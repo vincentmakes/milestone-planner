@@ -1,0 +1,153 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-family: var(--font-family);
+  font-weight: var(--font-weight-medium);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+/* Sizes */
+.sm {
+  height: 28px;
+  padding: 0 0.75rem;
+  font-size: var(--font-size-xs);
+}
+
+.md {
+  height: 36px;
+  padding: 0 1rem;
+  font-size: var(--font-size-sm);
+}
+
+.lg {
+  height: 44px;
+  padding: 0 1.5rem;
+  font-size: var(--font-size-base);
+}
+
+/* Variants */
+.primary {
+  background: var(--accent-blue);
+  color: white;
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent-blue-hover);
+}
+
+.primary:active:not(:disabled) {
+  background: var(--accent-blue-active);
+}
+
+.secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-color-hover);
+}
+
+.danger {
+  background: var(--accent-red);
+  color: white;
+}
+
+.danger:hover:not(:disabled) {
+  background: var(--accent-red-hover);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.icon {
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 0;
+  width: 36px;
+  height: 36px;
+}
+
+.icon.sm {
+  width: 28px;
+  height: 28px;
+}
+
+.icon.lg {
+  width: 44px;
+  height: 44px;
+}
+
+.icon:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* States */
+.disabled,
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.loading {
+  cursor: wait;
+}
+
+.loading .content,
+.loading .icon {
+  visibility: hidden;
+}
+
+/* Elements */
+.spinner {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+.content {
+  display: inline-flex;
+  align-items: center;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon svg {
+  width: 1em;
+  height: 1em;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

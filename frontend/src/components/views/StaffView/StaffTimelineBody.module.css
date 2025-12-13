@@ -1,0 +1,221 @@
+/* StaffTimelineBody - matches TimelineBody from main Gantt */
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+}
+
+.body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.body::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+.body::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+.content {
+  position: relative;
+  min-height: 100%;
+}
+
+/* Grid using CSS gradient for vertical lines */
+.grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.grid::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0px,
+    transparent calc(var(--cell-width, 36px) - 1px),
+    var(--border-color) calc(var(--cell-width, 36px) - 1px),
+    var(--border-color) var(--cell-width, 36px)
+  );
+  pointer-events: none;
+}
+
+.gridCell {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.gridCell.weekend {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.gridCell.holiday {
+  background: rgba(249, 115, 22, 0.12);
+}
+
+.gridCell.today {
+  background: rgba(59, 130, 246, 0.08);
+  border-left: 2px solid var(--accent-blue);
+  z-index: 2;
+}
+
+.rows {
+  position: relative;
+  z-index: 2;
+}
+
+/* Staff wrapper - contains main row + expanded rows */
+.staffWrapper {
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Bank holidays wrapper - distinct orange border */
+.bankHolidaysWrapper {
+  border-bottom: 1px solid var(--border-color);
+  border-top: 2px solid var(--accent-orange);
+}
+
+/* Row - base for main row and detail rows */
+.row {
+  position: relative;
+}
+
+/* Common bar styles */
+.bar {
+  position: absolute;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: filter 0.15s, box-shadow 0.15s;
+  z-index: 2;
+}
+
+.bar:hover {
+  filter: brightness(1.1);
+  box-shadow: var(--shadow-md);
+}
+
+/* Vacation Bar */
+.vacationBar {
+  background: var(--accent-purple);
+  opacity: 0.9;
+}
+
+/* Assignment Bar */
+.assignmentBar {
+  background: rgba(6, 182, 212, 0.9);
+}
+
+.barLabel {
+  font-size: 9px;
+  font-weight: var(--font-weight-medium);
+  color: white;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+  line-height: 1;
+}
+
+/* Detail bars (for expanded view) */
+.detailBar {
+  position: absolute;
+  border-radius: var(--radius-xs);
+  z-index: 2;
+}
+
+.vacationDetailBar {
+  background: var(--accent-purple);
+  opacity: 0.7;
+}
+
+.assignmentDetailBar {
+  background: rgba(6, 182, 212, 0.7);
+}
+
+.holidayDetailBar {
+  background: var(--accent-orange);
+  opacity: 0.6;
+}
+
+.customHolidayBar {
+  opacity: 0.8;
+  background: linear-gradient(135deg, var(--accent-orange), #f97316);
+}
+
+/* Workload Heatmap Cells - positioned at bottom of row */
+.workloadCell {
+  position: absolute;
+  z-index: 1;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* State-specific borders */
+.workloadCell.overloaded {
+  border-left: 2px solid var(--accent-red);
+  border-right: 2px solid var(--accent-red);
+}
+
+.workloadCell.vacation,
+.workloadCell.conflict {
+  border-left: 2px solid var(--accent-purple);
+  border-right: 2px solid var(--accent-purple);
+}
+
+/* Workload Indicator Badge - centered in the indicator area */
+.workloadIndicator {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 2px;
+  white-space: nowrap;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.workloadIndicator.overloaded {
+  background: var(--accent-red);
+  color: white;
+}
+
+.workloadIndicator.full {
+  background: var(--accent-blue);
+  color: white;
+}
+
+.workloadIndicator.partial {
+  background: rgba(59, 130, 246, 0.8);
+  color: white;
+}
+
+.workloadIndicator.vacation {
+  background: var(--accent-purple);
+  color: white;
+}
+
+.workloadIndicator.conflict {
+  background: #dc2626;
+  color: white;
+}

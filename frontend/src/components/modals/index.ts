@@ -1,0 +1,18 @@
+// Modal components barrel export
+export { ProjectModal } from './ProjectModal';
+export { PhaseModal } from './PhaseModal';
+export { SubphaseModal } from './SubphaseModal';
+export { StaffAssignmentModal } from './StaffAssignmentModal';
+export { EquipmentAssignmentModal } from './EquipmentAssignmentModal';
+export { VacationModal } from './VacationModal';
+export { BankHolidayModal } from './BankHolidayModal';
+export { CustomHolidayModal } from './CustomHolidayModal';
+export { SiteModal } from './SiteModal';
+export { SiteManagementModal } from './SiteManagementModal';
+export { UserManagementModal } from './UserManagementModal';
+export { SSOConfigModal } from './SSOConfigModal';
+export { EquipmentManagementModal } from './EquipmentManagementModal';
+export { PredefinedPhasesModal } from './PredefinedPhasesModal';
+export { ImportProjectModal } from './ImportProjectModal';
+export { SettingsModal } from './SettingsModal';
+export { ModalContainer } from './ModalContainer';

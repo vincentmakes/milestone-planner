@@ -1,0 +1,184 @@
+/* CrossSiteView - matches GanttContainer structure */
+
+.container {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+/* Left Panel */
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 52px;
+  padding: 0 1rem;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.headerTitle {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.panelBody {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 8px;
+}
+
+.panelBody::-webkit-scrollbar {
+  width: 6px;
+}
+
+.panelBody::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panelBody::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+/* Site Row */
+.siteRow {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 1rem;
+  gap: 10px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.siteRow.currentSite {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.siteIndicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.siteIndicator.current {
+  background: var(--accent-green);
+}
+
+.siteInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.siteName {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.siteMeta {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+/* Project Row */
+.projectRow {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 1rem 0 2.5rem;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.projectRow.masked {
+  opacity: 0.6;
+}
+
+.status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status.confirmed {
+  background: var(--accent-green);
+}
+
+.status.unconfirmed {
+  background: var(--accent-yellow);
+}
+
+.projectInfo {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.projectName {
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.projectMeta {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+/* Timeline - matches Gantt Timeline structure */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.timelineScroll {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+}
+
+.timelineScroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.timelineScroll::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+.timelineScroll::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+.timelineContent {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}

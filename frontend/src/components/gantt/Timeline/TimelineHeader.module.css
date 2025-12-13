@@ -1,0 +1,101 @@
+.header {
+  flex-shrink: 0;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.headerContent {
+  display: flex;
+  flex-direction: column;
+}
+
+.primaryRow {
+  display: flex;
+  height: 23px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.primaryCell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  border-right: 1px solid var(--border-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 0.25rem;
+}
+
+.primaryCell.current {
+  color: var(--accent-blue);
+  background: var(--accent-blue-alpha);
+}
+
+.secondaryRow {
+  display: flex;
+  height: 28px; /* Height to fit both week number and day */
+}
+
+.secondaryCell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  font-size: 10px;
+  color: var(--text-muted);
+  border-right: 1px solid var(--border-color);
+  position: relative;
+  padding: 2px 0;
+}
+
+.secondaryCell.weekend {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.secondaryCell.holiday {
+  background: rgba(249, 115, 22, 0.2);
+  color: var(--accent-orange);
+}
+
+.secondaryCell.today {
+  background: var(--accent-blue-alpha);
+  color: var(--accent-blue);
+  font-weight: var(--font-weight-semibold);
+}
+
+.dayLabel {
+  line-height: 1;
+}
+
+/* Week label at top-left corner - for week view */
+.weekLabelTop {
+  position: absolute;
+  top: 1px;
+  left: 2px;
+  font-size: 7px;
+  font-weight: var(--font-weight-semibold);
+  color: #a78bfa; /* Brighter purple */
+  white-space: nowrap;
+  z-index: 1;
+}
+
+/* Week label at bottom - for month view (below day number) */
+.weekLabelBottom {
+  font-size: 7px;
+  font-weight: var(--font-weight-semibold);
+  color: #a78bfa; /* Brighter purple */
+  white-space: nowrap;
+  line-height: 1;
+  margin-top: 1px;
+}
+
+.monthLabel {
+  font-size: 8px;
+  color: var(--text-muted);
+  position: absolute;
+  bottom: 1px;
+  opacity: 0.7;
+}
