@@ -1,0 +1,143 @@
+.row {
+  position: relative;
+  height: var(--row-height);
+  border-bottom: 1px solid var(--border-color);
+  box-sizing: content-box;
+}
+
+.row:not(.projectRow) {
+  height: var(--detail-row-height);
+}
+
+.projectRow {
+  background: var(--bg-secondary);
+}
+
+.assignmentBar {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: calc(100% - 14px);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 500;
+  color: white;
+  overflow: hidden;
+  padding: 0 4px;
+  cursor: pointer;  /* All assignment bars are double-clickable to edit */
+}
+
+.assignmentBar.staff {
+  background: rgba(6, 182, 212, 0.85);
+}
+
+.assignmentBar.equipment {
+  background: rgba(249, 115, 22, 0.85);
+}
+
+/* All assignment bars have hover effect (double-click to edit) */
+.assignmentBar:hover {
+  filter: brightness(1.1);
+  z-index: 5;
+}
+
+/* Interactive assignment bars (project-level) */
+.assignmentBar.interactive {
+  cursor: grab;
+  transition: filter 0.15s, box-shadow 0.15s;
+}
+
+.assignmentBar.interactive:hover {
+  filter: brightness(1.1);
+  box-shadow: var(--shadow-sm);
+  z-index: 5;
+}
+
+.assignmentBar.interactive:active,
+.assignmentBar.interactive.dragging {
+  cursor: grabbing;
+  z-index: 100;
+}
+
+/* Resize handles for interactive assignment bars */
+.assignmentBar .resizeHandle {
+  position: absolute;
+  top: 0;
+  width: 8px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.assignmentBar.interactive:hover .resizeHandle {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.assignmentBar .resizeHandle.left {
+  left: 0;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+
+.assignmentBar .resizeHandle.right {
+  right: 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+/* Phase staff - solid color with dashed border */
+.assignmentBar.phaseStaff {
+  cursor: pointer;
+}
+
+/* Subphase staff - smaller and more transparent */
+.assignmentBar.subphaseStaff {
+  height: 14px;
+  font-size: 9px;
+  border-radius: 2px;
+}
+
+.barLabel {
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Vacation cell markers - purple background strips across the entire row */
+.vacationCellMarker {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: rgba(139, 92, 246, 0.15);
+  border-left: 1px solid rgba(139, 92, 246, 0.3);
+  border-right: 1px solid rgba(139, 92, 246, 0.3);
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Add a subtle top border to indicate vacation */
+.vacationCellMarker::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--accent-purple);
+}
+
+/* Phantom row placeholder during phantom sibling mode */
+.phantomRow {
+  position: relative;
+  height: var(--detail-row-height);
+  border-bottom: 1px solid var(--border-color);
+  background: rgba(236, 72, 153, 0.05);
+  box-sizing: content-box;
+}

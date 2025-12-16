@@ -1,0 +1,111 @@
+.panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: var(--resource-panel-width);
+  height: 100%;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border-color);
+  transition: width var(--transition-normal) ease, transform var(--transition-normal) ease;
+  overflow: visible;
+  flex-shrink: 0;
+}
+
+.panel.collapsed {
+  width: 0;
+  border-left: none;
+}
+
+.collapseBtn {
+  position: absolute;
+  top: 120px;
+  left: -28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  z-index: 100;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
+}
+
+.collapseBtn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.collapseBtn svg {
+  transition: transform var(--transition-normal);
+}
+
+.panel.collapsed .collapseBtn svg {
+  transform: rotate(180deg);
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.panel.collapsed .content {
+  display: none;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem 0.75rem 2.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+/* Tablet */
+@media (max-width: 1024px) {
+  .panel {
+    width: 240px;
+  }
+}
+
+/* Mobile - panel becomes overlay */
+@media (max-width: 640px) {
+  .panel {
+    position: fixed;
+    top: 48px;
+    right: 0;
+    bottom: 0;
+    width: 280px;
+    z-index: 200;
+    transform: translateX(100%);
+    border-left: 1px solid var(--border-color);
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+  }
+  
+  .panel.mobileOpen {
+    transform: translateX(0);
+  }
+  
+  .panel.collapsed {
+    width: 280px;
+    transform: translateX(100%);
+  }
+  
+  .collapseBtn {
+    display: none;
+  }
+}

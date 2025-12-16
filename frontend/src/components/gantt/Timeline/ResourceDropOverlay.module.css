@@ -1,0 +1,91 @@
+/* ResourceDropOverlay - Overlay for drag-drop resource assignment */
+
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  cursor: crosshair;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.dropZone {
+  position: absolute;
+  left: 0;
+  background: rgba(59, 130, 246, 0.15);
+  border-top: 2px solid var(--accent-blue);
+  border-bottom: 2px solid var(--accent-blue);
+  pointer-events: none;
+  transition: top 0.1s ease, height 0.1s ease;
+}
+
+.previewBar {
+  position: absolute;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: left 0.05s ease;
+}
+
+.previewBar.staff {
+  background: rgba(59, 130, 246, 0.8);
+  border: 1px solid var(--accent-blue);
+}
+
+.previewBar.equipment {
+  background: rgba(168, 85, 247, 0.8);
+  border: 1px solid #a855f7;
+}
+
+.previewLabel {
+  font-size: 10px;
+  font-weight: 500;
+  color: white;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 6px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.instructions {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 20px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  z-index: 101;
+}
+
+.instructions span {
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+.instructions .hint {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+/* Global body class when dragging */
+:global(body.resource-dragging) {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+:global(body.resource-dragging) * {
+  cursor: grabbing !important;
+}

@@ -1,0 +1,248 @@
+/* TenantList.module.css */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Stats Grid */
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.statCard {
+  padding: 1.25rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.statCard h3 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 0.5rem;
+}
+
+.statValue {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.statCard.success .statValue { color: var(--accent-green); }
+.statCard.warning .statValue { color: var(--accent-yellow); }
+.statCard.danger .statValue { color: var(--accent-red); }
+
+/* Panel */
+.panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.panelHeader h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+/* Table */
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.table th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+}
+
+.table tbody tr:hover {
+  background: var(--bg-tertiary);
+}
+
+.emptyMessage {
+  text-align: center;
+  padding: 3rem 1rem !important;
+  color: var(--text-muted);
+}
+
+.tenantName {
+  font-weight: 500;
+  color: var(--accent-blue);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.tenantName:hover {
+  text-decoration: underline;
+}
+
+.companyName {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+
+.slug {
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+}
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  text-transform: capitalize;
+}
+
+.badgeSuccess {
+  color: var(--accent-green);
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.badgeWarning {
+  color: var(--accent-yellow);
+  background: rgba(245, 158, 11, 0.15);
+}
+
+.badgeDanger {
+  color: var(--accent-red);
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.badgeInfo {
+  color: var(--accent-blue);
+  background: var(--accent-blue-alpha);
+}
+
+/* Buttons */
+.btnPrimary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #fff;
+  background: var(--accent-blue);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btnPrimary:hover {
+  background: var(--accent-blue-hover);
+}
+
+/* Action Buttons */
+.actions {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.btnSmall {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btnSmall:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.btnSmall.btnSuccess {
+  color: var(--accent-green);
+}
+
+.btnSmall.btnSuccess:hover {
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.btnSmall.btnWarning {
+  color: var(--accent-yellow);
+}
+
+.btnSmall.btnWarning:hover {
+  background: rgba(245, 158, 11, 0.15);
+}
+
+.btnSmall.btnDanger {
+  color: var(--accent-red);
+}
+
+.btnSmall.btnDanger:hover {
+  background: var(--accent-red-alpha);
+}
+
+.loading {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .panelHeader {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: stretch;
+  }
+  
+  .table th,
+  .table td {
+    padding: 0.5rem;
+    font-size: 0.8125rem;
+  }
+  
+  .actions {
+    flex-wrap: wrap;
+  }
+}

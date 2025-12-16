@@ -1,0 +1,39 @@
+.timeline {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.horizontalScroll {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* Ensure scrollbar doesn't affect layout - use overlay scroll if available */
+  scrollbar-gutter: stable;
+  min-height: 0; /* Allow flex children to shrink */
+}
+
+.horizontalScroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.horizontalScroll::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+.horizontalScroll::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+.scrollContent {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden; /* Contain the vertical scroll within TimelineBody */
+}

@@ -1,0 +1,213 @@
+/* CustomColumnCell Styles - Spreadsheet-like cells */
+
+/* Cell wrapper - ensures full cell is interactive */
+.cellWrapper {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.cellWrapper.fillTarget {
+  background: rgba(59, 130, 246, 0.15);
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -2px;
+}
+
+/* Common cell styles */
+.textCell,
+.booleanCell,
+.listCell {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 0 8px;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  box-sizing: border-box;
+  position: relative;
+}
+
+.textCell:hover,
+.booleanCell:hover,
+.listCell:hover {
+  background: var(--bg-hover);
+}
+
+.readOnly {
+  cursor: default;
+}
+
+.readOnly:hover {
+  background: transparent;
+}
+
+.empty {
+  color: var(--text-muted);
+}
+
+/* Text Cell */
+.textCell {
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+.cellText {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.textInput {
+  width: 100%;
+  height: 100%;
+  padding: 0 8px;
+  margin: 0;
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 2px solid var(--accent-blue);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.textInput:focus {
+  background: var(--bg-secondary);
+}
+
+/* Boolean Cell */
+.booleanCell {
+  justify-content: center;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: white;
+  transition: all var(--transition-fast);
+}
+
+.booleanCell:not(.readOnly):hover .checkbox {
+  border-color: var(--accent-blue);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.checkbox.checked {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+}
+
+/* List Cell */
+.listCell {
+  position: relative;
+}
+
+.listValue {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  width: 100%;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+.listValue span {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform var(--transition-fast);
+}
+
+.chevron.open {
+  transform: rotate(180deg);
+}
+
+.dropdown {
+  position: absolute;
+  top: 100%;
+  left: -1px;
+  right: 0;
+  min-width: 120px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown);
+  animation: slideIn var(--transition-fast) ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.option {
+  padding: 0.5rem 0.75rem;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.option:hover {
+  background: var(--bg-hover);
+}
+
+.option.selected {
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--accent-blue);
+}
+
+.clearOption {
+  padding: 0.5rem 0.75rem;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-color);
+  transition: background var(--transition-fast);
+}
+
+.clearOption:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+/* Scrollbar for dropdown */
+.dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.dropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dropdown::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}

@@ -1,0 +1,56 @@
+/* EquipmentOverviewToggle styles */
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.toggle:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-orange);
+  color: var(--text-primary);
+}
+
+.toggle.active {
+  background: rgba(249, 115, 22, 0.15);
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
+}
+
+.toggle svg {
+  flex-shrink: 0;
+}
+
+.label {
+  white-space: nowrap;
+}
+
+.indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: background var(--transition-fast);
+}
+
+.indicator.on {
+  background: var(--accent-orange);
+  box-shadow: 0 0 6px var(--accent-orange);
+}
+
+/* Hide label on smaller screens */
+@media (max-width: 1200px) {
+  .label {
+    display: none;
+  }
+}
