@@ -1,4 +1,4 @@
-# Milestone - Development & Deployment Guide
+# Milestone - Development Guide
 
 ## Architecture Overview
 
@@ -12,147 +12,211 @@
 │  │  /admin          → React SPA (admin panel)              ││
 │  │  /t/{slug}/*     → React SPA (tenant app)               ││
 │  │  /*              → React SPA (main app)                 ││
-│  │  /img, /assets   → Static files from public/            ││
+│  │  /assets/*       → Static files from public/            ││
 │  └─────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Quick Start (Production)
+## Development Options
 
-```bash
-cd /mnt/user/appdata/milestone
-
-# Start the application
-docker-compose -f docker-compose.prod.yml up -d
-
-# Access at http://your-server:8485/
-```
-
-## Development Workflow
-
-### Without Hot Reload (Recommended)
+### Option 1: Without Hot Reload (Recommended for most changes)
 
 This is the simplest workflow. Make changes, build, deploy, refresh.
 
 ```bash
 # 1. Make changes to frontend/src/**/*.tsx
 
-# 2. Build the React app
-cd /mnt/user/appdata/milestone/frontend
-npm run build
+# 2. Build the React app (using Docker - no local Node.js needed)
+docker run --rm -v $(pwd)/frontend:/app -w /app node:20-alpine sh -c "npm install && npm run build"
 
 # 3. Deploy to public folder
-cd /mnt/user/appdata/milestone
 ./deploy-react.sh
 
-# 4. Refresh browser (Ctrl+Shift+R for hard refresh)
+# 4. Hard refresh browser: Ctrl+Shift+R (or Cmd+Shift+R on Mac)
 ```
 
-**Tip**: Create an alias for quick rebuilds:
-```bash
-alias milestone-rebuild="cd /mnt/user/appdata/milestone/frontend && npm run build && cd .. && ./deploy-react.sh"
-```
-
-### With Hot Reload (Optional)
+### Option 2: With Hot Reload (For rapid UI iteration)
 
 Use the Vite dev server for instant updates during development.
 
-**Limitation**: Tenant routes (`/t/slug/`) don't work on the dev server.
+```bash
+# Start both backend and frontend dev server
+docker-compose -f docker-compose.dev.yml up -d
+
+# Access at http://localhost:3333/
+# Changes to .tsx files appear instantly
+```
+
+**Note**: Tenant routes (`/t/slug/`) don't work on the dev server (port 3333).
+Use port 8485 when testing tenant-specific features.
+
+### Option 3: Local Node.js Development
+
+If you have Node.js installed locally:
 
 ```bash
-# Start the dev server
-docker-compose -f docker-compose.react-dev.yml up -d
-
-# Access at http://your-server:3333/
-# Changes to .tsx files appear instantly
-
-# For tenant features, use port 8485 instead
+cd frontend
+npm install
+npm run dev
+# Access at http://localhost:3333/
 ```
 
-## File Structure
+## Making Changes
 
-```
-milestone/
-├── app/                    # Python FastAPI backend
-│   ├── main.py            # Application entry point
-│   ├── routers/           # API endpoints
-│   ├── models/            # SQLAlchemy models
-│   ├── schemas/           # Pydantic schemas
-│   └── services/          # Business logic
-├── frontend/              # React frontend source
-│   ├── src/               # React components & logic
-│   ├── dist/              # Built React app (generated)
-│   └── package.json       # Node dependencies
-├── public/                # Served by FastAPI (deployed React)
-│   ├── index.html         # React app entry point
-│   ├── assets/            # JS/CSS bundles
-│   └── img/               # Images and logos
-├── deploy-react.sh        # Deploys frontend/dist → public/
-├── docker-compose.prod.yml    # Production (recommended)
-└── docker-compose.react-dev.yml # Development with hot reload
-```
-
-## Common Tasks
-
-### Update Frontend Code
+### Frontend Changes
 
 ```bash
 # Edit files in frontend/src/
 vim frontend/src/components/SomeComponent.tsx
 
-# Build and deploy
+# Build (choose one method):
+
+# Method A: Using Docker (no local Node.js)
+docker run --rm -v $(pwd)/frontend:/app -w /app node:20-alpine sh -c "npm run build"
+
+# Method B: Using local Node.js
 cd frontend && npm run build && cd ..
+
+# Method C: Using dev container
+docker exec milestone-react-dev sh -c "npm run build"
+
+# Deploy
 ./deploy-react.sh
 
 # Refresh browser
 ```
 
-### Update Backend Code
+### Backend Changes
 
 ```bash
 # Edit files in app/
 vim app/routers/projects.py
 
 # Rebuild container
-docker-compose -f docker-compose.prod.yml up -d --build
+docker-compose up -d --build
+
+# Or restart if only Python files changed
+docker-compose restart milestone
 ```
 
-### Update Both
+### Both Frontend and Backend
 
 ```bash
 # Build frontend
-cd frontend && npm run build && cd ..
+docker run --rm -v $(pwd)/frontend:/app -w /app node:20-alpine sh -c "npm run build"
 ./deploy-react.sh
 
 # Rebuild backend
-docker-compose -f docker-compose.prod.yml up -d --build
+docker-compose up -d --build
 ```
 
-### View Logs
+## Useful Commands
 
+### View Logs
 ```bash
 # All logs
-docker-compose -f docker-compose.prod.yml logs -f
+docker-compose logs -f
 
 # Just the app
 docker logs -f milestone
 ```
 
-### Check Container Status
-
+### Check Status
 ```bash
-docker-compose -f docker-compose.prod.yml ps
+docker-compose ps
 ```
 
-## Access URLs
+### Rebuild Everything
+```bash
+docker-compose down
+docker-compose up -d --build
+```
 
-| URL | Description |
-|-----|-------------|
-| `http://server:8485/` | Main application |
-| `http://server:8485/t/tenant-slug/` | Tenant-specific access |
-| `http://server:8485/admin/` | Admin panel (multi-tenant management) |
-| `http://server:8485/api/docs` | API documentation (Swagger) |
-| `http://server:8485/health` | Health check endpoint |
+### Database Access
+```bash
+# If using local PostgreSQL
+psql -U milestone -d milestone
+
+# If using Docker PostgreSQL
+docker exec -it milestone-db psql -U milestone
+```
+
+### Run Backend Tests
+```bash
+docker exec milestone pytest
+```
+
+## Project Structure Details
+
+### Backend (`app/`)
+
+```
+app/
+├── main.py              # FastAPI app, routes, middleware setup
+├── config.py            # Environment configuration
+├── database.py          # SQLAlchemy setup, session management
+├── routers/             # API endpoint handlers
+│   ├── projects.py      # Project CRUD
+│   ├── staff.py         # Staff management
+│   ├── equipment.py     # Equipment booking
+│   ├── auth.py          # Authentication
+│   └── admin.py         # Multi-tenant admin
+├── models/              # SQLAlchemy ORM models
+├── schemas/             # Pydantic request/response models
+├── services/            # Business logic
+│   ├── encryption.py    # Credential encryption
+│   ├── tenant_manager.py
+│   └── tenant_provisioner.py
+└── middleware/          # Request middleware
+    ├── auth.py          # Session authentication
+    └── tenant.py        # Multi-tenant routing
+```
+
+### Frontend (`frontend/src/`)
+
+```
+frontend/src/
+├── App.tsx              # Root component, routing
+├── main.tsx             # React entry point
+├── components/          # React components
+│   ├── Gantt/           # Gantt chart components
+│   ├── admin/           # Admin panel components
+│   ├── modals/          # Modal dialogs
+│   └── ui/              # Shared UI components
+├── stores/              # Zustand state stores
+├── api/                 # API client functions
+├── hooks/               # Custom React hooks
+├── types/               # TypeScript type definitions
+├── styles/              # CSS files
+└── utils/               # Utility functions
+```
+
+## Environment Setup
+
+### Required for Production
+```bash
+# .env
+DATABASE_URL=postgresql://user:pass@host:5432/milestone
+SESSION_SECRET=your-64-char-random-string
+```
+
+### Required for Multi-Tenant
+```bash
+MULTI_TENANT=true
+MASTER_DATABASE_URL=postgresql://user:pass@host:5432/milestone_master
+TENANT_ENCRYPTION_KEY=your-64-char-hex-string
+PG_ADMIN_USER=postgres
+PG_ADMIN_PASSWORD=admin-password
+```
+
+### Generate Secure Keys
+```bash
+# Session secret
+python -c "import secrets; print(secrets.token_hex(32))"
+
+# Encryption key
+python -c "import secrets; print(secrets.token_hex(32))"
+```
 
 ## Troubleshooting
 
@@ -162,6 +226,11 @@ docker-compose -f docker-compose.prod.yml ps
 2. Make sure you ran `./deploy-react.sh`
 3. Hard refresh browser: `Ctrl+Shift+R`
 4. Check browser console for errors
+5. Verify files in `public/`:
+   ```bash
+   ls -la public/
+   ls -la public/assets/
+   ```
 
 ### API errors
 
@@ -171,54 +240,41 @@ docker logs milestone
 
 # Test API endpoint
 curl http://localhost:8485/api/health
+
+# Check API docs
+open http://localhost:8485/api/docs
 ```
 
 ### Container won't start
 
 ```bash
 # Check logs
-docker-compose -f docker-compose.prod.yml logs
+docker-compose logs
 
 # Rebuild from scratch
-docker-compose -f docker-compose.prod.yml down
-docker-compose -f docker-compose.prod.yml up -d --build
+docker-compose down
+docker-compose up -d --build
 ```
 
-### Database issues
+### Database connection issues
 
 ```bash
-# Connect to container
-docker exec -it milestone bash
+# Test connection
+docker exec milestone python -c "from app.database import engine; print(engine.url)"
 
-# Check database
-python -c "from app.database import engine; print(engine.url)"
+# Check environment
+docker exec milestone env | grep DB
 ```
 
-## Environment Variables
+## Deployment Checklist
 
-Required in `.env`:
+Before deploying to production:
 
-```bash
-# Database
-DATABASE_URL=postgresql://user:pass@host:5432/milestone
-MASTER_DATABASE_URL=postgresql://user:pass@host:5432/milestone_master
-
-# Multi-tenant
-MULTI_TENANT=true
-
-# Security
-SECRET_KEY=your-secret-key
-ENCRYPTION_KEY=your-encryption-key
-```
-
-## Backup
-
-```bash
-# Database backup (adjust for your setup)
-pg_dump milestone > backup_$(date +%Y%m%d).sql
-
-# Application files
-tar -czf milestone_files_$(date +%Y%m%d).tar.gz \
-  /mnt/user/appdata/milestone/uploads \
-  /mnt/user/appdata/milestone/.env
-```
+- [ ] Update `.env` with production values
+- [ ] Change `SESSION_SECRET` to a secure random value
+- [ ] Change `TENANT_ENCRYPTION_KEY` if using multi-tenant
+- [ ] Set `DEBUG=false`
+- [ ] Configure proper database credentials
+- [ ] Set up SSL/TLS (via reverse proxy)
+- [ ] Configure backup strategy for database
+- [ ] Set up monitoring/logging

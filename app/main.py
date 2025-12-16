@@ -148,9 +148,10 @@ def create_app() -> FastAPI:
         version=__version__,
         description="Project management API for multi-site R&D organizations",
         lifespan=lifespan,
-        docs_url="/api/docs" if settings.debug else None,
-        redoc_url="/api/redoc" if settings.debug else None,
-        openapi_url="/api/openapi.json" if settings.debug else None,
+        # Disable default docs - we'll add protected versions
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
         default_response_class=CustomJSONResponse,  # Use custom datetime formatting
     )
     
@@ -235,6 +236,79 @@ def create_app() -> FastAPI:
     
     # Admin router for multi-tenant management (at /api/admin/*)
     app.include_router(admin.router, prefix="/api", tags=["Admin"])
+    
+    # Protected API documentation endpoints (require admin authentication)
+    from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
+    from fastapi.openapi.utils import get_openapi
+    from app.middleware.auth import get_current_user_from_session
+    
+    @app.get("/api/openapi.json", include_in_schema=False)
+    async def get_openapi_schema(request: Request):
+        """Get OpenAPI schema - requires authentication."""
+        user = await get_current_user_from_session(request)
+        if not user or user.get("role") != "admin":
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Authentication required. Admin access only."}
+            )
+        return JSONResponse(
+            get_openapi(
+                title=app.title,
+                version=app.version,
+                description=app.description,
+                routes=app.routes,
+            )
+        )
+    
+    @app.get("/api/docs", include_in_schema=False)
+    async def get_docs(request: Request):
+        """Swagger UI - requires authentication."""
+        user = await get_current_user_from_session(request)
+        if not user or user.get("role") != "admin":
+            return HTMLResponse(
+                content="""
+                <html>
+                <head><title>API Docs - Authentication Required</title></head>
+                <body style="font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #1a1a1a; color: #fff;">
+                    <div style="text-align: center;">
+                        <h1>🔒 Authentication Required</h1>
+                        <p>You must be logged in as an admin to access API documentation.</p>
+                        <p><a href="/" style="color: #4a90e2;">← Go to Login</a></p>
+                    </div>
+                </body>
+                </html>
+                """,
+                status_code=401
+            )
+        return get_swagger_ui_html(
+            openapi_url="/api/openapi.json",
+            title=f"{app.title} - Swagger UI"
+        )
+    
+    @app.get("/api/redoc", include_in_schema=False)
+    async def get_redoc(request: Request):
+        """ReDoc - requires authentication."""
+        user = await get_current_user_from_session(request)
+        if not user or user.get("role") != "admin":
+            return HTMLResponse(
+                content="""
+                <html>
+                <head><title>API Docs - Authentication Required</title></head>
+                <body style="font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #1a1a1a; color: #fff;">
+                    <div style="text-align: center;">
+                        <h1>🔒 Authentication Required</h1>
+                        <p>You must be logged in as an admin to access API documentation.</p>
+                        <p><a href="/" style="color: #4a90e2;">← Go to Login</a></p>
+                    </div>
+                </body>
+                </html>
+                """,
+                status_code=401
+            )
+        return get_redoc_html(
+            openapi_url="/api/openapi.json",
+            title=f"{app.title} - ReDoc"
+        )
     
     # Static file serving for frontend
     public_dir = Path("/app/public")

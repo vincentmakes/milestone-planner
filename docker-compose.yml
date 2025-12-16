@@ -1,68 +1,44 @@
-# Milestone API - Python/FastAPI Production Deployment
-# Full cutover from Node.js
+# Milestone - Production Docker Compose
+# 
+# This runs the FastAPI backend which serves both API and React frontend.
+# The React frontend is pre-built and deployed to the public/ folder.
+#
+# Usage:
+#   docker-compose up -d
+#
+# Access: http://your-server:8485/
 
 version: '3.8'
 
 services:
-  api:
+  milestone:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: milestone-api
+    container_name: milestone
     restart: unless-stopped
     ports:
-      - "8484:8000"  # Expose on same port as old Node.js
+      - "8485:8485"
     env_file:
       - .env
     environment:
-      # Override port for container
-      - PORT=8000
+      - PORT=8485
+      - TZ=Europe/Zurich
     volumes:
-      # Persist any uploaded files
-      - ./uploads:/app/uploads
-      # Static files from frontend
+      - /mnt/user/appdata/milestone/uploads:/app/uploads
       - ./public:/app/public:ro
-    # Remove depends_on if using external database
-    # depends_on:
-    #   db:
-    #     condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8485/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
     networks:
       - milestone-net
-    # Connect to external PostgreSQL container (adjust network as needed)
-    # external_links:
-    #   - postgresql:db
-
-# Uncomment if you need a new PostgreSQL instance
-#   db:
-#     image: postgres:15-alpine
-#     container_name: milestone-db
-#     restart: unless-stopped
-#     environment:
-#       - POSTGRES_USER=milestone
-#       - POSTGRES_PASSWORD=${DB_PASSWORD}
-#       - POSTGRES_DB=milestone
-#     volumes:
-#       - postgres_data:/var/lib/postgresql/data
-#     healthcheck:
-#       test: ["CMD-SHELL", "pg_isready -U milestone"]
-#       interval: 10s
-#       timeout: 5s
-#       retries: 5
-#     networks:
-#       - milestone-net
+      - guac-net
 
 networks:
   milestone-net:
     driver: bridge
-    # If you need to connect to existing network:
-    # external: true
-    # name: your-existing-network
-
-# volumes:
-#   postgres_data:
+  guac-net:
+    external: true

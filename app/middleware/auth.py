@@ -5,7 +5,7 @@ Provides FastAPI dependencies for protecting routes with authentication
 and role-based access control.
 """
 
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from fastapi import Cookie, Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -16,6 +16,32 @@ from app.config import get_settings
 from app.database import get_db
 from app.models.user import User
 from app.services.session import SessionService, parse_session_cookie
+
+
+async def get_current_user_from_session(request: Request) -> Optional[Dict[str, Any]]:
+    """
+    Get current user data directly from request session.
+    
+    This is a standalone function (not a dependency) for use in custom routes.
+    Returns the raw user dict from session, or None if not authenticated.
+    """
+    from app.database import get_session_factory
+    
+    # Get session cookie
+    connect_sid = request.cookies.get("connect.sid")
+    if not connect_sid:
+        return None
+    
+    session_id = parse_session_cookie(connect_sid)
+    if not session_id:
+        return None
+    
+    # Get user from session
+    session_factory = get_session_factory()
+    async with session_factory() as db:
+        session_service = SessionService(db)
+        user_data = await session_service.get_user_from_session(session_id)
+        return user_data
 
 
 async def get_session_id(
