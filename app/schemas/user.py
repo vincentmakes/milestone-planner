@@ -19,6 +19,16 @@ class UserSiteResponse(BaseModel):
         from_attributes = True
 
 
+class SkillInfo(BaseModel):
+    """Skill info for staff response."""
+    id: int
+    name: str
+    color: str
+
+    class Config:
+        from_attributes = True
+
+
 class StaffResponse(BaseModel):
     """
     Response model for staff members (users as resources).
@@ -35,6 +45,7 @@ class StaffResponse(BaseModel):
     active: int = 1
     site_id: Optional[int] = None  # Singular site ID
     site_name: Optional[str] = None  # Singular site name
+    skills: List[SkillInfo] = []  # User's skills
 
     class Config:
         from_attributes = True
@@ -65,6 +76,7 @@ class StaffCreate(BaseModel):
     job_title: Optional[str] = Field(None, max_length=100)
     role: str = Field(default="user", pattern="^(admin|superuser|user)$")
     site_ids: List[int] = []
+    skill_ids: List[int] = []
 
 
 class StaffUpdate(BaseModel):
@@ -77,23 +89,25 @@ class StaffUpdate(BaseModel):
     role: Optional[str] = Field(None, pattern="^(admin|superuser|user)$")
     active: Optional[int] = None
     site_ids: Optional[List[int]] = None
+    skill_ids: Optional[List[int]] = None
 
 
 class UserResponse(BaseModel):
     """
     Response model for user list (admin view).
-    Node.js returns site_ids and site_names as arrays.
-    Does NOT include job_title in list view.
+    Includes job_title, skills, site_ids, and site_names.
     """
     id: int
     email: str
     first_name: str
     last_name: str
+    job_title: Optional[str] = None
     role: str
     active: int
     created_at: DateTimeJS
     site_ids: List[int] = []
     site_names: List[str] = []
+    skills: List[SkillInfo] = []
 
     class Config:
         from_attributes = True
@@ -102,18 +116,19 @@ class UserResponse(BaseModel):
 class UserDetailResponse(BaseModel):
     """
     Response model for single user (admin view).
-    Node.js returns site_ids as array AND sites as array of objects.
-    Does NOT include job_title or site_names.
+    Includes job_title, skills, site_ids, and sites array.
     """
     id: int
     email: str
     first_name: str
     last_name: str
+    job_title: Optional[str] = None
     role: str
     active: int
     created_at: DateTimeJS
     site_ids: List[int] = []
     sites: List[UserSiteResponse] = []
+    skills: List[SkillInfo] = []
 
     class Config:
         from_attributes = True

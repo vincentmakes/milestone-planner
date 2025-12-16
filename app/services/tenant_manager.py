@@ -72,6 +72,32 @@ class TenantConnectionManager:
         self._pool_timestamps.pop(slug, None)
         self._session_factories.pop(slug, None)
     
+    async def _run_auto_migrations(self, conn, slug: str):
+        """
+        Run automatic migrations for tenant databases.
+        
+        This ensures schema changes are applied without manual intervention.
+        """
+        try:
+            # Check if is_system column exists
+            result = await conn.execute(text("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name = 'users' AND column_name = 'is_system'
+            """))
+            if not result.fetchone():
+                print(f"Auto-migration: Adding is_system column to tenant {slug}...")
+                await conn.execute(text("ALTER TABLE users ADD COLUMN is_system INTEGER DEFAULT 0"))
+                # Mark first admin as system user
+                await conn.execute(text("""
+                    UPDATE users SET is_system = 1 
+                    WHERE id = (SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 1)
+                """))
+                await conn.commit()
+                print(f"Auto-migration: Added is_system column to tenant {slug}")
+        except Exception as e:
+            print(f"Auto-migration warning for {slug}: {e}")
+            # Don't fail if migration has issues - continue with connection
+    
     async def get_pool(self, tenant: Tenant, credentials: TenantCredentials) -> AsyncEngine:
         """
         Get or create a connection pool for a tenant.
@@ -119,10 +145,14 @@ class TenantConnectionManager:
             pool_timeout=30,
         )
         
-        # Test connection
+        # Test connection and run auto-migrations
         try:
             async with engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
+                
+                # Auto-migration: Add is_system column if missing
+                await self._run_auto_migrations(conn, slug)
+            
             print(f"Tenant pool created: {slug}")
         except Exception as e:
             await engine.dispose()
@@ -180,10 +210,14 @@ class TenantConnectionManager:
             pool_timeout=30,
         )
         
-        # Test connection
+        # Test connection and run auto-migrations
         try:
             async with engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
+                
+                # Auto-migration: Add is_system column if missing
+                await self._run_auto_migrations(conn, slug)
+            
             print(f"Tenant pool created: {slug}")
         except Exception as e:
             await engine.dispose()

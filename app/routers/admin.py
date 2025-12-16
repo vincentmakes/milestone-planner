@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -578,7 +578,7 @@ async def update_tenant_status(
 @router.delete("/tenants/{tenant_id}")
 async def delete_tenant(
     tenant_id: str,
-    delete_database: bool = False,
+    delete_database: bool = Query(False, description="Also drop the tenant's database"),
     admin: AdminUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_master_db),
 ):
@@ -593,12 +593,24 @@ async def delete_tenant(
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
     
-    # Optionally drop database
-    if delete_database:
+    # Check if tenant is suspended (required before deletion)
+    if tenant.status == 'active':
+        raise HTTPException(
+            status_code=400, 
+            detail="Tenant must be suspended before deletion. Active tenants cannot be deleted."
+        )
+    
+    # Drop database if requested
+    if delete_database and tenant.credentials:
         try:
+            print(f"Dropping database for tenant {tenant.slug}: {tenant.database_name}")
             await drop_tenant_database(tenant.database_name, tenant.database_user)
+            print(f"Successfully dropped database: {tenant.database_name}")
         except Exception as e:
             print(f"Error dropping database: {e}")
+            # Continue with tenant deletion even if database drop fails
+            import traceback
+            traceback.print_exc()
     
     # Delete tenant record (cascades to credentials and audit log)
     await db.delete(tenant)

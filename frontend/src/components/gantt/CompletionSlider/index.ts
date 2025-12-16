@@ -1,1 +1,0 @@
-export { CompletionSlider } from './CompletionSlider';

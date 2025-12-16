@@ -72,6 +72,16 @@ from app.schemas.tenant import (
     TenantCreateResponse,
     SystemStatsResponse,
 )
+from app.schemas.custom_column import (
+    CustomColumnCreate,
+    CustomColumnUpdate,
+    CustomColumnResponse,
+    CustomColumnReorderRequest,
+    CustomColumnValueCreate,
+    CustomColumnValueResponse,
+    CustomColumnValueBulkUpdate,
+    CustomColumnsWithValuesResponse,
+)
 
 __all__ = [
     # Settings
@@ -137,4 +147,13 @@ __all__ = [
     "TenantResponse",
     "TenantCreateResponse",
     "SystemStatsResponse",
+    # Custom Columns
+    "CustomColumnCreate",
+    "CustomColumnUpdate",
+    "CustomColumnResponse",
+    "CustomColumnReorderRequest",
+    "CustomColumnValueCreate",
+    "CustomColumnValueResponse",
+    "CustomColumnValueBulkUpdate",
+    "CustomColumnsWithValuesResponse",
 ]

@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from app.models.project import Project
     from app.models.assignment import ProjectAssignment, PhaseStaffAssignment, SubphaseStaffAssignment
     from app.models.vacation import Vacation
+    from app.models.skill import Skill
 
 
 class User(Base):
@@ -47,6 +48,7 @@ class User(Base):
     sso_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     sso_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     active: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    is_system: Mapped[Optional[int]] = mapped_column(Integer, default=0, nullable=True)  # Protected admin created by master panel
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )
@@ -91,6 +93,13 @@ class User(Base):
         back_populates="staff",
         cascade="all, delete-orphan",
     )
+    
+    skills: Mapped[List["Skill"]] = relationship(
+        "Skill",
+        secondary="user_skills",
+        back_populates="users",
+        lazy="selectin",
+    )
 
     @property
     def full_name(self) -> str:
@@ -101,6 +110,11 @@ class User(Base):
     def is_active(self) -> bool:
         """Check if user is active."""
         return self.active == 1
+
+    @property
+    def is_system_user(self) -> bool:
+        """Check if user is a system-created admin (protected from deletion)."""
+        return self.is_system == 1 if self.is_system is not None else False
 
     @property
     def is_admin(self) -> bool:

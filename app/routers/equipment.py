@@ -29,6 +29,106 @@ from app.schemas.equipment import (
 router = APIRouter()
 
 
+# ---------------------------------------------------------
+# Equipment Types (derived from equipment.type field)
+# ---------------------------------------------------------
+
+@router.get("/equipment-types", response_model=List[str])
+async def get_equipment_types(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Get all unique equipment types.
+    
+    Returns a list of unique type strings from all equipment.
+    """
+    from sqlalchemy import distinct
+    
+    result = await db.execute(
+        select(distinct(Equipment.type))
+        .where(Equipment.type.isnot(None))
+        .where(Equipment.type != '')
+        .order_by(Equipment.type)
+    )
+    types = result.scalars().all()
+    
+    return list(types)
+
+
+@router.put("/equipment-types/{old_type}")
+async def rename_equipment_type(
+    old_type: str,
+    new_type: str = Query(..., description="New type name"),
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """
+    Rename an equipment type.
+    
+    Updates all equipment with the old type to use the new type.
+    Requires admin authentication.
+    """
+    from sqlalchemy import update
+    
+    if not new_type.strip():
+        raise HTTPException(status_code=400, detail="New type name cannot be empty")
+    
+    # Check if old type exists
+    result = await db.execute(
+        select(Equipment).where(Equipment.type == old_type)
+    )
+    equipment_list = result.scalars().all()
+    
+    if not equipment_list:
+        raise HTTPException(status_code=404, detail=f"No equipment found with type '{old_type}'")
+    
+    # Update all equipment with this type
+    await db.execute(
+        update(Equipment)
+        .where(Equipment.type == old_type)
+        .values(type=new_type.strip())
+    )
+    
+    await db.commit()
+    
+    return {
+        "success": True,
+        "old_type": old_type,
+        "new_type": new_type.strip(),
+        "updated_count": len(equipment_list)
+    }
+
+
+@router.delete("/equipment-types/{type_name}")
+async def delete_equipment_type(
+    type_name: str,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """
+    Delete an equipment type.
+    
+    Only succeeds if no equipment uses this type.
+    Requires admin authentication.
+    """
+    # Check if any equipment uses this type
+    result = await db.execute(
+        select(Equipment).where(Equipment.type == type_name)
+    )
+    equipment_list = result.scalars().all()
+    
+    if equipment_list:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Cannot delete type '{type_name}': {len(equipment_list)} equipment item(s) still use this type"
+        )
+    
+    # Type doesn't exist in any equipment - nothing to delete really
+    # This endpoint is mainly for UI consistency
+    return {"success": True, "type": type_name}
+
+
 def build_equipment_response(equipment: Equipment) -> dict:
     """Build equipment response dict with site info."""
     return {

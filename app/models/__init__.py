@@ -12,6 +12,8 @@ from app.models.vacation import Vacation
 from app.models.note import Note
 from app.models.settings import Settings, PredefinedPhase, SSOConfig
 from app.models.session import Session
+from app.models.custom_column import CustomColumn, CustomColumnValue
+from app.models.skill import Skill, UserSkill
 from app.models.tenant import MasterBase, Tenant, TenantCredentials, TenantAuditLog, AdminUser, AdminSession
 
 __all__ = [
@@ -34,6 +36,10 @@ __all__ = [
     "PredefinedPhase",
     "SSOConfig",
     "Session",
+    "CustomColumn",
+    "CustomColumnValue",
+    "Skill",
+    "UserSkill",
     # Multi-tenant admin models (use separate MasterBase)
     "MasterBase",
     "Tenant",

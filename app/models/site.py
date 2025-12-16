@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from app.models.user import User
     from app.models.project import Project
     from app.models.equipment import Equipment
+    from app.models.custom_column import CustomColumn
 
 
 class Site(Base):
@@ -64,6 +65,12 @@ class Site(Base):
     
     bank_holidays: Mapped[List["BankHoliday"]] = relationship(
         "BankHoliday",
+        back_populates="site",
+        cascade="all, delete-orphan",
+    )
+    
+    custom_columns: Mapped[List["CustomColumn"]] = relationship(
+        "CustomColumn",
         back_populates="site",
         cascade="all, delete-orphan",
     )

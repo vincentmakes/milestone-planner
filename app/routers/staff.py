@@ -39,6 +39,14 @@ def build_staff_row(user: User, site: Site = None) -> dict:
     
     Returns one row per user-site combination.
     """
+    # Build skills list from user's skills relationship
+    skills = []
+    if hasattr(user, 'skills') and user.skills:
+        skills = [
+            {"id": skill.id, "name": skill.name, "color": skill.color}
+            for skill in user.skills
+        ]
+    
     return {
         "id": user.id,
         "first_name": user.first_name,
@@ -49,6 +57,7 @@ def build_staff_row(user: User, site: Site = None) -> dict:
         "active": user.active,
         "site_id": site.id if site else None,
         "site_name": site.name if site else None,
+        "skills": skills,
     }
 
 
@@ -74,12 +83,14 @@ async def get_staff(
     # - Excludes admin users
     # - Returns one row per user-site combo
     # - Orders by first_name, last_name
+    # - Eager load skills
     query = (
         select(User, Site)
         .outerjoin(UserSite, User.id == UserSite.user_id)
         .outerjoin(Site, UserSite.site_id == Site.id)
         .where(User.role != 'admin')  # Exclude admins
         .where(User.active == 1)
+        .options(selectinload(User.skills))
         .order_by(User.first_name, User.last_name)
     )
     
@@ -87,7 +98,7 @@ async def get_staff(
         query = query.where(UserSite.site_id == siteId)
     
     result = await db.execute(query)
-    rows = result.all()
+    rows = result.unique().all()
     
     # Build response with one row per user-site
     return [build_staff_row(user, site) for user, site in rows]

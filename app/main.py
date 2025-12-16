@@ -217,6 +217,8 @@ def create_app() -> FastAPI:
         mpp_import,
         export,
         admin,
+        custom_columns,
+        skills,
     )
     
     app.include_router(health.router, tags=["Health"])
@@ -233,6 +235,8 @@ def create_app() -> FastAPI:
     app.include_router(assignments.router, prefix="/api", tags=["Assignments"])
     app.include_router(mpp_import.router, prefix="/api", tags=["Import"])
     app.include_router(export.router, prefix="/api", tags=["Export"])
+    app.include_router(custom_columns.router, prefix="/api", tags=["Custom Columns"])
+    app.include_router(skills.router, prefix="/api", tags=["Skills"])
     
     # Admin router for multi-tenant management (at /api/admin/*)
     app.include_router(admin.router, prefix="/api", tags=["Admin"])

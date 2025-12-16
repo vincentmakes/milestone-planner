@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.user import User, UserSite
 from app.models.site import Site
+from app.models.skill import Skill, UserSkill
 from app.middleware.auth import get_current_user, require_admin
 from app.schemas.user import (
     UserResponse,
@@ -28,21 +29,32 @@ router = APIRouter()
 
 
 def build_user_list_response(user: User) -> dict:
-    """Build user response for list view (no job_title, has site_names)."""
+    """Build user response for list view (includes job_title, skills, and site_names)."""
     sites = user.sites if hasattr(user, 'sites') and user.sites else []
     # Sort by site ID to match Node.js behavior
     sorted_sites = sorted(sites, key=lambda s: s.id)
+    
+    # Build skills list
+    skills = []
+    if hasattr(user, 'skills') and user.skills:
+        skills = [
+            {"id": skill.id, "name": skill.name, "color": skill.color}
+            for skill in user.skills
+        ]
     
     return {
         "id": user.id,
         "email": user.email,
         "first_name": user.first_name,
         "last_name": user.last_name,
+        "job_title": user.job_title,
         "role": user.role,
         "active": user.active,
+        "is_system": user.is_system if user.is_system is not None else 0,
         "created_at": user.created_at,
         "site_ids": [s.id for s in sorted_sites],
         "site_names": [s.name for s in sorted_sites],
+        "skills": skills,
     }
 
 
@@ -50,21 +62,33 @@ def build_user_detail_response(user: User) -> dict:
     """Build user response for detail view (has sites array, no site_names)."""
     sites = user.sites if hasattr(user, 'sites') and user.sites else []
     
+    # Build skills list
+    skills = []
+    if hasattr(user, 'skills') and user.skills:
+        skills = [
+            {"id": skill.id, "name": skill.name, "color": skill.color}
+            for skill in user.skills
+        ]
+    
     return {
         "id": user.id,
         "email": user.email,
         "first_name": user.first_name,
         "last_name": user.last_name,
+        "job_title": user.job_title,
         "role": user.role,
         "active": user.active,
+        "is_system": user.is_system if user.is_system is not None else 0,
         "created_at": user.created_at,
         "site_ids": [s.id for s in sites],
         "sites": [{"id": s.id, "name": s.name} for s in sites],
+        "skills": skills,
     }
 
 
 @router.get("/users", response_model=List[UserResponse])
 async def get_users(
+    include_disabled: bool = Query(False, alias="includeDisabled"),
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
@@ -74,12 +98,18 @@ async def get_users(
     Requires admin authentication.
     Matches: GET /api/users
     """
-    result = await db.execute(
+    query = (
         select(User)
         .options(selectinload(User.sites))
+        .options(selectinload(User.skills))
         .order_by(User.last_name, User.first_name)
     )
-    users = result.scalars().all()
+    
+    if not include_disabled:
+        query = query.where(User.active == 1)
+    
+    result = await db.execute(query)
+    users = result.unique().scalars().all()
     
     return [build_user_list_response(u) for u in users]
 
@@ -100,8 +130,9 @@ async def get_user(
         select(User)
         .where(User.id == user_id)
         .options(selectinload(User.sites))
+        .options(selectinload(User.skills))
     )
-    user = result.scalar_one_or_none()
+    user = result.unique().scalar_one_or_none()
     
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -160,9 +191,25 @@ async def create_user(
             if site:
                 sites.append(site)
     
+    # Add skill associations
+    skills = []
+    if hasattr(data, 'skill_ids') and data.skill_ids:
+        for skill_id in data.skill_ids:
+            user_skill = UserSkill(user_id=user.id, skill_id=skill_id)
+            db.add(user_skill)
+            
+            # Fetch skill for response
+            skill_result = await db.execute(
+                select(Skill).where(Skill.id == skill_id)
+            )
+            skill = skill_result.scalar_one_or_none()
+            if skill:
+                skills.append(skill)
+    
     await db.commit()
     await db.refresh(user)
     user.sites = sites
+    user.skills = skills
     
     return build_user_list_response(user)
 
@@ -184,11 +231,25 @@ async def update_user(
         select(User)
         .where(User.id == user_id)
         .options(selectinload(User.sites))
+        .options(selectinload(User.skills))
     )
-    user = result.scalar_one_or_none()
+    user = result.unique().scalar_one_or_none()
     
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    
+    # Protect system users from role/active changes
+    if user.is_system_user:
+        if data.role is not None and data.role != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot change role of system administrator"
+            )
+        if data.active is not None and data.active == 0:
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot deactivate system administrator"
+            )
     
     # Prevent admin from demoting themselves
     if user.id == admin.id and data.role and data.role != "admin":
@@ -252,9 +313,32 @@ async def update_user(
             if site:
                 sites.append(site)
     
+    # Update skill associations if provided
+    skills = list(user.skills) if user.skills else []
+    if hasattr(data, 'skill_ids') and data.skill_ids is not None:
+        # Remove existing skill associations
+        await db.execute(
+            delete(UserSkill).where(UserSkill.user_id == user_id)
+        )
+        
+        # Add new skill associations
+        skills = []
+        for skill_id in data.skill_ids:
+            user_skill = UserSkill(user_id=user_id, skill_id=skill_id)
+            db.add(user_skill)
+            
+            # Fetch skill for response
+            skill_result = await db.execute(
+                select(Skill).where(Skill.id == skill_id)
+            )
+            skill = skill_result.scalar_one_or_none()
+            if skill:
+                skills.append(skill)
+    
     await db.commit()
     await db.refresh(user)
     user.sites = sites
+    user.skills = skills
     
     return build_user_list_response(user)
 
@@ -284,6 +368,13 @@ async def delete_user(
     
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    
+    # Protect system users (created via master admin panel)
+    if user.is_system_user:
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot delete system administrator. This account was created during tenant provisioning."
+        )
     
     # Delete site associations first
     await db.execute(

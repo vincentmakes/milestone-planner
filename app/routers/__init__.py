@@ -18,6 +18,8 @@ from app.routers import (
     mpp_import,
     export,
     admin,
+    custom_columns,
+    skills,
 )
 
 __all__ = [
@@ -36,4 +38,6 @@ __all__ = [
     "mpp_import",
     "export",
     "admin",
+    "custom_columns",
+    "skills",
 ]

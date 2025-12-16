@@ -102,6 +102,7 @@ def get_tenant_schema_sql() -> str:
       sso_provider TEXT,
       sso_id TEXT,
       active INTEGER DEFAULT 1,
+      is_system INTEGER DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -257,6 +258,50 @@ def get_tenant_schema_sql() -> str:
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Custom columns (user-defined properties for projects/phases/subphases)
+    CREATE TABLE IF NOT EXISTS custom_columns (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      column_type VARCHAR(20) NOT NULL DEFAULT 'text' CHECK(column_type IN ('text', 'boolean', 'list')),
+      list_options TEXT,
+      site_id INTEGER REFERENCES sites(id) ON DELETE CASCADE,
+      display_order INTEGER NOT NULL DEFAULT 0,
+      width INTEGER NOT NULL DEFAULT 120,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Custom column values
+    CREATE TABLE IF NOT EXISTS custom_column_values (
+      id SERIAL PRIMARY KEY,
+      custom_column_id INTEGER NOT NULL REFERENCES custom_columns(id) ON DELETE CASCADE,
+      entity_type VARCHAR(20) NOT NULL CHECK(entity_type IN ('project', 'phase', 'subphase')),
+      entity_id INTEGER NOT NULL,
+      value TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(custom_column_id, entity_type, entity_id)
+    );
+
+    -- Skills (global, shared across all sites)
+    CREATE TABLE IF NOT EXISTS skills (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(100) NOT NULL UNIQUE,
+      description TEXT,
+      color VARCHAR(7) NOT NULL DEFAULT '#6366f1',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- User skills (many-to-many)
+    CREATE TABLE IF NOT EXISTS user_skills (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      skill_id INTEGER NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+      proficiency INTEGER NOT NULL DEFAULT 3 CHECK(proficiency >= 1 AND proficiency <= 5),
+      assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, skill_id)
+    );
+
     -- Create indexes
     CREATE INDEX IF NOT EXISTS idx_bank_holidays_site ON bank_holidays(site_id);
     CREATE INDEX IF NOT EXISTS idx_bank_holidays_date ON bank_holidays(date);
@@ -278,6 +323,11 @@ def get_tenant_schema_sql() -> str:
     CREATE INDEX IF NOT EXISTS idx_equipment_assignments_equip ON equipment_assignments(equipment_id);
     CREATE INDEX IF NOT EXISTS idx_vacations_staff ON vacations(staff_id);
     CREATE INDEX IF NOT EXISTS idx_vacations_dates ON vacations(start_date, end_date);
+    CREATE INDEX IF NOT EXISTS idx_custom_columns_site ON custom_columns(site_id);
+    CREATE INDEX IF NOT EXISTS idx_custom_column_values_column ON custom_column_values(custom_column_id);
+    CREATE INDEX IF NOT EXISTS idx_custom_column_values_entity ON custom_column_values(entity_type, entity_id);
+    CREATE INDEX IF NOT EXISTS idx_user_skills_user ON user_skills(user_id);
+    CREATE INDEX IF NOT EXISTS idx_user_skills_skill ON user_skills(skill_id);
     """
 
 
@@ -296,14 +346,24 @@ def get_seed_data_sql(admin_email: str, admin_password_hash: str) -> str:
       ('Report', 4, 1)
     ON CONFLICT (name) DO NOTHING;
     
+    -- Seed default skills
+    INSERT INTO skills (name, description, color) VALUES
+      ('Project Management', 'Experience in managing projects and teams', '#3b82f6'),
+      ('Data Analysis', 'Statistical analysis and data interpretation', '#8b5cf6'),
+      ('Laboratory Work', 'Hands-on laboratory experience', '#10b981'),
+      ('Technical Writing', 'Documentation and report writing', '#f59e0b'),
+      ('Quality Control', 'QC procedures and compliance', '#ef4444'),
+      ('R&D', 'Research and development experience', '#06b6d4')
+    ON CONFLICT (name) DO NOTHING;
+    
     -- Create default site
     INSERT INTO sites (name, location, city, country_code, region_code) 
     VALUES ('Main Site', 'Default', 'Default', 'US', 'US')
     ON CONFLICT (name) DO NOTHING;
     
-    -- Create admin user
-    INSERT INTO users (email, password, first_name, last_name, job_title, role)
-    VALUES ('{admin_email}', '{admin_password_hash}', 'Admin', 'User', 'Administrator', 'admin')
+    -- Create admin user (is_system=1 protects from deletion by other admins)
+    INSERT INTO users (email, password, first_name, last_name, job_title, role, is_system)
+    VALUES ('{admin_email}', '{admin_password_hash}', 'Admin', 'User', 'Administrator', 'admin', 1)
     ON CONFLICT (email) DO NOTHING;
     
     -- Assign admin to default site
