@@ -131,12 +131,10 @@ def main():
     if args.generate:
         import secrets
         password = secrets.token_urlsafe(16)
-        # Write generated password to a secure file instead of stdout
-        pw_file = Path(__file__).parent.parent / ".admin_password"
-        pw_file.write_text(password)
-        pw_file.chmod(0o600)
-        print(f"Generated password written to: {pw_file}")
-        print("(Read and delete that file after saving the password!)\n")
+        print("A secure admin password has been generated:\n")
+        print(f"    {password}\n")
+        print("Please copy this password and store it in a secure password manager.")
+        print("It will not be written to disk by this script.\n")
     elif args.password:
         password = args.password
     else:
@@ -162,7 +160,7 @@ def main():
         print(f"\nYou can now login at: http://localhost:8485/admin/")
         print(f"Email: {args.email}")
         if args.generate:
-            print(f"Password was saved to .admin_password file")
+            print("Use the generated password displayed above.")
     else:
         print("\n❌ Failed to set admin password")
         sys.exit(1)

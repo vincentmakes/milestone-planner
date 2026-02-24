@@ -699,7 +699,7 @@ async def provision_tenant(
             admin_email=admin_email,
             admin_password=admin_password,
         )
-        print(f"Provisioner completed for tenant, admin_email={prov_result.get('admin_email', 'N/A')}")
+        print("Tenant database provisioned successfully")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Provisioning failed: {e}") from e
 
