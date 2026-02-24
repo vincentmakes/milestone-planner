@@ -1,7 +1,7 @@
 # FastAPI and ASGI
 fastapi==0.109.2
 uvicorn[standard]==0.27.1
-python-multipart==0.0.9
+python-multipart==0.0.22
 
 # Database
 sqlalchemy[asyncio]==2.0.25
