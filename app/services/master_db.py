@@ -88,115 +88,129 @@ class MasterDatabase:
         This handles the case where the master database was created before
         the organizations feature was added. It checks for missing tables
         and columns and applies them idempotently.
+
+        Errors are caught and logged so the app can still start even if
+        migrations fail (e.g., due to insufficient DB permissions).
         """
-        async with self.engine.begin() as conn:
-            # Check if organizations table exists
-            result = await conn.execute(text(
-                "SELECT EXISTS ("
-                "  SELECT 1 FROM information_schema.tables "
-                "  WHERE table_name = 'organizations'"
-                ")"
-            ))
-            orgs_table_exists = result.scalar()
-
-            if not orgs_table_exists:
-                print("Master DB: Creating organizations table...")
+        try:
+            async with self.engine.begin() as conn:
+                # Ensure uuid-ossp extension exists
                 await conn.execute(text(
-                    "CREATE TABLE organizations ("
-                    "  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),"
-                    "  name VARCHAR(255) NOT NULL,"
-                    "  slug VARCHAR(63) NOT NULL UNIQUE,"
-                    "  description TEXT,"
-                    "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
-                    "  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                    'CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'
+                ))
+
+                # Check if organizations table exists
+                result = await conn.execute(text(
+                    "SELECT EXISTS ("
+                    "  SELECT 1 FROM information_schema.tables "
+                    "  WHERE table_name = 'organizations'"
                     ")"
                 ))
-                await conn.execute(text(
-                    "CREATE INDEX IF NOT EXISTS idx_organizations_slug "
-                    "ON organizations(slug)"
-                ))
-                print("Master DB: organizations table created")
+                orgs_table_exists = result.scalar()
 
-            # Check if organization_sso_config table exists
-            result = await conn.execute(text(
-                "SELECT EXISTS ("
-                "  SELECT 1 FROM information_schema.tables "
-                "  WHERE table_name = 'organization_sso_config'"
-                ")"
-            ))
-            sso_table_exists = result.scalar()
+                if not orgs_table_exists:
+                    print("Master DB: Creating organizations table...")
+                    await conn.execute(text(
+                        "CREATE TABLE organizations ("
+                        "  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),"
+                        "  name VARCHAR(255) NOT NULL,"
+                        "  slug VARCHAR(63) NOT NULL UNIQUE,"
+                        "  description TEXT,"
+                        "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        "  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                        ")"
+                    ))
+                    await conn.execute(text(
+                        "CREATE INDEX IF NOT EXISTS idx_organizations_slug "
+                        "ON organizations(slug)"
+                    ))
+                    print("Master DB: organizations table created")
 
-            if not sso_table_exists:
-                print("Master DB: Creating organization_sso_config table...")
-                await conn.execute(text(
-                    "CREATE TABLE organization_sso_config ("
-                    "  organization_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,"
-                    "  enabled INTEGER DEFAULT 0,"
-                    "  provider VARCHAR(50) DEFAULT 'entra',"
-                    "  entra_tenant_id VARCHAR(255),"
-                    "  client_id VARCHAR(255),"
-                    "  client_secret_encrypted TEXT,"
-                    "  redirect_uri VARCHAR(500),"
-                    "  auto_create_users INTEGER DEFAULT 0,"
-                    "  default_user_role VARCHAR(20) DEFAULT 'user',"
-                    "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
-                    "  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                # Check if organization_sso_config table exists
+                result = await conn.execute(text(
+                    "SELECT EXISTS ("
+                    "  SELECT 1 FROM information_schema.tables "
+                    "  WHERE table_name = 'organization_sso_config'"
                     ")"
                 ))
-                print("Master DB: organization_sso_config table created")
+                sso_table_exists = result.scalar()
 
-            # Check if tenants.organization_id column exists
-            result = await conn.execute(text(
-                "SELECT EXISTS ("
-                "  SELECT 1 FROM information_schema.columns "
-                "  WHERE table_name = 'tenants' AND column_name = 'organization_id'"
-                ")"
-            ))
-            has_org_id = result.scalar()
+                if not sso_table_exists:
+                    print("Master DB: Creating organization_sso_config table...")
+                    await conn.execute(text(
+                        "CREATE TABLE organization_sso_config ("
+                        "  organization_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,"
+                        "  enabled INTEGER DEFAULT 0,"
+                        "  provider VARCHAR(50) DEFAULT 'entra',"
+                        "  entra_tenant_id VARCHAR(255),"
+                        "  client_id VARCHAR(255),"
+                        "  client_secret_encrypted TEXT,"
+                        "  redirect_uri VARCHAR(500),"
+                        "  auto_create_users INTEGER DEFAULT 0,"
+                        "  default_user_role VARCHAR(20) DEFAULT 'user',"
+                        "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        "  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                        ")"
+                    ))
+                    print("Master DB: organization_sso_config table created")
 
-            if not has_org_id:
-                print("Master DB: Adding organization_id column to tenants...")
-                await conn.execute(text(
-                    "ALTER TABLE tenants ADD COLUMN organization_id UUID "
-                    "REFERENCES organizations(id) ON DELETE SET NULL"
+                # Check if tenants.organization_id column exists
+                result = await conn.execute(text(
+                    "SELECT EXISTS ("
+                    "  SELECT 1 FROM information_schema.columns "
+                    "  WHERE table_name = 'tenants' AND column_name = 'organization_id'"
+                    ")"
                 ))
-                await conn.execute(text(
-                    "CREATE INDEX IF NOT EXISTS idx_tenants_organization_id "
-                    "ON tenants(organization_id)"
+                has_org_id = result.scalar()
+
+                if not has_org_id:
+                    print("Master DB: Adding organization_id column to tenants...")
+                    await conn.execute(text(
+                        "ALTER TABLE tenants ADD COLUMN organization_id UUID "
+                        "REFERENCES organizations(id) ON DELETE SET NULL"
+                    ))
+                    await conn.execute(text(
+                        "CREATE INDEX IF NOT EXISTS idx_tenants_organization_id "
+                        "ON tenants(organization_id)"
+                    ))
+                    print("Master DB: organization_id column added")
+
+                # Check if tenants.required_group_ids column exists
+                result = await conn.execute(text(
+                    "SELECT EXISTS ("
+                    "  SELECT 1 FROM information_schema.columns "
+                    "  WHERE table_name = 'tenants' AND column_name = 'required_group_ids'"
+                    ")"
                 ))
-                print("Master DB: organization_id column added")
+                has_group_ids = result.scalar()
 
-            # Check if tenants.required_group_ids column exists
-            result = await conn.execute(text(
-                "SELECT EXISTS ("
-                "  SELECT 1 FROM information_schema.columns "
-                "  WHERE table_name = 'tenants' AND column_name = 'required_group_ids'"
-                ")"
-            ))
-            has_group_ids = result.scalar()
+                if not has_group_ids:
+                    print("Master DB: Adding required_group_ids column to tenants...")
+                    await conn.execute(text(
+                        "ALTER TABLE tenants ADD COLUMN required_group_ids JSONB DEFAULT '[]'"
+                    ))
+                    print("Master DB: required_group_ids column added")
 
-            if not has_group_ids:
-                print("Master DB: Adding required_group_ids column to tenants...")
-                await conn.execute(text(
-                    "ALTER TABLE tenants ADD COLUMN required_group_ids JSONB DEFAULT '[]'"
+                # Check if tenants.group_membership_mode column exists
+                result = await conn.execute(text(
+                    "SELECT EXISTS ("
+                    "  SELECT 1 FROM information_schema.columns "
+                    "  WHERE table_name = 'tenants' AND column_name = 'group_membership_mode'"
+                    ")"
                 ))
-                print("Master DB: required_group_ids column added")
+                has_group_mode = result.scalar()
 
-            # Check if tenants.group_membership_mode column exists
-            result = await conn.execute(text(
-                "SELECT EXISTS ("
-                "  SELECT 1 FROM information_schema.columns "
-                "  WHERE table_name = 'tenants' AND column_name = 'group_membership_mode'"
-                ")"
-            ))
-            has_group_mode = result.scalar()
+                if not has_group_mode:
+                    print("Master DB: Adding group_membership_mode column to tenants...")
+                    await conn.execute(text(
+                        "ALTER TABLE tenants ADD COLUMN group_membership_mode VARCHAR(10) DEFAULT 'any'"
+                    ))
+                    print("Master DB: group_membership_mode column added")
 
-            if not has_group_mode:
-                print("Master DB: Adding group_membership_mode column to tenants...")
-                await conn.execute(text(
-                    "ALTER TABLE tenants ADD COLUMN group_membership_mode VARCHAR(10) DEFAULT 'any'"
-                ))
-                print("Master DB: group_membership_mode column added")
+        except Exception as e:
+            print(f"WARNING: Auto-migration failed: {e}")
+            print("The app will continue, but organization features may not work.")
+            print("Run manually: python migrations/run_migration_master.py add_organizations")
     
     async def close(self):
         """Close the database connection."""
