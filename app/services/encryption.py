@@ -97,6 +97,49 @@ def decrypt(encrypted_data: str) -> str:
     return plaintext.decode()
 
 
+# ---------------------------------------------------------
+# User password hashing (bcrypt) - for tenant user accounts
+# ---------------------------------------------------------
+
+def hash_user_password(password: str) -> str:
+    """Hash a user password with bcrypt."""
+    from passlib.hash import bcrypt
+    return bcrypt.using(rounds=12).hash(password)
+
+
+def verify_user_password(password: str, stored: str) -> bool:
+    """
+    Verify a user password against its stored hash.
+
+    Supports multiple formats for backward compatibility:
+    - bcrypt ($2b$... or $2a$...)
+    - PBKDF2 (salt:hash from tenant provisioner)
+    - plain text (legacy, will be upgraded on next login)
+    """
+    if not stored:
+        return False
+
+    # bcrypt hash
+    if stored.startswith(("$2b$", "$2a$", "$2y$")):
+        from passlib.hash import bcrypt
+        return bcrypt.verify(password, stored)
+
+    # PBKDF2 hash (salt:hex_hash, both parts are hex)
+    parts = stored.split(":")
+    if len(parts) == 2 and len(parts[0]) == 32 and len(parts[1]) == 128:
+        return verify_password(password, stored)
+
+    # Plain text fallback (legacy)
+    return secrets.compare_digest(stored, password)
+
+
+def password_needs_upgrade(stored: str) -> bool:
+    """Check if a stored password should be re-hashed to bcrypt."""
+    if not stored:
+        return False
+    return not stored.startswith(("$2b$", "$2a$", "$2y$"))
+
+
 def generate_password(length: int = 32) -> str:
     """
     Generate a secure random password.

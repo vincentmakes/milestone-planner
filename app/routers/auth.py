@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_db
 from app.models.user import User, UserSite
+from app.services.encryption import verify_user_password, hash_user_password, password_needs_upgrade
 from app.models.settings import SSOConfig
 from app.services.session import SessionService
 from app.middleware.auth import (
@@ -95,13 +96,17 @@ async def login(
     user = result.scalar_one_or_none()
     
     # Verify credentials
-    # Note: In production, use proper password hashing (bcrypt)
-    if not user or user.password != data.password:
+    if not user or not verify_user_password(data.password, user.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
-    
+
+    # Lazy upgrade: re-hash plain text or PBKDF2 passwords to bcrypt
+    if password_needs_upgrade(user.password):
+        user.password = hash_user_password(data.password)
+        await db.commit()
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -209,15 +214,14 @@ async def change_password(
     Matches: POST /api/auth/change-password
     """
     # Verify current password
-    # Note: In production, use proper password hashing
-    if user.password != data.currentPassword:
+    if not verify_user_password(data.currentPassword, user.password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Current password is incorrect",
         )
-    
-    # Update password
-    user.password = data.newPassword
+
+    # Update password (hashed with bcrypt)
+    user.password = hash_user_password(data.newPassword)
     await db.commit()
     
     return {"success": True}
