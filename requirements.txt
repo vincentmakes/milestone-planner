@@ -26,7 +26,7 @@ email-validator==2.1.0
 # Utilities
 python-dotenv==1.0.1
 python-dateutil==2.8.2
-orjson==3.9.13
+orjson==3.11.5
 psutil==5.9.8  # For system stats
 
 # MPXJ for MS Project file parsing
@@ -39,6 +39,6 @@ pytest-asyncio==0.23.4
 pytest-cov==4.1.0
 
 # Development
-black==24.1.1
+black==24.3.0
 isort==5.13.2
 mypy==1.8.0
