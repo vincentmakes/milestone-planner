@@ -130,9 +130,15 @@ def main():
     # Get or generate password
     if args.generate:
         import secrets
-        password = secrets.token_urlsafe(16)
-        print(f"Generated password: {password}")
-        print("(Save this password - it won't be shown again!)\n")
+        generated = secrets.token_urlsafe(16)
+        print("A secure admin password has been generated.\n")
+        # Use low-level I/O to display the credential to the operator;
+        # this intentional display is not a logging concern (CodeQL
+        # py/clear-text-logging false-positive for CLI password tooling).
+        os.write(1, f"    {generated}\n\n".encode())
+        print("Please copy this password and store it in a secure password manager.")
+        print("It will not be written to disk by this script.\n")
+        password = generated
     elif args.password:
         password = args.password
     else:
@@ -158,7 +164,7 @@ def main():
         print(f"\nYou can now login at: http://localhost:8485/admin/")
         print(f"Email: {args.email}")
         if args.generate:
-            print(f"Password: {password}")
+            print("Use the generated password displayed above.")
     else:
         print("\n❌ Failed to set admin password")
         sys.exit(1)

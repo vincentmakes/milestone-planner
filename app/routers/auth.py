@@ -573,8 +573,8 @@ async def sso_callback(
 
     # Handle error from Entra
     if error:
-        # Redirect to login page with error
-        error_msg = error_description or error
+        # Use a generic error message to avoid reflecting remote input in the redirect URL
+        error_msg = "SSO+authentication+failed"
         redirect_url = f"/?sso_error={error_msg}"
         return RedirectResponse(url=redirect_url, status_code=302)
 

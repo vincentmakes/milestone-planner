@@ -357,11 +357,11 @@ async def list_tenants(
                     tenant.database_user,
                     decrypted_password,
                 )
-            except Exception as e:
+            except Exception:
                 db_status = {
                     "exists": False,
                     "accessible": False,
-                    "error": f"Decryption failed: {e}",
+                    "error": "Credential decryption failed",
                 }
 
         response.append(tenant_to_response(tenant, db_status))
@@ -699,7 +699,7 @@ async def provision_tenant(
             admin_email=admin_email,
             admin_password=admin_password,
         )
-        print(f"Provisioner returned: {prov_result}")
+        print("Tenant database provisioned successfully")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Provisioning failed: {e}") from e
 

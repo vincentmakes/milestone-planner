@@ -853,7 +853,7 @@ function generateICS(options: {
     adjustedEndDate.setDate(adjustedEndDate.getDate() + 1);
   }
   
-  const uid = `vacation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}@milestone`;
+  const uid = `vacation-${Date.now()}-${Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(36)).join('').slice(0, 9)}@milestone`;
   const now = formatDate(new Date(), false);
   
   const lines = [
