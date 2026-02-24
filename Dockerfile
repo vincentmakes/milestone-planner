@@ -46,14 +46,19 @@ RUN useradd --create-home --shell /bin/bash appuser
 
 WORKDIR /app
 
-# Copy application code
+# Copy entrypoint and application code
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY app/ ./app/
 COPY migrations/ ./migrations/
 
-# Create directories and set ownership
-RUN mkdir -p /app/uploads /app/public && chown -R appuser:appuser /app
+# Create directories, set ownership, and make entrypoint executable
+RUN mkdir -p /app/uploads /app/public \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh \
+    && chown -R appuser:appuser /app
 
 USER appuser
+
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 EXPOSE 8485
 
