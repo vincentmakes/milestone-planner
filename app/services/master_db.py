@@ -48,6 +48,7 @@ class MasterDatabase:
                 pool_size=10,
                 max_overflow=5,
                 pool_timeout=30,
+                pool_pre_ping=True,  # Test connections before use, replace stale ones
             )
         return self._engine
     
