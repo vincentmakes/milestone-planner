@@ -400,11 +400,11 @@ async def get_tenant(
                 tenant.database_user,
                 decrypted_password,
             )
-        except Exception as e:
+        except Exception:
             db_status = {
                 "exists": False,
                 "accessible": False,
-                "error": f"Decryption failed: {e}",
+                "error": "Credential decryption failed",
             }
 
     response = tenant_to_response(tenant, db_status)
