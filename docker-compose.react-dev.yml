@@ -1,16 +1,14 @@
 # Milestone with React Frontend - Unraid Development Setup
-# 
+#
 # This compose file runs:
 # - milestone-api: FastAPI backend on port 8485
-# - milestone-react: React frontend on port 3000 (dev server with hot reload)
+# - milestone-react-dev: React frontend on port 3333 (dev server with hot reload)
 #
 # Usage:
-#   docker-compose -f docker-compose.react-dev.yml up -d
+#   docker compose -f docker-compose.react-dev.yml up -d
 #
-# Access the React frontend at: http://your-unraid-ip:3000
+# Access the React frontend at: http://your-unraid-ip:3333
 # The React dev server proxies API requests to the backend
-
-version: '3.8'
 
 services:
   # FastAPI Backend
@@ -30,8 +28,6 @@ services:
     volumes:
       - /mnt/user/appdata/milestone/uploads:/app/uploads
       - ./public:/app/public:ro
-      # Note: Don't mount ./app as it would override the built-in db/, models/, etc.
-      # Instead, rebuild the image with: docker-compose up -d --build
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8485/health"]
       interval: 30s
@@ -55,7 +51,6 @@ services:
     environment:
       - NODE_ENV=development
       - TZ=Europe/Zurich
-      # Explicitly disable proxy for all requests
       - HTTP_PROXY=
       - HTTPS_PROXY=
       - http_proxy=
@@ -63,9 +58,7 @@ services:
       - NO_PROXY=*
       - no_proxy=*
     volumes:
-      # Mount the frontend source code
       - ./frontend:/app
-      # Use named volume for node_modules to avoid platform issues
       - react_node_modules:/app/node_modules
     command: >
       sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3333"

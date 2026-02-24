@@ -1,17 +1,15 @@
 # Milestone - Development Docker Compose with Hot Reload
-# 
+#
 # This compose file runs:
 # - milestone: FastAPI backend on port 8485
 # - milestone-react-dev: React frontend on port 3333 (dev server with hot reload)
 #
 # Usage:
-#   docker-compose -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.dev.yml up -d
 #
 # Access:
 #   - React dev server: http://localhost:3333 (hot reload, but /t/* routes don't work)
 #   - Backend directly: http://localhost:8485 (no hot reload, but all routes work)
-
-version: '3.8'
 
 services:
   # FastAPI Backend
@@ -54,7 +52,6 @@ services:
     environment:
       - NODE_ENV=development
       - TZ=Europe/Zurich
-      # Explicitly disable proxy for all requests
       - HTTP_PROXY=
       - HTTPS_PROXY=
       - http_proxy=
