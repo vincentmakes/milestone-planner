@@ -281,6 +281,19 @@ TZ=Europe/Zurich
 """
 
 
+def _write_env_file(path: Path, content: str) -> None:
+    """Write .env file with restrictive permissions (owner read/write only).
+
+    Uses os.open with O_CREAT|O_WRONLY|O_TRUNC and mode 0o600 so the file is
+    never world-readable, even briefly.
+    """
+    fd = os.open(str(path), os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, content.encode())
+    finally:
+        os.close(fd)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Milestone Fresh Install - Automated Setup"
@@ -392,7 +405,7 @@ def main():
                 env_content = generate_env_file(
                     args.pg_host, args.pg_port, args.pg_user
                 )
-                env_path.write_text(env_content)
+                _write_env_file(env_path, env_content)
                 print(f"   ✅ .env file updated")
                 print("   ⚠️  Remember to set the database passwords in .env")
         else:
@@ -400,7 +413,7 @@ def main():
             env_content = generate_env_file(
                 args.pg_host, args.pg_port, args.pg_user
             )
-            env_path.write_text(env_content)
+            _write_env_file(env_path, env_content)
             print(f"   ✅ .env file created at: {env_path}")
             print("   ⚠️  Remember to set the database passwords in .env")
     

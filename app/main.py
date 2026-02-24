@@ -399,15 +399,21 @@ def create_app() -> FastAPI:
             safe_path = _os.path.normpath(full_path)
             if safe_path.startswith("..") or _os.path.isabs(safe_path):
                 return JSONResponse(status_code=400, content={"error": "Invalid path"})
-            static_file = public_dir.resolve() / safe_path
+
+            resolved_public = public_dir.resolve()
+            static_file = (resolved_public / safe_path).resolve()
+
+            # Ensure the resolved path is still within public_dir
+            if not str(static_file).startswith(str(resolved_public) + _os.sep) and static_file != resolved_public:
+                return JSONResponse(status_code=400, content={"error": "Invalid path"})
 
             if static_file.exists() and static_file.is_file():
                 return FileResponse(static_file)
 
             # Check for directory with index.html (e.g., /admin/)
             if static_file.is_dir():
-                dir_index = static_file / "index.html"
-                if dir_index.exists():
+                dir_index = (static_file / "index.html").resolve()
+                if str(dir_index).startswith(str(resolved_public) + _os.sep) and dir_index.exists():
                     return FileResponse(dir_index)
 
             # Fall back to index.html for SPA routing
