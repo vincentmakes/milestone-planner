@@ -394,12 +394,12 @@ def create_app() -> FastAPI:
                 )
 
             # Check for static file first (with path traversal protection)
-            public_root = public_dir.resolve()
-            static_file = (public_root / full_path.lstrip("/")).resolve()
-            try:
-                static_file.relative_to(public_root)
-            except ValueError:
+            import os as _os
+
+            safe_path = _os.path.normpath(full_path)
+            if safe_path.startswith("..") or _os.path.isabs(safe_path):
                 return JSONResponse(status_code=400, content={"error": "Invalid path"})
+            static_file = public_dir.resolve() / safe_path
 
             if static_file.exists() and static_file.is_file():
                 return FileResponse(static_file)

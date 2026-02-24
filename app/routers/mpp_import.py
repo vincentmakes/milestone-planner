@@ -903,7 +903,10 @@ async def import_mpp_file(
         raise
     except Exception as e:
         logger.error(f"MPP import failed: {e}")
-        return JSONResponse(status_code=500, content={"success": False, "error": "Failed to parse MPP file"})
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": "Failed to parse MPP file"},
+        )
     finally:
         # Clean up temp file
         if temp_file and os.path.exists(temp_file.name):

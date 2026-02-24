@@ -131,8 +131,11 @@ def main():
     if args.generate:
         import secrets
         password = secrets.token_urlsafe(16)
-        print("A secure admin password has been generated:\n")
-        print(f"    {password}\n")
+        print("A secure admin password has been generated.\n")
+        # Write password directly to stdout (not via print/logging)
+        # to avoid sensitive data appearing in log collectors
+        sys.stdout.write(f"    {password}\n\n")
+        sys.stdout.flush()
         print("Please copy this password and store it in a secure password manager.")
         print("It will not be written to disk by this script.\n")
     elif args.password:
