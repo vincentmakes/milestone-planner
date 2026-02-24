@@ -17,6 +17,8 @@ services:
     restart: unless-stopped
     ports:
       - "8485:8485"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file:
       - .env
     environment:

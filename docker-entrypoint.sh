@@ -6,11 +6,11 @@ set -e
 # Handles database readiness check and optional auto-initialization
 # ============================================
 
-# Wait for PostgreSQL to be ready
+# Wait for PostgreSQL to be ready (best-effort, non-fatal)
 wait_for_db() {
     local host="$1"
     local port="$2"
-    local max_attempts=30
+    local max_attempts=15
     local attempt=1
 
     echo "Waiting for PostgreSQL at ${host}:${port}..."
@@ -18,7 +18,7 @@ wait_for_db() {
         if python -c "
 import socket
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.settimeout(2)
+s.settimeout(3)
 try:
     s.connect(('${host}', ${port}))
     s.close()
@@ -34,15 +34,15 @@ except:
         attempt=$((attempt + 1))
     done
 
-    echo "ERROR: PostgreSQL not ready after ${max_attempts} attempts"
-    return 1
+    echo "WARNING: PostgreSQL not ready after ${max_attempts} attempts, starting app anyway..."
+    return 0
 }
 
 # Determine database host/port
 DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-5432}"
 
-# Wait for the database
+# Wait for the database (non-fatal: app starts regardless)
 wait_for_db "$DB_HOST" "$DB_PORT"
 
 # Run auto-initialization if AUTO_INIT_DB is set
