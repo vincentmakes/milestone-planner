@@ -393,35 +393,15 @@ def create_app() -> FastAPI:
                     headers={"Upgrade": "websocket"},
                 )
 
-            # Check for static file first (with path traversal protection)
-            import os as _os
-
-            safe_path = _os.path.normpath(full_path)
-            if safe_path.startswith("..") or _os.path.isabs(safe_path):
-                return JSONResponse(status_code=400, content={"error": "Invalid path"})
-
-            resolved_public = public_dir.resolve()
-            static_file = (resolved_public / safe_path).resolve()
-
-            # Ensure the resolved path is still within public_dir
-            if not str(static_file).startswith(str(resolved_public) + _os.sep) and static_file != resolved_public:
-                return JSONResponse(status_code=400, content={"error": "Invalid path"})
-
-            if static_file.exists() and static_file.is_file():
-                return FileResponse(static_file)
-
-            # Check for directory with index.html (e.g., /admin/)
-            if static_file.is_dir():
-                dir_index = (static_file / "index.html").resolve()
-                if str(dir_index).startswith(str(resolved_public) + _os.sep) and dir_index.exists():
-                    return FileResponse(dir_index)
-
-            # Fall back to index.html for SPA routing
+            # Static files are served by the StaticFiles mounts above
+            # (/css, /js, /assets, /images, /img, /fonts).
+            # This catch-all only serves index.html for SPA client-side routing.
             index_file = public_dir / "index.html"
             if index_file.exists():
                 return FileResponse(index_file)
 
             return JSONResponse(status_code=404, content={"error": "Frontend not found"})
+
     else:
         # No frontend - return helpful message
         @app.get("/")
