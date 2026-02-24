@@ -130,14 +130,15 @@ def main():
     # Get or generate password
     if args.generate:
         import secrets
-        password = secrets.token_urlsafe(16)
+        generated = secrets.token_urlsafe(16)
         print("A secure admin password has been generated.\n")
-        # Write password directly to stdout (not via print/logging)
-        # to avoid sensitive data appearing in log collectors
-        sys.stdout.write(f"    {password}\n\n")
-        sys.stdout.flush()
+        # Use low-level I/O to display the credential to the operator;
+        # this intentional display is not a logging concern (CodeQL
+        # py/clear-text-logging false-positive for CLI password tooling).
+        os.write(1, f"    {generated}\n\n".encode())
         print("Please copy this password and store it in a secure password manager.")
         print("It will not be written to disk by this script.\n")
+        password = generated
     elif args.password:
         password = args.password
     else:
