@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.user import User, UserSite
+from app.services.encryption import hash_user_password
 from app.models.site import Site
 from app.models.skill import Skill, UserSkill
 from app.middleware.auth import get_current_user, require_admin, require_superuser
@@ -167,7 +168,7 @@ async def create_user(
     # Create user
     user = User(
         email=data.email,
-        password=data.password,  # Note: Should hash in production
+        password=hash_user_password(data.password),
         first_name=data.first_name,
         last_name=data.last_name,
         job_title=data.job_title,
@@ -301,7 +302,7 @@ async def update_user(
         user.email = data.email
     
     if data.password is not None:
-        user.password = data.password  # Note: Should hash in production
+        user.password = hash_user_password(data.password)
     if data.first_name is not None:
         user.first_name = data.first_name
     if data.last_name is not None:

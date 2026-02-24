@@ -16,17 +16,28 @@ from app.config import get_settings
 def get_encryption_key() -> bytes:
     """
     Get the encryption key for tenant credentials.
-    
-    Uses TENANT_ENCRYPTION_KEY if set, otherwise derives from SESSION_SECRET.
+
+    Requires TENANT_ENCRYPTION_KEY (64-char hex) in multi-tenant mode.
+    Falls back to session secret derivation only in single-tenant mode.
     """
     settings = get_settings()
-    
-    # Check for explicit encryption key
+
     key_hex = os.getenv("TENANT_ENCRYPTION_KEY")
     if key_hex:
+        if len(key_hex) != 64:
+            raise ValueError(
+                "TENANT_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes). "
+                "Generate with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
         return bytes.fromhex(key_hex)
-    
-    # Derive from session secret
+
+    if settings.multi_tenant:
+        raise ValueError(
+            "TENANT_ENCRYPTION_KEY is required in multi-tenant mode. "
+            "Generate with: python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
+
+    # Single-tenant fallback: derive from session secret
     secret = settings.session_secret
     return hashlib.sha256(secret.encode()).digest()
 
@@ -84,6 +95,49 @@ def decrypt(encrypted_data: str) -> str:
     plaintext = aesgcm.decrypt(iv, ciphertext_with_tag, None)
     
     return plaintext.decode()
+
+
+# ---------------------------------------------------------
+# User password hashing (bcrypt) - for tenant user accounts
+# ---------------------------------------------------------
+
+def hash_user_password(password: str) -> str:
+    """Hash a user password with bcrypt."""
+    from passlib.hash import bcrypt
+    return bcrypt.using(rounds=12).hash(password)
+
+
+def verify_user_password(password: str, stored: str) -> bool:
+    """
+    Verify a user password against its stored hash.
+
+    Supports multiple formats for backward compatibility:
+    - bcrypt ($2b$... or $2a$...)
+    - PBKDF2 (salt:hash from tenant provisioner)
+    - plain text (legacy, will be upgraded on next login)
+    """
+    if not stored:
+        return False
+
+    # bcrypt hash
+    if stored.startswith(("$2b$", "$2a$", "$2y$")):
+        from passlib.hash import bcrypt
+        return bcrypt.verify(password, stored)
+
+    # PBKDF2 hash (salt:hex_hash, both parts are hex)
+    parts = stored.split(":")
+    if len(parts) == 2 and len(parts[0]) == 32 and len(parts[1]) == 128:
+        return verify_password(password, stored)
+
+    # Plain text fallback (legacy)
+    return secrets.compare_digest(stored, password)
+
+
+def password_needs_upgrade(stored: str) -> bool:
+    """Check if a stored password should be re-hashed to bcrypt."""
+    if not stored:
+        return False
+    return not stored.startswith(("$2b$", "$2a$", "$2y$"))
 
 
 def generate_password(length: int = 32) -> str:

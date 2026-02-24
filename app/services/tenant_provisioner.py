@@ -7,12 +7,28 @@ Schema matches Node.js application exactly.
 
 from typing import Dict, Any, Optional
 
+import re
+
 import asyncpg
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import get_settings
 from app.services.encryption import generate_password, hash_password
+
+
+def _validate_identifier(name: str) -> str:
+    """Validate a SQL identifier (database name, username) to prevent injection."""
+    if not re.match(r'^[a-zA-Z0-9_-]+$', name):
+        raise ValueError(f"Invalid SQL identifier: {name!r}")
+    if len(name) > 63:
+        raise ValueError(f"SQL identifier too long (max 63): {name!r}")
+    return name
+
+
+def _escape_literal(value: str) -> str:
+    """Escape a string for use as a SQL literal (single-quoted value)."""
+    return value.replace("'", "''")
 
 
 async def get_admin_connection() -> asyncpg.Connection:
@@ -357,22 +373,22 @@ def get_tenant_schema_sql() -> str:
     """
 
 
-def get_seed_data_sql(admin_email: str, admin_password_hash: str) -> str:
-    """Get SQL to seed initial data for a new tenant."""
-    return f"""
-    -- Initialize SSO config
+async def run_seed_data(conn: asyncpg.Connection, admin_email: str, admin_password_hash: str):
+    """Seed initial data for a new tenant using parameterized queries."""
+    # Static seed data (no user input)
+    await conn.execute("""
     INSERT INTO sso_config (id, enabled) VALUES (1, 0) ON CONFLICT (id) DO NOTHING;
-    
-    -- Seed predefined phases
-    INSERT INTO predefined_phases (name, sort_order, is_active) VALUES 
+    """)
+    await conn.execute("""
+    INSERT INTO predefined_phases (name, sort_order, is_active) VALUES
       ('Preparation', 0, 1),
       ('Analytics', 1, 1),
       ('Trial', 2, 1),
       ('Cleaning', 3, 1),
       ('Report', 4, 1)
     ON CONFLICT (name) DO NOTHING;
-    
-    -- Seed default skills
+    """)
+    await conn.execute("""
     INSERT INTO skills (name, description, color) VALUES
       ('Project Management', 'Experience in managing projects and teams', '#3b82f6'),
       ('Data Analysis', 'Statistical analysis and data interpretation', '#8b5cf6'),
@@ -381,23 +397,26 @@ def get_seed_data_sql(admin_email: str, admin_password_hash: str) -> str:
       ('Quality Control', 'QC procedures and compliance', '#ef4444'),
       ('R&D', 'Research and development experience', '#06b6d4')
     ON CONFLICT (name) DO NOTHING;
-    
-    -- Create default site
-    INSERT INTO sites (name, location, city, country_code, region_code) 
+    """)
+    await conn.execute("""
+    INSERT INTO sites (name, location, city, country_code, region_code)
     VALUES ('Main Site', 'Default', 'Default', 'US', 'US')
     ON CONFLICT (name) DO NOTHING;
-    
-    -- Create admin user (is_system=1 protects from deletion by other admins)
-    INSERT INTO users (email, password, first_name, last_name, job_title, role, is_system)
-    VALUES ('{admin_email}', '{admin_password_hash}', 'Admin', 'User', 'Administrator', 'admin', 1)
-    ON CONFLICT (email) DO NOTHING;
-    
-    -- Assign admin to default site
-    INSERT INTO user_sites (user_id, site_id)
-    SELECT u.id, s.id FROM users u, sites s 
-    WHERE u.email = '{admin_email}' AND s.name = 'Main Site'
-    ON CONFLICT DO NOTHING;
-    """
+    """)
+    # User input - use parameterized queries
+    await conn.execute(
+        "INSERT INTO users (email, password, first_name, last_name, job_title, role, is_system) "
+        "VALUES ($1, $2, 'Admin', 'User', 'Administrator', 'admin', 1) "
+        "ON CONFLICT (email) DO NOTHING",
+        admin_email, admin_password_hash
+    )
+    await conn.execute(
+        "INSERT INTO user_sites (user_id, site_id) "
+        "SELECT u.id, s.id FROM users u, sites s "
+        "WHERE u.email = $1 AND s.name = 'Main Site' "
+        "ON CONFLICT DO NOTHING",
+        admin_email
+    )
 
 
 async def provision_tenant_database(
@@ -435,28 +454,33 @@ async def provision_tenant_database(
         
         print(f"Provisioning tenant database: {database_name}")
         
+        # Validate identifiers to prevent SQL injection
+        _validate_identifier(database_user)
+        _validate_identifier(database_name)
+        safe_password = _escape_literal(database_password)
+
         # Create database user
         try:
-            await conn.execute(f"""
-                CREATE USER "{database_user}" WITH PASSWORD '{database_password}'
-            """)
+            await conn.execute(
+                f'CREATE USER "{database_user}" WITH PASSWORD \'{safe_password}\''
+            )
             print(f"  Created user: {database_user}")
         except asyncpg.DuplicateObjectError:
             # User exists, update password
-            await conn.execute(f"""
-                ALTER USER "{database_user}" WITH PASSWORD '{database_password}'
-            """)
+            await conn.execute(
+                f'ALTER USER "{database_user}" WITH PASSWORD \'{safe_password}\''
+            )
             print(f"  Updated password for existing user: {database_user}")
         except Exception as e:
             print(f"  Error creating user: {e}")
             traceback.print_exc()
             raise
-        
+
         # Create database
         try:
-            await conn.execute(f"""
-                CREATE DATABASE "{database_name}" OWNER "{database_user}"
-            """)
+            await conn.execute(
+                f'CREATE DATABASE "{database_name}" OWNER "{database_user}"'
+            )
             print(f"  Created database: {database_name}")
         except asyncpg.DuplicateDatabaseError:
             print(f"  Database already exists: {database_name}")
@@ -464,12 +488,12 @@ async def provision_tenant_database(
             print(f"  Error creating database: {e}")
             traceback.print_exc()
             raise
-        
+
         # Grant privileges
         try:
-            await conn.execute(f"""
-                GRANT ALL PRIVILEGES ON DATABASE "{database_name}" TO "{database_user}"
-            """)
+            await conn.execute(
+                f'GRANT ALL PRIVILEGES ON DATABASE "{database_name}" TO "{database_user}"'
+            )
         except Exception as e:
             print(f"  Error granting privileges: {e}")
             traceback.print_exc()
@@ -497,8 +521,7 @@ async def provision_tenant_database(
         
         # Seed data
         print(f"  Seeding initial data...")
-        seed_sql = get_seed_data_sql(admin_email, admin_password_hash)
-        await tenant_conn.execute(seed_sql)
+        await run_seed_data(tenant_conn, admin_email, admin_password_hash)
         print(f"  Seeded initial data")
         
         await tenant_conn.close()
@@ -536,17 +559,20 @@ async def drop_tenant_database(
     conn = await get_admin_connection()
     
     try:
-        # Terminate any active connections
-        await conn.execute(f"""
-            SELECT pg_terminate_backend(pid) 
-            FROM pg_stat_activity 
-            WHERE datname = '{database_name}'
-        """)
-        
+        _validate_identifier(database_name)
+        _validate_identifier(database_user)
+
+        # Terminate any active connections (parameterized)
+        await conn.execute(
+            "SELECT pg_terminate_backend(pid) "
+            "FROM pg_stat_activity WHERE datname = $1",
+            database_name
+        )
+
         # Drop database
         await conn.execute(f'DROP DATABASE IF EXISTS "{database_name}"')
         print(f"Dropped database: {database_name}")
-        
+
         # Drop user
         await conn.execute(f'DROP USER IF EXISTS "{database_user}"')
         print(f"Dropped user: {database_user}")
@@ -587,12 +613,13 @@ async def reset_tenant_admin_password(
     )
     
     try:
-        # Update password
-        result = await conn.execute(f"""
-            UPDATE users SET password = '{password_hash}', updated_at = CURRENT_TIMESTAMP
-            WHERE email = '{admin_email}'
-        """)
-        
+        # Update password (parameterized)
+        result = await conn.execute(
+            "UPDATE users SET password = $1, updated_at = CURRENT_TIMESTAMP "
+            "WHERE email = $2",
+            password_hash, admin_email
+        )
+
         if result == "UPDATE 0":
             raise ValueError(f"Admin user not found: {admin_email}")
         
