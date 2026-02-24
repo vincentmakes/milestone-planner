@@ -26,6 +26,31 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- Organizations table (for multi-tenant SSO)
+CREATE TABLE IF NOT EXISTS organizations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    slug VARCHAR(63) NOT NULL UNIQUE,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Organization SSO configuration (Microsoft Entra ID)
+CREATE TABLE IF NOT EXISTS organization_sso_config (
+    organization_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+    enabled INTEGER DEFAULT 0,
+    provider VARCHAR(50) DEFAULT 'entra',
+    entra_tenant_id VARCHAR(255),
+    client_id VARCHAR(255),
+    client_secret_encrypted TEXT,
+    redirect_uri VARCHAR(500),
+    auto_create_users INTEGER DEFAULT 0,
+    default_user_role VARCHAR(20) DEFAULT 'user',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Tenants table
 CREATE TABLE IF NOT EXISTS tenants (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -40,6 +65,9 @@ CREATE TABLE IF NOT EXISTS tenants (
     admin_email VARCHAR(255) NOT NULL,
     company_name VARCHAR(255),
     settings JSONB DEFAULT '{}',
+    organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL,
+    required_group_ids JSONB DEFAULT '[]',
+    group_membership_mode VARCHAR(10) DEFAULT 'any',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -86,6 +114,10 @@ CREATE INDEX IF NOT EXISTS idx_admin_sessions_expired ON admin_sessions(expired)
 -- Create index for tenant lookups
 CREATE INDEX IF NOT EXISTS idx_tenants_slug ON tenants(slug);
 CREATE INDEX IF NOT EXISTS idx_tenants_status ON tenants(status);
+CREATE INDEX IF NOT EXISTS idx_tenants_organization_id ON tenants(organization_id);
+
+-- Create index for organization lookups
+CREATE INDEX IF NOT EXISTS idx_organizations_slug ON organizations(slug);
 
 -- Create default superadmin user (password: 'admin' - CHANGE THIS!)
 -- Password hash is bcrypt hash of 'admin'
