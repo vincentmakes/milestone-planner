@@ -357,7 +357,7 @@ async def list_tenants(
                     tenant.database_user,
                     decrypted_password,
                 )
-            except Exception as e:
+            except Exception:
                 db_status = {
                     "exists": False,
                     "accessible": False,
