@@ -528,11 +528,17 @@ async def sso_login(
             detail="SSO is not properly configured",
         )
     
-    # Generate state for CSRF protection and tenant identification
-    # Format: {random_token}:{tenant_slug} (tenant_slug optional)
-    state_token = secrets.token_urlsafe(32)
-    tenant_slug = tenant.slug if tenant else ""
-    state = f"{state_token}:{tenant_slug}"
+    # Generate HMAC-signed state for OAuth CSRF protection
+    # Format: {nonce}:{hmac_signature}
+    import hmac as _hmac
+    import hashlib as _hashlib
+    nonce = secrets.token_urlsafe(32)
+    sig = _hmac.new(
+        settings.session_secret.encode(),
+        nonce.encode(),
+        _hashlib.sha256,
+    ).hexdigest()[:16]
+    state = f"{nonce}:{sig}"
     
     # Determine if we need groups scope
     has_group_requirements = bool(config.get("required_group_ids"))
@@ -578,14 +584,21 @@ async def sso_callback(
     
     if not code:
         return RedirectResponse(url="/?sso_error=No+authorization+code+received", status_code=302)
-    
-    # Parse state to get tenant slug (format: {token}:{tenant_slug})
-    tenant_slug = ""
-    if state and ":" in state:
-        parts = state.split(":", 1)
-        if len(parts) == 2:
-            tenant_slug = parts[1]
-    
+
+    # Verify HMAC-signed state to prevent OAuth CSRF
+    import hmac as _hmac
+    import hashlib as _hashlib
+    if not state or ":" not in state:
+        return RedirectResponse(url="/?sso_error=Invalid+SSO+state", status_code=302)
+    nonce, sig = state.rsplit(":", 1)
+    expected_sig = _hmac.new(
+        settings.session_secret.encode(),
+        nonce.encode(),
+        _hashlib.sha256,
+    ).hexdigest()[:16]
+    if not _hmac.compare_digest(sig, expected_sig):
+        return RedirectResponse(url="/?sso_error=Invalid+SSO+state", status_code=302)
+
     sso_service = SSOService(db)
     
     # Get tenant from request state (set by tenant middleware in multi-tenant mode)

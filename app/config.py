@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     # Cookie security (set True when behind HTTPS)
     secure_cookies: bool = False
 
+    # CORS allowed origins (comma-separated, e.g. "https://app.example.com,https://admin.example.com")
+    # If not set, allows localhost origins in debug mode only
+    cors_origins: Optional[str] = None
+
     # Microsoft Entra SSO
     sso_enabled: bool = False
     sso_client_id: Optional[str] = None

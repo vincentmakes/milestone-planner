@@ -169,30 +169,29 @@ def create_app() -> FastAPI:
     
     # CORS middleware - handle credentials properly
     # When allow_credentials=True, we can't use allow_origins=["*"]
-    # Must specify exact origins instead
-    allowed_origins = [
-        "http://localhost:3333",  # Vite dev server
-        "http://localhost:8484",  # Production frontend
-        "http://localhost:8485",  # Backend (same-origin)
-        "http://127.0.0.1:3333",
-        "http://127.0.0.1:8484",
-        "http://127.0.0.1:8485",
-        # LAN access - common private IP ranges
-        "http://192.168.1.131:3333",
-        "http://192.168.1.131:8484",
-        "http://192.168.1.131:8485",
-    ]
-    
-    # Also allow any 192.168.x.x origin dynamically
-    # This is handled by a custom CORS handler below
-    
+    if settings.cors_origins:
+        # Production: use explicitly configured origins
+        allowed_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+    elif settings.debug:
+        # Debug only: allow localhost dev servers
+        allowed_origins = [
+            "http://localhost:3333",   # Vite dev server
+            "http://localhost:8484",
+            "http://localhost:8485",
+            "http://127.0.0.1:3333",
+            "http://127.0.0.1:8484",
+            "http://127.0.0.1:8485",
+        ]
+    else:
+        # Production without explicit config: same-origin only (empty list)
+        allowed_origins = []
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
-        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+)(:\d+)?$",
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Accept", "Authorization"],
     )
     
     # Note: Request timing middleware removed because @app.middleware("http") 
