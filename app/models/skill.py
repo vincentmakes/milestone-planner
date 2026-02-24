@@ -4,7 +4,7 @@ Skills are shared across all sites and can be assigned to users.
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     CheckConstraint,
@@ -29,17 +29,17 @@ class Skill(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    color: Mapped[str] = mapped_column(String(7), default="#6366f1", nullable=False)  # Hex color for UI
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    color: Mapped[str] = mapped_column(
+        String(7), default="#6366f1", nullable=False
+    )  # Hex color for UI
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
 
     # Relationships
-    users: Mapped[List["User"]] = relationship(
+    users: Mapped[list["User"]] = relationship(
         "User",
         secondary="user_skills",
         back_populates="skills",
@@ -56,8 +56,7 @@ class UserSkill(Base):
     __tablename__ = "user_skills"
     __table_args__ = (
         CheckConstraint(
-            "proficiency >= 1 AND proficiency <= 5",
-            name="user_skills_proficiency_check"
+            "proficiency >= 1 AND proficiency <= 5", name="user_skills_proficiency_check"
         ),
     )
 
@@ -72,6 +71,4 @@ class UserSkill(Base):
         primary_key=True,
     )
     proficiency: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
-    assigned_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    assigned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

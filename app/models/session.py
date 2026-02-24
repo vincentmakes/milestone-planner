@@ -5,7 +5,7 @@ Maps to the sessions table used by both Node.js and Python backends.
 
 import json
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy import BigInteger, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -16,7 +16,7 @@ from app.database import Base
 class Session(Base):
     """
     Session storage compatible with express-session PostgreSQL store.
-    
+
     This model must maintain exact compatibility with the Node.js
     express-session store to enable hybrid operation.
     """
@@ -46,19 +46,19 @@ class Session(Base):
         return self.expired < int(datetime.utcnow().timestamp() * 1000)
 
     @property
-    def user(self) -> Optional[dict[str, Any]]:
+    def user(self) -> dict[str, Any] | None:
         """Get user data from session if present."""
         data = self.session_data
         return data.get("user")
 
     @property
-    def user_id(self) -> Optional[int]:
+    def user_id(self) -> int | None:
         """Get user ID from session if present."""
         user = self.user
         return user.get("id") if user else None
 
     @property
-    def user_role(self) -> Optional[str]:
+    def user_role(self) -> str | None:
         """Get user role from session if present."""
         user = self.user
         return user.get("role") if user else None

@@ -18,6 +18,7 @@ router = APIRouter()
 
 class HealthResponse(BaseModel):
     """Health check response model."""
+
     status: str
     mode: str
     version: str
@@ -34,14 +35,14 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     Returns server status and database connectivity.
     """
     settings = get_settings()
-    
+
     # Test database connectivity
     db_status = "connected"
     try:
         await db.execute(text("SELECT 1"))
     except Exception as e:
         db_status = f"error: {str(e)}"
-    
+
     return HealthResponse(
         status="ok",
         mode="multi-tenant" if settings.multi_tenant else "single-tenant",

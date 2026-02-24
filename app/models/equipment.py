@@ -4,7 +4,7 @@ Maps to the equipment and equipment_assignments tables in PostgreSQL.
 """
 
 from datetime import date, datetime
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
     Date,
@@ -19,8 +19,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 if TYPE_CHECKING:
-    from app.models.site import Site
     from app.models.project import Project
+    from app.models.site import Site
 
 
 class Equipment(Base):
@@ -30,22 +30,20 @@ class Equipment(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    site_id: Mapped[Optional[int]] = mapped_column(
+    type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    site_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("sites.id", ondelete="SET NULL"),
         nullable=True,
     )
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
     site: Mapped[Optional["Site"]] = relationship("Site", back_populates="equipment")
-    
-    assignments: Mapped[List["EquipmentAssignment"]] = relationship(
+
+    assignments: Mapped[list["EquipmentAssignment"]] = relationship(
         "EquipmentAssignment",
         back_populates="equipment",
         cascade="all, delete-orphan",
@@ -57,7 +55,7 @@ class Equipment(Base):
         return self.active == 1
 
     @property
-    def site_name(self) -> Optional[str]:
+    def site_name(self) -> str | None:
         """Get site name."""
         if self.site:
             return self.site.name
@@ -86,17 +84,11 @@ class EquipmentAssignment(Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     # Note: 'notes' column not in Node.js schema for equipment_assignments
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
-    project: Mapped["Project"] = relationship(
-        "Project", back_populates="equipment_assignments"
-    )
-    equipment: Mapped["Equipment"] = relationship(
-        "Equipment", back_populates="assignments"
-    )
+    project: Mapped["Project"] = relationship("Project", back_populates="equipment_assignments")
+    equipment: Mapped["Equipment"] = relationship("Equipment", back_populates="assignments")
 
     @property
     def equipment_name(self) -> str:
@@ -104,7 +96,7 @@ class EquipmentAssignment(Base):
         return self.equipment.name if self.equipment else ""
 
     @property
-    def equipment_type(self) -> Optional[str]:
+    def equipment_type(self) -> str | None:
         """Get equipment type."""
         return self.equipment.type if self.equipment else None
 

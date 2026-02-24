@@ -4,27 +4,29 @@ Maps to the users and user_sites tables in PostgreSQL.
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
     String,
-    Text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
 if TYPE_CHECKING:
-    from app.models.site import Site
+    from app.models.assignment import (
+        PhaseStaffAssignment,
+        ProjectAssignment,
+        SubphaseStaffAssignment,
+    )
     from app.models.project import Project
-    from app.models.assignment import ProjectAssignment, PhaseStaffAssignment, SubphaseStaffAssignment
-    from app.models.vacation import Vacation
+    from app.models.site import Site
     from app.models.skill import Skill
+    from app.models.vacation import Vacation
 
 
 class User(Base):
@@ -32,10 +34,7 @@ class User(Base):
 
     __tablename__ = "users"
     __table_args__ = (
-        CheckConstraint(
-            "role IN ('admin', 'superuser', 'user')",
-            name="users_role_check"
-        ),
+        CheckConstraint("role IN ('admin', 'superuser', 'user')", name="users_role_check"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -43,59 +42,61 @@ class User(Base):
     password: Mapped[str] = mapped_column(String(255), nullable=False)
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    job_title: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    job_title: Mapped[str | None] = mapped_column(String(100), nullable=True)
     role: Mapped[str] = mapped_column(String(20), default="user", nullable=False)
-    max_capacity: Mapped[int] = mapped_column(Integer, default=100, nullable=False)  # Max work capacity % (e.g., 80 for part-time)
-    sso_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    sso_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    max_capacity: Mapped[int] = mapped_column(
+        Integer, default=100, nullable=False
+    )  # Max work capacity % (e.g., 80 for part-time)
+    sso_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    sso_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     active: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    is_system: Mapped[Optional[int]] = mapped_column(Integer, default=0, nullable=True)  # Protected admin created by master panel
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    is_system: Mapped[int | None] = mapped_column(
+        Integer, default=0, nullable=True
+    )  # Protected admin created by master panel
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
 
     # Relationships
-    sites: Mapped[List["Site"]] = relationship(
+    sites: Mapped[list["Site"]] = relationship(
         "Site",
         secondary="user_sites",
         back_populates="users",
         lazy="selectin",
     )
-    
-    managed_projects: Mapped[List["Project"]] = relationship(
+
+    managed_projects: Mapped[list["Project"]] = relationship(
         "Project",
         back_populates="project_manager",
         foreign_keys="Project.pm_id",
     )
-    
-    project_assignments: Mapped[List["ProjectAssignment"]] = relationship(
+
+    project_assignments: Mapped[list["ProjectAssignment"]] = relationship(
         "ProjectAssignment",
         back_populates="staff",
         cascade="all, delete-orphan",
     )
-    
-    phase_staff_assignments: Mapped[List["PhaseStaffAssignment"]] = relationship(
+
+    phase_staff_assignments: Mapped[list["PhaseStaffAssignment"]] = relationship(
         "PhaseStaffAssignment",
         back_populates="staff",
         cascade="all, delete-orphan",
     )
-    
-    subphase_staff_assignments: Mapped[List["SubphaseStaffAssignment"]] = relationship(
+
+    subphase_staff_assignments: Mapped[list["SubphaseStaffAssignment"]] = relationship(
         "SubphaseStaffAssignment",
         back_populates="staff",
         cascade="all, delete-orphan",
     )
-    
-    vacations: Mapped[List["Vacation"]] = relationship(
+
+    vacations: Mapped[list["Vacation"]] = relationship(
         "Vacation",
         back_populates="staff",
         cascade="all, delete-orphan",
     )
-    
-    skills: Mapped[List["Skill"]] = relationship(
+
+    skills: Mapped[list["Skill"]] = relationship(
         "Skill",
         secondary="user_skills",
         back_populates="users",
@@ -128,7 +129,7 @@ class User(Base):
         return self.role == "superuser"
 
     @property
-    def site_ids(self) -> List[int]:
+    def site_ids(self) -> list[int]:
         """Get list of site IDs user has access to."""
         return [site.id for site in self.sites]
 

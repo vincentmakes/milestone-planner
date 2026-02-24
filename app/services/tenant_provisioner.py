@@ -5,13 +5,10 @@ Handles creating and managing tenant PostgreSQL databases.
 Schema matches Node.js application exactly.
 """
 
-from typing import Dict, Any, Optional
-
 import re
+from typing import Any
 
 import asyncpg
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import get_settings
 from app.services.encryption import generate_password, hash_password
@@ -19,7 +16,7 @@ from app.services.encryption import generate_password, hash_password
 
 def _validate_identifier(name: str) -> str:
     """Validate a SQL identifier (database name, username) to prevent injection."""
-    if not re.match(r'^[a-zA-Z0-9_-]+$', name):
+    if not re.match(r"^[a-zA-Z0-9_-]+$", name):
         raise ValueError(f"Invalid SQL identifier: {name!r}")
     if len(name) > 63:
         raise ValueError(f"SQL identifier too long (max 63): {name!r}")
@@ -34,19 +31,19 @@ def _escape_literal(value: str) -> str:
 async def get_admin_connection() -> asyncpg.Connection:
     """
     Get a connection using PostgreSQL admin credentials.
-    
+
     Uses pg_admin_user/pg_admin_password or falls back to main DB credentials.
     """
     settings = get_settings()
-    
+
     host = settings.db_host
     port = settings.db_port
     user = settings.pg_admin_user or settings.db_user
     password = settings.pg_admin_password or settings.db_password
     database = "postgres"  # Connect to default database for admin operations
-    
+
     print(f"Admin connection: user={user}, host={host}:{port}, database={database}")
-    
+
     return await asyncpg.connect(
         host=host,
         port=port,
@@ -59,7 +56,7 @@ async def get_admin_connection() -> asyncpg.Connection:
 def get_tenant_schema_sql() -> str:
     """
     Get the SQL schema for tenant databases.
-    
+
     This matches the Node.js schema exactly for compatibility.
     """
     return """
@@ -408,14 +405,15 @@ async def run_seed_data(conn: asyncpg.Connection, admin_email: str, admin_passwo
         "INSERT INTO users (email, password, first_name, last_name, job_title, role, is_system) "
         "VALUES ($1, $2, 'Admin', 'User', 'Administrator', 'admin', 1) "
         "ON CONFLICT (email) DO NOTHING",
-        admin_email, admin_password_hash
+        admin_email,
+        admin_password_hash,
     )
     await conn.execute(
         "INSERT INTO user_sites (user_id, site_id) "
         "SELECT u.id, s.id FROM users u, sites s "
         "WHERE u.email = $1 AND s.name = 'Main Site' "
         "ON CONFLICT DO NOTHING",
-        admin_email
+        admin_email,
     )
 
 
@@ -425,35 +423,35 @@ async def provision_tenant_database(
     database_user: str,
     database_password: str,
     admin_email: str,
-    admin_password: Optional[str] = None,
-) -> Dict[str, Any]:
+    admin_password: str | None = None,
+) -> dict[str, Any]:
     """
     Provision a new tenant database.
-    
+
     Creates:
     1. PostgreSQL user
     2. PostgreSQL database
     3. Schema tables
     4. Seed data (predefined phases, default site, admin user)
-    
+
     Returns dict with admin credentials.
     """
     import traceback
-    
+
     conn = None
     tenant_conn = None
-    
+
     try:
         conn = await get_admin_connection()
-        
+
         # Generate admin password if not provided
         if not admin_password:
             admin_password = generate_password(16)
-        
+
         admin_password_hash = hash_password(admin_password)
-        
+
         print(f"Provisioning tenant database: {database_name}")
-        
+
         # Validate identifiers to prevent SQL injection
         _validate_identifier(database_user)
         _validate_identifier(database_name)
@@ -461,15 +459,11 @@ async def provision_tenant_database(
 
         # Create database user
         try:
-            await conn.execute(
-                f'CREATE USER "{database_user}" WITH PASSWORD \'{safe_password}\''
-            )
+            await conn.execute(f"CREATE USER \"{database_user}\" WITH PASSWORD '{safe_password}'")
             print(f"  Created user: {database_user}")
         except asyncpg.DuplicateObjectError:
             # User exists, update password
-            await conn.execute(
-                f'ALTER USER "{database_user}" WITH PASSWORD \'{safe_password}\''
-            )
+            await conn.execute(f"ALTER USER \"{database_user}\" WITH PASSWORD '{safe_password}'")
             print(f"  Updated password for existing user: {database_user}")
         except Exception as e:
             print(f"  Error creating user: {e}")
@@ -478,9 +472,7 @@ async def provision_tenant_database(
 
         # Create database
         try:
-            await conn.execute(
-                f'CREATE DATABASE "{database_name}" OWNER "{database_user}"'
-            )
+            await conn.execute(f'CREATE DATABASE "{database_name}" OWNER "{database_user}"')
             print(f"  Created database: {database_name}")
         except asyncpg.DuplicateDatabaseError:
             print(f"  Database already exists: {database_name}")
@@ -498,10 +490,10 @@ async def provision_tenant_database(
             print(f"  Error granting privileges: {e}")
             traceback.print_exc()
             raise
-        
+
         await conn.close()
         conn = None
-        
+
         # Connect to the new database to create schema
         settings = get_settings()
         print(f"  Connecting to new database as {database_user}...")
@@ -512,30 +504,30 @@ async def provision_tenant_database(
             password=database_password,
             database=database_name,
         )
-        
+
         # Create schema
-        print(f"  Creating schema tables...")
+        print("  Creating schema tables...")
         schema_sql = get_tenant_schema_sql()
         await tenant_conn.execute(schema_sql)
-        print(f"  Created schema tables")
-        
+        print("  Created schema tables")
+
         # Seed data
-        print(f"  Seeding initial data...")
+        print("  Seeding initial data...")
         await run_seed_data(tenant_conn, admin_email, admin_password_hash)
-        print(f"  Seeded initial data")
-        
+        print("  Seeded initial data")
+
         await tenant_conn.close()
         tenant_conn = None
-        
+
         print(f"Tenant database provisioned successfully: {database_name}")
-        
+
         return {
             "database_name": database_name,
             "database_user": database_user,
             "admin_email": admin_email,
             "admin_password": admin_password,
         }
-        
+
     except Exception as e:
         print(f"PROVISIONING ERROR: {e}")
         traceback.print_exc()
@@ -553,20 +545,19 @@ async def drop_tenant_database(
 ) -> bool:
     """
     Drop a tenant database and user.
-    
+
     WARNING: This permanently deletes all tenant data!
     """
     conn = await get_admin_connection()
-    
+
     try:
         _validate_identifier(database_name)
         _validate_identifier(database_user)
 
         # Terminate any active connections (parameterized)
         await conn.execute(
-            "SELECT pg_terminate_backend(pid) "
-            "FROM pg_stat_activity WHERE datname = $1",
-            database_name
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1",
+            database_name,
         )
 
         # Drop database
@@ -576,9 +567,9 @@ async def drop_tenant_database(
         # Drop user
         await conn.execute(f'DROP USER IF EXISTS "{database_user}"')
         print(f"Dropped user: {database_user}")
-        
+
         return True
-        
+
     finally:
         await conn.close()
 
@@ -588,21 +579,21 @@ async def reset_tenant_admin_password(
     database_user: str,
     database_password: str,
     admin_email: str,
-    new_password: Optional[str] = None,
-) -> Dict[str, str]:
+    new_password: str | None = None,
+) -> dict[str, str]:
     """
     Reset a tenant admin user's password.
-    
+
     Returns dict with the new password.
     """
     settings = get_settings()
-    
+
     # Generate new password if not provided
     if not new_password:
         new_password = generate_password(16)
-    
+
     password_hash = hash_password(new_password)
-    
+
     # Connect to tenant database
     conn = await asyncpg.connect(
         host=settings.db_host,
@@ -611,23 +602,23 @@ async def reset_tenant_admin_password(
         password=database_password,
         database=database_name,
     )
-    
+
     try:
         # Update password (parameterized)
         result = await conn.execute(
-            "UPDATE users SET password = $1, updated_at = CURRENT_TIMESTAMP "
-            "WHERE email = $2",
-            password_hash, admin_email
+            "UPDATE users SET password = $1, updated_at = CURRENT_TIMESTAMP WHERE email = $2",
+            password_hash,
+            admin_email,
         )
 
         if result == "UPDATE 0":
             raise ValueError(f"Admin user not found: {admin_email}")
-        
+
         print(f"Reset password for {admin_email} in {database_name}")
-        
+
     finally:
         await conn.close()
-    
+
     return {
         "admin_email": admin_email,
         "admin_password": new_password,
@@ -641,11 +632,11 @@ async def test_tenant_connection(
 ) -> bool:
     """
     Test if we can connect to a tenant database.
-    
+
     Returns True if connection succeeds.
     """
     settings = get_settings()
-    
+
     try:
         conn = await asyncpg.connect(
             host=settings.db_host,
@@ -666,10 +657,10 @@ async def check_tenant_database(
     database_name: str,
     database_user: str,
     database_password: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Check tenant database status and health.
-    
+
     Returns dict with:
     - exists: bool - database exists
     - accessible: bool - can connect with credentials
@@ -680,7 +671,7 @@ async def check_tenant_database(
     settings = get_settings()
     admin_conn = None
     tenant_conn = None
-    
+
     result = {
         "exists": False,
         "accessible": False,
@@ -689,27 +680,26 @@ async def check_tenant_database(
         "project_count": 0,
         "error": None,
     }
-    
+
     try:
         # Check if database exists using admin connection
         admin_conn = await get_admin_connection()
         db_check = await admin_conn.fetchval(
-            "SELECT 1 FROM pg_database WHERE datname = $1",
-            database_name
+            "SELECT 1 FROM pg_database WHERE datname = $1", database_name
         )
         result["exists"] = db_check is not None
-        
+
         if not result["exists"]:
             result["error"] = "Database does not exist"
             return result
-        
+
     except Exception as e:
         result["error"] = f"Admin connection failed: {e}"
         return result
     finally:
         if admin_conn:
             await admin_conn.close()
-    
+
     try:
         # Try to connect with tenant credentials
         tenant_conn = await asyncpg.connect(
@@ -720,30 +710,27 @@ async def check_tenant_database(
             database=database_name,
         )
         result["accessible"] = True
-        
+
         # Get table list
         tables = await tenant_conn.fetch("""
-            SELECT table_name FROM information_schema.tables 
-            WHERE table_schema = 'public' 
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'public'
             ORDER BY table_name
         """)
-        result["tables"] = [t["table_name"] for t in tables]
-        
+        table_list: list[str] = [t["table_name"] for t in tables]
+        result["tables"] = table_list
+
         # Get counts if tables exist
-        if "users" in result["tables"]:
-            result["user_count"] = await tenant_conn.fetchval(
-                "SELECT COUNT(*) FROM users"
-            )
-        
-        if "projects" in result["tables"]:
-            result["project_count"] = await tenant_conn.fetchval(
-                "SELECT COUNT(*) FROM projects"
-            )
-        
+        if "users" in table_list:
+            result["user_count"] = await tenant_conn.fetchval("SELECT COUNT(*) FROM users")
+
+        if "projects" in table_list:
+            result["project_count"] = await tenant_conn.fetchval("SELECT COUNT(*) FROM projects")
+
     except Exception as e:
         result["error"] = f"Tenant connection failed: {e}"
     finally:
         if tenant_conn:
             await tenant_conn.close()
-    
+
     return result

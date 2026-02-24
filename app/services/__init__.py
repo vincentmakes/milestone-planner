@@ -5,7 +5,7 @@ Services package for business logic.
 from app.services.session import SessionService, parse_session_cookie
 
 __all__ = [
-    "SessionService", 
+    "SessionService",
     "parse_session_cookie",
 ]
 

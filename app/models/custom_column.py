@@ -5,7 +5,7 @@ Implements user-definable columns for projects, phases, and subphases.
 
 import json
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
     CheckConstraint,
@@ -34,8 +34,7 @@ class CustomColumn(Base):
     __tablename__ = "custom_columns"
     __table_args__ = (
         CheckConstraint(
-            "column_type IN ('text', 'boolean', 'list')",
-            name="custom_columns_type_check"
+            "column_type IN ('text', 'boolean', 'list')", name="custom_columns_type_check"
         ),
     )
 
@@ -44,38 +43,36 @@ class CustomColumn(Base):
     column_type: Mapped[str] = mapped_column(
         String(20), nullable=False, default="text"
     )  # 'text', 'boolean', 'list'
-    
+
     # For list type: JSON array of options ["Low", "Medium", "High"]
-    list_options: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
+    list_options: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Scope: site_id = None means global (all sites)
-    site_id: Mapped[Optional[int]] = mapped_column(
+    site_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("sites.id", ondelete="CASCADE"),
         nullable=True,
     )
-    
+
     # Display configuration
     display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     width: Mapped[int] = mapped_column(Integer, default=120, nullable=False)
-    
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
 
     # Relationships
     site: Mapped[Optional["Site"]] = relationship("Site", back_populates="custom_columns")
-    values: Mapped[List["CustomColumnValue"]] = relationship(
+    values: Mapped[list["CustomColumnValue"]] = relationship(
         "CustomColumnValue",
         back_populates="column",
         cascade="all, delete-orphan",
     )
 
     @property
-    def parsed_list_options(self) -> List[str]:
+    def parsed_list_options(self) -> list[str]:
         """Parse list_options from JSON string."""
         if self.list_options:
             try:
@@ -84,7 +81,7 @@ class CustomColumn(Base):
                 return []
         return []
 
-    def set_list_options(self, options: List[str]) -> None:
+    def set_list_options(self, options: list[str]) -> None:
         """Set list_options as JSON string."""
         self.list_options = json.dumps(options) if options else None
 
@@ -108,53 +105,48 @@ class CustomColumnValue(Base):
     __table_args__ = (
         CheckConstraint(
             "entity_type IN ('project', 'phase', 'subphase')",
-            name="custom_column_values_entity_type_check"
+            name="custom_column_values_entity_type_check",
         ),
         # Unique constraint: one value per column per entity
         UniqueConstraint(
-            "custom_column_id", "entity_type", "entity_id",
-            name="uq_custom_column_value_entity"
+            "custom_column_id", "entity_type", "entity_id", name="uq_custom_column_value_entity"
         ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    
+
     custom_column_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("custom_columns.id", ondelete="CASCADE"),
         nullable=False,
     )
-    
+
     # Polymorphic reference to the entity
     entity_type: Mapped[str] = mapped_column(
         String(20), nullable=False
     )  # 'project', 'phase', 'subphase'
     entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    
+
     # Value stored as string, parsed based on column type
     # - text: stored as-is
     # - boolean: "true" or "false"
     # - list: stored as the selected option string
-    value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    value: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
 
     # Relationships
-    column: Mapped["CustomColumn"] = relationship(
-        "CustomColumn", back_populates="values"
-    )
+    column: Mapped["CustomColumn"] = relationship("CustomColumn", back_populates="values")
 
     @property
     def typed_value(self):
         """Get the value cast to the appropriate type based on column type."""
         if self.value is None:
             return None
-        
+
         if self.column.column_type == "boolean":
             return self.value.lower() == "true"
         elif self.column.column_type == "list":
