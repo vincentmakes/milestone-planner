@@ -217,7 +217,7 @@ async def admin_login(
         max_age=86400,  # 24 hours
         httponly=True,
         samesite="lax",
-        secure=False,  # Set True in production with HTTPS
+        secure=settings.secure_cookies,
         path="/",
     )
     

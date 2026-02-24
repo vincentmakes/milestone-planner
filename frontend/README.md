@@ -53,10 +53,10 @@ npm install
 ### Development
 
 ```bash
-# Start dev server (with proxy to backend on port 8000)
+# Start dev server (proxies API to backend on port 8485)
 npm run dev
 
-# The app will be available at http://localhost:3000
+# The app will be available at http://localhost:3333
 ```
 
 ### Building
@@ -144,28 +144,6 @@ import { useAppStore } from '../../../stores';
 import { useAppStore } from '@/stores';
 ```
 
-## Migration Status
-
-### Phase 1: Foundation ✅
-- [x] Project scaffolding (Vite + React + TypeScript)
-- [x] TypeScript types for all domain models
-- [x] Zustand stores (appStore, uiStore, undoStore)
-- [x] API client with tenant prefix support
-- [x] CSS variables and theme system
-- [x] Authentication hook and flow
-- [x] Data loader hook
-- [x] Loading and Login screens
-
-### Phase 2: Core Layout (Next)
-- [ ] Header with sub-components
-- [ ] Sidebar with navigation
-- [ ] Resource panel
-- [ ] Modal system
-
-### Phase 3-8: See REACT_MIGRATION_PLAN.md
-
 ## Integration with Backend
 
-The frontend expects the FastAPI backend to be running on port 8000. The Vite dev server is configured to proxy `/api` requests to the backend.
-
-For production, nginx should be configured to serve the built frontend and proxy API requests to the backend.
+The FastAPI backend runs on port 8485 and serves the built frontend from `public/`. The Vite dev server (port 3333) proxies `/api` requests to the backend for development.

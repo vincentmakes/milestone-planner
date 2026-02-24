@@ -119,10 +119,10 @@ async def login(
         max_age=settings.session_max_age,
         httponly=True,
         samesite="lax",
-        secure=False,  # Set to True in production with HTTPS
+        secure=settings.secure_cookies,
         path="/",
     )
-    
+
     return LoginResponse(
         success=True,
         user=build_user_session_info(user),
@@ -738,8 +738,8 @@ async def sso_callback(
         max_age=settings.session_max_age,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=settings.secure_cookies,
         path="/",
     )
-    
+
     return response

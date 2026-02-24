@@ -6,7 +6,7 @@ Multi-tenant SaaS platform for R&D project management with Gantt charts, staff a
 
 ## Tech Stack
 
-- **Backend**: Python 3.11+, FastAPI, SQLAlchemy 2.0 (async), asyncpg, Alembic
+- **Backend**: Python 3.11+, FastAPI, SQLAlchemy 2.0 (async), asyncpg
 - **Frontend**: React 18, TypeScript, Vite, Zustand, React Router, TanStack Query
 - **Database**: PostgreSQL 15+ (multi-tenant: one master DB + one DB per tenant)
 - **Deployment**: Docker, docker-compose, port 8485
@@ -86,7 +86,7 @@ python migrations/run_migration.py <migration_name>
 
 ## Database Migrations
 
-- **No Alembic versions are in use.** Migrations are raw SQL files in `migrations/`.
+- Migrations are raw SQL files in `migrations/` (no Alembic).
 - Master DB migrations: `python migrations/run_migration_master.py <name>`
 - Tenant DB migrations: `python migrations/run_migration.py <name>`
 - `master_db.init_db()` auto-applies missing schema (organizations table, new tenant columns) on startup.

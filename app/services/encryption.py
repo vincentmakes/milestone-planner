@@ -16,17 +16,28 @@ from app.config import get_settings
 def get_encryption_key() -> bytes:
     """
     Get the encryption key for tenant credentials.
-    
-    Uses TENANT_ENCRYPTION_KEY if set, otherwise derives from SESSION_SECRET.
+
+    Requires TENANT_ENCRYPTION_KEY (64-char hex) in multi-tenant mode.
+    Falls back to session secret derivation only in single-tenant mode.
     """
     settings = get_settings()
-    
-    # Check for explicit encryption key
+
     key_hex = os.getenv("TENANT_ENCRYPTION_KEY")
     if key_hex:
+        if len(key_hex) != 64:
+            raise ValueError(
+                "TENANT_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes). "
+                "Generate with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
         return bytes.fromhex(key_hex)
-    
-    # Derive from session secret
+
+    if settings.multi_tenant:
+        raise ValueError(
+            "TENANT_ENCRYPTION_KEY is required in multi-tenant mode. "
+            "Generate with: python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
+
+    # Single-tenant fallback: derive from session secret
     secret = settings.session_secret
     return hashlib.sha256(secret.encode()).digest()
 

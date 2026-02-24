@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     # Path to custom CA certificate for SSL verification (for corporate proxies)
     proxy_ca_cert: Optional[str] = None  # e.g., "/path/to/sulzer-ca.crt"
 
+    # Cookie security (set True when behind HTTPS)
+    secure_cookies: bool = False
+
     # Microsoft Entra SSO
     sso_enabled: bool = False
     sso_client_id: Optional[str] = None
