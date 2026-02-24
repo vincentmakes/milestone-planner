@@ -393,8 +393,11 @@ def create_app() -> FastAPI:
                     headers={"Upgrade": "websocket"},
                 )
 
-            # Check for static file first
-            static_file = public_dir / full_path
+            # Check for static file first (with path traversal protection)
+            static_file = (public_dir / full_path).resolve()
+            if not str(static_file).startswith(str(public_dir.resolve())):
+                return JSONResponse(status_code=400, content={"error": "Invalid path"})
+
             if static_file.exists() and static_file.is_file():
                 return FileResponse(static_file)
 

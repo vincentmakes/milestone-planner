@@ -66,7 +66,7 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
       lines.push(`UID:bankholiday-${holiday.id}@milestone`);
       lines.push(`DTSTART;VALUE=DATE:${startDate}`);
       lines.push(`DTEND;VALUE=DATE:${endDate}`);
-      lines.push(`SUMMARY:${holiday.name.replace(/,/g, '\\,')}`);
+      lines.push(`SUMMARY:${holiday.name.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n')}`);
       lines.push('TRANSP:TRANSPARENT');
       lines.push('END:VEVENT');
     });

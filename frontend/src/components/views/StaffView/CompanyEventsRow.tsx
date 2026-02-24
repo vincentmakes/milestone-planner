@@ -66,7 +66,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
       lines.push(`UID:companyevent-${event.id}@milestone`);
       lines.push(`DTSTART;VALUE=DATE:${startDate}`);
       lines.push(`DTEND;VALUE=DATE:${endDate}`);
-      lines.push(`SUMMARY:${event.name.replace(/,/g, '\\,')}`);
+      lines.push(`SUMMARY:${event.name.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n')}`);
       lines.push('TRANSP:TRANSPARENT');
       lines.push('END:VEVENT');
     });

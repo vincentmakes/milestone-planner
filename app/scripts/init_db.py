@@ -193,8 +193,8 @@ async def apply_master_schema(settings):
         admin_password = os.environ.get("INIT_ADMIN_PASSWORD")
         if not admin_password:
             admin_password = generate_password()
-            print(f"\n  *** Generated admin password: {admin_password} ***")
-            print("  *** Save this password! It won't be shown again. ***\n")
+            print("\n  *** Admin password was auto-generated. ***")
+            print("  *** Set INIT_ADMIN_PASSWORD env var to control it. ***\n")
 
         # Hash with bcrypt
         from passlib.hash import bcrypt
@@ -252,8 +252,8 @@ async def apply_tenant_schema(settings):
         admin_password = os.environ.get("INIT_ADMIN_PASSWORD")
         if not admin_password:
             admin_password = generate_password()
-            print(f"\n  *** Generated admin password: {admin_password} ***")
-            print("  *** Save this password! It won't be shown again. ***\n")
+            print("\n  *** Admin password was auto-generated. ***")
+            print("  *** Set INIT_ADMIN_PASSWORD env var to control it. ***\n")
 
         admin_password_hash = hash_password(admin_password)
         await run_seed_data(conn, admin_email, admin_password_hash)

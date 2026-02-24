@@ -841,12 +841,13 @@ async def test_mpp_import(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"MPP availability check failed: {e}")
         return JSONResponse(
             status_code=500,
             content={
                 "success": False,
                 "ready": False,
-                "error": str(e),
+                "error": "Internal error checking MPP import availability",
                 "setup_instructions": get_jvm_setup_instructions(),
             },
         )
@@ -901,7 +902,8 @@ async def import_mpp_file(
     except HTTPException:
         raise
     except Exception as e:
-        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+        logger.error(f"MPP import failed: {e}")
+        return JSONResponse(status_code=500, content={"success": False, "error": "Failed to parse MPP file"})
     finally:
         # Clean up temp file
         if temp_file and os.path.exists(temp_file.name):
@@ -1145,7 +1147,7 @@ async def import_project_full(
         await db.rollback()
 
         error_msg = str(e)
-        error_detail = {"success": False, "error": error_msg}
+        error_detail: dict[str, Any] = {"success": False, "error": "Project import failed"}
 
         # Check if this is a JVM/Java error
         if (
