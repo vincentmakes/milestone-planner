@@ -7,7 +7,7 @@ Provides:
 - Change broadcasting (real-time updates)
 """
 
-from app.websocket.manager import manager, ConnectionManager
 from app.websocket.handler import router
+from app.websocket.manager import ConnectionManager, manager
 
 __all__ = ["manager", "ConnectionManager", "router"]

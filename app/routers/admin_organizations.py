@@ -9,30 +9,29 @@ Handles organization management in multi-tenant admin panel:
 
 import uuid
 from datetime import datetime
-from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.services.master_db import get_master_db
-from app.services.encryption import encrypt, decrypt
 from app.models.organization import Organization, OrganizationSSOConfig
-from app.models.tenant import Tenant, TenantAuditLog
-from app.schemas.organization import (
-    OrganizationCreate,
-    OrganizationUpdate,
-    OrganizationResponse,
-    OrganizationDetailResponse,
-    TenantSummary,
-    OrganizationSSOConfigCreate,
-    OrganizationSSOConfigResponse,
-    TenantGroupAccessUpdate,
-)
+from app.models.tenant import Tenant
 
 # Import admin auth dependency from admin router
-from app.routers.admin import get_current_admin, AdminUser, add_audit_log
+from app.routers.admin import AdminUser, add_audit_log, get_current_admin
+from app.schemas.organization import (
+    OrganizationCreate,
+    OrganizationDetailResponse,
+    OrganizationResponse,
+    OrganizationSSOConfigCreate,
+    OrganizationSSOConfigResponse,
+    OrganizationUpdate,
+    TenantGroupAccessUpdate,
+    TenantSummary,
+)
+from app.services.encryption import encrypt
+from app.services.master_db import get_master_db
 
 router = APIRouter(prefix="/admin/organizations", tags=["Admin Organizations"])
 
@@ -41,7 +40,8 @@ router = APIRouter(prefix="/admin/organizations", tags=["Admin Organizations"])
 # Organization CRUD
 # ---------------------------------------------------------
 
-@router.get("", response_model=List[OrganizationResponse])
+
+@router.get("", response_model=list[OrganizationResponse])
 async def list_organizations(
     admin: AdminUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_master_db),
@@ -49,17 +49,14 @@ async def list_organizations(
     """List all organizations with tenant counts."""
     # Query organizations with tenant count
     result = await db.execute(
-        select(
-            Organization,
-            func.count(Tenant.id).label("tenant_count")
-        )
+        select(Organization, func.count(Tenant.id).label("tenant_count"))
         .outerjoin(Tenant, Tenant.organization_id == Organization.id)
         .options(selectinload(Organization.sso_config))
         .group_by(Organization.id)
         .order_by(Organization.name)
     )
     rows = result.all()
-    
+
     return [
         OrganizationResponse(
             id=org.id,
@@ -83,15 +80,13 @@ async def create_organization(
 ):
     """Create a new organization."""
     # Check if slug is already used
-    existing = await db.execute(
-        select(Organization).where(Organization.slug == data.slug)
-    )
+    existing = await db.execute(select(Organization).where(Organization.slug == data.slug))
     if existing.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Organization with slug '{data.slug}' already exists",
         )
-    
+
     # Create organization
     org = Organization(
         id=uuid.uuid4(),
@@ -102,7 +97,7 @@ async def create_organization(
     db.add(org)
     await db.commit()
     await db.refresh(org)
-    
+
     return OrganizationResponse(
         id=org.id,
         name=org.name,
@@ -131,10 +126,10 @@ async def get_organization(
         )
     )
     org = result.scalar_one_or_none()
-    
+
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
-    
+
     # Build SSO config response if exists
     sso_config = None
     if org.sso_config:
@@ -148,7 +143,7 @@ async def get_organization(
             auto_create_users=org.sso_config.should_auto_create_users,
             default_user_role=org.sso_config.default_user_role,
         )
-    
+
     return OrganizationDetailResponse(
         id=org.id,
         name=org.name,
@@ -185,27 +180,26 @@ async def update_organization(
         .options(selectinload(Organization.sso_config))
     )
     org = result.scalar_one_or_none()
-    
+
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
-    
+
     if data.name is not None:
         org.name = data.name
     if data.description is not None:
         org.description = data.description
-    
+
     org.updated_at = datetime.utcnow()
-    
+
     await db.commit()
     await db.refresh(org)
-    
+
     # Get tenant count
     count_result = await db.execute(
-        select(func.count(Tenant.id))
-        .where(Tenant.organization_id == org.id)
+        select(func.count(Tenant.id)).where(Tenant.organization_id == org.id)
     )
     tenant_count = count_result.scalar() or 0
-    
+
     return OrganizationResponse(
         id=org.id,
         name=org.name,
@@ -231,25 +225,26 @@ async def delete_organization(
         .options(selectinload(Organization.tenants))
     )
     org = result.scalar_one_or_none()
-    
+
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
-    
+
     # Disassociate tenants (organization_id will be set to NULL by ON DELETE SET NULL)
     # Just need to clear group restrictions
     for tenant in org.tenants:
         tenant.required_group_ids = []
         tenant.group_membership_mode = "any"
-    
+
     await db.delete(org)
     await db.commit()
-    
+
     return {"success": True, "message": f"Organization '{org.name}' deleted"}
 
 
 # ---------------------------------------------------------
 # Organization SSO Configuration
 # ---------------------------------------------------------
+
 
 @router.get("/{org_id}/sso", response_model=OrganizationSSOConfigResponse)
 async def get_organization_sso_config(
@@ -264,10 +259,10 @@ async def get_organization_sso_config(
         .options(selectinload(Organization.sso_config))
     )
     org = result.scalar_one_or_none()
-    
+
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
-    
+
     if not org.sso_config:
         return OrganizationSSOConfigResponse(
             enabled=False,
@@ -279,7 +274,7 @@ async def get_organization_sso_config(
             auto_create_users=False,
             default_user_role="user",
         )
-    
+
     return OrganizationSSOConfigResponse(
         enabled=org.sso_config.is_enabled,
         configured=org.sso_config.is_configured,
@@ -306,12 +301,12 @@ async def update_organization_sso_config(
         .options(selectinload(Organization.sso_config))
     )
     org = result.scalar_one_or_none()
-    
+
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
-    
+
     config = org.sso_config
-    
+
     if not config:
         # Create new SSO config
         config = OrganizationSSOConfig(
@@ -320,7 +315,7 @@ async def update_organization_sso_config(
             provider="entra",
         )
         db.add(config)
-    
+
     # Update fields if provided
     if data.enabled is not None:
         config.enabled = 1 if data.enabled else 0
@@ -337,12 +332,12 @@ async def update_organization_sso_config(
         config.auto_create_users = 1 if data.auto_create_users else 0
     if data.default_user_role is not None:
         config.default_user_role = data.default_user_role
-    
+
     config.updated_at = datetime.utcnow()
-    
+
     await db.commit()
     await db.refresh(config)
-    
+
     return OrganizationSSOConfigResponse(
         enabled=config.is_enabled,
         configured=config.is_configured,
@@ -368,16 +363,16 @@ async def delete_organization_sso_config(
         .options(selectinload(Organization.sso_config))
     )
     org = result.scalar_one_or_none()
-    
+
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
-    
+
     if not org.sso_config:
         raise HTTPException(status_code=404, detail="SSO config not found")
-    
+
     await db.delete(org.sso_config)
     await db.commit()
-    
+
     return {"success": True, "message": "SSO configuration deleted"}
 
 
@@ -385,56 +380,54 @@ async def delete_organization_sso_config(
 # Tenant Organization Assignment
 # ---------------------------------------------------------
 
+
 @router.put("/{org_id}/tenants/{tenant_id}")
 async def add_tenant_to_organization(
     org_id: str,
     tenant_id: str,
-    data: Optional[TenantGroupAccessUpdate] = None,
+    data: TenantGroupAccessUpdate | None = None,
     admin: AdminUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_master_db),
 ):
     """Add a tenant to an organization with optional group requirements."""
     # Get organization
-    org_result = await db.execute(
-        select(Organization).where(Organization.id == org_id)
-    )
+    org_result = await db.execute(select(Organization).where(Organization.id == org_id))
     org = org_result.scalar_one_or_none()
-    
+
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
-    
+
     # Get tenant
-    tenant_result = await db.execute(
-        select(Tenant).where(Tenant.id == tenant_id)
-    )
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
     tenant = tenant_result.scalar_one_or_none()
-    
+
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    
+
     # Update tenant
     tenant.organization_id = org.id
-    
+
     if data:
         if data.required_group_ids is not None:
             tenant.required_group_ids = data.required_group_ids
         if data.group_membership_mode is not None:
             if data.group_membership_mode not in ("any", "all"):
                 raise HTTPException(
-                    status_code=400,
-                    detail="group_membership_mode must be 'any' or 'all'"
+                    status_code=400, detail="group_membership_mode must be 'any' or 'all'"
                 )
             tenant.group_membership_mode = data.group_membership_mode
-    
+
     # Add audit log
     await add_audit_log(
-        db, tenant.id, "organization_assigned",
+        db,
+        tenant.id,
+        "organization_assigned",
         details={"organization_id": str(org.id), "organization_name": org.name},
         actor=admin.email,
     )
-    
+
     await db.commit()
-    
+
     return {
         "success": True,
         "message": f"Tenant '{tenant.name}' added to organization '{org.name}'",
@@ -450,35 +443,32 @@ async def remove_tenant_from_organization(
 ):
     """Remove a tenant from an organization."""
     # Get tenant
-    tenant_result = await db.execute(
-        select(Tenant).where(Tenant.id == tenant_id)
-    )
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
     tenant = tenant_result.scalar_one_or_none()
-    
+
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    
+
     if str(tenant.organization_id) != org_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Tenant is not in this organization"
-        )
-    
+        raise HTTPException(status_code=400, detail="Tenant is not in this organization")
+
     # Clear organization and group settings
     old_org_id = tenant.organization_id
     tenant.organization_id = None
     tenant.required_group_ids = []
     tenant.group_membership_mode = "any"
-    
+
     # Add audit log
     await add_audit_log(
-        db, tenant.id, "organization_removed",
+        db,
+        tenant.id,
+        "organization_removed",
         details={"organization_id": str(old_org_id)},
         actor=admin.email,
     )
-    
+
     await db.commit()
-    
+
     return {
         "success": True,
         "message": f"Tenant '{tenant.name}' removed from organization",
@@ -494,14 +484,12 @@ async def update_tenant_group_access(
 ):
     """Update tenant's group-based access requirements."""
     # Get tenant
-    tenant_result = await db.execute(
-        select(Tenant).where(Tenant.id == tenant_id)
-    )
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
     tenant = tenant_result.scalar_one_or_none()
-    
+
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    
+
     # Handle organization_id update
     if data.organization_id is not None:
         if data.organization_id:
@@ -512,21 +500,20 @@ async def update_tenant_group_access(
             if not org_result.scalar_one_or_none():
                 raise HTTPException(status_code=404, detail="Organization not found")
         tenant.organization_id = data.organization_id if data.organization_id else None
-    
+
     if data.required_group_ids is not None:
         tenant.required_group_ids = data.required_group_ids
-    
+
     if data.group_membership_mode is not None:
         if data.group_membership_mode not in ("any", "all"):
             raise HTTPException(
-                status_code=400,
-                detail="group_membership_mode must be 'any' or 'all'"
+                status_code=400, detail="group_membership_mode must be 'any' or 'all'"
             )
         tenant.group_membership_mode = data.group_membership_mode
-    
+
     await db.commit()
     await db.refresh(tenant)
-    
+
     return {
         "success": True,
         "organization_id": str(tenant.organization_id) if tenant.organization_id else None,

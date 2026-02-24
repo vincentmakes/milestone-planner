@@ -6,33 +6,31 @@ This is one of the first endpoints migrated to Python.
 It matches the Node.js API at /api/settings exactly.
 """
 
-from typing import Dict
-
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.middleware.auth import require_admin
 from app.models.settings import Settings, SSOConfig
 from app.models.user import User
-from app.middleware.auth import require_admin
-from app.schemas.settings import SettingsResponse, SettingUpdate
 from app.schemas.auth import SSOConfigResponse, SSOConfigUpdate
+from app.schemas.settings import SettingsResponse, SettingUpdate
 
 router = APIRouter()
 
 
-@router.get("/settings", response_model=Dict[str, str | None])
+@router.get("/settings", response_model=dict[str, str | None])
 async def get_all_settings(db: AsyncSession = Depends(get_db)):
     """
     Get all settings as a key-value dictionary.
-    
+
     This endpoint is public - needed for instance title on login page.
     Matches: GET /api/settings
     """
     result = await db.execute(select(Settings))
     settings = result.scalars().all()
-    
+
     return {s.key: s.value for s in settings}
 
 
@@ -40,13 +38,14 @@ async def get_all_settings(db: AsyncSession = Depends(get_db)):
 # SSO Configuration (MUST be before /settings/{key} routes)
 # ---------------------------------------------------------
 
+
 @router.get("/settings/sso", response_model=SSOConfigResponse)
 async def get_sso_settings(
     db: AsyncSession = Depends(get_db),
 ):
     """
     Get SSO configuration.
-    
+
     Public endpoint - needed for login page.
     Matches: GET /api/settings/sso
     """
@@ -60,13 +59,13 @@ async def get_sso_settings(
             enabled=False,
             configured=False,
         )
-    
+
     if not config:
         return SSOConfigResponse(
             enabled=False,
             configured=False,
         )
-    
+
     # Extract values to avoid any lazy loading issues
     return SSOConfigResponse(
         enabled=config.enabled == 1,
@@ -87,18 +86,18 @@ async def update_sso_settings(
 ):
     """
     Update SSO configuration.
-    
+
     Requires admin authentication.
     Matches: PUT /api/settings/sso
     """
     result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
     config = result.scalar_one_or_none()
-    
+
     if not config:
         # Create new config
         config = SSOConfig(id=1)
         db.add(config)
-    
+
     # Update fields - use column names directly, not properties
     if data.enabled is not None:
         config.enabled = 1 if data.enabled else 0
@@ -114,10 +113,10 @@ async def update_sso_settings(
         config.auto_create_users = 1 if data.auto_create_users else 0
     if data.default_role is not None:
         config.default_role = data.default_role
-    
+
     await db.commit()
     await db.refresh(config)
-    
+
     # Extract values directly to avoid property lazy loading
     return SSOConfigResponse(
         enabled=config.enabled == 1,
@@ -134,17 +133,18 @@ async def update_sso_settings(
 # Generic Key-Value Settings (AFTER specific routes)
 # ---------------------------------------------------------
 
+
 @router.get("/settings/{key}", response_model=SettingsResponse)
 async def get_setting(key: str, db: AsyncSession = Depends(get_db)):
     """
     Get a specific setting by key.
-    
+
     This endpoint is public.
     Matches: GET /api/settings/:key
     """
     result = await db.execute(select(Settings).where(Settings.key == key))
     setting = result.scalar_one_or_none()
-    
+
     if setting:
         return SettingsResponse(key=key, value=setting.value)
     else:
@@ -160,14 +160,14 @@ async def update_setting(
 ):
     """
     Update a setting (create if not exists).
-    
+
     Requires admin authentication.
     Matches: PUT /api/settings/:key
     """
     # Check if setting exists
     result = await db.execute(select(Settings).where(Settings.key == key))
     setting = result.scalar_one_or_none()
-    
+
     if setting:
         # Update existing
         setting.value = data.value
@@ -175,8 +175,8 @@ async def update_setting(
         # Create new
         setting = Settings(key=key, value=data.value)
         db.add(setting)
-    
+
     await db.commit()
     await db.refresh(setting)
-    
+
     return SettingsResponse(key=setting.key, value=setting.value)

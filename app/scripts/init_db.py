@@ -15,8 +15,8 @@ Environment variables:
 
 import asyncio
 import os
-import sys
 import secrets
+import sys
 
 import asyncpg
 
@@ -50,17 +50,13 @@ async def ensure_database_exists(settings, db_name: str, db_user: str, db_passwo
     conn = await get_admin_conn(settings)
     try:
         # Check if database exists
-        exists = await conn.fetchval(
-            "SELECT 1 FROM pg_database WHERE datname = $1", db_name
-        )
+        exists = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", db_name)
         if exists:
             print(f"  Database '{db_name}' already exists")
             return False
 
         # Create user if needed
-        user_exists = await conn.fetchval(
-            "SELECT 1 FROM pg_roles WHERE rolname = $1", db_user
-        )
+        user_exists = await conn.fetchval("SELECT 1 FROM pg_roles WHERE rolname = $1", db_user)
         if not user_exists:
             safe_pw = db_password.replace("'", "''")
             await conn.execute(f"CREATE USER \"{db_user}\" WITH PASSWORD '{safe_pw}'")
@@ -86,7 +82,7 @@ async def apply_master_schema(settings):
 
     print(f"\n=== Master Database: {db_name} ===")
 
-    created = await ensure_database_exists(settings, db_name, user, password)
+    await ensure_database_exists(settings, db_name, user, password)
 
     # Connect to master DB and apply schema
     conn = await asyncpg.connect(
@@ -180,11 +176,17 @@ async def apply_master_schema(settings):
         """)
 
         # Create indexes
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_admin_sessions_expired ON admin_sessions(expired)")
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_admin_sessions_expired ON admin_sessions(expired)"
+        )
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_tenants_slug ON tenants(slug)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_tenants_status ON tenants(status)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_tenants_organization_id ON tenants(organization_id)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_organizations_slug ON organizations(slug)")
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tenants_organization_id ON tenants(organization_id)"
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_organizations_slug ON organizations(slug)"
+        )
 
         # Seed default admin user
         admin_email = os.environ.get("INIT_ADMIN_EMAIL", "admin@milestone.local")
@@ -192,10 +194,11 @@ async def apply_master_schema(settings):
         if not admin_password:
             admin_password = generate_password()
             print(f"\n  *** Generated admin password: {admin_password} ***")
-            print(f"  *** Save this password! It won't be shown again. ***\n")
+            print("  *** Save this password! It won't be shown again. ***\n")
 
         # Hash with bcrypt
         from passlib.hash import bcrypt
+
         password_hash = bcrypt.using(rounds=12).hash(admin_password)
 
         result = await conn.execute(
@@ -238,8 +241,8 @@ async def apply_tenant_schema(settings):
     )
     try:
         # Import and run the same schema used by tenant_provisioner
-        from app.services.tenant_provisioner import get_tenant_schema_sql, run_seed_data
         from app.services.encryption import hash_password
+        from app.services.tenant_provisioner import get_tenant_schema_sql, run_seed_data
 
         schema_sql = get_tenant_schema_sql()
         await conn.execute(schema_sql)
@@ -250,7 +253,7 @@ async def apply_tenant_schema(settings):
         if not admin_password:
             admin_password = generate_password()
             print(f"\n  *** Generated admin password: {admin_password} ***")
-            print(f"  *** Save this password! It won't be shown again. ***\n")
+            print("  *** Save this password! It won't be shown again. ***\n")
 
         admin_password_hash = hash_password(admin_password)
         await run_seed_data(conn, admin_email, admin_password_hash)
@@ -292,6 +295,7 @@ async def main():
     except Exception as e:
         print(f"\nERROR: Database initialization failed: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

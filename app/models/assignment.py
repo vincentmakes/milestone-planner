@@ -4,22 +4,21 @@ Maps to project_assignments, phase_staff_assignments, and subphase_staff_assignm
 """
 
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
     Integer,
-    Text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
 if TYPE_CHECKING:
-    from app.models.user import User
     from app.models.project import Project, ProjectPhase, ProjectSubphase
+    from app.models.user import User
 
 
 class ProjectAssignment(Base):
@@ -43,17 +42,11 @@ class ProjectAssignment(Base):
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     # Note: 'notes' column exists in some DBs but not Node.js schema
     # We'll query it dynamically only if needed
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
-    project: Mapped["Project"] = relationship(
-        "Project", back_populates="staff_assignments"
-    )
-    staff: Mapped["User"] = relationship(
-        "User", back_populates="project_assignments"
-    )
+    project: Mapped["Project"] = relationship("Project", back_populates="staff_assignments")
+    staff: Mapped["User"] = relationship("User", back_populates="project_assignments")
 
     @property
     def staff_name(self) -> str:
@@ -61,7 +54,7 @@ class ProjectAssignment(Base):
         return self.staff.full_name if self.staff else ""
 
     @property
-    def staff_role(self) -> Optional[str]:
+    def staff_role(self) -> str | None:
         """Get staff member's job title."""
         return self.staff.job_title if self.staff else None
 
@@ -95,12 +88,8 @@ class PhaseStaffAssignment(Base):
 
     # Relationships
     project: Mapped["Project"] = relationship("Project")
-    phase: Mapped["ProjectPhase"] = relationship(
-        "ProjectPhase", back_populates="staff_assignments"
-    )
-    staff: Mapped["User"] = relationship(
-        "User", back_populates="phase_staff_assignments"
-    )
+    phase: Mapped["ProjectPhase"] = relationship("ProjectPhase", back_populates="staff_assignments")
+    staff: Mapped["User"] = relationship("User", back_populates="phase_staff_assignments")
 
     @property
     def staff_name(self) -> str:
@@ -108,7 +97,7 @@ class PhaseStaffAssignment(Base):
         return self.staff.full_name if self.staff else ""
 
     @property
-    def staff_role(self) -> Optional[str]:
+    def staff_role(self) -> str | None:
         """Get staff member's job title."""
         return self.staff.job_title if self.staff else None
 
@@ -145,9 +134,7 @@ class SubphaseStaffAssignment(Base):
     subphase: Mapped["ProjectSubphase"] = relationship(
         "ProjectSubphase", back_populates="staff_assignments"
     )
-    staff: Mapped["User"] = relationship(
-        "User", back_populates="subphase_staff_assignments"
-    )
+    staff: Mapped["User"] = relationship("User", back_populates="subphase_staff_assignments")
 
     @property
     def staff_name(self) -> str:
@@ -155,7 +142,7 @@ class SubphaseStaffAssignment(Base):
         return self.staff.full_name if self.staff else ""
 
     @property
-    def staff_role(self) -> Optional[str]:
+    def staff_role(self) -> str | None:
         """Get staff member's job title."""
         return self.staff.job_title if self.staff else None
 

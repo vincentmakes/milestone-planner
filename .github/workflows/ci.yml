@@ -35,15 +35,13 @@ jobs:
 
       - name: Ruff check
         run: ruff check app/
-        continue-on-error: true
 
       - name: Ruff format check
         run: ruff format --check app/
-        continue-on-error: true
 
       - name: MyPy type check
         run: mypy app/ --ignore-missing-imports
-        continue-on-error: true
+        continue-on-error: true  # SQLAlchemy Column[T] vs T false positives until models use Mapped[T]
 
   # ──────────────────────────────────────────
   # Backend: Tests

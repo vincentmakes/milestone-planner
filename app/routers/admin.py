@@ -12,36 +12,40 @@ Handles multi-tenant administration:
 import json
 import sys
 import time
-from datetime import datetime, timedelta
-from typing import Optional, List
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status, Query
-from sqlalchemy import select, func
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
-from app.services.master_db import get_master_db
-from app.services.encryption import (
-    encrypt, decrypt, generate_password, hash_password, verify_password
-)
-from app.services.tenant_provisioner import (
-    provision_tenant_database,
-    drop_tenant_database,
-    check_tenant_database,
-)
-from app.services.tenant_manager import tenant_connection_manager
-from app.models.tenant import (
-    Tenant, TenantCredentials, TenantAuditLog, AdminUser, AdminSession
-)
+from app.models.tenant import AdminSession, AdminUser, Tenant, TenantAuditLog, TenantCredentials
 from app.schemas.tenant import (
-    AdminLoginRequest, AdminLoginResponse, AdminUserInfo, AdminMeResponse,
-    TenantCreate, TenantUpdate, TenantResponse, TenantCreateResponse,
-    TenantCredentialsResponse, TenantProvisionRequest, TenantProvisionResponse,
-    ResetAdminPasswordRequest, ResetAdminPasswordResponse,
-    SystemStatsResponse, TenantStats, ConnectionStats, SystemInfo,
-    AdminUserCreate, AdminUserUpdate, AdminUserResponse,
-    DatabaseStatus, AuditLogEntry,
+    AdminLoginRequest,
+    AdminLoginResponse,
+    AdminMeResponse,
+    AdminUserCreate,
+    AdminUserInfo,
+    AdminUserUpdate,
+    ResetAdminPasswordRequest,
+    TenantCreate,
+    TenantProvisionRequest,
+    TenantUpdate,
+)
+from app.services.encryption import (
+    decrypt,
+    encrypt,
+    generate_password,
+    hash_password,
+    verify_password,
+)
+from app.services.master_db import get_master_db
+from app.services.tenant_manager import tenant_connection_manager
+from app.services.tenant_provisioner import (
+    check_tenant_database,
+    drop_tenant_database,
+    provision_tenant_database,
 )
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -55,7 +59,8 @@ _start_time = time.time()
 # Admin Auth Middleware
 # ---------------------------------------------------------
 
-async def get_admin_session_id(request: Request) -> Optional[str]:
+
+async def get_admin_session_id(request: Request) -> str | None:
     """Extract admin session ID from cookie."""
     cookie = request.cookies.get("admin_session")
     if not cookie:
@@ -69,20 +74,20 @@ async def get_current_admin(
 ) -> AdminUser:
     """
     Get current authenticated admin user.
-    
+
     Uses Node.js admin_sessions format:
     - sid: TEXT PRIMARY KEY (session ID)
     - sess: TEXT (JSON blob with {admin_user_id, email, ...})
     - expired: BIGINT (Unix timestamp in milliseconds)
     """
     session_id = await get_admin_session_id(request)
-    
+
     if not session_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Admin authentication required",
         )
-    
+
     # Find session (Node.js format)
     now_ms = int(time.time() * 1000)  # Current time in milliseconds
     result = await db.execute(
@@ -91,13 +96,13 @@ async def get_current_admin(
         .where(AdminSession.expired > now_ms)
     )
     session = result.scalar_one_or_none()
-    
+
     if not session:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired session",
         )
-    
+
     # Parse session data from JSON blob
     try:
         sess_data = json.loads(session.sess)
@@ -111,33 +116,31 @@ async def get_current_admin(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid session data format",
-        )
-    
+        ) from None
+
     # Get admin user
-    result = await db.execute(
-        select(AdminUser).where(AdminUser.id == admin_user_id)
-    )
+    result = await db.execute(select(AdminUser).where(AdminUser.id == admin_user_id))
     admin = result.scalar_one_or_none()
-    
+
     if not admin:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Admin user not found",
         )
-    
+
     if not admin.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Admin account is disabled",
         )
-    
+
     return admin
 
 
 async def get_current_admin_optional(
     request: Request,
     db: AsyncSession = Depends(get_master_db),
-) -> Optional[AdminUser]:
+) -> AdminUser | None:
     """Get current admin if authenticated, None otherwise."""
     try:
         return await get_current_admin(request, db)
@@ -161,6 +164,7 @@ async def require_superadmin(
 # Admin Authentication
 # ---------------------------------------------------------
 
+
 @router.post("/auth/login", response_model=AdminLoginResponse)
 async def admin_login(
     data: AdminLoginRequest,
@@ -169,47 +173,47 @@ async def admin_login(
 ):
     """Admin login."""
     # Find admin by email
-    result = await db.execute(
-        select(AdminUser).where(AdminUser.email == data.email)
-    )
+    result = await db.execute(select(AdminUser).where(AdminUser.email == data.email))
     admin = result.scalar_one_or_none()
-    
+
     # Verify credentials
     if not admin or not verify_password(data.password, admin.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
         )
-    
+
     if not admin.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Admin account is disabled",
         )
-    
+
     # Create session in Node.js format
     session_id = generate_password(64)
     expires_ms = int((time.time() + 86400) * 1000)  # 24 hours from now in milliseconds
-    
+
     # Session data as JSON blob (Node.js format)
-    sess_data = json.dumps({
-        "admin_user_id": admin.id,
-        "email": admin.email,
-        "role": admin.role,
-    })
-    
+    sess_data = json.dumps(
+        {
+            "admin_user_id": admin.id,
+            "email": admin.email,
+            "role": admin.role,
+        }
+    )
+
     session = AdminSession(
         sid=session_id,
         sess=sess_data,
         expired=expires_ms,
     )
     db.add(session)
-    
+
     # Update last login
     admin.last_login = datetime.utcnow()
-    
+
     await db.commit()
-    
+
     # Set cookie
     response.set_cookie(
         key="admin_session",
@@ -220,7 +224,7 @@ async def admin_login(
         secure=settings.secure_cookies,
         path="/",
     )
-    
+
     return AdminLoginResponse(
         success=True,
         user=AdminUserInfo(
@@ -240,24 +244,22 @@ async def admin_logout(
 ):
     """Admin logout."""
     session_id = await get_admin_session_id(request)
-    
+
     if session_id:
-        result = await db.execute(
-            select(AdminSession).where(AdminSession.sid == session_id)
-        )
+        result = await db.execute(select(AdminSession).where(AdminSession.sid == session_id))
         session = result.scalar_one_or_none()
         if session:
             await db.delete(session)
             await db.commit()
-    
+
     response.delete_cookie(key="admin_session", path="/")
-    
+
     return {"success": True}
 
 
 @router.get("/auth/me", response_model=AdminMeResponse)
 async def admin_me(
-    admin: Optional[AdminUser] = Depends(get_current_admin_optional),
+    admin: AdminUser | None = Depends(get_current_admin_optional),
 ):
     """Get current admin session."""
     if admin:
@@ -276,15 +278,17 @@ async def admin_me(
 # Tenant Management
 # ---------------------------------------------------------
 
+
 async def add_audit_log(
     db: AsyncSession,
     tenant_id,  # UUID
     action: str,
-    details: Optional[dict] = None,
-    actor: Optional[str] = None,
+    details: dict | None = None,
+    actor: str | None = None,
 ):
     """Add an audit log entry."""
     import uuid
+
     log = TenantAuditLog(
         id=uuid.uuid4(),
         tenant_id=tenant_id,
@@ -295,7 +299,7 @@ async def add_audit_log(
     db.add(log)
 
 
-def tenant_to_response(tenant: Tenant, db_status: Optional[dict] = None) -> dict:
+def tenant_to_response(tenant: Tenant, db_status: dict | None = None) -> dict:
     """Convert tenant model to response dict."""
     return {
         "id": str(tenant.id),  # UUID to string
@@ -327,21 +331,20 @@ async def list_tenants(
     db: AsyncSession = Depends(get_master_db),
 ):
     """List all tenants."""
-    from app.models.organization import Organization
-    
+
     query = select(Tenant).options(
         selectinload(Tenant.credentials),
         selectinload(Tenant.organization),
     )
-    
+
     if not include_archived:
         query = query.where(Tenant.status != "archived")
-    
+
     query = query.order_by(Tenant.name)
-    
+
     result = await db.execute(query)
     tenants = result.scalars().all()
-    
+
     # Get database status for each tenant
     response = []
     for tenant in tenants:
@@ -360,9 +363,9 @@ async def list_tenants(
                     "accessible": False,
                     "error": f"Decryption failed: {e}",
                 }
-        
+
         response.append(tenant_to_response(tenant, db_status))
-    
+
     return response
 
 
@@ -383,10 +386,10 @@ async def get_tenant(
         )
     )
     tenant = result.scalar_one_or_none()
-    
+
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    
+
     # Get database status
     db_status = None
     if tenant.credentials:
@@ -403,9 +406,9 @@ async def get_tenant(
                 "accessible": False,
                 "error": f"Decryption failed: {e}",
             }
-    
+
     response = tenant_to_response(tenant, db_status)
-    
+
     # Add audit log (limited to 20 entries)
     response["audit_log"] = [
         {
@@ -417,7 +420,7 @@ async def get_tenant(
         }
         for log in (tenant.audit_logs or [])[:20]
     ]
-    
+
     return response
 
 
@@ -430,31 +433,29 @@ async def create_tenant(
     """Create a new tenant."""
     import re
     import uuid
-    
+
     # Validate slug format
-    if not re.match(r'^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$', data.slug):
+    if not re.match(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$", data.slug):
         raise HTTPException(
             status_code=400,
             detail="Invalid slug format. Use lowercase letters, numbers, and hyphens only.",
         )
-    
+
     # Check reserved slugs
-    reserved = ['admin', 'api', 'app', 'www', 'mail', 'ftp', 'localhost', 'test', 'demo']
+    reserved = ["admin", "api", "app", "www", "mail", "ftp", "localhost", "test", "demo"]
     if data.slug in reserved:
         raise HTTPException(status_code=400, detail="This slug is reserved")
-    
+
     # Check if slug exists
-    existing = await db.execute(
-        select(Tenant).where(Tenant.slug == data.slug)
-    )
+    existing = await db.execute(select(Tenant).where(Tenant.slug == data.slug))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="A tenant with this slug already exists")
-    
+
     # Generate database credentials
     db_name = f"milestone_{data.slug.replace('-', '_')}"
     db_user = f"milestone_{data.slug.replace('-', '_')}_user"
     db_password = generate_password(32)
-    
+
     # Create tenant with UUID
     tenant = Tenant(
         id=uuid.uuid4(),
@@ -471,24 +472,26 @@ async def create_tenant(
     )
     db.add(tenant)
     await db.flush()  # Get tenant ID
-    
+
     # Store encrypted credentials
     credentials = TenantCredentials(
         tenant_id=tenant.id,
         encrypted_password=encrypt(db_password),
     )
     db.add(credentials)
-    
+
     # Add audit log
     await add_audit_log(
-        db, tenant.id, "created",
+        db,
+        tenant.id,
+        "created",
         details={"admin_email": data.admin_email},
         actor=admin.email,
     )
-    
+
     await db.commit()
     await db.refresh(tenant)
-    
+
     return {
         "success": True,
         "tenant": tenant_to_response(tenant),
@@ -510,21 +513,19 @@ async def update_tenant(
 ):
     """Update a tenant."""
     from app.models.organization import Organization
-    
+
     result = await db.execute(
-        select(Tenant)
-        .where(Tenant.id == tenant_id)
-        .options(selectinload(Tenant.organization))
+        select(Tenant).where(Tenant.id == tenant_id).options(selectinload(Tenant.organization))
     )
     tenant = result.scalar_one_or_none()
-    
+
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    
+
     # Update fields
     update_fields = data.model_dump(exclude_unset=True, by_alias=False)
     changes = {}
-    
+
     # Validate organization_id if being set
     if "organization_id" in update_fields and update_fields["organization_id"]:
         org_result = await db.execute(
@@ -532,33 +533,30 @@ async def update_tenant(
         )
         if not org_result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Organization not found")
-    
+
     # Validate group_membership_mode
     if "group_membership_mode" in update_fields:
         if update_fields["group_membership_mode"] not in ("any", "all"):
             raise HTTPException(
-                status_code=400, 
-                detail="group_membership_mode must be 'any' or 'all'"
+                status_code=400, detail="group_membership_mode must be 'any' or 'all'"
             )
-    
+
     for field, value in update_fields.items():
         if hasattr(tenant, field) and getattr(tenant, field) != value:
             changes[field] = {"from": getattr(tenant, field), "to": value}
             setattr(tenant, field, value)
-    
+
     if changes:
         await add_audit_log(db, tenant.id, "updated", details=changes, actor=admin.email)
-    
+
     await db.commit()
-    
+
     # Refresh with organization relationship
     result = await db.execute(
-        select(Tenant)
-        .where(Tenant.id == tenant_id)
-        .options(selectinload(Tenant.organization))
+        select(Tenant).where(Tenant.id == tenant_id).options(selectinload(Tenant.organization))
     )
     tenant = result.scalar_one_or_none()
-    
+
     return tenant_to_response(tenant)
 
 
@@ -571,45 +569,44 @@ async def update_tenant_status(
 ):
     """
     Update tenant status.
-    
+
     Valid statuses: active, suspended, archived
     """
     body = await request.json()
     new_status = body.get("status")
-    
+
     if new_status not in ["active", "suspended", "archived"]:
         raise HTTPException(
-            status_code=400,
-            detail="Invalid status. Must be: active, suspended, or archived"
+            status_code=400, detail="Invalid status. Must be: active, suspended, or archived"
         )
-    
-    result = await db.execute(
-        select(Tenant).where(Tenant.id == tenant_id)
-    )
+
+    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
     tenant = result.scalar_one_or_none()
-    
+
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    
+
     old_status = tenant.status
     tenant.status = new_status
-    
+
     await add_audit_log(
-        db, tenant.id, f"status_changed_to_{new_status}",
+        db,
+        tenant.id,
+        f"status_changed_to_{new_status}",
         details={"from": old_status, "to": new_status},
         actor=admin.email,
     )
-    
+
     # If suspending or archiving, close any active connections
     if new_status != "active":
         try:
-            await tenant_connection_manager.close_tenant(tenant.slug)
+            await tenant_connection_manager._close_pool(tenant.slug)
         except Exception:
             pass  # Ignore errors closing connections
-    
+
     await db.commit()
     await db.refresh(tenant)
-    
+
     return tenant_to_response(tenant)
 
 
@@ -622,22 +619,20 @@ async def delete_tenant(
 ):
     """Delete a tenant."""
     result = await db.execute(
-        select(Tenant)
-        .where(Tenant.id == tenant_id)
-        .options(selectinload(Tenant.credentials))
+        select(Tenant).where(Tenant.id == tenant_id).options(selectinload(Tenant.credentials))
     )
     tenant = result.scalar_one_or_none()
-    
+
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    
+
     # Check if tenant is suspended (required before deletion)
-    if tenant.status == 'active':
+    if tenant.status == "active":
         raise HTTPException(
-            status_code=400, 
-            detail="Tenant must be suspended before deletion. Active tenants cannot be deleted."
+            status_code=400,
+            detail="Tenant must be suspended before deletion. Active tenants cannot be deleted.",
         )
-    
+
     # Drop database if requested
     if delete_database and tenant.credentials:
         try:
@@ -648,49 +643,52 @@ async def delete_tenant(
             print(f"Error dropping database: {e}")
             # Continue with tenant deletion even if database drop fails
             import traceback
+
             traceback.print_exc()
-    
+
     # Delete tenant record (cascades to credentials and audit log)
     await db.delete(tenant)
     await db.commit()
-    
+
     return {
         "success": True,
-        "message": "Tenant and database deleted" if delete_database else "Tenant deleted (database preserved)",
+        "message": "Tenant and database deleted"
+        if delete_database
+        else "Tenant deleted (database preserved)",
     }
 
 
 @router.post("/tenants/{tenant_id}/provision")
 async def provision_tenant(
     tenant_id: str,
-    data: TenantProvisionRequest = None,
+    data: TenantProvisionRequest | None = None,
     admin: AdminUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_master_db),
 ):
     """Provision a tenant's database."""
     result = await db.execute(
-        select(Tenant)
-        .where(Tenant.id == tenant_id)
-        .options(selectinload(Tenant.credentials))
+        select(Tenant).where(Tenant.id == tenant_id).options(selectinload(Tenant.credentials))
     )
     tenant = result.scalar_one_or_none()
-    
+
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    
+
     if not tenant.credentials:
         raise HTTPException(status_code=400, detail="Tenant credentials not found")
-    
+
     # Get password
     db_password = decrypt(tenant.credentials.encrypted_password)
-    
+
     # Admin email and password
     admin_email = data.admin_email if data and data.admin_email else tenant.admin_email
     admin_password = data.admin_password if data and data.admin_password else None
-    
+
     print(f"Provision request: data={data}, tenant.admin_email={tenant.admin_email}")
-    print(f"Using admin_email={admin_email}, admin_password={'***' if admin_password else 'will be generated'}")
-    
+    print(
+        f"Using admin_email={admin_email}, admin_password={'***' if admin_password else 'will be generated'}"
+    )
+
     # Provision database
     try:
         prov_result = await provision_tenant_database(
@@ -703,20 +701,22 @@ async def provision_tenant(
         )
         print(f"Provisioner returned: {prov_result}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Provisioning failed: {e}")
-    
+        raise HTTPException(status_code=500, detail=f"Provisioning failed: {e}") from e
+
     # Update tenant status
     tenant.status = "active"
-    
+
     # Add audit log
     await add_audit_log(
-        db, tenant.id, "provisioned",
+        db,
+        tenant.id,
+        "provisioned",
         details={"admin_email": admin_email},
         actor=admin.email,
     )
-    
+
     await db.commit()
-    
+
     return {
         "success": True,
         "message": "Database provisioned successfully",
@@ -728,47 +728,45 @@ async def provision_tenant(
 @router.post("/tenants/{tenant_id}/reset-admin-password")
 async def reset_tenant_admin_password(
     tenant_id: str,
-    data: ResetAdminPasswordRequest = None,
+    data: ResetAdminPasswordRequest | None = None,
     admin: AdminUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_master_db),
 ):
     """Reset a tenant's admin password."""
     result = await db.execute(
-        select(Tenant)
-        .where(Tenant.id == tenant_id)
-        .options(selectinload(Tenant.credentials))
+        select(Tenant).where(Tenant.id == tenant_id).options(selectinload(Tenant.credentials))
     )
     tenant = result.scalar_one_or_none()
-    
+
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    
+
     if not tenant.credentials:
         raise HTTPException(status_code=400, detail="Tenant credentials not found")
-    
+
     # Decrypt password first
     tenant_password = decrypt(tenant.credentials.encrypted_password)
-    
+
     # Check database is accessible
     db_status = await check_tenant_database(
         tenant.database_name,
         tenant.database_user,
         tenant_password,
     )
-    
+
     if not db_status.get("accessible"):
         raise HTTPException(
             status_code=400,
             detail="Tenant database is not accessible. Provision it first.",
         )
-    
+
     # Generate new password
     new_password = data.password if data and data.password else generate_password(16)
     admin_email = data.email if data and data.email else tenant.admin_email
-    
+
     # Connect to tenant database and update password
     import asyncpg
-    
+
     conn = await asyncpg.connect(
         host=settings.db_host,
         port=settings.db_port,
@@ -776,7 +774,7 @@ async def reset_tenant_admin_password(
         password=tenant_password,
         database=tenant.database_name,
     )
-    
+
     try:
         # Update admin user password
         result = await conn.execute(
@@ -784,12 +782,10 @@ async def reset_tenant_admin_password(
             new_password,
             admin_email,
         )
-        
+
         if result == "UPDATE 0":
             # Try any admin
-            row = await conn.fetchrow(
-                "SELECT email FROM users WHERE role = 'admin' LIMIT 1"
-            )
+            row = await conn.fetchrow("SELECT email FROM users WHERE role = 'admin' LIMIT 1")
             if row:
                 admin_email = row["email"]
                 await conn.execute(
@@ -804,15 +800,17 @@ async def reset_tenant_admin_password(
                 )
     finally:
         await conn.close()
-    
+
     # Add audit log
     await add_audit_log(
-        db, tenant.id, "admin_password_reset",
+        db,
+        tenant.id,
+        "admin_password_reset",
         details={"admin_email": admin_email},
         actor=admin.email,
     )
     await db.commit()
-    
+
     return {
         "success": True,
         "email": admin_email,
@@ -836,7 +834,7 @@ async def get_tenant_audit_log(
         .limit(limit)
     )
     logs = result.scalars().all()
-    
+
     return [
         {
             "id": str(log.id),
@@ -853,6 +851,7 @@ async def get_tenant_audit_log(
 # System Stats
 # ---------------------------------------------------------
 
+
 @router.get("/stats")
 async def get_system_stats(
     admin: AdminUser = Depends(get_current_admin),
@@ -860,14 +859,11 @@ async def get_system_stats(
 ):
     """Get system statistics."""
     import psutil
-    
+
     # Tenant stats
-    result = await db.execute(
-        select(Tenant.status, func.count(Tenant.id))
-        .group_by(Tenant.status)
-    )
+    result = await db.execute(select(Tenant.status, func.count(Tenant.id)).group_by(Tenant.status))
     status_counts = {row[0]: row[1] for row in result.all()}
-    
+
     tenant_stats = {
         "total": sum(status_counts.values()),
         "active": status_counts.get("active", 0),
@@ -875,14 +871,14 @@ async def get_system_stats(
         "pending": status_counts.get("pending", 0),
         "archived": status_counts.get("archived", 0),
     }
-    
+
     # Connection stats
     pool_stats = tenant_connection_manager.get_stats()
-    
+
     # System stats
     process = psutil.Process()
     memory_info = process.memory_info()
-    
+
     return {
         "tenants": tenant_stats,
         "connections": {
@@ -901,17 +897,16 @@ async def get_system_stats(
 # Admin User Management (Superadmin only)
 # ---------------------------------------------------------
 
+
 @router.get("/users")
 async def list_admin_users(
     admin: AdminUser = Depends(require_superadmin),
     db: AsyncSession = Depends(get_master_db),
 ):
     """List all admin users."""
-    result = await db.execute(
-        select(AdminUser).order_by(AdminUser.email)
-    )
+    result = await db.execute(select(AdminUser).order_by(AdminUser.email))
     users = result.scalars().all()
-    
+
     return [
         {
             "id": u.id,
@@ -934,12 +929,10 @@ async def create_admin_user(
 ):
     """Create an admin user."""
     # Check if email exists
-    existing = await db.execute(
-        select(AdminUser).where(AdminUser.email == data.email)
-    )
+    existing = await db.execute(select(AdminUser).where(AdminUser.email == data.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already exists")
-    
+
     user = AdminUser(
         email=data.email,
         password_hash=hash_password(data.password),
@@ -950,7 +943,7 @@ async def create_admin_user(
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    
+
     return {
         "id": user.id,
         "email": user.email,
@@ -969,14 +962,12 @@ async def update_admin_user(
     db: AsyncSession = Depends(get_master_db),
 ):
     """Update an admin user."""
-    result = await db.execute(
-        select(AdminUser).where(AdminUser.id == user_id)
-    )
+    result = await db.execute(select(AdminUser).where(AdminUser.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     if data.name is not None:
         user.name = data.name
     if data.role is not None:
@@ -985,10 +976,10 @@ async def update_admin_user(
         user.active = 1 if data.active else 0
     if data.password is not None:
         user.password_hash = hash_password(data.password)
-    
+
     await db.commit()
     await db.refresh(user)
-    
+
     return {
         "id": user.id,
         "email": user.email,
@@ -1009,16 +1000,14 @@ async def delete_admin_user(
     """Delete an admin user."""
     if user_id == admin.id:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
-    
-    result = await db.execute(
-        select(AdminUser).where(AdminUser.id == user_id)
-    )
+
+    result = await db.execute(select(AdminUser).where(AdminUser.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     await db.delete(user)
     await db.commit()
-    
+
     return {"success": True}

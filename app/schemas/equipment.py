@@ -2,22 +2,22 @@
 Pydantic schemas for Equipment.
 """
 
-from datetime import date, datetime
-from typing import Optional
+from datetime import date
 
 from pydantic import BaseModel, Field
 
-from app.schemas.base import DateTimeJS, DateAsDateTimeJS
+from app.schemas.base import DateAsDateTimeJS, DateTimeJS
 
 
 class EquipmentResponse(BaseModel):
     """Response model for equipment."""
+
     id: int
     name: str
-    type: Optional[str] = None
-    site_id: Optional[int] = None
-    site_name: Optional[str] = None
-    description: Optional[str] = None
+    type: str | None = None
+    site_id: int | None = None
+    site_name: str | None = None
+    description: str | None = None
     active: int = 1
     created_at: DateTimeJS
 
@@ -27,27 +27,30 @@ class EquipmentResponse(BaseModel):
 
 class EquipmentCreate(BaseModel):
     """Request model for creating equipment."""
+
     name: str = Field(..., min_length=1, max_length=200)
-    type: Optional[str] = Field(None, max_length=100)
-    site_id: Optional[int] = None
-    description: Optional[str] = None
+    type: str | None = Field(None, max_length=100)
+    site_id: int | None = None
+    description: str | None = None
 
 
 class EquipmentUpdate(BaseModel):
     """Request model for updating equipment."""
-    name: Optional[str] = Field(None, min_length=1, max_length=200)
-    type: Optional[str] = Field(None, max_length=100)
-    site_id: Optional[int] = None
-    description: Optional[str] = None
-    active: Optional[int] = None
+
+    name: str | None = Field(None, min_length=1, max_length=200)
+    type: str | None = Field(None, max_length=100)
+    site_id: int | None = None
+    description: str | None = None
+    active: int | None = None
 
 
 class EquipmentAssignmentResponse(BaseModel):
     """Response model for equipment assignments."""
+
     id: int
     project_id: int
-    project_name: Optional[str] = None
-    project_site_id: Optional[int] = None
+    project_name: str | None = None
+    project_site_id: int | None = None
     equipment_id: int
     start_date: DateAsDateTimeJS
     end_date: DateAsDateTimeJS
@@ -59,6 +62,7 @@ class EquipmentAssignmentResponse(BaseModel):
 
 class EquipmentAssignmentCreate(BaseModel):
     """Request model for creating equipment assignment."""
+
     equipment_id: int
     start_date: date
     end_date: date
@@ -66,6 +70,7 @@ class EquipmentAssignmentCreate(BaseModel):
 
 class EquipmentAssignmentUpdate(BaseModel):
     """Request model for updating equipment assignment."""
-    equipment_id: Optional[int] = None
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
+
+    equipment_id: int | None = None
+    start_date: date | None = None
+    end_date: date | None = None

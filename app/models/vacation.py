@@ -4,7 +4,7 @@ Maps to the vacations table in PostgreSQL.
 """
 
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Date,
@@ -34,12 +34,8 @@ class Vacation(Base):
     )
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
-    description: Mapped[str] = mapped_column(
-        String(200), default="Vacation", nullable=False
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    description: Mapped[str] = mapped_column(String(200), default="Vacation", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
     staff: Mapped["User"] = relationship("User", back_populates="vacations")

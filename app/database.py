@@ -3,8 +3,8 @@ Database configuration and session management.
 Uses async SQLAlchemy for PostgreSQL connections.
 """
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Optional
 
 from fastapi import Request
 from sqlalchemy.ext.asyncio import (
@@ -14,19 +14,19 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.pool import NullPool
 
 from app.config import get_settings
 
 
 class Base(DeclarativeBase):
     """Base class for all SQLAlchemy models."""
+
     pass
 
 
 # Global engine and session factory (initialized on startup)
-_engine: Optional[AsyncEngine] = None
-_async_session_factory: Optional[async_sessionmaker[AsyncSession]] = None
+_engine: AsyncEngine | None = None
+_async_session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
 def get_engine() -> AsyncEngine:
@@ -45,7 +45,7 @@ def get_engine() -> AsyncEngine:
                 # Tell asyncpg to not apply timezone conversion
                 # Timestamps are stored as UTC in the database
                 "server_settings": {"timezone": "UTC"}
-            }
+            },
         )
     return _engine
 
@@ -67,21 +67,22 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
 async def get_db(request: Request) -> AsyncGenerator[AsyncSession, None]:
     """
     Dependency that provides a database session.
-    
+
     In multi-tenant mode with /t/{slug}/ URLs:
     - Uses tenant's database if request.state.tenant_slug exists
     - Falls back to default database otherwise
-    
+
     Used with FastAPI's Depends() for request-scoped sessions.
     """
     # Check for tenant context (set by ASGI middleware)
-    state = getattr(request, 'state', None)
-    if state and hasattr(state, 'tenant_slug') and state.tenant_slug:
+    state = getattr(request, "state", None)
+    if state and hasattr(state, "tenant_slug") and state.tenant_slug:
         # Use tenant's session factory from the connection manager
         from app.services.tenant_manager import tenant_connection_manager
+
         slug = state.tenant_slug
         session_factory = tenant_connection_manager.get_session_factory(slug)
-        
+
         if session_factory:
             async with session_factory() as session:
                 try:
@@ -91,7 +92,7 @@ async def get_db(request: Request) -> AsyncGenerator[AsyncSession, None]:
                     await session.rollback()
                     raise
             return
-    
+
     # Use default database
     session_factory = get_session_factory()
     async with session_factory() as session:
@@ -109,17 +110,18 @@ async def get_db_readonly(request: Request) -> AsyncGenerator[AsyncSession, None
     Use this for GET endpoints that only read data.
     """
     # Check for tenant context
-    state = getattr(request, 'state', None)
-    if state and hasattr(state, 'tenant_slug') and state.tenant_slug:
+    state = getattr(request, "state", None)
+    if state and hasattr(state, "tenant_slug") and state.tenant_slug:
         from app.services.tenant_manager import tenant_connection_manager
+
         slug = state.tenant_slug
         session_factory = tenant_connection_manager.get_session_factory(slug)
-        
+
         if session_factory:
             async with session_factory() as session:
                 yield session
             return
-    
+
     # Use default database
     session_factory = get_session_factory()
     async with session_factory() as session:
@@ -147,29 +149,30 @@ async def get_db_context() -> AsyncGenerator[AsyncSession, None]:
 async def init_db() -> None:
     """Initialize database connection and verify connectivity."""
     engine = get_engine()
-    
+
     # Test connection
     async with engine.begin() as conn:
         await conn.run_sync(lambda _: None)  # Simple connectivity test
-    
+
     print("Database connection established successfully")
 
 
 async def close_db() -> None:
     """Close database connections on shutdown."""
     global _engine, _async_session_factory
-    
+
     if _engine is not None:
         await _engine.dispose()
         _engine = None
         _async_session_factory = None
-    
+
     print("Database connections closed")
 
 
 # ---------------------------------------------------------
 # Tenant Database Support (for multi-tenant mode)
 # ---------------------------------------------------------
+
 
 class TenantDatabaseManager:
     """
@@ -182,9 +185,7 @@ class TenantDatabaseManager:
         self._session_factories: dict[str, async_sessionmaker[AsyncSession]] = {}
 
     async def get_tenant_session(
-        self, 
-        database_url: str, 
-        tenant_slug: str
+        self, database_url: str, tenant_slug: str
     ) -> AsyncGenerator[AsyncSession, None]:
         """Get a database session for a specific tenant."""
         if tenant_slug not in self._engines:
@@ -195,9 +196,7 @@ class TenantDatabaseManager:
                 max_overflow=5,
                 pool_timeout=30,
                 pool_pre_ping=True,
-                connect_args={
-                    "server_settings": {"timezone": "UTC"}
-                }
+                connect_args={"server_settings": {"timezone": "UTC"}},
             )
             self._session_factories[tenant_slug] = async_sessionmaker(
                 bind=self._engines[tenant_slug],

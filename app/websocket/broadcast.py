@@ -3,7 +3,7 @@ Broadcast helper for sending WebSocket updates from API endpoints.
 
 Usage in routers:
     from app.websocket.broadcast import broadcast_change
-    
+
     # After updating a phase:
     await broadcast_change(
         request=request,
@@ -17,7 +17,7 @@ Usage in routers:
 """
 
 import logging
-from typing import Optional
+
 from fastapi import Request
 
 from app.models.user import User
@@ -29,8 +29,9 @@ logger = logging.getLogger(__name__)
 def get_tenant_from_request(request: Request) -> str:
     """Extract tenant ID from request path."""
     import re
+
     path = request.url.path
-    match = re.match(r'^/t/([a-z0-9][a-z0-9-]*)/', path)
+    match = re.match(r"^/t/([a-z0-9][a-z0-9-]*)/", path)
     if match:
         return match.group(1)
     return "default"
@@ -49,11 +50,11 @@ async def broadcast_change(
     entity_id: int,
     project_id: int,
     action: str,
-    summary: Optional[str] = None,
+    summary: str | None = None,
 ) -> None:
     """
     Broadcast a change event to all connected users in the tenant.
-    
+
     Args:
         request: FastAPI request (used to determine tenant)
         user: The user who made the change
@@ -65,11 +66,13 @@ async def broadcast_change(
     """
     tenant_id = get_tenant_from_request(request)
     user_name = format_user_name(user)
-    
+
     # Debug logging
     online_count = manager.get_online_count(tenant_id)
-    logger.info(f"Broadcasting {entity_type}:{action} to tenant '{tenant_id}' ({online_count} users online)")
-    
+    logger.info(
+        f"Broadcasting {entity_type}:{action} to tenant '{tenant_id}' ({online_count} users online)"
+    )
+
     await manager.broadcast_change(
         tenant_id=tenant_id,
         user_id=user.id,

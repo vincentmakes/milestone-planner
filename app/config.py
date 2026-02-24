@@ -4,7 +4,6 @@ Loads from environment variables and .env file.
 """
 
 from functools import lru_cache
-from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -31,7 +30,7 @@ class Settings(BaseSettings):
     db_name: str = "milestone_dev"
     db_user: str = "milestone_dev_user"
     db_password: str = ""
-    database_url: Optional[str] = None
+    database_url: str | None = None
     db_ssl: bool = False
 
     # Connection pool settings
@@ -46,50 +45,50 @@ class Settings(BaseSettings):
 
     # Multi-tenant
     multi_tenant: bool = False
-    default_tenant: Optional[str] = None
+    default_tenant: str | None = None
 
     # Master database (for multi-tenant mode)
-    master_db_host: Optional[str] = None
+    master_db_host: str | None = None
     master_db_port: int = 5432
     master_db_name: str = "milestone_master"
-    master_db_user: Optional[str] = None
-    master_db_password: Optional[str] = None
+    master_db_user: str | None = None
+    master_db_password: str | None = None
 
     # PostgreSQL admin credentials (for provisioning tenant databases)
     # Needs CREATEROLE and CREATEDB privileges
-    pg_admin_user: Optional[str] = None
-    pg_admin_password: Optional[str] = None
+    pg_admin_user: str | None = None
+    pg_admin_password: str | None = None
 
     # External APIs
     nager_api_url: str = "https://date.nager.at/api/v3"
-    
+
     # HTTP Proxy (for external API calls)
     # Option 1: Direct proxy URL
-    http_proxy: Optional[str] = None  # e.g., "http://proxy.company.com:8080"
-    https_proxy: Optional[str] = None  # e.g., "http://proxy.company.com:8080"
+    http_proxy: str | None = None  # e.g., "http://proxy.company.com:8080"
+    https_proxy: str | None = None  # e.g., "http://proxy.company.com:8080"
     # Proxy authentication (if required)
-    proxy_username: Optional[str] = None
-    proxy_password: Optional[str] = None
+    proxy_username: str | None = None
+    proxy_password: str | None = None
     # Option 2: PAC file URL (will be parsed to find proxy for each request)
-    proxy_pac_url: Optional[str] = None  # e.g., "http://mcproxy.sulzer.com:8081/proxy.pac"
+    proxy_pac_url: str | None = None  # e.g., "http://mcproxy.sulzer.com:8081/proxy.pac"
     # SSL verification (set to false if proxy does SSL inspection and you don't have the CA cert)
     proxy_verify_ssl: bool = True
     # Path to custom CA certificate for SSL verification (for corporate proxies)
-    proxy_ca_cert: Optional[str] = None  # e.g., "/path/to/sulzer-ca.crt"
+    proxy_ca_cert: str | None = None  # e.g., "/path/to/sulzer-ca.crt"
 
     # Cookie security (set True when behind HTTPS)
     secure_cookies: bool = False
 
     # CORS allowed origins (comma-separated, e.g. "https://app.example.com,https://admin.example.com")
     # If not set, allows localhost origins in debug mode only
-    cors_origins: Optional[str] = None
+    cors_origins: str | None = None
 
     # Microsoft Entra SSO
     sso_enabled: bool = False
-    sso_client_id: Optional[str] = None
-    sso_client_secret: Optional[str] = None
-    sso_tenant_id: Optional[str] = None
-    sso_redirect_uri: Optional[str] = None
+    sso_client_id: str | None = None
+    sso_client_secret: str | None = None
+    sso_tenant_id: str | None = None
+    sso_redirect_uri: str | None = None
 
     @property
     def async_database_url(self) -> str:
@@ -123,7 +122,7 @@ class Settings(BaseSettings):
         )
 
     @property
-    def master_async_database_url(self) -> Optional[str]:
+    def master_async_database_url(self) -> str | None:
         """Build async master database URL for multi-tenant mode."""
         if not self.multi_tenant:
             return None

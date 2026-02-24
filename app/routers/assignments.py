@@ -24,26 +24,25 @@ Matches Node.js routes:
 """
 
 from datetime import date
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_superuser
-from app.models.user import User
-from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.assignment import (
-    ProjectAssignment,
     PhaseStaffAssignment,
+    ProjectAssignment,
     SubphaseStaffAssignment,
 )
 from app.models.equipment import EquipmentAssignment
+from app.models.project import Project
+from app.models.user import User
 from app.schemas.base import (
-    serialize_datetime_js,
     serialize_date_as_datetime_js,
+    serialize_datetime_js,
 )
 from app.websocket.broadcast import broadcast_change
 
@@ -54,8 +53,10 @@ router = APIRouter(tags=["assignments"])
 # Request/Response Models
 # ---------------------------------------------------------
 
+
 class ProjectStaffAssignmentCreate(BaseModel):
     """Request to assign staff to a project."""
+
     staff_id: int
     allocation: int = 100
     start_date: date
@@ -64,6 +65,7 @@ class ProjectStaffAssignmentCreate(BaseModel):
 
 class ProjectStaffAssignmentUpdate(BaseModel):
     """Request to update a project staff assignment."""
+
     allocation: int
     start_date: date
     end_date: date
@@ -71,30 +73,35 @@ class ProjectStaffAssignmentUpdate(BaseModel):
 
 class PhaseStaffAssignmentCreate(BaseModel):
     """Request to assign staff to a phase."""
+
     staff_id: int
     project_id: int
-    allocation: Optional[int] = 100
+    allocation: int | None = 100
 
 
 class PhaseStaffAssignmentUpdate(BaseModel):
     """Request to update a phase staff assignment."""
+
     allocation: int
 
 
 class SubphaseStaffAssignmentCreate(BaseModel):
     """Request to assign staff to a subphase."""
+
     staff_id: int
     project_id: int
-    allocation: Optional[int] = 100
+    allocation: int | None = 100
 
 
 class SubphaseStaffAssignmentUpdate(BaseModel):
     """Request to update a subphase staff assignment."""
+
     allocation: int
 
 
 class EquipmentAssignmentCreate(BaseModel):
     """Request to assign equipment to a project."""
+
     equipment_id: int
     start_date: date
     end_date: date
@@ -102,6 +109,7 @@ class EquipmentAssignmentCreate(BaseModel):
 
 class EquipmentAssignmentUpdate(BaseModel):
     """Request to update an equipment assignment."""
+
     start_date: date
     end_date: date
 
@@ -109,6 +117,7 @@ class EquipmentAssignmentUpdate(BaseModel):
 # ---------------------------------------------------------
 # Project Staff Assignment Routes
 # ---------------------------------------------------------
+
 
 @router.get("/staff/{staff_id}/assignments")
 async def get_staff_assignments(
@@ -118,7 +127,7 @@ async def get_staff_assignments(
 ):
     """
     Get all project assignments for a staff member.
-    
+
     Matches: GET /api/staff/:id/assignments
     """
     result = await db.execute(
@@ -132,7 +141,7 @@ async def get_staff_assignments(
         .order_by(ProjectAssignment.start_date)
     )
     rows = result.all()
-    
+
     return [
         {
             "id": r[0].id,
@@ -159,7 +168,7 @@ async def create_project_staff_assignment(
 ):
     """
     Assign staff to a project.
-    
+
     Matches: POST /api/projects/:projectId/staff
     """
     assignment = ProjectAssignment(
@@ -172,7 +181,7 @@ async def create_project_staff_assignment(
     db.add(assignment)
     await db.commit()
     await db.refresh(assignment)
-    
+
     # Broadcast change
     await broadcast_change(
         request=request,
@@ -182,7 +191,7 @@ async def create_project_staff_assignment(
         project_id=project_id,
         action="create",
     )
-    
+
     return {"id": assignment.id, "success": True}
 
 
@@ -196,25 +205,25 @@ async def update_project_staff_assignment(
 ):
     """
     Update a project staff assignment.
-    
+
     Matches: PUT /api/assignments/:id
     """
     result = await db.execute(
         select(ProjectAssignment).where(ProjectAssignment.id == assignment_id)
     )
     assignment = result.scalar_one_or_none()
-    
+
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
-    
+
     project_id = assignment.project_id
-    
+
     assignment.allocation = data.allocation
     assignment.start_date = data.start_date
     assignment.end_date = data.end_date
-    
+
     await db.commit()
-    
+
     # Broadcast change
     await broadcast_change(
         request=request,
@@ -224,7 +233,7 @@ async def update_project_staff_assignment(
         project_id=project_id,
         action="update",
     )
-    
+
     return {"success": True}
 
 
@@ -237,22 +246,22 @@ async def delete_project_staff_assignment(
 ):
     """
     Delete a project staff assignment.
-    
+
     Matches: DELETE /api/assignments/:id
     """
     result = await db.execute(
         select(ProjectAssignment).where(ProjectAssignment.id == assignment_id)
     )
     assignment = result.scalar_one_or_none()
-    
+
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
-    
+
     project_id = assignment.project_id
-    
+
     await db.delete(assignment)
     await db.commit()
-    
+
     # Broadcast change
     await broadcast_change(
         request=request,
@@ -262,13 +271,14 @@ async def delete_project_staff_assignment(
         project_id=project_id,
         action="delete",
     )
-    
+
     return {"success": True}
 
 
 # ---------------------------------------------------------
 # Phase Staff Assignment Routes
 # ---------------------------------------------------------
+
 
 @router.post("/phases/{phase_id}/staff")
 async def create_phase_staff_assignment(
@@ -280,7 +290,7 @@ async def create_phase_staff_assignment(
 ):
     """
     Assign staff to a phase.
-    
+
     Matches: POST /api/phases/:phaseId/staff
     """
     assignment = PhaseStaffAssignment(
@@ -292,7 +302,7 @@ async def create_phase_staff_assignment(
     db.add(assignment)
     await db.commit()
     await db.refresh(assignment)
-    
+
     # Get the assignment with staff details
     result = await db.execute(
         select(
@@ -304,7 +314,7 @@ async def create_phase_staff_assignment(
         .where(PhaseStaffAssignment.id == assignment.id)
     )
     row = result.first()
-    
+
     # Broadcast change
     await broadcast_change(
         request=request,
@@ -314,7 +324,7 @@ async def create_phase_staff_assignment(
         project_id=data.project_id,
         action="create",
     )
-    
+
     return {
         "id": row[0].id,
         "phase_id": row[0].phase_id,
@@ -336,23 +346,23 @@ async def update_phase_staff_assignment(
 ):
     """
     Update a phase staff assignment.
-    
+
     Matches: PUT /api/phase-staff/:id
     """
     result = await db.execute(
         select(PhaseStaffAssignment).where(PhaseStaffAssignment.id == assignment_id)
     )
     assignment = result.scalar_one_or_none()
-    
+
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
-    
+
     project_id = assignment.project_id
-    
+
     assignment.allocation = data.allocation
-    
+
     await db.commit()
-    
+
     # Broadcast change
     await broadcast_change(
         request=request,
@@ -362,7 +372,7 @@ async def update_phase_staff_assignment(
         project_id=project_id,
         action="update",
     )
-    
+
     return {"success": True}
 
 
@@ -375,22 +385,22 @@ async def delete_phase_staff_assignment(
 ):
     """
     Delete a phase staff assignment.
-    
+
     Matches: DELETE /api/phase-staff/:id
     """
     result = await db.execute(
         select(PhaseStaffAssignment).where(PhaseStaffAssignment.id == assignment_id)
     )
     assignment = result.scalar_one_or_none()
-    
+
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
-    
+
     project_id = assignment.project_id
-    
+
     await db.delete(assignment)
     await db.commit()
-    
+
     # Broadcast change
     await broadcast_change(
         request=request,
@@ -400,13 +410,14 @@ async def delete_phase_staff_assignment(
         project_id=project_id,
         action="delete",
     )
-    
+
     return {"success": True}
 
 
 # ---------------------------------------------------------
 # Subphase Staff Assignment Routes
 # ---------------------------------------------------------
+
 
 @router.post("/subphases/{subphase_id}/staff")
 async def create_subphase_staff_assignment(
@@ -418,7 +429,7 @@ async def create_subphase_staff_assignment(
 ):
     """
     Assign staff to a subphase.
-    
+
     Matches: POST /api/subphases/:subphaseId/staff
     """
     assignment = SubphaseStaffAssignment(
@@ -430,7 +441,7 @@ async def create_subphase_staff_assignment(
     db.add(assignment)
     await db.commit()
     await db.refresh(assignment)
-    
+
     # Get the assignment with staff details
     result = await db.execute(
         select(
@@ -442,7 +453,7 @@ async def create_subphase_staff_assignment(
         .where(SubphaseStaffAssignment.id == assignment.id)
     )
     row = result.first()
-    
+
     # Broadcast change
     await broadcast_change(
         request=request,
@@ -452,7 +463,7 @@ async def create_subphase_staff_assignment(
         project_id=data.project_id,
         action="create",
     )
-    
+
     return {
         "id": row[0].id,
         "subphase_id": row[0].subphase_id,
@@ -474,23 +485,23 @@ async def update_subphase_staff_assignment(
 ):
     """
     Update a subphase staff assignment.
-    
+
     Matches: PUT /api/subphase-staff/:id
     """
     result = await db.execute(
         select(SubphaseStaffAssignment).where(SubphaseStaffAssignment.id == assignment_id)
     )
     assignment = result.scalar_one_or_none()
-    
+
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
-    
+
     project_id = assignment.project_id
-    
+
     assignment.allocation = data.allocation
-    
+
     await db.commit()
-    
+
     # Broadcast change
     await broadcast_change(
         request=request,
@@ -500,7 +511,7 @@ async def update_subphase_staff_assignment(
         project_id=project_id,
         action="update",
     )
-    
+
     return {"success": True}
 
 
@@ -513,22 +524,22 @@ async def delete_subphase_staff_assignment(
 ):
     """
     Delete a subphase staff assignment.
-    
+
     Matches: DELETE /api/subphase-staff/:id
     """
     result = await db.execute(
         select(SubphaseStaffAssignment).where(SubphaseStaffAssignment.id == assignment_id)
     )
     assignment = result.scalar_one_or_none()
-    
+
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
-    
+
     project_id = assignment.project_id
-    
+
     await db.delete(assignment)
     await db.commit()
-    
+
     # Broadcast change
     await broadcast_change(
         request=request,
@@ -538,13 +549,14 @@ async def delete_subphase_staff_assignment(
         project_id=project_id,
         action="delete",
     )
-    
+
     return {"success": True}
 
 
 # ---------------------------------------------------------
 # Equipment Assignment Routes
 # ---------------------------------------------------------
+
 
 @router.post("/projects/{project_id}/equipment")
 async def create_equipment_assignment(
@@ -556,7 +568,7 @@ async def create_equipment_assignment(
 ):
     """
     Assign equipment to a project.
-    
+
     Matches: POST /api/projects/:projectId/equipment
     """
     assignment = EquipmentAssignment(
@@ -568,7 +580,7 @@ async def create_equipment_assignment(
     db.add(assignment)
     await db.commit()
     await db.refresh(assignment)
-    
+
     # Broadcast change
     await broadcast_change(
         request=request,
@@ -578,7 +590,7 @@ async def create_equipment_assignment(
         project_id=project_id,
         action="create",
     )
-    
+
     return {"id": assignment.id, "success": True}
 
 
@@ -592,24 +604,24 @@ async def update_equipment_assignment(
 ):
     """
     Update an equipment assignment.
-    
+
     Matches: PUT /api/equipment-assignments/:id
     """
     result = await db.execute(
         select(EquipmentAssignment).where(EquipmentAssignment.id == assignment_id)
     )
     assignment = result.scalar_one_or_none()
-    
+
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
-    
+
     project_id = assignment.project_id
-    
+
     assignment.start_date = data.start_date
     assignment.end_date = data.end_date
-    
+
     await db.commit()
-    
+
     # Broadcast change
     await broadcast_change(
         request=request,
@@ -619,7 +631,7 @@ async def update_equipment_assignment(
         project_id=project_id,
         action="update",
     )
-    
+
     return {"success": True}
 
 
@@ -632,22 +644,22 @@ async def delete_equipment_assignment(
 ):
     """
     Delete an equipment assignment.
-    
+
     Matches: DELETE /api/equipment-assignments/:id
     """
     result = await db.execute(
         select(EquipmentAssignment).where(EquipmentAssignment.id == assignment_id)
     )
     assignment = result.scalar_one_or_none()
-    
+
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
-    
+
     project_id = assignment.project_id
-    
+
     await db.delete(assignment)
     await db.commit()
-    
+
     # Broadcast change
     await broadcast_change(
         request=request,
@@ -657,5 +669,5 @@ async def delete_equipment_assignment(
         project_id=project_id,
         action="delete",
     )
-    
+
     return {"success": True}

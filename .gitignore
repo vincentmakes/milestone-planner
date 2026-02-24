@@ -28,6 +28,7 @@ dist/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+*.tsbuildinfo
 
 # Data and uploads
 /data

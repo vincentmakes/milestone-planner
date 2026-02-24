@@ -4,7 +4,7 @@ Maps to the notes table in PostgreSQL.
 """
 
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Date,
@@ -20,7 +20,6 @@ from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.site import Site
-    from app.models.user import User
 
 
 class Note(Base):
@@ -34,7 +33,7 @@ class Note(Base):
         ForeignKey("sites.id", ondelete="CASCADE"),
         nullable=False,
     )
-    staff_id: Mapped[Optional[int]] = mapped_column(
+    staff_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
@@ -42,9 +41,7 @@ class Note(Base):
     date: Mapped[date] = mapped_column(Date, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     type: Mapped[str] = mapped_column(String(50), default="general", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships - no back_populates since Site.notes relationship removed
     site: Mapped["Site"] = relationship("Site")
