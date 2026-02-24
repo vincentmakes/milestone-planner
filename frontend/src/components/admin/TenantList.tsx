@@ -112,7 +112,7 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
   };
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', {
+    return new Date(dateStr).toLocaleDateString(undefined, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -164,6 +164,7 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
                 <th>Slug</th>
                 <th>Status</th>
                 <th>Database</th>
+                <th>Organization</th>
                 <th>Admin Email</th>
                 <th>Plan</th>
                 <th>Created</th>
@@ -173,7 +174,7 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
             <tbody>
               {tenants.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className={styles.emptyMessage}>
+                  <td colSpan={9} className={styles.emptyMessage}>
                     No tenants found. Create your first tenant to get started.
                   </td>
                 </tr>
@@ -196,6 +197,20 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
                     </td>
                     <td>{getStatusBadge(tenant.status)}</td>
                     <td>{getDbStatusBadge(tenant.database_status)}</td>
+                    <td>
+                      {tenant.organization_name ? (
+                        <span style={{ fontSize: '0.8125rem' }}>
+                          {tenant.organization_name}
+                          {tenant.required_group_ids && tenant.required_group_ids.length > 0 && (
+                            <span style={{ marginLeft: '0.25rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                              ({tenant.required_group_ids.length} groups)
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>—</span>
+                      )}
+                    </td>
                     <td>{tenant.admin_email}</td>
                     <td>{tenant.plan}</td>
                     <td>{formatDate(tenant.created_at)}</td>

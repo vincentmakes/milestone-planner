@@ -62,6 +62,20 @@ class Settings(BaseSettings):
 
     # External APIs
     nager_api_url: str = "https://date.nager.at/api/v3"
+    
+    # HTTP Proxy (for external API calls)
+    # Option 1: Direct proxy URL
+    http_proxy: Optional[str] = None  # e.g., "http://proxy.company.com:8080"
+    https_proxy: Optional[str] = None  # e.g., "http://proxy.company.com:8080"
+    # Proxy authentication (if required)
+    proxy_username: Optional[str] = None
+    proxy_password: Optional[str] = None
+    # Option 2: PAC file URL (will be parsed to find proxy for each request)
+    proxy_pac_url: Optional[str] = None  # e.g., "http://mcproxy.sulzer.com:8081/proxy.pac"
+    # SSL verification (set to false if proxy does SSL inspection and you don't have the CA cert)
+    proxy_verify_ssl: bool = True
+    # Path to custom CA certificate for SSL verification (for corporate proxies)
+    proxy_ca_cert: Optional[str] = None  # e.g., "/path/to/sulzer-ca.crt"
 
     # Microsoft Entra SSO
     sso_enabled: bool = False

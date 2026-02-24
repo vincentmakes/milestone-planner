@@ -44,7 +44,8 @@ type ModalType =
   | 'addEquipment'
   | 'editEquipment'
   | 'bankHoliday'
-  | 'customHoliday';
+  | 'customHoliday'
+  | 'companyEvent';
 
 // =============================================================================
 // STATE INTERFACE

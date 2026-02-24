@@ -1,6 +1,6 @@
 /**
  * TenantDetailsModal
- * Modal showing detailed tenant information
+ * Modal showing detailed tenant information including organization membership
  */
 
 import { useState, useEffect } from 'react';
@@ -66,7 +66,7 @@ export function TenantDetailsModal({ tenantId, onClose }: TenantDetailsModalProp
   };
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', {
+    return new Date(dateStr).toLocaleDateString(undefined, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -147,6 +147,44 @@ export function TenantDetailsModal({ tenantId, onClose }: TenantDetailsModalProp
                   <span className={styles.infoLabel}>Created</span>
                   <span className={styles.infoValue}>{formatDate(tenant.created_at)}</span>
                 </div>
+              </div>
+
+              {/* Organization Section */}
+              <h4 className={styles.sectionTitle}>Organization & SSO</h4>
+              <div className={styles.infoGrid}>
+                <div className={styles.infoRow}>
+                  <span className={styles.infoLabel}>Organization</span>
+                  <span className={styles.infoValue}>
+                    {tenant.organization_name ? (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {tenant.organization_name}
+                        <span className={`${styles.badge} ${styles.badgeInfo}`}>SSO via Org</span>
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)' }}>Not assigned</span>
+                    )}
+                  </span>
+                </div>
+                {tenant.organization_id && (
+                  <>
+                    <div className={styles.infoRow}>
+                      <span className={styles.infoLabel}>Required Groups</span>
+                      <span className={styles.infoValue}>
+                        {tenant.required_group_ids && tenant.required_group_ids.length > 0 ? (
+                          <span>{tenant.required_group_ids.length} group(s) configured</span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>None (all org users allowed)</span>
+                        )}
+                      </span>
+                    </div>
+                    <div className={styles.infoRow}>
+                      <span className={styles.infoLabel}>Group Mode</span>
+                      <span className={styles.infoValue}>
+                        {tenant.group_membership_mode === 'all' ? 'All groups required' : 'Any group allowed'}
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Access URL */}

@@ -105,6 +105,9 @@ export const STORAGE_KEYS = {
   SIDEBAR_COLLAPSED: 'milestone_sidebar_collapsed',
   RESOURCE_PANEL_COLLAPSED: 'milestone_resource_panel_collapsed',
   
+  // Project Order (per site)
+  PROJECT_ORDER_PREFIX: 'milestone_project_order_site_',
+  
   // View State (persisted by Zustand)
   VIEW_STATE: 'milestone-app-storage',
   
@@ -114,6 +117,58 @@ export const STORAGE_KEYS = {
   LEGACY_VIEW_MODE: 'rd_pref_view_mode',
   LEGACY_VIEW_STATE: 'milestone_view_state',
 } as const;
+
+// =============================================================================
+// PROJECT ORDER STORAGE
+// =============================================================================
+
+/**
+ * Get the project order for a specific site
+ * Returns an array of project IDs in the user's preferred order
+ */
+export function getProjectOrder(siteId: number): number[] {
+  const key = `${STORAGE_KEYS.PROJECT_ORDER_PREFIX}${siteId}`;
+  return getLocalStorage<number[]>(key, []);
+}
+
+/**
+ * Set the project order for a specific site
+ */
+export function setProjectOrder(siteId: number, projectIds: number[]): void {
+  const key = `${STORAGE_KEYS.PROJECT_ORDER_PREFIX}${siteId}`;
+  setLocalStorage(key, projectIds);
+}
+
+/**
+ * Sort projects by user's preferred order (projects not in order list go at the end)
+ */
+export function sortProjectsByOrder<T extends { id: number }>(projects: T[], siteId: number): T[] {
+  const order = getProjectOrder(siteId);
+  if (order.length === 0) {
+    return projects; // No custom order, return as-is
+  }
+  
+  // Create a map of project ID to its position in the order array
+  const orderMap = new Map<number, number>();
+  order.forEach((id, index) => orderMap.set(id, index));
+  
+  // Sort projects: those in order list first (by their position), then the rest
+  return [...projects].sort((a, b) => {
+    const orderA = orderMap.get(a.id);
+    const orderB = orderMap.get(b.id);
+    
+    // Both have custom order
+    if (orderA !== undefined && orderB !== undefined) {
+      return orderA - orderB;
+    }
+    // Only A has custom order - A comes first
+    if (orderA !== undefined) return -1;
+    // Only B has custom order - B comes first
+    if (orderB !== undefined) return 1;
+    // Neither has custom order - maintain original order
+    return 0;
+  });
+}
 
 // =============================================================================
 // MIGRATION HELPERS
@@ -143,18 +198,106 @@ export function migrateLegacyStorage(): void {
 // THEME STORAGE
 // =============================================================================
 
-export type Theme = 'dark' | 'light';
+/**
+ * Available themes:
+ * - dark: Default Milestone dark theme
+ * - light: Default Milestone light theme
+ * - sulzer-dark: S-Theme dark variant
+ * - sulzer-light: S-Theme light variant
+ */
+export type Theme = 'dark' | 'light' | 'sulzer-dark' | 'sulzer-light';
+export type ThemeFamily = 'default' | 'sulzer';
+
+export interface ThemeInfo {
+  id: Theme;
+  name: string;
+  description: string;
+  family: ThemeFamily;
+  mode: 'dark' | 'light';
+}
+
+export interface ThemeFamilyInfo {
+  id: ThemeFamily;
+  name: string;
+  description: string;
+}
+
+export const THEME_FAMILIES: ThemeFamilyInfo[] = [
+  {
+    id: 'default',
+    name: 'Default',
+    description: 'Original Milestone theme',
+  },
+  {
+    id: 'sulzer',
+    name: 'S-Theme',
+    description: 'Alternative color scheme',
+  },
+];
+
+export const THEMES: ThemeInfo[] = [
+  {
+    id: 'dark',
+    name: 'Default Dark',
+    description: 'Original Milestone dark theme',
+    family: 'default',
+    mode: 'dark',
+  },
+  {
+    id: 'light',
+    name: 'Default Light',
+    description: 'Original Milestone light theme',
+    family: 'default',
+    mode: 'light',
+  },
+  {
+    id: 'sulzer-dark',
+    name: 'S-Theme Dark',
+    description: 'Alternative dark theme',
+    family: 'sulzer',
+    mode: 'dark',
+  },
+  {
+    id: 'sulzer-light',
+    name: 'S-Theme Light',
+    description: 'Alternative light theme',
+    family: 'sulzer',
+    mode: 'light',
+  },
+];
 
 /**
  * Get the current theme preference
  */
 export function getTheme(): Theme {
   const stored = localStorage.getItem(STORAGE_KEYS.PREF_THEME);
-  if (stored === 'light' || stored === 'dark') {
+  if (stored === 'light' || stored === 'dark' || stored === 'sulzer-dark' || stored === 'sulzer-light') {
     return stored;
   }
   // Default to dark theme
   return 'dark';
+}
+
+/**
+ * Get theme info by ID
+ */
+export function getThemeInfo(theme: Theme): ThemeInfo {
+  return THEMES.find(t => t.id === theme) || THEMES[0];
+}
+
+/**
+ * Get all themes in a specific family
+ */
+export function getThemesByFamily(family: 'default' | 'sulzer'): ThemeInfo[] {
+  return THEMES.filter(t => t.family === family);
+}
+
+/**
+ * Check if theme is a dark mode theme
+ */
+export function isDarkTheme(theme: Theme): boolean {
+  const info = getThemeInfo(theme);
+  return info.mode === 'dark';
 }
 
 /**
@@ -166,13 +309,70 @@ export function setTheme(theme: Theme): void {
 }
 
 /**
- * Toggle between light and dark theme
+ * Toggle between light and dark mode within the same theme family
+ */
+export function toggleThemeMode(): Theme {
+  const current = getTheme();
+  const currentInfo = getThemeInfo(current);
+  
+  // Find the opposite mode theme in the same family
+  const newTheme = THEMES.find(
+    t => t.family === currentInfo.family && t.mode !== currentInfo.mode
+  );
+  
+  if (newTheme) {
+    setTheme(newTheme.id);
+    return newTheme.id;
+  }
+  
+  // Fallback to simple toggle
+  const fallback = current === 'dark' ? 'light' : 'dark';
+  setTheme(fallback);
+  return fallback;
+}
+
+/**
+ * Legacy toggle function for backward compatibility
+ * @deprecated Use toggleThemeMode() instead
  */
 export function toggleTheme(): Theme {
+  return toggleThemeMode();
+}
+
+/**
+ * Get current theme family
+ */
+export function getThemeFamily(): ThemeFamily {
+  const theme = getTheme();
+  const info = getThemeInfo(theme);
+  return info.family;
+}
+
+/**
+ * Set theme family (switches to the same mode in the new family)
+ */
+export function setThemeFamily(family: ThemeFamily): Theme {
   const current = getTheme();
-  const newTheme = current === 'dark' ? 'light' : 'dark';
-  setTheme(newTheme);
-  return newTheme;
+  const currentInfo = getThemeInfo(current);
+  
+  // Find the theme in the new family with the same mode
+  const newTheme = THEMES.find(
+    t => t.family === family && t.mode === currentInfo.mode
+  );
+  
+  if (newTheme) {
+    setTheme(newTheme.id);
+    return newTheme.id;
+  }
+  
+  // Fallback to dark theme in the family
+  const fallback = THEMES.find(t => t.family === family && t.mode === 'dark');
+  if (fallback) {
+    setTheme(fallback.id);
+    return fallback.id;
+  }
+  
+  return current;
 }
 
 /**

@@ -4,6 +4,7 @@
  * Hook for handling drag-drop of staff/equipment from ResourcePanel
  * onto projects/phases/subphases in the Gantt chart.
  * Creates assignments with a default 5-day duration.
+ * Staff assignments use the staff member's max_capacity as default allocation.
  */
 
 import { useCallback } from 'react';
@@ -13,7 +14,6 @@ import { createStaffAssignment, createEquipmentAssignment, loadAllProjects } fro
 import { format, addDays } from 'date-fns';
 
 const DEFAULT_DURATION_DAYS = 5;
-const DEFAULT_ALLOCATION = 100;
 
 export function useResourceDragDrop() {
   const resourceDrag = useUIStore((s) => s.resourceDrag);
@@ -22,6 +22,15 @@ export function useResourceDragDrop() {
   const endResourceDrag = useUIStore((s) => s.endResourceDrag);
   const setProjects = useAppStore((s) => s.setProjects);
   const currentUser = useAppStore((s) => s.currentUser);
+  const staff = useAppStore((s) => s.staff);
+
+  /**
+   * Get the default allocation for a staff member (their max_capacity or 100)
+   */
+  const getStaffDefaultAllocation = useCallback((staffId: number): number => {
+    const staffMember = staff.find(s => s.id === staffId);
+    return staffMember?.max_capacity ?? 100;
+  }, [staff]);
 
   /**
    * Start dragging a resource
@@ -112,9 +121,11 @@ export function useResourceDragDrop() {
 
     try {
       if (type === 'staff') {
+        // Use staff's max_capacity as default allocation
+        const defaultAllocation = getStaffDefaultAllocation(resourceId);
         await createStaffAssignment({
           staff_id: resourceId,
-          allocation: DEFAULT_ALLOCATION,
+          allocation: defaultAllocation,
           start_date: startDate,
           end_date: endDate,
           project_id: subphaseId ? undefined : (phaseId ? undefined : projectId),
@@ -141,7 +152,7 @@ export function useResourceDragDrop() {
       endResourceDrag();
       document.body.classList.remove('resource-dragging');
     }
-  }, [resourceDrag, endResourceDrag, setProjects]);
+  }, [resourceDrag, endResourceDrag, setProjects, getStaffDefaultAllocation]);
 
   /**
    * Handle drag end (cleanup)
@@ -182,9 +193,9 @@ export function useResourceDragDrop() {
     handleDrop,
     handleDragEnd,
     calculateDateFromPosition,
+    getStaffDefaultAllocation,
     
     // Constants
     DEFAULT_DURATION_DAYS,
-    DEFAULT_ALLOCATION,
   };
 }

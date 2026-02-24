@@ -9,10 +9,15 @@ import { differenceInDays, eachDayOfInterval, isWeekend, parseISO, format } from
 import type { Phase, Subphase, Project } from '@/types';
 import styles from './ShiftTooltip.module.css';
 
+interface StaffInfo {
+  name: string;
+  allocation: number;
+}
+
 interface TooltipData {
-  type: 'phase' | 'subphase';
+  type: 'phase' | 'subphase' | 'project';
   title: string;
-  projectName: string;
+  projectName?: string;  // Only for phase/subphase
   parentName?: string;
   startDate: string;
   endDate: string;
@@ -21,8 +26,13 @@ interface TooltipData {
   workDays: number;
   totalDays: number;
   holidays: number;
+  staff: StaffInfo[];
   x: number;
   y: number;
+  // Project-specific
+  customer?: string | null;
+  pmName?: string | null;
+  confirmed?: boolean;
 }
 
 // Calculate work days excluding weekends and holidays
@@ -99,12 +109,18 @@ function getEffectiveCompletion(item: Phase | Subphase): { completion: number | 
   return { completion: item.completion ?? null, isCalculated: false };
 }
 
-// Format date range nicely
+// Format date range nicely using browser locale
 function formatDateRange(startDate: string, endDate: string): string {
   const start = parseISO(startDate);
   const end = parseISO(endDate);
   
-  return `${format(start, 'MMM d, yyyy')} - ${format(end, 'MMM d, yyyy')}`;
+  const formatter = new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  
+  return `${formatter.format(start)} - ${formatter.format(end)}`;
 }
 
 // Find project by phase ID
@@ -213,6 +229,12 @@ export function ShiftTooltip() {
       );
       const completionResult = getEffectiveCompletion(phase);
       
+      // Get staff assignments for this phase
+      const staff: StaffInfo[] = (phase.staffAssignments ?? []).map(a => ({
+        name: a.staff_name || `Staff #${a.staff_id}`,
+        allocation: a.allocation,
+      }));
+      
       setTooltipData({
         type: 'phase',
         title: phase.name,
@@ -224,6 +246,7 @@ export function ShiftTooltip() {
         workDays,
         totalDays,
         holidays,
+        staff,
         x,
         y,
       });
@@ -243,6 +266,12 @@ export function ShiftTooltip() {
       );
       const completionResult = getEffectiveCompletion(subphase);
       
+      // Get staff assignments for this subphase
+      const staff: StaffInfo[] = (subphase.staffAssignments ?? []).map(a => ({
+        name: a.staff_name || `Staff #${a.staff_id}`,
+        allocation: a.allocation,
+      }));
+      
       setTooltipData({
         type: 'subphase',
         title: subphase.name,
@@ -255,6 +284,80 @@ export function ShiftTooltip() {
         workDays,
         totalDays,
         holidays,
+        staff,
+        x,
+        y,
+      });
+    }
+  }, [projects, bankHolidayDates]);
+
+  // Show tooltip for a project bar
+  const showProjectTooltip = useCallback((projectId: number, x: number, y: number) => {
+    const project = projects.find(p => p.id === projectId);
+    
+    if (project) {
+      // Calculate project dates from phases if not set
+      const startDate = project.start_date || (project.phases?.[0]?.start_date ?? '');
+      const endDate = project.end_date || (project.phases?.reduce((latest, p) => 
+        p.end_date > latest ? p.end_date : latest, ''
+      ) ?? '');
+      
+      if (!startDate || !endDate) return;
+      
+      const { totalDays, workDays, holidays } = calculateDurationStats(
+        startDate, 
+        endDate, 
+        bankHolidayDates
+      );
+      
+      // Get all staff assignments for the project (project-level)
+      const staff: StaffInfo[] = (project.staffAssignments ?? []).map(a => ({
+        name: a.staff_name || `Staff #${a.staff_id}`,
+        allocation: a.allocation,
+      }));
+      
+      // Calculate overall project completion from phases
+      let completion: number | null = null;
+      let isCalculatedCompletion = false;
+      const phasesWithCompletion = (project.phases ?? []).filter(p => {
+        const result = getEffectiveCompletion(p);
+        return result.completion !== null;
+      });
+      
+      if (phasesWithCompletion.length > 0) {
+        let weightedSum = 0;
+        let totalWeight = 0;
+        
+        for (const phase of project.phases ?? []) {
+          const result = getEffectiveCompletion(phase);
+          const start = parseISO(phase.start_date);
+          const end = parseISO(phase.end_date);
+          const days = Math.max(1, differenceInDays(end, start) + 1);
+          const comp = result.completion ?? 0;
+          weightedSum += comp * days;
+          totalWeight += days;
+        }
+        
+        if (totalWeight > 0) {
+          completion = Math.round(weightedSum / totalWeight);
+          isCalculatedCompletion = true;
+        }
+      }
+      
+      setTooltipData({
+        type: 'project',
+        title: project.name,
+        startDate,
+        endDate,
+        completion,
+        isCalculatedCompletion,
+        workDays,
+        totalDays,
+        holidays,
+        staff,
+        customer: project.customer,
+        pmName: project.pm_name,
+        confirmed: project.confirmed,
         x,
         y,
       });
@@ -282,8 +385,8 @@ export function ShiftTooltip() {
       }
       
       // Find the bar element - must be a direct bar element, not just within a row
-      // The bar has data-phase-id or data-subphase-id directly on it
-      const bar = target.closest('[data-phase-id], [data-subphase-id]') as HTMLElement;
+      // The bar has data-phase-id, data-subphase-id, or data-project-id directly on it
+      const bar = target.closest('[data-phase-id], [data-subphase-id], [data-project-id]') as HTMLElement;
       
       if (!bar) {
         // Not over a bar, hide tooltip
@@ -326,11 +429,14 @@ export function ShiftTooltip() {
       currentBarRef.current = bar;
       const phaseId = bar.dataset.phaseId;
       const subphaseId = bar.dataset.subphaseId;
+      const projectId = bar.dataset.projectId;
       
       if (phaseId) {
         showPhaseTooltip(parseInt(phaseId), e.clientX, e.clientY);
       } else if (subphaseId) {
         showSubphaseTooltip(parseInt(subphaseId), e.clientX, e.clientY);
+      } else if (projectId) {
+        showProjectTooltip(parseInt(projectId), e.clientX, e.clientY);
       }
     };
     
@@ -339,7 +445,7 @@ export function ShiftTooltip() {
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
     };
-  }, [isShiftHeld, tooltipData, showPhaseTooltip, showSubphaseTooltip]);
+  }, [isShiftHeld, tooltipData, showPhaseTooltip, showSubphaseTooltip, showProjectTooltip]);
 
   if (!tooltipData || !isShiftHeld) return null;
 
@@ -349,23 +455,53 @@ export function ShiftTooltip() {
 
   // Position tooltip with offset from cursor, ensuring it stays in viewport
   const tooltipStyle: React.CSSProperties = {
-    left: Math.min(tooltipData.x + 15, window.innerWidth - 280),
-    top: Math.min(tooltipData.y + 15, window.innerHeight - 200),
+    left: Math.min(tooltipData.x + 15, window.innerWidth - 320),
+    top: Math.min(tooltipData.y + 15, window.innerHeight - 280),
   };
 
   return (
     <div className={styles.tooltip} style={tooltipStyle}>
       <div className={styles.title}>{tooltipData.title}</div>
-      <div className={styles.row}>
-        <span className={styles.label}>Project:</span>
-        <span>{tooltipData.projectName}</span>
-      </div>
+      
+      {/* Project-specific: show customer, PM, status */}
+      {tooltipData.type === 'project' && (
+        <>
+          {tooltipData.customer && (
+            <div className={styles.row}>
+              <span className={styles.label}>Customer:</span>
+              <span>{tooltipData.customer}</span>
+            </div>
+          )}
+          {tooltipData.pmName && (
+            <div className={styles.row}>
+              <span className={styles.label}>PM:</span>
+              <span>{tooltipData.pmName}</span>
+            </div>
+          )}
+          <div className={styles.row}>
+            <span className={styles.label}>Status:</span>
+            <span className={tooltipData.confirmed ? styles.confirmed : styles.unconfirmed}>
+              {tooltipData.confirmed ? 'Confirmed' : 'Unconfirmed'}
+            </span>
+          </div>
+        </>
+      )}
+      
+      {/* Phase/Subphase: show project name */}
+      {tooltipData.type !== 'project' && tooltipData.projectName && (
+        <div className={styles.row}>
+          <span className={styles.label}>Project:</span>
+          <span>{tooltipData.projectName}</span>
+        </div>
+      )}
+      
       {tooltipData.parentName && (
         <div className={styles.row}>
           <span className={styles.label}>Parent:</span>
           <span>{tooltipData.parentName}</span>
         </div>
       )}
+      
       <div className={styles.row}>
         <span className={styles.label}>Period:</span>
         <span>{formatDateRange(tooltipData.startDate, tooltipData.endDate)}</span>
@@ -385,6 +521,19 @@ export function ShiftTooltip() {
         <span className={styles.label}>Total:</span>
         <span>{tooltipData.totalDays} days</span>
       </div>
+      
+      {/* Staff assignments */}
+      {tooltipData.staff.length > 0 && (
+        <div className={styles.staffSection}>
+          <div className={styles.staffHeader}>Assigned Staff:</div>
+          {tooltipData.staff.map((s, i) => (
+            <div key={i} className={styles.staffRow}>
+              <span className={styles.staffName}>{s.name}</span>
+              <span className={styles.staffAllocation}>{s.allocation}%</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -111,6 +111,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     print(f"Mode: {'Multi-Tenant' if settings.multi_tenant else 'Single-Tenant'}")
     print(f"Debug: {settings.debug}")
     
+    # Log proxy configuration
+    if settings.https_proxy or settings.http_proxy or settings.proxy_pac_url:
+        print(f"Proxy Configuration:")
+        if settings.https_proxy:
+            print(f"  HTTPS_PROXY: {settings.https_proxy}")
+        if settings.http_proxy:
+            print(f"  HTTP_PROXY: {settings.http_proxy}")
+        if settings.proxy_pac_url:
+            print(f"  PROXY_PAC_URL: {settings.proxy_pac_url}")
+    else:
+        print("Proxy Configuration: None")
+    
     # Initialize tenant database
     await init_db()
     
@@ -183,20 +195,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     
-    # Add request timing middleware (for debugging slowness)
-    from starlette.middleware.base import BaseHTTPMiddleware
-    import time as time_module
-    
-    class TimingMiddleware(BaseHTTPMiddleware):
-        async def dispatch(self, request, call_next):
-            start = time_module.perf_counter()
-            response = await call_next(request)
-            duration = (time_module.perf_counter() - start) * 1000
-            if duration > 100:  # Only log slow requests (>100ms)
-                print(f"SLOW REQUEST: {request.method} {request.url.path} took {duration:.0f}ms")
-            return response
-    
-    app.add_middleware(TimingMiddleware)
+    # Note: Request timing middleware removed because @app.middleware("http") 
+    # uses BaseHTTPMiddleware internally which interferes with WebSocket connections.
+    # If timing middleware is needed, implement as pure ASGI middleware.
     
     # Note: Tenant middleware is added at the end of create_app() by wrapping the app
     
@@ -219,7 +220,9 @@ def create_app() -> FastAPI:
         admin,
         custom_columns,
         skills,
+        admin_organizations,
     )
+    from app.websocket import router as websocket_router
     
     app.include_router(health.router, tags=["Health"])
     app.include_router(auth.router, prefix="/api", tags=["Authentication"])
@@ -238,8 +241,12 @@ def create_app() -> FastAPI:
     app.include_router(custom_columns.router, prefix="/api", tags=["Custom Columns"])
     app.include_router(skills.router, prefix="/api", tags=["Skills"])
     
-    # Admin router for multi-tenant management (at /api/admin/*)
+    # WebSocket for real-time collaboration
+    app.include_router(websocket_router, tags=["WebSocket"])
+    
+    # Admin routers for multi-tenant management (at /api/admin/*)
     app.include_router(admin.router, prefix="/api", tags=["Admin"])
+    app.include_router(admin_organizations.router, prefix="/api", tags=["Admin Organizations"])
     
     # Protected API documentation endpoints (require admin authentication)
     from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
@@ -332,6 +339,9 @@ def create_app() -> FastAPI:
             app.mount("/img", StaticFiles(directory=public_dir / "img"), name="img")
         if (public_dir / "fonts").exists():
             app.mount("/fonts", StaticFiles(directory=public_dir / "fonts"), name="fonts")
+        # Vite builds to /assets folder
+        if (public_dir / "assets").exists():
+            app.mount("/assets", StaticFiles(directory=public_dir / "assets"), name="assets")
         
         # Root route - serve index.html
         @app.get("/")
@@ -368,11 +378,24 @@ def create_app() -> FastAPI:
         @app.get("/{full_path:path}")
         async def serve_spa(request: Request, full_path: str):
             """Serve the SPA frontend for non-API routes."""
+            # Debug: log all requests hitting this endpoint
+            print(f"[SPA Fallback] path={full_path}, method={request.method}")
+            
             # Don't serve index.html for API routes
             if full_path.startswith("api/"):
                 return JSONResponse(
                     status_code=404,
                     content={"error": "Not found"}
+                )
+            
+            # Don't serve index.html for WebSocket endpoint
+            # Handle both /ws and /t/{tenant}/ws patterns
+            if full_path == "ws" or full_path.startswith("ws/") or full_path.endswith("/ws") or "/ws" in full_path:
+                print(f"[SPA Fallback] WebSocket path detected: {full_path}, returning 426")
+                return JSONResponse(
+                    status_code=426,  # Upgrade Required
+                    content={"error": "WebSocket endpoint - use ws:// or wss:// protocol"},
+                    headers={"Upgrade": "websocket"}
                 )
             
             # Check for static file first
@@ -426,12 +449,16 @@ def create_wrapped_app():
     app = create_app()
     settings = get_settings()
     
+    print(f"[App Startup] MULTI_TENANT setting = {settings.multi_tenant}")
+    
     if settings.multi_tenant:
+        print("[App Startup] Wrapping app with TenantMiddleware")
         from app.middleware.tenant import TenantMiddleware
         # Wrap the entire app with tenant middleware
         # This ensures URL rewriting happens BEFORE FastAPI routing
         return TenantMiddleware(app)
     
+    print("[App Startup] Running in single-tenant mode (no middleware)")
     return app
 
 

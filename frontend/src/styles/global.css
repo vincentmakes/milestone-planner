@@ -4,6 +4,7 @@
  */
 
 @import './variables.css';
+@import './themes/themes.css';
 
 /* =============================================
    CSS RESET & BASE
@@ -399,10 +400,10 @@ body.phantom-sibling-mode * {
     font-size: 13px;
   }
   
-  /* Larger touch targets */
-  button, 
-  [role="button"],
-  input,
+  /* Larger touch targets - but NOT for inline badges/controls */
+  button:not([class*="Badge"]):not([class*="badge"]):not([class*="Level"]):not([class*="level"]):not([class*="expandBtn"]):not([class*="collapseBtn"]):not([class*="dragHandle"]):not([class*="levelBtn"]):not([class*="wbsLevel"]), 
+  [role="button"]:not([class*="Badge"]):not([class*="badge"]):not([class*="Level"]):not([class*="level"]),
+  input:not([class*="Cell"]):not([class*="cell"]),
   select {
     min-height: 44px;
     min-width: 44px;
@@ -414,12 +415,36 @@ body.phantom-sibling-mode * {
   }
 }
 
+/* Tablet breakpoint - iPad sizes (768px - 1024px) */
+@media (min-width: 640px) and (max-width: 1024px) {
+  /* Ensure badges don't get enlarged in height */
+  [class*="completionBadge"],
+  [class*="typeBadge"],
+  [class*="wbsLevel"] {
+    min-height: auto !important;
+  }
+}
+
 /* Touch device optimizations */
 @media (hover: none) and (pointer: coarse) {
-  /* Larger click/touch targets */
-  button:not([class*="collapseBtn"]),
-  [role="button"] {
+  /* Larger click/touch targets - but NOT for inline badges/controls in the gantt */
+  button:not([class*="Badge"]):not([class*="badge"]):not([class*="Level"]):not([class*="level"]):not([class*="expandBtn"]):not([class*="collapseBtn"]):not([class*="dragHandle"]):not([class*="levelBtn"]):not([class*="wbsLevel"]),
+  [role="button"]:not([class*="Badge"]):not([class*="badge"]):not([class*="Level"]):not([class*="level"]) {
     min-height: 40px;
+  }
+  
+  /* Ensure badges stay their proper size - only height, not width */
+  [class*="completionBadge"],
+  [class*="typeBadge"] {
+    min-height: auto !important;
+    height: auto !important;
+  }
+  
+  /* wbsLevel badges - preserve their min-width */
+  [class*="wbsLevel"] {
+    min-height: auto !important;
+    height: 18px !important;
+    /* Don't touch min-width - it should stay at 24px */
   }
   
   /* Show drag handles by default on touch */
@@ -431,6 +456,20 @@ body.phantom-sibling-mode * {
   *:hover {
     transition: none;
   }
+  
+  /* Enable touch scrolling */
+  [class*="Timeline"],
+  [class*="timeline"],
+  [class*="ProjectPanel"],
+  [class*="horizontalScroll"] {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: auto;
+  }
+  
+  /* Make scrollable areas respond better to touch */
+  [class*="body"] {
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 /* =============================================
@@ -438,6 +477,12 @@ body.phantom-sibling-mode * {
    ============================================= */
 
 @media print {
+  /* Page setup */
+  @page {
+    size: landscape;
+    margin: 10mm;
+  }
+  
   /* Preserve theme colors for printing */
   body {
     -webkit-print-color-adjust: exact;
@@ -466,10 +511,20 @@ body.phantom-sibling-mode * {
     display: none !important;
   }
   
+  /* Hide overview panels */
+  [class*="StaffOverview"],
+  [class*="EquipmentOverview"],
+  [class*="overviewPanel"],
+  [class*="horizontalResizer"] {
+    display: none !important;
+  }
+  
   /* Header - keep logo only */
   header[class*="header"],
   [class*="Header"] {
     box-shadow: none !important;
+    position: relative !important;
+    height: auto !important;
   }
   
   /* Hide header controls except logo */
@@ -504,12 +559,107 @@ body.phantom-sibling-mode * {
   main {
     margin: 0 !important;
     width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
   }
   
   /* Project panel header - hide action buttons */
   [class*="ProjectPanel"] [class*="headerActions"],
   [class*="ProjectPanel"] [class*="newProjectBtn"],
   [class*="ProjectPanel"] [class*="importBtn"] {
+    display: none !important;
+  }
+  
+  /* ========================================
+     GANTT FULL HEIGHT PRINT STYLES
+     ======================================== */
+  
+  /* Remove all height restrictions and overflow hiding */
+  [class*="GanttContainer"],
+  [class*="ganttContainer"],
+  [class*="container"] {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  
+  [class*="ganttArea"] {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    flex: none !important;
+  }
+  
+  /* Project Panel - expand to full content height */
+  [class*="ProjectPanel"],
+  [class*="projectPanel"] {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    flex-shrink: 0 !important;
+  }
+  
+  [class*="ProjectPanel"] [class*="body"],
+  [class*="projectPanel"] [class*="body"] {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    flex: none !important;
+  }
+  
+  /* Timeline - expand to full content height but clip horizontally */
+  [class*="Timeline"],
+  [class*="timeline"] {
+    height: auto !important;
+    max-height: none !important;
+    overflow-y: visible !important;
+    overflow-x: hidden !important; /* Clip horizontal to prevent overlap with project panel */
+    flex: 1 !important;
+    position: relative !important; /* Create clipping context */
+  }
+  
+  [class*="Timeline"] [class*="body"],
+  [class*="TimelineBody"],
+  [class*="timelineBody"] {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    flex: none !important;
+  }
+  
+  [class*="Timeline"] [class*="content"],
+  [class*="TimelineBody"] [class*="content"] {
+    height: auto !important;
+    min-height: auto !important;
+  }
+  
+  /* Project rows - ensure they're all visible */
+  [class*="ProjectRow"],
+  [class*="projectRow"],
+  [class*="PhaseRow"],
+  [class*="phaseRow"],
+  [class*="SubphaseRow"],
+  [class*="subphaseRow"],
+  [class*="AssignmentRow"],
+  [class*="assignmentRow"] {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  
+  /* Hide scrollbars */
+  *::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+  
+  * {
+    scrollbar-width: none !important;
+  }
+  
+  /* Hide resizers */
+  [class*="resizer"],
+  [class*="Resizer"] {
     display: none !important;
   }
   
@@ -543,5 +693,10 @@ body.phantom-sibling-mode * {
   
   .avoid-break {
     page-break-inside: avoid;
+  }
+  
+  /* Keep project groups together when possible */
+  [class*="ProjectRow"] {
+    page-break-after: auto;
   }
 }

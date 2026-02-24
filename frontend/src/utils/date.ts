@@ -53,17 +53,79 @@ export function toInputDateFormat(dateString: string | null | undefined): string
 }
 
 /**
- * Format a date for display (e.g., "Jan 15, 2025")
+ * Format a date for display using browser locale (e.g., "Jan 15, 2025" or "15 Jan 2025")
  */
 export function formatDateDisplay(date: Date): string {
-  return format(date, 'MMM d, yyyy');
+  const formatter = new Intl.DateTimeFormat(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+  return formatter.format(date);
 }
 
 /**
- * Format a date for short display (e.g., "Jan 15")
+ * Format a date for short display (e.g., "Jan 15" or "15 Jan")
  */
 export function formatDateShort(date: Date): string {
-  return format(date, 'MMM d');
+  const formatter = new Intl.DateTimeFormat(undefined, {
+    day: 'numeric',
+    month: 'short',
+  });
+  return formatter.format(date);
+}
+
+/**
+ * Get the browser's locale
+ */
+function getBrowserLocale(): string {
+  return navigator.language || 'en-US';
+}
+
+/**
+ * Format a date for short display using the browser's locale
+ * Uses Intl.DateTimeFormat to respect the user's system preferences
+ * @param date - The date to format
+ * @returns Formatted date string like "15 Jan" (EU) or "Jan 15" (US) depending on locale
+ */
+export function formatDateShortLocale(date: Date): string {
+  const locale = getBrowserLocale();
+  
+  // Use Intl.DateTimeFormat to format according to user's locale
+  const formatter = new Intl.DateTimeFormat(locale, {
+    day: 'numeric',
+    month: 'short',
+  });
+  
+  return formatter.format(date);
+}
+
+/**
+ * Format a date range for display in project panel
+ * Uses browser locale for formatting
+ * @param startDate - Start date string (ISO format)
+ * @param endDate - End date string (ISO format)
+ * @returns Formatted date range like "15 Jan - 28 Feb" (EU) or "Jan 15 - Feb 28" (US)
+ */
+export function formatShortDateRange(startDate: string, endDate: string): string {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  
+  const startFormatted = formatDateShortLocale(start);
+  const endFormatted = formatDateShortLocale(end);
+  
+  return `${startFormatted} - ${endFormatted}`;
+}
+
+/**
+ * Format a single date for display in project panel
+ * Uses browser locale for formatting
+ * @param dateString - Date string (ISO format)
+ * @returns Formatted date string
+ */
+export function formatSingleDate(dateString: string): string {
+  const date = new Date(dateString);
+  return formatDateShortLocale(date);
 }
 
 /**

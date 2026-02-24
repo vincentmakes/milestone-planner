@@ -10,14 +10,18 @@ import {
   getTenants, 
   getSystemStats, 
   getAdminUsers,
+  getOrganizations,
 } from '@/api';
-import { getTheme } from '@/utils/storage';
+import { getTheme, isDarkTheme, type Theme } from '@/utils/storage';
 import { TenantList } from './TenantList';
+import { OrganizationList } from './OrganizationList';
 import { AdminUserList } from './AdminUserList';
 import { SystemStatsPanel } from './SystemStatsPanel';
 import { CreateTenantModal } from './modals/CreateTenantModal';
 import { CreateAdminModal } from './modals/CreateAdminModal';
+import { CreateOrganizationModal } from './modals/CreateOrganizationModal';
 import { TenantDetailsModal } from './modals/TenantDetailsModal';
+import { OrganizationDetailsModal } from './modals/OrganizationDetailsModal';
 import { CredentialsModal } from './modals/CredentialsModal';
 import styles from './AdminDashboard.module.css';
 
@@ -26,24 +30,27 @@ export function AdminDashboard() {
   const activeTab = useAdminStore((s) => s.activeTab);
   const setActiveTab = useAdminStore((s) => s.setActiveTab);
   const setTenants = useAdminStore((s) => s.setTenants);
+  const setOrganizations = useAdminStore((s) => s.setOrganizations);
   const setSystemStats = useAdminStore((s) => s.setSystemStats);
   const setAdminUsers = useAdminStore((s) => s.setAdminUsers);
   const setIsAuthenticated = useAdminStore((s) => s.setIsAuthenticated);
   const setAdminUser = useAdminStore((s) => s.setAdminUser);
   const reset = useAdminStore((s) => s.reset);
   
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => getTheme());
+  const [theme, setThemeState] = useState<Theme>(() => getTheme());
   const [showCreateTenant, setShowCreateTenant] = useState(false);
+  const [showCreateOrganization, setShowCreateOrganization] = useState(false);
   const [showCreateAdmin, setShowCreateAdmin] = useState(false);
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<{ title: string; email: string; password: string } | null>(null);
 
   // Watch for theme changes
   useEffect(() => {
     const observer = new MutationObserver(() => {
-      const currentTheme = document.documentElement.dataset.theme as 'dark' | 'light';
+      const currentTheme = document.documentElement.dataset.theme as Theme;
       if (currentTheme && currentTheme !== theme) {
-        setTheme(currentTheme);
+        setThemeState(currentTheme);
       }
     });
 
@@ -58,6 +65,7 @@ export function AdminDashboard() {
   // Load initial data
   useEffect(() => {
     loadTenants();
+    loadOrganizations();
     loadStats();
   }, []);
 
@@ -74,6 +82,15 @@ export function AdminDashboard() {
       setTenants(data);
     } catch (err) {
       console.error('Failed to load tenants:', err);
+    }
+  };
+
+  const loadOrganizations = async () => {
+    try {
+      const data = await getOrganizations();
+      setOrganizations(data);
+    } catch (err) {
+      console.error('Failed to load organizations:', err);
     }
   };
 
@@ -111,7 +128,7 @@ export function AdminDashboard() {
     setCredentials({ title, email, password });
   };
 
-  const logoSrc = theme === 'dark'
+  const logoSrc = isDarkTheme(theme)
     ? '/img/milestone_logo_dark_theme.svg'
     : '/img/milestone_logo_light_theme.svg';
 
@@ -150,6 +167,17 @@ export function AdminDashboard() {
           </svg>
           Tenants
         </button>
+        <button
+          className={`${styles.tab} ${activeTab === 'organizations' ? styles.active : ''}`}
+          onClick={() => setActiveTab('organizations')}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="2" y1="12" x2="22" y2="12" />
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+          </svg>
+          Organizations
+        </button>
         {isSuperadmin && (
           <button
             className={`${styles.tab} ${activeTab === 'admins' ? styles.active : ''}`}
@@ -187,6 +215,13 @@ export function AdminDashboard() {
             onRefresh={loadTenants}
           />
         )}
+        {activeTab === 'organizations' && (
+          <OrganizationList
+            onCreateNew={() => setShowCreateOrganization(true)}
+            onViewDetails={(id) => setSelectedOrganizationId(id)}
+            onRefresh={loadOrganizations}
+          />
+        )}
         {activeTab === 'admins' && isSuperadmin && (
           <AdminUserList
             onCreateNew={() => setShowCreateAdmin(true)}
@@ -209,6 +244,16 @@ export function AdminDashboard() {
         />
       )}
 
+      {showCreateOrganization && (
+        <CreateOrganizationModal
+          onClose={() => setShowCreateOrganization(false)}
+          onCreated={() => {
+            loadOrganizations();
+            setShowCreateOrganization(false);
+          }}
+        />
+      )}
+
       {showCreateAdmin && (
         <CreateAdminModal
           onClose={() => setShowCreateAdmin(false)}
@@ -225,6 +270,17 @@ export function AdminDashboard() {
           onClose={() => setSelectedTenantId(null)}
           onShowCredentials={handleShowCredentials}
           onRefresh={loadTenants}
+        />
+      )}
+
+      {selectedOrganizationId && (
+        <OrganizationDetailsModal
+          organizationId={selectedOrganizationId}
+          onClose={() => setSelectedOrganizationId(null)}
+          onRefresh={() => {
+            loadOrganizations();
+            loadTenants();
+          }}
         />
       )}
 

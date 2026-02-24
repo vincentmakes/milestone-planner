@@ -1,9 +1,9 @@
 /**
  * StaffAssignmentModal - Assign Staff to Projects/Phases/Subphases
- * Supports percentage-based allocation
+ * Supports percentage-based allocation with max capacity awareness
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { useUIStore } from '@/stores/uiStore';
@@ -16,6 +16,11 @@ import {
 } from '@/api/endpoints/projects';
 import { toInputDateFormat } from '@/utils/date';
 import styles from './AssignmentModal.module.css';
+
+// Snap allocation value to nearest 5%
+const snapTo5Percent = (value: number): number => {
+  return Math.round(value / 5) * 5;
+};
 
 export function StaffAssignmentModal() {
   const { activeModal, editingStaffAssignment, modalContext, closeModal } = useUIStore();
@@ -42,6 +47,16 @@ export function StaffAssignmentModal() {
     if (!currentSite) return [];
     return staff.filter(s => s.site_id === currentSite.id);
   }, [staff, currentSite]);
+  
+  // Get selected staff's max capacity (default to 100 if not set)
+  const selectedStaffMaxCapacity = useMemo(() => {
+    if (!staffId) return 100;
+    const selected = staff.find(s => s.id === parseInt(staffId));
+    return selected?.max_capacity ?? 100;
+  }, [staffId, staff]);
+  
+  // Check if allocation exceeds max capacity
+  const isOverallocated = allocation > selectedStaffMaxCapacity;
   
   // Get the target item (project, phase, or subphase) for dates
   const targetItem = useMemo(() => {
@@ -97,6 +112,23 @@ export function StaffAssignmentModal() {
     }
   }, [isOpen, editingStaffAssignment, targetItem]);
   
+  // Handle staff selection - auto-set allocation to their max capacity
+  const handleStaffChange = useCallback((newStaffId: string) => {
+    setStaffId(newStaffId);
+    if (newStaffId && !isEditing) {
+      // Find the staff member's max capacity and set allocation to it
+      const selectedStaff = staff.find(s => s.id === parseInt(newStaffId));
+      const maxCap = selectedStaff?.max_capacity ?? 100;
+      setAllocation(snapTo5Percent(maxCap));
+    }
+  }, [staff, isEditing]);
+  
+  // Handle allocation slider change with 5% increments
+  const handleAllocationChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawValue = parseInt(e.target.value);
+    setAllocation(snapTo5Percent(rawValue));
+  }, []);
+  
   // Determine assignment level for API calls
   const assignmentLevel: 'project' | 'phase' | 'subphase' = subphaseId ? 'subphase' : (phaseId ? 'phase' : 'project');
   const isPhaseOrSubphase = assignmentLevel !== 'project';
@@ -115,8 +147,8 @@ export function StaffAssignmentModal() {
       return;
     }
     
-    if (allocation < 1 || allocation > 100) {
-      setError('Allocation must be between 1 and 100');
+    if (allocation < 5) {
+      setError('Allocation must be at least 5%');
       return;
     }
     
@@ -224,35 +256,53 @@ export function StaffAssignmentModal() {
           <select
             className={styles.input}
             value={staffId}
-            onChange={(e) => setStaffId(e.target.value)}
+            onChange={(e) => handleStaffChange(e.target.value)}
             disabled={isEditing} // Can't change staff member when editing
           >
             <option value="">Select staff member</option>
-            {siteStaff.map(s => (
-              <option key={s.id} value={s.id}>
-                {s.name} ({s.role || 'No role'})
-              </option>
-            ))}
+            {siteStaff.map(s => {
+              const maxCap = s.max_capacity ?? 100;
+              const capacityLabel = maxCap < 100 ? ` - ${maxCap}% capacity` : '';
+              return (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.role || 'No role'}){capacityLabel}
+                </option>
+              );
+            })}
           </select>
         </div>
         
         <div className={styles.formGroup}>
-          <label className={styles.label}>Allocation: {allocation}%</label>
+          <label className={styles.label}>
+            Allocation: {allocation}%
+            {selectedStaffMaxCapacity < 100 && (
+              <span className={styles.capacityHint}> (Max capacity: {selectedStaffMaxCapacity}%)</span>
+            )}
+          </label>
           <div className={styles.sliderContainer}>
             <input
               type="range"
-              className={styles.slider}
-              min="1"
+              className={`${styles.slider} ${isOverallocated ? styles.sliderOverallocated : ''}`}
+              min="5"
               max="100"
-              value={allocation}
-              onChange={(e) => setAllocation(parseInt(e.target.value))}
+              step="5"
+              value={Math.min(allocation, 100)}
+              onChange={handleAllocationChange}
             />
             <div className={styles.sliderLabels}>
-              <span>1%</span>
+              <span>5%</span>
+              {selectedStaffMaxCapacity < 100 && selectedStaffMaxCapacity > 25 && selectedStaffMaxCapacity < 75 && (
+                <span className={styles.maxCapacityMarker}>{selectedStaffMaxCapacity}%</span>
+              )}
               <span>50%</span>
               <span>100%</span>
             </div>
           </div>
+          {isOverallocated && (
+            <div className={styles.overallocationWarning}>
+              ⚠️ Allocation exceeds staff's max capacity of {selectedStaffMaxCapacity}%
+            </div>
+          )}
         </div>
         
         {/* Date fields only for project-level assignments */}

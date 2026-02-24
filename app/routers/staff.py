@@ -55,6 +55,7 @@ def build_staff_row(user: User, site: Site = None) -> dict:
         "role": user.job_title,  # Node.js uses job_title as 'role'
         "email": user.email,
         "active": user.active,
+        "max_capacity": user.max_capacity if hasattr(user, 'max_capacity') else 100,
         "site_id": site.id if site else None,
         "site_name": site.name if site else None,
         "skills": skills,

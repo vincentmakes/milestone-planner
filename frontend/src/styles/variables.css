@@ -1,7 +1,12 @@
 /**
  * CSS Variables
  * Central design tokens for the entire application
- * Ported from the existing vanilla CSS with full theme support
+ * 
+ * Theme System:
+ * - dark: Default Milestone dark theme
+ * - light: Default Milestone light theme
+ * - sulzer-dark: S-Theme dark variant (Navy + Blue)
+ * - sulzer-light: S-Theme light variant (Clean whites + Blue)
  */
 
 :root {
@@ -17,16 +22,22 @@
   
   /* Borders */
   --border-color: #2a3544;
+  --border-default: #2a3544;
   --border-light: #3a4554;
   --border-subtle: #2a3544;
+  --border-hover: #3a4a5a;
   
   /* Text */
   --text-primary: #e8edf4;
   --text-secondary: #8b99ab;
+  --text-tertiary: #6a7a8a;
   --text-muted: #5a6a7a;
   --text-disabled: #4a5a6a;
+  --text-on-accent: #ffffff;
   
   /* Accent Colors */
+  --accent-primary: #3b82f6;
+  --accent-primary-hover: #2563eb;
   --accent-blue: #3b82f6;
   --accent-blue-dim: #2563eb;
   --accent-blue-hover: #2563eb;
@@ -43,10 +54,69 @@
   
   /* Hover/Active States */
   --bg-hover: rgba(255, 255, 255, 0.05);
+  --bg-weekend: rgba(255, 255, 255, 0.05);
   --border-color-hover: #3a4a5a;
   
   /* Special Colors */
   --what-if-glow: #007AFE;
+  
+  /* Status colors */
+  --status-success: #10b981;
+  --status-warning: #f59e0b;
+  --status-error: #ef4444;
+  --status-info: #3b82f6;
+  
+  /* Button colors */
+  --btn-primary-bg: #3b82f6;
+  --btn-primary-hover: #2563eb;
+  --btn-primary-text: #ffffff;
+  --btn-secondary-bg: transparent;
+  --btn-secondary-border: #2a3544;
+  --btn-secondary-hover: rgba(59, 130, 246, 0.1);
+  
+  /* Input colors */
+  --input-bg: #1a2332;
+  --input-border: #2a3544;
+  --input-focus-border: #3b82f6;
+  --input-focus-shadow: rgba(59, 130, 246, 0.2);
+  
+  /* Table colors */
+  --table-header-bg: #1a2332;
+  --table-row-hover: rgba(59, 130, 246, 0.05);
+  --table-row-selected: rgba(59, 130, 246, 0.1);
+  --table-border: #2a3544;
+  
+  /* Modal colors */
+  --modal-backdrop: rgba(0, 0, 0, 0.75);
+  --modal-bg: #151d2a;
+  --modal-border: #2a3544;
+  
+  /* Scrollbar */
+  --scrollbar-track: #111820;
+  --scrollbar-thumb: #3a4554;
+  --scrollbar-thumb-hover: #5a6a7a;
+  
+  /* Header specific */
+  --header-bg: #111820;
+  --header-border: #2a3544;
+  
+  /* =========================================
+     PHASE & SUBPHASE LEVEL COLORS
+     ========================================= */
+  
+  --level-phase: #FF50A8;    /* Pink - Top-level phases */
+  --level-1: #05B6D4;        /* Cyan - First subphase level */
+  --level-2: #8B5CF6;        /* Purple - Second subphase level */
+  --level-3: #3B82F6;        /* Blue - Third subphase level */
+  --level-4: #FA7315;        /* Orange - Fourth subphase level */
+  --level-5: #11B981;        /* Emerald - Fifth subphase level */
+  --level-6: #EC4899;        /* Fuchsia - Sixth subphase level */
+  --level-7: #EAB30A;        /* Amber - Seventh subphase level */
+  --level-8: #14B8A6;        /* Teal - Eighth subphase level */
+  --level-9: #A755F7;        /* Violet - Ninth subphase level */
+  --level-10: #F43F5E;       /* Rose - Tenth subphase level */
+  --level-bar-text: #ffffff; /* Text color on level bars */
+  --progress-line-color: rgba(255, 255, 255, 0.9); /* Progress bar on phases */
   
   /* =========================================
      SPACING & SIZING
@@ -142,7 +212,7 @@
 }
 
 /* =============================================
-   LIGHT THEME
+   LIGHT THEME (Default Light)
    ============================================= */
 
 [data-theme="light"] {
@@ -152,6 +222,7 @@
   --bg-tertiary: #f1f5f9;
   --bg-card: #ffffff;
   --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-weekend: rgba(0, 0, 0, 0.06);
   
   /* Borders - stronger for better visibility */
   --border-color: #cbd5e1;
@@ -167,6 +238,7 @@
   --text-tertiary: #64748b;
   --text-muted: #64748b;
   --text-disabled: #94a3b8;
+  --text-on-accent: #ffffff;
   
   /* Accent Colors - deeper for light bg visibility */
   --accent-primary: #2563eb;
@@ -198,9 +270,48 @@
   --phase-cleaning: #0d9488;
   --phase-report: #059669;
   
+  /* Progress line - semi-transparent dark overlay for light bg */
+  --progress-line-color: rgba(0, 0, 0, 0.4);
+  
   /* Header specific */
   --header-bg: #f8fafc;
   --header-border: #e2e8f0;
+  
+  /* Status colors */
+  --status-success: #059669;
+  --status-warning: #d97706;
+  --status-error: #dc2626;
+  --status-info: #2563eb;
+  
+  /* Button colors */
+  --btn-primary-bg: #2563eb;
+  --btn-primary-hover: #1d4ed8;
+  --btn-primary-text: #ffffff;
+  --btn-secondary-bg: transparent;
+  --btn-secondary-border: #cbd5e1;
+  --btn-secondary-hover: rgba(37, 99, 235, 0.08);
+  
+  /* Input colors */
+  --input-bg: #ffffff;
+  --input-border: #cbd5e1;
+  --input-focus-border: #2563eb;
+  --input-focus-shadow: rgba(37, 99, 235, 0.15);
+  
+  /* Table colors */
+  --table-header-bg: #f8fafc;
+  --table-row-hover: rgba(37, 99, 235, 0.04);
+  --table-row-selected: rgba(37, 99, 235, 0.08);
+  --table-border: #e2e8f0;
+  
+  /* Modal colors */
+  --modal-backdrop: rgba(15, 23, 42, 0.5);
+  --modal-bg: #ffffff;
+  --modal-border: #e2e8f0;
+  
+  /* Scrollbar */
+  --scrollbar-track: #f8fafc;
+  --scrollbar-thumb: #cbd5e1;
+  --scrollbar-thumb-hover: #94a3b8;
 }
 
 /* Print-specific overrides */

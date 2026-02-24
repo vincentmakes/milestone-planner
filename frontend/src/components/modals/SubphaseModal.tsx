@@ -11,6 +11,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { createSubphase, createChildSubphase, updateSubphase, deleteSubphase, loadAllProjects, updatePhase, updateProject } from '@/api/endpoints/projects';
 import { toInputDateFormat } from '@/utils/date';
+import { getDepthColor } from '@/utils/themeColors';
 import type { Phase, Subphase, Project, CreateSubphaseRequest } from '@/types';
 import styles from './PhaseModal.module.css'; // Reuse phase modal styles
 
@@ -29,6 +30,26 @@ function findSubphaseInChildren(children: Subphase[], targetId: number): Subphas
     if (child.children && child.children.length > 0) {
       const found = findSubphaseInChildren(child.children, targetId);
       if (found) return found;
+    }
+  }
+  return null;
+}
+
+// Calculate the depth of a subphase (1-based)
+function getSubphaseDepth(phases: Phase[], subphaseId: number): number {
+  for (const phase of phases) {
+    const depth = findSubphaseDepthInChildren(phase.children || [], subphaseId, 1);
+    if (depth !== null) return depth;
+  }
+  return 1;
+}
+
+function findSubphaseDepthInChildren(children: Subphase[], targetId: number, currentDepth: number): number | null {
+  for (const child of children) {
+    if (child.id === targetId) return currentDepth;
+    if (child.children && child.children.length > 0) {
+      const depth = findSubphaseDepthInChildren(child.children, targetId, currentDepth + 1);
+      if (depth !== null) return depth;
     }
   }
   return null;
@@ -411,13 +432,27 @@ export function SubphaseModal() {
     setError(null);
     
     try {
+      // Calculate the appropriate color based on depth
+      let subphaseColor: string;
+      if (editingSubphase?.color) {
+        // Keep existing color when editing
+        subphaseColor = editingSubphase.color;
+      } else if (parentSubphaseId && project) {
+        // Creating under a subphase - depth is parent's depth + 1
+        const parentDepth = getSubphaseDepth(project.phases || [], parentSubphaseId);
+        subphaseColor = getDepthColor(parentDepth + 1);
+      } else {
+        // Creating directly under a phase - depth 1
+        subphaseColor = getDepthColor(1);
+      }
+      
       // Build subphase data
       const subphaseData: CreateSubphaseRequest = {
         name: name.trim(),
         start_date: startDate,
         end_date: isMilestone ? startDate : endDate,
         is_milestone: isMilestone,
-        color: editingSubphase?.color || parentPhase?.color || '#ec4899',
+        color: subphaseColor,
       };
       
       // If this was created via phantom sibling mode, add dependency and order

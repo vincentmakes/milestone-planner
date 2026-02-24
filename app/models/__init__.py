@@ -4,7 +4,7 @@ All models inherit from the Base class defined in database.py.
 """
 
 from app.models.user import User, UserSite
-from app.models.site import Site, BankHoliday
+from app.models.site import Site, BankHoliday, CompanyEvent
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.equipment import Equipment, EquipmentAssignment
 from app.models.assignment import ProjectAssignment, PhaseStaffAssignment, SubphaseStaffAssignment
@@ -15,6 +15,7 @@ from app.models.session import Session
 from app.models.custom_column import CustomColumn, CustomColumnValue
 from app.models.skill import Skill, UserSkill
 from app.models.tenant import MasterBase, Tenant, TenantCredentials, TenantAuditLog, AdminUser, AdminSession
+from app.models.organization import Organization, OrganizationSSOConfig
 
 __all__ = [
     # Tenant models
@@ -22,6 +23,7 @@ __all__ = [
     "UserSite",
     "Site",
     "BankHoliday",
+    "CompanyEvent",
     "Project",
     "ProjectPhase",
     "ProjectSubphase",
@@ -47,4 +49,7 @@ __all__ = [
     "TenantAuditLog",
     "AdminUser",
     "AdminSession",
+    # Organization models (also use MasterBase)
+    "Organization",
+    "OrganizationSSOConfig",
 ]

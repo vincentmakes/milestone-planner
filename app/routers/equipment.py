@@ -61,13 +61,13 @@ async def rename_equipment_type(
     old_type: str,
     new_type: str = Query(..., description="New type name"),
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(require_superuser),
 ):
     """
     Rename an equipment type.
     
     Updates all equipment with the old type to use the new type.
-    Requires admin authentication.
+    Requires admin or superuser authentication.
     """
     from sqlalchemy import update
     
@@ -104,13 +104,13 @@ async def rename_equipment_type(
 async def delete_equipment_type(
     type_name: str,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(require_superuser),
 ):
     """
     Delete an equipment type.
     
     Only succeeds if no equipment uses this type.
-    Requires admin authentication.
+    Requires admin or superuser authentication.
     """
     # Check if any equipment uses this type
     result = await db.execute(
@@ -174,12 +174,12 @@ async def get_equipment(
 @router.get("/equipment/all", response_model=List[EquipmentResponse])
 async def get_all_equipment(
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(require_superuser),
 ):
     """
     Get all equipment including inactive.
     
-    Requires admin authentication.
+    Requires admin or superuser authentication.
     Matches: GET /api/equipment/all
     """
     result = await db.execute(
@@ -220,14 +220,21 @@ async def get_equipment_by_id(
 async def create_equipment(
     data: EquipmentCreate,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(require_superuser),
 ):
     """
     Create new equipment.
     
-    Requires admin authentication.
+    Requires admin or superuser authentication.
+    Superusers can only create equipment in sites they're assigned to.
     Matches: POST /api/equipment
     """
+    # Check site access for non-admin users
+    if user.role != 'admin':
+        user_site_ids = [s.id for s in user.sites] if user.sites else []
+        if data.site_id not in user_site_ids:
+            raise HTTPException(status_code=403, detail="You can only create equipment in sites you're assigned to")
+    
     equipment = Equipment(
         name=data.name,
         type=data.type,
@@ -255,12 +262,13 @@ async def update_equipment(
     equipment_id: int,
     data: EquipmentUpdate,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(require_superuser),
 ):
     """
     Update equipment.
     
-    Requires admin authentication.
+    Requires admin or superuser authentication.
+    Superusers can only update equipment in sites they're assigned to.
     Matches: PUT /api/equipment/:id
     """
     result = await db.execute(
@@ -272,6 +280,12 @@ async def update_equipment(
     
     if not equipment:
         raise HTTPException(status_code=404, detail="Equipment not found")
+    
+    # Check site access for non-admin users
+    if user.role != 'admin':
+        user_site_ids = [s.id for s in user.sites] if user.sites else []
+        if equipment.site_id not in user_site_ids:
+            raise HTTPException(status_code=403, detail="You can only update equipment in sites you're assigned to")
     
     # Update fields
     if data.name is not None:
@@ -302,12 +316,13 @@ async def update_equipment(
 async def delete_equipment(
     equipment_id: int,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(require_superuser),
 ):
     """
     Delete equipment.
     
-    Requires admin authentication.
+    Requires admin or superuser authentication.
+    Superusers can only delete equipment in sites they're assigned to.
     Matches: DELETE /api/equipment/:id
     """
     result = await db.execute(
@@ -317,6 +332,12 @@ async def delete_equipment(
     
     if not equipment:
         raise HTTPException(status_code=404, detail="Equipment not found")
+    
+    # Check site access for non-admin users
+    if user.role != 'admin':
+        user_site_ids = [s.id for s in user.sites] if user.sites else []
+        if equipment.site_id not in user_site_ids:
+            raise HTTPException(status_code=403, detail="You can only delete equipment in sites you're assigned to")
     
     await db.delete(equipment)
     await db.commit()

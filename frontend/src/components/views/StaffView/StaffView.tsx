@@ -8,7 +8,7 @@
  * Can be used standalone or embedded below Gantt chart with synchronized scrolling.
  */
 
-import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
+import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useScrollSync, useCtrlScrollZoom, useResourceDragDrop } from '@/hooks';
@@ -16,12 +16,15 @@ import { generateTimelineCells, generateTimelineHeaders } from '@/components/gan
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { StaffTimelineBody } from './StaffTimelineBody';
 import { BankHolidaysRow } from './BankHolidaysRow';
+import { CompanyEventsRow } from './CompanyEventsRow';
 import { deleteVacation, getVacations } from '@/api/endpoints/vacations';
 import { useTimelineScrollSync } from '@/contexts/TimelineScrollContext';
+import { parseRecurringPattern, getRecurringDaysDisplay } from '@/utils/recurringVacation';
+import type { Project, Phase, Subphase, StaffAssignment } from '@/types';
 import styles from './StaffView.module.css';
 
 // Height constants matching Gantt rows
-const BASE_ROW_HEIGHT = 44;
+const BASE_ROW_HEIGHT = 44;  // Minimum row height
 const DETAIL_ROW_HEIGHT = 32;
 const BAR_HEIGHT = 14;  // Smaller bars to fit with indicator
 const BAR_GAP = 2;
@@ -31,17 +34,33 @@ const INDICATOR_AREA_HEIGHT = 18;  // Height for workload indicator at bottom
 interface StaffViewProps {
   /** When true, hides the header and syncs scroll with parent Gantt */
   embedded?: boolean;
-  /** Panel width when embedded (to match Gantt panel) */
+  /** Panel width when embedded (controlled by parent) */
   panelWidth?: number;
+  /** Callback when panel width changes in embedded mode */
+  onPanelWidthChange?: (width: number) => void;
   /** Height when embedded (controlled by parent resizer) */
   height?: number;
 }
 
-export function StaffView({ embedded = false, panelWidth, height }: StaffViewProps) {
+export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, height }: StaffViewProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const timelineBodyRef = useRef<HTMLDivElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
+  
+  // Refs for measuring actual row heights (keyed by staff ID)
+  const rowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const [measuredHeights, setMeasuredHeights] = useState<Map<number, number>>(new Map());
+  
+  // Local panel width state for standalone mode only
+  const [localPanelWidth, setLocalPanelWidth] = useState(320);
+  
+  // Resizer width constant
+  const RESIZER_WIDTH = 4;
+  
+  // Effective panel width: use prop in embedded mode, local state otherwise
+  // When embedded, panelWidth includes the resizer width, so subtract it for the panel itself
+  const effectivePanelWidth = embedded ? ((panelWidth || 324) - RESIZER_WIDTH) : localPanelWidth;
   
   const staff = useAppStore((s) => s.staff);
   const projects = useAppStore((s) => s.projects);
@@ -55,6 +74,8 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
   const cellWidth = useAppStore((s) => s.cellWidth);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
   const bankHolidays = useAppStore((s) => s.bankHolidays);
+  const companyEventDates = useAppStore((s) => s.companyEventDates);
+  const companyEvents = useAppStore((s) => s.companyEvents);
   
   const { openVacationModal } = useUIStore();
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
@@ -75,6 +96,7 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
   // Track expanded staff and bank holidays row
   const [expandedStaff, setExpandedStaff] = useState<Set<number>>(new Set());
   const [expandedBankHolidays, setExpandedBankHolidays] = useState(false);
+  const [expandedCompanyEvents, setExpandedCompanyEvents] = useState(false);
   
   // Filter state
   const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set());
@@ -181,8 +203,8 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
   
   // Generate timeline data
   const cells = useMemo(() => 
-    generateTimelineCells(currentDate, viewMode, bankHolidayDates, bankHolidays),
-    [currentDate, viewMode, bankHolidayDates, bankHolidays]
+    generateTimelineCells(currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents),
+    [currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents]
   );
   const headers = useMemo(() => 
     generateTimelineHeaders(cells, viewMode),
@@ -212,11 +234,49 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
     const map = new Map<number, StaffAssignmentWithContext[]>();
     siteStaff.forEach((s) => map.set(s.id, []));
     
+    let totalAssignments = 0;
+    
+    // Helper to recursively process subphases
+    const processSubphases = (
+      subphases: Subphase[] | undefined,
+      project: Project,
+      phase: Phase
+    ) => {
+      if (!subphases) return;
+      
+      for (const subphase of subphases) {
+        // Process staff assignments on this subphase
+        subphase.staffAssignments?.forEach((sa: StaffAssignment) => {
+          totalAssignments++;
+          const existing = map.get(sa.staff_id) || [];
+          existing.push({
+            ...sa,
+            start_date: sa.start_date || subphase.start_date,
+            end_date: sa.end_date || subphase.end_date,
+            projectName: project.name,
+            projectId: project.id,
+            phaseName: phase.name,
+            phaseId: phase.id,
+            subphaseName: subphase.name,
+            subphaseId: subphase.id,
+            level: 'subphase',
+          });
+          map.set(sa.staff_id, existing);
+        });
+        
+        // Recursively process nested subphases
+        if (subphase.children?.length) {
+          processSubphases(subphase.children, project, phase);
+        }
+      }
+    };
+    
     projects.forEach((project) => {
       if (project.archived) return;
       
       // Project-level staff assignments
       project.staffAssignments?.forEach((sa) => {
+        totalAssignments++;
         const existing = map.get(sa.staff_id) || [];
         existing.push({
           ...sa,
@@ -230,6 +290,7 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
       // Phase-level staff assignments
       project.phases?.forEach((phase) => {
         phase.staffAssignments?.forEach((sa) => {
+          totalAssignments++;
           const existing = map.get(sa.staff_id) || [];
           existing.push({
             ...sa,
@@ -244,26 +305,16 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
           map.set(sa.staff_id, existing);
         });
         
-        // Subphase-level staff assignments
-        phase.children?.forEach((subphase) => {
-          subphase.staffAssignments?.forEach((sa) => {
-            const existing = map.get(sa.staff_id) || [];
-            existing.push({
-              ...sa,
-              start_date: sa.start_date || subphase.start_date,
-              end_date: sa.end_date || subphase.end_date,
-              projectName: project.name,
-              projectId: project.id,
-              phaseName: phase.name,
-              phaseId: phase.id,
-              subphaseName: subphase.name,
-              subphaseId: subphase.id,
-              level: 'subphase',
-            });
-            map.set(sa.staff_id, existing);
-          });
-        });
+        // Recursively process all subphases (handles nested subphases)
+        processSubphases(phase.children, project, phase);
       });
+    });
+    
+    console.log('[StaffView] staffAssignmentsMap built:', { 
+      projectCount: projects.length, 
+      staffCount: siteStaff.length,
+      totalAssignments,
+      mapEntries: Array.from(map.entries()).filter(([_, v]) => v.length > 0).length
     });
     
     return map;
@@ -283,8 +334,8 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
     return map;
   }, [vacations, siteStaff]);
   
-  // Calculate row heights based on stacked assignments
-  const rowHeights = useMemo(() => {
+  // Calculate minimum row heights based on stacked assignments (for timeline bars)
+  const calculatedRowHeights = useMemo(() => {
     const heights = new Map<number, number>();
     
     siteStaff.forEach((staffMember) => {
@@ -308,6 +359,57 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
     return heights;
   }, [siteStaff, staffAssignmentsMap, staffVacationsMap]);
   
+  // Measure actual panel row heights after render (for text wrapping)
+  useLayoutEffect(() => {
+    // Small delay to ensure DOM is fully rendered
+    const measureHeights = () => {
+      const newMeasured = new Map<number, number>();
+      let hasChanges = false;
+      
+      rowRefs.current.forEach((element, staffId) => {
+        if (element) {
+          const height = element.offsetHeight;
+          newMeasured.set(staffId, height);
+          if (measuredHeights.get(staffId) !== height) {
+            hasChanges = true;
+          }
+        }
+      });
+      
+      if (hasChanges || newMeasured.size !== measuredHeights.size) {
+        setMeasuredHeights(newMeasured);
+      }
+    };
+    
+    // Use requestAnimationFrame to measure after paint
+    const rafId = requestAnimationFrame(measureHeights);
+    return () => cancelAnimationFrame(rafId);
+  }, [siteStaff, localPanelWidth, panelWidth, measuredHeights]);
+  
+  // Combine calculated heights (for bars) with measured heights (for text wrapping)
+  // Use the maximum of both to ensure both content types fit
+  const rowHeights = useMemo(() => {
+    const heights = new Map<number, number>();
+    
+    siteStaff.forEach((staffMember) => {
+      const calculated = calculatedRowHeights.get(staffMember.id) || BASE_ROW_HEIGHT;
+      const measured = measuredHeights.get(staffMember.id) || 0;
+      // Use max of calculated (for bars) and measured (for text), with BASE_ROW_HEIGHT as minimum
+      heights.set(staffMember.id, Math.max(BASE_ROW_HEIGHT, calculated, measured));
+    });
+    
+    return heights;
+  }, [siteStaff, calculatedRowHeights, measuredHeights]);
+  
+  // Ref callback to register row elements for measurement
+  const setRowRef = useCallback((staffId: number) => (element: HTMLDivElement | null) => {
+    if (element) {
+      rowRefs.current.set(staffId, element);
+    } else {
+      rowRefs.current.delete(staffId);
+    }
+  }, []);
+  
   // Helper to check if a date range includes today
   const isActiveToday = (startDate: string, endDate: string): boolean => {
     const today = new Date();
@@ -320,12 +422,16 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
   };
   
   // Calculate availability for TODAY (matches ResourceCard logic)
-  const calcAvailability = (staffId: number): number => {
+  // Takes into account max_capacity for part-time workers
+  const calcAvailability = (staffId: number): { available: number; maxCapacity: number } => {
+    const staffMember = siteStaff.find(s => s.id === staffId) || allSiteStaff.find(s => s.id === staffId);
+    const maxCapacity = staffMember?.max_capacity ?? 100;
+    
     // Check if on vacation today
     const staffVacations = staffVacationsMap.get(staffId) || [];
     const onVacation = staffVacations.some(v => isActiveToday(v.start_date, v.end_date));
     if (onVacation) {
-      return 0; // No availability during vacation
+      return { available: 0, maxCapacity }; // No availability during vacation
     }
     
     const assignments = staffAssignmentsMap.get(staffId) || [];
@@ -333,7 +439,7 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
     const totalAllocation = assignments
       .filter(a => a.start_date && a.end_date && isActiveToday(a.start_date, a.end_date))
       .reduce((sum, a) => sum + (a.allocation || 0), 0);
-    return 100 - totalAllocation;
+    return { available: maxCapacity - totalAllocation, maxCapacity };
   };
   
   // Toggle staff expansion
@@ -360,11 +466,11 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
   // Check if user can drag staff to assign
   const canDrag = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
   
-  // Format date range for display
+  // Format date range for display using browser locale
   const formatDateRange = (start: string, end: string) => {
     const s = new Date(start);
     const e = new Date(end);
-    const formatDate = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    const formatDate = (d: Date) => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
     if (start === end) return formatDate(s);
     return `${formatDate(s)} - ${formatDate(e)}`;
   };
@@ -401,8 +507,40 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
     setDeleteConfirm(null);
   }, []);
   
-  // Determine panel style
-  const panelStyle = embedded && panelWidth ? { width: panelWidth } : undefined;
+  // Handle panel resize (horizontal - width)
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = effectivePanelWidth;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const newWidth = Math.max(200, Math.min(500, startWidth + delta));
+      
+      if (embedded && onPanelWidthChange) {
+        // In embedded mode, notify parent
+        onPanelWidthChange(newWidth);
+      } else {
+        // In standalone mode, update local state
+        setLocalPanelWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [embedded, effectivePanelWidth, onPanelWidthChange]);
+  
+  // Determine panel style - use effective width
+  const panelStyle = { width: effectivePanelWidth };
   
   // Determine container style (height when embedded)
   const containerStyle = embedded && height ? { height } : undefined;
@@ -545,7 +683,8 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
             </div>
           ) : (
             siteStaff.map((staffMember) => {
-              const availability = calcAvailability(staffMember.id);
+              const { available, maxCapacity } = calcAvailability(staffMember.id);
+              const isPartTime = maxCapacity < 100;
               const rowHeight = rowHeights.get(staffMember.id) || BASE_ROW_HEIGHT;
               const isExpanded = expandedStaff.has(staffMember.id);
               const staffVacations = staffVacationsMap.get(staffMember.id) || [];
@@ -556,8 +695,9 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
                 <div key={staffMember.id} className={styles.staffWrapper}>
                   {/* Main staff row */}
                   <div 
+                    ref={setRowRef(staffMember.id)}
                     className={`${styles.staffRow} ${canDrag ? styles.draggable : ''}`}
-                    style={{ height: rowHeight }}
+                    style={{ minHeight: rowHeight }}
                     onClick={() => toggleStaffExpand(staffMember.id)}
                     draggable={canDrag}
                     onDragStart={canDrag ? (e) => {
@@ -583,14 +723,23 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
                         <polyline points="9 18 15 12 9 6" />
                       </svg>
                     </div>
-                    <div className={`${styles.status} ${availability > 0 ? styles.available : styles.overloaded}`} />
+                    <div 
+                      className={`${styles.status} ${available > 0 ? styles.available : styles.overloaded} ${isPartTime ? styles.partTime : ''}`}
+                      title={isPartTime ? `Part-time: Max ${maxCapacity}% capacity` : 'Full-time: 100% capacity'}
+                    />
                     <div className={styles.staffInfo}>
-                      <div className={styles.staffName}>{staffMember.name}</div>
+                      <div className={styles.staffName}>
+                        {staffMember.name}
+                        {isPartTime && <span className={styles.partTimeBadge}>{maxCapacity}%</span>}
+                      </div>
                       <div className={styles.staffMeta}>
                         <span>{staffMember.role || 'No title'}</span>
                         <span> · </span>
-                        <span className={availability <= 0 ? styles.overloadedText : ''}>
-                          {availability}% available
+                        <span 
+                          className={available <= 0 ? styles.overloadedText : ''}
+                          title={isPartTime ? `${available}% of ${maxCapacity}% max capacity` : undefined}
+                        >
+                          {available}% available
                         </span>
                       </div>
                     </div>
@@ -600,36 +749,62 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
                   {isExpanded && (
                     <div className={styles.expandedContent}>
                       {/* Vacation rows */}
-                      {staffVacations.map((vacation) => (
-                        <div 
-                          key={`v-${vacation.id}`}
-                          className={`${styles.detailRow} ${canManage ? styles.clickable : ''} ${styles.vacationRow}`}
-                          onClick={canManage ? () => openVacationModal(vacation, staffMember.id) : undefined}
-                        >
-                          <span className={`${styles.detailType} ${styles.vacation}`}>Vacation</span>
-                          <span className={styles.detailName}>{vacation.description || 'Time Off'}</span>
-                          <span className={styles.dateBadge}>{formatDateRange(vacation.start_date, vacation.end_date)}</span>
-                          {canManage && (
-                            <span 
-                              className={styles.deleteBtn}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteVacationRequest(
-                                  vacation.id,
-                                  staffMember.name,
-                                  vacation.description || 'Time Off'
-                                );
-                              }}
-                              title="Delete vacation"
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <line x1="18" y1="6" x2="6" y2="18" />
-                                <line x1="6" y1="6" x2="18" y2="18" />
-                              </svg>
+                      {staffVacations.map((vacation) => {
+                        const recurringPattern = parseRecurringPattern(vacation.description);
+                        const displayDescription = recurringPattern 
+                          ? recurringPattern.cleanDescription 
+                          : (vacation.description || 'Time Off');
+                        
+                        return (
+                          <div 
+                            key={`v-${vacation.id}`}
+                            className={`${styles.detailRow} ${canManage ? styles.clickable : ''} ${styles.vacationRow} ${recurringPattern ? styles.recurringRow : ''}`}
+                            onClick={canManage ? () => openVacationModal(vacation, staffMember.id) : undefined}
+                          >
+                            <span className={`${styles.detailType} ${styles.vacation}`}>
+                              {recurringPattern ? (
+                                <span className={styles.recurringBadge} title={getRecurringDaysDisplay(recurringPattern.daysOfWeek)}>
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M17 1l4 4-4 4" />
+                                    <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                                    <path d="M7 23l-4-4 4-4" />
+                                    <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+                                  </svg>
+                                  Recurring
+                                </span>
+                              ) : 'Vacation'}
                             </span>
-                          )}
-                        </div>
-                      ))}
+                            <span className={styles.detailName}>
+                              {displayDescription}
+                              {recurringPattern && (
+                                <span className={styles.recurringDays}>
+                                  {getRecurringDaysDisplay(recurringPattern.daysOfWeek)}
+                                </span>
+                              )}
+                            </span>
+                            <span className={styles.dateBadge}>{formatDateRange(vacation.start_date, vacation.end_date)}</span>
+                            {canManage && (
+                              <span 
+                                className={styles.deleteBtn}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteVacationRequest(
+                                    vacation.id,
+                                    staffMember.name,
+                                    displayDescription
+                                  );
+                                }}
+                                title="Delete vacation"
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <line x1="18" y1="6" x2="6" y2="18" />
+                                  <line x1="6" y1="6" x2="18" y2="18" />
+                                </svg>
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
                       
                       {/* Add vacation placeholder */}
                       {canManage && (
@@ -681,8 +856,20 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
             isExpanded={embedded ? false : expandedBankHolidays}
             onToggle={embedded ? undefined : () => setExpandedBankHolidays(!expandedBankHolidays)}
           />
+          
+          {/* Company Events Row - always show to maintain height sync with timeline */}
+          <CompanyEventsRow
+            isExpanded={embedded ? false : expandedCompanyEvents}
+            onToggle={embedded ? undefined : () => setExpandedCompanyEvents(!expandedCompanyEvents)}
+          />
         </div>
       </div>
+      
+      {/* Resizer for panel width */}
+      <div
+        className={styles.resizer}
+        onMouseDown={handleResizeStart}
+      />
       
       {/* Right Side - Timeline */}
       <div className={styles.timeline}>
@@ -714,6 +901,7 @@ export function StaffView({ embedded = false, panelWidth, height }: StaffViewPro
               rowHeights={rowHeights}
               expandedStaff={expandedStaff}
               expandedBankHolidays={embedded ? false : expandedBankHolidays}
+              expandedCompanyEvents={embedded ? false : expandedCompanyEvents}
               cells={cells}
               cellWidth={cellWidth}
               totalWidth={totalWidth}

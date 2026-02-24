@@ -52,3 +52,49 @@
   text-align: right;
   color: var(--text-primary);
 }
+
+/* Status styling */
+.confirmed {
+  color: var(--accent-green) !important;
+}
+
+.unconfirmed {
+  color: var(--accent-orange) !important;
+}
+
+/* Staff section */
+.staffSection {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
+}
+
+.staffHeader {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.staffRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  font-size: var(--font-size-sm);
+}
+
+.staffName {
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.staffAllocation {
+  color: var(--accent-cyan);
+  flex-shrink: 0;
+  font-weight: var(--font-weight-medium);
+}

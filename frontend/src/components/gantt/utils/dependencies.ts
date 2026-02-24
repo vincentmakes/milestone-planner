@@ -4,6 +4,7 @@
  */
 
 import type { Project, Phase, Subphase, DependencyLink, DependencyType } from '@/types';
+import { getPhaseColor } from '@/utils/themeColors';
 
 /**
  * Extract all dependency links from projects
@@ -301,5 +302,5 @@ export function getDependencyColor(isViolated: boolean = false, phaseColor?: str
   if (isViolated) {
     return '#ef4444'; // Red for violated
   }
-  return phaseColor || '#ec4899'; // Use phase color or default pink/magenta
+  return phaseColor || getPhaseColor();
 }

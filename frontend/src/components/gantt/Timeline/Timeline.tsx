@@ -6,7 +6,7 @@
  * When used within TimelineScrollProvider, syncs scroll with other timelines (e.g., StaffView).
  */
 
-import { forwardRef, useRef, useEffect, useCallback } from 'react';
+import { forwardRef, useRef, useEffect, useCallback, useState } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useCtrlScrollZoom } from '@/hooks/useCtrlScrollZoom';
@@ -51,6 +51,9 @@ export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
     const previousCellWidthRef = useRef<number>(cellWidth);
     const visibleDateRef = useRef<string | null>(null);
     const lastZoomTimestampRef = useRef<number>(0);
+    
+    // Track current scroll position for print styles
+    const [currentScrollLeft, setCurrentScrollLeft] = useState(timelineScrollLeft);
 
     // Enable Ctrl+Scroll zoom
     useCtrlScrollZoom({ containerRef: horizontalScrollRef, cellWidth });
@@ -200,6 +203,9 @@ export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
       // Update visible date immediately
       visibleDateRef.current = getVisibleDate();
       
+      // Update current scroll position for print styles (immediate)
+      setCurrentScrollLeft(scrollContainer.scrollLeft);
+      
       // Clear existing timeout
       if (scrollSaveTimeout.current) {
         clearTimeout(scrollSaveTimeout.current);
@@ -297,6 +303,7 @@ export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
           ref={horizontalScrollRef} 
           className={styles.horizontalScroll}
           onScroll={handleScroll}
+          style={{ '--print-scroll-left': `${-currentScrollLeft}px` } as React.CSSProperties}
         >
           <div className={styles.scrollContent} style={{ width: totalWidth }}>
             <TimelineHeader

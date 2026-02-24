@@ -163,12 +163,23 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
               ) : null
             )}
             
-            {/* Bank holiday markers */}
+            {/* Bank holiday background markers (orange - same for custom and public) */}
             {showHighlighting && cells.map((cell, index) => 
               cell.isBankHoliday ? (
                 <div
-                  key={`holiday-${index}`}
+                  key={`holiday-bg-${index}`}
                   className={`${styles.gridCell} ${styles.holiday}`}
+                  style={{ left: index * cellWidth, width: cellWidth }}
+                />
+              ) : null
+            )}
+            
+            {/* Company event background markers (red) */}
+            {showHighlighting && cells.map((cell, index) => 
+              cell.isCompanyEvent ? (
+                <div
+                  key={`event-bg-${index}`}
+                  className={`${styles.gridCell} ${styles.companyEvent}`}
                   style={{ left: index * cellWidth, width: cellWidth }}
                 />
               ) : null
@@ -192,6 +203,36 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
               />
             ))}
           </div>
+          
+          {/* Holiday/Event tooltip layer - top strip only, doesn't block bars */}
+          {showHighlighting && (
+            <div className={styles.tooltipLayer}>
+              {cells.map((cell, index) => {
+                // Priority: bank holidays first, then company events
+                if (cell.isBankHoliday) {
+                  return (
+                    <div
+                      key={`tooltip-${index}`}
+                      className={`${styles.tooltipCell} ${styles.holiday}`}
+                      style={{ left: index * cellWidth, width: cellWidth }}
+                      data-tooltip={cell.bankHolidayName || 'Holiday'}
+                    />
+                  );
+                }
+                if (cell.isCompanyEvent) {
+                  return (
+                    <div
+                      key={`tooltip-${index}`}
+                      className={`${styles.tooltipCell} ${styles.event}`}
+                      style={{ left: index * cellWidth, width: cellWidth }}
+                      data-tooltip={cell.companyEventName || 'Company Event'}
+                    />
+                  );
+                }
+                return null;
+              })}
+            </div>
+          )}
 
           {/* Dependency arrows overlay */}
           <DependencyLayer

@@ -13,6 +13,7 @@ import {
   DEPENDENCY_STYLES 
 } from '../utils/dependencies';
 import { calculateBarPosition } from '../utils/timeline';
+import { getPhaseColor } from '@/utils/themeColors';
 import type { TimelineCell } from '../utils/timeline';
 import type { Project, DependencyType } from '@/types';
 import { DependencyPopup } from './DependencyPopup';
@@ -405,7 +406,7 @@ export const DependencyLayer = memo(function DependencyLayer({
           if (!arrow) return null;
           
           const style = DEPENDENCY_STYLES[arrow.type];
-          const color = arrow.sourceColor || '#ec4899';
+          const color = arrow.sourceColor || getPhaseColor();
           // Create unique marker ID for this color
           const markerId = `arrow-${arrow.id}`;
 

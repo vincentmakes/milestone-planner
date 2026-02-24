@@ -109,11 +109,51 @@
   border: none;
 }
 
+/* Overallocated slider state */
+.sliderOverallocated {
+  background: linear-gradient(90deg, var(--accent-red) 0%, var(--accent-red) 100%);
+}
+
+.sliderOverallocated::-webkit-slider-thumb {
+  background: var(--accent-red);
+  box-shadow: 0 0 8px rgba(231, 76, 60, 0.6);
+}
+
+.sliderOverallocated::-webkit-slider-thumb:hover {
+  background: #c0392b;
+}
+
+.sliderOverallocated::-moz-range-thumb {
+  background: var(--accent-red);
+  box-shadow: 0 0 8px rgba(231, 76, 60, 0.6);
+}
+
 .sliderLabels {
   display: flex;
   justify-content: space-between;
   font-size: 0.75rem;
   color: var(--text-muted);
+}
+
+.maxCapacityMarker {
+  color: var(--accent-purple);
+  font-weight: 500;
+}
+
+.capacityHint {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.overallocationWarning {
+  padding: 0.5rem 0.75rem;
+  background: rgba(231, 76, 60, 0.15);
+  border: 1px solid rgba(231, 76, 60, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--accent-red);
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
 }
 
 /* Footer styles */

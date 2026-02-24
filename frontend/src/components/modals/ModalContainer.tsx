@@ -12,6 +12,7 @@ import {
   VacationModal,
   BankHolidayModal,
   CustomHolidayModal,
+  CompanyEventModal,
   SiteModal,
   SiteManagementModal,
   UserManagementModal,
@@ -33,6 +34,7 @@ export function ModalContainer() {
       <VacationModal />
       <BankHolidayModal />
       <CustomHolidayModal />
+      <CompanyEventModal />
       <SiteModal />
       <SiteManagementModal />
       <UserManagementModal />

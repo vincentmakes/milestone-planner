@@ -105,6 +105,21 @@ export function TimelineRow({
               key={`holiday-${index}`}
               className={`${styles.specialCell} ${styles.bankHoliday}`}
               style={{ left: index * cellWidth, width: cellWidth }}
+              data-tooltip={cell.bankHolidayName || 'Holiday'}
+            />
+          );
+        }
+        return null;
+      })}
+      
+      {showHighlighting && cells.map((cell, index) => {
+        if (cell.isCompanyEvent) {
+          return (
+            <div
+              key={`event-${index}`}
+              className={`${styles.specialCell} ${styles.companyEvent}`}
+              style={{ left: index * cellWidth, width: cellWidth }}
+              data-tooltip={cell.companyEventName || 'Company Event'}
             />
           );
         }

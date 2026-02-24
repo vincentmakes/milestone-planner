@@ -37,6 +37,63 @@
 .secondaryRow {
   display: flex;
   height: 28px; /* Height to fit both week number and day */
+  position: relative;
+}
+
+/* Use pseudo-element for vertical grid lines - renders above cell backgrounds */
+.secondaryRow::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0px,
+    transparent calc(var(--cell-width, 36px) - 1px),
+    var(--border-color) calc(var(--cell-width, 36px) - 1px),
+    var(--border-color) var(--cell-width, 36px)
+  );
+}
+
+/* Background layer for highlighting - positioned absolutely like body grid */
+.bgLayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Background cells - positioned absolutely at exact pixel positions */
+.bgCell {
+  position: absolute;
+  top: 0;
+  height: 100%;
+}
+
+.bgCell.weekendBg {
+  background: var(--bg-weekend, rgba(0, 0, 0, 0.04));
+}
+
+/* All holidays (public and custom) - orange, matching body */
+.bgCell.holidayBg {
+  background: rgba(249, 115, 22, 0.25);
+}
+
+/* Company events - red */
+.bgCell.eventBg {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+/* Today - blue */
+.bgCell.todayBg {
+  background: var(--accent-blue-alpha);
 }
 
 .secondaryCell {
@@ -46,24 +103,24 @@
   flex-direction: column;
   font-size: 10px;
   color: var(--text-muted);
-  border-right: 1px solid var(--border-color);
   position: relative;
   padding: 2px 0;
+  flex-shrink: 0;
+  z-index: 1;
 }
 
-.secondaryCell.weekend {
-  background: rgba(255, 255, 255, 0.08);
+/* Text color classes */
+.secondaryCell.todayText {
+  color: var(--accent-blue);
+  font-weight: var(--font-weight-semibold);
 }
 
-.secondaryCell.holiday {
-  background: rgba(249, 115, 22, 0.2);
+.secondaryCell.holidayText {
   color: var(--accent-orange);
 }
 
-.secondaryCell.today {
-  background: var(--accent-blue-alpha);
-  color: var(--accent-blue);
-  font-weight: var(--font-weight-semibold);
+.secondaryCell.eventText {
+  color: var(--accent-red);
 }
 
 .dayLabel {

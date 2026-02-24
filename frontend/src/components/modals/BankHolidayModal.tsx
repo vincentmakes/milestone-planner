@@ -174,7 +174,7 @@ export function BankHolidayModal() {
   
   const formatDate = (dateStr: string): string => {
     const date = new Date(dateStr);
-    return date.toLocaleDateString('en-GB', { 
+    return date.toLocaleDateString(undefined, { 
       weekday: 'short',
       day: 'numeric', 
       month: 'short',

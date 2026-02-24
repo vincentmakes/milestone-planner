@@ -19,14 +19,27 @@
 .panel {
   display: flex;
   flex-direction: column;
-  width: 320px;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
   flex-shrink: 0;
+  /* Width controlled by inline style from local state */
 }
 
 .container.embedded .panel {
-  width: auto; /* Width controlled by panelWidth prop */
+  /* Same as standalone - width from inline style */
+}
+
+/* Vertical resizer for panel width */
+.resizer {
+  width: 4px;
+  background: rgba(139, 92, 246, 0.4);
+  cursor: col-resize;
+  flex-shrink: 0;
+  transition: background var(--transition-fast);
+}
+
+.resizer:hover {
+  background: var(--accent-purple);
 }
 
 .panelHeader {
@@ -107,15 +120,22 @@
   border-top: 2px solid var(--accent-orange);
 }
 
+/* Company events wrapper - distinct red border */
+.companyEventsWrapper {
+  border-bottom: 1px solid var(--border-color);
+  border-top: 2px solid var(--accent-red);
+}
+
 /* Staff Row - clickable main row */
 .staffRow {
   display: flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0 0.5rem 0 0.75rem;
+  align-items: flex-start;
+  min-height: 52px;
+  padding: 8px 0.5rem 8px 0.75rem;
   gap: 8px;
   cursor: pointer;
   transition: background 0.15s;
+  box-sizing: border-box;
 }
 
 .staffRow:hover {
@@ -137,6 +157,7 @@
   justify-content: center;
   width: 14px;
   height: 20px;
+  margin-top: 0;
   color: var(--text-muted);
   opacity: 0.4;
   transition: opacity 0.15s, color 0.15s;
@@ -155,6 +176,7 @@
   justify-content: center;
   width: 16px;
   height: 16px;
+  margin-top: 2px;
   color: var(--text-muted);
   transition: transform 0.2s;
   flex-shrink: 0;
@@ -167,8 +189,10 @@
 .status {
   width: 8px;
   height: 8px;
+  margin-top: 5px;
   border-radius: 50%;
   flex-shrink: 0;
+  cursor: help;
 }
 
 .status.available {
@@ -179,10 +203,15 @@
   background: var(--accent-red);
 }
 
+/* Part-time indicator - ring around the status dot */
+.status.partTime {
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 3px var(--primary);
+}
+
 .staffInfo {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
+  padding: 2px 0;
 }
 
 .staffName {
@@ -192,11 +221,26 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Part-time capacity badge */
+.partTimeBadge {
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: var(--primary);
+  background: rgba(0, 122, 254, 0.15);
+  padding: 1px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
 }
 
 .staffMeta {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
+  line-height: 1.4;
 }
 
 .overloadedText {
@@ -349,6 +393,34 @@
   background: rgba(139, 92, 246, 0.05);
 }
 
+/* Recurring vacation row */
+.recurringRow {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(139, 92, 246, 0.03),
+    rgba(139, 92, 246, 0.03) 4px,
+    rgba(139, 92, 246, 0.08) 4px,
+    rgba(139, 92, 246, 0.08) 8px
+  );
+}
+
+.recurringBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.recurringBadge svg {
+  opacity: 0.8;
+}
+
+.recurringDays {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: 6px;
+  font-weight: var(--font-weight-normal);
+}
+
 /* Custom holiday row */
 .customHoliday {
   background: rgba(249, 115, 22, 0.05);
@@ -384,11 +456,40 @@
 /* Bank holidays row */
 .bankHolidaysRow {
   height: 44px;
+  min-height: 44px; /* Override staffRow min-height */
+  padding: 0 0.5rem 0 0.75rem; /* Remove vertical padding, keep horizontal */
   background: var(--bg-secondary);
+  align-items: center; /* Center content vertically */
+}
+
+/* Reset margins for centered alignment in bank holidays row */
+.bankHolidaysRow .expandIcon,
+.companyEventsRow .expandIcon {
+  margin-top: 0;
 }
 
 .bankHolidayStatus {
   background: var(--accent-orange) !important;
+  margin-top: 0; /* Reset margin for centered alignment */
+}
+
+/* Company events row */
+.companyEventsRow {
+  height: 44px;
+  min-height: 44px; /* Override staffRow min-height */
+  padding: 0 0.5rem 0 0.75rem; /* Remove vertical padding, keep horizontal */
+  background: var(--bg-secondary);
+  align-items: center; /* Center content vertically */
+}
+
+.companyEventStatus {
+  background: var(--accent-red) !important;
+  margin-top: 0; /* Reset margin for centered alignment */
+}
+
+.detailType.companyEvent {
+  background: rgba(239, 68, 68, 0.2);
+  color: var(--accent-red);
 }
 
 .noAssignments {

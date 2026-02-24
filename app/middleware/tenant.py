@@ -93,17 +93,34 @@ class TenantMiddleware:
     ASGI Middleware to resolve tenant from /t/{slug}/ URL prefix.
     
     This properly rewrites the URL path BEFORE FastAPI routing happens.
+    Handles both HTTP and WebSocket connections.
     """
     
     def __init__(self, app: ASGIApp):
         self.app = app
+        print("[TenantMiddleware] Initialized - wrapping app")
     
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        # Debug: log every request type
+        print(f"[TenantMiddleware] Request: type={scope['type']}, path={scope.get('path', 'N/A')}")
+        
+        # SKIP WebSocket connections - they handle tenant resolution themselves
+        # This avoids ASGI scope/state issues with WebSocket connections
+        if scope["type"] == "websocket":
+            print(f"[TenantMiddleware] Skipping WebSocket - handler will resolve tenant")
+            await self.app(scope, receive, send)
+            return
+        
+        # Only handle HTTP requests
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
         
         path = scope.get("path", "/")
+        
+        # Debug logging for WebSocket
+        if scope["type"] == "websocket":
+            print(f"[TenantMiddleware] WebSocket request: path={path}")
         
         # Fast path: Skip if not a tenant URL
         if not path.startswith('/t/'):
@@ -117,6 +134,10 @@ class TenantMiddleware:
         # Extract tenant slug from URL
         slug, remaining_path = extract_tenant_slug(path)
         
+        # Debug logging
+        if scope["type"] == "websocket":
+            print(f"[TenantMiddleware] WebSocket tenant extraction: slug={slug}, remaining={remaining_path}")
+        
         if not slug:
             await self.app(scope, receive, send)
             return
@@ -126,6 +147,12 @@ class TenantMiddleware:
             tenant_info = await get_tenant_info_cached(slug)
             
             if not tenant_info:
+                # For WebSocket, we can't send a JSON response easily before accept
+                # Just let it through and the handler will reject it
+                if scope["type"] == "websocket":
+                    await self.app(scope, receive, send)
+                    return
+                    
                 response = JSONResponse(
                     status_code=404,
                     content={
@@ -137,6 +164,11 @@ class TenantMiddleware:
                 return
             
             if tenant_info["status"] != "active":
+                # For WebSocket, let handler deal with it
+                if scope["type"] == "websocket":
+                    await self.app(scope, receive, send)
+                    return
+                    
                 status_messages = {
                     "suspended": "This organization has been suspended. Please contact support.",
                     "pending": "This organization is pending activation.",
@@ -163,6 +195,11 @@ class TenantMiddleware:
                     state["tenant_engine"] = engine
                 except Exception as e:
                     print(f"Tenant DB connection error: {e}")
+                    # For WebSocket, let handler deal with it
+                    if scope["type"] == "websocket":
+                        await self.app(scope, receive, send)
+                        return
+                        
                     response = JSONResponse(
                         status_code=503,
                         content={
@@ -180,6 +217,12 @@ class TenantMiddleware:
             new_scope["raw_path"] = remaining_path.encode()
             new_scope["state"] = state
             
+            # Debug logging for WebSocket
+            if scope["type"] == "websocket":
+                print(f"[TenantMiddleware] WebSocket path rewritten: {path} -> {remaining_path}")
+                print(f"[TenantMiddleware] WebSocket new_scope path: {new_scope.get('path')}")
+                print(f"[TenantMiddleware] WebSocket state: tenant_slug={state.get('tenant_slug')}, has_engine={state.get('tenant_engine') is not None}")
+            
             # Also update root_path if needed for URL generation
             # new_scope["root_path"] = f"/t/{slug}"
             
@@ -189,6 +232,11 @@ class TenantMiddleware:
             print(f"Tenant middleware error: {e}")
             import traceback
             traceback.print_exc()
+            # For WebSocket, let it fail naturally
+            if scope["type"] == "websocket":
+                await self.app(scope, receive, send)
+                return
+                
             response = JSONResponse(
                 status_code=500,
                 content={

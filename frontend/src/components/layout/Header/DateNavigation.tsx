@@ -5,7 +5,7 @@
 
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
-import { addWeeks, addMonths, format, startOfWeek, startOfQuarter } from 'date-fns';
+import { addWeeks, addMonths, startOfWeek, startOfQuarter } from 'date-fns';
 import styles from './DateNavigation.module.css';
 
 export function DateNavigation() {
@@ -45,24 +45,28 @@ export function DateNavigation() {
     triggerScrollToToday();
   };
 
-  // Format the current period label
+  // Format the current period label using browser locale
   const getPeriodLabel = (): string => {
+    const monthYearFormatter = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' });
+    const dateFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    const yearFormatter = new Intl.DateTimeFormat(undefined, { year: 'numeric' });
+    
     switch (viewMode) {
       case 'week': {
         const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
-        return format(weekStart, 'MMM d, yyyy');
+        return dateFormatter.format(weekStart);
       }
       case 'month':
-        return format(currentDate, 'MMMM yyyy');
+        return monthYearFormatter.format(currentDate);
       case 'quarter': {
         const qStart = startOfQuarter(currentDate);
         const quarter = Math.floor(qStart.getMonth() / 3) + 1;
-        return `Q${quarter} ${format(qStart, 'yyyy')}`;
+        return `Q${quarter} ${yearFormatter.format(qStart)}`;
       }
       case 'year':
-        return format(currentDate, 'yyyy');
+        return yearFormatter.format(currentDate);
       default:
-        return format(currentDate, 'MMMM yyyy');
+        return monthYearFormatter.format(currentDate);
     }
   };
 

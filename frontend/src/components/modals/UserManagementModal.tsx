@@ -372,6 +372,7 @@ function UserForm({ user, sites, skills, currentUser, onSave, onDelete, onCancel
   const [password, setPassword] = useState('');
   const [jobTitle, setJobTitle] = useState(user?.job_title || '');
   const [role, setRole] = useState<UserRole>(user?.role || 'user');
+  const [maxCapacity, setMaxCapacity] = useState(user?.max_capacity ?? 100);
   const [active, setActive] = useState(user?.active ?? true);
   const [selectedSiteIds, setSelectedSiteIds] = useState<number[]>(user?.site_ids || []);
   const [selectedSkillIds, setSelectedSkillIds] = useState<number[]>(user?.skills?.map(s => s.id) || []);
@@ -460,6 +461,7 @@ function UserForm({ user, sites, skills, currentUser, onSave, onDelete, onCancel
           email: email.trim(),
           job_title: jobTitle.trim() || undefined,
           role,
+          max_capacity: maxCapacity,
           active,
           site_ids: selectedSiteIds,
           skill_ids: selectedSkillIds,
@@ -474,6 +476,7 @@ function UserForm({ user, sites, skills, currentUser, onSave, onDelete, onCancel
           password,
           job_title: jobTitle.trim() || undefined,
           role,
+          max_capacity: maxCapacity,
           site_ids: selectedSiteIds,
           skill_ids: selectedSkillIds,
         };
@@ -534,6 +537,29 @@ function UserForm({ user, sites, skills, currentUser, onSave, onDelete, onCancel
         <div className={styles.field}>
           <label htmlFor="jobTitle">Job Title</label>
           <input type="text" id="jobTitle" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="e.g., Project Manager" />
+        </div>
+        <div className={styles.field}>
+          <label htmlFor="maxCapacity">Max Capacity: {maxCapacity}%</label>
+          <div className={styles.sliderContainer}>
+            <input
+              type="range"
+              className={styles.slider}
+              id="maxCapacity"
+              min="5"
+              max="100"
+              step="5"
+              value={maxCapacity}
+              onChange={(e) => setMaxCapacity(parseInt(e.target.value))}
+            />
+            <div className={styles.sliderLabels}>
+              <span>5%</span>
+              <span>50%</span>
+              <span>100%</span>
+            </div>
+          </div>
+          <span className={styles.hint}>
+            {maxCapacity < 100 ? `Part-time worker (${maxCapacity}% capacity)` : 'Full-time worker'}
+          </span>
         </div>
         <div className={styles.field}>
           <label htmlFor="role">Role *</label>

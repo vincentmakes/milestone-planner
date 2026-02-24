@@ -6,7 +6,7 @@
 import { useState, FormEvent, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { checkSSOEnabled, getSSOLoginUrl } from '@/api';
-import { getTheme } from '@/utils/storage';
+import { getTheme, isDarkTheme, type Theme } from '@/utils/storage';
 import styles from './LoginScreen.module.css';
 
 export function LoginScreen() {
@@ -16,7 +16,7 @@ export function LoginScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ssoEnabled, setSsoEnabled] = useState(false);
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => getTheme());
+  const [theme, setThemeState] = useState<Theme>(() => getTheme());
 
   // Check if SSO is enabled
   useEffect(() => {
@@ -34,9 +34,9 @@ export function LoginScreen() {
   // Watch for theme changes
   useEffect(() => {
     const observer = new MutationObserver(() => {
-      const currentTheme = document.documentElement.dataset.theme as 'dark' | 'light';
+      const currentTheme = document.documentElement.dataset.theme as Theme;
       if (currentTheme && currentTheme !== theme) {
-        setTheme(currentTheme);
+        setThemeState(currentTheme);
       }
     });
 
@@ -64,14 +64,21 @@ export function LoginScreen() {
 
   const handleSSOLogin = async () => {
     try {
-      const { url } = await getSSOLoginUrl();
-      window.location.href = url;
+      const response = await getSSOLoginUrl();
+      console.log('SSO Login response:', response);
+      if (response.url) {
+        window.location.href = response.url;
+      } else {
+        console.error('No URL in SSO response:', response);
+        setError('SSO login URL not received');
+      }
     } catch (err) {
+      console.error('SSO login error:', err);
       setError('Failed to initiate SSO login');
     }
   };
 
-  const logoSrc = theme === 'dark' 
+  const logoSrc = isDarkTheme(theme) 
     ? '/img/milestone_logo_dark_theme.svg'
     : '/img/milestone_logo_light_theme.svg';
 

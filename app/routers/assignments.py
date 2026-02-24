@@ -26,7 +26,7 @@ Matches Node.js routes:
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_superuser
 from app.models.user import User
-from app.models.project import Project
+from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.assignment import (
     ProjectAssignment,
     PhaseStaffAssignment,
@@ -45,6 +45,7 @@ from app.schemas.base import (
     serialize_datetime_js,
     serialize_date_as_datetime_js,
 )
+from app.websocket.broadcast import broadcast_change
 
 router = APIRouter(tags=["assignments"])
 
@@ -152,6 +153,7 @@ async def get_staff_assignments(
 async def create_project_staff_assignment(
     project_id: int,
     data: ProjectStaffAssignmentCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -171,6 +173,16 @@ async def create_project_staff_assignment(
     await db.commit()
     await db.refresh(assignment)
     
+    # Broadcast change
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="assignment",
+        entity_id=assignment.id,
+        project_id=project_id,
+        action="create",
+    )
+    
     return {"id": assignment.id, "success": True}
 
 
@@ -178,6 +190,7 @@ async def create_project_staff_assignment(
 async def update_project_staff_assignment(
     assignment_id: int,
     data: ProjectStaffAssignmentUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -194,11 +207,23 @@ async def update_project_staff_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
     
+    project_id = assignment.project_id
+    
     assignment.allocation = data.allocation
     assignment.start_date = data.start_date
     assignment.end_date = data.end_date
     
     await db.commit()
+    
+    # Broadcast change
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="assignment",
+        entity_id=assignment_id,
+        project_id=project_id,
+        action="update",
+    )
     
     return {"success": True}
 
@@ -206,6 +231,7 @@ async def update_project_staff_assignment(
 @router.delete("/assignments/{assignment_id}")
 async def delete_project_staff_assignment(
     assignment_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -222,8 +248,20 @@ async def delete_project_staff_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
     
+    project_id = assignment.project_id
+    
     await db.delete(assignment)
     await db.commit()
+    
+    # Broadcast change
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="assignment",
+        entity_id=assignment_id,
+        project_id=project_id,
+        action="delete",
+    )
     
     return {"success": True}
 
@@ -236,6 +274,7 @@ async def delete_project_staff_assignment(
 async def create_phase_staff_assignment(
     phase_id: int,
     data: PhaseStaffAssignmentCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -266,6 +305,16 @@ async def create_phase_staff_assignment(
     )
     row = result.first()
     
+    # Broadcast change
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="assignment",
+        entity_id=assignment.id,
+        project_id=data.project_id,
+        action="create",
+    )
+    
     return {
         "id": row[0].id,
         "phase_id": row[0].phase_id,
@@ -281,6 +330,7 @@ async def create_phase_staff_assignment(
 async def update_phase_staff_assignment(
     assignment_id: int,
     data: PhaseStaffAssignmentUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -297,9 +347,21 @@ async def update_phase_staff_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
     
+    project_id = assignment.project_id
+    
     assignment.allocation = data.allocation
     
     await db.commit()
+    
+    # Broadcast change
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="assignment",
+        entity_id=assignment_id,
+        project_id=project_id,
+        action="update",
+    )
     
     return {"success": True}
 
@@ -307,6 +369,7 @@ async def update_phase_staff_assignment(
 @router.delete("/phase-staff/{assignment_id}")
 async def delete_phase_staff_assignment(
     assignment_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -323,8 +386,20 @@ async def delete_phase_staff_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
     
+    project_id = assignment.project_id
+    
     await db.delete(assignment)
     await db.commit()
+    
+    # Broadcast change
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="assignment",
+        entity_id=assignment_id,
+        project_id=project_id,
+        action="delete",
+    )
     
     return {"success": True}
 
@@ -337,6 +412,7 @@ async def delete_phase_staff_assignment(
 async def create_subphase_staff_assignment(
     subphase_id: int,
     data: SubphaseStaffAssignmentCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -367,6 +443,16 @@ async def create_subphase_staff_assignment(
     )
     row = result.first()
     
+    # Broadcast change
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="assignment",
+        entity_id=assignment.id,
+        project_id=data.project_id,
+        action="create",
+    )
+    
     return {
         "id": row[0].id,
         "subphase_id": row[0].subphase_id,
@@ -382,6 +468,7 @@ async def create_subphase_staff_assignment(
 async def update_subphase_staff_assignment(
     assignment_id: int,
     data: SubphaseStaffAssignmentUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -398,9 +485,21 @@ async def update_subphase_staff_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
     
+    project_id = assignment.project_id
+    
     assignment.allocation = data.allocation
     
     await db.commit()
+    
+    # Broadcast change
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="assignment",
+        entity_id=assignment_id,
+        project_id=project_id,
+        action="update",
+    )
     
     return {"success": True}
 
@@ -408,6 +507,7 @@ async def update_subphase_staff_assignment(
 @router.delete("/subphase-staff/{assignment_id}")
 async def delete_subphase_staff_assignment(
     assignment_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -424,8 +524,20 @@ async def delete_subphase_staff_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
     
+    project_id = assignment.project_id
+    
     await db.delete(assignment)
     await db.commit()
+    
+    # Broadcast change
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="assignment",
+        entity_id=assignment_id,
+        project_id=project_id,
+        action="delete",
+    )
     
     return {"success": True}
 
@@ -438,6 +550,7 @@ async def delete_subphase_staff_assignment(
 async def create_equipment_assignment(
     project_id: int,
     data: EquipmentAssignmentCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -456,6 +569,16 @@ async def create_equipment_assignment(
     await db.commit()
     await db.refresh(assignment)
     
+    # Broadcast change
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="assignment",
+        entity_id=assignment.id,
+        project_id=project_id,
+        action="create",
+    )
+    
     return {"id": assignment.id, "success": True}
 
 
@@ -463,6 +586,7 @@ async def create_equipment_assignment(
 async def update_equipment_assignment(
     assignment_id: int,
     data: EquipmentAssignmentUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -479,10 +603,22 @@ async def update_equipment_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
     
+    project_id = assignment.project_id
+    
     assignment.start_date = data.start_date
     assignment.end_date = data.end_date
     
     await db.commit()
+    
+    # Broadcast change
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="assignment",
+        entity_id=assignment_id,
+        project_id=project_id,
+        action="update",
+    )
     
     return {"success": True}
 
@@ -490,6 +626,7 @@ async def update_equipment_assignment(
 @router.delete("/equipment-assignments/{assignment_id}")
 async def delete_equipment_assignment(
     assignment_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -506,7 +643,19 @@ async def delete_equipment_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
     
+    project_id = assignment.project_id
+    
     await db.delete(assignment)
     await db.commit()
+    
+    # Broadcast change
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="assignment",
+        entity_id=assignment_id,
+        project_id=project_id,
+        action="delete",
+    )
     
     return {"success": True}

@@ -9,25 +9,10 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { getPhaseColor, getDepthColor } from '@/utils/themeColors';
 import type { Phase, Subphase, Project } from '@/types';
 import type { TimelineCell } from '@/components/gantt/utils';
 import { format, addDays, differenceInDays } from 'date-fns';
-
-// Phase colors (matching vanilla JS)
-const PHASE_COLOR = '#ec4899'; // Pink/magenta for phases
-
-// Depth colors for subphases (matching vanilla JS getDepthColor)
-const DEPTH_COLORS = [
-  '#06b6d4', // cyan - depth 1
-  '#8b5cf6', // purple - depth 2
-  '#f59e0b', // amber - depth 3
-  '#10b981', // emerald - depth 4
-  '#ef4444', // red - depth 5+
-];
-
-function getDepthColor(depth: number): string {
-  return DEPTH_COLORS[Math.min(depth - 1, DEPTH_COLORS.length - 1)] || DEPTH_COLORS[0];
-}
 
 // Helper to find subphase depth in hierarchy
 function getSubphaseDepth(project: Project, subphaseId: number): number {
@@ -146,7 +131,7 @@ export function usePhantomSibling() {
         if (!sourceItem) return;
 
         sourceIndex = (project.phases || []).findIndex((p) => p.id === sourceId);
-        phantomColor = PHASE_COLOR;
+        phantomColor = getPhaseColor();
         
         // Collapse this phase's children if expanded
         const { expandedPhases } = useAppStore.getState();

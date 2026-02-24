@@ -17,10 +17,11 @@ import styles from './ProjectPanel.module.css';
 interface ProjectPanelProps {
   projects: Project[];
   width: number;  // Width of the name/info column
+  onProjectReorder?: (fromId: number, toId: number) => void;
 }
 
 export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
-  function ProjectPanel({ projects, width }, ref) {
+  function ProjectPanel({ projects, width, onProjectReorder }, ref) {
     const openProjectModal = useUIStore((s) => s.openProjectModal);
     const setActiveModal = useUIStore((s) => s.setActiveModal);
     const currentUser = useAppStore((s) => s.currentUser);
@@ -267,12 +268,15 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                 </p>
               </div>
             ) : (
-              projects.map((project) => (
+              projects.map((project, index) => (
                 <ProjectRow 
                   key={project.id} 
                   project={project}
                   customColumns={visibleColumns}
                   nameColumnWidth={width}
+                  onReorder={onProjectReorder}
+                  siblingIds={projects.map(p => p.id)}
+                  index={index}
                 />
               ))
             )}

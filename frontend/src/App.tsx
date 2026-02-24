@@ -8,6 +8,7 @@ import { MainLayout } from './components/layout/MainLayout';
 import { ModalContainer } from './components/modals';
 import { ContextMenuContainer } from './components/gantt/ContextMenuContainer';
 import { AdminApp } from './components/admin';
+import { WebSocketProvider } from './contexts/WebSocketContext';
 import './App.css';
 
 function App() {
@@ -75,13 +76,13 @@ function App() {
     return <LoadingScreen message="Loading data..." />;
   }
 
-  // Render main application with modals
+  // Render main application with WebSocket provider for real-time updates
   return (
-    <>
+    <WebSocketProvider>
       <MainLayout />
       <ModalContainer />
       <ContextMenuContainer />
-    </>
+    </WebSocketProvider>
   );
 }
 

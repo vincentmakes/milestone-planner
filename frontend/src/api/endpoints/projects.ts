@@ -102,9 +102,32 @@ export async function createPhase(projectId: number, data: CreatePhaseRequest): 
 
 /**
  * Update a phase
+ * Backend expects 'type' instead of 'name' for the phase name
  */
 export async function updatePhase(phaseId: number, data: UpdatePhaseRequest): Promise<Phase> {
-  return apiPut<Phase>(`/api/phases/${phaseId}`, data);
+  // Map frontend 'name' to backend 'type'
+  const backendData: Record<string, unknown> = {};
+  
+  if (data.name !== undefined) {
+    backendData.type = data.name;
+  }
+  if (data.start_date !== undefined) {
+    backendData.start_date = data.start_date;
+  }
+  if (data.end_date !== undefined) {
+    backendData.end_date = data.end_date;
+  }
+  if (data.is_milestone !== undefined) {
+    backendData.is_milestone = data.is_milestone;
+  }
+  if (data.dependencies !== undefined) {
+    backendData.dependencies = data.dependencies;
+  }
+  if (data.completion !== undefined) {
+    backendData.completion = data.completion;
+  }
+  
+  return apiPut<Phase>(`/api/phases/${phaseId}`, backendData);
 }
 
 /**
@@ -307,11 +330,14 @@ function transformProject(project: any): Project {
   };
 }
 
-// Phase color - all phases use pink/magenta
-const PHASE_COLOR = '#ec4899';
+// Phase color - use theme-aware function
+import { getPhaseColor, getDepthColor } from '@/utils/themeColors';
 
-// Subphase depth colors
-const DEPTH_COLORS: Record<number, string> = {
+// Legacy constants for fallback (kept for reference)
+const PHASE_COLOR_FALLBACK = '#ec4899';
+
+// Subphase depth colors fallback
+const DEPTH_COLORS_FALLBACK: Record<number, string> = {
   1: '#06b6d4',  // Cyan
   2: '#8b5cf6',  // Purple
   3: '#3b82f6',  // Blue
@@ -323,8 +349,21 @@ const DEPTH_COLORS: Record<number, string> = {
   9: '#a855f7',  // Light Purple
 };
 
-function getDepthColor(depth: number): string {
-  return DEPTH_COLORS[depth] || DEPTH_COLORS[1];
+function getDepthColorWithFallback(depth: number): string {
+  // Try to get from CSS variables first, fall back to hardcoded
+  try {
+    return getDepthColor(depth);
+  } catch {
+    return DEPTH_COLORS_FALLBACK[depth] || DEPTH_COLORS_FALLBACK[1];
+  }
+}
+
+function getPhaseColorWithFallback(): string {
+  try {
+    return getPhaseColor();
+  } catch {
+    return PHASE_COLOR_FALLBACK;
+  }
 }
 
 function transformPhase(phase: any): Phase {
@@ -334,7 +373,7 @@ function transformPhase(phase: any): Phase {
     name: phase.type || phase.name || 'Phase',  // API returns 'type' for phases
     start_date: phase.start_date,
     end_date: phase.end_date,
-    color: PHASE_COLOR,
+    color: getPhaseColorWithFallback(),
     order_index: phase.sort_order ?? 0,
     completion: phase.completion ?? null,
     // Handle SQLite integer (0/1) and boolean
@@ -356,7 +395,7 @@ function transformSubphase(subphase: any, depth: number = 1): Subphase {
     name: subphase.name,
     start_date: subphase.start_date,
     end_date: subphase.end_date,
-    color: getDepthColor(actualDepth),
+    color: getDepthColorWithFallback(actualDepth),
     order_index: subphase.sort_order ?? 0,
     completion: subphase.completion ?? null,
     // Handle SQLite integer (0/1) and boolean

@@ -15,6 +15,7 @@ import { usePhantomSibling } from '@/hooks';
 import { CustomColumnCell } from '@/components/gantt/CustomColumns';
 import { CompletionSlider } from '@/components/gantt/CompletionSlider';
 import { updatePhase } from '@/api';
+import { formatShortDateRange, formatSingleDate } from '@/utils/date';
 import type { Phase, Subphase, CustomColumn, CustomColumnEntityType } from '@/types';
 import styles from './PhaseRow.module.css';
 
@@ -48,14 +49,7 @@ interface PhaseRowProps {
   phases: Phase[];  // All phases for reorder context
   customColumns?: CustomColumn[];
   nameColumnWidth: number;
-}
-
-// Format date range like vanilla JS
-function formatDateRange(startDate: string, endDate: string): string {
-  const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
-  const start = new Date(startDate).toLocaleDateString('en-US', options);
-  const end = new Date(endDate).toLocaleDateString('en-US', options);
-  return `${start} - ${end}`;
+  criticalPathItems?: Set<string>;  // Critical path items for this project
 }
 
 // Recursively calculate effective completion for an item
@@ -109,6 +103,7 @@ export const PhaseRow = memo(function PhaseRow({
   phases,
   customColumns = [],
   nameColumnWidth,
+  criticalPathItems = new Set(),
 }: PhaseRowProps) {
   const expandedPhases = useAppStore((s) => s.expandedPhases);
   const togglePhaseExpanded = useAppStore((s) => s.togglePhaseExpanded);
@@ -186,12 +181,12 @@ export const PhaseRow = memo(function PhaseRow({
 
   const paddingLeft = depth * 16 + 8;
 
-  // Format date display
+  // Format date display using browser locale
   const dateDisplay = useMemo(() => {
     if (phase.is_milestone) {
-      return new Date(phase.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return formatSingleDate(phase.start_date);
     }
-    return formatDateRange(phase.start_date, phase.end_date);
+    return formatShortDateRange(phase.start_date, phase.end_date);
   }, [phase.start_date, phase.end_date, phase.is_milestone]);
 
   // Get effective completion (calculated from children or manual)
@@ -237,6 +232,10 @@ export const PhaseRow = memo(function PhaseRow({
       >
         {/* Name column - fixed width */}
         <div className={styles.nameColumn} style={{ width: nameColumnWidth, paddingLeft }}>
+          {/* Critical path indicator */}
+          {criticalPathItems.has(`phase-${phase.id}`) && (
+            <span className={styles.criticalPathDot} title="On Critical Path" />
+          )}
           {/* Drag handle */}
           <div
             className={styles.dragHandle}
@@ -342,6 +341,7 @@ export const PhaseRow = memo(function PhaseRow({
             depth={depth + 1}
             customColumns={customColumns}
             nameColumnWidth={nameColumnWidth}
+            criticalPathItems={criticalPathItems}
           />
 
           {/* Phase-level staff assignments - filtered by showAssignments */}
@@ -408,6 +408,7 @@ function PhaseSubphasesWithPhantom({
   depth,
   customColumns,
   nameColumnWidth,
+  criticalPathItems,
 }: { 
   subphases: Subphase[]; 
   phaseId: number; 
@@ -415,6 +416,7 @@ function PhaseSubphasesWithPhantom({
   depth: number;
   customColumns: CustomColumn[];
   nameColumnWidth: number;
+  criticalPathItems: Set<string>;
 }) {
   const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
   const customColumnFilters = useAppStore((s) => s.customColumnFilters);
@@ -487,6 +489,7 @@ function PhaseSubphasesWithPhantom({
             parentType="phase"
             customColumns={customColumns}
             nameColumnWidth={nameColumnWidth}
+            criticalPathItems={criticalPathItems}
           />
           {showPhantomAfter === subphase.id && (
             <PhantomRow

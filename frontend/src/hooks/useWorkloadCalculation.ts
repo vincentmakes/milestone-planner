@@ -4,7 +4,7 @@
  * Calculates per-cell workload data for Staff View heatmap visualization.
  * For each timeline cell (day/week), determines:
  * - Total allocation percentage from all assignments
- * - Whether staff is on vacation
+ * - Whether staff is on vacation (including recurring patterns)
  * - Contributing assignments for tooltip
  * - Visual state (overloaded, full, partial, vacation, conflict)
  */
@@ -12,6 +12,7 @@
 import { useMemo } from 'react';
 import type { TimelineCell } from '@/components/gantt/utils';
 import type { Vacation } from '@/types';
+import { parseRecurringPattern, isDateOnRecurringVacation } from '@/utils/recurringVacation';
 
 // Assignment with context from Staff View
 interface AssignmentWithDates {
@@ -32,6 +33,8 @@ export interface WorkloadCell {
   isOnVacation: boolean;
   /** Vacation description if on vacation */
   vacationDescription?: string;
+  /** Whether this is a recurring vacation day */
+  isRecurringVacation?: boolean;
   /** Available percentage (100 - total, or 0 if on vacation) */
   available: number;
   /** Visual state for styling */
@@ -40,11 +43,13 @@ export interface WorkloadCell {
 
 /**
  * Calculate workload data for each cell in the timeline
+ * @param maxCapacity - Staff member's max capacity (default 100, e.g. 80 for part-time)
  */
 export function useWorkloadCalculation(
   assignments: AssignmentWithDates[],
   vacations: Vacation[],
-  cells: TimelineCell[]
+  cells: TimelineCell[],
+  maxCapacity: number = 100
 ): WorkloadCell[] {
   return useMemo(() => {
     return cells.map((cell) => {
@@ -52,11 +57,34 @@ export function useWorkloadCalculation(
       const cellDateStr = cell.dateStr;
       
       // Check if on vacation (extract date part for comparison)
-      const activeVacation = vacations.find((v) => {
+      // Now handles both regular and recurring vacations
+      let activeVacation: Vacation | undefined;
+      let isRecurring = false;
+      
+      for (const v of vacations) {
         const vStart = v.start_date.split('T')[0];
         const vEnd = v.end_date.split('T')[0];
-        return cellDateStr >= vStart && cellDateStr <= vEnd;
-      });
+        
+        // Check if within date range first
+        if (cellDateStr >= vStart && cellDateStr <= vEnd) {
+          const pattern = parseRecurringPattern(v.description);
+          
+          if (pattern) {
+            // Recurring vacation - check if this day of week matches
+            if (isDateOnRecurringVacation(cellDateStr, v, pattern)) {
+              activeVacation = { ...v, description: pattern.cleanDescription };
+              isRecurring = true;
+              break;
+            }
+          } else {
+            // Regular vacation - within range means on vacation
+            activeVacation = v;
+            isRecurring = false;
+            break;
+          }
+        }
+      }
+      
       const isOnVacation = !!activeVacation;
       
       // Find all assignments active on this date (extract date part for comparison)
@@ -84,10 +112,10 @@ export function useWorkloadCalculation(
       } else if (total === 0) {
         available = 100;
         state = 'empty';
-      } else if (total > 100) {
+      } else if (total > maxCapacity) {
         available = 100 - total; // Will be negative
         state = 'overloaded';
-      } else if (total === 100) {
+      } else if (total === maxCapacity) {
         available = 0;
         state = 'full';
       } else {
@@ -100,11 +128,12 @@ export function useWorkloadCalculation(
         assignments: activeAssignments,
         isOnVacation,
         vacationDescription: activeVacation?.description,
+        isRecurringVacation: isRecurring,
         available,
         state,
       };
     });
-  }, [assignments, vacations, cells]);
+  }, [assignments, vacations, cells, maxCapacity]);
 }
 
 /**
@@ -113,10 +142,11 @@ export function useWorkloadCalculation(
 export function getWorkloadTooltip(workload: WorkloadCell): string {
   if (workload.isOnVacation) {
     const vacDesc = workload.vacationDescription || 'Vacation';
+    const recurringNote = workload.isRecurringVacation ? ' (recurring)' : '';
     if (workload.total > 0) {
-      return `${vacDesc}\n⚠️ Conflict: ${workload.total}% assigned during vacation`;
+      return `${vacDesc}${recurringNote}\n⚠️ Conflict: ${workload.total}% assigned during vacation`;
     }
-    return vacDesc;
+    return `${vacDesc}${recurringNote}`;
   }
   
   if (workload.total === 0) {

@@ -1,5 +1,5 @@
 import { useAppStore } from '@/stores/appStore';
-import { getBankHolidays, buildHolidayDateSet, getCustomColumnsWithValues } from '@/api';
+import { getBankHolidays, buildHolidayDateSet, getCustomColumnsWithValues, getCompanyEvents, buildEventDateSet } from '@/api';
 import styles from './SiteSelector.module.css';
 
 export function SiteSelector() {
@@ -7,6 +7,7 @@ export function SiteSelector() {
   const currentSite = useAppStore((s) => s.currentSite);
   const setCurrentSite = useAppStore((s) => s.setCurrentSite);
   const setBankHolidays = useAppStore((s) => s.setBankHolidays);
+  const setCompanyEvents = useAppStore((s) => s.setCompanyEvents);
   const setCustomColumns = useAppStore((s) => s.setCustomColumns);
   const setCustomColumnValues = useAppStore((s) => s.setCustomColumnValues);
   const clearAllCustomColumnFilters = useAppStore((s) => s.clearAllCustomColumnFilters);
@@ -34,6 +35,15 @@ export function SiteSelector() {
         setBankHolidays(holidays, holidayDates);
       } catch (err) {
         console.error('[SiteSelector] Failed to load bank holidays:', err);
+      }
+      
+      // Reload company events for the new site
+      try {
+        const events = await getCompanyEvents(site.id);
+        const eventDates = buildEventDateSet(events);
+        setCompanyEvents(events, eventDates);
+      } catch (err) {
+        console.error('[SiteSelector] Failed to load company events:', err);
       }
       
       // Reload custom columns for the new site

@@ -33,10 +33,10 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
     return acc;
   }, {} as Record<number, typeof bankHolidays>);
   
-  // Format date for display
+  // Format date for display using browser locale
   const formatHolidayDate = (dateStr: string) => {
     const date = new Date(dateStr);
-    return date.toLocaleDateString('en-GB', { 
+    return date.toLocaleDateString(undefined, { 
       weekday: 'short',
       day: 'numeric', 
       month: 'short' 

@@ -87,6 +87,17 @@
   margin-left: -4px;
 }
 
+/* Critical path indicator dot */
+.criticalPathDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: rgb(251, 146, 60);
+  flex-shrink: 0;
+  margin-left: -2px;
+  box-shadow: 0 0 4px rgba(251, 146, 60, 0.5);
+}
+
 .row:hover .dragHandle {
   opacity: 0.6;
 }

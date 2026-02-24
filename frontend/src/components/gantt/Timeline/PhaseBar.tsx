@@ -16,6 +16,8 @@ interface PhaseBarProps {
   isSubphase?: boolean;
   isMilestone?: boolean;
   completion?: number | null;  // 0-100 percentage
+  isCriticalPath?: boolean;  // Whether this item is on the critical path
+  changedBy?: string | null;  // Name of user who just changed this (for real-time indicator)
   // Interaction props
   phaseId?: number;
   projectId?: number;
@@ -71,6 +73,8 @@ export const PhaseBar = memo(function PhaseBar({
   isSubphase = false,
   isMilestone = false,
   completion = null,
+  isCriticalPath = false,
+  changedBy = null,
   phaseId,
   projectId,
   onDragStart,
@@ -252,11 +256,11 @@ export const PhaseBar = memo(function PhaseBar({
     return (
       <div
         ref={barRef}
-        className={`${styles.milestone} ${isSubphase ? styles.subphase : ''} ${isLinkingSource ? styles.linkingSource : ''}`}
+        className={`${styles.milestone} ${isSubphase ? styles.subphase : ''} ${isLinkingSource ? styles.linkingSource : ''} ${isCriticalPath ? styles.criticalPath : ''} ${changedBy ? styles.recentlyChanged : ''}`}
         style={{
           left: left + width / 2 - 12, // Center on the date
         }}
-        title={name}
+        title={isCriticalPath ? `${name} (Critical Path)` : name}
         onMouseDown={handlePointerDown}
         onTouchStart={handlePointerDown}
         {...dataAttrs}
@@ -273,10 +277,15 @@ export const PhaseBar = memo(function PhaseBar({
         )}
         
         <div 
-          className={styles.milestoneDiamond}
+          className={`${styles.milestoneDiamond} ${isCriticalPath ? styles.criticalPathDiamond : ''}`}
           style={{ backgroundColor: color }}
         />
         {name && <span className={styles.milestoneLabel}>{name}</span>}
+        
+        {/* Changed by indicator */}
+        {changedBy && (
+          <span className={styles.changedByBadge}>✨ {changedBy}</span>
+        )}
         
         {/* End link zone */}
         {onLinkZoneClick && (
@@ -301,17 +310,22 @@ export const PhaseBar = memo(function PhaseBar({
     ? { 'data-subphase-id': phaseId, 'data-project-id': projectId }
     : { 'data-phase-id': phaseId, 'data-project-id': projectId };
 
+  // Build title with completion and critical path info
+  let barTitle = name;
+  if (hasCompletion) barTitle += ` (${completion}%)`;
+  if (isCriticalPath) barTitle += ' - Critical Path';
+
   return (
     <div
       ref={barRef}
-      className={`${styles.bar} ${isSubphase ? styles.subphase : ''} ${isLinkingSource ? styles.linkingSource : ''}`}
+      className={`${styles.bar} ${isSubphase ? styles.subphase : ''} ${isLinkingSource ? styles.linkingSource : ''} ${isCriticalPath ? styles.criticalPath : ''} ${changedBy ? styles.recentlyChanged : ''}`}
       style={{
         left,
         width,
         height,
         backgroundColor: color,
       }}
-      title={hasCompletion ? `${name} (${completion}%)` : name}
+      title={barTitle}
       onMouseDown={handlePointerDown}
       onTouchStart={handlePointerDown}
       {...dataAttrs}
@@ -349,6 +363,11 @@ export const PhaseBar = memo(function PhaseBar({
         <span className={styles.label}>
           {name}
         </span>
+      )}
+      
+      {/* Changed by indicator */}
+      {changedBy && (
+        <span className={styles.changedByBadge}>✨ {changedBy}</span>
       )}
       
       {/* Right resize handle - enabled for both phases and subphases */}

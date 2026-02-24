@@ -4,7 +4,7 @@
  * Optionally shows Staff or Equipment Overview panel below when toggled
  */
 
-import { useRef, useMemo, useState } from 'react';
+import { useRef, useMemo, useState, useCallback } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { ProjectPanel } from './ProjectPanel';
 import { Timeline } from './Timeline';
@@ -13,6 +13,7 @@ import { generateTimelineCells, generateTimelineHeaders } from './utils';
 import { TimelineScrollProvider } from '@/contexts/TimelineScrollContext';
 import { StaffView } from '@/components/views/StaffView/StaffView';
 import { EquipmentView } from '@/components/views/EquipmentView/EquipmentView';
+import { sortProjectsByOrder, setProjectOrder, getProjectOrder } from '@/utils/storage';
 import styles from './GanttContainer.module.css';
 
 export function GanttContainer() {
@@ -28,6 +29,8 @@ export function GanttContainer() {
   const cellWidth = useAppStore((s) => s.cellWidth);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
   const bankHolidays = useAppStore((s) => s.bankHolidays);
+  const companyEventDates = useAppStore((s) => s.companyEventDates);
+  const companyEvents = useAppStore((s) => s.companyEvents);
   const customColumns = useAppStore((s) => s.customColumns);
   const showAllCustomColumns = useAppStore((s) => s.showAllCustomColumns);
   const hiddenCustomColumns = useAppStore((s) => s.hiddenCustomColumns);
@@ -38,25 +41,70 @@ export function GanttContainer() {
   // Only superusers/admins can see overview panels
   const canShowOverview = currentUser?.role === 'superuser' || currentUser?.role === 'admin';
   
+  // Track project order changes to trigger re-sorting
+  const [projectOrderVersion, setProjectOrderVersion] = useState(0);
+  
   // Calculate visible columns
   const visibleColumns = showAllCustomColumns
     ? customColumns.filter(col => !hiddenCustomColumns.has(col.id))
     : [];
 
-  // Filter projects for current site (non-archived) - no custom column filtering for projects
-  const filteredProjects = useMemo(
-    () =>
-      projects
-        .filter((p) => p.site_id === currentSite?.id && !p.archived)
-        .sort((a, b) => {
-          // Sort by confirmed status, then by name
-          if (a.confirmed !== b.confirmed) {
-            return a.confirmed ? -1 : 1;
-          }
-          return a.name.localeCompare(b.name);
-        }),
-    [projects, currentSite]
-  );
+  // Filter and sort projects for current site (non-archived)
+  const filteredProjects = useMemo(() => {
+    if (!currentSite?.id) return [];
+    
+    // First filter to current site and non-archived
+    const siteProjects = projects.filter((p) => p.site_id === currentSite.id && !p.archived);
+    
+    // Check if there's a custom order stored
+    const customOrder = getProjectOrder(currentSite.id);
+    
+    if (customOrder.length > 0) {
+      // Use custom order (sorts projects by their position in the stored order)
+      return sortProjectsByOrder(siteProjects, currentSite.id);
+    }
+    
+    // Default sort: confirmed first, then by name
+    return [...siteProjects].sort((a, b) => {
+      if (a.confirmed !== b.confirmed) {
+        return a.confirmed ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+  }, [projects, currentSite, projectOrderVersion]); // Include projectOrderVersion to re-sort when order changes
+  
+  // Handler to reorder projects (called from ProjectPanel)
+  const handleProjectReorder = useCallback((fromId: number, toId: number) => {
+    if (!currentSite?.id) return;
+    
+    // Get current order (or create from filtered projects)
+    let order = getProjectOrder(currentSite.id);
+    if (order.length === 0) {
+      // Initialize order from current filtered projects
+      order = filteredProjects.map(p => p.id);
+    }
+    
+    // Find positions
+    const fromIndex = order.indexOf(fromId);
+    const toIndex = order.indexOf(toId);
+    
+    // If project isn't in order yet (shouldn't happen), add it
+    if (fromIndex === -1) {
+      order.push(fromId);
+    }
+    
+    // Move the project
+    if (fromIndex !== -1 && toIndex !== -1) {
+      order.splice(fromIndex, 1);
+      order.splice(toIndex, 0, fromId);
+    }
+    
+    // Save the new order
+    setProjectOrder(currentSite.id, order);
+    
+    // Trigger re-render
+    setProjectOrderVersion(v => v + 1);
+  }, [currentSite, filteredProjects]);
 
   // Generate timeline cells
   const timelineCells = useMemo(
@@ -65,9 +113,11 @@ export function GanttContainer() {
         currentDate,
         viewMode,
         bankHolidayDates,
-        bankHolidays
+        bankHolidays,
+        companyEventDates,
+        companyEvents
       ),
-    [currentDate, viewMode, bankHolidayDates, bankHolidays]
+    [currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents]
   );
 
   // Generate timeline headers
@@ -141,6 +191,15 @@ export function GanttContainer() {
   
   // Account for the 4px resizer in total panel width
   const RESIZER_WIDTH = 4;
+  
+  // Handle overview panel width change (from embedded StaffView/EquipmentView resizer)
+  // This updates the main panel width to keep alignment
+  const handleOverviewPanelWidthChange = useCallback((newTotalWidth: number) => {
+    // newTotalWidth includes resizer, so subtract it and custom columns width
+    const newPanelWidth = newTotalWidth - RESIZER_WIDTH - customColumnsWidth;
+    const constrainedWidth = Math.max(200, Math.min(600, newPanelWidth));
+    setPanelWidth(constrainedWidth);
+  }, [customColumnsWidth]);
 
   const ganttContent = (
     <>
@@ -149,6 +208,7 @@ export function GanttContainer() {
           ref={projectPanelRef}
           projects={filteredProjects}
           width={panelWidth}
+          onProjectReorder={handleProjectReorder}
         />
         
         <div
@@ -179,6 +239,7 @@ export function GanttContainer() {
             <StaffView 
               embedded={true} 
               panelWidth={totalPanelWidth + RESIZER_WIDTH}
+              onPanelWidthChange={handleOverviewPanelWidthChange}
               height={overviewHeight}
             />
           )}
@@ -186,6 +247,7 @@ export function GanttContainer() {
             <EquipmentView 
               embedded={true} 
               panelWidth={totalPanelWidth + RESIZER_WIDTH}
+              onPanelWidthChange={handleOverviewPanelWidthChange}
               height={overviewHeight}
             />
           )}

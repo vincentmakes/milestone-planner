@@ -25,7 +25,6 @@ interface ResourceDropOverlayProps {
 }
 
 const DEFAULT_DURATION_DAYS = 5;
-const DEFAULT_ALLOCATION = 100;
 
 export function ResourceDropOverlay({
   projects,
@@ -38,6 +37,7 @@ export function ResourceDropOverlay({
   const resourceDrag = useUIStore((s) => s.resourceDrag);
   const endResourceDrag = useUIStore((s) => s.endResourceDrag);
   const setProjects = useAppStore((s) => s.setProjects);
+  const staff = useAppStore((s) => s.staff);
   const ensureProjectExpanded = useAppStore((s) => s.ensureProjectExpanded);
   const ensurePhaseExpanded = useAppStore((s) => s.ensurePhaseExpanded);
   const ensureSubphaseExpanded = useAppStore((s) => s.ensureSubphaseExpanded);
@@ -51,6 +51,14 @@ export function ResourceDropOverlay({
     subphaseId: number | null;
     rowKey: string;
   } | null>(null);
+
+  /**
+   * Get the default allocation for a staff member (their max_capacity or 100)
+   */
+  const getStaffDefaultAllocation = useCallback((staffId: number): number => {
+    const staffMember = staff.find(s => s.id === staffId);
+    return staffMember?.max_capacity ?? 100;
+  }, [staff]);
 
   // Handle cancel
   const handleCancel = useCallback(() => {
@@ -181,13 +189,15 @@ export function ResourceDropOverlay({
 
     try {
       if (resourceDrag.type === 'staff') {
+        // Use staff's max_capacity as default allocation
+        const allocation = getStaffDefaultAllocation(resourceDrag.resourceId);
         await createStaffAssignment({
           staff_id: resourceDrag.resourceId,
-          allocation: DEFAULT_ALLOCATION,
+          allocation,
           start_date: startDate,
           end_date: endDate,
-          // Route to correct endpoint based on target level
-          project_id: isProjectLevel ? hoveredTarget.projectId : (isPhaseLevel ? hoveredTarget.projectId : undefined),
+          // Always pass project_id for all levels
+          project_id: hoveredTarget.projectId,
           phase_id: isPhaseLevel ? hoveredTarget.phaseId! : undefined,
           subphase_id: isSubphaseLevel ? hoveredTarget.subphaseId! : undefined,
         });
@@ -196,8 +206,8 @@ export function ResourceDropOverlay({
           equipment_id: resourceDrag.resourceId,
           start_date: startDate,
           end_date: endDate,
-          // Route to correct endpoint based on target level
-          project_id: isProjectLevel ? hoveredTarget.projectId : (isPhaseLevel ? hoveredTarget.projectId : undefined),
+          // Always pass project_id for all levels
+          project_id: hoveredTarget.projectId,
           phase_id: isPhaseLevel ? hoveredTarget.phaseId! : undefined,
           subphase_id: isSubphaseLevel ? hoveredTarget.subphaseId! : undefined,
         });
@@ -224,7 +234,7 @@ export function ResourceDropOverlay({
       endResourceDrag();
       document.body.classList.remove('resource-dragging');
     }
-  }, [hoveredTarget, resourceDrag, mouseX, cellWidth, getDateFromX, endResourceDrag, setProjects, ensureProjectExpanded, ensurePhaseExpanded, ensureSubphaseExpanded]);
+  }, [hoveredTarget, resourceDrag, mouseX, cellWidth, getDateFromX, endResourceDrag, setProjects, ensureProjectExpanded, ensurePhaseExpanded, ensureSubphaseExpanded, getStaffDefaultAllocation]);
 
   // Handle drag leave - clean up when leaving
   const handleDragLeave = useCallback((e: React.DragEvent) => {
@@ -290,7 +300,7 @@ export function ResourceDropOverlay({
           }}
         >
           <span className={styles.previewLabel}>
-            {resourceDrag.resourceName} ({DEFAULT_DURATION_DAYS}d)
+            {resourceDrag.resourceName} ({DEFAULT_DURATION_DAYS}d{resourceDrag.type === 'staff' && resourceDrag.resourceId ? `, ${getStaffDefaultAllocation(resourceDrag.resourceId)}%` : ''})
           </span>
         </div>
       )}

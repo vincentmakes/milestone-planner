@@ -11,13 +11,18 @@ import { Button } from '@/components/common/Button';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { getSetting, updateSetting } from '@/api/endpoints/settings';
+import { 
+  getThemeFamily, 
+  setThemeFamily, 
+  THEME_FAMILIES,
+  type ThemeFamily 
+} from '@/utils/storage';
 import styles from './SettingsModal.module.css';
 
 interface SettingsData {
   instance_title: string;
   default_view: string;
   week_start: string;
-  date_format: string;
   show_weekends: string;
   auto_expand_projects: string;
   header_logo_dark: string;
@@ -28,7 +33,6 @@ const DEFAULT_SETTINGS: SettingsData = {
   instance_title: '',
   default_view: 'month',
   week_start: 'monday',
-  date_format: 'dd/mm/yyyy',
   show_weekends: 'true',
   auto_expand_projects: 'false',
   header_logo_dark: '',
@@ -47,12 +51,6 @@ const WEEK_START_OPTIONS = [
   { value: 'sunday', label: 'Sunday' },
 ];
 
-const DATE_FORMAT_OPTIONS = [
-  { value: 'dd/mm/yyyy', label: 'DD/MM/YYYY (31/12/2025)' },
-  { value: 'mm/dd/yyyy', label: 'MM/DD/YYYY (12/31/2025)' },
-  { value: 'yyyy-mm-dd', label: 'YYYY-MM-DD (2025-12-31)' },
-];
-
 export function SettingsModal() {
   const activeModal = useUIStore((s) => s.activeModal);
   const closeModal = useUIStore((s) => s.closeModal);
@@ -64,6 +62,7 @@ export function SettingsModal() {
   // State
   const [settings, setSettings] = useState<SettingsData>(DEFAULT_SETTINGS);
   const [originalSettings, setOriginalSettings] = useState<SettingsData>(DEFAULT_SETTINGS);
+  const [themeFamily, setThemeFamilyState] = useState<ThemeFamily>(() => getThemeFamily());
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -198,6 +197,34 @@ export function SettingsModal() {
               </div>
             </section>
             
+            {/* Appearance Section */}
+            <section className={styles.section}>
+              <h3 className={styles.sectionTitle}>Appearance</h3>
+              
+              <div className={styles.field}>
+                <label className={styles.label}>Theme</label>
+                <div className={styles.themeOptions}>
+                  {THEME_FAMILIES.map(family => (
+                    <button
+                      key={family.id}
+                      type="button"
+                      className={`${styles.themeOption} ${themeFamily === family.id ? styles.selected : ''}`}
+                      onClick={() => {
+                        setThemeFamilyState(family.id);
+                        setThemeFamily(family.id);
+                      }}
+                    >
+                      <span className={styles.themeName}>{family.name}</span>
+                      <span className={styles.themeDescription}>{family.description}</span>
+                    </button>
+                  ))}
+                </div>
+                <span className={styles.hint}>
+                  Use the sun/moon toggle in the header to switch between light and dark modes
+                </span>
+              </div>
+            </section>
+            
             {/* Branding Section - Logo Upload */}
             <section className={styles.section}>
               <h3 className={styles.sectionTitle}>Branding</h3>
@@ -256,24 +283,6 @@ export function SettingsModal() {
                     </button>
                   ))}
                 </div>
-              </div>
-              
-              <div className={styles.field}>
-                <label className={styles.label}>Date Format</label>
-                <select
-                  className={styles.select}
-                  value={settings.date_format}
-                  onChange={(e) => {
-                    setSettings(prev => ({ ...prev, date_format: e.target.value }));
-                    setSuccess(null);
-                  }}
-                >
-                  {DATE_FORMAT_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
               </div>
               
               <div className={styles.field}>

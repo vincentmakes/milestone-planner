@@ -43,6 +43,7 @@ class StaffResponse(BaseModel):
     role: Optional[str] = None  # This is job_title, not auth role
     email: str
     active: int = 1
+    max_capacity: int = 100  # Max work capacity % (e.g., 80 for part-time)
     site_id: Optional[int] = None  # Singular site ID
     site_name: Optional[str] = None  # Singular site name
     skills: List[SkillInfo] = []  # User's skills
@@ -75,6 +76,7 @@ class StaffCreate(BaseModel):
     last_name: str = Field(..., min_length=1, max_length=100)
     job_title: Optional[str] = Field(None, max_length=100)
     role: str = Field(default="user", pattern="^(admin|superuser|user)$")
+    max_capacity: int = Field(default=100, ge=1, le=100)  # Max work capacity %
     site_ids: List[int] = []
     skill_ids: List[int] = []
 
@@ -87,6 +89,7 @@ class StaffUpdate(BaseModel):
     last_name: Optional[str] = Field(None, min_length=1, max_length=100)
     job_title: Optional[str] = Field(None, max_length=100)
     role: Optional[str] = Field(None, pattern="^(admin|superuser|user)$")
+    max_capacity: Optional[int] = Field(None, ge=1, le=100)  # Max work capacity %
     active: Optional[int] = None
     site_ids: Optional[List[int]] = None
     skill_ids: Optional[List[int]] = None
@@ -103,6 +106,7 @@ class UserResponse(BaseModel):
     last_name: str
     job_title: Optional[str] = None
     role: str
+    max_capacity: int = 100  # Max work capacity %
     active: int
     created_at: DateTimeJS
     site_ids: List[int] = []
@@ -124,6 +128,7 @@ class UserDetailResponse(BaseModel):
     last_name: str
     job_title: Optional[str] = None
     role: str
+    max_capacity: int = 100  # Max work capacity %
     active: int
     created_at: DateTimeJS
     site_ids: List[int] = []

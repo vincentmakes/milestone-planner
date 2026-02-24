@@ -46,8 +46,20 @@ function moveStaffAssignmentsByOffset(
   pendingUpdates: PendingUpdate[]
 ): void {
   for (const assignment of assignments) {
+    // Skip assignments without valid dates
+    if (!assignment.start_date || !assignment.end_date) {
+      console.warn(`[autoCalculation] Skipping staff assignment ${assignment.id} - missing dates`);
+      continue;
+    }
+    
     const oldStart = new Date(assignment.start_date);
     const oldEnd = new Date(assignment.end_date);
+    
+    // Skip if dates are invalid
+    if (isNaN(oldStart.getTime()) || isNaN(oldEnd.getTime())) {
+      console.warn(`[autoCalculation] Skipping staff assignment ${assignment.id} - invalid dates`);
+      continue;
+    }
     
     const newStart = new Date(oldStart);
     newStart.setDate(newStart.getDate() + dayOffset);
@@ -77,8 +89,20 @@ function moveEquipmentAssignmentsByOffset(
   pendingUpdates: PendingUpdate[]
 ): void {
   for (const assignment of assignments) {
+    // Skip assignments without valid dates
+    if (!assignment.start_date || !assignment.end_date) {
+      console.warn(`[autoCalculation] Skipping equipment assignment ${assignment.id} - missing dates`);
+      continue;
+    }
+    
     const oldStart = new Date(assignment.start_date);
     const oldEnd = new Date(assignment.end_date);
+    
+    // Skip if dates are invalid
+    if (isNaN(oldStart.getTime()) || isNaN(oldEnd.getTime())) {
+      console.warn(`[autoCalculation] Skipping equipment assignment ${assignment.id} - invalid dates`);
+      continue;
+    }
     
     const newStart = new Date(oldStart);
     newStart.setDate(newStart.getDate() + dayOffset);

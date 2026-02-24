@@ -140,14 +140,20 @@ export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
   const isStaff = type === 'staff';
   const staffResource = resource as Staff;
   const equipmentResource = resource as Equipment;
+  
+  // Get max capacity (only for staff, equipment is always 100%)
+  const maxCapacity = isStaff ? (staffResource.max_capacity ?? 100) : 100;
 
   // Check if user can drag (superuser or admin)
   const canDrag = Boolean(currentUser && (currentUser.role === 'superuser' || currentUser.role === 'admin'));
 
-  const getAvailabilityColor = (available: number) => {
-    if (available <= 0) return 'var(--accent-red)';
-    if (available < 30) return 'var(--accent-orange)';
-    if (available < 60) return 'var(--accent-yellow)';
+  // Color based on allocation vs max capacity:
+  // - Below capacity: green
+  // - At capacity: blue  
+  // - Above capacity: red
+  const getAvailabilityColor = () => {
+    if (allocation > maxCapacity) return 'var(--accent-red)';
+    if (allocation === maxCapacity) return 'var(--accent-blue)';
     return 'var(--accent-green)';
   };
 
@@ -174,13 +180,13 @@ export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
             className={styles.fill}
             style={{
               width: `${Math.max(0, Math.min(100, available))}%`,
-              backgroundColor: getAvailabilityColor(available),
+              backgroundColor: getAvailabilityColor(),
             }}
           />
         </div>
         <span
           className={styles.percent}
-          style={{ color: getAvailabilityColor(available) }}
+          style={{ color: getAvailabilityColor() }}
         >
           {available}%
         </span>

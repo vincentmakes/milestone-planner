@@ -15,6 +15,7 @@ import type {
   User, 
   Vacation, 
   BankHoliday,
+  CompanyEvent,
   ViewMode,
   CurrentView,
   ResourceTab,
@@ -58,6 +59,8 @@ interface AppState {
   vacations: Vacation[];
   bankHolidays: BankHoliday[];
   bankHolidayDates: Set<string>;
+  companyEvents: CompanyEvent[];
+  companyEventDates: Set<string>;
   users: User[];
   instanceSettings: InstanceSettings | null;
   customColumns: CustomColumn[];
@@ -86,6 +89,11 @@ interface AppState {
   showStaffOverview: boolean;  // Show/hide staff overview panel below Gantt
   showEquipmentOverview: boolean;  // Show/hide equipment overview panel below Gantt
   
+  // Persisted site ID - saved/restored from localStorage
+  // This is separate from currentSite because currentSite is a full object
+  // that gets set by useDataLoader after data loads
+  _persistedSiteId: number | null;
+  
   // ---------------------------------------------
   // EXPANDED STATES (for tree views)
   // ---------------------------------------------
@@ -95,6 +103,14 @@ interface AppState {
   expandedStaff: Set<number>;
   expandedEquipment: Set<number>;
   expandedBankHolidays: boolean;
+  
+  // ---------------------------------------------
+  // CRITICAL PATH
+  // ---------------------------------------------
+  /** Set of project IDs that have critical path display enabled */
+  criticalPathEnabled: Set<number>;
+  /** Cached critical path items per project: projectId -> Set of 'phase-{id}' or 'subphase-{id}' */
+  criticalPathItems: Map<number, Set<string>>;
   
   // ---------------------------------------------
   // WHAT IF MODE
@@ -121,6 +137,7 @@ interface AppState {
   setEquipment: (equipment: Equipment[]) => void;
   setVacations: (vacations: Vacation[]) => void;
   setBankHolidays: (holidays: BankHoliday[], holidayDates: Set<string>) => void;
+  setCompanyEvents: (events: CompanyEvent[], eventDates: Set<string>) => void;
   setUsers: (users: User[]) => void;
   setInstanceSettings: (settings: InstanceSettings | null) => void;
   setCustomColumns: (columns: CustomColumn[]) => void;
@@ -178,6 +195,14 @@ interface AppState {
   expandAll: () => void;
   expandProjectLevel: (projectId: number) => void;
   collapseProjectLevel: (projectId: number) => void;
+  
+  // ---------------------------------------------
+  // ACTIONS - Critical Path
+  // ---------------------------------------------
+  toggleCriticalPath: (projectId: number) => void;
+  recalculateCriticalPath: (projectId: number) => void;
+  isCriticalPathEnabled: (projectId: number) => boolean;
+  getCriticalPathItems: (projectId: number) => Set<string>;
   
   // ---------------------------------------------
   // ACTIONS - What If Mode
@@ -386,6 +411,8 @@ const initialState = {
   vacations: [],
   bankHolidays: [],
   bankHolidayDates: new Set<string>(),
+  companyEvents: [],
+  companyEventDates: new Set<string>(),
   users: [],
   instanceSettings: null,
   customColumns: [],
@@ -398,6 +425,7 @@ const initialState = {
   // Selections
   currentSite: null,
   currentUser: null,
+  _persistedSiteId: null as number | null,  // Persisted site ID from localStorage
   
   // View state
   viewMode: 'month' as ViewMode,
@@ -417,6 +445,10 @@ const initialState = {
   expandedStaff: new Set<number>(),
   expandedEquipment: new Set<number>(),
   expandedBankHolidays: false,
+  
+  // Critical path
+  criticalPathEnabled: new Set<number>(),
+  criticalPathItems: new Map<number, Set<string>>(),
   
   // What If mode
   whatIfMode: false,
@@ -453,6 +485,11 @@ export const useAppStore = create<AppState>()(
       setBankHolidays: (holidays, holidayDates) => set({ 
         bankHolidays: holidays,
         bankHolidayDates: holidayDates,
+      }),
+      
+      setCompanyEvents: (events, eventDates) => set({
+        companyEvents: events,
+        companyEventDates: eventDates,
       }),
       
       setUsers: (users) => set({ users }),
@@ -536,7 +573,10 @@ export const useAppStore = create<AppState>()(
       // -----------------------------------------
       // SELECTION SETTERS
       // -----------------------------------------
-      setCurrentSite: (site) => set({ currentSite: site }),
+      setCurrentSite: (site) => set({ 
+        currentSite: site,
+        _persistedSiteId: site?.id ?? null,  // Keep in sync for persistence
+      }),
       
       setCurrentUser: (user) => set({ currentUser: user }),
       
@@ -764,6 +804,63 @@ export const useAppStore = create<AppState>()(
       },
       
       // -----------------------------------------
+      // CRITICAL PATH ACTIONS
+      // -----------------------------------------
+      toggleCriticalPath: (projectId) => {
+        const { criticalPathEnabled, criticalPathItems, projects } = get();
+        const newEnabled = new Set(criticalPathEnabled);
+        const newItems = new Map(criticalPathItems);
+        
+        if (newEnabled.has(projectId)) {
+          // Disable critical path for this project
+          newEnabled.delete(projectId);
+          newItems.delete(projectId);
+        } else {
+          // Enable critical path for this project
+          newEnabled.add(projectId);
+          
+          // Calculate critical path
+          const project = projects.find(p => p.id === projectId);
+          if (project) {
+            // Dynamic import to avoid circular dependency
+            import('@/components/gantt/utils/criticalPath').then(({ calculateCriticalPath }) => {
+              const result = calculateCriticalPath(project);
+              const updatedItems = new Map(get().criticalPathItems);
+              updatedItems.set(projectId, result.criticalItems);
+              set({ criticalPathItems: updatedItems });
+            });
+          }
+        }
+        
+        set({ criticalPathEnabled: newEnabled, criticalPathItems: newItems });
+      },
+      
+      recalculateCriticalPath: (projectId) => {
+        const { criticalPathEnabled, projects } = get();
+        
+        // Only recalculate if critical path is enabled for this project
+        if (!criticalPathEnabled.has(projectId)) return;
+        
+        const project = projects.find(p => p.id === projectId);
+        if (project) {
+          import('@/components/gantt/utils/criticalPath').then(({ calculateCriticalPath }) => {
+            const result = calculateCriticalPath(project);
+            const updatedItems = new Map(get().criticalPathItems);
+            updatedItems.set(projectId, result.criticalItems);
+            set({ criticalPathItems: updatedItems });
+          });
+        }
+      },
+      
+      isCriticalPathEnabled: (projectId) => {
+        return get().criticalPathEnabled.has(projectId);
+      },
+      
+      getCriticalPathItems: (projectId) => {
+        return get().criticalPathItems.get(projectId) || new Set();
+      },
+      
+      // -----------------------------------------
       // WHAT IF MODE ACTIONS
       // -----------------------------------------
       enterWhatIfMode: () => {
@@ -866,7 +963,7 @@ export const useAppStore = create<AppState>()(
       reset: () => set(initialState),
     }),
     {
-      name: 'milestone-app-storage',
+      name: 'milestone-app-storage-v3',
       storage: createJSONStorage(() => localStorage),
       // Only persist certain fields
       partialize: (state) => ({
@@ -877,12 +974,18 @@ export const useAppStore = create<AppState>()(
         sidebarCollapsed: state.sidebarCollapsed,
         resourcePanelCollapsed: state.resourcePanelCollapsed,
         timelineScrollLeft: state.timelineScrollLeft,
+        // Panel visibility (don't persist showAssignments - always show on load)
+        showStaffOverview: state.showStaffOverview,
+        showEquipmentOverview: state.showEquipmentOverview,
+        // Custom column visibility
+        showAllCustomColumns: state.showAllCustomColumns,
+        hiddenCustomColumns: Array.from(state.hiddenCustomColumns),
         // Convert Sets to Arrays for JSON serialization
         expandedProjects: Array.from(state.expandedProjects),
         expandedPhases: Array.from(state.expandedPhases),
         expandedSubphases: Array.from(state.expandedSubphases),
-        // Store current site ID
-        currentSiteId: state.currentSite?.id,
+        // Store current site ID (use _persistedSiteId which is properly maintained)
+        currentSiteId: state._persistedSiteId,
         // Store current date as ISO string
         currentDateISO: state.currentDate.toISOString(),
       }),
@@ -909,11 +1012,14 @@ export const useAppStore = create<AppState>()(
         console.log('[AppStore] Merging persisted state:', {
           raw: persistedState,
           unwrapped: persisted,
+          currentSiteId: persisted?.currentSiteId,
         });
         
         return {
           ...currentState,
-          // Only restore the view state fields, not currentSiteId (that's handled by useDataLoader)
+          // Restore _persistedSiteId from localStorage so it doesn't get overwritten
+          _persistedSiteId: persisted?.currentSiteId ?? currentState._persistedSiteId,
+          // Restore the view state fields
           viewMode: persisted?.viewMode ?? currentState.viewMode,
           currentView: persisted?.currentView ?? currentState.currentView,
           cellWidth: persisted?.cellWidth ?? currentState.cellWidth,
@@ -921,6 +1027,14 @@ export const useAppStore = create<AppState>()(
           sidebarCollapsed: persisted?.sidebarCollapsed ?? currentState.sidebarCollapsed,
           resourcePanelCollapsed: persisted?.resourcePanelCollapsed ?? currentState.resourcePanelCollapsed,
           timelineScrollLeft: persisted?.timelineScrollLeft ?? currentState.timelineScrollLeft,
+          // Panel visibility (showAssignments always defaults to true - not restored)
+          showStaffOverview: persisted?.showStaffOverview ?? currentState.showStaffOverview,
+          showEquipmentOverview: persisted?.showEquipmentOverview ?? currentState.showEquipmentOverview,
+          // Custom column visibility
+          showAllCustomColumns: persisted?.showAllCustomColumns ?? currentState.showAllCustomColumns,
+          hiddenCustomColumns: Array.isArray(persisted?.hiddenCustomColumns)
+            ? new Set(persisted.hiddenCustomColumns)
+            : currentState.hiddenCustomColumns,
           // Convert Arrays back to Sets
           expandedProjects: Array.isArray(persisted?.expandedProjects) 
             ? new Set(persisted.expandedProjects) 

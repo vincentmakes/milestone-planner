@@ -68,11 +68,11 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
                 />
               ) : null
             )}
-            {cells.map((cell, index) => 
-              cell.isToday ? (
+            {showHighlighting && cells.map((cell, index) => 
+              cell.isCompanyEvent ? (
                 <div
-                  key={`today-${index}`}
-                  className={`${styles.gridCell} ${styles.today}`}
+                  key={`event-${index}`}
+                  className={`${styles.gridCell} ${styles.companyEvent}`}
                   style={{ left: index * cellWidth, width: cellWidth }}
                 />
               ) : null
@@ -97,6 +97,36 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
               />
             ))}
           </div>
+          
+          {/* Holiday and event tooltip layer - top strip only */}
+          {showHighlighting && (
+            <div className={styles.tooltipLayer}>
+              {cells.map((cell, index) => {
+                // Priority: bank holidays first, then company events
+                if (cell.isBankHoliday) {
+                  return (
+                    <div
+                      key={`tooltip-${index}`}
+                      className={`${styles.tooltipCell} ${styles.holiday}`}
+                      style={{ left: index * cellWidth, width: cellWidth }}
+                      data-tooltip={cell.bankHolidayName || 'Holiday'}
+                    />
+                  );
+                }
+                if (cell.isCompanyEvent) {
+                  return (
+                    <div
+                      key={`tooltip-${index}`}
+                      className={`${styles.tooltipCell} ${styles.event}`}
+                      style={{ left: index * cellWidth, width: cellWidth }}
+                      data-tooltip={cell.companyEventName || 'Company Event'}
+                    />
+                  );
+                }
+                return null;
+              })}
+            </div>
+          )}
         </div>
       </div>
     );

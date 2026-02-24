@@ -434,6 +434,60 @@ async def update_sso_config(
 # Microsoft Entra SSO Flow
 # ---------------------------------------------------------
 
+@router.get("/auth/sso/status")
+async def sso_status(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Check SSO status for this tenant.
+    
+    Returns information about whether SSO is configured at
+    organization or tenant level, including group requirements.
+    
+    Public endpoint - used by login page to show/hide SSO button.
+    Matches: GET /api/auth/sso/status
+    """
+    from app.services.sso import SSOService
+    
+    sso_service = SSOService(db)
+    
+    # Get tenant from request state (set by tenant middleware in multi-tenant mode)
+    tenant = getattr(request.state, 'tenant', None) if hasattr(request, 'state') else None
+    
+    # Get effective SSO config
+    config, source = await sso_service.get_effective_sso_config(tenant)
+    
+    if not config or not config.get("enabled"):
+        return {
+            "enabled": False,
+            "source": None,
+            "provider": None,
+            "organization": None,
+            "required_groups": [],
+            "group_membership_mode": "any",
+        }
+    
+    result = {
+        "enabled": True,
+        "source": source,
+        "provider": "microsoft",
+        "required_groups": config.get("required_group_ids", []),
+        "group_membership_mode": config.get("group_membership_mode", "any"),
+    }
+    
+    # Include organization info if SSO is from organization
+    if source == "organization" and tenant and tenant.organization:
+        result["organization"] = {
+            "id": str(tenant.organization_id),
+            "name": tenant.organization.name,
+            "slug": tenant.organization.slug,
+            "sso_enabled": True,
+        }
+    
+    return result
+
+
 @router.get("/auth/sso/login")
 async def sso_login(
     request: Request,
@@ -442,40 +496,52 @@ async def sso_login(
     """
     Initiate SSO login flow.
     
+    Uses organization-level or tenant-level SSO configuration.
     Returns the authorization URL for the frontend to redirect to.
+    
     Matches: GET /api/auth/sso/login
     """
-    result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
-    config = result.scalar_one_or_none()
+    from app.services.sso import SSOService
+    import secrets
     
-    if not config or config.enabled != 1:
+    sso_service = SSOService(db)
+    
+    # Get tenant from request state (set by tenant middleware in multi-tenant mode)
+    tenant = getattr(request.state, 'tenant', None) if hasattr(request, 'state') else None
+    
+    # Get effective SSO config
+    config, source = await sso_service.get_effective_sso_config(tenant)
+    
+    if not config or not config.get("enabled"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="SSO is not configured or enabled",
         )
     
-    if not config.tenant_id or not config.client_id or not config.redirect_uri:
+    if not config.get("tenant_id") or not config.get("client_id") or not config.get("redirect_uri"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="SSO is not properly configured",
         )
     
+    # Generate state for CSRF protection and tenant identification
+    # Format: {random_token}:{tenant_slug} (tenant_slug optional)
+    state_token = secrets.token_urlsafe(32)
+    tenant_slug = tenant.slug if tenant else ""
+    state = f"{state_token}:{tenant_slug}"
+    
+    # Determine if we need groups scope
+    has_group_requirements = bool(config.get("required_group_ids"))
+    
     # Build authorization URL
-    auth_url = f"https://login.microsoftonline.com/{config.tenant_id}/oauth2/v2.0/authorize"
+    redirect_url = sso_service.build_authorization_url(
+        config, 
+        state, 
+        include_groups_scope=has_group_requirements
+    )
     
-    params = {
-        "client_id": config.client_id,
-        "response_type": "code",
-        "redirect_uri": config.redirect_uri,
-        "response_mode": "query",
-        "scope": "openid profile email User.Read",
-        "state": "sso_login",  # Could be a random token for CSRF protection
-    }
-    
-    redirect_url = f"{auth_url}?{urlencode(params)}"
-    
-    # Return redirectUrl for frontend to handle the redirect
-    return {"redirectUrl": redirect_url}
+    # Return url for frontend to handle the redirect
+    return {"url": redirect_url}
 
 
 @router.get("/auth/sso/callback")
@@ -483,6 +549,7 @@ async def sso_callback(
     request: Request,
     response: Response,
     code: Optional[str] = None,
+    state: Optional[str] = None,
     error: Optional[str] = None,
     error_description: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
@@ -490,50 +557,69 @@ async def sso_callback(
     """
     Handle SSO callback from Microsoft Entra.
     
-    Exchanges authorization code for tokens and creates session.
+    Supports organization-level SSO with group-based access control.
+    Exchanges authorization code for tokens, validates group membership,
+    and creates session.
+    
     Matches: GET /api/auth/sso/callback
     """
+    from app.services.sso import SSOService
+    
+    # Handle error from Entra
     if error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"SSO Error: {error_description or error}",
-        )
+        # Redirect to login page with error
+        error_msg = error_description or error
+        redirect_url = f"/?sso_error={error_msg}"
+        return RedirectResponse(url=redirect_url, status_code=302)
     
     if not code:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No authorization code received",
-        )
+        return RedirectResponse(url="/?sso_error=No+authorization+code+received", status_code=302)
     
-    # Get SSO config
-    result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
-    config = result.scalar_one_or_none()
+    # Parse state to get tenant slug (format: {token}:{tenant_slug})
+    tenant_slug = ""
+    if state and ":" in state:
+        parts = state.split(":", 1)
+        if len(parts) == 2:
+            tenant_slug = parts[1]
     
-    if not config or not config.is_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="SSO is not configured or enabled",
-        )
+    sso_service = SSOService(db)
+    
+    # Get tenant from request state (set by tenant middleware in multi-tenant mode)
+    tenant = getattr(request.state, 'tenant', None) if hasattr(request, 'state') else None
+    
+    # Get effective SSO config
+    config, source = await sso_service.get_effective_sso_config(tenant)
+    
+    if not config or not config.get("enabled"):
+        return RedirectResponse(url="/?sso_error=SSO+not+configured", status_code=302)
     
     # Exchange code for tokens
-    token_url = f"https://login.microsoftonline.com/{config.tenant_id}/oauth2/v2.0/token"
+    entra_tenant_id = config["tenant_id"]
+    token_url = f"https://login.microsoftonline.com/{entra_tenant_id}/oauth2/v2.0/token"
+    
+    # Determine scopes (need GroupMember.Read.All if groups are required)
+    has_group_requirements = bool(config.get("required_group_ids"))
+    scopes = ["openid", "profile", "email", "User.Read"]
+    if has_group_requirements:
+        scopes.append("GroupMember.Read.All")
     
     token_data = {
-        "client_id": config.client_id,
-        "client_secret": config.client_secret,
+        "client_id": config["client_id"],
+        "client_secret": config["client_secret"],
         "code": code,
-        "redirect_uri": config.redirect_uri,
+        "redirect_uri": config["redirect_uri"],
         "grant_type": "authorization_code",
-        "scope": "openid profile email User.Read",
+        "scope": " ".join(scopes),
     }
     
     async with httpx.AsyncClient() as client:
         token_response = await client.post(token_url, data=token_data)
         
         if token_response.status_code != 200:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to exchange authorization code for tokens",
+            print(f"Token exchange failed: {token_response.status_code} {token_response.text}")
+            return RedirectResponse(
+                url="/?sso_error=Failed+to+exchange+authorization+code",
+                status_code=302
             )
         
         tokens = token_response.json()
@@ -546,20 +632,37 @@ async def sso_callback(
         )
         
         if graph_response.status_code != 200:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to fetch user info from Microsoft Graph",
+            print(f"Graph API failed: {graph_response.status_code} {graph_response.text}")
+            return RedirectResponse(
+                url="/?sso_error=Failed+to+fetch+user+info",
+                status_code=302
             )
         
         user_info = graph_response.json()
+    
+    # Validate group membership if required
+    if has_group_requirements:
+        user_groups = await sso_service.fetch_user_groups(access_token)
+        
+        is_allowed = sso_service.validate_group_membership(
+            user_groups,
+            config["required_group_ids"],
+            config.get("group_membership_mode", "any")
+        )
+        
+        if not is_allowed:
+            return RedirectResponse(
+                url="/?sso_error=You+do+not+have+access+to+this+tenant.+Contact+administrator.",
+                status_code=302
+            )
     
     # Find or create user
     email = user_info.get("mail") or user_info.get("userPrincipalName")
     
     if not email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No email found in Microsoft account",
+        return RedirectResponse(
+            url="/?sso_error=No+email+found+in+Microsoft+account",
+            status_code=302
         )
     
     # Look up existing user
@@ -572,10 +675,10 @@ async def sso_callback(
     
     if not user:
         # Check if auto-create is enabled
-        if not config.should_auto_create_users:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No account found for this email. Contact an administrator.",
+        if not config.get("auto_create_users"):
+            return RedirectResponse(
+                url="/?sso_error=No+account+found.+Contact+administrator.",
+                status_code=302
             )
         
         # Create new user
@@ -585,7 +688,7 @@ async def sso_callback(
             first_name=user_info.get("givenName", ""),
             last_name=user_info.get("surname", ""),
             job_title=user_info.get("jobTitle"),
-            role=config.default_role,
+            role=config.get("default_role", "user"),
             sso_provider="microsoft",
             sso_id=user_info.get("id"),
             active=1,
@@ -606,17 +709,29 @@ async def sso_callback(
             await db.commit()
     
     if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User account is disabled",
+        return RedirectResponse(
+            url="/?sso_error=User+account+is+disabled",
+            status_code=302
         )
     
     # Create session
     session_service = SessionService(db)
     session_id = await session_service.create_session(user)
     
+    # Determine redirect URL - for multi-tenant, redirect to tenant base URL
+    redirect_url = "/"
+    if config.get("redirect_uri"):
+        from urllib.parse import urlparse
+        parsed = urlparse(config["redirect_uri"])
+        path = parsed.path
+        # Extract tenant prefix from callback path (remove /api/auth/sso/callback)
+        if "/api/auth/sso/callback" in path:
+            tenant_path = path.replace("/api/auth/sso/callback", "")
+            if tenant_path:
+                redirect_url = tenant_path if tenant_path.endswith("/") else tenant_path + "/"
+    
     # Set cookie
-    response = RedirectResponse(url="/", status_code=302)
+    response = RedirectResponse(url=redirect_url, status_code=302)
     response.set_cookie(
         key="connect.sid",
         value=f"s%3A{session_id}.",

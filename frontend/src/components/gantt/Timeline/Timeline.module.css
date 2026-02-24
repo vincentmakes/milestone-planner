@@ -37,3 +37,21 @@
   min-height: 0;
   overflow: hidden; /* Contain the vertical scroll within TimelineBody */
 }
+
+/* Print styles - transform content to show current scroll position */
+@media print {
+  .timeline {
+    position: relative !important;
+    overflow-x: hidden !important; /* Clip horizontal overflow */
+    overflow-y: visible !important; /* Allow vertical for full height */
+  }
+  
+  .horizontalScroll {
+    overflow: visible !important;
+  }
+  
+  .scrollContent {
+    transform: translateX(var(--print-scroll-left, 0));
+    overflow: visible !important;
+  }
+}

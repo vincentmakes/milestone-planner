@@ -90,6 +90,16 @@ def get_tenant_schema_sql() -> str:
       UNIQUE(site_id, date, name)
     );
 
+    -- Company events table (similar to holidays but don't affect working days)
+    CREATE TABLE IF NOT EXISTS company_events (
+      id SERIAL PRIMARY KEY,
+      site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      date DATE NOT NULL,
+      end_date DATE,
+      name TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- Users table
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -99,6 +109,7 @@ def get_tenant_schema_sql() -> str:
       last_name TEXT NOT NULL,
       job_title TEXT,
       role TEXT DEFAULT 'user' CHECK(role IN ('admin', 'superuser', 'user')),
+      max_capacity INTEGER DEFAULT 100,
       sso_provider TEXT,
       sso_id TEXT,
       active INTEGER DEFAULT 1,
@@ -302,10 +313,22 @@ def get_tenant_schema_sql() -> str:
       PRIMARY KEY (user_id, skill_id)
     );
 
+    -- Project presence (tracking active viewers for realtime collaboration)
+    CREATE TABLE IF NOT EXISTS project_presence (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      activity TEXT DEFAULT 'viewing' NOT NULL,
+      last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_project_presence_unique ON project_presence(project_id, user_id);
+
     -- Create indexes
     CREATE INDEX IF NOT EXISTS idx_bank_holidays_site ON bank_holidays(site_id);
     CREATE INDEX IF NOT EXISTS idx_bank_holidays_date ON bank_holidays(date);
     CREATE INDEX IF NOT EXISTS idx_bank_holidays_year ON bank_holidays(site_id, year);
+    CREATE INDEX IF NOT EXISTS idx_company_events_site_date ON company_events(site_id, date);
     CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired);
     CREATE INDEX IF NOT EXISTS idx_projects_site ON projects(site_id);
     CREATE INDEX IF NOT EXISTS idx_project_phases_project ON project_phases(project_id);
@@ -328,6 +351,9 @@ def get_tenant_schema_sql() -> str:
     CREATE INDEX IF NOT EXISTS idx_custom_column_values_entity ON custom_column_values(entity_type, entity_id);
     CREATE INDEX IF NOT EXISTS idx_user_skills_user ON user_skills(user_id);
     CREATE INDEX IF NOT EXISTS idx_user_skills_skill ON user_skills(skill_id);
+    CREATE INDEX IF NOT EXISTS idx_project_presence_project ON project_presence(project_id);
+    CREATE INDEX IF NOT EXISTS idx_project_presence_user ON project_presence(user_id);
+    CREATE INDEX IF NOT EXISTS idx_project_presence_last_seen ON project_presence(last_seen_at);
     """
 
 

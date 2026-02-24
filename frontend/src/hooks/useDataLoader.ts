@@ -13,6 +13,8 @@ import {
   loadAllProjects,
   getBankHolidays,
   buildHolidayDateSet,
+  getCompanyEvents,
+  buildEventDateSet,
   getInstanceSettings,
   getCustomColumnsWithValues,
   skillsApi,
@@ -39,12 +41,16 @@ export function useDataLoader(): UseDataLoaderReturn {
     setEquipment,
     setVacations,
     setBankHolidays,
+    setCompanyEvents,
     setCurrentSite,
     setInstanceSettings,
     setCustomColumns,
     setCustomColumnValues,
     setSkills,
   } = useAppStore();
+  
+  // Get persisted site ID from store (restored by Zustand persist)
+  const persistedSiteId = useAppStore((s) => s._persistedSiteId);
 
   /**
    * Load all initial data
@@ -90,40 +96,21 @@ export function useDataLoader(): UseDataLoaderReturn {
         // Sort sites by ID for consistent ordering
         const sortedSites = [...sites].sort((a, b) => a.id - b.id);
         
-        // Check for persisted site ID in localStorage
+        // Check for persisted site ID from store (restored by Zustand persist)
         let targetSite = sortedSites[0];
         console.log('[DataLoader] Default site (first by ID):', targetSite.name, 'id:', targetSite.id);
+        console.log('[DataLoader] Persisted site ID from store:', persistedSiteId);
         
-        try {
-          const stored = localStorage.getItem('milestone-app-storage');
-          console.log('[DataLoader] Raw localStorage:', stored);
-          
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            const persistedSiteId = parsed?.state?.currentSiteId;
-            console.log('[DataLoader] Looking for persisted site ID:', persistedSiteId, 'type:', typeof persistedSiteId);
-            console.log('[DataLoader] Available sites:', sortedSites.map(s => ({ id: s.id, name: s.name, type: typeof s.id })));
-            
-            if (persistedSiteId != null) {
-              // Ensure numeric comparison
-              const siteIdNum = Number(persistedSiteId);
-              const foundSite = sortedSites.find(s => Number(s.id) === siteIdNum);
-              console.log('[DataLoader] Comparison: looking for', siteIdNum, 'type:', typeof siteIdNum);
-              
-              if (foundSite) {
-                targetSite = foundSite;
-                console.log('[DataLoader] ✓ Restored persisted site:', targetSite.name, 'id:', targetSite.id);
-              } else {
-                console.log('[DataLoader] ✗ Site ID', siteIdNum, 'not found in available sites');
-              }
-            } else {
-              console.log('[DataLoader] No persistedSiteId in stored state');
-            }
+        if (persistedSiteId != null) {
+          const foundSite = sortedSites.find(s => s.id === persistedSiteId);
+          if (foundSite) {
+            targetSite = foundSite;
+            console.log('[DataLoader] ✓ Restored persisted site:', targetSite.name, 'id:', targetSite.id);
           } else {
-            console.log('[DataLoader] No stored state in localStorage');
+            console.log('[DataLoader] ✗ Site ID', persistedSiteId, 'not found in available sites');
           }
-        } catch (e) {
-          console.warn('[DataLoader] Failed to restore persisted site:', e);
+        } else {
+          console.log('[DataLoader] No persistedSiteId in store');
         }
         
         console.log('[DataLoader] Final selected site:', targetSite.name, 'id:', targetSite.id);
@@ -133,6 +120,11 @@ export function useDataLoader(): UseDataLoaderReturn {
         const holidays = await getBankHolidays(targetSite.id);
         const holidayDates = buildHolidayDateSet(holidays);
         setBankHolidays(holidays, holidayDates);
+        
+        // Load company events for restored site
+        const events = await getCompanyEvents(targetSite.id);
+        const eventDates = buildEventDateSet(events);
+        setCompanyEvents(events, eventDates);
         
         // Load custom columns and values for restored site
         try {
@@ -164,6 +156,7 @@ export function useDataLoader(): UseDataLoaderReturn {
     setEquipment,
     setVacations,
     setBankHolidays,
+    setCompanyEvents,
     setCurrentSite,
     setInstanceSettings,
     setCustomColumns,
@@ -184,17 +177,21 @@ export function useDataLoader(): UseDataLoaderReturn {
   }, [setProjects]);
 
   /**
-   * Refresh data for a specific site (bank holidays)
+   * Refresh data for a specific site (bank holidays and company events)
    */
   const refreshSiteData = useCallback(async (siteId: number) => {
     try {
       const holidays = await getBankHolidays(siteId);
       const holidayDates = buildHolidayDateSet(holidays);
       setBankHolidays(holidays, holidayDates);
+      
+      const events = await getCompanyEvents(siteId);
+      const eventDates = buildEventDateSet(events);
+      setCompanyEvents(events, eventDates);
     } catch (err) {
       console.error('[DataLoader] Failed to refresh site data:', err);
     }
-  }, [setBankHolidays]);
+  }, [setBankHolidays, setCompanyEvents]);
 
   /**
    * Refresh custom columns for a specific site

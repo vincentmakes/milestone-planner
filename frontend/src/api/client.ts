@@ -224,3 +224,10 @@ export function apiPut<T>(endpoint: string, body?: unknown): Promise<T> {
 export function apiDelete<T>(endpoint: string): Promise<T> {
   return apiRequest<T>(endpoint, { method: 'DELETE' });
 }
+
+/**
+ * PATCH request helper
+ */
+export function apiPatch<T>(endpoint: string, body?: unknown): Promise<T> {
+  return apiRequest<T>(endpoint, { method: 'PATCH', body });
+}

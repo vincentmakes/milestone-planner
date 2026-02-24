@@ -68,3 +68,23 @@ class BankHolidayCreate(BaseModel):
     date: date
     end_date: Optional[date] = None
     name: str = Field(..., min_length=1, max_length=200)
+
+
+class CompanyEventResponse(BaseModel):
+    """Response model for company events."""
+    id: int
+    site_id: int
+    date: DateAsDateTimeJS
+    end_date: Optional[DateAsDateTimeJS] = None
+    name: str
+    created_at: DateTimeJS
+
+    class Config:
+        from_attributes = True
+
+
+class CompanyEventCreate(BaseModel):
+    """Request model for creating a company event."""
+    date: date
+    end_date: Optional[date] = None
+    name: str = Field(..., min_length=1, max_length=200)

@@ -30,7 +30,10 @@ export interface TimelineCell {
   isToday: boolean;
   isWeekend: boolean;
   isBankHoliday: boolean;
+  isCustomHoliday: boolean;
   bankHolidayName?: string;
+  isCompanyEvent: boolean;
+  companyEventName?: string;
   dayOfWeek: number;
   isFirstOfWeek: boolean;
   isFirstOfMonth: boolean;
@@ -68,26 +71,53 @@ export function generateTimelineCells(
   currentDate: Date,
   viewMode: ViewMode,
   bankHolidayDates: Set<string>,
-  bankHolidays: Array<{ date: string; name: string }>
+  bankHolidays: Array<{ date: string; end_date?: string | null; name: string; is_custom?: boolean }>,
+  companyEventDates: Set<string> = new Set(),
+  companyEvents: Array<{ date: string; end_date?: string | null; name: string }> = []
 ): TimelineCell[] {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const getBankHolidayName = (date: Date): string | undefined => {
+  // Helper to normalize date strings to YYYY-MM-DD (handles ISO strings with time)
+  const normalizeDate = (dateStr: string): string => dateStr.substring(0, 10);
+
+  const getHolidayInfo = (date: Date): { name?: string; isCustom: boolean } => {
     const dateStr = format(date, 'yyyy-MM-dd');
-    const holiday = bankHolidays.find((h) => h.date === dateStr);
-    return holiday?.name;
+    // Find holiday that includes this date (handles multi-day holidays)
+    const holiday = bankHolidays.find((h) => {
+      const startDate = normalizeDate(h.date);
+      const endDate = normalizeDate(h.end_date || h.date);
+      return dateStr >= startDate && dateStr <= endDate;
+    });
+    return {
+      name: holiday?.name,
+      isCustom: holiday?.is_custom ?? false,
+    };
+  };
+  
+  const getEventInfo = (date: Date): { name?: string; isEvent: boolean } => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    // Find event that includes this date (handles multi-day events)
+    const event = companyEvents.find((e) => {
+      const startDate = normalizeDate(e.date);
+      const endDate = normalizeDate(e.end_date || e.date);
+      return dateStr >= startDate && dateStr <= endDate;
+    });
+    return {
+      name: event?.name,
+      isEvent: companyEventDates.has(dateStr),
+    };
   };
 
   switch (viewMode) {
     case 'week':
-      return generateWeekViewCells(currentDate, today, bankHolidayDates, getBankHolidayName);
+      return generateWeekViewCells(currentDate, today, bankHolidayDates, getHolidayInfo, getEventInfo);
     case 'month':
-      return generateMonthViewCells(currentDate, today, bankHolidayDates, getBankHolidayName);
+      return generateMonthViewCells(currentDate, today, bankHolidayDates, getHolidayInfo, getEventInfo);
     case 'quarter':
-      return generateQuarterViewCells(currentDate, today, bankHolidayDates, getBankHolidayName);
+      return generateQuarterViewCells(currentDate, today, bankHolidayDates, getHolidayInfo, getEventInfo);
     case 'year':
-      return generateYearViewCells(currentDate, today, bankHolidayDates, getBankHolidayName);
+      return generateYearViewCells(currentDate, today, bankHolidayDates, getHolidayInfo, getEventInfo);
     default:
       return [];
   }
@@ -100,7 +130,8 @@ function generateWeekViewCells(
   currentDate: Date,
   today: Date,
   bankHolidayDates: Set<string>,
-  getBankHolidayName: (date: Date) => string | undefined
+  getHolidayInfo: (date: Date) => { name?: string; isCustom: boolean },
+  getEventInfo: (date: Date) => { name?: string; isEvent: boolean }
 ): TimelineCell[] {
   const cells: TimelineCell[] = [];
   const { before, after } = PERIODS_CONFIG.week;
@@ -113,7 +144,7 @@ function generateWeekViewCells(
 
   for (let i = 0; i < totalDays; i++) {
     const date = addDays(startDate, i);
-    cells.push(createCell(date, today, bankHolidayDates, getBankHolidayName));
+    cells.push(createCell(date, today, bankHolidayDates, getHolidayInfo, getEventInfo));
   }
 
   return cells;
@@ -126,7 +157,8 @@ function generateMonthViewCells(
   currentDate: Date,
   today: Date,
   bankHolidayDates: Set<string>,
-  getBankHolidayName: (date: Date) => string | undefined
+  getHolidayInfo: (date: Date) => { name?: string; isCustom: boolean },
+  getEventInfo: (date: Date) => { name?: string; isEvent: boolean }
 ): TimelineCell[] {
   const cells: TimelineCell[] = [];
   const { before, after } = PERIODS_CONFIG.month;
@@ -138,7 +170,7 @@ function generateMonthViewCells(
 
   let current = startDate;
   while (current <= endDate) {
-    cells.push(createCell(current, today, bankHolidayDates, getBankHolidayName));
+    cells.push(createCell(current, today, bankHolidayDates, getHolidayInfo, getEventInfo));
     current = addDays(current, 1);
   }
 
@@ -152,7 +184,8 @@ function generateQuarterViewCells(
   currentDate: Date,
   today: Date,
   bankHolidayDates: Set<string>,
-  getBankHolidayName: (date: Date) => string | undefined
+  getHolidayInfo: (date: Date) => { name?: string; isCustom: boolean },
+  getEventInfo: (date: Date) => { name?: string; isEvent: boolean }
 ): TimelineCell[] {
   const cells: TimelineCell[] = [];
   const { before, after } = PERIODS_CONFIG.quarter;
@@ -169,7 +202,7 @@ function generateQuarterViewCells(
     // For quarter view, isToday should be true if today falls within the week
     const isTodayInWeek = today >= current && today <= weekEnd;
     
-    const cell = createCell(current, today, bankHolidayDates, getBankHolidayName);
+    const cell = createCell(current, today, bankHolidayDates, getHolidayInfo, getEventInfo);
     // Add week end date (Sunday) for quarter view
     cell.dateEnd = weekEnd;
     // Override isToday to check if today is within this week
@@ -188,7 +221,8 @@ function generateYearViewCells(
   currentDate: Date,
   _today: Date,
   _bankHolidayDates: Set<string>,
-  _getBankHolidayName: (date: Date) => string | undefined
+  _getHolidayInfo: (date: Date) => { name?: string; isCustom: boolean },
+  _getEventInfo: (date: Date) => { name?: string; isEvent: boolean }
 ): TimelineCell[] {
   const cells: TimelineCell[] = [];
   const { before, after } = PERIODS_CONFIG.year;
@@ -227,7 +261,10 @@ function createYearViewCell(
     isToday: isCurrentMonth, // Highlight current month
     isWeekend: false, // Not applicable for month-level cells
     isBankHoliday: false, // Not applicable for month-level cells
+    isCustomHoliday: false, // Not applicable for month-level cells
     bankHolidayName: undefined,
+    isCompanyEvent: false, // Not applicable for month-level cells
+    companyEventName: undefined,
     dayOfWeek,
     isFirstOfWeek: date.getDate() <= 7 && dayOfWeek === 1,
     isFirstOfMonth: true, // Every cell is start of month
@@ -244,10 +281,13 @@ function createCell(
   date: Date,
   today: Date,
   bankHolidayDates: Set<string>,
-  getBankHolidayName: (date: Date) => string | undefined
+  getHolidayInfo: (date: Date) => { name?: string; isCustom: boolean },
+  getEventInfo: (date: Date) => { name?: string; isEvent: boolean }
 ): TimelineCell {
   const dateStr = format(date, 'yyyy-MM-dd');
   const dayOfWeek = date.getDay();
+  const holidayInfo = getHolidayInfo(date);
+  const eventInfo = getEventInfo(date);
 
   return {
     date,
@@ -256,7 +296,10 @@ function createCell(
     isToday: isSameDay(date, today),
     isWeekend: isWeekend(date),
     isBankHoliday: bankHolidayDates.has(dateStr),
-    bankHolidayName: getBankHolidayName(date),
+    isCustomHoliday: holidayInfo.isCustom,
+    bankHolidayName: holidayInfo.name,
+    isCompanyEvent: eventInfo.isEvent,
+    companyEventName: eventInfo.name,
     dayOfWeek,
     isFirstOfWeek: dayOfWeek === 1, // Monday
     isFirstOfMonth: date.getDate() === 1,

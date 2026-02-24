@@ -15,6 +15,8 @@ import { useDragAndDrop } from '@/hooks/useDragAndDrop';
 import { useResize } from '@/hooks/useResize';
 import { useDependencyLinking } from '@/hooks/useDependencyLinking';
 import { usePhantomSibling } from '@/hooks/usePhantomSibling';
+import { useWebSocketContext } from '@/contexts/WebSocketContext';
+import { parseRecurringPattern } from '@/utils/recurringVacation';
 import styles from './ProjectTimeline.module.css';
 
 interface ProjectTimelineProps {
@@ -157,6 +159,15 @@ export const ProjectTimeline = memo(function ProjectTimeline({
   const customColumnFilters = useAppStore((s) => s.customColumnFilters);
   const customColumnValues = useAppStore((s) => s.customColumnValues);
   const showAssignments = useAppStore((s) => s.showAssignments);
+  
+  // Get critical path state
+  const criticalPathEnabled = useAppStore((s) => s.criticalPathEnabled);
+  const criticalPathItems = useAppStore((s) => s.criticalPathItems);
+  
+  // Get critical path items for this project (empty set if not enabled)
+  const projectCriticalItems = criticalPathEnabled.has(project.id) 
+    ? (criticalPathItems.get(project.id) || new Set<string>())
+    : new Set<string>();
   
   // Get drag and resize hooks
   const { startProjectDrag, startPhaseDrag, startSubphaseDrag, startStaffAssignmentDrag, startEquipmentAssignmentDrag } = useDragAndDrop();
@@ -369,6 +380,7 @@ export const ProjectTimeline = memo(function ProjectTimeline({
                   entityPassesFilters={entityPassesFilters}
                   anyDescendantMatches={anyDescendantMatches}
                   showAssignments={showAssignments}
+                  criticalPathItems={projectCriticalItems}
                 />
                 {isPhantomSource && (
                   <div className={styles.phantomRow} />
@@ -454,6 +466,8 @@ interface PhaseTimelineProps {
   entityPassesFilters: (entityType: string, entityId: number) => boolean;
   anyDescendantMatches: (subphases: Subphase[]) => boolean;
   showAssignments: boolean;
+  // Critical path
+  criticalPathItems: Set<string>;
 }
 
 const PhaseTimeline = memo(function PhaseTimeline({
@@ -479,9 +493,20 @@ const PhaseTimeline = memo(function PhaseTimeline({
   entityPassesFilters,
   anyDescendantMatches,
   showAssignments,
+  criticalPathItems,
 }: PhaseTimelineProps) {
   // Access phantom mode for subphase phantom rows
   const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
+  
+  // Access WebSocket context for real-time change indicators
+  const { recentChanges } = useWebSocketContext();
+  
+  // Get changedBy for this phase (if recently changed by another user)
+  const phaseChange = useMemo(() => 
+    recentChanges.find(c => c.entity_type === 'phase' && c.entity_id === phase.id),
+    [recentChanges, phase.id]
+  );
+  const changedBy = phaseChange?.user_name ?? null;
   
   // Filter subphases: show if subphase matches OR any descendant matches
   const visibleSubphases = useMemo(() => 
@@ -539,6 +564,8 @@ const PhaseTimeline = memo(function PhaseTimeline({
             name={phase.name}
             isMilestone={Boolean(phase.is_milestone)}
             completion={phaseCompletion}
+            isCriticalPath={criticalPathItems.has(`phase-${phase.id}`)}
+            changedBy={changedBy}
             phaseId={phase.id}
             projectId={projectId}
             startDate={phase.start_date}
@@ -589,6 +616,7 @@ const PhaseTimeline = memo(function PhaseTimeline({
                   entityPassesFilters={entityPassesFilters}
                   anyDescendantMatches={anyDescendantMatches}
                   showAssignments={showAssignments}
+                  criticalPathItems={criticalPathItems}
                 />
                 {isPhantomSource && (
                   <div className={styles.phantomRow} />
@@ -668,6 +696,8 @@ interface SubphaseTimelineProps {
   entityPassesFilters: (entityType: string, entityId: number) => boolean;
   anyDescendantMatches: (subphases: Subphase[]) => boolean;
   showAssignments: boolean;
+  // Critical path
+  criticalPathItems: Set<string>;
 }
 
 const SubphaseTimeline = memo(function SubphaseTimeline({
@@ -691,9 +721,20 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
   entityPassesFilters,
   anyDescendantMatches,
   showAssignments,
+  criticalPathItems,
 }: SubphaseTimelineProps) {
   // Access phantom mode for nested subphase phantom rows
   const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
+  
+  // Access WebSocket context for real-time change indicators
+  const { recentChanges } = useWebSocketContext();
+  
+  // Get changedBy for this subphase (if recently changed by another user)
+  const subphaseChange = useMemo(() => 
+    recentChanges.find(c => c.entity_type === 'subphase' && c.entity_id === subphase.id),
+    [recentChanges, subphase.id]
+  );
+  const changedBy = subphaseChange?.user_name ?? null;
   
   // Filter nested subphases: show if matches OR any descendant matches
   const visibleChildren = useMemo(() => 
@@ -751,6 +792,8 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
             isSubphase
             isMilestone={Boolean(subphase.is_milestone)}
             completion={subphaseCompletion}
+            isCriticalPath={criticalPathItems.has(`subphase-${subphase.id}`)}
+            changedBy={changedBy}
             phaseId={subphase.id}
             projectId={projectId}
             startDate={subphase.start_date}
@@ -799,6 +842,7 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
                   entityPassesFilters={entityPassesFilters}
                   anyDescendantMatches={anyDescendantMatches}
                   showAssignments={showAssignments}
+                  criticalPathItems={criticalPathItems}
                 />
                 {isPhantomSource && (
                   <div className={styles.phantomRow} />
@@ -912,7 +956,13 @@ const AssignmentBar = memo(function AssignmentBar({
   const vacationCellMarkers = useMemo(() => {
     if (!staffId || assignmentType !== 'staff') return [];
     
-    const staffVacations = vacations.filter(v => v.staff_id === staffId);
+    // Filter out recurring vacations - only show regular (non-recurring) vacations
+    const staffVacations = vacations.filter(v => {
+      if (v.staff_id !== staffId) return false;
+      // Skip recurring vacations
+      if (parseRecurringPattern(v.description)) return false;
+      return true;
+    });
     if (staffVacations.length === 0) return [];
     
     const markers: Array<{ left: number; width: number; title: string }> = [];

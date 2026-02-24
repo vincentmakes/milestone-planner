@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
-import { getTheme, toggleTheme as toggleThemeUtil } from '@/utils/storage';
+import { getTheme, toggleThemeMode, isDarkTheme, type Theme } from '@/utils/storage';
 import styles from './ThemeToggle.module.css';
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => getTheme());
+  const [theme, setTheme] = useState<Theme>(() => getTheme());
 
   useEffect(() => {
     // Watch for external theme changes
     const observer = new MutationObserver(() => {
-      const currentTheme = document.documentElement.dataset.theme as 'dark' | 'light';
+      const currentTheme = document.documentElement.dataset.theme as Theme;
       if (currentTheme && currentTheme !== theme) {
         setTheme(currentTheme);
       }
@@ -23,18 +23,20 @@ export function ThemeToggle() {
   }, [theme]);
 
   const handleToggle = () => {
-    const newTheme = toggleThemeUtil();
+    const newTheme = toggleThemeMode();
     setTheme(newTheme);
   };
+
+  const isDark = isDarkTheme(theme);
 
   return (
     <button
       className={styles.button}
       onClick={handleToggle}
-      title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-      aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+      title={`Switch to ${isDark ? 'light' : 'dark'} mode`}
+      aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
     >
-      {theme === 'dark' ? (
+      {isDark ? (
         <svg
           width="18"
           height="18"

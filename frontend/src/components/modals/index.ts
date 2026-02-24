@@ -7,6 +7,7 @@ export { EquipmentAssignmentModal } from './EquipmentAssignmentModal';
 export { VacationModal } from './VacationModal';
 export { BankHolidayModal } from './BankHolidayModal';
 export { CustomHolidayModal } from './CustomHolidayModal';
+export { CompanyEventModal } from './CompanyEventModal';
 export { SiteModal } from './SiteModal';
 export { SiteManagementModal } from './SiteManagementModal';
 export { UserManagementModal } from './UserManagementModal';

@@ -113,7 +113,7 @@ export interface Staff {
   role?: string;  // job_title
   site_id: number;
   active: boolean;
-  max_allocation?: number;
+  max_capacity?: number;  // Max work capacity % (e.g., 80 for part-time), defaults to 100
   skills?: Skill[];  // Staff skills
 }
 
@@ -164,6 +164,7 @@ export interface User {
   name: string; // Computed: first_name + last_name
   job_title?: string;  // Job role/title
   role: UserRole;  // System role (admin/superuser/user)
+  max_capacity?: number;  // Max work capacity % (e.g., 80 for part-time), defaults to 100
   active: boolean;
   site_ids: number[];
   skills?: Skill[];  // User's skills
@@ -197,6 +198,14 @@ export interface BankHoliday {
   name: string;
   is_custom: boolean;
   year?: number;
+}
+
+export interface CompanyEvent {
+  id: number;
+  site_id: number;
+  date: string;
+  end_date?: string | null;
+  name: string;
 }
 
 // =============================================================================
@@ -243,7 +252,10 @@ export interface TimelineCell {
   isToday: boolean;
   isWeekend: boolean;
   isBankHoliday: boolean;
+  isCustomHoliday: boolean;  // Keep for backwards compat, but both will be orange
   bankHolidayName?: string | null;
+  isCompanyEvent: boolean;
+  companyEventName?: string | null;
   dayOfWeek: number;
   periodOffset: number;
   isFirstOfWeek?: boolean;
@@ -378,6 +390,7 @@ export interface CreateUserRequest {
   last_name: string;
   job_title?: string;
   role: UserRole;
+  max_capacity?: number;  // Max work capacity % (default 100)
   site_ids: number[];
   skill_ids?: number[];
 }
@@ -389,6 +402,7 @@ export interface UpdateUserRequest {
   last_name?: string;
   job_title?: string;
   role?: UserRole;
+  max_capacity?: number;  // Max work capacity %
   active?: boolean;
   site_ids?: number[];
   skill_ids?: number[];

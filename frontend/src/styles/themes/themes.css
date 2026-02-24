@@ -1,0 +1,344 @@
+/**
+ * Theme Definitions
+ * 
+ * Theme Structure:
+ * - Default Dark: Original Milestone dark theme
+ * - Default Light: Original Milestone light theme  
+ * - S-Theme Dark: Alternative dark theme (Navy-based)
+ * - S-Theme Light: Alternative light theme (Clean whites with blue accent)
+ */
+
+/* Import Inter font for S-Theme */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* =============================================
+   S-THEME DARK
+   Navy-based dark theme with blue accents
+   Aligned with Sulzer UI Guidelines v2.0.3
+   ============================================= */
+
+[data-theme="sulzer-dark"] {
+  /* Typography - Inter font family (Sulzer standard) */
+  --font-family: 'Inter', 'Arial MT', Arial, -apple-system, BlinkMacSystemFont, sans-serif;
+  
+  /* Font sizes - Sulzer UI specifications (minimum 12px for readability) */
+  --font-size-xs: 12px;   /* Minimum readable size */
+  --font-size-sm: 12px;   /* Minimum readable size */
+  --font-size-md: 12px;   /* Callout/Sublines */
+  --font-size-base: 14px; /* Body */
+  --font-size-lg: 16px;   /* Paragraphs */
+  --font-size-xl: 18px;   /* S Title */
+  --font-size-2xl: 24px;  /* M Title */
+  --font-size-3xl: 32px;  /* L Title */
+  
+  /* Line height - Sulzer recommends 1.5x */
+  --line-height-tight: 1.3;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.6;
+  
+  /* Spacing system - 8px grid (Sulzer standard) */
+  --spacing-xs: 4px;   /* 0.5x */
+  --spacing-sm: 8px;   /* 1x */
+  --spacing-md: 16px;  /* 2x */
+  --spacing-lg: 24px;  /* 3x */
+  --spacing-xl: 32px;  /* 4x */
+  --spacing-2xl: 48px; /* 6x */
+  
+  /* Border radius - Sulzer corporate style */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-full: 9999px;
+  
+  /* Backgrounds - Navy-based dark palette */
+  --bg-primary: #0a0f1a;
+  --bg-secondary: #111827;
+  --bg-tertiary: #1a2744;
+  --bg-card: #151d2e;
+  --bg-hover: rgba(60, 139, 255, 0.08);
+  --bg-weekend: rgba(255, 255, 255, 0.05);
+  
+  /* Borders - Blue-tinted */
+  --border-color: #2a3a5a;
+  --border-default: #2a3a5a;
+  --border-light: #364064;
+  --border-subtle: #243352;
+  --border-color-hover: #3a4a6a;
+  --border-hover: #3a4a6a;
+  
+  /* Text - Clean hierarchy (Sulzer palette adapted for dark) */
+  --text-primary: #f0f6ff;      /* Fog - primary text on dark */
+  --text-secondary: #abbfd5;    /* Rain - secondary text */
+  --text-tertiary: #7c9cbf;     /* Cobalt - tertiary text */
+  --text-muted: #6b7896;        /* Stone - muted text */
+  --text-disabled: #585e76;     /* Iron - disabled text */
+  --text-on-accent: #ffffff;    /* Snow - text on colored buttons */
+  --text-title: #f0f6ff;        /* Fog - for titles */
+  --input-placeholder: #7c9cbf; /* Cobalt - for placeholders */
+  
+  /* Primary Accent - Water (brightened for dark bg visibility) */
+  --accent-primary: #3c8bff;
+  --accent-primary-hover: #5a9fff;
+  --accent-blue: #3c8bff;
+  --accent-blue-dim: #2070e0;
+  --accent-blue-hover: #5a9fff;
+  --accent-blue-active: #70acff;
+  --accent-blue-alpha: rgba(60, 139, 255, 0.2);
+  
+  /* Secondary Accents (Sulzer palette) */
+  --accent-cyan: #00c8ff;       /* Bondi */
+  --accent-green: #30a52d;      /* Forest */
+  --accent-yellow: #ffda3a;     /* Lemon */
+  --accent-orange: #f18100;     /* Fire */
+  --accent-red: #ff4d4d;        /* Cherry (brightened) */
+  --accent-red-hover: #ff6b6b;
+  --accent-red-alpha: rgba(255, 77, 77, 0.15);
+  --accent-purple: #a855f7;
+  
+  /* Shadows - Deeper for dark theme */
+  --shadow-sm: 0 3px 24px rgba(0, 0, 0, 0.3);  /* Soft shadow style */
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);  /* Medium shadow */
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.7);
+  
+  /* Phase bar colors */
+  --phase-preparation: #a855f7;
+  --phase-analytics: #3c8bff;
+  --phase-trial: #f18100;
+  --phase-cleaning: #20c997;
+  --phase-report: #30a52d;
+  
+  /* Phase & Subphase Level Colors - S-Theme palette */
+  --level-phase: #D63384;    /* Rose - Top-level phases */
+  --level-1: #0076DE;        /* River - First subphase level */
+  --level-2: #6610F2;        /* Gem - Second subphase level */
+  --level-3: #00C8FF;        /* Bondi - Third subphase level */
+  --level-4: #FF9F43;        /* Sun - Fourth subphase level */
+  --level-5: #20C997;        /* Moss - Fifth subphase level */
+  --level-6: #D633CF;        /* Lotus - Sixth subphase level */
+  --level-7: #FFB443;        /* Beer - Seventh subphase level */
+  --level-8: #7367F0;        /* Berry - Eighth subphase level */
+  --level-9: #EA5455;        /* Cherry - Ninth subphase level */
+  --level-10: #A990DD;       /* Lilac - Tenth subphase level */
+  --level-bar-text: #ffffff; /* Text color on level bars */
+  
+  /* Progress line - white for dark theme */
+  --progress-line-color: rgba(255, 255, 255, 0.9);
+  
+  /* Header specific */
+  --header-bg: #111827;
+  --header-border: #2a3a5a;
+  
+  /* What-If mode */
+  --what-if-glow: #3c8bff;
+  
+  /* Status colors (Sulzer) */
+  --status-success: #30a52d;    /* Forest */
+  --status-warning: #f18100;    /* Fire */
+  --status-error: #ff4d4d;      /* Cherry (brightened) */
+  --status-info: #3c8bff;       /* Water */
+  
+  /* Button colors */
+  --btn-primary-bg: #3c8bff;
+  --btn-primary-hover: #5a9fff;
+  --btn-primary-text: #ffffff;
+  --btn-secondary-bg: transparent;
+  --btn-secondary-border: #2a3a5a;
+  --btn-secondary-hover: rgba(60, 139, 255, 0.1);
+  
+  /* Input colors */
+  --input-bg: #1a2744;
+  --input-border: #2a3a5a;
+  --input-focus-border: #3c8bff;
+  --input-focus-shadow: rgba(60, 139, 255, 0.25);
+  
+  /* Table colors */
+  --table-header-bg: #1a2744;
+  --table-row-hover: rgba(60, 139, 255, 0.05);
+  --table-row-selected: rgba(60, 139, 255, 0.1);
+  --table-border: #2a3a5a;
+  
+  /* Modal colors */
+  --modal-backdrop: rgba(0, 10, 30, 0.85);
+  --modal-bg: #151d2e;
+  --modal-border: #2a3a5a;
+  
+  /* Scrollbar */
+  --scrollbar-track: #111827;
+  --scrollbar-thumb: #364064;
+  --scrollbar-thumb-hover: #4a5a7a;
+}
+
+
+/* =============================================
+   S-THEME LIGHT
+   Clean white theme with blue accent
+   Aligned with Sulzer UI Guidelines v2.0.3
+   ============================================= */
+
+[data-theme="sulzer-light"] {
+  /* Typography - Inter font family (Sulzer standard) */
+  --font-family: 'Inter', 'Arial MT', Arial, -apple-system, BlinkMacSystemFont, sans-serif;
+  
+  /* Font sizes - Sulzer UI specifications (minimum 12px for readability) */
+  --font-size-xs: 12px;   /* Minimum readable size */
+  --font-size-sm: 12px;   /* Minimum readable size */
+  --font-size-md: 12px;   /* Callout/Sublines */
+  --font-size-base: 14px; /* Body */
+  --font-size-lg: 16px;   /* Paragraphs */
+  --font-size-xl: 18px;   /* S Title */
+  --font-size-2xl: 24px;  /* M Title */
+  --font-size-3xl: 32px;  /* L Title */
+  
+  /* Line height - Sulzer recommends 1.5x */
+  --line-height-tight: 1.3;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.6;
+  
+  /* Spacing system - 8px grid (Sulzer standard) */
+  --spacing-xs: 4px;   /* 0.5x */
+  --spacing-sm: 8px;   /* 1x */
+  --spacing-md: 16px;  /* 2x */
+  --spacing-lg: 24px;  /* 3x */
+  --spacing-xl: 32px;  /* 4x */
+  --spacing-2xl: 48px; /* 6x */
+  
+  /* Border radius - Sulzer corporate style */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-full: 9999px;
+  
+  /* Backgrounds - Sulzer Fog/Snow based */
+  --bg-primary: #ffffff;      /* Snow */
+  --bg-secondary: #f0f6ff;    /* Fog */
+  --bg-tertiary: #d0e0f2;     /* Cloud */
+  --bg-card: #ffffff;         /* Snow */
+  --bg-hover: rgba(0, 46, 255, 0.04);
+  --bg-weekend: rgba(0, 0, 0, 0.06);
+  
+  /* Borders - Sulzer Cloud/Smoke tones */
+  --border-color: #c9d1d8;    /* Smoke */
+  --border-default: #c9d1d8;  /* Smoke */
+  --border-light: #d0e0f2;    /* Cloud */
+  --border-subtle: #e0e8f2;
+  --border-color-hover: #abbfd5; /* Rain */
+  --border-hover: #abbfd5;       /* Rain */
+  
+  /* Text hierarchy - Sulzer exact colors */
+  --text-primary: #000000;       /* Black */
+  --text-secondary: #353535;     /* Night */
+  --text-tertiary: #585858;      /* Coal */
+  --text-muted: #82868b;         /* Grey */
+  --text-disabled: #a7a7a7;      /* Rock */
+  --text-on-accent: #ffffff;     /* Snow */
+  --text-title: #364064;         /* Granite - for titles on light backgrounds */
+  --input-placeholder: #7c9cbf;  /* Cobalt - for placeholders */
+  
+  /* Primary Accent - Blueberry (Sulzer Pure Blue) */
+  --accent-primary: #002eff;
+  --accent-primary-hover: #0062f2;   /* Ocean */
+  --accent-blue: #002eff;            /* Blueberry */
+  --accent-blue-dim: #001b9a;        /* Indigo */
+  --accent-blue-hover: #0062f2;      /* Ocean */
+  --accent-blue-active: #001478;     /* Navy */
+  --accent-blue-alpha: rgba(0, 46, 255, 0.1);
+  
+  /* Secondary Accents - Sulzer palette */
+  --accent-cyan: #0076de;       /* River */
+  --accent-green: #30a52d;      /* Forest */
+  --accent-yellow: #ffb443;     /* Beer */
+  --accent-orange: #f18100;     /* Fire */
+  --accent-red: #ce1618;        /* Ruby */
+  --accent-red-hover: #ea5455;  /* Cherry */
+  --accent-red-alpha: rgba(206, 22, 24, 0.1);
+  --accent-purple: #8f0098;     /* Violet */
+  
+  /* Shadows - Sulzer specifications */
+  --shadow-sm: 0 3px 24px rgba(0, 0, 0, 0.1);  /* Soft: Y:3, Blur:24, 10% */
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);  /* Medium: Y:4, Blur:12, 40% */
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.2);
+  --shadow-xl: 0 4px 12px 2px rgba(0, 0, 0, 0.25);
+  
+  /* Phase bar colors */
+  --phase-preparation: #8f0098;  /* Violet */
+  --phase-analytics: #002eff;    /* Blueberry */
+  --phase-trial: #f18100;        /* Fire */
+  --phase-cleaning: #20c997;     /* Moss */
+  --phase-report: #30a52d;       /* Forest */
+  
+  /* Phase & Subphase Level Colors - Sulzer secondary palette */
+  --level-phase: #D63384;    /* Rose - Top-level phases */
+  --level-1: #0076DE;        /* River - First subphase level */
+  --level-2: #6610F2;        /* Gem - Second subphase level */
+  --level-3: #00C8FF;        /* Bondi - Third subphase level */
+  --level-4: #FF9F43;        /* Sun - Fourth subphase level */
+  --level-5: #20C997;        /* Moss - Fifth subphase level */
+  --level-6: #D633CF;        /* Lotus - Sixth subphase level */
+  --level-7: #FFB443;        /* Beer - Seventh subphase level */
+  --level-8: #7367F0;        /* Berry - Eighth subphase level */
+  --level-9: #EA5455;        /* Cherry - Ninth subphase level */
+  --level-10: #A990DD;       /* Lilac - Tenth subphase level */
+  --level-bar-text: #ffffff; /* Snow - text on level bars */
+  
+  /* Progress line - semi-transparent dark overlay for light bg */
+  --progress-line-color: rgba(0, 0, 0, 0.4);
+  
+  /* Header specific - Snow with Cloud border */
+  --header-bg: #ffffff;      /* Snow */
+  --header-border: #d0e0f2;  /* Cloud */
+  
+  /* What-If mode */
+  --what-if-glow: #002eff;   /* Blueberry */
+  
+  /* Status colors - Sulzer standard */
+  --status-success: #30a52d;  /* Forest */
+  --status-warning: #f18100;  /* Fire */
+  --status-error: #ce1618;    /* Ruby */
+  --status-info: #0062f2;     /* Ocean */
+  
+  /* Button colors */
+  --btn-primary-bg: #002eff;      /* Blueberry */
+  --btn-primary-hover: #0062f2;   /* Ocean */
+  --btn-primary-text: #ffffff;    /* Snow */
+  --btn-secondary-bg: transparent;
+  --btn-secondary-border: #c9d1d8; /* Smoke */
+  --btn-secondary-hover: rgba(0, 46, 255, 0.06);
+  
+  /* Input colors */
+  --input-bg: #ffffff;            /* Snow */
+  --input-border: #c9d1d8;        /* Smoke */
+  --input-focus-border: #002eff;  /* Blueberry */
+  --input-focus-shadow: rgba(0, 46, 255, 0.15);
+  
+  /* Table colors */
+  --table-header-bg: #f0f6ff;     /* Fog */
+  --table-row-hover: rgba(0, 46, 255, 0.03);
+  --table-row-selected: rgba(0, 46, 255, 0.08);
+  --table-border: #d0e0f2;        /* Cloud */
+  
+  /* Modal colors */
+  --modal-backdrop: rgba(0, 20, 120, 0.3);  /* Navy with opacity */
+  --modal-bg: #ffffff;            /* Snow */
+  --modal-border: #d0e0f2;        /* Cloud */
+  
+  /* Scrollbar */
+  --scrollbar-track: #f0f6ff;     /* Fog */
+  --scrollbar-thumb: #c9d1d8;     /* Smoke */
+  --scrollbar-thumb-hover: #abbfd5; /* Rain */
+}
+
+/* Print-specific overrides for S-Theme Light */
+@media print {
+  [data-theme="sulzer-light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #f5f5f5;
+    --border-color: #cccccc;
+    --text-primary: #000000;
+    --text-secondary: #333333;
+    --shadow-sm: none;
+    --shadow-md: none;
+    --shadow-lg: none;
+  }
+}

@@ -45,6 +45,7 @@ class User(Base):
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     job_title: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     role: Mapped[str] = mapped_column(String(20), default="user", nullable=False)
+    max_capacity: Mapped[int] = mapped_column(Integer, default=100, nullable=False)  # Max work capacity % (e.g., 80 for part-time)
     sso_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     sso_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     active: Mapped[int] = mapped_column(Integer, default=1, nullable=False)

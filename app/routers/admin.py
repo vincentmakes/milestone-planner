@@ -312,6 +312,11 @@ def tenant_to_response(tenant: Tenant, db_status: Optional[dict] = None) -> dict
         "created_at": tenant.created_at,
         "updated_at": tenant.updated_at,
         "database_status": db_status,
+        # Organization fields
+        "organization_id": str(tenant.organization_id) if tenant.organization_id else None,
+        "organization_name": tenant.organization.name if tenant.organization else None,
+        "required_group_ids": tenant.required_group_ids or [],
+        "group_membership_mode": tenant.group_membership_mode or "any",
     }
 
 
@@ -322,7 +327,12 @@ async def list_tenants(
     db: AsyncSession = Depends(get_master_db),
 ):
     """List all tenants."""
-    query = select(Tenant).options(selectinload(Tenant.credentials))
+    from app.models.organization import Organization
+    
+    query = select(Tenant).options(
+        selectinload(Tenant.credentials),
+        selectinload(Tenant.organization),
+    )
     
     if not include_archived:
         query = query.where(Tenant.status != "archived")
@@ -369,6 +379,7 @@ async def get_tenant(
         .options(
             selectinload(Tenant.credentials),
             selectinload(Tenant.audit_logs),
+            selectinload(Tenant.organization),
         )
     )
     tenant = result.scalar_one_or_none()
@@ -498,8 +509,12 @@ async def update_tenant(
     db: AsyncSession = Depends(get_master_db),
 ):
     """Update a tenant."""
+    from app.models.organization import Organization
+    
     result = await db.execute(
-        select(Tenant).where(Tenant.id == tenant_id)
+        select(Tenant)
+        .where(Tenant.id == tenant_id)
+        .options(selectinload(Tenant.organization))
     )
     tenant = result.scalar_one_or_none()
     
@@ -510,6 +525,22 @@ async def update_tenant(
     update_fields = data.model_dump(exclude_unset=True, by_alias=False)
     changes = {}
     
+    # Validate organization_id if being set
+    if "organization_id" in update_fields and update_fields["organization_id"]:
+        org_result = await db.execute(
+            select(Organization).where(Organization.id == update_fields["organization_id"])
+        )
+        if not org_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Organization not found")
+    
+    # Validate group_membership_mode
+    if "group_membership_mode" in update_fields:
+        if update_fields["group_membership_mode"] not in ("any", "all"):
+            raise HTTPException(
+                status_code=400, 
+                detail="group_membership_mode must be 'any' or 'all'"
+            )
+    
     for field, value in update_fields.items():
         if hasattr(tenant, field) and getattr(tenant, field) != value:
             changes[field] = {"from": getattr(tenant, field), "to": value}
@@ -519,7 +550,14 @@ async def update_tenant(
         await add_audit_log(db, tenant.id, "updated", details=changes, actor=admin.email)
     
     await db.commit()
-    await db.refresh(tenant)
+    
+    # Refresh with organization relationship
+    result = await db.execute(
+        select(Tenant)
+        .where(Tenant.id == tenant_id)
+        .options(selectinload(Tenant.organization))
+    )
+    tenant = result.scalar_one_or_none()
     
     return tenant_to_response(tenant)
 

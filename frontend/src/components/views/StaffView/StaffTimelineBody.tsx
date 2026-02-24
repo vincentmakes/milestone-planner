@@ -12,6 +12,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { calculateBarPosition, calculateTodayPosition } from '@/components/gantt/utils';
 import { TodayLine } from '@/components/gantt/Timeline/TodayLine';
 import { useWorkloadCalculation, getWorkloadTooltip, getWorkloadBackground } from '@/hooks';
+import { parseRecurringPattern } from '@/utils/recurringVacation';
 import { BAR_HEIGHT, BAR_GAP, ROW_PADDING, DETAIL_ROW_HEIGHT, INDICATOR_AREA_HEIGHT } from './StaffView';
 import type { TimelineCell } from '@/components/gantt/utils';
 import type { Staff, Vacation, ViewMode } from '@/types';
@@ -25,6 +26,7 @@ interface StaffTimelineBodyProps {
   rowHeights: Map<number, number>;
   expandedStaff: Set<number>;
   expandedBankHolidays: boolean;
+  expandedCompanyEvents: boolean;
   cells: TimelineCell[];
   cellWidth: number;
   totalWidth: number;
@@ -39,6 +41,7 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
     rowHeights,
     expandedStaff,
     expandedBankHolidays,
+    expandedCompanyEvents,
     cells, 
     cellWidth, 
     totalWidth,
@@ -46,6 +49,7 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
   }, ref) {
     
     const bankHolidays = useAppStore((s) => s.bankHolidays);
+    const companyEvents = useAppStore((s) => s.companyEvents);
     const currentUser = useAppStore((s) => s.currentUser);
     
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
@@ -92,11 +96,11 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
                 />
               ) : null
             )}
-            {cells.map((cell, index) => 
-              cell.isToday ? (
+            {showHighlighting && cells.map((cell, index) => 
+              cell.isCompanyEvent ? (
                 <div
-                  key={`today-${index}`}
-                  className={`${styles.gridCell} ${styles.today}`}
+                  key={`event-${index}`}
+                  className={`${styles.gridCell} ${styles.companyEvent}`}
                   style={{ left: index * cellWidth, width: cellWidth }}
                 />
               ) : null
@@ -177,7 +181,46 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
               cellWidth={cellWidth}
               viewMode={viewMode}
             />
+            
+            {/* Company events row */}
+            <CompanyEventsTimelineRow
+              isExpanded={expandedCompanyEvents}
+              events={companyEvents}
+              cells={cells}
+              cellWidth={cellWidth}
+              viewMode={viewMode}
+            />
           </div>
+          
+          {/* Holiday and event tooltip layer - top strip only */}
+          {showHighlighting && (
+            <div className={styles.tooltipLayer}>
+              {cells.map((cell, index) => {
+                // Priority: bank holidays first, then company events
+                if (cell.isBankHoliday) {
+                  return (
+                    <div
+                      key={`tooltip-${index}`}
+                      className={`${styles.tooltipCell} ${styles.holiday}`}
+                      style={{ left: index * cellWidth, width: cellWidth }}
+                      data-tooltip={cell.bankHolidayName || 'Holiday'}
+                    />
+                  );
+                }
+                if (cell.isCompanyEvent) {
+                  return (
+                    <div
+                      key={`tooltip-${index}`}
+                      className={`${styles.tooltipCell} ${styles.event}`}
+                      style={{ left: index * cellWidth, width: cellWidth }}
+                      data-tooltip={cell.companyEventName || 'Company Event'}
+                    />
+                  );
+                }
+                return null;
+              })}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -195,11 +238,14 @@ interface StaffRowProps {
   viewMode: ViewMode;
 }
 
-function StaffRow({ assignments, vacations, rowHeight, cells, cellWidth, viewMode }: StaffRowProps) {
+function StaffRow({ staffMember, assignments, vacations, rowHeight, cells, cellWidth, viewMode }: StaffRowProps) {
   const { openVacationModal } = useUIStore();
   
+  // Get max capacity for this staff member
+  const maxCapacity = staffMember.max_capacity ?? 100;
+  
   // Calculate workload per cell
-  const workloadCells = useWorkloadCalculation(assignments, vacations, cells);
+  const workloadCells = useWorkloadCalculation(assignments, vacations, cells, maxCapacity);
   
   // Only show workload heatmap in week/month view (not quarter/year - cells too small)
   const showWorkloadHeatmap = viewMode === 'week' || viewMode === 'month';
@@ -236,8 +282,13 @@ function StaffRow({ assignments, vacations, rowHeight, cells, cellWidth, viewMod
       });
     });
     
-    // Add vacations
+    // Add vacations (skip recurring - they show as individual "OFF" indicators instead)
     vacations.forEach((vacation) => {
+      // Skip recurring vacations - they're shown as individual day markers
+      if (parseRecurringPattern(vacation.description)) {
+        return;
+      }
+      
       allItems.push({
         type: 'vacation',
         id: vacation.id,
@@ -479,6 +530,64 @@ function BankHolidaysTimelineRow({ isExpanded, holidays, cells, cellWidth, viewM
           )}
           
           {/* Placeholder row for "Add custom holiday" button */}
+          {canEdit && (
+            <div className={styles.row} style={{ height: DETAIL_ROW_HEIGHT }} />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// Company events timeline row
+interface CompanyEventsTimelineRowProps {
+  isExpanded: boolean;
+  events: Array<{ id: number; name: string; date: string; end_date?: string | null }>;
+  cells: TimelineCell[];
+  cellWidth: number;
+  viewMode: ViewMode;
+}
+
+function CompanyEventsTimelineRow({ isExpanded, events, cells, cellWidth, viewMode }: CompanyEventsTimelineRowProps) {
+  const BASE_HEIGHT = 44;
+  const currentUser = useAppStore((s) => s.currentUser);
+  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  
+  return (
+    <div className={styles.companyEventsWrapper}>
+      {/* Main company events row */}
+      <div className={styles.row} style={{ height: BASE_HEIGHT }} />
+      
+      {/* Expanded event rows */}
+      {isExpanded && (
+        <>
+          {events.map((event) => {
+            const pos = calculateBarPosition(event.date, event.end_date || event.date, cells, cellWidth, viewMode);
+            
+            return (
+              <div key={event.id} className={styles.row} style={{ height: DETAIL_ROW_HEIGHT }}>
+                {pos && (
+                  <div
+                    className={`${styles.detailBar} ${styles.eventDetailBar}`}
+                    style={{
+                      left: pos.left,
+                      width: pos.width,
+                      height: 20,
+                      top: 6,
+                    }}
+                    title={event.name}
+                  />
+                )}
+              </div>
+            );
+          })}
+          
+          {/* Empty row if no events */}
+          {events.length === 0 && (
+            <div className={styles.row} style={{ height: DETAIL_ROW_HEIGHT }} />
+          )}
+          
+          {/* Placeholder row for "Add event" button */}
           {canEdit && (
             <div className={styles.row} style={{ height: DETAIL_ROW_HEIGHT }} />
           )}

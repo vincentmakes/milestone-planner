@@ -18,17 +18,29 @@ import styles from './EquipmentView.module.css';
 interface EquipmentViewProps {
   /** When true, hides the main header and syncs scroll with parent Gantt */
   embedded?: boolean;
-  /** Panel width when embedded (to match Gantt panel) */
+  /** Panel width when embedded (controlled by parent) */
   panelWidth?: number;
+  /** Callback when panel width changes in embedded mode */
+  onPanelWidthChange?: (width: number) => void;
   /** Height when embedded (controlled by parent resizer) */
   height?: number;
 }
 
-export function EquipmentView({ embedded = false, panelWidth, height }: EquipmentViewProps) {
+export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange, height }: EquipmentViewProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const timelineBodyRef = useRef<HTMLDivElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
+  
+  // Local panel width state for standalone mode only
+  const [localPanelWidth, setLocalPanelWidth] = useState(320);
+  
+  // Resizer width constant
+  const RESIZER_WIDTH = 4;
+  
+  // Effective panel width: use prop in embedded mode, local state otherwise
+  // When embedded, panelWidth includes the resizer width, so subtract it for the panel itself
+  const effectivePanelWidth = embedded ? ((panelWidth || 324) - RESIZER_WIDTH) : localPanelWidth;
   
   const equipment = useAppStore((s) => s.equipment);
   const projects = useAppStore((s) => s.projects);
@@ -38,6 +50,8 @@ export function EquipmentView({ embedded = false, panelWidth, height }: Equipmen
   const cellWidth = useAppStore((s) => s.cellWidth);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
   const bankHolidays = useAppStore((s) => s.bankHolidays);
+  const companyEventDates = useAppStore((s) => s.companyEventDates);
+  const companyEvents = useAppStore((s) => s.companyEvents);
   
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
   const currentUser = useAppStore((s) => s.currentUser);
@@ -129,8 +143,8 @@ export function EquipmentView({ embedded = false, panelWidth, height }: Equipmen
   
   // Generate timeline data
   const cells = useMemo(() => 
-    generateTimelineCells(currentDate, viewMode, bankHolidayDates, bankHolidays),
-    [currentDate, viewMode, bankHolidayDates, bankHolidays]
+    generateTimelineCells(currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents),
+    [currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents]
   );
   const headers = useMemo(() => 
     generateTimelineHeaders(cells, viewMode),
@@ -204,8 +218,40 @@ export function EquipmentView({ embedded = false, panelWidth, height }: Equipmen
     return bookings.length > 0 ? 100 : 0;
   };
   
-  // Determine panel style for embedded mode
-  const panelStyle = embedded && panelWidth ? { width: panelWidth } : undefined;
+  // Handle panel resize (horizontal - width)
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = effectivePanelWidth;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const newWidth = Math.max(200, Math.min(500, startWidth + delta));
+      
+      if (embedded && onPanelWidthChange) {
+        // In embedded mode, notify parent
+        onPanelWidthChange(newWidth);
+      } else {
+        // In standalone mode, update local state
+        setLocalPanelWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+  
+  // Determine panel style - use effective width
+  const panelStyle = { width: effectivePanelWidth };
   
   // Determine container style (height when embedded)
   const containerStyle = embedded && height ? { height } : undefined;
@@ -356,6 +402,12 @@ export function EquipmentView({ embedded = false, panelWidth, height }: Equipmen
           )}
         </div>
       </div>
+      
+      {/* Resizer for panel width */}
+      <div
+        className={styles.resizer}
+        onMouseDown={handleResizeStart}
+      />
       
       {/* Right Side - Timeline */}
       <div className={styles.timeline}>

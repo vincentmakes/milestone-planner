@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
-from app.models.site import Site, BankHoliday
+from app.models.site import Site, BankHoliday, CompanyEvent
 from app.models.user import User
 from app.middleware.auth import get_current_user, require_admin, require_superuser
 from app.schemas.site import (
@@ -24,6 +24,8 @@ from app.schemas.site import (
     SiteUpdate,
     BankHolidayResponse,
     BankHolidayCreate,
+    CompanyEventResponse,
+    CompanyEventCreate,
 )
 
 router = APIRouter()
@@ -340,13 +342,14 @@ async def delete_custom_holiday(
 async def refresh_bank_holidays(
     site_id: int,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(require_superuser),
 ):
     """
     Refresh bank holidays from external API.
     
     Clears existing non-custom holidays and re-fetches.
-    Requires admin authentication.
+    Requires admin or superuser authentication.
+    Superusers can only refresh holidays for sites they're assigned to.
     Matches: POST /api/sites/:id/holidays/refresh
     """
     result = await db.execute(select(Site).where(Site.id == site_id))
@@ -354,6 +357,12 @@ async def refresh_bank_holidays(
     
     if not site:
         raise HTTPException(status_code=404, detail="Site not found")
+    
+    # Check site access for non-admin users
+    if user.role != 'admin':
+        user_site_ids = [s.id for s in user.sites] if user.sites else []
+        if site_id not in user_site_ids:
+            raise HTTPException(status_code=403, detail="You can only refresh holidays for sites you're assigned to")
     
     if not site.country_code:
         raise HTTPException(
@@ -453,7 +462,35 @@ async def fetch_and_store_bank_holidays(
     
     total_added = 0
     
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    # Get proxy configuration (supports PAC files and direct proxy)
+    from app.services.proxy import get_proxy_for_url
+    proxy_url = await get_proxy_for_url(settings.nager_api_url)
+    if proxy_url:
+        print(f"Using proxy: {proxy_url}")
+        # Add authentication to proxy URL if credentials provided
+        if settings.proxy_username and settings.proxy_password:
+            from urllib.parse import urlparse, urlunparse
+            parsed = urlparse(proxy_url)
+            auth_proxy = urlunparse((
+                parsed.scheme,
+                f"{settings.proxy_username}:{settings.proxy_password}@{parsed.netloc}",
+                parsed.path,
+                parsed.params,
+                parsed.query,
+                parsed.fragment
+            ))
+            proxy_url = auth_proxy
+            print(f"Proxy authentication enabled for user: {settings.proxy_username}")
+    
+    # SSL verification - can use custom CA cert for corporate proxies
+    ssl_verify: bool | str = settings.proxy_verify_ssl
+    if settings.proxy_ca_cert:
+        print(f"Using custom CA certificate: {settings.proxy_ca_cert}")
+        ssl_verify = settings.proxy_ca_cert
+    elif not settings.proxy_verify_ssl:
+        print("SSL verification disabled for proxy")
+    
+    async with httpx.AsyncClient(timeout=10.0, proxy=proxy_url, verify=ssl_verify) as client:
         for year in years:
             try:
                 url = f"{settings.nager_api_url}/PublicHolidays/{year}/{country_code}"
@@ -462,6 +499,13 @@ async def fetch_and_store_bank_holidays(
                 
                 if response.status_code != 200:
                     print(f"Failed to fetch holidays for {country_code}/{year}: HTTP {response.status_code}")
+                    # Debug: show response headers and body for non-200 responses
+                    print(f"  Response headers: {dict(response.headers)}")
+                    try:
+                        body = response.text[:500]  # First 500 chars
+                        print(f"  Response body: {body}")
+                    except:
+                        pass
                     continue
                 
                 holidays_data = response.json()
@@ -516,3 +560,154 @@ async def fetch_and_store_bank_holidays(
     # Update last fetch timestamp
     site.last_holiday_fetch = datetime.utcnow()
     await db.commit()
+
+
+# ---------------------------------------------------------
+# Company Events CRUD
+# ---------------------------------------------------------
+
+@router.get("/sites/{site_id}/events", response_model=List[CompanyEventResponse])
+async def get_company_events(
+    site_id: int,
+    year: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Get company events for a site.
+    
+    Optionally filter by year.
+    """
+    query = select(CompanyEvent).where(CompanyEvent.site_id == site_id)
+    
+    if year:
+        from sqlalchemy import extract
+        query = query.where(extract('year', CompanyEvent.date) == year)
+    
+    query = query.order_by(CompanyEvent.date)
+    result = await db.execute(query)
+    events = result.scalars().all()
+    
+    return [
+        CompanyEventResponse(
+            id=e.id,
+            site_id=e.site_id,
+            date=e.date,
+            end_date=e.end_date,
+            name=e.name,
+            created_at=e.created_at,
+        )
+        for e in events
+    ]
+
+
+@router.get("/events", response_model=List[CompanyEventResponse])
+async def get_events_in_range(
+    siteId: int = Query(...),
+    startDate: Optional[str] = Query(None),
+    endDate: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Get company events for a site within a date range.
+    
+    Used by Gantt visualization.
+    """
+    from datetime import datetime as dt
+    
+    query = select(CompanyEvent).where(CompanyEvent.site_id == siteId)
+    
+    if startDate:
+        try:
+            start = dt.strptime(startDate, "%Y-%m-%d").date()
+            query = query.where(CompanyEvent.date >= start)
+        except ValueError:
+            pass
+    
+    if endDate:
+        try:
+            end = dt.strptime(endDate, "%Y-%m-%d").date()
+            query = query.where(CompanyEvent.date <= end)
+        except ValueError:
+            pass
+    
+    query = query.order_by(CompanyEvent.date)
+    result = await db.execute(query)
+    events = result.scalars().all()
+    
+    return [
+        CompanyEventResponse(
+            id=e.id,
+            site_id=e.site_id,
+            date=e.date,
+            end_date=e.end_date,
+            name=e.name,
+            created_at=e.created_at,
+        )
+        for e in events
+    ]
+
+
+@router.post("/sites/{site_id}/events", response_model=CompanyEventResponse)
+async def create_company_event(
+    site_id: int,
+    event_data: CompanyEventCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superuser),
+):
+    """
+    Create a company event.
+    
+    Requires superuser or admin role.
+    """
+    # Verify site exists
+    site = await db.get(Site, site_id)
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    
+    event = CompanyEvent(
+        site_id=site_id,
+        date=event_data.date,
+        end_date=event_data.end_date,
+        name=event_data.name,
+    )
+    
+    db.add(event)
+    await db.commit()
+    await db.refresh(event)
+    
+    return CompanyEventResponse(
+        id=event.id,
+        site_id=event.site_id,
+        date=event.date,
+        end_date=event.end_date,
+        name=event.name,
+        created_at=event.created_at,
+    )
+
+
+@router.delete("/sites/{site_id}/events/{event_id}")
+async def delete_company_event(
+    site_id: int,
+    event_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superuser),
+):
+    """
+    Delete a company event.
+    
+    Requires superuser or admin role.
+    """
+    event = await db.get(CompanyEvent, event_id)
+    
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    if event.site_id != site_id:
+        raise HTTPException(status_code=404, detail="Event not found for this site")
+    
+    await db.delete(event)
+    await db.commit()
+    
+    return {"success": True}

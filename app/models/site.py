@@ -10,6 +10,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -75,6 +76,12 @@ class Site(Base):
         cascade="all, delete-orphan",
     )
     
+    company_events: Mapped[List["CompanyEvent"]] = relationship(
+        "CompanyEvent",
+        back_populates="site",
+        cascade="all, delete-orphan",
+    )
+    
     # Note: staff_notes relationship removed - feature not in use
 
     @property
@@ -124,3 +131,39 @@ class BankHoliday(Base):
 
     def __repr__(self) -> str:
         return f"<BankHoliday {self.name} ({self.date})>"
+
+
+class CompanyEvent(Base):
+    """
+    Company events (audits, company meetings, etc.)
+    Similar to holidays but don't impact working days calculation.
+    """
+
+    __tablename__ = "company_events"
+    __table_args__ = (
+        Index("ix_company_events_site_date", "site_id", "date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    site_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("sites.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    # Relationships
+    site: Mapped["Site"] = relationship("Site", back_populates="company_events")
+
+    @property
+    def is_multi_day(self) -> bool:
+        """Check if this event spans multiple days."""
+        return self.end_date is not None and self.end_date != self.date
+
+    def __repr__(self) -> str:
+        return f"<CompanyEvent {self.name} ({self.date})>"

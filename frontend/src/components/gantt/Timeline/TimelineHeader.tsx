@@ -49,28 +49,80 @@ export const TimelineHeader = memo(function TimelineHeader({
         </div>
 
         {/* Secondary row (days/weeks/months) */}
-        <div className={styles.secondaryRow}>
-          {cells.map((cell, index) => (
-            <div
-              key={index}
-              className={`${styles.secondaryCell} ${cell.isToday ? styles.today : ''} ${showHighlighting && cell.isWeekend ? styles.weekend : ''} ${showHighlighting && cell.isBankHoliday ? styles.holiday : ''}`}
-              style={{ width: cellWidth }}
-              title={showHighlighting && cell.isBankHoliday ? cell.bankHolidayName : undefined}
-              data-date={cell.dateStr}
-              data-date-end={cell.dateEnd || undefined}
-            >
-              <span className={styles.dayLabel}>{cell.label}</span>
-              {/* Week number on first day of week - position varies by view */}
-              {showWeekNumbers && cell.isFirstOfWeek && (
-                <span className={viewMode === 'month' ? styles.weekLabelBottom : styles.weekLabelTop}>
-                  W{cell.weekNumber}
-                </span>
-              )}
-              {cell.isFirstOfMonth && cellWidth < 40 && (
-                <span className={styles.monthLabel}>{cell.monthLabel}</span>
-              )}
+        <div 
+          className={styles.secondaryRow}
+          style={{ '--cell-width': `${cellWidth}px` } as React.CSSProperties}
+        >
+          {/* Background markers for highlighting - positioned absolutely like body grid */}
+          {showHighlighting && (
+            <div className={styles.bgLayer}>
+              {cells.map((cell, index) => {
+                // Determine background type - priority: today > holiday > event > weekend
+                let bgClass = '';
+                if (cell.isToday) {
+                  bgClass = styles.todayBg;
+                } else if (cell.isBankHoliday) {
+                  // All holidays (public and custom) use orange - matching body
+                  bgClass = styles.holidayBg;
+                } else if (cell.isCompanyEvent) {
+                  bgClass = styles.eventBg;
+                } else if (cell.isWeekend) {
+                  bgClass = styles.weekendBg;
+                }
+                
+                if (!bgClass) return null;
+                
+                return (
+                  <div
+                    key={`bg-${index}`}
+                    className={`${styles.bgCell} ${bgClass}`}
+                    style={{ left: index * cellWidth, width: cellWidth }}
+                  />
+                );
+              })}
             </div>
-          ))}
+          )}
+          
+          {/* Cell labels */}
+          {cells.map((cell, index) => {
+            // Determine text color class
+            let textClass = '';
+            if (cell.isToday) {
+              textClass = styles.todayText;
+            } else if (cell.isBankHoliday) {
+              textClass = styles.holidayText;
+            } else if (cell.isCompanyEvent) {
+              textClass = styles.eventText;
+            }
+            
+            const tooltipText = cell.isBankHoliday 
+              ? cell.bankHolidayName 
+              : cell.isCompanyEvent 
+                ? cell.companyEventName 
+                : undefined;
+            
+            return (
+              <div
+                key={index}
+                className={`${styles.secondaryCell} ${textClass}`}
+                style={{ width: cellWidth }}
+                title={tooltipText}
+                data-date={cell.dateStr}
+                data-date-end={cell.dateEnd || undefined}
+              >
+                <span className={styles.dayLabel}>{cell.label}</span>
+                {/* Week number on first day of week - position varies by view */}
+                {showWeekNumbers && cell.isFirstOfWeek && (
+                  <span className={viewMode === 'month' ? styles.weekLabelBottom : styles.weekLabelTop}>
+                    W{cell.weekNumber}
+                  </span>
+                )}
+                {cell.isFirstOfMonth && cellWidth < 40 && (
+                  <span className={styles.monthLabel}>{cell.monthLabel}</span>
+                )}
+              </div>
+            );
+          })}
         </div>
         
         {/* Spacer row to align with custom column headers in ProjectPanel */}

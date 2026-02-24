@@ -37,6 +37,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
+COPY migrations/ ./migrations/
 
 # Create directories for uploads and static files
 RUN mkdir -p /app/uploads /app/public && chown -R appuser:appuser /app

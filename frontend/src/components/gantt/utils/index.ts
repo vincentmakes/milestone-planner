@@ -33,3 +33,10 @@ export {
   movePhasesWithProject,
   cloneProject,
 } from './autoCalculation';
+
+export {
+  calculateCriticalPath,
+  isPhaseOnCriticalPath,
+  isSubphaseOnCriticalPath,
+} from './criticalPath';
+export type { CriticalPathResult } from './criticalPath';

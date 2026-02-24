@@ -70,6 +70,10 @@ class TenantUpdate(BaseModel):
     plan: Optional[str] = None
     max_users: Optional[int] = Field(None, alias="maxUsers")
     max_projects: Optional[int] = Field(None, alias="maxProjects")
+    # Organization fields
+    organization_id: Optional[UUID] = Field(None, alias="organizationId")
+    required_group_ids: Optional[List[str]] = Field(None, alias="requiredGroupIds")
+    group_membership_mode: Optional[str] = Field(None, alias="groupMembershipMode")
     
     class Config:
         populate_by_name = True
@@ -108,6 +112,11 @@ class TenantResponse(BaseModel):
     updated_at: Optional[datetime] = None
     database_status: Optional[DatabaseStatus] = None
     audit_log: Optional[List[AuditLogEntry]] = None
+    # Organization fields
+    organization_id: Optional[UUID] = None
+    organization_name: Optional[str] = None
+    required_group_ids: List[str] = []
+    group_membership_mode: str = "any"
 
 
 class TenantCredentialsResponse(BaseModel):

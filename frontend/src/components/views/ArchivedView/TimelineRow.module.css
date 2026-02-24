@@ -35,11 +35,49 @@
 }
 
 .weekend {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-weekend, rgba(0, 0, 0, 0.04));
 }
 
 .bankHoliday {
   background: rgba(249, 115, 22, 0.12);
+  pointer-events: auto;
+  cursor: default;
+  z-index: 100;
+}
+
+.companyEvent {
+  background: rgba(239, 68, 68, 0.15);
+  pointer-events: auto;
+  cursor: default;
+  z-index: 100;
+}
+
+/* CSS-based fast tooltip for holidays/events */
+.bankHoliday[data-tooltip]::after,
+.companyEvent[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  background: var(--bg-tertiary, #3d3d3d);
+  color: var(--text-primary, #e0e0e0);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 10000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.05s, visibility 0.05s;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(100% + 4px);
+}
+
+.bankHoliday:hover[data-tooltip]::after,
+.companyEvent:hover[data-tooltip]::after {
+  opacity: 1;
+  visibility: visible;
 }
 
 .today {

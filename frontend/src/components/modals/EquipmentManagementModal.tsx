@@ -129,7 +129,7 @@ export function EquipmentManagementModal() {
               onSave={handleSave}
               onDelete={handleDelete}
               onCancel={handleCloseForm}
-              canDelete={currentUser?.role === 'admin'}
+              canDelete={currentUser?.role === 'admin' || currentUser?.role === 'superuser'}
             />
           ) : (
           <>

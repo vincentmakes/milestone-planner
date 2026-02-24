@@ -20,6 +20,7 @@ from app.routers import (
     admin,
     custom_columns,
     skills,
+    admin_organizations,
 )
 
 __all__ = [
@@ -40,4 +41,5 @@ __all__ = [
     "admin",
     "custom_columns",
     "skills",
+    "admin_organizations",
 ]

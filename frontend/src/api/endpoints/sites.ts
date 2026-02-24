@@ -3,7 +3,7 @@
  */
 
 import { apiGet, apiPost, apiPut, apiDelete } from '../client';
-import type { Site, BankHoliday } from '@/types';
+import type { Site, BankHoliday, CompanyEvent } from '@/types';
 
 // =============================================================================
 // SITES
@@ -91,6 +91,34 @@ export async function refreshBankHolidays(siteId: number): Promise<BankHoliday[]
 }
 
 // =============================================================================
+// COMPANY EVENTS
+// =============================================================================
+
+/**
+ * Get company events for a site
+ */
+export async function getCompanyEvents(siteId: number): Promise<CompanyEvent[]> {
+  return apiGet<CompanyEvent[]>(`/api/sites/${siteId}/events`);
+}
+
+/**
+ * Create a company event
+ */
+export async function createCompanyEvent(
+  siteId: number,
+  data: { date: string; end_date?: string; name: string }
+): Promise<CompanyEvent> {
+  return apiPost<CompanyEvent>(`/api/sites/${siteId}/events`, data);
+}
+
+/**
+ * Delete a company event
+ */
+export async function deleteCompanyEvent(siteId: number, eventId: number): Promise<void> {
+  await apiDelete(`/api/sites/${siteId}/events/${eventId}`);
+}
+
+// =============================================================================
 // HELPERS
 // =============================================================================
 
@@ -102,8 +130,46 @@ export function buildHolidayDateSet(holidays: BankHoliday[]): Set<string> {
   const dates = new Set<string>();
   
   holidays.forEach(holiday => {
-    const startDate = new Date(holiday.date);
-    const endDate = holiday.end_date ? new Date(holiday.end_date) : startDate;
+    // Normalize date strings to YYYY-MM-DD (handles ISO strings with time)
+    const startStr = holiday.date.substring(0, 10);
+    const endStr = (holiday.end_date || holiday.date).substring(0, 10);
+    
+    // Parse as local dates to avoid timezone issues
+    const [startYear, startMonth, startDay] = startStr.split('-').map(Number);
+    const [endYear, endMonth, endDay] = endStr.split('-').map(Number);
+    
+    const startDate = new Date(startYear, startMonth - 1, startDay);
+    const endDate = new Date(endYear, endMonth - 1, endDay);
+    
+    // Add all dates in the range
+    const current = new Date(startDate);
+    while (current <= endDate) {
+      const dateStr = formatDateForLookup(current);
+      dates.add(dateStr);
+      current.setDate(current.getDate() + 1);
+    }
+  });
+  
+  return dates;
+}
+
+/**
+ * Build a Set of company event date strings for quick lookup
+ */
+export function buildEventDateSet(events: CompanyEvent[]): Set<string> {
+  const dates = new Set<string>();
+  
+  events.forEach(event => {
+    // Normalize date strings to YYYY-MM-DD (handles ISO strings with time)
+    const startStr = event.date.substring(0, 10);
+    const endStr = (event.end_date || event.date).substring(0, 10);
+    
+    // Parse as local dates to avoid timezone issues
+    const [startYear, startMonth, startDay] = startStr.split('-').map(Number);
+    const [endYear, endMonth, endDay] = endStr.split('-').map(Number);
+    
+    const startDate = new Date(startYear, startMonth - 1, startDay);
+    const endDate = new Date(endYear, endMonth - 1, endDay);
     
     // Add all dates in the range
     const current = new Date(startDate);

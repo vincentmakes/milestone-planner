@@ -66,6 +66,15 @@ export const CrossSiteTimelineBody = forwardRef<HTMLDivElement, CrossSiteTimelin
                 />
               ) : null
             )}
+            {showHighlighting && cells.map((cell, index) => 
+              cell.isCompanyEvent ? (
+                <div
+                  key={`event-${index}`}
+                  className={`${styles.gridCell} ${styles.companyEvent}`}
+                  style={{ left: index * cellWidth, width: cellWidth }}
+                />
+              ) : null
+            )}
             {cells.map((cell, index) => 
               cell.isToday ? (
                 <div
@@ -105,6 +114,35 @@ export const CrossSiteTimelineBody = forwardRef<HTMLDivElement, CrossSiteTimelin
               }
             })}
           </div>
+          
+          {/* Holiday and event tooltip overlay - sits above all content */}
+          {showHighlighting && (
+            <div className={styles.holidayTooltipOverlay}>
+              {cells.map((cell, index) => {
+                if (cell.isCompanyEvent) {
+                  return (
+                    <div
+                      key={`event-tooltip-${index}`}
+                      className={styles.eventTooltipZone}
+                      style={{ left: index * cellWidth, width: cellWidth }}
+                      data-tooltip={cell.companyEventName || 'Company Event'}
+                    />
+                  );
+                }
+                if (cell.isBankHoliday) {
+                  return (
+                    <div
+                      key={`holiday-tooltip-${index}`}
+                      className={styles.holidayTooltipZone}
+                      style={{ left: index * cellWidth, width: cellWidth }}
+                      data-tooltip={cell.bankHolidayName || 'Holiday'}
+                    />
+                  );
+                }
+                return null;
+              })}
+            </div>
+          )}
         </div>
       </div>
     );

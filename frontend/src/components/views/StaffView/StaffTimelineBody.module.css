@@ -62,18 +62,75 @@
 }
 
 .gridCell.weekend {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-weekend, rgba(0, 0, 0, 0.04));
 }
 
 .gridCell.holiday {
   background: rgba(249, 115, 22, 0.12);
 }
 
-.gridCell.today {
-  background: rgba(59, 130, 246, 0.08);
-  border-left: 2px solid var(--accent-blue);
-  z-index: 2;
+.gridCell.companyEvent {
+  background: rgba(239, 68, 68, 0.15);
 }
+
+/* Tooltip layer - on top, but cells only cover top strip where bars don't reach */
+.tooltipLayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 100;
+  pointer-events: none;
+}
+
+/* Individual tooltip cells - only cover top 12px strip */
+.tooltipCell {
+  position: absolute;
+  top: 0;
+  height: 12px; /* Only top strip - bars are centered so don't reach here */
+  pointer-events: auto;
+  cursor: default;
+  background: linear-gradient(to bottom, var(--tooltip-line-color) 3px, transparent 3px);
+}
+
+/* Holiday tooltip cells - orange line */
+.tooltipCell.holiday {
+  --tooltip-line-color: var(--accent-orange, #f97316);
+}
+
+/* Company event tooltip cells - red line */
+.tooltipCell.event {
+  --tooltip-line-color: #ef4444;
+}
+
+/* CSS tooltip - centered on the cell */
+.tooltipCell::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-tertiary, #3d3d3d);
+  color: var(--text-primary, #e0e0e0);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  z-index: 10000;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.tooltipCell:hover::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Today marker removed - using TodayLine component instead */
 
 .rows {
   position: relative;
@@ -83,17 +140,55 @@
 /* Staff wrapper - contains main row + expanded rows */
 .staffWrapper {
   border-bottom: 1px solid var(--border-color);
+  /* Add vertical grid lines for consistency when expanded */
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0px,
+    transparent calc(var(--cell-width, 36px) - 1px),
+    var(--border-color) calc(var(--cell-width, 36px) - 1px),
+    var(--border-color) var(--cell-width, 36px)
+  );
 }
 
 /* Bank holidays wrapper - distinct orange border */
 .bankHolidaysWrapper {
+  position: relative;
   border-bottom: 1px solid var(--border-color);
   border-top: 2px solid var(--accent-orange);
+  /* Add vertical grid lines */
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0px,
+    transparent calc(var(--cell-width, 36px) - 1px),
+    var(--border-color) calc(var(--cell-width, 36px) - 1px),
+    var(--border-color) var(--cell-width, 36px)
+  );
+}
+
+/* Company events wrapper - distinct red border */
+.companyEventsWrapper {
+  position: relative;
+  border-bottom: 1px solid var(--border-color);
+  border-top: 2px solid var(--accent-red);
+  /* Add vertical grid lines */
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0px,
+    transparent calc(var(--cell-width, 36px) - 1px),
+    var(--border-color) calc(var(--cell-width, 36px) - 1px),
+    var(--border-color) var(--cell-width, 36px)
+  );
 }
 
 /* Row - base for main row and detail rows */
 .row {
   position: relative;
+  border-bottom: 1px solid var(--border-color-subtle, rgba(255,255,255,0.05));
+}
+
+/* Last row in expanded section doesn't need bottom border - wrapper provides it */
+.row:last-child {
+  border-bottom: none;
 }
 
 /* Common bar styles */
@@ -107,6 +202,7 @@
   cursor: pointer;
   transition: filter 0.15s, box-shadow 0.15s;
   z-index: 2;
+  pointer-events: auto; /* Capture events even when parent has pointer-events: none */
 }
 
 .bar:hover {
@@ -160,6 +256,11 @@
 .customHolidayBar {
   opacity: 0.8;
   background: linear-gradient(135deg, var(--accent-orange), #f97316);
+}
+
+.eventDetailBar {
+  background: var(--accent-red);
+  opacity: 0.6;
 }
 
 /* Workload Heatmap Cells - positioned at bottom of row */

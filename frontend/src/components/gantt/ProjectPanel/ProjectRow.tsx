@@ -3,7 +3,7 @@
  * A single project row in the project panel with expandable children
  */
 
-import { memo, useMemo, useCallback, Fragment } from 'react';
+import { memo, useMemo, useCallback, Fragment, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { PhaseRow } from './PhaseRow';
@@ -17,6 +17,9 @@ interface ProjectRowProps {
   project: Project;
   customColumns?: CustomColumn[];
   nameColumnWidth: number;  // Width of the name/info column
+  onReorder?: (fromId: number, toId: number) => void;  // Callback when project is reordered
+  siblingIds?: number[];  // IDs of all projects for reorder context
+  index?: number;  // Position in the list
 }
 
 // Recursively calculate effective completion for a phase/subphase
@@ -90,7 +93,14 @@ function calculateProjectCompletion(project: Project): number | null {
   return null;
 }
 
-export const ProjectRow = memo(function ProjectRow({ project, customColumns = [], nameColumnWidth }: ProjectRowProps) {
+export const ProjectRow = memo(function ProjectRow({ 
+  project, 
+  customColumns = [], 
+  nameColumnWidth,
+  onReorder,
+  siblingIds = [],
+  index: _index = 0,
+}: ProjectRowProps) {
   const expandedProjects = useAppStore((s) => s.expandedProjects);
   const expandedPhases = useAppStore((s) => s.expandedPhases);
   const expandedSubphases = useAppStore((s) => s.expandedSubphases);
@@ -100,10 +110,16 @@ export const ProjectRow = memo(function ProjectRow({ project, customColumns = []
   const staff = useAppStore((s) => s.staff);
   const equipment = useAppStore((s) => s.equipment);
   const showAssignments = useAppStore((s) => s.showAssignments);
+  const toggleCriticalPath = useAppStore((s) => s.toggleCriticalPath);
+  const isCriticalPathEnabled = useAppStore((s) => s.isCriticalPathEnabled);
+  const criticalPathItems = useAppStore((s) => s.criticalPathItems);
   const openProjectModal = useUIStore((s) => s.openProjectModal);
 
   const isExpanded = expandedProjects.has(project.id);
   const completion = useMemo(() => calculateProjectCompletion(project), [project]);
+  
+  // Get critical path items for this project
+  const projectCriticalPathItems = criticalPathItems.get(project.id) || new Set<string>();
 
   // Calculate current expansion level for this project
   const currentLevel = useMemo(() => {
@@ -167,6 +183,11 @@ export const ProjectRow = memo(function ProjectRow({ project, customColumns = []
     collapseProjectLevel(project.id);
   };
 
+  const handleCriticalPathToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    toggleCriticalPath(project.id);
+  };
+
   const handleEdit = () => {
     openProjectModal(project);
   };
@@ -178,22 +199,123 @@ export const ProjectRow = memo(function ProjectRow({ project, customColumns = []
     showContextMenu('project', project.id, e.clientX, e.clientY);
   }, [showContextMenu, project.id]);
 
+  // Project reorder drag state
+  const [dropPosition, setDropPosition] = useState<'above' | 'below' | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  
+  // Project drag handlers for reordering
+  const handleProjectDragStart = useCallback((e: React.DragEvent) => {
+    e.stopPropagation();
+    setIsDragging(true);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('application/x-project-reorder', String(project.id));
+  }, [project.id]);
+  
+  const handleProjectDragEnd = useCallback(() => {
+    setIsDragging(false);
+    setDropPosition(null);
+  }, []);
+  
+  const handleProjectDragOver = useCallback((e: React.DragEvent) => {
+    // Only accept project reorder drags
+    if (!e.dataTransfer.types.includes('application/x-project-reorder')) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Determine drop position based on mouse position
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+    const newPosition = e.clientY < midpoint ? 'above' : 'below';
+    setDropPosition(newPosition);
+  }, []);
+  
+  const handleProjectDragLeave = useCallback((e: React.DragEvent) => {
+    // Only reset if actually leaving the element (not entering a child)
+    const relatedTarget = e.relatedTarget as HTMLElement;
+    const currentTarget = e.currentTarget as HTMLElement;
+    if (relatedTarget && currentTarget.contains(relatedTarget)) return;
+    setDropPosition(null);
+  }, []);
+  
+  const handleProjectDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const draggedId = parseInt(e.dataTransfer.getData('application/x-project-reorder'), 10);
+    if (isNaN(draggedId) || draggedId === project.id) {
+      setDropPosition(null);
+      return;
+    }
+    
+    // Determine target position
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+    const insertBefore = e.clientY < midpoint;
+    
+    // Calculate target ID
+    let targetId = project.id;
+    if (!insertBefore && siblingIds.length > 0) {
+      // If dropping below, find the next sibling
+      const currentIndex = siblingIds.indexOf(project.id);
+      if (currentIndex < siblingIds.length - 1) {
+        targetId = siblingIds[currentIndex + 1];
+      }
+    }
+    
+    if (onReorder) {
+      onReorder(draggedId, targetId);
+    }
+    
+    setDropPosition(null);
+  }, [project.id, siblingIds, onReorder]);
+
   return (
     <>
       {/* Project row */}
       <div
-        className={`${styles.row} ${!project.confirmed ? styles.unconfirmed : ''}`}
+        className={`${styles.row} ${!project.confirmed ? styles.unconfirmed : ''} ${dropPosition === 'above' ? styles.dropAbove : ''} ${dropPosition === 'below' ? styles.dropBelow : ''} ${isDragging ? styles.dragging : ''}`}
         data-project-id={project.id}
         onDoubleClick={handleEdit}
         onContextMenu={handleContextMenu}
+        onDragOver={handleProjectDragOver}
+        onDragLeave={handleProjectDragLeave}
+        onDrop={handleProjectDrop}
       >
         {/* Name column - fixed width */}
         <div className={styles.nameColumn} style={{ width: nameColumnWidth }}>
+          {/* Drag handle for reordering */}
+          {onReorder && (
+            <div
+              className={styles.dragHandle}
+              draggable
+              onDragStart={handleProjectDragStart}
+              onDragEnd={handleProjectDragEnd}
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              title="Drag to reorder"
+            >
+              <svg width="8" height="12" viewBox="0 0 8 12" fill="currentColor">
+                <circle cx="2" cy="2" r="1.2" />
+                <circle cx="6" cy="2" r="1.2" />
+                <circle cx="2" cy="6" r="1.2" />
+                <circle cx="6" cy="6" r="1.2" />
+                <circle cx="2" cy="10" r="1.2" />
+                <circle cx="6" cy="10" r="1.2" />
+              </svg>
+            </div>
+          )}
+          
           {/* Level controls (+/-) */}
-          <div className={styles.levelControls} onClick={(e) => e.stopPropagation()}>
+          <div 
+            className={styles.levelControls} 
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+          >
             <button
               className={styles.levelBtn}
               onClick={handleCollapseLevel}
+              onDoubleClick={(e) => e.stopPropagation()}
               disabled={currentLevel === 0}
               title="Collapse one level"
             >
@@ -204,6 +326,7 @@ export const ProjectRow = memo(function ProjectRow({ project, customColumns = []
             <button
               className={styles.levelBtn}
               onClick={handleExpandLevel}
+              onDoubleClick={(e) => e.stopPropagation()}
               disabled={currentLevel >= maxLevel}
               title="Expand one level"
             >
@@ -213,6 +336,18 @@ export const ProjectRow = memo(function ProjectRow({ project, customColumns = []
               </svg>
             </button>
           </div>
+
+          {/* Critical Path toggle */}
+          <button
+            className={`${styles.criticalPathBtn} ${isCriticalPathEnabled(project.id) ? styles.active : ''}`}
+            onClick={handleCriticalPathToggle}
+            onDoubleClick={(e) => e.stopPropagation()}
+            title={isCriticalPathEnabled(project.id) ? 'Hide Critical Path' : 'Show Critical Path'}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+            </svg>
+          </button>
 
           {/* Status indicator */}
           <span
@@ -270,6 +405,7 @@ export const ProjectRow = memo(function ProjectRow({ project, customColumns = []
             projectId={project.id}
             customColumns={customColumns}
             nameColumnWidth={nameColumnWidth}
+            criticalPathItems={projectCriticalPathItems}
           />
 
           {/* Project-level staff assignments */}
@@ -324,12 +460,14 @@ function PhasesWithPhantom({
   phases, 
   projectId, 
   customColumns,
-  nameColumnWidth 
+  nameColumnWidth,
+  criticalPathItems,
 }: { 
   phases: Phase[]; 
   projectId: number;
   customColumns: CustomColumn[];
   nameColumnWidth: number;
+  criticalPathItems: Set<string>;
 }) {
   const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
   const customColumnFilters = useAppStore((s) => s.customColumnFilters);
@@ -396,6 +534,7 @@ function PhasesWithPhantom({
             phases={phases}
             customColumns={customColumns}
             nameColumnWidth={nameColumnWidth}
+            criticalPathItems={criticalPathItems}
           />
           {showPhantomAfter === phase.id && (
             <PhantomRow

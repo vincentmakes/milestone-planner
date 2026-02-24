@@ -10,6 +10,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { createPhase, updatePhase, deletePhase, loadAllProjects, updateProject } from '@/api/endpoints/projects';
 import { toInputDateFormat } from '@/utils/date';
+import { getPhaseColor } from '@/utils/themeColors';
 import type { Project } from '@/types';
 import styles from './PhaseModal.module.css';
 
@@ -184,7 +185,7 @@ export function PhaseModal() {
         start_date: startDate,
         end_date: isMilestone ? startDate : endDate,
         is_milestone: isMilestone,
-        color: editingPhase?.color || '#ec4899', // Default pink color for phases
+        color: editingPhase?.color || getPhaseColor(),
       };
       
       // If this was created via phantom sibling mode, add dependency and order

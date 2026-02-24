@@ -16,7 +16,7 @@ from app.database import get_db
 from app.models.user import User, UserSite
 from app.models.site import Site
 from app.models.skill import Skill, UserSkill
-from app.middleware.auth import get_current_user, require_admin
+from app.middleware.auth import get_current_user, require_admin, require_superuser
 from app.schemas.user import (
     UserResponse,
     UserDetailResponse,
@@ -49,6 +49,7 @@ def build_user_list_response(user: User) -> dict:
         "last_name": user.last_name,
         "job_title": user.job_title,
         "role": user.role,
+        "max_capacity": user.max_capacity if hasattr(user, 'max_capacity') else 100,
         "active": user.active,
         "is_system": user.is_system if user.is_system is not None else 0,
         "created_at": user.created_at,
@@ -77,6 +78,7 @@ def build_user_detail_response(user: User) -> dict:
         "last_name": user.last_name,
         "job_title": user.job_title,
         "role": user.role,
+        "max_capacity": user.max_capacity if hasattr(user, 'max_capacity') else 100,
         "active": user.active,
         "is_system": user.is_system if user.is_system is not None else 0,
         "created_at": user.created_at,
@@ -90,12 +92,12 @@ def build_user_detail_response(user: User) -> dict:
 async def get_users(
     include_disabled: bool = Query(False, alias="includeDisabled"),
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(require_superuser),
 ):
     """
     Get all users.
     
-    Requires admin authentication.
+    Requires admin or superuser authentication.
     Matches: GET /api/users
     """
     query = (
@@ -118,7 +120,7 @@ async def get_users(
 async def get_user(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(require_superuser),
 ):
     """
     Get a specific user by ID.
@@ -170,6 +172,7 @@ async def create_user(
         last_name=data.last_name,
         job_title=data.job_title,
         role=data.role,
+        max_capacity=data.max_capacity,
         active=1,
     )
     
@@ -219,12 +222,16 @@ async def update_user(
     user_id: int,
     data: StaffUpdate,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    current_user: User = Depends(require_superuser),
 ):
     """
     Update a user.
     
-    Requires admin authentication.
+    Requires admin or superuser authentication.
+    Superusers can only:
+    - Assign sites they themselves have access to
+    - Assign skills to users
+    - Update basic info (name, job_title) but NOT role or active status
     Matches: PUT /api/users/:id
     """
     result = await db.execute(
@@ -237,6 +244,21 @@ async def update_user(
     
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    
+    is_admin = current_user.role == 'admin'
+    
+    # Superusers cannot change role or active status
+    if not is_admin:
+        if data.role is not None:
+            raise HTTPException(
+                status_code=403,
+                detail="Only administrators can change user roles"
+            )
+        if data.active is not None:
+            raise HTTPException(
+                status_code=403,
+                detail="Only administrators can change user active status"
+            )
     
     # Protect system users from role/active changes
     if user.is_system_user:
@@ -252,14 +274,14 @@ async def update_user(
             )
     
     # Prevent admin from demoting themselves
-    if user.id == admin.id and data.role and data.role != "admin":
+    if is_admin and user.id == current_user.id and data.role and data.role != "admin":
         raise HTTPException(
             status_code=400,
             detail="Cannot change your own admin role"
         )
     
     # Prevent admin from deactivating themselves
-    if user.id == admin.id and data.active is not None and data.active == 0:
+    if is_admin and user.id == current_user.id and data.active is not None and data.active == 0:
         raise HTTPException(
             status_code=400,
             detail="Cannot deactivate your own account"
@@ -288,12 +310,24 @@ async def update_user(
         user.job_title = data.job_title
     if data.role is not None:
         user.role = data.role
+    if data.max_capacity is not None:
+        user.max_capacity = data.max_capacity
     if data.active is not None:
         user.active = data.active
     
     # Update site associations if provided
     sites = list(user.sites) if user.sites else []
     if data.site_ids is not None:
+        # Superusers can only assign sites they have access to
+        if not is_admin:
+            current_user_site_ids = [s.id for s in current_user.sites] if current_user.sites else []
+            for site_id in data.site_ids:
+                if site_id not in current_user_site_ids:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"You can only assign sites you have access to (site {site_id} not allowed)"
+                    )
+        
         # Remove existing associations
         await db.execute(
             delete(UserSite).where(UserSite.user_id == user_id)

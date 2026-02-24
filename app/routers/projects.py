@@ -7,7 +7,7 @@ phases, subphases, and their staff assignments.
 import json
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, func, and_, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -23,6 +23,7 @@ from app.models.assignment import (
     SubphaseStaffAssignment,
 )
 from app.models.equipment import EquipmentAssignment, Equipment
+from app.websocket.broadcast import broadcast_change
 from app.schemas.project import (
     ProjectListResponse,
     ProjectDetailResponse,
@@ -673,6 +674,7 @@ async def create_phase(
 async def update_phase(
     phase_id: int,
     data: PhaseUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -686,6 +688,8 @@ async def update_phase(
     
     if not phase:
         raise HTTPException(status_code=404, detail="Phase not found")
+    
+    project_id = phase.project_id
     
     if data.type is not None:
         phase.type = data.type
@@ -701,6 +705,16 @@ async def update_phase(
         phase.completion = data.completion
     
     await db.commit()
+    
+    # Broadcast change to other users
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="phase",
+        entity_id=phase_id,
+        project_id=project_id,
+        action="update",
+    )
     
     return {"success": True}
 
@@ -923,6 +937,7 @@ async def create_child_subphase(
 async def update_subphase(
     subphase_id: int,
     data: SubphaseUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -936,6 +951,8 @@ async def update_subphase(
     
     if not subphase:
         raise HTTPException(status_code=404, detail="Subphase not found")
+    
+    project_id = subphase.project_id
     
     if data.name is not None:
         subphase.name = data.name
@@ -951,6 +968,16 @@ async def update_subphase(
         subphase.completion = data.completion
     
     await db.commit()
+    
+    # Broadcast change to other users
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="subphase",
+        entity_id=subphase_id,
+        project_id=project_id,
+        action="update",
+    )
     
     return {"success": True}
 

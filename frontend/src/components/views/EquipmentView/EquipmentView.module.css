@@ -19,14 +19,27 @@
 .panel {
   display: flex;
   flex-direction: column;
-  width: 320px;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
   flex-shrink: 0;
+  /* Width controlled by inline style from local state */
 }
 
 .container.embedded .panel {
-  width: auto; /* Width controlled by panelWidth prop */
+  /* Same as standalone - width from inline style */
+}
+
+/* Vertical resizer for panel width */
+.resizer {
+  width: 4px;
+  background: rgba(20, 184, 166, 0.4);
+  cursor: col-resize;
+  flex-shrink: 0;
+  transition: background var(--transition-fast);
+}
+
+.resizer:hover {
+  background: var(--accent-teal);
 }
 
 .panelHeader {

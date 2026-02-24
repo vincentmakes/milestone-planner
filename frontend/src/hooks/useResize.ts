@@ -39,6 +39,19 @@ export function useResize() {
   const resizeDataRef = useRef<ResizeData | null>(null);
   const currentXRef = useRef(0);
   
+  // Refs to hold current values - prevents stale closure issues in event handlers
+  const cellWidthRef = useRef(cellWidth);
+  const viewModeRef = useRef(viewMode);
+  
+  // Keep refs in sync with store values
+  useEffect(() => {
+    cellWidthRef.current = cellWidth;
+  }, [cellWidth]);
+  
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+  }, [viewMode]);
+  
   // Format date as YYYY-MM-DD
   const formatDateLocal = useCallback((date: Date): string => {
     const year = date.getFullYear();
@@ -116,7 +129,17 @@ export function useResize() {
     
     currentXRef.current = e.clientX;
     const data = resizeDataRef.current;
-    const deltaX = e.clientX - data.startX;
+    
+    // Get current values from refs to avoid stale closures
+    const currentCellWidth = cellWidthRef.current;
+    const currentViewMode = viewModeRef.current;
+    
+    let deltaX = e.clientX - data.startX;
+    
+    // For week/month view, snap to day boundaries (cellWidth increments)
+    if (currentViewMode === 'week' || currentViewMode === 'month') {
+      deltaX = Math.round(deltaX / currentCellWidth) * currentCellWidth;
+    }
     
     let newLeft = data.originalLeft;
     let newWidth = data.originalWidth;
@@ -127,14 +150,14 @@ export function useResize() {
         // Resizing from left: move left edge, adjust width
         newLeft = data.originalLeft + deltaX;
         newWidth = data.originalWidth - deltaX;
-        if (newWidth >= cellWidth) { // Minimum 1 cell width
+        if (newWidth >= currentCellWidth) { // Minimum 1 cell width
           data.element.style.left = `${newLeft}px`;
           data.element.style.width = `${newWidth}px`;
         }
       } else {
         // Resizing from right: just adjust width
         newWidth = data.originalWidth + deltaX;
-        if (newWidth >= cellWidth) { // Minimum 1 cell width
+        if (newWidth >= currentCellWidth) { // Minimum 1 cell width
           data.element.style.width = `${newWidth}px`;
         }
       }
@@ -142,18 +165,18 @@ export function useResize() {
     
     // Calculate and show resize indicator
     const cells = getTimelineCellsFromDOM();
-    if (cells && cells.length > 0 && newWidth >= cellWidth && data.element) {
+    if (cells && cells.length > 0 && newWidth >= currentCellWidth && data.element) {
       const dateStr = data.edge === 'left' 
-        ? calculateDateFromPosition(newLeft, cells, cellWidth, viewMode)
-        : calculateDateFromPosition(newLeft + newWidth, cells, cellWidth, viewMode);
+        ? calculateDateFromPosition(newLeft, cells, currentCellWidth, currentViewMode)
+        : calculateDateFromPosition(newLeft + newWidth, cells, currentCellWidth, currentViewMode);
       
       if (dateStr) {
         // Calculate duration
         const startDateStr = data.edge === 'left' 
           ? dateStr 
-          : calculateDateFromPosition(newLeft, cells, cellWidth, viewMode) || data.originalStartDate;
+          : calculateDateFromPosition(newLeft, cells, currentCellWidth, currentViewMode) || data.originalStartDate;
         const endDateStr = data.edge === 'left'
-          ? calculateDateFromPosition(newLeft + newWidth, cells, cellWidth, viewMode) || data.originalEndDate
+          ? calculateDateFromPosition(newLeft + newWidth, cells, currentCellWidth, currentViewMode) || data.originalEndDate
           : dateStr;
         
         const startMs = new Date(startDateStr).getTime();
@@ -174,7 +197,7 @@ export function useResize() {
         }
       }
     }
-  }, [cellWidth, viewMode, showResizeIndicator, getTimelineCellsFromDOM, calculateDateFromPosition]);
+  }, [showResizeIndicator, getTimelineCellsFromDOM, calculateDateFromPosition]);
   
   // Handle mouse up - commit the resize
   const handleMouseUp = useCallback(async () => {
@@ -187,6 +210,10 @@ export function useResize() {
     }
     
     const data = resizeDataRef.current;
+    
+    // Get current values from refs to avoid stale closures
+    const currentCellWidth = cellWidthRef.current;
+    const currentViewMode = viewModeRef.current;
     
     // Clean up listeners first
     document.removeEventListener('mousemove', handleMouseMove);
@@ -229,7 +256,7 @@ export function useResize() {
       // Use inverse of calculateBarPosition
       if (data.edge === 'left') {
         // Left resize: calculate new start date from new left position
-        const calculatedStart = calculateDateFromPosition(finalLeft, cells, cellWidth, viewMode);
+        const calculatedStart = calculateDateFromPosition(finalLeft, cells, currentCellWidth, currentViewMode);
         if (calculatedStart) {
           newStartDate = calculatedStart;
           // Ensure start doesn't go past end
@@ -242,7 +269,7 @@ export function useResize() {
       } else {
         // Right resize: calculate new end date from right edge position
         const rightPosition = finalLeft + finalWidth;
-        const calculatedEnd = calculateDateFromPosition(rightPosition, cells, cellWidth, viewMode);
+        const calculatedEnd = calculateDateFromPosition(rightPosition, cells, currentCellWidth, currentViewMode);
         if (calculatedEnd) {
           newEndDate = calculatedEnd;
           // Ensure end doesn't go before start
@@ -257,7 +284,7 @@ export function useResize() {
       // Fallback to delta-based calculation
       const deltaX = currentXRef.current - data.startX;
       let daysPerCell: number;
-      switch (viewMode) {
+      switch (currentViewMode) {
         case 'week':
         case 'month':
           daysPerCell = 1;
@@ -272,7 +299,7 @@ export function useResize() {
           daysPerCell = 1;
       }
       
-      const daysDelta = Math.round((deltaX / cellWidth) * daysPerCell);
+      const daysDelta = Math.round((deltaX / currentCellWidth) * daysPerCell);
       
       const addDays = (dateStr: string, days: number): string => {
         const date = new Date(dateStr);
@@ -416,7 +443,7 @@ export function useResize() {
     
     resizeDataRef.current = null;
     endResize();
-  }, [cellWidth, viewMode, endResize, handleMouseMove, saveState, setProjects, projects, hideIndicator]);
+  }, [endResize, handleMouseMove, saveState, setProjects, projects, hideIndicator, getTimelineCellsFromDOM, calculateDateFromPosition, formatDateLocal]);
   
   // Helper to recursively update subphase in tree
   const updateSubphaseInTree = (

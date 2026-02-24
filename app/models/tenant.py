@@ -8,7 +8,7 @@ Schema source: lib/masterDb.js initializeMasterDb()
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, TYPE_CHECKING
 
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, ForeignKey, BigInteger
@@ -19,6 +19,9 @@ from sqlalchemy.orm import relationship, declarative_base
 # Separate Base for master database models
 # This prevents these tables from being created in tenant databases
 MasterBase = declarative_base()
+
+if TYPE_CHECKING:
+    from app.models.organization import Organization
 
 
 class Tenant(MasterBase):
@@ -40,7 +43,10 @@ class Tenant(MasterBase):
         max_users INTEGER DEFAULT 50,
         max_projects INTEGER DEFAULT 100,
         admin_email VARCHAR(255) NOT NULL,
-        company_name VARCHAR(255)
+        company_name VARCHAR(255),
+        organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL,
+        required_group_ids JSONB DEFAULT '[]',
+        group_membership_mode VARCHAR(10) DEFAULT 'any'
     );
     """
     
@@ -69,6 +75,20 @@ class Tenant(MasterBase):
     # Settings (JSONB)
     settings = Column(JSONB, default={})
     
+    # Organization reference (nullable for backward compatibility)
+    organization_id = Column(
+        UUID(as_uuid=True), 
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True
+    )
+    
+    # Group-based access control (when using organization SSO)
+    # JSONB array of Entra group IDs (UUIDs) required for access
+    required_group_ids = Column(JSONB, default=[])
+    # 'any' = user must be member of at least one group (OR logic)
+    # 'all' = user must be member of all groups (AND logic)
+    group_membership_mode = Column(String(10), default="any")
+    
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -76,10 +96,40 @@ class Tenant(MasterBase):
     # Relationships
     credentials = relationship("TenantCredentials", back_populates="tenant", uselist=False, cascade="all, delete-orphan")
     audit_logs = relationship("TenantAuditLog", back_populates="tenant", order_by="desc(TenantAuditLog.created_at)", cascade="all, delete-orphan")
+    organization = relationship("Organization", back_populates="tenants", foreign_keys=[organization_id])
     
     @property
     def is_active(self) -> bool:
         return self.status == "active"
+    
+    @property
+    def has_group_restriction(self) -> bool:
+        """Check if tenant has group-based access restrictions."""
+        return bool(self.required_group_ids and len(self.required_group_ids) > 0)
+    
+    def check_group_membership(self, user_group_ids: List[str]) -> bool:
+        """
+        Check if user's group membership satisfies tenant requirements.
+        
+        Args:
+            user_group_ids: List of Entra group IDs the user belongs to
+            
+        Returns:
+            True if user has access, False otherwise
+        """
+        if not self.has_group_restriction:
+            # No group restriction - allow all users
+            return True
+        
+        required = set(self.required_group_ids)
+        user_groups = set(user_group_ids)
+        
+        if self.group_membership_mode == "all":
+            # User must be member of ALL required groups
+            return required.issubset(user_groups)
+        else:
+            # 'any' mode: User must be member of at least ONE required group
+            return bool(required.intersection(user_groups))
 
 
 class TenantCredentials(MasterBase):

@@ -6,7 +6,7 @@
 import { useState, FormEvent, useEffect } from 'react';
 import { adminLogin } from '@/api';
 import { useAdminStore } from '@/stores/adminStore';
-import { getTheme } from '@/utils/storage';
+import { getTheme, isDarkTheme, type Theme } from '@/utils/storage';
 import styles from './AdminLogin.module.css';
 
 export function AdminLoginScreen() {
@@ -14,7 +14,7 @@ export function AdminLoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => getTheme());
+  const [theme, setThemeState] = useState<Theme>(() => getTheme());
   
   const setAdminUser = useAdminStore((s) => s.setAdminUser);
   const setIsAuthenticated = useAdminStore((s) => s.setIsAuthenticated);
@@ -23,9 +23,9 @@ export function AdminLoginScreen() {
   // Watch for theme changes
   useEffect(() => {
     const observer = new MutationObserver(() => {
-      const currentTheme = document.documentElement.dataset.theme as 'dark' | 'light';
+      const currentTheme = document.documentElement.dataset.theme as Theme;
       if (currentTheme && currentTheme !== theme) {
-        setTheme(currentTheme);
+        setThemeState(currentTheme);
       }
     });
 
@@ -56,7 +56,7 @@ export function AdminLoginScreen() {
     }
   };
 
-  const logoSrc = theme === 'dark'
+  const logoSrc = isDarkTheme(theme)
     ? '/img/milestone_logo_dark_theme.svg'
     : '/img/milestone_logo_light_theme.svg';
 

@@ -10,7 +10,7 @@
 }
 
 .projectRow {
-  background: var(--bg-secondary);
+  background: color-mix(in srgb, var(--bg-secondary) 20%, transparent);
 }
 
 .assignmentBar {
@@ -28,6 +28,7 @@
   overflow: hidden;
   padding: 0 4px;
   cursor: pointer;  /* All assignment bars are double-clickable to edit */
+  pointer-events: auto; /* Capture events even when parent has pointer-events: none */
 }
 
 .assignmentBar.staff {

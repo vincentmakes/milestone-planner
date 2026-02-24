@@ -20,7 +20,7 @@ export function Modal({
   children,
   size = 'md',
   footer,
-  closeOnOverlayClick = true,
+  closeOnOverlayClick = false,
   closeOnEscape = true,
 }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);

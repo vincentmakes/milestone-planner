@@ -219,3 +219,118 @@
   /* Empty placeholder cells on project rows - just for alignment */
   background: var(--bg-tertiary);
 }
+
+/* Critical Path Toggle Button */
+.criticalPathBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.criticalPathBtn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.criticalPathBtn.active {
+  background: rgba(251, 146, 60, 0.15);
+  border-color: rgba(251, 146, 60, 0.5);
+  color: rgb(251, 146, 60);
+  box-shadow: 0 0 8px rgba(251, 146, 60, 0.3);
+}
+
+.criticalPathBtn.active:hover {
+  background: rgba(251, 146, 60, 0.25);
+  box-shadow: 0 0 12px rgba(251, 146, 60, 0.4);
+}
+
+.criticalPathBtn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Drag handle for project reordering */
+.dragHandle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 20px;
+  padding: 0;
+  margin-right: 2px;
+  margin-left: -4px;
+  cursor: grab;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.row:hover .dragHandle {
+  opacity: 0.5;
+}
+
+.dragHandle:hover {
+  opacity: 1 !important;
+  color: var(--text-primary);
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+/* Drop indicators - more visible */
+.row.dropAbove {
+  position: relative;
+}
+
+.row.dropAbove::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--accent-blue);
+  z-index: 10;
+  box-shadow: 0 0 8px var(--accent-blue);
+}
+
+.row.dropBelow {
+  position: relative;
+}
+
+.row.dropBelow::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--accent-blue);
+  z-index: 10;
+  box-shadow: 0 0 8px var(--accent-blue);
+}
+
+/* Highlight entire row when it's a drop target */
+.row.dropAbove,
+.row.dropBelow {
+  background: rgba(0, 122, 254, 0.08);
+}
+
+/* Row being dragged */
+.row.dragging {
+  opacity: 0.5;
+  background: var(--bg-tertiary);
+}

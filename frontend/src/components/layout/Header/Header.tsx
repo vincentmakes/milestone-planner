@@ -6,7 +6,8 @@ import { UserMenu } from './UserMenu';
 import { ThemeToggle } from './ThemeToggle';
 import { WhatIfToggle } from './WhatIfToggle';
 import { InstanceTitle } from './InstanceTitle';
-import { getTheme } from '@/utils/storage';
+import { OnlineUsers } from '@/components/common/OnlineUsers';
+import { getTheme, isDarkTheme, type Theme } from '@/utils/storage';
 import { getSetting } from '@/api/endpoints/settings';
 import type { ViewMode } from '@/types';
 import styles from './Header.module.css';
@@ -38,7 +39,7 @@ export function Header() {
   const toggleShowStaffOverview = useAppStore((s) => s.toggleShowStaffOverview);
   const toggleShowEquipmentOverview = useAppStore((s) => s.toggleShowEquipmentOverview);
   
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => getTheme());
+  const [theme, setThemeState] = useState<Theme>(() => getTheme());
   const [customLogoDark, setCustomLogoDark] = useState<string>('');
   const [customLogoLight, setCustomLogoLight] = useState<string>('');
   const [showPanelsDropdown, setShowPanelsDropdown] = useState(false);
@@ -64,9 +65,9 @@ export function Header() {
   // Watch for theme changes
   useEffect(() => {
     const observer = new MutationObserver(() => {
-      const currentTheme = document.documentElement.dataset.theme as 'dark' | 'light';
+      const currentTheme = document.documentElement.dataset.theme as Theme;
       if (currentTheme && currentTheme !== theme) {
-        setTheme(currentTheme);
+        setThemeState(currentTheme);
       }
     });
 
@@ -116,7 +117,7 @@ export function Header() {
 
   // Determine logo source
   const logoSrc = useMemo(() => {
-    if (theme === 'dark') {
+    if (isDarkTheme(theme)) {
       return customLogoDark || '/img/milestone_logo_dark_theme.svg';
     } else {
       return customLogoLight || '/img/milestone_logo_light_theme.svg';
@@ -260,6 +261,9 @@ export function Header() {
         
         {/* Theme Toggle */}
         <ThemeToggle />
+        
+        {/* Online Users */}
+        <OnlineUsers />
         
         {/* User Menu */}
         <UserMenu />

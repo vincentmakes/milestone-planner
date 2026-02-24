@@ -10,6 +10,7 @@ export {
   apiPost, 
   apiPut, 
   apiDelete,
+  apiPatch,
   getTenantPrefix,
   configureApiClient,
 } from './client';
