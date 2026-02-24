@@ -1,54 +1,68 @@
 # Milestone API - Python/FastAPI Backend
-# Production deployment
+# Multi-stage production build
 
-FROM python:3.11-slim-bookworm
+# ---- Stage 1: Build dependencies ----
+FROM python:3.11-slim-bookworm AS builder
 
-# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# ---- Stage 2: Production runtime ----
+FROM python:3.11-slim-bookworm AS runtime
+
+LABEL org.opencontainers.image.title="milestone-planner" \
+      org.opencontainers.image.description="Multi-tenant SaaS R&D project management" \
+      org.opencontainers.image.source="https://github.com/vincentmakes/milestone-planner"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
     JAVA_HOME=/usr/lib/jvm/default-java \
     PORT=8485
 
-# Install system dependencies
+# Install only runtime dependencies (no gcc needed)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Required for psycopg2
-    libpq-dev \
-    gcc \
-    # Required for MPXJ
+    libpq5 \
     default-jre-headless \
-    # For healthcheck
     curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Copy installed Python packages from builder
+COPY --from=builder /install /usr/local
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash appuser
 
-# Set working directory
 WORKDIR /app
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
+# Copy entrypoint and application code
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY app/ ./app/
 COPY migrations/ ./migrations/
 
-# Create directories for uploads and static files
-RUN mkdir -p /app/uploads /app/public && chown -R appuser:appuser /app
+# Create directories, set ownership, and make entrypoint executable
+RUN mkdir -p /app/uploads /app/public \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh \
+    && chown -R appuser:appuser /app
 
-# Switch to non-root user
 USER appuser
 
-# Expose port
+ENTRYPOINT ["docker-entrypoint.sh"]
+
 EXPOSE 8485
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:${PORT:-8485}/health || exit 1
 
-# Run the application - use shell form to expand $PORT
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8485}
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8485}"]

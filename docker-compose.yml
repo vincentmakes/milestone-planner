@@ -1,14 +1,12 @@
 # Milestone - Production Docker Compose
-# 
+#
 # This runs the FastAPI backend which serves both API and React frontend.
 # The React frontend is pre-built and deployed to the public/ folder.
 #
 # Usage:
-#   docker-compose up -d
+#   docker compose up -d
 #
 # Access: http://your-server:8485/
-
-version: '3.8'
 
 services:
   milestone:
@@ -33,6 +31,12 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 256m
     networks:
       - milestone-net
       - guac-net

@@ -1,0 +1,49 @@
+# Git
+.git
+.gitignore
+
+# CI/CD
+.github
+
+# Frontend source (built assets served from public/ volume)
+frontend
+
+# Documentation
+*.md
+LICENSE
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python artifacts
+__pycache__
+*.pyc
+*.pyo
+.mypy_cache
+.pytest_cache
+.coverage
+htmlcov
+
+# Docker compose files (not needed inside container)
+docker-compose*.yml
+
+# Data and uploads (mounted as volumes)
+data
+public
+uploads
+
+# Build artifacts
+*.zip
+*.tar.gz
