@@ -104,9 +104,11 @@ def decrypt(encrypted_data: str) -> str:
 
 def hash_user_password(password: str) -> str:
     """Hash a user password with bcrypt."""
-    from passlib.hash import bcrypt
+    import bcrypt as _bcrypt
 
-    return bcrypt.using(rounds=12).hash(password)
+    return _bcrypt.hashpw(
+        password.encode("utf-8"), _bcrypt.gensalt(rounds=12)
+    ).decode("utf-8")
 
 
 def verify_user_password(password: str, stored: str) -> bool:
@@ -123,9 +125,9 @@ def verify_user_password(password: str, stored: str) -> bool:
 
     # bcrypt hash
     if stored.startswith(("$2b$", "$2a$", "$2y$")):
-        from passlib.hash import bcrypt
+        import bcrypt as _bcrypt
 
-        return bcrypt.verify(password, stored)
+        return _bcrypt.checkpw(password.encode("utf-8"), stored.encode("utf-8"))
 
     # PBKDF2 hash (salt:hex_hash, both parts are hex)
     parts = stored.split(":")

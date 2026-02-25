@@ -197,9 +197,11 @@ async def apply_master_schema(settings):
             print("  *** Set INIT_ADMIN_PASSWORD env var to control it. ***\n")
 
         # Hash with bcrypt
-        from passlib.hash import bcrypt
+        import bcrypt as _bcrypt
 
-        password_hash = bcrypt.using(rounds=12).hash(admin_password)
+        password_hash = _bcrypt.hashpw(
+            admin_password.encode("utf-8"), _bcrypt.gensalt(rounds=12)
+        ).decode("utf-8")
 
         result = await conn.execute(
             """
