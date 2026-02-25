@@ -34,12 +34,20 @@ class AdminLoginResponse(BaseModel):
 
     success: bool
     user: AdminUserInfo
+    must_change_password: bool = False
 
 
 class AdminMeResponse(BaseModel):
     """Admin session check response."""
 
     user: AdminUserInfo | None = None
+
+
+class ChangeAdminPasswordRequest(BaseModel):
+    """Request to change admin's own password."""
+
+    current_password: str
+    new_password: str
 
 
 # ---------------------------------------------------------

@@ -75,6 +75,7 @@ export interface TenantGroupAccessUpdate {
 export interface AdminLoginResponse {
   success: boolean;
   user: AdminUser;
+  must_change_password?: boolean;
 }
 
 export interface AdminMeResponse {
@@ -166,6 +167,13 @@ export async function adminLogin(email: string, password: string): Promise<Admin
 
 export async function adminLogout(): Promise<void> {
   await apiPost('/api/admin/auth/logout', {});
+}
+
+export async function changeAdminPassword(currentPassword: string, newPassword: string): Promise<{ success: boolean }> {
+  return apiPost('/api/admin/auth/change-password', {
+    current_password: currentPassword,
+    new_password: newPassword,
+  });
 }
 
 export async function getAdminMe(): Promise<AdminMeResponse> {
