@@ -48,8 +48,11 @@ wait_for_db "$DB_HOST" "$DB_PORT"
 # Run auto-initialization if AUTO_INIT_DB is set
 if [ "${AUTO_INIT_DB}" = "true" ]; then
     echo "Running database auto-initialization..."
-    python -m app.scripts.init_db
-    echo "Database initialization complete."
+    if python -m app.scripts.init_db; then
+        echo "Database initialization complete."
+    else
+        echo "ERROR: Database initialization failed (exit code $?). Starting app anyway..."
+    fi
 fi
 
 # Execute the main command
