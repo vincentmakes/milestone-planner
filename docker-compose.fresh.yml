@@ -18,19 +18,17 @@
 #   Email: admin@milestone.local
 #   Password: check container logs: docker logs milestone-fresh
 #
-# Access: http://localhost:${FRESH_APP_PORT:-8486}/
+# Port configuration (override via .env or environment):
+#   FRESH_DB_PORT  - host port for PostgreSQL (default: 5433)
+#   FRESH_APP_PORT - host port for the app     (default: 8486)
 #
-# Port & naming configuration (set in .env to avoid conflicts):
-#   FRESH_APP_PORT   - Host port for the app (default: 8486)
-#   FRESH_DB_PORT    - Host port for PostgreSQL (default: 5433)
-#   FRESH_APP_NAME   - Container name for the app (default: milestone-fresh)
-#   FRESH_DB_NAME    - Container name for the DB (default: milestone-fresh-db)
+# Access: http://localhost:${FRESH_APP_PORT:-8486}/
 
 services:
   # PostgreSQL Database
   db:
     image: postgres:15-alpine
-    container_name: ${FRESH_DB_NAME:-milestone-fresh-db}
+    container_name: milestone-fresh-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${PG_ADMIN_USER:-postgres}
@@ -61,7 +59,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ${FRESH_APP_NAME:-milestone-fresh}
+    container_name: milestone-fresh
     restart: unless-stopped
     ports:
       - "${FRESH_APP_PORT:-8486}:8485"
