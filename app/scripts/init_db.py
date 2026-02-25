@@ -231,15 +231,30 @@ async def apply_master_schema(settings):
         if created_new:
             print(f"  Created admin user: {admin_email}")
         else:
-            # Existing user — check if they need the must_change_password upgrade.
-            # If must_change_password is still 0 and they've never logged in,
-            # they were created with the old hardcoded password. Reset it.
+            # Existing user — check if they still have the old hardcoded "admin"
+            # password or haven't yet been migrated to must_change_password.
             row = await conn.fetchrow(
-                "SELECT must_change_password, last_login FROM admin_users WHERE email = $1",
+                "SELECT password_hash, must_change_password FROM admin_users WHERE email = $1",
                 admin_email,
             )
-            if row and row["must_change_password"] == 0 and row["last_login"] is None:
-                # Upgrade: reset password and force change
+            needs_reset = False
+            if row and row["must_change_password"] == 0:
+                stored_hash = row["password_hash"]
+                # Check if password is still the old hardcoded "admin"
+                if stored_hash.startswith(("$2b$", "$2a$", "$2y$")):
+                    needs_reset = _bcrypt.checkpw(b"admin", stored_hash.encode("utf-8"))
+                elif ":" in stored_hash:
+                    # PBKDF2 format — check against "admin"
+                    import hashlib
+
+                    salt = stored_hash.split(":")[0]
+                    expected = stored_hash.split(":")[1]
+                    test_hash = hashlib.pbkdf2_hmac(
+                        "sha512", b"admin", salt.encode("utf-8"), 10000, dklen=64
+                    ).hex()
+                    needs_reset = test_hash == expected
+
+            if needs_reset:
                 must_change = 1
                 admin_password = generate_password()
                 password_hash = _bcrypt.hashpw(

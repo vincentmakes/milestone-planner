@@ -450,23 +450,35 @@ async def sso_status(
     """
     from app.services.sso import SSOService
 
-    sso_service = SSOService(db)
+    _sso_disabled = {
+        "enabled": False,
+        "source": None,
+        "provider": None,
+        "organization": None,
+        "required_groups": [],
+        "group_membership_mode": "any",
+    }
 
     # Get tenant from request state (set by tenant middleware in multi-tenant mode)
     tenant = getattr(request.state, "tenant", None) if hasattr(request, "state") else None
 
-    # Get effective SSO config
-    config, source = await sso_service.get_effective_sso_config(tenant)
+    # In multi-tenant mode without a tenant context, there's no tenant DB to query
+    settings = get_settings()
+    if settings.multi_tenant and not tenant:
+        state = getattr(request, "state", None)
+        has_tenant_slug = state and hasattr(state, "tenant_slug") and state.tenant_slug
+        if not has_tenant_slug:
+            return _sso_disabled
+
+    sso_service = SSOService(db)
+
+    try:
+        config, source = await sso_service.get_effective_sso_config(tenant)
+    except Exception:
+        return _sso_disabled
 
     if not config or not config.get("enabled"):
-        return {
-            "enabled": False,
-            "source": None,
-            "provider": None,
-            "organization": None,
-            "required_groups": [],
-            "group_membership_mode": "any",
-        }
+        return _sso_disabled
 
     result = {
         "enabled": True,
