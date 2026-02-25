@@ -82,7 +82,7 @@ export function CreateTenantModal({ onClose, onCreated }: CreateTenantModalProps
           </button>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} className={styles.modalForm}>
           <div className={styles.body}>
             <div className={styles.form}>
               <div className={styles.formGroup}>

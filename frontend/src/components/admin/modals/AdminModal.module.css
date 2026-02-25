@@ -29,7 +29,7 @@
 }
 
 /* Ensure forms inside modals participate in flex column layout */
-.modal > form {
+.modalForm {
   display: flex;
   flex-direction: column;
   flex: 1;
