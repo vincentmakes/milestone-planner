@@ -16,7 +16,7 @@ from pydantic import BaseModel, EmailStr, Field
 class AdminLoginRequest(BaseModel):
     """Admin login request."""
 
-    email: EmailStr
+    email: str
     password: str
 
 
