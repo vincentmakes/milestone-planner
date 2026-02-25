@@ -28,7 +28,6 @@ services:
       - TZ=Europe/Zurich
     volumes:
       - /mnt/user/appdata/milestone/uploads:/app/uploads
-      - ./public:/app/public:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8485/health"]
       interval: 30s

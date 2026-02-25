@@ -45,7 +45,6 @@ services:
       - INIT_ADMIN_PASSWORD=${INIT_ADMIN_PASSWORD:-}
     volumes:
       - uploads:/app/uploads
-      - ./public:/app/public:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8485/health"]
       interval: 30s

@@ -92,7 +92,6 @@ services:
       - INIT_ADMIN_PASSWORD=${INIT_ADMIN_PASSWORD:-}
     volumes:
       - fresh-uploads:/app/uploads
-      - ./public:/app/public:ro
     depends_on:
       db:
         condition: service_healthy
