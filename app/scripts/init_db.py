@@ -194,6 +194,7 @@ async def apply_master_schema(settings):
         if not admin_password:
             admin_password = generate_password()
             print("\n  *** Admin password was auto-generated. ***")
+            print(f"  *** Admin login: {admin_email} / {admin_password} ***")
             print("  *** Set INIT_ADMIN_PASSWORD env var to control it. ***\n")
 
         # Hash with bcrypt
