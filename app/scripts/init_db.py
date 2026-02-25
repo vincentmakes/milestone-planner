@@ -227,24 +227,49 @@ async def apply_master_schema(settings):
             password_hash,
             must_change,
         )
-        if "INSERT 0 1" in result:
+        created_new = "INSERT 0 1" in result
+        if created_new:
             print(f"  Created admin user: {admin_email}")
-            if must_change:
-                # Use stderr to bypass any stdout buffering in Docker
-                print("", file=sys.stderr, flush=True)
-                print("  " + "=" * 50, file=sys.stderr, flush=True)
-                print("  DEFAULT ADMIN CREDENTIALS", file=sys.stderr, flush=True)
-                print(f"  Email:    {admin_email}", file=sys.stderr, flush=True)
-                print(f"  Password: {admin_password}", file=sys.stderr, flush=True)
-                print(
-                    "  You will be required to change this on first login.",
-                    file=sys.stderr,
-                    flush=True,
-                )
-                print("  " + "=" * 50, file=sys.stderr, flush=True)
-                print("", file=sys.stderr, flush=True)
         else:
-            print(f"  Admin user already exists: {admin_email}")
+            # Existing user — check if they need the must_change_password upgrade.
+            # If must_change_password is still 0 and they've never logged in,
+            # they were created with the old hardcoded password. Reset it.
+            row = await conn.fetchrow(
+                "SELECT must_change_password, last_login FROM admin_users WHERE email = $1",
+                admin_email,
+            )
+            if row and row["must_change_password"] == 0 and row["last_login"] is None:
+                # Upgrade: reset password and force change
+                must_change = 1
+                admin_password = generate_password()
+                password_hash = _bcrypt.hashpw(
+                    admin_password.encode("utf-8"), _bcrypt.gensalt(rounds=12)
+                ).decode("utf-8")
+                await conn.execute(
+                    "UPDATE admin_users SET password_hash = $1, must_change_password = 1 "
+                    "WHERE email = $2",
+                    password_hash,
+                    admin_email,
+                )
+                created_new = True  # trigger credential display below
+                print(f"  Reset password for admin user: {admin_email}")
+            else:
+                print(f"  Admin user already exists: {admin_email}")
+
+        if created_new and must_change:
+            # Use stderr to bypass any stdout buffering in Docker
+            print("", file=sys.stderr, flush=True)
+            print("  " + "=" * 50, file=sys.stderr, flush=True)
+            print("  DEFAULT ADMIN CREDENTIALS", file=sys.stderr, flush=True)
+            print(f"  Email:    {admin_email}", file=sys.stderr, flush=True)
+            print(f"  Password: {admin_password}", file=sys.stderr, flush=True)
+            print(
+                "  You will be required to change this on first login.",
+                file=sys.stderr,
+                flush=True,
+            )
+            print("  " + "=" * 50, file=sys.stderr, flush=True)
+            print("", file=sys.stderr, flush=True)
 
         print("  Master database schema applied successfully")
 
