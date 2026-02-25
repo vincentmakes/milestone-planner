@@ -98,6 +98,39 @@ class MasterDatabase:
                 # Ensure uuid-ossp extension exists
                 await conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
 
+                # Ensure admin_users table exists (needed for login)
+                await conn.execute(
+                    text(
+                        "CREATE TABLE IF NOT EXISTS admin_users ("
+                        "  id SERIAL PRIMARY KEY,"
+                        "  email VARCHAR(255) NOT NULL UNIQUE,"
+                        "  password_hash TEXT NOT NULL,"
+                        "  name VARCHAR(255),"
+                        "  role VARCHAR(20) DEFAULT 'admin',"
+                        "  active INTEGER DEFAULT 1,"
+                        "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        "  last_login TIMESTAMP"
+                        ")"
+                    )
+                )
+
+                # Ensure admin_sessions table exists (needed for login)
+                await conn.execute(
+                    text(
+                        "CREATE TABLE IF NOT EXISTS admin_sessions ("
+                        "  sid TEXT PRIMARY KEY,"
+                        "  sess TEXT NOT NULL,"
+                        "  expired BIGINT NOT NULL"
+                        ")"
+                    )
+                )
+                await conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_admin_sessions_expired "
+                        "ON admin_sessions(expired)"
+                    )
+                )
+
                 # Check if organizations table exists
                 result = await conn.execute(
                     text(
@@ -253,16 +286,29 @@ class MasterDatabase:
                 raise
 
     async def verify_admin_exists(self):
-        """Verify at least one admin user exists."""
+        """Verify at least one admin user exists, create default if none."""
         from sqlalchemy import func, select
+
+        from app.services.encryption import hash_password
 
         async with self.session() as session:
             result = await session.execute(select(func.count(AdminUser.id)))
             count = result.scalar()
 
             if count == 0:
-                print("WARNING: No admin users found in master database!")
-                print("The Node.js application should have created a default admin.")
+                print("No admin users found - creating default admin user...")
+                admin = AdminUser(
+                    email="admin@milestone.local",
+                    password_hash=hash_password("admin"),
+                    name="System Admin",
+                    role="superadmin",
+                    active=1,
+                )
+                session.add(admin)
+                print("Default admin user created:")
+                print("  Email: admin@milestone.local")
+                print("  Password: admin")
+                print("  *** CHANGE THIS IMMEDIATELY ***")
             else:
                 print(f"Master DB: Found {count} admin user(s)")
 
