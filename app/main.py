@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
@@ -341,10 +341,14 @@ def create_app() -> FastAPI:
         if (public_dir / "assets").exists():
             app.mount("/assets", StaticFiles(directory=public_dir / "assets"), name="assets")
 
-        # Root route - serve index.html
+        # Root route - serve index.html (or redirect to /admin in multi-tenant mode)
         @app.get("/")
         async def serve_root():
             """Serve the main index.html."""
+            # In multi-tenant mode, root has no tenant context — redirect to admin portal
+            if settings.multi_tenant:
+                return RedirectResponse(url="/admin", status_code=302)
+
             index_file = public_dir / "index.html"
             if index_file.exists():
                 return FileResponse(index_file)
