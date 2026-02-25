@@ -503,9 +503,13 @@ async def create_tenant(
     await db.flush()  # Get tenant ID
 
     # Store encrypted credentials
+    try:
+        encrypted_pw = encrypt(db_password)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from None
     credentials = TenantCredentials(
         tenant_id=tenant.id,
-        encrypted_password=encrypt(db_password),
+        encrypted_password=encrypted_pw,
     )
     db.add(credentials)
 
