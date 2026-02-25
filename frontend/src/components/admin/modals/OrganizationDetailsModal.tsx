@@ -240,12 +240,13 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
         </div>
 
         {/* Tab Navigation */}
-        <div style={{ 
-          display: 'flex', 
-          gap: '0.25rem', 
-          padding: '0.75rem 1.25rem', 
+        <div style={{
+          display: 'flex',
+          gap: '0.25rem',
+          padding: '0.75rem 1.25rem',
           borderBottom: '1px solid var(--border-color)',
-          background: 'var(--bg-tertiary)'
+          background: 'var(--bg-tertiary)',
+          flexShrink: 0,
         }}>
           {(['details', 'sso', 'tenants'] as Tab[]).map((tab) => (
             <button
@@ -270,7 +271,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
           ))}
         </div>
 
-        <div className={styles.body} style={{ minHeight: 400 }}>
+        <div className={styles.body}>
           {isLoading ? (
             <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
               Loading...
