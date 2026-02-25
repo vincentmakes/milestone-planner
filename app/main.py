@@ -123,11 +123,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     else:
         print("Proxy Configuration: None")
 
-    # Initialize tenant database
-    await init_db()
-
-    # Initialize master database if in multi-tenant mode
+    # Initialize database connections
     if settings.multi_tenant:
+        # Multi-tenant: only initialize master DB (tenant DBs are provisioned on demand)
         from app.services.master_db import master_db
         from app.services.tenant_manager import tenant_connection_manager
 
@@ -135,6 +133,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await master_db.verify_admin_exists()
         tenant_connection_manager.start_cleanup_task()
         print("Master database initialized")
+    else:
+        # Single-tenant: connect to the default tenant database
+        await init_db()
 
     yield
 
