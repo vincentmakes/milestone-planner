@@ -343,11 +343,15 @@ def create_app() -> FastAPI:
 
         # Root route - serve index.html (or redirect to /admin in multi-tenant mode)
         @app.get("/")
-        async def serve_root():
+        async def serve_root(request: Request):
             """Serve the main index.html."""
-            # In multi-tenant mode, root has no tenant context — redirect to admin portal
+            # In multi-tenant mode, only redirect to /admin if there's no tenant context.
+            # Tenant URLs like /t/{slug}/ get rewritten to / by TenantMiddleware,
+            # so we must check for tenant state before redirecting.
             if settings.multi_tenant:
-                return RedirectResponse(url="/admin", status_code=302)
+                tenant = getattr(request.state, "tenant", None)
+                if not tenant:
+                    return RedirectResponse(url="/admin", status_code=302)
 
             index_file = public_dir / "index.html"
             if index_file.exists():
