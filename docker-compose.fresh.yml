@@ -16,15 +16,19 @@
 #
 # Default admin credentials (multi-tenant admin panel):
 #   Email: admin@milestone.local
-#   Password: check container logs: docker logs milestone
+#   Password: check container logs: docker logs milestone-fresh
 #
-# Access: http://localhost:8485/
+# Port configuration (override via .env or environment):
+#   FRESH_DB_PORT  - host port for PostgreSQL (default: 5433)
+#   FRESH_APP_PORT - host port for the app     (default: 8486)
+#
+# Access: http://localhost:${FRESH_APP_PORT:-8486}/
 
 services:
   # PostgreSQL Database
   db:
     image: postgres:15-alpine
-    container_name: milestone-db
+    container_name: milestone-fresh-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${PG_ADMIN_USER:-postgres}
@@ -32,9 +36,9 @@ services:
       POSTGRES_DB: postgres
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - fresh-pgdata:/var/lib/postgresql/data
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "${FRESH_DB_PORT:-5433}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${PG_ADMIN_USER:-postgres}"]
       interval: 5s
@@ -48,17 +52,17 @@ services:
         reservations:
           memory: 128m
     networks:
-      - milestone-net
+      - milestone-fresh-net
 
   # FastAPI Application
   milestone:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: milestone
+    container_name: milestone-fresh
     restart: unless-stopped
     ports:
-      - "8485:8485"
+      - "${FRESH_APP_PORT:-8486}:8485"
     environment:
       - PORT=8485
       - TZ=Europe/Zurich
@@ -87,7 +91,7 @@ services:
       - INIT_ADMIN_EMAIL=${INIT_ADMIN_EMAIL:-admin@milestone.local}
       - INIT_ADMIN_PASSWORD=${INIT_ADMIN_PASSWORD:-}
     volumes:
-      - uploads:/app/uploads
+      - fresh-uploads:/app/uploads
       - ./public:/app/public:ro
     depends_on:
       db:
@@ -105,12 +109,12 @@ services:
         reservations:
           memory: 256m
     networks:
-      - milestone-net
+      - milestone-fresh-net
 
 volumes:
-  pgdata:
-  uploads:
+  fresh-pgdata:
+  fresh-uploads:
 
 networks:
-  milestone-net:
+  milestone-fresh-net:
     driver: bridge
