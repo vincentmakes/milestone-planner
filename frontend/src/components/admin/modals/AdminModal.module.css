@@ -21,6 +21,7 @@
   box-shadow: var(--shadow-xl);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .modal.wide {
@@ -64,7 +65,7 @@
 }
 
 .body {
-  flex: 1 1 0;
+  flex: 1 1 auto;
   min-height: 0;
   padding: 1.25rem;
   overflow-y: auto;
