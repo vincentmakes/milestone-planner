@@ -75,6 +75,7 @@ def build_user_session_info(user: User) -> UserSessionInfo:
 @router.post("/auth/login", response_model=LoginResponse)
 async def login(
     data: LoginRequest,
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
@@ -84,6 +85,16 @@ async def login(
     Creates a session and sets the session cookie.
     Matches: POST /api/auth/login
     """
+    # In multi-tenant mode, this endpoint requires a tenant context
+    if settings.multi_tenant:
+        state = getattr(request, "state", None)
+        has_tenant = state and hasattr(state, "tenant_slug") and state.tenant_slug
+        if not has_tenant:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No tenant context. Use tenant-specific URLs (/t/{slug}/api/auth/login).",
+            )
+
     # Find user by email
     result = await db.execute(
         select(User).where(User.email == data.email).options(selectinload(User.sites))
@@ -131,6 +142,7 @@ async def login(
 
 @router.post("/auth/logout")
 async def logout(
+    request: Request,
     response: Response,
     session_id: str | None = Depends(get_session_id),
     db: AsyncSession = Depends(get_db),
@@ -141,6 +153,14 @@ async def logout(
     Destroys the session and clears the cookie.
     Matches: POST /api/auth/logout
     """
+    if settings.multi_tenant:
+        state = getattr(request, "state", None)
+        has_tenant = state and hasattr(state, "tenant_slug") and state.tenant_slug
+        if not has_tenant:
+            # Just clear the cookie and return success
+            response.delete_cookie(key="connect.sid", path="/")
+            return {"success": True}
+
     if session_id:
         session_service = SessionService(db)
         await session_service.delete_session(session_id)
@@ -156,6 +176,7 @@ async def logout(
 
 @router.get("/auth/me", response_model=AuthMeResponse)
 async def get_current_session(
+    request: Request,
     session_id: str | None = Depends(get_session_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -168,6 +189,13 @@ async def get_current_session(
     Note: This endpoint fetches the full user from DB (not cached session)
     to ensure all site attributes are available.
     """
+    # In multi-tenant mode without tenant context, no user can be authenticated
+    if settings.multi_tenant:
+        state = getattr(request, "state", None)
+        has_tenant = state and hasattr(state, "tenant_slug") and state.tenant_slug
+        if not has_tenant:
+            return AuthMeResponse(user=None)
+
     if not session_id:
         return AuthMeResponse(user=None)
 
@@ -197,6 +225,7 @@ async def get_current_session(
 @router.post("/auth/change-password")
 async def change_password(
     data: ChangePasswordRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -206,6 +235,15 @@ async def change_password(
     Requires current password verification.
     Matches: POST /api/auth/change-password
     """
+    if settings.multi_tenant:
+        state = getattr(request, "state", None)
+        has_tenant = state and hasattr(state, "tenant_slug") and state.tenant_slug
+        if not has_tenant:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No tenant context.",
+            )
+
     # Verify current password
     if not verify_user_password(data.currentPassword, user.password):
         raise HTTPException(
@@ -227,6 +265,7 @@ async def change_password(
 
 @router.get("/sso/config")
 async def get_sso_config_public(
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -235,6 +274,12 @@ async def get_sso_config_public(
     Public endpoint - needed for login page to show SSO button.
     Matches: GET /api/sso/config
     """
+    if settings.multi_tenant:
+        state = getattr(request, "state", None)
+        has_tenant = state and hasattr(state, "tenant_slug") and state.tenant_slug
+        if not has_tenant:
+            return {"enabled": 0}
+
     try:
         result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
         config = result.scalar_one_or_none()
@@ -350,6 +395,7 @@ async def update_sso_config_new(
 
 @router.get("/auth/sso/config", response_model=SSOConfigResponse)
 async def get_sso_config(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     # Public endpoint - needed for login page
 ):
@@ -359,6 +405,12 @@ async def get_sso_config(
     Does not return client_secret.
     Matches: GET /api/auth/sso/config
     """
+    if settings.multi_tenant:
+        state = getattr(request, "state", None)
+        has_tenant = state and hasattr(state, "tenant_slug") and state.tenant_slug
+        if not has_tenant:
+            return SSOConfigResponse(enabled=False, configured=False)
+
     result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
     config = result.scalar_one_or_none()
 
