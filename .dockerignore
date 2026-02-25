@@ -5,8 +5,9 @@
 # CI/CD
 .github
 
-# Frontend source (built assets served from public/ volume)
-frontend
+# Frontend build output (built inside Docker, not needed from host)
+frontend/node_modules
+frontend/dist
 
 # Documentation
 *.md
@@ -41,7 +42,8 @@ docker-compose*.yml
 
 # Data and uploads (mounted as volumes)
 data
-public
+public/assets
+public/index.html
 uploads
 
 # Build artifacts
