@@ -1,7 +1,7 @@
 # Milestone API - Python/FastAPI Backend
 # Multi-stage production build
 
-# ---- Stage 1: Build dependencies ----
+# ---- Stage 1: Build Python dependencies ----
 FROM python:3.11-slim-bookworm AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -18,7 +18,18 @@ WORKDIR /build
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-# ---- Stage 2: Production runtime ----
+# ---- Stage 2: Build React frontend ----
+FROM node:20-alpine AS frontend
+
+WORKDIR /build
+
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci
+
+COPY frontend/ ./
+RUN npm run build
+
+# ---- Stage 3: Production runtime ----
 FROM python:3.11-slim-bookworm AS runtime
 
 LABEL org.opencontainers.image.title="milestone-planner" \
@@ -51,8 +62,13 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY app/ ./app/
 COPY migrations/ ./migrations/
 
+# Copy frontend build output from Node.js stage
+COPY --from=frontend /build/dist/ ./public/
+# Copy static images (logos etc.) not produced by Vite
+COPY public/img/ ./public/img/
+
 # Create directories, set ownership, and make entrypoint executable
-RUN mkdir -p /app/uploads /app/public \
+RUN mkdir -p /app/uploads \
     && chmod +x /usr/local/bin/docker-entrypoint.sh \
     && chown -R appuser:appuser /app
 

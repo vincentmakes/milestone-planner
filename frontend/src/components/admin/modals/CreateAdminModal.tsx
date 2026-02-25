@@ -64,8 +64,7 @@ export function CreateAdminModal({ onClose, onCreated }: CreateAdminModalProps) 
           </button>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div className={styles.body}>
+        <form id="create-admin-form" onSubmit={handleSubmit} className={styles.body}>
             <div className={styles.form}>
               <div className={styles.formGroup}>
                 <label className={styles.label}>Email *</label>
@@ -126,26 +125,26 @@ export function CreateAdminModal({ onClose, onCreated }: CreateAdminModalProps) 
 
               {error && <div className={styles.error}>{error}</div>}
             </div>
-          </div>
-
-          <div className={styles.footer}>
-            <button
-              type="button"
-              className={`${styles.btn} ${styles.btnSecondary}`}
-              onClick={onClose}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className={`${styles.btn} ${styles.btnPrimary}`}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? 'Creating...' : 'Create Admin'}
-            </button>
-          </div>
         </form>
+
+        <div className={styles.footer}>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnSecondary}`}
+            onClick={onClose}
+            disabled={isSubmitting}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form="create-admin-form"
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Creating...' : 'Create Admin'}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -163,6 +163,7 @@ async def apply_master_schema(settings):
                 name VARCHAR(255),
                 role VARCHAR(20) DEFAULT 'admin',
                 active INTEGER DEFAULT 1,
+                must_change_password INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_login TIMESTAMP
             )
@@ -174,6 +175,19 @@ async def apply_master_schema(settings):
                 expired BIGINT NOT NULL
             )
         """)
+
+        # Add must_change_password column if missing (upgrade path)
+        has_col = await conn.fetchval(
+            "SELECT EXISTS ("
+            "  SELECT 1 FROM information_schema.columns "
+            "  WHERE table_name = 'admin_users' AND column_name = 'must_change_password'"
+            ")"
+        )
+        if not has_col:
+            await conn.execute(
+                "ALTER TABLE admin_users ADD COLUMN must_change_password INTEGER DEFAULT 0"
+            )
+            print("  Added must_change_password column to admin_users")
 
         # Create indexes
         await conn.execute(
@@ -191,11 +205,10 @@ async def apply_master_schema(settings):
         # Seed default admin user
         admin_email = os.environ.get("INIT_ADMIN_EMAIL", "admin@milestone.local")
         admin_password = os.environ.get("INIT_ADMIN_PASSWORD")
+        must_change = 0
         if not admin_password:
             admin_password = generate_password()
-            print("\n  *** Admin password was auto-generated. ***")
-            print(f"  *** Admin login: {admin_email} / {admin_password} ***")
-            print("  *** Set INIT_ADMIN_PASSWORD env var to control it. ***\n")
+            must_change = 1
 
         # Hash with bcrypt
         import bcrypt as _bcrypt
@@ -206,17 +219,72 @@ async def apply_master_schema(settings):
 
         result = await conn.execute(
             """
-            INSERT INTO admin_users (email, password_hash, name, role, active)
-            VALUES ($1, $2, 'System Admin', 'superadmin', 1)
+            INSERT INTO admin_users (email, password_hash, name, role, active, must_change_password)
+            VALUES ($1, $2, 'System Admin', 'superadmin', 1, $3)
             ON CONFLICT (email) DO NOTHING
             """,
             admin_email,
             password_hash,
+            must_change,
         )
-        if "INSERT 0 1" in result:
+        created_new = "INSERT 0 1" in result
+        if created_new:
             print(f"  Created admin user: {admin_email}")
         else:
-            print(f"  Admin user already exists: {admin_email}")
+            # Existing user — check if they still have the old hardcoded "admin"
+            # password or haven't yet been migrated to must_change_password.
+            row = await conn.fetchrow(
+                "SELECT password_hash, must_change_password FROM admin_users WHERE email = $1",
+                admin_email,
+            )
+            needs_reset = False
+            if row and row["must_change_password"] == 0:
+                stored_hash = row["password_hash"]
+                # Check if password is still the old hardcoded "admin"
+                if stored_hash.startswith(("$2b$", "$2a$", "$2y$")):
+                    needs_reset = _bcrypt.checkpw(b"admin", stored_hash.encode("utf-8"))
+                elif ":" in stored_hash:
+                    # PBKDF2 format — check against "admin"
+                    import hashlib
+
+                    salt = stored_hash.split(":")[0]
+                    expected = stored_hash.split(":")[1]
+                    test_hash = hashlib.pbkdf2_hmac(
+                        "sha512", b"admin", salt.encode("utf-8"), 10000, dklen=64
+                    ).hex()
+                    needs_reset = test_hash == expected
+
+            if needs_reset:
+                must_change = 1
+                admin_password = generate_password()
+                password_hash = _bcrypt.hashpw(
+                    admin_password.encode("utf-8"), _bcrypt.gensalt(rounds=12)
+                ).decode("utf-8")
+                await conn.execute(
+                    "UPDATE admin_users SET password_hash = $1, must_change_password = 1 "
+                    "WHERE email = $2",
+                    password_hash,
+                    admin_email,
+                )
+                created_new = True  # trigger credential display below
+                print(f"  Reset password for admin user: {admin_email}")
+            else:
+                print(f"  Admin user already exists: {admin_email}")
+
+        if created_new and must_change:
+            # Use stderr to bypass any stdout buffering in Docker
+            print("", file=sys.stderr, flush=True)
+            print("  " + "=" * 50, file=sys.stderr, flush=True)
+            print("  DEFAULT ADMIN CREDENTIALS", file=sys.stderr, flush=True)
+            print(f"  Email:    {admin_email}", file=sys.stderr, flush=True)
+            print(f"  Password: {admin_password}", file=sys.stderr, flush=True)
+            print(
+                "  You will be required to change this on first login.",
+                file=sys.stderr,
+                flush=True,
+            )
+            print("  " + "=" * 50, file=sys.stderr, flush=True)
+            print("", file=sys.stderr, flush=True)
 
         print("  Master database schema applied successfully")
 

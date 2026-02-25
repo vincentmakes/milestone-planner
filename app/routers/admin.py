@@ -28,6 +28,7 @@ from app.schemas.tenant import (
     AdminUserCreate,
     AdminUserInfo,
     AdminUserUpdate,
+    ChangeAdminPasswordRequest,
     ResetAdminPasswordRequest,
     TenantCreate,
     TenantProvisionRequest,
@@ -233,6 +234,7 @@ async def admin_login(
             name=admin.name,
             role=admin.role,
         ),
+        must_change_password=admin.must_change_password == 1,
     )
 
 
@@ -272,6 +274,33 @@ async def admin_me(
             )
         )
     return AdminMeResponse(user=None)
+
+
+@router.post("/auth/change-password")
+async def change_admin_password(
+    data: ChangeAdminPasswordRequest,
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_master_db),
+):
+    """Change current admin user's password."""
+    # Verify current password
+    if not verify_password(data.current_password, admin.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    if len(data.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 8 characters",
+        )
+
+    admin.password_hash = hash_password(data.new_password)
+    admin.must_change_password = 0
+    await db.commit()
+
+    return {"success": True, "message": "Password changed successfully"}
 
 
 # ---------------------------------------------------------
@@ -474,9 +503,13 @@ async def create_tenant(
     await db.flush()  # Get tenant ID
 
     # Store encrypted credentials
+    try:
+        encrypted_pw = encrypt(db_password)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from None
     credentials = TenantCredentials(
         tenant_id=tenant.id,
-        encrypted_password=encrypt(db_password),
+        encrypted_password=encrypted_pw,
     )
     db.add(credentials)
 

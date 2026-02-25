@@ -11,6 +11,7 @@ interface AdminState {
   adminUser: AdminUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  mustChangePassword: boolean;
   
   // Data
   tenants: Tenant[];
@@ -27,6 +28,7 @@ interface AdminState {
   setAdminUser: (user: AdminUser | null) => void;
   setIsAuthenticated: (auth: boolean) => void;
   setIsLoading: (loading: boolean) => void;
+  setMustChangePassword: (must: boolean) => void;
   setTenants: (tenants: Tenant[]) => void;
   setOrganizations: (organizations: Organization[]) => void;
   setSystemStats: (stats: SystemStats | null) => void;
@@ -58,6 +60,7 @@ const initialState = {
   adminUser: null,
   isAuthenticated: false,
   isLoading: true,
+  mustChangePassword: false,
   tenants: [],
   organizations: [],
   systemStats: null,
@@ -73,6 +76,7 @@ export const useAdminStore = create<AdminState>((set) => ({
   setAdminUser: (user) => set({ adminUser: user }),
   setIsAuthenticated: (auth) => set({ isAuthenticated: auth }),
   setIsLoading: (loading) => set({ isLoading: loading }),
+  setMustChangePassword: (must) => set({ mustChangePassword: must }),
   setTenants: (tenants) => set({ tenants }),
   setOrganizations: (organizations) => set({ organizations }),
   setSystemStats: (stats) => set({ systemStats: stats }),

@@ -10,6 +10,7 @@ Handles connections to the admin/master database that stores:
 This is separate from tenant databases.
 """
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -20,6 +21,8 @@ from app.config import get_settings
 
 # Import tenant models and their separate Base
 from app.models.tenant import AdminUser
+
+logger = logging.getLogger(__name__)
 
 
 class MasterDatabase:
@@ -97,6 +100,40 @@ class MasterDatabase:
             async with self.engine.begin() as conn:
                 # Ensure uuid-ossp extension exists
                 await conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
+
+                # Ensure admin_users table exists (needed for login)
+                await conn.execute(
+                    text(
+                        "CREATE TABLE IF NOT EXISTS admin_users ("
+                        "  id SERIAL PRIMARY KEY,"
+                        "  email VARCHAR(255) NOT NULL UNIQUE,"
+                        "  password_hash TEXT NOT NULL,"
+                        "  name VARCHAR(255),"
+                        "  role VARCHAR(20) DEFAULT 'admin',"
+                        "  active INTEGER DEFAULT 1,"
+                        "  must_change_password INTEGER DEFAULT 0,"
+                        "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        "  last_login TIMESTAMP"
+                        ")"
+                    )
+                )
+
+                # Ensure admin_sessions table exists (needed for login)
+                await conn.execute(
+                    text(
+                        "CREATE TABLE IF NOT EXISTS admin_sessions ("
+                        "  sid TEXT PRIMARY KEY,"
+                        "  sess TEXT NOT NULL,"
+                        "  expired BIGINT NOT NULL"
+                        ")"
+                    )
+                )
+                await conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_admin_sessions_expired "
+                        "ON admin_sessions(expired)"
+                    )
+                )
 
                 # Check if organizations table exists
                 result = await conn.execute(
@@ -228,6 +265,26 @@ class MasterDatabase:
                     )
                     print("Master DB: group_membership_mode column added")
 
+                # Check if admin_users.must_change_password column exists
+                result = await conn.execute(
+                    text(
+                        "SELECT EXISTS ("
+                        "  SELECT 1 FROM information_schema.columns "
+                        "  WHERE table_name = 'admin_users' AND column_name = 'must_change_password'"
+                        ")"
+                    )
+                )
+                has_must_change = result.scalar()
+
+                if not has_must_change:
+                    print("Master DB: Adding must_change_password column to admin_users...")
+                    await conn.execute(
+                        text(
+                            "ALTER TABLE admin_users ADD COLUMN must_change_password INTEGER DEFAULT 0"
+                        )
+                    )
+                    print("Master DB: must_change_password column added")
+
         except Exception as e:
             print(f"WARNING: Auto-migration failed: {e}")
             print("The app will continue, but organization features may not work.")
@@ -253,18 +310,35 @@ class MasterDatabase:
                 raise
 
     async def verify_admin_exists(self):
-        """Verify at least one admin user exists."""
+        """Verify at least one admin user exists, create default if none."""
         from sqlalchemy import func, select
+
+        from app.services.encryption import generate_password, hash_password
 
         async with self.session() as session:
             result = await session.execute(select(func.count(AdminUser.id)))
             count = result.scalar()
 
             if count == 0:
-                print("WARNING: No admin users found in master database!")
-                print("The Node.js application should have created a default admin.")
+                password = generate_password(16)
+                logger.warning("No admin users found - creating default admin user...")
+                admin = AdminUser(
+                    email="admin@milestone.local",
+                    password_hash=hash_password(password),
+                    name="System Admin",
+                    role="superadmin",
+                    active=1,
+                    must_change_password=1,
+                )
+                session.add(admin)
+                logger.warning("=" * 60)
+                logger.warning("  DEFAULT ADMIN USER CREATED")
+                logger.warning("  Email:    admin@milestone.local")
+                logger.warning("  Password: %s", password)
+                logger.warning("  You will be required to change this on first login.")
+                logger.warning("=" * 60)
             else:
-                print(f"Master DB: Found {count} admin user(s)")
+                logger.info("Master DB: Found %d admin user(s)", count)
 
 
 # Global instance

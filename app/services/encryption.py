@@ -106,9 +106,7 @@ def hash_user_password(password: str) -> str:
     """Hash a user password with bcrypt."""
     import bcrypt as _bcrypt
 
-    return _bcrypt.hashpw(
-        password.encode("utf-8"), _bcrypt.gensalt(rounds=12)
-    ).decode("utf-8")
+    return _bcrypt.hashpw(password.encode("utf-8"), _bcrypt.gensalt(rounds=12)).decode("utf-8")
 
 
 def verify_user_password(password: str, stored: str) -> bool:
@@ -177,10 +175,22 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, stored_hash: str) -> bool:
     """
-    Verify a password against its PBKDF2 hash.
+    Verify a password against its stored hash.
 
-    Format: salt:hash (both hex encoded)
+    Supports:
+    - PBKDF2 format: salt:hash (both hex encoded)
+    - bcrypt format: $2b$... / $2a$... / $2y$...
     """
+    if not stored_hash:
+        return False
+
+    # bcrypt hash (used by setup_databases.sql seed)
+    if stored_hash.startswith(("$2b$", "$2a$", "$2y$")):
+        import bcrypt as _bcrypt
+
+        return _bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8"))
+
+    # PBKDF2 hash (salt:hex_hash)
     import hashlib
 
     parts = stored_hash.split(":")

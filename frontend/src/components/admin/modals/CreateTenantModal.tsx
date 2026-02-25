@@ -82,8 +82,7 @@ export function CreateTenantModal({ onClose, onCreated }: CreateTenantModalProps
           </button>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div className={styles.body}>
+        <form id="create-tenant-form" onSubmit={handleSubmit} className={styles.body}>
             <div className={styles.form}>
               <div className={styles.formGroup}>
                 <label className={styles.label}>Tenant Name *</label>
@@ -190,26 +189,26 @@ export function CreateTenantModal({ onClose, onCreated }: CreateTenantModalProps
 
               {error && <div className={styles.error}>{error}</div>}
             </div>
-          </div>
-
-          <div className={styles.footer}>
-            <button
-              type="button"
-              className={`${styles.btn} ${styles.btnSecondary}`}
-              onClick={onClose}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className={`${styles.btn} ${styles.btnPrimary}`}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? 'Creating...' : 'Create Tenant'}
-            </button>
-          </div>
         </form>
+
+        <div className={styles.footer}>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnSecondary}`}
+            onClick={onClose}
+            disabled={isSubmitting}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form="create-tenant-form"
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Creating...' : 'Create Tenant'}
+          </button>
+        </div>
       </div>
     </div>
   );

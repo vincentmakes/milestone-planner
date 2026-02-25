@@ -207,6 +207,7 @@ class AdminUser(MasterBase):  # type: ignore[misc]
         name VARCHAR(255),
         role VARCHAR(20) DEFAULT 'admin',
         active INTEGER DEFAULT 1,
+        must_change_password INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         last_login TIMESTAMP
     );
@@ -223,6 +224,7 @@ class AdminUser(MasterBase):  # type: ignore[misc]
     role = Column(String(20), default="admin")
 
     active = Column(Integer, default=1)
+    must_change_password = Column(Integer, default=0)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime)

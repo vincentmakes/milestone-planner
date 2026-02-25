@@ -38,5 +38,6 @@ frontend/dist/
 *.zip
 *.tar.gz
 
-# Docker volumes
+# Frontend build output (built inside Docker)
 public/assets/
+public/index.html
