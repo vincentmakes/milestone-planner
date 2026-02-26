@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import { getPhaseColor, getDepthColor } from '@/utils/themeColors';
 import type { Phase, Subphase, Project } from '@/types';
 import type { TimelineCell } from '@/components/gantt/utils';
@@ -134,9 +135,9 @@ export function usePhantomSibling() {
         phantomColor = getPhaseColor();
         
         // Collapse this phase's children if expanded
-        const { expandedPhases } = useAppStore.getState();
+        const { expandedPhases } = useViewStore.getState();
         if (expandedPhases.has(sourceId)) {
-          useAppStore.getState().togglePhaseExpanded(sourceId);
+          useViewStore.getState().togglePhaseExpanded(sourceId);
         }
       } else {
         sourceItem = findSubphaseById(project.phases || [], sourceId) || undefined;
@@ -156,9 +157,9 @@ export function usePhantomSibling() {
         }
         
         // Collapse this subphase's children if expanded
-        const { expandedSubphases } = useAppStore.getState();
+        const { expandedSubphases } = useViewStore.getState();
         if (expandedSubphases.has(sourceId)) {
-          useAppStore.getState().toggleSubphaseExpanded(sourceId);
+          useViewStore.getState().toggleSubphaseExpanded(sourceId);
         }
       }
 

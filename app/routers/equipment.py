@@ -6,7 +6,7 @@ Matches the Node.js API at /api/equipment exactly.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,6 +15,7 @@ from app.middleware.auth import get_current_user, require_superuser
 from app.models.equipment import Equipment, EquipmentAssignment
 from app.models.site import Site
 from app.models.user import User
+from app.schemas.base import PaginationParams
 from app.schemas.equipment import (
     EquipmentAssignmentResponse,
     EquipmentAssignmentUpdate,
@@ -135,32 +136,47 @@ def build_equipment_response(equipment: Equipment) -> dict:
     }
 
 
-@router.get("/equipment", response_model=list[EquipmentResponse])
+@router.get("/equipment")
 async def get_equipment(
     siteId: int | None = Query(None),
     includeAllSites: bool | None = Query(False),
+    pagination: PaginationParams = Depends(),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """
-    Get equipment list.
+    Get equipment list with pagination.
 
     If siteId provided, returns equipment for that site.
     If includeAllSites=true, returns all equipment.
 
     Matches: GET /api/equipment
     """
-    query = select(Equipment).where(Equipment.active == 1)
+    base_query = select(Equipment).where(Equipment.active == 1)
 
     if not includeAllSites and siteId:
-        query = query.where(Equipment.site_id == siteId)
+        base_query = base_query.where(Equipment.site_id == siteId)
 
-    query = query.options(selectinload(Equipment.site)).order_by(Equipment.name)
+    # Get total count
+    count_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
+    total = count_result.scalar() or 0
+
+    query = (
+        base_query.options(selectinload(Equipment.site))
+        .order_by(Equipment.name)
+        .offset(pagination.offset)
+        .limit(pagination.limit)
+    )
 
     result = await db.execute(query)
     equipment_list = result.scalars().all()
 
-    return [build_equipment_response(e) for e in equipment_list]
+    return {
+        "items": [build_equipment_response(e) for e in equipment_list],
+        "total": total,
+        "offset": pagination.offset,
+        "limit": pagination.limit,
+    }
 
 
 @router.get("/equipment/all", response_model=list[EquipmentResponse])

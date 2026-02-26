@@ -5,6 +5,8 @@ Handles login, logout, session management, and SSO.
 Matches the Node.js API at /api/auth exactly.
 """
 
+import logging
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
@@ -33,6 +35,8 @@ from app.schemas.auth import (
 )
 from app.services.encryption import hash_user_password, password_needs_upgrade, verify_user_password
 from app.services.session import SessionService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 settings = get_settings()
@@ -284,7 +288,7 @@ async def get_sso_config_public(
         result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
         config = result.scalar_one_or_none()
     except Exception as e:
-        print(f"SSO config query failed: {e}")
+        logger.error("SSO config query failed: %s", e)
         return {"enabled": 0}
 
     if not config:
@@ -316,10 +320,7 @@ async def get_sso_config_full(
         result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
         config = result.scalar_one_or_none()
     except Exception as e:
-        print(f"SSO config query failed: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.exception("SSO config query failed: %s", e)
         return {"id": 1, "enabled": 0}
 
     if not config:
@@ -356,13 +357,13 @@ async def update_sso_config_new(
     Requires admin authentication.
     Matches: PUT /api/sso/config
     """
-    print(f"SSO Update received: {data}")
+    logger.info("SSO Update received: %s", data)
 
     result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
     config = result.scalar_one_or_none()
 
     if not config:
-        print("Creating new SSO config record")
+        logger.info("Creating new SSO config record")
         config = SSOConfig(id=1)
         db.add(config)
 
@@ -387,7 +388,7 @@ async def update_sso_config_new(
 
     await db.commit()
 
-    print(f"SSO config saved: enabled={config.enabled}, tenant_id={config.tenant_id}")
+    logger.info("SSO config saved: enabled=%s, tenant_id=%s", config.enabled, config.tenant_id)
 
     # Return { success: true } to match Node.js
     return {"success": True}
@@ -694,7 +695,9 @@ async def sso_callback(
         token_response = await client.post(token_url, data=token_data)
 
         if token_response.status_code != 200:
-            print(f"Token exchange failed: {token_response.status_code} {token_response.text}")
+            logger.error(
+                "Token exchange failed: %s %s", token_response.status_code, token_response.text
+            )
             return RedirectResponse(
                 url="/?sso_error=Failed+to+exchange+authorization+code", status_code=302
             )
@@ -709,7 +712,7 @@ async def sso_callback(
         )
 
         if graph_response.status_code != 200:
-            print(f"Graph API failed: {graph_response.status_code} {graph_response.text}")
+            logger.error("Graph API failed: %s %s", graph_response.status_code, graph_response.text)
             return RedirectResponse(url="/?sso_error=Failed+to+fetch+user+info", status_code=302)
 
         user_info = graph_response.json()

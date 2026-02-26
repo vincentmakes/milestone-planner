@@ -8,7 +8,7 @@
 
 import { forwardRef, useRef, useEffect, useCallback, useState } from 'react';
 import { useUIStore } from '@/stores/uiStore';
-import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import { useCtrlScrollZoom } from '@/hooks/useCtrlScrollZoom';
 import { TimelineHeader } from './TimelineHeader';
 import { TimelineBody } from './TimelineBody';
@@ -41,10 +41,10 @@ export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
     const clearScrollToDateTrigger = useUIStore((s) => s.clearScrollToDateTrigger);
     const zoomTrigger = useUIStore((s) => s.zoomTrigger);
     const clearZoomTrigger = useUIStore((s) => s.clearZoomTrigger);
-    const timelineScrollLeft = useAppStore((s) => s.timelineScrollLeft);
-    const setTimelineScrollLeft = useAppStore((s) => s.setTimelineScrollLeft);
-    const showStaffOverview = useAppStore((s) => s.showStaffOverview);
-    const showEquipmentOverview = useAppStore((s) => s.showEquipmentOverview);
+    const timelineScrollLeft = useViewStore((s) => s.timelineScrollLeft);
+    const setTimelineScrollLeft = useViewStore((s) => s.setTimelineScrollLeft);
+    const showStaffOverview = useViewStore((s) => s.showStaffOverview);
+    const showEquipmentOverview = useViewStore((s) => s.showEquipmentOverview);
     const hasRestoredScroll = useRef(false);
     const scrollSaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
     const previousViewModeRef = useRef<ViewMode>(viewMode);

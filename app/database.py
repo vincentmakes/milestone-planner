@@ -3,6 +3,7 @@ Database configuration and session management.
 Uses async SQLAlchemy for PostgreSQL connections.
 """
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -16,6 +17,8 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -154,7 +157,7 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(lambda _: None)  # Simple connectivity test
 
-    print("Database connection established successfully")
+    logger.info("Database connection established successfully")
 
 
 async def close_db() -> None:
@@ -166,7 +169,7 @@ async def close_db() -> None:
         _engine = None
         _async_session_factory = None
 
-    print("Database connections closed")
+    logger.info("Database connections closed")
 
 
 # ---------------------------------------------------------

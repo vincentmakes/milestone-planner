@@ -54,9 +54,6 @@ export const OnlineUsers = memo(function OnlineUsers() {
   const { connectionState, onlineUsers, isConnected } = useWebSocketContext();
   const [showDropdown, setShowDropdown] = useState(false);
 
-  // Debug logging
-  console.log('[OnlineUsers] connectionState:', connectionState, 'isConnected:', isConnected, 'users:', onlineUsers.length);
-
   // Don't show anything if not connected or no other users
   if (!isConnected && connectionState !== 'connecting') {
     return null;

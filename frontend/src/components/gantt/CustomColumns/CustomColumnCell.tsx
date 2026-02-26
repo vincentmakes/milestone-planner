@@ -6,7 +6,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useAppStore } from '@/stores/appStore';
+import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { setCustomColumnValue as setCustomColumnValueApi, getValueKey } from '@/api';
 import type { CustomColumn, CustomColumnEntityType } from '@/types';
 import styles from './CustomColumnCell.module.css';
@@ -33,8 +33,8 @@ export function CustomColumnCell({
   readOnly = false,
   childEntities = [],
 }: CustomColumnCellProps) {
-  const customColumnValues = useAppStore((s) => s.customColumnValues);
-  const setCustomColumnValueLocal = useAppStore((s) => s.setCustomColumnValue);
+  const customColumnValues = useCustomColumnStore((s) => s.customColumnValues);
+  const setCustomColumnValueLocal = useCustomColumnStore((s) => s.setCustomColumnValue);
   
   const valueKey = getValueKey(column.id, entityType, entityId);
   const value = customColumnValues[valueKey] ?? null;

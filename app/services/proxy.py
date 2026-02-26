@@ -3,11 +3,14 @@ Proxy configuration service.
 Supports PAC (Proxy Auto-Config) files and direct proxy URLs.
 """
 
+import logging
 import re
 
 import httpx
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 # Cache for PAC file content and parsed proxy
 _pac_content: str | None = None
@@ -58,17 +61,17 @@ async def get_proxy_for_url(url: str) -> str | None:
 
     settings = get_settings()
 
-    # Debug: print all proxy-related settings
-    print(f"[Proxy] Debug - https_proxy: '{settings.https_proxy}'")
-    print(f"[Proxy] Debug - http_proxy: '{settings.http_proxy}'")
-    print(f"[Proxy] Debug - proxy_pac_url: '{settings.proxy_pac_url}'")
+    # Debug: log all proxy-related settings
+    logger.debug("https_proxy: '%s'", settings.https_proxy)
+    logger.debug("http_proxy: '%s'", settings.http_proxy)
+    logger.debug("proxy_pac_url: '%s'", settings.proxy_pac_url)
 
     # Check direct proxy settings first
     if settings.https_proxy:
-        print(f"[Proxy] Using HTTPS_PROXY: {settings.https_proxy}")
+        logger.info("Using HTTPS_PROXY: %s", settings.https_proxy)
         return settings.https_proxy
     if settings.http_proxy:
-        print(f"[Proxy] Using HTTP_PROXY: {settings.http_proxy}")
+        logger.info("Using HTTP_PROXY: %s", settings.http_proxy)
         return settings.http_proxy
 
     # Check PAC file
@@ -89,18 +92,18 @@ async def get_proxy_for_url(url: str) -> str | None:
 
                     if proxy:
                         _cached_proxy = proxy
-                        print(f"[Proxy] PAC file resolved to: {proxy}")
+                        logger.info("PAC file resolved to: %s", proxy)
                         return proxy
                     else:
                         _cached_proxy = "DIRECT"
-                        print("[Proxy] PAC file indicates DIRECT connection")
+                        logger.info("PAC file indicates DIRECT connection")
                         return None
                 else:
-                    print(f"[Proxy] Failed to fetch PAC file: HTTP {response.status_code}")
+                    logger.warning("Failed to fetch PAC file: HTTP %s", response.status_code)
         except Exception as e:
-            print(f"[Proxy] Error fetching PAC file: {e}")
+            logger.error("Error fetching PAC file: %s", e)
 
-    print("[Proxy] No proxy configured")
+    logger.debug("No proxy configured")
     return None
 
 

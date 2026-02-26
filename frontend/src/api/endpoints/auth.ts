@@ -8,19 +8,19 @@ import type { User, AuthResponse } from '@/types';
 /**
  * Transform user from API camelCase to frontend snake_case
  */
-function transformUser(apiUser: any): User {
+function transformUser(apiUser: Record<string, unknown>): User {
   return {
-    id: apiUser.id,
-    email: apiUser.email,
-    first_name: apiUser.firstName,
-    last_name: apiUser.lastName,
-    name: apiUser.name,
-    job_title: apiUser.jobTitle,
-    role: apiUser.role,
-    max_capacity: apiUser.maxCapacity ?? apiUser.max_capacity ?? 100,
+    id: apiUser.id as number,
+    email: apiUser.email as string,
+    first_name: apiUser.firstName as string,
+    last_name: apiUser.lastName as string,
+    name: apiUser.name as string,
+    job_title: apiUser.jobTitle as string | undefined,
+    role: apiUser.role as User['role'],
+    max_capacity: (apiUser.maxCapacity ?? apiUser.max_capacity ?? 100) as number,
     active: true,
-    site_ids: apiUser.siteIds || [],
-    skills: apiUser.skills || [],
+    site_ids: (apiUser.siteIds || []) as number[],
+    skills: (apiUser.skills || []) as User['skills'],
   };
 }
 
@@ -30,7 +30,7 @@ function transformUser(apiUser: any): User {
  */
 export async function checkAuth(): Promise<{ user: User | null }> {
   try {
-    const response = await apiGet<{ user: any }>('/api/auth/me');
+    const response = await apiGet<{ user: Record<string, unknown> | null }>('/api/auth/me');
     if (response.user) {
       return { user: transformUser(response.user) };
     }
@@ -44,7 +44,7 @@ export async function checkAuth(): Promise<{ user: User | null }> {
  * Login with email and password
  */
 export async function login(email: string, password: string): Promise<AuthResponse> {
-  const response = await apiPost<{ success: boolean; user: any }>('/api/auth/login', { email, password });
+  const response = await apiPost<{ success: boolean; user: Record<string, unknown> }>('/api/auth/login', { email, password });
   return {
     user: transformUser(response.user),
   };

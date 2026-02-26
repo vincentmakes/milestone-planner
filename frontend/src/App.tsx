@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAppStore } from './stores/appStore';
+import { useWhatIfStore } from './stores/whatIfStore';
 import { useAuth } from './hooks/useAuth';
 import { useDataLoader } from './hooks/useDataLoader';
 import { LoadingScreen } from './components/screens/LoadingScreen';
@@ -14,7 +15,7 @@ import './App.css';
 function App() {
   const { isLoading, isAuthenticated } = useAuth();
   const { loadAllData, isLoading: isDataLoading } = useDataLoader();
-  const whatIfMode = useAppStore((state) => state.whatIfMode);
+  const whatIfMode = useWhatIfStore((state) => state.whatIfMode);
   const instanceSettings = useAppStore((state) => state.instanceSettings);
 
   // Check if we're on the admin route

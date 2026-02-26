@@ -4,7 +4,8 @@
  */
 
 import { forwardRef, useMemo, useRef, useCallback } from 'react';
-import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
+import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useUIStore } from '@/stores/uiStore';
 import { ProjectTimeline } from './ProjectTimeline';
 import { TodayLine } from './TodayLine';
@@ -27,12 +28,12 @@ interface TimelineBodyProps {
 
 export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
   function TimelineBody({ cells, projects, cellWidth, totalWidth, viewMode }, ref) {
-    const expandedProjects = useAppStore((s) => s.expandedProjects);
-    const expandedPhases = useAppStore((s) => s.expandedPhases);
-    const expandedSubphases = useAppStore((s) => s.expandedSubphases);
-    const showAssignments = useAppStore((s) => s.showAssignments);
-    const customColumnFilters = useAppStore((s) => s.customColumnFilters);
-    const customColumnValues = useAppStore((s) => s.customColumnValues);
+    const expandedProjects = useViewStore((s) => s.expandedProjects);
+    const expandedPhases = useViewStore((s) => s.expandedPhases);
+    const expandedSubphases = useViewStore((s) => s.expandedSubphases);
+    const showAssignments = useViewStore((s) => s.showAssignments);
+    const customColumnFilters = useCustomColumnStore((s) => s.customColumnFilters);
+    const customColumnValues = useCustomColumnStore((s) => s.customColumnValues);
     const dragIndicator = useUIStore((s) => s.dragIndicator);
     const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
     const resourceDrag = useUIStore((s) => s.resourceDrag);

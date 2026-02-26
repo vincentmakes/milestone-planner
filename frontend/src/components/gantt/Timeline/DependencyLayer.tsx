@@ -5,6 +5,8 @@
 
 import { memo, useMemo, useEffect, useState, useRef, useCallback } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
+import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useUIStore } from '@/stores/uiStore';
 import { 
   extractDependencies, 
@@ -15,7 +17,7 @@ import {
 import { calculateBarPosition } from '../utils/timeline';
 import { getPhaseColor } from '@/utils/themeColors';
 import type { TimelineCell } from '../utils/timeline';
-import type { Project, DependencyType } from '@/types';
+import type { Project, DependencyType, Subphase, Dependency } from '@/types';
 import { DependencyPopup } from './DependencyPopup';
 import { updatePhase, updateSubphase, loadAllProjects } from '@/api/endpoints/projects';
 import styles from './DependencyLayer.module.css';
@@ -47,11 +49,11 @@ export const DependencyLayer = memo(function DependencyLayer({
   cellWidth,
   rowPositions,
 }: DependencyLayerProps) {
-  // Get viewMode and setProjects from store
-  const viewMode = useAppStore((s) => s.viewMode);
+  // Get viewMode and setProjects from stores
+  const viewMode = useViewStore((s) => s.viewMode);
   const setProjects = useAppStore((s) => s.setProjects);
-  const showAssignments = useAppStore((s) => s.showAssignments);
-  const customColumnFilters = useAppStore((s) => s.customColumnFilters);
+  const showAssignments = useViewStore((s) => s.showAssignments);
+  const customColumnFilters = useCustomColumnStore((s) => s.customColumnFilters);
   
   // Get drag state to re-measure after drag ends
   const isDragging = useUIStore((s) => s.isDragging);
@@ -314,11 +316,11 @@ export const DependencyLayer = memo(function DependencyLayer({
           };
         } else {
           // Update subphase recursively
-          const updateSubphaseInTree = (subphases: any[]): any[] => {
+          const updateSubphaseInTree = (subphases: Subphase[]): Subphase[] => {
             return subphases.map(sp => {
               if (sp.id === selectedDep.toId) {
                 const newDeps = (sp.dependencies ?? []).filter(
-                  (d: any) => !(d.id === selectedDep.fromId && d.type === selectedDep.type)
+                  (d: Dependency) => !(d.id === selectedDep.fromId && d.type === selectedDep.type)
                 );
                 return { ...sp, dependencies: newDeps };
               }
@@ -361,7 +363,7 @@ export const DependencyLayer = memo(function DependencyLayer({
         }
       } else {
         // Find subphase
-        const findSubphase = (subphases: any[]): any | null => {
+        const findSubphase = (subphases: Subphase[]): Subphase | null => {
           for (const sp of subphases) {
             if (sp.id === selectedDep.toId) return sp;
             if (sp.children?.length) {
@@ -372,7 +374,7 @@ export const DependencyLayer = memo(function DependencyLayer({
           return null;
         };
 
-        let targetSubphase: any = null;
+        let targetSubphase: Subphase | null = null;
         for (const phase of targetProject.phases ?? []) {
           targetSubphase = findSubphase(phase.children ?? []);
           if (targetSubphase) break;
@@ -380,7 +382,7 @@ export const DependencyLayer = memo(function DependencyLayer({
 
         if (targetSubphase) {
           const newDeps = (targetSubphase.dependencies ?? []).filter(
-            (d: any) => !(d.id === selectedDep.fromId && d.type === selectedDep.type)
+            (d: Dependency) => !(d.id === selectedDep.fromId && d.type === selectedDep.type)
           );
           await updateSubphase(selectedDep.toId, {
             start_date: targetSubphase.start_date,

@@ -28,6 +28,7 @@ from app.schemas.user import (
     StaffDetailResponse,
     StaffResponse,
 )
+from app.services.response_builders import build_skills_list, get_max_capacity
 
 router = APIRouter()
 
@@ -38,25 +39,18 @@ def build_staff_row(user: User, site: Site | None = None) -> dict:
 
     Returns one row per user-site combination.
     """
-    # Build skills list from user's skills relationship
-    skills = []
-    if hasattr(user, "skills") and user.skills:
-        skills = [
-            {"id": skill.id, "name": skill.name, "color": skill.color} for skill in user.skills
-        ]
-
     return {
         "id": user.id,
         "first_name": user.first_name,
         "last_name": user.last_name,
-        "name": f"{user.first_name} {user.last_name}",
+        "name": user.full_name,
         "role": user.job_title,  # Node.js uses job_title as 'role'
         "email": user.email,
         "active": user.active,
-        "max_capacity": user.max_capacity if hasattr(user, "max_capacity") else 100,
+        "max_capacity": get_max_capacity(user),
         "site_id": site.id if site else None,
         "site_name": site.name if site else None,
-        "skills": skills,
+        "skills": build_skills_list(user),
     }
 
 

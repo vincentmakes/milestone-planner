@@ -10,10 +10,11 @@ import type { User, CreateUserRequest, UpdateUserRequest } from '@/types';
  * @param includeDisabled - If true, include disabled users
  */
 export async function getUsers(includeDisabled = false): Promise<User[]> {
-  const url = includeDisabled 
+  const url = includeDisabled
     ? '/api/users?includeDisabled=true'
     : '/api/users';
-  return apiGet<User[]>(url);
+  const response = await apiGet<{ items: User[]; total: number; offset: number; limit: number }>(url);
+  return response.items;
 }
 
 /**

@@ -5,6 +5,7 @@
 
 import { useState, useCallback } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { 
   getSites, 
   getStaff, 
@@ -44,11 +45,14 @@ export function useDataLoader(): UseDataLoaderReturn {
     setCompanyEvents,
     setCurrentSite,
     setInstanceSettings,
-    setCustomColumns,
-    setCustomColumnValues,
     setSkills,
   } = useAppStore();
-  
+
+  const {
+    setCustomColumns,
+    setCustomColumnValues,
+  } = useCustomColumnStore();
+
   // Get persisted site ID from store (restored by Zustand persist)
   const persistedSiteId = useAppStore((s) => s._persistedSiteId);
 
@@ -60,8 +64,6 @@ export function useDataLoader(): UseDataLoaderReturn {
     setError(null);
 
     try {
-      console.log('[DataLoader] Loading all data...');
-
       // Load core data in parallel
       const [sites, staff, equipment, vacations, instanceSettings, skills] = await Promise.all([
         getSites(),
@@ -71,15 +73,6 @@ export function useDataLoader(): UseDataLoaderReturn {
         getInstanceSettings().catch(() => null), // Don't fail if settings not available
         skillsApi.getAll().catch(() => []), // Don't fail if skills not available
       ]);
-
-      console.log('[DataLoader] Loaded:', {
-        sites: sites.length,
-        staff: staff.length,
-        equipment: equipment.length,
-        vacations: vacations.length,
-        instanceSettings: instanceSettings ? 'yes' : 'no',
-        skills: skills.length,
-      });
 
       // Update store
       setSites(sites);
@@ -98,22 +91,16 @@ export function useDataLoader(): UseDataLoaderReturn {
         
         // Check for persisted site ID from store (restored by Zustand persist)
         let targetSite = sortedSites[0];
-        console.log('[DataLoader] Default site (first by ID):', targetSite.name, 'id:', targetSite.id);
-        console.log('[DataLoader] Persisted site ID from store:', persistedSiteId);
         
         if (persistedSiteId != null) {
           const foundSite = sortedSites.find(s => s.id === persistedSiteId);
           if (foundSite) {
             targetSite = foundSite;
-            console.log('[DataLoader] ✓ Restored persisted site:', targetSite.name, 'id:', targetSite.id);
           } else {
-            console.log('[DataLoader] ✗ Site ID', persistedSiteId, 'not found in available sites');
+            // Site ID not found in available sites
           }
-        } else {
-          console.log('[DataLoader] No persistedSiteId in store');
         }
         
-        console.log('[DataLoader] Final selected site:', targetSite.name, 'id:', targetSite.id);
         setCurrentSite(targetSite);
         
         // Load bank holidays for restored site
@@ -131,7 +118,6 @@ export function useDataLoader(): UseDataLoaderReturn {
           const customColumnsData = await getCustomColumnsWithValues(targetSite.id);
           setCustomColumns(customColumnsData.columns);
           setCustomColumnValues(customColumnsData.values);
-          console.log('[DataLoader] Loaded custom columns:', customColumnsData.columns.length);
         } catch (err) {
           console.warn('[DataLoader] Failed to load custom columns:', err);
         }
@@ -140,7 +126,6 @@ export function useDataLoader(): UseDataLoaderReturn {
       // Load projects with full details
       const projects = await loadAllProjects();
       setProjects(projects);
-      console.log('[DataLoader] Loaded projects:', projects.length);
 
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load data';
@@ -159,9 +144,9 @@ export function useDataLoader(): UseDataLoaderReturn {
     setCompanyEvents,
     setCurrentSite,
     setInstanceSettings,
+    setSkills,
     setCustomColumns,
     setCustomColumnValues,
-    setSkills,
   ]);
 
   /**

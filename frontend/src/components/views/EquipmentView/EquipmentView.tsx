@@ -7,6 +7,7 @@
 
 import { useMemo, useRef, useState, useEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useScrollSync, useCtrlScrollZoom, useResourceDragDrop } from '@/hooks';
 import { useTimelineScrollSync } from '@/contexts/TimelineScrollContext';
@@ -45,13 +46,13 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   const equipment = useAppStore((s) => s.equipment);
   const projects = useAppStore((s) => s.projects);
   const currentSite = useAppStore((s) => s.currentSite);
-  const viewMode = useAppStore((s) => s.viewMode);
-  const currentDate = useAppStore((s) => s.currentDate);
-  const cellWidth = useAppStore((s) => s.cellWidth);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
   const bankHolidays = useAppStore((s) => s.bankHolidays);
   const companyEventDates = useAppStore((s) => s.companyEventDates);
   const companyEvents = useAppStore((s) => s.companyEvents);
+  const viewMode = useViewStore((s) => s.viewMode);
+  const currentDate = useViewStore((s) => s.currentDate);
+  const cellWidth = useViewStore((s) => s.cellWidth);
   
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
   const currentUser = useAppStore((s) => s.currentUser);

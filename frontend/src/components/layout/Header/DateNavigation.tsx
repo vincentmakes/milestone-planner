@@ -3,15 +3,15 @@
  * Controls for navigating the timeline (prev/next/today)
  */
 
-import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { addWeeks, addMonths, startOfWeek, startOfQuarter } from 'date-fns';
 import styles from './DateNavigation.module.css';
 
 export function DateNavigation() {
-  const viewMode = useAppStore((s) => s.viewMode);
-  const currentDate = useAppStore((s) => s.currentDate);
-  const setCurrentDate = useAppStore((s) => s.setCurrentDate);
+  const viewMode = useViewStore((s) => s.viewMode);
+  const currentDate = useViewStore((s) => s.currentDate);
+  const setCurrentDate = useViewStore((s) => s.setCurrentDate);
   const triggerScrollToToday = useUIStore((s) => s.triggerScrollToToday);
 
   // Navigate to previous/next period

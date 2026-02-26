@@ -8,6 +8,7 @@ Provides:
 - SSO callback URL construction
 """
 
+import logging
 from typing import TYPE_CHECKING, Any, Optional
 from urllib.parse import urlencode
 
@@ -17,6 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.services.encryption import decrypt
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from app.models.tenant import Tenant
@@ -106,8 +109,8 @@ class SSOService:
 
                 if response.status_code != 200:
                     # Log error but don't fail - groups might just not be available
-                    print(
-                        f"Warning: Failed to fetch groups: {response.status_code} {response.text}"
+                    logger.warning(
+                        "Failed to fetch groups: %s %s", response.status_code, response.text
                     )
                     break
 

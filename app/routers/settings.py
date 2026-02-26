@@ -6,6 +6,8 @@ This is one of the first endpoints migrated to Python.
 It matches the Node.js API at /api/settings exactly.
 """
 
+import logging
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +18,8 @@ from app.models.settings import Settings, SSOConfig
 from app.models.user import User
 from app.schemas.auth import SSOConfigResponse, SSOConfigUpdate
 from app.schemas.settings import SettingsResponse, SettingUpdate
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -54,7 +58,7 @@ async def get_sso_settings(
         config = result.scalar_one_or_none()
     except Exception as e:
         # Table might not exist - return default disabled config
-        print(f"SSO config query failed (table may not exist): {e}")
+        logger.warning("SSO config query failed (table may not exist): %s", e)
         return SSOConfigResponse(
             enabled=False,
             configured=False,

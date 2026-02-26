@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react';
-import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 
 // Zoom limits
 const MIN_CELL_WIDTH = 12;
@@ -23,7 +23,7 @@ interface UseCtrlScrollZoomOptions {
 }
 
 export function useCtrlScrollZoom({ containerRef, cellWidth, enabled = true }: UseCtrlScrollZoomOptions) {
-  const setCellWidth = useAppStore((s) => s.setCellWidth);
+  const setCellWidth = useViewStore((s) => s.setCellWidth);
   const isZoomingRef = useRef(false);
 
   const handleWheel = useCallback((e: WheelEvent) => {

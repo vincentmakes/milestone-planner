@@ -8,9 +8,11 @@ import { ProjectBar } from './ProjectBar';
 import { PhaseBar } from './PhaseBar';
 import { calculateBarPosition } from '../utils';
 import type { TimelineCell } from '../utils';
-import type { Project, Phase, Subphase, ViewMode } from '@/types';
+import type { Project, Phase, Subphase, ViewMode, StaffAssignment, EquipmentAssignment } from '@/types';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
+import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useDragAndDrop } from '@/hooks/useDragAndDrop';
 import { useResize } from '@/hooks/useResize';
 import { useDependencyLinking } from '@/hooks/useDependencyLinking';
@@ -154,12 +156,12 @@ export const ProjectTimeline = memo(function ProjectTimeline({
   const { openPhaseModal, openSubphaseModal, setEditingPhase, setEditingSubphase } = useUIStore();
   const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
   
-  // Get viewMode and filter state from app store
-  const viewMode = useAppStore((s) => s.viewMode);
-  const customColumnFilters = useAppStore((s) => s.customColumnFilters);
-  const customColumnValues = useAppStore((s) => s.customColumnValues);
-  const showAssignments = useAppStore((s) => s.showAssignments);
-  
+  // Get viewMode and filter state from stores
+  const viewMode = useViewStore((s) => s.viewMode);
+  const showAssignments = useViewStore((s) => s.showAssignments);
+  const customColumnFilters = useCustomColumnStore((s) => s.customColumnFilters);
+  const customColumnValues = useCustomColumnStore((s) => s.customColumnValues);
+
   // Get critical path state
   const criticalPathEnabled = useAppStore((s) => s.criticalPathEnabled);
   const criticalPathItems = useAppStore((s) => s.criticalPathItems);
@@ -626,7 +628,7 @@ const PhaseTimeline = memo(function PhaseTimeline({
           })}
 
           {/* Phase-level assignments - use phase dates since phase assignments don't have their own - filtered */}
-          {showAssignments && (phase.staffAssignments ?? []).map((assignment: any) => (
+          {showAssignments && (phase.staffAssignments ?? []).map((assignment: StaffAssignment) => (
             <div key={`staff-${assignment.id}`} className={styles.row}>
               <AssignmentBar
                 assignmentId={assignment.id}
@@ -647,7 +649,7 @@ const PhaseTimeline = memo(function PhaseTimeline({
             </div>
           ))}
 
-          {showAssignments && (phase.equipmentAssignments ?? []).map((assignment: any) => (
+          {showAssignments && (phase.equipmentAssignments ?? []).map((assignment: EquipmentAssignment) => (
             <div key={`equip-${assignment.id}`} className={styles.row}>
               <AssignmentBar
                 assignmentId={assignment.id}
@@ -852,7 +854,7 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
           })}
 
           {/* Subphase-level assignments - use subphase dates - filtered */}
-          {showAssignments && (subphase.staffAssignments ?? []).map((assignment: any) => (
+          {showAssignments && (subphase.staffAssignments ?? []).map((assignment: StaffAssignment) => (
             <div key={`staff-${assignment.id}`} className={styles.row}>
               <AssignmentBar
                 assignmentId={assignment.id}
@@ -874,7 +876,7 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
             </div>
           ))}
 
-          {showAssignments && (subphase.equipmentAssignments ?? []).map((assignment: any) => (
+          {showAssignments && (subphase.equipmentAssignments ?? []).map((assignment: EquipmentAssignment) => (
             <div key={`equip-${assignment.id}`} className={styles.row}>
               <AssignmentBar
                 assignmentId={assignment.id}

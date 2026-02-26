@@ -33,6 +33,7 @@ export {
   movePhasesWithProject,
   cloneProject,
 } from './autoCalculation';
+export type { PendingUpdate } from './autoCalculation';
 
 export {
   calculateCriticalPath,

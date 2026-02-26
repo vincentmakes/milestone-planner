@@ -122,8 +122,6 @@ export function ImportProjectModal() {
         apiUrl = apiUrl.replace('/api/', `${tenantMatch[1]}/api/`);
       }
       
-      console.log('Import URL:', apiUrl);
-      
       // Send to backend - it handles everything
       const response = await fetch(apiUrl, {
         method: 'POST',

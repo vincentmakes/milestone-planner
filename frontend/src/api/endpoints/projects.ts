@@ -27,7 +27,8 @@ import type {
  * @param archived - Filter: 'all', 'true', 'false' (default: active only)
  */
 export async function getProjects(archived: 'all' | 'true' | 'false' = 'false'): Promise<Project[]> {
-  return apiGet<Project[]>(`/api/projects?archived=${archived}`);
+  const response = await apiGet<{ items: Project[]; total: number; offset: number; limit: number }>(`/api/projects?archived=${archived}`);
+  return response.items;
 }
 
 /**
@@ -320,13 +321,16 @@ export async function deleteEquipmentAssignment(assignmentId: number): Promise<v
 /**
  * Transform API response from snake_case to camelCase
  */
-function transformProject(project: any): Project {
+function transformProject(project: Record<string, unknown>): Project {
+  const phases = (project.phases ?? []) as Record<string, unknown>[];
+  const staffAssignments = (project.staff_assignments ?? project.staffAssignments ?? []) as Record<string, unknown>[];
+  const equipmentAssignments = (project.equipment_assignments ?? project.equipmentAssignments ?? []) as Record<string, unknown>[];
   return {
-    ...project,
+    ...(project as unknown as Project),
     // Ensure arrays exist and transform nested data
-    phases: (project.phases ?? []).map(transformPhase),
-    staffAssignments: (project.staff_assignments ?? project.staffAssignments ?? []).map(transformStaffAssignment),
-    equipmentAssignments: (project.equipment_assignments ?? project.equipmentAssignments ?? []).map(transformEquipmentAssignment),
+    phases: phases.map(transformPhase),
+    staffAssignments: staffAssignments.map(transformStaffAssignment),
+    equipmentAssignments: equipmentAssignments.map(transformEquipmentAssignment),
   };
 }
 
@@ -366,71 +370,77 @@ function getPhaseColorWithFallback(): string {
   }
 }
 
-function transformPhase(phase: any): Phase {
+function transformPhase(phase: Record<string, unknown>): Phase {
+  const children = (phase.children ?? phase.subphases ?? []) as Record<string, unknown>[];
+  const staffAssignments = (phase.staff_assignments ?? phase.staffAssignments ?? []) as Record<string, unknown>[];
+  const equipmentAssignments = (phase.equipment_assignments ?? phase.equipmentAssignments ?? []) as Record<string, unknown>[];
   return {
-    id: phase.id,
-    project_id: phase.project_id,
-    name: phase.type || phase.name || 'Phase',  // API returns 'type' for phases
-    start_date: phase.start_date,
-    end_date: phase.end_date,
+    id: phase.id as number,
+    project_id: phase.project_id as number,
+    name: (phase.type || phase.name || 'Phase') as string,  // API returns 'type' for phases
+    start_date: phase.start_date as string,
+    end_date: phase.end_date as string,
     color: getPhaseColorWithFallback(),
-    order_index: phase.sort_order ?? 0,
-    completion: phase.completion ?? null,
+    order_index: (phase.sort_order ?? 0) as number,
+    completion: (phase.completion ?? null) as number | null,
     // Handle SQLite integer (0/1) and boolean
     is_milestone: Boolean(phase.is_milestone),
-    dependencies: phase.dependencies ?? [],
-    children: (phase.children ?? phase.subphases ?? []).map((s: any) => transformSubphase(s, 1)),
-    staffAssignments: (phase.staff_assignments ?? phase.staffAssignments ?? []).map(transformStaffAssignment),
-    equipmentAssignments: (phase.equipment_assignments ?? phase.equipmentAssignments ?? []).map(transformEquipmentAssignment),
+    dependencies: (phase.dependencies ?? []) as Phase['dependencies'],
+    children: children.map((s: Record<string, unknown>) => transformSubphase(s, 1)),
+    staffAssignments: staffAssignments.map(transformStaffAssignment),
+    equipmentAssignments: equipmentAssignments.map(transformEquipmentAssignment),
   };
 }
 
-function transformSubphase(subphase: any, depth: number = 1): Subphase {
-  const actualDepth = subphase.depth ?? depth;
+function transformSubphase(subphase: Record<string, unknown>, depth: number = 1): Subphase {
+  const actualDepth = (subphase.depth ?? depth) as number;
+  const children = (subphase.children ?? []) as Record<string, unknown>[];
+  const staffAssignments = (subphase.staff_assignments ?? subphase.staffAssignments ?? []) as Record<string, unknown>[];
+  const equipmentAssignments = (subphase.equipment_assignments ?? subphase.equipmentAssignments ?? []) as Record<string, unknown>[];
   return {
-    id: subphase.id,
-    project_id: subphase.project_id,
-    parent_phase_id: subphase.parent_type === 'phase' ? subphase.parent_id : null,
-    parent_subphase_id: subphase.parent_type === 'subphase' ? subphase.parent_id : null,
-    name: subphase.name,
-    start_date: subphase.start_date,
-    end_date: subphase.end_date,
+    id: subphase.id as number,
+    project_id: subphase.project_id as number,
+    parent_phase_id: subphase.parent_type === 'phase' ? subphase.parent_id as number : null,
+    parent_subphase_id: subphase.parent_type === 'subphase' ? subphase.parent_id as number : null,
+    name: subphase.name as string,
+    start_date: subphase.start_date as string,
+    end_date: subphase.end_date as string,
     color: getDepthColorWithFallback(actualDepth),
-    order_index: subphase.sort_order ?? 0,
-    completion: subphase.completion ?? null,
+    order_index: (subphase.sort_order ?? 0) as number,
+    completion: (subphase.completion ?? null) as number | null,
     // Handle SQLite integer (0/1) and boolean
     is_milestone: Boolean(subphase.is_milestone),
-    dependencies: subphase.dependencies ?? [],
-    children: (subphase.children ?? []).map((s: any) => transformSubphase(s, actualDepth + 1)),
-    staffAssignments: (subphase.staff_assignments ?? subphase.staffAssignments ?? []).map(transformStaffAssignment),
-    equipmentAssignments: (subphase.equipment_assignments ?? subphase.equipmentAssignments ?? []).map(transformEquipmentAssignment),
+    dependencies: (subphase.dependencies ?? []) as Subphase['dependencies'],
+    children: children.map((s: Record<string, unknown>) => transformSubphase(s, actualDepth + 1)),
+    staffAssignments: staffAssignments.map(transformStaffAssignment),
+    equipmentAssignments: equipmentAssignments.map(transformEquipmentAssignment),
   };
 }
 
-function transformStaffAssignment(assignment: any): StaffAssignment {
+function transformStaffAssignment(assignment: Record<string, unknown>): StaffAssignment {
   return {
-    id: assignment.id,
-    staff_id: assignment.staff_id,
-    staff_name: assignment.staff_name,
-    project_id: assignment.project_id,
-    phase_id: assignment.phase_id,
-    subphase_id: assignment.subphase_id,
-    allocation: assignment.allocation ?? assignment.allocation_percent ?? 100,
-    start_date: assignment.start_date,
-    end_date: assignment.end_date,
+    id: assignment.id as number,
+    staff_id: assignment.staff_id as number,
+    staff_name: assignment.staff_name as string | undefined,
+    project_id: assignment.project_id as number | null | undefined,
+    phase_id: assignment.phase_id as number | null | undefined,
+    subphase_id: assignment.subphase_id as number | null | undefined,
+    allocation: (assignment.allocation ?? assignment.allocation_percent ?? 100) as number,
+    start_date: assignment.start_date as string,
+    end_date: assignment.end_date as string,
   };
 }
 
-function transformEquipmentAssignment(assignment: any): EquipmentAssignment {
+function transformEquipmentAssignment(assignment: Record<string, unknown>): EquipmentAssignment {
   return {
-    id: assignment.id,
-    equipment_id: assignment.equipment_id,
-    equipment_name: assignment.equipment_name,
-    project_id: assignment.project_id,
-    phase_id: assignment.phase_id,
-    subphase_id: assignment.subphase_id,
-    start_date: assignment.start_date,
-    end_date: assignment.end_date,
+    id: assignment.id as number,
+    equipment_id: assignment.equipment_id as number,
+    equipment_name: assignment.equipment_name as string | undefined,
+    project_id: assignment.project_id as number | null | undefined,
+    phase_id: assignment.phase_id as number | null | undefined,
+    subphase_id: assignment.subphase_id as number | null | undefined,
+    start_date: assignment.start_date as string,
+    end_date: assignment.end_date as string,
   };
 }
 
@@ -451,5 +461,5 @@ export async function loadAllProjects(): Promise<Project[]> {
   );
   
   // Transform to ensure correct property names
-  return fullProjects.map(transformProject);
+  return fullProjects.map(p => transformProject(p as unknown as Record<string, unknown>));
 }

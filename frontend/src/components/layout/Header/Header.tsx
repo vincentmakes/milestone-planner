@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
+import { useWhatIfStore } from '@/stores/whatIfStore';
 import { SiteSelector } from './SiteSelector';
 import { DateNavigation } from './DateNavigation';
 import { UserMenu } from './UserMenu';
@@ -28,16 +30,16 @@ const DEFAULT_CELL_WIDTH = 36;
 
 export function Header() {
   const currentUser = useAppStore((s) => s.currentUser);
-  const whatIfMode = useAppStore((s) => s.whatIfMode);
-  const currentView = useAppStore((s) => s.currentView);
-  const viewMode = useAppStore((s) => s.viewMode);
-  const setViewMode = useAppStore((s) => s.setViewMode);
-  const cellWidth = useAppStore((s) => s.cellWidth);
-  const setCellWidth = useAppStore((s) => s.setCellWidth);
-  const showStaffOverview = useAppStore((s) => s.showStaffOverview);
-  const showEquipmentOverview = useAppStore((s) => s.showEquipmentOverview);
-  const toggleShowStaffOverview = useAppStore((s) => s.toggleShowStaffOverview);
-  const toggleShowEquipmentOverview = useAppStore((s) => s.toggleShowEquipmentOverview);
+  const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
+  const currentView = useViewStore((s) => s.currentView);
+  const viewMode = useViewStore((s) => s.viewMode);
+  const setViewMode = useViewStore((s) => s.setViewMode);
+  const cellWidth = useViewStore((s) => s.cellWidth);
+  const setCellWidth = useViewStore((s) => s.setCellWidth);
+  const showStaffOverview = useViewStore((s) => s.showStaffOverview);
+  const showEquipmentOverview = useViewStore((s) => s.showEquipmentOverview);
+  const toggleShowStaffOverview = useViewStore((s) => s.toggleShowStaffOverview);
+  const toggleShowEquipmentOverview = useViewStore((s) => s.toggleShowEquipmentOverview);
   
   const [theme, setThemeState] = useState<Theme>(() => getTheme());
   const [customLogoDark, setCustomLogoDark] = useState<string>('');

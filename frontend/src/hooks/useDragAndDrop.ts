@@ -6,6 +6,7 @@
 import { useCallback, useRef, useEffect } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import { updatePhase, updateSubphase, updateProject, updateStaffAssignment, updateEquipmentAssignment, loadAllProjects } from '@/api/endpoints/projects';
 import { useUndoStore } from '@/stores/undoStore';
 import { 
@@ -35,7 +36,9 @@ interface DragData {
 
 export function useDragAndDrop() {
   const { isDragging, dragType, dragItemId, startDrag, endDrag, showDragIndicator, hideIndicator } = useUIStore();
-  const { projects, setProjects, cellWidth, currentView, viewMode } = useAppStore();
+  const projects = useAppStore((s) => s.projects);
+  const setProjects = useAppStore((s) => s.setProjects);
+  const { cellWidth, currentView, viewMode } = useViewStore();
   const { saveState } = useUndoStore();
   
   const dragDataRef = useRef<DragData | null>(null);
@@ -561,7 +564,6 @@ export function useDragAndDrop() {
       
       // Save all cascaded updates (children) to server
       if (pendingUpdates.length > 0) {
-        console.log(`Saving ${pendingUpdates.length} cascaded updates`);
         await savePendingUpdates(pendingUpdates);
       }
       

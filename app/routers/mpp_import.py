@@ -171,7 +171,7 @@ def find_mpxj_jar() -> str | None:
         for filename in os.listdir(mpxj_dir):
             if filename.endswith(".jar") and "mpxj" in filename.lower():
                 jar_path = os.path.join(mpxj_dir, filename)
-                logger.info(f"Found MPXJ JAR: {jar_path}")
+                logger.info("Found MPXJ JAR: %s", jar_path)
                 return jar_path
 
         # Also check in a 'lib' subdirectory
@@ -180,16 +180,16 @@ def find_mpxj_jar() -> str | None:
             for filename in os.listdir(lib_dir):
                 if filename.endswith(".jar"):
                     jar_path = os.path.join(lib_dir, filename)
-                    logger.info(f"Found JAR in lib: {jar_path}")
+                    logger.info("Found JAR in lib: %s", jar_path)
                     return jar_path
 
-        logger.warning(f"No JAR file found in mpxj package at {mpxj_dir}")
+        logger.warning("No JAR file found in mpxj package at %s", mpxj_dir)
         return None
     except ImportError:
         logger.warning("mpxj Python package not installed")
         return None
     except Exception as e:
-        logger.warning(f"Error finding MPXJ JAR: {e}")
+        logger.warning("Error finding MPXJ JAR: %s", e)
         return None
 
 
@@ -220,7 +220,7 @@ def get_mpxj_classpath() -> str:
 
         if jar_files:
             classpath = os.pathsep.join(jar_files)
-            logger.info(f"MPXJ classpath: {classpath}")
+            logger.info("MPXJ classpath: %s", classpath)
             return classpath
 
         logger.warning("No JAR files found in mpxj package")
@@ -229,7 +229,7 @@ def get_mpxj_classpath() -> str:
         logger.warning("mpxj Python package not installed - install with: pip install mpxj")
         return ""
     except Exception as e:
-        logger.warning(f"Error building MPXJ classpath: {e}")
+        logger.warning("Error building MPXJ classpath: %s", e)
         return ""
 
 
@@ -250,9 +250,9 @@ def ensure_jvm_started() -> None:
     try:
         import mpxj
 
-        logger.info(f"mpxj package loaded from: {mpxj.__file__}")
+        logger.info("mpxj package loaded from: %s", mpxj.__file__)
     except ImportError as e:
-        logger.error(f"mpxj package not installed: {e}")
+        logger.error("mpxj package not installed: %s", e)
         raise HTTPException(
             status_code=500,
             detail=f"""mpxj Python package not installed.
@@ -270,11 +270,11 @@ Install with: pip install mpxj
     jvm_path = None
 
     if java_home:
-        logger.info(f"Found JAVA_HOME: {java_home}")
+        logger.info("Found JAVA_HOME: %s", java_home)
         os.environ["JAVA_HOME"] = java_home
         jvm_path = find_jvm_library(java_home)
         if jvm_path:
-            logger.info(f"Found JVM library: {jvm_path}")
+            logger.info("Found JVM library: %s", jvm_path)
 
     try:
         # Start JVM - mpxj has already added its JARs to the classpath
@@ -298,7 +298,7 @@ Install with: pip install mpxj
 
                 logger.info("MPXJ loaded successfully (net.sf.mpxj)")
             except ImportError as e:
-                logger.error(f"MPXJ not accessible: {e}")
+                logger.error("MPXJ not accessible: %s", e)
                 raise HTTPException(
                     status_code=500,
                     detail=f"""MPXJ Java library not found in classpath.
@@ -313,7 +313,7 @@ Try reinstalling: pip install --force-reinstall mpxj
 
     except Exception as e:
         error_msg = str(e)
-        logger.error(f"Failed to start JVM: {error_msg}")
+        logger.error("Failed to start JVM: %s", error_msg)
 
         # Provide helpful error message
         if "libjvm.so" in error_msg or "JVMNotFoundException" in str(type(e)):
@@ -841,7 +841,7 @@ async def test_mpp_import(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"MPP availability check failed: {e}")
+        logger.error("MPP availability check failed: %s", e)
         return JSONResponse(
             status_code=500,
             content={
@@ -902,7 +902,7 @@ async def import_mpp_file(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"MPP import failed: {e}")
+        logger.error("MPP import failed: %s", e)
         return JSONResponse(
             status_code=500,
             content={"success": False, "error": "Failed to parse MPP file"},
@@ -950,10 +950,6 @@ async def import_project_full(
 
     Matches: POST /api/import/project
     """
-    import logging
-
-    logger = logging.getLogger(__name__)
-
     # Parse site_id from string
     parsed_site_id: int | None = None
     if site_id and site_id.strip():
@@ -962,8 +958,7 @@ async def import_project_full(
         except ValueError:
             pass
 
-    logger.info(f"Import request received: {file.filename}, site_id: {parsed_site_id}")
-    print(f"Import request received: {file.filename}, site_id: {parsed_site_id}")
+    logger.info("Import request received: %s, site_id: %s", file.filename, parsed_site_id)
 
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
@@ -971,8 +966,7 @@ async def import_project_full(
     filename_lower = file.filename.lower()
     content = await file.read()
 
-    logger.info(f"File size: {len(content)} bytes")
-    print(f"File size: {len(content)} bytes")
+    logger.info("File size: %d bytes", len(content))
 
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
@@ -1143,10 +1137,7 @@ async def import_project_full(
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-
-        logger.error(f"Import failed: {str(e)}")
-        logger.error(traceback.format_exc())
+        logger.exception("Import failed: %s", e)
         await db.rollback()
 
         error_msg = str(e)

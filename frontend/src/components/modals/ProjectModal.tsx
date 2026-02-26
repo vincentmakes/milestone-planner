@@ -26,7 +26,9 @@ interface PredefinedPhaseFromAPI {
 
 export function ProjectModal() {
   const { activeModal, editingProject, closeModal } = useUIStore();
-  const { currentSite, staff, setProjects } = useAppStore();
+  const currentSite = useAppStore((s) => s.currentSite);
+  const staff = useAppStore((s) => s.staff);
+  const setProjects = useAppStore((s) => s.setProjects);
   
   const isOpen = activeModal === 'project';
   const isEditing = !!editingProject;

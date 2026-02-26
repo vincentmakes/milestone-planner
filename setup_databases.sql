@@ -120,16 +120,10 @@ CREATE INDEX IF NOT EXISTS idx_tenants_organization_id ON tenants(organization_i
 -- Create index for organization lookups
 CREATE INDEX IF NOT EXISTS idx_organizations_slug ON organizations(slug);
 
--- Create default superadmin user (password: 'admin' - CHANGE THIS!)
--- Password hash is bcrypt hash of 'admin'
-INSERT INTO admin_users (email, password_hash, name, role, active)
-VALUES (
-    'admin@milestone.local',
-    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.G6J8EHyFj2YQXW',
-    'System Admin',
-    'superadmin',
-    1
-) ON CONFLICT (email) DO NOTHING;
+-- NOTE: Default admin user is no longer hardcoded here for security.
+-- The application auto-creates an admin on first startup via master_db.verify_admin_exists().
+-- To manually create an admin, use:
+--   python -m app.scripts.create_admin --email admin@example.com --password <secure_password>
 
 -- ============================================================================
 -- PART 2: TENANT DATABASE TEMPLATE
@@ -422,10 +416,9 @@ ON CONFLICT (id) DO NOTHING;
 -- NOTES
 -- ============================================================================
 -- 
--- Default admin login for multi-tenant admin panel:
---   Email: admin@milestone.local
---   Password: admin
---   *** CHANGE THIS IMMEDIATELY AFTER FIRST LOGIN ***
+-- Admin login for multi-tenant admin panel:
+--   Created automatically on first startup via master_db.verify_admin_exists()
+--   Or manually via: python -m app.scripts.create_admin
 --
 -- For single-tenant setup:
 --   Create a user in the tenant database's users table

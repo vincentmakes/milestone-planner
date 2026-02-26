@@ -7,6 +7,8 @@
 import { memo, useMemo, useCallback, useState, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
+import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useReorder } from '@/contexts/ReorderContext';
 import { AssignmentRow } from './AssignmentRow';
@@ -113,12 +115,12 @@ export const SubphaseRow = memo(function SubphaseRow({
   nameColumnWidth,
   criticalPathItems = new Set(),
 }: SubphaseRowProps) {
-  const expandedSubphases = useAppStore((s) => s.expandedSubphases);
-  const toggleSubphaseExpanded = useAppStore((s) => s.toggleSubphaseExpanded);
+  const expandedSubphases = useViewStore((s) => s.expandedSubphases);
+  const toggleSubphaseExpanded = useViewStore((s) => s.toggleSubphaseExpanded);
   const staff = useAppStore((s) => s.staff);
   const equipment = useAppStore((s) => s.equipment);
   const currentUser = useAppStore((s) => s.currentUser);
-  const showAssignments = useAppStore((s) => s.showAssignments);
+  const showAssignments = useViewStore((s) => s.showAssignments);
   const openSubphaseModal = useUIStore((s) => s.openSubphaseModal);
   const triggerScrollToDate = useUIStore((s) => s.triggerScrollToDate);
   const projects = useAppStore((s) => s.projects);
@@ -467,8 +469,8 @@ function SubphasesWithPhantom({
   criticalPathItems: Set<string>;
 }) {
   const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
-  const customColumnFilters = useAppStore((s) => s.customColumnFilters);
-  const customColumnValues = useAppStore((s) => s.customColumnValues);
+  const customColumnFilters = useCustomColumnStore((s) => s.customColumnFilters);
+  const customColumnValues = useCustomColumnStore((s) => s.customColumnValues);
   const { completePhantom, cancelPhantom } = usePhantomSibling();
   
   // Check if phantom mode is for a subphase

@@ -3,7 +3,7 @@
  * The primary application layout after authentication
  */
 
-import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import { useKeyboardShortcuts } from '@/hooks';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
@@ -13,7 +13,7 @@ import { StaffView, EquipmentView, CrossSiteView, ArchivedView } from '@/compone
 import styles from './MainLayout.module.css';
 
 export function MainLayout() {
-  const currentView = useAppStore((s) => s.currentView);
+  const currentView = useViewStore((s) => s.currentView);
 
   // Enable global keyboard shortcuts
   useKeyboardShortcuts();

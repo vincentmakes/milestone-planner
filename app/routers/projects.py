@@ -5,6 +5,7 @@ phases, subphases, and their staff assignments.
 """
 
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import and_, func, or_, select, update
@@ -21,19 +22,21 @@ from app.models.equipment import Equipment, EquipmentAssignment
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.site import Site
 from app.models.user import User
+from app.schemas.base import PaginationParams
 from app.schemas.project import (
     PhaseCreate,
     PhaseReorderRequest,
     PhaseUpdate,
     ProjectCreate,
     ProjectDetailResponse,
-    ProjectListResponse,
     ProjectUpdate,
     SubphaseCreate,
     SubphaseReorderRequest,
     SubphaseUpdate,
 )
 from app.websocket.broadcast import broadcast_change
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -141,25 +144,45 @@ def build_subphase_tree(
 # ---------------------------------------------------------
 
 
-@router.get("/projects", response_model=list[ProjectListResponse])
+@router.get("/projects")
 async def get_projects(
     siteId: int | None = Query(None),
     includeOtherSites: str | None = Query(None),
     archived: str | None = Query(None),
+    pagination: PaginationParams = Depends(),
     db: AsyncSession = Depends(get_db_readonly),
     user: User = Depends(get_current_user),
 ):
     """
-    Get list of projects.
+    Get list of projects with pagination.
 
     Query params:
     - siteId: Filter by site
     - includeOtherSites: If 'true', show all sites but mask external project details
     - archived: 'true' for archived only, 'all' for all, default is non-archived
+    - offset: Number of items to skip (default 0)
+    - limit: Max items to return (default 50, max 200)
 
     Matches: GET /api/projects
     """
-    # Build base query with joins
+    # Build base filter query
+    base_filter = select(Project.id)
+
+    # Filter by archived status
+    if archived == "true":
+        base_filter = base_filter.where(Project.archived == 1)
+    elif archived != "all":
+        base_filter = base_filter.where(or_(Project.archived == 0, Project.archived.is_(None)))
+
+    # Filter by site
+    if siteId and includeOtherSites != "true":
+        base_filter = base_filter.where(Project.site_id == int(siteId))
+
+    # Get total count
+    count_result = await db.execute(select(func.count()).select_from(base_filter.subquery()))
+    total = count_result.scalar() or 0
+
+    # Build paginated query with joins
     query = (
         select(
             Project,
@@ -170,17 +193,15 @@ async def get_projects(
         .outerjoin(User, Project.pm_id == User.id)
     )
 
-    # Filter by archived status
     if archived == "true":
         query = query.where(Project.archived == 1)
     elif archived != "all":
         query = query.where(or_(Project.archived == 0, Project.archived.is_(None)))
 
-    # Filter by site
     if siteId and includeOtherSites != "true":
         query = query.where(Project.site_id == int(siteId))
 
-    query = query.order_by(Project.start_date)
+    query = query.order_by(Project.start_date).offset(pagination.offset).limit(pagination.limit)
 
     result = await db.execute(query)
     rows = result.all()
@@ -235,7 +256,12 @@ async def get_projects(
                 }
             )
 
-    return projects
+    return {
+        "items": projects,
+        "total": total,
+        "offset": pagination.offset,
+        "limit": pagination.limit,
+    }
 
 
 @router.get("/projects/{project_id}", response_model=ProjectDetailResponse)
@@ -367,8 +393,17 @@ async def get_project(
     equipment_rows = equipment_result.all()
 
     # Log all query times
-    print(
-        f"PROJECT {project_id}: q1={int((t1 - t0) * 1000)}ms q2={int((t2 - t1) * 1000)}ms q3={int((t3 - t2) * 1000)}ms q4={int((t4 - t3) * 1000)}ms q5={int((t5 - t4) * 1000)}ms q6={int((t6 - t5) * 1000)}ms q7={int((t7 - t6) * 1000)}ms TOTAL={int((t7 - t0) * 1000)}ms"
+    logger.debug(
+        "PROJECT %s: q1=%dms q2=%dms q3=%dms q4=%dms q5=%dms q6=%dms q7=%dms TOTAL=%dms",
+        project_id,
+        int((t1 - t0) * 1000),
+        int((t2 - t1) * 1000),
+        int((t3 - t2) * 1000),
+        int((t4 - t3) * 1000),
+        int((t5 - t4) * 1000),
+        int((t6 - t5) * 1000),
+        int((t7 - t6) * 1000),
+        int((t7 - t0) * 1000),
     )
 
     # Convert to list with attributes
@@ -460,8 +495,13 @@ async def get_project(
     ]
     t8 = time.perf_counter()
 
-    print(
-        f"PROJECT {project_id} TIMING: q6={int((t6 - t5) * 1000)}ms q7={int((t7 - t6) * 1000)}ms proc={int((t8 - t7) * 1000)}ms TOTAL={int((t8 - t0) * 1000)}ms"
+    logger.debug(
+        "PROJECT %s TIMING: q6=%dms q7=%dms proc=%dms TOTAL=%dms",
+        project_id,
+        int((t6 - t5) * 1000),
+        int((t7 - t6) * 1000),
+        int((t8 - t7) * 1000),
+        int((t8 - t0) * 1000),
     )
 
     return {

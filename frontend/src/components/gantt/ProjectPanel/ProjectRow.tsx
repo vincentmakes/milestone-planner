@@ -5,6 +5,8 @@
 
 import { memo, useMemo, useCallback, Fragment, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
+import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useUIStore } from '@/stores/uiStore';
 import { PhaseRow } from './PhaseRow';
 import { AssignmentRow } from './AssignmentRow';
@@ -101,18 +103,19 @@ export const ProjectRow = memo(function ProjectRow({
   siblingIds = [],
   index: _index = 0,
 }: ProjectRowProps) {
-  const expandedProjects = useAppStore((s) => s.expandedProjects);
-  const expandedPhases = useAppStore((s) => s.expandedPhases);
-  const expandedSubphases = useAppStore((s) => s.expandedSubphases);
-  const toggleProjectExpanded = useAppStore((s) => s.toggleProjectExpanded);
-  const expandProjectLevel = useAppStore((s) => s.expandProjectLevel);
-  const collapseProjectLevel = useAppStore((s) => s.collapseProjectLevel);
+  const expandedProjects = useViewStore((s) => s.expandedProjects);
+  const expandedPhases = useViewStore((s) => s.expandedPhases);
+  const expandedSubphases = useViewStore((s) => s.expandedSubphases);
+  const toggleProjectExpanded = useViewStore((s) => s.toggleProjectExpanded);
+  const expandProjectLevel = useViewStore((s) => s.expandProjectLevel);
+  const collapseProjectLevel = useViewStore((s) => s.collapseProjectLevel);
   const staff = useAppStore((s) => s.staff);
   const equipment = useAppStore((s) => s.equipment);
-  const showAssignments = useAppStore((s) => s.showAssignments);
+  const showAssignments = useViewStore((s) => s.showAssignments);
   const toggleCriticalPath = useAppStore((s) => s.toggleCriticalPath);
   const isCriticalPathEnabled = useAppStore((s) => s.isCriticalPathEnabled);
   const criticalPathItems = useAppStore((s) => s.criticalPathItems);
+  const projects = useAppStore((s) => s.projects);
   const openProjectModal = useUIStore((s) => s.openProjectModal);
 
   const isExpanded = expandedProjects.has(project.id);
@@ -175,12 +178,12 @@ export const ProjectRow = memo(function ProjectRow({
 
   const handleExpandLevel = (e: React.MouseEvent) => {
     e.stopPropagation();
-    expandProjectLevel(project.id);
+    expandProjectLevel(project.id, projects);
   };
 
   const handleCollapseLevel = (e: React.MouseEvent) => {
     e.stopPropagation();
-    collapseProjectLevel(project.id);
+    collapseProjectLevel(project.id, projects);
   };
 
   const handleCriticalPathToggle = (e: React.MouseEvent) => {
@@ -470,8 +473,8 @@ function PhasesWithPhantom({
   criticalPathItems: Set<string>;
 }) {
   const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
-  const customColumnFilters = useAppStore((s) => s.customColumnFilters);
-  const customColumnValues = useAppStore((s) => s.customColumnValues);
+  const customColumnFilters = useCustomColumnStore((s) => s.customColumnFilters);
+  const customColumnValues = useCustomColumnStore((s) => s.customColumnValues);
   const { completePhantom, cancelPhantom } = usePhantomSibling();
   
   // Check if phantom mode is for a phase in this project

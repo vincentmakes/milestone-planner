@@ -1,11 +1,11 @@
-import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import { ResourceTabs } from './ResourceTabs';
 import { ResourceList } from './ResourceList';
 import styles from './ResourcePanel.module.css';
 
 export function ResourcePanel() {
-  const resourcePanelCollapsed = useAppStore((s) => s.resourcePanelCollapsed);
-  const setResourcePanelCollapsed = useAppStore((s) => s.setResourcePanelCollapsed);
+  const resourcePanelCollapsed = useViewStore((s) => s.resourcePanelCollapsed);
+  const setResourcePanelCollapsed = useViewStore((s) => s.setResourcePanelCollapsed);
 
   const toggleCollapsed = () => {
     setResourcePanelCollapsed(!resourcePanelCollapsed);

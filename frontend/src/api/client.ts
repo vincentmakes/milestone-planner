@@ -103,8 +103,6 @@ export async function apiRequest<T>(
     const isAllowed = allowedPrefixes.some(prefix => url.includes(prefix));
     
     if (!isAllowed) {
-      console.log(`[What If Mode] Queued ${method} request to ${url}`);
-      
       // Queue the operation for later execution when applying changes
       if (clientConfig.queueWhatIfOperation) {
         // Store the relative URL (without base) for replay

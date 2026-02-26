@@ -1,18 +1,20 @@
 import { useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { useWhatIfStore } from '@/stores/whatIfStore';
 import styles from './WhatIfToggle.module.css';
 
 export function WhatIfToggle() {
-  const whatIfMode = useAppStore((s) => s.whatIfMode);
-  const whatIfPendingOperations = useAppStore((s) => s.whatIfPendingOperations);
-  const enterWhatIfMode = useAppStore((s) => s.enterWhatIfMode);
-  const exitWhatIfMode = useAppStore((s) => s.exitWhatIfMode);
+  const projects = useAppStore((s) => s.projects);
+  const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
+  const whatIfPendingOperations = useWhatIfStore((s) => s.whatIfPendingOperations);
+  const enterWhatIfMode = useWhatIfStore((s) => s.enterWhatIfMode);
+  const exitWhatIfMode = useWhatIfStore((s) => s.exitWhatIfMode);
   const [isApplying, setIsApplying] = useState(false);
 
   const pendingCount = whatIfPendingOperations.length;
 
   const handleEnter = () => {
-    enterWhatIfMode();
+    enterWhatIfMode(projects);
   };
 
   const handleDiscard = () => {

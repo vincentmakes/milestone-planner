@@ -20,6 +20,7 @@ from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.site import Site
+    from app.models.user import User
 
 
 class Note(Base):
@@ -43,8 +44,9 @@ class Note(Base):
     type: Mapped[str] = mapped_column(String(50), default="general", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
-    # Relationships - no back_populates since Site.notes relationship removed
+    # Relationships
     site: Mapped["Site"] = relationship("Site")
+    staff: Mapped["User | None"] = relationship("User", foreign_keys=[staff_id], lazy="noload")
 
     def __repr__(self) -> str:
         return f"<Note {self.id} (Site: {self.site_id}, Date: {self.date})>"

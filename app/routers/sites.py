@@ -5,6 +5,7 @@ Handles CRUD operations for sites and bank holidays.
 Matches the Node.js API at /api/sites exactly.
 """
 
+import logging
 from datetime import datetime
 
 import httpx
@@ -26,6 +27,8 @@ from app.schemas.site import (
     SiteResponse,
     SiteUpdate,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -444,7 +447,9 @@ async def fetch_and_store_bank_holidays(
     country_code = site.country_code
     region_code = site.region_code
 
-    print(f"Fetching holidays for site {site_id}, country={country_code}, region={region_code}")
+    logger.info(
+        "Fetching holidays for site %s, country=%s, region=%s", site_id, country_code, region_code
+    )
 
     settings = get_settings()
     current_year = datetime.now().year
@@ -457,7 +462,7 @@ async def fetch_and_store_bank_holidays(
 
     proxy_url = await get_proxy_for_url(settings.nager_api_url)
     if proxy_url:
-        print(f"Using proxy: {proxy_url}")
+        logger.info("Using proxy: %s", proxy_url)
         # Add authentication to proxy URL if credentials provided
         if settings.proxy_username and settings.proxy_password:
             from urllib.parse import urlparse, urlunparse
@@ -474,38 +479,43 @@ async def fetch_and_store_bank_holidays(
                 )
             )
             proxy_url = auth_proxy
-            print(f"Proxy authentication enabled for user: {settings.proxy_username}")
+            logger.info("Proxy authentication enabled for user: %s", settings.proxy_username)
 
     # SSL verification - can use custom CA cert for corporate proxies
     ssl_verify: bool | str = settings.proxy_verify_ssl
     if settings.proxy_ca_cert:
-        print(f"Using custom CA certificate: {settings.proxy_ca_cert}")
+        logger.info("Using custom CA certificate: %s", settings.proxy_ca_cert)
         ssl_verify = settings.proxy_ca_cert
     elif not settings.proxy_verify_ssl:
-        print("SSL verification disabled for proxy")
+        logger.info("SSL verification disabled for proxy")
 
     async with httpx.AsyncClient(timeout=10.0, proxy=proxy_url, verify=ssl_verify) as client:
         for year in years:
             try:
                 url = f"{settings.nager_api_url}/PublicHolidays/{year}/{country_code}"
-                print(f"Fetching: {url}")
+                logger.info("Fetching: %s", url)
                 response = await client.get(url)
 
                 if response.status_code != 200:
-                    print(
-                        f"Failed to fetch holidays for {country_code}/{year}: HTTP {response.status_code}"
+                    logger.warning(
+                        "Failed to fetch holidays for %s/%s: HTTP %s",
+                        country_code,
+                        year,
+                        response.status_code,
                     )
                     # Debug: show response headers and body for non-200 responses
-                    print(f"  Response headers: {dict(response.headers)}")
+                    logger.debug("  Response headers: %s", dict(response.headers))
                     try:
                         body = response.text[:500]  # First 500 chars
-                        print(f"  Response body: {body}")
+                        logger.debug("  Response body: %s", body)
                     except Exception:
                         pass
                     continue
 
                 holidays_data = response.json()
-                print(f"Received {len(holidays_data)} holidays for {country_code}/{year}")
+                logger.info(
+                    "Received %d holidays for %s/%s", len(holidays_data), country_code, year
+                )
 
                 for h in holidays_data:
                     # Filter by region if specified
@@ -539,20 +549,19 @@ async def fetch_and_store_bank_holidays(
                         # Don't rollback the whole transaction, just skip this one
                         # It might be a duplicate
                         await db.rollback()
-                        print(f"Skipped holiday {h['date']} {h.get('localName', h['name'])}: {e}")
+                        logger.debug(
+                            "Skipped holiday %s %s: %s", h["date"], h.get("localName", h["name"]), e
+                        )
                         continue
 
             except httpx.RequestError as e:
-                print(f"Request error fetching holidays for {country_code}/{year}: {e}")
+                logger.error("Request error fetching holidays for %s/%s: %s", country_code, year, e)
                 continue
             except Exception as e:
-                print(f"Error fetching holidays for {country_code}/{year}: {e}")
-                import traceback
-
-                traceback.print_exc()
+                logger.exception("Error fetching holidays for %s/%s: %s", country_code, year, e)
                 continue
 
-    print(f"Added {total_added} holidays for site {site_id}")
+    logger.info("Added %d holidays for site %s", total_added, site_id)
 
     # Update last fetch timestamp
     site.last_holiday_fetch = datetime.utcnow()

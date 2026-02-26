@@ -9,6 +9,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useDataLoader } from '@/hooks/useDataLoader';
 import { ContextMenu, type ContextMenuItem } from '@/components/common';
 import { deleteProject, deletePhase, deleteSubphase, deleteStaffAssignment, deleteEquipmentAssignment } from '@/api';
+import type { Project, Phase, Subphase } from '@/types';
 
 export function ContextMenuContainer() {
   const contextMenu = useUIStore((s) => s.contextMenu);
@@ -56,7 +57,7 @@ export function ContextMenuContainer() {
 
     // Project context menu
     if (type === 'project') {
-      const project = target as any;
+      const project = target as Project;
       return [
         {
           label: 'Edit Project',
@@ -108,7 +109,7 @@ export function ContextMenuContainer() {
 
     // Phase context menu
     if (type === 'phase') {
-      const phase = target as any;
+      const phase = target as Phase;
       return [
         {
           label: 'Edit Phase',
@@ -160,7 +161,7 @@ export function ContextMenuContainer() {
 
     // Subphase context menu
     if (type === 'subphase') {
-      const subphase = target as any;
+      const subphase = target as Subphase;
       return [
         {
           label: 'Edit Subphase',

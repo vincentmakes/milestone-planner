@@ -147,7 +147,7 @@ class MasterDatabase:
                 orgs_table_exists = result.scalar()
 
                 if not orgs_table_exists:
-                    print("Master DB: Creating organizations table...")
+                    logger.info("Master DB: Creating organizations table...")
                     await conn.execute(
                         text(
                             "CREATE TABLE organizations ("
@@ -166,7 +166,7 @@ class MasterDatabase:
                             "ON organizations(slug)"
                         )
                     )
-                    print("Master DB: organizations table created")
+                    logger.info("Master DB: organizations table created")
 
                 # Check if organization_sso_config table exists
                 result = await conn.execute(
@@ -180,7 +180,7 @@ class MasterDatabase:
                 sso_table_exists = result.scalar()
 
                 if not sso_table_exists:
-                    print("Master DB: Creating organization_sso_config table...")
+                    logger.info("Master DB: Creating organization_sso_config table...")
                     await conn.execute(
                         text(
                             "CREATE TABLE organization_sso_config ("
@@ -198,7 +198,7 @@ class MasterDatabase:
                             ")"
                         )
                     )
-                    print("Master DB: organization_sso_config table created")
+                    logger.info("Master DB: organization_sso_config table created")
 
                 # Check if tenants.organization_id column exists
                 result = await conn.execute(
@@ -212,7 +212,7 @@ class MasterDatabase:
                 has_org_id = result.scalar()
 
                 if not has_org_id:
-                    print("Master DB: Adding organization_id column to tenants...")
+                    logger.info("Master DB: Adding organization_id column to tenants...")
                     await conn.execute(
                         text(
                             "ALTER TABLE tenants ADD COLUMN organization_id UUID "
@@ -225,7 +225,7 @@ class MasterDatabase:
                             "ON tenants(organization_id)"
                         )
                     )
-                    print("Master DB: organization_id column added")
+                    logger.info("Master DB: organization_id column added")
 
                 # Check if tenants.required_group_ids column exists
                 result = await conn.execute(
@@ -239,11 +239,11 @@ class MasterDatabase:
                 has_group_ids = result.scalar()
 
                 if not has_group_ids:
-                    print("Master DB: Adding required_group_ids column to tenants...")
+                    logger.info("Master DB: Adding required_group_ids column to tenants...")
                     await conn.execute(
                         text("ALTER TABLE tenants ADD COLUMN required_group_ids JSONB DEFAULT '[]'")
                     )
-                    print("Master DB: required_group_ids column added")
+                    logger.info("Master DB: required_group_ids column added")
 
                 # Check if tenants.group_membership_mode column exists
                 result = await conn.execute(
@@ -257,13 +257,13 @@ class MasterDatabase:
                 has_group_mode = result.scalar()
 
                 if not has_group_mode:
-                    print("Master DB: Adding group_membership_mode column to tenants...")
+                    logger.info("Master DB: Adding group_membership_mode column to tenants...")
                     await conn.execute(
                         text(
                             "ALTER TABLE tenants ADD COLUMN group_membership_mode VARCHAR(10) DEFAULT 'any'"
                         )
                     )
-                    print("Master DB: group_membership_mode column added")
+                    logger.info("Master DB: group_membership_mode column added")
 
                 # Check if admin_users.must_change_password column exists
                 result = await conn.execute(
@@ -277,18 +277,20 @@ class MasterDatabase:
                 has_must_change = result.scalar()
 
                 if not has_must_change:
-                    print("Master DB: Adding must_change_password column to admin_users...")
+                    logger.info("Master DB: Adding must_change_password column to admin_users...")
                     await conn.execute(
                         text(
                             "ALTER TABLE admin_users ADD COLUMN must_change_password INTEGER DEFAULT 0"
                         )
                     )
-                    print("Master DB: must_change_password column added")
+                    logger.info("Master DB: must_change_password column added")
 
         except Exception as e:
-            print(f"WARNING: Auto-migration failed: {e}")
-            print("The app will continue, but organization features may not work.")
-            print("Run manually: python migrations/run_migration_master.py add_organizations")
+            logger.warning("Auto-migration failed: %s", e)
+            logger.warning("The app will continue, but organization features may not work.")
+            logger.warning(
+                "Run manually: python migrations/run_migration_master.py add_organizations"
+            )
 
     async def close(self):
         """Close the database connection."""

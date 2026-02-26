@@ -5,13 +5,14 @@
  */
 
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import styles from './EquipmentOverviewToggle.module.css';
 
 export function EquipmentOverviewToggle() {
-  const showEquipmentOverview = useAppStore((s) => s.showEquipmentOverview);
-  const toggleShowEquipmentOverview = useAppStore((s) => s.toggleShowEquipmentOverview);
+  const showEquipmentOverview = useViewStore((s) => s.showEquipmentOverview);
+  const toggleShowEquipmentOverview = useViewStore((s) => s.toggleShowEquipmentOverview);
   const currentUser = useAppStore((s) => s.currentUser);
-  const currentView = useAppStore((s) => s.currentView);
+  const currentView = useViewStore((s) => s.currentView);
 
   // Only show for admin/superuser and only in gantt view
   if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'superuser')) {

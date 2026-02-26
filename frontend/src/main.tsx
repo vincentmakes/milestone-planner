@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
 import { initTheme, migrateLegacyStorage } from './utils/storage';
 import { configureApiClient } from './api/client';
-import { useAppStore } from './stores/appStore';
+import { useWhatIfStore } from './stores/whatIfStore';
 import './styles/global.css';
 
 // Initialize theme before render to prevent flash
@@ -15,8 +15,8 @@ migrateLegacyStorage();
 
 // Configure API client with What If mode check and queue function
 configureApiClient({
-  isWhatIfMode: () => useAppStore.getState().whatIfMode,
-  queueWhatIfOperation: (op) => useAppStore.getState().queueWhatIfOperation(op),
+  isWhatIfMode: () => useWhatIfStore.getState().whatIfMode,
+  queueWhatIfOperation: (op) => useWhatIfStore.getState().queueWhatIfOperation(op),
 });
 
 // Create React Query client with sensible defaults
