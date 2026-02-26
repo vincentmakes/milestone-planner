@@ -7,8 +7,6 @@ set -e
 # ============================================
 
 # Wait for PostgreSQL to be ready (best-effort, non-fatal)
-# Uses actual psql query or Python asyncpg to verify the DB is query-ready,
-# not just accepting TCP connections.
 wait_for_db() {
     local host="$1"
     local port="$2"
@@ -18,21 +16,24 @@ wait_for_db() {
 
     echo "Waiting for PostgreSQL ${label} at ${host}:${port} (max ${max_attempts} attempts)..."
     while [ $attempt -le $max_attempts ]; do
-        if python -c "
-import socket
+        # Use Python socket check, but capture the error for diagnostics
+        error=$(python -c "
+import socket, sys
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.settimeout(3)
 try:
     s.connect(('${host}', ${port}))
     s.close()
-    exit(0)
-except:
-    exit(1)
-" 2>/dev/null; then
+    sys.exit(0)
+except Exception as e:
+    print(str(e), file=sys.stderr)
+    sys.exit(1)
+" 2>&1)
+        if [ $? -eq 0 ]; then
             echo "PostgreSQL ${label} is ready at ${host}:${port}"
             return 0
         fi
-        echo "  Attempt ${attempt}/${max_attempts} - waiting..."
+        echo "  Attempt ${attempt}/${max_attempts} - ${error:-connection failed}"
         sleep 2
         attempt=$((attempt + 1))
     done
