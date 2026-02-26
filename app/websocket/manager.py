@@ -74,7 +74,11 @@ class ConnectionManager:
         """
         await websocket.accept()
         logger.info(
-            "Connection accepted for user %s (%s %s) in tenant '%s'", user_id, first_name, last_name, tenant_id
+            "Connection accepted for user %s (%s %s) in tenant '%s'",
+            user_id,
+            first_name,
+            last_name,
+            tenant_id,
         )
 
         # Immediately send a test message to verify connection is alive
@@ -127,9 +131,7 @@ class ConnectionManager:
 
         # Check if connection is still open before sending
         if websocket.client_state.name != "CONNECTED":
-            logger.warning(
-                "WebSocket not connected! State: %s", websocket.client_state.name
-            )
+            logger.warning("WebSocket not connected! State: %s", websocket.client_state.name)
             await self.disconnect(tenant_id, user_id)
             return
 
@@ -166,7 +168,9 @@ class ConnectionManager:
                 user = self._connections[tenant_id].pop(user_id, None)
                 logger.debug("Disconnected user %s from tenant '%s'", user_id, tenant_id)
                 logger.debug(
-                    "Remaining connections in tenant '%s': %d", tenant_id, len(self._connections.get(tenant_id, {}))
+                    "Remaining connections in tenant '%s': %d",
+                    tenant_id,
+                    len(self._connections.get(tenant_id, {})),
                 )
 
                 # Clean up empty tenant rooms
@@ -222,7 +226,11 @@ class ConnectionManager:
 
         recipients = [uid for uid in connections.keys() if uid != exclude_user]
         logger.debug(
-            "Broadcasting %s to tenant '%s', recipients: %s (excluding: %s)", message.get('type'), tenant_id, recipients, exclude_user
+            "Broadcasting %s to tenant '%s', recipients: %s (excluding: %s)",
+            message.get("type"),
+            tenant_id,
+            recipients,
+            exclude_user,
         )
 
         for user_id, connected_user in connections.items():
@@ -261,7 +269,12 @@ class ConnectionManager:
             summary: Optional human-readable summary
         """
         logger.debug(
-            "broadcast_change called: %s:%s by user %s (%s) in tenant '%s'", entity_type, action, user_id, user_name, tenant_id
+            "broadcast_change called: %s:%s by user %s (%s) in tenant '%s'",
+            entity_type,
+            action,
+            user_id,
+            user_name,
+            tenant_id,
         )
 
         await self.broadcast_to_tenant(

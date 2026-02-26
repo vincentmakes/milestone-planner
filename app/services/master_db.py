@@ -288,7 +288,9 @@ class MasterDatabase:
         except Exception as e:
             logger.warning("Auto-migration failed: %s", e)
             logger.warning("The app will continue, but organization features may not work.")
-            logger.warning("Run manually: python migrations/run_migration_master.py add_organizations")
+            logger.warning(
+                "Run manually: python migrations/run_migration_master.py add_organizations"
+            )
 
     async def close(self):
         """Close the database connection."""

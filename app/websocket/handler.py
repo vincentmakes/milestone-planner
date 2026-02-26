@@ -120,7 +120,10 @@ def get_tenant_from_scope(websocket: WebSocket) -> str:
     path = websocket.scope.get("path", "/ws")
 
     logger.debug(
-        "get_tenant_from_scope: path=%s, state keys=%s, tenant_slug=%s", path, list(state.keys()), tenant_slug
+        "get_tenant_from_scope: path=%s, state keys=%s, tenant_slug=%s",
+        path,
+        list(state.keys()),
+        tenant_slug,
     )
 
     if tenant_slug:
@@ -276,7 +279,7 @@ async def handle_websocket_connection(websocket: WebSocket, tenant_slug: str | N
                 logger.warning("Invalid JSON from user %s", user_id)
 
     except WebSocketDisconnect as e:
-        logger.info("Disconnected: user %s, code=%s", user_id, getattr(e, 'code', 'N/A'))
+        logger.info("Disconnected: user %s, code=%s", user_id, getattr(e, "code", "N/A"))
         await manager.disconnect(tenant_id, user_id)
     except Exception as e:
         logger.error("Error for user %s: %s", user_id, e)

@@ -395,9 +395,15 @@ async def get_project(
     # Log all query times
     logger.debug(
         "PROJECT %s: q1=%dms q2=%dms q3=%dms q4=%dms q5=%dms q6=%dms q7=%dms TOTAL=%dms",
-        project_id, int((t1 - t0) * 1000), int((t2 - t1) * 1000), int((t3 - t2) * 1000),
-        int((t4 - t3) * 1000), int((t5 - t4) * 1000), int((t6 - t5) * 1000),
-        int((t7 - t6) * 1000), int((t7 - t0) * 1000),
+        project_id,
+        int((t1 - t0) * 1000),
+        int((t2 - t1) * 1000),
+        int((t3 - t2) * 1000),
+        int((t4 - t3) * 1000),
+        int((t5 - t4) * 1000),
+        int((t6 - t5) * 1000),
+        int((t7 - t6) * 1000),
+        int((t7 - t0) * 1000),
     )
 
     # Convert to list with attributes
@@ -491,8 +497,11 @@ async def get_project(
 
     logger.debug(
         "PROJECT %s TIMING: q6=%dms q7=%dms proc=%dms TOTAL=%dms",
-        project_id, int((t6 - t5) * 1000), int((t7 - t6) * 1000),
-        int((t8 - t7) * 1000), int((t8 - t0) * 1000),
+        project_id,
+        int((t6 - t5) * 1000),
+        int((t7 - t6) * 1000),
+        int((t8 - t7) * 1000),
+        int((t8 - t0) * 1000),
     )
 
     return {

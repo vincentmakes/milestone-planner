@@ -695,7 +695,9 @@ async def sso_callback(
         token_response = await client.post(token_url, data=token_data)
 
         if token_response.status_code != 200:
-            logger.error("Token exchange failed: %s %s", token_response.status_code, token_response.text)
+            logger.error(
+                "Token exchange failed: %s %s", token_response.status_code, token_response.text
+            )
             return RedirectResponse(
                 url="/?sso_error=Failed+to+exchange+authorization+code", status_code=302
             )

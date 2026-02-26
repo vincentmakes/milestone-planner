@@ -100,7 +100,9 @@ class TenantMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
         # Debug: log every request type
-        logger.debug("TenantMiddleware request: type=%s, path=%s", scope['type'], scope.get('path', 'N/A'))
+        logger.debug(
+            "TenantMiddleware request: type=%s, path=%s", scope["type"], scope.get("path", "N/A")
+        )
 
         # SKIP WebSocket connections - they handle tenant resolution themselves
         # This avoids ASGI scope/state issues with WebSocket connections
@@ -135,7 +137,9 @@ class TenantMiddleware:
         # Debug logging
         if scope["type"] == "websocket":
             logger.debug(
-                "TenantMiddleware WebSocket tenant extraction: slug=%s, remaining=%s", slug, remaining_path
+                "TenantMiddleware WebSocket tenant extraction: slug=%s, remaining=%s",
+                slug,
+                remaining_path,
             )
 
         if not slug:
@@ -221,10 +225,14 @@ class TenantMiddleware:
 
             # Debug logging for WebSocket
             if scope["type"] == "websocket":
-                logger.debug("TenantMiddleware WebSocket path rewritten: %s -> %s", path, remaining_path)
-                logger.debug("TenantMiddleware WebSocket new_scope path: %s", new_scope.get('path'))
                 logger.debug(
-                    "TenantMiddleware WebSocket state: tenant_slug=%s, has_engine=%s", state.get('tenant_slug'), state.get('tenant_engine') is not None
+                    "TenantMiddleware WebSocket path rewritten: %s -> %s", path, remaining_path
+                )
+                logger.debug("TenantMiddleware WebSocket new_scope path: %s", new_scope.get("path"))
+                logger.debug(
+                    "TenantMiddleware WebSocket state: tenant_slug=%s, has_engine=%s",
+                    state.get("tenant_slug"),
+                    state.get("tenant_engine") is not None,
                 )
 
             # Also update root_path if needed for URL generation

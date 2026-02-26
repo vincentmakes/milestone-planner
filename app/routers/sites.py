@@ -447,7 +447,9 @@ async def fetch_and_store_bank_holidays(
     country_code = site.country_code
     region_code = site.region_code
 
-    logger.info("Fetching holidays for site %s, country=%s, region=%s", site_id, country_code, region_code)
+    logger.info(
+        "Fetching holidays for site %s, country=%s, region=%s", site_id, country_code, region_code
+    )
 
     settings = get_settings()
     current_year = datetime.now().year
@@ -496,7 +498,10 @@ async def fetch_and_store_bank_holidays(
 
                 if response.status_code != 200:
                     logger.warning(
-                        "Failed to fetch holidays for %s/%s: HTTP %s", country_code, year, response.status_code
+                        "Failed to fetch holidays for %s/%s: HTTP %s",
+                        country_code,
+                        year,
+                        response.status_code,
                     )
                     # Debug: show response headers and body for non-200 responses
                     logger.debug("  Response headers: %s", dict(response.headers))
@@ -508,7 +513,9 @@ async def fetch_and_store_bank_holidays(
                     continue
 
                 holidays_data = response.json()
-                logger.info("Received %d holidays for %s/%s", len(holidays_data), country_code, year)
+                logger.info(
+                    "Received %d holidays for %s/%s", len(holidays_data), country_code, year
+                )
 
                 for h in holidays_data:
                     # Filter by region if specified
@@ -542,7 +549,9 @@ async def fetch_and_store_bank_holidays(
                         # Don't rollback the whole transaction, just skip this one
                         # It might be a duplicate
                         await db.rollback()
-                        logger.debug("Skipped holiday %s %s: %s", h['date'], h.get('localName', h['name']), e)
+                        logger.debug(
+                            "Skipped holiday %s %s: %s", h["date"], h.get("localName", h["name"]), e
+                        )
                         continue
 
             except httpx.RequestError as e:

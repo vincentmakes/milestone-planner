@@ -146,7 +146,11 @@ class TenantConnectionManager:
         )
 
         logger.info(
-            "Connecting to tenant DB: %s as %s@%s:%s", tenant.database_name, tenant.database_user, host, port
+            "Connecting to tenant DB: %s as %s@%s:%s",
+            tenant.database_name,
+            tenant.database_user,
+            host,
+            port,
         )
 
         # Create engine
@@ -215,7 +219,11 @@ class TenantConnectionManager:
         )
 
         logger.info(
-            "Connecting to tenant DB: %s as %s@%s:%s", tenant_info['database_name'], tenant_info['database_user'], host, port
+            "Connecting to tenant DB: %s as %s@%s:%s",
+            tenant_info["database_name"],
+            tenant_info["database_user"],
+            host,
+            port,
         )
 
         # Create engine
