@@ -90,10 +90,9 @@ class MasterDatabase:
                 break
             except Exception as e:
                 if attempt < max_retries:
-                    wait = 2 ** attempt  # 2, 4, 8, 16, 32 seconds
+                    wait = 2**attempt  # 2, 4, 8, 16, 32 seconds
                     logger.warning(
-                        "Master DB: Connection failed (attempt %d/%d): %s. "
-                        "Retrying in %ds...",
+                        "Master DB: Connection failed (attempt %d/%d): %s. Retrying in %ds...",
                         attempt,
                         max_retries,
                         e,
