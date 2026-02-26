@@ -3,7 +3,7 @@ Shared test fixtures for the Milestone API test suite.
 """
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -59,9 +59,11 @@ async def app_client(test_settings, mock_db_session):
 
         # Override the database dependency to use our mock
         from app.database import get_db, get_db_readonly
+        from app.services.master_db import get_master_db
 
         app.dependency_overrides[get_db] = lambda: mock_db_session
         app.dependency_overrides[get_db_readonly] = lambda: mock_db_session
+        app.dependency_overrides[get_master_db] = lambda: mock_db_session
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:

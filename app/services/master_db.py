@@ -348,6 +348,13 @@ master_db = MasterDatabase()
 
 
 async def get_master_db() -> AsyncGenerator[AsyncSession, None]:
-    """Dependency for getting master database session."""
-    async with master_db.session() as session:
+    """FastAPI dependency for getting master database session.
+
+    Unlike ``master_db.session()`` (which auto-commits), this dependency
+    yields a plain session so route handlers control their own transaction
+    lifecycle.  This avoids double-commit and ensures that HTTPExceptions
+    raised by the handler are not intercepted by an ``except Exception``
+    block during dependency cleanup.
+    """
+    async with master_db.session_factory() as session:
         yield session
