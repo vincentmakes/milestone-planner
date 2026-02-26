@@ -17,17 +17,30 @@ if [ ! -d "$FRONTEND_DIST" ]; then
     exit 1
 fi
 
-# Remove old vanilla JS files completely
-echo "Removing old vanilla JS files..."
-rm -rf "$PUBLIC_DIR/admin" 2>/dev/null || true
-rm -rf "$PUBLIC_DIR/css" 2>/dev/null || true
-rm -rf "$PUBLIC_DIR/js" 2>/dev/null || true
-rm -rf "$PUBLIC_DIR/assets" 2>/dev/null || true
-rm -f "$PUBLIC_DIR/index.html" 2>/dev/null || true
+# Verify the build has index.html before touching public/
+if [ ! -f "$FRONTEND_DIST/index.html" ]; then
+    echo "Error: frontend/dist/index.html not found. Build may have failed."
+    exit 1
+fi
 
-# Copy React build to public
-echo "Copying React build..."
-cp -r "$FRONTEND_DIST"/* "$PUBLIC_DIR/"
+# Deploy atomically: copy to temp dir, verify, then swap
+TEMP_DIR="$SCRIPT_DIR/.public_deploy_tmp"
+rm -rf "$TEMP_DIR"
+mkdir -p "$TEMP_DIR"
+
+echo "Copying React build to staging directory..."
+cp -r "$FRONTEND_DIST"/* "$TEMP_DIR/"
+
+# Preserve non-build assets (e.g., images uploaded at runtime)
+if [ -d "$PUBLIC_DIR/img" ] && [ ! -d "$TEMP_DIR/img" ]; then
+    cp -r "$PUBLIC_DIR/img" "$TEMP_DIR/img"
+fi
+
+# Swap: remove old public contents and move new ones in
+echo "Swapping into public/..."
+rm -rf "$PUBLIC_DIR/admin" "$PUBLIC_DIR/css" "$PUBLIC_DIR/js" "$PUBLIC_DIR/assets" "$PUBLIC_DIR/index.html" 2>/dev/null || true
+cp -r "$TEMP_DIR"/* "$PUBLIC_DIR/"
+rm -rf "$TEMP_DIR"
 
 echo ""
 echo "=== Deployment Complete ==="

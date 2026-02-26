@@ -41,7 +41,11 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
     modalContext,
     closeModal
   } = useUIStore();
-  const { projects, staff, equipment, currentSite, setProjects } = useAppStore();
+  const projects = useAppStore((s) => s.projects);
+  const staff = useAppStore((s) => s.staff);
+  const equipment = useAppStore((s) => s.equipment);
+  const currentSite = useAppStore((s) => s.currentSite);
+  const setProjects = useAppStore((s) => s.setProjects);
 
   const isOpen = isStaff
     ? activeModal === 'staffAssignment'

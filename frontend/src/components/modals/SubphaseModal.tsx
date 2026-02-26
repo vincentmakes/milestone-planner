@@ -291,7 +291,8 @@ async function cascadeDatesUpward(
 
 export function SubphaseModal() {
   const { activeModal, editingSubphase, modalContext, closeModal } = useUIStore();
-  const { projects, setProjects } = useAppStore();
+  const projects = useAppStore((s) => s.projects);
+  const setProjects = useAppStore((s) => s.setProjects);
   const { ensurePhaseExpanded, ensureSubphaseExpanded } = useViewStore();
   
   const isOpen = activeModal === 'subphase';

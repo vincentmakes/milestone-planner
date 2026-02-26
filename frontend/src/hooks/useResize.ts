@@ -35,7 +35,8 @@ interface ResizeData {
 
 export function useResize() {
   const { isResizing, resizeEdge, resizeItemId, resizeItemType, startResize, endResize, showResizeIndicator, hideIndicator } = useUIStore();
-  const { projects, setProjects } = useAppStore();
+  const projects = useAppStore((s) => s.projects);
+  const setProjects = useAppStore((s) => s.setProjects);
   const { cellWidth, currentView, viewMode } = useViewStore();
   const { saveState } = useUndoStore();
   

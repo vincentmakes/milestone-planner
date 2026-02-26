@@ -20,7 +20,9 @@ import styles from './BankHolidayModal.module.css';
 
 export function BankHolidayModal() {
   const { activeModal, closeModal } = useUIStore();
-  const { currentSite, bankHolidays, setBankHolidays } = useAppStore();
+  const currentSite = useAppStore((s) => s.currentSite);
+  const bankHolidays = useAppStore((s) => s.bankHolidays);
+  const setBankHolidays = useAppStore((s) => s.setBankHolidays);
   
   const isOpen = activeModal === 'bankHoliday';
   

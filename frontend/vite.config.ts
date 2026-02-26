@@ -50,7 +50,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    sourcemap: true,
+    sourcemap: !!process.env.VITE_SOURCEMAP,
   },
   server: {
     port: 3333,

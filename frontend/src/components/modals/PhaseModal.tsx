@@ -80,7 +80,8 @@ async function cascadeProjectDates(
 
 export function PhaseModal() {
   const { activeModal, editingPhase, modalContext, closeModal } = useUIStore();
-  const { projects, setProjects } = useAppStore();
+  const projects = useAppStore((s) => s.projects);
+  const setProjects = useAppStore((s) => s.setProjects);
   const { ensureProjectExpanded } = useViewStore();
   
   const isOpen = activeModal === 'phase';

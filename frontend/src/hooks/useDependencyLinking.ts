@@ -44,7 +44,8 @@ export function useDependencyLinking() {
     cancelLinking 
   } = useUIStore();
   
-  const { projects, setProjects } = useAppStore();
+  const projects = useAppStore((s) => s.projects);
+  const setProjects = useAppStore((s) => s.setProjects);
 
   // Find a phase by ID across all projects
   const findPhase = useCallback((phaseId: number): { project: typeof projects[0], phase: Phase } | null => {

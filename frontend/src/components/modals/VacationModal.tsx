@@ -189,7 +189,8 @@ const ModalFooter = memo(function ModalFooter({
 
 export function VacationModal() {
   const { activeModal, editingVacation, modalContext, closeModal } = useUIStore();
-  const { staff, setVacations } = useAppStore();
+  const staff = useAppStore((s) => s.staff);
+  const setVacations = useAppStore((s) => s.setVacations);
   const canManageResources = useAppStore(selectCanManageResources);
   
   const isOpen = activeModal === 'vacation';
