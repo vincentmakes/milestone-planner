@@ -10,10 +10,11 @@ import type { Equipment } from '@/types';
  * @param includeAllSites - If true, return equipment from all sites
  */
 export async function getEquipment(includeAllSites = false): Promise<Equipment[]> {
-  const url = includeAllSites 
+  const url = includeAllSites
     ? '/api/equipment?includeAllSites=true'
     : '/api/equipment';
-  return apiGet<Equipment[]>(url);
+  const response = await apiGet<{ items: Equipment[]; total: number; offset: number; limit: number }>(url);
+  return response.items;
 }
 
 /**
