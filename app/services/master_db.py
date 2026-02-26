@@ -10,6 +10,7 @@ Handles connections to the admin/master database that stores:
 This is separate from tenant databases.
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -72,13 +73,40 @@ class MasterDatabase:
 
         Verifies connectivity and ensures the schema is up to date
         (e.g., organizations table and related tenant columns).
+
+        Retries up to 5 times with exponential backoff if PostgreSQL
+        is not yet ready (e.g., container still starting).
         """
         if self._initialized:
             return
 
-        # Verify we can connect
-        async with self.engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
+        max_retries = 5
+        for attempt in range(1, max_retries + 1):
+            try:
+                # Verify we can connect
+                async with self.engine.connect() as conn:
+                    await conn.execute(text("SELECT 1"))
+                logger.info("Master DB: Connection verified (attempt %d)", attempt)
+                break
+            except Exception as e:
+                if attempt < max_retries:
+                    wait = 2 ** attempt  # 2, 4, 8, 16, 32 seconds
+                    logger.warning(
+                        "Master DB: Connection failed (attempt %d/%d): %s. "
+                        "Retrying in %ds...",
+                        attempt,
+                        max_retries,
+                        e,
+                        wait,
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error(
+                        "Master DB: Connection failed after %d attempts: %s",
+                        max_retries,
+                        e,
+                    )
+                    raise
 
         # Apply any missing schema migrations
         await self._apply_pending_migrations()
@@ -93,48 +121,56 @@ class MasterDatabase:
         the organizations feature was added. It checks for missing tables
         and columns and applies them idempotently.
 
-        Errors are caught and logged so the app can still start even if
-        migrations fail (e.g., due to insufficient DB permissions).
+        Critical tables (admin_users, admin_sessions) must succeed or the
+        app will not start. Optional migrations (organizations, SSO) are
+        caught and logged so the app can still start if they fail.
         """
+        # --- Critical tables: admin_users and admin_sessions ---
+        # These are required for the app to function. Errors here are fatal.
+        async with self.engine.begin() as conn:
+            # Ensure uuid-ossp extension exists
+            await conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
+
+            # Ensure admin_users table exists (needed for login)
+            await conn.execute(
+                text(
+                    "CREATE TABLE IF NOT EXISTS admin_users ("
+                    "  id SERIAL PRIMARY KEY,"
+                    "  email VARCHAR(255) NOT NULL UNIQUE,"
+                    "  password_hash TEXT NOT NULL,"
+                    "  name VARCHAR(255),"
+                    "  role VARCHAR(20) DEFAULT 'admin',"
+                    "  active INTEGER DEFAULT 1,"
+                    "  must_change_password INTEGER DEFAULT 0,"
+                    "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                    "  last_login TIMESTAMP"
+                    ")"
+                )
+            )
+
+            # Ensure admin_sessions table exists (needed for login)
+            await conn.execute(
+                text(
+                    "CREATE TABLE IF NOT EXISTS admin_sessions ("
+                    "  sid TEXT PRIMARY KEY,"
+                    "  sess TEXT NOT NULL,"
+                    "  expired BIGINT NOT NULL"
+                    ")"
+                )
+            )
+            await conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_admin_sessions_expired "
+                    "ON admin_sessions(expired)"
+                )
+            )
+
+        logger.info("Master DB: Core tables verified (admin_users, admin_sessions)")
+
+        # --- Optional migrations: organizations, SSO, tenant columns ---
+        # These can fail without preventing the app from starting.
         try:
             async with self.engine.begin() as conn:
-                # Ensure uuid-ossp extension exists
-                await conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
-
-                # Ensure admin_users table exists (needed for login)
-                await conn.execute(
-                    text(
-                        "CREATE TABLE IF NOT EXISTS admin_users ("
-                        "  id SERIAL PRIMARY KEY,"
-                        "  email VARCHAR(255) NOT NULL UNIQUE,"
-                        "  password_hash TEXT NOT NULL,"
-                        "  name VARCHAR(255),"
-                        "  role VARCHAR(20) DEFAULT 'admin',"
-                        "  active INTEGER DEFAULT 1,"
-                        "  must_change_password INTEGER DEFAULT 0,"
-                        "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
-                        "  last_login TIMESTAMP"
-                        ")"
-                    )
-                )
-
-                # Ensure admin_sessions table exists (needed for login)
-                await conn.execute(
-                    text(
-                        "CREATE TABLE IF NOT EXISTS admin_sessions ("
-                        "  sid TEXT PRIMARY KEY,"
-                        "  sess TEXT NOT NULL,"
-                        "  expired BIGINT NOT NULL"
-                        ")"
-                    )
-                )
-                await conn.execute(
-                    text(
-                        "CREATE INDEX IF NOT EXISTS idx_admin_sessions_expired "
-                        "ON admin_sessions(expired)"
-                    )
-                )
-
                 # Check if organizations table exists
                 result = await conn.execute(
                     text(
@@ -286,7 +322,7 @@ class MasterDatabase:
                     logger.info("Master DB: must_change_password column added")
 
         except Exception as e:
-            logger.warning("Auto-migration failed: %s", e)
+            logger.warning("Auto-migration for optional tables failed: %s", e)
             logger.warning("The app will continue, but organization features may not work.")
             logger.warning(
                 "Run manually: python migrations/run_migration_master.py add_organizations"

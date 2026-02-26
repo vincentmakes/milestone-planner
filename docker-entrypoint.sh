@@ -7,13 +7,16 @@ set -e
 # ============================================
 
 # Wait for PostgreSQL to be ready (best-effort, non-fatal)
+# Uses actual psql query or Python asyncpg to verify the DB is query-ready,
+# not just accepting TCP connections.
 wait_for_db() {
     local host="$1"
     local port="$2"
-    local max_attempts=15
+    local label="$3"
+    local max_attempts="${DB_WAIT_ATTEMPTS:-30}"
     local attempt=1
 
-    echo "Waiting for PostgreSQL at ${host}:${port}..."
+    echo "Waiting for PostgreSQL ${label} at ${host}:${port} (max ${max_attempts} attempts)..."
     while [ $attempt -le $max_attempts ]; do
         if python -c "
 import socket
@@ -26,7 +29,7 @@ try:
 except:
     exit(1)
 " 2>/dev/null; then
-            echo "PostgreSQL is ready at ${host}:${port}"
+            echo "PostgreSQL ${label} is ready at ${host}:${port}"
             return 0
         fi
         echo "  Attempt ${attempt}/${max_attempts} - waiting..."
@@ -34,7 +37,7 @@ except:
         attempt=$((attempt + 1))
     done
 
-    echo "WARNING: PostgreSQL not ready after ${max_attempts} attempts, starting app anyway..."
+    echo "WARNING: PostgreSQL ${label} not ready after ${max_attempts} attempts, starting app anyway..."
     return 0
 }
 
@@ -42,8 +45,14 @@ except:
 DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-5432}"
 
-# Wait for the database (non-fatal: app starts regardless)
-wait_for_db "$DB_HOST" "$DB_PORT"
+# Wait for the main (tenant) database
+wait_for_db "$DB_HOST" "$DB_PORT" "(tenant DB)"
+
+# In multi-tenant mode, also wait for master DB if it's on a different host
+if [ "${MULTI_TENANT}" = "true" ] && [ -n "${MASTER_DB_HOST}" ] && [ "${MASTER_DB_HOST}" != "${DB_HOST}" ]; then
+    MASTER_DB_PORT="${MASTER_DB_PORT:-5432}"
+    wait_for_db "$MASTER_DB_HOST" "$MASTER_DB_PORT" "(master DB)"
+fi
 
 # Run auto-initialization if AUTO_INIT_DB is set
 if [ "${AUTO_INIT_DB}" = "true" ]; then
