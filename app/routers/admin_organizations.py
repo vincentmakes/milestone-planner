@@ -16,10 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.organization import Organization, OrganizationSSOConfig
-from app.models.tenant import Tenant
-
-# Import admin auth dependency and helpers from admin sub-package
-from app.models.tenant import AdminUser
+from app.models.tenant import AdminUser, Tenant
 from app.routers.admin.auth import get_current_admin
 from app.routers.admin.tenants import add_audit_log
 from app.schemas.organization import (

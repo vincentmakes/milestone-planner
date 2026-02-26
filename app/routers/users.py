@@ -12,11 +12,10 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.middleware.auth import require_admin, require_superuser
-from app.schemas.base import PaginationParams
-from app.services.response_builders import build_skills_list, build_user_base, get_sorted_sites
 from app.models.site import Site
 from app.models.skill import Skill, UserSkill
 from app.models.user import User, UserSite
+from app.schemas.base import PaginationParams
 from app.schemas.user import (
     StaffCreate,
     StaffUpdate,
@@ -24,6 +23,7 @@ from app.schemas.user import (
     UserResponse,
 )
 from app.services.encryption import hash_user_password
+from app.services.response_builders import build_skills_list, build_user_base, get_sorted_sites
 
 router = APIRouter()
 

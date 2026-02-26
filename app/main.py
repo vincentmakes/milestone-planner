@@ -10,8 +10,6 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -21,6 +19,8 @@ from app import __version__
 from app.config import get_settings
 from app.database import close_db, init_db
 from app.schemas.base import serialize_date_simple, serialize_datetime_js
+
+logger = logging.getLogger(__name__)
 
 
 def custom_json_serializer(obj: Any) -> Any:

@@ -14,8 +14,6 @@ User Management (/api/users routes). Staff = non-admin users assigned to sites.
 
 from datetime import datetime, timedelta
 
-from app.services.response_builders import build_skills_list, get_max_capacity
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +28,7 @@ from app.schemas.user import (
     StaffDetailResponse,
     StaffResponse,
 )
+from app.services.response_builders import build_skills_list, get_max_capacity
 
 router = APIRouter()
 

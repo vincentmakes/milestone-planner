@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, get_db_readonly
 from app.middleware.auth import get_current_user, require_superuser
-from app.schemas.base import PaginationParams
 from app.models.assignment import (
     PhaseStaffAssignment,
     ProjectAssignment,
@@ -23,13 +22,13 @@ from app.models.equipment import Equipment, EquipmentAssignment
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.site import Site
 from app.models.user import User
+from app.schemas.base import PaginationParams
 from app.schemas.project import (
     PhaseCreate,
     PhaseReorderRequest,
     PhaseUpdate,
     ProjectCreate,
     ProjectDetailResponse,
-    ProjectListResponse,
     ProjectUpdate,
     SubphaseCreate,
     SubphaseReorderRequest,

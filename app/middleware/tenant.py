@@ -10,8 +10,6 @@ import re
 from datetime import datetime
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from starlette.responses import JSONResponse
@@ -20,6 +18,8 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from app.models.tenant import Tenant
 from app.services.master_db import master_db
 from app.services.tenant_manager import tenant_connection_manager
+
+logger = logging.getLogger(__name__)
 
 # Simple in-memory cache for tenant lookups
 # Store primitive values, not ORM objects, to avoid detached session issues

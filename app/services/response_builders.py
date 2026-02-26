@@ -10,8 +10,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.models.user import User
     from app.models.site import Site
+    from app.models.user import User
 
 
 def get_sorted_sites(user: User) -> list[Site]:

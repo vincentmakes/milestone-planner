@@ -3,6 +3,7 @@ Database configuration and session management.
 Uses async SQLAlchemy for PostgreSQL connections.
 """
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -16,8 +17,6 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import get_settings
-
-import logging
 
 logger = logging.getLogger(__name__)
 
