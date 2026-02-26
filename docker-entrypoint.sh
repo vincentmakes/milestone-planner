@@ -10,31 +10,35 @@ set -e
 wait_for_db() {
     local host="$1"
     local port="$2"
-    local max_attempts=15
+    local label="$3"
+    local max_attempts="${DB_WAIT_ATTEMPTS:-30}"
     local attempt=1
 
-    echo "Waiting for PostgreSQL at ${host}:${port}..."
+    echo "Waiting for PostgreSQL ${label} at ${host}:${port} (max ${max_attempts} attempts)..."
     while [ $attempt -le $max_attempts ]; do
-        if python -c "
-import socket
+        # Use Python socket check, but capture the error for diagnostics
+        error=$(python -c "
+import socket, sys
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.settimeout(3)
 try:
     s.connect(('${host}', ${port}))
     s.close()
-    exit(0)
-except:
-    exit(1)
-" 2>/dev/null; then
-            echo "PostgreSQL is ready at ${host}:${port}"
+    sys.exit(0)
+except Exception as e:
+    print(str(e), file=sys.stderr)
+    sys.exit(1)
+" 2>&1)
+        if [ $? -eq 0 ]; then
+            echo "PostgreSQL ${label} is ready at ${host}:${port}"
             return 0
         fi
-        echo "  Attempt ${attempt}/${max_attempts} - waiting..."
+        echo "  Attempt ${attempt}/${max_attempts} - ${error:-connection failed}"
         sleep 2
         attempt=$((attempt + 1))
     done
 
-    echo "WARNING: PostgreSQL not ready after ${max_attempts} attempts, starting app anyway..."
+    echo "WARNING: PostgreSQL ${label} not ready after ${max_attempts} attempts, starting app anyway..."
     return 0
 }
 
@@ -42,8 +46,14 @@ except:
 DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-5432}"
 
-# Wait for the database (non-fatal: app starts regardless)
-wait_for_db "$DB_HOST" "$DB_PORT"
+# Wait for the main (tenant) database
+wait_for_db "$DB_HOST" "$DB_PORT" "(tenant DB)"
+
+# In multi-tenant mode, also wait for master DB if it's on a different host
+if [ "${MULTI_TENANT}" = "true" ] && [ -n "${MASTER_DB_HOST}" ] && [ "${MASTER_DB_HOST}" != "${DB_HOST}" ]; then
+    MASTER_DB_PORT="${MASTER_DB_PORT:-5432}"
+    wait_for_db "$MASTER_DB_HOST" "$MASTER_DB_PORT" "(master DB)"
+fi
 
 # Run auto-initialization if AUTO_INIT_DB is set
 if [ "${AUTO_INIT_DB}" = "true" ]; then

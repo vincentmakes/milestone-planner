@@ -96,30 +96,31 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Proxy Configuration: None")
 
     # Initialize database connections
+    # Always initialize master DB — admin routes are available in both modes
+    from app.services.master_db import master_db
+
+    await master_db.init_db()
+    await master_db.verify_admin_exists()
+    logger.info("Master database initialized")
+
     if settings.multi_tenant:
-        # Multi-tenant: only initialize master DB (tenant DBs are provisioned on demand)
-        from app.services.master_db import master_db
         from app.services.tenant_manager import tenant_connection_manager
 
-        await master_db.init_db()
-        await master_db.verify_admin_exists()
         tenant_connection_manager.start_cleanup_task()
-        logger.info("Master database initialized")
     else:
-        # Single-tenant: connect to the default tenant database
+        # Single-tenant: also connect to the default tenant database
         await init_db()
 
     yield
 
     # Shutdown
     await close_db()
+    await master_db.close()
 
     if settings.multi_tenant:
-        from app.services.master_db import master_db
         from app.services.tenant_manager import tenant_connection_manager
 
         await tenant_connection_manager.close_all()
-        await master_db.close()
 
     logger.info("Milestone API shutdown complete")
 
