@@ -27,7 +27,7 @@ export function AdminApp() {
         }
       } catch (err) {
         // Not authenticated
-        console.log('Admin not authenticated');
+        // Not authenticated - no action needed
       } finally {
         setIsLoading(false);
       }

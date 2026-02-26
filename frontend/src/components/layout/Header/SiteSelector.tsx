@@ -1,4 +1,5 @@
 import { useAppStore } from '@/stores/appStore';
+import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { getBankHolidays, buildHolidayDateSet, getCustomColumnsWithValues, getCompanyEvents, buildEventDateSet } from '@/api';
 import styles from './SiteSelector.module.css';
 
@@ -8,9 +9,9 @@ export function SiteSelector() {
   const setCurrentSite = useAppStore((s) => s.setCurrentSite);
   const setBankHolidays = useAppStore((s) => s.setBankHolidays);
   const setCompanyEvents = useAppStore((s) => s.setCompanyEvents);
-  const setCustomColumns = useAppStore((s) => s.setCustomColumns);
-  const setCustomColumnValues = useAppStore((s) => s.setCustomColumnValues);
-  const clearAllCustomColumnFilters = useAppStore((s) => s.clearAllCustomColumnFilters);
+  const setCustomColumns = useCustomColumnStore((s) => s.setCustomColumns);
+  const setCustomColumnValues = useCustomColumnStore((s) => s.setCustomColumnValues);
+  const clearAllCustomColumnFilters = useCustomColumnStore((s) => s.clearAllCustomColumnFilters);
   const currentUser = useAppStore((s) => s.currentUser);
 
   // Filter sites based on user's assigned sites (if not admin)
@@ -51,7 +52,6 @@ export function SiteSelector() {
         const customColumnsData = await getCustomColumnsWithValues(site.id);
         setCustomColumns(customColumnsData.columns);
         setCustomColumnValues(customColumnsData.values);
-        console.log('[SiteSelector] Loaded custom columns for site:', site.name, customColumnsData.columns.length);
       } catch (err) {
         console.error('[SiteSelector] Failed to load custom columns:', err);
       }

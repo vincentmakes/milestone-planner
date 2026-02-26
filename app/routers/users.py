@@ -6,12 +6,14 @@ Matches the Node.js API at /api/users exactly.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.middleware.auth import require_admin, require_superuser
+from app.schemas.base import PaginationParams
+from app.services.response_builders import build_skills_list, build_user_base, get_sorted_sites
 from app.models.site import Site
 from app.models.skill import Skill, UserSkill
 from app.models.user import User, UserSite
@@ -28,88 +30,70 @@ router = APIRouter()
 
 def build_user_list_response(user: User) -> dict:
     """Build user response for list view (includes job_title, skills, and site_names)."""
-    sites = user.sites if hasattr(user, "sites") and user.sites else []
-    # Sort by site ID to match Node.js behavior
-    sorted_sites = sorted(sites, key=lambda s: s.id)
-
-    # Build skills list
-    skills = []
-    if hasattr(user, "skills") and user.skills:
-        skills = [
-            {"id": skill.id, "name": skill.name, "color": skill.color} for skill in user.skills
-        ]
-
+    sorted_sites = get_sorted_sites(user)
     return {
-        "id": user.id,
-        "email": user.email,
-        "first_name": user.first_name,
-        "last_name": user.last_name,
-        "job_title": user.job_title,
-        "role": user.role,
-        "max_capacity": user.max_capacity if hasattr(user, "max_capacity") else 100,
-        "active": user.active,
+        **build_user_base(user),
         "is_system": user.is_system if user.is_system is not None else 0,
         "created_at": user.created_at,
         "site_ids": [s.id for s in sorted_sites],
         "site_names": [s.name for s in sorted_sites],
-        "skills": skills,
+        "skills": build_skills_list(user),
     }
 
 
 def build_user_detail_response(user: User) -> dict:
     """Build user response for detail view (has sites array, no site_names)."""
-    sites = user.sites if hasattr(user, "sites") and user.sites else []
-
-    # Build skills list
-    skills = []
-    if hasattr(user, "skills") and user.skills:
-        skills = [
-            {"id": skill.id, "name": skill.name, "color": skill.color} for skill in user.skills
-        ]
-
+    sorted_sites = get_sorted_sites(user)
     return {
-        "id": user.id,
-        "email": user.email,
-        "first_name": user.first_name,
-        "last_name": user.last_name,
-        "job_title": user.job_title,
-        "role": user.role,
-        "max_capacity": user.max_capacity if hasattr(user, "max_capacity") else 100,
-        "active": user.active,
+        **build_user_base(user),
         "is_system": user.is_system if user.is_system is not None else 0,
         "created_at": user.created_at,
-        "site_ids": [s.id for s in sites],
-        "sites": [{"id": s.id, "name": s.name} for s in sites],
-        "skills": skills,
+        "site_ids": [s.id for s in sorted_sites],
+        "sites": [{"id": s.id, "name": s.name} for s in sorted_sites],
+        "skills": build_skills_list(user),
     }
 
 
-@router.get("/users", response_model=list[UserResponse])
+@router.get("/users")
 async def get_users(
     include_disabled: bool = Query(False, alias="includeDisabled"),
+    pagination: PaginationParams = Depends(),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
     """
-    Get all users.
+    Get all users with pagination.
 
     Requires admin or superuser authentication.
     Matches: GET /api/users
     """
-    query = (
-        select(User)
-        .options(selectinload(User.sites))
-        .options(selectinload(User.skills))
-        .order_by(User.last_name, User.first_name)
-    )
+    base_query = select(User)
 
     if not include_disabled:
-        query = query.where(User.active == 1)
+        base_query = base_query.where(User.active == 1)
+
+    # Get total count
+    count_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
+    total = count_result.scalar() or 0
+
+    # Paginated query
+    query = (
+        base_query.options(selectinload(User.sites))
+        .options(selectinload(User.skills))
+        .order_by(User.last_name, User.first_name)
+        .offset(pagination.offset)
+        .limit(pagination.limit)
+    )
 
     result = await db.execute(query)
     users = result.unique().scalars().all()
 
-    return [build_user_list_response(u) for u in users]
+    return {
+        "items": [build_user_list_response(u) for u in users],
+        "total": total,
+        "offset": pagination.offset,
+        "limit": pagination.limit,
+    }
 
 
 @router.get("/users/{user_id}", response_model=UserDetailResponse)

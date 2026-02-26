@@ -9,6 +9,7 @@
 import { useCallback, useMemo, useEffect, useState, useRef } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import { createStaffAssignment, createEquipmentAssignment, loadAllProjects } from '@/api/endpoints/projects';
 import { format, addDays } from 'date-fns';
 import type { TimelineCell } from '../utils';
@@ -38,9 +39,9 @@ export function ResourceDropOverlay({
   const endResourceDrag = useUIStore((s) => s.endResourceDrag);
   const setProjects = useAppStore((s) => s.setProjects);
   const staff = useAppStore((s) => s.staff);
-  const ensureProjectExpanded = useAppStore((s) => s.ensureProjectExpanded);
-  const ensurePhaseExpanded = useAppStore((s) => s.ensurePhaseExpanded);
-  const ensureSubphaseExpanded = useAppStore((s) => s.ensureSubphaseExpanded);
+  const ensureProjectExpanded = useViewStore((s) => s.ensureProjectExpanded);
+  const ensurePhaseExpanded = useViewStore((s) => s.ensurePhaseExpanded);
+  const ensureSubphaseExpanded = useViewStore((s) => s.ensureSubphaseExpanded);
   const overlayRef = useRef<HTMLDivElement>(null);
   
   // Track position for preview bar

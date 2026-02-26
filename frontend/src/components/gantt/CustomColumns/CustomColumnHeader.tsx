@@ -5,7 +5,7 @@
 
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { updateCustomColumn } from '@/api';
-import { useAppStore } from '@/stores/appStore';
+import { useCustomColumnStore } from '@/stores/customColumnStore';
 import type { CustomColumn } from '@/types';
 import styles from './CustomColumnHeader.module.css';
 
@@ -24,10 +24,10 @@ export function CustomColumnHeader({
   const [isResizing, setIsResizing] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
   
-  const customColumnValues = useAppStore((s) => s.customColumnValues);
-  const customColumnFilters = useAppStore((s) => s.customColumnFilters);
-  const setCustomColumnFilter = useAppStore((s) => s.setCustomColumnFilter);
-  const clearCustomColumnFilter = useAppStore((s) => s.clearCustomColumnFilter);
+  const customColumnValues = useCustomColumnStore((s) => s.customColumnValues);
+  const customColumnFilters = useCustomColumnStore((s) => s.customColumnFilters);
+  const setCustomColumnFilter = useCustomColumnStore((s) => s.setCustomColumnFilter);
+  const clearCustomColumnFilter = useCustomColumnStore((s) => s.clearCustomColumnFilter);
   
   const activeFilter = customColumnFilters[column.id] || [];
   const hasActiveFilter = activeFilter.length > 0;

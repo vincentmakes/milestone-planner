@@ -225,7 +225,6 @@ export function useDependencyLinking() {
       
       // Check if dependency already exists
       if (currentDeps.some(d => d.id === fromItemId && d.type === depType)) {
-        console.log('Dependency already exists');
         return;
       }
 
@@ -387,13 +386,11 @@ export function useDependencyLinking() {
       
       // Save child updates to server
       if (childUpdates.length > 0) {
-        console.log(`Saving ${childUpdates.length} child updates from dependency creation`);
         await savePendingUpdates(childUpdates);
       }
       
       // Save parent updates to server
       if (parentUpdates.length > 0) {
-        console.log(`Saving ${parentUpdates.length} parent updates from dependency creation`);
         await savePendingUpdates(parentUpdates);
       }
 

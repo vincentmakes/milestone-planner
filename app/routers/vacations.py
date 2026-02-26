@@ -25,9 +25,7 @@ router = APIRouter()
 
 def build_vacation_response(vacation: Vacation, can_edit: bool = False) -> dict:
     """Build vacation response dict."""
-    staff_name = ""
-    if vacation.staff:
-        staff_name = f"{vacation.staff.first_name} {vacation.staff.last_name}".strip()
+    staff_name = vacation.staff.full_name if vacation.staff else ""
 
     return {
         "id": vacation.id,

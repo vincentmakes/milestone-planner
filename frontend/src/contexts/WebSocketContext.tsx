@@ -50,10 +50,8 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     pendingRefreshRef.current = true;
     
     try {
-      console.log('[WebSocket] Refreshing projects due to remote change...');
       const projects = await loadAllProjects();
       setProjects(projects);
-      console.log('[WebSocket] Projects refreshed:', projects.length);
     } catch (err) {
       console.error('[WebSocket] Failed to refresh projects:', err);
     } finally {
@@ -62,9 +60,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   }, [setProjects]);
   
   // Handle incoming changes - debounced refresh
-  const handleChangeReceived = useCallback((change: ChangePayload) => {
-    console.log('[WebSocket] Change received, scheduling refresh:', change.entity_type, change.entity_id);
-    
+  const handleChangeReceived = useCallback((_change: ChangePayload) => {
     // Clear any pending refresh
     if (refreshTimeoutRef.current) {
       clearTimeout(refreshTimeoutRef.current);

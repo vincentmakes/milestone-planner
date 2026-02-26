@@ -5,13 +5,14 @@
  */
 
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import styles from './StaffOverviewToggle.module.css';
 
 export function StaffOverviewToggle() {
-  const showStaffOverview = useAppStore((s) => s.showStaffOverview);
-  const toggleShowStaffOverview = useAppStore((s) => s.toggleShowStaffOverview);
+  const showStaffOverview = useViewStore((s) => s.showStaffOverview);
+  const toggleShowStaffOverview = useViewStore((s) => s.toggleShowStaffOverview);
   const currentUser = useAppStore((s) => s.currentUser);
-  const currentView = useAppStore((s) => s.currentView);
+  const currentView = useViewStore((s) => s.currentView);
 
   // Only show for admin/superuser and only in gantt view
   if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'superuser')) {

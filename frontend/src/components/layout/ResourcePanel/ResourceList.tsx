@@ -1,13 +1,14 @@
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import { ResourceCard } from './ResourceCard';
 import styles from './ResourceList.module.css';
 
 export function ResourceList() {
-  const currentResourceTab = useAppStore((s) => s.currentResourceTab);
+  const currentResourceTab = useViewStore((s) => s.currentResourceTab);
   const staff = useAppStore((s) => s.staff);
   const equipment = useAppStore((s) => s.equipment);
   const currentSite = useAppStore((s) => s.currentSite);
-  
+
   // Subscribe to projects to pass to ResourceCards
   const projects = useAppStore((s) => s.projects);
 

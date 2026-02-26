@@ -5,6 +5,7 @@ Handles creating and managing tenant PostgreSQL databases.
 Schema matches Node.js application exactly.
 """
 
+import logging
 import re
 from typing import Any
 
@@ -12,6 +13,8 @@ import asyncpg
 
 from app.config import get_settings
 from app.services.encryption import generate_password, hash_password
+
+logger = logging.getLogger(__name__)
 
 
 def _validate_identifier(name: str) -> str:
@@ -42,7 +45,7 @@ async def get_admin_connection() -> asyncpg.Connection:
     password = settings.pg_admin_password or settings.db_password
     database = "postgres"  # Connect to default database for admin operations
 
-    print(f"Admin connection: user={user}, host={host}:{port}, database={database}")
+    logger.info("Admin connection: user=%s, host=%s:%s, database=%s", user, host, port, database)
 
     return await asyncpg.connect(
         host=host,
@@ -436,8 +439,6 @@ async def provision_tenant_database(
 
     Returns dict with admin credentials.
     """
-    import traceback
-
     conn = None
     tenant_conn = None
 
@@ -450,7 +451,7 @@ async def provision_tenant_database(
 
         admin_password_hash = hash_password(admin_password)
 
-        print(f"Provisioning tenant database: {database_name}")
+        logger.info("Provisioning tenant database: %s", database_name)
 
         # Validate identifiers to prevent SQL injection
         _validate_identifier(database_user)
@@ -460,25 +461,23 @@ async def provision_tenant_database(
         # Create database user
         try:
             await conn.execute(f"CREATE USER \"{database_user}\" WITH PASSWORD '{safe_password}'")
-            print(f"  Created user: {database_user}")
+            logger.info("  Created user: %s", database_user)
         except asyncpg.DuplicateObjectError:
             # User exists, update password
             await conn.execute(f"ALTER USER \"{database_user}\" WITH PASSWORD '{safe_password}'")
-            print(f"  Updated password for existing user: {database_user}")
+            logger.info("  Updated password for existing user: %s", database_user)
         except Exception as e:
-            print(f"  Error creating user: {e}")
-            traceback.print_exc()
+            logger.exception("  Error creating user: %s", e)
             raise
 
         # Create database
         try:
             await conn.execute(f'CREATE DATABASE "{database_name}" OWNER "{database_user}"')
-            print(f"  Created database: {database_name}")
+            logger.info("  Created database: %s", database_name)
         except asyncpg.DuplicateDatabaseError:
-            print(f"  Database already exists: {database_name}")
+            logger.info("  Database already exists: %s", database_name)
         except Exception as e:
-            print(f"  Error creating database: {e}")
-            traceback.print_exc()
+            logger.exception("  Error creating database: %s", e)
             raise
 
         # Grant privileges
@@ -487,8 +486,7 @@ async def provision_tenant_database(
                 f'GRANT ALL PRIVILEGES ON DATABASE "{database_name}" TO "{database_user}"'
             )
         except Exception as e:
-            print(f"  Error granting privileges: {e}")
-            traceback.print_exc()
+            logger.exception("  Error granting privileges: %s", e)
             raise
 
         await conn.close()
@@ -496,7 +494,7 @@ async def provision_tenant_database(
 
         # Connect to the new database to create schema
         settings = get_settings()
-        print(f"  Connecting to new database as {database_user}...")
+        logger.info("  Connecting to new database as %s...", database_user)
         tenant_conn = await asyncpg.connect(
             host=settings.db_host,
             port=settings.db_port,
@@ -506,20 +504,20 @@ async def provision_tenant_database(
         )
 
         # Create schema
-        print("  Creating schema tables...")
+        logger.info("  Creating schema tables...")
         schema_sql = get_tenant_schema_sql()
         await tenant_conn.execute(schema_sql)
-        print("  Created schema tables")
+        logger.info("  Created schema tables")
 
         # Seed data
-        print("  Seeding initial data...")
+        logger.info("  Seeding initial data...")
         await run_seed_data(tenant_conn, admin_email, admin_password_hash)
-        print("  Seeded initial data")
+        logger.info("  Seeded initial data")
 
         await tenant_conn.close()
         tenant_conn = None
 
-        print(f"Tenant database provisioned successfully: {database_name}")
+        logger.info("Tenant database provisioned successfully: %s", database_name)
 
         return {
             "database_name": database_name,
@@ -529,8 +527,7 @@ async def provision_tenant_database(
         }
 
     except Exception as e:
-        print(f"PROVISIONING ERROR: {e}")
-        traceback.print_exc()
+        logger.exception("PROVISIONING ERROR: %s", e)
         raise
     finally:
         if conn:
@@ -562,11 +559,11 @@ async def drop_tenant_database(
 
         # Drop database
         await conn.execute(f'DROP DATABASE IF EXISTS "{database_name}"')
-        print(f"Dropped database: {database_name}")
+        logger.info("Dropped database: %s", database_name)
 
         # Drop user
         await conn.execute(f'DROP USER IF EXISTS "{database_user}"')
-        print(f"Dropped user: {database_user}")
+        logger.info("Dropped user: %s", database_user)
 
         return True
 
@@ -614,7 +611,7 @@ async def reset_tenant_admin_password(
         if result == "UPDATE 0":
             raise ValueError(f"Admin user not found: {admin_email}")
 
-        print(f"Reset password for {admin_email} in {database_name}")
+        logger.info("Reset password for %s in %s", admin_email, database_name)
 
     finally:
         await conn.close()
@@ -649,7 +646,7 @@ async def test_tenant_connection(
         await conn.close()
         return True
     except Exception as e:
-        print(f"Connection test failed: {e}")
+        logger.error("Connection test failed: %s", e)
         return False
 
 

@@ -6,6 +6,8 @@
 
 import { useRef, useMemo, useState, useCallback } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
+import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { ProjectPanel } from './ProjectPanel';
 import { Timeline } from './Timeline';
 import { useScrollSync } from './hooks/useScrollSync';
@@ -24,19 +26,19 @@ export function GanttContainer() {
 
   const projects = useAppStore((s) => s.projects);
   const currentSite = useAppStore((s) => s.currentSite);
-  const viewMode = useAppStore((s) => s.viewMode);
-  const currentDate = useAppStore((s) => s.currentDate);
-  const cellWidth = useAppStore((s) => s.cellWidth);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
   const bankHolidays = useAppStore((s) => s.bankHolidays);
   const companyEventDates = useAppStore((s) => s.companyEventDates);
   const companyEvents = useAppStore((s) => s.companyEvents);
-  const customColumns = useAppStore((s) => s.customColumns);
-  const showAllCustomColumns = useAppStore((s) => s.showAllCustomColumns);
-  const hiddenCustomColumns = useAppStore((s) => s.hiddenCustomColumns);
-  const showStaffOverview = useAppStore((s) => s.showStaffOverview);
-  const showEquipmentOverview = useAppStore((s) => s.showEquipmentOverview);
   const currentUser = useAppStore((s) => s.currentUser);
+  const viewMode = useViewStore((s) => s.viewMode);
+  const currentDate = useViewStore((s) => s.currentDate);
+  const cellWidth = useViewStore((s) => s.cellWidth);
+  const showStaffOverview = useViewStore((s) => s.showStaffOverview);
+  const showEquipmentOverview = useViewStore((s) => s.showEquipmentOverview);
+  const customColumns = useCustomColumnStore((s) => s.customColumns);
+  const showAllCustomColumns = useCustomColumnStore((s) => s.showAllCustomColumns);
+  const hiddenCustomColumns = useCustomColumnStore((s) => s.hiddenCustomColumns);
 
   // Only superusers/admins can see overview panels
   const canShowOverview = currentUser?.role === 'superuser' || currentUser?.role === 'admin';

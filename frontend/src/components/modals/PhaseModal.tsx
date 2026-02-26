@@ -8,6 +8,7 @@ import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import { createPhase, updatePhase, deletePhase, loadAllProjects, updateProject } from '@/api/endpoints/projects';
 import { toInputDateFormat } from '@/utils/date';
 import { getPhaseColor } from '@/utils/themeColors';
@@ -68,14 +69,6 @@ async function cascadeProjectDates(
   // Update project if dates changed
   if (updatedProjectStart.getTime() !== projectStart.getTime() || 
       updatedProjectEnd.getTime() !== projectEnd.getTime()) {
-    console.log('[PhaseModal] Cascading project dates:', {
-      projectId: project.id,
-      mode,
-      oldStart: project.start_date,
-      oldEnd: project.end_date,
-      newStart: updatedProjectStart.toISOString().split('T')[0],
-      newEnd: updatedProjectEnd.toISOString().split('T')[0],
-    });
     await updateProject(project.id, {
       start_date: updatedProjectStart.toISOString().split('T')[0],
       end_date: updatedProjectEnd.toISOString().split('T')[0],
@@ -87,7 +80,8 @@ async function cascadeProjectDates(
 
 export function PhaseModal() {
   const { activeModal, editingPhase, modalContext, closeModal } = useUIStore();
-  const { projects, setProjects, ensureProjectExpanded } = useAppStore();
+  const { projects, setProjects } = useAppStore();
+  const { ensureProjectExpanded } = useViewStore();
   
   const isOpen = activeModal === 'phase';
   const isEditing = !!editingPhase;

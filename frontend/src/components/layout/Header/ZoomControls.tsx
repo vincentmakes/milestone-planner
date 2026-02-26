@@ -2,7 +2,7 @@
  * ZoomControls - Zoom in/out buttons and current zoom level indicator
  */
 
-import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import styles from './ZoomControls.module.css';
 
@@ -13,8 +13,8 @@ const ZOOM_STEP = 4;
 const DEFAULT_CELL_WIDTH = 36;
 
 export function ZoomControls() {
-  const cellWidth = useAppStore((s) => s.cellWidth);
-  const setCellWidth = useAppStore((s) => s.setCellWidth);
+  const cellWidth = useViewStore((s) => s.cellWidth);
+  const setCellWidth = useViewStore((s) => s.setCellWidth);
   const triggerZoom = useUIStore((s) => s.triggerZoom);
 
   // Calculate zoom percentage relative to default

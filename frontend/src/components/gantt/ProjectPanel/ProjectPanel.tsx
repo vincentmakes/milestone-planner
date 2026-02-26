@@ -7,6 +7,8 @@ import { forwardRef, useState, useCallback, useRef, useEffect } from 'react';
 import { ProjectRow } from './ProjectRow';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
+import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useDataLoader } from '@/hooks';
 import { ReorderProvider } from '@/contexts/ReorderContext';
 import { CustomColumnModal, CustomColumnsManagerModal } from '@/components/modals';
@@ -26,14 +28,14 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
     const setActiveModal = useUIStore((s) => s.setActiveModal);
     const currentUser = useAppStore((s) => s.currentUser);
     const currentSite = useAppStore((s) => s.currentSite);
-    const customColumns = useAppStore((s) => s.customColumns);
-    const setCustomColumns = useAppStore((s) => s.setCustomColumns);
-    const showAssignments = useAppStore((s) => s.showAssignments);
-    const toggleShowAssignments = useAppStore((s) => s.toggleShowAssignments);
-    const showAllCustomColumns = useAppStore((s) => s.showAllCustomColumns);
-    const hiddenCustomColumns = useAppStore((s) => s.hiddenCustomColumns);
-    const setShowAllCustomColumns = useAppStore((s) => s.setShowAllCustomColumns);
-    const toggleCustomColumnVisibility = useAppStore((s) => s.toggleCustomColumnVisibility);
+    const showAssignments = useViewStore((s) => s.showAssignments);
+    const toggleShowAssignments = useViewStore((s) => s.toggleShowAssignments);
+    const customColumns = useCustomColumnStore((s) => s.customColumns);
+    const setCustomColumns = useCustomColumnStore((s) => s.setCustomColumns);
+    const showAllCustomColumns = useCustomColumnStore((s) => s.showAllCustomColumns);
+    const hiddenCustomColumns = useCustomColumnStore((s) => s.hiddenCustomColumns);
+    const setShowAllCustomColumns = useCustomColumnStore((s) => s.setShowAllCustomColumns);
+    const toggleCustomColumnVisibility = useCustomColumnStore((s) => s.toggleCustomColumnVisibility);
     
     const { refreshCustomColumns } = useDataLoader();
     

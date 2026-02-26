@@ -3,11 +3,14 @@ Main FastAPI application entry point.
 """
 
 import json
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,51 +20,20 @@ from fastapi.staticfiles import StaticFiles
 from app import __version__
 from app.config import get_settings
 from app.database import close_db, init_db
-
-
-def format_datetime_js(dt: datetime) -> str:
-    """
-    Format datetime to match JavaScript's toISOString().
-
-    Node.js outputs: "2025-12-08T09:01:16.715Z"
-    """
-    if dt is None:
-        return None
-
-    if dt.tzinfo is None:
-        # Assume UTC for naive datetimes
-        formatted = dt.strftime("%Y-%m-%dT%H:%M:%S")
-        ms = dt.microsecond // 1000
-        return f"{formatted}.{ms:03d}Z"
-    else:
-        # Convert to UTC and format
-        utc_dt = dt.astimezone(UTC)
-        formatted = utc_dt.strftime("%Y-%m-%dT%H:%M:%S")
-        ms = utc_dt.microsecond // 1000
-        return f"{formatted}.{ms:03d}Z"
-
-
-def format_date_js(d: date) -> str:
-    """
-    Format date to match Node.js date serialization.
-
-    Node.js stores dates as timestamps at midnight UTC, which when
-    serialized becomes the previous day at 23:00:00.000Z due to timezone.
-
-    For consistency, we'll output as ISO date string since that's what
-    the database actually stores, and it's cleaner.
-    """
-    if d is None:
-        return None
-    return d.isoformat()
+from app.schemas.base import serialize_date_simple, serialize_datetime_js
 
 
 def custom_json_serializer(obj: Any) -> Any:
-    """Custom JSON serializer for non-standard types."""
+    """Custom JSON serializer for non-standard types.
+
+    Delegates to the canonical serializers in app.schemas.base to ensure
+    consistent datetime/date formatting across dict-based responses and
+    Pydantic model responses.
+    """
     if isinstance(obj, datetime):
-        return format_datetime_js(obj)
+        return serialize_datetime_js(obj)
     if isinstance(obj, date):
-        return format_date_js(obj)
+        return serialize_date_simple(obj)
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 
@@ -107,21 +79,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     # Startup
     settings = get_settings()
-    print(f"Starting Milestone API v{__version__}")
-    print(f"Mode: {'Multi-Tenant' if settings.multi_tenant else 'Single-Tenant'}")
-    print(f"Debug: {settings.debug}")
+    logger.info("Starting Milestone API v%s", __version__)
+    logger.info("Mode: %s", "Multi-Tenant" if settings.multi_tenant else "Single-Tenant")
+    logger.info("Debug: %s", settings.debug)
 
     # Log proxy configuration
     if settings.https_proxy or settings.http_proxy or settings.proxy_pac_url:
-        print("Proxy Configuration:")
+        logger.info("Proxy Configuration:")
         if settings.https_proxy:
-            print(f"  HTTPS_PROXY: {settings.https_proxy}")
+            logger.info("  HTTPS_PROXY: %s", settings.https_proxy)
         if settings.http_proxy:
-            print(f"  HTTP_PROXY: {settings.http_proxy}")
+            logger.info("  HTTP_PROXY: %s", settings.http_proxy)
         if settings.proxy_pac_url:
-            print(f"  PROXY_PAC_URL: {settings.proxy_pac_url}")
+            logger.info("  PROXY_PAC_URL: %s", settings.proxy_pac_url)
     else:
-        print("Proxy Configuration: None")
+        logger.info("Proxy Configuration: None")
 
     # Initialize database connections
     if settings.multi_tenant:
@@ -132,7 +104,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await master_db.init_db()
         await master_db.verify_admin_exists()
         tenant_connection_manager.start_cleanup_task()
-        print("Master database initialized")
+        logger.info("Master database initialized")
     else:
         # Single-tenant: connect to the default tenant database
         await init_db()
@@ -149,7 +121,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await tenant_connection_manager.close_all()
         await master_db.close()
 
-    print("Milestone API shutdown complete")
+    logger.info("Milestone API shutdown complete")
 
 
 def create_app() -> FastAPI:
@@ -380,8 +352,7 @@ def create_app() -> FastAPI:
         @app.get("/{full_path:path}")
         async def serve_spa(request: Request, full_path: str):
             """Serve the SPA frontend for non-API routes."""
-            # Debug: log all requests hitting this endpoint
-            print(f"[SPA Fallback] path={full_path}, method={request.method}")
+            logger.debug("SPA Fallback: path=%s, method=%s", full_path, request.method)
 
             # Don't serve index.html for API routes
             if full_path.startswith("api/"):
@@ -395,7 +366,7 @@ def create_app() -> FastAPI:
                 or full_path.endswith("/ws")
                 or "/ws" in full_path
             ):
-                print(f"[SPA Fallback] WebSocket path detected: {full_path}, returning 426")
+                logger.debug("SPA Fallback: WebSocket path detected: %s, returning 426", full_path)
                 return JSONResponse(
                     status_code=426,  # Upgrade Required
                     content={"error": "WebSocket endpoint - use ws:// or wss:// protocol"},
@@ -428,10 +399,7 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         """Handle uncaught exceptions."""
-        import traceback
-
-        print(f"Unhandled exception on {request.method} {request.url.path}: {exc}")
-        traceback.print_exc()
+        logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
         # Don't leak internal error details to clients
         return JSONResponse(
             status_code=500,
@@ -446,17 +414,17 @@ def create_wrapped_app():
     app = create_app()
     settings = get_settings()
 
-    print(f"[App Startup] MULTI_TENANT setting = {settings.multi_tenant}")
+    logger.info("MULTI_TENANT setting = %s", settings.multi_tenant)
 
     if settings.multi_tenant:
-        print("[App Startup] Wrapping app with TenantMiddleware")
+        logger.info("Wrapping app with TenantMiddleware")
         from app.middleware.tenant import TenantMiddleware
 
         # Wrap the entire app with tenant middleware
         # This ensures URL rewriting happens BEFORE FastAPI routing
         return TenantMiddleware(app)
 
-    print("[App Startup] Running in single-tenant mode (no middleware)")
+    logger.info("Running in single-tenant mode (no middleware)")
     return app
 
 

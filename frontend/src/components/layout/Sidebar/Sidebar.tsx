@@ -1,12 +1,13 @@
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import { Navigation } from './Navigation';
 import { AdminSection } from './AdminSection';
 import { QuickStats } from './QuickStats';
 import styles from './Sidebar.module.css';
 
 export function Sidebar() {
-  const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
-  const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
+  const sidebarCollapsed = useViewStore((s) => s.sidebarCollapsed);
+  const setSidebarCollapsed = useViewStore((s) => s.setSidebarCollapsed);
   const currentUser = useAppStore((s) => s.currentUser);
 
   const isAdminOrSuperuser =

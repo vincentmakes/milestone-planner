@@ -8,6 +8,7 @@ Matches the Node.js API at /api/notes exactly.
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_superuser
@@ -23,8 +24,7 @@ router = APIRouter()
 
 def build_note_response(note: Note) -> dict:
     """Build note response dict."""
-    staff_name = None
-    # Note: staff relationship not defined in Note model, query separately if needed
+    staff_name = note.staff.full_name if note.staff else None
 
     return {
         "id": note.id,
@@ -53,7 +53,7 @@ async def get_notes(
 
     Matches: GET /api/notes
     """
-    query = select(Note).where(Note.site_id == siteId)
+    query = select(Note).where(Note.site_id == siteId).options(selectinload(Note.staff))
 
     if startDate:
         query = query.where(Note.date >= startDate)
@@ -65,20 +65,7 @@ async def get_notes(
     result = await db.execute(query)
     notes = result.scalars().all()
 
-    # Fetch staff names for notes with staff_id
-    response = []
-    for note in notes:
-        note_dict = build_note_response(note)
-
-        if note.staff_id:
-            staff_result = await db.execute(select(User).where(User.id == note.staff_id))
-            staff = staff_result.scalar_one_or_none()
-            if staff:
-                note_dict["staff_name"] = f"{staff.first_name} {staff.last_name}".strip()
-
-        response.append(note_dict)
-
-    return response
+    return [build_note_response(note) for note in notes]
 
 
 @router.post("/notes", response_model=NoteResponse, status_code=201)
@@ -106,16 +93,12 @@ async def create_note(
     await db.commit()
     await db.refresh(note)
 
-    note_dict = build_note_response(note)
-
-    # Fetch staff name if applicable
+    # Eager-load staff for response
     if note.staff_id:
         staff_result = await db.execute(select(User).where(User.id == note.staff_id))
-        staff = staff_result.scalar_one_or_none()
-        if staff:
-            note_dict["staff_name"] = f"{staff.first_name} {staff.last_name}".strip()
+        note.staff = staff_result.scalar_one_or_none()
 
-    return note_dict
+    return build_note_response(note)
 
 
 @router.delete("/notes/{note_id}")

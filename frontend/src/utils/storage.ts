@@ -189,7 +189,7 @@ export function migrateLegacyStorage(): void {
     const oldValue = localStorage.getItem(oldKey);
     if (oldValue !== null && localStorage.getItem(newKey) === null) {
       localStorage.setItem(newKey, oldValue);
-      console.log(`Migrated storage: ${oldKey} -> ${newKey}`);
+      // Successfully migrated
     }
   });
 }

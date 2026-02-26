@@ -5,9 +5,12 @@ Handles /t/{tenant-slug}/ URL prefix routing for multi-tenant mode.
 Resolves tenant from URL and attaches tenant context to request state.
 """
 
+import logging
 import re
 from datetime import datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -93,16 +96,16 @@ class TenantMiddleware:
 
     def __init__(self, app: ASGIApp):
         self.app = app
-        print("[TenantMiddleware] Initialized - wrapping app")
+        logger.info("TenantMiddleware initialized - wrapping app")
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
         # Debug: log every request type
-        print(f"[TenantMiddleware] Request: type={scope['type']}, path={scope.get('path', 'N/A')}")
+        logger.debug("TenantMiddleware request: type=%s, path=%s", scope['type'], scope.get('path', 'N/A'))
 
         # SKIP WebSocket connections - they handle tenant resolution themselves
         # This avoids ASGI scope/state issues with WebSocket connections
         if scope["type"] == "websocket":
-            print("[TenantMiddleware] Skipping WebSocket - handler will resolve tenant")
+            logger.debug("TenantMiddleware skipping WebSocket - handler will resolve tenant")
             await self.app(scope, receive, send)
             return
 
@@ -115,7 +118,7 @@ class TenantMiddleware:
 
         # Debug logging for WebSocket
         if scope["type"] == "websocket":
-            print(f"[TenantMiddleware] WebSocket request: path={path}")
+            logger.debug("TenantMiddleware WebSocket request: path=%s", path)
 
         # Fast path: Skip if not a tenant URL
         if not path.startswith("/t/"):
@@ -131,8 +134,8 @@ class TenantMiddleware:
 
         # Debug logging
         if scope["type"] == "websocket":
-            print(
-                f"[TenantMiddleware] WebSocket tenant extraction: slug={slug}, remaining={remaining_path}"
+            logger.debug(
+                "TenantMiddleware WebSocket tenant extraction: slug=%s, remaining=%s", slug, remaining_path
             )
 
         if not slug:
@@ -193,7 +196,7 @@ class TenantMiddleware:
                     engine = await tenant_connection_manager.get_pool_from_info(tenant_info)
                     state["tenant_engine"] = engine
                 except Exception as e:
-                    print(f"Tenant DB connection error: {e}")
+                    logger.error("Tenant DB connection error: %s", e)
                     # For WebSocket, let handler deal with it
                     if scope["type"] == "websocket":
                         await self.app(scope, receive, send)
@@ -218,10 +221,10 @@ class TenantMiddleware:
 
             # Debug logging for WebSocket
             if scope["type"] == "websocket":
-                print(f"[TenantMiddleware] WebSocket path rewritten: {path} -> {remaining_path}")
-                print(f"[TenantMiddleware] WebSocket new_scope path: {new_scope.get('path')}")
-                print(
-                    f"[TenantMiddleware] WebSocket state: tenant_slug={state.get('tenant_slug')}, has_engine={state.get('tenant_engine') is not None}"
+                logger.debug("TenantMiddleware WebSocket path rewritten: %s -> %s", path, remaining_path)
+                logger.debug("TenantMiddleware WebSocket new_scope path: %s", new_scope.get('path'))
+                logger.debug(
+                    "TenantMiddleware WebSocket state: tenant_slug=%s, has_engine=%s", state.get('tenant_slug'), state.get('tenant_engine') is not None
                 )
 
             # Also update root_path if needed for URL generation
@@ -230,10 +233,7 @@ class TenantMiddleware:
             await self.app(new_scope, receive, send)
 
         except Exception as e:
-            print(f"Tenant middleware error: {e}")
-            import traceback
-
-            traceback.print_exc()
+            logger.exception("Tenant middleware error: %s", e)
             # For WebSocket, let it fail naturally
             if scope["type"] == "websocket":
                 await self.app(scope, receive, send)

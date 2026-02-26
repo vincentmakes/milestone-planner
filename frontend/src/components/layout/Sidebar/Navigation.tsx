@@ -1,4 +1,4 @@
-import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import type { CurrentView } from '@/types';
 import styles from './Navigation.module.css';
 
@@ -72,8 +72,8 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 export function Navigation({ collapsed = false }: NavigationProps) {
-  const currentView = useAppStore((s) => s.currentView);
-  const setCurrentView = useAppStore((s) => s.setCurrentView);
+  const currentView = useViewStore((s) => s.currentView);
+  const setCurrentView = useViewStore((s) => s.setCurrentView);
 
   return (
     <nav className={`${styles.nav} ${collapsed ? styles.collapsed : ''}`}>

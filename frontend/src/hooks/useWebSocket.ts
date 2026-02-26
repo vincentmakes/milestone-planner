@@ -157,8 +157,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const handleMessage = useCallback((event: MessageEvent) => {
     try {
       const message: ServerMessage = JSON.parse(event.data);
-      console.log('[WebSocket] Received:', message.type, message.payload);
-      
       switch (message.type) {
         case 'pong':
           // Keepalive acknowledged
@@ -166,14 +164,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           
         case 'presence:list':
           const listPayload = message.payload as { users: PresenceUser[] };
-          console.log('[WebSocket] Presence list:', listPayload.users);
           setOnlineUsers(listPayload.users);
           onPresenceChangeRef.current?.(listPayload.users);
           break;
           
         case 'presence:join':
           const joinUser = message.payload as PresenceUser;
-          console.log('[WebSocket] User joined:', joinUser);
           setOnlineUsers(prev => {
             // Avoid duplicates
             const filtered = prev.filter(u => u.user_id !== joinUser.user_id);
@@ -185,7 +181,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           
         case 'presence:leave':
           const leavePayload = message.payload as { user_id: number };
-          console.log('[WebSocket] User left:', leavePayload.user_id);
           setOnlineUsers(prev => {
             const updated = prev.filter(u => u.user_id !== leavePayload.user_id);
             onPresenceChangeRef.current?.(updated);
@@ -198,7 +193,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         case 'change:project':
         case 'change:assignment':
           const change = message.payload as ChangePayload;
-          console.log('[WebSocket] Change received:', change);
           // Add timestamp for expiry tracking
           change.timestamp = message.timestamp;
           setRecentChanges(prev => [...prev, change]);
@@ -206,7 +200,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           break;
           
         default:
-          console.log('[WebSocket] Unknown message type:', message.type);
+          // Unknown message type - ignore
       }
     } catch (error) {
       console.warn('Failed to parse WebSocket message:', error);
@@ -219,20 +213,17 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     if (wsRef.current) {
       const state = wsRef.current.readyState;
       if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) {
-        console.log('[WebSocket] Already connected or connecting, skipping');
         return;
       }
     }
     
     // Use a lock to prevent multiple simultaneous connection attempts
     if (connectingRef.current) {
-      console.log('[WebSocket] Connection already in progress, skipping');
       return;
     }
     connectingRef.current = true;
 
     const url = getWebSocketUrl();
-    console.log('[WebSocket] Connecting to:', url);
     setConnectionState('connecting');
     
     try {
@@ -242,7 +233,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       ws.onopen = () => {
         connectingRef.current = false;
         if (!mountedRef.current) return;
-        console.log('[WebSocket] Connected successfully');
         setConnectionState('connected');
         reconnectAttemptRef.current = 0;
         
@@ -259,8 +249,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       ws.onclose = (event) => {
         connectingRef.current = false;
         if (!mountedRef.current) return;
-        
-        console.log(`[WebSocket] Connection closed: code=${event.code}, reason=${event.reason}`);
         
         // Clear ping interval
         if (pingIntervalRef.current) {
@@ -281,13 +269,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         // - component unmounted
         const noReconnectCodes = [1000, 1001, 4000, 4001, 4002, 4003, 4004, 4005, 4006];
         if (noReconnectCodes.includes(event.code) || !mountedRef.current) {
-          console.log(`[WebSocket] Closed with code ${event.code}, not reconnecting`);
           return;
         }
         
         // Stop after max attempts
         if (reconnectAttemptRef.current >= RECONNECT_MAX_ATTEMPTS) {
-          console.log(`[WebSocket] Max reconnection attempts (${RECONNECT_MAX_ATTEMPTS}) reached, giving up`);
           return;
         }
         
@@ -298,7 +284,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         );
         reconnectAttemptRef.current++;
         
-        console.log(`[WebSocket] Closed with code ${event.code}, reconnecting in ${delay}ms...`);
         reconnectTimeoutRef.current = window.setTimeout(() => {
           if (mountedRef.current) {
             connect();

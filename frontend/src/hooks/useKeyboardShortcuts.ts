@@ -13,7 +13,7 @@
 
 import { useEffect, useCallback } from 'react';
 import { useUIStore } from '@/stores/uiStore';
-import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 
 // Zoom limits (same as useCtrlScrollZoom)
 const MIN_CELL_WIDTH = 12;
@@ -29,9 +29,9 @@ export function useKeyboardShortcuts() {
   const isLinkingDependency = useUIStore((s) => s.isLinkingDependency);
   const closeModal = useUIStore((s) => s.closeModal);
   const activeModal = useUIStore((s) => s.activeModal);
-  
-  const cellWidth = useAppStore((s) => s.cellWidth);
-  const setCellWidth = useAppStore((s) => s.setCellWidth);
+
+  const cellWidth = useViewStore((s) => s.cellWidth);
+  const setCellWidth = useViewStore((s) => s.setCellWidth);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // Don't handle shortcuts when focused on input elements

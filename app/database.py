@@ -17,6 +17,10 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.config import get_settings
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class Base(DeclarativeBase):
     """Base class for all SQLAlchemy models."""
@@ -154,7 +158,7 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(lambda _: None)  # Simple connectivity test
 
-    print("Database connection established successfully")
+    logger.info("Database connection established successfully")
 
 
 async def close_db() -> None:
@@ -166,7 +170,7 @@ async def close_db() -> None:
         _engine = None
         _async_session_factory = None
 
-    print("Database connections closed")
+    logger.info("Database connections closed")
 
 
 # ---------------------------------------------------------

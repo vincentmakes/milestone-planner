@@ -7,7 +7,8 @@ import { useState, useCallback, useRef } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { useAppStore } from '@/stores/appStore';
-import { 
+import { useCustomColumnStore } from '@/stores/customColumnStore';
+import {
   updateCustomColumn,
   deleteCustomColumn,
   getCustomColumnsWithValues,
@@ -21,14 +22,14 @@ interface CustomColumnsManagerModalProps {
   onClose: () => void;
 }
 
-export function CustomColumnsManagerModal({ 
-  isOpen, 
+export function CustomColumnsManagerModal({
+  isOpen,
   onClose,
 }: CustomColumnsManagerModalProps) {
-  const customColumns = useAppStore((s) => s.customColumns);
+  const customColumns = useCustomColumnStore((s) => s.customColumns);
   const currentSite = useAppStore((s) => s.currentSite);
-  const setCustomColumns = useAppStore((s) => s.setCustomColumns);
-  const setCustomColumnValues = useAppStore((s) => s.setCustomColumnValues);
+  const setCustomColumns = useCustomColumnStore((s) => s.setCustomColumns);
+  const setCustomColumnValues = useCustomColumnStore((s) => s.setCustomColumnValues);
   
   const [editingColumn, setEditingColumn] = useState<CustomColumn | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);

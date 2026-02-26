@@ -1,4 +1,4 @@
-import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import type { ViewMode } from '@/types';
 import styles from './ViewModeControls.module.css';
 
@@ -10,8 +10,8 @@ const VIEW_MODES: { value: ViewMode; label: string }[] = [
 ];
 
 export function ViewModeControls() {
-  const viewMode = useAppStore((s) => s.viewMode);
-  const setViewMode = useAppStore((s) => s.setViewMode);
+  const viewMode = useViewStore((s) => s.viewMode);
+  const setViewMode = useViewStore((s) => s.setViewMode);
 
   return (
     <div className={styles.wrapper}>

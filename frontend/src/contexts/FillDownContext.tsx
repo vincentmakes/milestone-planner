@@ -4,7 +4,7 @@
  */
 
 import { createContext, useContext, useState, useCallback, useRef, ReactNode } from 'react';
-import { useAppStore } from '@/stores/appStore';
+import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { setCustomColumnValue as setCustomColumnValueApi } from '@/api';
 import type { CustomColumnEntityType } from '@/types';
 
@@ -50,7 +50,7 @@ export function FillDownProvider({ children }: { children: ReactNode }) {
   const [fillSource, setFillSource] = useState<FillDownSource | null>(null);
   const [fillTargets, setFillTargets] = useState<FillDownTarget[]>([]);
   
-  const setCustomColumnValueLocal = useAppStore((s) => s.setCustomColumnValue);
+  const setCustomColumnValueLocal = useCustomColumnStore((s) => s.setCustomColumnValue);
   
   // Registry of cell elements for hit testing during drag
   const cellRegistry = useRef<Map<string, { 

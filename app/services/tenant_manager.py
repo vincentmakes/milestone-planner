@@ -6,6 +6,7 @@ Each tenant has their own PostgreSQL database with isolated data.
 """
 
 import asyncio
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -20,6 +21,8 @@ from sqlalchemy.ext.asyncio import (
 from app.config import get_settings
 from app.models.tenant import Tenant, TenantCredentials
 from app.services.encryption import decrypt
+
+logger = logging.getLogger(__name__)
 
 
 class TenantConnectionManager:
@@ -65,7 +68,7 @@ class TenantConnectionManager:
 
         for slug in to_remove:
             await self._close_pool(slug)
-            print(f"Closed idle tenant pool: {slug}")
+            logger.info("Closed idle tenant pool: %s", slug)
 
     async def _close_pool(self, slug: str):
         """Close a specific tenant's connection pool."""
@@ -91,7 +94,7 @@ class TenantConnectionManager:
             """)
             )
             if not result.fetchone():
-                print(f"Auto-migration: Adding is_system column to tenant {slug}...")
+                logger.info("Auto-migration: Adding is_system column to tenant %s...", slug)
                 await conn.execute(text("ALTER TABLE users ADD COLUMN is_system INTEGER DEFAULT 0"))
                 # Mark first admin as system user
                 await conn.execute(
@@ -101,9 +104,9 @@ class TenantConnectionManager:
                 """)
                 )
                 await conn.commit()
-                print(f"Auto-migration: Added is_system column to tenant {slug}")
+                logger.info("Auto-migration: Added is_system column to tenant %s", slug)
         except Exception as e:
-            print(f"Auto-migration warning for {slug}: {e}")
+            logger.warning("Auto-migration warning for %s: %s", slug, e)
             # Don't fail if migration has issues - continue with connection
 
     async def get_pool(self, tenant: Tenant, credentials: TenantCredentials) -> AsyncEngine:
@@ -142,8 +145,8 @@ class TenantConnectionManager:
             f"@{host}:{port}/{tenant.database_name}"
         )
 
-        print(
-            f"Connecting to tenant DB: {tenant.database_name} as {tenant.database_user}@{host}:{port}"
+        logger.info(
+            "Connecting to tenant DB: %s as %s@%s:%s", tenant.database_name, tenant.database_user, host, port
         )
 
         # Create engine
@@ -163,7 +166,7 @@ class TenantConnectionManager:
                 # Auto-migration: Add is_system column if missing
                 await self._run_auto_migrations(conn, slug)
 
-            print(f"Tenant pool created: {slug}")
+            logger.info("Tenant pool created: %s", slug)
         except Exception as e:
             await engine.dispose()
             raise ConnectionError(
@@ -211,8 +214,8 @@ class TenantConnectionManager:
             f"@{host}:{port}/{tenant_info['database_name']}"
         )
 
-        print(
-            f"Connecting to tenant DB: {tenant_info['database_name']} as {tenant_info['database_user']}@{host}:{port}"
+        logger.info(
+            "Connecting to tenant DB: %s as %s@%s:%s", tenant_info['database_name'], tenant_info['database_user'], host, port
         )
 
         # Create engine
@@ -232,7 +235,7 @@ class TenantConnectionManager:
                 # Auto-migration: Add is_system column if missing
                 await self._run_auto_migrations(conn, slug)
 
-            print(f"Tenant pool created: {slug}")
+            logger.info("Tenant pool created: %s", slug)
         except Exception as e:
             await engine.dispose()
             raise ConnectionError(

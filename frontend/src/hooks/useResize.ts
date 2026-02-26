@@ -6,14 +6,16 @@
 import { useCallback, useRef, useEffect } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import { updatePhase, updateSubphase, updateStaffAssignment, updateEquipmentAssignment, loadAllProjects } from '@/api/endpoints/projects';
 import { useUndoStore } from '@/stores/undoStore';
-import { 
-  processPhaseMove, 
-  processSubphaseMove, 
+import {
+  processPhaseMove,
+  processSubphaseMove,
   savePendingUpdates,
-  cloneProject 
+  cloneProject
 } from '@/components/gantt/utils';
+import type { PendingUpdate } from '@/components/gantt/utils';
 import type { ViewMode, Subphase } from '@/types';
 
 type ResizeEdge = 'left' | 'right';
@@ -33,7 +35,8 @@ interface ResizeData {
 
 export function useResize() {
   const { isResizing, resizeEdge, resizeItemId, resizeItemType, startResize, endResize, showResizeIndicator, hideIndicator } = useUIStore();
-  const { projects, setProjects, cellWidth, currentView, viewMode } = useAppStore();
+  const { projects, setProjects } = useAppStore();
+  const { cellWidth, currentView, viewMode } = useViewStore();
   const { saveState } = useUndoStore();
   
   const resizeDataRef = useRef<ResizeData | null>(null);
@@ -379,7 +382,7 @@ export function useResize() {
       }
       
       // Process auto-calculations (cascading) - only for phases/subphases
-      let pendingUpdates: any[] = [];
+      let pendingUpdates: PendingUpdate[] = [];
       if (data.type === 'phase') {
         pendingUpdates = processPhaseMove(
           projectCopy, 
@@ -431,7 +434,6 @@ export function useResize() {
       
       // Save all cascaded updates to server
       if (pendingUpdates.length > 0) {
-        console.log(`Cascading ${pendingUpdates.length} updates:`, pendingUpdates);
         await savePendingUpdates(pendingUpdates);
       }
     } catch (err) {

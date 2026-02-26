@@ -34,35 +34,35 @@ async def get_user_from_session(session_id: str, db: AsyncSession) -> User | Non
         User if session is valid, None otherwise
     """
     try:
-        print(f"[WS Auth] Looking up session: {session_id[:20]}...")
+        logger.debug("Looking up session: %s...", session_id[:20])
 
         # Query the session
         result = await db.execute(select(Session).where(Session.sid == session_id))
         session = result.scalar_one_or_none()
 
         if not session:
-            print("[WS Auth] Session not found in database")
+            logger.debug("Session not found in database")
             return None
 
-        print("[WS Auth] Session found, checking expiry...")
+        logger.debug("Session found, checking expiry...")
 
         # Check if session is expired
         now_ms = int(datetime.utcnow().timestamp() * 1000)
         if session.expired < now_ms:
-            print(f"[WS Auth] Session expired: {session.expired} < {now_ms}")
+            logger.debug("Session expired: %s < %s", session.expired, now_ms)
             return None
 
-        print("[WS Auth] Session valid, parsing data...")
+        logger.debug("Session valid, parsing data...")
 
         # Parse session data to get user ID
         sess_data = json.loads(session.sess)
         user_data = sess_data.get("user", {})
         user_id = user_data.get("id")
 
-        print(f"[WS Auth] User ID from session: {user_id}")
+        logger.debug("User ID from session: %s", user_id)
 
         if not user_id:
-            print("[WS Auth] No user ID in session data")
+            logger.debug("No user ID in session data")
             return None
 
         # Get the user
@@ -70,15 +70,14 @@ async def get_user_from_session(session_id: str, db: AsyncSession) -> User | Non
         user = result.scalar_one_or_none()
 
         if user:
-            print(f"[WS Auth] User found: {user.first_name} {user.last_name}")
+            logger.debug("User found: %s %s", user.first_name, user.last_name)
         else:
-            print(f"[WS Auth] User {user_id} not found in database")
+            logger.debug("User %s not found in database", user_id)
 
         return user
 
     except Exception as e:
-        print(f"[WS Auth] Error validating session: {e}")
-        logger.error(f"Error validating session: {e}")
+        logger.error("Error validating session: %s", e)
         return None
 
 
@@ -120,8 +119,8 @@ def get_tenant_from_scope(websocket: WebSocket) -> str:
     tenant_slug = state.get("tenant_slug")
     path = websocket.scope.get("path", "/ws")
 
-    print(
-        f"[WS get_tenant_from_scope] path={path}, state keys={list(state.keys())}, tenant_slug={tenant_slug}"
+    logger.debug(
+        "get_tenant_from_scope: path=%s, state keys=%s, tenant_slug=%s", path, list(state.keys()), tenant_slug
     )
 
     if tenant_slug:
@@ -132,7 +131,7 @@ def get_tenant_from_scope(websocket: WebSocket) -> str:
 
     match = re.match(r"^/t/([a-z0-9][a-z0-9-]*)/ws", path)
     if match:
-        print(f"[WS get_tenant_from_scope] Using fallback path extraction: {match.group(1)}")
+        logger.debug("get_tenant_from_scope: Using fallback path extraction: %s", match.group(1))
         return match.group(1)
 
     return "default"
@@ -144,7 +143,7 @@ async def websocket_endpoint(websocket: WebSocket):
     WebSocket endpoint for single-tenant mode.
     Handles connections at /ws.
     """
-    print("[WS] >>> websocket_endpoint (/ws) called <<<")
+    logger.debug("websocket_endpoint (/ws) called")
     await handle_websocket_connection(websocket, tenant_slug=None)
 
 
@@ -154,7 +153,7 @@ async def websocket_tenant_endpoint(websocket: WebSocket, tenant_slug: str):
     WebSocket endpoint for multi-tenant mode.
     Handles connections at /t/{tenant}/ws.
     """
-    print(f"[WS] >>> websocket_tenant_endpoint (/t/{tenant_slug}/ws) called <<<")
+    logger.debug("websocket_tenant_endpoint (/t/%s/ws) called", tenant_slug)
     await handle_websocket_connection(websocket, tenant_slug=tenant_slug)
 
 
@@ -166,7 +165,7 @@ async def handle_websocket_connection(websocket: WebSocket, tenant_slug: str | N
         websocket: The WebSocket connection
         tenant_slug: Tenant slug from URL path (None for single-tenant)
     """
-    logger.info(f"WebSocket connection attempt from {websocket.client}")
+    logger.info("WebSocket connection attempt from %s", websocket.client)
 
     # Get session cookie
     cookies = websocket.cookies
@@ -180,7 +179,7 @@ async def handle_websocket_connection(websocket: WebSocket, tenant_slug: str | N
 
     # Determine tenant - use URL slug or "default" for single-tenant
     tenant_id = tenant_slug if tenant_slug else "default"
-    print(f"[WS] Tenant: {tenant_id}, Session: {session_id[:20]}...")
+    logger.debug("Tenant: %s, Session: %s...", tenant_id, session_id[:20])
 
     # Validate session and get user
     try:
@@ -236,13 +235,10 @@ async def handle_websocket_connection(websocket: WebSocket, tenant_slug: str | N
         user_id = user.id
         first_name = user.first_name
         last_name = user.last_name
-        print(f"[WS] Authenticated: user {user_id} ({first_name} {last_name})")
+        logger.info("Authenticated: user %s (%s %s)", user_id, first_name, last_name)
 
     except Exception as e:
-        logger.error(f"Database error during WebSocket auth: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.exception("Database error during WebSocket auth: %s", e)
         await websocket.accept()
         await websocket.close(code=4002, reason="Authentication error")
         return
@@ -256,7 +252,7 @@ async def handle_websocket_connection(websocket: WebSocket, tenant_slug: str | N
         last_name=last_name,
     )
 
-    print(f"[WS] Starting receive loop for user {user_id}")
+    logger.debug("Starting receive loop for user %s", user_id)
 
     try:
         while True:
@@ -277,11 +273,11 @@ async def handle_websocket_connection(websocket: WebSocket, tenant_slug: str | N
                     )
 
             except json.JSONDecodeError:
-                logger.warning(f"Invalid JSON from user {user_id}")
+                logger.warning("Invalid JSON from user %s", user_id)
 
     except WebSocketDisconnect as e:
-        print(f"[WS] Disconnected: user {user_id}, code={getattr(e, 'code', 'N/A')}")
+        logger.info("Disconnected: user %s, code=%s", user_id, getattr(e, 'code', 'N/A'))
         await manager.disconnect(tenant_id, user_id)
     except Exception as e:
-        print(f"[WS] Error for user {user_id}: {e}")
+        logger.error("Error for user %s: %s", user_id, e)
         await manager.disconnect(tenant_id, user_id)

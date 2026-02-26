@@ -7,6 +7,7 @@
 
 import { useMemo, useRef, useEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useScrollSync, useCtrlScrollZoom } from '@/hooks';
 import { generateTimelineCells, generateTimelineHeaders } from '@/components/gantt/utils/timeline';
@@ -18,17 +19,17 @@ export function CrossSiteView() {
   const panelRef = useRef<HTMLDivElement>(null);
   const timelineBodyRef = useRef<HTMLDivElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
-  
+
   const sites = useAppStore((s) => s.sites);
   const projects = useAppStore((s) => s.projects);
   const currentSite = useAppStore((s) => s.currentSite);
-  const viewMode = useAppStore((s) => s.viewMode);
-  const currentDate = useAppStore((s) => s.currentDate);
-  const cellWidth = useAppStore((s) => s.cellWidth);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
   const bankHolidays = useAppStore((s) => s.bankHolidays);
   const companyEventDates = useAppStore((s) => s.companyEventDates);
   const companyEvents = useAppStore((s) => s.companyEvents);
+  const viewMode = useViewStore((s) => s.viewMode);
+  const currentDate = useViewStore((s) => s.currentDate);
+  const cellWidth = useViewStore((s) => s.cellWidth);
   
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
   

@@ -9,31 +9,13 @@ import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import { createSubphase, createChildSubphase, updateSubphase, deleteSubphase, loadAllProjects, updatePhase, updateProject } from '@/api/endpoints/projects';
 import { toInputDateFormat } from '@/utils/date';
 import { getDepthColor } from '@/utils/themeColors';
 import type { Phase, Subphase, Project, CreateSubphaseRequest } from '@/types';
+import { findSubphaseById, findPhaseContainingSubphase } from '@/utils/subphaseUtils';
 import styles from './PhaseModal.module.css'; // Reuse phase modal styles
-
-// Helper to find subphase by ID in nested structure
-function findSubphaseById(phases: Phase[], subphaseId: number): Subphase | null {
-  for (const phase of phases) {
-    const found = findSubphaseInChildren(phase.children || [], subphaseId);
-    if (found) return found;
-  }
-  return null;
-}
-
-function findSubphaseInChildren(children: Subphase[], targetId: number): Subphase | null {
-  for (const child of children) {
-    if (child.id === targetId) return child;
-    if (child.children && child.children.length > 0) {
-      const found = findSubphaseInChildren(child.children, targetId);
-      if (found) return found;
-    }
-  }
-  return null;
-}
 
 // Calculate the depth of a subphase (1-based)
 function getSubphaseDepth(phases: Phase[], subphaseId: number): number {
@@ -51,15 +33,6 @@ function findSubphaseDepthInChildren(children: Subphase[], targetId: number, cur
       const depth = findSubphaseDepthInChildren(child.children, targetId, currentDepth + 1);
       if (depth !== null) return depth;
     }
-  }
-  return null;
-}
-
-// Find the phase that contains a subphase
-function findPhaseContainingSubphase(phases: Phase[], subphaseId: number): Phase | null {
-  for (const phase of phases) {
-    const found = findSubphaseInChildren(phase.children || [], subphaseId);
-    if (found) return phase;
   }
   return null;
 }
@@ -232,14 +205,6 @@ async function cascadeDatesUpward(
       // Update subphase if dates changed
       if (updatedStart.getTime() !== subStart.getTime() || 
           updatedEnd.getTime() !== subEnd.getTime()) {
-        console.log('[Cascade] Updating parent subphase dates:', {
-          subphaseId: parentSubphase.id,
-          name: parentSubphase.name,
-          oldStart: parentSubphase.start_date,
-          oldEnd: parentSubphase.end_date,
-          newStart: updatedStart.toISOString().split('T')[0],
-          newEnd: updatedEnd.toISOString().split('T')[0],
-        });
         await updateSubphase(parentSubphase.id, {
           start_date: updatedStart.toISOString().split('T')[0],
           end_date: updatedEnd.toISOString().split('T')[0],
@@ -280,13 +245,6 @@ async function cascadeDatesUpward(
   // Update phase if dates changed
   if (updatedPhaseStart.getTime() !== phaseStart.getTime() || 
       updatedPhaseEnd.getTime() !== phaseEnd.getTime()) {
-    console.log('[Cascade] Updating phase dates:', {
-      phaseId,
-      oldStart: phase.start_date,
-      oldEnd: phase.end_date,
-      newStart: updatedPhaseStart.toISOString().split('T')[0],
-      newEnd: updatedPhaseEnd.toISOString().split('T')[0],
-    });
     await updatePhase(phaseId, {
       start_date: updatedPhaseStart.toISOString().split('T')[0],
       end_date: updatedPhaseEnd.toISOString().split('T')[0],
@@ -321,13 +279,6 @@ async function cascadeDatesUpward(
   // Update project if dates changed
   if (updatedProjectStart.getTime() !== projectStart.getTime() || 
       updatedProjectEnd.getTime() !== projectEnd.getTime()) {
-    console.log('[Cascade] Updating project dates:', {
-      projectId: project.id,
-      oldStart: project.start_date,
-      oldEnd: project.end_date,
-      newStart: updatedProjectStart.toISOString().split('T')[0],
-      newEnd: updatedProjectEnd.toISOString().split('T')[0],
-    });
     await updateProject(project.id, {
       start_date: updatedProjectStart.toISOString().split('T')[0],
       end_date: updatedProjectEnd.toISOString().split('T')[0],
@@ -340,7 +291,8 @@ async function cascadeDatesUpward(
 
 export function SubphaseModal() {
   const { activeModal, editingSubphase, modalContext, closeModal } = useUIStore();
-  const { projects, setProjects, ensurePhaseExpanded, ensureSubphaseExpanded } = useAppStore();
+  const { projects, setProjects } = useAppStore();
+  const { ensurePhaseExpanded, ensureSubphaseExpanded } = useViewStore();
   
   const isOpen = activeModal === 'subphase';
   const isEditing = !!editingSubphase;

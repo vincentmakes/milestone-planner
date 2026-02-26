@@ -33,9 +33,12 @@ A proper fix should use the actual server timezone offset.
 
 import calendar
 from datetime import date, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Generic, TypeVar
 
+from fastapi import Query
 from pydantic import BaseModel, ConfigDict, PlainSerializer
+
+T = TypeVar("T")
 
 
 def is_dst_europe(dt: datetime | date) -> bool:
@@ -144,3 +147,36 @@ class BaseSchema(BaseModel):
     model_config = ConfigDict(
         from_attributes=True,
     )
+
+
+# ---------------------------------------------------------------------------
+# Pagination
+# ---------------------------------------------------------------------------
+
+
+class PaginationParams:
+    """FastAPI dependency for pagination query parameters.
+
+    Usage::
+
+        @router.get("/items")
+        async def list_items(pagination: PaginationParams = Depends()):
+            query = select(Item).offset(pagination.offset).limit(pagination.limit)
+    """
+
+    def __init__(
+        self,
+        offset: int = Query(0, ge=0, description="Number of items to skip"),
+        limit: int = Query(50, ge=1, le=200, description="Max items to return"),
+    ):
+        self.offset = offset
+        self.limit = limit
+
+
+class PaginatedResponse(BaseSchema, Generic[T]):
+    """Paginated response wrapper."""
+
+    items: list[T]
+    total: int
+    offset: int
+    limit: int

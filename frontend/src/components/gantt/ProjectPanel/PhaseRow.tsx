@@ -6,6 +6,8 @@
 
 import { memo, useMemo, useCallback, Fragment, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
+import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useReorder } from '@/contexts/ReorderContext';
 import { SubphaseRow } from './SubphaseRow';
@@ -105,12 +107,12 @@ export const PhaseRow = memo(function PhaseRow({
   nameColumnWidth,
   criticalPathItems = new Set(),
 }: PhaseRowProps) {
-  const expandedPhases = useAppStore((s) => s.expandedPhases);
-  const togglePhaseExpanded = useAppStore((s) => s.togglePhaseExpanded);
+  const expandedPhases = useViewStore((s) => s.expandedPhases);
+  const togglePhaseExpanded = useViewStore((s) => s.togglePhaseExpanded);
   const staff = useAppStore((s) => s.staff);
   const equipment = useAppStore((s) => s.equipment);
   const currentUser = useAppStore((s) => s.currentUser);
-  const showAssignments = useAppStore((s) => s.showAssignments);
+  const showAssignments = useViewStore((s) => s.showAssignments);
   const projects = useAppStore((s) => s.projects);
   const setProjects = useAppStore((s) => s.setProjects);
   const openPhaseModal = useUIStore((s) => s.openPhaseModal);
@@ -419,12 +421,12 @@ function PhaseSubphasesWithPhantom({
   criticalPathItems: Set<string>;
 }) {
   const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
-  const customColumnFilters = useAppStore((s) => s.customColumnFilters);
-  const customColumnValues = useAppStore((s) => s.customColumnValues);
+  const customColumnFilters = useCustomColumnStore((s) => s.customColumnFilters);
+  const customColumnValues = useCustomColumnStore((s) => s.customColumnValues);
   const { completePhantom, cancelPhantom } = usePhantomSibling();
-  
+
   // Check if phantom mode is for a subphase under this phase
-  const showPhantomAfter = phantomSiblingMode?.type === 'subphase' && 
+  const showPhantomAfter = phantomSiblingMode?.type === 'subphase' &&
     phantomSiblingMode.projectId === projectId &&
     phantomSiblingMode.parentType === 'phase' &&
     phantomSiblingMode.parentId === phaseId

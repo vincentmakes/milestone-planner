@@ -10,6 +10,7 @@
 
 import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useScrollSync, useCtrlScrollZoom, useResourceDragDrop } from '@/hooks';
 import { generateTimelineCells, generateTimelineHeaders } from '@/components/gantt/utils/timeline';
@@ -69,13 +70,13 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const currentSite = useAppStore((s) => s.currentSite);
   const currentUser = useAppStore((s) => s.currentUser);
   const skills = useAppStore((s) => s.skills);
-  const viewMode = useAppStore((s) => s.viewMode);
-  const currentDate = useAppStore((s) => s.currentDate);
-  const cellWidth = useAppStore((s) => s.cellWidth);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
   const bankHolidays = useAppStore((s) => s.bankHolidays);
   const companyEventDates = useAppStore((s) => s.companyEventDates);
   const companyEvents = useAppStore((s) => s.companyEvents);
+  const viewMode = useViewStore((s) => s.viewMode);
+  const currentDate = useViewStore((s) => s.currentDate);
+  const cellWidth = useViewStore((s) => s.cellWidth);
   
   const { openVacationModal } = useUIStore();
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
@@ -308,13 +309,6 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
         // Recursively process all subphases (handles nested subphases)
         processSubphases(phase.children, project, phase);
       });
-    });
-    
-    console.log('[StaffView] staffAssignmentsMap built:', { 
-      projectCount: projects.length, 
-      staffCount: siteStaff.length,
-      totalAssignments,
-      mapEntries: Array.from(map.entries()).filter(([_, v]) => v.length > 0).length
     });
     
     return map;

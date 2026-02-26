@@ -65,7 +65,6 @@ export function LoginScreen() {
   const handleSSOLogin = async () => {
     try {
       const response = await getSSOLoginUrl();
-      console.log('SSO Login response:', response);
       if (response.url) {
         window.location.href = response.url;
       } else {
