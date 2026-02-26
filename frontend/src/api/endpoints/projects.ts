@@ -27,7 +27,8 @@ import type {
  * @param archived - Filter: 'all', 'true', 'false' (default: active only)
  */
 export async function getProjects(archived: 'all' | 'true' | 'false' = 'false'): Promise<Project[]> {
-  return apiGet<Project[]>(`/api/projects?archived=${archived}`);
+  const response = await apiGet<{ items: Project[]; total: number; offset: number; limit: number }>(`/api/projects?archived=${archived}`);
+  return response.items;
 }
 
 /**

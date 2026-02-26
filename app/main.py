@@ -163,7 +163,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=allowed_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
         allow_headers=["Content-Type", "Accept", "Authorization"],
     )
 
@@ -349,13 +349,18 @@ def create_app() -> FastAPI:
             return JSONResponse(status_code=404, content={"error": "Admin panel not found"})
 
         # SPA fallback - serve index.html for non-API routes
-        @app.get("/{full_path:path}")
+        # Handle all methods to return 404 instead of 405 for unmatched routes
+        @app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
         async def serve_spa(request: Request, full_path: str):
             """Serve the SPA frontend for non-API routes."""
             logger.debug("SPA Fallback: path=%s, method=%s", full_path, request.method)
 
             # Don't serve index.html for API routes
             if full_path.startswith("api/"):
+                return JSONResponse(status_code=404, content={"error": "Not found"})
+
+            # Only serve the SPA for GET requests
+            if request.method != "GET":
                 return JSONResponse(status_code=404, content={"error": "Not found"})
 
             # Don't serve index.html for WebSocket endpoint
