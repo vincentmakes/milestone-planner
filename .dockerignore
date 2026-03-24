@@ -1,0 +1,51 @@
+# Git
+.git
+.gitignore
+
+# CI/CD
+.github
+
+# Frontend build output (built inside Docker, not needed from host)
+frontend/node_modules
+frontend/dist
+
+# Documentation
+*.md
+LICENSE
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python artifacts
+__pycache__
+*.pyc
+*.pyo
+.mypy_cache
+.pytest_cache
+.coverage
+htmlcov
+
+# Docker compose files (not needed inside container)
+docker-compose*.yml
+
+# Data and uploads (mounted as volumes)
+data
+public/assets
+public/index.html
+uploads
+
+# Build artifacts
+*.zip
+*.tar.gz

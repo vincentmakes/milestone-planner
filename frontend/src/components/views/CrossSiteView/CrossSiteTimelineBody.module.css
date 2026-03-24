@@ -1,0 +1,207 @@
+/* CrossSiteTimelineBody - matches TimelineBody from main Gantt */
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+}
+
+.body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.body::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+.body::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+.content {
+  position: relative;
+  min-height: 100%;
+}
+
+/* Grid using CSS gradient for vertical lines */
+.grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.grid::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0px,
+    transparent calc(var(--cell-width, 36px) - 1px),
+    var(--border-color) calc(var(--cell-width, 36px) - 1px),
+    var(--border-color) var(--cell-width, 36px)
+  );
+  pointer-events: none;
+}
+
+.gridCell {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.gridCell.weekend {
+  background: var(--bg-weekend, rgba(0, 0, 0, 0.04));
+}
+
+.gridCell.holiday {
+  background: rgba(249, 115, 22, 0.12);
+}
+
+.gridCell.companyEvent {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+/* Tooltip overlay - sits above all content */
+.holidayTooltipOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+/* Common tooltip zone styles */
+.holidayTooltipZone,
+.eventTooltipZone {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  pointer-events: auto;
+  cursor: default;
+}
+
+/* CSS-based fast tooltip */
+.holidayTooltipZone[data-tooltip]::after,
+.eventTooltipZone[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  background: var(--bg-tertiary, #3d3d3d);
+  color: var(--text-primary, #e0e0e0);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 10000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.05s, visibility 0.05s;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(100% + 4px);
+}
+
+.holidayTooltipZone:hover[data-tooltip]::after,
+.eventTooltipZone:hover[data-tooltip]::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+.gridCell.today {
+  background: rgba(59, 130, 246, 0.08);
+  border-left: 2px solid var(--accent-blue);
+  z-index: 2;
+}
+
+.rows {
+  position: relative;
+  z-index: 2;
+}
+
+/* Site Row */
+.siteRow {
+  height: 44px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.siteRow.currentSite {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+/* Project Row */
+.projectRow {
+  position: relative;
+  height: 32px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Project Bar */
+.bar {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: calc(100% - 8px);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 500;
+  color: white;
+  overflow: hidden;
+  white-space: nowrap;
+  user-select: none;
+  z-index: 3;
+  cursor: pointer;
+  transition: filter 0.15s, box-shadow 0.15s;
+}
+
+.bar:hover {
+  filter: brightness(1.1);
+  box-shadow: var(--shadow-md);
+}
+
+/* Confirmed project - blue/cyan gradient */
+.bar.confirmed {
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+}
+
+/* Unconfirmed project - yellow/orange with diagonal stripes */
+.bar.unconfirmed {
+  background: 
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 8px,
+      rgba(0, 0, 0, 0.1) 8px,
+      rgba(0, 0, 0, 0.1) 16px
+    ),
+    linear-gradient(135deg, var(--accent-yellow), var(--accent-orange));
+}
+
+/* Masked (other site) */
+.bar.masked {
+  opacity: 0.6;
+}
+
+.barLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}

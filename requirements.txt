@@ -1,0 +1,34 @@
+# FastAPI and ASGI
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+python-multipart==0.0.22
+
+# Database
+sqlalchemy[asyncio]==2.0.25
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+
+# Authentication & Sessions
+authlib==1.6.7
+itsdangerous==2.1.2
+python-jose[cryptography]==3.4.0
+bcrypt>=4.0.0
+httpx==0.26.0
+
+# Encryption (for tenant credentials)
+cryptography==46.0.5
+
+# Validation & Serialization
+pydantic==2.6.1
+pydantic-settings==2.1.0
+email-validator==2.1.0
+
+# Utilities
+python-dotenv==1.0.1
+python-dateutil==2.8.2
+orjson==3.11.5
+psutil==5.9.8  # For system stats
+
+# MPXJ for MS Project file parsing
+jpype1==1.5.0
+mpxj>=12.0.0  # Python wrapper with bundled MPXJ JARs

@@ -1,0 +1,48 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.ganttArea {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0; /* Important for flex children to shrink */
+}
+
+.resizer {
+  width: 4px;
+  background: var(--border-color);
+  cursor: col-resize;
+  flex-shrink: 0;
+  transition: background var(--transition-fast);
+}
+
+.resizer:hover {
+  background: var(--accent-blue);
+}
+
+/* Horizontal resizer between Gantt and Staff Overview */
+.horizontalResizer {
+  height: 4px;
+  background: var(--accent-purple);
+  cursor: row-resize;
+  flex-shrink: 0;
+  transition: background var(--transition-fast);
+}
+
+.horizontalResizer:hover {
+  background: var(--accent-cyan);
+}
+
+/* Orange resizer for Equipment Overview */
+.horizontalResizer.equipment {
+  background: var(--accent-orange);
+}
+
+.horizontalResizer.equipment:hover {
+  background: #fb923c; /* Lighter orange on hover */
+}

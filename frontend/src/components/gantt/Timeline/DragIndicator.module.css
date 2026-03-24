@@ -1,0 +1,56 @@
+/* DragIndicator.module.css */
+/* Matches vanilla JS indicator styling */
+
+/* Lag indicator during drag */
+.lagIndicator {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  z-index: 100;
+  pointer-events: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.lagIndicator.positive {
+  background: var(--accent-green, #27ae60);
+  color: white;
+}
+
+.lagIndicator.negative {
+  background: var(--accent-red, #e74c3c);
+  color: white;
+}
+
+/* Resize indicator - shows duration and date while resizing */
+.resizeIndicator {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+  white-space: nowrap;
+  z-index: 100;
+  pointer-events: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  background: var(--accent-blue, #3498db);
+  color: white;
+  gap: 2px;
+}
+
+.resizeIndicator .duration {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.resizeIndicator .date {
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.9;
+}
