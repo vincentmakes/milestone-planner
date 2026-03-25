@@ -9,7 +9,7 @@ asyncpg==0.29.0
 psycopg2-binary==2.9.9
 
 # Authentication & Sessions
-authlib==1.6.7
+authlib==1.6.9
 itsdangerous==2.1.2
 python-jose[cryptography]==3.4.0
 bcrypt>=4.0.0
