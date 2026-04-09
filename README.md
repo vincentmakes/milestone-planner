@@ -28,9 +28,9 @@ A comprehensive R&D project management platform for multi-site organizations.
 
 ### Option 1: GitHub Codespaces (Recommended for Demo)
 
-Click the button above or go to [codespaces.new/vincentmakes/milestone-planner](https://codespaces.new/vincentmakes/milestone-planner?quickstart=1) to launch a fully configured development environment with PostgreSQL, Python, Node.js, and VS Code extensions.
+Click the badge above to launch a fully configured environment with PostgreSQL, Python, Node.js, and a pre-seeded demo tenant.
 
-After the Codespace starts:
+After the Codespace starts, run:
 
 ```bash
 # Start the backend
@@ -39,6 +39,15 @@ uvicorn app.main:app --host 0.0.0.0 --port 8485 --reload
 # In another terminal, start the frontend dev server
 cd frontend && npm run dev -- --host 0.0.0.0 --port 3333
 ```
+
+The Codespace automatically creates a demo tenant with sample data:
+
+| Access | URL | Email | Password |
+|--------|-----|-------|----------|
+| **Admin Portal** | `/admin/` | `admin@demo.local` | `demo1234` |
+| **Demo Tenant** | `/t/demo/` | `admin@demo.local` | `demo1234` |
+
+The demo tenant includes 2 sites (Winterthur, Frankfurt), 4 projects with phases and assignments, 8 staff members with skills, and 8 equipment items. All staff accounts use password `demo1234`.
 
 ### Option 2: Docker Fresh Install
 

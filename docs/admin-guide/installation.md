@@ -116,6 +116,7 @@ The Codespace includes:
 - PostgreSQL 15 (auto-configured)
 - VS Code extensions for Python, TypeScript, Docker
 - Forwarded ports: 8485 (app), 3333 (Vite dev), 5432 (PostgreSQL)
+- **Pre-seeded demo tenant** with sample projects, staff, and equipment
 
 After the Codespace starts, run:
 
@@ -126,6 +127,23 @@ uvicorn app.main:app --host 0.0.0.0 --port 8485 --reload
 # In a separate terminal, start the frontend dev server
 cd frontend && npm run dev -- --host 0.0.0.0 --port 3333
 ```
+
+### Demo Credentials
+
+| Access | URL | Email | Password |
+|--------|-----|-------|----------|
+| **Admin Portal** | `/admin/` | `admin@demo.local` | `demo1234` |
+| **Demo Tenant** | `/t/demo/` | `admin@demo.local` | `demo1234` |
+
+The demo tenant includes:
+
+- **2 sites**: Winterthur (CH), Frankfurt (DE)
+- **4 projects** with phases, staff assignments, and timeline data
+- **8 staff members** with skills and site assignments
+- **8 equipment items** across both sites
+- **6 skills** (Project Management, HPLC, Data Analysis, Cell Culture, Technical Writing, Quality Control)
+
+All staff accounts use password `demo1234`.
 
 ## Reverse Proxy (SSL/TLS)
 
