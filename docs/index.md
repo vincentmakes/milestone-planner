@@ -26,4 +26,19 @@
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/vincentmakes/milestone-planner?quickstart=1)
 
-Launch a fully configured development environment in your browser with PostgreSQL, Python, and Node.js pre-installed.
+Launch a fully configured development environment in your browser with PostgreSQL, Python, Node.js, and a pre-seeded demo tenant.
+
+After the Codespace starts, run:
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8485 --reload
+```
+
+### Demo Credentials
+
+| Access | URL | Email | Password |
+|--------|-----|-------|----------|
+| **Admin Portal** | `/admin/` | `admin@demo.local` | `demo1234` |
+| **Demo Tenant** | `/t/demo/` | `admin@demo.local` | `demo1234` |
+
+The demo tenant includes 2 sites, 4 projects with phases and staff assignments, 8 staff members with skills, and 8 equipment items. All staff accounts use password `demo1234`.
