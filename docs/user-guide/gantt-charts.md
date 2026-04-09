@@ -69,6 +69,75 @@ Add additional data fields to the project panel:
 
 Custom columns support inline editing, show/hide toggles, and resizable widths.
 
+## Dependencies
+
+Link phases and subphases with dependency relationships to enforce scheduling logic. Dependency arrows are drawn on the timeline to visualize the relationships.
+
+### Dependency Types
+
+| Type | Name | Meaning |
+|------|------|---------|
+| **FS** | Finish-to-Start | Target starts after source finishes (most common) |
+| **SS** | Start-to-Start | Target starts when source starts |
+| **FF** | Finish-to-Finish | Target finishes when source finishes |
+| **SF** | Start-to-Finish | Target finishes when source starts (rare) |
+
+### Creating a Dependency
+
+Dependencies use a **two-click flow**:
+
+1. Hover over a phase or subphase bar — **link zones** appear at the start (left) and end (right) edges
+2. Click a link zone on the **source** item (e.g., the end zone for a Finish-to-Start link)
+3. Click a link zone on the **target** item (e.g., the start zone)
+4. The dependency type is determined automatically based on which zones you clicked:
+   - End → Start = **FS**, Start → Start = **SS**, End → End = **FF**, Start → End = **SF**
+
+After linking, the target item's dates are automatically adjusted:
+
+- **FS**: Target start moves to the day after the source ends
+- **SS**: Target start aligns with the source start
+- **FF** and **SF**: No automatic date adjustment
+
+Child phases/subphases move along with their parent when dates are adjusted. Parent dates cascade upward to accommodate children.
+
+### Deleting a Dependency
+
+Right-click on a phase or subphase, edit it, and remove the dependency from the dependencies list.
+
+### Visual Arrows
+
+Each dependency type has a distinct visual style on the timeline:
+
+- **FS** — Solid arrow from source end to target start
+- **SS** — Dashed arrow connecting start edges
+- **FF** — Dotted arrow connecting end edges
+- **SF** — Dash-dot arrow from source start to target end
+
+### Constraints
+
+- Dependencies can only be created between items **within the same project**
+- **Circular dependencies** are detected and blocked — you'll see an alert if a link would create a cycle
+- Duplicate dependencies (same source, same type) are silently ignored
+
+## Critical Path
+
+The **Critical Path** highlights the longest sequence of dependent phases through a project, showing the minimum time needed to complete it. Items on the critical path have zero slack — any delay to them delays the entire project.
+
+### How to Use
+
+1. Right-click on a project and select **Toggle Critical Path** (or use the project context menu)
+2. Critical path items are visually highlighted on the timeline
+3. Toggle it off to return to normal view
+
+The critical path is calculated using the **Critical Path Method (CPM)** algorithm:
+
+- Forward pass: calculates the earliest possible start and finish for each item
+- Backward pass: calculates the latest allowable start and finish
+- Items where early start equals late start (zero float) are on the critical path
+
+!!! tip
+    The critical path requires dependencies to be set up between phases. Without dependencies, all items have independent float and no critical path exists.
+
 ## Context Menu
 
 Right-click on any item for context-appropriate actions:

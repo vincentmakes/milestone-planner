@@ -17,6 +17,17 @@
 - What-If changes are broadcast in real-time to other connected users via WebSocket, so collaborators can see your experimental planning
 - Changes are not persisted until explicitly committed
 - Only administrators and superusers can enter What-If mode
+- The visual appearance changes (header indicator) to remind you that you're in planning mode
+
+## Committing and Discarding
+
+When you're finished experimenting:
+
+- **Commit changes** — All modifications made during the What-If session are saved to the database in a single batch. This includes moved phases, reassigned staff, date changes, and any other edits. Once committed, changes become the live data visible to all users.
+- **Discard changes** — All modifications are thrown away and the original data is reloaded from the database. No trace of the What-If session remains.
+
+!!! warning
+    Committing cannot be undone. Review your changes carefully before committing, especially if multiple phases or assignments were modified.
 
 ## Use Cases
 
@@ -24,3 +35,4 @@
 - Explore "what happens if we move Project X to Q3?"
 - Plan team changes without disrupting the live schedule
 - Present planning options to stakeholders before deciding
+- Run capacity scenarios during planning meetings with real-time visibility for the team

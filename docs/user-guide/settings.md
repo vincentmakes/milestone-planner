@@ -40,38 +40,89 @@ Administrators can create, edit, and delete user accounts with:
 
 ## Skills Management
 
-Skills are tags assigned to staff for resource planning:
+Skills are colored tags assigned to staff for resource planning and filtering.
 
-- Create skills with a **name**, **description**, and **color**
-- Assign skills to staff through user management
-- Filter staff by skills in the Staff Overview
+### Creating Skills
+
+1. Navigate to **Settings** > **Skills**
+2. Click **+ Add Skill**
+3. Set a **name**, optional **description**, and a **color** (used as a visual dot/badge)
+4. Click **Save**
+
+### Assigning Skills to Staff
+
+1. Go to **User Management** and edit a user
+2. In the skills section, select one or more skills from the dropdown
+3. Save the user profile
+
+### Filtering by Skills
+
+In the **Staff Overview**, click the **Filter** dropdown and select one or more skills. Each skill shows its assigned color dot for quick visual identification. Staff members matching **any** of the selected skills are shown. The header displays a filtered/total count (e.g., "8/20 staff").
 
 ## Equipment Types
 
-Categorize equipment inventory:
+Equipment types categorize your inventory for filtering and organization.
 
-- Create types (e.g., Analytical, Molecular Biology, General Lab)
-- Equipment items are assigned a type during creation
-- Types appear as filter options in the Equipment View
+### Managing Types
+
+- **Create**: Types are created implicitly when you add equipment items — enter a type name during equipment creation
+- **Rename**: In the Equipment View filter dropdown, click the edit icon next to a type to rename it. All equipment items of that type are updated automatically
+- **Delete**: Remove a type from the dropdown. Equipment items previously assigned this type will have their type cleared
+
+Types appear as filter checkboxes in the **Equipment View** — use "Select All" and "Clear" for quick filtering.
 
 ## Predefined Phases
 
-Phase templates that appear when creating a new project:
+Phase templates that appear as pre-selected options when creating a new project.
 
-- Set **name**, **color**, and **active/inactive** status
-- Control display **order**
-- Only active phases appear in the project creation modal
+### Managing Templates
+
+1. Navigate to **Settings** > **Predefined Phases**
+2. Each template has:
+   - **Name** — The phase name (e.g., "Planning", "Execution", "Review")
+   - **Color** — Color used for the phase bar on the timeline
+   - **Active/Inactive** — Only active templates appear in the project creation modal
+   - **Display Order** — Drag to reorder how templates are listed
+
+### How Templates Work
+
+When creating a new project, all **active** predefined phases are pre-selected as checkboxes. Uncheck any you don't need for that project. The selected phases are created with default durations matching the project's start and end dates.
+
+### Adding a Template
+
+1. Click **+ Add Phase**
+2. Enter the name and pick a color
+3. The new template is active by default and appears at the end of the list
+4. Drag to reorder as needed
 
 ## Bank Holidays & Company Events
 
-**Bank Holidays:**
+### Bank Holidays
 
-- Configured per site based on country/region
-- Auto-refreshed from the Nager.Date API or manually added
-- Highlighted on the timeline and affect availability calculations
+Bank holidays are configured **per site** and affect staff availability calculations.
 
-**Company Events:**
+**Auto-fetch from Nager.Date API:**
 
-- Organization-wide events (e.g., retreat, annual meeting)
-- Created with name, date, and description
-- Displayed as labeled rows on the timeline
+1. Go to **Settings** > **Sites** and edit a site
+2. Set the site's **country** (e.g., Switzerland, Germany)
+3. Click **Refresh Holidays** — Milestone fetches the current year's public holidays from the [Nager.Date API](https://date.nager.at/) based on the country
+4. Holidays appear as highlighted columns on the timeline
+
+**Manually add a holiday:**
+
+1. In the site's holiday list, click **+ Add Holiday**
+2. Enter the **name** and **date**
+3. Save — the holiday is added alongside any auto-fetched ones
+
+Bank holidays are shown as shaded columns on the Gantt timeline and reduce staff availability on those days.
+
+### Company Events
+
+Company events are organization-wide dates displayed as labeled rows at the bottom of the Staff Overview timeline (e.g., "Annual Retreat", "Company Meeting").
+
+1. Navigate to **Settings** > **Company Events**
+2. Click **+ Add Event**
+3. Enter the **name**, **date**, and optional **description**
+4. Save — the event appears on the timeline for all users
+
+Company events are informational markers and do not automatically affect availability calculations.

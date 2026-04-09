@@ -14,8 +14,36 @@ Milestone can import project data from external tools:
 
 After import, a summary shows the created project, phase count, and subphase count.
 
+### Supported Formats
+
+| Format | Extension | Requirements | Notes |
+|--------|-----------|-------------|-------|
+| **CSV** | `.csv` | None | Simple comma-separated values with project name, phase names, start/end dates |
+| **XML** | `.xml` | None | Microsoft Project XML format — preserves full hierarchy and metadata |
+| **MPP** | `.mpp` | Java (JRE 11+) | Microsoft Project native binary format — richest data preservation |
+| **MPT** | `.mpt` | Java (JRE 11+) | Microsoft Project template format |
+| **MPX** | `.mpx` | Java (JRE 11+) | Older Microsoft Project exchange format |
+
 !!! note
     MPP/MPT/MPX file import requires Java to be installed on the server (included in the Docker image). CSV and XML imports work without Java.
+
+### What Gets Imported
+
+- **Project name** and metadata (start date, end date)
+- **Phase hierarchy** — top-level tasks become phases, nested tasks become subphases (unlimited nesting depth preserved)
+- **Dates** — start and end dates for all phases and subphases
+- **Task names** — preserved as phase/subphase names
+
+Staff assignments, resource allocations, and custom fields from the source file are not imported — these are configured within Milestone after import.
+
+### Troubleshooting Import Issues
+
+| Problem | Solution |
+|---------|----------|
+| MPP import fails with "Java not found" | Java (JRE 11+) must be installed on the server. The Docker image includes it, but local development may not. |
+| Phases appear flat (no nesting) | The source file may not have task hierarchy. Check the WBS structure in Microsoft Project before exporting. |
+| Dates look wrong | Ensure the source file uses date formats that can be parsed (ISO 8601 or standard regional formats). |
+| Large file takes too long | Very large project files (hundreds of tasks) may take several seconds to parse. Be patient during the preview step. |
 
 ## Exporting Projects
 

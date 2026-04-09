@@ -52,6 +52,9 @@ markdown_extensions:
   - toc:
       permalink: true
 
+extra_css:
+  - stylesheets/extra.css
+
 extra:
   social:
     - icon: fontawesome/brands/github
@@ -69,6 +72,7 @@ nav:
     - Import & Export: user-guide/import-export.md
     - What-If Planning: user-guide/what-if-planning.md
     - Settings & Configuration: user-guide/settings.md
+    - Real-Time Collaboration: user-guide/collaboration.md
     - Keyboard Shortcuts: user-guide/keyboard-shortcuts.md
   - Admin Guide:
     - Overview: admin-guide/overview.md
