@@ -1,122 +1,113 @@
-# Milestone  - https://www.milestoneplanner.net
+# Milestone Planner
 
 A comprehensive R&D project management platform for multi-site organizations.
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/vincentmakes/milestone-planner?quickstart=1)
+
 ## Features
 
-- **Gantt chart visualization** - Interactive timeline with drag & drop, resize phases
-- **Resource management** - Staff allocation with percentage-based assignments
-- **Equipment scheduling** - Book equipment across projects and phases
-- **Multi-tenant architecture** - Separate databases per organization
-- **Organization-level SSO** - Microsoft Entra ID with group-based access control
-- **Cross-site visibility** - View resources across locations while maintaining confidentiality
-- **What-If planning** - Scenario planning without affecting production data
-- **Mobile responsive** - Touch-optimized for tablets
+- **Gantt chart visualization** — Interactive timeline with drag & drop, resize phases
+- **Resource management** — Staff allocation with percentage-based assignments
+- **Equipment scheduling** — Book equipment across projects and phases
+- **Multi-tenant architecture** — Separate databases per organization
+- **Organization-level SSO** — Microsoft Entra ID with group-based access control
+- **Cross-site visibility** — View resources across locations while maintaining confidentiality
+- **What-If planning** — Scenario planning without affecting production data
+- **Real-time collaboration** — WebSocket-powered live updates
+- **Import/Export** — Microsoft Project (CSV, XML, MPP) support
+- **Mobile responsive** — Touch-optimized for tablets
 
 ## Tech Stack
 
 - **Backend**: Python 3.11+ / FastAPI / SQLAlchemy 2.0 (async) / PostgreSQL 15+
 - **Frontend**: React 18 / TypeScript / Zustand / Vite / TanStack Query
 - **Deployment**: Docker / Docker Compose
+- **Documentation**: MkDocs Material / Cloudflare Pages
 
 ## Quick Start
 
-### Prerequisites
+### Option 1: GitHub Codespaces (Recommended for Demo)
 
-- Docker and Docker Compose
-- PostgreSQL 15+
-- (Optional) Node.js 20+ for frontend development
+Click the button above or go to [codespaces.new/vincentmakes/milestone-planner](https://codespaces.new/vincentmakes/milestone-planner?quickstart=1) to launch a fully configured development environment with PostgreSQL, Python, Node.js, and VS Code extensions.
 
-### 1. Clone and Configure
+After the Codespace starts:
+
+```bash
+# Start the backend
+uvicorn app.main:app --host 0.0.0.0 --port 8485 --reload
+
+# In another terminal, start the frontend dev server
+cd frontend && npm run dev -- --host 0.0.0.0 --port 3333
+```
+
+### Option 2: Docker Fresh Install
+
+```bash
+git clone https://github.com/vincentmakes/milestone-planner.git
+cd milestone-planner
+cp .env.example .env
+docker compose -f docker-compose.fresh.yml up -d
+```
+
+This starts PostgreSQL + the app with auto-initialization. Check `docker logs milestone-fresh` for the admin password. Access at `http://localhost:8486/`.
+
+### Option 3: Production with External DB
 
 ```bash
 cp .env.example .env
 # Edit .env with your database credentials and secrets
-```
 
-### 2. Setup Database
-
-```bash
-# Run the full setup script as PostgreSQL superuser
+# Set up the database
 psql -U postgres -f setup_databases.sql
+
+# Start the application
+docker compose up -d
 ```
 
-Or manually:
-```bash
-psql -U postgres
-CREATE DATABASE milestone;
-CREATE USER milestone WITH PASSWORD 'your_secure_password';
-GRANT ALL PRIVILEGES ON DATABASE milestone TO milestone;
-\c milestone
--- Run the tenant schema section from setup_databases.sql
-```
+Access at `http://localhost:8485/`.
 
-### 3. Start the Application
+## Documentation
 
-```bash
-# Production
-docker-compose up -d
-
-# Development with hot reload
-docker-compose -f docker-compose.react-dev.yml up -d
-```
-
-### 4. Create First User
-
-```bash
-psql -U milestone -d milestone
-
--- Create admin user (password: 'admin' - change this!)
-INSERT INTO users (email, password, first_name, last_name, role)
-VALUES (
-    'admin@example.com',
-    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.G6J8EHyFj2YQXW',
-    'Admin',
-    'User',
-    'admin'
-);
-```
-
-### 5. Access the Application
-
-- **Main app**: http://localhost:8485/
-- **API docs**: http://localhost:8485/api/docs (requires admin login)
+| Resource | Description |
+|----------|-------------|
+| [User Guide](docs/user-guide/getting-started.md) | Day-to-day usage: Gantt charts, staff, equipment, vacations |
+| [Admin Guide](docs/admin-guide/overview.md) | Installation, multi-tenant management, SSO configuration |
+| [Developer Guide](docs/developer-guide/architecture.md) | Architecture, local development, API reference |
+| [Development Guide](DEVELOPMENT.md) | Quick reference for making changes |
+| [API Documentation](http://localhost:8485/api/docs) | Swagger UI (when running) |
 
 ## File Structure
 
 ```
-milestone/
+milestone-planner/
 ├── app/                    # FastAPI backend
 │   ├── main.py            # Application entry point
-│   ├── config.py          # Pydantic settings (env vars)
+│   ├── config.py          # Pydantic settings
 │   ├── database.py        # Tenant DB engine/session
-│   ├── routers/           # API endpoints
-│   ├── models/            # SQLAlchemy models
+│   ├── routers/           # API endpoints (20 modules)
+│   ├── models/            # SQLAlchemy models (14 modules)
 │   ├── schemas/           # Pydantic schemas
-│   ├── services/          # Business logic (master_db, tenant_manager, encryption)
-│   └── middleware/        # Auth, tenant middleware
+│   ├── services/          # Business logic (encryption, SSO, tenant management)
+│   └── middleware/        # Auth and tenant middleware
 ├── frontend/              # React frontend source
 │   └── src/               # Components, stores, API clients, types
-├── public/                # Served frontend (built from frontend/dist/)
+├── docs/                  # MkDocs documentation source
+│   ├── user-guide/        # End-user documentation
+│   ├── admin-guide/       # Admin & multi-tenant docs
+│   └── developer-guide/   # Architecture & API reference
+├── .devcontainer/         # GitHub Codespaces configuration
+├── .github/workflows/     # CI/CD (lint, test, build, docs deploy)
 ├── migrations/            # Raw SQL migration files
-├── scripts/               # Utility scripts (fresh install, seeding, etc.)
+├── scripts/               # Utility scripts
+├── public/                # Served frontend (built from frontend/dist/)
 ├── docker-compose.yml     # Production deployment
+├── docker-compose.fresh.yml  # Self-contained fresh install
 ├── docker-compose.dev.yml # Development with hot reload
-├── docker-compose.react-dev.yml  # React dev server variant
-├── Dockerfile             # Container build
+├── Dockerfile             # Multi-stage container build
+├── mkdocs.yml             # Documentation site config
 ├── setup_databases.sql    # Complete database schema
-├── deploy-react.sh        # Frontend deployment helper
-├── requirements.txt       # Python dependencies
-├── .env.example           # Environment template
-└── DEVELOPMENT.md         # Development guide
+└── .env.example           # Environment template
 ```
-
-## Documentation
-
-- [Development Guide](DEVELOPMENT.md) - How to make changes and deploy
-- [Migration Guide](migrations/README.md) - Database migration procedures
-- [Frontend Guide](frontend/README.md) - Frontend development
-- [API Documentation](http://localhost:8485/api/docs) - Swagger UI (when running)
 
 ## Multi-Tenant Mode
 
@@ -128,7 +119,7 @@ For SaaS deployment with multiple organizations:
 4. Set `PG_ADMIN_USER` / `PG_ADMIN_PASSWORD` for auto-provisioning
 5. Access admin panel at `/admin/`
 
-The master database schema (organizations, tenants, SSO config) is auto-applied on startup.
+Each tenant gets an isolated PostgreSQL database. Credentials are encrypted with AES-256-GCM. See the [Multi-Tenant Management Guide](docs/admin-guide/multi-tenant.md) for details.
 
 ## Access URLs
 
