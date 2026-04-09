@@ -60,14 +60,60 @@ Each project and phase has a completion slider (0–100%):
 
 ## Custom Columns
 
-Add additional data fields to the project panel:
+Add custom data fields to the project panel to track metadata like priority, status codes, budget, or risk levels. Up to **10 columns** can be active per site (including global columns).
+
+### Creating a Column
 
 1. Click **Manage Columns** in the panel header
-2. Click **+ New Column**
-3. Configure: Name, Data Type (Text, Number, Checkbox, Date, Dropdown), Default Value, Width
-4. For Dropdown type: provide comma-separated options
+2. Click **Add Column**
+3. Configure:
+   - **Column Name** (required, e.g., "Priority", "Status", "Owner")
+   - **Column Type** — cannot be changed after creation:
+     - **Text** — Free-text field
+     - **Checkbox** — Boolean toggle (checked/unchecked)
+     - **Dropdown List** — Choose from predefined options
+   - **Scope** — **Global** (all sites) or **Local** (current site only)
+   - **Column Width** — 60px to 300px (default 120px), adjustable via slider
+4. For Dropdown type: add option values using the **Add Option** button (at least one required)
+5. Click **Create**
 
-Custom columns support inline editing, show/hide toggles, and resizable widths.
+### Editing Values
+
+Custom column values appear as editable cells in the project panel, next to each project, phase, and subphase:
+
+- **Text columns**: Click the cell to edit, press Enter or click away to save, Escape to cancel
+- **Checkbox columns**: Click to toggle between checked and unchecked
+- **Dropdown columns**: Click to open the options list, select a value or click "Clear selection" to reset
+
+Values are saved automatically as you edit. Changes cascade — editing a phase's value also updates its child subphases.
+
+### Managing Columns
+
+Open **Manage Columns** to see all active columns:
+
+- **Reorder**: Drag columns by the handle icon to change display order
+- **Edit**: Click the edit icon to change name, dropdown options, or width (type cannot be changed)
+- **Delete**: Click the delete icon. A confirmation warns that **all values will be lost**
+
+### Column Filtering
+
+Click the **filter icon** on any column header to filter the project list:
+
+1. The dropdown shows all unique values in that column
+2. Check values to show only matching rows
+3. Use **Select All** / **Clear All** for quick selection
+4. Filter by **(Empty)** to find rows with no value set
+5. Multiple column filters combine with AND logic
+
+An active filter turns the column header's filter icon blue.
+
+### Resizing Column Widths
+
+Drag the **right edge** of any column header to resize its width (60px–400px). The new width is saved automatically.
+
+### Show/Hide Columns
+
+Toggle individual column visibility from the column manager without deleting them.
 
 ## Dependencies
 
