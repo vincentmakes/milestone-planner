@@ -10,6 +10,8 @@ Multi-tenant SaaS platform for R&D project management with Gantt charts, staff a
 - **Frontend**: React 18, TypeScript, Vite, Zustand, React Router, TanStack Query
 - **Database**: PostgreSQL 15+ (multi-tenant: one master DB + one DB per tenant)
 - **Deployment**: Docker, docker-compose, port 8485
+- **CI/CD**: GitHub Actions (backend lint/test/typecheck, frontend lint/test/build, Docker build)
+- **Documentation**: MkDocs Material, deployed to Cloudflare Pages
 
 ## Architecture
 
@@ -26,27 +28,91 @@ app/
   config.py            # Pydantic settings (env vars)
   database.py          # Tenant DB engine/session (Base)
   models/              # SQLAlchemy ORM models
-    tenant.py          # MasterBase + Tenant, AdminUser, etc.
+    tenant.py          # MasterBase + Tenant, AdminUser
     organization.py    # Organization, OrganizationSSOConfig
+    project.py         # Project, Phase, Subphase
+    user.py            # User (with full_name property)
+    assignment.py      # StaffAssignment, EquipmentAssignment
+    equipment.py       # Equipment, EquipmentType
+    site.py            # Site
+    skill.py           # Skill
+    vacation.py        # Vacation, RecurringAbsence
+    custom_column.py   # CustomColumn, CustomColumnValue
+    note.py            # Note
+    settings.py        # InstanceSettings
+    session.py         # Session
+    presence.py        # Presence
   routers/             # FastAPI route handlers
-    admin.py           # Tenant CRUD, admin auth
+    admin/             # Multi-tenant admin sub-routes
     admin_organizations.py  # Organization CRUD
+    assignments.py     # Staff/equipment assignments
+    auth.py            # Authentication (login, SSO, sessions)
+    custom_columns.py  # Custom column CRUD
+    equipment.py       # Equipment CRUD and bookings
+    export.py          # CSV/XML project export
+    health.py          # Health check endpoint
+    mpp_import.py      # Microsoft Project file import (requires Java)
+    notes.py           # Project/phase notes
+    predefined_phases.py # Phase template management
+    presence.py        # Real-time presence (WebSocket)
+    projects.py        # Project CRUD
+    settings.py        # Instance settings
+    sites.py           # Site management
+    skills.py          # Skills management
+    staff.py           # Staff management
+    users.py           # User management
+    vacations.py       # Vacation/time-off management
   schemas/             # Pydantic request/response schemas
   services/
+    auth.py            # Authentication logic
+    encryption.py      # AES-256-GCM credential encryption
     master_db.py       # Master DB connection + auto-migrations
+    proxy.py           # Proxy service
+    response_builders.py # Shared response formatting
+    session.py         # Session management
+    sso.py             # Microsoft Entra SSO
     tenant_manager.py  # Per-tenant connection pool management
     tenant_provisioner.py  # DB/user creation for new tenants
-    encryption.py      # AES-256-GCM credential encryption
   middleware/
     auth.py            # Session-based authentication
     tenant.py          # URL-based tenant resolution (/t/{slug}/*)
 frontend/
   src/
-    components/        # React components (Gantt/, admin/, modals/, ui/)
+    App.tsx            # Root component with routing
+    main.tsx           # React entry point
+    api/               # API client and per-resource endpoint functions
+      client.ts        # Base HTTP client
+      endpoints/       # admin, auth, customColumns, equipment, presence,
+                       # projects, settings, sites, skills, staff, users, vacations
+    components/
+      admin/           # AdminApp, TenantList, OrganizationList, AdminUserList, SystemStatsPanel
+      gantt/           # Gantt chart components
+      views/           # ArchivedView, CrossSiteView, EquipmentView, StaffView
+      screens/         # LoginScreen, LoadingScreen
+      modals/          # Modal dialogs
+      common/          # Shared UI components
+      layout/          # Layout components
     stores/            # Zustand state stores
-    api/               # API client functions
-    types/             # TypeScript type definitions
-migrations/            # SQL migration files (run manually)
+      appStore.ts      # Main app state
+      adminStore.ts    # Admin portal state
+      uiStore.ts       # UI state (sidebar, modals)
+      viewStore.ts     # Current view state
+      whatIfStore.ts   # What-If mode state
+      customColumnStore.ts  # Custom columns state
+      undoStore.ts     # Undo/redo state
+    types/             # TypeScript type definitions (models.ts)
+    hooks/             # Custom React hooks
+    styles/            # CSS files
+    utils/             # Utility functions
+docs/                  # MkDocs documentation source
+  index.md             # Docs landing page
+  user-guide/          # End-user documentation
+  admin-guide/         # Admin & multi-tenant management docs
+  developer-guide/     # Architecture, API reference, contributing
+migrations/            # Raw SQL migration files
+scripts/               # Utility scripts (fresh_install, seed_tenant_data, etc.)
+.devcontainer/         # GitHub Codespaces configuration
+.github/workflows/     # CI: backend.yml, frontend.yml, docker.yml, docs.yml
 setup_databases.sql    # Full schema for fresh installs
 ```
 
@@ -62,6 +128,9 @@ docker run --rm -v $(pwd)/frontend:/app -w /app node:20-alpine sh -c "npm instal
 # Start production
 docker-compose up -d
 
+# Fresh install (includes PostgreSQL)
+docker compose -f docker-compose.fresh.yml up -d
+
 # Rebuild after backend changes
 docker-compose up -d --build
 
@@ -70,6 +139,8 @@ docker logs -f milestone
 
 # Run backend tests
 docker exec milestone pytest
+# Or locally:
+pytest --cov=app --cov-report=term-missing
 
 # Frontend dev server (hot reload, port 3333)
 cd frontend && npm install && npm run dev
@@ -77,11 +148,24 @@ cd frontend && npm install && npm run dev
 # Frontend tests
 cd frontend && npm test
 
-# Run master DB migration (e.g., add_organizations)
+# Linting
+ruff check app/ && ruff format --check app/
+cd frontend && npm run lint
+
+# Type checking
+mypy app/
+cd frontend && npm run build   # TypeScript compilation included
+
+# Run master DB migration
 python migrations/run_migration_master.py add_organizations
 
 # Run tenant DB migration across all tenants
 python migrations/run_migration.py <migration_name>
+
+# Build documentation locally
+pip install -r docs/requirements.txt
+mkdocs serve   # Preview at http://localhost:8000
+mkdocs build   # Output to site/
 ```
 
 ## Database Migrations
@@ -91,6 +175,7 @@ python migrations/run_migration.py <migration_name>
 - Tenant DB migrations: `python migrations/run_migration.py <name>`
 - `master_db.init_db()` auto-applies missing schema (organizations table, new tenant columns) on startup.
 - `setup_databases.sql` is the canonical fresh-install schema.
+- Available migrations: `add_organizations`, `add_skills_tables`, `add_custom_columns`, `add_company_events`, `add_project_presence`, `add_is_system_column`, `upgrade_to_v90`
 
 ## Environment Variables
 
@@ -104,6 +189,11 @@ Multi-tenant mode:
 - `TENANT_ENCRYPTION_KEY` - 64-char hex for AES-256-GCM
 - `PG_ADMIN_USER`, `PG_ADMIN_PASSWORD` - for provisioning new tenant DBs
 
+Auto-initialization (fresh install):
+- `AUTO_INIT_DB=true` - runs `app.scripts.init_db` on startup
+- `INIT_ADMIN_EMAIL` - initial admin email
+- `INIT_ADMIN_PASSWORD` - initial admin password (auto-generated if empty)
+
 ## Important Patterns
 
 - Admin routes are at `/api/admin/*` and use `get_master_db` dependency for master DB sessions.
@@ -111,6 +201,8 @@ Multi-tenant mode:
 - The frontend is a React SPA served from `public/` by FastAPI's catch-all route.
 - `CustomJSONResponse` formats datetimes to match Node.js `toISOString()` output.
 - Organization SSO (Microsoft Entra ID) is configured per-organization and shared across its tenants.
+- WebSocket connections provide real-time collaboration (presence tracking, live updates).
+- The Dockerfile is a multi-stage build: Python deps, Node.js frontend build, slim runtime.
 
 ## Gotchas
 
@@ -118,3 +210,5 @@ Multi-tenant mode:
 - `setup_databases.sql` must stay in sync with SQLAlchemy models. When adding columns to master DB models, also update this file and add a migration in `migrations/`.
 - Tenant routes don't work on the Vite dev server (port 3333). Use port 8485 for tenant features.
 - The `run_migration_master.py` splits SQL on `;` which can break `DO $$ ... END $$;` blocks. Use `run_migration.py` or apply those manually via `psql`.
+- MPP file import requires Java (JRE 11+), included in the Docker image but not in dev environments by default.
+- The User model has a `full_name` property at `user.py` — use it instead of manual `first_name + last_name` concatenation.

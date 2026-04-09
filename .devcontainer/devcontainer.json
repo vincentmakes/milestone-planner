@@ -1,0 +1,49 @@
+{
+  "name": "Milestone Planner",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
+
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "20" },
+    "ghcr.io/devcontainers/features/python:1": { "version": "3.11" },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+
+  "forwardedPorts": [8485, 3333, 5432],
+  "portsAttributes": {
+    "8485": { "label": "Milestone App", "onAutoForward": "openBrowser" },
+    "3333": { "label": "Vite Dev Server", "onAutoForward": "notify" },
+    "5432": { "label": "PostgreSQL", "onAutoForward": "ignore" }
+  },
+
+  "postCreateCommand": ".devcontainer/setup.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "dbaeumer.vscode-eslint",
+        "bradlc.vscode-tailwindcss",
+        "esbenp.prettier-vscode",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.analysis.typeCheckingMode": "basic",
+        "editor.formatOnSave": true,
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        },
+        "[typescript]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[typescriptreact]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        }
+      }
+    }
+  }
+}
