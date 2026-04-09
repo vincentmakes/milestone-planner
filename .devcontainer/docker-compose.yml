@@ -25,6 +25,7 @@ services:
       - TENANT_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       - AUTO_INIT_DB=true
       - INIT_ADMIN_EMAIL=admin@demo.local
+      - INIT_ADMIN_PASSWORD=demo1234
       - DEBUG=true
       - PORT=8485
     ports:
