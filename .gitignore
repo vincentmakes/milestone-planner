@@ -37,6 +37,7 @@ frontend/dist/
 # Build artifacts
 *.zip
 *.tar.gz
+site/
 
 # Frontend build output (built inside Docker)
 public/assets/
