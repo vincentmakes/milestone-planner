@@ -6,8 +6,12 @@ echo "=== Milestone Planner — Codespaces Setup ==="
 # Install Python dependencies
 pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
 
-# Install frontend dependencies
-cd frontend && npm install && cd ..
+# Install frontend dependencies and build
+cd frontend && npm install && npm run build && cd ..
+
+# Deploy built frontend to public/ so the backend can serve it
+echo "Deploying frontend build to public/..."
+cp -r frontend/dist/* public/ 2>/dev/null || true
 
 # Wait for PostgreSQL
 echo "Waiting for PostgreSQL..."
