@@ -139,3 +139,44 @@ The application uses two separate SQLAlchemy base classes:
 ### SPA Fallback
 
 All non-API, non-static routes serve `public/index.html` (the React SPA), which handles client-side routing.
+
+## Real-Time Architecture
+
+Milestone uses two complementary real-time mechanisms:
+
+### WebSocket (Live Updates)
+
+```
+Browser ──── WebSocket ──── FastAPI (app/websocket/)
+  │                              │
+  ├─ Receives:                   ├─ handler.py   → Accepts connections, authenticates via session cookie
+  │   presence:list/join/leave   ├─ manager.py   → Manages connections per tenant (isolation)
+  │   change:phase/subphase/...  └─ broadcast.py → Called from API routes after mutations
+  │
+  └─ Sends: ping (keepalive)
+```
+
+- **Endpoints**: `/ws` (single-tenant) and `/t/{slug}/ws` (multi-tenant)
+- **Authentication**: Session cookie (`connect.sid`) validated on connection
+- **Tenant isolation**: Each tenant has a separate connection room — users only see activity within their tenant
+- **Keepalive**: Client sends ping every 25 seconds; server responds with pong
+- **Reconnection**: Exponential backoff (2s base, 60s max, 5 attempts)
+- **Broadcasting**: API routers (`projects.py`, `assignments.py`) call `broadcast_change()` after mutations, which sends a message to all connected users in that tenant
+
+### REST Presence (Conflict Detection)
+
+```
+Browser ──── HTTP ──── FastAPI (app/routers/presence.py)
+  │                         │
+  ├─ POST /presence/heartbeat  (every 30s while viewing a project)
+  ├─ GET  /presence/project/{id}  (list active viewers)
+  ├─ POST /presence/check-conflict/{id}  (before saving)
+  └─ DELETE /presence/{id}  (leave project)
+```
+
+- **Heartbeat**: Frontend sends a heartbeat every 30 seconds with `activity: "viewing"` or `"editing"`
+- **Timeout**: Presence records expire after 300+ seconds without a heartbeat
+- **Conflict check**: Before saving, the frontend calls `check-conflict` which returns:
+  - Whether other users are actively editing
+  - The last modification timestamp and author
+  - A list of active editors with their names

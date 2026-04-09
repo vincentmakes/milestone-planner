@@ -72,8 +72,19 @@ Organizations group related tenants and share SSO configuration.
 
 Admin users have access to the admin portal (separate from tenant application users).
 
-- **Roles**: Regular admin (manages assigned tenants) or **Superadmin** (full platform access)
-- The Admin Users tab is only visible to superadmins
+| Capability | Admin | Superadmin |
+|-----------|-------|------------|
+| View tenant list | Yes | Yes |
+| Create/edit/delete tenants | Yes | Yes |
+| Provision tenant databases | Yes | Yes |
+| View tenant audit logs | Yes | Yes |
+| View organizations | Yes | Yes |
+| Configure organization SSO | Yes | Yes |
+| Manage admin users | No | Yes |
+| View system statistics | Yes | Yes |
+
+- The **Admin Users** tab is only visible to superadmins
+- Regular admins can manage tenants and organizations but cannot create or modify other admin accounts
 
 ### System Statistics
 

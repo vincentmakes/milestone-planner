@@ -1,0 +1,12 @@
+/* Dark header so the blue logo pops out */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #1a1a2e;
+  --md-primary-fg-color--light: #2d2d44;
+  --md-primary-fg-color--dark: #12121f;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #1a1a2e;
+  --md-primary-fg-color--light: #2d2d44;
+  --md-primary-fg-color--dark: #12121f;
+}

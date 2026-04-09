@@ -13,7 +13,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { getTenantPrefix } from '@/api/client';
 
 // Feature flag to disable WebSocket (set to true to disable until proxy/IIS is properly configured)
-const WEBSOCKET_DISABLED = true;
+const WEBSOCKET_DISABLED = false;
 
 // Message types from server
 export interface PresenceUser {

@@ -77,3 +77,33 @@ SSO_REDIRECT_URI=https://your-domain.com/api/auth/callback
 ### Testing SSO
 
 Use the **Test Connection** button in the SSO configuration modal to verify the setup works before rolling it out to users.
+
+## Group-Based Access Control
+
+Restrict tenant access to users who belong to specific Microsoft Entra ID (Azure AD) security groups.
+
+### How It Works
+
+1. In the admin portal, edit a tenant
+2. Under **Group Restrictions**, add one or more **Azure AD Group IDs** (GUIDs from your Entra directory)
+3. Choose the **membership mode**:
+   - **Any** (default) — User must belong to **at least one** of the listed groups
+   - **All** — User must belong to **every** listed group
+4. Save the tenant configuration
+
+When a user logs in via SSO, Milestone fetches their group memberships from the Microsoft Graph API and validates them against the tenant's requirements. If the user doesn't meet the group criteria, access is denied.
+
+### Finding Azure AD Group IDs
+
+1. Go to [Azure Portal](https://portal.azure.com) > Azure Active Directory > Groups
+2. Click on the group you want to use
+3. Copy the **Object ID** (a GUID like `a1b2c3d4-e5f6-7890-abcd-ef1234567890`)
+
+### Use Cases
+
+- **Department isolation** — Only R&D department members can access the R&D tenant
+- **Project-based access** — Create an Azure AD group per project team and restrict the tenant accordingly
+- **Compliance** — Ensure only authorized personnel can access sensitive project data
+
+!!! note
+    Group-based access control requires SSO to be configured. It has no effect on local (email/password) authentication.

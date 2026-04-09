@@ -102,6 +102,45 @@ WebSocket connections require proper proxy configuration:
 - Cloudflare: Enable WebSockets in the dashboard
 - Load balancers: Enable sticky sessions or WebSocket support
 
+## System Statistics (Multi-Tenant)
+
+In multi-tenant mode, the admin portal includes a **System Statistics** panel showing platform-wide metrics:
+
+| Metric | Description |
+|--------|-------------|
+| **Total Tenants** | Count of all tenants by status (active, suspended, pending, archived) |
+| **Active Connection Pools** | Number of database connection pools currently maintained by `TenantManager` |
+| **Total Connections** | Sum of active database connections across all tenant pools |
+| **System Uptime** | Time since the application process started |
+| **Memory Usage** | Current memory consumption of the FastAPI process |
+| **Python Version** | Runtime version for troubleshooting |
+
+Access this panel from the admin portal at `/admin/` — it appears on the main dashboard alongside the tenant list.
+
+## Tenant Audit Logging
+
+Every administrative action on tenants is logged for accountability and compliance:
+
+| Action | What's Logged |
+|--------|--------------|
+| **Tenant created** | Tenant name, slug, who created it |
+| **Tenant provisioned** | Database creation result, admin who triggered it |
+| **Tenant updated** | Changed fields (name, slug, status), who made the change |
+| **Tenant suspended** | Who suspended it and when |
+| **Tenant deleted** | Who deleted it and when |
+| **Password reset** | Who initiated the reset |
+
+### Viewing Audit Logs
+
+1. In the admin portal, open a tenant's details
+2. The **Audit Log** section shows the most recent 20 entries
+3. Each entry includes: timestamp, action type, actor (admin email), and details
+
+Audit logs are stored in the master database and persist even if a tenant is deleted.
+
+!!! tip
+    Audit logs can also be retrieved via the API: `GET /api/admin/tenants/{tenant_id}/audit-log`
+
 ## Performance
 
 ### Database Optimization
