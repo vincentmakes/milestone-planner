@@ -6,8 +6,12 @@ echo "=== Milestone Planner — Codespaces Setup ==="
 # Install Python dependencies
 pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
 
-# Install frontend dependencies
-cd frontend && npm install && cd ..
+# Install frontend dependencies and build
+cd frontend && npm install && npm run build && cd ..
+
+# Deploy built frontend to public/ so the backend can serve it
+echo "Deploying frontend build to public/..."
+cp -r frontend/dist/* public/ 2>/dev/null || true
 
 # Wait for PostgreSQL
 echo "Waiting for PostgreSQL..."
@@ -28,28 +32,30 @@ python -m app.scripts.init_db || echo "DB init skipped (may already exist)."
 echo "Seeding demo tenant..."
 python -m app.scripts.seed_demo || echo "Demo seed skipped (may already exist)."
 
+# Start uvicorn in the background so the app is ready immediately
+echo "Starting Milestone Planner..."
+nohup uvicorn app.main:app --host 0.0.0.0 --port 8485 --reload > /tmp/uvicorn.log 2>&1 &
+
+# Wait for the server to be ready
+for i in $(seq 1 15); do
+    if curl -sf http://localhost:8485/health > /dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
+
 echo ""
 echo "=============================================="
-echo "  Setup complete!"
+echo "  Milestone Planner is running!"
 echo "=============================================="
 echo ""
-echo "  Start the app:"
-echo "    uvicorn app.main:app --host 0.0.0.0 --port 8485 --reload"
-echo ""
-echo "  Start frontend dev server (optional):"
-echo "    cd frontend && npm run dev -- --host 0.0.0.0 --port 3333"
+echo "  App:           http://localhost:8485/t/demo/"
+echo "  Admin Portal:  http://localhost:8485/admin/"
 echo ""
 echo "  ---- Demo Credentials ----"
+echo "  Email:         admin@demo.local"
+echo "  Password:      demo1234"
 echo ""
-echo "  Admin Portal:  http://localhost:8485/admin/"
-echo "    Email:       admin@demo.local"
-echo "    Password:    demo1234"
-echo ""
-echo "  Demo Tenant:   http://localhost:8485/t/demo/"
-echo "    Email:       admin@demo.local"
-echo "    Password:    demo1234"
-echo ""
-echo "  The demo tenant includes 4 projects, 8 staff,"
-echo "  8 equipment items, skills, and assignments."
+echo "  Server logs:   tail -f /tmp/uvicorn.log"
 echo "=============================================="
 echo ""
