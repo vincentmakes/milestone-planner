@@ -11,7 +11,6 @@ Usage:
 """
 
 import asyncio
-import os
 import sys
 from datetime import date, timedelta
 
@@ -19,7 +18,6 @@ import asyncpg
 
 from app.config import get_settings
 from app.services.encryption import encrypt, hash_password
-
 
 DEMO_TENANT_SLUG = "demo"
 DEMO_TENANT_NAME = "Demo Company"
@@ -35,7 +33,9 @@ async def get_admin_conn(settings) -> asyncpg.Connection:
     port = settings.master_db_port or settings.db_port
     user = settings.pg_admin_user or settings.db_user
     password = settings.pg_admin_password or settings.db_password
-    return await asyncpg.connect(host=host, port=port, user=user, password=password, database="postgres")
+    return await asyncpg.connect(
+        host=host, port=port, user=user, password=password, database="postgres"
+    )
 
 
 async def ensure_tenant_registered(settings) -> bool:
@@ -46,7 +46,9 @@ async def ensure_tenant_registered(settings) -> bool:
     password = settings.master_db_password or settings.db_password
     db_name = settings.master_db_name
 
-    conn = await asyncpg.connect(host=host, port=port, user=user, password=password, database=db_name)
+    conn = await asyncpg.connect(
+        host=host, port=port, user=user, password=password, database=db_name
+    )
     try:
         exists = await conn.fetchval("SELECT 1 FROM tenants WHERE slug = $1", DEMO_TENANT_SLUG)
         if exists:
@@ -59,13 +61,18 @@ async def ensure_tenant_registered(settings) -> bool:
             INSERT INTO tenants (name, slug, database_name, database_user, status, admin_email, company_name)
             VALUES ($1, $2, $3, $4, 'active', $5, $6)
             """,
-            DEMO_TENANT_NAME, DEMO_TENANT_SLUG, DEMO_TENANT_DB, DEMO_TENANT_USER,
-            DEMO_ADMIN_EMAIL, DEMO_TENANT_NAME,
+            DEMO_TENANT_NAME,
+            DEMO_TENANT_SLUG,
+            DEMO_TENANT_DB,
+            DEMO_TENANT_USER,
+            DEMO_ADMIN_EMAIL,
+            DEMO_TENANT_NAME,
         )
         tenant_id = await conn.fetchval("SELECT id FROM tenants WHERE slug = $1", DEMO_TENANT_SLUG)
         await conn.execute(
             "INSERT INTO tenant_credentials (tenant_id, encrypted_password) VALUES ($1, $2)",
-            tenant_id, encrypted_pw,
+            tenant_id,
+            encrypted_pw,
         )
         print(f"  Registered tenant '{DEMO_TENANT_SLUG}' in master DB")
         return True
@@ -82,14 +89,18 @@ async def provision_demo_db(settings) -> bool:
             print(f"  Database '{DEMO_TENANT_DB}' already exists")
             return False
 
-        user_exists = await conn.fetchval("SELECT 1 FROM pg_roles WHERE rolname = $1", DEMO_TENANT_USER)
+        user_exists = await conn.fetchval(
+            "SELECT 1 FROM pg_roles WHERE rolname = $1", DEMO_TENANT_USER
+        )
         if not user_exists:
             safe_pw = DEMO_TENANT_PASSWORD.replace("'", "''")
             await conn.execute(f"CREATE USER \"{DEMO_TENANT_USER}\" WITH PASSWORD '{safe_pw}'")
             print(f"  Created database user '{DEMO_TENANT_USER}'")
 
         await conn.execute(f'CREATE DATABASE "{DEMO_TENANT_DB}" OWNER "{DEMO_TENANT_USER}"')
-        await conn.execute(f'GRANT ALL PRIVILEGES ON DATABASE "{DEMO_TENANT_DB}" TO "{DEMO_TENANT_USER}"')
+        await conn.execute(
+            f'GRANT ALL PRIVILEGES ON DATABASE "{DEMO_TENANT_DB}" TO "{DEMO_TENANT_USER}"'
+        )
         print(f"  Created database '{DEMO_TENANT_DB}'")
         return True
     finally:
@@ -101,8 +112,10 @@ async def apply_schema_and_seed(settings):
     from app.services.tenant_provisioner import get_tenant_schema_sql
 
     conn = await asyncpg.connect(
-        host=settings.db_host, port=settings.db_port,
-        user=DEMO_TENANT_USER, password=DEMO_TENANT_PASSWORD,
+        host=settings.db_host,
+        port=settings.db_port,
+        user=DEMO_TENANT_USER,
+        password=DEMO_TENANT_PASSWORD,
         database=DEMO_TENANT_DB,
     )
     try:
@@ -166,17 +179,26 @@ async def apply_schema_and_seed(settings):
             """INSERT INTO users (email, password, first_name, last_name, job_title, role, is_system)
                VALUES ($1, $2, 'Admin', 'User', 'System Administrator', 'admin', 1)
                ON CONFLICT (email) DO NOTHING""",
-            DEMO_ADMIN_EMAIL, admin_hash,
+            DEMO_ADMIN_EMAIL,
+            admin_hash,
         )
         admin_id = await conn.fetchval("SELECT id FROM users WHERE email = $1", DEMO_ADMIN_EMAIL)
         await conn.execute(
             "INSERT INTO user_sites (user_id, site_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-            admin_id, wt_id,
+            admin_id,
+            wt_id,
         )
 
         # Staff members
         staff_data = [
-            ("alice.anderson@demo.local", "Alice", "Anderson", "Research Scientist", "superuser", wt_id),
+            (
+                "alice.anderson@demo.local",
+                "Alice",
+                "Anderson",
+                "Research Scientist",
+                "superuser",
+                wt_id,
+            ),
             ("bob.brown@demo.local", "Bob", "Brown", "Project Manager", "superuser", wt_id),
             ("charlie.clark@demo.local", "Charlie", "Clark", "Lab Technician", "user", wt_id),
             ("diana.davis@demo.local", "Diana", "Davis", "Data Analyst", "user", wt_id),
@@ -192,13 +214,19 @@ async def apply_schema_and_seed(settings):
                 """INSERT INTO users (email, password, first_name, last_name, job_title, role)
                    VALUES ($1, $2, $3, $4, $5, $6)
                    ON CONFLICT (email) DO NOTHING""",
-                email, staff_hash, first, last, title, role,
+                email,
+                staff_hash,
+                first,
+                last,
+                title,
+                role,
             )
             uid = await conn.fetchval("SELECT id FROM users WHERE email = $1", email)
             staff_ids[email] = uid
             await conn.execute(
                 "INSERT INTO user_sites (user_id, site_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                uid, site_id,
+                uid,
+                site_id,
             )
         print(f"  Created {len(staff_data)} staff members")
 
@@ -222,7 +250,9 @@ async def apply_schema_and_seed(settings):
                 if sid:
                     await conn.execute(
                         "INSERT INTO user_skills (user_id, skill_id, proficiency) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-                        uid, sid, 4,
+                        uid,
+                        sid,
+                        4,
                     )
 
         # Equipment
@@ -241,32 +271,65 @@ async def apply_schema_and_seed(settings):
                 """INSERT INTO equipment (name, type, site_id, active)
                    VALUES ($1, $2, $3, 1)
                    ON CONFLICT DO NOTHING""",
-                name, etype, site_id,
+                name,
+                etype,
+                site_id,
             )
         print(f"  Created {len(equip_data)} equipment items")
 
         # Projects
         today = date.today()
         projects = [
-            ("Catalyst Optimization", wt_id, "Novachem AG", True,
-             today - timedelta(days=30), today + timedelta(days=150)),
-            ("Bioprocess Scale-Up", wt_id, "BioGen Ltd", True,
-             today - timedelta(days=15), today + timedelta(days=200)),
-            ("Analytical Method Transfer", wt_id, "PharmaCore", False,
-             today + timedelta(days=14), today + timedelta(days=120)),
-            ("Quality System Upgrade", ff_id, "Internal", True,
-             today - timedelta(days=60), today + timedelta(days=90)),
+            (
+                "Catalyst Optimization",
+                wt_id,
+                "Novachem AG",
+                True,
+                today - timedelta(days=30),
+                today + timedelta(days=150),
+            ),
+            (
+                "Bioprocess Scale-Up",
+                wt_id,
+                "BioGen Ltd",
+                True,
+                today - timedelta(days=15),
+                today + timedelta(days=200),
+            ),
+            (
+                "Analytical Method Transfer",
+                wt_id,
+                "PharmaCore",
+                False,
+                today + timedelta(days=14),
+                today + timedelta(days=120),
+            ),
+            (
+                "Quality System Upgrade",
+                ff_id,
+                "Internal",
+                True,
+                today - timedelta(days=60),
+                today + timedelta(days=90),
+            ),
         ]
         for pname, site_id, customer, confirmed, start, end in projects:
             await conn.execute(
                 """INSERT INTO projects (name, site_id, customer, confirmed, start_date, end_date)
                    VALUES ($1, $2, $3, $4, $5, $6)""",
-                pname, site_id, customer, 1 if confirmed else 0, start, end,
+                pname,
+                site_id,
+                customer,
+                1 if confirmed else 0,
+                start,
+                end,
             )
         print(f"  Created {len(projects)} projects")
 
         # Phases for each project
-        project_rows = await conn.fetch("SELECT id, name, start_date, end_date FROM projects ORDER BY id")
+        project_rows = await conn.fetch(
+            "SELECT id, name, start_date, end_date FROM projects ORDER BY id"
+        )
         phase_types = ["Preparation", "Analytics", "Trial", "Cleaning", "Report"]
         for proj in project_rows:
             proj_start = proj["start_date"]
@@ -281,7 +344,11 @@ async def apply_schema_and_seed(settings):
                 await conn.execute(
                     """INSERT INTO project_phases (project_id, type, start_date, end_date, sort_order)
                        VALUES ($1, $2, $3, $4, $5)""",
-                    proj["id"], ptype, ps, pe, i,
+                    proj["id"],
+                    ptype,
+                    ps,
+                    pe,
+                    i,
                 )
 
         # Staff assignments to phases
@@ -289,11 +356,19 @@ async def apply_schema_and_seed(settings):
             "SELECT pp.id, pp.project_id, pp.type, p.site_id "
             "FROM project_phases pp JOIN projects p ON pp.project_id = p.id ORDER BY pp.id"
         )
-        wt_staff = [v for k, v in staff_ids.items() if k.split("@")[0] in
-                     ("alice.anderson", "bob.brown", "charlie.clark", "diana.davis", "edward.evans")]
-        ff_staff = [v for k, v in staff_ids.items() if k.split("@")[0] in
-                     ("fiona.fischer", "george.garcia", "hannah.harris")]
+        wt_staff = [
+            v
+            for k, v in staff_ids.items()
+            if k.split("@")[0]
+            in ("alice.anderson", "bob.brown", "charlie.clark", "diana.davis", "edward.evans")
+        ]
+        ff_staff = [
+            v
+            for k, v in staff_ids.items()
+            if k.split("@")[0] in ("fiona.fischer", "george.garcia", "hannah.harris")
+        ]
         import random
+
         random.seed(42)  # reproducible
         assignment_count = 0
         for phase in phases:
@@ -305,7 +380,10 @@ async def apply_schema_and_seed(settings):
                 await conn.execute(
                     """INSERT INTO phase_staff_assignments (phase_id, project_id, staff_id, allocation)
                        VALUES ($1, $2, $3, $4)""",
-                    phase["id"], phase["project_id"], sid, alloc,
+                    phase["id"],
+                    phase["project_id"],
+                    sid,
+                    alloc,
                 )
                 assignment_count += 1
         print(f"  Created {assignment_count} staff assignments")
@@ -316,12 +394,18 @@ async def apply_schema_and_seed(settings):
         if alice_id:
             await conn.execute(
                 "INSERT INTO vacations (staff_id, start_date, end_date, description) VALUES ($1, $2, $3, $4)",
-                alice_id, today + timedelta(days=30), today + timedelta(days=37), "Summer vacation",
+                alice_id,
+                today + timedelta(days=30),
+                today + timedelta(days=37),
+                "Summer vacation",
             )
         if bob_id:
             await conn.execute(
                 "INSERT INTO vacations (staff_id, start_date, end_date, description) VALUES ($1, $2, $3, $4)",
-                bob_id, today + timedelta(days=60), today + timedelta(days=64), "Conference",
+                bob_id,
+                today + timedelta(days=60),
+                today + timedelta(days=64),
+                "Conference",
             )
 
         print("  Demo data seeded successfully")
@@ -357,9 +441,9 @@ async def main():
     print(f"  Email:    {DEMO_ADMIN_EMAIL}")
     print(f"  Password: {DEMO_ADMIN_PASSWORD}")
     print("=" * 50)
-    print(f"\n  Admin Portal: http://localhost:8485/admin/")
-    print(f"  Admin Email:  admin@demo.local")
-    print(f"  Admin Pass:   demo1234")
+    print("\n  Admin Portal: http://localhost:8485/admin/")
+    print("  Admin Email:  admin@demo.local")
+    print("  Admin Pass:   demo1234")
     print("=" * 50 + "\n")
 
 
