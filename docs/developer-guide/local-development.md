@@ -13,7 +13,14 @@ The fastest way to get a development environment:
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/vincentmakes/milestone-planner?quickstart=1)
 
-Everything is pre-configured: Python, Node.js, PostgreSQL, VS Code extensions.
+Everything is pre-configured: Python, Node.js, PostgreSQL, VS Code extensions, and a pre-seeded demo tenant.
+
+| Access | URL | Email | Password |
+|--------|-----|-------|----------|
+| **Admin Portal** | `/admin/` | `admin@demo.local` | `demo1234` |
+| **Demo Tenant** | `/t/demo/` | `admin@demo.local` | `demo1234` |
+
+All demo staff accounts also use password `demo1234`.
 
 ## Local Setup
 

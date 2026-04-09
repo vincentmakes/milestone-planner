@@ -77,11 +77,13 @@ Access at `http://localhost:8485/`.
 
 ## Documentation
 
+Full documentation is published at **[docs-milestone.verdet.me](https://docs-milestone.verdet.me)**.
+
 | Resource | Description |
 |----------|-------------|
-| [User Guide](docs/user-guide/getting-started.md) | Day-to-day usage: Gantt charts, staff, equipment, vacations |
-| [Admin Guide](docs/admin-guide/overview.md) | Installation, multi-tenant management, SSO configuration |
-| [Developer Guide](docs/developer-guide/architecture.md) | Architecture, local development, API reference |
+| [User Guide](https://docs-milestone.verdet.me/user-guide/getting-started/) | Day-to-day usage: Gantt charts, staff, equipment, vacations |
+| [Admin Guide](https://docs-milestone.verdet.me/admin-guide/overview/) | Installation, multi-tenant management, SSO configuration |
+| [Developer Guide](https://docs-milestone.verdet.me/developer-guide/architecture/) | Architecture, local development, API reference |
 | [Development Guide](DEVELOPMENT.md) | Quick reference for making changes |
 | [API Documentation](http://localhost:8485/api/docs) | Swagger UI (when running) |
 
