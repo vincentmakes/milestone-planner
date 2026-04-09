@@ -22,54 +22,254 @@ Access settings through the gear icon in the sidebar or through the user menu. M
 | Show Weekends | Toggle weekend columns on/off |
 | Auto-expand Projects | Automatically expand all projects on load |
 
+---
+
 ## Site Management
 
-Sites represent your organization's physical locations:
+Sites represent your organization's physical locations. Projects, staff, equipment, and holidays are all scoped to sites. Click **Manage Sites** in the admin section of the sidebar to open site management.
 
-- **Name**, **City**, **Country**, **Timezone**
-- Site-specific **bank holidays** (auto-fetched or manually added)
-- Staff and projects are filtered by the selected site
+### Creating a Site
+
+1. Open the **Manage Sites** modal from the sidebar
+2. Enter a site name in the text field (e.g., "Winterthur HQ")
+3. Click **Add** — the site is created with minimal fields
+4. Click the **edit icon** (pencil) on the new site to open the full edit modal
+
+### Editing a Site
+
+The site edit modal has these fields:
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| **Site Name** | Display name (required, must be unique) | Winterthur HQ |
+| **City** | City location | Winterthur |
+| **Country** | Country from grouped dropdown (Europe, Americas, Asia & Pacific, Africa & Middle East) | Switzerland (CH) |
+| **Region/State Code** | Sub-region for holiday filtering — varies by country | ZH (Zurich), HE (Hesse), BY (Bavaria) |
+| **Active** | Checkbox — inactive sites are hidden from the site selector | Checked |
+
+!!! tip
+    Setting the **Country** enables automatic bank holiday fetching. Adding a **Region/State Code** filters holidays to your specific region (e.g., canton-specific holidays in Switzerland).
+
+### Site Selector
+
+The **site selector** dropdown in the header filters everything to the selected site:
+
+- Projects visible on the Gantt chart
+- Staff in the Staff Overview
+- Equipment in the Equipment View
+- Bank holidays and company events on the timeline
+- Custom columns
+
+Admins see all sites. Regular users only see sites they are assigned to.
+
+### Deleting a Site
+
+Delete a site from the Manage Sites modal. This cascades to remove all associated projects, equipment, holidays, and company events.
+
+!!! danger
+    Deleting a site is irreversible and removes all data associated with it.
+
+---
+
+## Bank Holidays
+
+Bank holidays are configured **per site** and affect staff availability calculations. They appear as highlighted columns on the Gantt and Staff timelines.
+
+### Automatic Fetching
+
+If a site has a **country** set, Milestone can auto-fetch public holidays from the [Nager.Date API](https://date.nager.at/):
+
+1. Edit a site and set its **Country** (and optionally **Region/State Code**)
+2. Click **Save Changes**
+3. Open the **Bank Holidays** modal (accessible from the Staff View or site edit)
+4. Click **Refresh** — Milestone fetches public holidays for the current and next year
+5. If a region code is set, only region-specific holidays are included
+
+The last refresh timestamp is shown in the site edit modal: *"Last updated: April 2026"*.
+
+### Viewing and Managing Holidays
+
+Open the **Bank Holidays** modal to see all holidays for the current site:
+
+- Use the **year dropdown** to switch between years (current -1 to current +2)
+- Holidays are split into two sections:
+    - **Public Holidays** — auto-fetched from Nager.Date (read-only, cannot be deleted individually)
+    - **Custom Holidays** — manually added (can be deleted with the × button)
+
+### Adding a Custom Holiday
+
+1. Click **Add Custom** in the Bank Holidays modal
+2. Enter the **holiday name** (e.g., "Company Anniversary")
+3. Set the **start date** (required)
+4. Optionally set an **end date** for multi-day holidays
+5. Click **Add**
+
+Custom holidays are site-specific and appear alongside auto-fetched public holidays.
+
+### Exporting Holidays to Calendar
+
+Click **Export ICS** to download an `.ics` calendar file containing all holidays for the selected year. Import this into Outlook, Google Calendar, or any calendar app to sync holidays to your personal calendar.
+
+### How Holidays Affect the Timeline
+
+- Holiday dates appear as **shaded columns** on the Gantt timeline
+- Staff availability is reduced on holiday dates — they are **not counted as working days**
+- The Staff View shows holiday labels in the timeline header
+
+!!! note
+    Only **Superusers and Admins** can add/delete custom holidays and refresh from the API. Regular users can view holidays but not modify them.
+
+---
+
+## Company Events
+
+Company events are organization-wide dates shown as labeled markers on the Staff View timeline (e.g., "ISO Audit", "All-Hands Meeting", "Annual Retreat").
+
+### Adding a Company Event
+
+1. Open the **Company Event** modal (from the Staff View or settings)
+2. Enter the **event name** (e.g., "ISO Audit")
+3. Set the **start date** (required)
+4. Optionally set an **end date** for multi-day events
+5. Click **Add Event**
+
+### How Events Appear
+
+- Company events display as **red markers** on the Staff Overview timeline
+- They are informational only — unlike bank holidays, they **do not affect working day calculations** or staff availability
+- Events are visible to all users on the selected site
+
+### Deleting a Company Event
+
+In the Staff View, click the delete button on a company event to remove it (requires Superuser role).
+
+---
 
 ## User Management
 
-Administrators can create, edit, and delete user accounts with:
+Administrators can create, edit, and deactivate user accounts. Open **User Management** from the sidebar admin section.
 
-- Email, name, job title
-- Role (Admin, Superuser, User)
-- Site assignments (users can belong to multiple sites)
+### User Fields
+
+| Field | Description |
+|-------|-------------|
+| **Email** | Login email address (unique) |
+| **First Name** / **Last Name** | Display name |
+| **Job Title** | Role description shown in staff lists |
+| **Role** | Admin, Superuser, or User (see below) |
+| **Sites** | One or more sites the user can access |
+| **Skills** | Tags for resource planning (see Skills Management below) |
+| **Active** | Deactivate to prevent login without deleting |
+
+### User Roles
+
+| Permission | Admin | Superuser | User |
+|-----------|-------|-----------|------|
+| View projects & timeline | Yes | Yes | Yes |
+| Create/edit/delete projects | Yes | Yes | No |
+| Manage staff assignments | Yes | Yes | No |
+| Manage equipment assignments | Yes | Yes | No |
+| Enter What-If mode | Yes | Yes | No |
+| Add custom holidays / events | Yes | Yes | No |
+| Manage users & settings | Yes | No | No |
+| Manage sites | Yes | No | No |
+
+### Filtering Users
+
+The user management table supports filtering by:
+
+- **Status**: Active / Disabled
+- **Role**: Admin / Superuser / User
+- **Job Title**: Dynamic list from existing users
+- **Site**: Filter by site assignment
+- **Skills**: Filter by assigned skill
+
+The results count updates as filters are applied (e.g., "12 users (filtered from 20)").
+
+---
 
 ## Skills Management
 
-Skills are colored tags assigned to staff for resource planning and filtering.
+Skills are colored tags assigned to staff members for resource planning and filtering. Open the **Skills Management** modal from the sidebar admin section.
 
-### Creating Skills
+### Creating a Skill
 
-1. Navigate to **Settings** > **Skills**
-2. Click **+ Add Skill**
-3. Set a **name**, optional **description**, and a **color** (used as a visual dot/badge)
+1. Click **Add Skill** in the Skills Management modal
+2. Fill in:
+   - **Name** (required, max 100 characters, must be unique)
+   - **Description** (optional)
+   - **Color** — choose from 10 preset colors or use the custom color picker:
+     - Presets: Blue, Purple, Green, Amber, Red, Cyan, Pink, Lime, Orange, Indigo
+     - Custom: Click the color picker to choose any hex color
+3. A **live preview** shows the skill name with its color dot
 4. Click **Save**
 
-### Assigning Skills to Staff
+### Editing a Skill
 
-1. Go to **User Management** and edit a user
-2. In the skills section, select one or more skills from the dropdown
-3. Save the user profile
+Click the **edit icon** on any skill in the list to modify its name, description, or color. Changes apply immediately to all users who have the skill assigned.
 
-### Filtering by Skills
+### Deleting a Skill
 
-In the **Staff Overview**, click the **Filter** dropdown and select one or more skills. Each skill shows its assigned color dot for quick visual identification. Staff members matching **any** of the selected skills are shown. The header displays a filtered/total count (e.g., "8/20 staff").
+Click the **trash icon** on a skill. A confirmation dialog warns: *"This will remove the skill from all users who have it assigned."* Deletion cascades to remove the skill from every user.
+
+### Assigning Skills to Users
+
+1. Open **User Management** and edit (or create) a user
+2. In the **Skills** section, click skill buttons to toggle them on/off
+   - Selected skills show a blue-tinted background with a color dot
+   - Unselected skills show a gray border
+3. To create a new skill inline, click **+ New skill**, type a name, and press Enter
+4. Save the user — skills are updated immediately
+
+### Filtering Staff by Skills
+
+In the **Staff Overview**, open the **Filter** panel:
+
+1. Under the **Skills** section, check one or more skills
+2. Each skill shows its assigned **color dot** next to the name
+3. Staff members matching **any** of the selected skills are shown (OR logic)
+4. The header updates to show the filtered count: "8/20 staff"
+5. Click **Clear All** to reset all filters
+
+Skills are also visible as colored badges in the **User Management** table (first 3 shown, "+N" for additional).
+
+---
 
 ## Equipment Types
 
-Equipment types categorize your inventory for filtering and organization.
+Equipment types categorize your inventory for filtering in the Equipment View. Types are managed through the **Manage Types** button in the Equipment Management modal.
 
-### Managing Types
+### Creating Types
 
-- **Create**: Types are created implicitly when you add equipment items — enter a type name during equipment creation
-- **Rename**: In the Equipment View filter dropdown, click the edit icon next to a type to rename it. All equipment items of that type are updated automatically
-- **Delete**: Remove a type from the dropdown. Equipment items previously assigned this type will have their type cleared
+Types are created in two ways:
 
-Types appear as filter checkboxes in the **Equipment View** — use "Select All" and "Clear" for quick filtering.
+- **During equipment creation**: Click **+ New type**, enter a name, and confirm. The type is saved when the equipment item is created.
+- **From the type manager**: Click **Add Type** in the Equipment Types modal, enter a name, and save.
+
+### Renaming Types
+
+1. Open **Equipment Management** > **Manage Types**
+2. Click the **edit icon** on a type
+3. Enter the new name
+4. Click **Rename Type**
+
+!!! note
+    Renaming a type updates **all equipment items** that use it. A warning shows how many items will be affected.
+
+### Deleting Types
+
+Click the delete icon on a type. Types can only be deleted if **no equipment items** are currently using them. The delete button is disabled for types that are in use.
+
+### Type Filtering
+
+In the **Equipment View**, use the type filter dropdown to show/hide equipment by type:
+
+- Click the filter button to open the dropdown
+- Use **Select All** / **Clear** for quick selection
+- Check individual types to filter
+- The filter button shows the active count (e.g., "3 types")
+
+---
 
 ## Predefined Phases
 
@@ -95,34 +295,8 @@ When creating a new project, all **active** predefined phases are pre-selected a
 3. The new template is active by default and appears at the end of the list
 4. Drag to reorder as needed
 
-## Bank Holidays & Company Events
+---
 
-### Bank Holidays
+## Custom Columns
 
-Bank holidays are configured **per site** and affect staff availability calculations.
-
-**Auto-fetch from Nager.Date API:**
-
-1. Go to **Settings** > **Sites** and edit a site
-2. Set the site's **country** (e.g., Switzerland, Germany)
-3. Click **Refresh Holidays** — Milestone fetches the current year's public holidays from the [Nager.Date API](https://date.nager.at/) based on the country
-4. Holidays appear as highlighted columns on the timeline
-
-**Manually add a holiday:**
-
-1. In the site's holiday list, click **+ Add Holiday**
-2. Enter the **name** and **date**
-3. Save — the holiday is added alongside any auto-fetched ones
-
-Bank holidays are shown as shaded columns on the Gantt timeline and reduce staff availability on those days.
-
-### Company Events
-
-Company events are organization-wide dates displayed as labeled rows at the bottom of the Staff Overview timeline (e.g., "Annual Retreat", "Company Meeting").
-
-1. Navigate to **Settings** > **Company Events**
-2. Click **+ Add Event**
-3. Enter the **name**, **date**, and optional **description**
-4. Save — the event appears on the timeline for all users
-
-Company events are informational markers and do not automatically affect availability calculations.
+Add custom data fields to the project panel in the Gantt chart. See [Gantt Charts — Custom Columns](gantt-charts.md#custom-columns) for full details on creating, editing, and using custom columns.
