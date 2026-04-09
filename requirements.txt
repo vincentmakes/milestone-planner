@@ -16,7 +16,7 @@ bcrypt>=4.0.0
 httpx==0.26.0
 
 # Encryption (for tenant credentials)
-cryptography==46.0.5
+cryptography==46.0.7
 
 # Validation & Serialization
 pydantic==2.6.1
