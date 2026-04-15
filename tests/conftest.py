@@ -2,7 +2,6 @@
 Shared test fixtures for the Milestone API test suite.
 """
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,14 +9,6 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.config import Settings
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create a single event loop for the entire test session."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture
