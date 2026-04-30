@@ -116,7 +116,7 @@ export async function getCompanyEvents(siteId: number): Promise<CompanyEvent[]> 
  */
 export async function createCompanyEvent(
   siteId: number,
-  data: { date: string; end_date?: string; name: string }
+  data: { date: string; end_date?: string; name: string; color?: string }
 ): Promise<CompanyEvent> {
   return apiPost<CompanyEvent>(`/api/sites/${siteId}/events`, data);
 }

@@ -12,13 +12,16 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_superuser
-from app.models.equipment import Equipment, EquipmentAssignment
+from app.models.equipment import Equipment, EquipmentAssignment, EquipmentBlock
 from app.models.site import Site
 from app.models.user import User
 from app.schemas.base import PaginationParams
 from app.schemas.equipment import (
     EquipmentAssignmentResponse,
     EquipmentAssignmentUpdate,
+    EquipmentBlockCreate,
+    EquipmentBlockResponse,
+    EquipmentBlockUpdate,
     EquipmentCreate,
     EquipmentResponse,
     EquipmentUpdate,
@@ -525,3 +528,173 @@ async def get_equipment_availability(
         current += timedelta(days=1)
 
     return availability
+
+
+# ---------------------------------------------------------
+# Equipment Blocks (maintenance / defect periods)
+# ---------------------------------------------------------
+
+
+def build_block_response(block: EquipmentBlock) -> dict:
+    return {
+        "id": block.id,
+        "equipment_id": block.equipment_id,
+        "equipment_name": block.equipment.name if block.equipment else "",
+        "start_date": block.start_date,
+        "end_date": block.end_date,
+        "reason": block.reason,
+        "description": block.description,
+        "created_at": block.created_at,
+    }
+
+
+@router.get("/equipment-blocks", response_model=list[EquipmentBlockResponse])
+async def list_equipment_blocks(
+    siteId: int | None = Query(None),
+    equipmentId: int | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    List equipment blocks. Optionally filter by site or equipment.
+    """
+    query = select(EquipmentBlock).options(selectinload(EquipmentBlock.equipment))
+
+    if equipmentId is not None:
+        query = query.where(EquipmentBlock.equipment_id == equipmentId)
+
+    if siteId is not None:
+        query = query.join(Equipment, Equipment.id == EquipmentBlock.equipment_id).where(
+            Equipment.site_id == siteId
+        )
+
+    query = query.order_by(EquipmentBlock.start_date)
+    result = await db.execute(query)
+    blocks = result.scalars().all()
+
+    return [build_block_response(b) for b in blocks]
+
+
+@router.get("/equipment/{equipment_id}/blocks", response_model=list[EquipmentBlockResponse])
+async def get_equipment_blocks(
+    equipment_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """List all blocks for a specific equipment."""
+    result = await db.execute(
+        select(EquipmentBlock)
+        .where(EquipmentBlock.equipment_id == equipment_id)
+        .options(selectinload(EquipmentBlock.equipment))
+        .order_by(EquipmentBlock.start_date)
+    )
+    blocks = result.scalars().all()
+    return [build_block_response(b) for b in blocks]
+
+
+@router.post("/equipment-blocks", response_model=EquipmentBlockResponse, status_code=201)
+async def create_equipment_block(
+    data: EquipmentBlockCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superuser),
+):
+    """
+    Create an equipment block (maintenance / defect / calibration period).
+    Requires superuser or admin.
+    """
+    if data.end_date < data.start_date:
+        raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
+
+    equipment = await db.get(Equipment, data.equipment_id)
+    if not equipment:
+        raise HTTPException(status_code=404, detail="Equipment not found")
+
+    if user.role != "admin":
+        user_site_ids = [s.id for s in user.sites] if user.sites else []
+        if equipment.site_id not in user_site_ids:
+            raise HTTPException(
+                status_code=403, detail="You can only block equipment in sites you're assigned to"
+            )
+
+    block = EquipmentBlock(
+        equipment_id=data.equipment_id,
+        start_date=data.start_date,
+        end_date=data.end_date,
+        reason=data.reason or "maintenance",
+        description=data.description or "Maintenance",
+    )
+    db.add(block)
+    await db.commit()
+    await db.refresh(block)
+    block.equipment = equipment
+
+    return build_block_response(block)
+
+
+@router.put("/equipment-blocks/{block_id}", response_model=EquipmentBlockResponse)
+async def update_equipment_block(
+    block_id: int,
+    data: EquipmentBlockUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superuser),
+):
+    """Update an equipment block. Requires superuser or admin."""
+    result = await db.execute(
+        select(EquipmentBlock)
+        .where(EquipmentBlock.id == block_id)
+        .options(selectinload(EquipmentBlock.equipment))
+    )
+    block = result.scalar_one_or_none()
+    if not block:
+        raise HTTPException(status_code=404, detail="Equipment block not found")
+
+    if user.role != "admin":
+        user_site_ids = [s.id for s in user.sites] if user.sites else []
+        site_id = block.equipment.site_id if block.equipment else None
+        if site_id not in user_site_ids:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    if data.start_date is not None:
+        block.start_date = data.start_date
+    if data.end_date is not None:
+        block.end_date = data.end_date
+    if data.reason is not None:
+        block.reason = data.reason
+    if data.description is not None:
+        block.description = data.description
+
+    if block.end_date < block.start_date:
+        raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
+
+    await db.commit()
+    await db.refresh(block)
+
+    return build_block_response(block)
+
+
+@router.delete("/equipment-blocks/{block_id}")
+async def delete_equipment_block(
+    block_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superuser),
+):
+    """Delete an equipment block. Requires superuser or admin."""
+    result = await db.execute(
+        select(EquipmentBlock)
+        .where(EquipmentBlock.id == block_id)
+        .options(selectinload(EquipmentBlock.equipment))
+    )
+    block = result.scalar_one_or_none()
+    if not block:
+        raise HTTPException(status_code=404, detail="Equipment block not found")
+
+    if user.role != "admin":
+        user_site_ids = [s.id for s in user.sites] if user.sites else []
+        site_id = block.equipment.site_id if block.equipment else None
+        if site_id not in user_site_ids:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    await db.delete(block)
+    await db.commit()
+
+    return {"success": True}

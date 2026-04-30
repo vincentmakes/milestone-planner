@@ -5,7 +5,7 @@ All models inherit from the Base class defined in database.py.
 
 from app.models.assignment import PhaseStaffAssignment, ProjectAssignment, SubphaseStaffAssignment
 from app.models.custom_column import CustomColumn, CustomColumnValue
-from app.models.equipment import Equipment, EquipmentAssignment
+from app.models.equipment import Equipment, EquipmentAssignment, EquipmentBlock
 from app.models.note import Note
 from app.models.organization import Organization, OrganizationSSOConfig
 from app.models.project import Project, ProjectPhase, ProjectSubphase
@@ -36,6 +36,7 @@ __all__ = [
     "ProjectSubphase",
     "Equipment",
     "EquipmentAssignment",
+    "EquipmentBlock",
     "ProjectAssignment",
     "PhaseStaffAssignment",
     "SubphaseStaffAssignment",

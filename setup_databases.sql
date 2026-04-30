@@ -297,6 +297,17 @@ CREATE TABLE IF NOT EXISTS vacations (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
+-- Equipment blocks (maintenance / defect / calibration periods)
+CREATE TABLE IF NOT EXISTS equipment_blocks (
+    id SERIAL PRIMARY KEY,
+    equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    reason VARCHAR(50) DEFAULT 'maintenance' NOT NULL,
+    description VARCHAR(200) DEFAULT 'Maintenance' NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
 -- Bank holidays
 CREATE TABLE IF NOT EXISTS bank_holidays (
     id SERIAL PRIMARY KEY,
@@ -364,6 +375,12 @@ CREATE INDEX IF NOT EXISTS idx_equipment_site_id ON equipment(site_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_assignments_project_id ON equipment_assignments(project_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_assignments_equipment_id ON equipment_assignments(equipment_id);
 CREATE INDEX IF NOT EXISTS idx_vacations_staff_id ON vacations(staff_id);
+CREATE INDEX IF NOT EXISTS idx_equipment_blocks_equipment_id ON equipment_blocks(equipment_id);
+CREATE INDEX IF NOT EXISTS idx_equipment_blocks_dates ON equipment_blocks(start_date, end_date);
+
+-- Company events table is created in tenant_provisioner.py / app/models/site.py
+-- Ensure color column exists for choosing event color in UI
+ALTER TABLE IF EXISTS company_events ADD COLUMN IF NOT EXISTS color VARCHAR(20);
 CREATE INDEX IF NOT EXISTS idx_bank_holidays_site_id ON bank_holidays(site_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired);
 

@@ -78,6 +78,148 @@
   border-radius: var(--radius-full);
 }
 
+/* Wrapper around each equipment row (collapsed row + expanded content) */
+.equipmentWrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Expand chevron - rotates 90° when row is expanded (mirrors StaffView) */
+.expandIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.expandIcon.expanded {
+  transform: rotate(90deg);
+}
+
+/* Expanded content area below an equipment row */
+.expandedContent {
+  background: var(--bg-primary);
+}
+
+/* Detail row layout (mirrors StaffView .detailRow) */
+.detailRow {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 1rem 0 2.5rem;
+  gap: 8px;
+  font-size: var(--font-size-xs);
+  border-bottom: 1px solid var(--border-color-subtle, rgba(255, 255, 255, 0.05));
+}
+
+.detailRow:last-child {
+  border-bottom: none;
+}
+
+.detailRow.clickable {
+  cursor: pointer;
+}
+
+.detailRow.clickable:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Detail type badge (left-side colored chip) */
+.detailType {
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.detailType.block {
+  background: rgba(249, 115, 22, 0.2);
+  color: var(--accent-orange);
+}
+
+.detailType.allocation {
+  background: rgba(20, 184, 166, 0.2);
+  color: var(--accent-teal, #14b8a6);
+}
+
+.detailName {
+  flex: 1;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dateBadge {
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* Hover-revealed delete button on detail rows */
+.deleteBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.detailRow:hover .deleteBtn {
+  opacity: 1;
+}
+
+.deleteBtn:hover {
+  color: var(--accent-red);
+}
+
+/* "Add block" placeholder row (mirrors StaffView .addRow) */
+.addRow {
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.addRow:hover {
+  background: rgba(249, 115, 22, 0.1);
+}
+
+.addIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--accent-orange);
+}
+
+.addText {
+  color: var(--accent-orange);
+}
+
+/* Per-detail-row tinting */
+.blockRow {
+  background: rgba(249, 115, 22, 0.05);
+}
+
+.assignmentRow {
+  background: rgba(20, 184, 166, 0.04);
+}
+
+.noAssignments {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 /* Type Filter Dropdown */
 .filterWrapper {
   position: relative;
@@ -359,6 +501,15 @@
   background: var(--accent-orange);
 }
 
+.status.blocked {
+  background: var(--accent-red);
+}
+
+.metaBlocked {
+  color: var(--accent-red);
+  font-weight: var(--font-weight-medium);
+}
+
 .equipmentInfo {
   flex: 1;
   min-width: 0;
@@ -369,6 +520,13 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.equipmentName > span:first-child {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

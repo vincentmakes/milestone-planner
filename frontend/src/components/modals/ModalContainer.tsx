@@ -15,6 +15,7 @@ const VacationModal = lazy(() => import('./VacationModal').then(m => ({ default:
 const BankHolidayModal = lazy(() => import('./BankHolidayModal').then(m => ({ default: m.BankHolidayModal })));
 const CustomHolidayModal = lazy(() => import('./CustomHolidayModal').then(m => ({ default: m.CustomHolidayModal })));
 const CompanyEventModal = lazy(() => import('./CompanyEventModal').then(m => ({ default: m.CompanyEventModal })));
+const EquipmentBlockModal = lazy(() => import('./EquipmentBlockModal').then(m => ({ default: m.EquipmentBlockModal })));
 const SiteModal = lazy(() => import('./SiteModal').then(m => ({ default: m.SiteModal })));
 const SiteManagementModal = lazy(() => import('./SiteManagementModal').then(m => ({ default: m.SiteManagementModal })));
 const UserManagementModal = lazy(() => import('./UserManagementModal').then(m => ({ default: m.UserManagementModal })));
@@ -36,6 +37,7 @@ export function ModalContainer() {
       <BankHolidayModal />
       <CustomHolidayModal />
       <CompanyEventModal />
+      <EquipmentBlockModal />
       <SiteModal />
       <SiteManagementModal />
       <UserManagementModal />

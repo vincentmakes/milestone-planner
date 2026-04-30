@@ -603,6 +603,7 @@ async def get_company_events(
             date=e.date,
             end_date=e.end_date,
             name=e.name,
+            color=e.color,
             created_at=e.created_at,
         )
         for e in events
@@ -651,6 +652,7 @@ async def get_events_in_range(
             date=e.date,
             end_date=e.end_date,
             name=e.name,
+            color=e.color,
             created_at=e.created_at,
         )
         for e in events
@@ -679,6 +681,7 @@ async def create_company_event(
         date=event_data.date,
         end_date=event_data.end_date,
         name=event_data.name,
+        color=event_data.color,
     )
 
     db.add(event)
@@ -691,6 +694,7 @@ async def create_company_event(
         date=event.date,
         end_date=event.end_date,
         name=event.name,
+        color=event.color,
         created_at=event.created_at,
     )
 

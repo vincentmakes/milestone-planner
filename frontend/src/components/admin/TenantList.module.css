@@ -117,10 +117,20 @@
 }
 
 .slug {
+  display: inline-block;
+  font-family: monospace;
   font-size: 0.8125rem;
   padding: 0.25rem 0.5rem;
   background: var(--bg-tertiary);
+  color: var(--accent-blue);
   border-radius: var(--radius-sm);
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.slug:hover {
+  background: var(--accent-blue-alpha, rgba(59, 130, 246, 0.15));
+  text-decoration: underline;
 }
 
 /* Badges */

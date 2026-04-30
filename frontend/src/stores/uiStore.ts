@@ -5,13 +5,14 @@
  */
 
 import { create } from 'zustand';
-import type { 
-  Project, 
-  Phase, 
-  Subphase, 
-  StaffAssignment, 
+import type {
+  Project,
+  Phase,
+  Subphase,
+  StaffAssignment,
   EquipmentAssignment,
   Vacation,
+  EquipmentBlock,
   Staff,
   Equipment,
   User,
@@ -45,7 +46,8 @@ type ModalType =
   | 'editEquipment'
   | 'bankHoliday'
   | 'customHoliday'
-  | 'companyEvent';
+  | 'companyEvent'
+  | 'equipmentBlock';
 
 // =============================================================================
 // STATE INTERFACE
@@ -64,6 +66,7 @@ interface UIState {
   editingStaffAssignment: StaffAssignment | null;
   editingEquipmentAssignment: EquipmentAssignment | null;
   editingVacation: Vacation | null;
+  editingEquipmentBlock: EquipmentBlock | null;
   editingStaff: Staff | null;
   editingEquipment: Equipment | null;
   editingUser: User | null;
@@ -217,6 +220,7 @@ interface UIState {
   openPhaseModal: (phase?: Phase, projectId?: number) => void;
   openSubphaseModal: (subphase?: Subphase, phaseId?: number, projectId?: number, parentSubphaseId?: number) => void;
   openVacationModal: (vacation?: Vacation, staffId?: number) => void;
+  openEquipmentBlockModal: (block?: EquipmentBlock, equipmentId?: number) => void;
   openBankHolidayModal: () => void;
   openSiteModal: () => void;
   setActiveModal: (modal: ModalType | string | null) => void;
@@ -349,6 +353,7 @@ const initialState = {
   editingStaffAssignment: null,
   editingEquipmentAssignment: null,
   editingVacation: null,
+  editingEquipmentBlock: null,
   editingStaff: null,
   editingEquipment: null,
   editingUser: null,
@@ -450,6 +455,7 @@ export const useUIStore = create<UIState>()((set) => ({
     editingStaffAssignment: null,
     editingEquipmentAssignment: null,
     editingVacation: null,
+    editingEquipmentBlock: null,
     editingStaff: null,
     editingEquipment: null,
     editingUser: null,
@@ -490,6 +496,12 @@ export const useUIStore = create<UIState>()((set) => ({
     activeModal: 'vacation',
     editingVacation: vacation || null,
     modalContext: staffId ? { staffId } : {},
+  }),
+
+  openEquipmentBlockModal: (block, equipmentId) => set({
+    activeModal: 'equipmentBlock',
+    editingEquipmentBlock: block || null,
+    modalContext: equipmentId ? { equipmentId } : {},
   }),
   
   openBankHolidayModal: () => set({

@@ -212,6 +212,23 @@
   word-break: break-all;
 }
 
+.codeLink {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--accent-blue);
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.codeLink:hover {
+  background: var(--accent-blue-alpha, rgba(59, 130, 246, 0.12));
+  border-color: var(--accent-blue);
+  text-decoration: underline;
+}
+
 /* Credentials */
 .credentialsField {
   display: flex;

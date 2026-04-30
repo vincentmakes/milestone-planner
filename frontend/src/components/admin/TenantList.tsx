@@ -193,7 +193,16 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
                       )}
                     </td>
                     <td>
-                      <code className={styles.slug}>{tenant.slug}</code>
+                      <a
+                        className={styles.slug}
+                        href={`/t/${tenant.slug}/`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`Open ${tenant.name} (opens in a new tab)`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {tenant.slug}
+                      </a>
                     </td>
                     <td>{getStatusBadge(tenant.status)}</td>
                     <td>{getDbStatusBadge(tenant.database_status)}</td>
@@ -230,7 +239,23 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
                                 <circle cx="12" cy="12" r="3" />
                               </svg>
                             </button>
-                            
+
+                            {tenant.database_status?.accessible && tenant.status === 'active' && (
+                              <a
+                                className={styles.btnSmall}
+                                href={`/t/${tenant.slug}/`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Open tenant (new tab)"
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                  <polyline points="15 3 21 3 21 9" />
+                                  <line x1="10" y1="14" x2="21" y2="3" />
+                                </svg>
+                              </a>
+                            )}
+
                             {!tenant.database_status?.accessible && (
                               <button
                                 className={`${styles.btnSmall} ${styles.btnSuccess}`}
