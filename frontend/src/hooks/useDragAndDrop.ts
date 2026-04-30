@@ -572,6 +572,7 @@ export function useDragAndDrop() {
       // On error, reload to get correct state
       const reloadedProjects = await loadAllProjects();
       setProjects(reloadedProjects);
+      useUndoStore.getState().clear();
     }
     
     dragDataRef.current = null;

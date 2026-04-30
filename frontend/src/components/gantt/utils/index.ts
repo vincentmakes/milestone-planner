@@ -41,3 +41,5 @@ export {
   isSubphaseOnCriticalPath,
 } from './criticalPath';
 export type { CriticalPathResult } from './criticalPath';
+
+export { diffProjects } from './diffProjects';

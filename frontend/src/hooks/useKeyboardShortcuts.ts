@@ -1,12 +1,12 @@
 /**
  * useKeyboardShortcuts Hook
- * 
+ *
  * Global keyboard shortcuts for common operations.
- * 
+ *
  * Shortcuts:
  * - Escape: Cancel current operation (phantom mode, dependency linking)
- * - Ctrl+Z: Undo (future)
- * - Ctrl+Y / Ctrl+Shift+Z: Redo (future)
+ * - Ctrl+Z: Undo
+ * - Ctrl+Y / Ctrl+Shift+Z: Redo
  * - Home: Jump to today
  * - +/-: Zoom in/out
  */
@@ -14,6 +14,7 @@
 import { useEffect, useCallback } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useViewStore } from '@/stores/viewStore';
+import { useUndoRedo } from './useUndoRedo';
 
 // Zoom limits (same as useCtrlScrollZoom)
 const MIN_CELL_WIDTH = 12;
@@ -32,6 +33,8 @@ export function useKeyboardShortcuts() {
 
   const cellWidth = useViewStore((s) => s.cellWidth);
   const setCellWidth = useViewStore((s) => s.setCellWidth);
+
+  const { undo, redo } = useUndoRedo();
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // Don't handle shortcuts when focused on input elements
@@ -90,30 +93,37 @@ export function useKeyboardShortcuts() {
       return;
     }
 
-    // Future: Ctrl+Z for Undo
-    // if (e.key === 'z' && e.ctrlKey && !e.shiftKey) {
-    //   // TODO: Implement undo
-    //   e.preventDefault();
-    //   return;
-    // }
+    const ctrlOrMeta = e.ctrlKey || e.metaKey;
 
-    // Future: Ctrl+Y or Ctrl+Shift+Z for Redo
-    // if ((e.key === 'y' && e.ctrlKey) || (e.key === 'z' && e.ctrlKey && e.shiftKey)) {
-    //   // TODO: Implement redo
-    //   e.preventDefault();
-    //   return;
-    // }
+    // Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y - Redo
+    if (
+      ctrlOrMeta &&
+      ((e.key === 'z' && e.shiftKey) || (e.key === 'Z' && e.shiftKey) || e.key === 'y' || e.key === 'Y')
+    ) {
+      void redo();
+      e.preventDefault();
+      return;
+    }
+
+    // Ctrl/Cmd+Z - Undo
+    if (ctrlOrMeta && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) {
+      void undo();
+      e.preventDefault();
+      return;
+    }
   }, [
-    activeModal, 
-    closeModal, 
-    isLinkingDependency, 
-    cancelLinking, 
-    phantomSiblingMode, 
+    activeModal,
+    closeModal,
+    isLinkingDependency,
+    cancelLinking,
+    phantomSiblingMode,
     endPhantomSibling,
     triggerScrollToToday,
     triggerZoom,
     cellWidth,
     setCellWidth,
+    undo,
+    redo,
   ]);
 
   useEffect(() => {
