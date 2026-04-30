@@ -189,9 +189,20 @@ export function TenantDetailsModal({ tenantId, onClose }: TenantDetailsModalProp
 
               {/* Access URL */}
               <h4 className={styles.sectionTitle}>Access URL</h4>
-              <div className={styles.codeBlock}>
-                {window.location.origin}/t/{tenant.slug}/
-              </div>
+              <a
+                className={`${styles.codeBlock} ${styles.codeLink}`}
+                href={`/t/${tenant.slug}/`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`Open ${tenant.name} (opens in a new tab)`}
+              >
+                <span>{window.location.origin}/t/{tenant.slug}/</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+              </a>
 
               {/* Audit Log */}
               {auditLog.length > 0 && (
