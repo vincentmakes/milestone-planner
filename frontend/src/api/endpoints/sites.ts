@@ -2,7 +2,7 @@
  * Sites API endpoints
  */
 
-import { apiGet, apiPost, apiPut, apiDelete } from '../client';
+import { apiGet, apiPost, apiPut, apiDelete, downloadFile } from '../client';
 import type { Site, BankHoliday, CompanyEvent } from '@/types';
 
 // =============================================================================
@@ -42,6 +42,16 @@ export async function updateSite(id: number, data: Partial<Omit<Site, 'id'>>): P
  */
 export async function deleteSite(id: number): Promise<void> {
   await apiDelete(`/api/sites/${id}`);
+}
+
+/**
+ * Export all data for a site as an Excel (.xlsx) file.
+ * Triggers a browser download. Restricted to admin / superuser on the backend.
+ */
+export async function exportSiteToExcel(siteId: number, siteName?: string): Promise<void> {
+  const safeName = (siteName || `site-${siteId}`).toLowerCase().replace(/[^a-z0-9._-]+/g, '-');
+  const fallback = `${safeName}-export.xlsx`;
+  await downloadFile(`/api/export/site/${siteId}/excel`, fallback);
 }
 
 // =============================================================================

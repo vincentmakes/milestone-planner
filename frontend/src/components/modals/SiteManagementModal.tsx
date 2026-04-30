@@ -5,9 +5,9 @@
  */
 
 import { useState } from 'react';
-import { useAppStore } from '@/stores/appStore';
+import { useAppStore, selectCanManageResources } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
-import { createSite } from '@/api';
+import { createSite, exportSiteToExcel } from '@/api';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import type { Site } from '@/types';
@@ -35,13 +35,15 @@ export function SiteManagementModal() {
   const { activeModal, closeModal, setEditingSite, openModal } = useUIStore();
   const sites = useAppStore((s) => s.sites);
   const setSites = useAppStore((s) => s.setSites);
-  
+  const canManageResources = useAppStore(selectCanManageResources);
+
   const isOpen = activeModal === 'manageSites' || activeModal === 'siteManagement';
-  
+
   // New site form
   const [newSiteName, setNewSiteName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exportingSiteId, setExportingSiteId] = useState<number | null>(null);
   
   // Handle add new site
   const handleAddSite = async () => {
@@ -68,6 +70,19 @@ export function SiteManagementModal() {
   const handleEditSite = (site: Site) => {
     setEditingSite(site);
     openModal('site');
+  };
+
+  // Handle export of a site's data as Excel
+  const handleExportSite = async (site: Site) => {
+    setError(null);
+    setExportingSiteId(site.id);
+    try {
+      await exportSiteToExcel(site.id, site.name);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export site data');
+    } finally {
+      setExportingSiteId(null);
+    }
   };
   
   // Handle close
@@ -119,7 +134,27 @@ export function SiteManagementModal() {
                 {!site.active && site.active !== undefined && (
                   <span className={styles.inactiveBadge}>Inactive</span>
                 )}
-                <button 
+                {canManageResources && (
+                  <button
+                    className={styles.editBtn}
+                    onClick={() => handleExportSite(site)}
+                    disabled={exportingSiteId === site.id}
+                    title="Export site data as Excel"
+                  >
+                    {exportingSiteId === site.id ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10" />
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                    )}
+                  </button>
+                )}
+                <button
                   className={styles.editBtn}
                   onClick={() => handleEditSite(site)}
                   title="Edit site"

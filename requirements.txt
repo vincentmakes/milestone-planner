@@ -32,3 +32,6 @@ psutil==5.9.8  # For system stats
 # MPXJ for MS Project file parsing
 jpype1==1.5.0
 mpxj>=12.0.0  # Python wrapper with bundled MPXJ JARs
+
+# Excel export
+openpyxl==3.1.5
