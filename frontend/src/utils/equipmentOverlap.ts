@@ -155,3 +155,86 @@ export function buildEquipmentOverlapMap(
   }
   return result;
 }
+
+/**
+ * What an equipment is doing right now. "blocked" wins over "booked" so a
+ * piece of gear that is both blocked and booked surfaces the more disruptive
+ * state to the user.
+ */
+export type EquipmentTodayStatus = 'blocked' | 'booked' | 'available';
+
+/**
+ * Format a JS Date as YYYY-MM-DD in the local timezone.
+ */
+function toLocalDateString(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function isWithin(today: string, start: string, end: string): boolean {
+  return today >= normalizeDate(start) && today <= normalizeDate(end);
+}
+
+/**
+ * Build a Map<equipmentId, EquipmentTodayStatus> reflecting whether each
+ * equipment is currently blocked, currently booked, or free, based on a
+ * single reference date (defaults to "now"). Equipment without any
+ * reservation today is omitted (callers should default to "available").
+ */
+export function buildEquipmentTodayStatusMap(
+  projects: Project[],
+  blocks: EquipmentBlock[],
+  reference: Date = new Date(),
+): Map<number, EquipmentTodayStatus> {
+  const today = toLocalDateString(reference);
+  const status = new Map<number, EquipmentTodayStatus>();
+
+  // Blocks first — "blocked" wins over "booked".
+  for (const b of blocks) {
+    if (isWithin(today, b.start_date, b.end_date)) {
+      status.set(b.equipment_id, 'blocked');
+    }
+  }
+
+  const markBooked = (equipmentId: number) => {
+    if (status.get(equipmentId) === 'blocked') return; // don't downgrade
+    status.set(equipmentId, 'booked');
+  };
+
+  for (const project of projects) {
+    if (project.archived) continue;
+
+    for (const a of project.equipmentAssignments || []) {
+      if (isWithin(today, a.start_date, a.end_date)) {
+        markBooked(a.equipment_id);
+      }
+    }
+    for (const phase of project.phases || []) {
+      for (const a of phase.equipmentAssignments || []) {
+        const start = a.start_date || phase.start_date;
+        const end = a.end_date || phase.end_date;
+        if (isWithin(today, start, end)) {
+          markBooked(a.equipment_id);
+        }
+      }
+      const walkSubs = (subs: typeof phase.children | undefined) => {
+        if (!subs) return;
+        for (const sub of subs) {
+          for (const a of sub.equipmentAssignments || []) {
+            const start = a.start_date || sub.start_date;
+            const end = a.end_date || sub.end_date;
+            if (isWithin(today, start, end)) {
+              markBooked(a.equipment_id);
+            }
+          }
+          walkSubs(sub.children);
+        }
+      };
+      walkSubs(phase.children);
+    }
+  }
+
+  return status;
+}

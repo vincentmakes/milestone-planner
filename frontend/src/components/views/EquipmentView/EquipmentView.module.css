@@ -501,6 +501,15 @@
   background: var(--accent-orange);
 }
 
+.status.blocked {
+  background: var(--accent-red);
+}
+
+.metaBlocked {
+  color: var(--accent-red);
+  font-weight: var(--font-weight-medium);
+}
+
 .equipmentInfo {
   flex: 1;
   min-width: 0;

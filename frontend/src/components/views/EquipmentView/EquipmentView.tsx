@@ -9,7 +9,13 @@ import { useMemo, useRef, useState, useEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
-import { useScrollSync, useCtrlScrollZoom, useResourceDragDrop, useEquipmentOverlaps } from '@/hooks';
+import {
+  useScrollSync,
+  useCtrlScrollZoom,
+  useResourceDragDrop,
+  useEquipmentOverlaps,
+  useEquipmentTodayStatus,
+} from '@/hooks';
 import { useDataLoader } from '@/hooks/useDataLoader';
 import { useTimelineScrollSync } from '@/contexts/TimelineScrollContext';
 import { deleteEquipmentBlock } from '@/api';
@@ -74,6 +80,8 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
 
   // Overlap detection: equipmentId -> { hasOverlap, segments }
   const overlapMap = useEquipmentOverlaps();
+  // What is each equipment doing right now: 'blocked' | 'booked' | (absent = available)
+  const todayStatusMap = useEquipmentTodayStatus();
 
   // Check if user can drag equipment to assign / manage blocks
   const canDrag = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
@@ -263,11 +271,11 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
     return map;
   }, [equipmentBlocks, siteEquipment]);
 
-  // Calculate utilization (based on number of bookings - simplified)
-  const calcUtilization = (equipmentId: number): number => {
-    const bookings = equipmentBookingsMap.get(equipmentId) || [];
-    // Simple check: if any booking exists, show as utilized
-    return bookings.length > 0 ? 100 : 0;
+  // Status label / class for an equipment based on what's happening today
+  const STATUS_LABEL: Record<string, string> = {
+    blocked: 'Blocked',
+    booked: 'In use',
+    available: 'Available',
   };
   
   // Handle panel resize (horizontal - width)
@@ -415,7 +423,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
             </div>
           ) : (
             siteEquipment.map((equip) => {
-              const utilization = calcUtilization(equip.id);
+              const todayStatus = todayStatusMap.get(equip.id) ?? 'available';
               const isExpanded = expandedEquipment.has(equip.id);
               const equipBookings = equipmentBookingsMap.get(equip.id) || [];
               const equipBlocks = equipmentBlocksMap.get(equip.id) || [];
@@ -449,7 +457,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
                         <polyline points="9 18 15 12 9 6" />
                       </svg>
                     </div>
-                    <div className={`${styles.status} ${utilization > 0 ? styles.booked : styles.available}`} />
+                    <div className={`${styles.status} ${styles[todayStatus]}`} title={STATUS_LABEL[todayStatus]} />
                     <div className={styles.equipmentInfo}>
                       <div className={styles.equipmentName}>
                         <span>{equip.name}</span>
@@ -463,7 +471,9 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
                       <div className={styles.equipmentMeta}>
                         <span>{equip.type || 'Equipment'}</span>
                         <span> · </span>
-                        <span>{utilization > 0 ? 'In use' : 'Available'}</span>
+                        <span className={todayStatus === 'blocked' ? styles.metaBlocked : undefined}>
+                          {STATUS_LABEL[todayStatus]}
+                        </span>
                       </div>
                     </div>
                   </div>

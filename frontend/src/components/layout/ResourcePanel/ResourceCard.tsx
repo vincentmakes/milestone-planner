@@ -1,7 +1,7 @@
 import type { Staff, Equipment, ResourceTab, Project, Vacation } from '@/types';
 import { useAppStore } from '@/stores/appStore';
 import { useResourceDragDrop } from '@/hooks/useResourceDragDrop';
-import { useEquipmentOverlaps } from '@/hooks/useEquipmentOverlaps';
+import { useEquipmentOverlaps, useEquipmentTodayStatus } from '@/hooks/useEquipmentOverlaps';
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
 import styles from './ResourceCard.module.css';
 
@@ -81,63 +81,20 @@ function calculateStaffAllocationToday(
   return total;
 }
 
-// Helper to check if equipment is booked TODAY
-function isEquipmentBookedToday(projects: Project[], equipmentId: number): boolean {
-  const today = new Date();
-  today.setHours(12, 0, 0, 0);
-  
-  for (const project of projects) {
-    for (const booking of project.equipmentAssignments || []) {
-      if (booking.equipment_id === equipmentId &&
-          isActiveToday(booking.start_date, booking.end_date, today)) {
-        return true;
-      }
-    }
-    
-    for (const phase of project.phases || []) {
-      for (const booking of phase.equipmentAssignments || []) {
-        if (booking.equipment_id === equipmentId &&
-            isActiveToday(phase.start_date, phase.end_date, today)) {
-          return true;
-        }
-      }
-      
-      // Check subphases recursively
-      const checkSubphases = (subphases: typeof phase.children): boolean => {
-        for (const subphase of subphases || []) {
-          for (const booking of subphase.equipmentAssignments || []) {
-            if (booking.equipment_id === equipmentId &&
-                isActiveToday(subphase.start_date, subphase.end_date, today)) {
-              return true;
-            }
-          }
-          if (subphase.children && checkSubphases(subphase.children)) {
-            return true;
-          }
-        }
-        return false;
-      };
-      
-      if (checkSubphases(phase.children)) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
   // Get vacations from store for vacation checking
   const vacations = useAppStore((s) => s.vacations);
   const currentUser = useAppStore((s) => s.currentUser);
   const { handleDragStart, handleDragEnd } = useResourceDragDrop();
   const overlapMap = useEquipmentOverlaps();
+  const todayStatusMap = useEquipmentTodayStatus();
   const hasEquipmentConflict = type === 'equipment' && overlapMap.get(resource.id)?.hasOverlap === true;
   
-  // Calculate allocation for TODAY
-  const allocation = type === 'staff' 
+  // Calculate allocation for TODAY.
+  // For equipment, both bookings and active blocks count as "in use" (100%).
+  const allocation = type === 'staff'
     ? calculateStaffAllocationToday(projects, resource.id, vacations)
-    : isEquipmentBookedToday(projects, resource.id) ? 100 : 0;
+    : todayStatusMap.get(resource.id) ? 100 : 0;
   
   const available = 100 - allocation;
 
