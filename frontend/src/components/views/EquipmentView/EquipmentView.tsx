@@ -268,6 +268,16 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
           <div className={styles.headerLeft}>
             <span className={styles.headerTitle}>Equipment Overview</span>
             <span className={styles.headerCount}>{siteEquipment.length}</span>
+            {canDrag && (
+              <button
+                type="button"
+                className={styles.blockBtn}
+                onClick={() => useUIStore.getState().openEquipmentBlockModal()}
+                title="Block equipment for maintenance or defect"
+              >
+                Block
+              </button>
+            )}
           </div>
           
           {/* Type Filter Dropdown */}

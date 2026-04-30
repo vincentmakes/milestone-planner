@@ -206,6 +206,17 @@ export interface CompanyEvent {
   date: string;
   end_date?: string | null;
   name: string;
+  color?: string | null;
+}
+
+export interface EquipmentBlock {
+  id: number;
+  equipment_id: number;
+  equipment_name?: string;
+  start_date: string;
+  end_date: string;
+  reason: string;
+  description: string;
 }
 
 // =============================================================================
@@ -380,6 +391,14 @@ export interface CreateVacationRequest {
   staff_id: number;
   start_date: string;
   end_date: string;
+  description?: string;
+}
+
+export interface CreateEquipmentBlockRequest {
+  equipment_id: number;
+  start_date: string;
+  end_date: string;
+  reason?: string;
   description?: string;
 }
 

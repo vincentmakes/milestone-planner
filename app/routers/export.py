@@ -24,7 +24,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.middleware.auth import require_superuser
 from app.models.custom_column import CustomColumn, CustomColumnValue
-from app.models.equipment import Equipment
+from app.models.equipment import Equipment, EquipmentBlock
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.site import BankHoliday, CompanyEvent, Site
 from app.models.skill import Skill, UserSkill
@@ -493,6 +493,22 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         .scalars()
         .all()
     )
+    equipment_id_set = {e.id for e in equipment_rows}
+
+    # Equipment blocks (maintenance / defect periods) for this site's equipment
+    equipment_block_rows: list[EquipmentBlock] = []
+    if equipment_id_set:
+        equipment_block_rows = list(
+            (
+                await db.execute(
+                    select(EquipmentBlock)
+                    .where(EquipmentBlock.equipment_id.in_(equipment_id_set))
+                    .order_by(EquipmentBlock.start_date)
+                )
+            )
+            .scalars()
+            .all()
+        )
 
     # Skills are global - include all of them, plus per-user proficiency for the site's users
     skill_rows = (await db.execute(select(Skill).order_by(Skill.name))).scalars().all()
@@ -1061,8 +1077,40 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
     # Company events
     add_sheet(
         "Company events",
-        ["ID", "Date", "End date", "Name", "Created at"],
-        [[e.id, _iso(e.date), _iso(e.end_date), e.name, _iso(e.created_at)] for e in event_rows],
+        ["ID", "Date", "End date", "Name", "Color", "Created at"],
+        [
+            [e.id, _iso(e.date), _iso(e.end_date), e.name, e.color or "", _iso(e.created_at)]
+            for e in event_rows
+        ],
+    )
+
+    # Equipment blocks (maintenance / defect periods)
+    equipment_name_by_id = {e.id: e.name for e in equipment_rows}
+    add_sheet(
+        "Equipment blocks",
+        [
+            "ID",
+            "Equipment ID",
+            "Equipment name",
+            "Start date",
+            "End date",
+            "Reason",
+            "Description",
+            "Created at",
+        ],
+        [
+            [
+                b.id,
+                b.equipment_id,
+                equipment_name_by_id.get(b.equipment_id, ""),
+                _iso(b.start_date),
+                _iso(b.end_date),
+                b.reason,
+                b.description,
+                _iso(b.created_at),
+            ]
+            for b in equipment_block_rows
+        ],
     )
 
     buffer = io.BytesIO()

@@ -113,6 +113,7 @@ def get_tenant_schema_sql() -> str:
       date DATE NOT NULL,
       end_date DATE,
       name TEXT NOT NULL,
+      color VARCHAR(20),
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -265,6 +266,17 @@ def get_tenant_schema_sql() -> str:
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Equipment blocks (maintenance / defect / calibration unavailability)
+    CREATE TABLE IF NOT EXISTS equipment_blocks (
+      id SERIAL PRIMARY KEY,
+      equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+      start_date DATE NOT NULL,
+      end_date DATE NOT NULL,
+      reason VARCHAR(50) DEFAULT 'maintenance' NOT NULL,
+      description VARCHAR(200) DEFAULT 'Maintenance' NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- Session storage for express-session (Node.js format)
     CREATE TABLE IF NOT EXISTS sessions (
       sid TEXT PRIMARY KEY,
@@ -345,6 +357,8 @@ def get_tenant_schema_sql() -> str:
     CREATE INDEX IF NOT EXISTS idx_bank_holidays_date ON bank_holidays(date);
     CREATE INDEX IF NOT EXISTS idx_bank_holidays_year ON bank_holidays(site_id, year);
     CREATE INDEX IF NOT EXISTS idx_company_events_site_date ON company_events(site_id, date);
+    CREATE INDEX IF NOT EXISTS idx_equipment_blocks_equipment_id ON equipment_blocks(equipment_id);
+    CREATE INDEX IF NOT EXISTS idx_equipment_blocks_dates ON equipment_blocks(start_date, end_date);
     CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired);
     CREATE INDEX IF NOT EXISTS idx_projects_site ON projects(site_id);
     CREATE INDEX IF NOT EXISTS idx_project_phases_project ON project_phases(project_id);

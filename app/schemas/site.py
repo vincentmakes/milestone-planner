@@ -82,6 +82,7 @@ class CompanyEventResponse(BaseModel):
     date: DateAsDateTimeJS
     end_date: DateAsDateTimeJS | None = None
     name: str
+    color: str | None = None
     created_at: DateTimeJS
 
     class Config:
@@ -94,3 +95,4 @@ class CompanyEventCreate(BaseModel):
     date: date
     end_date: date | None = None
     name: str = Field(..., min_length=1, max_length=200)
+    color: str | None = Field(None, max_length=20)

@@ -12,28 +12,43 @@ import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import styles from './CustomHolidayModal.module.css'; // Reuse same styles
 
+// Theme color swatches matching variables.css accent colors.
+// The first option (red) preserves the previous default marker color.
+const EVENT_COLOR_SWATCHES: { label: string; value: string }[] = [
+  { label: 'Red', value: '#ef4444' },
+  { label: 'Orange', value: '#f97316' },
+  { label: 'Yellow', value: '#f59e0b' },
+  { label: 'Green', value: '#10b981' },
+  { label: 'Cyan', value: '#06b6d4' },
+  { label: 'Blue', value: '#3b82f6' },
+  { label: 'Purple', value: '#8b5cf6' },
+];
+const DEFAULT_EVENT_COLOR = EVENT_COLOR_SWATCHES[0].value;
+
 export function CompanyEventModal() {
   const { activeModal, closeModal } = useUIStore();
   const currentSite = useAppStore((s) => s.currentSite);
   const setCompanyEvents = useAppStore((s) => s.setCompanyEvents);
-  
+
   const isOpen = activeModal === 'companyEvent';
-  
+
   // Form state
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  
+  const [color, setColor] = useState<string>(DEFAULT_EVENT_COLOR);
+
   // Status
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
       setName('');
       setStartDate('');
       setEndDate('');
+      setColor(DEFAULT_EVENT_COLOR);
       setError(null);
     }
   }, [isOpen]);
@@ -69,6 +84,7 @@ export function CompanyEventModal() {
         name: name.trim(),
         date: startDate,
         end_date: endDate || undefined,
+        color,
       });
       
       // Reload events
@@ -144,9 +160,45 @@ export function CompanyEventModal() {
           />
         </div>
       </div>
-      
+
+      <div className={styles.formGroup}>
+        <label className={styles.label}>Color</label>
+        <div
+          role="radiogroup"
+          aria-label="Event color"
+          style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}
+        >
+          {EVENT_COLOR_SWATCHES.map((swatch) => {
+            const selected = color === swatch.value;
+            return (
+              <button
+                key={swatch.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                aria-label={swatch.label}
+                title={swatch.label}
+                onClick={() => setColor(swatch.value)}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: '50%',
+                  background: swatch.value,
+                  border: selected
+                    ? '2px solid var(--text-primary)'
+                    : '2px solid transparent',
+                  outline: selected ? '2px solid var(--accent-blue)' : 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              />
+            );
+          })}
+        </div>
+      </div>
+
       <p className={styles.help}>
-        Company events are shown as red markers on the timeline. Unlike holidays, they do not affect working day calculations. Leave end date empty for a single-day event.
+        Company events are shown as colored markers on the timeline. Unlike holidays, they do not affect working day calculations. Leave end date empty for a single-day event.
       </p>
     </Modal>
   );

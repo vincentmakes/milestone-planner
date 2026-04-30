@@ -49,7 +49,7 @@ app/
     auth.py            # Authentication (login, SSO, sessions)
     custom_columns.py  # Custom column CRUD
     equipment.py       # Equipment CRUD and bookings
-    export.py          # CSV/XML project export
+    export.py          # CSV/XML project export + full site export to Excel (.xlsx)
     health.py          # Health check endpoint
     mpp_import.py      # Microsoft Project file import (requires Java)
     notes.py           # Project/phase notes
@@ -193,6 +193,13 @@ Auto-initialization (fresh install):
 - `AUTO_INIT_DB=true` - runs `app.scripts.init_db` on startup
 - `INIT_ADMIN_EMAIL` - initial admin email
 - `INIT_ADMIN_PASSWORD` - initial admin password (auto-generated if empty)
+
+## Site Export to Excel
+
+- Endpoint: `GET /t/{slug}/api/export/site/{site_id}/excel` (admin / superuser only; superusers limited to sites they belong to).
+- Implemented in `app/routers/export.py` — `build_site_export_workbook()` generates a multi-sheet `.xlsx` via `openpyxl`.
+- Current sheets: Site, Projects (hierarchy with phases/subphases), Users, Equipment, Skills, User skills, Vacations, Project assignments, Phase assignments, Subphase assignments, Equipment assignments, Custom columns, Custom column values, Bank holidays, Company events.
+- **IMPORTANT**: any new data added at the site level through future enhancements (e.g. equipment maintenance/blocks, new event types, additional site-scoped settings, new assignment kinds, etc.) **must** be added as a new sheet (or a new column on the existing sheet) in `build_site_export_workbook()`. The site export is the canonical "everything for this site" snapshot — do not let it drift behind the model.
 
 ## Important Patterns
 

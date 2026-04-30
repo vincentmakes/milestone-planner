@@ -49,6 +49,12 @@ class Equipment(Base):
         cascade="all, delete-orphan",
     )
 
+    blocks: Mapped[list["EquipmentBlock"]] = relationship(
+        "EquipmentBlock",
+        back_populates="equipment",
+        cascade="all, delete-orphan",
+    )
+
     @property
     def is_active(self) -> bool:
         """Check if equipment is active."""
@@ -102,3 +108,37 @@ class EquipmentAssignment(Base):
 
     def __repr__(self) -> str:
         return f"<EquipmentAssignment {self.equipment_id} -> Project {self.project_id}>"
+
+
+class EquipmentBlock(Base):
+    """
+    Equipment block - represents periods when equipment is unavailable
+    due to maintenance, defects, calibration, etc. Equivalent to staff vacations.
+    """
+
+    __tablename__ = "equipment_blocks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    equipment_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("equipment.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    reason: Mapped[str] = mapped_column(String(50), default="maintenance", nullable=False)
+    description: Mapped[str] = mapped_column(String(200), default="Maintenance", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    equipment: Mapped["Equipment"] = relationship("Equipment", back_populates="blocks")
+
+    @property
+    def equipment_name(self) -> str:
+        return self.equipment.name if self.equipment else ""
+
+    @property
+    def duration_days(self) -> int:
+        return (self.end_date - self.start_date).days + 1
+
+    def __repr__(self) -> str:
+        return f"<EquipmentBlock {self.equipment_id} ({self.start_date} to {self.end_date})>"

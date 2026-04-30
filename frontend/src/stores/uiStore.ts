@@ -45,7 +45,8 @@ type ModalType =
   | 'editEquipment'
   | 'bankHoliday'
   | 'customHoliday'
-  | 'companyEvent';
+  | 'companyEvent'
+  | 'equipmentBlock';
 
 // =============================================================================
 // STATE INTERFACE
@@ -217,6 +218,7 @@ interface UIState {
   openPhaseModal: (phase?: Phase, projectId?: number) => void;
   openSubphaseModal: (subphase?: Subphase, phaseId?: number, projectId?: number, parentSubphaseId?: number) => void;
   openVacationModal: (vacation?: Vacation, staffId?: number) => void;
+  openEquipmentBlockModal: (equipmentId?: number) => void;
   openBankHolidayModal: () => void;
   openSiteModal: () => void;
   setActiveModal: (modal: ModalType | string | null) => void;
@@ -490,6 +492,11 @@ export const useUIStore = create<UIState>()((set) => ({
     activeModal: 'vacation',
     editingVacation: vacation || null,
     modalContext: staffId ? { staffId } : {},
+  }),
+
+  openEquipmentBlockModal: (equipmentId) => set({
+    activeModal: 'equipmentBlock',
+    modalContext: equipmentId ? { equipmentId } : {},
   }),
   
   openBankHolidayModal: () => set({

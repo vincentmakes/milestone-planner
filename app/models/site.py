@@ -144,6 +144,7 @@ class CompanyEvent(Base):
     date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    color: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships

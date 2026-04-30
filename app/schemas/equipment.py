@@ -74,3 +74,38 @@ class EquipmentAssignmentUpdate(BaseModel):
     equipment_id: int | None = None
     start_date: date | None = None
     end_date: date | None = None
+
+
+class EquipmentBlockResponse(BaseModel):
+    """Response model for equipment blocks (maintenance / defect periods)."""
+
+    id: int
+    equipment_id: int
+    equipment_name: str = ""
+    start_date: DateAsDateTimeJS
+    end_date: DateAsDateTimeJS
+    reason: str = "maintenance"
+    description: str = "Maintenance"
+    created_at: DateTimeJS
+
+    class Config:
+        from_attributes = True
+
+
+class EquipmentBlockCreate(BaseModel):
+    """Request model for creating an equipment block."""
+
+    equipment_id: int
+    start_date: date
+    end_date: date
+    reason: str | None = Field(default="maintenance", max_length=50)
+    description: str | None = Field(default="Maintenance", max_length=200)
+
+
+class EquipmentBlockUpdate(BaseModel):
+    """Request model for updating an equipment block."""
+
+    start_date: date | None = None
+    end_date: date | None = None
+    reason: str | None = Field(None, max_length=50)
+    description: str | None = Field(None, max_length=200)
