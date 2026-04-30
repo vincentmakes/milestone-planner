@@ -10,11 +10,17 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useScrollSync, useCtrlScrollZoom, useResourceDragDrop } from '@/hooks';
+import { useDataLoader } from '@/hooks/useDataLoader';
 import { useTimelineScrollSync } from '@/contexts/TimelineScrollContext';
+import { deleteEquipmentBlock } from '@/api';
 import { generateTimelineCells, generateTimelineHeaders } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { EquipmentTimelineBody } from './EquipmentTimelineBody';
 import styles from './EquipmentView.module.css';
+
+// Shared row-height constants (used by EquipmentTimelineBody to keep rows in sync)
+export const BASE_ROW_HEIGHT = 44;
+export const DETAIL_ROW_HEIGHT = 32;
 
 interface EquipmentViewProps {
   /** When true, hides the main header and syncs scroll with parent Gantt */
@@ -56,13 +62,41 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   const cellWidth = useViewStore((s) => s.cellWidth);
   
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
+  const openEquipmentBlockModal = useUIStore((s) => s.openEquipmentBlockModal);
   const currentUser = useAppStore((s) => s.currentUser);
-  
+
   // Drag and drop for equipment assignment
   const { handleDragStart, handleDragEnd } = useResourceDragDrop();
-  
-  // Check if user can drag equipment to assign
+
+  // Refresh blocks from the API after delete
+  const { refreshEquipmentBlocks } = useDataLoader();
+
+  // Check if user can drag equipment to assign / manage blocks
   const canDrag = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+
+  // Per-row expansion state (mirrors StaffView)
+  const [expandedEquipment, setExpandedEquipment] = useState<Set<number>>(new Set());
+  const toggleEquipmentExpand = (id: number) => {
+    setExpandedEquipment((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleDeleteBlock = async (blockId: number) => {
+    if (!window.confirm('Delete this equipment block?')) return;
+    try {
+      await deleteEquipmentBlock(blockId);
+      await refreshEquipmentBlocks();
+    } catch (err) {
+      console.error('[EquipmentView] Failed to delete block:', err);
+    }
+  };
   
   // Enable Ctrl+Scroll zoom (only when not embedded)
   useCtrlScrollZoom({ containerRef: timelineScrollRef, cellWidth, enabled: !embedded });
@@ -378,56 +412,127 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
           ) : (
             siteEquipment.map((equip) => {
               const utilization = calcUtilization(equip.id);
+              const isExpanded = expandedEquipment.has(equip.id);
+              const equipBookings = equipmentBookingsMap.get(equip.id) || [];
+              const equipBlocks = equipmentBlocksMap.get(equip.id) || [];
+
               return (
-                <div 
-                  key={equip.id} 
-                  className={`${styles.equipmentRow} ${canDrag ? styles.draggable : ''}`}
-                  draggable={canDrag}
-                  onDragStart={canDrag ? (e) => {
-                    e.stopPropagation();
-                    handleDragStart(e, 'equipment', equip.id, equip.name);
-                  } : undefined}
-                  onDragEnd={canDrag ? handleDragEnd : undefined}
-                >
-                  {canDrag && (
-                    <div className={styles.dragHandle} title="Drag to assign">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                        <circle cx="9" cy="5" r="2" />
-                        <circle cx="9" cy="12" r="2" />
-                        <circle cx="9" cy="19" r="2" />
-                        <circle cx="15" cy="5" r="2" />
-                        <circle cx="15" cy="12" r="2" />
-                        <circle cx="15" cy="19" r="2" />
+                <div key={equip.id} className={styles.equipmentWrapper}>
+                  <div
+                    className={`${styles.equipmentRow} ${canDrag ? styles.draggable : ''}`}
+                    onClick={() => toggleEquipmentExpand(equip.id)}
+                    draggable={canDrag}
+                    onDragStart={canDrag ? (e) => {
+                      e.stopPropagation();
+                      handleDragStart(e, 'equipment', equip.id, equip.name);
+                    } : undefined}
+                    onDragEnd={canDrag ? handleDragEnd : undefined}
+                  >
+                    {canDrag && (
+                      <div className={styles.dragHandle} title="Drag to assign">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                          <circle cx="9" cy="5" r="2" />
+                          <circle cx="9" cy="12" r="2" />
+                          <circle cx="9" cy="19" r="2" />
+                          <circle cx="15" cy="5" r="2" />
+                          <circle cx="15" cy="12" r="2" />
+                          <circle cx="15" cy="19" r="2" />
+                        </svg>
+                      </div>
+                    )}
+                    <div className={`${styles.expandIcon} ${isExpanded ? styles.expanded : ''}`}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="9 18 15 12 9 6" />
                       </svg>
                     </div>
-                  )}
-                  <div className={`${styles.status} ${utilization > 0 ? styles.booked : styles.available}`} />
-                  <div className={styles.equipmentInfo}>
-                    <div className={styles.equipmentName}>{equip.name}</div>
-                    <div className={styles.equipmentMeta}>
-                      <span>{equip.type || 'Equipment'}</span>
-                      <span> · </span>
-                      <span>{utilization > 0 ? 'In use' : 'Available'}</span>
+                    <div className={`${styles.status} ${utilization > 0 ? styles.booked : styles.available}`} />
+                    <div className={styles.equipmentInfo}>
+                      <div className={styles.equipmentName}>{equip.name}</div>
+                      <div className={styles.equipmentMeta}>
+                        <span>{equip.type || 'Equipment'}</span>
+                        <span> · </span>
+                        <span>{utilization > 0 ? 'In use' : 'Available'}</span>
+                      </div>
                     </div>
                   </div>
-                  {canDrag && (
-                    <button
-                      type="button"
-                      className={styles.addBlockBtn}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        useUIStore.getState().openEquipmentBlockModal(undefined, equip.id);
-                      }}
-                      onDragStart={(e) => e.preventDefault()}
-                      draggable={false}
-                      title="Block equipment (maintenance / defect)"
-                      aria-label={`Block ${equip.name}`}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <line x1="12" y1="5" x2="12" y2="19" />
-                        <line x1="5" y1="12" x2="19" y2="12" />
-                      </svg>
-                    </button>
+
+                  {isExpanded && (
+                    <div className={styles.expandedContent}>
+                      {/* Block detail rows */}
+                      {equipBlocks.map((block) => (
+                        <div
+                          key={`b-${block.id}`}
+                          className={`${styles.detailRow} ${canDrag ? styles.clickable : ''} ${styles.blockRow}`}
+                          onClick={canDrag ? () => openEquipmentBlockModal(block) : undefined}
+                        >
+                          <span className={`${styles.detailType} ${styles.block}`}>
+                            {block.reason || 'Block'}
+                          </span>
+                          <span className={styles.detailName}>
+                            {block.description || 'Blocked'}
+                          </span>
+                          <span className={styles.dateBadge}>
+                            {formatBlockDateRange(block.start_date, block.end_date)}
+                          </span>
+                          {canDrag && (
+                            <span
+                              className={styles.deleteBtn}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteBlock(block.id);
+                              }}
+                              title="Delete block"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <line x1="18" y1="6" x2="6" y2="18" />
+                                <line x1="6" y1="6" x2="18" y2="18" />
+                              </svg>
+                            </span>
+                          )}
+                        </div>
+                      ))}
+
+                      {/* Add block placeholder */}
+                      {canDrag && (
+                        <div
+                          className={`${styles.detailRow} ${styles.addRow}`}
+                          onClick={() => openEquipmentBlockModal(undefined, equip.id)}
+                        >
+                          <span className={styles.addIcon}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <line x1="12" y1="5" x2="12" y2="19" />
+                              <line x1="5" y1="12" x2="19" y2="12" />
+                            </svg>
+                          </span>
+                          <span className={styles.addText}>Add block (maintenance / defect)</span>
+                        </div>
+                      )}
+
+                      {/* Assignment / booking detail rows */}
+                      {equipBookings.map((booking) => (
+                        <div
+                          key={`a-${booking.id}-${booking.level}`}
+                          className={`${styles.detailRow} ${styles.assignmentRow}`}
+                        >
+                          <span className={`${styles.detailType} ${styles.allocation}`}>
+                            {booking.level === 'phase' ? 'Phase' : 'Project'}
+                          </span>
+                          <span className={styles.detailName}>
+                            {booking.projectName}
+                            {booking.phaseName && ` › ${booking.phaseName}`}
+                          </span>
+                          <span className={styles.dateBadge}>
+                            {formatBlockDateRange(booking.start_date, booking.end_date)}
+                          </span>
+                        </div>
+                      ))}
+
+                      {equipBookings.length === 0 && equipBlocks.length === 0 && !canDrag && (
+                        <div className={styles.detailRow}>
+                          <span className={styles.noAssignments}>No bookings or blocks</span>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               );
@@ -468,6 +573,8 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
               equipment={siteEquipment}
               bookingsMap={equipmentBookingsMap}
               blocksMap={equipmentBlocksMap}
+              expandedEquipment={expandedEquipment}
+              canManage={canDrag}
               cells={cells}
               cellWidth={cellWidth}
               totalWidth={totalWidth}
@@ -478,6 +585,21 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
       </div>
     </div>
   );
+}
+
+// Compact date range formatter for detail rows ("Apr 30 → May 12, 2026")
+function formatBlockDateRange(start: string, end: string): string {
+  const startStr = start.substring(0, 10);
+  const endStr = end.substring(0, 10);
+  const [sy, sm, sd] = startStr.split('-').map(Number);
+  const [ey, em, ed] = endStr.split('-').map(Number);
+  const startDate = new Date(sy, sm - 1, sd);
+  const endDate = new Date(ey, em - 1, ed);
+  const fmt = (d: Date) => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (startStr === endStr) {
+    return `${fmt(startDate)}, ${ey}`;
+  }
+  return `${fmt(startDate)} → ${fmt(endDate)}, ${ey}`;
 }
 
 // Types

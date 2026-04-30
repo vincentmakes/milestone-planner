@@ -11,12 +11,15 @@ import { useUIStore } from '@/stores/uiStore';
 import type { TimelineCell } from '@/components/gantt/utils';
 import type { Equipment, EquipmentBlock, ViewMode } from '@/types';
 import type { EquipmentBookingWithContext } from './EquipmentView';
+import { DETAIL_ROW_HEIGHT } from './EquipmentView';
 import styles from './EquipmentTimelineBody.module.css';
 
 interface EquipmentTimelineBodyProps {
   equipment: Equipment[];
   bookingsMap: Map<number, EquipmentBookingWithContext[]>;
   blocksMap: Map<number, EquipmentBlock[]>;
+  expandedEquipment: Set<number>;
+  canManage: boolean;
   cells: TimelineCell[];
   cellWidth: number;
   totalWidth: number;
@@ -28,6 +31,8 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
     equipment,
     bookingsMap,
     blocksMap,
+    expandedEquipment,
+    canManage,
     cells,
     cellWidth,
     totalWidth,
@@ -89,17 +94,52 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
           
           {/* Equipment rows */}
           <div className={styles.rows}>
-            {equipment.map((equip) => (
-              <EquipmentRow
-                key={equip.id}
-                equipment={equip}
-                bookings={bookingsMap.get(equip.id) || []}
-                blocks={blocksMap.get(equip.id) || []}
-                cells={cells}
-                cellWidth={cellWidth}
-                viewMode={viewMode}
-              />
-            ))}
+            {equipment.map((equip) => {
+              const equipBookings = bookingsMap.get(equip.id) || [];
+              const equipBlocks = blocksMap.get(equip.id) || [];
+              const isExpanded = expandedEquipment.has(equip.id);
+              return (
+                <div key={equip.id} className={styles.equipmentWrapper}>
+                  <EquipmentRow
+                    equipment={equip}
+                    bookings={equipBookings}
+                    blocks={equipBlocks}
+                    cells={cells}
+                    cellWidth={cellWidth}
+                    viewMode={viewMode}
+                  />
+                  {isExpanded && (
+                    <>
+                      {equipBlocks.map((block) => (
+                        <BlockDetailRow
+                          key={`b-${block.id}`}
+                          block={block}
+                          cells={cells}
+                          cellWidth={cellWidth}
+                          viewMode={viewMode}
+                        />
+                      ))}
+                      {/* "Add block" placeholder row mirrors panel height */}
+                      {canManage && (
+                        <div className={styles.row} style={{ height: DETAIL_ROW_HEIGHT }} />
+                      )}
+                      {equipBookings.map((booking) => (
+                        <BookingDetailRow
+                          key={`a-${booking.id}-${booking.level}`}
+                          booking={booking}
+                          cells={cells}
+                          cellWidth={cellWidth}
+                          viewMode={viewMode}
+                        />
+                      ))}
+                      {equipBookings.length === 0 && equipBlocks.length === 0 && !canManage && (
+                        <div className={styles.row} style={{ height: DETAIL_ROW_HEIGHT }} />
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
           
           {/* Holiday and event tooltip layer - top strip only */}
@@ -200,6 +240,65 @@ function EquipmentRow({ bookings, blocks, cells, cellWidth, viewMode }: Equipmen
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Block detail row (shown when equipment is expanded)
+interface BlockDetailRowProps {
+  block: EquipmentBlock;
+  cells: TimelineCell[];
+  cellWidth: number;
+  viewMode: ViewMode;
+}
+
+function BlockDetailRow({ block, cells, cellWidth, viewMode }: BlockDetailRowProps) {
+  const openEquipmentBlockModal = useUIStore((s) => s.openEquipmentBlockModal);
+  const pos = useMemo(
+    () => calculateBarPosition(block.start_date, block.end_date, cells, cellWidth, viewMode),
+    [block, cells, cellWidth, viewMode],
+  );
+
+  if (!pos) return <div className={styles.row} style={{ height: DETAIL_ROW_HEIGHT }} />;
+
+  return (
+    <div className={styles.row} style={{ height: DETAIL_ROW_HEIGHT }}>
+      <div
+        className={`${styles.detailBar} ${styles.blockDetailBar} ${styles[`reason-${block.reason}`] || ''}`}
+        style={{ left: pos.left, width: pos.width, height: 20, top: 6 }}
+        title={`${block.description || 'Blocked'} (${block.reason})`}
+        onClick={(e) => {
+          e.stopPropagation();
+          openEquipmentBlockModal(block);
+        }}
+      />
+    </div>
+  );
+}
+
+// Booking detail row (shown when equipment is expanded)
+interface BookingDetailRowProps {
+  booking: EquipmentBookingWithContext;
+  cells: TimelineCell[];
+  cellWidth: number;
+  viewMode: ViewMode;
+}
+
+function BookingDetailRow({ booking, cells, cellWidth, viewMode }: BookingDetailRowProps) {
+  const pos = useMemo(
+    () => calculateBarPosition(booking.start_date, booking.end_date, cells, cellWidth, viewMode),
+    [booking, cells, cellWidth, viewMode],
+  );
+
+  if (!pos) return <div className={styles.row} style={{ height: DETAIL_ROW_HEIGHT }} />;
+
+  return (
+    <div className={styles.row} style={{ height: DETAIL_ROW_HEIGHT }}>
+      <div
+        className={`${styles.detailBar} ${styles.bookingDetailBar}`}
+        style={{ left: pos.left, width: pos.width, height: 20, top: 6 }}
+        title={`${booking.projectName}${booking.phaseName ? ` - ${booking.phaseName}` : ''}`}
+      />
     </div>
   );
 }

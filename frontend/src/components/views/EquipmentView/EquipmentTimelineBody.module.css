@@ -230,6 +230,42 @@
   border-color: rgba(75, 85, 99, 1);
 }
 
+/* Wrapper for an equipment + its expanded detail rows */
+.equipmentWrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Detail bars (shown when an equipment row is expanded) */
+.detailBar {
+  position: absolute;
+  border-radius: var(--radius-xs);
+  z-index: 2;
+  cursor: pointer;
+}
+
+.blockDetailBar {
+  background: rgba(249, 115, 22, 0.7);
+  opacity: 0.85;
+}
+
+.blockDetailBar.reason-defect {
+  background: rgba(239, 68, 68, 0.7);
+}
+
+.blockDetailBar.reason-calibration {
+  background: rgba(139, 92, 246, 0.7);
+}
+
+.blockDetailBar.reason-other {
+  background: rgba(107, 114, 128, 0.7);
+}
+
+.bookingDetailBar {
+  background: rgba(20, 184, 166, 0.6);
+  cursor: default;
+}
+
 .barLabel {
   font-size: 10px;
   font-weight: var(--font-weight-medium);
