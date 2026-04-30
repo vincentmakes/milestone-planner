@@ -7,6 +7,8 @@
 import { memo, useCallback } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useEquipmentOverlaps } from '@/hooks/useEquipmentOverlaps';
+import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
 import styles from './AssignmentRow.module.css';
 
 interface AssignmentRowProps {
@@ -48,7 +50,10 @@ export const AssignmentRow = memo(function AssignmentRow({
 }: AssignmentRowProps) {
   const showContextMenu = useUIStore((s) => s.showContextMenu);
   const currentUser = useAppStore((s) => s.currentUser);
-  
+  const overlapMap = useEquipmentOverlaps();
+  const hasEquipmentConflict =
+    type === 'equipment' && equipmentId !== undefined && overlapMap.get(equipmentId)?.hasOverlap === true;
+
   const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
   
   const paddingLeft = depth * 16 + 28; // Extra offset for no expand button
@@ -132,6 +137,13 @@ export const AssignmentRow = memo(function AssignmentRow({
           <span className={styles.detail}> · {role || equipmentType}</span>
         )}
       </span>
+
+      {hasEquipmentConflict && (
+        <OverlapWarningIcon
+          size={12}
+          title="This equipment has overlapping bookings or blocks"
+        />
+      )}
 
       {/* Allocation */}
       {type === 'staff' && allocation !== undefined && (

@@ -21,3 +21,5 @@ export type { LoadingSpinnerProps } from './LoadingSpinner';
 
 export { ContextMenu } from './ContextMenu';
 export type { ContextMenuItem } from './ContextMenu';
+
+export { OverlapWarningIcon } from './OverlapWarningIcon';

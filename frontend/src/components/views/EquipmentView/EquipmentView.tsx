@@ -9,12 +9,13 @@ import { useMemo, useRef, useState, useEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
-import { useScrollSync, useCtrlScrollZoom, useResourceDragDrop } from '@/hooks';
+import { useScrollSync, useCtrlScrollZoom, useResourceDragDrop, useEquipmentOverlaps } from '@/hooks';
 import { useDataLoader } from '@/hooks/useDataLoader';
 import { useTimelineScrollSync } from '@/contexts/TimelineScrollContext';
 import { deleteEquipmentBlock } from '@/api';
 import { generateTimelineCells, generateTimelineHeaders } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
+import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
 import { EquipmentTimelineBody } from './EquipmentTimelineBody';
 import styles from './EquipmentView.module.css';
 
@@ -70,6 +71,9 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
 
   // Refresh blocks from the API after delete
   const { refreshEquipmentBlocks } = useDataLoader();
+
+  // Overlap detection: equipmentId -> { hasOverlap, segments }
+  const overlapMap = useEquipmentOverlaps();
 
   // Check if user can drag equipment to assign / manage blocks
   const canDrag = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
@@ -447,7 +451,15 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
                     </div>
                     <div className={`${styles.status} ${utilization > 0 ? styles.booked : styles.available}`} />
                     <div className={styles.equipmentInfo}>
-                      <div className={styles.equipmentName}>{equip.name}</div>
+                      <div className={styles.equipmentName}>
+                        <span>{equip.name}</span>
+                        {overlapMap.get(equip.id)?.hasOverlap && (
+                          <OverlapWarningIcon
+                            size={14}
+                            title="This equipment has overlapping bookings or blocks"
+                          />
+                        )}
+                      </div>
                       <div className={styles.equipmentMeta}>
                         <span>{equip.type || 'Equipment'}</span>
                         <span> · </span>
@@ -573,6 +585,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
               equipment={siteEquipment}
               bookingsMap={equipmentBookingsMap}
               blocksMap={equipmentBlocksMap}
+              overlapMap={overlapMap}
               expandedEquipment={expandedEquipment}
               canManage={canDrag}
               cells={cells}

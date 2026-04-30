@@ -511,6 +511,13 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.equipmentName > span:first-child {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

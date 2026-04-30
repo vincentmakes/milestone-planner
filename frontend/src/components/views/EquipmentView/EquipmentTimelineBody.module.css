@@ -230,6 +230,30 @@
   border-color: rgba(75, 85, 99, 1);
 }
 
+/*
+ * Overlap conflict overlay — drawn on top of booking / block bars to flag
+ * the date range where ≥2 reservations clash. Outlined red box with a
+ * subtle hatched fill so the underlying bars are still readable.
+ */
+.overlapBar {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: calc(100% - 6px);
+  border: 2px solid var(--accent-red, #ef4444);
+  border-radius: var(--radius-sm);
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(239, 68, 68, 0.25),
+    rgba(239, 68, 68, 0.25) 4px,
+    rgba(239, 68, 68, 0) 4px,
+    rgba(239, 68, 68, 0) 10px
+  );
+  pointer-events: none;
+  z-index: 4;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.4);
+}
+
 /* Wrapper for an equipment + its expanded detail rows */
 .equipmentWrapper {
   display: flex;

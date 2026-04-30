@@ -10,6 +10,7 @@ import { TodayLine } from '@/components/gantt/Timeline/TodayLine';
 import { useUIStore } from '@/stores/uiStore';
 import type { TimelineCell } from '@/components/gantt/utils';
 import type { Equipment, EquipmentBlock, ViewMode } from '@/types';
+import type { OverlapInfo } from '@/utils/equipmentOverlap';
 import type { EquipmentBookingWithContext } from './EquipmentView';
 import { DETAIL_ROW_HEIGHT } from './EquipmentView';
 import styles from './EquipmentTimelineBody.module.css';
@@ -18,6 +19,7 @@ interface EquipmentTimelineBodyProps {
   equipment: Equipment[];
   bookingsMap: Map<number, EquipmentBookingWithContext[]>;
   blocksMap: Map<number, EquipmentBlock[]>;
+  overlapMap: Map<number, OverlapInfo>;
   expandedEquipment: Set<number>;
   canManage: boolean;
   cells: TimelineCell[];
@@ -31,6 +33,7 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
     equipment,
     bookingsMap,
     blocksMap,
+    overlapMap,
     expandedEquipment,
     canManage,
     cells,
@@ -97,6 +100,7 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
             {equipment.map((equip) => {
               const equipBookings = bookingsMap.get(equip.id) || [];
               const equipBlocks = blocksMap.get(equip.id) || [];
+              const overlapSegments = overlapMap.get(equip.id)?.segments || [];
               const isExpanded = expandedEquipment.has(equip.id);
               return (
                 <div key={equip.id} className={styles.equipmentWrapper}>
@@ -104,6 +108,7 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
                     equipment={equip}
                     bookings={equipBookings}
                     blocks={equipBlocks}
+                    overlapSegments={overlapSegments}
                     cells={cells}
                     cellWidth={cellWidth}
                     viewMode={viewMode}
@@ -182,12 +187,13 @@ interface EquipmentRowProps {
   equipment: Equipment;
   bookings: EquipmentBookingWithContext[];
   blocks: EquipmentBlock[];
+  overlapSegments: { start: string; end: string }[];
   cells: TimelineCell[];
   cellWidth: number;
   viewMode: ViewMode;
 }
 
-function EquipmentRow({ bookings, blocks, cells, cellWidth, viewMode }: EquipmentRowProps) {
+function EquipmentRow({ bookings, blocks, overlapSegments, cells, cellWidth, viewMode }: EquipmentRowProps) {
   const openEquipmentBlockModal = useUIStore((s) => s.openEquipmentBlockModal);
 
   // Calculate bar positions for bookings
@@ -211,6 +217,13 @@ function EquipmentRow({ bookings, blocks, cells, cellWidth, viewMode }: Equipmen
       return { block, left: pos.left, width: pos.width };
     }).filter((x): x is { block: EquipmentBlock; left: number; width: number } => x !== null);
   }, [blocks, cells, cellWidth, viewMode]);
+
+  // Calculate positions for overlap segments (overlay on top of bars)
+  const overlapBars = useMemo(() => {
+    return overlapSegments
+      .map((seg) => calculateBarPosition(seg.start, seg.end, cells, cellWidth, viewMode))
+      .filter((pos): pos is { left: number; width: number } => pos !== null);
+  }, [overlapSegments, cells, cellWidth, viewMode]);
 
   return (
     <div className={styles.row}>
@@ -239,6 +252,15 @@ function EquipmentRow({ bookings, blocks, cells, cellWidth, viewMode }: Equipmen
             {block.description || 'Blocked'}
           </span>
         </div>
+      ))}
+      {/* Overlap conflict overlay - renders on top of bars where ≥2 reservations clash */}
+      {overlapBars.map((pos, idx) => (
+        <div
+          key={`overlap-${idx}`}
+          className={styles.overlapBar}
+          style={{ left: pos.left, width: pos.width }}
+          title="Booking conflict: overlapping reservations"
+        />
       ))}
     </div>
   );

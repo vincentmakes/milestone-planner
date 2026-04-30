@@ -1,6 +1,8 @@
 import type { Staff, Equipment, ResourceTab, Project, Vacation } from '@/types';
 import { useAppStore } from '@/stores/appStore';
 import { useResourceDragDrop } from '@/hooks/useResourceDragDrop';
+import { useEquipmentOverlaps } from '@/hooks/useEquipmentOverlaps';
+import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
 import styles from './ResourceCard.module.css';
 
 interface ResourceCardProps {
@@ -129,6 +131,8 @@ export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
   const vacations = useAppStore((s) => s.vacations);
   const currentUser = useAppStore((s) => s.currentUser);
   const { handleDragStart, handleDragEnd } = useResourceDragDrop();
+  const overlapMap = useEquipmentOverlaps();
+  const hasEquipmentConflict = type === 'equipment' && overlapMap.get(resource.id)?.hasOverlap === true;
   
   // Calculate allocation for TODAY
   const allocation = type === 'staff' 
@@ -169,7 +173,15 @@ export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
       onDragEnd={canDrag ? handleDragEnd : undefined}
     >
       <div className={styles.info}>
-        <span className={styles.name}>{resource.name}</span>
+        <span className={styles.name}>
+          {resource.name}
+          {hasEquipmentConflict && (
+            <OverlapWarningIcon
+              size={12}
+              title="This equipment has overlapping bookings or blocks"
+            />
+          )}
+        </span>
         <span className={styles.detail}>
           {isStaff ? staffResource.role || 'No role' : equipmentResource.type || 'No type'}
         </span>

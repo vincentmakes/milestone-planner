@@ -13,3 +13,4 @@ export { useCtrlScrollZoom } from './useCtrlScrollZoom';
 export { useKeyboardShortcuts } from './useKeyboardShortcuts';
 export { useTouchDrag, isTouchDevice, createSyntheticMouseEvent } from './useTouchDrag';
 export { useResourceDragDrop } from './useResourceDragDrop';
+export { useEquipmentOverlaps } from './useEquipmentOverlaps';
