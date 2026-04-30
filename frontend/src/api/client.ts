@@ -229,3 +229,44 @@ export function apiDelete<T>(endpoint: string): Promise<T> {
 export function apiPatch<T>(endpoint: string, body?: unknown): Promise<T> {
   return apiRequest<T>(endpoint, { method: 'PATCH', body });
 }
+
+/**
+ * Download a binary file from the API and trigger a browser save dialog.
+ * Filename comes from the Content-Disposition header when available, or the
+ * provided fallback otherwise.
+ */
+export async function downloadFile(endpoint: string, fallbackFilename: string): Promise<void> {
+  const baseUrl = getApiBaseUrl();
+  const tenantPrefix = getTenantPrefix();
+  let url = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  if (url.startsWith('/api/') && tenantPrefix) {
+    url = tenantPrefix + url;
+  }
+  url = baseUrl + url;
+
+  const response = await fetch(url, { method: 'GET', credentials: 'include' });
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const data = await response.json();
+      detail = (data?.detail as string) || (data?.error as string) || detail;
+    } catch {
+      // Body wasn't JSON; keep the status code.
+    }
+    throw new Error(detail);
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+  const filename = match ? decodeURIComponent(match[1]) : fallbackFilename;
+
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(objectUrl);
+}
