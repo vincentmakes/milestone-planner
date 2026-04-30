@@ -6,11 +6,12 @@
 import { useState, useCallback } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
-import { 
-  getSites, 
-  getStaff, 
-  getEquipment, 
-  getVacations, 
+import {
+  getSites,
+  getStaff,
+  getEquipment,
+  getEquipmentBlocks,
+  getVacations,
   loadAllProjects,
   getBankHolidays,
   buildHolidayDateSet,
@@ -29,6 +30,7 @@ interface UseDataLoaderReturn {
   refreshSiteData: (siteId: number) => Promise<void>;
   refreshCustomColumns: (siteId: number) => Promise<void>;
   refreshStaff: () => Promise<void>;
+  refreshEquipmentBlocks: () => Promise<void>;
 }
 
 export function useDataLoader(): UseDataLoaderReturn {
@@ -40,6 +42,7 @@ export function useDataLoader(): UseDataLoaderReturn {
     setProjects,
     setStaff,
     setEquipment,
+    setEquipmentBlocks,
     setVacations,
     setBankHolidays,
     setCompanyEvents,
@@ -65,10 +68,11 @@ export function useDataLoader(): UseDataLoaderReturn {
 
     try {
       // Load core data in parallel
-      const [sites, staff, equipment, vacations, instanceSettings, skills] = await Promise.all([
+      const [sites, staff, equipment, equipmentBlocks, vacations, instanceSettings, skills] = await Promise.all([
         getSites(),
         getStaff(true), // Include all sites
         getEquipment(true), // Include all sites
+        getEquipmentBlocks().catch(() => []),
         getVacations(),
         getInstanceSettings().catch(() => null), // Don't fail if settings not available
         skillsApi.getAll().catch(() => []), // Don't fail if skills not available
@@ -78,6 +82,7 @@ export function useDataLoader(): UseDataLoaderReturn {
       setSites(sites);
       setStaff(staff);
       setEquipment(equipment);
+      setEquipmentBlocks(equipmentBlocks);
       setVacations(vacations);
       setSkills(skills);
       if (instanceSettings) {
@@ -139,6 +144,7 @@ export function useDataLoader(): UseDataLoaderReturn {
     setProjects,
     setStaff,
     setEquipment,
+    setEquipmentBlocks,
     setVacations,
     setBankHolidays,
     setCompanyEvents,
@@ -203,6 +209,18 @@ export function useDataLoader(): UseDataLoaderReturn {
     }
   }, [setStaff]);
 
+  /**
+   * Refresh equipment blocks
+   */
+  const refreshEquipmentBlocks = useCallback(async () => {
+    try {
+      const blocks = await getEquipmentBlocks();
+      setEquipmentBlocks(blocks);
+    } catch (err) {
+      console.error('[DataLoader] Failed to refresh equipment blocks:', err);
+    }
+  }, [setEquipmentBlocks]);
+
   return {
     isLoading,
     error,
@@ -211,5 +229,6 @@ export function useDataLoader(): UseDataLoaderReturn {
     refreshSiteData,
     refreshCustomColumns,
     refreshStaff,
+    refreshEquipmentBlocks,
   };
 }

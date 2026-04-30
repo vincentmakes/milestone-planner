@@ -167,6 +167,69 @@
   box-shadow: var(--shadow-md);
 }
 
+/* Equipment block bar (maintenance / defect / calibration) */
+.blockBar {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: calc(100% - 10px);
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(239, 68, 68, 0.85),
+    rgba(239, 68, 68, 0.85) 6px,
+    rgba(220, 38, 38, 0.95) 6px,
+    rgba(220, 38, 38, 0.95) 12px
+  );
+  border: 1px solid rgba(220, 38, 38, 1);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: filter 0.15s, box-shadow 0.15s;
+  z-index: 3;
+  pointer-events: auto;
+}
+
+.blockBar:hover {
+  filter: brightness(1.1);
+  box-shadow: var(--shadow-md);
+}
+
+.blockBar.reason-maintenance {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(245, 158, 11, 0.85),
+    rgba(245, 158, 11, 0.85) 6px,
+    rgba(217, 119, 6, 0.95) 6px,
+    rgba(217, 119, 6, 0.95) 12px
+  );
+  border-color: rgba(217, 119, 6, 1);
+}
+
+.blockBar.reason-calibration {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(139, 92, 246, 0.85),
+    rgba(139, 92, 246, 0.85) 6px,
+    rgba(124, 58, 237, 0.95) 6px,
+    rgba(124, 58, 237, 0.95) 12px
+  );
+  border-color: rgba(124, 58, 237, 1);
+}
+
+.blockBar.reason-other {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(107, 114, 128, 0.85),
+    rgba(107, 114, 128, 0.85) 6px,
+    rgba(75, 85, 99, 0.95) 6px,
+    rgba(75, 85, 99, 0.95) 12px
+  );
+  border-color: rgba(75, 85, 99, 1);
+}
+
 .barLabel {
   font-size: 10px;
   font-weight: var(--font-weight-medium);

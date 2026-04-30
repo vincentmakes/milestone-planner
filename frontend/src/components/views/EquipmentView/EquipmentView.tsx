@@ -44,6 +44,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   const effectivePanelWidth = embedded ? ((panelWidth || 324) - RESIZER_WIDTH) : localPanelWidth;
   
   const equipment = useAppStore((s) => s.equipment);
+  const equipmentBlocks = useAppStore((s) => s.equipmentBlocks);
   const projects = useAppStore((s) => s.projects);
   const currentSite = useAppStore((s) => s.currentSite);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
@@ -211,7 +212,19 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
     
     return map;
   }, [projects, siteEquipment]);
-  
+
+  // Build equipment blocks map (maintenance / defect periods, scoped to current site)
+  const equipmentBlocksMap = useMemo(() => {
+    const map = new Map<number, typeof equipmentBlocks>();
+    siteEquipment.forEach((e) => map.set(e.id, []));
+    equipmentBlocks.forEach((block) => {
+      if (map.has(block.equipment_id)) {
+        map.get(block.equipment_id)!.push(block);
+      }
+    });
+    return map;
+  }, [equipmentBlocks, siteEquipment]);
+
   // Calculate utilization (based on number of bookings - simplified)
   const calcUtilization = (equipmentId: number): number => {
     const bookings = equipmentBookingsMap.get(equipmentId) || [];
@@ -268,16 +281,6 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
           <div className={styles.headerLeft}>
             <span className={styles.headerTitle}>Equipment Overview</span>
             <span className={styles.headerCount}>{siteEquipment.length}</span>
-            {canDrag && (
-              <button
-                type="button"
-                className={styles.blockBtn}
-                onClick={() => useUIStore.getState().openEquipmentBlockModal()}
-                title="Block equipment for maintenance or defect"
-              >
-                Block
-              </button>
-            )}
           </div>
           
           {/* Type Filter Dropdown */}
@@ -407,6 +410,25 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
                       <span>{utilization > 0 ? 'In use' : 'Available'}</span>
                     </div>
                   </div>
+                  {canDrag && (
+                    <button
+                      type="button"
+                      className={styles.addBlockBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        useUIStore.getState().openEquipmentBlockModal(undefined, equip.id);
+                      }}
+                      onDragStart={(e) => e.preventDefault()}
+                      draggable={false}
+                      title="Block equipment (maintenance / defect)"
+                      aria-label={`Block ${equip.name}`}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
               );
             })
@@ -445,6 +467,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
               ref={timelineBodyRef}
               equipment={siteEquipment}
               bookingsMap={equipmentBookingsMap}
+              blocksMap={equipmentBlocksMap}
               cells={cells}
               cellWidth={cellWidth}
               totalWidth={totalWidth}

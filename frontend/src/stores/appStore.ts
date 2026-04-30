@@ -16,6 +16,7 @@ import type {
   Project,
   Staff,
   Equipment,
+  EquipmentBlock,
   User,
   Vacation,
   BankHoliday,
@@ -42,6 +43,7 @@ interface AppState {
   projects: Project[];
   staff: Staff[];
   equipment: Equipment[];
+  equipmentBlocks: EquipmentBlock[];
   vacations: Vacation[];
   bankHolidays: BankHoliday[];
   bankHolidayDates: Set<string>;
@@ -77,6 +79,7 @@ interface AppState {
   setProjects: (projects: Project[]) => void;
   setStaff: (staff: Staff[]) => void;
   setEquipment: (equipment: Equipment[]) => void;
+  setEquipmentBlocks: (blocks: EquipmentBlock[]) => void;
   setVacations: (vacations: Vacation[]) => void;
   setBankHolidays: (holidays: BankHoliday[], holidayDates: Set<string>) => void;
   setCompanyEvents: (events: CompanyEvent[], eventDates: Set<string>) => void;
@@ -124,6 +127,7 @@ const initialState = {
   projects: [] as Project[],
   staff: [] as Staff[],
   equipment: [] as Equipment[],
+  equipmentBlocks: [] as EquipmentBlock[],
   vacations: [] as Vacation[],
   bankHolidays: [] as BankHoliday[],
   bankHolidayDates: new Set<string>(),
@@ -162,6 +166,8 @@ export const useAppStore = create<AppState>()(
       setStaff: (staff) => set({ staff }),
 
       setEquipment: (equipment) => set({ equipment }),
+
+      setEquipmentBlocks: (equipmentBlocks) => set({ equipmentBlocks }),
 
       setVacations: (vacations) => set({ vacations }),
 

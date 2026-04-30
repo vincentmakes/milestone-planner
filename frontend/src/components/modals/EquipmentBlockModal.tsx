@@ -7,11 +7,16 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
-import { createEquipmentBlock, getEquipment } from '@/api';
+import {
+  createEquipmentBlock,
+  updateEquipmentBlock,
+  deleteEquipmentBlock,
+  getEquipmentBlocks,
+} from '@/api';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
-import type { Equipment } from '@/types';
-import styles from './CustomHolidayModal.module.css'; // Reuse same styles
+import { toInputDateFormat } from '@/utils/date';
+import styles from './CustomHolidayModal.module.css';
 
 const REASON_OPTIONS: { value: string; label: string; defaultDescription: string }[] = [
   { value: 'maintenance', label: 'Maintenance', defaultDescription: 'Maintenance' },
@@ -21,13 +26,14 @@ const REASON_OPTIONS: { value: string; label: string; defaultDescription: string
 ];
 
 export function EquipmentBlockModal() {
-  const { activeModal, modalContext, closeModal } = useUIStore();
+  const { activeModal, editingEquipmentBlock, modalContext, closeModal } = useUIStore();
+  const equipment = useAppStore((s) => s.equipment);
   const currentSite = useAppStore((s) => s.currentSite);
+  const setEquipmentBlocks = useAppStore((s) => s.setEquipmentBlocks);
 
   const isOpen = activeModal === 'equipmentBlock';
+  const isEditing = !!editingEquipmentBlock;
 
-  // Equipment list - loaded when modal opens
-  const [equipmentList, setEquipmentList] = useState<Equipment[]>([]);
   const [equipmentId, setEquipmentId] = useState<number | null>(null);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -35,38 +41,36 @@ export function EquipmentBlockModal() {
   const [description, setDescription] = useState('Maintenance');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset and load equipment when modal opens
+  const siteEquipment = useMemo(() => {
+    if (!currentSite) return equipment;
+    return equipment.filter((e) => e.site_id === currentSite.id);
+  }, [equipment, currentSite]);
+
+  // Initialize form whenever the modal opens
   useEffect(() => {
     if (!isOpen) return;
-
-    setEquipmentId(modalContext.equipmentId ?? null);
-    setStartDate('');
-    setEndDate('');
-    setReason('maintenance');
-    setDescription('Maintenance');
     setError(null);
 
-    let cancelled = false;
-    (async () => {
-      try {
-        const items = await getEquipment(false);
-        if (cancelled) return;
-        const filtered = currentSite
-          ? items.filter((e) => e.site_id === currentSite.id)
-          : items;
-        setEquipmentList(filtered);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load equipment');
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, currentSite, modalContext.equipmentId]);
+    if (editingEquipmentBlock) {
+      setEquipmentId(editingEquipmentBlock.equipment_id);
+      setStartDate(toInputDateFormat(editingEquipmentBlock.start_date));
+      setEndDate(toInputDateFormat(editingEquipmentBlock.end_date));
+      setReason(editingEquipmentBlock.reason || 'maintenance');
+      setDescription(editingEquipmentBlock.description || 'Maintenance');
+    } else {
+      setEquipmentId(modalContext.equipmentId ?? null);
+      const today = new Date();
+      const tomorrow = new Date(today);
+      tomorrow.setDate(today.getDate() + 1);
+      setStartDate(toInputDateFormat(today.toISOString()));
+      setEndDate(toInputDateFormat(tomorrow.toISOString()));
+      setReason('maintenance');
+      setDescription('Maintenance');
+    }
+  }, [isOpen, editingEquipmentBlock, modalContext.equipmentId]);
 
   const duration = useMemo(() => {
     if (!startDate || !endDate) return 0;
@@ -79,7 +83,18 @@ export function EquipmentBlockModal() {
   const handleReasonChange = (value: string) => {
     setReason(value);
     const opt = REASON_OPTIONS.find((o) => o.value === value);
-    if (opt) setDescription(opt.defaultDescription);
+    if (opt && (description === '' || REASON_OPTIONS.some((o) => o.defaultDescription === description))) {
+      setDescription(opt.defaultDescription);
+    }
+  };
+
+  const refreshBlocks = async () => {
+    try {
+      const blocks = await getEquipmentBlocks();
+      setEquipmentBlocks(blocks);
+    } catch (err) {
+      console.error('[EquipmentBlockModal] Failed to refresh blocks:', err);
+    }
   };
 
   const handleSave = async () => {
@@ -99,29 +114,61 @@ export function EquipmentBlockModal() {
     setIsSubmitting(true);
     setError(null);
     try {
-      await createEquipmentBlock({
+      const fallbackDesc = REASON_OPTIONS.find((o) => o.value === reason)?.defaultDescription ?? 'Unavailable';
+      const payload = {
         equipment_id: equipmentId,
         start_date: startDate,
         end_date: endDate,
         reason,
-        description: description.trim() || (REASON_OPTIONS.find((o) => o.value === reason)?.defaultDescription ?? 'Unavailable'),
-      });
+        description: description.trim() || fallbackDesc,
+      };
+
+      if (isEditing && editingEquipmentBlock) {
+        await updateEquipmentBlock(editingEquipmentBlock.id, payload);
+      } else {
+        await createEquipmentBlock(payload);
+      }
+      await refreshBlocks();
       closeModal();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to block equipment');
+      setError(err instanceof Error ? err.message : 'Failed to save equipment block');
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const handleDelete = async () => {
+    if (!editingEquipmentBlock) return;
+    if (!window.confirm('Delete this equipment block?')) return;
+
+    setIsDeleting(true);
+    setError(null);
+    try {
+      await deleteEquipmentBlock(editingEquipmentBlock.id);
+      await refreshBlocks();
+      closeModal();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete equipment block');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const footer = (
-    <div className={styles.footer}>
-      <Button variant="secondary" onClick={closeModal} disabled={isSubmitting}>
-        Cancel
-      </Button>
-      <Button variant="primary" onClick={handleSave} disabled={isSubmitting}>
-        {isSubmitting ? 'Blocking...' : 'Block Equipment'}
-      </Button>
+    <div className={styles.footer} style={{ width: '100%', justifyContent: isEditing ? 'space-between' : 'flex-end' }}>
+      {isEditing && (
+        <Button variant="danger" onClick={handleDelete} disabled={isSubmitting || isDeleting}>
+          {isDeleting ? 'Deleting...' : 'Delete'}
+        </Button>
+      )}
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <Button variant="secondary" onClick={closeModal} disabled={isSubmitting || isDeleting}>
+          Cancel
+        </Button>
+        <Button variant="primary" onClick={handleSave} disabled={isSubmitting || isDeleting}>
+          {isSubmitting ? 'Saving...' : isEditing ? 'Save Changes' : 'Block Equipment'}
+        </Button>
+      </div>
     </div>
   );
 
@@ -129,7 +176,7 @@ export function EquipmentBlockModal() {
     <Modal
       isOpen={isOpen}
       onClose={closeModal}
-      title="Block Equipment"
+      title={isEditing ? 'Edit Equipment Block' : 'Block Equipment'}
       size="sm"
       footer={footer}
     >
@@ -141,9 +188,10 @@ export function EquipmentBlockModal() {
           className={styles.input}
           value={equipmentId ?? ''}
           onChange={(e) => setEquipmentId(e.target.value ? Number(e.target.value) : null)}
+          disabled={isEditing}
         >
           <option value="">Select equipment…</option>
-          {equipmentList.map((eq) => (
+          {siteEquipment.map((eq) => (
             <option key={eq.id} value={eq.id}>
               {eq.name}
               {eq.type ? ` (${eq.type})` : ''}
@@ -207,7 +255,7 @@ export function EquipmentBlockModal() {
       </div>
 
       <p className={styles.help}>
-        Blocked equipment is unavailable for new project bookings during this period — same as staff vacations.
+        Blocked equipment is unavailable during this period — same as staff vacations.
       </p>
     </Modal>
   );
