@@ -8,6 +8,7 @@ import { UserMenu } from './UserMenu';
 import { ThemeToggle } from './ThemeToggle';
 import { WhatIfToggle } from './WhatIfToggle';
 import { InstanceTitle } from './InstanceTitle';
+import { UndoRedoControls } from './UndoRedoControls';
 import { OnlineUsers } from '@/components/common/OnlineUsers';
 import { getTheme, isDarkTheme, type Theme } from '@/utils/storage';
 import { getSetting } from '@/api/endpoints/settings';
@@ -162,7 +163,11 @@ export function Header() {
         </div>
         
         <div className={styles.divider} />
-        
+
+        <UndoRedoControls />
+
+        <div className={styles.divider} />
+
         {/* Zoom Controls */}
         <div className={styles.zoomControls}>
           <button

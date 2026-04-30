@@ -11,6 +11,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { useUndoStore } from './undoStore';
 import type {
   Site,
   Project,
@@ -190,10 +191,16 @@ export const useAppStore = create<AppState>()(
       // -----------------------------------------
       // SELECTION SETTERS
       // -----------------------------------------
-      setCurrentSite: (site) => set({
-        currentSite: site,
-        _persistedSiteId: site?.id ?? null,
-      }),
+      setCurrentSite: (site) => {
+        const prevId = get().currentSite?.id ?? null;
+        set({
+          currentSite: site,
+          _persistedSiteId: site?.id ?? null,
+        });
+        if ((site?.id ?? null) !== prevId) {
+          useUndoStore.getState().clear();
+        }
+      },
 
       setCurrentUser: (user) => set({ currentUser: user }),
 
@@ -264,7 +271,10 @@ export const useAppStore = create<AppState>()(
       // -----------------------------------------
       // RESET
       // -----------------------------------------
-      reset: () => set(initialState),
+      reset: () => {
+        useUndoStore.getState().clear();
+        set(initialState);
+      },
     }),
     {
       name: 'milestone-app-storage-v3',
