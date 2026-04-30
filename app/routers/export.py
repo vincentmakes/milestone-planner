@@ -633,27 +633,58 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         ],
     )
 
-    # Projects
-    add_sheet(
-        "Projects",
-        [
-            "ID",
-            "Name",
-            "Customer",
-            "PM",
-            "Sales PM",
-            "Confirmed",
-            "Volume",
-            "Start date",
-            "End date",
-            "Archived",
-            "Notes",
-            "Created at",
-            "Updated at",
-        ],
-        [
+    # Combined Projects / Phases / Subphases hierarchy.
+    # Rows are emitted in tree order (project → phases → nested subphases) so
+    # the spreadsheet reads top-to-bottom like the Gantt outline.
+    subphases_by_parent: dict[tuple[str, int], list[ProjectSubphase]] = {}
+    for p in project_rows:
+        for sp in p.subphases:
+            subphases_by_parent.setdefault((sp.parent_type, sp.parent_id), []).append(sp)
+    for siblings in subphases_by_parent.values():
+        siblings.sort(key=lambda s: (s.sort_order or 0, s.start_date))
+
+    hierarchy_rows: list[list[Any]] = []
+
+    def append_subphase_rows(project: Project, parent_key: tuple[str, int], depth: int) -> None:
+        for sp in subphases_by_parent.get(parent_key, []):
+            hierarchy_rows.append(
+                [
+                    "Subphase",
+                    depth,
+                    sp.id,
+                    project.id,
+                    project.name,
+                    sp.parent_type,
+                    sp.parent_id,
+                    sp.name,
+                    "",  # Customer
+                    "",  # PM
+                    "",  # Sales PM
+                    "",  # Confirmed
+                    "",  # Volume
+                    _iso(sp.start_date),
+                    _iso(sp.end_date),
+                    sp.completion,
+                    _yes_no(sp.is_milestone),
+                    sp.sort_order,
+                    sp.dependencies or "",
+                    "",  # Archived
+                    "",  # Notes
+                    _iso(sp.created_at),
+                ]
+            )
+            append_subphase_rows(project, ("subphase", sp.id), depth + 1)
+
+    for p in project_rows:
+        hierarchy_rows.append(
             [
+                "Project",
+                1,
                 p.id,
+                p.id,
+                p.name,
+                "",  # Parent type
+                "",  # Parent ID
                 p.name,
                 p.customer,
                 user_by_id[p.pm_id].full_name if p.pm_id and p.pm_id in user_by_id else "",
@@ -662,93 +693,71 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                 p.volume,
                 _iso(p.start_date),
                 _iso(p.end_date),
+                "",  # Completion (project-level rollup not stored)
+                "",  # Milestone
+                "",  # Sort order
+                "",  # Dependencies
                 _yes_no(p.archived),
                 p.notes,
                 _iso(p.created_at),
-                _iso(p.updated_at),
             ]
-            for p in project_rows
-        ],
-    )
-
-    # Phases
-    phase_rows_data = []
-    for p in project_rows:
+        )
         for ph in sorted(p.phases, key=lambda x: (x.sort_order or 0, x.start_date)):
-            phase_rows_data.append(
+            hierarchy_rows.append(
                 [
+                    "Phase",
+                    2,
                     ph.id,
                     p.id,
                     p.name,
+                    "project",
+                    p.id,
                     ph.type,
+                    "",  # Customer
+                    "",  # PM
+                    "",  # Sales PM
+                    "",  # Confirmed
+                    "",  # Volume
                     _iso(ph.start_date),
                     _iso(ph.end_date),
-                    ph.sort_order,
                     ph.completion,
                     _yes_no(ph.is_milestone),
+                    ph.sort_order,
                     ph.dependencies or "",
+                    "",  # Archived
+                    "",  # Notes
                     _iso(ph.created_at),
                 ]
             )
-    add_sheet(
-        "Phases",
-        [
-            "ID",
-            "Project ID",
-            "Project name",
-            "Type",
-            "Start date",
-            "End date",
-            "Sort order",
-            "Completion %",
-            "Milestone",
-            "Dependencies",
-            "Created at",
-        ],
-        phase_rows_data,
-    )
+            append_subphase_rows(p, ("phase", ph.id), 3)
 
-    # Subphases
-    subphase_rows_data = []
-    for p in project_rows:
-        for sp in sorted(p.subphases, key=lambda x: (x.sort_order or 0, x.start_date)):
-            subphase_rows_data.append(
-                [
-                    sp.id,
-                    p.id,
-                    p.name,
-                    sp.parent_type,
-                    sp.parent_id,
-                    sp.name,
-                    _iso(sp.start_date),
-                    _iso(sp.end_date),
-                    sp.depth,
-                    sp.sort_order,
-                    sp.completion,
-                    _yes_no(sp.is_milestone),
-                    sp.dependencies or "",
-                    _iso(sp.created_at),
-                ]
-            )
     add_sheet(
-        "Subphases",
+        "Projects",
         [
+            "Type",
+            "Level",
             "ID",
             "Project ID",
             "Project name",
             "Parent type",
             "Parent ID",
             "Name",
+            "Customer",
+            "PM",
+            "Sales PM",
+            "Confirmed",
+            "Volume",
             "Start date",
             "End date",
-            "Depth",
-            "Sort order",
             "Completion %",
             "Milestone",
+            "Sort order",
             "Dependencies",
+            "Archived",
+            "Notes",
             "Created at",
         ],
-        subphase_rows_data,
+        hierarchy_rows,
     )
 
     # Users
