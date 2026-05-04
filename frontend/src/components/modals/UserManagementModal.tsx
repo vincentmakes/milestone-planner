@@ -10,7 +10,7 @@
  * - SuperUser: CRU + Disable users (no delete), can promote users to SuperUser
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { useUIStore } from '@/stores/uiStore';
@@ -349,6 +349,138 @@ export function UserManagementModal() {
 }
 
 // =============================================================================
+// JOB TITLE AUTOCOMPLETE
+// =============================================================================
+
+interface JobTitleAutocompleteProps {
+  value: string;
+  onChange: (value: string) => void;
+  suggestions: string[];
+}
+
+function JobTitleAutocomplete({ value, onChange, suggestions }: JobTitleAutocompleteProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [highlightIndex, setHighlightIndex] = useState(-1);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+
+  const filtered = useMemo(() => {
+    const q = value.trim().toLowerCase();
+    const list = q
+      ? suggestions.filter((s) => s.toLowerCase().includes(q))
+      : suggestions;
+    return list.slice(0, 50);
+  }, [value, suggestions]);
+
+  // Position the dropdown anchored under the input.
+  useLayoutEffect(() => {
+    if (!isOpen || !inputRef.current) return;
+    const update = () => {
+      const rect = inputRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const top = rect.bottom + 4;
+      const available = Math.max(120, window.innerHeight - top - 16);
+      setDropdownStyle({
+        top,
+        left: rect.left,
+        width: rect.width,
+        maxHeight: Math.min(260, available),
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [isOpen]);
+
+  // Close on outside click.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (wrapperRef.current?.contains(target)) return;
+      // The dropdown is portaled-feeling (position:fixed); check by class via element.closest
+      if ((e.target as HTMLElement).closest?.(`[data-job-title-dropdown="true"]`)) return;
+      setIsOpen(false);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [isOpen]);
+
+  const select = (val: string) => {
+    onChange(val);
+    setIsOpen(false);
+    setHighlightIndex(-1);
+    inputRef.current?.focus();
+  };
+
+  return (
+    <div ref={wrapperRef} className={styles.autocompleteWrapper}>
+      <input
+        ref={inputRef}
+        type="text"
+        id="jobTitle"
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setIsOpen(true);
+          setHighlightIndex(-1);
+        }}
+        onFocus={() => setIsOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (!isOpen) {
+              setIsOpen(true);
+              return;
+            }
+            setHighlightIndex((i) => Math.min((filtered.length - 1), i + 1));
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setHighlightIndex((i) => Math.max(-1, i - 1));
+          } else if (e.key === 'Enter') {
+            if (isOpen && highlightIndex >= 0 && filtered[highlightIndex]) {
+              e.preventDefault();
+              select(filtered[highlightIndex]);
+            }
+          } else if (e.key === 'Escape') {
+            setIsOpen(false);
+            setHighlightIndex(-1);
+          }
+        }}
+        placeholder="e.g., Project Manager"
+        autoComplete="off"
+      />
+      {isOpen && filtered.length > 0 && (
+        <ul
+          className={styles.autocompleteDropdown}
+          style={dropdownStyle}
+          data-job-title-dropdown="true"
+          role="listbox"
+        >
+          {filtered.map((s, i) => (
+            <li
+              key={s}
+              role="option"
+              aria-selected={i === highlightIndex}
+              className={`${styles.autocompleteOption} ${i === highlightIndex ? styles.autocompleteOptionActive : ''}`}
+              onMouseDown={(e) => { e.preventDefault(); select(s); }}
+              onMouseEnter={() => setHighlightIndex(i)}
+            >
+              {s}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
 // USER FORM COMPONENT
 // =============================================================================
 
@@ -539,20 +671,11 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
         </div>
         <div className={styles.field}>
           <label htmlFor="jobTitle">Job Title</label>
-          <input
-            type="text"
-            id="jobTitle"
+          <JobTitleAutocomplete
             value={jobTitle}
-            onChange={(e) => setJobTitle(e.target.value)}
-            placeholder="e.g., Project Manager"
-            list="jobTitleSuggestions"
-            autoComplete="off"
+            onChange={setJobTitle}
+            suggestions={jobTitleSuggestions}
           />
-          <datalist id="jobTitleSuggestions">
-            {jobTitleSuggestions.map((t) => (
-              <option key={t} value={t} />
-            ))}
-          </datalist>
         </div>
         <div className={styles.field}>
           <label htmlFor="maxCapacity">Max Capacity: {maxCapacity}%</label>

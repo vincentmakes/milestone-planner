@@ -410,6 +410,42 @@
   color: var(--text-muted);
 }
 
+/* Job Title Autocomplete */
+.autocompleteWrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.autocompleteDropdown {
+  /* position:fixed so the popup escapes any overflow:hidden ancestor (modal). */
+  position: fixed;
+  z-index: 9999;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  overflow-y: auto;
+  font-size: 0.875rem;
+}
+
+.autocompleteOption {
+  padding: 6px 12px;
+  cursor: pointer;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.autocompleteOption:hover,
+.autocompleteOptionActive {
+  background: var(--bg-hover, rgba(59, 130, 246, 0.12));
+}
+
 /* Toggle Label */
 .toggleLabel {
   display: flex;
