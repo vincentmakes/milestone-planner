@@ -545,6 +545,11 @@ async def create_project(
 
     Matches: POST /api/projects
     """
+    tag_objs: list[Tag] = []
+    if data.tag_ids:
+        tag_result = await db.execute(select(Tag).where(Tag.id.in_(data.tag_ids)))
+        tag_objs = list(tag_result.scalars().all())
+
     project = Project(
         name=data.name,
         site_id=data.site_id,
@@ -556,6 +561,7 @@ async def create_project(
         start_date=data.start_date,
         end_date=data.end_date,
         notes=data.notes,
+        tags=tag_objs,
     )
 
     db.add(project)
@@ -573,14 +579,6 @@ async def create_project(
                 sort_order=index,
             )
             db.add(phase)
-
-    # Assign tags if provided
-    if data.tag_ids is not None:
-        if data.tag_ids:
-            tag_result = await db.execute(select(Tag).where(Tag.id.in_(data.tag_ids)))
-            project.tags = list(tag_result.scalars().all())
-        else:
-            project.tags = []
 
     await db.commit()
 
