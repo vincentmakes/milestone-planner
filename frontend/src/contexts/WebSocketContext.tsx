@@ -55,10 +55,12 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     inFlightRef.current = true;
 
     try {
+      console.info('[WS] refreshing projects after remote change');
       const projects = await loadAllProjects();
       setProjects(projects);
+      console.info('[WS] refreshed', projects.length, 'projects');
     } catch (err) {
-      console.error('[WebSocket] Failed to refresh projects:', err);
+      console.error('[WS] Failed to refresh projects:', err);
     } finally {
       inFlightRef.current = false;
     }

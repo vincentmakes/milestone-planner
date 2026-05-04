@@ -31,7 +31,9 @@ export interface ChangePayload {
   project_id: number;
   action: 'create' | 'update' | 'delete' | 'move';
   summary?: string;
-  timestamp?: string;  // Added when received
+  timestamp?: string;  // Server-supplied ISO string (added when received)
+  /** Local client-side receipt time, used for expiry to avoid clock-skew bugs. */
+  _receivedAt?: number;
 }
 
 export interface ServerMessage {
@@ -138,18 +140,20 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     };
   }
 
-  // Clear expired changes
+  // Clear expired changes. We expire based on local receipt time, not the
+  // server timestamp, so clock skew between client and server can't drop
+  // every change as "already expired."
   useEffect(() => {
     const interval = setInterval(() => {
       setRecentChanges(prev => {
         const now = Date.now();
         return prev.filter(c => {
-          const changeTime = new Date(c.timestamp || '').getTime();
-          return now - changeTime < CHANGE_EXPIRY;
+          const t = c._receivedAt ?? (Date.parse(c.timestamp || '') || now);
+          return now - t < CHANGE_EXPIRY;
         });
       });
     }, 1000);
-    
+
     return () => clearInterval(interval);
   }, []);
 
@@ -161,25 +165,26 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         case 'pong':
           // Keepalive acknowledged
           break;
-          
-        case 'presence:list':
+
+        case 'presence:list': {
           const listPayload = message.payload as { users: PresenceUser[] };
           setOnlineUsers(listPayload.users);
           onPresenceChangeRef.current?.(listPayload.users);
           break;
-          
-        case 'presence:join':
+        }
+
+        case 'presence:join': {
           const joinUser = message.payload as PresenceUser;
           setOnlineUsers(prev => {
-            // Avoid duplicates
             const filtered = prev.filter(u => u.user_id !== joinUser.user_id);
             const updated = [...filtered, joinUser];
             onPresenceChangeRef.current?.(updated);
             return updated;
           });
           break;
-          
-        case 'presence:leave':
+        }
+
+        case 'presence:leave': {
           const leavePayload = message.payload as { user_id: number };
           setOnlineUsers(prev => {
             const updated = prev.filter(u => u.user_id !== leavePayload.user_id);
@@ -187,18 +192,23 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
             return updated;
           });
           break;
-          
+        }
+
         case 'change:phase':
         case 'change:subphase':
         case 'change:project':
-        case 'change:assignment':
+        case 'change:assignment': {
           const change = message.payload as ChangePayload;
-          // Add timestamp for expiry tracking
           change.timestamp = message.timestamp;
+          change._receivedAt = Date.now();
+          // Diagnostic: makes it easy to see in the browser console whether
+          // change events are actually arriving on the receiving client.
+          console.info('[WS] received', message.type, change);
           setRecentChanges(prev => [...prev, change]);
           onChangeReceivedRef.current?.(change);
           break;
-          
+        }
+
         default:
           // Unknown message type - ignore
       }
@@ -235,7 +245,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         if (!mountedRef.current) return;
         setConnectionState('connected');
         reconnectAttemptRef.current = 0;
-        
+        console.info('[WS] connected', url);
+
         // Start ping interval
         pingIntervalRef.current = window.setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
@@ -249,13 +260,15 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       ws.onclose = (event) => {
         connectingRef.current = false;
         if (!mountedRef.current) return;
-        
+
+        console.info('[WS] closed', { code: event.code, reason: event.reason });
+
         // Clear ping interval
         if (pingIntervalRef.current) {
           clearInterval(pingIntervalRef.current);
           pingIntervalRef.current = null;
         }
-        
+
         setConnectionState('disconnected');
         setOnlineUsers([]);
         

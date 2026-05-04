@@ -3,12 +3,14 @@ WebSocket Connection Manager
 
 Manages WebSocket connections with:
 - Tenant-based isolation (users only see activity in their tenant)
+- Multiple concurrent connections per user (multiple tabs/devices supported)
 - Session-based authentication
 - Presence tracking (who's online)
 - Broadcast of changes to connected clients
 """
 
 import asyncio
+import itertools
 import json
 import logging
 from dataclasses import dataclass, field
@@ -21,8 +23,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ConnectedUser:
-    """Represents a connected WebSocket user."""
+    """Represents a single WebSocket connection for a user.
 
+    A user may have multiple ConnectedUser entries simultaneously (one per
+    tab/device). Each is keyed by a unique connection_id so that closing one
+    tab doesn't drop messages destined for another.
+    """
+
+    connection_id: int
     user_id: int
     first_name: str
     last_name: str
@@ -44,15 +52,29 @@ class ConnectionManager:
     Manages WebSocket connections per tenant.
 
     Each tenant has its own "room" - users can only see other users
-    and receive broadcasts from the same tenant.
+    and receive broadcasts from the same tenant. Each user can have
+    multiple concurrent connections (different tabs/devices); broadcasts
+    fan out to every active connection.
     """
 
     def __init__(self):
-        # tenant_id -> user_id -> ConnectedUser
+        # tenant_id -> connection_id -> ConnectedUser
         self._connections: dict[str, dict[int, ConnectedUser]] = {}
-        # Lock for thread-safe operations
         self._lock = asyncio.Lock()
+        self._connection_id_counter = itertools.count(1)
         logger.info("WebSocket Manager initialized")
+
+    def _next_connection_id(self) -> int:
+        return next(self._connection_id_counter)
+
+    def _user_has_other_connections(
+        self, tenant_id: str, user_id: int, exclude_conn_id: int
+    ) -> bool:
+        connections = self._connections.get(tenant_id, {})
+        for cid, conn in connections.items():
+            if cid != exclude_conn_id and conn.user_id == user_id:
+                return True
+        return False
 
     async def connect(
         self,
@@ -61,126 +83,103 @@ class ConnectionManager:
         user_id: int,
         first_name: str,
         last_name: str,
-    ) -> None:
+    ) -> int:
         """
         Accept a new WebSocket connection.
 
-        Args:
-            websocket: The WebSocket connection
-            tenant_id: Tenant identifier (or "default" for single-tenant)
-            user_id: Authenticated user ID
-            first_name: User's first name
-            last_name: User's last name
+        Returns the connection_id, which the caller passes back to disconnect()
+        so we tear down the right connection if the user has multiple tabs open.
         """
         await websocket.accept()
+        connection_id = self._next_connection_id()
         logger.info(
-            "Connection accepted for user %s (%s %s) in tenant '%s'",
+            "Connection accepted: conn=%s user=%s (%s %s) tenant='%s'",
+            connection_id,
             user_id,
             first_name,
             last_name,
             tenant_id,
         )
 
-        # Immediately send a test message to verify connection is alive
-        try:
-            await websocket.send_text('{"type":"ping","test":"immediate"}')
-            logger.debug("Immediate ping sent successfully to user %s", user_id)
-        except Exception as e:
-            logger.error("Immediate ping failed for user %s: %s", user_id, e)
-            return
-
-        old_websocket_to_close = None
-
-        # Use lock only for modifying the connections dict - keep it short!
-        async with self._lock:
-            logger.debug("Lock acquired for user %s", user_id)
-
-            if tenant_id not in self._connections:
-                self._connections[tenant_id] = {}
-
-            # Check for existing connection (will close AFTER releasing lock)
-            if user_id in self._connections[tenant_id]:
-                old_conn = self._connections[tenant_id][user_id]
-                old_websocket_to_close = old_conn.websocket
-                logger.debug("Will close existing connection for user %s", user_id)
-
-            # Store new connection
-            connected_user = ConnectedUser(
-                user_id=user_id,
-                first_name=first_name,
-                last_name=last_name,
-                websocket=websocket,
-            )
-            self._connections[tenant_id][user_id] = connected_user
-
-            logger.debug(
-                "Total connections in tenant '%s': %d", tenant_id, len(self._connections[tenant_id])
-            )
-            logger.debug("Connected users: %s", list(self._connections[tenant_id].keys()))
-
-        logger.debug("Lock released for user %s", user_id)
-
-        # Note: We used to close old connections here, but that can cause issues
-        # with the close() call interfering with the new connection.
-        # Old connections will time out naturally or be garbage collected.
-        if old_websocket_to_close:
-            logger.debug("Old connection exists for user %s - will timeout naturally", user_id)
-
-        logger.debug("About to send presence list to user %s", user_id)
-        logger.info("WebSocket connected: user=%s tenant=%s", user_id, tenant_id)
-
-        # Check if connection is still open before sending
-        if websocket.client_state.name != "CONNECTED":
-            logger.warning("WebSocket not connected! State: %s", websocket.client_state.name)
-            await self.disconnect(tenant_id, user_id)
-            return
-
-        logger.debug("WebSocket state: %s", websocket.client_state.name)
-
-        # Send current online users to the new connection (with safety check)
-        try:
-            logger.debug("Calling _send_presence_list...")
-            await self._send_presence_list(websocket, tenant_id)
-            logger.debug("Presence list sent successfully")
-        except Exception as e:
-            logger.exception("Failed to send presence list: %s", e)
-            # Connection may have failed, clean up
-            await self.disconnect(tenant_id, user_id)
-            return
-
-        # Broadcast join event to others
-        await self.broadcast_to_tenant(
-            tenant_id,
-            {
-                "type": "presence:join",
-                "payload": connected_user.to_presence_dict(),
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-            },
-            exclude_user=user_id,
+        connected_user = ConnectedUser(
+            connection_id=connection_id,
+            user_id=user_id,
+            first_name=first_name,
+            last_name=last_name,
+            websocket=websocket,
         )
 
-    async def disconnect(self, tenant_id: str, user_id: int) -> None:
-        """
-        Handle WebSocket disconnection.
-        """
         async with self._lock:
-            if tenant_id in self._connections:
-                user = self._connections[tenant_id].pop(user_id, None)
-                logger.debug("Disconnected user %s from tenant '%s'", user_id, tenant_id)
-                logger.debug(
-                    "Remaining connections in tenant '%s': %d",
-                    tenant_id,
-                    len(self._connections.get(tenant_id, {})),
-                )
+            if tenant_id not in self._connections:
+                self._connections[tenant_id] = {}
+            self._connections[tenant_id][connection_id] = connected_user
+            total = len(self._connections[tenant_id])
 
-                # Clean up empty tenant rooms
-                if not self._connections[tenant_id]:
+        logger.info(
+            "WebSocket registered: conn=%s user=%s tenant=%s (total connections in tenant: %d)",
+            connection_id,
+            user_id,
+            tenant_id,
+            total,
+        )
+
+        if websocket.client_state.name != "CONNECTED":
+            logger.warning("WebSocket not connected! State: %s", websocket.client_state.name)
+            await self.disconnect(tenant_id, connection_id)
+            return connection_id
+
+        # Send current online users to the new connection
+        try:
+            await self._send_presence_list(websocket, tenant_id)
+        except Exception as e:
+            logger.exception("Failed to send presence list: %s", e)
+            await self.disconnect(tenant_id, connection_id)
+            return connection_id
+
+        # Broadcast join event to others (only meaningful when this is the
+        # user's first connection in the tenant; otherwise other clients
+        # already know about them).
+        is_first_connection_for_user = not self._user_has_other_connections(
+            tenant_id, user_id, exclude_conn_id=connection_id
+        )
+        if is_first_connection_for_user:
+            await self.broadcast_to_tenant(
+                tenant_id,
+                {
+                    "type": "presence:join",
+                    "payload": connected_user.to_presence_dict(),
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                },
+                exclude_connection=connection_id,
+            )
+
+        return connection_id
+
+    async def disconnect(self, tenant_id: str, connection_id: int) -> None:
+        """Handle WebSocket disconnection for a single connection."""
+        user_id: int | None = None
+        last_for_user = False
+        async with self._lock:
+            tenant_conns = self._connections.get(tenant_id)
+            if tenant_conns:
+                conn = tenant_conns.pop(connection_id, None)
+                if conn:
+                    user_id = conn.user_id
+                    # Did the user have any other connections after removal?
+                    last_for_user = not any(c.user_id == user_id for c in tenant_conns.values())
+                if not tenant_conns:
                     del self._connections[tenant_id]
 
-        logger.info("WebSocket disconnected: user=%s tenant=%s", user_id, tenant_id)
+        logger.info(
+            "WebSocket disconnected: conn=%s user=%s tenant=%s last_for_user=%s",
+            connection_id,
+            user_id,
+            tenant_id,
+            last_for_user,
+        )
 
-        # Broadcast leave event
-        if user:
+        # Only emit presence:leave when the user has no remaining tabs/devices
+        if user_id is not None and last_for_user:
             await self.broadcast_to_tenant(
                 tenant_id,
                 {
@@ -191,13 +190,16 @@ class ConnectionManager:
             )
 
     async def _send_presence_list(self, websocket: WebSocket, tenant_id: str) -> None:
-        """Send list of currently online users to a connection."""
-        users = []
+        """Send list of currently online users (deduplicated by user_id) to a connection."""
+        seen: set[int] = set()
+        users: list[dict] = []
         async with self._lock:
-            if tenant_id in self._connections:
-                users = [user.to_presence_dict() for user in self._connections[tenant_id].values()]
+            for conn in self._connections.get(tenant_id, {}).values():
+                if conn.user_id in seen:
+                    continue
+                seen.add(conn.user_id)
+                users.append(conn.to_presence_dict())
 
-        logger.debug("Sending presence list with %d users", len(users))
         await self._send_json(
             websocket,
             {
@@ -212,37 +214,50 @@ class ConnectionManager:
         tenant_id: str,
         message: dict,
         exclude_user: int | None = None,
-    ) -> None:
+        exclude_connection: int | None = None,
+    ) -> int:
         """
-        Broadcast a message to all users in a tenant.
+        Broadcast a message to all connections in a tenant.
 
         Args:
             tenant_id: Target tenant
             message: Message dict to send
-            exclude_user: Optional user ID to exclude (e.g., the sender)
+            exclude_user: Optional user ID to exclude (e.g., the sender). All
+                connections belonging to that user are skipped.
+            exclude_connection: Optional connection_id to exclude (e.g. the
+                originating tab when broadcasting presence:join from connect).
+
+        Returns the number of connections the message was sent to.
         """
         async with self._lock:
-            connections = self._connections.get(tenant_id, {}).copy()
+            connections = list(self._connections.get(tenant_id, {}).values())
 
-        recipients = [uid for uid in connections.keys() if uid != exclude_user]
-        logger.debug(
-            "Broadcasting %s to tenant '%s', recipients: %s (excluding: %s)",
+        sent = 0
+        for conn in connections:
+            if exclude_user is not None and conn.user_id == exclude_user:
+                continue
+            if exclude_connection is not None and conn.connection_id == exclude_connection:
+                continue
+            try:
+                await self._send_json(conn.websocket, message)
+                sent += 1
+            except Exception as e:
+                logger.warning(
+                    "Failed to send to conn=%s user=%s: %s",
+                    conn.connection_id,
+                    conn.user_id,
+                    e,
+                )
+
+        logger.info(
+            "Broadcast %s to tenant '%s': %d/%d recipients (exclude_user=%s)",
             message.get("type"),
             tenant_id,
-            recipients,
+            sent,
+            len(connections),
             exclude_user,
         )
-
-        for user_id, connected_user in connections.items():
-            if exclude_user and user_id == exclude_user:
-                continue
-
-            try:
-                await self._send_json(connected_user.websocket, message)
-                logger.debug("Sent to user %s", user_id)
-            except Exception as e:
-                logger.warning("Failed to send to user %s: %s", user_id, e)
-                # Don't remove here - let the receive loop handle disconnection
+        return sent
 
     async def broadcast_change(
         self,
@@ -256,27 +271,9 @@ class ConnectionManager:
         summary: str | None = None,
     ) -> None:
         """
-        Broadcast a change event to all users in a tenant.
-
-        Args:
-            tenant_id: Target tenant
-            user_id: User who made the change
-            user_name: Display name (e.g., "Vincent D.")
-            entity_type: Type of entity changed (phase, subphase, project, assignment)
-            entity_id: ID of the changed entity
-            project_id: Parent project ID
-            action: Action type (create, update, delete, move)
-            summary: Optional human-readable summary
+        Broadcast a change event to all OTHER users in a tenant. The
+        originating user is excluded across all of their tabs/devices.
         """
-        logger.debug(
-            "broadcast_change called: %s:%s by user %s (%s) in tenant '%s'",
-            entity_type,
-            action,
-            user_id,
-            user_name,
-            tenant_id,
-        )
-
         await self.broadcast_to_tenant(
             tenant_id,
             {
@@ -292,16 +289,16 @@ class ConnectionManager:
                 },
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             },
-            exclude_user=user_id,  # Don't send to the user who made the change
+            exclude_user=user_id,
         )
 
     async def _send_json(self, websocket: WebSocket, data: dict) -> None:
         """Send JSON data through WebSocket, with safety check."""
         try:
-            # Check if WebSocket is still connected
             if websocket.client_state.name != "CONNECTED":
                 logger.debug(
-                    "Cannot send - WebSocket not connected (state: %s)", websocket.client_state.name
+                    "Cannot send - WebSocket not connected (state: %s)",
+                    websocket.client_state.name,
                 )
                 return
             await websocket.send_text(json.dumps(data))
@@ -312,16 +309,20 @@ class ConnectionManager:
             logger.warning("Error sending to WebSocket: %s", e)
 
     def get_online_count(self, tenant_id: str) -> int:
-        """Get number of online users in a tenant."""
-        count = len(self._connections.get(tenant_id, {}))
-        logger.debug("get_online_count('%s'): %d", tenant_id, count)
-        return count
+        """Get number of distinct online users in a tenant."""
+        connections = self._connections.get(tenant_id, {})
+        return len({c.user_id for c in connections.values()})
 
     def get_online_users(self, tenant_id: str) -> list[dict]:
-        """Get list of online users in a tenant."""
-        if tenant_id not in self._connections:
-            return []
-        return [user.to_presence_dict() for user in self._connections[tenant_id].values()]
+        """Get list of online users (deduplicated) in a tenant."""
+        seen: set[int] = set()
+        out: list[dict] = []
+        for conn in self._connections.get(tenant_id, {}).values():
+            if conn.user_id in seen:
+                continue
+            seen.add(conn.user_id)
+            out.append(conn.to_presence_dict())
+        return out
 
 
 # Global connection manager instance
