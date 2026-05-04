@@ -13,6 +13,7 @@ import { getPredefinedPhases } from '@/api/endpoints/settings';
 import { toInputDateFormat } from '@/utils/date';
 import { exportAndDownload } from '@/utils/csvExport';
 import { exportProjectToXML } from '@/utils/xmlExport';
+import { TagPicker } from './TagPicker';
 import styles from './ProjectModal.module.css';
 
 // Local interface for predefined phases from API
@@ -45,6 +46,7 @@ export function ProjectModal() {
   const [endDate, setEndDate] = useState('');
   const [selectedPhases, setSelectedPhases] = useState<Set<string>>(new Set());
   const [predefinedPhases, setPredefinedPhases] = useState<PredefinedPhaseFromAPI[]>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<Set<number>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -86,12 +88,13 @@ export function ProjectModal() {
         setStartDate(toInputDateFormat(editingProject.start_date));
         setEndDate(toInputDateFormat(editingProject.end_date));
         setSelectedPhases(new Set()); // Don't select phases when editing
+        setSelectedTagIds(new Set((editingProject.tags ?? []).map((t) => t.id)));
       } else {
         // New project mode
         const today = new Date();
         const nextMonth = new Date(today);
         nextMonth.setMonth(nextMonth.getMonth() + 1);
-        
+
         setName('');
         setCustomer('');
         setPmId('');
@@ -101,6 +104,7 @@ export function ProjectModal() {
         setArchived(false);
         setStartDate(today.toISOString().split('T')[0]);
         setEndDate(nextMonth.toISOString().split('T')[0]);
+        setSelectedTagIds(new Set());
       }
       setError(null);
     }
@@ -180,6 +184,7 @@ export function ProjectModal() {
         start_date: startDate,
         end_date: endDate,
         phases: isEditing ? undefined : phases,
+        tag_ids: Array.from(selectedTagIds),
       };
       
       if (isEditing && editingProject) {
@@ -365,6 +370,11 @@ export function ProjectModal() {
           </div>
         </div>
         
+        <div className={styles.formGroup}>
+          <label className={styles.label}>Tags</label>
+          <TagPicker selectedIds={selectedTagIds} onChange={setSelectedTagIds} />
+        </div>
+
         {!isEditing && (
           <div className={styles.formGroup}>
             <label className={styles.label}>Project Phases</label>

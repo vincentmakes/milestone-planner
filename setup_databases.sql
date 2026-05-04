@@ -359,6 +359,23 @@ CREATE TABLE IF NOT EXISTS sessions (
     expired BIGINT NOT NULL
 );
 
+-- Tags (global, shared across all sites; assignable to projects)
+CREATE TABLE IF NOT EXISTS tags (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    color VARCHAR(7) NOT NULL DEFAULT '#6366f1',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Project tags association (many-to-many)
+CREATE TABLE IF NOT EXISTS project_tags (
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (project_id, tag_id)
+);
+
 -- Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_projects_site_id ON projects(site_id);
 CREATE INDEX IF NOT EXISTS idx_projects_pm_id ON projects(pm_id);
@@ -383,6 +400,8 @@ CREATE INDEX IF NOT EXISTS idx_equipment_blocks_dates ON equipment_blocks(start_
 ALTER TABLE IF EXISTS company_events ADD COLUMN IF NOT EXISTS color VARCHAR(20);
 CREATE INDEX IF NOT EXISTS idx_bank_holidays_site_id ON bank_holidays(site_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired);
+CREATE INDEX IF NOT EXISTS idx_project_tags_project ON project_tags(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_tags_tag ON project_tags(tag_id);
 
 -- Insert default predefined phases
 INSERT INTO predefined_phases (name, sort_order, is_active) VALUES

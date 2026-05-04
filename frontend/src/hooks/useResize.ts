@@ -84,29 +84,35 @@ export function useResize() {
     return cells.length > 0 ? cells : null;
   }, []);
   
-  // Calculate date from pixel position (inverse of calculateBarPosition)
+  // Calculate date from pixel position (inverse of calculateBarPosition).
+  //
+  // The forward path renders the right edge of a bar at the boundary between
+  // two cells (e.g., end_date = Jan 3 → right edge ≈ start of Jan 4 cell).
+  // To stay consistent on the way back, the right edge of a bar at pixel P
+  // must resolve to the cell BEFORE round(P/cw), not the cell AT it.
   const calculateDateFromPosition = useCallback((
-    leftPx: number, 
-    cells: { date: string; dateEnd?: string }[], 
-    cw: number, 
-    vm: ViewMode
+    leftPx: number,
+    cells: { date: string; dateEnd?: string }[],
+    cw: number,
+    vm: ViewMode,
+    edge: ResizeEdge
   ): string | null => {
     if (cells.length === 0) return null;
-    
+
     // For week/month view, snap to the nearest cell (day)
     if (vm === 'week' || vm === 'month') {
-      const cellIndex = Math.round(leftPx / cw);
-      const clampedIndex = Math.max(0, Math.min(cells.length - 1, cellIndex));
+      const rawIndex = Math.round(leftPx / cw) - (edge === 'right' ? 1 : 0);
+      const clampedIndex = Math.max(0, Math.min(cells.length - 1, rawIndex));
       return cells[clampedIndex].date;
     }
-    
+
     // For quarter/year view, use proportional calculation
     const fcd = new Date(cells[0].date);
     fcd.setHours(0, 0, 0, 0);
-    
+
     let lcd: Date;
     const lastCell = cells[cells.length - 1];
-    
+
     if (vm === 'quarter' && lastCell.dateEnd) {
       lcd = new Date(lastCell.dateEnd);
       lcd.setHours(23, 59, 59, 999);
@@ -117,13 +123,19 @@ export function useResize() {
       lcd = new Date(lastCell.date);
       lcd.setHours(23, 59, 59, 999);
     }
-    
+
     const totalMs = lcd.getTime() - fcd.getTime();
     const tw = cells.length * cw;
-    
+
     const msOffset = (leftPx / tw) * totalMs;
     const newDate = new Date(fcd.getTime() + msOffset);
-    
+
+    // Right-edge boundary lands on the start of the next unit; step back one day
+    // so the date represents the inclusive end of the bar.
+    if (edge === 'right') {
+      newDate.setDate(newDate.getDate() - 1);
+    }
+
     return formatDateLocal(newDate);
   }, [formatDateLocal]);
   
@@ -170,17 +182,17 @@ export function useResize() {
     // Calculate and show resize indicator
     const cells = getTimelineCellsFromDOM();
     if (cells && cells.length > 0 && newWidth >= currentCellWidth && data.element) {
-      const dateStr = data.edge === 'left' 
-        ? calculateDateFromPosition(newLeft, cells, currentCellWidth, currentViewMode)
-        : calculateDateFromPosition(newLeft + newWidth, cells, currentCellWidth, currentViewMode);
-      
+      const dateStr = data.edge === 'left'
+        ? calculateDateFromPosition(newLeft, cells, currentCellWidth, currentViewMode, 'left')
+        : calculateDateFromPosition(newLeft + newWidth, cells, currentCellWidth, currentViewMode, 'right');
+
       if (dateStr) {
         // Calculate duration
-        const startDateStr = data.edge === 'left' 
-          ? dateStr 
-          : calculateDateFromPosition(newLeft, cells, currentCellWidth, currentViewMode) || data.originalStartDate;
+        const startDateStr = data.edge === 'left'
+          ? dateStr
+          : calculateDateFromPosition(newLeft, cells, currentCellWidth, currentViewMode, 'left') || data.originalStartDate;
         const endDateStr = data.edge === 'left'
-          ? calculateDateFromPosition(newLeft + newWidth, cells, currentCellWidth, currentViewMode) || data.originalEndDate
+          ? calculateDateFromPosition(newLeft + newWidth, cells, currentCellWidth, currentViewMode, 'right') || data.originalEndDate
           : dateStr;
         
         const startMs = new Date(startDateStr).getTime();
@@ -260,7 +272,7 @@ export function useResize() {
       // Use inverse of calculateBarPosition
       if (data.edge === 'left') {
         // Left resize: calculate new start date from new left position
-        const calculatedStart = calculateDateFromPosition(finalLeft, cells, currentCellWidth, currentViewMode);
+        const calculatedStart = calculateDateFromPosition(finalLeft, cells, currentCellWidth, currentViewMode, 'left');
         if (calculatedStart) {
           newStartDate = calculatedStart;
           // Ensure start doesn't go past end
@@ -273,7 +285,7 @@ export function useResize() {
       } else {
         // Right resize: calculate new end date from right edge position
         const rightPosition = finalLeft + finalWidth;
-        const calculatedEnd = calculateDateFromPosition(rightPosition, cells, currentCellWidth, currentViewMode);
+        const calculatedEnd = calculateDateFromPosition(rightPosition, cells, currentCellWidth, currentViewMode, 'right');
         if (calculatedEnd) {
           newEndDate = calculatedEnd;
           // Ensure end doesn't go before start

@@ -24,6 +24,7 @@ import type {
   CompanyEvent,
   InstanceSettings,
   Skill,
+  Tag,
 } from '@/types';
 
 // =============================================================================
@@ -53,6 +54,7 @@ interface AppState {
   users: User[];
   instanceSettings: InstanceSettings | null;
   skills: Skill[];
+  tags: Tag[];
 
   // ---------------------------------------------
   // CURRENT SELECTIONS
@@ -87,6 +89,7 @@ interface AppState {
   setUsers: (users: User[]) => void;
   setInstanceSettings: (settings: InstanceSettings | null) => void;
   setSkills: (skills: Skill[]) => void;
+  setTags: (tags: Tag[]) => void;
 
   // ---------------------------------------------
   // ACTIONS - Selection Setters
@@ -137,6 +140,7 @@ const initialState = {
   users: [] as User[],
   instanceSettings: null as InstanceSettings | null,
   skills: [] as Skill[],
+  tags: [] as Tag[],
 
   // Selections
   currentSite: null as Site | null,
@@ -187,6 +191,8 @@ export const useAppStore = create<AppState>()(
       setInstanceSettings: (settings) => set({ instanceSettings: settings }),
 
       setSkills: (skills) => set({ skills }),
+
+      setTags: (tags) => set({ tags }),
 
       // -----------------------------------------
       // SELECTION SETTERS
