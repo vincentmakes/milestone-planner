@@ -161,6 +161,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const handleMessage = useCallback((event: MessageEvent) => {
     try {
       const message: ServerMessage = JSON.parse(event.data);
+      // Diagnostic: log every incoming WebSocket message so it's easy to
+      // tell whether the post-handshake receive channel is alive at all
+      // (presence:list, presence:join, change:*, etc).
+      if (message.type !== 'pong') {
+        console.info('[WS] received', message.type, message.payload);
+      }
       switch (message.type) {
         case 'pong':
           // Keepalive acknowledged
@@ -201,9 +207,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           const change = message.payload as ChangePayload;
           change.timestamp = message.timestamp;
           change._receivedAt = Date.now();
-          // Diagnostic: makes it easy to see in the browser console whether
-          // change events are actually arriving on the receiving client.
-          console.info('[WS] received', message.type, change);
           setRecentChanges(prev => [...prev, change]);
           onChangeReceivedRef.current?.(change);
           break;
