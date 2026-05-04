@@ -139,7 +139,14 @@ export async function apiRequest<T>(
   
   try {
     const response = await fetch(url, config);
-    
+
+    // Diagnostic: log every state-changing request so we can see at a glance
+    // whether a Gantt drag/resize is actually hitting the API and what
+    // status the backend returned. Helpful for tracking down sync issues.
+    if (method !== 'GET') {
+      console.info('[API]', method, url, '->', response.status);
+    }
+
     // Handle empty responses (204 No Content)
     if (response.status === 204) {
       return {} as T;

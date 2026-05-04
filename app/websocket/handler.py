@@ -246,8 +246,9 @@ async def handle_websocket_connection(websocket: WebSocket, tenant_slug: str | N
         await websocket.close(code=4002, reason="Authentication error")
         return
 
-    # Accept connection and register with manager
-    await manager.connect(
+    # Accept connection and register with manager (returns the connection_id
+    # we need to pass back when this specific tab/device disconnects).
+    connection_id = await manager.connect(
         websocket=websocket,
         tenant_id=tenant_id,
         user_id=user_id,
@@ -255,7 +256,7 @@ async def handle_websocket_connection(websocket: WebSocket, tenant_slug: str | N
         last_name=last_name,
     )
 
-    logger.debug("Starting receive loop for user %s", user_id)
+    logger.debug("Starting receive loop for user %s conn=%s", user_id, connection_id)
 
     try:
         while True:
@@ -279,8 +280,13 @@ async def handle_websocket_connection(websocket: WebSocket, tenant_slug: str | N
                 logger.warning("Invalid JSON from user %s", user_id)
 
     except WebSocketDisconnect as e:
-        logger.info("Disconnected: user %s, code=%s", user_id, getattr(e, "code", "N/A"))
-        await manager.disconnect(tenant_id, user_id)
+        logger.info(
+            "Disconnected: user %s conn=%s code=%s",
+            user_id,
+            connection_id,
+            getattr(e, "code", "N/A"),
+        )
+        await manager.disconnect(tenant_id, connection_id)
     except Exception as e:
-        logger.error("Error for user %s: %s", user_id, e)
-        await manager.disconnect(tenant_id, user_id)
+        logger.error("Error for user %s conn=%s: %s", user_id, connection_id, e)
+        await manager.disconnect(tenant_id, connection_id)

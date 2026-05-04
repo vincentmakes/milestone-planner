@@ -5,7 +5,7 @@ Handles equipment and equipment assignment operations.
 Matches the Node.js API at /api/equipment exactly.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -26,6 +26,7 @@ from app.schemas.equipment import (
     EquipmentResponse,
     EquipmentUpdate,
 )
+from app.websocket.broadcast import broadcast_change
 
 router = APIRouter()
 
@@ -398,6 +399,7 @@ async def get_equipment_assignments(
 async def update_equipment_assignment(
     assignment_id: int,
     data: EquipmentAssignmentUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -406,6 +408,11 @@ async def update_equipment_assignment(
 
     Requires admin or superuser authentication.
     Matches: PUT /api/equipment-assignments/:id
+
+    NOTE: a near-identical handler exists in `routers/assignments.py`. FastAPI
+    dispatches to whichever route was registered first (this one), so the
+    broadcast must live here too. Removing one of the duplicates is a
+    separate cleanup; for now, keep both call sites in sync.
     """
     result = await db.execute(
         select(EquipmentAssignment)
@@ -439,6 +446,15 @@ async def update_equipment_assignment(
     )
     assignment = result.scalar_one()
 
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="equipment_assignment",
+        entity_id=assignment_id,
+        project_id=assignment.project_id,
+        action="update",
+    )
+
     return EquipmentAssignmentResponse(
         id=assignment.id,
         project_id=assignment.project_id,
@@ -454,6 +470,7 @@ async def update_equipment_assignment(
 @router.delete("/equipment-assignments/{assignment_id}")
 async def delete_equipment_assignment(
     assignment_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -471,8 +488,19 @@ async def delete_equipment_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Equipment assignment not found")
 
+    project_id = assignment.project_id
+
     await db.delete(assignment)
     await db.commit()
+
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="equipment_assignment",
+        entity_id=assignment_id,
+        project_id=project_id,
+        action="delete",
+    )
 
     return {"success": True}
 

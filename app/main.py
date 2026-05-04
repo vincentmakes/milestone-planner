@@ -418,22 +418,26 @@ def create_app() -> FastAPI:
 
 
 def create_wrapped_app():
-    """Create app and wrap with tenant middleware if multi-tenant mode."""
+    """Create app and wrap with tenant + broadcast middleware."""
     app = create_app()
     settings = get_settings()
 
     logger.info("MULTI_TENANT setting = %s", settings.multi_tenant)
 
+    # Auto-broadcast on successful API writes. Wrapped INSIDE the tenant
+    # middleware so it sees the rewritten path and populated tenant state.
+    from app.middleware.broadcast import BroadcastMiddleware
+
+    wrapped: object = BroadcastMiddleware(app)
+
     if settings.multi_tenant:
-        logger.info("Wrapping app with TenantMiddleware")
+        logger.info("Wrapping app with TenantMiddleware + BroadcastMiddleware")
         from app.middleware.tenant import TenantMiddleware
 
-        # Wrap the entire app with tenant middleware
-        # This ensures URL rewriting happens BEFORE FastAPI routing
-        return TenantMiddleware(app)
+        return TenantMiddleware(wrapped)
 
-    logger.info("Running in single-tenant mode (no middleware)")
-    return app
+    logger.info("Running in single-tenant mode (BroadcastMiddleware only)")
+    return wrapped
 
 
 # Create app instance

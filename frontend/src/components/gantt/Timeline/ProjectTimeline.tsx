@@ -948,6 +948,23 @@ const AssignmentBar = memo(function AssignmentBar({
 }: AssignmentBarProps) {
   // Get vacations from store to show vacation indicators
   const vacations = useAppStore((s) => s.vacations);
+
+  // Live attribution: show "✨ Vincent D." on this bar if another user just
+  // changed THIS specific assignment. Staff and equipment assignments live
+  // in different tables but share the integer id space, so matching on a
+  // generic "assignment" entity type would cross-light bars (a staff drag
+  // would highlight an equipment bar with the same numeric id, and vice
+  // versa). The backend now emits staff_assignment / equipment_assignment
+  // explicitly so we can match the right kind.
+  const { recentChanges } = useWebSocketContext();
+  const expectedEntityType =
+    assignmentType === 'staff' ? 'staff_assignment' : 'equipment_assignment';
+  const changedBy = useMemo(() => {
+    const c = recentChanges.find(
+      (r) => r.entity_type === expectedEntityType && r.entity_id === assignmentId,
+    );
+    return c?.user_name ?? null;
+  }, [recentChanges, expectedEntityType, assignmentId]);
   
   const barPosition = useMemo(
     () => calculateBarPosition(startDate, endDate, cells, cellWidth, viewMode),
@@ -1074,9 +1091,9 @@ const AssignmentBar = memo(function AssignmentBar({
       
       {/* Assignment bar */}
       <div
-        className={`${styles.assignmentBar} ${styles[barType]} ${isPhaseStaff ? styles.phaseStaff : ''} ${isSubphaseStaff ? styles.subphaseStaff : ''} ${interactive ? styles.interactive : ''}`}
+        className={`${styles.assignmentBar} ${styles[barType]} ${isPhaseStaff ? styles.phaseStaff : ''} ${isSubphaseStaff ? styles.subphaseStaff : ''} ${interactive ? styles.interactive : ''} ${changedBy ? styles.recentlyChanged : ''}`}
         style={barStyle}
-        title={label}
+        title={changedBy ? `${label} — just edited by ${changedBy}` : label}
         data-assignment-id={assignmentId}
         data-assignment-type={assignmentType}
         data-start={startDate}
@@ -1090,9 +1107,9 @@ const AssignmentBar = memo(function AssignmentBar({
             onMouseDown={(e) => handleResizeMouseDown(e, 'left')}
           />
         )}
-        
+
         <span className={styles.barLabel}>{label}</span>
-        
+
         {/* Right resize handle */}
         {interactive && (
           <div
@@ -1101,6 +1118,18 @@ const AssignmentBar = memo(function AssignmentBar({
           />
         )}
       </div>
+
+      {/* Render the "✨ <name>" attribution as a sibling of the bar (not a
+          child) so the bar's overflow: hidden doesn't clip it. Positioned
+          relative to the row using the same left offset as the bar. */}
+      {changedBy && (
+        <div
+          className={styles.changedByBadge}
+          style={{ left: barPosition.left }}
+        >
+          ✨ {changedBy}
+        </div>
+      )}
     </>
   );
 });
