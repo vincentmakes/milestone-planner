@@ -758,6 +758,7 @@ async def sso_callback(
             password="",  # No password for SSO users
             first_name=user_info.get("givenName", ""),
             last_name=user_info.get("surname", ""),
+            # SSO bypasses the job_titles dropdown by design — claim is stored as-is.
             job_title=user_info.get("jobTitle"),
             role=config.get("default_role", "user"),
             sso_provider="microsoft",

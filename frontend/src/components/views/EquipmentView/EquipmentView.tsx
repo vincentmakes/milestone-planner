@@ -5,7 +5,7 @@
  * Supports embedded mode for display below Gantt chart
  */
 
-import { useMemo, useRef, useState, useEffect } from 'react';
+import { useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -123,6 +123,32 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   // Type filter state
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [filterDropdownStyle, setFilterDropdownStyle] = useState<React.CSSProperties>({});
+
+  // Position the position:fixed filter dropdown anchored below the trigger.
+  // The dropdown opens to the right edge of the wrapper, max-width 240.
+  useLayoutEffect(() => {
+    if (!isFilterOpen || !filterRef.current) return;
+    const update = () => {
+      const rect = filterRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const top = rect.bottom + 6;
+      const available = Math.max(160, window.innerHeight - top - 12);
+      const dropdownWidth = 240;
+      setFilterDropdownStyle({
+        top,
+        left: Math.max(8, Math.min(rect.right - dropdownWidth, window.innerWidth - dropdownWidth - 8)),
+        maxHeight: available,
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [isFilterOpen]);
   
   // Sync vertical scroll between panel and timeline body
   useScrollSync(panelRef, timelineBodyRef);
@@ -369,7 +395,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
               </button>
               
               {isFilterOpen && (
-                <div className={styles.filterDropdown}>
+                <div className={styles.filterDropdown} style={filterDropdownStyle}>
                   <div className={styles.filterActions}>
                     <button 
                       className={styles.filterActionBtn}

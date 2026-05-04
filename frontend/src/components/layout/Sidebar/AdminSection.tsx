@@ -66,6 +66,17 @@ const ADMIN_ITEMS: AdminItem[] = [
     ),
   },
   {
+    id: 'jobTitles',
+    label: 'Job Titles',
+    modal: 'jobTitles',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M20 7h-4V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1z" />
+        <line x1="10" y1="5" x2="14" y2="5" />
+      </svg>
+    ),
+  },
+  {
     id: 'sso',
     label: 'SSO Configuration',
     modal: 'ssoConfig',

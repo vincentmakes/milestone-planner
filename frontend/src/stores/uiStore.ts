@@ -37,6 +37,7 @@ type ModalType =
   | 'ssoConfig'
   | 'manageEquipment'
   | 'predefinedPhases'
+  | 'jobTitles'
   | 'importProject'
   | 'settings'
   | 'instanceTitle'

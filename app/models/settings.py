@@ -52,6 +52,25 @@ class PredefinedPhase(Base):
         return f"<PredefinedPhase {self.name}>"
 
 
+class JobTitle(Base):
+    """Predefined job titles offered as a dropdown when creating users."""
+
+    __tablename__ = "job_titles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_active: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    @property
+    def active(self) -> bool:
+        return self.is_active == 1
+
+    def __repr__(self) -> str:
+        return f"<JobTitle {self.name}>"
+
+
 class SSOConfig(Base):
     """SSO configuration (Microsoft Entra / Azure AD)."""
 

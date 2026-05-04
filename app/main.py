@@ -184,6 +184,7 @@ def create_app() -> FastAPI:
         equipment,
         export,
         health,
+        job_titles,
         mpp_import,
         notes,
         predefined_phases,
@@ -205,6 +206,7 @@ def create_app() -> FastAPI:
     app.include_router(users.router, prefix="/api", tags=["Users"])
     app.include_router(settings_router.router, prefix="/api", tags=["Settings"])
     app.include_router(predefined_phases.router, prefix="/api", tags=["Predefined Phases"])
+    app.include_router(job_titles.router, prefix="/api", tags=["Job Titles"])
     app.include_router(sites.router, prefix="/api", tags=["Sites"])
     app.include_router(staff.router, prefix="/api", tags=["Staff"])
     app.include_router(equipment.router, prefix="/api", tags=["Equipment"])

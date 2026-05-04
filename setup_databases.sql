@@ -337,6 +337,15 @@ CREATE TABLE IF NOT EXISTS predefined_phases (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
+-- Predefined job titles (dropdown source for user creation)
+CREATE TABLE IF NOT EXISTS job_titles (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    sort_order INTEGER DEFAULT 0 NOT NULL,
+    is_active INTEGER DEFAULT 1 NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
 -- SSO configuration (singleton - only one row)
 CREATE TABLE IF NOT EXISTS sso_config (
     id INTEGER PRIMARY KEY DEFAULT 1,

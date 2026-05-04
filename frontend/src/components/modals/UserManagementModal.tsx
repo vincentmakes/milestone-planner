@@ -17,8 +17,9 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useDataLoader } from '@/hooks/useDataLoader';
 import { getUsers, createUser, updateUser, deleteUser } from '@/api/endpoints/users';
+import { jobTitlesApi } from '@/api/endpoints/jobTitles';
 import { SkillsManagementModal } from './SkillsManagementModal';
-import type { User, UserRole, CreateUserRequest, UpdateUserRequest, Skill } from '@/types';
+import type { User, UserRole, CreateUserRequest, UpdateUserRequest, Skill, JobTitle } from '@/types';
 import styles from './UserManagementModal.module.css';
 
 // Role display configuration
@@ -362,6 +363,19 @@ interface UserFormProps {
 }
 
 function UserForm({ user, sites, skills, currentUser, onSave, onDelete, onCancel }: UserFormProps) {
+  const [availableJobTitles, setAvailableJobTitles] = useState<JobTitle[]>([]);
+  const [isAddingNewJobTitle, setIsAddingNewJobTitle] = useState(false);
+  const [newJobTitleName, setNewJobTitleName] = useState('');
+  const [isCreatingJobTitle, setIsCreatingJobTitle] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    jobTitlesApi.getActive()
+      .then((data) => { if (!cancelled) setAvailableJobTitles(data); })
+      .catch((err) => console.error('Failed to load job titles:', err));
+    return () => { cancelled = true; };
+  }, []);
+
   const isEditing = !!user;
   const isAdmin = currentUser?.role === 'admin';
   const isSuperUser = currentUser?.role === 'superuser';
@@ -536,7 +550,76 @@ function UserForm({ user, sites, skills, currentUser, onSave, onDelete, onCancel
         </div>
         <div className={styles.field}>
           <label htmlFor="jobTitle">Job Title</label>
-          <input type="text" id="jobTitle" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="e.g., Project Manager" />
+          {isAddingNewJobTitle ? (
+            <div className={styles.newItemInput}>
+              <input
+                type="text"
+                value={newJobTitleName}
+                onChange={(e) => setNewJobTitleName(e.target.value)}
+                placeholder="New job title"
+                autoFocus
+                disabled={isCreatingJobTitle}
+                onKeyDown={async (e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const name = newJobTitleName.trim();
+                    if (!name) return;
+                    setIsCreatingJobTitle(true);
+                    try {
+                      const created = await jobTitlesApi.create({ name });
+                      const all = await jobTitlesApi.getActive();
+                      setAvailableJobTitles(all);
+                      setJobTitle(created.name);
+                      setIsAddingNewJobTitle(false);
+                      setNewJobTitleName('');
+                    } catch (err) {
+                      console.error('Failed to create job title:', err);
+                      setError(err instanceof Error ? err.message : 'Failed to create job title');
+                    } finally {
+                      setIsCreatingJobTitle(false);
+                    }
+                  } else if (e.key === 'Escape') {
+                    setIsAddingNewJobTitle(false);
+                    setNewJobTitleName('');
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className={styles.cancelBtn}
+                onClick={() => { setIsAddingNewJobTitle(false); setNewJobTitleName(''); }}
+                disabled={isCreatingJobTitle}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <select
+              id="jobTitle"
+              value={jobTitle}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value === '__add_new__') {
+                  setIsAddingNewJobTitle(true);
+                  return;
+                }
+                setJobTitle(value);
+              }}
+            >
+              <option value="">— Select —</option>
+              {availableJobTitles.map((jt) => (
+                <option key={jt.id} value={jt.name}>{jt.name}</option>
+              ))}
+              {/* Preserve a value not in the dropdown (e.g. SSO-provisioned). */}
+              {jobTitle && !availableJobTitles.some((jt) => jt.name === jobTitle) && (
+                <option value={jobTitle}>{jobTitle} (custom)</option>
+              )}
+              <option value="__add_new__">+ Add new job title…</option>
+            </select>
+          )}
         </div>
         <div className={styles.field}>
           <label htmlFor="maxCapacity">Max Capacity: {maxCapacity}%</label>

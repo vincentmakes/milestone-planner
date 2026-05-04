@@ -15,6 +15,7 @@ export { UserManagementModal } from './UserManagementModal';
 export { SSOConfigModal } from './SSOConfigModal';
 export { EquipmentManagementModal } from './EquipmentManagementModal';
 export { PredefinedPhasesModal } from './PredefinedPhasesModal';
+export { JobTitlesModal } from './JobTitlesModal';
 export { ImportProjectModal } from './ImportProjectModal';
 export { SettingsModal } from './SettingsModal';
 export { CustomColumnModal } from './CustomColumnModal';
