@@ -1107,10 +1107,6 @@ const AssignmentBar = memo(function AssignmentBar({
 
         <span className={styles.barLabel}>{label}</span>
 
-        {changedBy && (
-          <span className={styles.changedByBadge}>✨ {changedBy}</span>
-        )}
-
         {/* Right resize handle */}
         {interactive && (
           <div
@@ -1119,6 +1115,18 @@ const AssignmentBar = memo(function AssignmentBar({
           />
         )}
       </div>
+
+      {/* Render the "✨ <name>" attribution as a sibling of the bar (not a
+          child) so the bar's overflow: hidden doesn't clip it. Positioned
+          relative to the row using the same left offset as the bar. */}
+      {changedBy && (
+        <div
+          className={styles.changedByBadge}
+          style={{ left: barPosition.left }}
+        >
+          ✨ {changedBy}
+        </div>
+      )}
     </>
   );
 });

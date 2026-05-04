@@ -157,18 +157,44 @@ function changeKey(c: ChangePayload): string {
 export const ActivityFeed = memo(function ActivityFeed() {
   const { recentChanges } = useWebSocketContext();
   const projects = useAppStore((s) => s.projects);
+  const currentSite = useAppStore((s) => s.currentSite);
   const [toasts, setToasts] = useState<ToastEntry[]>([]);
   const seenRef = useRef<Set<string>>(new Set());
+
+  // Site -> project_id index. Used to filter incoming change broadcasts so
+  // a user looking at site A doesn't get spammed by activity in site B.
+  // Broadcasts whose project_id we can't classify (project_id=0, or for an
+  // entity that isn't tied to a project) are shown by default - they're
+  // typically site-agnostic things like a new tag or skill.
+  const projectSiteById = useMemo(() => {
+    const map = new Map<number, number | null>();
+    for (const p of projects) {
+      map.set(p.id, (p as { site_id?: number | null }).site_id ?? null);
+    }
+    return map;
+  }, [projects]);
 
   useEffect(() => {
     if (recentChanges.length === 0) return;
 
-    // Find any changes we haven't ingested yet.
+    const currentSiteId = currentSite?.id ?? null;
+
+    // Find any changes we haven't ingested yet AND that belong to the
+    // current site (or that aren't site-scoped at all).
     const fresh: ChangePayload[] = [];
     for (const c of recentChanges) {
       const k = changeKey(c);
       if (seenRef.current.has(k)) continue;
       seenRef.current.add(k);
+
+      if (currentSiteId != null && c.project_id) {
+        const projectSite = projectSiteById.get(c.project_id);
+        if (projectSite != null && projectSite !== currentSiteId) {
+          // Edit happened in another site - drop the toast.
+          continue;
+        }
+      }
+
       fresh.push(c);
     }
     if (fresh.length === 0) return;
@@ -207,7 +233,7 @@ export const ActivityFeed = memo(function ActivityFeed() {
       }
       return next.slice(-MAX_VISIBLE);
     });
-  }, [recentChanges]);
+  }, [recentChanges, currentSite, projectSiteById]);
 
   const projectNamesById = useMemo(() => {
     const map = new Map<number, string>();
