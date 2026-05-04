@@ -37,6 +37,13 @@ export interface Project {
   phases: Phase[];
   staffAssignments: StaffAssignment[];
   equipmentAssignments: EquipmentAssignment[];
+  tags?: Tag[];
+}
+
+export interface Tag {
+  id: number;
+  name: string;
+  color: string;
 }
 
 export interface Phase {
@@ -334,6 +341,7 @@ export interface CreateProjectRequest {
   confirmed?: boolean;
   start_date?: string | null;
   end_date?: string | null;
+  tag_ids?: number[];
 }
 
 export interface UpdateProjectRequest extends Partial<CreateProjectRequest> {

@@ -191,6 +191,7 @@ def create_app() -> FastAPI:
         sites,
         skills,
         staff,
+        tags,
         users,
         vacations,
     )
@@ -215,6 +216,7 @@ def create_app() -> FastAPI:
     app.include_router(export.router, prefix="/api", tags=["Export"])
     app.include_router(custom_columns.router, prefix="/api", tags=["Custom Columns"])
     app.include_router(skills.router, prefix="/api", tags=["Skills"])
+    app.include_router(tags.router, prefix="/api", tags=["Tags"])
 
     # WebSocket for real-time collaboration
     app.include_router(websocket_router, tags=["WebSocket"])

@@ -10,6 +10,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db, get_db_readonly
 from app.middleware.auth import get_current_user, require_superuser
@@ -21,6 +22,7 @@ from app.models.assignment import (
 from app.models.equipment import Equipment, EquipmentAssignment
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.site import Site
+from app.models.tag import Tag
 from app.models.user import User
 from app.schemas.base import PaginationParams
 from app.schemas.project import (
@@ -191,6 +193,7 @@ async def get_projects(
         )
         .outerjoin(Site, Project.site_id == Site.id)
         .outerjoin(User, Project.pm_id == User.id)
+        .options(selectinload(Project.tags))
     )
 
     if archived == "true":
@@ -232,6 +235,7 @@ async def get_projects(
                     "archived": project.archived,
                     "created_at": project.created_at,
                     "updated_at": project.updated_at,
+                    "tags": [],
                 }
             )
         else:
@@ -253,6 +257,7 @@ async def get_projects(
                     "archived": project.archived,
                     "created_at": project.created_at,
                     "updated_at": project.updated_at,
+                    "tags": [{"id": t.id, "name": t.name, "color": t.color} for t in project.tags],
                 }
             )
 
@@ -291,6 +296,7 @@ async def get_project(
             )
             .outerjoin(Site, Project.site_id == Site.id)
             .outerjoin(User, Project.pm_id == User.id)
+            .options(selectinload(Project.tags))
             .where(Project.id == project_id)
         )
 
@@ -524,6 +530,7 @@ async def get_project(
         "phases": phases,
         "staffAssignments": staff_assignments,
         "equipmentAssignments": equipment_assignments,
+        "tags": [{"id": t.id, "name": t.name, "color": t.color} for t in project.tags],
     }
 
 
@@ -567,6 +574,14 @@ async def create_project(
             )
             db.add(phase)
 
+    # Assign tags if provided
+    if data.tag_ids is not None:
+        if data.tag_ids:
+            tag_result = await db.execute(select(Tag).where(Tag.id.in_(data.tag_ids)))
+            project.tags = list(tag_result.scalars().all())
+        else:
+            project.tags = []
+
     await db.commit()
 
     return {"id": project.id, "success": True}
@@ -584,7 +599,9 @@ async def update_project(
 
     Matches: PUT /api/projects/:id
     """
-    result = await db.execute(select(Project).where(Project.id == project_id))
+    result = await db.execute(
+        select(Project).options(selectinload(Project.tags)).where(Project.id == project_id)
+    )
     project = result.scalar_one_or_none()
 
     if not project:
@@ -611,6 +628,14 @@ async def update_project(
         project.notes = data.notes
     if data.archived is not None:
         project.archived = 1 if data.archived else 0
+
+    # Replace tag assignments if provided (None = no change, [] = clear all)
+    if data.tag_ids is not None:
+        if data.tag_ids:
+            tag_result = await db.execute(select(Tag).where(Tag.id.in_(data.tag_ids)))
+            project.tags = list(tag_result.scalars().all())
+        else:
+            project.tags = []
 
     await db.commit()
 

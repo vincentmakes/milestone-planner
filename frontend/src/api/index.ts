@@ -28,6 +28,7 @@ export * from './endpoints/users';
 export * from './endpoints/settings';
 export * from './endpoints/customColumns';
 export * from './endpoints/skills';
+export * from './endpoints/tags';
 
 // Admin endpoints (multi-tenant management)
 export * from './endpoints/admin';

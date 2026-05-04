@@ -13,6 +13,7 @@ from app.models.session import Session
 from app.models.settings import PredefinedPhase, Settings, SSOConfig
 from app.models.site import BankHoliday, CompanyEvent, Site
 from app.models.skill import Skill, UserSkill
+from app.models.tag import ProjectTag, Tag
 from app.models.tenant import (
     AdminSession,
     AdminUser,
@@ -50,6 +51,8 @@ __all__ = [
     "CustomColumnValue",
     "Skill",
     "UserSkill",
+    "Tag",
+    "ProjectTag",
     # Multi-tenant admin models (use separate MasterBase)
     "MasterBase",
     "Tenant",
