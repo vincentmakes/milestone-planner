@@ -155,7 +155,7 @@ Administrators can create, edit, and deactivate user accounts. Open **User Manag
 |-------|-------------|
 | **Email** | Login email address (unique) |
 | **First Name** / **Last Name** | Display name |
-| **Job Title** | Role description shown in staff lists |
+| **Job Title** | Role description shown in staff lists. Free-text with autocomplete suggestions — see [Job Title Suggestions](#job-title-suggestions) |
 | **Role** | Admin, Superuser, or User (see below) |
 | **Sites** | One or more sites the user can access |
 | **Skills** | Tags for resource planning (see Skills Management below) |
@@ -185,6 +185,39 @@ The user management table supports filtering by:
 - **Skills**: Filter by assigned skill
 
 The results count updates as filters are applied (e.g., "12 users (filtered from 20)").
+
+### Job Title Suggestions
+
+The **Job Title** field is a free-text input backed by an autocomplete
+dropdown. It does not have a separately managed list — instead, it
+suggests every distinct job title already used by another user on this
+instance. This keeps titles consistent across the team without an admin
+needing to curate them.
+
+How it behaves:
+
+- **Click or focus** the field to see all existing titles, sorted
+  alphabetically.
+- **Start typing** to narrow suggestions to those containing what you've
+  typed (case-insensitive substring match).
+- **Pick a suggestion** with the mouse or **↑ / ↓ arrow keys** + **Enter**.
+- **Type a brand-new value** and just save — the entry doesn't have to
+  match a suggestion. Once saved, that new title becomes a suggestion
+  for the next user added.
+- **Press Escape** to close the dropdown without picking anything.
+- The dropdown is scrollable when the list is long and stays anchored
+  to the input even on small screens.
+
+Notes:
+
+- SSO-provisioned users (Microsoft Entra ID) receive their job title
+  directly from the `jobTitle` claim returned by the identity provider —
+  these are written to the user record as-is and become available as
+  suggestions for the next user you create manually.
+- Renaming a title on one user does not propagate to other users; you
+  must edit each user individually if you want to retire an old title.
+  An old title only stops appearing in suggestions once no remaining
+  user has it set.
 
 ---
 
