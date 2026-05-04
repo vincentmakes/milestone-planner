@@ -26,8 +26,15 @@ export interface PresenceUser {
 export interface ChangePayload {
   user_id: number;
   user_name: string;
-  entity_type: 'phase' | 'subphase' | 'project' | 'assignment';
+  /**
+   * Type of entity that changed. Common values include:
+   * phase, subphase, project, assignment, staff, equipment, equipment_block,
+   * vacation, skill, site, custom_column, note, tag, user, predefined_phase,
+   * settings, bank_holiday, company_event.
+   */
+  entity_type: string;
   entity_id: number;
+  /** Parent project id (0 when the entity isn't tied to a single project). */
   project_id: number;
   action: 'create' | 'update' | 'delete' | 'move';
   summary?: string;
@@ -77,7 +84,9 @@ const RECONNECT_BASE_DELAY = 2000;  // 2 seconds (was 1)
 const RECONNECT_MAX_DELAY = 60000;  // 60 seconds (was 30)
 const RECONNECT_MAX_ATTEMPTS = 5;   // Stop after 5 attempts
 const PING_INTERVAL = 25000;        // 25 seconds
-const CHANGE_EXPIRY = 5000;         // Show changes for 5 seconds
+// How long the inline "changed by X" badge stays glued to a phase/subphase/etc.
+// Long enough that a user can scroll/look around and still see who just edited.
+const CHANGE_EXPIRY = 30000;
 
 /**
  * Build WebSocket URL based on current location
@@ -200,20 +209,18 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           break;
         }
 
-        case 'change:phase':
-        case 'change:subphase':
-        case 'change:project':
-        case 'change:assignment': {
-          const change = message.payload as ChangePayload;
-          change.timestamp = message.timestamp;
-          change._receivedAt = Date.now();
-          setRecentChanges(prev => [...prev, change]);
-          onChangeReceivedRef.current?.(change);
-          break;
+        default: {
+          // Treat any "change:*" message uniformly so new entity types
+          // (staff, equipment, vacation, ...) work without code changes.
+          if (typeof message.type === 'string' && message.type.startsWith('change:')) {
+            const change = message.payload as ChangePayload;
+            change.timestamp = message.timestamp;
+            change._receivedAt = Date.now();
+            setRecentChanges(prev => [...prev, change]);
+            onChangeReceivedRef.current?.(change);
+          }
+          // Unknown non-change message types are intentionally ignored.
         }
-
-        default:
-          // Unknown message type - ignore
       }
     } catch (error) {
       console.warn('Failed to parse WebSocket message:', error);

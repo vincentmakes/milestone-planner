@@ -72,8 +72,8 @@ async def broadcast_change(
     user: User,
     entity_type: str,
     entity_id: int,
-    project_id: int,
-    action: str,
+    project_id: int = 0,
+    action: str = "update",
     summary: str | None = None,
 ) -> None:
     """

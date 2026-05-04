@@ -9,6 +9,12 @@ import React, { createContext, useContext, useCallback, useMemo, useEffect, useR
 import { useWebSocket, ConnectionState } from '@/hooks/useWebSocket';
 import type { PresenceUser, ChangePayload } from '@/hooks/useWebSocket';
 import { loadAllProjects } from '@/api/endpoints/projects';
+import { getStaff } from '@/api/endpoints/staff';
+import { getEquipment, getEquipmentBlocks } from '@/api/endpoints/equipment';
+import { getVacations } from '@/api/endpoints/vacations';
+import { getSites } from '@/api/endpoints/sites';
+import { skillsApi } from '@/api/endpoints/skills';
+import { tagsApi } from '@/api/endpoints/tags';
 import { useAppStore } from '@/stores/appStore';
 
 // Re-export types for convenience
@@ -37,51 +43,137 @@ interface WebSocketProviderProps {
   children: React.ReactNode;
 }
 
+/** Map an entity_type from the server to the data slice that needs to be reloaded. */
+type Slice =
+  | 'projects'
+  | 'staff'
+  | 'equipment'
+  | 'equipmentBlocks'
+  | 'vacations'
+  | 'sites'
+  | 'skills'
+  | 'tags';
+
+function slicesForEntity(entityType: string): Slice[] {
+  switch (entityType) {
+    // Project tree (and assignments live inside projects)
+    case 'project':
+    case 'phase':
+    case 'subphase':
+    case 'assignment':
+    case 'predefined_phase':
+    case 'note':
+    case 'custom_column':
+    case 'bank_holiday':
+    case 'company_event':
+      return ['projects'];
+    case 'staff':
+    case 'user':
+      return ['staff', 'projects'];
+    case 'equipment':
+      return ['equipment', 'projects'];
+    case 'equipment_block':
+      return ['equipmentBlocks'];
+    case 'vacation':
+      return ['vacations'];
+    case 'site':
+      return ['sites'];
+    case 'skill':
+      return ['skills', 'staff'];
+    case 'tag':
+      return ['tags', 'projects'];
+    default:
+      // Unknown type: refresh everything to be safe.
+      return ['projects', 'staff', 'equipment', 'equipmentBlocks', 'vacations', 'sites', 'skills', 'tags'];
+  }
+}
+
 export function WebSocketProvider({ children }: WebSocketProviderProps) {
   const setProjects = useAppStore((s) => s.setProjects);
+  const setStaff = useAppStore((s) => s.setStaff);
+  const setEquipment = useAppStore((s) => s.setEquipment);
+  const setEquipmentBlocks = useAppStore((s) => s.setEquipmentBlocks);
+  const setVacations = useAppStore((s) => s.setVacations);
+  const setSites = useAppStore((s) => s.setSites);
+  const setSkills = useAppStore((s) => s.setSkills);
+  const setTags = useAppStore((s) => s.setTags);
 
   // Debounce refresh to avoid multiple rapid requests
   const refreshTimeoutRef = useRef<number | null>(null);
   const inFlightRef = useRef(false);
-  // If a change arrives while we're already refreshing, schedule another pass
-  // instead of dropping it on the floor.
-  const restageRef = useRef(false);
+  // Set of slices to reload on the next refresh tick. Cascaded broadcasts
+  // (e.g. a phase drag that produces N child subphase updates) collapse into
+  // a single fetch per slice this way.
+  const pendingSlicesRef = useRef<Set<Slice>>(new Set());
+  // If a change arrives while we're already refreshing, schedule another pass.
+  const restageRef = useRef<Set<Slice>>(new Set());
 
-  const refreshProjects = useCallback(async () => {
-    if (inFlightRef.current) {
-      restageRef.current = true;
-      return;
-    }
+  const runRefresh = useCallback(async () => {
+    if (inFlightRef.current) return;
+    const slices = pendingSlicesRef.current;
+    if (slices.size === 0) return;
+
     inFlightRef.current = true;
+    const batch = Array.from(slices);
+    pendingSlicesRef.current = new Set();
 
-    try {
-      console.info('[WS] refreshing projects after remote change');
-      const projects = await loadAllProjects();
-      setProjects(projects);
-      console.info('[WS] refreshed', projects.length, 'projects');
-    } catch (err) {
-      console.error('[WS] Failed to refresh projects:', err);
-    } finally {
-      inFlightRef.current = false;
+    console.info('[WS] refreshing slices', batch);
+
+    const tasks: Array<Promise<unknown>> = [];
+    for (const slice of batch) {
+      switch (slice) {
+        case 'projects':
+          tasks.push(loadAllProjects().then(setProjects).catch((e) => console.error('[WS] projects refresh failed', e)));
+          break;
+        case 'staff':
+          tasks.push(getStaff(true).then(setStaff).catch((e) => console.error('[WS] staff refresh failed', e)));
+          break;
+        case 'equipment':
+          tasks.push(getEquipment(true).then(setEquipment).catch((e) => console.error('[WS] equipment refresh failed', e)));
+          break;
+        case 'equipmentBlocks':
+          tasks.push(getEquipmentBlocks().then(setEquipmentBlocks).catch((e) => console.error('[WS] equipment blocks refresh failed', e)));
+          break;
+        case 'vacations':
+          tasks.push(getVacations().then(setVacations).catch((e) => console.error('[WS] vacations refresh failed', e)));
+          break;
+        case 'sites':
+          tasks.push(getSites().then(setSites).catch((e) => console.error('[WS] sites refresh failed', e)));
+          break;
+        case 'skills':
+          tasks.push(skillsApi.getAll().then(setSkills).catch((e) => console.error('[WS] skills refresh failed', e)));
+          break;
+        case 'tags':
+          tasks.push(tagsApi.getAll().then(setTags).catch((e) => console.error('[WS] tags refresh failed', e)));
+          break;
+      }
     }
 
-    // If another change came in during the fetch, run again.
-    if (restageRef.current) {
-      restageRef.current = false;
-      refreshProjects();
-    }
-  }, [setProjects]);
+    await Promise.all(tasks);
+    inFlightRef.current = false;
 
-  const handleChangeReceived = useCallback((_change: ChangePayload) => {
+    // If more changes came in during the fetch, immediately restage them.
+    if (restageRef.current.size > 0) {
+      const next = restageRef.current;
+      restageRef.current = new Set();
+      for (const s of next) pendingSlicesRef.current.add(s);
+      runRefresh();
+    }
+  }, [setProjects, setStaff, setEquipment, setEquipmentBlocks, setVacations, setSites, setSkills, setTags]);
+
+  const handleChangeReceived = useCallback((change: ChangePayload) => {
+    const target = inFlightRef.current ? restageRef.current : pendingSlicesRef.current;
+    for (const slice of slicesForEntity(change.entity_type)) {
+      target.add(slice);
+    }
+
     if (refreshTimeoutRef.current) {
       clearTimeout(refreshTimeoutRef.current);
     }
     // Short debounce so a burst of drag-related updates collapses into a single
     // refresh, but the receiving user still feels the change near-instantly.
-    refreshTimeoutRef.current = window.setTimeout(() => {
-      refreshProjects();
-    }, 200);
-  }, [refreshProjects]);
+    refreshTimeoutRef.current = window.setTimeout(runRefresh, 200);
+  }, [runRefresh]);
   
   const {
     connectionState,

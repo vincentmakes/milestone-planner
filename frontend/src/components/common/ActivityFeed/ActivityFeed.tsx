@@ -3,18 +3,20 @@
  *
  * Miro/Monday-style live activity feed. Shows a stack of toast cards in the
  * bottom-right whenever another user makes a change in the same tenant.
- * Each toast auto-dismisses after a few seconds, giving the receiving user
- * clear attribution for what just changed and who made the change.
+ * Cascaded changes (e.g. one drag that triggers child-subphase updates)
+ * are coalesced into a single toast per user+project within a short window.
  */
 
-import { memo, useEffect, useState, useMemo } from 'react';
+import { memo, useEffect, useState, useMemo, useRef } from 'react';
 import { useWebSocketContext } from '@/contexts/WebSocketContext';
 import type { ChangePayload } from '@/hooks/useWebSocket';
 import { useAppStore } from '@/stores/appStore';
 import styles from './ActivityFeed.module.css';
 
-const TOAST_LIFETIME = 4500;
+const TOAST_LIFETIME = 6000;
 const MAX_VISIBLE = 4;
+/** Coalesce additional changes from the same user/project into one toast within this window. */
+const COALESCE_WINDOW = 2500;
 
 const AVATAR_COLORS = [
   '#3b82f6',
@@ -38,18 +40,24 @@ function getInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-interface ToastEntry extends ChangePayload {
-  /** Unique key for React rendering even if multiple changes share entity_id */
-  _key: string;
-  /** Local time the toast was queued (for fade-out) */
-  _at: number;
-}
-
 const ENTITY_LABELS: Record<string, string> = {
   phase: 'phase',
   subphase: 'subphase',
   project: 'project',
   assignment: 'assignment',
+  staff: 'staff member',
+  equipment: 'equipment',
+  equipment_block: 'equipment block',
+  vacation: 'vacation',
+  skill: 'skill',
+  site: 'site',
+  custom_column: 'custom column',
+  note: 'note',
+  tag: 'tag',
+  user: 'user',
+  predefined_phase: 'phase template',
+  bank_holiday: 'bank holiday',
+  company_event: 'company event',
 };
 
 const ACTION_VERBS: Record<string, string> = {
@@ -59,11 +67,32 @@ const ACTION_VERBS: Record<string, string> = {
   move: 'moved',
 };
 
-function describeChange(change: ChangePayload, projectName: string | undefined): string {
+interface ToastEntry {
+  _key: string;
+  _at: number;
+  user_id: number;
+  user_name: string;
+  /** project_id for the bucket; 0 means not project-scoped. */
+  project_id: number;
+  /** Aggregate counter so we can show "5 changes" if many cascaded events arrive. */
+  count: number;
+  /** Most recent change in this group, used to render the description. */
+  latest: ChangePayload;
+}
+
+function describe(toast: ToastEntry, projectName: string | undefined): string {
+  const change = toast.latest;
   const verb = ACTION_VERBS[change.action] ?? 'changed';
   const entity = ENTITY_LABELS[change.entity_type] ?? change.entity_type;
   const summary = change.summary?.trim();
   const target = summary ? `${entity} "${summary}"` : entity;
+
+  // Multiple cascaded events: keep it short.
+  if (toast.count > 1) {
+    if (projectName) return `made ${toast.count} changes in ${projectName}`;
+    return `made ${toast.count} changes`;
+  }
+
   if (projectName && change.entity_type !== 'project') {
     return `${verb} ${target} in ${projectName}`;
   }
@@ -83,15 +112,19 @@ const ActivityToast = memo(function ActivityToast({ toast, projectName, onDismis
   const [closing, setClosing] = useState(false);
 
   useEffect(() => {
-    const fade = window.setTimeout(() => setClosing(true), TOAST_LIFETIME - 300);
-    const remove = window.setTimeout(() => onDismiss(toast._key), TOAST_LIFETIME);
+    // Toast lifetime is measured from the LATEST change in the group, so a
+    // burst of cascaded updates keeps the same card visible.
+    const elapsed = Date.now() - toast._at;
+    const remaining = Math.max(800, TOAST_LIFETIME - elapsed);
+    const fade = window.setTimeout(() => setClosing(true), Math.max(300, remaining - 300));
+    const remove = window.setTimeout(() => onDismiss(toast._key), remaining);
     return () => {
       window.clearTimeout(fade);
       window.clearTimeout(remove);
     };
-  }, [toast._key, onDismiss]);
+  }, [toast._key, toast._at, onDismiss]);
 
-  const description = describeChange(toast, projectName);
+  const description = describe(toast, projectName);
   const color = getAvatarColor(toast.user_id);
 
   return (
@@ -117,32 +150,64 @@ const ActivityToast = memo(function ActivityToast({ toast, projectName, onDismis
   );
 });
 
+function changeKey(c: ChangePayload): string {
+  return `${c.timestamp ?? ''}:${c.entity_type}:${c.entity_id}:${c.action}:${c.user_id}`;
+}
+
 export const ActivityFeed = memo(function ActivityFeed() {
   const { recentChanges } = useWebSocketContext();
   const projects = useAppStore((s) => s.projects);
   const [toasts, setToasts] = useState<ToastEntry[]>([]);
-  const [seen] = useState<Set<string>>(() => new Set());
+  const seenRef = useRef<Set<string>>(new Set());
 
-  // Append new changes to the toast queue. We dedupe by timestamp+entity so
-  // a single broadcast can't spawn duplicate toasts.
   useEffect(() => {
     if (recentChanges.length === 0) return;
 
-    const newToasts: ToastEntry[] = [];
-    for (const change of recentChanges) {
-      const key = `${change.timestamp ?? ''}:${change.entity_type}:${change.entity_id}:${change.action}:${change.user_id}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      newToasts.push({ ...change, _key: key, _at: Date.now() });
+    // Find any changes we haven't ingested yet.
+    const fresh: ChangePayload[] = [];
+    for (const c of recentChanges) {
+      const k = changeKey(c);
+      if (seenRef.current.has(k)) continue;
+      seenRef.current.add(k);
+      fresh.push(c);
     }
-    if (newToasts.length === 0) return;
+    if (fresh.length === 0) return;
 
     setToasts((prev) => {
-      const combined = [...prev, ...newToasts];
-      // Keep only most recent N
-      return combined.slice(-MAX_VISIBLE);
+      const next = [...prev];
+      const now = Date.now();
+      for (const c of fresh) {
+        // Bucket by user + project so cascaded child updates merge with their parent.
+        const bucketIdx = next.findIndex(
+          (t) =>
+            t.user_id === c.user_id &&
+            t.project_id === c.project_id &&
+            now - t._at < COALESCE_WINDOW,
+        );
+        if (bucketIdx >= 0) {
+          const prevToast = next[bucketIdx];
+          next[bucketIdx] = {
+            ...prevToast,
+            _at: now,
+            count: prevToast.count + 1,
+            latest: c,
+            user_name: c.user_name,
+          };
+        } else {
+          next.push({
+            _key: changeKey(c),
+            _at: now,
+            user_id: c.user_id,
+            user_name: c.user_name,
+            project_id: c.project_id,
+            count: 1,
+            latest: c,
+          });
+        }
+      }
+      return next.slice(-MAX_VISIBLE);
     });
-  }, [recentChanges, seen]);
+  }, [recentChanges]);
 
   const projectNamesById = useMemo(() => {
     const map = new Map<number, string>();
@@ -162,7 +227,7 @@ export const ActivityFeed = memo(function ActivityFeed() {
         <ActivityToast
           key={t._key}
           toast={t}
-          projectName={projectNamesById.get(t.project_id)}
+          projectName={t.project_id ? projectNamesById.get(t.project_id) : undefined}
           onDismiss={dismiss}
         />
       ))}
