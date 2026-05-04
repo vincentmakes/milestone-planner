@@ -948,6 +948,20 @@ const AssignmentBar = memo(function AssignmentBar({
 }: AssignmentBarProps) {
   // Get vacations from store to show vacation indicators
   const vacations = useAppStore((s) => s.vacations);
+
+  // Live attribution: show "✨ Vincent D." on this bar if another user just
+  // changed this assignment. Matches both the explicit "assignment" entity
+  // type from the assignments router and the staff/equipment fallback that
+  // the auto-broadcast middleware emits.
+  const { recentChanges } = useWebSocketContext();
+  const changedBy = useMemo(() => {
+    const c = recentChanges.find(
+      (r) =>
+        (r.entity_type === 'assignment' && r.entity_id === assignmentId) ||
+        (r.entity_type === assignmentType && r.entity_id === (assignmentType === 'staff' ? staffId : _equipmentId)),
+    );
+    return c?.user_name ?? null;
+  }, [recentChanges, assignmentId, assignmentType, staffId, _equipmentId]);
   
   const barPosition = useMemo(
     () => calculateBarPosition(startDate, endDate, cells, cellWidth, viewMode),
@@ -1074,9 +1088,9 @@ const AssignmentBar = memo(function AssignmentBar({
       
       {/* Assignment bar */}
       <div
-        className={`${styles.assignmentBar} ${styles[barType]} ${isPhaseStaff ? styles.phaseStaff : ''} ${isSubphaseStaff ? styles.subphaseStaff : ''} ${interactive ? styles.interactive : ''}`}
+        className={`${styles.assignmentBar} ${styles[barType]} ${isPhaseStaff ? styles.phaseStaff : ''} ${isSubphaseStaff ? styles.subphaseStaff : ''} ${interactive ? styles.interactive : ''} ${changedBy ? styles.recentlyChanged : ''}`}
         style={barStyle}
-        title={label}
+        title={changedBy ? `${label} — just edited by ${changedBy}` : label}
         data-assignment-id={assignmentId}
         data-assignment-type={assignmentType}
         data-start={startDate}
@@ -1090,9 +1104,13 @@ const AssignmentBar = memo(function AssignmentBar({
             onMouseDown={(e) => handleResizeMouseDown(e, 'left')}
           />
         )}
-        
+
         <span className={styles.barLabel}>{label}</span>
-        
+
+        {changedBy && (
+          <span className={styles.changedByBadge}>✨ {changedBy}</span>
+        )}
+
         {/* Right resize handle */}
         {interactive && (
           <div

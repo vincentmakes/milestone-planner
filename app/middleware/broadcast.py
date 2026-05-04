@@ -115,18 +115,24 @@ class BroadcastMiddleware:
         # scope["state"] (and the path will have been rewritten to drop the
         # /t/{slug}/ prefix already, which is why our regex patterns above
         # match against the rewritten /api/* path).
-        state = scope.get("state") if isinstance(scope.get("state"), dict) else None
+        scope_state_raw = scope.get("state")
+        state = scope_state_raw if isinstance(scope_state_raw, dict) else None
         tenant_id = (state or {}).get("tenant_slug") or "default"
 
-        try:
-            request = Request(scope=scope, receive=receive)
-            user_data = await get_current_user_from_session(request)
-        except Exception as e:
-            logger.debug("BroadcastMiddleware: session lookup failed: %s", e)
-            user_data = None
+        # Prefer the user that the request's auth dependency stashed in
+        # scope state - that lookup already used the tenant-aware DB. Fall
+        # back to a session lookup only for endpoints that don't go through
+        # get_current_user (uncommon for /api writes).
+        user_data: dict | None = (state or {}).get("current_user") if state else None
+        if user_data is None:
+            try:
+                request = Request(scope=scope, receive=receive)
+                user_data = await get_current_user_from_session(request)
+            except Exception as e:
+                logger.debug("BroadcastMiddleware: session lookup failed: %s", e)
+                user_data = None
 
         if not user_data:
-            # Anonymous write (shouldn't happen for protected APIs, but be safe).
             return
 
         user_id = user_data.get("id")
