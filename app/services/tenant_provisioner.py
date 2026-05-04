@@ -43,9 +43,11 @@ async def _reassign_public_schema_owner(conn: asyncpg.Connection, new_owner: str
     _validate_identifier(new_owner)
 
     # Tables, views, materialized views, sequences, foreign tables.
+    # Cast relkind to text because asyncpg returns PostgreSQL's internal
+    # "char" type as raw bytes, which would never match str dict keys.
     rows = await conn.fetch(
         """
-        SELECT c.relname, c.relkind
+        SELECT c.relname, c.relkind::text AS relkind
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = 'public'
