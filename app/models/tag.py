@@ -40,7 +40,6 @@ class Tag(Base):
         "Project",
         secondary="project_tags",
         back_populates="tags",
-        lazy="selectin",
     )
 
     def __repr__(self) -> str:
