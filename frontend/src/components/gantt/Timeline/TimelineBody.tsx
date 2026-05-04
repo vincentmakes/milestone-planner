@@ -123,6 +123,7 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
     // Only show weekend/holiday highlighting for week and month views
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
     const renderWeekendMarkers = showHighlighting && showWeekends;
+    const renderWeekSeparators = showHighlighting && !showWeekends;
     
     // Calculate container dimensions for phantom overlay
     const containerHeight = rowPositions.totalHeight + 100; // Add some padding
@@ -179,12 +180,23 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
             )}
             
             {/* Company event background markers (red) */}
-            {showHighlighting && cells.map((cell, index) => 
+            {showHighlighting && cells.map((cell, index) =>
               cell.isCompanyEvent ? (
                 <div
                   key={`event-bg-${index}`}
                   className={`${styles.gridCell} ${styles.companyEvent}`}
                   style={{ left: index * cellWidth, width: cellWidth }}
+                />
+              ) : null
+            )}
+
+            {/* Week separator lines (when weekends are hidden) */}
+            {renderWeekSeparators && cells.map((cell, index) =>
+              cell.isFirstOfWeek && index > 0 ? (
+                <div
+                  key={`week-sep-${index}`}
+                  className={styles.weekSeparator}
+                  style={{ left: index * cellWidth }}
                 />
               ) : null
             )}

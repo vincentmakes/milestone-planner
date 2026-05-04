@@ -71,9 +71,9 @@ export const TimelineHeader = memo(function TimelineHeader({
                 } else if (cell.isWeekend && showWeekends) {
                   bgClass = styles.weekendBg;
                 }
-                
+
                 if (!bgClass) return null;
-                
+
                 return (
                   <div
                     key={`bg-${index}`}
@@ -82,6 +82,16 @@ export const TimelineHeader = memo(function TimelineHeader({
                   />
                 );
               })}
+              {/* Week separator lines (when weekends are hidden) */}
+              {!showWeekends && cells.map((cell, index) =>
+                cell.isFirstOfWeek && index > 0 ? (
+                  <div
+                    key={`week-sep-${index}`}
+                    className={styles.weekSeparator}
+                    style={{ left: index * cellWidth }}
+                  />
+                ) : null
+              )}
             </div>
           )}
           
