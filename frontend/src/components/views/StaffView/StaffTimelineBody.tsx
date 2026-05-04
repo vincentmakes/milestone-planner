@@ -55,6 +55,7 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
 
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
     const renderWeekendMarkers = showHighlighting && showWeekends;
+    const renderWeekSeparators = showHighlighting && !showWeekends;
     
     // Calculate today line position
     const todayPosition = useMemo(
@@ -98,12 +99,21 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
                 />
               ) : null
             )}
-            {showHighlighting && cells.map((cell, index) => 
+            {showHighlighting && cells.map((cell, index) =>
               cell.isCompanyEvent ? (
                 <div
                   key={`event-${index}`}
                   className={`${styles.gridCell} ${styles.companyEvent}`}
                   style={{ left: index * cellWidth, width: cellWidth }}
+                />
+              ) : null
+            )}
+            {renderWeekSeparators && cells.map((cell, index) =>
+              cell.isFirstOfWeek && index > 0 ? (
+                <div
+                  key={`week-sep-${index}`}
+                  className={styles.weekSeparator}
+                  style={{ left: index * cellWidth }}
                 />
               ) : null
             )}
