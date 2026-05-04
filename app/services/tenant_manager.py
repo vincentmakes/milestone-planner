@@ -109,6 +109,52 @@ class TenantConnectionManager:
             logger.warning("Auto-migration warning for %s: %s", slug, e)
             # Don't fail if migration has issues - continue with connection
 
+        # Tags / project_tags tables (added in the project-tags feature).
+        # Idempotent CREATE IF NOT EXISTS so this is safe to run on every boot.
+        try:
+            tables_check = await conn.execute(
+                text("""
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name IN ('tags', 'project_tags')
+            """)
+            )
+            existing = {row[0] for row in tables_check.fetchall()}
+            if "tags" not in existing or "project_tags" not in existing:
+                logger.info("Auto-migration: Creating tags tables on tenant %s...", slug)
+                await conn.execute(
+                    text("""
+                    CREATE TABLE IF NOT EXISTS tags (
+                        id SERIAL PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL UNIQUE,
+                        color VARCHAR(7) NOT NULL DEFAULT '#6366f1',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                )
+                await conn.execute(
+                    text("""
+                    CREATE TABLE IF NOT EXISTS project_tags (
+                        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                        tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                        assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (project_id, tag_id)
+                    )
+                """)
+                )
+                await conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_project_tags_project ON project_tags(project_id)"
+                    )
+                )
+                await conn.execute(
+                    text("CREATE INDEX IF NOT EXISTS idx_project_tags_tag ON project_tags(tag_id)")
+                )
+                await conn.commit()
+                logger.info("Auto-migration: Created tags tables on tenant %s", slug)
+        except Exception as e:
+            logger.warning("Auto-migration (tags) warning for %s: %s", slug, e)
+
     async def get_pool(self, tenant: Tenant, credentials: TenantCredentials) -> AsyncEngine:
         """
         Get or create a connection pool for a tenant.

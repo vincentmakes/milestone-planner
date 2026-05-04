@@ -341,6 +341,23 @@ def get_tenant_schema_sql() -> str:
       PRIMARY KEY (user_id, skill_id)
     );
 
+    -- Tags (global, shared across all sites; assignable to projects)
+    CREATE TABLE IF NOT EXISTS tags (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(100) NOT NULL UNIQUE,
+      color VARCHAR(7) NOT NULL DEFAULT '#6366f1',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Project tags (many-to-many)
+    CREATE TABLE IF NOT EXISTS project_tags (
+      project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+      assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (project_id, tag_id)
+    );
+
     -- Project presence (tracking active viewers for realtime collaboration)
     CREATE TABLE IF NOT EXISTS project_presence (
       id SERIAL PRIMARY KEY,
@@ -381,6 +398,8 @@ def get_tenant_schema_sql() -> str:
     CREATE INDEX IF NOT EXISTS idx_custom_column_values_entity ON custom_column_values(entity_type, entity_id);
     CREATE INDEX IF NOT EXISTS idx_user_skills_user ON user_skills(user_id);
     CREATE INDEX IF NOT EXISTS idx_user_skills_skill ON user_skills(skill_id);
+    CREATE INDEX IF NOT EXISTS idx_project_tags_project ON project_tags(project_id);
+    CREATE INDEX IF NOT EXISTS idx_project_tags_tag ON project_tags(tag_id);
     CREATE INDEX IF NOT EXISTS idx_project_presence_project ON project_presence(project_id);
     CREATE INDEX IF NOT EXISTS idx_project_presence_user ON project_presence(user_id);
     CREATE INDEX IF NOT EXISTS idx_project_presence_last_seen ON project_presence(last_seen_at);

@@ -159,10 +159,38 @@
 .editForm {
   padding: 0.625rem;
   background: var(--bg-tertiary);
-  border-top: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.panelTitle {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.panelPreview {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.75rem;
+  border-radius: 999px;
+  color: white;
+  font-weight: var(--font-weight-medium);
+}
+
+.dropdownError {
+  padding: 0.4rem 0.625rem;
+  font-size: 0.75rem;
+  color: var(--accent-red);
+  border-top: 1px solid var(--border-color);
 }
 
 .editFormRow {
