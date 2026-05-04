@@ -22,7 +22,6 @@ const UserManagementModal = lazy(() => import('./UserManagementModal').then(m =>
 const SSOConfigModal = lazy(() => import('./SSOConfigModal').then(m => ({ default: m.SSOConfigModal })));
 const EquipmentManagementModal = lazy(() => import('./EquipmentManagementModal').then(m => ({ default: m.EquipmentManagementModal })));
 const PredefinedPhasesModal = lazy(() => import('./PredefinedPhasesModal').then(m => ({ default: m.PredefinedPhasesModal })));
-const JobTitlesModal = lazy(() => import('./JobTitlesModal').then(m => ({ default: m.JobTitlesModal })));
 const ImportProjectModal = lazy(() => import('./ImportProjectModal').then(m => ({ default: m.ImportProjectModal })));
 const SettingsModal = lazy(() => import('./SettingsModal').then(m => ({ default: m.SettingsModal })));
 
@@ -45,7 +44,6 @@ export function ModalContainer() {
       <SSOConfigModal />
       <EquipmentManagementModal />
       <PredefinedPhasesModal />
-      <JobTitlesModal />
       <ImportProjectModal />
       <SettingsModal />
     </Suspense>

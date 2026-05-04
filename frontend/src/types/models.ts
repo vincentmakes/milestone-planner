@@ -238,14 +238,6 @@ export interface PredefinedPhase {
   created_at?: string;
 }
 
-export interface JobTitle {
-  id: number;
-  name: string;
-  sort_order: number;
-  is_active: boolean;
-  created_at?: string;
-}
-
 export interface SSOConfig {
   enabled: boolean;
   client_id?: string;
