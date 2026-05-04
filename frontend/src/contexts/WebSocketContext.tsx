@@ -60,7 +60,9 @@ function slicesForEntity(entityType: string): Slice[] {
     case 'project':
     case 'phase':
     case 'subphase':
-    case 'assignment':
+    case 'assignment':            // legacy generic, kept for back-compat
+    case 'staff_assignment':
+    case 'equipment_assignment':
     case 'predefined_phase':
     case 'note':
     case 'custom_column':

@@ -449,7 +449,7 @@ async def update_equipment_assignment(
     await broadcast_change(
         request=request,
         user=user,
-        entity_type="assignment",
+        entity_type="equipment_assignment",
         entity_id=assignment_id,
         project_id=assignment.project_id,
         action="update",
@@ -496,7 +496,7 @@ async def delete_equipment_assignment(
     await broadcast_change(
         request=request,
         user=user,
-        entity_type="assignment",
+        entity_type="equipment_assignment",
         entity_id=assignment_id,
         project_id=project_id,
         action="delete",

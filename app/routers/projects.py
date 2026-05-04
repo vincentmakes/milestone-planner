@@ -345,7 +345,7 @@ async def get_project(
             )
             .join(User, ProjectAssignment.staff_id == User.id)
             .where(ProjectAssignment.project_id == project_id)
-            .order_by(ProjectAssignment.start_date)
+            .order_by(ProjectAssignment.id)  # stable - dragging an item must not reorder rows
         )
 
     async def query_equipment():
@@ -357,7 +357,7 @@ async def get_project(
             )
             .join(Equipment, EquipmentAssignment.equipment_id == Equipment.id)
             .where(EquipmentAssignment.project_id == project_id)
-            .order_by(EquipmentAssignment.start_date)
+            .order_by(EquipmentAssignment.id)  # stable - dragging an item must not reorder rows
         )
 
     # Execute all queries - note: SQLAlchemy async sessions are NOT thread-safe

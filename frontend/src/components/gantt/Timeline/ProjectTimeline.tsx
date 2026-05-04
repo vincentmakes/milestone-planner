@@ -950,18 +950,21 @@ const AssignmentBar = memo(function AssignmentBar({
   const vacations = useAppStore((s) => s.vacations);
 
   // Live attribution: show "✨ Vincent D." on this bar if another user just
-  // changed this assignment. Matches both the explicit "assignment" entity
-  // type from the assignments router and the staff/equipment fallback that
-  // the auto-broadcast middleware emits.
+  // changed THIS specific assignment. Staff and equipment assignments live
+  // in different tables but share the integer id space, so matching on a
+  // generic "assignment" entity type would cross-light bars (a staff drag
+  // would highlight an equipment bar with the same numeric id, and vice
+  // versa). The backend now emits staff_assignment / equipment_assignment
+  // explicitly so we can match the right kind.
   const { recentChanges } = useWebSocketContext();
+  const expectedEntityType =
+    assignmentType === 'staff' ? 'staff_assignment' : 'equipment_assignment';
   const changedBy = useMemo(() => {
     const c = recentChanges.find(
-      (r) =>
-        (r.entity_type === 'assignment' && r.entity_id === assignmentId) ||
-        (r.entity_type === assignmentType && r.entity_id === (assignmentType === 'staff' ? staffId : _equipmentId)),
+      (r) => r.entity_type === expectedEntityType && r.entity_id === assignmentId,
     );
     return c?.user_name ?? null;
-  }, [recentChanges, assignmentId, assignmentType, staffId, _equipmentId]);
+  }, [recentChanges, expectedEntityType, assignmentId]);
   
   const barPosition = useMemo(
     () => calculateBarPosition(startDate, endDate, cells, cellWidth, viewMode),

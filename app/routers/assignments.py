@@ -186,7 +186,7 @@ async def create_project_staff_assignment(
     await broadcast_change(
         request=request,
         user=user,
-        entity_type="assignment",
+        entity_type="staff_assignment",
         entity_id=assignment.id,
         project_id=project_id,
         action="create",
@@ -228,7 +228,7 @@ async def update_project_staff_assignment(
     await broadcast_change(
         request=request,
         user=user,
-        entity_type="assignment",
+        entity_type="staff_assignment",
         entity_id=assignment_id,
         project_id=project_id,
         action="update",
@@ -266,7 +266,7 @@ async def delete_project_staff_assignment(
     await broadcast_change(
         request=request,
         user=user,
-        entity_type="assignment",
+        entity_type="staff_assignment",
         entity_id=assignment_id,
         project_id=project_id,
         action="delete",
@@ -319,7 +319,7 @@ async def create_phase_staff_assignment(
     await broadcast_change(
         request=request,
         user=user,
-        entity_type="assignment",
+        entity_type="staff_assignment",
         entity_id=assignment.id,
         project_id=data.project_id,
         action="create",
@@ -367,7 +367,7 @@ async def update_phase_staff_assignment(
     await broadcast_change(
         request=request,
         user=user,
-        entity_type="assignment",
+        entity_type="staff_assignment",
         entity_id=assignment_id,
         project_id=project_id,
         action="update",
@@ -405,7 +405,7 @@ async def delete_phase_staff_assignment(
     await broadcast_change(
         request=request,
         user=user,
-        entity_type="assignment",
+        entity_type="staff_assignment",
         entity_id=assignment_id,
         project_id=project_id,
         action="delete",
@@ -458,7 +458,7 @@ async def create_subphase_staff_assignment(
     await broadcast_change(
         request=request,
         user=user,
-        entity_type="assignment",
+        entity_type="staff_assignment",
         entity_id=assignment.id,
         project_id=data.project_id,
         action="create",
@@ -506,7 +506,7 @@ async def update_subphase_staff_assignment(
     await broadcast_change(
         request=request,
         user=user,
-        entity_type="assignment",
+        entity_type="staff_assignment",
         entity_id=assignment_id,
         project_id=project_id,
         action="update",
@@ -544,7 +544,7 @@ async def delete_subphase_staff_assignment(
     await broadcast_change(
         request=request,
         user=user,
-        entity_type="assignment",
+        entity_type="staff_assignment",
         entity_id=assignment_id,
         project_id=project_id,
         action="delete",
@@ -585,7 +585,7 @@ async def create_equipment_assignment(
     await broadcast_change(
         request=request,
         user=user,
-        entity_type="assignment",
+        entity_type="equipment_assignment",
         entity_id=assignment.id,
         project_id=project_id,
         action="create",
@@ -626,7 +626,7 @@ async def update_equipment_assignment(
     await broadcast_change(
         request=request,
         user=user,
-        entity_type="assignment",
+        entity_type="equipment_assignment",
         entity_id=assignment_id,
         project_id=project_id,
         action="update",
@@ -664,7 +664,7 @@ async def delete_equipment_assignment(
     await broadcast_change(
         request=request,
         user=user,
-        entity_type="assignment",
+        entity_type="equipment_assignment",
         entity_id=assignment_id,
         project_id=project_id,
         action="delete",
