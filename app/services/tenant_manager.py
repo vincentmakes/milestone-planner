@@ -380,12 +380,19 @@ class TenantConnectionManager:
 
     def get_stats(self) -> dict[str, Any]:
         """Get connection pool statistics."""
+
+        def _pool_size(engine: AsyncEngine) -> int:
+            # SQLAlchemy's QueuePool.size is a method, not an attribute.
+            size = getattr(engine.pool, "size", 0)
+            try:
+                return int(size() if callable(size) else size)
+            except Exception:
+                return 0
+
         return {
             "active_pools": len(self._pools),
             "pool_slugs": list(self._pools.keys()),
-            "total_connections": sum(
-                getattr(engine.pool, "size", 0) for engine in self._pools.values()
-            ),
+            "total_connections": sum(_pool_size(engine) for engine in self._pools.values()),
         }
 
     async def close_all(self):
