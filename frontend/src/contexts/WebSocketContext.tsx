@@ -39,37 +39,46 @@ interface WebSocketProviderProps {
 
 export function WebSocketProvider({ children }: WebSocketProviderProps) {
   const setProjects = useAppStore((s) => s.setProjects);
-  
+
   // Debounce refresh to avoid multiple rapid requests
   const refreshTimeoutRef = useRef<number | null>(null);
-  const pendingRefreshRef = useRef(false);
-  
-  // Refresh projects data from server
+  const inFlightRef = useRef(false);
+  // If a change arrives while we're already refreshing, schedule another pass
+  // instead of dropping it on the floor.
+  const restageRef = useRef(false);
+
   const refreshProjects = useCallback(async () => {
-    if (pendingRefreshRef.current) return;
-    pendingRefreshRef.current = true;
-    
+    if (inFlightRef.current) {
+      restageRef.current = true;
+      return;
+    }
+    inFlightRef.current = true;
+
     try {
       const projects = await loadAllProjects();
       setProjects(projects);
     } catch (err) {
       console.error('[WebSocket] Failed to refresh projects:', err);
     } finally {
-      pendingRefreshRef.current = false;
+      inFlightRef.current = false;
+    }
+
+    // If another change came in during the fetch, run again.
+    if (restageRef.current) {
+      restageRef.current = false;
+      refreshProjects();
     }
   }, [setProjects]);
-  
-  // Handle incoming changes - debounced refresh
+
   const handleChangeReceived = useCallback((_change: ChangePayload) => {
-    // Clear any pending refresh
     if (refreshTimeoutRef.current) {
       clearTimeout(refreshTimeoutRef.current);
     }
-    
-    // Debounce: wait 500ms before refreshing (in case multiple changes come quickly)
+    // Short debounce so a burst of drag-related updates collapses into a single
+    // refresh, but the receiving user still feels the change near-instantly.
     refreshTimeoutRef.current = window.setTimeout(() => {
       refreshProjects();
-    }, 500);
+    }, 200);
   }, [refreshProjects]);
   
   const {
