@@ -27,7 +27,21 @@ logger = logging.getLogger(__name__)
 
 
 def get_tenant_from_request(request: Request) -> str:
-    """Extract tenant ID from request path."""
+    """Resolve the tenant slug for an incoming HTTP request.
+
+    Prefer `request.state.tenant_slug`, which is set by `TenantMiddleware`.
+    The middleware also strips the `/t/{slug}/` prefix from the path before
+    the route handler sees it, so parsing `request.url.path` here would
+    almost always return "default" even for multi-tenant requests. We keep
+    the path-parse as a safety net for any code path that bypasses the
+    middleware.
+    """
+    state = getattr(request, "state", None)
+    if state is not None:
+        tenant_slug = getattr(state, "tenant_slug", None)
+        if tenant_slug:
+            return tenant_slug
+
     import re
 
     path = request.url.path
