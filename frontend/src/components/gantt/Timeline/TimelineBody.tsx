@@ -7,6 +7,7 @@ import { forwardRef, useMemo, useRef, useCallback } from 'react';
 import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useUIStore } from '@/stores/uiStore';
+import { useAppStore } from '@/stores/appStore';
 import { ProjectTimeline } from './ProjectTimeline';
 import { TodayLine } from './TodayLine';
 import { DependencyLayer } from './DependencyLayer';
@@ -37,6 +38,7 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
     const dragIndicator = useUIStore((s) => s.dragIndicator);
     const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
     const resourceDrag = useUIStore((s) => s.resourceDrag);
+    const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
     
     // Internal ref for phantom overlay mouse tracking
     const internalRef = useRef<HTMLDivElement>(null);
@@ -120,6 +122,7 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
 
     // Only show weekend/holiday highlighting for week and month views
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
+    const renderWeekendMarkers = showHighlighting && showWeekends;
     
     // Calculate container dimensions for phantom overlay
     const containerHeight = rowPositions.totalHeight + 100; // Add some padding
@@ -153,8 +156,8 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
         >
           {/* Grid background with CSS gradient + special cell markers */}
           <div className={styles.grid}>
-            {/* Weekend markers */}
-            {showHighlighting && cells.map((cell, index) => 
+            {/* Weekend markers (suppressed when show_weekends setting is off) */}
+            {renderWeekendMarkers && cells.map((cell, index) =>
               cell.isWeekend ? (
                 <div
                   key={`weekend-${index}`}

@@ -51,8 +51,10 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
     const bankHolidays = useAppStore((s) => s.bankHolidays);
     const companyEvents = useAppStore((s) => s.companyEvents);
     const currentUser = useAppStore((s) => s.currentUser);
-    
+    const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
+
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
+    const renderWeekendMarkers = showHighlighting && showWeekends;
     
     // Calculate today line position
     const todayPosition = useMemo(
@@ -78,7 +80,7 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
         >
           {/* Grid background */}
           <div className={styles.grid}>
-            {showHighlighting && cells.map((cell, index) => 
+            {renderWeekendMarkers && cells.map((cell, index) =>
               cell.isWeekend ? (
                 <div
                   key={`weekend-${index}`}

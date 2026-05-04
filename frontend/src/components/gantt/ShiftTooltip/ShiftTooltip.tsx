@@ -6,7 +6,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { differenceInDays, eachDayOfInterval, isWeekend, parseISO, format } from 'date-fns';
-import type { Phase, Subphase, Project } from '@/types';
+import type { Phase, Subphase, Project, Tag } from '@/types';
 import styles from './ShiftTooltip.module.css';
 
 interface StaffInfo {
@@ -33,6 +33,7 @@ interface TooltipData {
   customer?: string | null;
   pmName?: string | null;
   confirmed?: boolean;
+  tags?: Tag[];
 }
 
 // Calculate work days excluding weekends and holidays
@@ -358,6 +359,7 @@ export function ShiftTooltip() {
         customer: project.customer,
         pmName: project.pm_name,
         confirmed: project.confirmed,
+        tags: project.tags ?? [],
         x,
         y,
       });
@@ -455,8 +457,8 @@ export function ShiftTooltip() {
 
   // Position tooltip with offset from cursor, ensuring it stays in viewport
   const tooltipStyle: React.CSSProperties = {
-    left: Math.min(tooltipData.x + 15, window.innerWidth - 320),
-    top: Math.min(tooltipData.y + 15, window.innerHeight - 280),
+    left: Math.min(tooltipData.x + 15, window.innerWidth - 380),
+    top: Math.min(tooltipData.y + 15, window.innerHeight - 340),
   };
 
   return (
@@ -484,6 +486,22 @@ export function ShiftTooltip() {
               {tooltipData.confirmed ? 'Confirmed' : 'Unconfirmed'}
             </span>
           </div>
+          {tooltipData.tags && tooltipData.tags.length > 0 && (
+            <div className={styles.tagSection}>
+              <div className={styles.tagHeader}>Tags:</div>
+              <div className={styles.tagRow}>
+                {tooltipData.tags.map((tag) => (
+                  <span
+                    key={tag.id}
+                    className={styles.tagPill}
+                    style={{ backgroundColor: tag.color }}
+                  >
+                    {tag.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       )}
       

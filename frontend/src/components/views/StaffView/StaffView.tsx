@@ -74,6 +74,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const bankHolidays = useAppStore((s) => s.bankHolidays);
   const companyEventDates = useAppStore((s) => s.companyEventDates);
   const companyEvents = useAppStore((s) => s.companyEvents);
+  const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
   const cellWidth = useViewStore((s) => s.cellWidth);
@@ -103,6 +104,30 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set());
   const [selectedSkills, setSelectedSkills] = useState<Set<number>>(new Set());
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [filterDropdownStyle, setFilterDropdownStyle] = useState<React.CSSProperties>({});
+
+  // Position the position:fixed filter dropdown anchored below the trigger.
+  useLayoutEffect(() => {
+    if (!isFilterOpen || !filterRef.current) return;
+    const update = () => {
+      const rect = filterRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const top = rect.bottom + 6;
+      const available = Math.max(160, window.innerHeight - top - 12);
+      setFilterDropdownStyle({
+        top,
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - 458)),
+        maxHeight: available,
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [isFilterOpen]);
   
   // Delete confirmation state
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -203,9 +228,9 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const hasActiveFilters = selectedRoles.size > 0 || selectedSkills.size > 0;
   
   // Generate timeline data
-  const cells = useMemo(() => 
-    generateTimelineCells(currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents),
-    [currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents]
+  const cells = useMemo(() =>
+    generateTimelineCells(currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents, showWeekends),
+    [currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents, showWeekends]
   );
   const headers = useMemo(() => 
     generateTimelineHeaders(cells, viewMode),
@@ -592,7 +617,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
             </button>
             
             {isFilterOpen && (
-              <div className={styles.filterDropdown}>
+              <div className={styles.filterDropdown} style={filterDropdownStyle}>
                 {/* Clear all button */}
                 {hasActiveFilters && (
                   <div className={styles.filterActions}>

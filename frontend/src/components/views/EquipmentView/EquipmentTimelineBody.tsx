@@ -8,6 +8,7 @@ import { forwardRef, useMemo } from 'react';
 import { calculateBarPosition, calculateTodayPosition } from '@/components/gantt/utils';
 import { TodayLine } from '@/components/gantt/Timeline/TodayLine';
 import { useUIStore } from '@/stores/uiStore';
+import { useAppStore } from '@/stores/appStore';
 import type { TimelineCell } from '@/components/gantt/utils';
 import type { Equipment, EquipmentBlock, ViewMode } from '@/types';
 import type { OverlapInfo } from '@/utils/equipmentOverlap';
@@ -42,8 +43,10 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
     viewMode
   }, ref) {
     
+    const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
-    
+    const renderWeekendMarkers = showHighlighting && showWeekends;
+
     // Calculate today line position
     const todayPosition = useMemo(
       () => calculateTodayPosition(cells, cellWidth),
@@ -61,7 +64,7 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
         >
           {/* Grid background */}
           <div className={styles.grid}>
-            {showHighlighting && cells.map((cell, index) => 
+            {renderWeekendMarkers && cells.map((cell, index) =>
               cell.isWeekend ? (
                 <div
                   key={`weekend-${index}`}

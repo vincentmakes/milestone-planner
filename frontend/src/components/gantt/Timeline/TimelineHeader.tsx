@@ -4,6 +4,7 @@
  */
 
 import { memo } from 'react';
+import { useAppStore } from '@/stores/appStore';
 import type { TimelineCell, TimelineHeader as TimelineHeaderType } from '../utils';
 import styles from './TimelineHeader.module.css';
 
@@ -31,6 +32,7 @@ export const TimelineHeader = memo(function TimelineHeader({
   const showWeekNumbers = viewMode === 'week' || viewMode === 'month' || viewMode === 'quarter';
   // Only show weekend/holiday highlighting in week and month views
   const showHighlighting = viewMode === 'week' || viewMode === 'month';
+  const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
 
   return (
     <div className={styles.header}>
@@ -66,7 +68,7 @@ export const TimelineHeader = memo(function TimelineHeader({
                   bgClass = styles.holidayBg;
                 } else if (cell.isCompanyEvent) {
                   bgClass = styles.eventBg;
-                } else if (cell.isWeekend) {
+                } else if (cell.isWeekend && showWeekends) {
                   bgClass = styles.weekendBg;
                 }
                 

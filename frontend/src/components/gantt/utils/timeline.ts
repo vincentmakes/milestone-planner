@@ -65,7 +65,12 @@ const PERIODS_CONFIG: Record<ViewMode, { before: number; after: number }> = {
 // =============================================================================
 
 /**
- * Generate timeline cells based on view mode
+ * Generate timeline cells based on view mode.
+ *
+ * `showWeekends` only affects daily-cell views (week/month). When false,
+ * Saturday/Sunday cells are dropped entirely so the timeline grid skips
+ * them — `calculateBarPosition` handles the resulting non-contiguous cell
+ * array via cell-index based positioning.
  */
 export function generateTimelineCells(
   currentDate: Date,
@@ -73,7 +78,8 @@ export function generateTimelineCells(
   bankHolidayDates: Set<string>,
   bankHolidays: Array<{ date: string; end_date?: string | null; name: string; is_custom?: boolean }>,
   companyEventDates: Set<string> = new Set(),
-  companyEvents: Array<{ date: string; end_date?: string | null; name: string }> = []
+  companyEvents: Array<{ date: string; end_date?: string | null; name: string }> = [],
+  showWeekends: boolean = true
 ): TimelineCell[] {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -109,18 +115,30 @@ export function generateTimelineCells(
     };
   };
 
+  let cells: TimelineCell[];
   switch (viewMode) {
     case 'week':
-      return generateWeekViewCells(currentDate, today, bankHolidayDates, getHolidayInfo, getEventInfo);
+      cells = generateWeekViewCells(currentDate, today, bankHolidayDates, getHolidayInfo, getEventInfo);
+      break;
     case 'month':
-      return generateMonthViewCells(currentDate, today, bankHolidayDates, getHolidayInfo, getEventInfo);
+      cells = generateMonthViewCells(currentDate, today, bankHolidayDates, getHolidayInfo, getEventInfo);
+      break;
     case 'quarter':
-      return generateQuarterViewCells(currentDate, today, bankHolidayDates, getHolidayInfo, getEventInfo);
+      cells = generateQuarterViewCells(currentDate, today, bankHolidayDates, getHolidayInfo, getEventInfo);
+      break;
     case 'year':
-      return generateYearViewCells(currentDate, today, bankHolidayDates, getHolidayInfo, getEventInfo);
+      cells = generateYearViewCells(currentDate, today, bankHolidayDates, getHolidayInfo, getEventInfo);
+      break;
     default:
       return [];
   }
+
+  // Drop weekend cells in daily-cell views when the user has disabled them.
+  if (!showWeekends && (viewMode === 'week' || viewMode === 'month')) {
+    cells = cells.filter((c) => !c.isWeekend);
+  }
+
+  return cells;
 }
 
 /**
@@ -498,15 +516,52 @@ export function calculateBarPosition(
   // Extract just the date part if it's a full timestamp
   const startDateStr = String(startDate).split('T')[0];
   const endDateStr = String(endDate).split('T')[0];
-  
+
   const sd = new Date(startDateStr + 'T00:00:00');
   const ed = new Date(endDateStr + 'T23:59:59.999'); // End of the end day
-  
+
   // Check for invalid dates
   if (isNaN(sd.getTime()) || isNaN(ed.getTime())) {
     return null;
   }
-  
+
+  // Daily-cell views (week/month) use cell-index based positioning so the
+  // grid stays aligned even when weekend cells are filtered out, leaving
+  // non-contiguous dates in the cells array.
+  if (viewMode === 'week' || viewMode === 'month') {
+    const firstCell = new Date(cells[0].date);
+    firstCell.setHours(0, 0, 0, 0);
+    const lastCell = new Date(cells[cells.length - 1].date);
+    lastCell.setHours(23, 59, 59, 999);
+
+    if (ed < firstCell || sd > lastCell) return null;
+
+    // First cell whose date >= sd (or 0 if bar starts before timeline).
+    let startIdx = -1;
+    for (let i = 0; i < cells.length; i++) {
+      const cd = new Date(cells[i].date);
+      cd.setHours(0, 0, 0, 0);
+      if (cd >= sd) { startIdx = i; break; }
+    }
+    if (startIdx === -1) startIdx = cells.length - 1;
+    if (sd < firstCell) startIdx = 0;
+
+    // Last cell whose date <= ed (or last index if bar ends after timeline).
+    let endIdx = -1;
+    for (let i = cells.length - 1; i >= 0; i--) {
+      const cd = new Date(cells[i].date);
+      cd.setHours(0, 0, 0, 0);
+      if (cd <= ed) { endIdx = i; break; }
+    }
+    if (endIdx === -1) endIdx = 0;
+
+    if (endIdx < startIdx) endIdx = startIdx;
+
+    const left = startIdx * cellWidth;
+    const width = Math.max(cellWidth, (endIdx - startIdx + 1) * cellWidth);
+    return { left, width };
+  }
+
   // Get first cell date, normalize to start of day
   const fcd = new Date(cells[0].date);
   fcd.setHours(0, 0, 0, 0);
