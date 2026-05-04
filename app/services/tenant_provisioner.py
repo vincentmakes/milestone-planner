@@ -31,6 +31,47 @@ def _escape_literal(value: str) -> str:
     return value.replace("'", "''")
 
 
+async def _reassign_public_schema_owner(conn: asyncpg.Connection, new_owner: str) -> None:
+    """
+    Reassign ownership of every object in the public schema to ``new_owner``.
+
+    Used when re-provisioning a tenant database whose existing objects belong
+    to a different role: CREATE INDEX / ALTER on those objects would otherwise
+    fail with "must be owner of table ...". The connection must be a
+    superuser or a member of both the current owner role and ``new_owner``.
+    """
+    _validate_identifier(new_owner)
+
+    # Tables, views, materialized views, sequences, foreign tables.
+    # Cast relkind to text because asyncpg returns PostgreSQL's internal
+    # "char" type as raw bytes, which would never match str dict keys.
+    rows = await conn.fetch(
+        """
+        SELECT c.relname, c.relkind::text AS relkind
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relkind IN ('r', 'v', 'm', 'S', 'f')
+        """
+    )
+    relkind_to_keyword = {
+        "r": "TABLE",
+        "v": "VIEW",
+        "m": "MATERIALIZED VIEW",
+        "S": "SEQUENCE",
+        "f": "FOREIGN TABLE",
+    }
+    for row in rows:
+        keyword = relkind_to_keyword[row["relkind"]]
+        await conn.execute(f'ALTER {keyword} public."{row["relname"]}" OWNER TO "{new_owner}"')
+
+    # Schema itself (so future CREATE TABLE works as the tenant user).
+    try:
+        await conn.execute(f'ALTER SCHEMA public OWNER TO "{new_owner}"')
+    except Exception as e:
+        logger.warning("Could not change public schema owner: %s", e)
+
+
 async def get_admin_connection() -> asyncpg.Connection:
     """
     Get a connection using PostgreSQL admin credentials.
@@ -522,11 +563,42 @@ async def provision_tenant_database(
             logger.exception("  Error granting privileges: %s", e)
             raise
 
+        # Make sure the tenant user owns the database itself (in case the DB
+        # pre-existed and was owned by some other role).
+        try:
+            await conn.execute(f'ALTER DATABASE "{database_name}" OWNER TO "{database_user}"')
+        except Exception as e:
+            logger.warning("  Could not set database owner (continuing): %s", e)
+
         await conn.close()
         conn = None
 
-        # Connect to the new database to create schema
+        # When re-provisioning an existing tenant database, objects (tables,
+        # sequences, indexes) may be owned by a different role than the
+        # current tenant user. CREATE INDEX IF NOT EXISTS / ALTER will then
+        # fail with "must be owner of table ...". Reassign ownership of all
+        # objects in the public schema to the tenant user using the admin
+        # connection before we run the schema as the tenant user.
         settings = get_settings()
+        admin_user = settings.pg_admin_user or settings.db_user
+        admin_password = settings.pg_admin_password or settings.db_password
+        try:
+            ownership_conn = await asyncpg.connect(
+                host=settings.db_host,
+                port=settings.db_port,
+                user=admin_user,
+                password=admin_password,
+                database=database_name,
+            )
+            try:
+                await _reassign_public_schema_owner(ownership_conn, database_user)
+                logger.info("  Reassigned public schema object ownership to %s", database_user)
+            finally:
+                await ownership_conn.close()
+        except Exception as e:
+            logger.warning("  Could not reassign object ownership (continuing): %s", e)
+
+        # Connect to the new database to create schema
         logger.info("  Connecting to new database as %s...", database_user)
         tenant_conn = await asyncpg.connect(
             host=settings.db_host,

@@ -426,7 +426,22 @@ async def provision_tenant(
     if not tenant.credentials:
         raise HTTPException(status_code=400, detail="Tenant credentials not found")
 
-    db_password = decrypt(tenant.credentials.encrypted_password)
+    # Decrypt the stored DB password. If decryption fails (e.g., the
+    # TENANT_ENCRYPTION_KEY changed since this tenant was created), generate a
+    # fresh password and re-encrypt with the current key. Provisioning resets
+    # the database role's password anyway via ALTER USER, so this is safe.
+    try:
+        db_password = decrypt(tenant.credentials.encrypted_password)
+    except Exception as e:
+        logger.warning(
+            "Could not decrypt stored credentials for tenant %s (%s). "
+            "Generating new password and re-encrypting.",
+            tenant.slug,
+            e,
+        )
+        db_password = generate_password(32)
+        tenant.credentials.encrypted_password = encrypt(db_password)
+
     admin_email = data.admin_email if data and data.admin_email else tenant.admin_email
     admin_password = data.admin_password if data and data.admin_password else None
 

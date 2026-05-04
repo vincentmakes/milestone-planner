@@ -155,6 +155,70 @@ class TenantConnectionManager:
         except Exception as e:
             logger.warning("Auto-migration (tags) warning for %s: %s", slug, e)
 
+        # equipment_blocks table (added in the equipment maintenance feature).
+        # Old tenants provisioned before this feature lack the table entirely.
+        try:
+            result = await conn.execute(
+                text("""
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'equipment_blocks'
+            """)
+            )
+            if not result.fetchone():
+                logger.info("Auto-migration: Creating equipment_blocks table on tenant %s...", slug)
+                await conn.execute(
+                    text("""
+                    CREATE TABLE IF NOT EXISTS equipment_blocks (
+                        id SERIAL PRIMARY KEY,
+                        equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+                        start_date DATE NOT NULL,
+                        end_date DATE NOT NULL,
+                        reason VARCHAR(50) NOT NULL DEFAULT 'maintenance',
+                        description VARCHAR(200) NOT NULL DEFAULT 'Maintenance',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                )
+                await conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_equipment_blocks_equipment_id "
+                        "ON equipment_blocks(equipment_id)"
+                    )
+                )
+                await conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_equipment_blocks_dates "
+                        "ON equipment_blocks(start_date, end_date)"
+                    )
+                )
+                await conn.commit()
+                logger.info("Auto-migration: Created equipment_blocks table on tenant %s", slug)
+        except Exception as e:
+            logger.warning("Auto-migration (equipment_blocks) warning for %s: %s", slug, e)
+
+        # company_events.color column (added when event color picker was introduced).
+        # Old tenants have the company_events table but no color column.
+        try:
+            result = await conn.execute(
+                text("""
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'company_events' AND column_name = 'color'
+            """)
+            )
+            if not result.fetchone():
+                logger.info(
+                    "Auto-migration: Adding color column to company_events on tenant %s...", slug
+                )
+                await conn.execute(
+                    text("ALTER TABLE company_events ADD COLUMN IF NOT EXISTS color VARCHAR(20)")
+                )
+                await conn.commit()
+                logger.info(
+                    "Auto-migration: Added color column to company_events on tenant %s", slug
+                )
+        except Exception as e:
+            logger.warning("Auto-migration (company_events.color) warning for %s: %s", slug, e)
+
     async def get_pool(self, tenant: Tenant, credentials: TenantCredentials) -> AsyncEngine:
         """
         Get or create a connection pool for a tenant.
@@ -316,12 +380,19 @@ class TenantConnectionManager:
 
     def get_stats(self) -> dict[str, Any]:
         """Get connection pool statistics."""
+
+        def _pool_size(engine: AsyncEngine) -> int:
+            # SQLAlchemy's QueuePool.size is a method, not an attribute.
+            size = getattr(engine.pool, "size", 0)
+            try:
+                return int(size() if callable(size) else size)
+            except Exception:
+                return 0
+
         return {
             "active_pools": len(self._pools),
             "pool_slugs": list(self._pools.keys()),
-            "total_connections": sum(
-                getattr(engine.pool, "size", 0) for engine in self._pools.values()
-            ),
+            "total_connections": sum(_pool_size(engine) for engine in self._pools.values()),
         }
 
     async def close_all(self):
