@@ -73,6 +73,17 @@
   background: rgba(239, 68, 68, 0.15);
 }
 
+/* Week separator line (drawn between weeks when weekends are hidden) */
+.weekSeparator {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 1px;
+  background: var(--border-color-hover);
+  pointer-events: none;
+  z-index: 1;
+}
+
 /* Tooltip layer - on top, but cells only cover top strip where bars don't reach */
 .tooltipLayer {
   position: absolute;
