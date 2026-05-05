@@ -34,6 +34,7 @@ export interface TimelineCell {
   bankHolidayName?: string;
   isCompanyEvent: boolean;
   companyEventName?: string;
+  companyEventColor?: string | null;
   dayOfWeek: number;
   isFirstOfWeek: boolean;
   isFirstOfMonth: boolean;
@@ -78,7 +79,7 @@ export function generateTimelineCells(
   bankHolidayDates: Set<string>,
   bankHolidays: Array<{ date: string; end_date?: string | null; name: string; is_custom?: boolean }>,
   companyEventDates: Set<string> = new Set(),
-  companyEvents: Array<{ date: string; end_date?: string | null; name: string }> = [],
+  companyEvents: Array<{ date: string; end_date?: string | null; name: string; color?: string | null }> = [],
   showWeekends: boolean = true
 ): TimelineCell[] {
   const today = new Date();
@@ -101,7 +102,7 @@ export function generateTimelineCells(
     };
   };
   
-  const getEventInfo = (date: Date): { name?: string; isEvent: boolean } => {
+  const getEventInfo = (date: Date): { name?: string; isEvent: boolean; color?: string | null } => {
     const dateStr = format(date, 'yyyy-MM-dd');
     // Find event that includes this date (handles multi-day events)
     const event = companyEvents.find((e) => {
@@ -112,6 +113,7 @@ export function generateTimelineCells(
     return {
       name: event?.name,
       isEvent: companyEventDates.has(dateStr),
+      color: event?.color,
     };
   };
 
@@ -149,7 +151,7 @@ function generateWeekViewCells(
   today: Date,
   bankHolidayDates: Set<string>,
   getHolidayInfo: (date: Date) => { name?: string; isCustom: boolean },
-  getEventInfo: (date: Date) => { name?: string; isEvent: boolean }
+  getEventInfo: (date: Date) => { name?: string; isEvent: boolean; color?: string | null }
 ): TimelineCell[] {
   const cells: TimelineCell[] = [];
   const { before, after } = PERIODS_CONFIG.week;
@@ -176,7 +178,7 @@ function generateMonthViewCells(
   today: Date,
   bankHolidayDates: Set<string>,
   getHolidayInfo: (date: Date) => { name?: string; isCustom: boolean },
-  getEventInfo: (date: Date) => { name?: string; isEvent: boolean }
+  getEventInfo: (date: Date) => { name?: string; isEvent: boolean; color?: string | null }
 ): TimelineCell[] {
   const cells: TimelineCell[] = [];
   const { before, after } = PERIODS_CONFIG.month;
@@ -203,7 +205,7 @@ function generateQuarterViewCells(
   today: Date,
   bankHolidayDates: Set<string>,
   getHolidayInfo: (date: Date) => { name?: string; isCustom: boolean },
-  getEventInfo: (date: Date) => { name?: string; isEvent: boolean }
+  getEventInfo: (date: Date) => { name?: string; isEvent: boolean; color?: string | null }
 ): TimelineCell[] {
   const cells: TimelineCell[] = [];
   const { before, after } = PERIODS_CONFIG.quarter;
@@ -240,7 +242,7 @@ function generateYearViewCells(
   _today: Date,
   _bankHolidayDates: Set<string>,
   _getHolidayInfo: (date: Date) => { name?: string; isCustom: boolean },
-  _getEventInfo: (date: Date) => { name?: string; isEvent: boolean }
+  _getEventInfo: (date: Date) => { name?: string; isEvent: boolean; color?: string | null }
 ): TimelineCell[] {
   const cells: TimelineCell[] = [];
   const { before, after } = PERIODS_CONFIG.year;
@@ -300,7 +302,7 @@ function createCell(
   today: Date,
   bankHolidayDates: Set<string>,
   getHolidayInfo: (date: Date) => { name?: string; isCustom: boolean },
-  getEventInfo: (date: Date) => { name?: string; isEvent: boolean }
+  getEventInfo: (date: Date) => { name?: string; isEvent: boolean; color?: string | null }
 ): TimelineCell {
   const dateStr = format(date, 'yyyy-MM-dd');
   const dayOfWeek = date.getDay();
@@ -318,6 +320,7 @@ function createCell(
     bankHolidayName: holidayInfo.name,
     isCompanyEvent: eventInfo.isEvent,
     companyEventName: eventInfo.name,
+    companyEventColor: eventInfo.color,
     dayOfWeek,
     isFirstOfWeek: dayOfWeek === 1, // Monday
     isFirstOfMonth: date.getDate() === 1,

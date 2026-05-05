@@ -5,7 +5,7 @@
  * Supports embedded mode for display below Gantt chart
  */
 
-import { useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
+import { useCallback, useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -68,6 +68,10 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
   const cellWidth = useViewStore((s) => s.cellWidth);
+  const timelineScrollLeft = useViewStore((s) => s.timelineScrollLeft);
+  const setTimelineScrollLeft = useViewStore((s) => s.setTimelineScrollLeft);
+  const hasRestoredScroll = useRef(false);
+  const scrollSaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
   const openEquipmentBlockModal = useUIStore((s) => s.openEquipmentBlockModal);
@@ -243,7 +247,34 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
     const scrollTo = Math.max(0, todayPosition - containerWidth / 2 + cellWidth / 2);
     scrollContainer.scrollTo({ left: scrollTo, behavior: 'smooth' });
   }, [embedded, scrollToTodayTrigger, cells, cellWidth]);
-  
+
+  // Restore horizontal timeline scroll on mount (standalone only — Gantt's Timeline persists when embedded).
+  useEffect(() => {
+    if (embedded || hasRestoredScroll.current) return;
+    const scrollContainer = timelineScrollRef.current;
+    if (!scrollContainer) return;
+    if (timelineScrollLeft > 0) {
+      requestAnimationFrame(() => {
+        scrollContainer.scrollLeft = timelineScrollLeft;
+        hasRestoredScroll.current = true;
+      });
+    } else {
+      hasRestoredScroll.current = true;
+    }
+  }, [embedded, timelineScrollLeft]);
+
+  // Save scroll position (debounced) on every scroll, while also forwarding to the embedded sync hook.
+  const handleTimelineScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    handleSyncScroll(e);
+    if (embedded) return;
+    const scrollContainer = timelineScrollRef.current;
+    if (!scrollContainer || !hasRestoredScroll.current) return;
+    if (scrollSaveTimeout.current) clearTimeout(scrollSaveTimeout.current);
+    scrollSaveTimeout.current = setTimeout(() => {
+      setTimelineScrollLeft(scrollContainer.scrollLeft);
+    }, 200);
+  }, [embedded, handleSyncScroll, setTimelineScrollLeft]);
+
   // Build equipment bookings map
   const equipmentBookingsMap = useMemo(() => {
     const map = new Map<number, EquipmentBookingWithContext[]>();
@@ -604,7 +635,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
         <div 
           className={styles.timelineScroll} 
           ref={timelineScrollRef}
-          onScroll={handleSyncScroll}
+          onScroll={handleTimelineScroll}
         >
           <div className={styles.timelineContent} style={{ width: totalWidth }}>
             {/* Full header when not embedded */}

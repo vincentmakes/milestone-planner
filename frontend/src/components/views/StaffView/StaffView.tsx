@@ -78,6 +78,10 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
   const cellWidth = useViewStore((s) => s.cellWidth);
+  const timelineScrollLeft = useViewStore((s) => s.timelineScrollLeft);
+  const setTimelineScrollLeft = useViewStore((s) => s.setTimelineScrollLeft);
+  const hasRestoredScroll = useRef(false);
+  const scrollSaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const { openVacationModal } = useUIStore();
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
@@ -242,18 +246,45 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   // Scroll to today when trigger changes (only when not embedded - Gantt handles this)
   useEffect(() => {
     if (embedded || !scrollToTodayTrigger || !timelineScrollRef.current) return;
-    
+
     const todayIndex = cells.findIndex((cell) => cell.isToday);
     if (todayIndex === -1) return;
-    
+
     const scrollContainer = timelineScrollRef.current;
     const containerWidth = scrollContainer.clientWidth;
     const todayPosition = todayIndex * cellWidth;
-    
+
     // Center today in the viewport
     const scrollTo = Math.max(0, todayPosition - containerWidth / 2 + cellWidth / 2);
     scrollContainer.scrollTo({ left: scrollTo, behavior: 'smooth' });
   }, [embedded, scrollToTodayTrigger, cells, cellWidth]);
+
+  // Restore horizontal timeline scroll on mount (standalone only — Gantt's Timeline persists when embedded).
+  useEffect(() => {
+    if (embedded || hasRestoredScroll.current) return;
+    const scrollContainer = timelineScrollRef.current;
+    if (!scrollContainer) return;
+    if (timelineScrollLeft > 0) {
+      requestAnimationFrame(() => {
+        scrollContainer.scrollLeft = timelineScrollLeft;
+        hasRestoredScroll.current = true;
+      });
+    } else {
+      hasRestoredScroll.current = true;
+    }
+  }, [embedded, timelineScrollLeft]);
+
+  // Save scroll position (debounced) on every scroll, while also forwarding to the embedded sync hook.
+  const handleTimelineScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    handleSyncScroll(e);
+    if (embedded) return;
+    const scrollContainer = timelineScrollRef.current;
+    if (!scrollContainer || !hasRestoredScroll.current) return;
+    if (scrollSaveTimeout.current) clearTimeout(scrollSaveTimeout.current);
+    scrollSaveTimeout.current = setTimeout(() => {
+      setTimelineScrollLeft(scrollContainer.scrollLeft);
+    }, 200);
+  }, [embedded, handleSyncScroll, setTimelineScrollLeft]);
   
   // Build staff assignments map with stacking info
   const staffAssignmentsMap = useMemo(() => {
@@ -898,7 +929,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
         <div 
           className={styles.timelineScroll} 
           ref={timelineScrollRef}
-          onScroll={handleSyncScroll}
+          onScroll={handleTimelineScroll}
         >
           <div className={styles.timelineContent} style={{ width: totalWidth }}>
             {/* Full header when not embedded */}

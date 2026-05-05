@@ -46,7 +46,7 @@
 }
 
 .companyEvent {
-  background: rgba(239, 68, 68, 0.15);
+  background: color-mix(in srgb, var(--event-color, #ef4444) 15%, transparent);
   pointer-events: auto;
   cursor: default;
   z-index: 100;

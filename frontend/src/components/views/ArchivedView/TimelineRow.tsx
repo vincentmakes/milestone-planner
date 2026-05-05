@@ -121,7 +121,13 @@ export function TimelineRow({
             <div
               key={`event-${index}`}
               className={`${styles.specialCell} ${styles.companyEvent}`}
-              style={{ left: index * cellWidth, width: cellWidth }}
+              style={{
+                left: index * cellWidth,
+                width: cellWidth,
+                ...(cell.companyEventColor
+                  ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
+                  : {}),
+              }}
               data-tooltip={cell.companyEventName || 'Company Event'}
             />
           );
