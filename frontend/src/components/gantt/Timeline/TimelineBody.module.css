@@ -75,9 +75,9 @@
   background: rgba(249, 115, 22, 0.12);
 }
 
-/* Company events - red tint */
+/* Company events - tinted using --event-color (set inline per event), red fallback */
 .gridCell.companyEvent {
-  background: rgba(239, 68, 68, 0.15);
+  background: color-mix(in srgb, var(--event-color, #ef4444) 15%, transparent);
 }
 
 /* Week separator line (drawn between weeks when weekends are hidden) */
@@ -117,9 +117,9 @@
   --tooltip-line-color: var(--accent-orange, #f97316);
 }
 
-/* Company event tooltip cells - red line */
+/* Company event tooltip cells - line uses --event-color (set inline per event), red fallback */
 .tooltipCell.event {
-  --tooltip-line-color: #ef4444;
+  --tooltip-line-color: var(--event-color, #ef4444);
 }
 
 /* CSS tooltip - centered on the cell */
