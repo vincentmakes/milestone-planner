@@ -69,12 +69,18 @@ export const CrossSiteTimelineBody = forwardRef<HTMLDivElement, CrossSiteTimelin
                 />
               ) : null
             )}
-            {showHighlighting && cells.map((cell, index) => 
+            {showHighlighting && cells.map((cell, index) =>
               cell.isCompanyEvent ? (
                 <div
                   key={`event-${index}`}
                   className={`${styles.gridCell} ${styles.companyEvent}`}
-                  style={{ left: index * cellWidth, width: cellWidth }}
+                  style={{
+                    left: index * cellWidth,
+                    width: cellWidth,
+                    ...(cell.companyEventColor
+                      ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
+                      : {}),
+                  }}
                 />
               ) : null
             )}

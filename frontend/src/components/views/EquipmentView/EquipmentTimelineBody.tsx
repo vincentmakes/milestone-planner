@@ -88,7 +88,13 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
                 <div
                   key={`event-${index}`}
                   className={`${styles.gridCell} ${styles.companyEvent}`}
-                  style={{ left: index * cellWidth, width: cellWidth }}
+                  style={{
+                    left: index * cellWidth,
+                    width: cellWidth,
+                    ...(cell.companyEventColor
+                      ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
+                      : {}),
+                  }}
                 />
               ) : null
             )}
@@ -180,7 +186,13 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
                     <div
                       key={`tooltip-${index}`}
                       className={`${styles.tooltipCell} ${styles.event}`}
-                      style={{ left: index * cellWidth, width: cellWidth }}
+                      style={{
+                        left: index * cellWidth,
+                        width: cellWidth,
+                        ...(cell.companyEventColor
+                          ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
+                          : {}),
+                      }}
                       data-tooltip={cell.companyEventName || 'Company Event'}
                     />
                   );
