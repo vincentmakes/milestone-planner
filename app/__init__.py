@@ -1,6 +1,7 @@
 """
 Milestone API - FastAPI Backend
 """
+
 from pathlib import Path
 
 _VERSION_FILE = Path(__file__).resolve().parent.parent / "VERSION"
