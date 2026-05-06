@@ -2,6 +2,8 @@
 
 Multi-tenant mode enables SaaS deployment where each organization gets an isolated database. A centralized admin portal at `/admin/` manages the entire platform.
 
+![Admin portal — Tenants tab](../assets/screenshots/admin-tenants.png){ loading=lazy }
+
 ## Enabling Multi-Tenant Mode
 
 Add these settings to your `.env`:

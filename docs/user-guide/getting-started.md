@@ -4,6 +4,8 @@
 
 When you navigate to the application URL, you are presented with the login screen.
 
+![Login screen](../assets/screenshots/login.png){ loading=lazy }
+
 - Enter your **email** and **password**, then click **Sign In**.
 - If your organization uses **Microsoft Entra ID (SSO)**, click **Sign in with Microsoft** to authenticate through your corporate identity provider. The SSO button only appears if configured by your administrator.
 

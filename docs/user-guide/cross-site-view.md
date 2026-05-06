@@ -2,6 +2,8 @@
 
 The **Cross-Site View** provides a high-level overview of projects across all sites in your organization, designed for company-wide capacity planning.
 
+![Cross-Site overview with confidentiality masking on other sites](../assets/screenshots/cross-site.png){ loading=lazy }
+
 ## How It Works
 
 - **Your site's projects** are fully visible with names and details

@@ -2,6 +2,8 @@
 
 The Gantt Chart is the primary view and the default when you log in. It combines a hierarchical project list with an interactive timeline.
 
+![Main Gantt view with project bars and the today indicator](../assets/screenshots/gantt-main.png){ loading=lazy }
+
 ## Project Panel
 
 The left panel displays your projects in a tree structure:

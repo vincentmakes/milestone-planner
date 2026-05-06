@@ -2,6 +2,8 @@
 
 The **Equipment View** provides a timeline for tracking equipment availability and bookings across projects. It can be accessed from the sidebar or embedded below the main Gantt chart via the **Panels** toggle.
 
+![Equipment view showing inventory and the booking timeline](../assets/screenshots/equipment-view.png){ loading=lazy }
+
 ## Equipment List Panel
 
 The left panel lists all equipment items for the selected site with:
@@ -80,6 +82,38 @@ Click **Delete Equipment** in the edit form. A confirmation dialog warns that al
 
 Types are managed via the **Manage Types** button in the Equipment Management modal. See [Settings — Equipment Types](settings.md#equipment-types) for details on creating, renaming, and deleting types.
 
+## Maintenance Blocks
+
+Equipment blocks mark a period when an item is **unavailable for booking** — typically due to maintenance, calibration, defect, or another planned outage. Blocks behave like vacations for equipment: they appear on the Equipment Timeline and are honoured by overlap detection so you don't accidentally schedule a project during a downtime window.
+
+### Creating a Block
+
+1. Right-click the equipment row (or an existing booking) on the Equipment Timeline and select **Block Equipment**, *or* open the Equipment panel and use the block action on the equipment item.
+2. The Equipment Block modal opens. Fill in:
+    - **Equipment** (required) — defaults to the row you clicked from
+    - **Start date** and **End date** (required, inclusive)
+    - **Reason** — *Maintenance*, *Defect / Out of order*, *Calibration*, or *Other*
+    - **Description** — short free-text label, prefilled from the chosen reason (e.g. *"Annual recalibration"*)
+3. Click **Save Block**.
+
+The duration is shown live as you change dates so you can confirm the window before saving.
+
+### Editing or Deleting a Block
+
+- Click an existing block on the Equipment Timeline to open the modal in edit mode.
+- Adjust dates, reason, or description and click **Save Block**.
+- Click **Delete Block** to remove it. There is no soft-delete — the block disappears immediately and the equipment becomes bookable again on those dates.
+
+### How Blocks Affect Availability
+
+- Block bars are styled distinctly from project bookings on the Equipment Timeline (typically a hatched or muted fill) so they're easy to distinguish.
+- The equipment status indicator in the Equipment panel reflects the block — an item is shown as *In use* when its current date falls inside an active block, even with no project booking.
+- When you create a new equipment assignment that overlaps a block, an overlap warning is shown (the assignment is still allowed — the warning is informational so you can resolve the conflict deliberately).
+
+### Permissions
+
+Only **Admins** and **Superusers** can create, edit, or delete equipment blocks. Regular users see them on the timeline but cannot modify them. Superusers are limited to equipment on sites they have access to.
+
 ## Permissions
 
 | Action | Admin | Superuser | User |
@@ -88,3 +122,4 @@ Types are managed via the **Manage Types** button in the Equipment Management mo
 | Assign equipment to projects | Yes | Yes | No |
 | Add/edit/delete equipment | Yes | Yes (own sites only) | No |
 | Manage equipment types | Yes | Yes | No |
+| Create/edit equipment blocks | Yes | Yes (own sites only) | No |

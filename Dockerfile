@@ -11,6 +11,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     gcc \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -59,6 +60,7 @@ WORKDIR /app
 
 # Copy entrypoint and application code
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY VERSION ./VERSION
 COPY app/ ./app/
 COPY migrations/ ./migrations/
 

@@ -45,7 +45,9 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
-  - pymdownx.snippets
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
   - attr_list
   - md_in_html
   - tables
@@ -87,3 +89,4 @@ nav:
     - Local Development: developer-guide/local-development.md
     - API Reference: developer-guide/api-reference.md
     - Contributing: developer-guide/contributing.md
+    - Release Notes: release-notes.md

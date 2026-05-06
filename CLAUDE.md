@@ -271,3 +271,9 @@ Do **not** use an `[Unreleased]` section — every change belongs to a concrete 
 ### Static placeholders
 
 `frontend/package.json`'s `"version"` field is a **static placeholder** — do not edit it on each bump. Only `/VERSION` is the source of truth. The backend reads `/VERSION` at import in `app/__init__.py` and exposes it via `/health`.
+
+## Commit & PR conventions
+
+- **Never include the `🤖 Generated with Claude Code` line, the "Generated with Claude Code" badge, or any equivalent attribution string** in commit messages or PR descriptions. Keep `Co-Authored-By: Claude Opus … <noreply@anthropic.com>` (this repo's existing convention) — that's the only AI-attribution footer this project uses.
+- PR titles: short imperative summary (under ~70 chars). Body explains *why*, not *what* — the diff covers the what.
+- Don't add an "AI was used" disclaimer or footer to PR bodies.
