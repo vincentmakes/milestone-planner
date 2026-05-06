@@ -239,6 +239,7 @@ export const PhaseRow = memo(function PhaseRow({
             <span className={styles.criticalPathDot} title="On Critical Path" />
           )}
           {/* Drag handle */}
+          {canEdit && (
           <div
             className={styles.dragHandle}
             draggable
@@ -255,6 +256,7 @@ export const PhaseRow = memo(function PhaseRow({
               <circle cx="15" cy="18" r="2" />
             </svg>
           </div>
+          )}
           {/* Expand button */}
           <button
             className={`${styles.expandBtn} ${isExpanded ? styles.expanded : ''}`}

@@ -111,6 +111,8 @@ export const ProjectRow = memo(function ProjectRow({
   const collapseProjectLevel = useViewStore((s) => s.collapseProjectLevel);
   const staff = useAppStore((s) => s.staff);
   const equipment = useAppStore((s) => s.equipment);
+  const currentUser = useAppStore((s) => s.currentUser);
+  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
   const showAssignments = useViewStore((s) => s.showAssignments);
   const toggleCriticalPath = useAppStore((s) => s.toggleCriticalPath);
   const isCriticalPathEnabled = useAppStore((s) => s.isCriticalPathEnabled);
@@ -288,7 +290,7 @@ export const ProjectRow = memo(function ProjectRow({
         {/* Name column - fixed width */}
         <div className={styles.nameColumn} style={{ width: nameColumnWidth }}>
           {/* Drag handle for reordering */}
-          {onReorder && (
+          {onReorder && canEdit && (
             <div
               className={styles.dragHandle}
               draggable

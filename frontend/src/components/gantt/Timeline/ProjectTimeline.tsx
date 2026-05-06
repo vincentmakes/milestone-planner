@@ -165,6 +165,10 @@ export const ProjectTimeline = memo(function ProjectTimeline({
   // Get critical path state
   const criticalPathEnabled = useAppStore((s) => s.criticalPathEnabled);
   const criticalPathItems = useAppStore((s) => s.criticalPathItems);
+
+  // Permission gate: basic users (role 'user') may not move/resize schedule items.
+  const currentUser = useAppStore((s) => s.currentUser);
+  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
   
   // Get critical path items for this project (empty set if not enabled)
   const projectCriticalItems = criticalPathEnabled.has(project.id) 
@@ -342,7 +346,7 @@ export const ProjectTimeline = memo(function ProjectTimeline({
             projectId={project.id}
             startDate={project.start_date || ''}
             endDate={project.end_date || ''}
-            onDragStart={handleProjectDragStart}
+            onDragStart={canEdit ? handleProjectDragStart : undefined}
           />
         )}
       </div>
@@ -407,9 +411,9 @@ export const ProjectTimeline = memo(function ProjectTimeline({
                 name={assignment.staff_name}
                 allocation={assignment.allocation}
                 staffId={assignment.staff_id}
-                interactive={true}
-                onDragStart={(e) => handleStaffAssignmentDragStart(e, assignment.id, assignment.start_date, assignment.end_date)}
-                onResizeStart={(e, edge) => handleStaffAssignmentResizeStart(e, assignment.id, edge, assignment.start_date, assignment.end_date)}
+                interactive={canEdit}
+                onDragStart={canEdit ? (e) => handleStaffAssignmentDragStart(e, assignment.id, assignment.start_date, assignment.end_date) : undefined}
+                onResizeStart={canEdit ? (e, edge) => handleStaffAssignmentResizeStart(e, assignment.id, edge, assignment.start_date, assignment.end_date) : undefined}
               />
             </div>
           ))}
@@ -429,9 +433,9 @@ export const ProjectTimeline = memo(function ProjectTimeline({
                 type="equipment"
                 name={assignment.equipment_name}
                 equipmentId={assignment.equipment_id}
-                interactive={true}
-                onDragStart={(e) => handleEquipmentAssignmentDragStart(e, assignment.id, assignment.start_date, assignment.end_date)}
-                onResizeStart={(e, edge) => handleEquipmentAssignmentResizeStart(e, assignment.id, edge, assignment.start_date, assignment.end_date)}
+                interactive={canEdit}
+                onDragStart={canEdit ? (e) => handleEquipmentAssignmentDragStart(e, assignment.id, assignment.start_date, assignment.end_date) : undefined}
+                onResizeStart={canEdit ? (e, edge) => handleEquipmentAssignmentResizeStart(e, assignment.id, edge, assignment.start_date, assignment.end_date) : undefined}
               />
             </div>
           ))}
@@ -497,6 +501,10 @@ const PhaseTimeline = memo(function PhaseTimeline({
   showAssignments,
   criticalPathItems,
 }: PhaseTimelineProps) {
+  // Permission gate: basic users (role 'user') may not move/resize.
+  const currentUser = useAppStore((s) => s.currentUser);
+  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+
   // Access phantom mode for subphase phantom rows
   const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
   
@@ -572,8 +580,8 @@ const PhaseTimeline = memo(function PhaseTimeline({
             projectId={projectId}
             startDate={phase.start_date}
             endDate={phase.end_date}
-            onDragStart={handleDragStart}
-            onResizeStart={phase.is_milestone ? undefined : handleResizeStart}
+            onDragStart={canEdit ? handleDragStart : undefined}
+            onResizeStart={!canEdit || phase.is_milestone ? undefined : handleResizeStart}
             onClick={handleClick}
             onLinkZoneClick={handleLinkClick}
             isLinkingSource={isLinkingSource}
@@ -725,6 +733,10 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
   showAssignments,
   criticalPathItems,
 }: SubphaseTimelineProps) {
+  // Permission gate: basic users (role 'user') may not move/resize.
+  const currentUser = useAppStore((s) => s.currentUser);
+  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+
   // Access phantom mode for nested subphase phantom rows
   const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
   
@@ -800,8 +812,8 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
             projectId={projectId}
             startDate={subphase.start_date}
             endDate={subphase.end_date}
-            onDragStart={handleDragStart}
-            onResizeStart={subphase.is_milestone ? undefined : handleResizeStart}
+            onDragStart={canEdit ? handleDragStart : undefined}
+            onResizeStart={!canEdit || subphase.is_milestone ? undefined : handleResizeStart}
             onClick={handleClick}
             onLinkZoneClick={handleLinkClick}
             isLinkingSource={isLinkingSource}
