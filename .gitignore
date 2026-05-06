@@ -42,3 +42,6 @@ site/
 # Frontend build output (built inside Docker)
 public/assets/
 public/index.html
+
+#Local Claude
+.claude/
