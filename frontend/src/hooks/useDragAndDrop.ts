@@ -38,6 +38,8 @@ export function useDragAndDrop() {
   const { isDragging, dragType, dragItemId, startDrag, endDrag, showDragIndicator, hideIndicator } = useUIStore();
   const projects = useAppStore((s) => s.projects);
   const setProjects = useAppStore((s) => s.setProjects);
+  const currentUser = useAppStore((s) => s.currentUser);
+  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
   const { cellWidth, currentView, viewMode } = useViewStore();
   const { saveState } = useUndoStore();
   
@@ -610,18 +612,21 @@ export function useDragAndDrop() {
     isMilestone: boolean = false,
     targetElement?: HTMLElement
   ) => {
+    // Only admins/superusers may modify schedule data
+    if (!canEdit) return;
+
     // Don't drag if clicking resize handle
     if ((e.target as HTMLElement).classList.contains('resize-handle')) return;
-    
+
     // Don't allow dragging in equipment view (read-only)
     if (currentView === 'equipment') return;
-    
+
     // Don't allow dragging projects/phases in staff view
     if (currentView === 'staff') return;
-    
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     // Use provided element or find from event
     let element = targetElement || (e.currentTarget as HTMLElement);
     if (!element || (!element.classList?.contains('gantt-bar') && !element.dataset?.phaseId)) {
@@ -656,7 +661,7 @@ export function useDragAndDrop() {
     
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [currentView, handleMouseMove, handleMouseUp, startDrag]);
+  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startDrag]);
   
   // Start dragging a subphase
   const startSubphaseDrag = useCallback((
@@ -669,18 +674,20 @@ export function useDragAndDrop() {
     isMilestone: boolean = false,
     targetElement?: HTMLElement
   ) => {
+    if (!canEdit) return;
+
     // Don't drag if clicking resize handle
     if ((e.target as HTMLElement).classList.contains('resize-handle')) return;
-    
+
     // Don't allow dragging in equipment view (read-only)
     if (currentView === 'equipment') return;
-    
+
     // Don't allow dragging in staff view
     if (currentView === 'staff') return;
-    
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     // Use provided element or find from event
     let element = targetElement || (e.currentTarget as HTMLElement);
     if (!element || (!element.classList?.contains('gantt-bar') && !element.dataset?.subphaseId)) {
@@ -716,7 +723,7 @@ export function useDragAndDrop() {
     
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [currentView, handleMouseMove, handleMouseUp, startDrag]);
+  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startDrag]);
   
   // Start dragging a project
   const startProjectDrag = useCallback((
@@ -726,18 +733,20 @@ export function useDragAndDrop() {
     endDate: string,
     targetElement?: HTMLElement
   ) => {
+    if (!canEdit) return;
+
     // Don't drag if clicking resize handle
     if ((e.target as HTMLElement).classList.contains('resize-handle')) return;
-    
+
     // Don't allow dragging in equipment view (read-only)
     if (currentView === 'equipment') return;
-    
+
     // Don't allow dragging in staff view
     if (currentView === 'staff') return;
-    
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     // Use provided element or find from event
     let element = targetElement || (e.currentTarget as HTMLElement);
     if (!element || (!element.classList?.contains('gantt-bar') && !element.dataset?.projectId)) {
@@ -772,7 +781,7 @@ export function useDragAndDrop() {
     
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [currentView, handleMouseMove, handleMouseUp, startDrag]);
+  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startDrag]);
   
   // Start dragging a staff assignment
   const startStaffAssignmentDrag = useCallback((
@@ -783,24 +792,26 @@ export function useDragAndDrop() {
     endDate: string,
     targetElement?: HTMLElement
   ) => {
+    if (!canEdit) return;
+
     // Don't drag if clicking resize handle
     if ((e.target as HTMLElement).classList.contains('resize-handle')) return;
-    
+
     // Don't allow dragging in equipment view (read-only)
     if (currentView === 'equipment') return;
-    
+
     // Don't allow dragging in staff view (read-only)
     if (currentView === 'staff') return;
-    
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     // Use provided element or find from event
     let element = targetElement || (e.currentTarget as HTMLElement);
     if (!element || !element.dataset?.assignmentId) {
       element = (e.target as HTMLElement).closest('[data-assignment-id]') as HTMLElement;
     }
-    
+
     if (!element) {
       console.warn('Could not find element for staff assignment drag');
       return;
@@ -829,7 +840,7 @@ export function useDragAndDrop() {
     
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [currentView, handleMouseMove, handleMouseUp, startDrag]);
+  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startDrag]);
   
   // Start dragging an equipment assignment
   const startEquipmentAssignmentDrag = useCallback((
@@ -840,24 +851,26 @@ export function useDragAndDrop() {
     endDate: string,
     targetElement?: HTMLElement
   ) => {
+    if (!canEdit) return;
+
     // Don't drag if clicking resize handle
     if ((e.target as HTMLElement).classList.contains('resize-handle')) return;
-    
+
     // Don't allow dragging in equipment view (read-only)
     if (currentView === 'equipment') return;
-    
+
     // Don't allow dragging in staff view (read-only)
     if (currentView === 'staff') return;
-    
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     // Use provided element or find from event
     let element = targetElement || (e.currentTarget as HTMLElement);
     if (!element || !element.dataset?.assignmentId) {
       element = (e.target as HTMLElement).closest('[data-assignment-id]') as HTMLElement;
     }
-    
+
     if (!element) {
       console.warn('Could not find element for equipment assignment drag');
       return;
@@ -886,7 +899,7 @@ export function useDragAndDrop() {
     
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [currentView, handleMouseMove, handleMouseUp, startDrag]);
+  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startDrag]);
   
   // Cleanup on unmount
   useEffect(() => {

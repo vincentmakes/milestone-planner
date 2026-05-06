@@ -37,6 +37,8 @@ export function useResize() {
   const { isResizing, resizeEdge, resizeItemId, resizeItemType, startResize, endResize, showResizeIndicator, hideIndicator } = useUIStore();
   const projects = useAppStore((s) => s.projects);
   const setProjects = useAppStore((s) => s.setProjects);
+  const currentUser = useAppStore((s) => s.currentUser);
+  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
   const { cellWidth, currentView, viewMode } = useViewStore();
   const { saveState } = useUndoStore();
   
@@ -492,18 +494,20 @@ export function useResize() {
     endDate: string,
     element: HTMLElement
   ) => {
+    if (!canEdit) return;
+
     // Don't allow resizing in equipment view (read-only)
     if (currentView === 'equipment') return;
-    
+
     // Don't allow resizing in staff view
     if (currentView === 'staff') return;
-    
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     const rect = element.getBoundingClientRect();
     const style = window.getComputedStyle(element);
-    
+
     resizeDataRef.current = {
       id: phaseId,
       type: 'phase',
@@ -529,7 +533,7 @@ export function useResize() {
     
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [currentView, handleMouseMove, handleMouseUp, startResize]);
+  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startResize]);
   
   // Start resizing a subphase
   const startSubphaseResize = useCallback((
@@ -541,18 +545,20 @@ export function useResize() {
     endDate: string,
     element: HTMLElement
   ) => {
+    if (!canEdit) return;
+
     // Don't allow resizing in equipment view (read-only)
     if (currentView === 'equipment') return;
-    
+
     // Don't allow resizing in staff view
     if (currentView === 'staff') return;
-    
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     const rect = element.getBoundingClientRect();
     const style = window.getComputedStyle(element);
-    
+
     resizeDataRef.current = {
       id: subphaseId,
       type: 'subphase',
@@ -578,7 +584,7 @@ export function useResize() {
     
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [currentView, handleMouseMove, handleMouseUp, startResize]);
+  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startResize]);
   
   // Start resizing a staff assignment
   const startStaffAssignmentResize = useCallback((
@@ -590,18 +596,20 @@ export function useResize() {
     endDate: string,
     targetElement?: HTMLElement
   ) => {
+    if (!canEdit) return;
+
     // Don't allow resizing in equipment view (read-only)
     if (currentView === 'equipment') return;
-    
+
     // Don't allow resizing in staff view (read-only)
     if (currentView === 'staff') return;
-    
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     const element = targetElement || (e.currentTarget as HTMLElement).closest('[data-assignment-id]') as HTMLElement;
     if (!element) return;
-    
+
     resizeDataRef.current = {
       id: assignmentId,
       type: 'staffAssignment',
@@ -627,7 +635,7 @@ export function useResize() {
     
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [currentView, handleMouseMove, handleMouseUp, startResize]);
+  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startResize]);
   
   // Start resizing an equipment assignment
   const startEquipmentAssignmentResize = useCallback((
@@ -639,18 +647,20 @@ export function useResize() {
     endDate: string,
     targetElement?: HTMLElement
   ) => {
+    if (!canEdit) return;
+
     // Don't allow resizing in equipment view (read-only)
     if (currentView === 'equipment') return;
-    
+
     // Don't allow resizing in staff view (read-only)
     if (currentView === 'staff') return;
-    
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     const element = targetElement || (e.currentTarget as HTMLElement).closest('[data-assignment-id]') as HTMLElement;
     if (!element) return;
-    
+
     resizeDataRef.current = {
       id: assignmentId,
       type: 'equipmentAssignment',
@@ -676,7 +686,7 @@ export function useResize() {
     
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [currentView, handleMouseMove, handleMouseUp, startResize]);
+  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startResize]);
   
   // Cleanup on unmount
   useEffect(() => {
