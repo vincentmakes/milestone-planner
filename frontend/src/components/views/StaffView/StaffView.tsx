@@ -903,14 +903,14 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
           
           {/* Bank Holidays Row - always show to maintain height sync with timeline */}
           <BankHolidaysRow
-            isExpanded={embedded ? false : expandedBankHolidays}
-            onToggle={embedded ? undefined : () => setExpandedBankHolidays(!expandedBankHolidays)}
+            isExpanded={expandedBankHolidays}
+            onToggle={() => setExpandedBankHolidays(!expandedBankHolidays)}
           />
-          
+
           {/* Company Events Row - always show to maintain height sync with timeline */}
           <CompanyEventsRow
-            isExpanded={embedded ? false : expandedCompanyEvents}
-            onToggle={embedded ? undefined : () => setExpandedCompanyEvents(!expandedCompanyEvents)}
+            isExpanded={expandedCompanyEvents}
+            onToggle={() => setExpandedCompanyEvents(!expandedCompanyEvents)}
           />
         </div>
       </div>
@@ -950,8 +950,8 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
               vacationsMap={staffVacationsMap}
               rowHeights={rowHeights}
               expandedStaff={expandedStaff}
-              expandedBankHolidays={embedded ? false : expandedBankHolidays}
-              expandedCompanyEvents={embedded ? false : expandedCompanyEvents}
+              expandedBankHolidays={expandedBankHolidays}
+              expandedCompanyEvents={expandedCompanyEvents}
               cells={cells}
               cellWidth={cellWidth}
               totalWidth={totalWidth}
