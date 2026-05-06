@@ -1,0 +1,57 @@
+name: Version Check
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  version-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect app-code changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            app:
+              - 'app/**'
+              - 'frontend/src/**'
+              - 'frontend/package.json'
+              - 'frontend/package-lock.json'
+              - 'frontend/vite.config.ts'
+              - 'frontend/tsconfig*.json'
+              - 'frontend/index.html'
+              - 'migrations/**'
+              - 'scripts/**'
+              - 'setup_databases.sql'
+              - 'Dockerfile'
+              - 'docker-compose*.yml'
+              - 'requirements*.txt'
+              - 'pyproject.toml'
+
+      - name: Verify VERSION bumped vs main
+        if: steps.filter.outputs.app == 'true'
+        run: |
+          set -euo pipefail
+          base_version=$(git show origin/main:VERSION 2>/dev/null | tr -d '[:space:]' || echo "")
+          head_version=$(tr -d '[:space:]' < VERSION)
+          echo "base=$base_version  head=$head_version"
+          if [ "$base_version" = "$head_version" ]; then
+            echo "::error::App code changed but VERSION was not bumped (still $head_version). Bump VERSION per SemVer."
+            exit 1
+          fi
+
+      - name: Verify CHANGELOG has a matching heading
+        if: steps.filter.outputs.app == 'true'
+        run: |
+          set -euo pipefail
+          head_version=$(tr -d '[:space:]' < VERSION)
+          escaped_version=${head_version//./\\.}
+          if ! grep -qE "^## \[${escaped_version}\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md is missing a '## [$head_version]' heading."
+            exit 1
+          fi

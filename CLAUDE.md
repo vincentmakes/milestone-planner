@@ -219,3 +219,55 @@ Auto-initialization (fresh install):
 - The `run_migration_master.py` splits SQL on `;` which can break `DO $$ ... END $$;` blocks. Use `run_migration.py` or apply those manually via `psql`.
 - MPP file import requires Java (JRE 11+), included in the Docker image but not in dev environments by default.
 - The User model has a `full_name` property at `user.py` — use it instead of manual `first_name + last_name` concatenation.
+
+## Versioning & Changelog (MANDATORY)
+
+This project uses [Semantic Versioning](https://semver.org/) and [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). **Single source of truth for the version is `/VERSION`** (one line, e.g. `1.2.3`, no `v` prefix).
+
+### When to bump
+
+You MUST bump `VERSION` and add a `CHANGELOG.md` entry — in the same PR — for any change to:
+
+- `app/**` — backend code
+- `frontend/src/**`, `frontend/package.json`, `frontend/package-lock.json`, `frontend/vite.config.ts`, `frontend/tsconfig*.json`, `frontend/index.html` — frontend code/build
+- `migrations/**`, `setup_databases.sql` — DB schema
+- `Dockerfile`, `docker-compose*.yml` — runtime/deployment
+- `scripts/**` — operational scripts that ship with the app
+- `requirements*.txt`, `pyproject.toml` — backend deps
+
+**No bump needed** for changes confined to:
+
+- `README.md`, `CLAUDE.md`, `CHANGELOG.md` itself
+- `docs/**`, `mkdocs.yml`, `docs/requirements.txt` — MkDocs end-user / admin / developer docs
+- `LICENSE`, `.gitignore`, `.dockerignore`, `.editorconfig`
+- `.github/ISSUE_TEMPLATE/**`, `.github/PULL_REQUEST_TEMPLATE.md`
+- `.devcontainer/**` — Codespaces config
+
+CI enforces this via `.github/workflows/version-check.yml` — PRs touching the first list FAIL unless `VERSION` is bumped AND `CHANGELOG.md` has a matching `## [<new-version>]` heading.
+
+### How to bump (SemVer)
+
+- **PATCH** (`1.0.0` → `1.0.1`) — bug fix, no API/UX change.
+- **MINOR** (`1.0.0` → `1.1.0`) — new feature, backwards-compatible.
+- **MAJOR** (`1.0.0` → `2.0.0`) — breaking change to API, DB schema in a non-additive way, env-var rename, etc.
+
+One bump per PR — not per commit. All commits in a feature branch share one version.
+
+### CHANGELOG entry format
+
+Add the new version as a new `## [<version>] - YYYY-MM-DD` heading at the top, under the preamble. Use only the categories that apply, in this order:
+
+- **Added** — new features
+- **Changed** — changes to existing behaviour
+- **Deprecated** — features marked for removal
+- **Removed** — features removed in this release
+- **Fixed** — bug fixes
+- **Security** — security-relevant fixes
+
+Each entry is a single, human-readable line written from the user's perspective — not implementation detail.
+
+Do **not** use an `[Unreleased]` section — every change belongs to a concrete numbered release.
+
+### Static placeholders
+
+`frontend/package.json`'s `"version"` field is a **static placeholder** — do not edit it on each bump. Only `/VERSION` is the source of truth. The backend reads `/VERSION` at import in `app/__init__.py` and exposes it via `/health`.
