@@ -2,6 +2,8 @@
 
 ## Importing Projects
 
+![Import Project modal with the drop zone for CSV/XML/MPP files](../assets/screenshots/import-modal.png){ loading=lazy }
+
 Milestone can import project data from external tools:
 
 1. Click **Import** in the project panel header
@@ -55,3 +57,44 @@ To export a project:
    - **XML Export** — Microsoft Project XML format
 
 The exported file includes the project hierarchy (phases, subphases), dates, assignments, and custom column values.
+
+## Site Excel Export
+
+The **Site Excel Export** is a complete snapshot of everything that lives under one site — projects, users, equipment, skills, vacations, assignments, custom columns, bank holidays, and company events — bundled into a single multi-sheet `.xlsx` file. It is the canonical "everything for this site" backup format, useful for archiving, audit, or migration.
+
+### How to Export
+
+1. Open the **Manage Sites** modal from the sidebar admin section.
+2. Locate the site you want to export.
+3. Click the **download icon** (↓) next to the edit/pencil icon. Hover tooltip: *"Export site data as Excel"*.
+4. The browser downloads `site_<name>_<YYYY-MM-DD>.xlsx`. Large sites may take several seconds to generate — the icon shows a spinner while the export is being built server-side.
+
+![Manage Sites modal — the download icon next to each site triggers the Excel export](../assets/screenshots/manage-sites.png){ loading=lazy }
+
+### What's in the File
+
+Each kind of data lives on its own sheet, so the file opens cleanly in Excel, LibreOffice, or any spreadsheet tool:
+
+| Sheet | Contents |
+|---|---|
+| **Site** | Site metadata: name, city, country, region code, active flag |
+| **Projects** | All projects on the site with their phases and subphases (full hierarchy, dates, project manager, customer, completion %) |
+| **Users** | Users assigned to this site (name, email, role, job title, active flag) |
+| **Equipment** | Equipment items at the site, with type and active status |
+| **Skills** | Skills defined on the instance (name, color, description) |
+| **User skills** | User → Skill associations |
+| **Vacations** | All vacation entries for users on this site, including recurring patterns |
+| **Project assignments** | Staff assigned at the project level |
+| **Phase assignments** | Staff assigned at the phase level (with allocation %) |
+| **Subphase assignments** | Staff assigned at the subphase level |
+| **Equipment assignments** | Equipment booked against projects/phases/subphases |
+| **Custom columns** | Custom column definitions for this site (name, type, scope, options) |
+| **Custom column values** | Custom column values for every project/phase/subphase |
+| **Bank holidays** | Public and custom holidays on the site (with year) |
+| **Company events** | Company events configured for the site |
+
+!!! note
+    The Site Excel Export is restricted to **Admins and Superusers**. Superusers can only export sites they belong to — Admins can export any site.
+
+!!! tip
+    Use this export before doing destructive operations (e.g. deleting a site, large bulk edits). The file is small enough to keep alongside regular database backups and is human-readable without needing to restore.

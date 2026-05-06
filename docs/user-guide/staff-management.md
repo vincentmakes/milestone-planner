@@ -2,6 +2,8 @@
 
 The **Staff Overview** provides a timeline view centered on people rather than projects. It shows each staff member's assignments, availability, and time off.
 
+![Staff Overview with allocation percentages and availability](../assets/screenshots/staff-overview.png){ loading=lazy }
+
 ## Staff List Panel
 
 The left panel shows all staff members with:

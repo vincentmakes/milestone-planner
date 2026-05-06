@@ -2,6 +2,8 @@
 
 The Gantt Chart is the primary view and the default when you log in. It combines a hierarchical project list with an interactive timeline.
 
+![Main Gantt view with project bars and the today indicator](../assets/screenshots/gantt-main.png){ loading=lazy }
+
 ## Project Panel
 
 The left panel displays your projects in a tree structure:
@@ -41,6 +43,8 @@ The right side shows horizontal bars representing duration of each project, phas
 - **Delete**: Right-click on any item and select "Delete" (with confirmation)
 
 When editing a project, export buttons (CSV and XML) are available in the modal footer.
+
+![Edit Project modal with name, dates, customer, tags, and CSV/XML export buttons](../assets/screenshots/project-modal.png){ loading=lazy }
 
 ## Tags
 
@@ -104,6 +108,8 @@ Each project and phase has a completion slider (0–100%):
 ## Custom Columns
 
 Add custom data fields to the project panel to track metadata like priority, status codes, budget, or risk levels. Up to **10 columns** can be active per site (including global columns).
+
+![Manage Custom Columns modal — empty state with the Add Column action](../assets/screenshots/custom-columns.png){ loading=lazy }
 
 ### Creating a Column
 

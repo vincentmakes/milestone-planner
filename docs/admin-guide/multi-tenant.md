@@ -2,6 +2,8 @@
 
 Multi-tenant mode enables SaaS deployment where each organization gets an isolated database. A centralized admin portal at `/admin/` manages the entire platform.
 
+![Admin portal — Tenants tab](../assets/screenshots/admin-tenants.png){ loading=lazy }
+
 ## Enabling Multi-Tenant Mode
 
 Add these settings to your `.env`:
@@ -72,6 +74,8 @@ Organizations group related tenants and share SSO configuration.
 
 Admin users have access to the admin portal (separate from tenant application users).
 
+![Admin Portal — Admin Users tab](../assets/screenshots/admin-users.png){ loading=lazy }
+
 | Capability | Admin | Superadmin |
 |-----------|-------|------------|
 | View tenant list | Yes | Yes |
@@ -88,12 +92,9 @@ Admin users have access to the admin portal (separate from tenant application us
 
 ### System Statistics
 
-Overview of the platform deployment:
+Overview of the platform deployment — tenant counts by status, database connection pools, server uptime/memory, and Python version.
 
-- Total tenants, users, and projects
-- Database storage usage
-- Active sessions
-- API request metrics
+![Admin Portal — System Stats tab with tenant, connection-pool, and server panels](../assets/screenshots/admin-stats.png){ loading=lazy }
 
 ## Tenant Database Architecture
 
