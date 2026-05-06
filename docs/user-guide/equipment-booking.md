@@ -57,6 +57,8 @@ Click the **filter button** in the Equipment panel header to filter by equipment
 
 Open the **Equipment Management** modal from the sidebar admin section (Admins and Superusers only).
 
+![Equipment Management modal — inventory by site, type filter, and Manage Types](../assets/screenshots/manage-equipment.png){ loading=lazy }
+
 ### Adding Equipment
 
 1. Click **Add Equipment**

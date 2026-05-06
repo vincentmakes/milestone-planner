@@ -44,6 +44,8 @@ The right side shows horizontal bars representing duration of each project, phas
 
 When editing a project, export buttons (CSV and XML) are available in the modal footer.
 
+![Edit Project modal with name, dates, customer, tags, and CSV/XML export buttons](../assets/screenshots/project-modal.png){ loading=lazy }
+
 ## Tags
 
 Tags are colored labels you can attach to projects to group, filter, or visually classify them (e.g., *Critical*, *Internal*, *Customer X*). The same tag library is shared across every project in the instance — once a tag is created, anyone can attach it to their projects.
@@ -106,6 +108,8 @@ Each project and phase has a completion slider (0–100%):
 ## Custom Columns
 
 Add custom data fields to the project panel to track metadata like priority, status codes, budget, or risk levels. Up to **10 columns** can be active per site (including global columns).
+
+![Manage Custom Columns modal — empty state with the Add Column action](../assets/screenshots/custom-columns.png){ loading=lazy }
 
 ### Creating a Column
 

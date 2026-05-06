@@ -2,6 +2,8 @@
 
 ## Importing Projects
 
+![Import Project modal with the drop zone for CSV/XML/MPP files](../assets/screenshots/import-modal.png){ loading=lazy }
+
 Milestone can import project data from external tools:
 
 1. Click **Import** in the project panel header
@@ -66,6 +68,8 @@ The **Site Excel Export** is a complete snapshot of everything that lives under 
 2. Locate the site you want to export.
 3. Click the **download icon** (↓) next to the edit/pencil icon. Hover tooltip: *"Export site data as Excel"*.
 4. The browser downloads `site_<name>_<YYYY-MM-DD>.xlsx`. Large sites may take several seconds to generate — the icon shows a spinner while the export is being built server-side.
+
+![Manage Sites modal — the download icon next to each site triggers the Excel export](../assets/screenshots/manage-sites.png){ loading=lazy }
 
 ### What's in the File
 

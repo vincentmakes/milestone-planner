@@ -2,6 +2,8 @@
 
 Access settings through the gear icon in the sidebar or through the user menu. Most settings require Admin role.
 
+![Settings modal — instance title, theme picker, branding logos, and display defaults](../assets/screenshots/settings-modal.png){ loading=lazy }
+
 ## Instance Settings
 
 - **Application Title** — Name displayed in the header and browser tab (e.g., "ACME R&D Planner")
@@ -27,6 +29,8 @@ Access settings through the gear icon in the sidebar or through the user menu. M
 ## Site Management
 
 Sites represent your organization's physical locations. Projects, staff, equipment, and holidays are all scoped to sites. Click **Manage Sites** in the admin section of the sidebar to open site management.
+
+![Manage Sites modal — sites list with edit and Excel-export actions](../assets/screenshots/manage-sites.png){ loading=lazy }
 
 ### Creating a Site
 
@@ -149,6 +153,8 @@ In the Staff View, click the delete button on a company event to remove it (requ
 
 Administrators can create, edit, and deactivate user accounts. Open **User Management** from the sidebar admin section.
 
+![User Management modal with role, skill, and site columns](../assets/screenshots/manage-users.png){ loading=lazy }
+
 ### User Fields
 
 | Field | Description |
@@ -224,6 +230,8 @@ Notes:
 ## Skills Management
 
 Skills are colored tags assigned to staff members for resource planning and filtering. Open the **Skills Management** modal from the sidebar admin section.
+
+![Skills Management modal — colored skill list with edit and delete actions](../assets/screenshots/skills-mgmt.png){ loading=lazy }
 
 ### Creating a Skill
 
@@ -307,6 +315,8 @@ In the **Equipment View**, use the type filter dropdown to show/hide equipment b
 ## Predefined Phases
 
 Phase templates that appear as pre-selected options when creating a new project.
+
+![Predefined Phases modal — drag handles, active toggles, and the Add Phase form](../assets/screenshots/predefined-phases.png){ loading=lazy }
 
 ### Managing Templates
 
