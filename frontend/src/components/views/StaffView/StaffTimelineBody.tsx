@@ -51,8 +51,11 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
     const bankHolidays = useAppStore((s) => s.bankHolidays);
     const companyEvents = useAppStore((s) => s.companyEvents);
     const currentUser = useAppStore((s) => s.currentUser);
-    
+    const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
+
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
+    const renderWeekendMarkers = showHighlighting && showWeekends;
+    const renderWeekSeparators = showHighlighting && !showWeekends;
     
     // Calculate today line position
     const todayPosition = useMemo(
@@ -78,7 +81,7 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
         >
           {/* Grid background */}
           <div className={styles.grid}>
-            {showHighlighting && cells.map((cell, index) => 
+            {renderWeekendMarkers && cells.map((cell, index) =>
               cell.isWeekend ? (
                 <div
                   key={`weekend-${index}`}
@@ -96,12 +99,27 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
                 />
               ) : null
             )}
-            {showHighlighting && cells.map((cell, index) => 
+            {showHighlighting && cells.map((cell, index) =>
               cell.isCompanyEvent ? (
                 <div
                   key={`event-${index}`}
                   className={`${styles.gridCell} ${styles.companyEvent}`}
-                  style={{ left: index * cellWidth, width: cellWidth }}
+                  style={{
+                    left: index * cellWidth,
+                    width: cellWidth,
+                    ...(cell.companyEventColor
+                      ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
+                      : {}),
+                  }}
+                />
+              ) : null
+            )}
+            {renderWeekSeparators && cells.map((cell, index) =>
+              cell.isFirstOfWeek && index > 0 ? (
+                <div
+                  key={`week-sep-${index}`}
+                  className={styles.weekSeparator}
+                  style={{ left: index * cellWidth }}
                 />
               ) : null
             )}
@@ -212,7 +230,13 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
                     <div
                       key={`tooltip-${index}`}
                       className={`${styles.tooltipCell} ${styles.event}`}
-                      style={{ left: index * cellWidth, width: cellWidth }}
+                      style={{
+                        left: index * cellWidth,
+                        width: cellWidth,
+                        ...(cell.companyEventColor
+                          ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
+                          : {}),
+                      }}
                       data-tooltip={cell.companyEventName || 'Company Event'}
                     />
                   );
@@ -542,7 +566,7 @@ function BankHolidaysTimelineRow({ isExpanded, holidays, cells, cellWidth, viewM
 // Company events timeline row
 interface CompanyEventsTimelineRowProps {
   isExpanded: boolean;
-  events: Array<{ id: number; name: string; date: string; end_date?: string | null }>;
+  events: Array<{ id: number; name: string; date: string; end_date?: string | null; color?: string | null }>;
   cells: TimelineCell[];
   cellWidth: number;
   viewMode: ViewMode;
@@ -552,18 +576,18 @@ function CompanyEventsTimelineRow({ isExpanded, events, cells, cellWidth, viewMo
   const BASE_HEIGHT = 44;
   const currentUser = useAppStore((s) => s.currentUser);
   const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
-  
+
   return (
     <div className={styles.companyEventsWrapper}>
       {/* Main company events row */}
       <div className={styles.row} style={{ height: BASE_HEIGHT }} />
-      
+
       {/* Expanded event rows */}
       {isExpanded && (
         <>
           {events.map((event) => {
             const pos = calculateBarPosition(event.date, event.end_date || event.date, cells, cellWidth, viewMode);
-            
+
             return (
               <div key={event.id} className={styles.row} style={{ height: DETAIL_ROW_HEIGHT }}>
                 {pos && (
@@ -574,6 +598,7 @@ function CompanyEventsTimelineRow({ isExpanded, events, cells, cellWidth, viewMo
                       width: pos.width,
                       height: 20,
                       top: 6,
+                      ...(event.color ? { background: event.color } : {}),
                     }}
                     title={event.name}
                   />

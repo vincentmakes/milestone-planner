@@ -2,6 +2,8 @@
 
 The Gantt Chart is the primary view and the default when you log in. It combines a hierarchical project list with an interactive timeline.
 
+![Main Gantt view: projects expanded into phases, custom columns populated, today indicator](../assets/screenshots/gantt-main.png){ loading=lazy }
+
 ## Project Panel
 
 The left panel displays your projects in a tree structure:
@@ -24,6 +26,16 @@ The right side shows horizontal bars representing duration of each project, phas
 - A red vertical line marks today's date
 - Bank holidays and company events are highlighted on the background
 
+## Resource Panels
+
+Administrators and superusers can dock the **Staff Overview** or **Equipment** view directly below the Gantt chart from the **Panels** button in the header. The two panels are mutually exclusive — you can show one at a time. Drag the divider between the chart and the docked panel to resize each region.
+
+This is the fastest way to see scheduling and capacity together: changes you make in the Gantt are reflected in the panel below in real time.
+
+![Gantt chart with the Staff Overview panel docked below, showing assignments per person](../assets/screenshots/gantt-with-staff-panel.png){ loading=lazy }
+
+![Gantt chart with the Equipment panel docked below, showing equipment availability](../assets/screenshots/gantt-with-equipment-panel.png){ loading=lazy }
+
 ## Creating a Project
 
 1. Click **+ New Project** in the panel header
@@ -41,6 +53,51 @@ The right side shows horizontal bars representing duration of each project, phas
 - **Delete**: Right-click on any item and select "Delete" (with confirmation)
 
 When editing a project, export buttons (CSV and XML) are available in the modal footer.
+
+![Edit Project modal with name, dates, customer, tags, and CSV/XML export buttons](../assets/screenshots/project-modal.png){ loading=lazy }
+
+## Tags
+
+Tags are colored labels you can attach to projects to group, filter, or visually classify them (e.g., *Critical*, *Internal*, *Customer X*). The same tag library is shared across every project in the instance — once a tag is created, anyone can attach it to their projects.
+
+Tags are managed from the **Tags** field in the project create/edit modal.
+
+### Attaching a tag
+
+1. Open the project (Edit, or while creating a new one).
+2. Click the **Find or create a tag…** field under *Tags*.
+3. Start typing to filter the dropdown of existing tags. Click a result — or press Enter on a unique match — to attach it. The tag appears as a colored pill above the search field.
+4. Click the **×** on any pill to detach it from the project.
+
+### Creating a new tag
+
+Available to admins and superusers.
+
+1. In the same field, type the new tag name.
+2. If no existing tag matches, a **Create "<name>"** row appears at the bottom of the dropdown. Click it (or press Enter).
+3. The tag is created instantly with a randomly chosen color and attached to the project. The dropdown then shows a small **Pick a color for "<name>"** panel.
+4. Click any swatch (or use the native color picker) to set the color. Changes apply immediately and propagate to every other project that uses this tag. Click **Done** to dismiss the panel.
+
+### Editing or deleting a tag
+
+Available to admins and superusers.
+
+1. Open the dropdown and locate the tag you want to change.
+2. Click the **pencil** icon next to it. The dropdown switches to an edit panel with a name field and color palette.
+3. Edit the name (commits on Enter or when you click away) and pick a color (applies immediately).
+4. To remove the tag from the entire instance, click **Delete** in this panel. You'll be asked to confirm — deletion removes the tag from every project that uses it and cannot be undone.
+5. Click **Done** to close the panel.
+
+To simply remove a tag from one project without deleting it, use the **×** on the pill instead of the Delete button.
+
+### Permissions
+
+| Action                              | Who can do it                                  |
+| ----------------------------------- | ---------------------------------------------- |
+| Attach / detach an existing tag     | Anyone who can edit the project                |
+| Create a new tag                    | Admins and superusers                          |
+| Rename a tag or change its color    | Admins and superusers                          |
+| Delete a tag from every project     | Admins and superusers                          |
 
 ## Drag & Drop
 
@@ -61,6 +118,8 @@ Each project and phase has a completion slider (0–100%):
 ## Custom Columns
 
 Add custom data fields to the project panel to track metadata like priority, status codes, budget, or risk levels. Up to **10 columns** can be active per site (including global columns).
+
+![Project panel with custom columns (Priority dropdown, Owner text, Reviewed checkbox) populated per phase](../assets/screenshots/custom-columns.png){ loading=lazy }
 
 ### Creating a Column
 

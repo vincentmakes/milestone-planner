@@ -125,6 +125,7 @@ async def get_current_user_optional(
 
 
 async def get_current_user(
+    request: Request,
     user: User | None = Depends(get_current_user_optional),
 ) -> User:
     """
@@ -132,6 +133,11 @@ async def get_current_user(
 
     Raises 401 if not authenticated.
     Use this for routes that require authentication.
+
+    Side-effect: stashes a small dict identifying the authenticated user in
+    `scope["state"]["current_user"]` so ASGI middleware running outside the
+    request context (e.g. the auto-broadcast middleware) can attribute the
+    change without doing another tenant-aware DB roundtrip.
     """
     if not user:
         raise HTTPException(
@@ -144,6 +150,14 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User account is disabled",
         )
+
+    state = request.scope.get("state")
+    if isinstance(state, dict):
+        state["current_user"] = {
+            "id": user.id,
+            "first_name": getattr(user, "first_name", "") or "",
+            "last_name": getattr(user, "last_name", "") or "",
+        }
 
     return user
 

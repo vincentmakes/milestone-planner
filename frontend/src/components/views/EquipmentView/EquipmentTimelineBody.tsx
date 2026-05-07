@@ -8,6 +8,7 @@ import { forwardRef, useMemo } from 'react';
 import { calculateBarPosition, calculateTodayPosition } from '@/components/gantt/utils';
 import { TodayLine } from '@/components/gantt/Timeline/TodayLine';
 import { useUIStore } from '@/stores/uiStore';
+import { useAppStore } from '@/stores/appStore';
 import type { TimelineCell } from '@/components/gantt/utils';
 import type { Equipment, EquipmentBlock, ViewMode } from '@/types';
 import type { OverlapInfo } from '@/utils/equipmentOverlap';
@@ -42,8 +43,11 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
     viewMode
   }, ref) {
     
+    const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
-    
+    const renderWeekendMarkers = showHighlighting && showWeekends;
+    const renderWeekSeparators = showHighlighting && !showWeekends;
+
     // Calculate today line position
     const todayPosition = useMemo(
       () => calculateTodayPosition(cells, cellWidth),
@@ -61,7 +65,7 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
         >
           {/* Grid background */}
           <div className={styles.grid}>
-            {showHighlighting && cells.map((cell, index) => 
+            {renderWeekendMarkers && cells.map((cell, index) =>
               cell.isWeekend ? (
                 <div
                   key={`weekend-${index}`}
@@ -79,12 +83,27 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
                 />
               ) : null
             )}
-            {showHighlighting && cells.map((cell, index) => 
+            {showHighlighting && cells.map((cell, index) =>
               cell.isCompanyEvent ? (
                 <div
                   key={`event-${index}`}
                   className={`${styles.gridCell} ${styles.companyEvent}`}
-                  style={{ left: index * cellWidth, width: cellWidth }}
+                  style={{
+                    left: index * cellWidth,
+                    width: cellWidth,
+                    ...(cell.companyEventColor
+                      ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
+                      : {}),
+                  }}
+                />
+              ) : null
+            )}
+            {renderWeekSeparators && cells.map((cell, index) =>
+              cell.isFirstOfWeek && index > 0 ? (
+                <div
+                  key={`week-sep-${index}`}
+                  className={styles.weekSeparator}
+                  style={{ left: index * cellWidth }}
                 />
               ) : null
             )}
@@ -167,7 +186,13 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
                     <div
                       key={`tooltip-${index}`}
                       className={`${styles.tooltipCell} ${styles.event}`}
-                      style={{ left: index * cellWidth, width: cellWidth }}
+                      style={{
+                        left: index * cellWidth,
+                        width: cellWidth,
+                        ...(cell.companyEventColor
+                          ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
+                          : {}),
+                      }}
                       data-tooltip={cell.companyEventName || 'Company Event'}
                     />
                   );

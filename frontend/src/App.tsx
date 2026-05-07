@@ -10,6 +10,7 @@ import { ModalContainer } from './components/modals';
 import { ContextMenuContainer } from './components/gantt/ContextMenuContainer';
 import { AdminApp } from './components/admin';
 import { WebSocketProvider } from './contexts/WebSocketContext';
+import { ActivityFeed } from './components/common/ActivityFeed/ActivityFeed';
 import './App.css';
 
 function App() {
@@ -83,6 +84,7 @@ function App() {
       <MainLayout />
       <ModalContainer />
       <ContextMenuContainer />
+      <ActivityFeed />
     </WebSocketProvider>
   );
 }

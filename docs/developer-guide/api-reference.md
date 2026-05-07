@@ -79,6 +79,19 @@ All tenant routes are prefixed with `/t/{slug}/api/`:
 | `POST` | `/t/{slug}/api/equipment` | Create equipment item |
 | `PUT` | `/t/{slug}/api/equipment/{id}` | Update equipment item |
 | `DELETE` | `/t/{slug}/api/equipment/{id}` | Delete equipment item |
+| `GET` | `/t/{slug}/api/equipment/{id}/availability?startDate=&endDate=` | Per-day availability for a date range |
+
+### Equipment Blocks (Maintenance / Out-of-service)
+
+Block periods mark equipment as unavailable for booking. See [Equipment Booking — Maintenance Blocks](../user-guide/equipment-booking.md#maintenance-blocks) for the user-facing behaviour.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/t/{slug}/api/equipment-blocks?siteId=&equipmentId=` | List equipment blocks (optional filters) |
+| `GET` | `/t/{slug}/api/equipment/{id}/blocks` | List blocks for one equipment item |
+| `POST` | `/t/{slug}/api/equipment-blocks` | Create a block (admin/superuser) |
+| `PUT` | `/t/{slug}/api/equipment-blocks/{id}` | Update a block |
+| `DELETE` | `/t/{slug}/api/equipment-blocks/{id}` | Delete a block |
 
 ### Assignments
 
@@ -107,6 +120,28 @@ All tenant routes are prefixed with `/t/{slug}/api/`:
 | `GET` | `/t/{slug}/api/equipment-types` | List all equipment types |
 | `PUT` | `/t/{slug}/api/equipment-types/{old_type}` | Rename an equipment type |
 | `DELETE` | `/t/{slug}/api/equipment-types/{type_name}` | Delete an equipment type |
+
+### Tags
+
+Project tags are colored labels shared across all projects in the instance. See [Gantt Charts — Tags](../user-guide/gantt-charts.md#tags) for the user-facing behaviour. To attach or detach tags from a project, send a `tag_ids` array in the project `PUT` payload.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/t/{slug}/api/tags` | List all tags (with project usage counts) |
+| `POST` | `/t/{slug}/api/tags` | Create a tag (admin/superuser) |
+| `PUT` | `/t/{slug}/api/tags/{id}` | Update a tag's name or color (admin/superuser) |
+| `DELETE` | `/t/{slug}/api/tags/{id}` | Delete a tag from every project (admin/superuser) |
+
+### Import & Export
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/t/{slug}/api/import/project` | Import a project from CSV / XML (multipart upload) |
+| `POST` | `/t/{slug}/api/import/mpp` | Import a project from Microsoft Project (`.mpp`/`.mpt`/`.mpx`) — requires Java |
+| `GET` | `/t/{slug}/api/import/mpp/test` | Diagnostic — verify Java/MPP toolchain is available |
+| `GET` | `/t/{slug}/api/export/project/{id}/csv` | Export a single project as CSV |
+| `GET` | `/t/{slug}/api/export/project/{id}/xml` | Export a single project as Microsoft Project XML |
+| `GET` | `/t/{slug}/api/export/site/{site_id}/excel` | Export the full site (multi-sheet `.xlsx`) — admin/superuser only |
 
 ### Custom Columns
 
@@ -248,6 +283,21 @@ POST /t/{slug}/api/presence/check-conflict/5
 
 ```
 GET /health
+GET /api/health
 ```
 
-Returns `200 OK` when the application is running.
+Both endpoints return identical content. They require **no authentication** and are safe for load-balancer probes.
+
+```json
+{
+    "status": "ok",
+    "mode": "multi-tenant",
+    "version": "1.0.0",
+    "backend": "python-fastapi",
+    "default_tenant": "demo",
+    "timestamp": "2026-05-06T12:34:56.789012",
+    "database": "connected"
+}
+```
+
+The `version` field is read at startup from the repo-root `/VERSION` file (see [Contributing — Versioning & Changelog](contributing.md#versioning-changelog)). If the database is unreachable the response is still returned with `status: "ok"` but `database` contains an `error: ...` string — useful for distinguishing process-level failure from DB-level failure in monitoring.

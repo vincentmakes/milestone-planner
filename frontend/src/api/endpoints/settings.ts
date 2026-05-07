@@ -44,6 +44,7 @@ export async function getInstanceSettings(): Promise<InstanceSettings> {
   return {
     instance_title: allSettings.instance_title || undefined,
     instance_name: allSettings.instance_name || undefined,
+    show_weekends: allSettings.show_weekends || undefined,
   };
 }
 

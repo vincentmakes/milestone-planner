@@ -2,6 +2,9 @@
 
 **Milestone Planner** is a web-based R&D project management platform designed for multi-site organizations. It provides interactive Gantt charts, staff allocation with capacity tracking, equipment booking, and real-time collaboration.
 
+!!! info inline end "Current release"
+    **v1.0.0** — see [Release Notes](release-notes.md) for the full history.
+
 ## Key Features
 
 - **Interactive Gantt Charts** — Drag-and-drop timeline with phases, subphases, and completion tracking

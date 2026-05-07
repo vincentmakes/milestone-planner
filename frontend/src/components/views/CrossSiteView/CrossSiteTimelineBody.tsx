@@ -5,6 +5,7 @@
  */
 
 import { forwardRef, useMemo } from 'react';
+import { useAppStore } from '@/stores/appStore';
 import { calculateBarPosition, calculateTodayPosition } from '@/components/gantt/utils';
 import { TodayLine } from '@/components/gantt/Timeline/TodayLine';
 import type { TimelineCell } from '@/components/gantt/utils';
@@ -29,7 +30,9 @@ export const CrossSiteTimelineBody = forwardRef<HTMLDivElement, CrossSiteTimelin
     viewMode 
   }, ref) {
     
+    const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
+    const renderWeekendMarkers = showHighlighting && showWeekends;
     
     // Calculate today line position
     const todayPosition = useMemo(
@@ -48,7 +51,7 @@ export const CrossSiteTimelineBody = forwardRef<HTMLDivElement, CrossSiteTimelin
         >
           {/* Grid background */}
           <div className={styles.grid}>
-            {showHighlighting && cells.map((cell, index) => 
+            {renderWeekendMarkers && cells.map((cell, index) =>
               cell.isWeekend ? (
                 <div
                   key={`weekend-${index}`}
@@ -66,12 +69,18 @@ export const CrossSiteTimelineBody = forwardRef<HTMLDivElement, CrossSiteTimelin
                 />
               ) : null
             )}
-            {showHighlighting && cells.map((cell, index) => 
+            {showHighlighting && cells.map((cell, index) =>
               cell.isCompanyEvent ? (
                 <div
                   key={`event-${index}`}
                   className={`${styles.gridCell} ${styles.companyEvent}`}
-                  style={{ left: index * cellWidth, width: cellWidth }}
+                  style={{
+                    left: index * cellWidth,
+                    width: cellWidth,
+                    ...(cell.companyEventColor
+                      ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
+                      : {}),
+                  }}
                 />
               ) : null
             )}

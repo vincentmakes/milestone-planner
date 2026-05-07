@@ -4,6 +4,7 @@
  */
 
 import { memo } from 'react';
+import { useAppStore } from '@/stores/appStore';
 import type { TimelineCell, TimelineHeader as TimelineHeaderType } from '../utils';
 import styles from './TimelineHeader.module.css';
 
@@ -31,6 +32,7 @@ export const TimelineHeader = memo(function TimelineHeader({
   const showWeekNumbers = viewMode === 'week' || viewMode === 'month' || viewMode === 'quarter';
   // Only show weekend/holiday highlighting in week and month views
   const showHighlighting = viewMode === 'week' || viewMode === 'month';
+  const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
 
   return (
     <div className={styles.header}>
@@ -66,12 +68,12 @@ export const TimelineHeader = memo(function TimelineHeader({
                   bgClass = styles.holidayBg;
                 } else if (cell.isCompanyEvent) {
                   bgClass = styles.eventBg;
-                } else if (cell.isWeekend) {
+                } else if (cell.isWeekend && showWeekends) {
                   bgClass = styles.weekendBg;
                 }
-                
+
                 if (!bgClass) return null;
-                
+
                 return (
                   <div
                     key={`bg-${index}`}
@@ -80,6 +82,16 @@ export const TimelineHeader = memo(function TimelineHeader({
                   />
                 );
               })}
+              {/* Week separator lines (when weekends are hidden) */}
+              {!showWeekends && cells.map((cell, index) =>
+                cell.isFirstOfWeek && index > 0 ? (
+                  <div
+                    key={`week-sep-${index}`}
+                    className={styles.weekSeparator}
+                    style={{ left: index * cellWidth }}
+                  />
+                ) : null
+              )}
             </div>
           )}
           

@@ -74,9 +74,14 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const bankHolidays = useAppStore((s) => s.bankHolidays);
   const companyEventDates = useAppStore((s) => s.companyEventDates);
   const companyEvents = useAppStore((s) => s.companyEvents);
+  const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
   const cellWidth = useViewStore((s) => s.cellWidth);
+  const timelineScrollLeft = useViewStore((s) => s.timelineScrollLeft);
+  const setTimelineScrollLeft = useViewStore((s) => s.setTimelineScrollLeft);
+  const hasRestoredScroll = useRef(false);
+  const scrollSaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const { openVacationModal } = useUIStore();
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
@@ -103,6 +108,30 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set());
   const [selectedSkills, setSelectedSkills] = useState<Set<number>>(new Set());
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [filterDropdownStyle, setFilterDropdownStyle] = useState<React.CSSProperties>({});
+
+  // Position the position:fixed filter dropdown anchored below the trigger.
+  useLayoutEffect(() => {
+    if (!isFilterOpen || !filterRef.current) return;
+    const update = () => {
+      const rect = filterRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const top = rect.bottom + 6;
+      const available = Math.max(160, window.innerHeight - top - 12);
+      setFilterDropdownStyle({
+        top,
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - 458)),
+        maxHeight: available,
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [isFilterOpen]);
   
   // Delete confirmation state
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -203,9 +232,9 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const hasActiveFilters = selectedRoles.size > 0 || selectedSkills.size > 0;
   
   // Generate timeline data
-  const cells = useMemo(() => 
-    generateTimelineCells(currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents),
-    [currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents]
+  const cells = useMemo(() =>
+    generateTimelineCells(currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents, showWeekends),
+    [currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents, showWeekends]
   );
   const headers = useMemo(() => 
     generateTimelineHeaders(cells, viewMode),
@@ -217,18 +246,45 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   // Scroll to today when trigger changes (only when not embedded - Gantt handles this)
   useEffect(() => {
     if (embedded || !scrollToTodayTrigger || !timelineScrollRef.current) return;
-    
+
     const todayIndex = cells.findIndex((cell) => cell.isToday);
     if (todayIndex === -1) return;
-    
+
     const scrollContainer = timelineScrollRef.current;
     const containerWidth = scrollContainer.clientWidth;
     const todayPosition = todayIndex * cellWidth;
-    
+
     // Center today in the viewport
     const scrollTo = Math.max(0, todayPosition - containerWidth / 2 + cellWidth / 2);
     scrollContainer.scrollTo({ left: scrollTo, behavior: 'smooth' });
   }, [embedded, scrollToTodayTrigger, cells, cellWidth]);
+
+  // Restore horizontal timeline scroll on mount (standalone only — Gantt's Timeline persists when embedded).
+  useEffect(() => {
+    if (embedded || hasRestoredScroll.current) return;
+    const scrollContainer = timelineScrollRef.current;
+    if (!scrollContainer) return;
+    if (timelineScrollLeft > 0) {
+      requestAnimationFrame(() => {
+        scrollContainer.scrollLeft = timelineScrollLeft;
+        hasRestoredScroll.current = true;
+      });
+    } else {
+      hasRestoredScroll.current = true;
+    }
+  }, [embedded, timelineScrollLeft]);
+
+  // Save scroll position (debounced) on every scroll, while also forwarding to the embedded sync hook.
+  const handleTimelineScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    handleSyncScroll(e);
+    if (embedded) return;
+    const scrollContainer = timelineScrollRef.current;
+    if (!scrollContainer || !hasRestoredScroll.current) return;
+    if (scrollSaveTimeout.current) clearTimeout(scrollSaveTimeout.current);
+    scrollSaveTimeout.current = setTimeout(() => {
+      setTimelineScrollLeft(scrollContainer.scrollLeft);
+    }, 200);
+  }, [embedded, handleSyncScroll, setTimelineScrollLeft]);
   
   // Build staff assignments map with stacking info
   const staffAssignmentsMap = useMemo(() => {
@@ -592,7 +648,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
             </button>
             
             {isFilterOpen && (
-              <div className={styles.filterDropdown}>
+              <div className={styles.filterDropdown} style={filterDropdownStyle}>
                 {/* Clear all button */}
                 {hasActiveFilters && (
                   <div className={styles.filterActions}>
@@ -847,14 +903,14 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
           
           {/* Bank Holidays Row - always show to maintain height sync with timeline */}
           <BankHolidaysRow
-            isExpanded={embedded ? false : expandedBankHolidays}
-            onToggle={embedded ? undefined : () => setExpandedBankHolidays(!expandedBankHolidays)}
+            isExpanded={expandedBankHolidays}
+            onToggle={() => setExpandedBankHolidays(!expandedBankHolidays)}
           />
-          
+
           {/* Company Events Row - always show to maintain height sync with timeline */}
           <CompanyEventsRow
-            isExpanded={embedded ? false : expandedCompanyEvents}
-            onToggle={embedded ? undefined : () => setExpandedCompanyEvents(!expandedCompanyEvents)}
+            isExpanded={expandedCompanyEvents}
+            onToggle={() => setExpandedCompanyEvents(!expandedCompanyEvents)}
           />
         </div>
       </div>
@@ -873,7 +929,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
         <div 
           className={styles.timelineScroll} 
           ref={timelineScrollRef}
-          onScroll={handleSyncScroll}
+          onScroll={handleTimelineScroll}
         >
           <div className={styles.timelineContent} style={{ width: totalWidth }}>
             {/* Full header when not embedded */}
@@ -894,8 +950,8 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
               vacationsMap={staffVacationsMap}
               rowHeights={rowHeights}
               expandedStaff={expandedStaff}
-              expandedBankHolidays={embedded ? false : expandedBankHolidays}
-              expandedCompanyEvents={embedded ? false : expandedCompanyEvents}
+              expandedBankHolidays={expandedBankHolidays}
+              expandedCompanyEvents={expandedCompanyEvents}
               cells={cells}
               cellWidth={cellWidth}
               totalWidth={totalWidth}

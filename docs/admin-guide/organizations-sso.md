@@ -4,6 +4,8 @@
 
 Organizations group related tenants together and provide shared SSO configuration. For example, a company with separate Milestone instances for different departments can share a single Microsoft Entra ID setup.
 
+![Admin portal — Organizations tab](../assets/screenshots/admin-organizations.png){ loading=lazy }
+
 ### Creating an Organization
 
 1. Go to the **Organizations** tab in the admin portal

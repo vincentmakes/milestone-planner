@@ -28,6 +28,7 @@ from app.models.equipment import Equipment, EquipmentBlock
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.site import BankHoliday, CompanyEvent, Site
 from app.models.skill import Skill, UserSkill
+from app.models.tag import Tag
 from app.models.user import User, UserSite
 from app.models.vacation import Vacation
 
@@ -474,6 +475,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                     selectinload(Project.subphases).selectinload(ProjectSubphase.staff_assignments),
                     selectinload(Project.staff_assignments),
                     selectinload(Project.equipment_assignments),
+                    selectinload(Project.tags),
                 )
                 .order_by(Project.name)
             )
@@ -521,6 +523,9 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         )
     skill_by_id = {s.id: s for s in skill_rows}
     user_by_id = {u.id: u for u in user_rows}
+
+    # Tags are global - include all of them; per-project assignments come from Project.tags
+    tag_rows = (await db.execute(select(Tag).order_by(Tag.name))).scalars().all()
 
     # Vacations for users belonging to this site
     vacation_rows: list[Vacation] = []
@@ -838,6 +843,19 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
             ]
             for us in user_skill_rows
         ],
+    )
+
+    # Tags (global) and per-project tag assignments
+    add_sheet(
+        "Tags",
+        ["ID", "Name", "Color", "Created at"],
+        [[t.id, t.name, t.color, _iso(t.created_at)] for t in tag_rows],
+    )
+    project_tag_rows = [[p.id, p.name, t.id, t.name, t.color] for p in project_rows for t in p.tags]
+    add_sheet(
+        "Project tags",
+        ["Project ID", "Project name", "Tag ID", "Tag name", "Tag color"],
+        project_tag_rows,
     )
 
     # Vacations

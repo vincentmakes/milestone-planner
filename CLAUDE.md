@@ -201,6 +201,42 @@ Auto-initialization (fresh install):
 - Current sheets: Site, Projects (hierarchy with phases/subphases), Users, Equipment, Skills, User skills, Vacations, Project assignments, Phase assignments, Subphase assignments, Equipment assignments, Custom columns, Custom column values, Bank holidays, Company events.
 - **IMPORTANT**: any new data added at the site level through future enhancements (e.g. equipment maintenance/blocks, new event types, additional site-scoped settings, new assignment kinds, etc.) **must** be added as a new sheet (or a new column on the existing sheet) in `build_site_export_workbook()`. The site export is the canonical "everything for this site" snapshot — do not let it drift behind the model.
 
+## Documentation Screenshots
+
+When asked to **add, update, or refresh screenshots in the MkDocs docs** (`docs/`), use the canonical capture pipeline in [scripts/screenshots/](scripts/screenshots/) — do not capture by hand.
+
+**Pipeline:**
+1. **Spin up the demo instance** (self-contained Postgres + app on port 8486):
+   ```bash
+   cp .env.example .env  # if missing — generate SECRET_KEY/SESSION_SECRET/TENANT_ENCRYPTION_KEY (64-char hex each)
+   docker compose -f docker-compose.fresh.yml up -d --build
+   docker exec milestone-fresh python -m app.scripts.seed_demo
+   docker exec -i milestone-fresh-db psql -U milestone_demo -d milestone_demo \
+     < scripts/screenshots/seed_extras.sql
+   ```
+   This produces tenant `demo` (Demo Company) with the canonical projects (Bioprocess Scale-Up, Catalyst Optimization, Analytical Method Transfer, Quality System Upgrade), Swiss bank holidays, demo vacations, and 3 populated custom columns. Login: `admin@demo.local` / `demo1234` (and `bob.brown@demo.local` for multi-user collab shots).
+2. **Install Playwright** once:
+   ```bash
+   python3 -m venv /tmp/pw-venv
+   /tmp/pw-venv/bin/pip install playwright
+   /tmp/pw-venv/bin/playwright install chromium
+   ```
+3. **Capture** — both scripts are idempotent and headless, output to `docs/assets/screenshots/`:
+   ```bash
+   /tmp/pw-venv/bin/python scripts/screenshots/capture.py          # single-user shots
+   /tmp/pw-venv/bin/python scripts/screenshots/capture_collab.py   # multi-user collab shots
+   ```
+4. **Verify** with `mkdocs build --strict` (catches broken image refs).
+
+**Conventions** the scripts enforce:
+- Viewport **1440×900**, **light theme**, Gantt **Q (Quarter)** zoom — matches the existing screenshots' visual style.
+- Capture against the **demo tenant only** — project names and dates are referenced in alt text and prose.
+- Multi-user shots use **two Playwright `BrowserContext`s in one browser** (independent cookies, real WebSockets); User B drives events through `ctx_b.request.*` API calls so the WS broadcast fires naturally.
+
+**Adding a new shot:** add a `shot_<key>` function to `capture.py` or `capture_collab.py`, register it in the `targets` map, reference the new PNG from a markdown page, then re-run capture + `mkdocs build --strict`. See [scripts/screenshots/README.md](scripts/screenshots/README.md) for full details.
+
+The `scripts/screenshots/` Python scripts run their own Chromium and are always headless — they do **not** depend on the Claude Code Playwright MCP plugin. (If the user asks to make that plugin headless-by-default, edit both copies of `.mcp.json` under `~/.claude/plugins/.../playwright/` to add `"--headless"` to the `args` list and reload Claude Code.)
+
 ## Important Patterns
 
 - Admin routes are at `/api/admin/*` and use `get_master_db` dependency for master DB sessions.
@@ -219,3 +255,61 @@ Auto-initialization (fresh install):
 - The `run_migration_master.py` splits SQL on `;` which can break `DO $$ ... END $$;` blocks. Use `run_migration.py` or apply those manually via `psql`.
 - MPP file import requires Java (JRE 11+), included in the Docker image but not in dev environments by default.
 - The User model has a `full_name` property at `user.py` — use it instead of manual `first_name + last_name` concatenation.
+
+## Versioning & Changelog (MANDATORY)
+
+This project uses [Semantic Versioning](https://semver.org/) and [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). **Single source of truth for the version is `/VERSION`** (one line, e.g. `1.2.3`, no `v` prefix).
+
+### When to bump
+
+You MUST bump `VERSION` and add a `CHANGELOG.md` entry — in the same PR — for any change to:
+
+- `app/**` — backend code
+- `frontend/src/**`, `frontend/package.json`, `frontend/package-lock.json`, `frontend/vite.config.ts`, `frontend/tsconfig*.json`, `frontend/index.html` — frontend code/build
+- `migrations/**`, `setup_databases.sql` — DB schema
+- `Dockerfile`, `docker-compose*.yml` — runtime/deployment
+- `scripts/**` — operational scripts that ship with the app
+- `requirements*.txt`, `pyproject.toml` — backend deps
+
+**No bump needed** for changes confined to:
+
+- `README.md`, `CLAUDE.md`, `CHANGELOG.md` itself
+- `docs/**`, `mkdocs.yml`, `docs/requirements.txt` — MkDocs end-user / admin / developer docs
+- `LICENSE`, `.gitignore`, `.dockerignore`, `.editorconfig`
+- `.github/ISSUE_TEMPLATE/**`, `.github/PULL_REQUEST_TEMPLATE.md`
+- `.devcontainer/**` — Codespaces config
+
+CI enforces this via `.github/workflows/version-check.yml` — PRs touching the first list FAIL unless `VERSION` is bumped AND `CHANGELOG.md` has a matching `## [<new-version>]` heading.
+
+### How to bump (SemVer)
+
+- **PATCH** (`1.0.0` → `1.0.1`) — bug fix, no API/UX change.
+- **MINOR** (`1.0.0` → `1.1.0`) — new feature, backwards-compatible.
+- **MAJOR** (`1.0.0` → `2.0.0`) — breaking change to API, DB schema in a non-additive way, env-var rename, etc.
+
+One bump per PR — not per commit. All commits in a feature branch share one version.
+
+### CHANGELOG entry format
+
+Add the new version as a new `## [<version>] - YYYY-MM-DD` heading at the top, under the preamble. Use only the categories that apply, in this order:
+
+- **Added** — new features
+- **Changed** — changes to existing behaviour
+- **Deprecated** — features marked for removal
+- **Removed** — features removed in this release
+- **Fixed** — bug fixes
+- **Security** — security-relevant fixes
+
+Each entry is a single, human-readable line written from the user's perspective — not implementation detail.
+
+Do **not** use an `[Unreleased]` section — every change belongs to a concrete numbered release.
+
+### Static placeholders
+
+`frontend/package.json`'s `"version"` field is a **static placeholder** — do not edit it on each bump. Only `/VERSION` is the source of truth. The backend reads `/VERSION` at import in `app/__init__.py` and exposes it via `/health`.
+
+## Commit & PR conventions
+
+- **Never include the `🤖 Generated with Claude Code` line, the "Generated with Claude Code" badge, or any equivalent attribution string** in commit messages or PR descriptions. Keep `Co-Authored-By: Claude Opus … <noreply@anthropic.com>` (this repo's existing convention) — that's the only AI-attribution footer this project uses.
+- PR titles: short imperative summary (under ~70 chars). Body explains *why*, not *what* — the diff covers the what.
+- Don't add an "AI was used" disclaimer or footer to PR bodies.

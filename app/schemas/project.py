@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.schemas.base import DateAsDateTimeJS, DateTimeJS
+from app.schemas.tag import TagListResponse
 
 # ---------------------------------------------------------
 # Staff Assignment Schemas (for nested responses)
@@ -191,6 +192,7 @@ class ProjectListResponse(BaseModel):
     archived: int = 0
     created_at: DateTimeJS
     updated_at: DateTimeJS | None = None
+    tags: list[TagListResponse] = []
 
     class Config:
         from_attributes = True
@@ -218,6 +220,7 @@ class ProjectDetailResponse(BaseModel):
     phases: list[PhaseResponse] = []
     staffAssignments: list[ProjectStaffAssignmentResponse] = []
     equipmentAssignments: list[EquipmentAssignmentInProject] = []
+    tags: list[TagListResponse] = []
 
     class Config:
         from_attributes = True
@@ -237,6 +240,7 @@ class ProjectCreate(BaseModel):
     end_date: date
     notes: str | None = None
     phases: list[PhaseCreate] | None = None
+    tag_ids: list[int] | None = None
 
 
 class ProjectUpdate(BaseModel):
@@ -252,6 +256,7 @@ class ProjectUpdate(BaseModel):
     end_date: date | None = None
     notes: str | None = None
     archived: bool | None = None
+    tag_ids: list[int] | None = None
 
 
 class SubphaseReorderRequest(BaseModel):

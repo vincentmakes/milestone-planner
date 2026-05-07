@@ -20,6 +20,7 @@ import {
   getInstanceSettings,
   getCustomColumnsWithValues,
   skillsApi,
+  tagsApi,
 } from '@/api';
 
 interface UseDataLoaderReturn {
@@ -49,6 +50,7 @@ export function useDataLoader(): UseDataLoaderReturn {
     setCurrentSite,
     setInstanceSettings,
     setSkills,
+    setTags,
   } = useAppStore();
 
   const {
@@ -68,7 +70,7 @@ export function useDataLoader(): UseDataLoaderReturn {
 
     try {
       // Load core data in parallel
-      const [sites, staff, equipment, equipmentBlocks, vacations, instanceSettings, skills] = await Promise.all([
+      const [sites, staff, equipment, equipmentBlocks, vacations, instanceSettings, skills, tags] = await Promise.all([
         getSites(),
         getStaff(true), // Include all sites
         getEquipment(true), // Include all sites
@@ -76,6 +78,7 @@ export function useDataLoader(): UseDataLoaderReturn {
         getVacations(),
         getInstanceSettings().catch(() => null), // Don't fail if settings not available
         skillsApi.getAll().catch(() => []), // Don't fail if skills not available
+        tagsApi.getAll().catch(() => []), // Don't fail if tags not available
       ]);
 
       // Update store
@@ -85,6 +88,7 @@ export function useDataLoader(): UseDataLoaderReturn {
       setEquipmentBlocks(equipmentBlocks);
       setVacations(vacations);
       setSkills(skills);
+      setTags(tags);
       if (instanceSettings) {
         setInstanceSettings(instanceSettings);
       }
@@ -151,6 +155,7 @@ export function useDataLoader(): UseDataLoaderReturn {
     setCurrentSite,
     setInstanceSettings,
     setSkills,
+    setTags,
     setCustomColumns,
     setCustomColumnValues,
   ]);

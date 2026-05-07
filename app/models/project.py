@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     )
     from app.models.equipment import EquipmentAssignment
     from app.models.site import Site
+    from app.models.tag import Tag
     from app.models.user import User
 
 
@@ -94,6 +95,13 @@ class Project(Base):
         "EquipmentAssignment",
         back_populates="project",
         cascade="all, delete-orphan",
+    )
+
+    tags: Mapped[list["Tag"]] = relationship(
+        "Tag",
+        secondary="project_tags",
+        back_populates="projects",
+        lazy="selectin",
     )
 
     @property

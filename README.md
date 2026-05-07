@@ -1,6 +1,15 @@
-# Milestone Planner
+# Milestone
+
+<img width="1034" height="139" alt="Screenshot 2026-05-04 at 22 55 43" src="https://github.com/user-attachments/assets/277f8f49-e300-4134-8ded-247b6ce9eb22" />  
 
 A comprehensive R&D project management platform for multi-site organizations.
+
+
+<img width="1440" height="481" alt="Screenshot 2026-05-04 at 22 53 48" src="https://github.com/user-attachments/assets/1ce98a58-67b6-4a28-815b-1372c1b118c2" />  
+
+  <br/>
+<br/>
+<br/>  
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/vincentmakes/milestone-planner?quickstart=1)
 
@@ -84,8 +93,8 @@ Full documentation is published at **[docs-milestone.verdet.me](https://docs-mil
 | [User Guide](https://docs-milestone.verdet.me/user-guide/getting-started/) | Day-to-day usage: Gantt charts, staff, equipment, vacations |
 | [Admin Guide](https://docs-milestone.verdet.me/admin-guide/overview/) | Installation, multi-tenant management, SSO configuration |
 | [Developer Guide](https://docs-milestone.verdet.me/developer-guide/architecture/) | Architecture, local development, API reference |
-| [Development Guide](DEVELOPMENT.md) | Quick reference for making changes |
 | [API Documentation](http://localhost:8485/api/docs) | Swagger UI (when running) |
+| [Changelog](CHANGELOG.md) | Release history (SemVer) |
 
 ## File Structure
 
@@ -157,4 +166,4 @@ Key variables (see `.env.example` for full list):
 
 ## License
 
-Proprietary - All rights reserved
+MIT

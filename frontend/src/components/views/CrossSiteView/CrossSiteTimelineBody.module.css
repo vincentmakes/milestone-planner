@@ -70,7 +70,7 @@
 }
 
 .gridCell.companyEvent {
-  background: rgba(239, 68, 68, 0.15);
+  background: color-mix(in srgb, var(--event-color, #ef4444) 15%, transparent);
 }
 
 /* Tooltip overlay - sits above all content */

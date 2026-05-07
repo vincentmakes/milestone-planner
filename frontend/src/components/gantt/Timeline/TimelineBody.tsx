@@ -7,6 +7,7 @@ import { forwardRef, useMemo, useRef, useCallback } from 'react';
 import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useUIStore } from '@/stores/uiStore';
+import { useAppStore } from '@/stores/appStore';
 import { ProjectTimeline } from './ProjectTimeline';
 import { TodayLine } from './TodayLine';
 import { DependencyLayer } from './DependencyLayer';
@@ -37,6 +38,7 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
     const dragIndicator = useUIStore((s) => s.dragIndicator);
     const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
     const resourceDrag = useUIStore((s) => s.resourceDrag);
+    const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
     
     // Internal ref for phantom overlay mouse tracking
     const internalRef = useRef<HTMLDivElement>(null);
@@ -120,6 +122,8 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
 
     // Only show weekend/holiday highlighting for week and month views
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
+    const renderWeekendMarkers = showHighlighting && showWeekends;
+    const renderWeekSeparators = showHighlighting && !showWeekends;
     
     // Calculate container dimensions for phantom overlay
     const containerHeight = rowPositions.totalHeight + 100; // Add some padding
@@ -153,8 +157,8 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
         >
           {/* Grid background with CSS gradient + special cell markers */}
           <div className={styles.grid}>
-            {/* Weekend markers */}
-            {showHighlighting && cells.map((cell, index) => 
+            {/* Weekend markers (suppressed when show_weekends setting is off) */}
+            {renderWeekendMarkers && cells.map((cell, index) =>
               cell.isWeekend ? (
                 <div
                   key={`weekend-${index}`}
@@ -175,13 +179,30 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
               ) : null
             )}
             
-            {/* Company event background markers (red) */}
-            {showHighlighting && cells.map((cell, index) => 
+            {/* Company event background markers (per-event color, red fallback) */}
+            {showHighlighting && cells.map((cell, index) =>
               cell.isCompanyEvent ? (
                 <div
                   key={`event-bg-${index}`}
                   className={`${styles.gridCell} ${styles.companyEvent}`}
-                  style={{ left: index * cellWidth, width: cellWidth }}
+                  style={{
+                    left: index * cellWidth,
+                    width: cellWidth,
+                    ...(cell.companyEventColor
+                      ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
+                      : {}),
+                  }}
+                />
+              ) : null
+            )}
+
+            {/* Week separator lines (when weekends are hidden) */}
+            {renderWeekSeparators && cells.map((cell, index) =>
+              cell.isFirstOfWeek && index > 0 ? (
+                <div
+                  key={`week-sep-${index}`}
+                  className={styles.weekSeparator}
+                  style={{ left: index * cellWidth }}
                 />
               ) : null
             )}
@@ -225,7 +246,13 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
                     <div
                       key={`tooltip-${index}`}
                       className={`${styles.tooltipCell} ${styles.event}`}
-                      style={{ left: index * cellWidth, width: cellWidth }}
+                      style={{
+                        left: index * cellWidth,
+                        width: cellWidth,
+                        ...(cell.companyEventColor
+                          ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
+                          : {}),
+                      }}
                       data-tooltip={cell.companyEventName || 'Company Event'}
                     />
                   );

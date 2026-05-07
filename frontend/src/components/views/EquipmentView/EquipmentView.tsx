@@ -5,7 +5,7 @@
  * Supports embedded mode for display below Gantt chart
  */
 
-import { useMemo, useRef, useState, useEffect } from 'react';
+import { useCallback, useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -64,9 +64,14 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   const bankHolidays = useAppStore((s) => s.bankHolidays);
   const companyEventDates = useAppStore((s) => s.companyEventDates);
   const companyEvents = useAppStore((s) => s.companyEvents);
+  const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
   const cellWidth = useViewStore((s) => s.cellWidth);
+  const timelineScrollLeft = useViewStore((s) => s.timelineScrollLeft);
+  const setTimelineScrollLeft = useViewStore((s) => s.setTimelineScrollLeft);
+  const hasRestoredScroll = useRef(false);
+  const scrollSaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
   const openEquipmentBlockModal = useUIStore((s) => s.openEquipmentBlockModal);
@@ -123,6 +128,32 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   // Type filter state
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [filterDropdownStyle, setFilterDropdownStyle] = useState<React.CSSProperties>({});
+
+  // Position the position:fixed filter dropdown anchored below the trigger.
+  // The dropdown opens to the right edge of the wrapper, max-width 240.
+  useLayoutEffect(() => {
+    if (!isFilterOpen || !filterRef.current) return;
+    const update = () => {
+      const rect = filterRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const top = rect.bottom + 6;
+      const available = Math.max(160, window.innerHeight - top - 12);
+      const dropdownWidth = 240;
+      setFilterDropdownStyle({
+        top,
+        left: Math.max(8, Math.min(rect.right - dropdownWidth, window.innerWidth - dropdownWidth - 8)),
+        maxHeight: available,
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [isFilterOpen]);
   
   // Sync vertical scroll between panel and timeline body
   useScrollSync(panelRef, timelineBodyRef);
@@ -190,9 +221,9 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   };
   
   // Generate timeline data
-  const cells = useMemo(() => 
-    generateTimelineCells(currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents),
-    [currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents]
+  const cells = useMemo(() =>
+    generateTimelineCells(currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents, showWeekends),
+    [currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents, showWeekends]
   );
   const headers = useMemo(() => 
     generateTimelineHeaders(cells, viewMode),
@@ -216,7 +247,34 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
     const scrollTo = Math.max(0, todayPosition - containerWidth / 2 + cellWidth / 2);
     scrollContainer.scrollTo({ left: scrollTo, behavior: 'smooth' });
   }, [embedded, scrollToTodayTrigger, cells, cellWidth]);
-  
+
+  // Restore horizontal timeline scroll on mount (standalone only — Gantt's Timeline persists when embedded).
+  useEffect(() => {
+    if (embedded || hasRestoredScroll.current) return;
+    const scrollContainer = timelineScrollRef.current;
+    if (!scrollContainer) return;
+    if (timelineScrollLeft > 0) {
+      requestAnimationFrame(() => {
+        scrollContainer.scrollLeft = timelineScrollLeft;
+        hasRestoredScroll.current = true;
+      });
+    } else {
+      hasRestoredScroll.current = true;
+    }
+  }, [embedded, timelineScrollLeft]);
+
+  // Save scroll position (debounced) on every scroll, while also forwarding to the embedded sync hook.
+  const handleTimelineScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    handleSyncScroll(e);
+    if (embedded) return;
+    const scrollContainer = timelineScrollRef.current;
+    if (!scrollContainer || !hasRestoredScroll.current) return;
+    if (scrollSaveTimeout.current) clearTimeout(scrollSaveTimeout.current);
+    scrollSaveTimeout.current = setTimeout(() => {
+      setTimelineScrollLeft(scrollContainer.scrollLeft);
+    }, 200);
+  }, [embedded, handleSyncScroll, setTimelineScrollLeft]);
+
   // Build equipment bookings map
   const equipmentBookingsMap = useMemo(() => {
     const map = new Map<number, EquipmentBookingWithContext[]>();
@@ -369,7 +427,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
               </button>
               
               {isFilterOpen && (
-                <div className={styles.filterDropdown}>
+                <div className={styles.filterDropdown} style={filterDropdownStyle}>
                   <div className={styles.filterActions}>
                     <button 
                       className={styles.filterActionBtn}
@@ -577,7 +635,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
         <div 
           className={styles.timelineScroll} 
           ref={timelineScrollRef}
-          onScroll={handleSyncScroll}
+          onScroll={handleTimelineScroll}
         >
           <div className={styles.timelineContent} style={{ width: totalWidth }}>
             {/* Full header when not embedded */}

@@ -4,6 +4,7 @@
  */
 
 import { useMemo } from 'react';
+import { useAppStore } from '@/stores/appStore';
 import type { Project } from '@/types';
 import type { TimelineCell } from '@/components/gantt/utils';
 import styles from './TimelineRow.module.css';
@@ -16,14 +17,16 @@ interface TimelineRowProps {
   showHighlighting: boolean;
 }
 
-export function TimelineRow({ 
-  project, 
-  cells, 
-  cellWidth, 
+export function TimelineRow({
+  project,
+  cells,
+  cellWidth,
   totalWidth,
-  showHighlighting 
+  showHighlighting
 }: TimelineRowProps) {
-  
+  const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
+  const renderWeekendMarkers = showHighlighting && showWeekends;
+
   // Calculate bar position
   const barPosition = useMemo(() => {
     if (!project.start_date || !project.end_date || cells.length === 0) {
@@ -85,7 +88,7 @@ export function TimelineRow({
       } as React.CSSProperties}
     >
       {/* Special cell markers for weekends/holidays */}
-      {showHighlighting && cells.map((cell, index) => {
+      {renderWeekendMarkers && cells.map((cell, index) => {
         if (cell.isWeekend) {
           return (
             <div
@@ -118,7 +121,13 @@ export function TimelineRow({
             <div
               key={`event-${index}`}
               className={`${styles.specialCell} ${styles.companyEvent}`}
-              style={{ left: index * cellWidth, width: cellWidth }}
+              style={{
+                left: index * cellWidth,
+                width: cellWidth,
+                ...(cell.companyEventColor
+                  ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
+                  : {}),
+              }}
               data-tooltip={cell.companyEventName || 'Company Event'}
             />
           );

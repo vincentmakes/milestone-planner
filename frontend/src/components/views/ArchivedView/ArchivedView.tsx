@@ -24,6 +24,7 @@ export function ArchivedView() {
   const bankHolidays = useAppStore((s) => s.bankHolidays);
   const companyEventDates = useAppStore((s) => s.companyEventDates);
   const companyEvents = useAppStore((s) => s.companyEvents);
+  const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
   const cellWidth = useViewStore((s) => s.cellWidth);
@@ -41,9 +42,9 @@ export function ArchivedView() {
   }, [projects, currentSite]);
   
   // Generate timeline data
-  const cells = useMemo(() => 
-    generateTimelineCells(currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents),
-    [currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents]
+  const cells = useMemo(() =>
+    generateTimelineCells(currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents, showWeekends),
+    [currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents, showWeekends]
   );
   const headers = useMemo(() => 
     generateTimelineHeaders(cells, viewMode),

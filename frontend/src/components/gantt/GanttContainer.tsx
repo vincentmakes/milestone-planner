@@ -31,6 +31,7 @@ export function GanttContainer() {
   const companyEventDates = useAppStore((s) => s.companyEventDates);
   const companyEvents = useAppStore((s) => s.companyEvents);
   const currentUser = useAppStore((s) => s.currentUser);
+  const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
   const cellWidth = useViewStore((s) => s.cellWidth);
@@ -117,9 +118,10 @@ export function GanttContainer() {
         bankHolidayDates,
         bankHolidays,
         companyEventDates,
-        companyEvents
+        companyEvents,
+        showWeekends
       ),
-    [currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents]
+    [currentDate, viewMode, bankHolidayDates, bankHolidays, companyEventDates, companyEvents, showWeekends]
   );
 
   // Generate timeline headers

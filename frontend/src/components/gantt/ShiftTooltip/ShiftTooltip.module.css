@@ -10,7 +10,7 @@
   box-shadow: var(--shadow-lg);
   pointer-events: none;
   min-width: 240px;
-  max-width: 320px;
+  max-width: 360px;
   animation: tooltipFadeIn 0.15s ease-out;
 }
 
@@ -97,4 +97,38 @@
   color: var(--accent-cyan);
   flex-shrink: 0;
   font-weight: var(--font-weight-medium);
+}
+
+/* Tag section */
+.tagSection {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
+}
+
+.tagHeader {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.tagRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tagPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  color: #fff;
+  white-space: nowrap;
+  line-height: 1.4;
 }

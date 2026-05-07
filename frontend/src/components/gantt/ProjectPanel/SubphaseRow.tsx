@@ -271,22 +271,24 @@ export const SubphaseRow = memo(function SubphaseRow({
             <span className={styles.criticalPathDot} title="On Critical Path" />
           )}
           {/* Drag handle */}
-          <div
-            className={styles.dragHandle}
-            draggable
-            onDragStart={onDragStart}
-            onDragEnd={handleDragEnd}
-            title="Drag to reorder"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-              <circle cx="9" cy="6" r="2" />
-              <circle cx="15" cy="6" r="2" />
-              <circle cx="9" cy="12" r="2" />
-              <circle cx="15" cy="12" r="2" />
-              <circle cx="9" cy="18" r="2" />
-              <circle cx="15" cy="18" r="2" />
-            </svg>
-          </div>
+          {canEdit && (
+            <div
+              className={styles.dragHandle}
+              draggable
+              onDragStart={onDragStart}
+              onDragEnd={handleDragEnd}
+              title="Drag to reorder"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="9" cy="6" r="2" />
+                <circle cx="15" cy="6" r="2" />
+                <circle cx="9" cy="12" r="2" />
+                <circle cx="15" cy="12" r="2" />
+                <circle cx="9" cy="18" r="2" />
+                <circle cx="15" cy="18" r="2" />
+              </svg>
+            </div>
+          )}
           {/* Expand button */}
           <button
             className={`${styles.expandBtn} ${isExpanded ? styles.expanded : ''}`}

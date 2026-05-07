@@ -126,6 +126,7 @@ export function SettingsModal() {
       const newInstanceSettings = {
         ...instanceSettings,
         instance_title: settings.instance_title,
+        show_weekends: settings.show_weekends,
       };
       setInstanceSettings(newInstanceSettings);
       

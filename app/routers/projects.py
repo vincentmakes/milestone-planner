@@ -10,6 +10,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db, get_db_readonly
 from app.middleware.auth import get_current_user, require_superuser
@@ -21,6 +22,7 @@ from app.models.assignment import (
 from app.models.equipment import Equipment, EquipmentAssignment
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.site import Site
+from app.models.tag import Tag
 from app.models.user import User
 from app.schemas.base import PaginationParams
 from app.schemas.project import (
@@ -191,6 +193,7 @@ async def get_projects(
         )
         .outerjoin(Site, Project.site_id == Site.id)
         .outerjoin(User, Project.pm_id == User.id)
+        .options(selectinload(Project.tags))
     )
 
     if archived == "true":
@@ -232,6 +235,7 @@ async def get_projects(
                     "archived": project.archived,
                     "created_at": project.created_at,
                     "updated_at": project.updated_at,
+                    "tags": [],
                 }
             )
         else:
@@ -253,6 +257,7 @@ async def get_projects(
                     "archived": project.archived,
                     "created_at": project.created_at,
                     "updated_at": project.updated_at,
+                    "tags": [{"id": t.id, "name": t.name, "color": t.color} for t in project.tags],
                 }
             )
 
@@ -291,6 +296,7 @@ async def get_project(
             )
             .outerjoin(Site, Project.site_id == Site.id)
             .outerjoin(User, Project.pm_id == User.id)
+            .options(selectinload(Project.tags))
             .where(Project.id == project_id)
         )
 
@@ -339,7 +345,7 @@ async def get_project(
             )
             .join(User, ProjectAssignment.staff_id == User.id)
             .where(ProjectAssignment.project_id == project_id)
-            .order_by(ProjectAssignment.start_date)
+            .order_by(ProjectAssignment.id)  # stable - dragging an item must not reorder rows
         )
 
     async def query_equipment():
@@ -351,7 +357,7 @@ async def get_project(
             )
             .join(Equipment, EquipmentAssignment.equipment_id == Equipment.id)
             .where(EquipmentAssignment.project_id == project_id)
-            .order_by(EquipmentAssignment.start_date)
+            .order_by(EquipmentAssignment.id)  # stable - dragging an item must not reorder rows
         )
 
     # Execute all queries - note: SQLAlchemy async sessions are NOT thread-safe
@@ -524,12 +530,14 @@ async def get_project(
         "phases": phases,
         "staffAssignments": staff_assignments,
         "equipmentAssignments": equipment_assignments,
+        "tags": [{"id": t.id, "name": t.name, "color": t.color} for t in project.tags],
     }
 
 
 @router.post("/projects")
 async def create_project(
     data: ProjectCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -538,6 +546,11 @@ async def create_project(
 
     Matches: POST /api/projects
     """
+    tag_objs: list[Tag] = []
+    if data.tag_ids:
+        tag_result = await db.execute(select(Tag).where(Tag.id.in_(data.tag_ids)))
+        tag_objs = list(tag_result.scalars().all())
+
     project = Project(
         name=data.name,
         site_id=data.site_id,
@@ -549,6 +562,7 @@ async def create_project(
         start_date=data.start_date,
         end_date=data.end_date,
         notes=data.notes,
+        tags=tag_objs,
     )
 
     db.add(project)
@@ -569,6 +583,16 @@ async def create_project(
 
     await db.commit()
 
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="project",
+        entity_id=project.id,
+        project_id=project.id,
+        action="create",
+        summary=project.name,
+    )
+
     return {"id": project.id, "success": True}
 
 
@@ -576,6 +600,7 @@ async def create_project(
 async def update_project(
     project_id: int,
     data: ProjectUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -584,7 +609,9 @@ async def update_project(
 
     Matches: PUT /api/projects/:id
     """
-    result = await db.execute(select(Project).where(Project.id == project_id))
+    result = await db.execute(
+        select(Project).options(selectinload(Project.tags)).where(Project.id == project_id)
+    )
     project = result.scalar_one_or_none()
 
     if not project:
@@ -612,7 +639,25 @@ async def update_project(
     if data.archived is not None:
         project.archived = 1 if data.archived else 0
 
+    # Replace tag assignments if provided (None = no change, [] = clear all)
+    if data.tag_ids is not None:
+        if data.tag_ids:
+            tag_result = await db.execute(select(Tag).where(Tag.id.in_(data.tag_ids)))
+            project.tags = list(tag_result.scalars().all())
+        else:
+            project.tags = []
+
     await db.commit()
+
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="project",
+        entity_id=project_id,
+        project_id=project_id,
+        action="update",
+        summary=project.name,
+    )
 
     return {"success": True}
 
@@ -620,6 +665,7 @@ async def update_project(
 @router.delete("/projects/{project_id}")
 async def delete_project(
     project_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -633,6 +679,8 @@ async def delete_project(
 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    project_name = project.name
 
     # Delete related data (cascade should handle most, but be explicit)
     await db.execute(ProjectPhase.__table__.delete().where(ProjectPhase.project_id == project_id))
@@ -649,6 +697,16 @@ async def delete_project(
     await db.delete(project)
     await db.commit()
 
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="project",
+        entity_id=project_id,
+        project_id=project_id,
+        action="delete",
+        summary=project_name,
+    )
+
     return {"success": True}
 
 
@@ -661,6 +719,7 @@ async def delete_project(
 async def create_phase(
     project_id: int,
     data: PhaseCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -705,6 +764,16 @@ async def create_phase(
 
     db.add(phase)
     await db.commit()
+
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="phase",
+        entity_id=phase.id,
+        project_id=project_id,
+        action="create",
+        summary=phase.type,
+    )
 
     return {"id": phase.id, "success": True}
 
@@ -761,6 +830,7 @@ async def update_phase(
 @router.delete("/phases/{phase_id}")
 async def delete_phase(
     phase_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -775,8 +845,21 @@ async def delete_phase(
     if not phase:
         raise HTTPException(status_code=404, detail="Phase not found")
 
+    project_id = phase.project_id
+    phase_type = phase.type
+
     await db.delete(phase)
     await db.commit()
+
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="phase",
+        entity_id=phase_id,
+        project_id=project_id,
+        action="delete",
+        summary=phase_type,
+    )
 
     return {"success": True}
 
@@ -785,6 +868,7 @@ async def delete_phase(
 async def reorder_phases(
     project_id: int,
     data: PhaseReorderRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -802,6 +886,16 @@ async def reorder_phases(
 
     await db.commit()
 
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="project",
+        entity_id=project_id,
+        project_id=project_id,
+        action="update",
+        summary="reordered phases",
+    )
+
     return {"success": True}
 
 
@@ -814,6 +908,7 @@ async def reorder_phases(
 async def create_subphase_under_phase(
     phase_id: int,
     data: SubphaseCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -869,6 +964,16 @@ async def create_subphase_under_phase(
     db.add(subphase)
     await db.commit()
 
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="subphase",
+        entity_id=subphase.id,
+        project_id=subphase.project_id,
+        action="create",
+        summary=subphase.name,
+    )
+
     return {
         "id": subphase.id,
         "parent_id": subphase.parent_id,
@@ -891,6 +996,7 @@ async def create_subphase_under_phase(
 async def create_child_subphase(
     subphase_id: int,
     data: SubphaseCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -957,6 +1063,16 @@ async def create_child_subphase(
 
     db.add(subphase)
     await db.commit()
+
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="subphase",
+        entity_id=subphase.id,
+        project_id=subphase.project_id,
+        action="create",
+        summary=subphase.name,
+    )
 
     return {
         "id": subphase.id,
@@ -1028,6 +1144,7 @@ async def update_subphase(
 @router.delete("/subphases/{subphase_id}")
 async def delete_subphase(
     subphase_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -1036,6 +1153,11 @@ async def delete_subphase(
 
     Matches: DELETE /api/subphases/:id
     """
+    sp_result = await db.execute(select(ProjectSubphase).where(ProjectSubphase.id == subphase_id))
+    target = sp_result.scalar_one_or_none()
+    project_id = target.project_id if target else None
+    sp_name = target.name if target else None
+
     # For SQLite/PostgreSQL, we need to recursively delete descendants
     # PostgreSQL doesn't support recursive CTEs in DELETE directly through SQLAlchemy
     # So we'll do it iteratively
@@ -1071,6 +1193,17 @@ async def delete_subphase(
 
     await db.commit()
 
+    if project_id is not None:
+        await broadcast_change(
+            request=request,
+            user=user,
+            entity_type="subphase",
+            entity_id=subphase_id,
+            project_id=project_id,
+            action="delete",
+            summary=sp_name,
+        )
+
     return {"success": True}
 
 
@@ -1078,6 +1211,7 @@ async def delete_subphase(
 async def reorder_subphases(
     parent_id: int,
     data: SubphaseReorderRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_superuser),
 ):
@@ -1086,6 +1220,7 @@ async def reorder_subphases(
 
     Matches: PUT /api/subphases/:parentId/reorder
     """
+    project_id: int | None = None
     for index, subphase_id in enumerate(data.subphase_order):
         await db.execute(
             ProjectSubphase.__table__.update()
@@ -1098,7 +1233,23 @@ async def reorder_subphases(
             )
             .values(sort_order=index)
         )
+        if project_id is None:
+            sp_result = await db.execute(
+                select(ProjectSubphase.project_id).where(ProjectSubphase.id == subphase_id)
+            )
+            project_id = sp_result.scalar_one_or_none()
 
     await db.commit()
+
+    if project_id is not None:
+        await broadcast_change(
+            request=request,
+            user=user,
+            entity_type="project",
+            entity_id=project_id,
+            project_id=project_id,
+            action="update",
+            summary="reordered subphases",
+        )
 
     return {"success": True}
