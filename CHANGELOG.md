@@ -5,6 +5,11 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.4] - 2026-05-07
+
+### Changed
+- Bumped `python-multipart` from 0.0.26 to 0.0.27 (Dependabot pip group update).
+
 ## [1.0.3] - 2026-05-07
 
 ### Changed
