@@ -4,6 +4,9 @@ The **Equipment View** provides a timeline for tracking equipment availability a
 
 ![Equipment view showing inventory and the booking timeline](../assets/screenshots/equipment-view.png){ loading=lazy }
 
+!!! tip
+    Admins and superusers can dock the Equipment view directly below the Gantt chart via the **Panels** button — see [Resource Panels](gantt-charts.md#resource-panels).
+
 ## Equipment List Panel
 
 The left panel lists all equipment items for the selected site with:

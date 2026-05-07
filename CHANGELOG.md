@@ -5,6 +5,20 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.2] - 2026-05-07
+
+### Added
+- Reproducible screenshot capture pipeline for the docs (`scripts/screenshots/`): two headless Playwright scripts plus a SQL seed for vacations, bank holidays, and populated custom columns. Run against the `demo` tenant from `app.scripts.seed_demo` to refresh every screenshot referenced by the MkDocs site.
+
+### Changed
+- Refreshed and expanded screenshot coverage in the user guide:
+  - `gantt-main.png` now shows projects expanded into phases with custom columns populated and the today indicator on a real timeline.
+  - New combined-view screenshots (`gantt-with-staff-panel.png`, `gantt-with-equipment-panel.png`) demonstrating the **Panels** dock.
+  - New `vacations-view.png` for the previously screenshot-less *Vacations & Time Off* page.
+  - New `what-if-active.png` showing the active What-If state with Discard/Exit, replacing `what-if.png`.
+  - New collaboration screenshots (`collab-online-users.png`, `collab-presence-viewing.png`, `collab-activity-feed.png`) for the previously text-only *Real-Time Collaboration* page.
+  - `custom-columns.png` now shows populated values rather than the empty Manage Columns modal.
+
 ## [1.0.1] - 2026-05-06
 
 ### Fixed

@@ -2,7 +2,7 @@
 
 **What-If Mode** lets administrators and superusers experiment with scheduling changes without affecting the live data.
 
-![What-If mode active — the header shows Discard and Exit actions for the scratch session](../assets/screenshots/what-if.png){ loading=lazy }
+![What-If mode active — the header shows Discard and Exit actions for the scratch session](../assets/screenshots/what-if-active.png){ loading=lazy }
 
 ## How It Works
 

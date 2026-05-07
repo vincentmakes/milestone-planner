@@ -201,6 +201,42 @@ Auto-initialization (fresh install):
 - Current sheets: Site, Projects (hierarchy with phases/subphases), Users, Equipment, Skills, User skills, Vacations, Project assignments, Phase assignments, Subphase assignments, Equipment assignments, Custom columns, Custom column values, Bank holidays, Company events.
 - **IMPORTANT**: any new data added at the site level through future enhancements (e.g. equipment maintenance/blocks, new event types, additional site-scoped settings, new assignment kinds, etc.) **must** be added as a new sheet (or a new column on the existing sheet) in `build_site_export_workbook()`. The site export is the canonical "everything for this site" snapshot — do not let it drift behind the model.
 
+## Documentation Screenshots
+
+When asked to **add, update, or refresh screenshots in the MkDocs docs** (`docs/`), use the canonical capture pipeline in [scripts/screenshots/](scripts/screenshots/) — do not capture by hand.
+
+**Pipeline:**
+1. **Spin up the demo instance** (self-contained Postgres + app on port 8486):
+   ```bash
+   cp .env.example .env  # if missing — generate SECRET_KEY/SESSION_SECRET/TENANT_ENCRYPTION_KEY (64-char hex each)
+   docker compose -f docker-compose.fresh.yml up -d --build
+   docker exec milestone-fresh python -m app.scripts.seed_demo
+   docker exec -i milestone-fresh-db psql -U milestone_demo -d milestone_demo \
+     < scripts/screenshots/seed_extras.sql
+   ```
+   This produces tenant `demo` (Demo Company) with the canonical projects (Bioprocess Scale-Up, Catalyst Optimization, Analytical Method Transfer, Quality System Upgrade), Swiss bank holidays, demo vacations, and 3 populated custom columns. Login: `admin@demo.local` / `demo1234` (and `bob.brown@demo.local` for multi-user collab shots).
+2. **Install Playwright** once:
+   ```bash
+   python3 -m venv /tmp/pw-venv
+   /tmp/pw-venv/bin/pip install playwright
+   /tmp/pw-venv/bin/playwright install chromium
+   ```
+3. **Capture** — both scripts are idempotent and headless, output to `docs/assets/screenshots/`:
+   ```bash
+   /tmp/pw-venv/bin/python scripts/screenshots/capture.py          # single-user shots
+   /tmp/pw-venv/bin/python scripts/screenshots/capture_collab.py   # multi-user collab shots
+   ```
+4. **Verify** with `mkdocs build --strict` (catches broken image refs).
+
+**Conventions** the scripts enforce:
+- Viewport **1440×900**, **light theme**, Gantt **Q (Quarter)** zoom — matches the existing screenshots' visual style.
+- Capture against the **demo tenant only** — project names and dates are referenced in alt text and prose.
+- Multi-user shots use **two Playwright `BrowserContext`s in one browser** (independent cookies, real WebSockets); User B drives events through `ctx_b.request.*` API calls so the WS broadcast fires naturally.
+
+**Adding a new shot:** add a `shot_<key>` function to `capture.py` or `capture_collab.py`, register it in the `targets` map, reference the new PNG from a markdown page, then re-run capture + `mkdocs build --strict`. See [scripts/screenshots/README.md](scripts/screenshots/README.md) for full details.
+
+The `scripts/screenshots/` Python scripts run their own Chromium and are always headless — they do **not** depend on the Claude Code Playwright MCP plugin. (If the user asks to make that plugin headless-by-default, edit both copies of `.mcp.json` under `~/.claude/plugins/.../playwright/` to add `"--headless"` to the `args` list and reload Claude Code.)
+
 ## Important Patterns
 
 - Admin routes are at `/api/admin/*` and use `get_master_db` dependency for master DB sessions.

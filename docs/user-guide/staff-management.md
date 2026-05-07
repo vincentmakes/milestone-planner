@@ -4,6 +4,9 @@ The **Staff Overview** provides a timeline view centered on people rather than p
 
 ![Staff Overview with allocation percentages and availability](../assets/screenshots/staff-overview.png){ loading=lazy }
 
+!!! tip
+    Admins and superusers can dock the Staff Overview directly below the Gantt chart via the **Panels** button — see [Resource Panels](gantt-charts.md#resource-panels).
+
 ## Staff List Panel
 
 The left panel shows all staff members with:

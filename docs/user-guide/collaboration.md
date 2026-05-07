@@ -4,14 +4,17 @@ Milestone Planner includes real-time collaboration features so teams can see who
 
 ## Online Users
 
-The **Online Users** indicator in the header shows how many users are currently connected. Click it to see their names. This uses a WebSocket connection that updates automatically — when someone opens or closes Milestone, the list refreshes in real-time.
+The **Online Users** indicator in the header shows how many users are currently connected, as a stack of colored avatars next to a green status dot. This uses a WebSocket connection that updates automatically — when someone opens or closes Milestone, the list refreshes in real-time.
+
+![Online Users indicator in the header — green status dot and avatar stack for the two connected users](../assets/screenshots/collab-online-users.png){ loading=lazy }
+
+Hover the avatar stack to open a dropdown listing every connected user by name:
+
+![Online Users dropdown showing the full list of connected users by name](../assets/screenshots/collab-presence-viewing.png){ loading=lazy }
 
 ## Presence Tracking
 
-When you open a project, Milestone sends a heartbeat every 30 seconds to let others know you're actively viewing or editing. Other users see presence indicators showing:
-
-- **Who is viewing** a project — displayed as user avatars or initials near the project
-- **Who is editing** — an editing indicator warns that another user is actively making changes
+When you open a project, Milestone sends a heartbeat every 30 seconds to let others know you're actively viewing or editing. The Online Users dropdown reflects who is currently connected; presence records on the backend (`/api/presence/...`) capture per-project viewing and editing state, which is used internally for change-broadcast routing and conflict detection.
 
 Presence is tracked per project, so multiple users can work on different projects simultaneously without interference.
 
@@ -26,13 +29,11 @@ This prevents two users from unknowingly overwriting each other's work.
 
 ## Live Change Notifications
 
-When another user modifies a phase, subphase, or assignment, you receive a real-time notification via WebSocket. Changes briefly highlight on the Gantt timeline so you can see what was modified:
+When another user modifies a phase, subphase, or assignment, a toast appears in the bottom-right corner via WebSocket. Cascaded changes from the same user are coalesced into a single toast within a short window (e.g. *"Bob B. made 2 changes in Bioprocess Scale-Up"*).
 
-- **Phase/subphase moves** — The affected bar highlights momentarily
-- **Assignment changes** — Updated assignments are indicated
-- **Project updates** — Structural changes are reflected
+![Activity Feed toast showing 'Bob B. updated phase in Bioprocess Scale-Up' triggered by another user's edit](../assets/screenshots/collab-activity-feed.png){ loading=lazy }
 
-Change indicators appear for about 5 seconds before fading. The notification includes the user's name and a summary of what changed.
+Toasts appear for about 6 seconds before fading. The notification includes the user's avatar, name, and a summary of what changed.
 
 ## WebSocket Connection
 
