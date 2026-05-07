@@ -2,6 +2,8 @@
 
 Milestone tracks staff vacations and time off to provide accurate availability data in the Staff Overview.
 
+![Staff Overview with vacation bars (Annual Leave, Conferences, Family Holiday) and bank holiday rows](../assets/screenshots/vacations-view.png){ loading=lazy }
+
 ## Creating Vacations
 
 1. In the Staff Overview, expand a staff member and click **+ Add vacation/time off**

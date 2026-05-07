@@ -2,7 +2,7 @@
 
 The Gantt Chart is the primary view and the default when you log in. It combines a hierarchical project list with an interactive timeline.
 
-![Main Gantt view with project bars and the today indicator](../assets/screenshots/gantt-main.png){ loading=lazy }
+![Main Gantt view: projects expanded into phases, custom columns populated, today indicator](../assets/screenshots/gantt-main.png){ loading=lazy }
 
 ## Project Panel
 
@@ -25,6 +25,16 @@ The right side shows horizontal bars representing duration of each project, phas
 - **Subphase bars** support unlimited nesting depth
 - A red vertical line marks today's date
 - Bank holidays and company events are highlighted on the background
+
+## Resource Panels
+
+Administrators and superusers can dock the **Staff Overview** or **Equipment** view directly below the Gantt chart from the **Panels** button in the header. The two panels are mutually exclusive — you can show one at a time. Drag the divider between the chart and the docked panel to resize each region.
+
+This is the fastest way to see scheduling and capacity together: changes you make in the Gantt are reflected in the panel below in real time.
+
+![Gantt chart with the Staff Overview panel docked below, showing assignments per person](../assets/screenshots/gantt-with-staff-panel.png){ loading=lazy }
+
+![Gantt chart with the Equipment panel docked below, showing equipment availability](../assets/screenshots/gantt-with-equipment-panel.png){ loading=lazy }
 
 ## Creating a Project
 
@@ -109,7 +119,7 @@ Each project and phase has a completion slider (0–100%):
 
 Add custom data fields to the project panel to track metadata like priority, status codes, budget, or risk levels. Up to **10 columns** can be active per site (including global columns).
 
-![Manage Custom Columns modal — empty state with the Add Column action](../assets/screenshots/custom-columns.png){ loading=lazy }
+![Project panel with custom columns (Priority dropdown, Owner text, Reviewed checkbox) populated per phase](../assets/screenshots/custom-columns.png){ loading=lazy }
 
 ### Creating a Column
 

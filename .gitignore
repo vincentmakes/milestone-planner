@@ -39,6 +39,9 @@ frontend/dist/
 *.tar.gz
 site/
 
+# Playwright MCP runtime artifacts
+.playwright-mcp/
+
 # Frontend build output (built inside Docker)
 public/assets/
 public/index.html
