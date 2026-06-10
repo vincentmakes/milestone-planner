@@ -5,6 +5,11 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.7] - 2026-06-10
+
+### Changed
+- Bumped `react-router-dom` from 6.30.3 to 6.30.4 (Dependabot npm group update).
+
 ## [1.0.6] - 2026-06-02
 
 ### Changed
