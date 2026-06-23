@@ -1,7 +1,7 @@
 # FastAPI and ASGI
 fastapi==0.109.2
 uvicorn[standard]==0.27.1
-python-multipart==0.0.27
+python-multipart==0.0.31
 
 # Database
 sqlalchemy[asyncio]==2.0.25
@@ -16,7 +16,7 @@ bcrypt>=4.0.0
 httpx==0.26.0
 
 # Encryption (for tenant credentials)
-cryptography==46.0.7
+cryptography==48.0.1
 
 # Validation & Serialization
 pydantic==2.6.1

@@ -5,6 +5,14 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.8] - 2026-06-23
+
+### Security
+- Updated `cryptography` to 48.0.1, fixing a vulnerable OpenSSL version bundled in the wheels.
+- Updated `python-multipart` to 0.0.31, addressing denial-of-service and parameter-smuggling issues in querystring and multipart form parsing.
+- Updated `vite` to 7.3.5, fixing a `server.fs.deny` bypass and an NTLM hash-disclosure issue in the bundled dev-server tooling.
+- Updated bundled frontend dependencies `form-data` (CRLF injection), `js-yaml` (denial-of-service), `@babel/core` (arbitrary file read), `esbuild` (dev-server file read), `ws` (memory disclosure / denial-of-service), and `brace-expansion` (denial-of-service) to patched versions.
+
 ## [1.0.7] - 2026-06-10
 
 ### Changed
