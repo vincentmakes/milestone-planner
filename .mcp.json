@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "github-dependabot": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/x/dependabot/readonly",
+      "headers": {
+        "Authorization": "Bearer ${GITHUB_DEPENDABOT_TOKEN}"
+      }
+    }
+  }
+}
