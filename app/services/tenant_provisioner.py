@@ -65,7 +65,18 @@ async def _reassign_public_schema_owner(conn: asyncpg.Connection, new_owner: str
         keyword = relkind_to_keyword[row["relkind"]]
         await conn.execute(f'ALTER {keyword} public."{row["relname"]}" OWNER TO "{new_owner}"')
 
-    # Schema itself (so future CREATE TABLE works as the tenant user).
+    # Schema itself — make the tenant user able to create objects in public.
+    # On managed Postgres (Azure Database / RDS / Cloud SQL) the public schema
+    # of a freshly created database is owned by the platform admin role, and
+    # since PostgreSQL 15 the PUBLIC pseudo-role no longer has CREATE on it —
+    # so the tenant user cannot create its tables and provisioning fails with
+    # "permission denied for schema public". Grant CREATE/USAGE explicitly and
+    # (best-effort) hand ownership to the tenant user. Both statements require
+    # the admin connection to own the public schema or be a superuser.
+    try:
+        await conn.execute(f'GRANT ALL ON SCHEMA public TO "{new_owner}"')
+    except Exception as e:
+        logger.warning("Could not grant public schema privileges to %s: %s", new_owner, e)
     try:
         await conn.execute(f'ALTER SCHEMA public OWNER TO "{new_owner}"')
     except Exception as e:
@@ -543,6 +554,18 @@ async def provision_tenant_database(
         except Exception as e:
             logger.exception("  Error creating user: %s", e)
             raise
+
+        # Grant the tenant role to the provisioning admin so that, on managed
+        # Postgres (Azure / RDS / Cloud SQL) where the admin is not a superuser,
+        # it can create a database OWNED by that role. Without membership,
+        # "CREATE DATABASE ... OWNER <role>" fails with
+        # 'must be able to SET ROLE "<role>"'. A CREATEROLE admin may grant
+        # membership in any non-superuser role. Harmless if already a superuser.
+        try:
+            await conn.execute(f'GRANT "{database_user}" TO CURRENT_USER')
+            logger.info("  Granted %s to provisioning admin", database_user)
+        except Exception as e:
+            logger.warning("  Could not grant tenant role to admin (continuing): %s", e)
 
         # Create database
         try:
