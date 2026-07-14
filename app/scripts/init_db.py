@@ -62,6 +62,15 @@ async def ensure_database_exists(settings, db_name: str, db_user: str, db_passwo
             await conn.execute(f"CREATE USER \"{db_user}\" WITH PASSWORD '{safe_pw}'")
             print(f"  Created user '{db_user}'")
 
+        # Grant the role to the current admin so a non-superuser (managed
+        # Postgres: Azure / RDS / Cloud SQL) can create a database OWNED by it.
+        # Without membership, "CREATE DATABASE ... OWNER <role>" fails with
+        # 'must be able to SET ROLE "<role>"'.
+        try:
+            await conn.execute(f'GRANT "{db_user}" TO CURRENT_USER')
+        except Exception as e:
+            print(f"  Warning: could not grant role to admin (continuing): {e}")
+
         # Create database
         await conn.execute(f'CREATE DATABASE "{db_name}" OWNER "{db_user}"')
         await conn.execute(f'GRANT ALL PRIVILEGES ON DATABASE "{db_name}" TO "{db_user}"')

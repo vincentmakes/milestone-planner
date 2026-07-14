@@ -97,6 +97,15 @@ async def provision_demo_db(settings) -> bool:
             await conn.execute(f"CREATE USER \"{DEMO_TENANT_USER}\" WITH PASSWORD '{safe_pw}'")
             print(f"  Created database user '{DEMO_TENANT_USER}'")
 
+        # Grant the role to the current admin so a non-superuser (managed
+        # Postgres: Azure / RDS / Cloud SQL) can create a database OWNED by it.
+        # Without membership, "CREATE DATABASE ... OWNER <role>" fails with
+        # 'must be able to SET ROLE "<role>"'.
+        try:
+            await conn.execute(f'GRANT "{DEMO_TENANT_USER}" TO CURRENT_USER')
+        except Exception as e:
+            print(f"  Warning: could not grant role to admin (continuing): {e}")
+
         await conn.execute(f'CREATE DATABASE "{DEMO_TENANT_DB}" OWNER "{DEMO_TENANT_USER}"')
         await conn.execute(
             f'GRANT ALL PRIVILEGES ON DATABASE "{DEMO_TENANT_DB}" TO "{DEMO_TENANT_USER}"'

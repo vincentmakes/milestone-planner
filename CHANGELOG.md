@@ -5,6 +5,11 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.9] - 2026-07-14
+
+### Fixed
+- Tenant provisioning now works on managed PostgreSQL (Azure Database, RDS, Cloud SQL) where the admin role is not a superuser: the provisioning admin is granted each new tenant role before creating its database (previously failed with `must be able to SET ROLE "…"`), and the tenant user is explicitly granted `CREATE`/`USAGE` on its `public` schema (previously failed with `permission denied for schema public` when building tables).
+
 ## [1.0.8] - 2026-06-23
 
 ### Security
