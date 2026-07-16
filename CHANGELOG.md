@@ -5,6 +5,16 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.14] - 2026-07-16
+
+### Fixed
+- The manual tenant schema template now includes the equipment blocks, tags and project tags tables it was missing.
+- The staff notes table is now created consistently as `staff_notes` on every install path; databases from older installs are migrated automatically (legacy `notes` rows are carried over and the old table removed).
+- Assignment endpoints are now correctly listed in the broadcast middleware's skip list, replacing a stale entry for a route that never existed.
+
+### Removed
+- Dead HTTP presence endpoints and unused presence polling code; presence has always worked over the WebSocket connection.
+
 ## [1.0.13] - 2026-07-16
 
 ### Fixed

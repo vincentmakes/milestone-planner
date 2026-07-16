@@ -219,6 +219,71 @@ class TenantConnectionManager:
         except Exception as e:
             logger.warning("Auto-migration (company_events.color) warning for %s: %s", slug, e)
 
+        # staff_notes table (the Note model's table). Historic install paths
+        # created a legacy "notes" table instead, which the app never read or
+        # wrote. Create staff_notes, copy any legacy rows, drop the old table.
+        try:
+            result = await conn.execute(
+                text("""
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name IN ('staff_notes', 'notes')
+            """)
+            )
+            existing = {row[0] for row in result.fetchall()}
+            if "staff_notes" not in existing or "notes" in existing:
+                logger.info("Auto-migration: Creating staff_notes table on tenant %s...", slug)
+                await conn.execute(
+                    text("""
+                    CREATE TABLE IF NOT EXISTS staff_notes (
+                        id SERIAL PRIMARY KEY,
+                        site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+                        staff_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                        date DATE NOT NULL,
+                        text TEXT NOT NULL,
+                        type VARCHAR(50) NOT NULL DEFAULT 'general',
+                        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                )
+                await conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_staff_notes_site_date "
+                        "ON staff_notes(site_id, date)"
+                    )
+                )
+                if "notes" in existing:
+                    has_type = await conn.execute(
+                        text("""
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'notes' AND column_name = 'type'
+                    """)
+                    )
+                    if has_type.fetchone():
+                        await conn.execute(
+                            text("""
+                            INSERT INTO staff_notes (site_id, staff_id, date, text, type, created_at)
+                            SELECT site_id, staff_id, date, text,
+                                   COALESCE(type, 'general'),
+                                   COALESCE(created_at, CURRENT_TIMESTAMP)
+                            FROM notes WHERE site_id IS NOT NULL
+                        """)
+                        )
+                    else:
+                        await conn.execute(
+                            text("""
+                            INSERT INTO staff_notes (site_id, staff_id, date, text, created_at)
+                            SELECT site_id, staff_id, date, text,
+                                   COALESCE(created_at, CURRENT_TIMESTAMP)
+                            FROM notes WHERE site_id IS NOT NULL
+                        """)
+                        )
+                    await conn.execute(text("DROP TABLE notes"))
+                await conn.commit()
+                logger.info("Auto-migration: Created staff_notes table on tenant %s", slug)
+        except Exception as e:
+            logger.warning("Auto-migration (staff_notes) warning for %s: %s", slug, e)
+
     async def get_pool(self, tenant: Tenant, credentials: TenantCredentials) -> AsyncEngine:
         """
         Get or create a connection pool for a tenant.

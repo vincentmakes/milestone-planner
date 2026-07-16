@@ -297,15 +297,15 @@ def get_tenant_schema_sql() -> str:
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Notes
-    CREATE TABLE IF NOT EXISTS notes (
+    -- Staff notes (pinned to a site/date; matches the Note model's staff_notes table)
+    CREATE TABLE IF NOT EXISTS staff_notes (
       id SERIAL PRIMARY KEY,
-      site_id INTEGER REFERENCES sites(id),
-      staff_id INTEGER REFERENCES users(id),
+      site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      staff_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
       date DATE NOT NULL,
       text TEXT NOT NULL,
-      type TEXT DEFAULT 'general',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      type VARCHAR(50) NOT NULL DEFAULT 'general',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
     -- Vacations/time off
@@ -426,6 +426,7 @@ def get_tenant_schema_sql() -> str:
     CREATE INDEX IF NOT EXISTS idx_bank_holidays_date ON bank_holidays(date);
     CREATE INDEX IF NOT EXISTS idx_bank_holidays_year ON bank_holidays(site_id, year);
     CREATE INDEX IF NOT EXISTS idx_company_events_site_date ON company_events(site_id, date);
+    CREATE INDEX IF NOT EXISTS idx_staff_notes_site_date ON staff_notes(site_id, date);
     CREATE INDEX IF NOT EXISTS idx_equipment_blocks_equipment_id ON equipment_blocks(equipment_id);
     CREATE INDEX IF NOT EXISTS idx_equipment_blocks_dates ON equipment_blocks(start_date, end_date);
     CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired);

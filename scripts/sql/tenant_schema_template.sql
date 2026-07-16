@@ -197,6 +197,17 @@ CREATE TABLE vacations (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Equipment blocks (maintenance / defect / calibration unavailability)
+CREATE TABLE equipment_blocks (
+    id SERIAL PRIMARY KEY,
+    equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    reason VARCHAR(50) DEFAULT 'maintenance' NOT NULL,
+    description VARCHAR(200) DEFAULT 'Maintenance' NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Bank holidays
 CREATE TABLE bank_holidays (
     id SERIAL PRIMARY KEY,
@@ -220,14 +231,15 @@ CREATE TABLE company_events (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Notes (date-specific annotations)
-CREATE TABLE notes (
+-- Staff notes (date-specific annotations pinned to a site)
+CREATE TABLE staff_notes (
     id SERIAL PRIMARY KEY,
-    site_id INTEGER REFERENCES sites(id) ON DELETE CASCADE,
-    staff_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    staff_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     date DATE NOT NULL,
     text TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    type VARCHAR(50) NOT NULL DEFAULT 'general',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ============================================================================
@@ -318,6 +330,27 @@ CREATE TABLE user_skills (
 );
 
 -- ============================================================================
+-- TAGS (global project tags, shared across sites)
+-- ============================================================================
+
+-- Tags definitions
+CREATE TABLE tags (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    color VARCHAR(7) NOT NULL DEFAULT '#6366f1',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Project tags (many-to-many)
+CREATE TABLE project_tags (
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (project_id, tag_id)
+);
+
+-- ============================================================================
 -- REALTIME COLLABORATION
 -- ============================================================================
 
@@ -360,8 +393,11 @@ CREATE INDEX idx_vacations_dates ON vacations(start_date, end_date);
 CREATE INDEX idx_bank_holidays_site ON bank_holidays(site_id);
 CREATE INDEX idx_bank_holidays_date ON bank_holidays(date);
 CREATE INDEX idx_company_events_site_date ON company_events(site_id, date);
-CREATE INDEX idx_notes_staff ON notes(staff_id);
-CREATE INDEX idx_notes_date ON notes(date);
+CREATE INDEX idx_staff_notes_site_date ON staff_notes(site_id, date);
+CREATE INDEX idx_equipment_blocks_equipment_id ON equipment_blocks(equipment_id);
+CREATE INDEX idx_equipment_blocks_dates ON equipment_blocks(start_date, end_date);
+CREATE INDEX idx_project_tags_project ON project_tags(project_id);
+CREATE INDEX idx_project_tags_tag ON project_tags(tag_id);
 CREATE INDEX idx_custom_columns_site ON custom_columns(site_id);
 CREATE INDEX idx_custom_column_values_column ON custom_column_values(custom_column_id);
 CREATE INDEX idx_custom_column_values_entity ON custom_column_values(entity_type, entity_id);

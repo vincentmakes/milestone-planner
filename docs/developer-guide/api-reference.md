@@ -154,16 +154,13 @@ Project tags are colored labels shared across all projects in the instance. See 
 | `PUT` | `/t/{slug}/api/custom-columns/reorder` | Reorder columns |
 | `PUT` | `/t/{slug}/api/custom-columns/{id}/values` | Bulk update column values |
 
-### Presence & Collaboration
+### Real-Time Collaboration
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/t/{slug}/api/presence/heartbeat` | Send presence heartbeat (viewing/editing) |
-| `DELETE` | `/t/{slug}/api/presence/{project_id}` | Leave project presence |
-| `GET` | `/t/{slug}/api/presence/project/{id}` | Get active viewers for a project |
-| `GET` | `/t/{slug}/api/presence/site/{id}` | Get presence across all projects in a site |
-| `POST` | `/t/{slug}/api/presence/check-conflict/{id}` | Check for conflicts before saving |
-| `WS` | `/t/{slug}/ws` | WebSocket for real-time updates |
+| `WS` | `/t/{slug}/ws` | WebSocket for real-time updates and presence |
+
+Presence (who is online, who is viewing a project) is handled entirely over the WebSocket connection — there are no HTTP presence endpoints.
 
 ### Other Endpoints
 
@@ -239,42 +236,6 @@ Content-Type: application/json
     "dependencies": [
         {"id": 41, "type": "FS"},
         {"id": 38, "type": "SS"}
-    ]
-}
-```
-
-### Presence Heartbeat
-
-```
-POST /t/{slug}/api/presence/heartbeat
-Content-Type: application/json
-
-{
-    "project_id": 5,
-    "activity": "editing"
-}
-```
-
-### Conflict Check Response
-
-```
-POST /t/{slug}/api/presence/check-conflict/5
-
-→ 200 OK
-{
-    "has_conflict": true,
-    "message": "Project was modified by another user",
-    "last_modified_at": "2026-04-09T14:30:00Z",
-    "last_modified_by": "Jane Doe",
-    "active_editors": [
-        {
-            "user_id": 3,
-            "first_name": "Jane",
-            "last_name": "Doe",
-            "activity": "editing",
-            "started_at": "2026-04-09T14:25:00Z",
-            "last_seen_at": "2026-04-09T14:30:00Z"
-        }
     ]
 }
 ```
