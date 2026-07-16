@@ -5,6 +5,11 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.11] - 2026-07-16
+
+### Fixed
+- Organization-level Microsoft Entra SSO sign-in no longer returns a 500 error on the Microsoft callback in multi-tenant mode: the workspace is now carried through the OAuth flow so the shared organization callback URL completes against the correct tenant database and returns the user to their workspace. A single organization SSO configuration and redirect URI now works for every tenant in the organization.
+
 ## [1.0.10] - 2026-07-16
 
 ### Added

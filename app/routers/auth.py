@@ -6,6 +6,7 @@ Matches the Node.js API at /api/auth exactly.
 """
 
 import logging
+from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -551,6 +552,106 @@ async def update_sso_config(
 # ---------------------------------------------------------
 
 
+def _sso_state_sig(payload: str) -> str:
+    """HMAC-SHA256 signature (truncated) over the state payload."""
+    import hashlib
+    import hmac
+
+    return hmac.new(
+        settings.session_secret.encode(),
+        payload.encode(),
+        hashlib.sha256,
+    ).hexdigest()[:16]
+
+
+def _sign_sso_state(slug: str | None) -> str:
+    """
+    Build an HMAC-signed OAuth ``state`` that also carries the tenant slug.
+
+    Organization SSO uses a single shared callback URL with no ``/t/{slug}/``
+    prefix, so the tenant identity must survive the round-trip inside the state.
+    Format: ``{slug}:{nonce}:{sig}`` where ``sig`` signs ``f"{slug}:{nonce}"``.
+    ``slug`` is empty in single-tenant mode.
+    """
+    import secrets
+
+    slug = slug or ""
+    nonce = secrets.token_urlsafe(32)
+    payload = f"{slug}:{nonce}"
+    return f"{payload}:{_sso_state_sig(payload)}"
+
+
+def _parse_sso_state(state: str | None) -> tuple[str | None, bool]:
+    """
+    Verify an OAuth ``state`` and extract the tenant slug.
+
+    Returns ``(tenant_slug_or_None, valid)``. Accepts the new three-part
+    ``{slug}:{nonce}:{sig}`` form and the legacy two-part ``{nonce}:{sig}`` form
+    (slug ``None``) so logins already in flight during a deploy still validate.
+    """
+    import hmac
+
+    if not state or ":" not in state:
+        return None, False
+
+    parts = state.split(":")
+    if len(parts) == 3:
+        slug, nonce, sig = parts
+        payload = f"{slug}:{nonce}"
+        if hmac.compare_digest(sig, _sso_state_sig(payload)):
+            return (slug or None), True
+        return None, False
+    if len(parts) == 2:
+        nonce, sig = parts
+        if hmac.compare_digest(sig, _sso_state_sig(nonce)):
+            return None, True
+        return None, False
+    return None, False
+
+
+@asynccontextmanager
+async def _resolve_sso_tenant_session(request: Request, default_db: AsyncSession, tenant_slug):
+    """
+    Yield ``(db_session, tenant_ctx)`` for the SSO callback.
+
+    Organization SSO shares one callback URL with no ``/t/{slug}/`` prefix, so
+    when the request carries no tenant context we recover the tenant from the
+    (already-verified) state slug and open a session against that tenant's own
+    database — mirroring what ``TenantMiddleware`` does for prefixed routes.
+    Otherwise the request's default session is yielded unchanged.
+
+    On an unknown/inactive tenant or a connection failure, yields
+    ``(None, None)`` so the caller can redirect with a friendly error instead of
+    surfacing a 500.
+    """
+    tenant = getattr(request.state, "tenant", None) if hasattr(request, "state") else None
+    if tenant or not tenant_slug:
+        yield default_db, tenant
+        return
+
+    from app.middleware.tenant import get_tenant_info_cached
+    from app.services.tenant_manager import tenant_connection_manager
+
+    try:
+        tenant_info = await get_tenant_info_cached(tenant_slug)
+        if not tenant_info or tenant_info.get("status") != "active":
+            yield None, None
+            return
+        await tenant_connection_manager.get_pool_from_info(tenant_info)
+        factory = tenant_connection_manager.get_session_factory(tenant_slug)
+    except Exception:
+        logger.exception("SSO callback: failed to resolve tenant '%s'", tenant_slug)
+        yield None, None
+        return
+
+    if factory is None:
+        yield None, None
+        return
+
+    async with factory() as tenant_db:
+        yield tenant_db, tenant_info
+
+
 @router.get("/auth/sso/status")
 async def sso_status(
     request: Request,
@@ -633,8 +734,6 @@ async def sso_login(
 
     Matches: GET /api/auth/sso/login
     """
-    import secrets
-
     from app.services.sso import SSOService
 
     sso_service = SSOService(db)
@@ -657,18 +756,13 @@ async def sso_login(
             detail="SSO is not properly configured",
         )
 
-    # Generate HMAC-signed state for OAuth CSRF protection
-    # Format: {nonce}:{hmac_signature}
-    import hashlib as _hashlib
-    import hmac as _hmac
-
-    nonce = secrets.token_urlsafe(32)
-    sig = _hmac.new(
-        settings.session_secret.encode(),
-        nonce.encode(),
-        _hashlib.sha256,
-    ).hexdigest()[:16]
-    state = f"{nonce}:{sig}"
+    # Generate an HMAC-signed state carrying the tenant slug. Organization SSO
+    # shares one callback URL with no tenant prefix, so the callback recovers the
+    # tenant from the state (see _parse_sso_state / sso_callback).
+    tenant_slug = getattr(request.state, "tenant_slug", None) if hasattr(request, "state") else None
+    if not tenant_slug and isinstance(tenant, dict):
+        tenant_slug = tenant.get("slug")
+    state = _sign_sso_state(tenant_slug)
 
     # Determine if we need groups scope
     has_group_requirements = bool(config.get("required_group_ids"))
@@ -713,169 +807,174 @@ async def sso_callback(
     if not code:
         return RedirectResponse(url="/?sso_error=No+authorization+code+received", status_code=302)
 
-    # Verify HMAC-signed state to prevent OAuth CSRF
-    import hashlib as _hashlib
-    import hmac as _hmac
-
-    if not state or ":" not in state:
-        return RedirectResponse(url="/?sso_error=Invalid+SSO+state", status_code=302)
-    nonce, sig = state.rsplit(":", 1)
-    expected_sig = _hmac.new(
-        settings.session_secret.encode(),
-        nonce.encode(),
-        _hashlib.sha256,
-    ).hexdigest()[:16]
-    if not _hmac.compare_digest(sig, expected_sig):
+    # Verify the HMAC-signed state and recover the tenant slug it carries.
+    tenant_slug, state_valid = _parse_sso_state(state)
+    if not state_valid:
         return RedirectResponse(url="/?sso_error=Invalid+SSO+state", status_code=302)
 
-    sso_service = SSOService(db)
+    # Organization SSO shares one callback URL with no /t/{slug}/ prefix, so the
+    # request has no tenant context here — recover it from the (verified) state
+    # slug and run the rest of the flow against that tenant's own database.
+    async with _resolve_sso_tenant_session(request, db, tenant_slug) as (active_db, tenant_ctx):
+        if active_db is None:
+            return RedirectResponse(url="/?sso_error=Unknown+or+inactive+tenant", status_code=302)
 
-    # Get tenant from request state (set by tenant middleware in multi-tenant mode)
-    tenant = getattr(request.state, "tenant", None) if hasattr(request, "state") else None
+        sso_service = SSOService(active_db)
 
-    # Get effective SSO config
-    config, source = await sso_service.get_effective_sso_config(tenant)
+        # Get effective SSO config (organization-level is resolved from the tenant)
+        config, source = await sso_service.get_effective_sso_config(tenant_ctx)
 
-    if not config or not config.get("enabled"):
-        return RedirectResponse(url="/?sso_error=SSO+not+configured", status_code=302)
+        if not config or not config.get("enabled"):
+            return RedirectResponse(url="/?sso_error=SSO+not+configured", status_code=302)
 
-    # Exchange code for tokens
-    entra_tenant_id = config["tenant_id"]
-    token_url = f"https://login.microsoftonline.com/{entra_tenant_id}/oauth2/v2.0/token"
+        # Exchange code for tokens
+        entra_tenant_id = config["tenant_id"]
+        token_url = f"https://login.microsoftonline.com/{entra_tenant_id}/oauth2/v2.0/token"
 
-    # Determine scopes (need GroupMember.Read.All if groups are required)
-    has_group_requirements = bool(config.get("required_group_ids"))
-    scopes = ["openid", "profile", "email", "User.Read"]
-    if has_group_requirements:
-        scopes.append("GroupMember.Read.All")
+        # Determine scopes (need GroupMember.Read.All if groups are required)
+        has_group_requirements = bool(config.get("required_group_ids"))
+        scopes = ["openid", "profile", "email", "User.Read"]
+        if has_group_requirements:
+            scopes.append("GroupMember.Read.All")
 
-    token_data = {
-        "client_id": config["client_id"],
-        "client_secret": config["client_secret"],
-        "code": code,
-        "redirect_uri": config["redirect_uri"],
-        "grant_type": "authorization_code",
-        "scope": " ".join(scopes),
-    }
+        token_data = {
+            "client_id": config["client_id"],
+            "client_secret": config["client_secret"],
+            "code": code,
+            "redirect_uri": config["redirect_uri"],
+            "grant_type": "authorization_code",
+            "scope": " ".join(scopes),
+        }
 
-    async with httpx.AsyncClient() as client:
-        token_response = await client.post(token_url, data=token_data)
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(token_url, data=token_data)
 
-        if token_response.status_code != 200:
-            logger.error(
-                "Token exchange failed: %s %s", token_response.status_code, token_response.text
+            if token_response.status_code != 200:
+                logger.error(
+                    "Token exchange failed: %s %s", token_response.status_code, token_response.text
+                )
+                return RedirectResponse(
+                    url="/?sso_error=Failed+to+exchange+authorization+code", status_code=302
+                )
+
+            tokens = token_response.json()
+            access_token = tokens.get("access_token")
+
+            # Get user info from Microsoft Graph
+            graph_response = await client.get(
+                "https://graph.microsoft.com/v1.0/me",
+                headers={"Authorization": f"Bearer {access_token}"},
             )
+
+            if graph_response.status_code != 200:
+                logger.error(
+                    "Graph API failed: %s %s", graph_response.status_code, graph_response.text
+                )
+                return RedirectResponse(
+                    url="/?sso_error=Failed+to+fetch+user+info", status_code=302
+                )
+
+            user_info = graph_response.json()
+
+        # Validate group membership if required
+        if has_group_requirements:
+            user_groups = await sso_service.fetch_user_groups(access_token)
+
+            is_allowed = sso_service.validate_group_membership(
+                user_groups,
+                config["required_group_ids"],
+                config.get("group_membership_mode", "any"),
+            )
+
+            if not is_allowed:
+                return RedirectResponse(
+                    url="/?sso_error=You+do+not+have+access+to+this+tenant.+Contact+administrator.",
+                    status_code=302,
+                )
+
+        # Find or create user
+        email = user_info.get("mail") or user_info.get("userPrincipalName")
+
+        if not email:
             return RedirectResponse(
-                url="/?sso_error=Failed+to+exchange+authorization+code", status_code=302
+                url="/?sso_error=No+email+found+in+Microsoft+account", status_code=302
             )
 
-        tokens = token_response.json()
-        access_token = tokens.get("access_token")
-
-        # Get user info from Microsoft Graph
-        graph_response = await client.get(
-            "https://graph.microsoft.com/v1.0/me",
-            headers={"Authorization": f"Bearer {access_token}"},
+        # Look up existing user
+        user_result = await active_db.execute(
+            select(User).where(User.email == email).options(selectinload(User.sites))
         )
+        user = user_result.scalar_one_or_none()
 
-        if graph_response.status_code != 200:
-            logger.error("Graph API failed: %s %s", graph_response.status_code, graph_response.text)
-            return RedirectResponse(url="/?sso_error=Failed+to+fetch+user+info", status_code=302)
+        if not user:
+            # Check if auto-create is enabled
+            if not config.get("auto_create_users"):
+                return RedirectResponse(
+                    url="/?sso_error=No+account+found.+Contact+administrator.", status_code=302
+                )
 
-        user_info = graph_response.json()
-
-    # Validate group membership if required
-    if has_group_requirements:
-        user_groups = await sso_service.fetch_user_groups(access_token)
-
-        is_allowed = sso_service.validate_group_membership(
-            user_groups, config["required_group_ids"], config.get("group_membership_mode", "any")
-        )
-
-        if not is_allowed:
-            return RedirectResponse(
-                url="/?sso_error=You+do+not+have+access+to+this+tenant.+Contact+administrator.",
-                status_code=302,
+            # Create new user
+            user = User(
+                email=email,
+                password="",  # No password for SSO users
+                first_name=user_info.get("givenName", ""),
+                last_name=user_info.get("surname", ""),
+                job_title=user_info.get("jobTitle"),
+                role=config.get("default_role", "user"),
+                sso_provider="microsoft",
+                sso_id=user_info.get("id"),
+                active=1,
             )
 
-    # Find or create user
-    email = user_info.get("mail") or user_info.get("userPrincipalName")
+            active_db.add(user)
+            await active_db.commit()
+            await active_db.refresh(user)
 
-    if not email:
-        return RedirectResponse(
-            url="/?sso_error=No+email+found+in+Microsoft+account", status_code=302
+            # Load sites relationship
+            user.sites = []
+
+        else:
+            # Update SSO info if needed
+            if not user.sso_provider:
+                user.sso_provider = "microsoft"
+                user.sso_id = user_info.get("id")
+                await active_db.commit()
+
+        if not user.is_active:
+            return RedirectResponse(url="/?sso_error=User+account+is+disabled", status_code=302)
+
+        # Create session
+        session_service = SessionService(active_db)
+        session_id = await session_service.create_session(user)
+
+        # Determine redirect URL - land back inside the tenant workspace.
+        if tenant_slug:
+            redirect_url = f"/t/{tenant_slug}/"
+        else:
+            # Single-tenant / legacy state: derive from the callback path as before.
+            redirect_url = "/"
+            if config.get("redirect_uri"):
+                from urllib.parse import urlparse
+
+                parsed = urlparse(config["redirect_uri"])
+                path = parsed.path
+                if "/api/auth/sso/callback" in path:
+                    tenant_path = path.replace("/api/auth/sso/callback", "")
+                    if tenant_path:
+                        redirect_url = (
+                            tenant_path if tenant_path.endswith("/") else tenant_path + "/"
+                        )
+
+        # Set cookie
+        response = RedirectResponse(url=redirect_url, status_code=302)
+        response.set_cookie(
+            key="connect.sid",
+            value=f"s%3A{session_id}.",
+            max_age=settings.session_max_age,
+            httponly=True,
+            samesite="lax",
+            secure=settings.secure_cookies,
+            path="/",
         )
 
-    # Look up existing user
-    user_result = await db.execute(
-        select(User).where(User.email == email).options(selectinload(User.sites))
-    )
-    user = user_result.scalar_one_or_none()
-
-    if not user:
-        # Check if auto-create is enabled
-        if not config.get("auto_create_users"):
-            return RedirectResponse(
-                url="/?sso_error=No+account+found.+Contact+administrator.", status_code=302
-            )
-
-        # Create new user
-        user = User(
-            email=email,
-            password="",  # No password for SSO users
-            first_name=user_info.get("givenName", ""),
-            last_name=user_info.get("surname", ""),
-            job_title=user_info.get("jobTitle"),
-            role=config.get("default_role", "user"),
-            sso_provider="microsoft",
-            sso_id=user_info.get("id"),
-            active=1,
-        )
-
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-
-        # Load sites relationship
-        user.sites = []
-
-    else:
-        # Update SSO info if needed
-        if not user.sso_provider:
-            user.sso_provider = "microsoft"
-            user.sso_id = user_info.get("id")
-            await db.commit()
-
-    if not user.is_active:
-        return RedirectResponse(url="/?sso_error=User+account+is+disabled", status_code=302)
-
-    # Create session
-    session_service = SessionService(db)
-    session_id = await session_service.create_session(user)
-
-    # Determine redirect URL - for multi-tenant, redirect to tenant base URL
-    redirect_url = "/"
-    if config.get("redirect_uri"):
-        from urllib.parse import urlparse
-
-        parsed = urlparse(config["redirect_uri"])
-        path = parsed.path
-        # Extract tenant prefix from callback path (remove /api/auth/sso/callback)
-        if "/api/auth/sso/callback" in path:
-            tenant_path = path.replace("/api/auth/sso/callback", "")
-            if tenant_path:
-                redirect_url = tenant_path if tenant_path.endswith("/") else tenant_path + "/"
-
-    # Set cookie
-    response = RedirectResponse(url=redirect_url, status_code=302)
-    response.set_cookie(
-        key="connect.sid",
-        value=f"s%3A{session_id}.",
-        max_age=settings.session_max_age,
-        httponly=True,
-        samesite="lax",
-        secure=settings.secure_cookies,
-        path="/",
-    )
-
-    return response
+        return response

@@ -64,8 +64,15 @@ class SSOService:
         # Fall back to tenant-level SSO config
         from app.models.settings import SSOConfig
 
-        result = await self.db.execute(select(SSOConfig).where(SSOConfig.id == 1))
-        config = result.scalar_one_or_none()
+        try:
+            result = await self.db.execute(select(SSOConfig).where(SSOConfig.id == 1))
+            config = result.scalar_one_or_none()
+        except Exception:
+            # A missing table or a query against the wrong database must not
+            # surface as a 500 (e.g. the SSO callback running without tenant
+            # context). Treat it as "no tenant-level SSO configured".
+            logger.exception("Tenant-level SSO config lookup failed")
+            return None, "none"
 
         if config and config.is_enabled and config.is_configured:
             return {
