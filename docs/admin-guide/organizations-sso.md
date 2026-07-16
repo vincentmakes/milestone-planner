@@ -33,16 +33,38 @@ Milestone supports enterprise SSO through Microsoft Entra ID (formerly Azure AD)
 - An App Registration in Azure AD
 - A client secret for the App Registration
 - The redirect URI configured in Azure AD
+- Outbound HTTPS access from the Milestone **server** to `login.microsoftonline.com` and
+  `graph.microsoft.com` (see [Network & Firewall Requirements](installation.md#network-firewall-requirements))
+
+### Redirect URI
+
+Milestone uses a **single, shared callback URL** for all SSO sign-ins:
+
+```
+https://your-domain.com/api/auth/sso/callback
+```
+
+!!! important "One redirect URI for the whole organization"
+    Do **not** add the tenant path (`/t/{slug}/...`) to the redirect URI. Milestone carries
+    the tenant through the sign-in flow internally, so this one URL works for **every**
+    tenant in the organization. Register it once per App Registration and reuse it — you do
+    not need a separate redirect URI per tenant.
+
+    Use the same value in three places: the Azure App Registration, the **Redirect URI**
+    field in Milestone's SSO configuration, and (single-tenant only) `SSO_REDIRECT_URI`.
+    They must match exactly.
 
 ### Azure AD App Registration
 
 1. Go to [Azure Portal](https://portal.azure.com) > Azure Active Directory > App Registrations
 2. Click **New Registration**
-3. Set the redirect URI to: `https://your-domain.com/t/{slug}/api/auth/callback`
+3. Set the redirect URI (platform **Web**) to: `https://your-domain.com/api/auth/sso/callback`
 4. Under **Certificates & secrets**, create a new client secret
 5. Note the **Application (client) ID**, **Directory (tenant) ID**, and the client secret value
 
 ### Configuring SSO in Milestone
+
+SSO can be configured at two scopes:
 
 **Per-Organization (Multi-Tenant):**
 
@@ -52,9 +74,22 @@ Milestone supports enterprise SSO through Microsoft Entra ID (formerly Azure AD)
    - **Client ID** — Application (client) ID from Azure
    - **Tenant ID** — Directory (tenant) ID from Azure
    - **Client Secret** — The secret value
+   - **Redirect URI** — `https://your-domain.com/api/auth/sso/callback` (the shared URL above)
 4. Save configuration
 
-All tenants in the organization will share this SSO setup.
+All tenants in the organization share this SSO setup.
+
+**Per-Tenant (Multi-Tenant):**
+
+A tenant that does **not** belong to an organization can configure its own SSO from the
+**SSO Configuration** screen inside the application (admin only), using the same fields and
+the same shared redirect URI.
+
+!!! note "Organization SSO takes precedence"
+    If a tenant belongs to an organization that has SSO enabled, the organization's
+    configuration always applies and the tenant-level SSO form is shown read-only — a
+    per-tenant configuration would be ignored. To configure SSO per tenant, remove the
+    tenant from the organization (or disable the organization's SSO).
 
 **Per-Instance (Single-Tenant):**
 
@@ -65,7 +100,7 @@ SSO_ENABLED=true
 SSO_CLIENT_ID=your-azure-app-client-id
 SSO_CLIENT_SECRET=your-azure-app-client-secret
 SSO_TENANT_ID=your-azure-tenant-id
-SSO_REDIRECT_URI=https://your-domain.com/api/auth/callback
+SSO_REDIRECT_URI=https://your-domain.com/api/auth/sso/callback
 ```
 
 ### SSO Login Flow
@@ -78,7 +113,12 @@ SSO_REDIRECT_URI=https://your-domain.com/api/auth/callback
 
 ### Testing SSO
 
-Use the **Test Connection** button in the SSO configuration modal to verify the setup works before rolling it out to users.
+After saving the configuration, verify it end to end: open a tenant's login page and click
+**Sign in with Microsoft**. You should be redirected to Microsoft, and after signing in,
+returned to that tenant's workspace. If sign-in fails on the return trip, the most common
+cause is a redirect-URI mismatch — confirm the App Registration, Milestone's **Redirect
+URI** field, and (single-tenant) `SSO_REDIRECT_URI` all read exactly
+`https://your-domain.com/api/auth/sso/callback`.
 
 ## Group-Based Access Control
 

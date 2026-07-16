@@ -91,6 +91,12 @@ If a site has a **country** set, Milestone can auto-fetch public holidays from t
 
 The last refresh timestamp is shown in the site edit modal: *"Last updated: April 2026"*.
 
+!!! note "Behind a corporate firewall?"
+    Fetching holidays is an outbound call from the Milestone **server** to `date.nager.at`.
+    If your network blocks server-to-internet traffic, ask your administrator to allow it —
+    see [Network & Firewall Requirements](../admin-guide/installation.md#network-firewall-requirements).
+    Everything else keeps working if it's blocked; the site just won't have imported holidays.
+
 ### Viewing and Managing Holidays
 
 Open the **Bank Holidays** modal to see all holidays for the current site:
