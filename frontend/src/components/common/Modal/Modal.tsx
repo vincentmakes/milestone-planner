@@ -1,4 +1,4 @@
-import { useEffect, useRef, ReactNode, useCallback } from 'react';
+import { useEffect, useRef, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './Modal.module.css';
 
@@ -9,7 +9,6 @@ export interface ModalProps {
   children: ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'xxl' | 'full';
   footer?: ReactNode;
-  closeOnOverlayClick?: boolean;
   closeOnEscape?: boolean;
 }
 
@@ -20,25 +19,14 @@ export function Modal({
   children,
   size = 'md',
   footer,
-  closeOnOverlayClick = false,
   closeOnEscape = true,
 }: ModalProps) {
-  const overlayRef = useRef<HTMLDivElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const wasOpenRef = useRef(false);
-  
+
   // Store onClose in a ref to avoid re-running effect when it changes
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
-
-  const handleOverlayClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (closeOnOverlayClick && e.target === overlayRef.current) {
-        onCloseRef.current();
-      }
-    },
-    [closeOnOverlayClick]
-  );
 
   // Handle escape key - use ref to avoid dependency on onClose
   useEffect(() => {
@@ -80,9 +68,7 @@ export function Modal({
 
   return createPortal(
     <div
-      ref={overlayRef}
       className={styles.overlay}
-      onClick={handleOverlayClick}
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"

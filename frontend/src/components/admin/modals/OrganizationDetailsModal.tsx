@@ -14,6 +14,7 @@ import {
   updateTenantGroupAccess,
 } from '@/api';
 import type { OrganizationDetail, TenantSummary } from '@/api/endpoints/admin';
+import { useEscapeKey } from '@/hooks';
 import styles from './AdminModal.module.css';
 
 interface OrganizationDetailsModalProps {
@@ -211,11 +212,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
     }
   };
 
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
+  useEscapeKey(onClose);
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString(undefined, {
@@ -233,7 +230,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
   );
 
   return (
-    <div className={styles.overlay} onClick={handleOverlayClick}>
+    <div className={styles.overlay}>
       <div className={`${styles.modal} ${styles.wide}`} style={{ maxWidth: 800 }}>
         <div className={styles.header}>
           <h2 className={styles.title}>

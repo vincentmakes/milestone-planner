@@ -57,6 +57,7 @@ When working on this codebase, follow these conventions:
 - **All snake_case↔camelCase transforms live in the API layer**, chiefly `src/api/endpoints/projects.ts` (`transformProject/Phase/Subphase/...` — including `type`↔`name` for phases and `sort_order`↔`order_index`). Components consume the frontend model from `src/types/models.ts` only; never transform field names in components.
 - **New write endpoints are What-If-intercepted by default.** The API client queues every PUT/POST/DELETE while What-If mode is active, except URLs under `/api/auth/` and `/api/settings/`. If a new endpoint must bypass What-If (rare), extend the exemption list in `src/api/client.ts` deliberately — and if it must be queued, ensure the local optimistic update is complete since the server won't respond for real.
 - **Optimistic-write failure protocol**: on persist failure, reload the affected data from the server and call `undoStore.clear()` — a stale undo stack against fresh server state corrupts data. `useDragAndDrop` and `useUndoRedo` are the reference implementations.
+- **Modals close only via explicit buttons or the Escape key — never on backdrop/outside click.** Clicking outside a modal must NOT close it (it discards in-progress input, e.g. when a text-selection drag ends on the backdrop). The shared `Modal` component (`src/components/common/Modal/`) enforces this and has no overlay-click prop; new dialogs must use it. Standalone dialogs that can't (like the admin-portal modals in `src/components/admin/modals/`) must not attach close handlers to their overlay and should use the `useEscapeKey` hook for Escape support. This rule is for modals/dialogs only — dropdowns, context menus, and popovers keep their click-outside-to-close behavior.
 - New localStorage keys go through `STORAGE_KEYS` in `src/utils/storage.ts` (typed wrappers, legacy migration support). Zustand persistence serializes `Set`s as arrays with custom `merge` — follow the existing pattern in `viewStore`.
 - ESLint is configured with most rules at **warn** level (including `rules-of-hooks`) — CI's lint job will not catch everything. Treat warnings as errors when writing new code.
 - Frontend model types live in `src/types/models.ts`; dates are `YYYY-MM-DD` strings throughout the frontend.
@@ -489,7 +490,7 @@ Two declarative bases: **`Base`** (tenant databases, `app/database.py`) and **`M
 
 | Table | Model | Purpose |
 |-------|-------|---------|
-| `staff_notes` | `Note` | Notes pinned to a site/date. ⚠ Class is `Note` but tablename is **`staff_notes`** (the provisioner SQL historically created `notes` — check both when touching this) |
+| `staff_notes` | `Note` | Notes pinned to a site/date. ⚠ Class is `Note` but tablename is **`staff_notes`** — `setup_databases.sql` creates `staff_notes` (matching the model), but the provisioner SQL and `tenant_schema_template.sql` still create `notes`; check both when touching this |
 | `settings` | `Settings` | Instance key-value settings (e.g. `instance_title`, `show_weekends`) |
 | `predefined_phases` | `PredefinedPhase` | Phase name templates offered in the UI |
 | `project_presence` | `ProjectPresence` | Active-viewer rows (60s timeout). Written by the WS layer; the HTTP presence router is not mounted |
@@ -901,7 +902,7 @@ Docs are **not** built by Actions — Cloudflare Pages builds them from `docs/bu
 
 - The master and tenant databases use **separate SQLAlchemy Base classes** (`MasterBase` vs `Base`). Don't mix them.
 - `setup_databases.sql`, the provisioner schema (`tenant_provisioner.get_tenant_schema_sql()`), and `scripts/sql/tenant_schema_template.sql` must all stay in sync with the models — follow the schema-change checklist.
-- The `Note` model's tablename is **`staff_notes`**, but the provisioner SQL historically created a `notes` table — verify which exists before writing SQL against it.
+- The `Note` model's tablename is **`staff_notes`** and `setup_databases.sql` creates `staff_notes`, but the provisioner SQL and `tenant_schema_template.sql` create a `notes` table — verify which exists before writing SQL against it.
 - `app/routers/presence.py` is **not registered** in `main.py`; its endpoints (and the frontend `usePresence` HTTP polling) are dead. Presence is WebSocket-only.
 - `PUT/DELETE /equipment-assignments/{id}` is defined in both `equipment.py` and `assignments.py`; `equipment.py` wins (registered first). Edit there.
 - `request.state.X` does **not** work for tenant info — `TenantMiddleware` writes a plain dict into `scope["state"]`; read `request.scope["state"]["tenant_slug"]`.

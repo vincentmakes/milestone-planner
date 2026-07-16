@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { getTenant, getTenantAuditLog } from '@/api';
 import type { Tenant, AuditLogEntry } from '@/api/endpoints/admin';
+import { useEscapeKey } from '@/hooks';
 import styles from './AdminModal.module.css';
 
 interface TenantDetailsModalProps {
@@ -42,11 +43,7 @@ export function TenantDetailsModal({ tenantId, onClose }: TenantDetailsModalProp
     }
   };
 
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
+  useEscapeKey(onClose);
 
   const getStatusBadge = (status: Tenant['status']) => {
     const classes: Record<string, string> = {
@@ -76,7 +73,7 @@ export function TenantDetailsModal({ tenantId, onClose }: TenantDetailsModalProp
   };
 
   return (
-    <div className={styles.overlay} onClick={handleOverlayClick}>
+    <div className={styles.overlay}>
       <div className={`${styles.modal} ${styles.wide}`}>
         <div className={styles.header}>
           <h2 className={styles.title}>Tenant Details</h2>

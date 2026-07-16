@@ -5,6 +5,12 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.13] - 2026-07-16
+
+### Fixed
+- Admin portal dialogs no longer close when clicking outside them, which could discard in-progress input (e.g. when a text selection ended on the backdrop); use the close/cancel buttons or press Escape instead. Escape now closes admin portal dialogs.
+- The fresh-install schema (`setup_databases.sql`) now includes the previously missing company events, staff notes, custom columns, skills and project presence tables, matching the schema created for provisioned tenants.
+
 ## [1.0.12] - 2026-07-16
 
 ### Fixed

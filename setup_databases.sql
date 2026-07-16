@@ -376,6 +376,83 @@ CREATE TABLE IF NOT EXISTS project_tags (
     PRIMARY KEY (project_id, tag_id)
 );
 
+-- Company events (audits, meetings, etc. - displayed but don't affect working-day calc)
+CREATE TABLE IF NOT EXISTS company_events (
+    id SERIAL PRIMARY KEY,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    end_date DATE,
+    name TEXT NOT NULL,
+    color VARCHAR(20),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Staff notes pinned to a site/date
+CREATE TABLE IF NOT EXISTS staff_notes (
+    id SERIAL PRIMARY KEY,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    staff_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    date DATE NOT NULL,
+    text TEXT NOT NULL,
+    type VARCHAR(50) NOT NULL DEFAULT 'general',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Custom Gantt columns (user-defined)
+CREATE TABLE IF NOT EXISTS custom_columns (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    column_type VARCHAR(20) NOT NULL DEFAULT 'text' CHECK(column_type IN ('text', 'boolean', 'list')),
+    list_options TEXT,
+    site_id INTEGER REFERENCES sites(id) ON DELETE CASCADE,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    width INTEGER NOT NULL DEFAULT 120,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Custom column values (EAV)
+CREATE TABLE IF NOT EXISTS custom_column_values (
+    id SERIAL PRIMARY KEY,
+    custom_column_id INTEGER NOT NULL REFERENCES custom_columns(id) ON DELETE CASCADE,
+    entity_type VARCHAR(20) NOT NULL CHECK(entity_type IN ('project', 'phase', 'subphase')),
+    entity_id INTEGER NOT NULL,
+    value TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(custom_column_id, entity_type, entity_id)
+);
+
+-- Skills (global, shared across all sites)
+CREATE TABLE IF NOT EXISTS skills (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    color VARCHAR(7) NOT NULL DEFAULT '#6366f1',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- User skills association (many-to-many)
+CREATE TABLE IF NOT EXISTS user_skills (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    skill_id INTEGER NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+    proficiency INTEGER NOT NULL DEFAULT 3 CHECK(proficiency >= 1 AND proficiency <= 5),
+    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, skill_id)
+);
+
+-- Project presence (active viewers for realtime collaboration)
+CREATE TABLE IF NOT EXISTS project_presence (
+    id SERIAL PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    activity TEXT DEFAULT 'viewing' NOT NULL,
+    last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_project_presence_unique ON project_presence(project_id, user_id);
+
 -- Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_projects_site_id ON projects(site_id);
 CREATE INDEX IF NOT EXISTS idx_projects_pm_id ON projects(pm_id);
@@ -395,13 +472,22 @@ CREATE INDEX IF NOT EXISTS idx_vacations_staff_id ON vacations(staff_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_blocks_equipment_id ON equipment_blocks(equipment_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_blocks_dates ON equipment_blocks(start_date, end_date);
 
--- Company events table is created in tenant_provisioner.py / app/models/site.py
--- Ensure color column exists for choosing event color in UI
+-- Ensure color column exists on pre-existing company_events tables (upgrades)
 ALTER TABLE IF EXISTS company_events ADD COLUMN IF NOT EXISTS color VARCHAR(20);
 CREATE INDEX IF NOT EXISTS idx_bank_holidays_site_id ON bank_holidays(site_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired);
 CREATE INDEX IF NOT EXISTS idx_project_tags_project ON project_tags(project_id);
 CREATE INDEX IF NOT EXISTS idx_project_tags_tag ON project_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_company_events_site_date ON company_events(site_id, date);
+CREATE INDEX IF NOT EXISTS idx_staff_notes_site_date ON staff_notes(site_id, date);
+CREATE INDEX IF NOT EXISTS idx_custom_columns_site_id ON custom_columns(site_id);
+CREATE INDEX IF NOT EXISTS idx_custom_column_values_column_id ON custom_column_values(custom_column_id);
+CREATE INDEX IF NOT EXISTS idx_custom_column_values_entity ON custom_column_values(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_user_skills_user ON user_skills(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_skills_skill ON user_skills(skill_id);
+CREATE INDEX IF NOT EXISTS idx_project_presence_project ON project_presence(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_presence_user ON project_presence(user_id);
+CREATE INDEX IF NOT EXISTS idx_project_presence_last_seen ON project_presence(last_seen_at);
 
 -- Insert default predefined phases
 INSERT INTO predefined_phases (name, sort_order, is_active) VALUES
