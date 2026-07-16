@@ -32,14 +32,15 @@ app/
     organization.py    # Organization, OrganizationSSOConfig
     project.py         # Project, Phase, Subphase
     user.py            # User (with full_name property)
-    assignment.py      # StaffAssignment, EquipmentAssignment
-    equipment.py       # Equipment, EquipmentType
-    site.py            # Site
-    skill.py           # Skill
+    assignment.py      # ProjectAssignment, PhaseStaffAssignment, SubphaseStaffAssignment
+    equipment.py       # Equipment, EquipmentAssignment, EquipmentBlock (maintenance/unavailability)
+    site.py            # Site, BankHoliday, CompanyEvent
+    skill.py           # Skill, UserSkill
     vacation.py        # Vacation, RecurringAbsence
     custom_column.py   # CustomColumn, CustomColumnValue
+    tag.py             # Tag, ProjectTag (global project tags, shared across sites)
     note.py            # Note
-    settings.py        # InstanceSettings
+    settings.py        # Settings, PredefinedPhase, SSOConfig
     session.py         # Session
     presence.py        # Presence
   routers/             # FastAPI route handlers
@@ -60,6 +61,7 @@ app/
     sites.py           # Site management
     skills.py          # Skills management
     staff.py           # Staff management
+    tags.py            # Project tag CRUD (superuser/admin only)
     users.py           # User management
     vacations.py       # Vacation/time-off management
   schemas/             # Pydantic request/response schemas
@@ -76,16 +78,22 @@ app/
   middleware/
     auth.py            # Session-based authentication
     tenant.py          # URL-based tenant resolution (/t/{slug}/*)
+    broadcast.py       # Auto-broadcasts change:<entity> WS events on successful writes
+  websocket/
+    manager.py         # Connection manager (tenant isolation, presence, multi-tab)
+    handler.py         # WebSocket endpoint + session auth
+    broadcast.py       # broadcast_change() helper for routers (rich attribution)
 frontend/
   src/
     App.tsx            # Root component with routing
     main.tsx           # React entry point
     api/               # API client and per-resource endpoint functions
       client.ts        # Base HTTP client
-      endpoints/       # admin, auth, customColumns, equipment, presence,
-                       # projects, settings, sites, skills, staff, users, vacations
+      endpoints/       # admin, auth, customColumns, equipment, presence, projects,
+                       # settings, sites, skills, staff, tags, users, vacations
     components/
-      admin/           # AdminApp, TenantList, OrganizationList, AdminUserList, SystemStatsPanel
+      admin/           # AdminApp, AdminDashboard, AdminLoginScreen, TenantList,
+                       # OrganizationList, AdminUserList, SystemStatsPanel
       gantt/           # Gantt chart components
       views/           # ArchivedView, CrossSiteView, EquipmentView, StaffView
       screens/         # LoginScreen, LoadingScreen
@@ -175,7 +183,7 @@ mkdocs build   # Output to site/
 - Tenant DB migrations: `python migrations/run_migration.py <name>`
 - `master_db.init_db()` auto-applies missing schema (organizations table, new tenant columns) on startup.
 - `setup_databases.sql` is the canonical fresh-install schema.
-- Available migrations: `add_organizations`, `add_skills_tables`, `add_custom_columns`, `add_company_events`, `add_project_presence`, `add_is_system_column`, `upgrade_to_v90`
+- Available migrations: `add_organizations`, `add_skills_tables`, `add_custom_columns`, `add_company_events`, `add_company_event_color`, `add_project_presence`, `add_is_system_column`, `add_equipment_blocks`, `add_tags_tables`, `upgrade_to_v90`
 
 ## Environment Variables
 
@@ -198,7 +206,7 @@ Auto-initialization (fresh install):
 
 - Endpoint: `GET /t/{slug}/api/export/site/{site_id}/excel` (admin / superuser only; superusers limited to sites they belong to).
 - Implemented in `app/routers/export.py` — `build_site_export_workbook()` generates a multi-sheet `.xlsx` via `openpyxl`.
-- Current sheets: Site, Projects (hierarchy with phases/subphases), Users, Equipment, Skills, User skills, Vacations, Project assignments, Phase assignments, Subphase assignments, Equipment assignments, Custom columns, Custom column values, Bank holidays, Company events.
+- Current sheets: Site, Projects (hierarchy with phases/subphases), Users, Equipment, Skills, User skills, Tags, Project tags, Vacations, Project assignments, Phase assignments, Subphase assignments, Equipment assignments, Custom columns, Custom column values, Bank holidays, Company events, Equipment blocks.
 - **IMPORTANT**: any new data added at the site level through future enhancements (e.g. equipment maintenance/blocks, new event types, additional site-scoped settings, new assignment kinds, etc.) **must** be added as a new sheet (or a new column on the existing sheet) in `build_site_export_workbook()`. The site export is the canonical "everything for this site" snapshot — do not let it drift behind the model.
 
 ## Documentation Screenshots
@@ -244,7 +252,7 @@ The `scripts/screenshots/` Python scripts run their own Chromium and are always 
 - The frontend is a React SPA served from `public/` by FastAPI's catch-all route.
 - `CustomJSONResponse` formats datetimes to match Node.js `toISOString()` output.
 - Organization SSO (Microsoft Entra ID) is configured per-organization and shared across its tenants.
-- WebSocket connections provide real-time collaboration (presence tracking, live updates).
+- WebSocket connections (`app/websocket/`) provide real-time collaboration (presence tracking, live updates). Routers can call `broadcast_change(...)` (`app/websocket/broadcast.py`) for rich, attributed updates; `BroadcastMiddleware` (`app/middleware/broadcast.py`) auto-fires a coarse `change:<entity>` event on any other successful write so clients refresh the affected slice.
 - The Dockerfile is a multi-stage build: Python deps, Node.js frontend build, slim runtime.
 
 ## Gotchas
