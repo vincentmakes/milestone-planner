@@ -5,6 +5,11 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.12] - 2026-07-16
+
+### Fixed
+- Corrected outdated setup and migration documentation: removed references to a nonexistent Alembic setup and `migrate_all_tenants.py` script, documented the master-database migration runner, and completed the list of available migrations.
+
 ## [1.0.11] - 2026-07-16
 
 ### Fixed

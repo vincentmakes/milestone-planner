@@ -24,6 +24,16 @@ python -m migrations.run_migration add_company_events
 ./migrations/run_migration.sh add_company_events
 ```
 
+### Master Database Migrations
+
+Migrations that target the **master database** (multi-tenant admin DB) use a dedicated runner that executes statement-by-statement (safely preserving `DO $$ ... END $$;` blocks — covered by `tests/test_migration_parser.py`):
+
+```bash
+python migrations/run_migration_master.py add_organizations
+```
+
+In single-tenant mode it falls back to the main `DB_*` database.
+
 ## How It Works
 
 The migration runner automatically detects deployment mode:
@@ -76,12 +86,20 @@ The migration runner uses these environment variables:
 
 ## Available Migrations
 
-| Migration | Description |
-|-----------|-------------|
-| `add_company_events` | Adds company_events table for non-working-day events |
-| `add_custom_columns` | Adds custom_columns and custom_column_values tables for EAV pattern |
-| `add_is_system_column` | Adds is_system flag to protect system users from deletion |
-| `add_skills_tables` | Adds skills and user_skills tables for capability tracking |
+The authoritative list is the set of `.sql` files in this folder — run either runner with no argument to list them.
+
+| Migration | Target | Description |
+|-----------|--------|-------------|
+| `add_company_events` | tenant | Adds company_events table for non-working-day events |
+| `add_company_event_color` | tenant | Adds color column to company_events |
+| `add_custom_columns` | tenant | Adds custom_columns and custom_column_values tables (EAV pattern) |
+| `add_equipment_blocks` | tenant | Adds equipment_blocks table (maintenance/unavailability) |
+| `add_is_system_column` | tenant | Adds is_system flag to protect system users from deletion |
+| `add_organizations` | **master** | Adds organizations + organization_sso_config tables and tenant columns |
+| `add_project_presence` | tenant | Adds project_presence table (active viewers) |
+| `add_skills_tables` | tenant | Adds skills and user_skills tables for capability tracking |
+| `add_tags_tables` | tenant | Adds tags and project_tags tables |
+| `upgrade_to_v90` | tenant | Comprehensive upgrade applying all schema changes since the initial release |
 
 ### Additional Migrations (in scripts/sql/migrations/)
 

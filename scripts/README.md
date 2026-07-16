@@ -55,30 +55,23 @@ This will apply all schema changes since the initial release.
 
 ### Migrating All Tenants
 
-After deploying code with database schema changes:
+After deploying code with database schema changes, run the tenant migration runner — in multi-tenant mode it automatically applies the migration to **every active tenant** listed in the master database:
 
 ```bash
-# Preview what would be migrated
-python scripts/migrate_all_tenants.py --dry-run
+# Apply a migration to all active tenants (or the single DB in single-tenant mode)
+python -m migrations.run_migration <migration_name>
 
-# Run migrations on all tenants
-python scripts/migrate_all_tenants.py
-
-# Migrate a specific tenant only
-python scripts/migrate_all_tenants.py --tenant acme-corp
-
-# Include master database
-python scripts/migrate_all_tenants.py --include-master
+# List available migrations
+python -m migrations.run_migration
 ```
 
-### Single Tenant Migration
-
-For single-tenant mode or manual migrations:
+For master-database migrations use the dedicated runner:
 
 ```bash
-# Standard Alembic migration
-alembic upgrade head
+python migrations/run_migration_master.py <migration_name>
 ```
+
+A pure-psql fallback loop also exists at `migrations/migrate_all_tenants.sh`. See [migrations/README.md](../migrations/README.md) for credentials and details. There is **no Alembic** in this project — migrations are raw idempotent SQL files.
 
 ## Seeding Data
 
@@ -94,10 +87,13 @@ python scripts/seed_tenant_data.py --tenant acme-corp
 |--------|---------|
 | `fresh_install.py` | Automated fresh installation |
 | `setup_admin_password.py` | Set/reset admin password |
-| `migrate_all_tenants.py` | Run migrations on all tenant databases |
 | `seed_tenant_data.py` | Seed a tenant with sample data |
+| `screenshots/` | Playwright pipeline for the MkDocs documentation screenshots |
 | `sql/milestone_master_fresh_install.sql` | Master database schema |
 | `sql/tenant_schema_template.sql` | Tenant database schema reference |
+| `sql/migrations/001_add_max_capacity.sql` | Legacy migration (max_capacity column on users) |
+
+Tenant/master migrations live in [`migrations/`](../migrations/) at the repo root, not here.
 
 ## Environment Variables
 
@@ -134,9 +130,9 @@ Check that PostgreSQL is running and accepting connections on the configured hos
 
 ### Migration fails on specific tenant
 ```bash
-# Check the specific tenant
-python scripts/migrate_all_tenants.py --tenant problem-tenant --verbose
+# Re-run the migration (it is idempotent) and read the per-tenant output
+python -m migrations.run_migration <migration_name>
 
-# Manually inspect the database
+# Manually inspect the tenant database
 psql -U postgres -d milestone_problem_tenant
 ```
