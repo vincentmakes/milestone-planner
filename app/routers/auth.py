@@ -541,12 +541,15 @@ async def sso_status(
         "group_membership_mode": config.get("group_membership_mode", "any"),
     }
 
-    # Include organization info if SSO is from organization
-    if source == "organization" and tenant and tenant.organization:
+    # Include organization info if SSO is from organization. The org details
+    # are carried on the effective config (resolved from the master DB) since
+    # request.state.tenant is a primitive dict without relationships.
+    org_info = config.get("organization") if source == "organization" else None
+    if org_info:
         result["organization"] = {
-            "id": str(tenant.organization_id),
-            "name": tenant.organization.name,
-            "slug": tenant.organization.slug,
+            "id": org_info["id"],
+            "name": org_info["name"],
+            "slug": org_info["slug"],
             "sso_enabled": True,
         }
 

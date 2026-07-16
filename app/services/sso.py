@@ -9,7 +9,7 @@ Provides:
 """
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any
 from urllib.parse import urlencode
 
 import httpx
@@ -21,9 +21,6 @@ from app.services.encryption import decrypt
 
 logger = logging.getLogger(__name__)
 
-if TYPE_CHECKING:
-    from app.models.tenant import Tenant
-
 
 class SSOService:
     """Service for SSO operations."""
@@ -33,35 +30,36 @@ class SSOService:
         self.settings = get_settings()
 
     async def get_effective_sso_config(
-        self, tenant: Optional["Tenant"] = None
+        self, tenant: Any = None
     ) -> tuple[dict[str, Any] | None, str]:
         """
         Get the effective SSO configuration for a tenant.
+
+        ``tenant`` may be a ``Tenant`` ORM object, the lightweight tenant-info
+        dict that ``TenantMiddleware`` attaches to ``request.state`` (which only
+        carries primitive fields, not relationships), or ``None`` in
+        single-tenant mode. Organization-level config is resolved against the
+        master DB using the tenant id, so it works regardless of which form is
+        passed.
 
         Returns:
             Tuple of (config_dict, source) where:
             - config_dict: SSO configuration as dict, or None if SSO not enabled
             - source: 'organization', 'tenant', or 'none'
         """
-        # If tenant has an organization with SSO, use that
-        if tenant and tenant.organization_id and tenant.organization:
-            org = tenant.organization
-            if org.sso_config and org.sso_config.is_enabled and org.sso_config.is_configured:
-                config = org.sso_config
-                return {
-                    "enabled": True,
-                    "provider": config.provider,
-                    "tenant_id": config.entra_tenant_id,
-                    "client_id": config.client_id,
-                    "client_secret": decrypt(config.client_secret_encrypted)
-                    if config.client_secret_encrypted
-                    else None,
-                    "redirect_uri": config.redirect_uri,
-                    "auto_create_users": config.should_auto_create_users,
-                    "default_role": config.default_user_role,
-                    "required_group_ids": tenant.required_group_ids if tenant else [],
-                    "group_membership_mode": tenant.group_membership_mode if tenant else "any",
-                }, "organization"
+        # Resolve the tenant id from either an ORM object or the state dict.
+        tenant_id = None
+        if tenant is not None:
+            tenant_id = (
+                tenant.get("id") if isinstance(tenant, dict) else getattr(tenant, "id", None)
+            )
+
+        # Organization-level SSO lives in the master DB and is shared across a
+        # tenant's organization. Only relevant in multi-tenant mode.
+        if tenant_id and self.settings.multi_tenant:
+            org_config = await self._get_organization_sso_config(str(tenant_id))
+            if org_config is not None:
+                return org_config, "organization"
 
         # Fall back to tenant-level SSO config
         from app.models.settings import SSOConfig
@@ -84,6 +82,63 @@ class SSOService:
             }, "tenant"
 
         return None, "none"
+
+    async def _get_organization_sso_config(self, tenant_id: str) -> dict[str, Any] | None:
+        """
+        Resolve organization-level SSO config for a tenant from the master DB.
+
+        The tenant object attached to the request is a detached dict, so the
+        organization and its SSO config are loaded fresh (and eagerly) from the
+        master database here. Returns the effective config dict when the
+        tenant's organization has SSO enabled and configured, otherwise None.
+        """
+        from sqlalchemy.orm import selectinload
+
+        from app.models.organization import Organization
+        from app.models.tenant import Tenant
+        from app.services.master_db import master_db
+
+        try:
+            async with master_db.session() as session:
+                result = await session.execute(
+                    select(Tenant)
+                    .where(Tenant.id == tenant_id)
+                    .options(
+                        selectinload(Tenant.organization).selectinload(Organization.sso_config)
+                    )
+                )
+                tenant = result.scalar_one_or_none()
+        except Exception:
+            logger.exception("Failed to load organization SSO config for tenant %s", tenant_id)
+            return None
+
+        if not tenant or not tenant.organization:
+            return None
+
+        org = tenant.organization
+        config = org.sso_config
+        if not config or not config.is_enabled or not config.is_configured:
+            return None
+
+        return {
+            "enabled": True,
+            "provider": config.provider,
+            "tenant_id": config.entra_tenant_id,
+            "client_id": config.client_id,
+            "client_secret": decrypt(config.client_secret_encrypted)
+            if config.client_secret_encrypted
+            else None,
+            "redirect_uri": config.redirect_uri,
+            "auto_create_users": config.should_auto_create_users,
+            "default_role": config.default_user_role,
+            "required_group_ids": tenant.required_group_ids or [],
+            "group_membership_mode": tenant.group_membership_mode or "any",
+            "organization": {
+                "id": str(org.id),
+                "name": org.name,
+                "slug": org.slug,
+            },
+        }
 
     async def fetch_user_groups(self, access_token: str, max_groups: int = 500) -> list[str]:
         """
