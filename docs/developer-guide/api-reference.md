@@ -25,8 +25,8 @@ Content-Type: application/json
 ### SSO Login (Microsoft Entra ID)
 
 ```
-GET /api/auth/sso/login    → Redirects to Microsoft
-GET /api/auth/callback      → Handles OAuth callback
+GET /api/auth/sso/login     → Returns the Microsoft authorization URL
+GET /api/auth/sso/callback  → Handles the OAuth callback from Microsoft
 ```
 
 ### Logout
