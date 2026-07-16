@@ -140,6 +140,20 @@ class SSOService:
             },
         }
 
+    async def get_active_organization_sso(self, tenant_id: Any) -> dict[str, Any] | None:
+        """
+        Return the effective organization-level SSO config for a tenant when its
+        organization has SSO enabled and configured, otherwise None.
+
+        Thin public wrapper over ``_get_organization_sso_config`` used by the
+        settings UI and write guardrails to detect whether tenant-level SSO is
+        overridden by (and therefore redundant with) organization SSO. Only
+        meaningful in multi-tenant mode; returns None when the id is missing.
+        """
+        if not tenant_id:
+            return None
+        return await self._get_organization_sso_config(str(tenant_id))
+
     async def fetch_user_groups(self, access_token: str, max_groups: int = 500) -> list[str]:
         """
         Fetch user's group memberships from Microsoft Graph API.

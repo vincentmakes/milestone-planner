@@ -267,6 +267,52 @@ async def change_password(
 # ---------------------------------------------------------
 
 
+async def _active_org_sso(request: Request, db: AsyncSession) -> dict | None:
+    """
+    Return the active organization-level SSO config for the request's tenant,
+    or None if the organization has no SSO (or in single-tenant mode).
+
+    Used to detect when tenant-level SSO would be overridden by (and is
+    therefore redundant with) organization SSO. Never raises — any lookup
+    failure yields None so it can't break the settings screen or a save.
+    """
+    if not settings.multi_tenant:
+        return None
+
+    tenant = getattr(request.state, "tenant", None) if hasattr(request, "state") else None
+    tenant_id = tenant.get("id") if isinstance(tenant, dict) else getattr(tenant, "id", None)
+    if not tenant_id:
+        return None
+
+    from app.services.sso import SSOService
+
+    try:
+        return await SSOService(db).get_active_organization_sso(tenant_id)
+    except Exception:
+        logger.exception("Organization SSO status lookup failed")
+        return None
+
+
+def _reject_if_org_sso_active(data: "SSOConfigUpdate", org_sso: dict | None) -> None:
+    """
+    Guardrail: refuse to enable tenant-level SSO while organization-level SSO is
+    active for this tenant, since org SSO always takes precedence and the
+    tenant-level config would silently never take effect.
+
+    Disabling or clearing tenant-level SSO stays allowed (so admins can tidy up
+    dead config). Raises HTTP 409 when the write would enable a redundant config.
+    """
+    if org_sso is not None and data.enabled:
+        org_name = (org_sso.get("organization") or {}).get("name")
+        detail = (
+            "Organization-level SSO is active for this workspace"
+            + (f" (via {org_name})" if org_name else "")
+            + ". It overrides tenant-level SSO, so tenant-level SSO cannot be enabled. "
+            "Ask an administrator to change SSO at the organization level."
+        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+
 @router.get("/sso/config")
 async def get_sso_config_public(
     request: Request,
@@ -307,6 +353,7 @@ async def get_sso_config_public(
 
 @router.get("/sso/config/full")
 async def get_sso_config_full(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
@@ -315,32 +362,43 @@ async def get_sso_config_full(
 
     Requires admin authentication.
     Matches: GET /api/sso/config/full
+
+    Also reports whether organization-level SSO is active for this tenant
+    (``org_sso_active`` + ``organization``); when it is, tenant-level SSO is
+    overridden and the settings UI disables the form.
     """
     try:
         result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
         config = result.scalar_one_or_none()
     except Exception as e:
         logger.exception("SSO config query failed: %s", e)
-        return {"id": 1, "enabled": 0}
+        config = None
 
     if not config:
-        return {"id": 1, "enabled": 0}
+        response: dict = {"id": 1, "enabled": 0}
+    else:
+        # Return snake_case to match Node.js, include client_secret_masked
+        response = {
+            "id": config.id,
+            "enabled": config.enabled,
+            "tenant_id": config.tenant_id,
+            "client_id": config.client_id,
+            "client_secret": config.client_secret,
+            "redirect_uri": config.redirect_uri,
+            "auto_create_users": config.auto_create_users,
+            "default_role": config.default_role,
+        }
 
-    # Return snake_case to match Node.js, include client_secret_masked
-    response = {
-        "id": config.id,
-        "enabled": config.enabled,
-        "tenant_id": config.tenant_id,
-        "client_id": config.client_id,
-        "client_secret": config.client_secret,
-        "redirect_uri": config.redirect_uri,
-        "auto_create_users": config.auto_create_users,
-        "default_role": config.default_role,
-    }
+        # Mask client_secret for display (show only last 4 chars)
+        if config.client_secret:
+            response["client_secret_masked"] = "****" + config.client_secret[-4:]
 
-    # Mask client_secret for display (show only last 4 chars)
-    if config.client_secret:
-        response["client_secret_masked"] = "****" + config.client_secret[-4:]
+    # Surface organization-level SSO precedence so the settings UI can explain
+    # and disable the tenant-level form.
+    org_sso = await _active_org_sso(request, db)
+    response["org_sso_active"] = org_sso is not None
+    if org_sso and org_sso.get("organization"):
+        response["organization"] = {"name": org_sso["organization"].get("name")}
 
     return response
 
@@ -348,6 +406,7 @@ async def get_sso_config_full(
 @router.put("/sso/config")
 async def update_sso_config_new(
     data: SSOConfigUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
@@ -358,6 +417,8 @@ async def update_sso_config_new(
     Matches: PUT /api/sso/config
     """
     logger.info("SSO Update received: %s", data)
+
+    _reject_if_org_sso_active(data, await _active_org_sso(request, db))
 
     result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
     config = result.scalar_one_or_none()
@@ -435,6 +496,7 @@ async def get_sso_config(
 @router.put("/auth/sso/config", response_model=SSOConfigResponse)
 async def update_sso_config(
     data: SSOConfigUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
@@ -444,6 +506,8 @@ async def update_sso_config(
     Requires admin authentication.
     Matches: PUT /api/auth/sso/config
     """
+    _reject_if_org_sso_active(data, await _active_org_sso(request, db))
+
     result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
     config = result.scalar_one_or_none()
 

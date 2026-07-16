@@ -32,6 +32,20 @@
   font-size: 0.875rem;
 }
 
+.notice {
+  padding: 0.75rem 1rem;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.notice strong {
+  font-weight: 600;
+}
+
 /* Toggle Section */
 .toggleSection {
   padding-bottom: 1rem;

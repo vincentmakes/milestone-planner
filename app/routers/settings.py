@@ -8,7 +8,7 @@ It matches the Node.js API at /api/settings exactly.
 
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,7 @@ from app.database import get_db
 from app.middleware.auth import require_admin
 from app.models.settings import Settings, SSOConfig
 from app.models.user import User
+from app.routers.auth import _active_org_sso, _reject_if_org_sso_active
 from app.schemas.auth import SSOConfigResponse, SSOConfigUpdate
 from app.schemas.settings import SettingsResponse, SettingUpdate
 
@@ -85,6 +86,7 @@ async def get_sso_settings(
 @router.put("/settings/sso", response_model=SSOConfigResponse)
 async def update_sso_settings(
     data: SSOConfigUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
@@ -94,6 +96,8 @@ async def update_sso_settings(
     Requires admin authentication.
     Matches: PUT /api/settings/sso
     """
+    _reject_if_org_sso_active(data, await _active_org_sso(request, db))
+
     result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
     config = result.scalar_one_or_none()
 

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [1.0.10] - 2026-07-16
 
+### Added
+- Guardrails against redundant SSO setup: when a workspace's organization manages SSO, the tenant-level SSO settings form now explains that organization SSO takes precedence and is shown read-only (and the server rejects enabling tenant-level SSO), and the admin panel warns when adding a tenant whose own SSO would be overridden by organization SSO.
+
 ### Fixed
 - SSO login button no longer stays hidden (and the SSO login/callback flow no longer fails) for multi-tenant instances: SSO configuration is now resolved correctly from the tenant context set by the tenant middleware, so both organization-level and tenant-level Microsoft Entra SSO work when signing in at a tenant URL.
 
