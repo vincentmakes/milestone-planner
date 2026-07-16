@@ -49,6 +49,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
   const [ssoSuccess, setSsoSuccess] = useState<string | null>(null);
   
   // Tenant management states
+  const [tenantNotice, setTenantNotice] = useState<string | null>(null);
   const [selectedTenantToAdd, setSelectedTenantToAdd] = useState('');
   const [editingTenant, setEditingTenant] = useState<string | null>(null);
   const [tenantGroupIds, setTenantGroupIds] = useState('');
@@ -149,10 +150,17 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
 
   const handleAddTenant = async () => {
     if (!organization || !selectedTenantToAdd) return;
-    
+
+    setTenantNotice(null);
     try {
-      await addTenantToOrganization(organization.id, selectedTenantToAdd);
+      const result = await addTenantToOrganization(organization.id, selectedTenantToAdd);
       setSelectedTenantToAdd('');
+      if (result?.tenant_had_own_sso) {
+        setTenantNotice(
+          'This tenant already had its own SSO configured. Organization SSO takes '
+          + 'precedence, so the tenant-level SSO will no longer be used.'
+        );
+      }
       await loadOrganization();
       onRefresh?.();
     } catch (err) {
@@ -397,6 +405,8 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                     </label>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
                       When enabled, all tenants in this organization can use SSO login.
+                      Organization SSO takes precedence over any SSO a member tenant
+                      configured for itself, so tenant-level SSO settings are overridden.
                     </span>
                   </div>
 
@@ -497,8 +507,21 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
               {/* Tenants Tab */}
               {activeTab === 'tenants' && (
                 <div>
+                  {tenantNotice && (
+                    <div style={{
+                      padding: '0.75rem 1rem',
+                      background: 'rgba(59, 130, 246, 0.1)',
+                      border: '1px solid rgba(59, 130, 246, 0.3)',
+                      color: 'var(--text-primary)',
+                      borderRadius: 'var(--radius-md)',
+                      marginBottom: '1rem',
+                      fontSize: '0.875rem',
+                    }}>
+                      {tenantNotice}
+                    </div>
+                  )}
                   {/* Add Tenant */}
-                  <div style={{ 
+                  <div style={{
                     display: 'flex', 
                     gap: '0.75rem', 
                     marginBottom: '1.5rem',

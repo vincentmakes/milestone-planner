@@ -7,6 +7,7 @@ Handles organization management in multi-tenant admin panel:
 - Tenant-organization association
 """
 
+import logging
 import uuid
 from datetime import datetime
 
@@ -33,6 +34,45 @@ from app.services.encryption import encrypt
 from app.services.master_db import get_master_db
 
 router = APIRouter(prefix="/admin/organizations", tags=["Admin Organizations"])
+
+logger = logging.getLogger(__name__)
+
+
+async def _tenant_has_own_sso_enabled(tenant: Tenant) -> bool:
+    """
+    Best-effort check of whether a tenant has its own tenant-level SSO enabled.
+
+    Connects to the tenant's own database (its SSO config lives there, not in
+    the master DB) and reads the singleton ``sso_config`` row. Any failure —
+    missing credentials, unreachable DB, absent table — yields False so the
+    caller never fails an organization action over an advisory warning.
+    """
+    from app.models.settings import SSOConfig
+    from app.services.tenant_manager import tenant_connection_manager
+
+    credentials = getattr(tenant, "credentials", None)
+    if not credentials or not getattr(credentials, "encrypted_password", None):
+        return False
+
+    tenant_info = {
+        "slug": tenant.slug,
+        "database_name": tenant.database_name,
+        "database_user": tenant.database_user,
+        "encrypted_password": credentials.encrypted_password,
+    }
+
+    try:
+        await tenant_connection_manager.get_pool_from_info(tenant_info)
+        factory = tenant_connection_manager.get_session_factory(tenant.slug)
+        if factory is None:
+            return False
+        async with factory() as tdb:
+            result = await tdb.execute(select(SSOConfig).where(SSOConfig.id == 1))
+            config = result.scalar_one_or_none()
+        return bool(config and config.enabled == 1)
+    except Exception:
+        logger.warning("Could not check tenant-level SSO for %s", tenant.slug, exc_info=True)
+        return False
 
 
 # ---------------------------------------------------------
@@ -389,19 +429,31 @@ async def add_tenant_to_organization(
     db: AsyncSession = Depends(get_master_db),
 ):
     """Add a tenant to an organization with optional group requirements."""
-    # Get organization
-    org_result = await db.execute(select(Organization).where(Organization.id == org_id))
+    # Get organization (with its SSO config to know if org SSO would override the tenant's own)
+    org_result = await db.execute(
+        select(Organization)
+        .where(Organization.id == org_id)
+        .options(selectinload(Organization.sso_config))
+    )
     org = org_result.scalar_one_or_none()
 
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    # Get tenant
-    tenant_result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+    # Get tenant (with credentials so we can inspect its own SSO config if needed)
+    tenant_result = await db.execute(
+        select(Tenant).where(Tenant.id == tenant_id).options(selectinload(Tenant.credentials))
+    )
     tenant = tenant_result.scalar_one_or_none()
 
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
+
+    # If organization SSO is active it will override any SSO this tenant set up
+    # for itself. Surface that (best-effort) so the admin can warn the tenant.
+    tenant_had_own_sso = False
+    if org.sso_config and org.sso_config.is_enabled:
+        tenant_had_own_sso = await _tenant_has_own_sso_enabled(tenant)
 
     # Update tenant
     tenant.organization_id = org.id
@@ -430,6 +482,7 @@ async def add_tenant_to_organization(
     return {
         "success": True,
         "message": f"Tenant '{tenant.name}' added to organization '{org.name}'",
+        "tenant_had_own_sso": tenant_had_own_sso,
     }
 
 

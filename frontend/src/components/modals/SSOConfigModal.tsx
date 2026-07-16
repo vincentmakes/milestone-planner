@@ -21,6 +21,8 @@ interface SSOFullConfig {
   redirect_uri: string;
   auto_create_users: boolean;
   default_role: 'user' | 'superuser' | 'admin';
+  org_sso_active?: boolean;
+  organization?: { name?: string };
 }
 
 export function SSOConfigModal() {
@@ -40,7 +42,12 @@ export function SSOConfigModal() {
   const [redirectUri, setRedirectUri] = useState('');
   const [autoCreateUsers, setAutoCreateUsers] = useState(false);
   const [defaultRole, setDefaultRole] = useState<'user' | 'superuser' | 'admin'>('user');
-  
+
+  // When the tenant's organization manages SSO, the tenant-level config below
+  // is overridden and never takes effect, so the form is shown read-only.
+  const [orgSSOActive, setOrgSSOActive] = useState(false);
+  const [orgName, setOrgName] = useState('');
+
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +77,8 @@ export function SSOConfigModal() {
       setRedirectUri(config.redirect_uri || redirectHint);
       setAutoCreateUsers(config.auto_create_users);
       setDefaultRole(config.default_role || 'user');
+      setOrgSSOActive(Boolean(config.org_sso_active));
+      setOrgName(config.organization?.name || '');
     } catch (err) {
       console.error('Failed to load SSO config:', err);
       setError(err instanceof Error ? err.message : 'Failed to load configuration');
@@ -140,7 +149,17 @@ export function SSOConfigModal() {
           <>
             {error && <div className={styles.error}>{error}</div>}
             {success && <div className={styles.success}>{success}</div>}
-            
+
+            {orgSSOActive && (
+              <div className={styles.notice}>
+                SSO for this workspace is managed by your organization
+                {orgName ? <> <strong>{orgName}</strong></> : null}. Organization
+                SSO takes precedence over tenant-level settings, so this form is
+                disabled and the values below have no effect. To change SSO,
+                contact your organization administrator.
+              </div>
+            )}
+
             {/* Enable SSO Toggle */}
             <div className={styles.toggleSection}>
               <label className={styles.toggle}>
@@ -148,6 +167,7 @@ export function SSOConfigModal() {
                   type="checkbox"
                   checked={enabled}
                   onChange={(e) => setEnabled(e.target.checked)}
+                  disabled={orgSSOActive}
                 />
                 <span className={styles.toggleSwitch}></span>
                 <span className={styles.toggleLabel}>Enable SSO</span>
@@ -169,7 +189,7 @@ export function SSOConfigModal() {
                   value={tenantId}
                   onChange={(e) => setTenantId(e.target.value)}
                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                  disabled={!enabled}
+                  disabled={!enabled || orgSSOActive}
                 />
                 <span className={styles.hint}>
                   Found in Azure Portal → Microsoft Entra ID → Overview
@@ -184,7 +204,7 @@ export function SSOConfigModal() {
                   value={clientId}
                   onChange={(e) => setClientId(e.target.value)}
                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                  disabled={!enabled}
+                  disabled={!enabled || orgSSOActive}
                 />
                 <span className={styles.hint}>
                   Found in App Registration → Overview → Application (client) ID
@@ -199,7 +219,7 @@ export function SSOConfigModal() {
                   value={clientSecret}
                   onChange={(e) => setClientSecret(e.target.value)}
                   placeholder={clientSecretPlaceholder || 'Enter client secret'}
-                  disabled={!enabled}
+                  disabled={!enabled || orgSSOActive}
                 />
                 <span className={styles.hint}>
                   Leave blank to keep existing secret. Create in App Registration → Certificates & secrets
@@ -214,7 +234,7 @@ export function SSOConfigModal() {
                   value={redirectUri}
                   onChange={(e) => setRedirectUri(e.target.value)}
                   placeholder={redirectHint}
-                  disabled={!enabled}
+                  disabled={!enabled || orgSSOActive}
                 />
                 <span className={styles.hint}>
                   Must be registered in App Registration → Authentication → Redirect URIs
@@ -231,7 +251,7 @@ export function SSOConfigModal() {
                   type="checkbox"
                   checked={autoCreateUsers}
                   onChange={(e) => setAutoCreateUsers(e.target.checked)}
-                  disabled={!enabled}
+                  disabled={!enabled || orgSSOActive}
                 />
                 <span>Auto-create users on first SSO login</span>
               </label>
@@ -242,7 +262,7 @@ export function SSOConfigModal() {
                   id="defaultRole"
                   value={defaultRole}
                   onChange={(e) => setDefaultRole(e.target.value as 'user' | 'superuser' | 'admin')}
-                  disabled={!enabled || !autoCreateUsers}
+                  disabled={!enabled || !autoCreateUsers || orgSSOActive}
                 >
                   <option value="user">User</option>
                   <option value="superuser">SuperUser</option>
@@ -256,7 +276,7 @@ export function SSOConfigModal() {
               <Button variant="secondary" onClick={closeModal}>
                 Cancel
               </Button>
-              <Button onClick={handleSave} disabled={isSaving}>
+              <Button onClick={handleSave} disabled={isSaving || orgSSOActive}>
                 {isSaving ? 'Saving...' : 'Save Configuration'}
               </Button>
             </div>

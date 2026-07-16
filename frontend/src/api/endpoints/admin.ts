@@ -286,8 +286,15 @@ export async function deleteOrganizationSSOConfig(orgId: string): Promise<void> 
 }
 
 // Tenant Organization Assignment
-export async function addTenantToOrganization(orgId: string, tenantId: string, data?: TenantGroupAccessUpdate): Promise<void> {
-  await apiPut(`/api/admin/organizations/${orgId}/tenants/${tenantId}`, data || {});
+export interface AddTenantToOrganizationResult {
+  success: boolean;
+  message?: string;
+  /** True when the tenant already had its own SSO enabled that org SSO now overrides. */
+  tenant_had_own_sso?: boolean;
+}
+
+export async function addTenantToOrganization(orgId: string, tenantId: string, data?: TenantGroupAccessUpdate): Promise<AddTenantToOrganizationResult> {
+  return apiPut<AddTenantToOrganizationResult>(`/api/admin/organizations/${orgId}/tenants/${tenantId}`, data || {});
 }
 
 export async function removeTenantFromOrganization(orgId: string, tenantId: string): Promise<void> {
