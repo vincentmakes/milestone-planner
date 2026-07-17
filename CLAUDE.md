@@ -352,7 +352,7 @@ docker-entrypoint.sh   # DB wait + optional AUTO_INIT_DB, then uvicorn
 
 ```bash
 # Build frontend (Docker, no local Node.js needed)
-docker run --rm -v $(pwd)/frontend:/app -w /app node:20-alpine sh -c "npm install && npm run build"
+docker run --rm -v $(pwd)/frontend:/app -w /app node:24-alpine sh -c "npm install && npm run build"
 
 # Deploy frontend to public/
 ./deploy-react.sh
@@ -869,7 +869,7 @@ A client-side planning sandbox — the server is never aware of it.
 
 **Dockerfile** (3 stages):
 1. `builder` (`python:3.11-slim-bookworm` + libpq-dev/gcc/g++) — pip-installs `requirements.txt` to `/install` (g++ needed for `psutil`/`jpype1` source builds).
-2. `frontend` (`node:20-alpine`) — `npm ci && npm run build`.
+2. `frontend` (`node:24-alpine`) — `npm ci && npm run build`.
 3. `runtime` (`python:3.11-slim-bookworm`) — runtime libs only (`libpq5`, **`default-jre-headless`** for MPP import, `curl`), non-root `appuser`, copies `VERSION` + `app/` + `migrations/` + built frontend → `public/`, healthcheck on `/health`, `EXPOSE 8485`, uvicorn via `docker-entrypoint.sh` (waits for DB(s), optional `AUTO_INIT_DB`).
 
 **Compose files**:

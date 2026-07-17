@@ -5,6 +5,11 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.16] - 2026-07-17
+
+### Changed
+- The frontend build and development environments now use Node.js 24 LTS (previously Node 20, which has reached end-of-life). No application behaviour changes.
+
 ## [1.0.15] - 2026-07-17
 
 ### Added
