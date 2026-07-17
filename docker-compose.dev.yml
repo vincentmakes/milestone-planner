@@ -40,7 +40,7 @@ services:
 
   # React Frontend (Development Server with Hot Reload)
   milestone-react-dev:
-    image: node:20-alpine
+    image: node:24-alpine
     container_name: milestone-react-dev
     restart: unless-stopped
     working_dir: /app

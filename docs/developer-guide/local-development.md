@@ -73,7 +73,7 @@ Build, deploy, refresh:
 
 ```bash
 # Build frontend
-docker run --rm -v $(pwd)/frontend:/app -w /app node:20-alpine sh -c "npm install && npm run build"
+docker run --rm -v $(pwd)/frontend:/app -w /app node:24-alpine sh -c "npm install && npm run build"
 
 # Deploy to public/
 ./deploy-react.sh

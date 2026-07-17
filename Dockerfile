@@ -20,7 +20,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # ---- Stage 2: Build React frontend ----
-FROM node:20-alpine AS frontend
+FROM node:24-alpine AS frontend
 
 WORKDIR /build
 
