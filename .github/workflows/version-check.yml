@@ -8,7 +8,7 @@ jobs:
   version-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -33,11 +33,14 @@ jobs:
               - 'requirements*.txt'
               - 'pyproject.toml'
 
-      - name: Verify VERSION bumped vs main
+      - name: Verify VERSION bumped vs base
         if: steps.filter.outputs.app == 'true'
         run: |
           set -euo pipefail
-          base_version=$(git show origin/main:VERSION 2>/dev/null | tr -d '[:space:]' || echo "")
+          # Compare against the PR's base commit, not the live main branch —
+          # if the PR is merged before this job runs, main already contains the
+          # bumped VERSION and a live comparison reports a false failure.
+          base_version=$(git show ${{ github.event.pull_request.base.sha }}:VERSION 2>/dev/null | tr -d '[:space:]' || echo "")
           head_version=$(tr -d '[:space:]' < VERSION)
           echo "base=$base_version  head=$head_version"
           if [ "$base_version" = "$head_version" ]; then
