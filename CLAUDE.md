@@ -474,7 +474,7 @@ Two declarative bases: **`Base`** (tenant databases, `app/database.py`) and **`M
 | `project_assignments` | `ProjectAssignment` | Project-level staff: allocation %, own start/end dates |
 | `phase_staff_assignments` | `PhaseStaffAssignment` | Phase-level staff: allocation only (dates come from the phase) |
 | `subphase_staff_assignments` | `SubphaseStaffAssignment` | Subphase-level staff: allocation only |
-| `equipment_assignments` | `EquipmentAssignment` | Equipment bookings: project + equipment + dates (schema also carries phase/subphase columns) |
+| `equipment_assignments` | `EquipmentAssignment` | Equipment bookings: project + equipment + dates (project-level only; tenants provisioned before 1.0.15 may carry unused legacy phase/subphase columns) |
 
 **Resources & time-off**
 
@@ -821,6 +821,7 @@ All backend↔frontend field mapping is centralized: `transformProject/Phase/Sub
 | `usePhantomSibling` | Shift+click spawns a phantom sibling bar following the cursor (lag computed on placement) |
 | `useUndoRedo` | Undo/redo orchestration (see above) |
 | `useKeyboardShortcuts` | Esc (modal → linking → phantom priority), Home (today), `+`/`-` zoom (12–120 px), Ctrl/Cmd+Z / Ctrl/Cmd+Y / Ctrl/Cmd+Shift+Z |
+| `useEscapeKey` | Escape-to-close for standalone dialogs that can't use the shared `Modal` (e.g. the admin-portal modals) |
 | `useCtrlScrollZoom` | Ctrl+wheel zoom keeping the date under the cursor fixed |
 | `useScrollSync` | Vertical scroll sync between two elements |
 | `useWorkloadCalculation` | Per-cell staff workload for the Staff heatmap (allocations, vacations incl. recurring, visual states) |
@@ -838,6 +839,7 @@ A client-side planning sandbox — the server is never aware of it.
 - While active, the **API client** intercepts every PUT/POST/DELETE (except `/api/auth/*` and `/api/settings/*`): the request is queued as a `WhatIfOperation {method, url, body}` and a fake success `{success: true, whatIfMode: true}` is returned, so optimistic local state updates normally.
 - **Discard**: restore the snapshot, drop the queue. **Apply**: temporarily disable the interception check, replay queued operations sequentially with real requests; on error the snapshot is **not** restored (some writes may have landed — the user should reload). The interception check is always restored in `finally`.
 - Implications for new code: any new write endpoint is queued by default (see Frontend Conventions); operations that depend on real server responses (created IDs used by later operations) do not work correctly inside What-If — the queue replays with the original bodies.
+- Known limitations: MPP import uploads via a raw `fetch` that bypasses the queue, so `ImportProjectModal` blocks importing while What-If is active. Custom-column *definition* changes are queued but live in `customColumnStore`, which is not snapshotted — a definition created/deleted during What-If is not rolled back locally on Discard (reload to resync).
 
 ## Import & Export
 
@@ -845,7 +847,7 @@ A client-side planning sandbox — the server is never aware of it.
 
 - Endpoint: `GET /t/{slug}/api/export/site/{site_id}/excel` (admin / superuser only; superusers limited to sites they belong to).
 - Implemented in `app/routers/export.py` — `build_site_export_workbook()` generates a multi-sheet `.xlsx` via `openpyxl`.
-- Current sheets: Site, Projects (hierarchy with phases/subphases), Users, Equipment, Skills, User skills, Tags, Project tags, Vacations, Project assignments, Phase assignments, Subphase assignments, Equipment assignments, Custom columns, Custom column values, Bank holidays, Company events, Equipment blocks.
+- Current sheets: Site, Projects (hierarchy with phases/subphases), Users, Equipment, Skills, User skills, Tags, Project tags, Vacations, Project assignments, Phase assignments, Subphase assignments, Equipment assignments, Custom columns, Custom column values, Bank holidays, Company events, Equipment blocks, Staff notes.
 - **IMPORTANT**: any new data added at the site level through future enhancements (e.g. equipment maintenance/blocks, new event types, additional site-scoped settings, new assignment kinds, etc.) **must** be added as a new sheet (or a new column on the existing sheet) in `build_site_export_workbook()`. The site export is the canonical "everything for this site" snapshot — do not let it drift behind the model.
 
 ### MS Project & CSV

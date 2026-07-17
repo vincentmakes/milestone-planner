@@ -9,7 +9,7 @@ Milestone Planner is a full-stack application with a FastAPI backend serving a R
 | Layer | Technology |
 |-------|-----------|
 | **Backend** | Python 3.11+, FastAPI, SQLAlchemy 2.0 (async), asyncpg |
-| **Frontend** | React 18, TypeScript, Vite, Zustand, React Router, TanStack Query |
+| **Frontend** | React 18, TypeScript, Vite, Zustand, TanStack Query (no client-side router) |
 | **Database** | PostgreSQL 15+ |
 | **Deployment** | Docker, Docker Compose |
 | **CI/CD** | GitHub Actions (lint, test, type check, Docker build) |
@@ -37,6 +37,7 @@ app/
 │   ├── settings.py          # Instance settings
 │   ├── sites.py             # Site management
 │   ├── skills.py            # Skills management
+│   ├── tags.py              # Project tags
 │   ├── staff.py             # Staff management
 │   ├── users.py             # User management
 │   └── vacations.py         # Vacation/time-off management
@@ -51,6 +52,7 @@ app/
 │   ├── skill.py             # Skill
 │   ├── vacation.py          # Vacation, RecurringAbsence
 │   ├── custom_column.py     # CustomColumn, CustomColumnValue
+│   ├── tag.py               # Tag, ProjectTag
 │   ├── note.py              # Note
 │   ├── settings.py          # InstanceSettings
 │   ├── session.py           # Session
@@ -75,7 +77,7 @@ app/
 
 ```
 frontend/src/
-├── App.tsx                  # Root component with routing
+├── App.tsx                  # Root component (pathname branching: /admin vs main app — no router)
 ├── main.tsx                 # React entry point
 ├── api/                     # API client
 │   ├── client.ts            # Base HTTP client
@@ -137,7 +139,7 @@ The application uses two separate SQLAlchemy base classes:
 
 ### SPA Fallback
 
-All non-API, non-static routes serve `public/index.html` (the React SPA), which handles client-side routing.
+All non-API, non-static routes serve `public/index.html` (the React SPA). There is no client-side router — the app branches on `window.location.pathname` (`/admin*` vs main app) and switches in-app views through store state.
 
 ## Real-Time Architecture
 

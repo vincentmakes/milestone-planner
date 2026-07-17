@@ -8,6 +8,7 @@ from app.models.custom_column import CustomColumn, CustomColumnValue
 from app.models.equipment import Equipment, EquipmentAssignment, EquipmentBlock
 from app.models.note import Note
 from app.models.organization import Organization, OrganizationSSOConfig
+from app.models.presence import ProjectPresence
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.session import Session
 from app.models.settings import PredefinedPhase, Settings, SSOConfig
@@ -53,6 +54,7 @@ __all__ = [
     "UserSkill",
     "Tag",
     "ProjectTag",
+    "ProjectPresence",
     # Multi-tenant admin models (use separate MasterBase)
     "MasterBase",
     "Tenant",

@@ -21,7 +21,7 @@ import tempfile
 from datetime import date, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +29,7 @@ from app.database import get_db
 from app.middleware.auth import require_superuser
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.user import User
+from app.websocket.broadcast import broadcast_change
 
 router = APIRouter(tags=["import"])
 logger = logging.getLogger(__name__)
@@ -937,6 +938,7 @@ async def test_upload_endpoint(
 
 @router.post("/import/project")
 async def import_project_full(
+    request: Request,
     file: UploadFile = File(...),
     site_id: str = Form(""),
     db: AsyncSession = Depends(get_db),
@@ -1015,6 +1017,15 @@ async def import_project_full(
         tasks = project_data.get("tasks", [])
         if not tasks:
             await db.commit()
+            await broadcast_change(
+                request=request,
+                user=user,
+                entity_type="project",
+                entity_id=project_id,
+                project_id=project_id,
+                action="create",
+                summary=f"imported {project.name}",
+            )
             return {
                 "success": True,
                 "project_id": project_id,
@@ -1125,6 +1136,16 @@ async def import_project_full(
                         subphase.dependencies = deps_json
 
         await db.commit()
+
+        await broadcast_change(
+            request=request,
+            user=user,
+            entity_type="project",
+            entity_id=project_id,
+            project_id=project_id,
+            action="create",
+            summary=f"imported {project.name}",
+        )
 
         return {
             "success": True,

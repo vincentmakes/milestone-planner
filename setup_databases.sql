@@ -172,9 +172,11 @@ CREATE TABLE IF NOT EXISTS users (
     last_name VARCHAR(100) NOT NULL,
     job_title VARCHAR(100),
     role VARCHAR(20) DEFAULT 'user' NOT NULL,
+    max_capacity INTEGER DEFAULT 100 NOT NULL,
     sso_provider VARCHAR(50),
     sso_id VARCHAR(255),
     active INTEGER DEFAULT 1 NOT NULL,
+    is_system INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT users_role_check CHECK (role IN ('admin', 'superuser', 'user'))

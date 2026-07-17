@@ -40,6 +40,7 @@ SKIP_PATTERNS = [
     re.compile(r"^/api/phase-staff(?:/|$)"),
     re.compile(r"^/api/subphase-staff(?:/|$)"),
     re.compile(r"^/api/equipment-assignments(?:/|$)"),
+    re.compile(r"^/api/import(?:/|$)"),
     re.compile(r"^/api/auth(?:/|$)"),
     re.compile(r"^/api/admin(?:/|$)"),
     re.compile(r"^/api/ws-debug(?:/|$)"),

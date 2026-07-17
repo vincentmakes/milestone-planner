@@ -24,13 +24,14 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Sites (locations)
 CREATE TABLE sites (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
+    name VARCHAR(255) NOT NULL UNIQUE,
     location VARCHAR(255),
+    city VARCHAR(255),
     country_code VARCHAR(10),
-    region VARCHAR(100),
+    region_code VARCHAR(100),
     timezone VARCHAR(50) DEFAULT 'Europe/Zurich',
-    color VARCHAR(20),
-    is_default INTEGER DEFAULT 0,
+    last_holiday_fetch TIMESTAMP,
+    active INTEGER DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -38,26 +39,25 @@ CREATE TABLE sites (
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     email VARCHAR(255) NOT NULL UNIQUE,
-    password TEXT,
+    password VARCHAR(255) NOT NULL,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     job_title VARCHAR(100),
-    role VARCHAR(20) DEFAULT 'user',
-    max_capacity INTEGER DEFAULT 100,
-    active INTEGER DEFAULT 1,
-    is_system INTEGER DEFAULT 0,
+    role VARCHAR(20) DEFAULT 'user' NOT NULL CHECK (role IN ('admin', 'superuser', 'user')),
+    max_capacity INTEGER DEFAULT 100 NOT NULL,
     sso_provider VARCHAR(50),
     sso_id VARCHAR(255),
+    active INTEGER DEFAULT 1 NOT NULL,
+    is_system INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- User-Site associations
 CREATE TABLE user_sites (
-    id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
-    UNIQUE(user_id, site_id)
+    PRIMARY KEY (user_id, site_id)
 );
 
 -- Sessions (express-session compatible)
@@ -75,48 +75,48 @@ CREATE TABLE sessions (
 CREATE TABLE projects (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL,
     customer VARCHAR(255),
-    pm_name VARCHAR(100),
+    pm_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     sales_pm VARCHAR(100),
-    volume FLOAT,
     confirmed INTEGER DEFAULT 0,
+    volume REAL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    notes TEXT,
     archived INTEGER DEFAULT 0,
-    start_date DATE,
-    end_date DATE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Project phases
+-- Project phases (type carries the phase name)
 CREATE TABLE project_phases (
     id SERIAL PRIMARY KEY,
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL,
-    type VARCHAR(50),
+    type VARCHAR(100) NOT NULL,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
-    color VARCHAR(20),
     is_milestone INTEGER DEFAULT 0,
+    sort_order INTEGER DEFAULT 0,
     completion INTEGER,
     dependencies TEXT,
-    sort_order INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Project subphases (nested, recursive)
+-- Project subphases (nested, recursive via parent_id + parent_type)
 CREATE TABLE project_subphases (
     id SERIAL PRIMARY KEY,
-    phase_id INTEGER NOT NULL REFERENCES project_phases(id) ON DELETE CASCADE,
-    parent_id INTEGER REFERENCES project_subphases(id) ON DELETE CASCADE,
-    parent_type VARCHAR(20) DEFAULT 'phase',
+    parent_id INTEGER NOT NULL,
+    parent_type VARCHAR(20) NOT NULL DEFAULT 'phase' CHECK (parent_type IN ('phase', 'subphase')),
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
-    color VARCHAR(20),
     is_milestone INTEGER DEFAULT 0,
+    sort_order INTEGER DEFAULT 0,
+    depth INTEGER DEFAULT 1,
     completion INTEGER,
     dependencies TEXT,
-    sort_order INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -124,36 +124,34 @@ CREATE TABLE project_subphases (
 -- ASSIGNMENT TABLES
 -- ============================================================================
 
--- Project-level staff assignments
+-- Project-level staff assignments (have their own dates)
 CREATE TABLE project_assignments (
     id SERIAL PRIMARY KEY,
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    allocation INTEGER DEFAULT 100,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
-    allocation_percent INTEGER DEFAULT 100,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Phase-level staff assignments
+-- Phase-level staff assignments (dates come from the phase)
 CREATE TABLE phase_staff_assignments (
     id SERIAL PRIMARY KEY,
     phase_id INTEGER NOT NULL REFERENCES project_phases(id) ON DELETE CASCADE,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    start_date DATE NOT NULL,
-    end_date DATE NOT NULL,
-    allocation_percent INTEGER DEFAULT 100,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    allocation INTEGER DEFAULT 100,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Subphase-level staff assignments
+-- Subphase-level staff assignments (dates come from the subphase)
 CREATE TABLE subphase_staff_assignments (
     id SERIAL PRIMARY KEY,
     subphase_id INTEGER NOT NULL REFERENCES project_subphases(id) ON DELETE CASCADE,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    start_date DATE NOT NULL,
-    end_date DATE NOT NULL,
-    allocation_percent INTEGER DEFAULT 100,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    allocation INTEGER DEFAULT 100,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -164,22 +162,21 @@ CREATE TABLE subphase_staff_assignments (
 -- Equipment inventory
 CREATE TABLE equipment (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    type VARCHAR(50),
-    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(100),
+    site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL,
     description TEXT,
+    active INTEGER DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Equipment assignments
+-- Equipment assignments (project-level bookings)
 CREATE TABLE equipment_assignments (
     id SERIAL PRIMARY KEY,
-    equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    phase_id INTEGER REFERENCES project_phases(id) ON DELETE CASCADE,
+    equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
-    allocation_percent INTEGER DEFAULT 100,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -193,7 +190,7 @@ CREATE TABLE vacations (
     staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
-    description TEXT,
+    description VARCHAR(200) DEFAULT 'Vacation' NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -228,6 +225,7 @@ CREATE TABLE company_events (
     date DATE NOT NULL,
     end_date DATE,
     name VARCHAR(200) NOT NULL,
+    color VARCHAR(20),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -256,11 +254,9 @@ CREATE TABLE settings (
 -- Predefined phase templates
 CREATE TABLE predefined_phases (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    color VARCHAR(20),
+    name VARCHAR(100) NOT NULL UNIQUE,
     sort_order INTEGER DEFAULT 0,
     is_active INTEGER DEFAULT 1,
-    is_system INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -273,7 +269,7 @@ CREATE TABLE sso_config (
     client_secret TEXT,
     redirect_uri TEXT,
     auto_create_users INTEGER DEFAULT 0,
-    default_role VARCHAR(20) DEFAULT 'user',
+    default_role VARCHAR(20) DEFAULT 'user' CHECK (default_role IN ('superuser', 'user')),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT single_row CHECK (id = 1)
 );
@@ -286,19 +282,20 @@ CREATE TABLE sso_config (
 CREATE TABLE custom_columns (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
-    column_type VARCHAR(20) NOT NULL DEFAULT 'text',
+    column_type VARCHAR(20) NOT NULL DEFAULT 'text' CHECK (column_type IN ('text', 'boolean', 'list')),
     list_options TEXT,
     site_id INTEGER REFERENCES sites(id) ON DELETE CASCADE,
-    display_order INTEGER DEFAULT 0,
-    width INTEGER DEFAULT 100,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    display_order INTEGER NOT NULL DEFAULT 0,
+    width INTEGER NOT NULL DEFAULT 120,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Custom column values
 CREATE TABLE custom_column_values (
     id SERIAL PRIMARY KEY,
     custom_column_id INTEGER NOT NULL REFERENCES custom_columns(id) ON DELETE CASCADE,
-    entity_type VARCHAR(20) NOT NULL,
+    entity_type VARCHAR(20) NOT NULL CHECK (entity_type IN ('project', 'phase', 'subphase')),
     entity_id INTEGER NOT NULL,
     value TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -315,7 +312,7 @@ CREATE TABLE skills (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL UNIQUE,
     description TEXT,
-    color VARCHAR(7) DEFAULT '#6366f1',
+    color VARCHAR(7) NOT NULL DEFAULT '#6366f1',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -324,7 +321,7 @@ CREATE TABLE skills (
 CREATE TABLE user_skills (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     skill_id INTEGER NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
-    proficiency INTEGER DEFAULT 3 CHECK (proficiency >= 1 AND proficiency <= 5),
+    proficiency INTEGER NOT NULL DEFAULT 3 CHECK (proficiency >= 1 AND proficiency <= 5),
     assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, skill_id)
 );
@@ -376,15 +373,16 @@ CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_active ON users(active);
 CREATE INDEX idx_projects_site ON projects(site_id);
 CREATE INDEX idx_projects_archived ON projects(archived);
+CREATE INDEX idx_projects_pm ON projects(pm_id);
 CREATE INDEX idx_phases_project ON project_phases(project_id);
-CREATE INDEX idx_subphases_phase ON project_subphases(phase_id);
-CREATE INDEX idx_subphases_parent ON project_subphases(parent_id);
+CREATE INDEX idx_subphases_project ON project_subphases(project_id);
+CREATE INDEX idx_subphases_parent ON project_subphases(parent_type, parent_id);
 CREATE INDEX idx_project_assignments_project ON project_assignments(project_id);
-CREATE INDEX idx_project_assignments_user ON project_assignments(user_id);
+CREATE INDEX idx_project_assignments_staff ON project_assignments(staff_id);
 CREATE INDEX idx_phase_staff_phase ON phase_staff_assignments(phase_id);
-CREATE INDEX idx_phase_staff_user ON phase_staff_assignments(user_id);
+CREATE INDEX idx_phase_staff_staff ON phase_staff_assignments(staff_id);
 CREATE INDEX idx_subphase_staff_subphase ON subphase_staff_assignments(subphase_id);
-CREATE INDEX idx_subphase_staff_user ON subphase_staff_assignments(user_id);
+CREATE INDEX idx_subphase_staff_staff ON subphase_staff_assignments(staff_id);
 CREATE INDEX idx_equipment_site ON equipment(site_id);
 CREATE INDEX idx_equipment_assignments_equipment ON equipment_assignments(equipment_id);
 CREATE INDEX idx_equipment_assignments_project ON equipment_assignments(project_id);
@@ -413,19 +411,17 @@ CREATE INDEX idx_project_presence_last_seen ON project_presence(last_seen_at);
 -- ============================================================================
 
 -- Default settings
-INSERT INTO settings (key, value) VALUES 
-    ('instanceTitle', 'Milestone'),
-    ('fiscalYearStart', '1'),
-    ('defaultView', 'month'),
-    ('workingDays', '1,2,3,4,5');
+INSERT INTO settings (key, value) VALUES
+    ('instance_title', 'Milestone'),
+    ('fiscal_year_start', '1');
 
 -- Default predefined phases
-INSERT INTO predefined_phases (name, color, sort_order, is_active, is_system) VALUES
-    ('Preparation', '#9b59b6', 1, 1, 1),
-    ('Analytics', '#3498db', 2, 1, 1),
-    ('Trial', '#e67e22', 3, 1, 1),
-    ('Cleaning', '#1abc9c', 4, 1, 1),
-    ('Report', '#27ae60', 5, 1, 1);
+INSERT INTO predefined_phases (name, sort_order, is_active) VALUES
+    ('Preparation', 1, 1),
+    ('Analytics', 2, 1),
+    ('Trial', 3, 1),
+    ('Cleaning', 4, 1),
+    ('Report', 5, 1);
 
 -- Initialize SSO config row
 INSERT INTO sso_config (id, enabled) VALUES (1, 0);
