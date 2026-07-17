@@ -5,6 +5,7 @@
 
 import { useState } from 'react';
 import { createOrganization } from '@/api';
+import { useEscapeKey } from '@/hooks';
 import styles from './AdminModal.module.css';
 
 interface CreateOrganizationModalProps {
@@ -66,14 +67,10 @@ export function CreateOrganizationModal({ onClose, onCreated }: CreateOrganizati
     }
   };
 
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
+  useEscapeKey(onClose);
 
   return (
-    <div className={styles.overlay} onClick={handleOverlayClick}>
+    <div className={styles.overlay}>
       <div className={styles.modal}>
         <div className={styles.header}>
           <h2 className={styles.title}>Create Organization</h2>

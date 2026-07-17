@@ -36,7 +36,7 @@ When working on this codebase, follow these conventions:
 
 ### Backend Conventions
 
-- Route handlers live in `app/routers/`, one file per resource domain, and **must be registered in `create_app()` in `app/main.py`** (`app.include_router(...)`). Cautionary tale: `app/routers/presence.py` was written but never registered — its HTTP endpoints are dead code (presence actually works over WebSocket). Verify registration when adding a router.
+- Route handlers live in `app/routers/`, one file per resource domain, and **must be registered in `create_app()` in `app/main.py`** (`app.include_router(...)`). Cautionary tale: a `presence.py` router was once written but never registered — its HTTP endpoints sat dead for a long time before being deleted (presence works over WebSocket). Verify registration when adding a router.
 - Use `async def` and `AsyncSession` for all handlers and DB access.
 - Role gating via dependencies from `app/middleware/auth.py`: `get_current_user` (any authenticated user), `require_superuser` (**admin OR superuser**), `require_admin` (admin only). Admin-portal routes use `get_current_admin` / `require_superadmin` from `app/routers/admin/auth.py` against the master DB. The `is_system` flag on users protects the provisioned admin from deletion.
 - **Real-time broadcast is two-tier.** For user-facing mutations on projects/phases/subphases/assignments, call `broadcast_change(...)` (`app/websocket/broadcast.py`) with rich attribution (entity, action, summary). Everything else is covered automatically: `BroadcastMiddleware` (`app/middleware/broadcast.py`) fires a coarse `change:<entity>` on any successful 2xx write, and its `SKIP_PATTERNS` list suppresses the paths that already do rich broadcasts. When you add rich broadcasting to a new path, add it to `SKIP_PATTERNS` too — otherwise clients receive double events.
@@ -57,6 +57,7 @@ When working on this codebase, follow these conventions:
 - **All snake_case↔camelCase transforms live in the API layer**, chiefly `src/api/endpoints/projects.ts` (`transformProject/Phase/Subphase/...` — including `type`↔`name` for phases and `sort_order`↔`order_index`). Components consume the frontend model from `src/types/models.ts` only; never transform field names in components.
 - **New write endpoints are What-If-intercepted by default.** The API client queues every PUT/POST/DELETE while What-If mode is active, except URLs under `/api/auth/` and `/api/settings/`. If a new endpoint must bypass What-If (rare), extend the exemption list in `src/api/client.ts` deliberately — and if it must be queued, ensure the local optimistic update is complete since the server won't respond for real.
 - **Optimistic-write failure protocol**: on persist failure, reload the affected data from the server and call `undoStore.clear()` — a stale undo stack against fresh server state corrupts data. `useDragAndDrop` and `useUndoRedo` are the reference implementations.
+- **Modals close only via explicit buttons or the Escape key — never on backdrop/outside click.** Clicking outside a modal must NOT close it (it discards in-progress input, e.g. when a text-selection drag ends on the backdrop). The shared `Modal` component (`src/components/common/Modal/`) enforces this and has no overlay-click prop; new dialogs must use it. Standalone dialogs that can't (like the admin-portal modals in `src/components/admin/modals/`) must not attach close handlers to their overlay and should use the `useEscapeKey` hook for Escape support. This rule is for modals/dialogs only — dropdowns, context menus, and popovers keep their click-outside-to-close behavior.
 - New localStorage keys go through `STORAGE_KEYS` in `src/utils/storage.ts` (typed wrappers, legacy migration support). Zustand persistence serializes `Set`s as arrays with custom `merge` — follow the existing pattern in `viewStore`.
 - ESLint is configured with most rules at **warn** level (including `rules-of-hooks`) — CI's lint job will not catch everything. Treat warnings as errors when writing new code.
 - Frontend model types live in `src/types/models.ts`; dates are `YYYY-MM-DD` strings throughout the frontend.
@@ -256,7 +257,7 @@ app/
     vacation.py        # Vacation (recurring pattern encoded in description)
     custom_column.py   # CustomColumn, CustomColumnValue (EAV)
     tag.py             # Tag, ProjectTag (global project tags, shared across sites)
-    note.py            # Note — NOTE: tablename is staff_notes
+    note.py            # Note — tablename is staff_notes
     settings.py        # Settings (KV), PredefinedPhase, SSOConfig (singleton)
     session.py         # Session (express-session compatible)
     presence.py        # ProjectPresence
@@ -272,7 +273,6 @@ app/
     mpp_import.py      # Microsoft Project file import (requires Java)
     notes.py           # Staff notes
     predefined_phases.py # Phase template management
-    presence.py        # ⚠ NOT REGISTERED in main.py — dead code (presence is WS-only)
     projects.py        # Project/phase/subphase CRUD + reorder
     settings.py        # Instance settings (KV) + tenant SSO settings
     sites.py           # Sites, bank holidays (incl. Nager refresh), company events
@@ -309,7 +309,7 @@ frontend/
     App.tsx            # Top-level branching (pathname /admin* vs main app), no router
     api/
       client.ts        # Fetch wrapper: cookie auth, tenant prefix, What-If interception
-      endpoints/       # admin, auth, customColumns, equipment, presence, projects (transform
+      endpoints/       # admin, auth, customColumns, equipment, projects (transform
                        #   layer), settings, sites, skills, staff, tags, users, vacations
     components/
       admin/           # AdminApp, AdminDashboard, TenantList, OrganizationList,
@@ -474,7 +474,7 @@ Two declarative bases: **`Base`** (tenant databases, `app/database.py`) and **`M
 | `project_assignments` | `ProjectAssignment` | Project-level staff: allocation %, own start/end dates |
 | `phase_staff_assignments` | `PhaseStaffAssignment` | Phase-level staff: allocation only (dates come from the phase) |
 | `subphase_staff_assignments` | `SubphaseStaffAssignment` | Subphase-level staff: allocation only |
-| `equipment_assignments` | `EquipmentAssignment` | Equipment bookings: project + equipment + dates (schema also carries phase/subphase columns) |
+| `equipment_assignments` | `EquipmentAssignment` | Equipment bookings: project + equipment + dates (project-level only; tenants provisioned before 1.0.15 may carry unused legacy phase/subphase columns) |
 
 **Resources & time-off**
 
@@ -489,10 +489,10 @@ Two declarative bases: **`Base`** (tenant databases, `app/database.py`) and **`M
 
 | Table | Model | Purpose |
 |-------|-------|---------|
-| `staff_notes` | `Note` | Notes pinned to a site/date. ⚠ Class is `Note` but tablename is **`staff_notes`** (the provisioner SQL historically created `notes` — check both when touching this) |
+| `staff_notes` | `Note` | Notes pinned to a site/date. Class is `Note` but tablename is **`staff_notes`**. All schema sources now create `staff_notes`; a legacy `notes` table on old installs is migrated and dropped by `migrations/add_staff_notes.sql` / the tenant auto-migration |
 | `settings` | `Settings` | Instance key-value settings (e.g. `instance_title`, `show_weekends`) |
 | `predefined_phases` | `PredefinedPhase` | Phase name templates offered in the UI |
-| `project_presence` | `ProjectPresence` | Active-viewer rows (60s timeout). Written by the WS layer; the HTTP presence router is not mounted |
+| `project_presence` | `ProjectPresence` | Active-viewer rows (60s timeout). Written by the WS layer; presence has no HTTP API |
 
 ### Master database tables (`milestone_admin`)
 
@@ -693,9 +693,9 @@ These handlers call rich `broadcast_change()` — their paths are in `BroadcastM
 | PUT / DELETE | `/{id}/tenants/{tid}` | Attach / detach a tenant |
 | PATCH | `/tenants/{tid}/groups` | Set tenant SSO group access (`required_group_ids`, `group_membership_mode`) |
 
-### Not mounted
+### No HTTP presence API
 
-`app/routers/presence.py` (HTTP heartbeat/list/conflict endpoints) is **not registered** in `main.py` — do not document or call these as a live API. Presence works through the WebSocket layer.
+There are no HTTP presence endpoints — presence works exclusively through the WebSocket layer. (A never-registered `presence.py` router and its frontend polling counterpart were removed as dead code.)
 
 ---
 
@@ -753,7 +753,6 @@ Flow: `GET /auth/sso/login` builds the Entra authorization URL with an **HMAC-si
 - `useWebSocket` (`src/hooks/useWebSocket.ts`): connects to `ws(s)://<host><tenantPrefix>/ws`, exponential backoff (2 s base, 60 s max, 5 attempts), does **not** reconnect on close codes 1000/1001/4000–4006, tracks `onlineUsers` (presence messages) and `recentChanges` (any `change:*`, expiring 30 s after local receipt to dodge clock skew).
 - `WebSocketContext` (`src/contexts/WebSocketContext.tsx`) turns changes into data refreshes: `slicesForEntity()` maps entity type → data slices (`phase`→`projects`, `staff`→`staff`+`projects`, unknown → everything), then refreshes via a **200 ms debounced, coalesced** runner with an in-flight guard that re-stages if more changes arrive mid-fetch. A phase drag producing N child updates results in one refetch per slice. Unknown entity types refresh everything, so new backend entities need no client change.
 - `useEntityChangeIndicator(entityType, entityId)` drives the `ChangeIndicator` badges ("changed by X"); `OnlineUsers` and `ActivityFeed` render presence and the change feed.
-- ⚠ Separate from WS presence, `usePresence` (`src/hooks/usePresence.ts`) polls HTTP presence endpoints every 30 s — **those endpoints belong to the unmounted `presence.py` router and are dead**. Known inconsistency: don't build on the HTTP presence path; use the WebSocket presence data.
 
 ---
 
@@ -814,7 +813,6 @@ All backend↔frontend field mapping is centralized: `transformProject/Phase/Sub
 | `useAuth` | Mount-time `checkAuth()`, login/logout (logout resets `appStore`) |
 | `useDataLoader` | Parallel initial data load + site resolution + granular refreshers (`refreshProjects`, `refreshSiteData`, …) used by the WS refetch layer |
 | `useWebSocket` / `WebSocketContext` | See Real-Time Collaboration |
-| `usePresence` | HTTP-poll presence (⚠ targets the unmounted presence router — dead path) |
 | `useDragAndDrop` | Gantt bar dragging (see drag pipeline); gated on admin/superuser |
 | `useResize` | Bar edge resizing with date recalculation |
 | `useResourceDragDrop` | HTML5 drag of staff/equipment from ResourcePanel onto rows; creates a 5-day default assignment (staff allocation defaults to `max_capacity`) |
@@ -823,6 +821,7 @@ All backend↔frontend field mapping is centralized: `transformProject/Phase/Sub
 | `usePhantomSibling` | Shift+click spawns a phantom sibling bar following the cursor (lag computed on placement) |
 | `useUndoRedo` | Undo/redo orchestration (see above) |
 | `useKeyboardShortcuts` | Esc (modal → linking → phantom priority), Home (today), `+`/`-` zoom (12–120 px), Ctrl/Cmd+Z / Ctrl/Cmd+Y / Ctrl/Cmd+Shift+Z |
+| `useEscapeKey` | Escape-to-close for standalone dialogs that can't use the shared `Modal` (e.g. the admin-portal modals) |
 | `useCtrlScrollZoom` | Ctrl+wheel zoom keeping the date under the cursor fixed |
 | `useScrollSync` | Vertical scroll sync between two elements |
 | `useWorkloadCalculation` | Per-cell staff workload for the Staff heatmap (allocations, vacations incl. recurring, visual states) |
@@ -840,6 +839,7 @@ A client-side planning sandbox — the server is never aware of it.
 - While active, the **API client** intercepts every PUT/POST/DELETE (except `/api/auth/*` and `/api/settings/*`): the request is queued as a `WhatIfOperation {method, url, body}` and a fake success `{success: true, whatIfMode: true}` is returned, so optimistic local state updates normally.
 - **Discard**: restore the snapshot, drop the queue. **Apply**: temporarily disable the interception check, replay queued operations sequentially with real requests; on error the snapshot is **not** restored (some writes may have landed — the user should reload). The interception check is always restored in `finally`.
 - Implications for new code: any new write endpoint is queued by default (see Frontend Conventions); operations that depend on real server responses (created IDs used by later operations) do not work correctly inside What-If — the queue replays with the original bodies.
+- Known limitations: MPP import uploads via a raw `fetch` that bypasses the queue, so `ImportProjectModal` blocks importing while What-If is active. Custom-column *definition* changes are queued but live in `customColumnStore`, which is not snapshotted — a definition created/deleted during What-If is not rolled back locally on Discard (reload to resync).
 
 ## Import & Export
 
@@ -847,7 +847,7 @@ A client-side planning sandbox — the server is never aware of it.
 
 - Endpoint: `GET /t/{slug}/api/export/site/{site_id}/excel` (admin / superuser only; superusers limited to sites they belong to).
 - Implemented in `app/routers/export.py` — `build_site_export_workbook()` generates a multi-sheet `.xlsx` via `openpyxl`.
-- Current sheets: Site, Projects (hierarchy with phases/subphases), Users, Equipment, Skills, User skills, Tags, Project tags, Vacations, Project assignments, Phase assignments, Subphase assignments, Equipment assignments, Custom columns, Custom column values, Bank holidays, Company events, Equipment blocks.
+- Current sheets: Site, Projects (hierarchy with phases/subphases), Users, Equipment, Skills, User skills, Tags, Project tags, Vacations, Project assignments, Phase assignments, Subphase assignments, Equipment assignments, Custom columns, Custom column values, Bank holidays, Company events, Equipment blocks, Staff notes.
 - **IMPORTANT**: any new data added at the site level through future enhancements (e.g. equipment maintenance/blocks, new event types, additional site-scoped settings, new assignment kinds, etc.) **must** be added as a new sheet (or a new column on the existing sheet) in `build_site_export_workbook()`. The site export is the canonical "everything for this site" snapshot — do not let it drift behind the model.
 
 ### MS Project & CSV
@@ -901,8 +901,8 @@ Docs are **not** built by Actions — Cloudflare Pages builds them from `docs/bu
 
 - The master and tenant databases use **separate SQLAlchemy Base classes** (`MasterBase` vs `Base`). Don't mix them.
 - `setup_databases.sql`, the provisioner schema (`tenant_provisioner.get_tenant_schema_sql()`), and `scripts/sql/tenant_schema_template.sql` must all stay in sync with the models — follow the schema-change checklist.
-- The `Note` model's tablename is **`staff_notes`**, but the provisioner SQL historically created a `notes` table — verify which exists before writing SQL against it.
-- `app/routers/presence.py` is **not registered** in `main.py`; its endpoints (and the frontend `usePresence` HTTP polling) are dead. Presence is WebSocket-only.
+- The `Note` model's tablename is **`staff_notes`**. All schema sources create `staff_notes` now; databases from old installs may carry a legacy `notes` table until `migrations/add_staff_notes.sql` or the tenant auto-migration runs (it migrates the rows and drops `notes`).
+- Presence is WebSocket-only — there is no HTTP presence API (a dead, never-registered presence router and its `usePresence` polling hook were removed).
 - `PUT/DELETE /equipment-assignments/{id}` is defined in both `equipment.py` and `assignments.py`; `equipment.py` wins (registered first). Edit there.
 - `request.state.X` does **not** work for tenant info — `TenantMiddleware` writes a plain dict into `scope["state"]`; read `request.scope["state"]["tenant_slug"]`.
 - The Vite dev server (:3333) has **no API proxy** — the client targets `:8485` directly, so the backend must be running; full tenant/WS behaviour is best tested on `:8485` with the built frontend.

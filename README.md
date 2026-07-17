@@ -105,7 +105,7 @@ milestone-planner/
 │   ├── config.py          # Pydantic settings
 │   ├── database.py        # Tenant DB engine/session
 │   ├── routers/           # API endpoints (20 modules)
-│   ├── models/            # SQLAlchemy models (14 modules)
+│   ├── models/            # SQLAlchemy models (15 modules)
 │   ├── schemas/           # Pydantic schemas
 │   ├── services/          # Business logic (encryption, SSO, tenant management)
 │   └── middleware/        # Auth and tenant middleware

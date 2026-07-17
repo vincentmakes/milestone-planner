@@ -35,6 +35,35 @@ CREATE DATABASE milestone_dev;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================================================
+-- ORGANIZATION TABLES (group tenants that share one SSO configuration)
+-- ============================================================================
+
+-- Organizations
+CREATE TABLE organizations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    slug VARCHAR(63) NOT NULL UNIQUE,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Organization-level SSO configuration (Microsoft Entra)
+CREATE TABLE organization_sso_config (
+    organization_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+    enabled INTEGER DEFAULT 0,
+    provider VARCHAR(50) DEFAULT 'entra',
+    entra_tenant_id VARCHAR(255),
+    client_id VARCHAR(255),
+    client_secret_encrypted TEXT,
+    redirect_uri VARCHAR(500),
+    auto_create_users INTEGER DEFAULT 0,
+    default_user_role VARCHAR(20) DEFAULT 'user',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================================
 -- TENANT MANAGEMENT TABLES
 -- ============================================================================
 
@@ -52,6 +81,9 @@ CREATE TABLE tenants (
     admin_email VARCHAR(255) NOT NULL,
     company_name VARCHAR(255),
     settings JSONB DEFAULT '{}',
+    organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL,
+    required_group_ids JSONB DEFAULT '[]',
+    group_membership_mode VARCHAR(10) DEFAULT 'any',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -85,6 +117,7 @@ CREATE TABLE admin_users (
     name VARCHAR(255),
     role VARCHAR(20) DEFAULT 'admin',
     active INTEGER DEFAULT 1,
+    must_change_password INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_login TIMESTAMP
 );
@@ -103,6 +136,8 @@ CREATE TABLE admin_sessions (
 CREATE INDEX idx_admin_sessions_expired ON admin_sessions(expired);
 CREATE INDEX idx_tenants_slug ON tenants(slug);
 CREATE INDEX idx_tenants_status ON tenants(status);
+CREATE INDEX idx_tenants_organization_id ON tenants(organization_id);
+CREATE INDEX idx_organizations_slug ON organizations(slug);
 CREATE INDEX idx_tenant_audit_log_tenant ON tenant_audit_log(tenant_id);
 CREATE INDEX idx_tenant_audit_log_created ON tenant_audit_log(created_at DESC);
 

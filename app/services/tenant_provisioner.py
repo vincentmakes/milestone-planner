@@ -177,11 +177,11 @@ def get_tenant_schema_sql() -> str:
       first_name TEXT NOT NULL,
       last_name TEXT NOT NULL,
       job_title TEXT,
-      role TEXT DEFAULT 'user' CHECK(role IN ('admin', 'superuser', 'user')),
-      max_capacity INTEGER DEFAULT 100,
+      role TEXT DEFAULT 'user' NOT NULL CHECK(role IN ('admin', 'superuser', 'user')),
+      max_capacity INTEGER DEFAULT 100 NOT NULL,
       sso_provider TEXT,
       sso_id TEXT,
-      active INTEGER DEFAULT 1,
+      active INTEGER DEFAULT 1 NOT NULL,
       is_system INTEGER DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -199,7 +199,7 @@ def get_tenant_schema_sql() -> str:
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
       type TEXT,
-      site_id INTEGER REFERENCES sites(id),
+      site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL,
       description TEXT,
       active INTEGER DEFAULT 1,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -209,9 +209,9 @@ def get_tenant_schema_sql() -> str:
     CREATE TABLE IF NOT EXISTS projects (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
-      site_id INTEGER REFERENCES sites(id),
+      site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL,
       customer TEXT,
-      pm_id INTEGER REFERENCES users(id),
+      pm_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
       sales_pm TEXT,
       confirmed INTEGER DEFAULT 0,
       volume REAL,
@@ -289,23 +289,21 @@ def get_tenant_schema_sql() -> str:
     CREATE TABLE IF NOT EXISTS equipment_assignments (
       id SERIAL PRIMARY KEY,
       project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-      phase_id INTEGER REFERENCES project_phases(id) ON DELETE CASCADE,
-      subphase_id INTEGER REFERENCES project_subphases(id) ON DELETE CASCADE,
       equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
       start_date DATE NOT NULL,
       end_date DATE NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Notes
-    CREATE TABLE IF NOT EXISTS notes (
+    -- Staff notes (pinned to a site/date; matches the Note model's staff_notes table)
+    CREATE TABLE IF NOT EXISTS staff_notes (
       id SERIAL PRIMARY KEY,
-      site_id INTEGER REFERENCES sites(id),
-      staff_id INTEGER REFERENCES users(id),
+      site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      staff_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
       date DATE NOT NULL,
       text TEXT NOT NULL,
-      type TEXT DEFAULT 'general',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      type VARCHAR(50) NOT NULL DEFAULT 'general',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
     -- Vacations/time off
@@ -314,7 +312,7 @@ def get_tenant_schema_sql() -> str:
       staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       start_date DATE NOT NULL,
       end_date DATE NOT NULL,
-      description TEXT DEFAULT 'Vacation',
+      description TEXT DEFAULT 'Vacation' NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -426,6 +424,7 @@ def get_tenant_schema_sql() -> str:
     CREATE INDEX IF NOT EXISTS idx_bank_holidays_date ON bank_holidays(date);
     CREATE INDEX IF NOT EXISTS idx_bank_holidays_year ON bank_holidays(site_id, year);
     CREATE INDEX IF NOT EXISTS idx_company_events_site_date ON company_events(site_id, date);
+    CREATE INDEX IF NOT EXISTS idx_staff_notes_site_date ON staff_notes(site_id, date);
     CREATE INDEX IF NOT EXISTS idx_equipment_blocks_equipment_id ON equipment_blocks(equipment_id);
     CREATE INDEX IF NOT EXISTS idx_equipment_blocks_dates ON equipment_blocks(start_date, end_date);
     CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired);

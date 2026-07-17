@@ -5,6 +5,41 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.15] - 2026-07-17
+
+### Added
+- The full site export now includes a Staff notes sheet.
+
+### Changed
+- Newly provisioned tenants no longer receive unused legacy phase/subphase columns on equipment assignments; equipment bookings are project-level, matching the application.
+
+### Fixed
+- Fresh single-tenant installs via `setup_databases.sql` were missing the user work-capacity and system-flag columns, which broke the app on first login; they are now included.
+- The master fresh-install script now creates the organizations and organization SSO tables and the tenant organization/group-access columns instead of relying on runtime auto-migration.
+- Deleting a site or a project manager on provisioned tenants now detaches their projects and equipment instead of being blocked by the database.
+- Other connected users now see a project immediately after an MS Project/CSV import instead of having to reload.
+- Importing a project is now blocked while What-If mode is active — it previously bypassed the sandbox and wrote to the server for real.
+- The manual tenant schema template was rebuilt to match the actual application schema (it had drifted on a dozen tables: wrong column names, missing columns and constraints).
+
+### Removed
+- Unused frontend staff create/update/delete functions that targeted endpoints that never existed.
+
+## [1.0.14] - 2026-07-16
+
+### Fixed
+- The manual tenant schema template now includes the equipment blocks, tags and project tags tables it was missing.
+- The staff notes table is now created consistently as `staff_notes` on every install path; databases from older installs are migrated automatically (legacy `notes` rows are carried over and the old table removed).
+- Assignment endpoints are now correctly listed in the broadcast middleware's skip list, replacing a stale entry for a route that never existed.
+
+### Removed
+- Dead HTTP presence endpoints and unused presence polling code; presence has always worked over the WebSocket connection.
+
+## [1.0.13] - 2026-07-16
+
+### Fixed
+- Admin portal dialogs no longer close when clicking outside them, which could discard in-progress input (e.g. when a text selection ended on the backdrop); use the close/cancel buttons or press Escape instead. Escape now closes admin portal dialogs.
+- The fresh-install schema (`setup_databases.sql`) now includes the previously missing company events, staff notes, custom columns, skills and project presence tables, matching the schema created for provisioned tenants.
+
 ## [1.0.12] - 2026-07-16
 
 ### Fixed

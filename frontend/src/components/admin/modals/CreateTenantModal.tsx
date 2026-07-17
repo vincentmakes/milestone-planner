@@ -6,6 +6,7 @@
 import { useState, FormEvent } from 'react';
 import { createTenant } from '@/api';
 import type { Tenant, TenantCreateRequest } from '@/api/endpoints/admin';
+import { useEscapeKey } from '@/hooks';
 import styles from './AdminModal.module.css';
 
 interface CreateTenantModalProps {
@@ -63,14 +64,10 @@ export function CreateTenantModal({ onClose, onCreated }: CreateTenantModalProps
     }
   };
 
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
+  useEscapeKey(onClose);
 
   return (
-    <div className={styles.overlay} onClick={handleOverlayClick}>
+    <div className={styles.overlay}>
       <div className={styles.modal}>
         <div className={styles.header}>
           <h2 className={styles.title}>Create Tenant</h2>

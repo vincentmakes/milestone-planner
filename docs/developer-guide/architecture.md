@@ -9,7 +9,7 @@ Milestone Planner is a full-stack application with a FastAPI backend serving a R
 | Layer | Technology |
 |-------|-----------|
 | **Backend** | Python 3.11+, FastAPI, SQLAlchemy 2.0 (async), asyncpg |
-| **Frontend** | React 18, TypeScript, Vite, Zustand, React Router, TanStack Query |
+| **Frontend** | React 18, TypeScript, Vite, Zustand, TanStack Query (no client-side router) |
 | **Database** | PostgreSQL 15+ |
 | **Deployment** | Docker, Docker Compose |
 | **CI/CD** | GitHub Actions (lint, test, type check, Docker build) |
@@ -33,11 +33,11 @@ app/
 │   ├── mpp_import.py        # Microsoft Project file import
 │   ├── notes.py             # Project/phase notes
 │   ├── predefined_phases.py # Phase templates
-│   ├── presence.py          # Real-time presence tracking
 │   ├── projects.py          # Project CRUD
 │   ├── settings.py          # Instance settings
 │   ├── sites.py             # Site management
 │   ├── skills.py            # Skills management
+│   ├── tags.py              # Project tags
 │   ├── staff.py             # Staff management
 │   ├── users.py             # User management
 │   └── vacations.py         # Vacation/time-off management
@@ -52,6 +52,7 @@ app/
 │   ├── skill.py             # Skill
 │   ├── vacation.py          # Vacation, RecurringAbsence
 │   ├── custom_column.py     # CustomColumn, CustomColumnValue
+│   ├── tag.py               # Tag, ProjectTag
 │   ├── note.py              # Note
 │   ├── settings.py          # InstanceSettings
 │   ├── session.py           # Session
@@ -76,14 +77,14 @@ app/
 
 ```
 frontend/src/
-├── App.tsx                  # Root component with routing
+├── App.tsx                  # Root component (pathname branching: /admin vs main app — no router)
 ├── main.tsx                 # React entry point
 ├── api/                     # API client
 │   ├── client.ts            # Base HTTP client
 │   ├── index.ts             # Re-exports
 │   └── endpoints/           # Per-resource API functions
 │       ├── admin.ts, auth.ts, customColumns.ts, equipment.ts
-│       ├── presence.ts, projects.ts, settings.ts, sites.ts
+│       ├── projects.ts, settings.ts, sites.ts
 │       ├── skills.ts, staff.ts, users.ts, vacations.ts
 ├── components/
 │   ├── admin/               # Admin portal (AdminApp, TenantList, OrgList, etc.)
@@ -138,11 +139,11 @@ The application uses two separate SQLAlchemy base classes:
 
 ### SPA Fallback
 
-All non-API, non-static routes serve `public/index.html` (the React SPA), which handles client-side routing.
+All non-API, non-static routes serve `public/index.html` (the React SPA). There is no client-side router — the app branches on `window.location.pathname` (`/admin*` vs main app) and switches in-app views through store state.
 
 ## Real-Time Architecture
 
-Milestone uses two complementary real-time mechanisms:
+Milestone's real-time collaboration runs entirely over WebSockets — both live data updates and presence (who is online / viewing a project):
 
 ### WebSocket (Live Updates)
 
@@ -163,20 +164,4 @@ Browser ──── WebSocket ──── FastAPI (app/websocket/)
 - **Reconnection**: Exponential backoff (2s base, 60s max, 5 attempts)
 - **Broadcasting**: API routers (`projects.py`, `assignments.py`) call `broadcast_change()` after mutations, which sends a message to all connected users in that tenant
 
-### REST Presence (Conflict Detection)
-
-```
-Browser ──── HTTP ──── FastAPI (app/routers/presence.py)
-  │                         │
-  ├─ POST /presence/heartbeat  (every 30s while viewing a project)
-  ├─ GET  /presence/project/{id}  (list active viewers)
-  ├─ POST /presence/check-conflict/{id}  (before saving)
-  └─ DELETE /presence/{id}  (leave project)
-```
-
-- **Heartbeat**: Frontend sends a heartbeat every 30 seconds with `activity: "viewing"` or `"editing"`
-- **Timeout**: Presence records expire after 300+ seconds without a heartbeat
-- **Conflict check**: Before saving, the frontend calls `check-conflict` which returns:
-  - Whether other users are actively editing
-  - The last modification timestamp and author
-  - A list of active editors with their names
+There are no HTTP presence endpoints — presence join/leave/list messages travel over the same WebSocket connection as change broadcasts.

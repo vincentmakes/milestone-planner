@@ -14,7 +14,7 @@ Hover the avatar stack to open a dropdown listing every connected user by name:
 
 ## Presence Tracking
 
-When you open a project, Milestone sends a heartbeat every 30 seconds to let others know you're actively viewing or editing. The Online Users dropdown reflects who is currently connected; presence records on the backend (`/api/presence/...`) capture per-project viewing and editing state, which is used internally for change-broadcast routing and conflict detection.
+Presence is tracked over your WebSocket connection: joining and leaving is announced the moment you connect or disconnect, with a periodic keepalive ping in between. The Online Users dropdown reflects who is currently connected in your workspace.
 
 Presence is tracked per project, so multiple users can work on different projects simultaneously without interference.
 

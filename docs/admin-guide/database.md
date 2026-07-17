@@ -57,8 +57,12 @@ bash migrations/run_migration.sh <migration_name>
 | `add_skills_tables` | Tenant | Skills management |
 | `add_custom_columns` | Tenant | Custom column support |
 | `add_company_events` | Tenant | Company events on timeline |
+| `add_company_event_color` | Tenant | Color column for company events |
+| `add_equipment_blocks` | Tenant | Equipment maintenance blocks |
+| `add_tags_tables` | Tenant | Project tags |
 | `add_project_presence` | Tenant | Real-time presence tracking |
 | `add_is_system_column` | Tenant | System column flag |
+| `add_staff_notes` | Tenant | Staff notes table (migrates and drops the legacy `notes` table) |
 | `upgrade_to_v90` | Tenant | Major version upgrade |
 
 ### Writing New Migrations

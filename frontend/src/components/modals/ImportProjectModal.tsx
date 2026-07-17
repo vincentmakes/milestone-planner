@@ -10,6 +10,7 @@ import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useWhatIfStore } from '@/stores/whatIfStore';
 import { loadAllProjects } from '@/api/endpoints/projects';
 import styles from './ImportProjectModal.module.css';
 
@@ -34,6 +35,7 @@ export function ImportProjectModal() {
   const closeModal = useUIStore((s) => s.closeModal);
   const setProjects = useAppStore((s) => s.setProjects);
   const currentSite = useAppStore((s) => s.currentSite);
+  const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
   
   const isOpen = activeModal === 'importProject';
   
@@ -93,7 +95,14 @@ export function ImportProjectModal() {
   // Handle import
   const handleImport = async () => {
     if (!selectedFile) return;
-    
+
+    // The import uploads via a raw fetch that bypasses the What-If queue,
+    // so it would hit the server for real. Block it while the sandbox is on.
+    if (whatIfMode) {
+      setError('Importing is unavailable while What-If mode is active. Apply or discard your What-If changes first.');
+      return;
+    }
+
     setIsImporting(true);
     setError(null);
     setResult(null);

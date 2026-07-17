@@ -25,6 +25,7 @@ from app.database import get_db
 from app.middleware.auth import require_superuser
 from app.models.custom_column import CustomColumn, CustomColumnValue
 from app.models.equipment import Equipment, EquipmentBlock
+from app.models.note import Note
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.site import BankHoliday, CompanyEvent, Site
 from app.models.skill import Skill, UserSkill
@@ -597,6 +598,11 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         .scalars()
         .all()
     )
+    note_rows = (
+        (await db.execute(select(Note).where(Note.site_id == site_id).order_by(Note.date)))
+        .scalars()
+        .all()
+    )
 
     # --- Build the workbook ----------------------------------------------------------
     wb = Workbook()
@@ -1128,6 +1134,24 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                 _iso(b.created_at),
             ]
             for b in equipment_block_rows
+        ],
+    )
+
+    # Staff notes
+    add_sheet(
+        "Staff notes",
+        ["ID", "Date", "Text", "Type", "Staff ID", "Staff name", "Created at"],
+        [
+            [
+                n.id,
+                _iso(n.date),
+                n.text,
+                n.type,
+                n.staff_id or "",
+                user_by_id[n.staff_id].full_name if n.staff_id in user_by_id else "",
+                _iso(n.created_at),
+            ]
+            for n in note_rows
         ],
     )
 

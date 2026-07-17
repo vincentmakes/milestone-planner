@@ -67,9 +67,10 @@ All tenant routes are prefixed with `/t/{slug}/api/`:
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/t/{slug}/api/staff` | List all staff |
-| `POST` | `/t/{slug}/api/staff` | Create staff member |
-| `PUT` | `/t/{slug}/api/staff/{id}` | Update staff member |
-| `DELETE` | `/t/{slug}/api/staff/{id}` | Delete staff member |
+| `GET` | `/t/{slug}/api/staff/{id}` | Get a staff member |
+| `GET` | `/t/{slug}/api/staff/{id}/availability` | Availability calculation |
+
+Staff endpoints are read-only — staff members *are* users and are created and managed via the `/users` endpoints.
 
 ### Equipment
 
@@ -97,12 +98,14 @@ Block periods mark equipment as unavailable for booking. See [Equipment Booking 
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/t/{slug}/api/assignments/staff` | Assign staff to phase |
-| `PUT` | `/t/{slug}/api/assignments/staff/{id}` | Update assignment |
-| `DELETE` | `/t/{slug}/api/assignments/staff/{id}` | Remove assignment |
-| `POST` | `/t/{slug}/api/assignments/equipment` | Assign equipment to phase |
-| `PUT` | `/t/{slug}/api/assignments/equipment/{id}` | Update equipment assignment |
-| `DELETE` | `/t/{slug}/api/assignments/equipment/{id}` | Remove equipment assignment |
+| `POST` | `/t/{slug}/api/projects/{id}/staff` | Assign staff at project level |
+| `PUT` / `DELETE` | `/t/{slug}/api/assignments/{id}` | Update / remove project-level assignment |
+| `POST` | `/t/{slug}/api/phases/{id}/staff` | Assign staff at phase level |
+| `PUT` / `DELETE` | `/t/{slug}/api/phase-staff/{id}` | Update / remove phase-level assignment |
+| `POST` | `/t/{slug}/api/subphases/{id}/staff` | Assign staff at subphase level |
+| `PUT` / `DELETE` | `/t/{slug}/api/subphase-staff/{id}` | Update / remove subphase-level assignment |
+| `POST` | `/t/{slug}/api/projects/{id}/equipment` | Book equipment on a project |
+| `PUT` / `DELETE` | `/t/{slug}/api/equipment-assignments/{id}` | Update / remove equipment booking |
 
 ### Vacations
 
@@ -139,8 +142,8 @@ Project tags are colored labels shared across all projects in the instance. See 
 | `POST` | `/t/{slug}/api/import/project` | Import a project from CSV / XML (multipart upload) |
 | `POST` | `/t/{slug}/api/import/mpp` | Import a project from Microsoft Project (`.mpp`/`.mpt`/`.mpx`) — requires Java |
 | `GET` | `/t/{slug}/api/import/mpp/test` | Diagnostic — verify Java/MPP toolchain is available |
-| `GET` | `/t/{slug}/api/export/project/{id}/csv` | Export a single project as CSV |
-| `GET` | `/t/{slug}/api/export/project/{id}/xml` | Export a single project as Microsoft Project XML |
+| `GET` / `POST` | `/t/{slug}/api/export/csv/{id}` | Export a single project as CSV |
+| `POST` | `/t/{slug}/api/export/mpp/{id}` | Export a single project for Microsoft Project |
 | `GET` | `/t/{slug}/api/export/site/{site_id}/excel` | Export the full site (multi-sheet `.xlsx`) — admin/superuser only |
 
 ### Custom Columns
@@ -149,21 +152,18 @@ Project tags are colored labels shared across all projects in the instance. See 
 |--------|----------|-------------|
 | `GET` | `/t/{slug}/api/custom-columns` | List custom column definitions |
 | `POST` | `/t/{slug}/api/custom-columns` | Create a custom column |
-| `PUT` | `/t/{slug}/api/custom-columns/{id}` | Update a custom column |
+| `PATCH` | `/t/{slug}/api/custom-columns/{id}` | Update a custom column |
 | `DELETE` | `/t/{slug}/api/custom-columns/{id}` | Delete a custom column |
-| `PUT` | `/t/{slug}/api/custom-columns/reorder` | Reorder columns |
-| `PUT` | `/t/{slug}/api/custom-columns/{id}/values` | Bulk update column values |
+| `PATCH` | `/t/{slug}/api/custom-columns/reorder` | Reorder columns |
+| `PUT` | `/t/{slug}/api/custom-columns/values` | Write a column value (`/values/batch` for bulk) |
 
-### Presence & Collaboration
+### Real-Time Collaboration
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/t/{slug}/api/presence/heartbeat` | Send presence heartbeat (viewing/editing) |
-| `DELETE` | `/t/{slug}/api/presence/{project_id}` | Leave project presence |
-| `GET` | `/t/{slug}/api/presence/project/{id}` | Get active viewers for a project |
-| `GET` | `/t/{slug}/api/presence/site/{id}` | Get presence across all projects in a site |
-| `POST` | `/t/{slug}/api/presence/check-conflict/{id}` | Check for conflicts before saving |
-| `WS` | `/t/{slug}/ws` | WebSocket for real-time updates |
+| `WS` | `/t/{slug}/ws` | WebSocket for real-time updates and presence |
+
+Presence (who is online, who is viewing a project) is handled entirely over the WebSocket connection — there are no HTTP presence endpoints.
 
 ### Other Endpoints
 
@@ -196,7 +196,7 @@ Admin routes are at `/api/admin/`:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/admin/login` | Admin login |
+| `POST` | `/api/admin/auth/login` | Admin login |
 | `GET` | `/api/admin/tenants` | List tenants |
 | `POST` | `/api/admin/tenants` | Create tenant |
 | `PUT` | `/api/admin/tenants/{id}` | Update tenant |
@@ -239,42 +239,6 @@ Content-Type: application/json
     "dependencies": [
         {"id": 41, "type": "FS"},
         {"id": 38, "type": "SS"}
-    ]
-}
-```
-
-### Presence Heartbeat
-
-```
-POST /t/{slug}/api/presence/heartbeat
-Content-Type: application/json
-
-{
-    "project_id": 5,
-    "activity": "editing"
-}
-```
-
-### Conflict Check Response
-
-```
-POST /t/{slug}/api/presence/check-conflict/5
-
-→ 200 OK
-{
-    "has_conflict": true,
-    "message": "Project was modified by another user",
-    "last_modified_at": "2026-04-09T14:30:00Z",
-    "last_modified_by": "Jane Doe",
-    "active_editors": [
-        {
-            "user_id": 3,
-            "first_name": "Jane",
-            "last_name": "Doe",
-            "activity": "editing",
-            "started_at": "2026-04-09T14:25:00Z",
-            "last_seen_at": "2026-04-09T14:30:00Z"
-        }
     ]
 }
 ```

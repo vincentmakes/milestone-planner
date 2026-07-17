@@ -3,9 +3,10 @@
  * Modal showing detailed tenant information including organization membership
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getTenant, getTenantAuditLog } from '@/api';
 import type { Tenant, AuditLogEntry } from '@/api/endpoints/admin';
+import { useEscapeKey } from '@/hooks';
 import styles from './AdminModal.module.css';
 
 interface TenantDetailsModalProps {
@@ -21,11 +22,7 @@ export function TenantDetailsModal({ tenantId, onClose }: TenantDetailsModalProp
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadTenantDetails();
-  }, [tenantId]);
-
-  const loadTenantDetails = async () => {
+  const loadTenantDetails = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -40,13 +37,13 @@ export function TenantDetailsModal({ tenantId, onClose }: TenantDetailsModalProp
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [tenantId]);
 
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
+  useEffect(() => {
+    loadTenantDetails();
+  }, [loadTenantDetails]);
+
+  useEscapeKey(onClose);
 
   const getStatusBadge = (status: Tenant['status']) => {
     const classes: Record<string, string> = {
@@ -76,7 +73,7 @@ export function TenantDetailsModal({ tenantId, onClose }: TenantDetailsModalProp
   };
 
   return (
-    <div className={styles.overlay} onClick={handleOverlayClick}>
+    <div className={styles.overlay}>
       <div className={`${styles.modal} ${styles.wide}`}>
         <div className={styles.header}>
           <h2 className={styles.title}>Tenant Details</h2>
