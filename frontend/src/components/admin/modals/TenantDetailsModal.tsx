@@ -3,7 +3,7 @@
  * Modal showing detailed tenant information including organization membership
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getTenant, getTenantAuditLog } from '@/api';
 import type { Tenant, AuditLogEntry } from '@/api/endpoints/admin';
 import { useEscapeKey } from '@/hooks';
@@ -22,11 +22,7 @@ export function TenantDetailsModal({ tenantId, onClose }: TenantDetailsModalProp
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadTenantDetails();
-  }, [tenantId]);
-
-  const loadTenantDetails = async () => {
+  const loadTenantDetails = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -41,7 +37,11 @@ export function TenantDetailsModal({ tenantId, onClose }: TenantDetailsModalProp
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [tenantId]);
+
+  useEffect(() => {
+    loadTenantDetails();
+  }, [loadTenantDetails]);
 
   useEscapeKey(onClose);
 

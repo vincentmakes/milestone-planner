@@ -3,7 +3,7 @@
  * Modal showing organization details with SSO configuration and tenant management
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAdminStore } from '@/stores/adminStore';
 import { 
   getOrganization, 
@@ -60,21 +60,17 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
     ? `${window.location.origin}/api/auth/sso/callback`
     : '/api/auth/sso/callback';
 
-  useEffect(() => {
-    loadOrganization();
-  }, [organizationId]);
-
-  const loadOrganization = async () => {
+  const loadOrganization = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
       const data = await getOrganization(organizationId);
       setOrganization(data);
-      
+
       // Set edit fields
       setEditName(data.name);
       setEditDescription(data.description || '');
-      
+
       // Set SSO fields
       if (data.sso_config) {
         setSsoEnabled(data.sso_config.enabled);
@@ -91,7 +87,11 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [organizationId, redirectHint]);
+
+  useEffect(() => {
+    loadOrganization();
+  }, [loadOrganization]);
 
   const handleSaveDetails = async () => {
     if (!organization) return;
