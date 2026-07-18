@@ -356,7 +356,14 @@ async def update_tenant_status(
             pass
 
     await db.commit()
-    await db.refresh(tenant)
+
+    # Re-select with the organization eager-loaded: tenant_to_response reads
+    # tenant.organization, and a lazy load after commit raises MissingGreenlet
+    # for organization-attached tenants.
+    result = await db.execute(
+        select(Tenant).where(Tenant.id == tenant_id).options(selectinload(Tenant.organization))
+    )
+    tenant = result.scalar_one()
 
     return tenant_to_response(tenant)
 

@@ -80,7 +80,9 @@ def tenant_login(page: Page) -> None:
     if page.locator('input[type="email"]').count() > 0:
         page.fill('input[type="email"]', TENANT_EMAIL)
         page.fill('input[type="password"]', TENANT_PASSWORD)
-        page.click('button:has-text("Sign In")')
+        # Exact match: with organization SSO active the login page also has a
+        # "Sign in with Microsoft" button, which a substring match would hit.
+        page.get_by_role("button", name="Sign In", exact=True).click()
         page.wait_for_load_state("networkidle")
     try:
         page.click('button[aria-label="Switch to light mode"]', timeout=2000)
@@ -153,9 +155,18 @@ def seed_master_state(context: BrowserContext) -> tuple[str, str]:
     return org_id, tenant_id
 
 
-def cleanup_master_state(context: BrowserContext, org_id: str, tenant_id: str) -> None:
-    api(context, "delete", f"/api/admin/organizations/{org_id}/tenants/{tenant_id}")
-    log("[cleanup] demo tenant detached from organization")
+def cleanup_master_state(context: BrowserContext) -> None:
+    """Detach the demo tenant from the screenshot organization (looked up by
+    slug, so this works even after a partial seed)."""
+    orgs = api(context, "get", "/api/admin/organizations")
+    org = next((o for o in orgs if o.get("slug") == ORG_SLUG), None)
+    tenants = api(context, "get", "/api/admin/tenants")
+    tenant = next((t for t in tenants if t.get("slug") == "demo"), None)
+    if org and tenant and tenant.get("organization_id") == org["id"]:
+        api(context, "delete", f"/api/admin/organizations/{org['id']}/tenants/{tenant['id']}")
+        log("[cleanup] demo tenant detached from organization")
+    else:
+        log("[cleanup] nothing to detach")
 
 
 # --------------------------- shots ---------------------------
@@ -229,8 +240,9 @@ def main() -> None:
         admin_page.add_init_script("localStorage.setItem('milestone_theme', 'light')")
         admin_login(admin_page)
 
-        org_id, tenant_id = seed_master_state(admin_ctx)
         try:
+            seed_master_state(admin_ctx)
+
             # Reload so the freshly seeded org/audit data is in the UI.
             admin_page.reload()
             admin_page.wait_for_load_state("networkidle")
@@ -243,7 +255,9 @@ def main() -> None:
             shot_sso_org_precedence(tenant_ctx)
             tenant_ctx.close()
         finally:
-            cleanup_master_state(admin_ctx, org_id, tenant_id)
+            # Runs even after a partial seed — an attached tenant would leave
+            # a "Sign in with Microsoft" button on the login page.
+            cleanup_master_state(admin_ctx)
         browser.close()
 
 
