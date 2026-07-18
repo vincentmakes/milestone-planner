@@ -150,6 +150,9 @@ def shot_gantt_with_staff(context: BrowserContext) -> None:
     open_panel(page, "Staff")
     page.screenshot(path=str(OUT / "gantt-with-staff-panel.png"))
     log("[done] gantt-with-staff-panel.png")
+    # Panel visibility persists in localStorage — close it again so later
+    # shots (modals, What-If) capture a clean Gantt.
+    open_panel(page, "Staff")
     page.close()
 
 
@@ -163,6 +166,9 @@ def shot_gantt_with_equipment(context: BrowserContext) -> None:
     open_panel(page, "Equipment")
     page.screenshot(path=str(OUT / "gantt-with-equipment-panel.png"))
     log("[done] gantt-with-equipment-panel.png")
+    # Panel visibility persists in localStorage — close it again so later
+    # shots (modals, What-If) capture a clean Gantt.
+    open_panel(page, "Equipment")
     page.close()
 
 
@@ -231,15 +237,22 @@ def shot_custom_columns(context: BrowserContext) -> None:
 
 
 def shot_login(context: BrowserContext) -> None:
-    """Unauthenticated login page (light theme pinned via localStorage)."""
-    page = context.new_page()
+    """Unauthenticated login page (light theme pinned via localStorage).
+
+    Uses a fresh, cookie-less context — the shared context is already logged
+    in by earlier shots and would render the app instead of the login form.
+    """
+    fresh = context.browser.new_context(
+        viewport={"width": 1440, "height": 900}, locale="en-US"
+    )
+    page = fresh.new_page()
     page.add_init_script("localStorage.setItem('milestone_theme', 'light')")
     page.goto(URL)
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(800)
     page.screenshot(path=str(OUT / "login.png"))
     log("[done] login.png")
-    page.close()
+    fresh.close()
 
 
 def shot_project_modal(context: BrowserContext) -> None:
@@ -260,6 +273,12 @@ def shot_project_tags(context: BrowserContext) -> None:
     page.wait_for_timeout(400)
     page.locator('button[title="Edit tag"]').first.click()
     page.wait_for_timeout(400)
+    # Bring the edit panel's color palette fully into the modal's scroll view.
+    try:
+        page.get_by_role("button", name="Done", exact=True).scroll_into_view_if_needed()
+        page.wait_for_timeout(300)
+    except Exception:
+        pass
     page.screenshot(path=str(OUT / "project-tags.png"))
     log("[done] project-tags.png")
     page.close()
@@ -276,8 +295,10 @@ def shot_assign_staff_modal(context: BrowserContext) -> None:
     right_click_row(page, "Catalyst Optimization")
     page.get_by_text("Assign Staff", exact=True).click()
     page.wait_for_timeout(600)
-    modal_select = page.locator('select').first
-    modal_select.select_option(label=modal_select.locator('option').nth(1).text_content())
+    # The page has other <select>s (custom-column list cells) — target the
+    # modal's staff dropdown via its placeholder option.
+    staff_select = page.locator('select:has(option:text("Select staff member"))')
+    staff_select.select_option(index=1)
     page.wait_for_timeout(400)
     page.screenshot(path=str(OUT / "assign-staff-modal.png"))
     log("[done] assign-staff-modal.png")
@@ -354,6 +375,9 @@ def shot_cross_site(context: BrowserContext) -> None:
     login(page)
     open_sidebar_item(page, "Cross-Site")
     page.wait_for_timeout(1500)
+    use_quarter_view(page)
+    click_today(page)
+    page.wait_for_timeout(500)
     page.screenshot(path=str(OUT / "cross-site.png"))
     log("[done] cross-site.png")
     page.close()
