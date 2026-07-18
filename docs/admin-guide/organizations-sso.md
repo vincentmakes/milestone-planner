@@ -91,6 +91,8 @@ the same shared redirect URI.
     per-tenant configuration would be ignored. To configure SSO per tenant, remove the
     tenant from the organization (or disable the organization's SSO).
 
+![Tenant SSO Configuration form shown read-only because organization SSO is active](../assets/screenshots/sso-org-precedence.png){ loading=lazy }
+
 **Per-Instance (Single-Tenant):**
 
 Configure SSO in the Settings modal within the application, or set environment variables:

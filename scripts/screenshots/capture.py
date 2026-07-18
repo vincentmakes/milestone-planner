@@ -71,7 +71,9 @@ def expand_all_projects(page: Page) -> None:
             break
         for btn in buttons:
             try:
-                btn.click()
+                # Short timeout: rows re-render as levels expand, so buttons
+                # from this snapshot can go stale — skip them fast.
+                btn.click(timeout=2000)
             except Exception:
                 pass
         page.wait_for_timeout(400)
@@ -91,6 +93,34 @@ def open_panel(page: Page, label: str) -> None:
     page.wait_for_timeout(400)
     page.locator('header').get_by_role('button', name=label, exact=True).click()
     page.wait_for_timeout(1500)
+
+
+def open_sidebar_item(page: Page, label: str) -> None:
+    """Click a sidebar navigation or admin-section item by its visible label."""
+    nav = page.locator('aside, nav').first
+    try:
+        nav.get_by_role('button', name=label, exact=True).click()
+    except Exception:
+        page.click(f'button:has-text("{label}")')
+    page.wait_for_timeout(800)
+
+
+def right_click_row(page: Page, name: str) -> None:
+    """Right-click a project-panel row by its visible text to open the context menu."""
+    row = page.get_by_text(name, exact=True).first
+    row.scroll_into_view_if_needed()
+    row.click(button="right")
+    page.wait_for_timeout(400)
+
+
+def open_project_modal(page: Page, project: str = "Bioprocess Scale-Up") -> None:
+    """Open the Edit Project modal for a project via the context menu."""
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    right_click_row(page, project)
+    page.get_by_text("Edit Project", exact=True).click()
+    page.wait_for_timeout(800)
 
 
 # --------------------------- shots ---------------------------
@@ -200,28 +230,210 @@ def shot_custom_columns(context: BrowserContext) -> None:
     page.close()
 
 
+def shot_login(context: BrowserContext) -> None:
+    """Unauthenticated login page (light theme pinned via localStorage)."""
+    page = context.new_page()
+    page.add_init_script("localStorage.setItem('milestone_theme', 'light')")
+    page.goto(URL)
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(800)
+    page.screenshot(path=str(OUT / "login.png"))
+    log("[done] login.png")
+    page.close()
+
+
+def shot_project_modal(context: BrowserContext) -> None:
+    page = context.new_page()
+    login(page)
+    open_project_modal(page)
+    page.screenshot(path=str(OUT / "project-modal.png"))
+    log("[done] project-modal.png")
+    page.close()
+
+
+def shot_project_tags(context: BrowserContext) -> None:
+    """Tag picker inside the project modal, with the tag edit/color panel open."""
+    page = context.new_page()
+    login(page)
+    open_project_modal(page)
+    page.click('input[placeholder="Find or create a tag..."]')
+    page.wait_for_timeout(400)
+    page.locator('button[title="Edit tag"]').first.click()
+    page.wait_for_timeout(400)
+    page.screenshot(path=str(OUT / "project-tags.png"))
+    log("[done] project-tags.png")
+    page.close()
+
+
+def shot_assign_staff_modal(context: BrowserContext) -> None:
+    """Assign Staff modal (project level) with a member selected so the
+    allocation slider is populated."""
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    right_click_row(page, "Catalyst Optimization")
+    page.get_by_text("Assign Staff", exact=True).click()
+    page.wait_for_timeout(600)
+    modal_select = page.locator('select').first
+    modal_select.select_option(label=modal_select.locator('option').nth(1).text_content())
+    page.wait_for_timeout(400)
+    page.screenshot(path=str(OUT / "assign-staff-modal.png"))
+    log("[done] assign-staff-modal.png")
+    page.close()
+
+
+def _sidebar_modal_shot(context: BrowserContext, label: str, outfile: str) -> None:
+    page = context.new_page()
+    login(page)
+    open_sidebar_item(page, label)
+    page.screenshot(path=str(OUT / outfile))
+    log(f"[done] {outfile}")
+    page.close()
+
+
+def shot_settings_modal(context: BrowserContext) -> None:
+    _sidebar_modal_shot(context, "Settings", "settings-modal.png")
+
+
+def shot_manage_sites(context: BrowserContext) -> None:
+    _sidebar_modal_shot(context, "Manage Sites", "manage-sites.png")
+
+
+def shot_manage_users(context: BrowserContext) -> None:
+    _sidebar_modal_shot(context, "Manage Users", "manage-users.png")
+
+
+def shot_manage_equipment(context: BrowserContext) -> None:
+    _sidebar_modal_shot(context, "Manage Equipment", "manage-equipment.png")
+
+
+def shot_predefined_phases(context: BrowserContext) -> None:
+    _sidebar_modal_shot(context, "Predefined Phases", "predefined-phases.png")
+
+
+def shot_skills_mgmt(context: BrowserContext) -> None:
+    """Skills management, reached from within Manage Users."""
+    page = context.new_page()
+    login(page)
+    open_sidebar_item(page, "Manage Users")
+    page.click('button:has-text("Manage Skills")')
+    page.wait_for_timeout(800)
+    page.screenshot(path=str(OUT / "skills-mgmt.png"))
+    log("[done] skills-mgmt.png")
+    page.close()
+
+
+def shot_import_modal(context: BrowserContext) -> None:
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    page.click('button[title="Import Project"]')
+    page.wait_for_timeout(800)
+    page.screenshot(path=str(OUT / "import-modal.png"))
+    log("[done] import-modal.png")
+    page.close()
+
+
+def shot_staff_overview(context: BrowserContext) -> None:
+    page = context.new_page()
+    login(page)
+    open_sidebar_item(page, "Staff Overview")
+    page.wait_for_timeout(1000)
+    use_quarter_view(page)
+    click_today(page)
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(OUT / "staff-overview.png"))
+    log("[done] staff-overview.png")
+    page.close()
+
+
+def shot_cross_site(context: BrowserContext) -> None:
+    page = context.new_page()
+    login(page)
+    open_sidebar_item(page, "Cross-Site")
+    page.wait_for_timeout(1500)
+    page.screenshot(path=str(OUT / "cross-site.png"))
+    log("[done] cross-site.png")
+    page.close()
+
+
+def shot_equipment_view(context: BrowserContext) -> None:
+    page = context.new_page()
+    login(page)
+    open_sidebar_item(page, "Equipment")
+    page.wait_for_timeout(1000)
+    use_quarter_view(page)
+    click_today(page)
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(OUT / "equipment-view.png"))
+    log("[done] equipment-view.png")
+    page.close()
+
+
+def shot_equipment_block_modal(context: BrowserContext) -> None:
+    """Block Equipment modal, reached from an expanded equipment row."""
+    page = context.new_page()
+    login(page)
+    open_sidebar_item(page, "Equipment")
+    page.wait_for_timeout(1000)
+    page.get_by_text("HPLC System 1", exact=True).first.click()
+    page.wait_for_timeout(400)
+    page.get_by_text("Add block (maintenance / defect)", exact=True).click()
+    page.wait_for_timeout(800)
+    page.screenshot(path=str(OUT / "equipment-block-modal.png"))
+    log("[done] equipment-block-modal.png")
+    page.close()
+
+
 # --------------------------- main ---------------------------
+
+# Ordered: shot key -> capture function. Order matters for reproducibility
+# (independent shots, but a stable run order keeps logs comparable).
+TARGETS = {
+    "main": shot_gantt_main,
+    "staff": shot_gantt_with_staff,
+    "equipment": shot_gantt_with_equipment,
+    "whatif": shot_what_if_active,
+    "vacations": shot_vacations_view,
+    "columns": shot_custom_columns,
+    "login": shot_login,
+    "project-modal": shot_project_modal,
+    "tags": shot_project_tags,
+    "assign-staff": shot_assign_staff_modal,
+    "settings": shot_settings_modal,
+    "sites": shot_manage_sites,
+    "users": shot_manage_users,
+    "equipment-mgmt": shot_manage_equipment,
+    "phases": shot_predefined_phases,
+    "skills": shot_skills_mgmt,
+    "import": shot_import_modal,
+    "staff-view": shot_staff_overview,
+    "crosssite": shot_cross_site,
+    "equipment-view": shot_equipment_view,
+    "block-modal": shot_equipment_block_modal,
+}
 
 
 def main() -> None:
     args = set(sys.argv[1:])
-    targets = {
-        "main": shot_gantt_main,
-        "staff": shot_gantt_with_staff,
-        "equipment": shot_gantt_with_equipment,
-        "whatif": shot_what_if_active,
-        "vacations": shot_vacations_view,
-        "columns": shot_custom_columns,
-    }
+    unknown = args - set(TARGETS)
+    if unknown:
+        log(f"Unknown shot keys: {', '.join(sorted(unknown))}")
+        log(f"Available: {', '.join(TARGETS)}")
+        sys.exit(1)
     if not args:
-        args = set(targets.keys())
+        args = set(TARGETS.keys())
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(viewport={"width": 1440, "height": 900})
-        for key in ["main", "staff", "equipment", "whatif", "vacations", "columns"]:
+        # locale pinned so date formatting is deterministic regardless of the
+        # host's locale (a POSIX host locale even crashes Intl.DateTimeFormat).
+        context = browser.new_context(viewport={"width": 1440, "height": 900}, locale="en-US")
+        for key, shot in TARGETS.items():
             if key in args:
                 try:
-                    targets[key](context)
+                    shot(context)
                 except Exception as e:  # pragma: no cover
                     log(f"[ERROR] {key}: {e}")
         browser.close()

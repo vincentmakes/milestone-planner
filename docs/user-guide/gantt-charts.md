@@ -62,6 +62,8 @@ Tags are colored labels you can attach to projects to group, filter, or visually
 
 Tags are managed from the **Tags** field in the project create/edit modal.
 
+![Tag picker in the project modal with the tag edit panel and color palette open](../assets/screenshots/project-tags.png){ loading=lazy }
+
 ### Attaching a tag
 
 1. Open the project (Edit, or while creating a new one).

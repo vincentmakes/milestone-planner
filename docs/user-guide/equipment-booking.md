@@ -101,6 +101,8 @@ Equipment blocks mark a period when an item is **unavailable for booking** — t
     - **Description** — short free-text label, prefilled from the chosen reason (e.g. *"Annual recalibration"*)
 3. Click **Save Block**.
 
+![Block Equipment modal with equipment, date range, reason, and description fields](../assets/screenshots/equipment-block-modal.png){ loading=lazy }
+
 The duration is shown live as you change dates so you can confirm the window before saving.
 
 ### Editing or Deleting a Block
