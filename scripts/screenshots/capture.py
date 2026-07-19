@@ -411,6 +411,198 @@ def shot_equipment_block_modal(context: BrowserContext) -> None:
     page.close()
 
 
+def scroll_timeline_right(page: Page, dx: int = 500) -> None:
+    """Scroll the timeline pane horizontally (dependency chains often extend
+    to the right of the today-centered viewport)."""
+    page.mouse.move(1150, 400)
+    page.mouse.wheel(dx, 0)
+    page.wait_for_timeout(600)
+
+
+def shot_gantt_dependencies(context: BrowserContext) -> None:
+    """Dependency arrows between the Catalyst Optimization phases."""
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    expand_all_projects(page)
+    click_today(page)
+    scroll_timeline_right(page)
+    page.screenshot(path=str(OUT / "gantt-dependencies.png"))
+    log("[done] gantt-dependencies.png")
+    page.close()
+
+
+def shot_gantt_critical_path(context: BrowserContext) -> None:
+    """Critical path highlighted on Catalyst Optimization (seeded FS chain)."""
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    expand_all_projects(page)
+    click_today(page)
+    page.locator('button[title="Show Critical Path"]').nth(1).click()
+    page.wait_for_timeout(800)
+    scroll_timeline_right(page)
+    page.screenshot(path=str(OUT / "gantt-critical-path.png"))
+    log("[done] gantt-critical-path.png")
+    page.close()
+
+
+def shot_gantt_context_menu(context: BrowserContext) -> None:
+    """Right-click context menu on a project row — no item is clicked."""
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    right_click_row(page, "Bioprocess Scale-Up")
+    page.screenshot(path=str(OUT / "gantt-context-menu.png"))
+    log("[done] gantt-context-menu.png")
+    page.close()
+
+
+def shot_manage_columns_modal(context: BrowserContext) -> None:
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    page.click('button[title="Manage Custom Columns"]')
+    page.wait_for_timeout(800)
+    page.screenshot(path=str(OUT / "manage-columns-modal.png"))
+    log("[done] manage-columns-modal.png")
+    page.close()
+
+
+def shot_column_filter(context: BrowserContext) -> None:
+    """Custom-column filter dropdown on the Priority header."""
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    page.locator('button[title="Filter column"]').first.click()
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(OUT / "column-filter-dropdown.png"))
+    log("[done] column-filter-dropdown.png")
+    page.close()
+
+
+def shot_vacation_modal(context: BrowserContext) -> None:
+    """Vacation modal from an expanded staff row (capture only — never saved)."""
+    page = context.new_page()
+    login(page)
+    open_sidebar_item(page, "Staff Overview")
+    page.wait_for_timeout(1000)
+    # Staff rows expand by clicking the row itself.
+    page.get_by_text("Alice Anderson", exact=True).first.click()
+    page.wait_for_timeout(600)
+    page.get_by_text("Add vacation / time off", exact=True).first.click()
+    page.wait_for_timeout(800)
+    page.screenshot(path=str(OUT / "vacation-modal.png"))
+    log("[done] vacation-modal.png")
+    page.close()
+
+
+def shot_staff_filter(context: BrowserContext) -> None:
+    """Role/skills filter dropdown in the Staff Overview header."""
+    page = context.new_page()
+    login(page)
+    open_sidebar_item(page, "Staff Overview")
+    page.wait_for_timeout(1000)
+    page.get_by_role("button", name="Filter", exact=True).click()
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(OUT / "staff-filter-dropdown.png"))
+    log("[done] staff-filter-dropdown.png")
+    page.close()
+
+
+def shot_bank_holidays(context: BrowserContext) -> None:
+    """Staff Overview with the Bank Holidays row expanded."""
+    page = context.new_page()
+    login(page)
+    open_sidebar_item(page, "Staff Overview")
+    page.wait_for_timeout(1000)
+    use_quarter_view(page)
+    click_today(page)
+    page.get_by_text("Bank Holidays", exact=True).first.click()
+    page.wait_for_timeout(600)
+    page.screenshot(path=str(OUT / "bank-holidays.png"))
+    log("[done] bank-holidays.png")
+    page.close()
+
+
+def shot_archived_view(context: BrowserContext) -> None:
+    page = context.new_page()
+    login(page)
+    open_sidebar_item(page, "Archived")
+    page.wait_for_timeout(1200)
+    use_quarter_view(page)
+    click_today(page)
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(OUT / "archived-view.png"))
+    log("[done] archived-view.png")
+    page.close()
+
+
+def shot_site_modal(context: BrowserContext) -> None:
+    """Site edit modal (country/region codes) from Manage Sites."""
+    page = context.new_page()
+    login(page)
+    open_sidebar_item(page, "Manage Sites")
+    page.locator('button[title="Edit site"]').first.click()
+    page.wait_for_timeout(600)
+    page.screenshot(path=str(OUT / "site-edit-modal.png"))
+    log("[done] site-edit-modal.png")
+    page.close()
+
+
+def shot_equipment_assign_modal(context: BrowserContext) -> None:
+    """Assign Equipment modal with a piece of equipment selected."""
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    right_click_row(page, "Bioprocess Scale-Up")
+    page.get_by_text("Assign Equipment", exact=True).click()
+    page.wait_for_timeout(600)
+    equip_select = page.locator('select:has(option:text("Select equipment"))')
+    equip_select.select_option(index=1)
+    page.wait_for_timeout(400)
+    page.screenshot(path=str(OUT / "equipment-assignment-modal.png"))
+    log("[done] equipment-assignment-modal.png")
+    page.close()
+
+
+def shot_dark_theme(context: BrowserContext) -> None:
+    """Gantt in the dark theme. Fresh context so the shared (light) context
+    is untouched; must run last anyway to keep run order deterministic."""
+    fresh = context.browser.new_context(
+        viewport={"width": 1440, "height": 900}, locale="en-US"
+    )
+    page = fresh.new_page()
+    page.add_init_script("localStorage.setItem('milestone_theme', 'dark')")
+    page.goto(URL)
+    page.wait_for_load_state("networkidle")
+    if page.locator('input[type="email"]').count() > 0:
+        page.fill('input[type="email"]', EMAIL)
+        page.fill('input[type="password"]', PASSWORD)
+        page.get_by_role("button", name="Sign In", exact=True).click()
+        page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(1500)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    expand_all_projects(page)
+    click_today(page)
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(OUT / "dark-theme.png"))
+    log("[done] dark-theme.png")
+    fresh.close()
+
+
 # --------------------------- main ---------------------------
 
 # Ordered: shot key -> capture function. Order matters for reproducibility
@@ -437,6 +629,18 @@ TARGETS = {
     "crosssite": shot_cross_site,
     "equipment-view": shot_equipment_view,
     "block-modal": shot_equipment_block_modal,
+    "dependencies": shot_gantt_dependencies,
+    "critical-path": shot_gantt_critical_path,
+    "context-menu": shot_gantt_context_menu,
+    "manage-columns": shot_manage_columns_modal,
+    "column-filter": shot_column_filter,
+    "vacation-modal": shot_vacation_modal,
+    "staff-filter": shot_staff_filter,
+    "bank-holidays": shot_bank_holidays,
+    "archived": shot_archived_view,
+    "site-modal": shot_site_modal,
+    "equipment-assign": shot_equipment_assign_modal,
+    "dark-theme": shot_dark_theme,  # keep last: the only intentionally dark shot
 }
 
 

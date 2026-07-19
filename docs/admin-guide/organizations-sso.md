@@ -77,6 +77,8 @@ SSO can be configured at two scopes:
    - **Redirect URI** — `https://your-domain.com/api/auth/sso/callback` (the shared URL above)
 4. Save configuration
 
+![Organization details with the SSO configuration form in the admin portal](../assets/screenshots/admin-org-sso-config.png){ loading=lazy }
+
 All tenants in the organization share this SSO setup.
 
 **Per-Tenant (Multi-Tenant):**

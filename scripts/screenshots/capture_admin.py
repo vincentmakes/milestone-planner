@@ -195,6 +195,30 @@ def shot_admin_tabs(page: Page) -> None:
     log("[done] admin-stats.png")
 
 
+def shot_create_tenant_modal(page: Page) -> None:
+    """Create Tenant modal (capture only — never submitted)."""
+    open_tab(page, "Tenants")
+    page.get_by_role("button", name="Create Tenant").click()
+    page.wait_for_timeout(800)
+    page.screenshot(path=str(OUT / "admin-create-tenant-modal.png"))
+    log("[done] admin-create-tenant-modal.png")
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(400)
+
+
+def shot_org_sso_config(page: Page) -> None:
+    """Editable organization SSO configuration in the admin portal."""
+    open_tab(page, "Organizations")
+    page.locator('button[title="View Details & Configure SSO"]').first.click()
+    page.wait_for_timeout(1000)
+    page.get_by_role("button", name="SSO Configuration").click()
+    page.wait_for_timeout(600)
+    page.screenshot(path=str(OUT / "admin-org-sso-config.png"))
+    log("[done] admin-org-sso-config.png")
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(400)
+
+
 def shot_tenant_audit(page: Page) -> None:
     open_tab(page, "Tenants")
     page.locator('button[title="View Details"]').first.click()
@@ -249,6 +273,8 @@ def main() -> None:
             admin_page.wait_for_timeout(1000)
 
             shot_admin_tabs(admin_page)
+            shot_create_tenant_modal(admin_page)
+            shot_org_sso_config(admin_page)
             shot_tenant_audit(admin_page)
 
             tenant_ctx = browser.new_context(viewport={"width": 1440, "height": 900}, locale="en-US")

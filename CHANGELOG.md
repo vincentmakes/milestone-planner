@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 - The documentation screenshot pipeline now captures every screenshot in the docs automatically, including the admin portal, all management modals, tags, equipment maintenance blocks, and the read-only tenant SSO form shown when organization SSO applies.
+- Fourteen more documentation illustrations: dependency arrows, critical path, context menu, column manager and filters, vacation and equipment booking modals, bank holidays, archived view, dark theme, site editor, staff filter, and the admin portal's create-tenant and organization SSO dialogs.
 
 ### Fixed
 - Changing the status of a tenant that belongs to an organization no longer fails with an internal server error in the admin portal.

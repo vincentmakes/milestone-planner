@@ -141,6 +141,8 @@ Overview of the platform deployment — tenant counts by status, database connec
 4. The system auto-provisions the database
 5. Copy the generated credentials from the "Show Credentials" button
 
+![Create Tenant modal in the admin portal](../assets/screenshots/admin-create-tenant-modal.png){ loading=lazy }
+
 ### Suspending a Tenant
 
 Edit the tenant and set its status to **Inactive**. The tenant's database remains intact but users cannot log in.

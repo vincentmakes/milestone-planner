@@ -89,6 +89,33 @@ SELECT e.id, CURRENT_DATE + 20, CURRENT_DATE + 24, 'defect', 'Detector lamp repl
    AND NOT EXISTS (SELECT 1 FROM equipment_blocks b
                     WHERE b.equipment_id = e.id AND b.reason = 'defect');
 
+-- Phase dependencies on 'Catalyst Optimization': draws dependency arrows on
+-- the Gantt and gives the critical-path toggle a real zero-slack chain.
+-- dependencies is JSON text: [{"id": <predecessor phase id>, "type": "FS", "lag": 0}]
+UPDATE project_phases ph
+   SET dependencies = '[{"id": ' || pred.id || ', "type": "' || d.dep_type || '", "lag": ' || d.lag || '}]'
+  FROM (VALUES
+    -- All FS with the phases' back-to-back dates: the whole chain has zero
+    -- float, so the critical-path screenshot highlights every phase.
+    ('Analytics', 'Preparation', 'FS', 0),
+    ('Trial',     'Analytics',   'FS', 0),
+    ('Cleaning',  'Trial',       'FS', 0),
+    ('Report',    'Cleaning',    'FS', 0)
+  ) AS d(phase_type, pred_type, dep_type, lag),
+       projects p,
+       project_phases pred
+ WHERE p.name = 'Catalyst Optimization'
+   AND ph.project_id = p.id AND ph.type = d.phase_type
+   AND pred.project_id = p.id AND pred.type = d.pred_type
+   AND (ph.dependencies IS NULL OR ph.dependencies IN ('', '[]'));
+
+-- Archived demo project: gives the Archived view content. Kept separate from
+-- the canonical active projects, which other screenshots reference.
+INSERT INTO projects (name, site_id, customer, confirmed, start_date, end_date, archived)
+SELECT 'Legacy Filtration Study', 1, 'AquaPure GmbH', 1,
+       CURRENT_DATE - 120, CURRENT_DATE + 30, 1
+ WHERE NOT EXISTS (SELECT 1 FROM projects WHERE name = 'Legacy Filtration Study');
+
 -- Staff note: keeps the demo tenant canonical for the site Excel export
 -- ("Staff notes" sheet). There is no UI for notes yet.
 INSERT INTO staff_notes (site_id, staff_id, date, text, type)

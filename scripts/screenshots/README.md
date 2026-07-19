@@ -48,7 +48,8 @@ python3 -m venv /tmp/pw-venv
 Run all three scripts, in this order:
 
 ```bash
-# 1. Single-user tenant shots (Gantt, views, modals, tags, blocks, what-if).
+# 1. Single-user tenant shots (Gantt, views, modals, tags, blocks, what-if,
+#    dependencies, critical path, filters, archived view, dark theme).
 /tmp/pw-venv/bin/python scripts/screenshots/capture.py
 
 # 2. Multi-user collab shots (online users, presence dropdown, activity feed toast).

@@ -61,6 +61,8 @@ Click the **Filter** dropdown to filter by:
 
 The header shows filtered/total count (e.g., "12/20 staff") when filters are active.
 
+![Staff filter dropdown with role and skill checkboxes](../assets/screenshots/staff-filter-dropdown.png){ loading=lazy }
+
 ## Staff Notes
 
 Staff notes are short, date-pinned annotations attached to a site — for example *"Covering weekend shift for stability study sampling"* — optionally linked to a specific staff member. They are useful for recording scheduling context that doesn't belong in an assignment or vacation entry.
