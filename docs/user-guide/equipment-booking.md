@@ -43,6 +43,8 @@ The right side shows a horizontal timeline with booking bars:
 
 ### Assignment Modal
 
+![Assign Equipment modal with equipment dropdown and booking dates](../assets/screenshots/equipment-assignment-modal.png){ loading=lazy }
+
 - Select the **equipment item** from a dropdown
 - Set **start and end dates** for the booking
 - Click **Save** to confirm
@@ -100,6 +102,8 @@ Equipment blocks mark a period when an item is **unavailable for booking** — t
     - **Reason** — *Maintenance*, *Defect / Out of order*, *Calibration*, or *Other*
     - **Description** — short free-text label, prefilled from the chosen reason (e.g. *"Annual recalibration"*)
 3. Click **Save Block**.
+
+![Block Equipment modal with equipment, date range, reason, and description fields](../assets/screenshots/equipment-block-modal.png){ loading=lazy }
 
 The duration is shown live as you change dates so you can confirm the window before saving.
 

@@ -62,6 +62,8 @@ Tags are colored labels you can attach to projects to group, filter, or visually
 
 Tags are managed from the **Tags** field in the project create/edit modal.
 
+![Tag picker in the project modal with the tag edit panel and color palette open](../assets/screenshots/project-tags.png){ loading=lazy }
+
 ### Attaching a tag
 
 1. Open the project (Edit, or while creating a new one).
@@ -150,6 +152,8 @@ Values are saved automatically as you edit. Changes cascade — editing a phase'
 
 Open **Manage Columns** to see all active columns:
 
+![Manage Custom Columns modal with reorder handles and edit/delete actions](../assets/screenshots/manage-columns-modal.png){ loading=lazy }
+
 - **Reorder**: Drag columns by the handle icon to change display order
 - **Edit**: Click the edit icon to change name, dropdown options, or width (type cannot be changed)
 - **Delete**: Click the delete icon. A confirmation warns that **all values will be lost**
@@ -166,6 +170,8 @@ Click the **filter icon** on any column header to filter the project list:
 
 An active filter turns the column header's filter icon blue.
 
+![Column filter dropdown open on the Priority column](../assets/screenshots/column-filter-dropdown.png){ loading=lazy }
+
 ### Resizing Column Widths
 
 Drag the **right edge** of any column header to resize its width (60px–400px). The new width is saved automatically.
@@ -177,6 +183,8 @@ Toggle individual column visibility from the column manager without deleting the
 ## Dependencies
 
 Link phases and subphases with dependency relationships to enforce scheduling logic. Dependency arrows are drawn on the timeline to visualize the relationships.
+
+![Dependency arrows linking the Catalyst Optimization phases on the timeline](../assets/screenshots/gantt-dependencies.png){ loading=lazy }
 
 ### Dependency Types
 
@@ -230,9 +238,11 @@ The **Critical Path** highlights the longest sequence of dependent phases throug
 
 ### How to Use
 
-1. Right-click on a project and select **Toggle Critical Path** (or use the project context menu)
+1. Click the **lightning-bolt button** on the project's row in the project panel (tooltip: *Show Critical Path*)
 2. Critical path items are visually highlighted on the timeline
-3. Toggle it off to return to normal view
+3. Click the button again to return to normal view
+
+![Critical path highlighted across the Catalyst Optimization dependency chain](../assets/screenshots/gantt-critical-path.png){ loading=lazy }
 
 The critical path is calculated using the **Critical Path Method (CPM)** algorithm:
 
@@ -247,6 +257,8 @@ The critical path is calculated using the **Critical Path Method (CPM)** algorit
 
 Right-click on any item for context-appropriate actions:
 
+![Right-click context menu on a project row](../assets/screenshots/gantt-context-menu.png){ loading=lazy }
+
 | Target | Actions |
 |--------|---------|
 | Project | Edit, Delete, Add Phase, Assign Staff, Assign Equipment, View Details |
@@ -254,3 +266,15 @@ Right-click on any item for context-appropriate actions:
 | Subphase | Edit, Delete, Add Subphase, Assign Staff, Assign Equipment |
 | Staff Assignment | Edit Assignment, Remove Assignment |
 | Equipment Assignment | Edit Assignment, Remove Assignment |
+
+## Archived Projects
+
+Completed or dormant projects can be archived so they no longer clutter the Gantt chart, without deleting their data:
+
+1. Edit the project and tick the **Archived** checkbox, then save.
+2. The project disappears from the Gantt and moves to the **Archived** view (sidebar).
+3. To restore it, open the Archived view, click the project's edit button, untick **Archived**, and save — it reappears on the Gantt with all phases, assignments, and history intact.
+
+![Archived view listing archived projects](../assets/screenshots/archived-view.png){ loading=lazy }
+
+Archived projects are excluded from the Gantt chart and the cross-site overview, but they remain in the database and are included in the full site Excel export (with an *Archived* column).

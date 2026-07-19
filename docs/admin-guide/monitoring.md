@@ -133,13 +133,15 @@ Every administrative action on tenants is logged for accountability and complian
 ### Viewing Audit Logs
 
 1. In the admin portal, open a tenant's details
-2. The **Audit Log** section shows the most recent 20 entries
+2. The **Recent Activity** section shows the most recent entries
 3. Each entry includes: timestamp, action type, actor (admin email), and details
+
+![Tenant details modal with the Recent Activity audit log](../assets/screenshots/admin-tenant-audit.png){ loading=lazy }
 
 Audit logs are stored in the master database and persist even if a tenant is deleted.
 
 !!! tip
-    Audit logs can also be retrieved via the API: `GET /api/admin/tenants/{tenant_id}/audit-log`
+    Audit logs can also be retrieved via the API: `GET /api/admin/tenants/{tenant_id}/audit`
 
 ## Performance
 

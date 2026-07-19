@@ -64,7 +64,9 @@ def quarter_today_expand(page: Page) -> None:
             break
         for b in btns:
             try:
-                b.click()
+                # Short timeout: rows re-render as levels expand, so buttons
+                # from this snapshot can go stale — skip them fast.
+                b.click(timeout=2000)
             except Exception:
                 pass
         page.wait_for_timeout(400)
@@ -94,8 +96,8 @@ def _hover_online_users(page: Page, enter: bool) -> None:
 def main() -> None:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        ctx_a = browser.new_context(viewport={"width": 1440, "height": 900})
-        ctx_b = browser.new_context(viewport={"width": 1280, "height": 720})
+        ctx_a = browser.new_context(viewport={"width": 1440, "height": 900}, locale="en-US")
+        ctx_b = browser.new_context(viewport={"width": 1280, "height": 720}, locale="en-US")
 
         page_a = ctx_a.new_page()
         page_b = ctx_b.new_page()

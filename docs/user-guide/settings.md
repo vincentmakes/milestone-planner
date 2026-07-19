@@ -15,6 +15,8 @@ Access settings through the gear icon in the sidebar or through the user menu. M
 - Upload custom logos for dark and light themes (drag-and-drop or click to browse)
 - Click **Remove** to revert to the default Milestone logo
 
+![The Gantt chart in dark mode](../assets/screenshots/dark-theme.png){ loading=lazy }
+
 ## Display Settings
 
 | Setting | Description |
@@ -40,6 +42,8 @@ Sites represent your organization's physical locations. Projects, staff, equipme
 4. Click the **edit icon** (pencil) on the new site to open the full edit modal
 
 ### Editing a Site
+
+![Site edit modal with country and region fields and the bank-holiday refresh](../assets/screenshots/site-edit-modal.png){ loading=lazy }
 
 The site edit modal has these fields:
 
@@ -85,9 +89,8 @@ If a site has a **country** set, Milestone can auto-fetch public holidays from t
 
 1. Edit a site and set its **Country** (and optionally **Region/State Code**)
 2. Click **Save Changes**
-3. Open the **Bank Holidays** modal (accessible from the Staff View or site edit)
-4. Click **Refresh** — Milestone fetches public holidays for the current and next year
-5. If a region code is set, only region-specific holidays are included
+3. Re-open the site in the edit modal and click **Refresh** in the bank-holidays section — Milestone fetches public holidays for the current and next year
+4. If a region code is set, only region-specific holidays are included
 
 The last refresh timestamp is shown in the site edit modal: *"Last updated: April 2026"*.
 
@@ -99,16 +102,16 @@ The last refresh timestamp is shown in the site edit modal: *"Last updated: Apri
 
 ### Viewing and Managing Holidays
 
-Open the **Bank Holidays** modal to see all holidays for the current site:
+Expand the **Bank Holidays** row in the Staff Overview to see all holidays for the current site:
 
-- Use the **year dropdown** to switch between years (current -1 to current +2)
-- Holidays are split into two sections:
-    - **Public Holidays** — auto-fetched from Nager.Date (read-only, cannot be deleted individually)
-    - **Custom Holidays** — manually added (can be deleted with the × button)
+- Each entry is labelled **Holiday** (auto-fetched from Nager.Date, read-only) or **Custom** (manually added, deletable with the × button)
+- The row header shows the site and total holiday count
+
+![Staff Overview with the Bank Holidays row expanded, listing the site's holidays](../assets/screenshots/bank-holidays.png){ loading=lazy }
 
 ### Adding a Custom Holiday
 
-1. Click **Add Custom** in the Bank Holidays modal
+1. Click the **+** (Add custom holiday) button on the Bank Holidays row
 2. Enter the **holiday name** (e.g., "Company Anniversary")
 3. Set the **start date** (required)
 4. Optionally set an **end date** for multi-day holidays
@@ -118,7 +121,7 @@ Custom holidays are site-specific and appear alongside auto-fetched public holid
 
 ### Exporting Holidays to Calendar
 
-Click **Export ICS** to download an `.ics` calendar file containing all holidays for the selected year. Import this into Outlook, Google Calendar, or any calendar app to sync holidays to your personal calendar.
+Click the **Export to Outlook** button on the Bank Holidays row to download an `.ics` calendar file containing the site's holidays. Import this into Outlook, Google Calendar, or any calendar app to sync holidays to your personal calendar.
 
 ### How Holidays Affect the Timeline
 

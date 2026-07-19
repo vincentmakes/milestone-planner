@@ -5,6 +5,16 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.17] - 2026-07-18
+
+### Added
+- The documentation screenshot pipeline now captures every screenshot in the docs automatically, including the admin portal, all management modals, tags, equipment maintenance blocks, and the read-only tenant SSO form shown when organization SSO applies.
+- Fourteen more documentation illustrations: dependency arrows, critical path, context menu, column manager and filters, vacation and equipment booking modals, bank holidays, archived view, dark theme, site editor, staff filter, and the admin portal's create-tenant and organization SSO dialogs.
+
+### Fixed
+- Changing the status of a tenant that belongs to an organization no longer fails with an internal server error in the admin portal.
+- The screenshot demo-data seed script is now safe to re-run: it no longer duplicates vacations or custom columns.
+
 ## [1.0.16] - 2026-07-17
 
 ### Changed

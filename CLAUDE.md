@@ -100,22 +100,23 @@ When asked to **add, update, or refresh screenshots in the MkDocs docs** (`docs/
    docker exec -i milestone-fresh-db psql -U milestone_demo -d milestone_demo \
      < scripts/screenshots/seed_extras.sql
    ```
-   This produces tenant `demo` (Demo Company) with the canonical projects (Bioprocess Scale-Up, Catalyst Optimization, Analytical Method Transfer, Quality System Upgrade), Swiss bank holidays, demo vacations, and 3 populated custom columns. Login: `admin@demo.local` / `demo1234` (and `bob.brown@demo.local` for multi-user collab shots).
+   This produces tenant `demo` (Demo Company) with the canonical projects (Bioprocess Scale-Up, Catalyst Optimization, Analytical Method Transfer, Quality System Upgrade), Swiss bank holidays, demo vacations, tags, equipment blocks, and 3 populated custom columns. Login: `admin@demo.local` / `demo1234` (and `bob.brown@demo.local` for multi-user collab shots). **`.env` must set `MULTI_TENANT=true`, a `TENANT_ENCRYPTION_KEY`, and `INIT_ADMIN_PASSWORD`** (deterministic admin-portal login for `capture_admin.py`) — see `scripts/screenshots/README.md`.
 2. **Install Playwright** once:
    ```bash
    python3 -m venv /tmp/pw-venv
    /tmp/pw-venv/bin/pip install playwright
    /tmp/pw-venv/bin/playwright install chromium
    ```
-3. **Capture** — both scripts are idempotent and headless, output to `docs/assets/screenshots/`:
+3. **Capture** — all scripts are idempotent and headless, output to `docs/assets/screenshots/`, and must run in this order (`capture_admin.py` temporarily attaches the demo tenant to an SSO org and cleans up after itself):
    ```bash
    /tmp/pw-venv/bin/python scripts/screenshots/capture.py          # single-user shots
    /tmp/pw-venv/bin/python scripts/screenshots/capture_collab.py   # multi-user collab shots
+   INIT_ADMIN_PASSWORD=... /tmp/pw-venv/bin/python scripts/screenshots/capture_admin.py  # admin portal
    ```
 4. **Verify** with `mkdocs build --strict` (catches broken image refs).
 
 **Conventions** the scripts enforce:
-- Viewport **1440×900**, **light theme**, Gantt **Q (Quarter)** zoom — matches the existing screenshots' visual style.
+- Viewport **1440×900**, **light theme**, **en-US locale** (pinned on the browser context), Gantt **Q (Quarter)** zoom — matches the existing screenshots' visual style.
 - Capture against the **demo tenant only** — project names and dates are referenced in alt text and prose.
 - Multi-user shots use **two Playwright `BrowserContext`s in one browser** (independent cookies, real WebSockets); User B drives events through `ctx_b.request.*` API calls so the WS broadcast fires naturally.
 

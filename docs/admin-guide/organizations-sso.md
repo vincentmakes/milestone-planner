@@ -77,6 +77,8 @@ SSO can be configured at two scopes:
    - **Redirect URI** — `https://your-domain.com/api/auth/sso/callback` (the shared URL above)
 4. Save configuration
 
+![Organization details with the SSO configuration form in the admin portal](../assets/screenshots/admin-org-sso-config.png){ loading=lazy }
+
 All tenants in the organization share this SSO setup.
 
 **Per-Tenant (Multi-Tenant):**
@@ -90,6 +92,8 @@ the same shared redirect URI.
     configuration always applies and the tenant-level SSO form is shown read-only — a
     per-tenant configuration would be ignored. To configure SSO per tenant, remove the
     tenant from the organization (or disable the organization's SSO).
+
+![Tenant SSO Configuration form shown read-only because organization SSO is active](../assets/screenshots/sso-org-precedence.png){ loading=lazy }
 
 **Per-Instance (Single-Tenant):**
 

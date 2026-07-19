@@ -13,6 +13,8 @@ Milestone tracks staff vacations and time off to provide accurate availability d
 
 Administrators can create vacations for any staff member by selecting from the dropdown.
 
+![Vacation modal with date range, recurring-absence day toggles, and ICS import zone](../assets/screenshots/vacation-modal.png){ loading=lazy }
+
 ## Recurring Absences
 
 For regular part-time patterns (e.g., every Monday and Wednesday off):
