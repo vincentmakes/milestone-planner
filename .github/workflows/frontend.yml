@@ -5,15 +5,43 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Mondays 06:17 UTC. New advisories land against an unchanged lockfile, so
+    # the audit needs a trigger that doesn't depend on someone opening a PR.
+    - cron: "17 6 * * 1"
 
 defaults:
   run:
     working-directory: frontend
 
 jobs:
+  audit:
+    name: Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      # Reads package-lock.json directly — no install required.
+      #
+      # Threshold is `moderate`, not `high`, deliberately: the two React Router
+      # advisories that prompted this job were both moderate, and `high` would
+      # have stayed green through them.
+      #
+      # This gate also catches a failure mode `npm audit` is otherwise silent
+      # about — an `overrides` pin that was correct when written but fell back
+      # inside an advisory range after a later advisory widened it.
+      - name: npm audit
+        run: npm audit --audit-level=moderate
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v5
 
@@ -33,6 +61,7 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v5
 
@@ -52,6 +81,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v5
 
