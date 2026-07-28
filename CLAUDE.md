@@ -887,16 +887,18 @@ Health endpoint responds at **both** `/health` and `/api/health` (status, mode, 
 
 ## CI
 
-Four workflows in `.github/workflows/` (push to `main` + PRs; version-check is PR-only):
+Four workflows in `.github/workflows/` (push to `main` + PRs; version-check is PR-only; `frontend.yml` additionally runs weekly on a cron, where only its `Audit` job executes):
 
 | Workflow | Jobs / enforcement |
 |----------|--------------------|
 | `backend.yml` | ruff check + format check on `app/`; pytest with coverage; mypy |
-| `frontend.yml` | eslint; vitest; `npm run build` (tsc + vite) |
+| `frontend.yml` | eslint; vitest; `npm run build` (tsc + vite); `npm audit --audit-level=moderate` (**blocking** — see below) |
 | `docker.yml` | `docker build` of the production image |
 | `version-check.yml` | `dorny/paths-filter` on app-code paths → fails the PR unless `VERSION` changed vs `main` **and** `CHANGELOG.md` has a matching `## [<version>]` heading |
 
 Docs are **not** built by Actions — Cloudflare Pages builds them from `docs/build.sh` on push. There are no issue or PR templates in `.github/` (only `FUNDING.yml`).
+
+**The frontend `Audit` job is blocking, and a new advisory can turn it red on a PR that didn't touch dependencies.** That is intended — it is the only check that notices when a pin in `frontend/package.json`'s `overrides` block has gone stale, which happens silently whenever a *newer* advisory widens the affected range of an already-pinned package. When it fires, fix the pin rather than lowering the threshold; `--audit-level=moderate` is set deliberately, because the React Router advisories that motivated the job were moderate. If a finding is genuinely unreachable (dev-only tooling, no patched release available) and blocking is unacceptable, prefer a scoped, commented `overrides` entry over relaxing the gate.
 
 ## Gotchas
 
