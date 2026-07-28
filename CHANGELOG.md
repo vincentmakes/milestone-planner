@@ -5,6 +5,12 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.18] - 2026-07-28
+
+### Security
+- Removed the unused `react-router-dom` frontend dependency, clearing two React Router advisories (an open-redirect and an SSR hydration flaw) that no longer apply to this app.
+- Updated the bundled `js-yaml`, `postcss`, `brace-expansion` and `minimatch` build-time dependencies to versions without known denial-of-service and path-traversal advisories.
+
 ## [1.0.17] - 2026-07-18
 
 ### Added
