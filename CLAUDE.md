@@ -31,7 +31,7 @@ When working on this codebase, follow these conventions:
 - **Node.js compatibility is a contract, not an accident.** This app replaced a Node/Express implementation and keeps wire-level compatibility: `CustomJSONResponse` formats datetimes like `toISOString()` and coerces whole floats to ints; sessions are express-session-compatible (`connect.sid` cookie, `s%3A<id>.` value format, `sessions` table shape); credential encryption uses the Node `iv:authTag:ciphertext` hex format. Changing any of these serialization behaviours is a breaking change.
 - **Optimistic frontend + WebSocket refetch.** The frontend mutates Zustand state immediately and persists after; other clients converge via `change:<entity>` WebSocket events that trigger debounced slice refetches. On a failed persist the frontend reloads everything from the server and clears undo history. Keep new features inside this model — don't invent per-feature sync mechanisms.
 - **Site export is a canonical snapshot.** Any new site-scoped data must be added to `build_site_export_workbook()` — see the Site Export contract under Import & Export below.
-- **There is no client-side router.** `react-router-dom` is in `package.json` but unused. `App.tsx` branches on `window.location.pathname` (`/admin*` → admin portal, everything else → main app), and in-app views (gantt/staff/equipment/crosssite/archived) are `viewStore` state, not URLs. Don't add routes; add views to `viewStore` + `MainLayout.renderView()`.
+- **There is no client-side router.** `react-router-dom` was removed from `package.json` (it was never imported) — don't re-add it. `App.tsx` branches on `window.location.pathname` (`/admin*` → admin portal, everything else → main app), and in-app views (gantt/staff/equipment/crosssite/archived) are `viewStore` state, not URLs. Don't add routes; add views to `viewStore` + `MainLayout.renderView()`.
 - **Raw SQL migrations only — never introduce Alembic.** Migrations are idempotent `.sql` files in `migrations/` executed by `run_migration.py` (tenant DBs) / `run_migration_master.py` (master DB).
 
 ### Backend Conventions
@@ -761,7 +761,7 @@ Flow: `GET /auth/sso/login` builds the Entra authorization URL with an **HMAC-si
 
 ### Tech stack
 
-React 18 + TypeScript 5.6, Vite 7, Zustand 5, TanStack Query 5 (client cache defaults: staleTime 5 min, retry 1, no refetch-on-focus), date-fns 4, CSS Modules. `react-router-dom` is installed but **unused** — there is no route tree.
+React 18 + TypeScript 5.6, Vite 7, Zustand 5, TanStack Query 5 (client cache defaults: staleTime 5 min, retry 1, no refetch-on-focus), date-fns 4, CSS Modules. There is **no router package** — `react-router-dom` was removed as unused; there is no route tree.
 
 ### Routing without a router
 
