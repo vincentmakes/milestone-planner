@@ -1,5 +1,9 @@
 # FastAPI and ASGI
-fastapi==0.109.2
+fastapi==0.141.1
+# Transitive via FastAPI, pinned directly: FastAPI allows starlette>=0.46 with no
+# upper bound, and this is the floor that carries the form-parser, StaticFiles and
+# request-URL security fixes.
+starlette==1.4.1
 uvicorn[standard]==0.27.1
 python-multipart==0.0.31
 
@@ -16,7 +20,7 @@ httpx==0.26.0
 cryptography==50.0.0
 
 # Validation & Serialization
-pydantic==2.6.1
+pydantic==2.13.4
 pydantic-settings==2.1.0
 email-validator==2.1.0
 

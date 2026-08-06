@@ -39,22 +39,8 @@ jobs:
       # When a finding can't be fixed yet, add an `--ignore-vuln` line with a
       # comment saying why — don't drop the gate. Its value is catching the
       # *next* advisory, and that only works while the job is green.
-      #
-      # The starlette entries below are transitively pinned by
-      # `fastapi==0.109.2` (which requires `starlette>=0.36.3,<0.37.0`), so
-      # clearing them means upgrading FastAPI, Starlette and Pydantic together
-      # — tracked as follow-up work, deliberately not bundled into a
-      # dependency-security patch.
       - name: pip-audit
-        run: |
-          pip-audit --strict --progress-spinner=off \
-            --ignore-vuln PYSEC-2026-161 \
-            --ignore-vuln PYSEC-2026-248 \
-            --ignore-vuln PYSEC-2026-249 \
-            --ignore-vuln PYSEC-2026-1941 \
-            --ignore-vuln PYSEC-2026-1943 \
-            --ignore-vuln PYSEC-2026-2280 \
-            --ignore-vuln PYSEC-2026-2281
+        run: pip-audit --strict --progress-spinner=off
 
   lint:
     name: Lint & Format
