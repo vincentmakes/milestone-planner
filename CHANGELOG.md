@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Updated `cryptography` to 50.0.0, clearing a high-severity advisory about PKCS#7 enveloped-data decryption leaking key information through distinguishable errors and timing. Milestone Planner never used that code path — the library is only used for AES-GCM encryption of stored credentials — so no data was at risk.
 - Removed the unused `python-jose`, `authlib` and `itsdangerous` backend dependencies, which no longer ship in the application image.
 - Updated the web framework (FastAPI 0.141.1, Starlette 1.4.1, Pydantic 2.13.4), clearing seven Starlette advisories that the previous pins were stuck behind. Two were denial-of-service flaws an unauthenticated visitor could have triggered through form and file uploads; the rest covered request-URL handling. API responses are unchanged.
+- Updated the bundled `brace-expansion` build-time dependency to a release without a denial-of-service advisory. It is used only when building the app, not at runtime.
 
 ### Changed
 - Backend CI now audits Python dependencies for known vulnerabilities on every pull request and once a week, matching the existing frontend audit.
