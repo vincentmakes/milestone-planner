@@ -28,7 +28,7 @@ pg_dump -U postgres -d milestone_admin -Fc -f "$BACKUP_DIR/master.dump"
 
 # All tenant databases
 psql -U postgres -d milestone_admin -t -c \
-    "SELECT db_name FROM tenants WHERE status = 'active'" | \
+    "SELECT database_name FROM tenants WHERE status = 'active'" | \
 while read db; do
     db=$(echo "$db" | xargs)  # trim whitespace
     [ -z "$db" ] && continue
@@ -83,15 +83,7 @@ psql -U postgres -d milestone_acme -c "GRANT ALL ON ALL SEQUENCES IN SCHEMA publ
 
 ## File Backups
 
-In addition to databases, back up the uploads directory:
-
-```bash
-# Backup uploads
-tar -czf uploads_$(date +%Y%m%d).tar.gz /app/uploads/
-
-# Restore
-tar -xzf uploads_20260401.tar.gz -C /
-```
+All application data lives in PostgreSQL — there are no user-uploaded files stored on disk, so database backups cover everything. Back up your `.env` file (or however you manage the environment variables) separately: it holds `SESSION_SECRET` and `TENANT_ENCRYPTION_KEY`, and the encrypted tenant credentials in the master database cannot be decrypted without the original `TENANT_ENCRYPTION_KEY`.
 
 ## Testing Backups
 

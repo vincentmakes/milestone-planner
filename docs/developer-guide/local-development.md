@@ -4,7 +4,7 @@
 
 - Docker and Docker Compose
 - Python 3.11+ (for backend development without Docker)
-- Node.js 20+ (for frontend development)
+- Node.js 24 (for frontend development)
 - PostgreSQL 15+ (or use Docker)
 
 ## Quick Start with GitHub Codespaces
@@ -130,11 +130,13 @@ cd frontend && npm run lint
 
 ## CI/CD
 
-GitHub Actions run on every push to `main` and on pull requests:
+GitHub Actions run on every push to `main` and on pull requests (the two dependency-audit jobs also run on weekly crons):
 
 | Workflow | Jobs |
 |----------|------|
-| `backend.yml` | Ruff lint + format, pytest with coverage, mypy type checking |
-| `frontend.yml` | ESLint, Vitest, TypeScript build |
+| `backend.yml` | `pip-audit` dependency audit (blocking), Ruff lint + format, pytest with coverage, mypy type checking |
+| `frontend.yml` | `npm audit --audit-level=moderate` (blocking), ESLint, Vitest, TypeScript build |
 | `docker.yml` | Docker image build |
-| `docs.yml` | MkDocs build and deploy to Cloudflare Pages |
+| `version-check.yml` | Fails PRs that touch app code without a `VERSION` bump and matching `CHANGELOG.md` entry |
+
+Documentation is **not** built by GitHub Actions — Cloudflare Pages builds and deploys the MkDocs site from `docs/build.sh` on push.

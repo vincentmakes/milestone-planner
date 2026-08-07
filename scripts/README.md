@@ -78,7 +78,7 @@ A pure-psql fallback loop also exists at `migrations/migrate_all_tenants.sh`. Se
 ### Seed a Tenant with Sample Data
 
 ```bash
-python scripts/seed_tenant_data.py --tenant acme-corp
+python scripts/seed_tenant_data.py --tenant-slug acme-corp
 ```
 
 ## Script Reference

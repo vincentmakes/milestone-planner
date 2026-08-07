@@ -39,13 +39,9 @@ A comprehensive R&D project management platform for multi-site organizations.
 
 Click the badge above to launch a fully configured environment with PostgreSQL, Python, Node.js, and a pre-seeded demo tenant.
 
-After the Codespace starts, run:
+The backend starts automatically on port 8485 serving the pre-built frontend — the demo is usable as soon as the Codespace is ready. For frontend development with hot reload, optionally run:
 
 ```bash
-# Start the backend
-uvicorn app.main:app --host 0.0.0.0 --port 8485 --reload
-
-# In another terminal, start the frontend dev server
 cd frontend && npm run dev -- --host 0.0.0.0 --port 3333
 ```
 
@@ -75,14 +71,11 @@ This starts PostgreSQL + the app with auto-initialization. Check `docker logs mi
 cp .env.example .env
 # Edit .env with your database credentials and secrets
 
-# Set up the database
-psql -U postgres -f setup_databases.sql
-
-# Start the application
-docker compose up -d
+# Start against a managed/external PostgreSQL (auto-creates DBs with PG_ADMIN_* creds)
+docker compose -f docker-compose.external-db.yml up -d
 ```
 
-Access at `http://localhost:8485/`.
+Access at `http://localhost:8485/`. (The plain `docker-compose.yml` targets a specific Unraid deployment — external network + hardcoded host path — adapt it before using it elsewhere. See the [installation guide](https://docs-milestone.verdet.me/admin-guide/installation/).)
 
 ## Documentation
 
@@ -104,11 +97,13 @@ milestone-planner/
 │   ├── main.py            # Application entry point
 │   ├── config.py          # Pydantic settings
 │   ├── database.py        # Tenant DB engine/session
-│   ├── routers/           # API endpoints (20 modules)
+│   ├── routers/           # API endpoints (18 modules + admin/ package)
 │   ├── models/            # SQLAlchemy models (15 modules)
 │   ├── schemas/           # Pydantic schemas
+│   ├── scripts/           # init_db (auto-init), seed_demo
 │   ├── services/          # Business logic (encryption, SSO, tenant management)
-│   └── middleware/        # Auth and tenant middleware
+│   ├── middleware/        # Auth, tenant resolution, broadcast middleware
+│   └── websocket/         # Real-time collaboration (presence, change events)
 ├── frontend/              # React frontend source
 │   └── src/               # Components, stores, API clients, types
 ├── docs/                  # MkDocs documentation source
@@ -116,7 +111,7 @@ milestone-planner/
 │   ├── admin-guide/       # Admin & multi-tenant docs
 │   └── developer-guide/   # Architecture & API reference
 ├── .devcontainer/         # GitHub Codespaces configuration
-├── .github/workflows/     # CI/CD (lint, test, build, docs deploy)
+├── .github/workflows/     # CI (audits, lint, test, build, version gate; docs deploy via Cloudflare Pages)
 ├── migrations/            # Raw SQL migration files
 ├── scripts/               # Utility scripts
 ├── public/                # Served frontend (built from frontend/dist/)

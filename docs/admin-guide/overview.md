@@ -34,7 +34,7 @@ Multiple organizations, each with an isolated database. Includes a centralized a
 | **Memory** | 1 GB minimum (2 GB+ recommended for multi-tenant) |
 | **Disk** | 500 MB for application + database storage |
 | **Java** | JRE 11+ (for MPP file import; included in Docker image) |
-| **Node.js** | 20+ (for frontend development only; not required for production) |
+| **Node.js** | 24 (for frontend development only; not required for production) |
 
 ## Architecture Overview
 

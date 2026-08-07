@@ -27,11 +27,7 @@ docker logs --tail 100 milestone
 
 ### Log Levels
 
-Set the log level via environment variable:
-
-```bash
-LOG_LEVEL=debug  # debug, info, warning, error
-```
+There is no `LOG_LEVEL` environment variable. Setting `DEBUG=true` enables debug-level behaviour (never use it in production); otherwise the application logs at uvicorn's default level.
 
 ## Common Issues
 
@@ -160,12 +156,12 @@ psql -U milestone -d milestone -c "SELECT relname, pg_size_pretty(pg_total_relat
 
 ### Resource Limits
 
-The Docker Compose configuration sets resource limits:
+The Docker Compose configurations set resource limits:
 
-- **Memory**: 1 GB limit, 256 MB reservation
-- **PostgreSQL**: 512 MB limit, 128 MB reservation (fresh install)
+- **Memory**: 1 GB limit, 256 MB reservation (app container, `docker-compose.yml`)
+- **PostgreSQL**: 512 MB limit, 128 MB reservation (`docker-compose.fresh.yml` only)
 
-Adjust in `docker-compose.yml` under `deploy.resources` if needed.
+Adjust under `deploy.resources` in the compose file you deploy with, if needed.
 
 ## Deployment Checklist
 

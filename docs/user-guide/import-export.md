@@ -29,6 +29,9 @@ After import, a summary shows the created project, phase count, and subphase cou
 !!! note
     MPP/MPT/MPX file import requires Java to be installed on the server (included in the Docker image). CSV and XML imports work without Java.
 
+!!! note
+    Importing is blocked while [What-If mode](what-if-planning.md) is active — imports create the project immediately on the server and cannot be sandboxed. Exit What-If mode first.
+
 ### What Gets Imported
 
 - **Project name** and metadata (start date, end date)
@@ -83,6 +86,8 @@ Each kind of data lives on its own sheet, so the file opens cleanly in Excel, Li
 | **Equipment** | Equipment items at the site, with type and active status |
 | **Skills** | Skills defined on the instance (name, color, description) |
 | **User skills** | User → Skill associations |
+| **Tags** | Project tag definitions (name, color) |
+| **Project tags** | Project → Tag associations |
 | **Vacations** | All vacation entries for users on this site, including recurring patterns |
 | **Project assignments** | Staff assigned at the project level |
 | **Phase assignments** | Staff assigned at the phase level (with allocation %) |
@@ -92,6 +97,8 @@ Each kind of data lives on its own sheet, so the file opens cleanly in Excel, Li
 | **Custom column values** | Custom column values for every project/phase/subphase |
 | **Bank holidays** | Public and custom holidays on the site (with year) |
 | **Company events** | Company events configured for the site |
+| **Equipment blocks** | Maintenance/unavailability windows on the site's equipment |
+| **Staff notes** | Notes pinned to the site's staff timeline |
 
 !!! note
     The Site Excel Export is restricted to **Admins and Superusers**. Superusers can only export sites they belong to — Admins can export any site.

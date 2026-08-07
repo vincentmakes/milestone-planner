@@ -16,10 +16,11 @@
 
 ## Key Behaviors
 
-- What-If changes are broadcast in real-time to other connected users via WebSocket, so collaborators can see your experimental planning
+- What-If is a **private sandbox**: your experimental changes stay in your browser and are *not* sent to the server or visible to other users until you commit them
 - Changes are not persisted until explicitly committed
 - Only administrators and superusers can enter What-If mode
 - The visual appearance changes (header indicator) to remind you that you're in planning mode
+- Importing a Microsoft Project file is blocked while What-If mode is active — imports cannot be sandboxed, so exit What-If mode first
 
 ## Committing and Discarding
 
@@ -37,4 +38,4 @@ When you're finished experimenting:
 - Explore "what happens if we move Project X to Q3?"
 - Plan team changes without disrupting the live schedule
 - Present planning options to stakeholders before deciding
-- Run capacity scenarios during planning meetings with real-time visibility for the team
+- Run capacity scenarios during planning meetings — commit only the option the team agrees on

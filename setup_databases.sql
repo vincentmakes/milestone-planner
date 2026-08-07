@@ -542,17 +542,17 @@ ON CONFLICT (id) DO NOTHING;
 -- 
 -- Admin login for multi-tenant admin panel:
 --   Created automatically on first startup via master_db.verify_admin_exists()
---   Or manually via: python -m app.scripts.create_admin
+--   Or reset manually via: python scripts/setup_admin_password.py
 --
 -- For single-tenant setup:
 --   Create a user in the tenant database's users table
 --   Password should be bcrypt hashed
 --
--- Environment variables needed:
+-- Environment variables needed (see .env.example):
 --   DATABASE_URL=postgresql://user:pass@host:5432/milestone_tenant
---   MASTER_DATABASE_URL=postgresql://user:pass@host:5432/milestone_master
+--   MASTER_DB_HOST / MASTER_DB_PORT / MASTER_DB_NAME / MASTER_DB_USER / MASTER_DB_PASSWORD
 --   MULTI_TENANT=true  (or false for single-tenant)
---   SECRET_KEY=your-secret-key
---   ENCRYPTION_KEY=your-32-byte-encryption-key
+--   SESSION_SECRET=your-session-secret
+--   TENANT_ENCRYPTION_KEY=your-64-char-hex-key  (multi-tenant mode)
 --
 -- ============================================================================

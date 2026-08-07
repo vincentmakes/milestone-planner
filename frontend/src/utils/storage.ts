@@ -107,15 +107,17 @@ export const STORAGE_KEYS = {
   
   // Project Order (per site)
   PROJECT_ORDER_PREFIX: 'milestone_project_order_site_',
-  
-  // View State (persisted by Zustand)
-  VIEW_STATE: 'milestone-app-storage',
-  
+
+  // Zustand persist() keys (documentation of record — the stores declare
+  // these inline in their persist config; keep this list in sync)
+  ZUSTAND_APP_STORE: 'milestone-app-storage-v3',
+  ZUSTAND_VIEW_STORE: 'milestone-view-storage-v1',
+  ZUSTAND_CUSTOM_COLUMN_STORE: 'milestone-custom-columns-storage-v1',
+
   // Legacy keys (for migration from old vanilla JS app)
   LEGACY_SITE_ID: 'rd_pref_site_id',
   LEGACY_VIEW: 'rd_pref_view',
   LEGACY_VIEW_MODE: 'rd_pref_view_mode',
-  LEGACY_VIEW_STATE: 'milestone_view_state',
 } as const;
 
 // =============================================================================

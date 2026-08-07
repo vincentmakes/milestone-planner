@@ -24,6 +24,8 @@ python -m migrations.run_migration add_company_events
 ./migrations/run_migration.sh add_company_events
 ```
 
+A pure-psql loop over all tenants also exists at `./migrations/migrate_all_tenants.sh` for environments where running the Python runner is impractical.
+
 ### Master Database Migrations
 
 Migrations that target the **master database** (multi-tenant admin DB) use a dedicated runner that executes statement-by-statement (safely preserving `DO $$ ... END $$;` blocks — covered by `tests/test_migration_parser.py`):
@@ -98,6 +100,7 @@ The authoritative list is the set of `.sql` files in this folder — run either 
 | `add_organizations` | **master** | Adds organizations + organization_sso_config tables and tenant columns |
 | `add_project_presence` | tenant | Adds project_presence table (active viewers) |
 | `add_skills_tables` | tenant | Adds skills and user_skills tables for capability tracking |
+| `add_staff_notes` | tenant | Creates staff_notes (migrates rows from and drops the legacy `notes` table) |
 | `add_tags_tables` | tenant | Adds tags and project_tags tables |
 | `upgrade_to_v90` | tenant | Comprehensive upgrade applying all schema changes since the initial release |
 

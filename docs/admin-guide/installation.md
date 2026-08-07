@@ -55,7 +55,6 @@ DB_PASSWORD=<strong-password>
 
 # Security (generate with: python -c "import secrets; print(secrets.token_hex(32))")
 SESSION_SECRET=<64-char-random-string>
-SECRET_KEY=<64-char-random-string>
 
 # HTTPS
 SECURE_COOKIES=true
@@ -79,25 +78,28 @@ GRANT ALL PRIVILEGES ON DATABASE milestone TO milestone;
 
 ### 3. Start the Application
 
+For a managed or external PostgreSQL (RDS, Azure Database, Cloud SQL, or your own server), use the external-DB compose file — it can auto-create the databases and seed an admin when `PG_ADMIN_*` credentials are provided:
+
 ```bash
-docker compose up -d
+docker compose -f docker-compose.external-db.yml up -d
 ```
+
+!!! note "`docker-compose.yml` is deployment-specific"
+    The plain `docker-compose.yml` at the repository root targets a specific Unraid
+    deployment — it references an external Docker network (`guac-net`) and a hardcoded
+    host path, so `docker compose up -d` fails on machines without that setup. Use
+    `docker-compose.fresh.yml` or `docker-compose.external-db.yml` instead, or copy
+    `docker-compose.yml` and adapt the network and volume entries to your host.
 
 ### 4. Create First User
 
+The simplest path is auto-initialization: set `AUTO_INIT_DB=true` (plus optional `INIT_ADMIN_EMAIL` / `INIT_ADMIN_PASSWORD`) before first start — the entrypoint creates the schema and seeds an admin, printing a generated password in the container logs if you didn't set one.
+
+If the database was set up manually without auto-init, create or reset the admin with the helper script (it hashes the password correctly for you):
+
 ```bash
-psql -U milestone -d milestone
-
-INSERT INTO users (email, password, first_name, last_name, role)
-VALUES (
-    'admin@example.com',
-    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.G6J8EHyFj2YQXW',
-    'Admin', 'User', 'admin'
-);
+python scripts/setup_admin_password.py
 ```
-
-!!! warning
-    Change the default password immediately after first login.
 
 ### 5. Enable Multi-Tenant Mode (Optional)
 
@@ -112,19 +114,15 @@ Launch a fully configured development environment in your browser:
 The Codespace includes:
 
 - Python 3.11 with all backend dependencies
-- Node.js 20 with frontend dependencies
+- Node.js 24 with frontend dependencies
 - PostgreSQL 15 (auto-configured)
 - VS Code extensions for Python, TypeScript, Docker
 - Forwarded ports: 8485 (app), 3333 (Vite dev), 5432 (PostgreSQL)
 - **Pre-seeded demo tenant** with sample projects, staff, and equipment
 
-After the Codespace starts, run:
+The backend starts automatically on port 8485 (serving the pre-built frontend), so the demo is usable as soon as the Codespace is ready — no commands needed. For frontend development with hot reload, optionally start the Vite dev server:
 
 ```bash
-# Start the backend
-uvicorn app.main:app --host 0.0.0.0 --port 8485 --reload
-
-# In a separate terminal, start the frontend dev server
 cd frontend && npm run dev -- --host 0.0.0.0 --port 3333
 ```
 

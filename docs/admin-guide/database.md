@@ -11,6 +11,9 @@ Milestone uses PostgreSQL 15+ with two database tiers:
 
 In single-tenant mode, only the tenant database is used.
 
+!!! note "Master database name"
+    The master database name is whatever `MASTER_DB_NAME` is set to. The application's built-in default is `milestone_master`, but `docker-compose.fresh.yml` and the devcontainer set it to `milestone_admin`. Check your environment's `MASTER_DB_NAME` to know which name your installation uses; the examples in this guide use `milestone_admin`.
+
 ## Schema Management
 
 The canonical schema is defined in `setup_databases.sql`. This file must stay in sync with SQLAlchemy models.
@@ -85,8 +88,7 @@ bash migrations/run_migration.sh <migration_name>
 3. Run the migration: `python migrations/run_migration.py add_feature_x`
 4. Update `setup_databases.sql` to include the new schema
 
-!!! warning
-    The `run_migration_master.py` script splits SQL on `;` which breaks `DO $$ ... END $$;` blocks. For master DB migrations with PL/pgSQL blocks, use `psql` directly or `run_migration.py`.
+Both migration runners handle `DO $$ ... END $$;` blocks correctly — `run_migration_master.py` splits statements with a parser that preserves dollar-quoted blocks.
 
 ## Backup & Recovery
 
@@ -98,8 +100,8 @@ See [Backup & Recovery](backup-recovery.md) for detailed backup procedures.
 |----------|---------|-------------|
 | `DB_HOST` | `localhost` | Database host |
 | `DB_PORT` | `5432` | Database port |
-| `DB_NAME` | `milestone` | Database name |
-| `DB_USER` | `milestone` | Database user |
+| `DB_NAME` | `milestone_dev` | Database name |
+| `DB_USER` | `milestone_dev_user` | Database user |
 | `DB_PASSWORD` | — | Database password |
 | `DB_SSL` | `false` | Enable SSL connections |
 | `DB_POOL_SIZE` | `20` | Connection pool size |

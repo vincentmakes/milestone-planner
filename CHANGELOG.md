@@ -5,6 +5,22 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.20] - 2026-08-07
+
+### Security
+- The MPP import diagnostics endpoints (`/import/test`, `/import/test-upload`) now require a superuser session — previously they were reachable without authentication, including an endpoint that accepted file uploads.
+- The browser console no longer logs every API write request in production builds (the diagnostic logging now runs only in development).
+
+### Changed
+- The frontend now declares Node.js 24 as its required toolchain (`engines` field), matching the Docker build and CI.
+
+### Removed
+- Removed dead code left over from earlier iterations: unused backend exception classes and an unused site-access dependency, and several never-rendered frontend components, hooks and contexts (fill-down editing, touch drag, change-indicator badges, an orphaned theme selector and loading spinner, and duplicated row-position logic).
+- Removed the unused `black` and `isort` development dependencies — Ruff handles formatting and import sorting.
+
+### Fixed
+- `.env.example` now matches what the application actually reads: the master database is configured via `MASTER_DB_*` variables (the previously documented `MASTER_DATABASE_URL` was ignored), and the proxy and auto-initialization variables are now documented. The ignored `SECRET_KEY` variable was removed from the compose files.
+
 ## [1.0.19] - 2026-08-06
 
 ### Security
@@ -15,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - Backend CI now audits Python dependencies for known vulnerabilities on every pull request and once a week, matching the existing frontend audit.
+- Moved `email-validator` off a yanked release to a properly published version. No behaviour change.
 
 ## [1.0.18] - 2026-07-28
 

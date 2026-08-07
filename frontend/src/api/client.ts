@@ -140,10 +140,10 @@ export async function apiRequest<T>(
   try {
     const response = await fetch(url, config);
 
-    // Diagnostic: log every state-changing request so we can see at a glance
-    // whether a Gantt drag/resize is actually hitting the API and what
-    // status the backend returned. Helpful for tracking down sync issues.
-    if (method !== 'GET') {
+    // Diagnostic (dev only): log every state-changing request so we can see
+    // at a glance whether a Gantt drag/resize is actually hitting the API and
+    // what status the backend returned. Helpful for tracking down sync issues.
+    if (import.meta.env.DEV && method !== 'GET') {
       console.info('[API]', method, url, '->', response.status);
     }
 

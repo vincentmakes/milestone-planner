@@ -15,14 +15,6 @@ markers = [
     "integration: marks tests requiring database or external services",
 ]
 
-[tool.black]
-line-length = 100
-target-version = ["py311"]
-
-[tool.isort]
-profile = "black"
-line_length = 100
-
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -37,7 +29,7 @@ select = [
     "UP",  # pyupgrade
 ]
 ignore = [
-    "E501", # line too long (handled by black)
+    "E501", # line too long (handled by ruff format)
     "B008", # function call in default argument (false positive for FastAPI Depends)
 ]
 

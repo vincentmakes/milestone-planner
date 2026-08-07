@@ -58,8 +58,8 @@ Changes confined to the following paths do **not** trigger a bump:
 
 - `README.md`, `CLAUDE.md`, `CHANGELOG.md` itself
 - `docs/**`, `mkdocs.yml`, `docs/requirements.txt` — MkDocs site
-- `LICENSE`, `.gitignore`, `.dockerignore`, `.editorconfig`
-- `.github/ISSUE_TEMPLATE/**`, `.github/PULL_REQUEST_TEMPLATE.md`
+- `LICENSE.txt`, `.gitignore`, `.dockerignore`, `.editorconfig`
+- `.github/**` — workflows and repo metadata
 - `.devcontainer/**` — Codespaces config
 
 ### How to bump (SemVer)

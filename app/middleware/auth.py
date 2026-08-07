@@ -192,26 +192,3 @@ async def require_superuser(
             detail="Superuser access required",
         )
     return user
-
-
-def require_site_access(site_id: int):
-    """
-    Factory for site access check dependency.
-
-    Returns a dependency that verifies the user has access to the specified site.
-    """
-
-    async def check_site_access(
-        user: User = Depends(get_current_user),
-    ) -> User:
-        if user.is_admin:
-            return user
-
-        if site_id not in user.site_ids:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to this site",
-            )
-        return user
-
-    return check_site_access

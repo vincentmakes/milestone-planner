@@ -268,22 +268,3 @@ export function useOnlineUsers(): PresenceUser[] {
   const { onlineUsers } = useWebSocketContext();
   return onlineUsers;
 }
-
-/**
- * Hook to check if entity was recently changed
- */
-export function useEntityChangeIndicator(entityType: string, entityId: number): {
-  isChanged: boolean;
-  changedBy: string | null;
-} {
-  const { recentChanges } = useWebSocketContext();
-  
-  const change = recentChanges.find(
-    c => c.entity_type === entityType && c.entity_id === entityId
-  );
-  
-  return {
-    isChanged: !!change,
-    changedBy: change?.user_name ?? null,
-  };
-}
