@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models.session import Session
 from app.models.user import User
+from app.utils import utcnow_naive
 
 
 class SessionService:
@@ -51,7 +52,7 @@ class SessionService:
         session_data = {
             "cookie": {
                 "originalMaxAge": self.settings.session_max_age * 1000,
-                "expires": datetime.utcnow().isoformat() + "Z",
+                "expires": utcnow_naive().isoformat() + "Z",
                 "httpOnly": True,
                 "path": "/",
                 "sameSite": "lax",

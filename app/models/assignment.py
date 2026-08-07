@@ -15,6 +15,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.utils import utcnow_naive
 
 if TYPE_CHECKING:
     from app.models.project import Project, ProjectPhase, ProjectSubphase
@@ -42,7 +43,7 @@ class ProjectAssignment(Base):
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     # Note: 'notes' column exists in some DBs but not Node.js schema
     # We'll query it dynamically only if needed
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
     # Relationships
     project: Mapped["Project"] = relationship("Project", back_populates="staff_assignments")

@@ -18,6 +18,8 @@ from datetime import datetime
 
 from fastapi import WebSocket
 
+from app.utils import utcnow_naive
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,7 +37,7 @@ class ConnectedUser:
     first_name: str
     last_name: str
     websocket: WebSocket
-    connected_at: datetime = field(default_factory=datetime.utcnow)
+    connected_at: datetime = field(default_factory=utcnow_naive)
 
     def to_presence_dict(self) -> dict:
         """Convert to dict for presence broadcast."""
@@ -148,7 +150,7 @@ class ConnectionManager:
                 {
                     "type": "presence:join",
                     "payload": connected_user.to_presence_dict(),
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": utcnow_naive().isoformat() + "Z",
                 },
                 exclude_connection=connection_id,
             )
@@ -185,7 +187,7 @@ class ConnectionManager:
                 {
                     "type": "presence:leave",
                     "payload": {"user_id": user_id},
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": utcnow_naive().isoformat() + "Z",
                 },
             )
 
@@ -205,7 +207,7 @@ class ConnectionManager:
             {
                 "type": "presence:list",
                 "payload": {"users": users},
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utcnow_naive().isoformat() + "Z",
             },
         )
 
@@ -287,7 +289,7 @@ class ConnectionManager:
                     "action": action,
                     "summary": summary,
                 },
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utcnow_naive().isoformat() + "Z",
             },
             exclude_user=user_id,
         )

@@ -17,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.utils import utcnow_naive
 
 if TYPE_CHECKING:
     from app.models.project import Project
@@ -38,7 +39,7 @@ class Equipment(Base):
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
     # Relationships
     site: Mapped[Optional["Site"]] = relationship("Site", back_populates="equipment")
@@ -90,7 +91,7 @@ class EquipmentAssignment(Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     # Note: 'notes' column not in Node.js schema for equipment_assignments
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
     # Relationships
     project: Mapped["Project"] = relationship("Project", back_populates="equipment_assignments")
@@ -128,7 +129,7 @@ class EquipmentBlock(Base):
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     reason: Mapped[str] = mapped_column(String(50), default="maintenance", nullable=False)
     description: Mapped[str] = mapped_column(String(200), default="Maintenance", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
     equipment: Mapped["Equipment"] = relationship("Equipment", back_populates="blocks")
 

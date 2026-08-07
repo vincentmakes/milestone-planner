@@ -17,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.utils import utcnow_naive
 
 if TYPE_CHECKING:
     from app.models.site import Site
@@ -42,7 +43,7 @@ class Note(Base):
     date: Mapped[date] = mapped_column(Date, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     type: Mapped[str] = mapped_column(String(50), default="general", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
     # Relationships
     site: Mapped["Site"] = relationship("Site")

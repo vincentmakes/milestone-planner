@@ -10,6 +10,7 @@ from sqlalchemy import DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.utils import utcnow_naive
 
 if TYPE_CHECKING:
     from app.models.project import Project
@@ -54,11 +55,11 @@ class ProjectPresence(Base):
 
     # Last heartbeat timestamp
     last_seen_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
 
     # When the user started viewing this project
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
     # Relationships
     project: Mapped["Project"] = relationship("Project")

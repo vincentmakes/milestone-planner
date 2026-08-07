@@ -9,7 +9,6 @@ Handles organization management in multi-tenant admin panel:
 
 import logging
 import uuid
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
@@ -32,6 +31,7 @@ from app.schemas.organization import (
 )
 from app.services.encryption import encrypt
 from app.services.master_db import get_master_db
+from app.utils import utcnow_naive
 
 router = APIRouter(prefix="/admin/organizations", tags=["Admin Organizations"])
 
@@ -228,7 +228,7 @@ async def update_organization(
     if data.description is not None:
         org.description = data.description
 
-    org.updated_at = datetime.utcnow()
+    org.updated_at = utcnow_naive()
 
     await db.commit()
     await db.refresh(org)
@@ -372,7 +372,7 @@ async def update_organization_sso_config(
     if data.default_user_role is not None:
         config.default_user_role = data.default_user_role
 
-    config.updated_at = datetime.utcnow()
+    config.updated_at = utcnow_naive()
 
     await db.commit()
     await db.refresh(config)

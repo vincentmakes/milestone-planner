@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_session_factory
 from app.models.session import Session
 from app.models.user import User
+from app.utils import utcnow_naive
 from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
@@ -271,7 +272,7 @@ async def handle_websocket_connection(websocket: WebSocket, tenant_slug: str | N
                         json.dumps(
                             {
                                 "type": "pong",
-                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                                "timestamp": utcnow_naive().isoformat() + "Z",
                             }
                         )
                     )

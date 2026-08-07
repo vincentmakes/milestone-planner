@@ -16,6 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.utils import utcnow_naive
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -35,7 +36,7 @@ class Vacation(Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     description: Mapped[str] = mapped_column(String(200), default="Vacation", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
     # Relationships
     staff: Mapped["User"] = relationship("User", back_populates="vacations")

@@ -246,6 +246,7 @@ app/
                        #   CustomJSONResponse, CORS, static mounts + SPA catch-all
   config.py            # Pydantic settings (env vars); get_settings() lru_cached
   database.py          # Tenant DB engine/session (get_db / get_db_readonly) + declarative Base
+  utils.py             # utcnow_naive() — all DB datetime columns are naive TIMESTAMP holding UTC
   scripts/             # init_db.py (AUTO_INIT_DB target), seed_demo.py (screenshot demo data)
   models/              # SQLAlchemy ORM models
     tenant.py          # MasterBase + Tenant, TenantCredentials, TenantAuditLog,

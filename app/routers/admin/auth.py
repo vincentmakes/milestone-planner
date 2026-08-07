@@ -9,7 +9,6 @@ Provides:
 import json
 import logging
 import time
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
@@ -27,6 +26,7 @@ from app.schemas.tenant import (
 from app.services.auth import validate_admin_session
 from app.services.encryption import generate_password, hash_password, verify_password
 from app.services.master_db import get_master_db
+from app.utils import utcnow_naive
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -140,7 +140,7 @@ async def admin_login(
     )
     db.add(session)
 
-    admin.last_login = datetime.utcnow()
+    admin.last_login = utcnow_naive()
 
     await db.commit()
 

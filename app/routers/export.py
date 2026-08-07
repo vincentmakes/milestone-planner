@@ -32,6 +32,7 @@ from app.models.skill import Skill, UserSkill
 from app.models.tag import Tag
 from app.models.user import User, UserSite
 from app.models.vacation import Vacation
+from app.utils import utcnow_naive
 
 router = APIRouter(tags=["export"])
 
@@ -1159,7 +1160,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
     wb.save(buffer)
     buffer.seek(0)
 
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = utcnow_naive().strftime("%Y-%m-%d")
     filename = f"site_{_safe_filename(site.name)}_{today}.xlsx"
     return buffer.getvalue(), filename
 

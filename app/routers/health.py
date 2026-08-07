@@ -2,8 +2,6 @@
 Health check endpoints.
 """
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -14,6 +12,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models.user import User
+from app.utils import utcnow_naive
 from app.websocket.broadcast import broadcast_change, get_tenant_from_request
 from app.websocket.manager import manager
 
@@ -53,7 +52,7 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         version=__version__,
         backend="python-fastapi",
         default_tenant=settings.default_tenant,
-        timestamp=datetime.utcnow().isoformat(),
+        timestamp=utcnow_naive().isoformat(),
         database=db_status,
     )
 
