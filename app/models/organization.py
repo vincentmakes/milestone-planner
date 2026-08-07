@@ -5,7 +5,6 @@ Organizations allow multiple tenants to share SSO configuration
 and enable group-based access control via Microsoft Entra ID.
 """
 
-from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
@@ -13,6 +12,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.models.tenant import MasterBase
+from app.utils import utcnow_naive
 
 if TYPE_CHECKING:
     pass
@@ -40,8 +40,8 @@ class Organization(MasterBase):
     slug = Column(String(63), unique=True, nullable=False)
     description = Column(Text)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow_naive)
+    updated_at = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     # Relationships
     sso_config = relationship(
@@ -103,8 +103,8 @@ class OrganizationSSOConfig(MasterBase):
     auto_create_users = Column(Integer, default=0)
     default_user_role = Column(String(20), default="user")
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow_naive)
+    updated_at = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     # Relationship
     organization = relationship("Organization", back_populates="sso_config")

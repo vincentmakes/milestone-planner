@@ -18,6 +18,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from app.models.tenant import Tenant
 from app.services.master_db import master_db
 from app.services.tenant_manager import tenant_connection_manager
+from app.utils import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ async def get_tenant_info_cached(slug: str) -> dict[str, Any] | None:
     cached = _tenant_cache.get(slug)
     if cached:
         tenant_info, timestamp = cached
-        if (datetime.utcnow() - timestamp).total_seconds() < _cache_ttl:
+        if (utcnow_naive() - timestamp).total_seconds() < _cache_ttl:
             return tenant_info
 
     # Query database
@@ -55,7 +56,7 @@ async def get_tenant_info_cached(slug: str) -> dict[str, Any] | None:
                 if tenant.credentials
                 else None,
             }
-            _tenant_cache[slug] = (tenant_info, datetime.utcnow())
+            _tenant_cache[slug] = (tenant_info, utcnow_naive())
             return tenant_info
 
         return None

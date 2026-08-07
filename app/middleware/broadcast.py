@@ -18,12 +18,12 @@ upgrade path (BaseHTTPMiddleware would).
 
 import logging
 import re
-from datetime import datetime
 
 from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.middleware.auth import get_current_user_from_session
+from app.utils import utcnow_naive
 from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
@@ -157,7 +157,7 @@ class BroadcastMiddleware:
                         "project_id": 0,
                         "action": _action_for_method(method),
                     },
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": utcnow_naive().isoformat() + "Z",
                 },
                 exclude_user=user_id,
             )

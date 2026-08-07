@@ -30,12 +30,12 @@ def get_tenant_from_request(request: Request) -> str:
     """Resolve the tenant slug for an incoming HTTP request.
 
     `TenantMiddleware` stores the resolved slug in `scope["state"]` as a
-    plain dict (not a Starlette `State` object), and also rewrites the
-    request path to strip the `/t/{slug}/` prefix before the handler runs.
-    That means:
-    - `request.state.tenant_slug` (attribute access) silently fails, so
-      relying on it would always fall through to "default".
-    - `request.url.path` no longer contains `/t/{slug}/` for in-app routes.
+    plain dict, and also rewrites the request path to strip the
+    `/t/{slug}/` prefix before the handler runs. Starlette's
+    `request.state` lazily wraps that dict in a `State` object, so
+    attribute access does work on a real `Request` — but this helper may
+    also receive scope-like objects with no such wrapper, and
+    `request.url.path` no longer contains `/t/{slug}/` for in-app routes.
 
     Read directly from the ASGI scope's state dict, which is what the
     middleware actually populates. Fall back to path parsing only for

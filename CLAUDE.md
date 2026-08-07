@@ -2,7 +2,7 @@
 
 Multi-tenant SaaS platform for R&D project management: interactive Gantt charts with phase/subphase hierarchies and dependencies, staff allocation with workload heatmaps, equipment booking with conflict detection, vacation/holiday tracking, real-time multi-user collaboration over WebSockets, What-If planning, Microsoft Entra SSO, and MS Project import/export. FastAPI backend + React/TypeScript frontend.
 
-**Current version**: see `/VERSION` (single source of truth, one line, no `v` prefix). The backend reads it at import in `app/__init__.py` and exposes it via `/health`. Note: `app/config.py`'s `app_version = "2.0.0"` default is stale and **unused** — never treat it as the version.
+**Current version**: see `/VERSION` (single source of truth, one line, no `v` prefix). The backend reads it at import in `app/__init__.py` and exposes it via `/health`.
 
 ## Quick Start
 
@@ -37,8 +37,8 @@ When working on this codebase, follow these conventions:
 ### Backend Conventions
 
 - Route handlers live in `app/routers/`, one file per resource domain, and **must be registered in `create_app()` in `app/main.py`** (`app.include_router(...)`). Cautionary tale: a `presence.py` router was once written but never registered — its HTTP endpoints sat dead for a long time before being deleted (presence works over WebSocket). Verify registration when adding a router.
-- Use `async def` and `AsyncSession` for all handlers and DB access.
-- Role gating via dependencies from `app/middleware/auth.py`: `get_current_user` (any authenticated user), `require_superuser` (**admin OR superuser**), `require_admin` (admin only). Admin-portal routes use `get_current_admin` / `require_superadmin` from `app/routers/admin/auth.py` against the master DB. The `is_system` flag on users protects the provisioned admin from deletion.
+- Use `async def` and `AsyncSession` for all handlers and DB access. For read-only endpoints on hot paths, prefer the `get_db_readonly` dependency (`app/database.py`) over `get_db` — it skips commit/rollback overhead; `GET /projects` and `GET /projects/{id}` are the reference users.
+- Role gating via dependencies from `app/middleware/auth.py`: `get_current_user` (any authenticated user), `require_superuser` (**admin OR superuser**), `require_admin` (admin only). Always import these — never define a local copy of a role check in a router (skills/tags once did; the duplicates were removed so the role matrix has one source of truth). Admin-portal routes use `get_current_admin` / `require_superadmin` from `app/routers/admin/auth.py` against the master DB. The `is_system` flag on users protects the provisioned admin from deletion.
 - **Real-time broadcast is two-tier.** For user-facing mutations on projects/phases/subphases/assignments, call `broadcast_change(...)` (`app/websocket/broadcast.py`) with rich attribution (entity, action, summary). Everything else is covered automatically: `BroadcastMiddleware` (`app/middleware/broadcast.py`) fires a coarse `change:<entity>` on any successful 2xx write, and its `SKIP_PATTERNS` list suppresses the paths that already do rich broadcasts. When you add rich broadcasting to a new path, add it to `SKIP_PATTERNS` too — otherwise clients receive double events.
 - **Schema-change checklist** — when you add/alter a tenant table or column, update ALL of:
   1. The SQLAlchemy model (`app/models/`)
@@ -58,9 +58,10 @@ When working on this codebase, follow these conventions:
 - **New write endpoints are What-If-intercepted by default.** The API client queues every PUT/POST/DELETE while What-If mode is active, except URLs under `/api/auth/` and `/api/settings/`. If a new endpoint must bypass What-If (rare), extend the exemption list in `src/api/client.ts` deliberately — and if it must be queued, ensure the local optimistic update is complete since the server won't respond for real.
 - **Optimistic-write failure protocol**: on persist failure, reload the affected data from the server and call `undoStore.clear()` — a stale undo stack against fresh server state corrupts data. `useDragAndDrop` and `useUndoRedo` are the reference implementations.
 - **Modals close only via explicit buttons or the Escape key — never on backdrop/outside click.** Clicking outside a modal must NOT close it (it discards in-progress input, e.g. when a text-selection drag ends on the backdrop). The shared `Modal` component (`src/components/common/Modal/`) enforces this and has no overlay-click prop; new dialogs must use it. Standalone dialogs that can't (like the admin-portal modals in `src/components/admin/modals/`) must not attach close handlers to their overlay and should use the `useEscapeKey` hook for Escape support. This rule is for modals/dialogs only — dropdowns, context menus, and popovers keep their click-outside-to-close behavior.
-- New localStorage keys go through `STORAGE_KEYS` in `src/utils/storage.ts` (typed wrappers, legacy migration support). Zustand persistence serializes `Set`s as arrays with custom `merge` — follow the existing pattern in `viewStore`.
-- ESLint is configured with most rules at **warn** level (including `rules-of-hooks`) — CI's lint job will not catch everything. Treat warnings as errors when writing new code.
+- Direct localStorage access goes through the typed helpers and `STORAGE_KEYS` in `src/utils/storage.ts` (which also documents the Zustand `persist` key names — keep that list in sync). Zustand stores declare their persist keys inline (`milestone-app-storage-v3`, `milestone-view-storage-v1`, `milestone-custom-columns-storage-v1`) and serialize `Set`s as arrays with custom `merge` — follow the existing pattern in `viewStore`.
+- ESLint: `react-hooks/rules-of-hooks` is an **error** (fails CI); most other rules are at **warn** level, so CI's lint job will not catch everything else. Treat warnings as errors when writing new code.
 - Frontend model types live in `src/types/models.ts`; dates are `YYYY-MM-DD` strings throughout the frontend.
+- **Node 24** is the required toolchain (declared in `frontend/package.json` `engines`, used by the Dockerfile and all CI jobs) — don't build with older Node locally.
 
 ### Security Requirements
 
@@ -76,7 +77,7 @@ When working on this codebase, follow these conventions:
 - Backend tests live in `tests/` (pytest, `asyncio_mode=auto`, config in `pyproject.toml`). Style is **unit tests with mocks, no live DB**: `mock_db_session` (AsyncMock) and `app_client` (httpx `AsyncClient` + `ASGITransport` with dependency overrides) from `tests/conftest.py`.
 - `tests/test_lint.py` shells out to ruff — lint failures fail the test suite too.
 - `tests/test_migration_parser.py` covers `run_migration_master.py`'s `split_sql_statements()` (including `DO $$ ... END $$;` handling). Extend it when the migration runner must support new SQL constructs.
-- Frontend uses Vitest + Testing Library (`frontend/vitest.config.ts`, jsdom, setup in `src/test/setup.ts`). Coverage is currently minimal (a smoke test) — add tests alongside new features rather than retrofitting.
+- Frontend uses Vitest 4 + Testing Library (`frontend/vitest.config.ts`, jsdom, setup in `src/test/setup.ts`). Coverage is thin but not empty: `Modal.test.tsx` and `CredentialsModal.test.tsx` are the executable guards of the modal no-backdrop-close rule (see Frontend Conventions) — breaking that rule fails CI. Add tests alongside new features rather than retrofitting.
 - Run locally: `pytest --cov=app --cov-report=term-missing` and `cd frontend && npm run test -- --run`.
 
 ### Documentation (MkDocs)
@@ -94,7 +95,7 @@ When asked to **add, update, or refresh screenshots in the MkDocs docs** (`docs/
 **Pipeline:**
 1. **Spin up the demo instance** (self-contained Postgres + app on port 8486):
    ```bash
-   cp .env.example .env  # if missing — generate SECRET_KEY/SESSION_SECRET/TENANT_ENCRYPTION_KEY (64-char hex each)
+   cp .env.example .env  # if missing — generate SESSION_SECRET and TENANT_ENCRYPTION_KEY (64-char hex each)
    docker compose -f docker-compose.fresh.yml up -d --build
    docker exec milestone-fresh python -m app.scripts.seed_demo
    docker exec -i milestone-fresh-db psql -U milestone_demo -d milestone_demo \
@@ -143,7 +144,7 @@ You MUST bump `VERSION` and add a `CHANGELOG.md` entry — in the same PR — fo
 
 - `README.md`, `CLAUDE.md`, `CHANGELOG.md` itself
 - `docs/**`, `mkdocs.yml`, `docs/requirements.txt` — MkDocs end-user / admin / developer docs
-- `LICENSE`, `.gitignore`, `.dockerignore`, `.editorconfig`
+- `LICENSE.txt`, `.gitignore`, `.dockerignore`, `.editorconfig`
 - `.github/**` — workflows and repo metadata
 - `.devcontainer/**` — Codespaces config
 
@@ -244,7 +245,9 @@ app/
   main.py              # create_app()/create_wrapped_app(), lifespan, router registration,
                        #   CustomJSONResponse, CORS, static mounts + SPA catch-all
   config.py            # Pydantic settings (env vars); get_settings() lru_cached
-  database.py          # Tenant DB engine/session + declarative Base
+  database.py          # Tenant DB engine/session (get_db / get_db_readonly) + declarative Base
+  utils.py             # utcnow_naive() — all DB datetime columns are naive TIMESTAMP holding UTC
+  scripts/             # init_db.py (AUTO_INIT_DB target), seed_demo.py (screenshot demo data)
   models/              # SQLAlchemy ORM models
     tenant.py          # MasterBase + Tenant, TenantCredentials, TenantAuditLog,
                        #   AdminUser, AdminSession (master DB)
@@ -316,18 +319,22 @@ frontend/
       admin/           # AdminApp, AdminDashboard, TenantList, OrganizationList,
                        #   AdminUserList, SystemStatsPanel + admin modals
       gantt/           # GanttContainer, ProjectPanel/ (tree rows), Timeline/ (bars,
-                       #   dependencies, phantom overlays), CustomColumns/, hooks/, utils/
+                       #   dependencies, phantom overlays), CustomColumns/, CompletionSlider/,
+                       #   ShiftTooltip/ (Shift-hover date tooltip), ContextMenuContainer.tsx,
+                       #   utils/ (incl. criticalPath.ts, diffProjects.ts)
       views/           # StaffView (workload heatmap), EquipmentView, CrossSiteView, ArchivedView
       screens/         # LoginScreen, LoadingScreen
       modals/          # ModalContainer (lazy) + all dialogs
-      common/          # Button, Modal, Tooltip, ContextMenu, OnlineUsers, ActivityFeed, …
+      common/          # Button, Input, Select, Modal, ContextMenu, OnlineUsers, ActivityFeed, …
       layout/          # MainLayout, Header/ (controls), Sidebar/, ResourcePanel/
-    contexts/          # WebSocketContext (WS → debounced refetch), TimelineScrollContext
+    contexts/          # WebSocketContext (WS → debounced refetch), TimelineScrollContext,
+                       #   ReorderContext (row reordering in ProjectPanel)
     stores/            # 7 Zustand stores (see Frontend Architecture)
     types/models.ts    # All frontend entity types (snake_case, YYYY-MM-DD dates)
     hooks/             # useAuth, useDataLoader, useWebSocket, useDragAndDrop, … (see catalog)
-    utils/             # date, storage (STORAGE_KEYS, themes), criticalPath, csvExport,
-                       #   xmlExport, recurringVacation, equipmentOverlap, …
+    utils/             # date, storage (STORAGE_KEYS, themes), csvExport, xmlExport,
+                       #   recurringVacation, equipmentOverlap, subphaseUtils, …
+                       #   (criticalPath/diffProjects live in components/gantt/utils/)
   vite.config.ts       # tenantSpaPlugin (/t/* SPA fallback in dev), @ → src alias, port 3333
   vitest.config.ts     # Vitest (jsdom) config
 docs/                  # MkDocs Material source (user-guide/, admin-guide/, developer-guide/)
@@ -414,7 +421,7 @@ Settings are loaded by `app/config.py` (pydantic-settings, `.env`, case-insensit
 | `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | `localhost`/`5432`/`milestone_dev`/`milestone_dev_user`/`""` | Tenant DB (single-tenant mode) |
 | `DATABASE_URL` | *(unset)* | Overrides individual `DB_*` vars (`postgres://` auto-rewritten to `postgresql+asyncpg://`) |
 | `DB_SSL` | `false` | Require SSL to the tenant DB |
-| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` / `DB_POOL_TIMEOUT` | `20`/`10`/`30` | Connection pool tuning |
+| `DB_POOL_SIZE` / `DB_POOL_MAX_OVERFLOW` / `DB_POOL_TIMEOUT` | `20`/`10`/`30` | Connection pool tuning |
 | `SESSION_SECRET` | insecure default | Session signing secret — **must change in production** |
 | `SESSION_COOKIE_NAME` | `connect.sid` | Tenant session cookie (express-session compatible) |
 | `SESSION_MAX_AGE` | `86400` | Session lifetime (seconds) |
@@ -432,7 +439,7 @@ Settings are loaded by `app/config.py` (pydantic-settings, `.env`, case-insensit
 | `INIT_ADMIN_EMAIL` / `INIT_ADMIN_PASSWORD` | *(env-only)* | Initial admin credentials for auto-init (password auto-generated if empty) |
 | `TZ` | `Europe/Zurich` | Container timezone |
 
-Fresh-compose overrides: `FRESH_APP_PORT` (default 8486), `FRESH_DB_PORT` (5433), `FRESH_APP_NAME`, `FRESH_DB_NAME`.
+Fresh-compose overrides: `FRESH_APP_PORT` (default 8486), `FRESH_DB_PORT` (5433).
 
 ## Database Schema
 
@@ -509,7 +516,7 @@ Two declarative bases: **`Base`** (tenant databases, `app/database.py`) and **`M
 
 ### Migrations
 
-- Raw idempotent SQL files in `migrations/` — **no Alembic**. See `migrations/README.md`.
+- Raw idempotent SQL files in `migrations/` — **no Alembic**. See `migrations/README.md`. Shell wrappers `migrations/run_migration.sh` and `migrations/migrate_all_tenants.sh` exist for container use.
 - **Tenant migrations**: `python migrations/run_migration.py <name>` — single-tenant: runs against `DB_NAME`; multi-tenant: iterates every `active` tenant from the master DB, connecting with `PG_ADMIN_*` (preferred) or the decrypted per-tenant credentials.
 - **Master migrations**: `python migrations/run_migration_master.py <name>` — statement-by-statement execution via `split_sql_statements()`, which **correctly preserves `DO $$ ... END $$;` blocks** (covered by `tests/test_migration_parser.py`).
 - The list of available migrations is the set of `.sql` files in `migrations/` — run either runner with no argument to list them. One stray legacy migration lives at `scripts/sql/migrations/001_add_max_capacity.sql`.
@@ -526,7 +533,7 @@ All routers are mounted under `/api` (multi-tenant deployments reach them at `/t
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/health` and `/api/health` | public | Status, mode, version, DB reachability |
+| GET | `/health` and `/api/health` | public | Status, mode, version, backend id, `default_tenant`, DB reachability |
 | GET | `/api/ws-debug` | user | WebSocket diagnostics (tenant, connection/online counts) |
 | POST | `/api/ws-debug/broadcast` | user | Fire a synthetic `change:project` broadcast |
 
@@ -664,7 +671,7 @@ These handlers call rich `broadcast_change()` — their paths are in `BroadcastM
 | GET | `/import/mpp/test` | superuser | Verify the MPP parser (Java/mpxj) is functional |
 | POST | `/import/mpp` | superuser | Parse an uploaded MS Project file |
 | POST | `/import/project` | superuser | Import a parsed project |
-| GET / POST | `/import/test`, `/import/test-upload` | public | Import diagnostics |
+| GET / POST | `/import/test`, `/import/test-upload` | superuser | Import diagnostics |
 | POST | `/export/mpp/{pid}` | superuser | Export project to MPP |
 | GET / POST | `/export/csv/{pid}` | superuser | Export project to CSV |
 | GET | `/export/site/{sid}/excel` | superuser | Full site export to `.xlsx` (see Site Export contract) |
@@ -735,7 +742,7 @@ Flow: `GET /auth/sso/login` builds the Entra authorization URL with an **HMAC-si
 ## Multi-Tenancy Internals
 
 - **`TenantMiddleware`** (`app/middleware/tenant.py`) is a **pure ASGI middleware** (not `BaseHTTPMiddleware` — that breaks WebSockets). It matches `/t/{slug}/...`, resolves the tenant through a 60-second in-memory cache (plain dicts, not ORM objects, to avoid session-detachment issues), rewrites `scope["path"]` to strip the prefix, and stores `tenant` / `tenant_slug` / `tenant_engine` in `scope["state"]`. Missing/inactive/unreachable tenants → 404/403/503. WebSocket scopes are passed through untouched (the WS handler resolves the tenant itself). Only wraps the app when `MULTI_TENANT=true`.
-- ⚠ **`scope["state"]` is a plain dict** here — `request.state.tenant_slug` attribute access does not work; read `request.scope["state"]["tenant_slug"]` (the broadcast helper handles both forms).
+- **Tenant info lives in `scope["state"]` (a plain dict).** In HTTP handlers, `request.state.tenant_slug` attribute access works — Starlette's `Request.state` lazily wraps `scope["state"]` in a `State` object. In code that handles raw ASGI scopes (middleware, helpers that may not receive a full `Request`), read `scope["state"]["tenant_slug"]` directly; the broadcast helper handles both forms.
 - **`tenant_manager`** (`app/services/tenant_manager.py`) keeps lazy per-tenant engine pools (size 20 + 10 overflow), closes pools idle > 15 min (cleanup loop every 5 min), decrypts the tenant DB password on first connect, and runs idempotent per-tenant auto-migrations on pool creation.
 - **`tenant_provisioner`** (`app/services/tenant_provisioner.py`) creates the PG role + database, grants, applies the tenant schema, and seeds defaults (predefined phases, skills, "Main Site", admin user). It validates identifiers against injection and handles **managed PostgreSQL** (Azure/RDS/Cloud SQL) where the admin is not a superuser: grants the tenant role to the admin before `CREATE DATABASE` and reassigns `public` schema ownership.
 - Tenant DB credentials are stored AES-256-GCM-encrypted (`iv:tag:ciphertext` hex, key = `TENANT_ENCRYPTION_KEY`) in `tenant_credentials`, Node-compatible format.
@@ -753,7 +760,7 @@ Flow: `GET /auth/sso/login` builds the Entra authorization URL with an **HMAC-si
 
 - `useWebSocket` (`src/hooks/useWebSocket.ts`): connects to `ws(s)://<host><tenantPrefix>/ws`, exponential backoff (2 s base, 60 s max, 5 attempts), does **not** reconnect on close codes 1000/1001/4000–4006, tracks `onlineUsers` (presence messages) and `recentChanges` (any `change:*`, expiring 30 s after local receipt to dodge clock skew).
 - `WebSocketContext` (`src/contexts/WebSocketContext.tsx`) turns changes into data refreshes: `slicesForEntity()` maps entity type → data slices (`phase`→`projects`, `staff`→`staff`+`projects`, unknown → everything), then refreshes via a **200 ms debounced, coalesced** runner with an in-flight guard that re-stages if more changes arrive mid-fetch. A phase drag producing N child updates results in one refetch per slice. Unknown entity types refresh everything, so new backend entities need no client change.
-- `useEntityChangeIndicator(entityType, entityId)` drives the `ChangeIndicator` badges ("changed by X"); `OnlineUsers` and `ActivityFeed` render presence and the change feed.
+- `OnlineUsers` and `ActivityFeed` render presence and the change feed (`recentChanges` from `useWebSocket`). A per-entity "changed by X" badge (`ChangeIndicator` + `useEntityChangeIndicator`) was built but never wired up and has been removed as dead code.
 
 ---
 
@@ -761,7 +768,7 @@ Flow: `GET /auth/sso/login` builds the Entra authorization URL with an **HMAC-si
 
 ### Tech stack
 
-React 18 + TypeScript 5.6, Vite 7, Zustand 5, TanStack Query 5 (client cache defaults: staleTime 5 min, retry 1, no refetch-on-focus), date-fns 4, CSS Modules. There is **no router package** — `react-router-dom` was removed as unused; there is no route tree.
+React 18 + TypeScript 5.6, Vite 7, Vitest 4, Zustand 5, TanStack Query 5 (client cache defaults: staleTime 5 min, gcTime 30 min, retry 1, no refetch-on-focus; mutations retry 0), date-fns 4, CSS Modules. There is **no router package** — `react-router-dom` was removed as unused; there is no route tree.
 
 ### Routing without a router
 
@@ -775,7 +782,7 @@ React 18 + TypeScript 5.6, Vite 7, Zustand 5, TanStack Query 5 (client cache def
 | Store | Persisted | Purpose |
 |-------|-----------|---------|
 | `appStore` | only `_persistedSiteId` | Domain data (sites, projects, staff, equipment, blocks, vacations, holidays+date Sets, events, users, skills, tags, instance settings), auth state, current site/user, critical-path state. Site switch **clears undo history**. Exports selectors (`selectSiteProjects`, `selectCanManageResources`, …) |
-| `viewStore` | yes | View mode (`week`/`month`/`quarter`/`year`) + per-mode cell widths, current view, current date, expansion Sets (projects/phases/subphases/staff/equipment), level-based expand/collapse, scroll position, panel collapse flags, overview toggles (staff/equipment — mutually exclusive) |
+| `viewStore` | yes | View mode (`week`/`month`/`quarter`/`year`) + a single `cellWidth` (per-mode *defaults* applied on mode switch, then freely zoomed — widths are not remembered per mode), current view, current date, resource tab, expansion Sets (persisted: projects/phases/subphases; session-only: staff/equipment/bank-holidays), level-based expand/collapse, scroll position, panel collapse flags, overview toggles (staff/equipment — mutually exclusive) |
 | `uiStore` | no | Active modal + editing context, tooltip, drag/resize state, drag indicator, dependency-linking state, phantom-sibling state, context menu, scroll/zoom triggers, resource drag |
 | `whatIfStore` | no | What-If mode flag, `structuredClone` snapshot of projects, queued operations |
 | `undoStore` | no | Undo/redo stacks of project-tree snapshots (max 50) |
@@ -804,8 +811,8 @@ All backend↔frontend field mapping is centralized: `transformProject/Phase/Sub
 - Scroll sync: `TimelineScrollContext` (horizontal, direct DOM with feedback-loop guard) across Gantt/Staff/Equipment timelines; `useScrollSync` (vertical) between tree panel and timeline body.
 - **Drag pipeline** (`useDragAndDrop`): mousedown on a bar → live DOM movement with cell snapping (week/month) and a dependency lag indicator → on drop, `commitDragUpdate` computes new dates from pixels, prompts `window.confirm` for whole-project moves, snapshots undo state, clones and mutates the project tree (cascading children + assignments), updates the store optimistically, then persists via batched `PendingUpdate`s (`savePendingUpdates`). **Any persist error → reload all projects + clear undo.**
 - **Auto-calculation semantics** (`gantt/utils/autoCalculation.ts`): dependencies auto-align **only at creation time**; moving an item does *not* cascade to its dependents (users keep manual lead/lag control). Moves do (a) expand/contract parents to the union of their children and (b) auto-fit project dates to phases. Staff-assignment updates must include `allocation` (backend requirement).
-- **Critical path** (`utils/criticalPath.ts`): full CPM forward/backward pass, `totalFloat <= 0` = critical; loaded via dynamic import from `appStore.toggleCriticalPath` to avoid a circular dependency.
-- **Undo/redo** (`useUndoRedo` + `utils/diffProjects.ts`): restore snapshot, diff old-vs-new date fields into minimal `PendingUpdate`s, persist; on failure reload + clear history.
+- **Critical path** (`components/gantt/utils/criticalPath.ts`): full CPM forward/backward pass, `totalFloat <= 0` = critical; loaded via dynamic import from `appStore.toggleCriticalPath` to avoid a circular dependency.
+- **Undo/redo** (`useUndoRedo` + `components/gantt/utils/diffProjects.ts`): restore snapshot, diff old-vs-new date fields into minimal `PendingUpdate`s, persist; on failure reload + clear history.
 
 ### Hooks catalog (`src/hooks/`)
 
@@ -817,27 +824,26 @@ All backend↔frontend field mapping is centralized: `transformProject/Phase/Sub
 | `useDragAndDrop` | Gantt bar dragging (see drag pipeline); gated on admin/superuser |
 | `useResize` | Bar edge resizing with date recalculation |
 | `useResourceDragDrop` | HTML5 drag of staff/equipment from ResourcePanel onto rows; creates a 5-day default assignment (staff allocation defaults to `max_capacity`) |
-| `useTouchDrag` | Touch → synthetic mouse-event adapter |
 | `useDependencyLinking` | Two-click dependency creation |
 | `usePhantomSibling` | Shift+click spawns a phantom sibling bar following the cursor (lag computed on placement) |
 | `useUndoRedo` | Undo/redo orchestration (see above) |
 | `useKeyboardShortcuts` | Esc (modal → linking → phantom priority), Home (today), `+`/`-` zoom (12–120 px), Ctrl/Cmd+Z / Ctrl/Cmd+Y / Ctrl/Cmd+Shift+Z |
 | `useEscapeKey` | Escape-to-close for standalone dialogs that can't use the shared `Modal` (e.g. the admin-portal modals) |
 | `useCtrlScrollZoom` | Ctrl+wheel zoom keeping the date under the cursor fixed |
-| `useScrollSync` | Vertical scroll sync between two elements |
+| `useScrollSync` | Bidirectional vertical scroll sync between two elements (used by GanttContainer and the Staff/Equipment/CrossSite/Archived views) |
 | `useWorkloadCalculation` | Per-cell staff workload for the Staff heatmap (allocations, vacations incl. recurring, visual states) |
 | `useEquipmentOverlaps` | Equipment double-booking detection + today-status (`blocked` > `booked` > available) |
 
 ### Utilities worth knowing (`src/utils/`)
 
-`date.ts` (~24 date helpers incl. business-day math), `storage.ts` (typed storage wrappers, `STORAGE_KEYS`, theme system setting `data-theme` on `<html>`, legacy `rd_*` key migration, per-site project order), `themeColors.ts` (phase/depth colors from CSS vars), `recurringVacation.ts` (`[R:0,2,4]` pattern), `equipmentOverlap.ts`, `csvExport.ts` (MS-Project-compatible CSV: outline levels, `ID{FS|SS|FF|SF}±lag` predecessors), `xmlExport.ts` (MS Project XML), `criticalPath.ts`, `diffProjects.ts`.
+`date.ts` (~24 date helpers incl. business-day math), `storage.ts` (typed storage wrappers, `STORAGE_KEYS`, theme system setting `data-theme` on `<html>`, legacy `rd_*` key migration, per-site project order), `themeColors.ts` (phase/depth colors from CSS vars), `recurringVacation.ts` (`[R:0,2,4]` pattern), `equipmentOverlap.ts`, `csvExport.ts` (MS-Project-compatible CSV: outline levels, `ID{FS|SS|FF|SF}±lag` predecessors), `xmlExport.ts` (MS Project XML), `subphaseUtils.ts` (subphase tree helpers). Note: `criticalPath.ts` and `diffProjects.ts` live in `src/components/gantt/utils/`, not here.
 
 ## What-If Mode
 
 A client-side planning sandbox — the server is never aware of it.
 
 - Entering (`WhatIfToggle` → `whatIfStore.enterWhatIfMode`) snapshots `appStore.projects` via `structuredClone` and adds a `what-if-mode` body class.
-- While active, the **API client** intercepts every PUT/POST/DELETE (except `/api/auth/*` and `/api/settings/*`): the request is queued as a `WhatIfOperation {method, url, body}` and a fake success `{success: true, whatIfMode: true}` is returned, so optimistic local state updates normally.
+- While active, the **API client** intercepts every PUT/POST/DELETE (except `/api/auth/*` and `/api/settings/*`): the request is queued as a `WhatIfOperation {id, method, url, body?, timestamp}` and a fake success `{success: true, whatIfMode: true}` is returned, so optimistic local state updates normally.
 - **Discard**: restore the snapshot, drop the queue. **Apply**: temporarily disable the interception check, replay queued operations sequentially with real requests; on error the snapshot is **not** restored (some writes may have landed — the user should reload). The interception check is always restored in `finally`.
 - Implications for new code: any new write endpoint is queued by default (see Frontend Conventions); operations that depend on real server responses (created IDs used by later operations) do not work correctly inside What-If — the queue replays with the original bodies.
 - Known limitations: MPP import uploads via a raw `fetch` that bypasses the queue, so `ImportProjectModal` blocks importing while What-If is active. Custom-column *definition* changes are queued but live in `customColumnStore`, which is not snapshotted — a definition created/deleted during What-If is not rolled back locally on Discard (reload to resync).
@@ -865,6 +871,7 @@ A client-side planning sandbox — the server is never aware of it.
 - **SSO**: HMAC-signed state; secrets never returned unmasked (`/sso/config/full` masks); optional Entra group gating per tenant.
 - **Provisioning**: tenant identifiers validated against SQL injection in `tenant_provisioner`.
 - ⚠ `GET /settings` and `GET /settings/{key}` have no auth dependency — never store sensitive values in the tenant `settings` KV table.
+- ⚠ `/health` is public and includes the backend identifier and `default_tenant` in its response — don't add further config values to it.
 
 ## Docker & Deployment
 
@@ -887,18 +894,18 @@ Health endpoint responds at **both** `/health` and `/api/health` (status, mode, 
 
 ## CI
 
-Four workflows in `.github/workflows/` (push to `main` + PRs; version-check is PR-only; `frontend.yml` additionally runs weekly on a cron, where only its `Audit` job executes):
+Four workflows in `.github/workflows/` (push to `main` + PRs; version-check is PR-only; `backend.yml` and `frontend.yml` additionally run weekly on crons — offset a day apart — where only their `Audit` jobs execute):
 
 | Workflow | Jobs / enforcement |
 |----------|--------------------|
-| `backend.yml` | ruff check + format check on `app/`; pytest with coverage; mypy |
+| `backend.yml` | `pip-audit --strict` over `requirements*.txt` (**blocking**); ruff check + format check on `app/`; pytest with coverage; mypy |
 | `frontend.yml` | eslint; vitest; `npm run build` (tsc + vite); `npm audit --audit-level=moderate` (**blocking** — see below) |
 | `docker.yml` | `docker build` of the production image |
 | `version-check.yml` | `dorny/paths-filter` on app-code paths → fails the PR unless `VERSION` changed vs `main` **and** `CHANGELOG.md` has a matching `## [<version>]` heading |
 
 Docs are **not** built by Actions — Cloudflare Pages builds them from `docs/build.sh` on push. There are no issue or PR templates in `.github/` (only `FUNDING.yml`).
 
-**The frontend `Audit` job is blocking, and a new advisory can turn it red on a PR that didn't touch dependencies.** That is intended — it is the only check that notices when a pin in `frontend/package.json`'s `overrides` block has gone stale, which happens silently whenever a *newer* advisory widens the affected range of an already-pinned package. When it fires, fix the pin rather than lowering the threshold; `--audit-level=moderate` is set deliberately, because the React Router advisories that motivated the job were moderate. If a finding is genuinely unreachable (dev-only tooling, no patched release available) and blocking is unacceptable, prefer a scoped, commented `overrides` entry over relaxing the gate.
+**Both `Audit` jobs are blocking, and a new advisory can turn them red on a PR that didn't touch dependencies.** That is intended. On the backend, fix the pin in `requirements*.txt`; if a finding is genuinely unexploitable here, a `--ignore-vuln` flag with an explanatory comment in `backend.yml` is the sanctioned escape hatch. On the frontend, the audit is the only check that notices when a pin in `frontend/package.json`'s `overrides` block has gone stale, which happens silently whenever a *newer* advisory widens the affected range of an already-pinned package — the block currently holds ~8 transitive security pins (note the scoped `"minimatch@3"` syntax, which overrides only the v3 range). When it fires, fix the pin rather than lowering the threshold; `--audit-level=moderate` was chosen deliberately (the advisories that originally motivated the job were moderate). If a finding is genuinely unreachable (dev-only tooling, no patched release available) and blocking is unacceptable, prefer a scoped, commented `overrides` entry over relaxing the gate.
 
 ## Gotchas
 
@@ -907,12 +914,11 @@ Docs are **not** built by Actions — Cloudflare Pages builds them from `docs/bu
 - The `Note` model's tablename is **`staff_notes`**. All schema sources create `staff_notes` now; databases from old installs may carry a legacy `notes` table until `migrations/add_staff_notes.sql` or the tenant auto-migration runs (it migrates the rows and drops `notes`).
 - Presence is WebSocket-only — there is no HTTP presence API (a dead, never-registered presence router and its `usePresence` polling hook were removed).
 - `PUT/DELETE /equipment-assignments/{id}` is defined in both `equipment.py` and `assignments.py`; `equipment.py` wins (registered first). Edit there.
-- `request.state.X` does **not** work for tenant info — `TenantMiddleware` writes a plain dict into `scope["state"]`; read `request.scope["state"]["tenant_slug"]`.
+- Tenant info: `TenantMiddleware` writes a plain dict into `scope["state"]`. `request.state.tenant_slug` works in HTTP handlers (Starlette wraps the dict), but code handling raw ASGI scopes must read `scope["state"]["tenant_slug"]` directly.
 - The Vite dev server (:3333) has **no API proxy** — the client targets `:8485` directly, so the backend must be running; full tenant/WS behaviour is best tested on `:8485` with the built frontend.
 - `run_migration_master.py` handles `DO $$ ... END $$;` blocks correctly (`split_sql_statements()`, tested in `tests/test_migration_parser.py`) — but keep migrations idempotent regardless.
 - MPP file import requires Java (JRE 11+), included in the Docker image but not in dev environments by default.
 - The User model has a `full_name` property — use it instead of manual `first_name + last_name` concatenation.
 - Middleware must be **pure ASGI** — `BaseHTTPMiddleware` breaks WebSocket connections (this is why a timing middleware was removed).
-- `config.app_version` is a stale, unused default — the real version comes from `/VERSION` via `app/__init__.py`.
-- Zustand persistence: Sets serialize as arrays with custom `merge` restore; don't persist Maps.
+- Zustand persistence: Sets serialize as arrays with custom `merge` restore; don't persist Maps (`appStore` holds a `criticalPathItems` Map that is deliberately excluded from `partialize` — keep it that way).
 - New backend write endpoints are What-If-queued and coarse-broadcast by default — check both the client exemption list and `BroadcastMiddleware.SKIP_PATTERNS` when that's wrong for your endpoint.

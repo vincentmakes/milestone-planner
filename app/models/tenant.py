@@ -7,12 +7,13 @@ DO NOT modify these without checking the Node.js masterDb.js schema!
 Schema source: lib/masterDb.js initializeMasterDb()
 """
 
-from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import declarative_base, relationship
+
+from app.utils import utcnow_naive
 
 # Separate Base for master database models
 # This prevents these tables from being created in tenant databases
@@ -86,8 +87,8 @@ class Tenant(MasterBase):  # type: ignore[misc]
     group_membership_mode = Column(String(10), default="any")
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow_naive)
+    updated_at = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     # Relationships
     credentials = relationship(
@@ -159,7 +160,7 @@ class TenantCredentials(MasterBase):  # type: ignore[misc]
     # Encrypted password (AES-256-GCM format: iv:authTag:ciphertext)
     encrypted_password = Column(Text, nullable=False)
 
-    password_updated_at = Column(DateTime, default=datetime.utcnow)
+    password_updated_at = Column(DateTime, default=utcnow_naive)
 
     # Relationship
     tenant = relationship("Tenant", back_populates="credentials")
@@ -189,7 +190,7 @@ class TenantAuditLog(MasterBase):  # type: ignore[misc]
     actor = Column(String(255))  # Admin email who performed action
     details = Column(JSONB)  # JSON details
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow_naive)
 
     # Relationship
     tenant = relationship("Tenant", back_populates="audit_logs")
@@ -226,7 +227,7 @@ class AdminUser(MasterBase):  # type: ignore[misc]
     active = Column(Integer, default=1)
     must_change_password = Column(Integer, default=0)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow_naive)
     last_login = Column(DateTime)
 
     @property

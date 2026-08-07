@@ -83,7 +83,6 @@ services:
       - MASTER_DB_USER=${PG_ADMIN_USER:-postgres}
       - MASTER_DB_PASSWORD=${PG_ADMIN_PASSWORD:-milestone_secret}
       # Security
-      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
       - TENANT_ENCRYPTION_KEY=${TENANT_ENCRYPTION_KEY:-}
       # Auto-initialization

@@ -12,7 +12,7 @@ Milestone Planner is a full-stack application with a FastAPI backend serving a R
 | **Frontend** | React 18, TypeScript, Vite, Zustand, TanStack Query (no client-side router) |
 | **Database** | PostgreSQL 15+ |
 | **Deployment** | Docker, Docker Compose |
-| **CI/CD** | GitHub Actions (lint, test, type check, Docker build) |
+| **CI/CD** | GitHub Actions (dependency audits, lint, test, type check, Docker build, version gate) |
 
 ## Backend Structure
 
@@ -42,22 +42,25 @@ app/
 │   ├── users.py             # User management
 │   └── vacations.py         # Vacation/time-off management
 ├── models/                  # SQLAlchemy ORM models
-│   ├── tenant.py            # MasterBase: Tenant, AdminUser
-│   ├── organization.py      # Organization, OrganizationSSOConfig
-│   ├── project.py           # Project, Phase, Subphase
-│   ├── user.py              # User
-│   ├── assignment.py        # StaffAssignment, EquipmentAssignment
-│   ├── equipment.py         # Equipment, EquipmentType
-│   ├── site.py              # Site
-│   ├── skill.py             # Skill
-│   ├── vacation.py          # Vacation, RecurringAbsence
+│   ├── tenant.py            # MasterBase + Tenant, TenantCredentials, TenantAuditLog,
+│   │                        #   AdminUser, AdminSession (master DB)
+│   ├── organization.py      # Organization, OrganizationSSOConfig (master DB)
+│   ├── project.py           # Project, ProjectPhase, ProjectSubphase (recursive)
+│   ├── user.py              # User, UserSite
+│   ├── assignment.py        # ProjectAssignment, PhaseStaffAssignment, SubphaseStaffAssignment
+│   ├── equipment.py         # Equipment, EquipmentAssignment, EquipmentBlock
+│   │                        #   (equipment "types" are a free-form string, not a model)
+│   ├── site.py              # Site, BankHoliday, CompanyEvent
+│   ├── skill.py             # Skill, UserSkill
+│   ├── vacation.py          # Vacation (recurring pattern encoded in description)
 │   ├── custom_column.py     # CustomColumn, CustomColumnValue
 │   ├── tag.py               # Tag, ProjectTag
-│   ├── note.py              # Note
-│   ├── settings.py          # InstanceSettings
-│   ├── session.py           # Session
-│   └── presence.py          # Presence
+│   ├── note.py              # Note (tablename: staff_notes)
+│   ├── settings.py          # Settings (KV), PredefinedPhase, SSOConfig
+│   ├── session.py           # Session (express-session compatible)
+│   └── presence.py          # ProjectPresence
 ├── schemas/                 # Pydantic request/response schemas
+├── scripts/                 # init_db.py (AUTO_INIT_DB), seed_demo.py
 ├── services/                # Business logic
 │   ├── auth.py              # Authentication logic
 │   ├── encryption.py        # AES-256-GCM credential encryption
@@ -68,9 +71,14 @@ app/
 │   ├── sso.py               # Microsoft Entra SSO
 │   ├── tenant_manager.py    # Per-tenant connection pool management
 │   └── tenant_provisioner.py # DB/user creation for new tenants
-└── middleware/              # Request middleware
-    ├── auth.py              # Session-based authentication
-    └── tenant.py            # URL-based tenant resolution
+├── middleware/              # Pure-ASGI middleware + auth dependencies
+│   ├── auth.py              # Session-based authentication dependencies
+│   ├── tenant.py            # URL-based tenant resolution
+│   └── broadcast.py         # Coarse change:<entity> WebSocket broadcast on writes
+└── websocket/               # Real-time layer
+    ├── manager.py           # ConnectionManager (per-tenant rooms, presence)
+    ├── handler.py           # /ws endpoints, cookie auth
+    └── broadcast.py         # broadcast_change() helper (rich attribution)
 ```
 
 ## Frontend Structure

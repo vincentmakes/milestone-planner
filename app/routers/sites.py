@@ -27,6 +27,7 @@ from app.schemas.site import (
     SiteResponse,
     SiteUpdate,
 )
+from app.utils import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -564,7 +565,7 @@ async def fetch_and_store_bank_holidays(
     logger.info("Added %d holidays for site %s", total_added, site_id)
 
     # Update last fetch timestamp
-    site.last_holiday_fetch = datetime.utcnow()
+    site.last_holiday_fetch = utcnow_naive()
     await db.commit()
 
 

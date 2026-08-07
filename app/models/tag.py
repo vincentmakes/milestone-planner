@@ -15,6 +15,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.utils import utcnow_naive
 
 if TYPE_CHECKING:
     from app.models.project import Project
@@ -30,9 +31,9 @@ class Tag(Base):
     color: Mapped[str] = mapped_column(
         String(7), default="#6366f1", nullable=False
     )  # Hex color for UI
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
 
     # Relationships
@@ -61,4 +62,4 @@ class ProjectTag(Base):
         ForeignKey("tags.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    assigned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    assigned_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)

@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import (
 from app.config import get_settings
 from app.models.tenant import Tenant, TenantCredentials
 from app.services.encryption import decrypt
+from app.utils import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ class TenantConnectionManager:
 
     async def _cleanup_idle_pools(self):
         """Remove connection pools that have been idle too long."""
-        now = datetime.utcnow()
+        now = utcnow_naive()
         to_remove = []
 
         for slug, timestamp in self._pool_timestamps.items():
@@ -298,7 +299,7 @@ class TenantConnectionManager:
         slug = tenant.slug
 
         # Update access timestamp
-        self._pool_timestamps[slug] = datetime.utcnow()
+        self._pool_timestamps[slug] = utcnow_naive()
 
         # Return existing pool if available
         if slug in self._pools:
@@ -371,7 +372,7 @@ class TenantConnectionManager:
         slug = tenant_info["slug"]
 
         # Update access timestamp
-        self._pool_timestamps[slug] = datetime.utcnow()
+        self._pool_timestamps[slug] = utcnow_naive()
 
         # Return existing pool if available
         if slug in self._pools:

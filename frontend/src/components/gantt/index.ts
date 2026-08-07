@@ -20,6 +20,3 @@ export {
 } from './utils';
 
 export type { TimelineCell, TimelineHeader, RowPosition, RowPositionsResult } from './utils';
-
-// Re-export hooks
-export { useScrollSync } from './hooks';

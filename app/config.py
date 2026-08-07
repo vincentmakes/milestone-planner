@@ -20,7 +20,6 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = "Milestone API"
-    app_version: str = "2.0.0"
     debug: bool = False
     port: int = 8485  # Different from Node.js (8484) for hybrid running
 
@@ -109,7 +108,7 @@ class Settings(BaseSettings):
 
     @property
     def sync_database_url(self) -> str:
-        """Build sync database URL for Alembic migrations."""
+        """Build sync (non-asyncpg) database URL for scripts and migration runners."""
         if self.database_url:
             url = self.database_url
             if url.startswith("postgres://"):

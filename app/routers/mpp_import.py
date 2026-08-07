@@ -918,7 +918,7 @@ async def import_mpp_file(
 
 
 @router.get("/import/test")
-async def test_import_endpoint():
+async def test_import_endpoint(user: User = Depends(require_superuser)):
     """Simple test endpoint to verify routing works."""
     return {"status": "ok", "message": "Import endpoint is reachable"}
 
@@ -926,8 +926,9 @@ async def test_import_endpoint():
 @router.post("/import/test-upload")
 async def test_upload_endpoint(
     file: UploadFile = File(...),
+    user: User = Depends(require_superuser),
 ):
-    """Test file upload without authentication."""
+    """Test file upload (superuser-gated diagnostic)."""
     content = await file.read()
     return {
         "status": "ok",

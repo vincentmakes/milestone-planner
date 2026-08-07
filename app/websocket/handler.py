@@ -6,7 +6,7 @@ Handles WebSocket connections with session-based authentication.
 
 import json
 import logging
-from datetime import datetime
+import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_session_factory
 from app.models.session import Session
 from app.models.user import User
+from app.utils import utcnow_naive
 from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ async def get_user_from_session(session_id: str, db: AsyncSession) -> User | Non
         logger.debug("Session found, checking expiry...")
 
         # Check if session is expired
-        now_ms = int(datetime.utcnow().timestamp() * 1000)
+        now_ms = int(time.time() * 1000)
         if session.expired < now_ms:
             logger.debug("Session expired: %s < %s", session.expired, now_ms)
             return None
@@ -271,7 +272,7 @@ async def handle_websocket_connection(websocket: WebSocket, tenant_slug: str | N
                         json.dumps(
                             {
                                 "type": "pong",
-                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                                "timestamp": utcnow_naive().isoformat() + "Z",
                             }
                         )
                     )

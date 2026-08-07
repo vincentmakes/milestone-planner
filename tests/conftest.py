@@ -20,7 +20,6 @@ def test_settings():
         db_name="milestone_test",
         db_user="test",
         db_password="test",
-        secret_key="test-secret-key",
         session_secret="test-session-secret",
         multi_tenant=False,
         debug=True,

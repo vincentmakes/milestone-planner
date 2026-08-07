@@ -19,6 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.utils import utcnow_naive
 
 if TYPE_CHECKING:
     from app.models.site import Site
@@ -58,9 +59,9 @@ class CustomColumn(Base):
     display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     width: Mapped[int] = mapped_column(Integer, default=120, nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
 
     # Relationships
@@ -133,9 +134,9 @@ class CustomColumnValue(Base):
     # - list: stored as the selected option string
     value: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
 
     # Relationships

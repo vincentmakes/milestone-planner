@@ -1,6 +1,8 @@
 /**
  * useScrollSync Hook
- * Synchronizes vertical scroll position between two elements
+ * Synchronizes vertical scroll position (scrollTop) between two elements,
+ * bidirectionally. Both containers should have the same content height for
+ * proper row alignment.
  */
 
 import { useEffect, RefObject } from 'react';

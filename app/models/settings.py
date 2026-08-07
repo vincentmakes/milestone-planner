@@ -15,6 +15,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
+from app.utils import utcnow_naive
 
 
 class Settings(Base):
@@ -25,7 +26,7 @@ class Settings(Base):
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     value: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
 
     def __repr__(self) -> str:
@@ -41,7 +42,7 @@ class PredefinedPhase(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_active: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
     @property
     def active(self) -> bool:
@@ -72,7 +73,7 @@ class SSOConfig(Base):
     auto_create_users: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     default_role: Mapped[str] = mapped_column(String(20), default="user", nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
 
     @property

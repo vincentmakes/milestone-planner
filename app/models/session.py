@@ -4,7 +4,7 @@ Maps to the sessions table used by both Node.js and Python backends.
 """
 
 import json
-from datetime import datetime
+import time
 from typing import Any
 
 from sqlalchemy import BigInteger, String, Text
@@ -43,7 +43,7 @@ class Session(Base):
     @property
     def is_expired(self) -> bool:
         """Check if session has expired."""
-        return self.expired < int(datetime.utcnow().timestamp() * 1000)
+        return self.expired < int(time.time() * 1000)
 
     @property
     def user(self) -> dict[str, Any] | None:

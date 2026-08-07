@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.middleware.auth import require_superuser
 from app.models.tag import Tag
 from app.models.user import User
 from app.routers.auth import get_current_user
@@ -20,16 +21,6 @@ from app.schemas.tag import (
 )
 
 router = APIRouter(prefix="/tags", tags=["tags"])
-
-
-def require_superuser(current_user: User = Depends(get_current_user)) -> User:
-    """Require superuser or admin role."""
-    if current_user.role not in ("superuser", "admin"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only superusers and admins can manage tags",
-        )
-    return current_user
 
 
 @router.get("", response_model=list[TagListResponse])

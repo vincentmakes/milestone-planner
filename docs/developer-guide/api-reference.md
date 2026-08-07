@@ -177,7 +177,7 @@ Presence (who is online, who is viewing a project) is handled entirely over the 
 | `PUT` | `/t/{slug}/api/skills/{id}` | Update a skill |
 | `DELETE` | `/t/{slug}/api/skills/{id}` | Delete a skill |
 | `GET` | `/t/{slug}/api/settings` | Get instance settings |
-| `PUT` | `/t/{slug}/api/settings` | Update settings |
+| `PUT` | `/t/{slug}/api/settings/{key}` | Update one setting |
 | `GET` | `/t/{slug}/api/users` | List users |
 | `POST` | `/t/{slug}/api/users` | Create a user |
 | `PUT` | `/t/{slug}/api/users/{id}` | Update a user |
@@ -256,7 +256,7 @@ Both endpoints return identical content. They require **no authentication** and 
 {
     "status": "ok",
     "mode": "multi-tenant",
-    "version": "1.0.0",
+    "version": "1.0.20",
     "backend": "python-fastapi",
     "default_tenant": "demo",
     "timestamp": "2026-05-06T12:34:56.789012",

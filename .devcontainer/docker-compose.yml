@@ -12,7 +12,6 @@ services:
       - DB_NAME=milestone
       - DB_USER=milestone
       - DB_PASSWORD=milestone_dev
-      - SECRET_KEY=dev-secret-key-change-in-production
       - SESSION_SECRET=dev-session-secret-change-in-production
       - MULTI_TENANT=true
       - MASTER_DB_HOST=db

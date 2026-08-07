@@ -29,13 +29,7 @@
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/vincentmakes/milestone-planner?quickstart=1)
 
-Launch a fully configured development environment in your browser with PostgreSQL, Python, Node.js, and a pre-seeded demo tenant.
-
-After the Codespace starts, run:
-
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8485 --reload
-```
+Launch a fully configured development environment in your browser with PostgreSQL, Python, Node.js, and a pre-seeded demo tenant. The backend starts automatically on port 8485 — the demo is usable as soon as the Codespace is ready.
 
 ### Demo Credentials
 

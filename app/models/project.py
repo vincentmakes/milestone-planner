@@ -20,6 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.utils import utcnow_naive
 
 if TYPE_CHECKING:
     from app.models.assignment import (
@@ -58,9 +59,9 @@ class Project(Base):
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     archived: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
 
     # Relationships
@@ -150,7 +151,7 @@ class ProjectPhase(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     completion: Mapped[int | None] = mapped_column(Integer, nullable=True)
     dependencies: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
     # Relationships
     project: Mapped["Project"] = relationship("Project", back_populates="phases")
@@ -210,7 +211,7 @@ class ProjectSubphase(Base):
     depth: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     completion: Mapped[int | None] = mapped_column(Integer, nullable=True)
     dependencies: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
     # Relationships
     project: Mapped["Project"] = relationship("Project", back_populates="subphases")

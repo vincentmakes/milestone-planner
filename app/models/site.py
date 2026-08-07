@@ -18,6 +18,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.utils import utcnow_naive
 
 if TYPE_CHECKING:
     from app.models.custom_column import CustomColumn
@@ -40,7 +41,7 @@ class Site(Base):
     timezone: Mapped[str] = mapped_column(String(50), default="Europe/Zurich", nullable=False)
     last_holiday_fetch: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     active: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
     # Relationships
     users: Mapped[list["User"]] = relationship(
@@ -107,7 +108,7 @@ class BankHoliday(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     is_custom: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     year: Mapped[int] = mapped_column(Integer, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
     # Relationships
     site: Mapped["Site"] = relationship("Site", back_populates="bank_holidays")
@@ -145,7 +146,7 @@ class CompanyEvent(Base):
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     color: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
     # Relationships
     site: Mapped["Site"] = relationship("Site", back_populates="company_events")
