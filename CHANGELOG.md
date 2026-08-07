@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - The frontend now declares Node.js 24 as its required toolchain (`engines` field), matching the Docker build and CI.
+- React hooks-order violations now fail the frontend lint check instead of passing as warnings; the WebSocket hook that carried the only violations was refactored accordingly.
+- Deprecated Python `datetime.utcnow()` usage was fully migrated ahead of future Python upgrades. No behaviour change.
+
+### Fixed
+- Session expiry timestamps are now recorded as true Unix epochs. They were previously skewed 1–2 hours by the container timezone (self-cancelling in normal operation, but sessions spanning a daylight-saving switch could last up to an hour longer or shorter, and the stored expiry disagreed with the admin-portal sessions). Sessions created before this update will expire up to 2 hours early, once — logging in again is all that's needed.
+- The session cookie metadata now records the actual expiry time instead of the session's creation time.
 
 ### Removed
 - Removed dead code left over from earlier iterations: unused backend exception classes and an unused site-access dependency, and several never-rendered frontend components, hooks and contexts (fill-down editing, touch drag, change-indicator badges, an orphaned theme selector and loading spinner, and duplicated row-position logic).

@@ -7,7 +7,8 @@ Node.js express-session PostgreSQL store, enabling hybrid operation.
 
 import json
 import secrets
-from datetime import datetime, timedelta
+import time
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models.session import Session
 from app.models.user import User
-from app.utils import utcnow_naive
 
 
 class SessionService:
@@ -36,9 +36,8 @@ class SessionService:
         return secrets.token_urlsafe(32)
 
     def _get_expiry_timestamp(self) -> int:
-        """Get expiry timestamp in milliseconds (express-session format)."""
-        expiry = datetime.utcnow() + timedelta(seconds=self.settings.session_max_age)
-        return int(expiry.timestamp() * 1000)
+        """Get expiry timestamp in milliseconds (express-session format, true Unix epoch)."""
+        return int((time.time() + self.settings.session_max_age) * 1000)
 
     async def create_session(self, user: User) -> str:
         """
@@ -47,12 +46,16 @@ class SessionService:
         Returns the session ID to be set in the cookie.
         """
         session_id = self._generate_session_id()
+        expiry_ms = self._get_expiry_timestamp()
+        expires_iso = (
+            datetime.fromtimestamp(expiry_ms / 1000, UTC).replace(tzinfo=None).isoformat() + "Z"
+        )
 
         # Build session data matching express-session format
         session_data = {
             "cookie": {
                 "originalMaxAge": self.settings.session_max_age * 1000,
-                "expires": utcnow_naive().isoformat() + "Z",
+                "expires": expires_iso,
                 "httpOnly": True,
                 "path": "/",
                 "sameSite": "lax",
@@ -72,7 +75,7 @@ class SessionService:
         session = Session(
             sid=session_id,
             sess=json.dumps(session_data),
-            expired=self._get_expiry_timestamp(),
+            expired=expiry_ms,
         )
 
         self.db.add(session)
@@ -147,7 +150,7 @@ class SessionService:
 
         Returns the number of sessions deleted.
         """
-        current_time_ms = int(datetime.utcnow().timestamp() * 1000)
+        current_time_ms = int(time.time() * 1000)
         result = await self.db.execute(delete(Session).where(Session.expired < current_time_ms))
         await self.db.commit()
         return result.rowcount
