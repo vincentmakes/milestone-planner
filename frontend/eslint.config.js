@@ -28,7 +28,7 @@ export default tseslint.config(
       'no-case-declarations': 'warn',
       'no-control-regex': 'warn',
       'prefer-const': 'warn',
-      'react-hooks/rules-of-hooks': 'warn',
+      // 'react-hooks/rules-of-hooks' stays at the preset's 'error' level.
     },
   },
 );

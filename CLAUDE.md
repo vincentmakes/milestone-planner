@@ -59,7 +59,7 @@ When working on this codebase, follow these conventions:
 - **Optimistic-write failure protocol**: on persist failure, reload the affected data from the server and call `undoStore.clear()` — a stale undo stack against fresh server state corrupts data. `useDragAndDrop` and `useUndoRedo` are the reference implementations.
 - **Modals close only via explicit buttons or the Escape key — never on backdrop/outside click.** Clicking outside a modal must NOT close it (it discards in-progress input, e.g. when a text-selection drag ends on the backdrop). The shared `Modal` component (`src/components/common/Modal/`) enforces this and has no overlay-click prop; new dialogs must use it. Standalone dialogs that can't (like the admin-portal modals in `src/components/admin/modals/`) must not attach close handlers to their overlay and should use the `useEscapeKey` hook for Escape support. This rule is for modals/dialogs only — dropdowns, context menus, and popovers keep their click-outside-to-close behavior.
 - Direct localStorage access goes through the typed helpers and `STORAGE_KEYS` in `src/utils/storage.ts` (which also documents the Zustand `persist` key names — keep that list in sync). Zustand stores declare their persist keys inline (`milestone-app-storage-v3`, `milestone-view-storage-v1`, `milestone-custom-columns-storage-v1`) and serialize `Set`s as arrays with custom `merge` — follow the existing pattern in `viewStore`.
-- ESLint is configured with most rules at **warn** level (including `rules-of-hooks`) — CI's lint job will not catch everything. Treat warnings as errors when writing new code.
+- ESLint: `react-hooks/rules-of-hooks` is an **error** (fails CI); most other rules are at **warn** level, so CI's lint job will not catch everything else. Treat warnings as errors when writing new code.
 - Frontend model types live in `src/types/models.ts`; dates are `YYYY-MM-DD` strings throughout the frontend.
 - **Node 24** is the required toolchain (declared in `frontend/package.json` `engines`, used by the Dockerfile and all CI jobs) — don't build with older Node locally.
 
@@ -320,7 +320,7 @@ frontend/
       gantt/           # GanttContainer, ProjectPanel/ (tree rows), Timeline/ (bars,
                        #   dependencies, phantom overlays), CustomColumns/, CompletionSlider/,
                        #   ShiftTooltip/ (Shift-hover date tooltip), ContextMenuContainer.tsx,
-                       #   hooks/, utils/ (incl. criticalPath.ts, diffProjects.ts)
+                       #   utils/ (incl. criticalPath.ts, diffProjects.ts)
       views/           # StaffView (workload heatmap), EquipmentView, CrossSiteView, ArchivedView
       screens/         # LoginScreen, LoadingScreen
       modals/          # ModalContainer (lazy) + all dialogs
@@ -829,7 +829,7 @@ All backend↔frontend field mapping is centralized: `transformProject/Phase/Sub
 | `useKeyboardShortcuts` | Esc (modal → linking → phantom priority), Home (today), `+`/`-` zoom (12–120 px), Ctrl/Cmd+Z / Ctrl/Cmd+Y / Ctrl/Cmd+Shift+Z |
 | `useEscapeKey` | Escape-to-close for standalone dialogs that can't use the shared `Modal` (e.g. the admin-portal modals) |
 | `useCtrlScrollZoom` | Ctrl+wheel zoom keeping the date under the cursor fixed |
-| `useScrollSync` | Vertical scroll sync between two elements. ⚠ Two independent implementations exist: `src/hooks/useScrollSync.ts` (used by Staff/Equipment/CrossSite/Archived views) and `src/components/gantt/hooks/useScrollSync.ts` (used by `GanttContainer`) — consolidation pending; don't add a third |
+| `useScrollSync` | Bidirectional vertical scroll sync between two elements (used by GanttContainer and the Staff/Equipment/CrossSite/Archived views) |
 | `useWorkloadCalculation` | Per-cell staff workload for the Staff heatmap (allocations, vacations incl. recurring, visual states) |
 | `useEquipmentOverlaps` | Equipment double-booking detection + today-status (`blocked` > `booked` > available) |
 

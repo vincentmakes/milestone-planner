@@ -12,8 +12,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getTenantPrefix } from '@/api/client';
 
-// Feature flag to disable WebSocket (set to true to disable until proxy/IIS is properly configured)
-const WEBSOCKET_DISABLED = false;
+// Feature flag to disable WebSocket (set to true to disable until proxy/IIS is properly configured).
+// Guards live inside the effect/callback bodies so hook order stays unconditional.
+const WEBSOCKET_DISABLED: boolean = false;
 
 // Message types from server
 export interface PresenceUser {
@@ -135,24 +136,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     onChangeReceivedRef.current = onChangeReceived;
   }, [onChangeReceived]);
 
-  // If WebSocket is disabled, return stub functions
-  if (WEBSOCKET_DISABLED) {
-    return {
-      connectionState: 'disconnected',
-      isConnected: false,
-      onlineUsers: [],
-      recentChanges: [],
-      connect: () => {},
-      disconnect: () => {},
-      isChangeRecent: () => false,
-      getChangeInfo: () => undefined,
-    };
-  }
-
   // Clear expired changes. We expire based on local receipt time, not the
   // server timestamp, so clock skew between client and server can't drop
   // every change as "already expired."
   useEffect(() => {
+    if (WEBSOCKET_DISABLED) return;
     const interval = setInterval(() => {
       setRecentChanges(prev => {
         const now = Date.now();
@@ -229,6 +217,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
   // Connect to WebSocket
   const connect = useCallback(() => {
+    if (WEBSOCKET_DISABLED) return;
     // Don't connect if already connected or connecting
     if (wsRef.current) {
       const state = wsRef.current.readyState;
@@ -357,8 +346,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
   // Auto-connect on mount (only once)
   useEffect(() => {
+    if (WEBSOCKET_DISABLED) return;
     mountedRef.current = true;
-    
+
     if (autoConnect) {
       // Small delay to ensure cookies are available
       const timeout = setTimeout(() => {

@@ -10,7 +10,7 @@ import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { ProjectPanel } from './ProjectPanel';
 import { Timeline } from './Timeline';
-import { useScrollSync } from './hooks/useScrollSync';
+import { useScrollSync } from '@/hooks';
 import { generateTimelineCells, generateTimelineHeaders } from './utils';
 import { TimelineScrollProvider } from '@/contexts/TimelineScrollContext';
 import { StaffView } from '@/components/views/StaffView/StaffView';
