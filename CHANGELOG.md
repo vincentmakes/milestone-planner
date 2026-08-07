@@ -5,6 +5,17 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.19] - 2026-08-06
+
+### Security
+- Updated `cryptography` to 50.0.0, clearing a high-severity advisory about PKCS#7 enveloped-data decryption leaking key information through distinguishable errors and timing. Milestone Planner never used that code path — the library is only used for AES-GCM encryption of stored credentials — so no data was at risk.
+- Removed the unused `python-jose`, `authlib` and `itsdangerous` backend dependencies, which no longer ship in the application image.
+- Updated the web framework (FastAPI 0.141.1, Starlette 1.4.1, Pydantic 2.13.4), clearing seven Starlette advisories that the previous pins were stuck behind. Two were denial-of-service flaws an unauthenticated visitor could have triggered through form and file uploads; the rest covered request-URL handling. API responses are unchanged.
+- Updated the bundled `brace-expansion` and `js-yaml` build-time dependencies to releases without denial-of-service advisories. They are used only when building the app, not at runtime.
+
+### Changed
+- Backend CI now audits Python dependencies for known vulnerabilities on every pull request and once a week, matching the existing frontend audit.
+
 ## [1.0.18] - 2026-07-28
 
 ### Security
