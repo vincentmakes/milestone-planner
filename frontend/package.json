@@ -39,7 +39,7 @@
   },
   "overrides": {
     "form-data": ">=4.0.6",
-    "js-yaml": "^4.3.0",
+    "js-yaml": "^4.3.1",
     "@babel/core": ">=7.29.6",
     "esbuild": ">=0.28.1",
     "ws": ">=8.21.0",
