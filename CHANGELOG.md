@@ -5,6 +5,11 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.21] - 2026-08-10
+
+### Security
+- Updated a build-time dependency (`nanoid`) that a newly published advisory flagged as vulnerable. Build tooling only — the shipped application was never affected.
+
 ## [1.0.20] - 2026-08-07
 
 ### Security
