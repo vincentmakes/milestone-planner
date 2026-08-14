@@ -1,7 +1,7 @@
 /**
  * Site Modal
  * Modal for editing site settings (name, city, country, region, active status)
- * Bank holidays can be refreshed from here via the Nager.Date API
+ * Bank holidays can be refreshed from here via the Nager holiday API
  * Custom holidays are managed separately in the Staff View bank holidays section
  */
 
@@ -147,11 +147,11 @@ export function SiteModal() {
     }
   };
   
-  // Handle refresh holidays from Nager.Date API
+  // Handle refresh holidays from the Nager holiday API
   const handleRefreshHolidays = async () => {
     if (!site) return;
     
-    if (!confirm('This will refresh bank holidays from the Nager.Date API. Continue?')) {
+    if (!confirm('This will refresh bank holidays from the Nager holiday API. Continue?')) {
       return;
     }
     
@@ -350,7 +350,7 @@ export function SiteModal() {
         )}
         
         <p className={styles.help}>
-          Bank holidays are fetched from the Nager.Date public API. Custom holidays can be added in the Staff View under the Bank Holidays section.
+          Bank holidays are fetched from the Nager public holiday API, and their names are in English. Custom holidays can be added in the Staff View under the Bank Holidays section.
         </p>
       </div>
     </Modal>

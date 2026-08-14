@@ -8,12 +8,10 @@ Matches the Node.js API at /api/sites exactly.
 import logging
 from datetime import datetime
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin, require_superuser
 from app.models.site import BankHoliday, CompanyEvent, Site
@@ -27,6 +25,7 @@ from app.schemas.site import (
     SiteResponse,
     SiteUpdate,
 )
+from app.services.holidays import fetch_holidays, is_relevant_holiday
 from app.utils import utcnow_naive
 
 logger = logging.getLogger(__name__)
@@ -345,7 +344,8 @@ async def refresh_bank_holidays(
     """
     Refresh bank holidays from external API.
 
-    Clears existing non-custom holidays and re-fetches.
+    Re-fetches and replaces existing non-custom holidays. If the holiday API is
+    unreachable, the currently stored holidays are kept.
     Requires admin or superuser authentication.
     Superusers can only refresh holidays for sites they're assigned to.
     Matches: POST /api/sites/:id/holidays/refresh
@@ -367,13 +367,9 @@ async def refresh_bank_holidays(
     if not site.country_code:
         raise HTTPException(status_code=400, detail="Site has no country code configured")
 
-    # Delete existing non-custom holidays
-    await db.execute(
-        delete(BankHoliday).where(BankHoliday.site_id == site_id).where(BankHoliday.is_custom == 0)
-    )
-
-    # Fetch fresh holidays
-    await fetch_and_store_bank_holidays(db, site)
+    # Fetch fresh holidays; existing non-custom holidays are replaced only if
+    # the API actually returned data (see fetch_and_store_bank_holidays)
+    await fetch_and_store_bank_holidays(db, site, replace_existing=True)
 
     # Return updated list - build response manually to avoid lazy loading
     result = await db.execute(
@@ -437,11 +433,21 @@ async def get_holidays_in_range(
 async def fetch_and_store_bank_holidays(
     db: AsyncSession,
     site: Site,
-) -> None:
+    replace_existing: bool = False,
+) -> int:
     """
-    Fetch bank holidays from Nager.Date API and store them.
+    Fetch bank holidays from the Nager holiday API and store them.
 
-    Fetches for current year and next year.
+    Fetches for the current and next year. Returns the number of holidays
+    stored; failures are logged rather than raised, so creating or editing a
+    site still succeeds when the API is unreachable.
+
+    Imported (non-custom) holidays for the fetched years are replaced, so
+    changing a site's country does not leave stale entries behind. With
+    ``replace_existing`` the site's imported holidays are cleared for *all*
+    years instead. Either way the deletion only happens once the API has
+    actually returned data, so an unreachable API leaves the stored holidays in
+    place. Custom holidays are never touched.
     """
     # Extract values FIRST to avoid lazy loading issues after async operations
     site_id = site.id
@@ -452,121 +458,69 @@ async def fetch_and_store_bank_holidays(
         "Fetching holidays for site %s, country=%s, region=%s", site_id, country_code, region_code
     )
 
-    settings = get_settings()
     current_year = datetime.now().year
     years = [current_year, current_year + 1]
 
+    # Fetch everything before touching the database, so a failed request cannot
+    # leave the site with fewer holidays than it started with.
+    fetched = [(year, await fetch_holidays(country_code, year)) for year in years]
+
     total_added = 0
 
-    # Get proxy configuration (supports PAC files and direct proxy)
-    from app.services.proxy import get_proxy_for_url
+    if not any(holidays for _, holidays in fetched):
+        logger.warning(
+            "Holiday API returned nothing for site %s - keeping existing holidays", site_id
+        )
+    else:
+        # Replace the imported holidays. Custom holidays are always preserved.
+        stmt = (
+            delete(BankHoliday)
+            .where(BankHoliday.site_id == site_id)
+            .where(BankHoliday.is_custom == 0)
+        )
+        if not replace_existing:
+            stmt = stmt.where(BankHoliday.year.in_(years))
+        await db.execute(stmt)
+        await db.flush()
 
-    proxy_url = await get_proxy_for_url(settings.nager_api_url)
-    if proxy_url:
-        logger.info("Using proxy: %s", proxy_url)
-        # Add authentication to proxy URL if credentials provided
-        if settings.proxy_username and settings.proxy_password:
-            from urllib.parse import urlparse, urlunparse
+        # The unique constraint is (site_id, date, name). Custom holidays
+        # survive the delete above and can collide, so check up front rather
+        # than relying on a failed INSERT.
+        existing = await db.execute(
+            select(BankHoliday.date, BankHoliday.name).where(BankHoliday.site_id == site_id)
+        )
+        taken = {(row.date, row.name) for row in existing}
 
-            parsed = urlparse(proxy_url)
-            auth_proxy = urlunparse(
-                (
-                    parsed.scheme,
-                    f"{settings.proxy_username}:{settings.proxy_password}@{parsed.netloc}",
-                    parsed.path,
-                    parsed.params,
-                    parsed.query,
-                    parsed.fragment,
-                )
-            )
-            proxy_url = auth_proxy
-            logger.info("Proxy authentication enabled for user: %s", settings.proxy_username)
-
-    # SSL verification - can use custom CA cert for corporate proxies
-    ssl_verify: bool | str = settings.proxy_verify_ssl
-    if settings.proxy_ca_cert:
-        logger.info("Using custom CA certificate: %s", settings.proxy_ca_cert)
-        ssl_verify = settings.proxy_ca_cert
-    elif not settings.proxy_verify_ssl:
-        logger.info("SSL verification disabled for proxy")
-
-    async with httpx.AsyncClient(timeout=10.0, proxy=proxy_url, verify=ssl_verify) as client:
-        for year in years:
-            try:
-                url = f"{settings.nager_api_url}/PublicHolidays/{year}/{country_code}"
-                logger.info("Fetching: %s", url)
-                response = await client.get(url)
-
-                if response.status_code != 200:
-                    logger.warning(
-                        "Failed to fetch holidays for %s/%s: HTTP %s",
-                        country_code,
-                        year,
-                        response.status_code,
-                    )
-                    # Debug: show response headers and body for non-200 responses
-                    logger.debug("  Response headers: %s", dict(response.headers))
-                    try:
-                        body = response.text[:500]  # First 500 chars
-                        logger.debug("  Response body: %s", body)
-                    except Exception:
-                        pass
+        for year, holidays in fetched:
+            for holiday in holidays:
+                if not is_relevant_holiday(holiday, region_code):
                     continue
 
-                holidays_data = response.json()
-                logger.info(
-                    "Received %d holidays for %s/%s", len(holidays_data), country_code, year
-                )
+                key = (holiday.date, holiday.name)
+                if key in taken:
+                    logger.debug("Skipped duplicate holiday %s %s", holiday.date, holiday.name)
+                    continue
+                taken.add(key)
 
-                for h in holidays_data:
-                    # Filter by region if specified
-                    if region_code and h.get("counties"):
-                        # Check if region matches
-                        region_match = any(
-                            region_code in county for county in h.get("counties", [])
-                        )
-                        if not region_match:
-                            continue
-
-                    # Parse date string to date object
-                    from datetime import date as date_type
-
-                    holiday_date = date_type.fromisoformat(h["date"])
-
-                    holiday = BankHoliday(
+                db.add(
+                    BankHoliday(
                         site_id=site_id,
-                        date=holiday_date,
-                        end_date=holiday_date,
-                        name=h.get("localName") or h["name"],
+                        date=holiday.date,
+                        end_date=holiday.date,
+                        name=holiday.name,
                         is_custom=0,
                         year=year,
                     )
-
-                    try:
-                        db.add(holiday)
-                        await db.flush()
-                        total_added += 1
-                    except Exception as e:
-                        # Don't rollback the whole transaction, just skip this one
-                        # It might be a duplicate
-                        await db.rollback()
-                        logger.debug(
-                            "Skipped holiday %s %s: %s", h["date"], h.get("localName", h["name"]), e
-                        )
-                        continue
-
-            except httpx.RequestError as e:
-                logger.error("Request error fetching holidays for %s/%s: %s", country_code, year, e)
-                continue
-            except Exception as e:
-                logger.exception("Error fetching holidays for %s/%s: %s", country_code, year, e)
-                continue
+                )
+                total_added += 1
 
     logger.info("Added %d holidays for site %s", total_added, site_id)
 
     # Update last fetch timestamp
     site.last_holiday_fetch = utcnow_naive()
     await db.commit()
+
+    return total_added
 
 
 # ---------------------------------------------------------

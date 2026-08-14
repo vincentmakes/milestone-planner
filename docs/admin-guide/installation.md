@@ -205,15 +205,22 @@ Allow the application server to reach these hosts over **HTTPS (443)**:
 
 | Host | Purpose | Required? |
 |------|---------|-----------|
-| `date.nager.at` | Public/bank-holiday import for sites (`GET /api/v3/PublicHolidays/{year}/{country}`) | Optional — only when a site has a country code |
+| `nagerholidays.com` | Public/bank-holiday import for sites (`GET /api/v4/Holidays/{country}/{year}`) | Optional — only when a site has a country code |
 | `login.microsoftonline.com` | Microsoft Entra ID sign-in — authorize + token endpoints | Only if SSO is enabled |
 | `graph.microsoft.com` | Microsoft Graph — user profile and group membership | Only if SSO is enabled |
 
 !!! note "Holiday import fails soft"
     The holiday API base URL is configurable with `NAGER_API_URL` (default
-    `https://date.nager.at/api/v3`). If the host is unreachable, holiday import is skipped
-    and logged — creating or editing a site still succeeds; the site simply has no imported
-    bank holidays until it can reach the API.
+    `https://nagerholidays.com/api/v4`). If the host is unreachable, holiday import is skipped
+    and logged — creating or editing a site still succeeds; the site keeps whatever bank
+    holidays it already had until it can reach the API.
+
+!!! warning "Upgrading from a version before 1.1.0"
+    Earlier releases defaulted to `https://date.nager.at/api/v3`. **If your firewall allows
+    only `date.nager.at`, add `nagerholidays.com`** — otherwise holiday import stops working
+    after the upgrade. A `NAGER_API_URL` pinned to a `/api/v3` URL in your `.env` is still
+    detected and used (a warning is logged), but version 3 of the holiday API reaches end of
+    life on **2027-01-31**, so plan to switch to `https://nagerholidays.com/api/v4`.
 
 !!! warning "Outbound proxy coverage"
     The holiday API call honours the outbound-proxy settings (`HTTP_PROXY`, `HTTPS_PROXY`,

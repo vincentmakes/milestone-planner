@@ -85,17 +85,23 @@ Bank holidays are configured **per site** and affect staff availability calculat
 
 ### Automatic Fetching
 
-If a site has a **country** set, Milestone can auto-fetch public holidays from the [Nager.Date API](https://date.nager.at/):
+If a site has a **country** set, Milestone can auto-fetch public holidays from the [Nager holiday API](https://nagerholidays.com/):
 
 1. Edit a site and set its **Country** (and optionally **Region/State Code**)
 2. Click **Save Changes**
 3. Re-open the site in the edit modal and click **Refresh** in the bank-holidays section — Milestone fetches public holidays for the current and next year
-4. If a region code is set, only region-specific holidays are included
+4. If a region code is set, only holidays that apply nationally or to that region are included
+5. Only public and bank holidays are imported — school, observance and optional days don't affect working-day calculations
 
 The last refresh timestamp is shown in the site edit modal: *"Last updated: April 2026"*.
 
+!!! note "Holiday names are in English"
+    Imported holiday names come from the holiday API in English (for example *Swiss National
+    Day* rather than *Nationalfeiertag*). Rename one by deleting it and adding a custom
+    holiday with the name you prefer.
+
 !!! note "Behind a corporate firewall?"
-    Fetching holidays is an outbound call from the Milestone **server** to `date.nager.at`.
+    Fetching holidays is an outbound call from the Milestone **server** to `nagerholidays.com`.
     If your network blocks server-to-internet traffic, ask your administrator to allow it —
     see [Network & Firewall Requirements](../admin-guide/installation.md#network-firewall-requirements).
     Everything else keeps working if it's blocked; the site just won't have imported holidays.
@@ -104,7 +110,7 @@ The last refresh timestamp is shown in the site edit modal: *"Last updated: Apri
 
 Expand the **Bank Holidays** row in the Staff Overview to see all holidays for the current site:
 
-- Each entry is labelled **Holiday** (auto-fetched from Nager.Date, read-only) or **Custom** (manually added, deletable with the × button)
+- Each entry is labelled **Holiday** (auto-fetched from the holiday API, read-only) or **Custom** (manually added, deletable with the × button)
 - The row header shows the site and total holiday count
 
 ![Staff Overview with the Bank Holidays row expanded, listing the site's holidays](../assets/screenshots/bank-holidays.png){ loading=lazy }
