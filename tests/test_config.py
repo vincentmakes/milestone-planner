@@ -21,6 +21,8 @@ def test_settings_defaults():
     assert settings.port == 8485
     assert settings.multi_tenant is False
     assert settings.debug is False
+    # Holiday import defaults to the current Nager API (v4)
+    assert settings.nager_api_url.endswith("/api/v4")
 
 
 def test_async_database_url():

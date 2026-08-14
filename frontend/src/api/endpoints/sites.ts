@@ -94,7 +94,7 @@ export async function deleteCustomHoliday(siteId: number, holidayId: number): Pr
 export const deleteBankHoliday = deleteCustomHoliday;
 
 /**
- * Refresh bank holidays from external source (Nager.Date API)
+ * Refresh bank holidays from external source (Nager holiday API)
  */
 export async function refreshBankHolidays(siteId: number): Promise<BankHoliday[]> {
   return apiPost<BankHoliday[]>(`/api/sites/${siteId}/holidays/refresh`);

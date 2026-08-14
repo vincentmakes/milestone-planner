@@ -5,6 +5,20 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-08-14
+
+### Changed
+- Bank-holiday import now uses version 4 of the Nager public-holiday API at its new address, `https://nagerholidays.com/api/v4`. **If your firewall allows only `date.nager.at`, add `nagerholidays.com`** or holiday import will stop working after this upgrade.
+- An installation that pins `NAGER_API_URL` to a `/api/v3` URL keeps working — the version is detected automatically and a warning is logged — but version 3 of the holiday API reaches end of life on 31 January 2027.
+- Imported holiday names are now in English (for example "Swiss National Day" rather than "Nationalfeiertag"); version 4 of the holiday API no longer publishes local-language names. Existing holidays keep their current names until a site's holidays are refreshed.
+- Only public and bank holidays are imported. The holiday API's school, observance, optional and authority entries are ignored, so they no longer count against working days.
+- Region filtering now matches subdivision codes exactly, and accepts either form — a site configured with `ZH` or with `CH-ZH` gets the same holidays.
+- Changing a site's country now replaces its imported holidays for the current and next year instead of adding to them, so holidays from the previous country no longer linger.
+
+### Fixed
+- Refreshing holidays no longer clears a site's existing holidays when the holiday API is unreachable — they are kept until a successful fetch replaces them.
+- A single duplicate or malformed holiday returned by the API no longer discards the whole import; it is skipped and the remaining holidays are stored.
+
 ## [1.0.21] - 2026-08-10
 
 ### Security

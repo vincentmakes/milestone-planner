@@ -59,7 +59,9 @@ class Settings(BaseSettings):
     pg_admin_password: str | None = None
 
     # External APIs
-    nager_api_url: str = "https://date.nager.at/api/v3"
+    # Nager holiday API. The v3 API (https://date.nager.at/api/v3) is still
+    # accepted and auto-detected, but reaches end of life on 2027-01-31.
+    nager_api_url: str = "https://nagerholidays.com/api/v4"
 
     # HTTP Proxy (for external API calls)
     # Option 1: Direct proxy URL

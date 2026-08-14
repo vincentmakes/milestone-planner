@@ -433,7 +433,7 @@ Settings are loaded by `app/config.py` (pydantic-settings, `.env`, case-insensit
 | `PG_ADMIN_USER` / `PG_ADMIN_PASSWORD` | *(unset)* | PostgreSQL admin (CREATEROLE+CREATEDB) for tenant provisioning and cross-tenant migrations |
 | `TENANT_ENCRYPTION_KEY` | *(env-only)* | 64-char hex AES-256-GCM key for tenant credentials — **required** in multi-tenant mode |
 | `SSO_ENABLED` / `SSO_CLIENT_ID` / `SSO_CLIENT_SECRET` / `SSO_TENANT_ID` / `SSO_REDIRECT_URI` | `false`/unset | Env-level SSO bootstrap (normally configured in-app instead) |
-| `NAGER_API_URL` | `https://date.nager.at/api/v3` | Public-holiday API for bank-holiday refresh |
+| `NAGER_API_URL` | `https://nagerholidays.com/api/v4` | Public-holiday API for bank-holiday refresh (v3 URLs still detected; v3 EOL 2027-01-31) |
 | `HTTP_PROXY` / `HTTPS_PROXY` / `PROXY_USERNAME` / `PROXY_PASSWORD` / `PROXY_PAC_URL` / `PROXY_VERIFY_SSL` / `PROXY_CA_CERT` | *(unset)* | Corporate proxy for outbound HTTP (Nager, Microsoft Graph); PAC files supported |
 | `AUTO_INIT_DB` | *(env-only)* `false` | Run `app.scripts.init_db` on container start (fresh installs) |
 | `INIT_ADMIN_EMAIL` / `INIT_ADMIN_PASSWORD` | *(env-only)* | Initial admin credentials for auto-init (password auto-generated if empty) |

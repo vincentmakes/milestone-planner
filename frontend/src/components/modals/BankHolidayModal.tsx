@@ -218,7 +218,7 @@ export function BankHolidayModal() {
               size="sm"
               onClick={handleRefresh}
               disabled={isLoading}
-              title="Refresh from Nager.Date API"
+              title="Refresh from the Nager holiday API"
             >
               {isLoading ? 'Refreshing...' : 'Refresh'}
             </Button>
