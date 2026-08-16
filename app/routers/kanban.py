@@ -23,7 +23,7 @@ from app.database import get_db, get_db_readonly
 from app.middleware.auth import get_current_user, require_superuser
 from app.models.assignment import PhaseStaffAssignment, SubphaseStaffAssignment
 from app.models.card_comment import CardComment
-from app.models.project import ProjectPhase, ProjectSubphase
+from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.user import User
 from app.schemas.kanban import (
     CardAssigneeCreate,
@@ -138,6 +138,32 @@ async def get_comment_counts(
     result = await db.execute(
         select(CardComment.entity_type, CardComment.entity_id, func.count(CardComment.id))
         .where(CardComment.project_id == project_id)
+        .group_by(CardComment.entity_type, CardComment.entity_id)
+    )
+
+    counts: dict[str, dict[str, int]] = {"phase": {}, "subphase": {}}
+    for entity_type, entity_id, count in result.all():
+        if entity_type in counts:
+            counts[entity_type][str(entity_id)] = count
+
+    return counts
+
+
+@router.get("/sites/{site_id}/comment-counts", response_model=CommentCountsResponse)
+async def get_site_comment_counts(
+    site_id: int,
+    db: AsyncSession = Depends(get_db_readonly),
+    user: User = Depends(get_current_user),
+):
+    """Comment counts for every card in a site, in one query.
+
+    The board's "All projects" mode would otherwise fire one request per
+    project.
+    """
+    result = await db.execute(
+        select(CardComment.entity_type, CardComment.entity_id, func.count(CardComment.id))
+        .join(Project, CardComment.project_id == Project.id)
+        .where(Project.site_id == site_id)
         .group_by(CardComment.entity_type, CardComment.entity_id)
     )
 

@@ -252,7 +252,7 @@ export function collectCardsForProjects(projects: Project[]): KanbanCard[] {
 // GROUPING
 // =============================================================================
 
-export type KanbanGrouping = 'none' | 'phase' | 'assignee' | 'customColumn';
+export type KanbanGrouping = 'none' | 'project' | 'phase' | 'assignee' | 'customColumn';
 
 export interface KanbanLane {
   key: string;
@@ -261,8 +261,12 @@ export interface KanbanLane {
 }
 
 export interface GroupingContext {
-  /** Ordering + labels for lanes when grouping by phase. */
-  project?: Project;
+  /**
+   * Projects on the board, in display order. Lanes follow this order so the
+   * board reads top-to-bottom like the Gantt, and phase lanes are qualified
+   * with the project name when more than one project is shown.
+   */
+  projects?: Project[];
   /** staff_id -> display name, for assignee lanes. */
   staffNames?: Map<number, string>;
   /** card key -> custom column value, for custom-column lanes. */
@@ -284,14 +288,40 @@ export function groupCards(
     return [{ key: 'all', label: 'All cards', cards }];
   }
 
+
+  const projects = ctx.projects ?? [];
+  const qualify = projects.length > 1;
+
+  if (grouping === 'project') {
+    const lanes = new Map<string, KanbanLane>();
+    // Seed in project order so the board reads like the Gantt, and empty
+    // projects still show their (empty) columns.
+    for (const project of projects) {
+      lanes.set(`project-${project.id}`, { key: `project-${project.id}`, label: project.name, cards: [] });
+    }
+    for (const card of cards) {
+      const key = `project-${card.projectId}`;
+      const lane = lanes.get(key);
+      if (lane) lane.cards.push(card);
+      else lanes.set(key, { key, label: card.projectName, cards: [card] });
+    }
+    return Array.from(lanes.values());
+  }
+
   if (grouping === 'phase') {
     const lanes = new Map<string, KanbanLane>();
-    // Seed lanes in project phase order so empty lanes still render in place.
-    for (const phase of ctx.project?.phases ?? []) {
-      const isLeafPhase = (phase.children ?? []).length === 0;
-      const key = `phase-${phase.id}`;
-      if (isLeafPhase || (phase.children ?? []).length > 0) {
-        lanes.set(key, { key, label: phase.name, cards: [] });
+    // Seed lanes in project-then-phase order so empty lanes render in place.
+    for (const project of projects) {
+      for (const phase of project.phases ?? []) {
+        const key = `phase-${phase.id}`;
+        // Phase ids are unique across projects, but two projects can both have
+        // an "Analytics" phase -- qualify the label so the lanes are telling
+        // apart.
+        lanes.set(key, {
+          key,
+          label: qualify ? `${project.name} — ${phase.name}` : phase.name,
+          cards: [],
+        });
       }
     }
     for (const card of cards) {
@@ -303,9 +333,10 @@ export function groupCards(
       if (lane) {
         lane.cards.push(card);
       } else {
+        const name = card.swimlanePhaseName ?? card.name;
         lanes.set(key, {
           key,
-          label: card.swimlanePhaseName ?? card.name,
+          label: qualify ? `${card.projectName} — ${name}` : name,
           cards: [card],
         });
       }

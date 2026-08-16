@@ -30,10 +30,7 @@ export interface MoveCardResponse {
  * Comment counts for one project, flattened to the board's card-key space
  * (`phase-12`, `subphase-45`) so callers never re-derive the key format.
  */
-export async function getCommentCounts(projectId: number): Promise<Map<string, number>> {
-  const raw = await apiGet<CommentCountsResponse>(
-    `/api/kanban/projects/${projectId}/comment-counts`
-  );
+function flattenCommentCounts(raw: CommentCountsResponse): Map<string, number> {
   const counts = new Map<string, number>();
   for (const entityType of ['phase', 'subphase'] as CardEntityType[]) {
     for (const [id, count] of Object.entries(raw[entityType] ?? {})) {
@@ -41,6 +38,22 @@ export async function getCommentCounts(projectId: number): Promise<Map<string, n
     }
   }
   return counts;
+}
+
+export async function getCommentCounts(projectId: number): Promise<Map<string, number>> {
+  const raw = await apiGet<CommentCountsResponse>(
+    `/api/kanban/projects/${projectId}/comment-counts`
+  );
+  return flattenCommentCounts(raw);
+}
+
+/**
+ * Comment counts for every card in a site, in one request.
+ * Used by the board's "All projects" mode instead of one call per project.
+ */
+export async function getSiteCommentCounts(siteId: number): Promise<Map<string, number>> {
+  const raw = await apiGet<CommentCountsResponse>(`/api/kanban/sites/${siteId}/comment-counts`);
+  return flattenCommentCounts(raw);
 }
 
 /** Move a card to a different status column. */

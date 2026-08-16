@@ -74,6 +74,29 @@ describe('findActiveQuery', () => {
   it('opens at the very start of the text', () => {
     expect(findActiveQuery('@a', 2)).toEqual({ start: 0, query: 'a' });
   });
+
+  it('does not reopen on a mention that has already been picked', () => {
+    // Names contain spaces, so the scan would otherwise walk back into the
+    // finished mention and offer it again as you keep typing.
+    const text = '@Alice Anderson thanks';
+    const picked = [anchor(7, 'Alice Anderson', 0)];
+    expect(findActiveQuery(text, text.length, picked)).toBeNull();
+  });
+
+  it('still opens for a fresh @ after a picked mention', () => {
+    const text = '@Alice Anderson and @Bo';
+    const picked = [anchor(7, 'Alice Anderson', 0)];
+    expect(findActiveQuery(text, text.length, picked)).toEqual({ start: 20, query: 'Bo' });
+  });
+
+  it('reopens once the picked mention is broken', () => {
+    const text = '@Alice Andersonx';
+    const stale = [anchor(7, 'Alice Anderson', 0)];
+    expect(findActiveQuery(text, text.length, stale)).toEqual({
+      start: 0,
+      query: 'Alice Andersonx',
+    });
+  });
 });
 
 // =============================================================================

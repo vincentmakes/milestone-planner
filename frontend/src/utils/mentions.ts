@@ -83,7 +83,11 @@ export function anchorLength(anchor: Pick<MentionAnchor, 'name'>): number {
  * before the `@` must be absent or non-word, so `bob@example.com` never opens
  * the picker.
  */
-export function findActiveQuery(text: string, caret: number): ActiveQuery | null {
+export function findActiveQuery(
+  text: string,
+  caret: number,
+  anchors: MentionAnchor[] = []
+): ActiveQuery | null {
   if (caret < 0 || caret > text.length) return null;
 
   const lowest = Math.max(0, caret - MAX_QUERY_LENGTH - 1);
@@ -92,6 +96,10 @@ export function findActiveQuery(text: string, caret: number): ActiveQuery | null
     if (ch === '\n') return null; // a mention query never spans lines
     if (ch !== '@') continue;
     if (isWordChar(text[i - 1])) return null; // e.g. an email address
+    // Already picked: typing after a finished mention is not still composing
+    // it. Without this the picker reopens on the name you just inserted,
+    // because names contain spaces and the scan walks back into them.
+    if (anchors.some((a) => a.start === i && isAnchorIntact(text, a))) return null;
     return { start: i, query: text.slice(i + 1, caret) };
   }
   return null;

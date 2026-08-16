@@ -112,6 +112,16 @@ function type(textarea: HTMLTextAreaElement, value: string) {
   fireEvent.change(textarea, { target: { value, selectionStart: value.length } });
 }
 
+/**
+ * A real browser follows every keydown with a keyup, and the component tracks
+ * the caret on keyup. Firing only keydown hides bugs where the keyup path
+ * undoes what keydown just did — which is exactly what happened once.
+ */
+function press(textarea: HTMLTextAreaElement, key: string) {
+  fireEvent.keyDown(textarea, { key });
+  fireEvent.keyUp(textarea, { key });
+}
+
 describe('KanbanCardModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -197,8 +207,8 @@ describe('KanbanCardModal @-mentions', () => {
     const textarea = composer();
     type(textarea, 'hi @Ali');
 
-    fireEvent.keyDown(textarea, { key: 'ArrowDown' });
-    fireEvent.keyDown(textarea, { key: 'Enter' });
+    press(textarea, 'ArrowDown');
+    press(textarea, 'Enter');
 
     expect(textarea.value).toBe('hi @Alice Anderson ');
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
@@ -210,7 +220,7 @@ describe('KanbanCardModal @-mentions', () => {
     type(textarea, 'hi @Ali');
 
     // No ArrowDown: Enter must fall through as a newline, not pick a mention.
-    fireEvent.keyDown(textarea, { key: 'Enter' });
+    press(textarea, 'Enter');
     expect(textarea.value).toBe('hi @Ali');
   });
 
@@ -218,8 +228,8 @@ describe('KanbanCardModal @-mentions', () => {
     render(<KanbanCardModal />);
     const textarea = composer();
     type(textarea, 'ping @Ali');
-    fireEvent.keyDown(textarea, { key: 'ArrowDown' });
-    fireEvent.keyDown(textarea, { key: 'Enter' });
+    press(textarea, 'ArrowDown');
+    press(textarea, 'Enter');
 
     fireEvent.click(screen.getByRole('button', { name: 'Comment' }));
 
@@ -235,8 +245,8 @@ describe('KanbanCardModal @-mentions', () => {
     render(<KanbanCardModal />);
     const textarea = composer();
     type(textarea, '@Ali');
-    fireEvent.keyDown(textarea, { key: 'ArrowDown' });
-    fireEvent.keyDown(textarea, { key: 'Enter' });
+    press(textarea, 'ArrowDown');
+    press(textarea, 'Enter');
 
     // Mangle the inserted name — the anchor must drop.
     type(textarea, '@Alice Andersonx');
@@ -261,7 +271,7 @@ describe('KanbanCardModal @-mentions', () => {
     type(textarea, '@Ali');
     expect(screen.getByRole('listbox')).toBeInTheDocument();
 
-    fireEvent.keyDown(textarea, { key: 'Escape' });
+    press(textarea, 'Escape');
 
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
     expect(useUIStore.getState().activeModal).toBe('kanbanCard');
@@ -271,10 +281,38 @@ describe('KanbanCardModal @-mentions', () => {
     render(<KanbanCardModal />);
     const textarea = composer();
     type(textarea, '@Ali');
-    fireEvent.keyDown(textarea, { key: 'Escape' });
+    press(textarea, 'Escape');
     fireEvent.keyDown(document, { key: 'Escape' });
 
     expect(useUIStore.getState().activeModal).toBeNull();
+  });
+
+  it('keeps the highlight between ArrowDown and Enter', () => {
+    // Regression: the caret tracker ran on keyup and reset the active option,
+    // so Enter fell through and inserted a newline instead of the mention.
+    render(<KanbanCardModal />);
+    const textarea = composer();
+    type(textarea, '@Ali');
+    press(textarea, 'ArrowDown');
+    press(textarea, 'Enter');
+    expect(textarea.value).toBe('@Alice Anderson ');
+  });
+
+  it('stays closed after Escape until the text changes', () => {
+    // Regression: the keyup after Escape recomputed the query and reopened it.
+    render(<KanbanCardModal />);
+    const textarea = composer();
+    type(textarea, '@Ali');
+    press(textarea, 'Escape');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+
+    // A click elsewhere in the field must not revive it either.
+    fireEvent.click(textarea);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+
+    // Typing does.
+    type(textarea, '@Alic');
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
   });
 
   it('does not open the picker inside an email address', () => {

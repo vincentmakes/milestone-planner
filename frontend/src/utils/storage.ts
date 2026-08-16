@@ -146,6 +146,31 @@ export function setProjectOrder(siteId: number, projectIds: number[]): void {
 }
 
 /**
+ * Site projects in the order the Gantt shows them.
+ *
+ * Filters to the site, drops archived projects, then applies the user's custom
+ * order if one exists, falling back to confirmed-first-then-name. The Gantt and
+ * the Kanban board must agree, so both call this rather than each re-deriving
+ * the rule.
+ */
+export function orderSiteProjects<
+  T extends { id: number; site_id?: number | null; archived?: boolean; confirmed?: boolean; name: string },
+>(projects: T[], siteId: number | undefined): T[] {
+  if (siteId === undefined) return [];
+
+  const siteProjects = projects.filter((p) => p.site_id === siteId && !p.archived);
+
+  if (getProjectOrder(siteId).length > 0) {
+    return sortProjectsByOrder(siteProjects, siteId);
+  }
+
+  return [...siteProjects].sort((a, b) => {
+    if (a.confirmed !== b.confirmed) return a.confirmed ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/**
  * Sort projects by user's preferred order (projects not in order list go at the end)
  */
 export function sortProjectsByOrder<T extends { id: number }>(projects: T[], siteId: number): T[] {

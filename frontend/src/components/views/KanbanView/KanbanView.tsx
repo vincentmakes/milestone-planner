@@ -14,12 +14,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
-import { getCommentCounts } from '@/api/endpoints/kanban';
+import { getCommentCounts, getSiteCommentCounts } from '@/api/endpoints/kanban';
 import {
-  collectProjectCards,
+  collectCardsForProjects,
   groupCards,
   type KanbanCard as KanbanCardData,
 } from '@/utils/kanbanCards';
+import { orderSiteProjects } from '@/utils/storage';
 import { KanbanDragProvider, useKanbanDrag } from '@/contexts/KanbanDragContext';
 import { useUIStore } from '@/stores/uiStore';
 import { KanbanToolbar } from './KanbanToolbar';
@@ -47,37 +48,40 @@ export function KanbanView() {
 
   const [commentCounts, setCommentCounts] = useState<Map<string, number>>(new Map());
 
+  // Same ordering the Gantt uses, so the two views agree.
   const siteProjects = useMemo(
-    () =>
-      projects
-        .filter((p) => p.site_id === currentSite?.id && !p.archived)
-        .sort((a, b) => a.name.localeCompare(b.name)),
+    () => orderSiteProjects(projects, currentSite?.id),
     [projects, currentSite?.id]
   );
 
-  // Resolve the board's project: the persisted choice if it is still valid for
-  // this site, otherwise the first project.
-  const activeProject = useMemo(() => {
-    if (siteProjects.length === 0) return null;
-    return siteProjects.find((p) => p.id === kanbanProjectId) ?? siteProjects[0];
-  }, [siteProjects, kanbanProjectId]);
+  // A null id means "All projects"; a stale id (e.g. after a site switch) also
+  // falls back to showing everything rather than silently picking one.
+  const activeProject = useMemo(
+    () => (kanbanProjectId === null ? null : siteProjects.find((p) => p.id === kanbanProjectId) ?? null),
+    [siteProjects, kanbanProjectId]
+  );
 
-  // Keep the persisted id in step when it was stale (e.g. after a site switch).
-  useEffect(() => {
-    if (activeProject && activeProject.id !== kanbanProjectId) {
-      setKanbanProjectId(activeProject.id);
-    }
-  }, [activeProject, kanbanProjectId, setKanbanProjectId]);
+  /** The projects on the board, in Gantt order. */
+  const boardProjects = useMemo(
+    () => (activeProject ? [activeProject] : siteProjects),
+    [activeProject, siteProjects]
+  );
 
   // Comment counts are fetched only by this view - deliberately NOT folded into
   // GET /projects/{id}, which loadAllProjects() calls once per project.
   useEffect(() => {
     let cancelled = false;
-    if (!activeProject) {
+    // One site-wide query for "All projects" rather than one request per board.
+    const load = activeProject
+      ? getCommentCounts(activeProject.id)
+      : currentSite
+        ? getSiteCommentCounts(currentSite.id)
+        : null;
+    if (!load) {
       setCommentCounts(new Map());
       return;
     }
-    getCommentCounts(activeProject.id)
+    load
       .then((counts) => {
         if (!cancelled) setCommentCounts(counts);
       })
@@ -85,12 +89,9 @@ export function KanbanView() {
     return () => {
       cancelled = true;
     };
-  }, [activeProject]);
+  }, [activeProject, currentSite]);
 
-  const allCards = useMemo(
-    () => (activeProject ? collectProjectCards(activeProject) : []),
-    [activeProject]
-  );
+  const allCards = useMemo(() => collectCardsForProjects(boardProjects), [boardProjects]);
 
   const visibleCards = useMemo(() => {
     if (!myTodoOnly || !currentUser) return allCards;
@@ -115,7 +116,7 @@ export function KanbanView() {
       }
     }
     return groupCards(visibleCards, grouping, {
-      project: activeProject ?? undefined,
+      projects: boardProjects,
       staffNames,
       customValues,
       customOptions: column?.list_options ?? [],
@@ -126,7 +127,7 @@ export function KanbanView() {
     groupingColumnId,
     listColumns,
     customColumnValues,
-    activeProject,
+    boardProjects,
     staff,
   ]);
 
