@@ -3,7 +3,13 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { collectProjectCards, groupCards, cardsForColumn, cardKey } from '../kanbanCards';
+import {
+  collectProjectCards,
+  groupCards,
+  cardsForColumn,
+  cardKey,
+  dueStateOf,
+} from '../kanbanCards';
 import type { Phase, Project, StaffAssignment, Subphase } from '@/types';
 
 function sub(id: number, name: string, over: Partial<Subphase> = {}): Subphase {
@@ -155,6 +161,30 @@ describe('collectProjectCards', () => {
   it('returns no cards for a project with no phases', () => {
     expect(collectProjectCards(project([]))).toEqual([]);
   });
+
+  // The API serialises phase/subphase dates as Node-compatible ISO datetimes
+  // (DateAsDateTimeJS), not YYYY-MM-DD. Passing those straight through made
+  // date formatting throw and silently disabled overdue detection.
+  it('normalises ISO datetime dates to date-only', () => {
+    const cards = collectProjectCards(
+      project([
+        phase(1, 'Design', {
+          start_date: '2026-01-01T00:00:00.000Z',
+          end_date: '2026-03-01T00:00:00.000Z',
+        }),
+      ])
+    );
+    expect(cards[0].startDate).toBe('2026-01-01');
+    expect(cards[0].endDate).toBe('2026-03-01');
+  });
+
+  it('leaves already date-only values untouched', () => {
+    const cards = collectProjectCards(
+      project([phase(1, 'Design', { start_date: '2026-01-01', end_date: '2026-03-01' })])
+    );
+    expect(cards[0].startDate).toBe('2026-01-01');
+    expect(cards[0].endDate).toBe('2026-03-01');
+  });
 });
 
 describe('groupCards', () => {
@@ -235,5 +265,37 @@ describe('cardsForColumn', () => {
     expect(cardsForColumn(cards, 'todo').map((c) => c.name)).toEqual(['A', 'B']);
     expect(cardsForColumn(cards, 'done').map((c) => c.name)).toEqual(['C']);
     expect(cardsForColumn(cards, 'blocked')).toEqual([]);
+  });
+});
+
+describe('dueStateOf', () => {
+  const today = new Date('2026-06-15T12:00:00Z');
+
+  it('flags a card whose end date has passed', () => {
+    const [card] = collectProjectCards(
+      project([phase(1, 'Late', { end_date: '2026-06-01T00:00:00.000Z', status: 'in_progress' })])
+    );
+    expect(dueStateOf(card, today)).toBe('overdue');
+  });
+
+  it('flags a card due within a week', () => {
+    const [card] = collectProjectCards(
+      project([phase(1, 'Soon', { end_date: '2026-06-18T00:00:00.000Z' })])
+    );
+    expect(dueStateOf(card, today)).toBe('due-soon');
+  });
+
+  it('does not flag a card due far out', () => {
+    const [card] = collectProjectCards(
+      project([phase(1, 'Later', { end_date: '2026-09-01T00:00:00.000Z' })])
+    );
+    expect(dueStateOf(card, today)).toBeNull();
+  });
+
+  it('never flags a done card', () => {
+    const [card] = collectProjectCards(
+      project([phase(1, 'Finished', { end_date: '2026-01-01', status: 'done' })])
+    );
+    expect(dueStateOf(card, today)).toBeNull();
   });
 });
