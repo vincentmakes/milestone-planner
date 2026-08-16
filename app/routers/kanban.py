@@ -37,6 +37,7 @@ from app.schemas.kanban import (
 )
 from app.services.card_access import require_card_status_write
 from app.services.card_status import STATUS_LABELS, apply_status
+from app.services.mentions import parse_mention_ids, strip_mention_tokens
 from app.services.notifications import (
     build_notifications,
     card_assignee_ids,
@@ -89,6 +90,22 @@ def _comment_response(comment: CardComment, author_name: str | None) -> dict:
         "created_at": comment.created_at,
         "updated_at": comment.updated_at,
     }
+
+
+async def _validate_mention_ids(db: AsyncSession, body: str) -> list[int]:
+    """Mentioned user ids parsed from the body, filtered to real users.
+
+    Targeting is derived from the body rather than a client-supplied list: the
+    body is the durable record, so the mentions a reader sees rendered are
+    exactly the ones that were notified, and that stays true across edits and
+    exports.
+    """
+    ids = parse_mention_ids(body)
+    if not ids:
+        return []
+    valid = await db.execute(select(User.id).where(User.id.in_(set(ids))))
+    found = set(valid.scalars().all())
+    return [uid for uid in ids if uid in found]
 
 
 async def _push_notifications(request: Request, rows: list) -> None:
@@ -391,11 +408,9 @@ async def create_card_comment(
     """Post a comment. Open to any authenticated user."""
     card = await _load_card(db, entity_type, entity_id)
 
-    # Never trust the mention list: keep only ids that are real users.
-    mentioned: list[int] = []
-    if data.mentioned_user_ids:
-        valid = await db.execute(select(User.id).where(User.id.in_(set(data.mentioned_user_ids))))
-        mentioned = list(valid.scalars().all())
+    mentioned = await _validate_mention_ids(db, data.body)
+    # Strip before truncating, or a preview can end mid-token as "@[Alice And".
+    preview = strip_mention_tokens(data.body)[:200]
 
     comment = CardComment(
         entity_type=entity_type,
@@ -422,7 +437,7 @@ async def create_card_comment(
                 entity_id=entity_id,
                 project_id=card.project_id,
                 title=f"{author_name} mentioned you on {card_name}",
-                body=data.body[:200],
+                body=preview,
             ),
             build_notifications(
                 recipient_ids=assignees,
@@ -432,7 +447,7 @@ async def create_card_comment(
                 entity_id=entity_id,
                 project_id=card.project_id,
                 title=f"{author_name} commented on {card_name}",
-                body=data.body[:200],
+                body=preview,
             ),
         ]
     )
@@ -473,8 +488,30 @@ async def update_card_comment(
     if comment.author_id != user.id:
         raise HTTPException(status_code=403, detail="You can only edit your own comments")
 
+    # Mentions live in the body, so an edit can add or remove them. Without
+    # re-deriving, editing in a new mention would render a pill that notified
+    # nobody and leave the stored list contradicting the text.
+    previously_mentioned = set(comment.parsed_mentions)
+    mentioned = await _validate_mention_ids(db, data.body)
+
     comment.body = data.body
+    comment.set_mentions(mentioned)
     comment.updated_at = utcnow_naive()
+
+    author_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or "Someone"
+    newly_mentioned = [uid for uid in mentioned if uid not in previously_mentioned]
+    rows = build_notifications(
+        recipient_ids=newly_mentioned,
+        notification_type="mention",
+        actor_id=user.id,
+        entity_type=comment.entity_type,
+        entity_id=comment.entity_id,
+        project_id=comment.project_id,
+        title=f"{author_name} mentioned you in a comment",
+        body=strip_mention_tokens(data.body)[:200],
+    )
+    db.add_all(rows)
+
     await db.commit()
     await db.refresh(comment)
 
@@ -487,9 +524,9 @@ async def update_card_comment(
         action="update",
         summary="edited a comment",
     )
+    await _push_notifications(request, rows)
 
-    author_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or None
-    return _comment_response(comment, author_name)
+    return _comment_response(comment, author_name or None)
 
 
 @router.delete("/comments/{comment_id}")

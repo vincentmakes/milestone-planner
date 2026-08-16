@@ -48,7 +48,9 @@ class CardAssigneeResponse(BaseModel):
 
 class CardCommentCreate(BaseModel):
     body: str = Field(..., min_length=1, max_length=4000)
-    # Validated against real users server-side; never trusted as given.
+    # Accepted for wire compatibility but IGNORED: mentions are parsed from the
+    # body's `@[Name](id)` tokens so the rendered text and the notified people
+    # can never disagree. See app/services/mentions.py.
     mentioned_user_ids: list[int] = []
 
 
