@@ -40,6 +40,10 @@ SKIP_PATTERNS = [
     re.compile(r"^/api/phase-staff(?:/|$)"),
     re.compile(r"^/api/subphase-staff(?:/|$)"),
     re.compile(r"^/api/equipment-assignments(?:/|$)"),
+    re.compile(r"^/api/kanban(?:/|$)"),
+    # Marking a notification read is private to one user; a tenant-wide
+    # broadcast would wake every client for nothing.
+    re.compile(r"^/api/notifications(?:/|$)"),
     re.compile(r"^/api/import(?:/|$)"),
     re.compile(r"^/api/auth(?:/|$)"),
     re.compile(r"^/api/admin(?:/|$)"),
