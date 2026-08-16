@@ -99,6 +99,7 @@ CREATE TABLE project_phases (
     is_milestone INTEGER DEFAULT 0,
     sort_order INTEGER DEFAULT 0,
     completion INTEGER,
+    status VARCHAR(20) NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'in_progress', 'blocked', 'done')),
     dependencies TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -116,6 +117,7 @@ CREATE TABLE project_subphases (
     sort_order INTEGER DEFAULT 0,
     depth INTEGER DEFAULT 1,
     completion INTEGER,
+    status VARCHAR(20) NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'in_progress', 'blocked', 'done')),
     dependencies TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -303,6 +305,34 @@ CREATE TABLE custom_column_values (
     UNIQUE(custom_column_id, entity_type, entity_id)
 );
 
+-- Kanban card comments (a card is a leaf phase/subphase)
+CREATE TABLE card_comments (
+    id SERIAL PRIMARY KEY,
+    entity_type VARCHAR(20) NOT NULL CHECK (entity_type IN ('phase', 'subphase')),
+    entity_id INTEGER NOT NULL,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body TEXT NOT NULL,
+    mentioned_user_ids TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+-- In-app notifications (one row per recipient)
+CREATE TABLE notifications (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type VARCHAR(30) NOT NULL CHECK (type IN ('assigned', 'comment', 'mention', 'status_change')),
+    actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    entity_type VARCHAR(20),
+    entity_id INTEGER,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    title VARCHAR(200) NOT NULL,
+    body TEXT,
+    read_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
 -- ============================================================================
 -- SKILLS (for staff capability tracking)
 -- ============================================================================
@@ -377,6 +407,10 @@ CREATE INDEX idx_projects_pm ON projects(pm_id);
 CREATE INDEX idx_phases_project ON project_phases(project_id);
 CREATE INDEX idx_subphases_project ON project_subphases(project_id);
 CREATE INDEX idx_subphases_parent ON project_subphases(parent_type, parent_id);
+CREATE INDEX idx_card_comments_entity ON card_comments(entity_type, entity_id);
+CREATE INDEX idx_card_comments_project ON card_comments(project_id);
+CREATE INDEX idx_notifications_user_unread ON notifications(user_id, created_at DESC) WHERE read_at IS NULL;
+CREATE INDEX idx_notifications_user_created ON notifications(user_id, created_at DESC);
 CREATE INDEX idx_project_assignments_project ON project_assignments(project_id);
 CREATE INDEX idx_project_assignments_staff ON project_assignments(staff_id);
 CREATE INDEX idx_phase_staff_phase ON phase_staff_assignments(phase_id);

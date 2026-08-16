@@ -36,6 +36,7 @@ from app.schemas.project import (
     SubphaseReorderRequest,
     SubphaseUpdate,
 )
+from app.services.card_status import apply_completion, apply_status
 from app.websocket.broadcast import broadcast_change
 
 logger = logging.getLogger(__name__)
@@ -122,6 +123,7 @@ def build_subphase_tree_optimized(
                 "sort_order": sp.sort_order,
                 "depth": sp.depth,
                 "completion": sp.completion,
+                "status": sp.status,
                 "dependencies": deps,
                 "created_at": sp.created_at,
                 "staffAssignments": staff,
@@ -463,6 +465,7 @@ async def get_project(
                 "is_milestone": p.is_milestone == 1,
                 "sort_order": p.sort_order,
                 "completion": p.completion,
+                "status": p.status,
                 "dependencies": deps,
                 "created_at": p.created_at,
                 "staffAssignments": staff,
@@ -809,8 +812,12 @@ async def update_phase(
         phase.is_milestone = 1 if data.is_milestone else 0
     if data.dependencies is not None:
         phase.dependencies = json.dumps(data.dependencies)
+    # Completion first, then status: a request carrying both resolves toward the
+    # explicit status. Both go through card_status so the Kanban board agrees.
     if data.completion is not None:
-        phase.completion = data.completion
+        apply_completion(phase, data.completion)
+    if data.status is not None:
+        apply_status(phase, data.status)
 
     await db.commit()
 
@@ -986,6 +993,7 @@ async def create_subphase_under_phase(
         "sort_order": subphase.sort_order,
         "depth": subphase.depth,
         "completion": subphase.completion,
+        "status": subphase.status,
         "dependencies": [],
         "staffAssignments": [],
         "children": [],
@@ -1086,6 +1094,7 @@ async def create_child_subphase(
         "sort_order": subphase.sort_order,
         "depth": subphase.depth,
         "completion": subphase.completion,
+        "status": subphase.status,
         "dependencies": [],
         "staffAssignments": [],
         "children": [],
@@ -1123,8 +1132,12 @@ async def update_subphase(
         subphase.is_milestone = 1 if data.is_milestone else 0
     if data.dependencies is not None:
         subphase.dependencies = json.dumps(data.dependencies)
+    # Completion first, then status: a request carrying both resolves toward the
+    # explicit status. Both go through card_status so the Kanban board agrees.
     if data.completion is not None:
-        subphase.completion = data.completion
+        apply_completion(subphase, data.completion)
+    if data.status is not None:
+        apply_status(subphase, data.status)
 
     await db.commit()
 

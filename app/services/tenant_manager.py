@@ -285,6 +285,145 @@ class TenantConnectionManager:
         except Exception as e:
             logger.warning("Auto-migration (staff_notes) warning for %s: %s", slug, e)
 
+        # Kanban status column on the two card tables (added with the Kanban board).
+        # Backfilled from `completion` so existing plans land in sensible columns.
+        try:
+            status_check = await conn.execute(
+                text("""
+                SELECT table_name FROM information_schema.columns
+                WHERE table_schema = 'public' AND column_name = 'status'
+                  AND table_name IN ('project_phases', 'project_subphases')
+            """)
+            )
+            have_status = {row[0] for row in status_check.fetchall()}
+            for table in ("project_phases", "project_subphases"):
+                if table in have_status:
+                    continue
+                logger.info("Auto-migration: Adding %s.status on tenant %s...", table, slug)
+                await conn.execute(
+                    text(
+                        f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "  # noqa: S608
+                        "status VARCHAR(20) NOT NULL DEFAULT 'todo'"
+                    )
+                )
+                await conn.execute(
+                    text(f"""
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_constraint WHERE conname = '{table}_status_check'
+                        ) THEN
+                            ALTER TABLE {table} ADD CONSTRAINT {table}_status_check
+                            CHECK (status IN ('todo', 'in_progress', 'blocked', 'done'));
+                        END IF;
+                    END $$;
+                """)
+                )
+                await conn.execute(
+                    text(f"""
+                    UPDATE {table} SET status = CASE
+                        WHEN completion IS NULL OR completion <= 0 THEN 'todo'
+                        WHEN completion >= 100 THEN 'done'
+                        ELSE 'in_progress'
+                    END
+                    WHERE status = 'todo'
+                """)  # noqa: S608
+                )
+                await conn.commit()
+                logger.info("Auto-migration: Added %s.status on tenant %s", table, slug)
+        except Exception as e:
+            logger.warning("Auto-migration (card status) warning for %s: %s", slug, e)
+
+        # Kanban card comments table.
+        try:
+            comments_check = await conn.execute(
+                text("""
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'card_comments'
+            """)
+            )
+            if not comments_check.fetchone():
+                logger.info("Auto-migration: Creating card_comments on tenant %s...", slug)
+                await conn.execute(
+                    text("""
+                    CREATE TABLE IF NOT EXISTS card_comments (
+                        id SERIAL PRIMARY KEY,
+                        entity_type VARCHAR(20) NOT NULL,
+                        entity_id INTEGER NOT NULL,
+                        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                        author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        body TEXT NOT NULL,
+                        mentioned_user_ids TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                        CONSTRAINT card_comments_entity_type_check
+                            CHECK (entity_type IN ('phase', 'subphase'))
+                    )
+                """)
+                )
+                await conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_card_comments_entity "
+                        "ON card_comments(entity_type, entity_id)"
+                    )
+                )
+                await conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_card_comments_project "
+                        "ON card_comments(project_id)"
+                    )
+                )
+                await conn.commit()
+                logger.info("Auto-migration: Created card_comments on tenant %s", slug)
+        except Exception as e:
+            logger.warning("Auto-migration (card_comments) warning for %s: %s", slug, e)
+
+        # In-app notifications table.
+        try:
+            notif_check = await conn.execute(
+                text("""
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'notifications'
+            """)
+            )
+            if not notif_check.fetchone():
+                logger.info("Auto-migration: Creating notifications on tenant %s...", slug)
+                await conn.execute(
+                    text("""
+                    CREATE TABLE IF NOT EXISTS notifications (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        type VARCHAR(30) NOT NULL,
+                        actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                        entity_type VARCHAR(20),
+                        entity_id INTEGER,
+                        project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+                        title VARCHAR(200) NOT NULL,
+                        body TEXT,
+                        read_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                        CONSTRAINT notifications_type_check
+                            CHECK (type IN ('assigned', 'comment', 'mention', 'status_change'))
+                    )
+                """)
+                )
+                await conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_notifications_user_unread "
+                        "ON notifications(user_id, created_at DESC) WHERE read_at IS NULL"
+                    )
+                )
+                await conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_notifications_user_created "
+                        "ON notifications(user_id, created_at DESC)"
+                    )
+                )
+                await conn.commit()
+                logger.info("Auto-migration: Created notifications on tenant %s", slug)
+        except Exception as e:
+            logger.warning("Auto-migration (notifications) warning for %s: %s", slug, e)
+
     async def get_pool(self, tenant: Tenant, credentials: TenantCredentials) -> AsyncEngine:
         """
         Get or create a connection pool for a tenant.
