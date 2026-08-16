@@ -26,6 +26,13 @@ import {
   collectProjectCards,
   type KanbanCard,
 } from '@/utils/kanbanCards';
+import {
+  buildMentionCandidates,
+  mentionedUserIds,
+  serializeMentions,
+  type MentionAnchor,
+} from '@/utils/mentions';
+import { MentionText, MentionTextarea } from '@/components/common/MentionTextarea';
 import { formatDateShort, parseDateISO } from '@/utils/date';
 import type { CardStatus } from '@/types';
 import styles from './KanbanCardModal.module.css';
@@ -42,6 +49,7 @@ export function KanbanCardModal() {
 
   const [comments, setComments] = useState<CardComment[]>([]);
   const [draft, setDraft] = useState('');
+  const [anchors, setAnchors] = useState<MentionAnchor[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [assigneeToAdd, setAssigneeToAdd] = useState<string>('');
@@ -50,20 +58,47 @@ export function KanbanCardModal() {
   const { cardEntityType, cardEntityId, cardProjectId } = modalContext;
 
   // Derive the card from the store so it stays live through WebSocket refetches.
+  const project = useMemo(
+    () => projects.find((p) => p.id === cardProjectId) ?? null,
+    [projects, cardProjectId]
+  );
+
   const card: KanbanCard | null = useMemo(() => {
     if (!isOpen || !cardEntityType || !cardEntityId) return null;
-    const project = projects.find((p) => p.id === cardProjectId);
     if (!project) return null;
     return (
       collectProjectCards(project).find(
         (c) => c.entityType === cardEntityType && c.entityId === cardEntityId
       ) ?? null
     );
-  }, [isOpen, cardEntityType, cardEntityId, cardProjectId, projects]);
+  }, [isOpen, cardEntityType, cardEntityId, project]);
 
   const isPrivileged = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
   const canMove = Boolean(
     isPrivileged || (currentUser && card?.assigneeIds.includes(currentUser.id))
+  );
+
+  // staff holds one row per user-site pair, so scope to the CARD's site (not
+  // currentSite -- the modal opens from the cross-site view too) and dedupe.
+  const siteStaff = useMemo(() => {
+    const siteId = project?.site_id;
+    const byId = new Map<number, (typeof staff)[number]>();
+    for (const s of staff) {
+      if (siteId !== undefined && s.site_id !== siteId) continue;
+      if (!byId.has(s.id)) byId.set(s.id, s);
+    }
+    return Array.from(byId.values());
+  }, [staff, project?.site_id]);
+
+  const mentionCandidates = useMemo(
+    () =>
+      buildMentionCandidates(
+        card?.assignments ?? [],
+        siteStaff.map((s) => ({ id: s.id, name: s.name, role: s.role })),
+        // Mentioning yourself would render a pill that notifies nobody.
+        currentUser?.id
+      ),
+    [card?.assignments, siteStaff, currentUser?.id]
   );
 
   const reloadComments = useCallback(async () => {
@@ -79,6 +114,7 @@ export function KanbanCardModal() {
     if (!isOpen) {
       setComments([]);
       setDraft('');
+      setAnchors([]);
       setError(null);
       setAssigneeToAdd('');
       return;
@@ -136,12 +172,13 @@ export function KanbanCardModal() {
     setBusy(true);
     setError(null);
     try {
-      // @mentions are matched against staff names in the composed text.
-      const mentioned = staff
-        .filter((s) => draft.includes(`@${s.name}`))
-        .map((s) => s.id);
-      await createComment(card.entityType, card.entityId, draft.trim(), mentioned);
+      // Serialize first, then trim: trimming the draft would shift every anchor
+      // offset. Only picked mentions carry an anchor, so a hand-typed "@Alice"
+      // stays plain text and notifies nobody.
+      const body = serializeMentions(draft, anchors).trim();
+      await createComment(card.entityType, card.entityId, body, mentionedUserIds(draft, anchors));
       setDraft('');
+      setAnchors([]);
       // Only the thread changed -- do NOT reload every project for a comment.
       await reloadComments();
     } catch (err) {
@@ -163,7 +200,7 @@ export function KanbanCardModal() {
     }
   };
 
-  const unassignedStaff = staff.filter((s) => !card?.assigneeIds.includes(s.id));
+  const unassignedStaff = siteStaff.filter((s) => !card?.assigneeIds.includes(s.id));
 
   return (
     <Modal
@@ -279,19 +316,27 @@ export function KanbanCardModal() {
                       </button>
                     )}
                   </div>
-                  <p className={styles.commentBody}>{c.body}</p>
+                  <p className={styles.commentBody}>
+                    <MentionText body={c.body} meUserId={currentUser?.id} />
+                  </p>
                 </li>
               ))}
               {comments.length === 0 && <li className={styles.none}>No comments yet</li>}
             </ul>
 
             <div className={styles.composer}>
-              <textarea
-                className={styles.textarea}
+              <MentionTextarea
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Add a comment. Type @ and a name to notify someone."
+                anchors={anchors}
+                onChange={(text, next) => {
+                  setDraft(text);
+                  setAnchors(next);
+                }}
+                candidates={mentionCandidates}
                 rows={3}
+                disabled={busy}
+                aria-label="Comment"
+                placeholder="Add a comment. Type @ to notify someone."
               />
               <Button onClick={handleComment} disabled={busy || !draft.trim()}>
                 Comment
