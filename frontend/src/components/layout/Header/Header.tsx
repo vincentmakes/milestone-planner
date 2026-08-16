@@ -98,6 +98,9 @@ export function Header() {
   const canUseWhatIf = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
   const canShowPanels = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
   const isGanttView = currentView === 'gantt';
+  // Every view except Kanban renders a timeline, so date navigation, the view-mode
+  // switcher, undo/redo and zoom belong to all of them but the board.
+  const isTimelineView = currentView !== 'kanban';
 
   // Zoom calculations
   const zoomPercent = Math.round((cellWidth / DEFAULT_CELL_WIDTH) * 100);
@@ -144,6 +147,8 @@ export function Header() {
 
       {/* CENTER: Timeline Controls */}
       <div className={styles.center}>
+        {isTimelineView && (
+          <>
         <DateNavigation />
         
         <div className={styles.divider} />
@@ -198,6 +203,8 @@ export function Header() {
             </svg>
           </button>
         </div>
+          </>
+        )}
       </div>
 
       {/* RIGHT: Actions & User */}
