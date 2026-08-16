@@ -16,7 +16,7 @@ import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, get_db_readonly
@@ -24,7 +24,7 @@ from app.middleware.auth import get_current_user, require_superuser
 from app.models.assignment import PhaseStaffAssignment, SubphaseStaffAssignment
 from app.models.card_comment import CardComment
 from app.models.project import Project, ProjectPhase, ProjectSubphase
-from app.models.user import User
+from app.models.user import User, UserSite
 from app.schemas.kanban import (
     CardAssigneeCreate,
     CardAssigneeResponse,
@@ -34,6 +34,7 @@ from app.schemas.kanban import (
     CardStatusResponse,
     CardStatusUpdate,
     CommentCountsResponse,
+    MentionableUserResponse,
 )
 from app.services.card_access import require_card_status_write
 from app.services.card_status import STATUS_LABELS, apply_status
@@ -173,6 +174,42 @@ async def get_site_comment_counts(
             counts[entity_type][str(entity_id)] = count
 
     return counts
+
+
+@router.get("/sites/{site_id}/mentionable-users", response_model=list[MentionableUserResponse])
+async def get_mentionable_users(
+    site_id: int,
+    db: AsyncSession = Depends(get_db_readonly),
+    user: User = Depends(get_current_user),
+):
+    """Everyone who can be @-mentioned on a card at this site.
+
+    Deliberately not GET /staff, which excludes administrators and so left the
+    person most likely to need pinging -- the project manager -- unmentionable.
+
+    Two groups qualify:
+      - active members of the site, whatever their role;
+      - active administrators, who have access to every site. They are only
+        ever given one user_sites row, so joining on membership alone would
+        hide them on every other site.
+
+    Open to any authenticated user, because anyone may comment. Only the
+    fields a mention picker needs are returned.
+    """
+    site_member_ids = select(UserSite.user_id).where(UserSite.site_id == site_id)
+    result = await db.execute(
+        select(User)
+        .where(
+            User.active == 1,
+            or_(User.id.in_(site_member_ids), User.role == "admin"),
+        )
+        .order_by(User.first_name, User.last_name)
+    )
+
+    return [
+        {"id": u.id, "name": u.full_name, "job_title": u.job_title}
+        for u in result.scalars().unique().all()
+    ]
 
 
 # ---------------------------------------------------------

@@ -177,3 +177,49 @@ async def test_missing_card_returns_404(authed_client, mock_db_session):
         "/api/kanban/cards/phase/999/status", json={"status": "done"}
     )
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------
+# Mentionable users
+# ---------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_mentionable_users_requires_authentication(app_client):
+    response = await app_client.get("/api/kanban/sites/1/mentionable-users")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_mentionable_users_open_to_plain_users(authed_client, mock_db_session):
+    """Anyone may comment, so anyone may see who they can mention."""
+    client, set_user = authed_client
+    set_user(FakeUser(5, "user"))
+
+    result = MagicMock()
+    result.scalars.return_value.unique.return_value.all.return_value = []
+    result.scalars.return_value.all.return_value = []
+    mock_db_session.execute.return_value = result
+
+    response = await client.get("/api/kanban/sites/1/mentionable-users")
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_mentionable_users_query_covers_admins_and_members(
+    authed_client, mock_db_session
+):
+    """Admins span every site, so membership alone would hide them."""
+    client, set_user = authed_client
+    set_user(FakeUser(5, "user"))
+
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = []
+    mock_db_session.execute.return_value = result
+
+    await client.get("/api/kanban/sites/1/mentionable-users")
+
+    rendered = str(mock_db_session.execute.call_args[0][0])
+    assert "user_sites" in rendered  # site membership
+    assert "role" in rendered  # ... OR is an admin
+    assert "active" in rendered  # inactive users cannot be notified
