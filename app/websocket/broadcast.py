@@ -21,6 +21,7 @@ import logging
 from fastapi import Request
 
 from app.models.user import User
+from app.utils import utcnow_naive
 from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
@@ -106,4 +107,26 @@ async def broadcast_change(
         project_id=project_id,
         action=action,
         summary=summary,
+    )
+
+
+async def send_notification(request: Request, user_id: int, payload: dict) -> None:
+    """
+    Push one notification to a single user's connections.
+
+    Call this AFTER the notification row has been committed. The push is a live
+    hint only: the connection manager is per-process, so a user connected to a
+    different worker will not receive it and will instead pick the notification
+    up when the bell next loads.
+    """
+    tenant_id = get_tenant_from_request(request)
+
+    await manager.send_to_user(
+        tenant_id,
+        user_id,
+        {
+            "type": "notification:new",
+            "payload": payload,
+            "timestamp": utcnow_naive().isoformat() + "Z",
+        },
     )

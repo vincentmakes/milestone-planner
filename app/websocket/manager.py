@@ -261,6 +261,49 @@ class ConnectionManager:
         )
         return sent
 
+    async def send_to_user(self, tenant_id: str, user_id: int, message: dict) -> int:
+        """
+        Send a message to every connection belonging to ONE user in a tenant.
+
+        The counterpart to broadcast_to_tenant, which can only exclude users.
+        Multi-tab is handled by construction: each of the user's connections
+        gets the message.
+
+        Returns the number of connections reached. Zero means the user is not
+        connected *to this process* -- the manager is per-process and in-memory,
+        so with more than one worker a user on another process is not reached.
+        Callers must therefore persist the payload first and treat this push as
+        a live hint, not as delivery.
+        """
+        async with self._lock:
+            connections = [
+                conn
+                for conn in self._connections.get(tenant_id, {}).values()
+                if conn.user_id == user_id
+            ]
+
+        sent = 0
+        for conn in connections:
+            try:
+                await self._send_json(conn.websocket, message)
+                sent += 1
+            except Exception as e:
+                logger.warning(
+                    "Failed to send to conn=%s user=%s: %s",
+                    conn.connection_id,
+                    conn.user_id,
+                    e,
+                )
+
+        logger.info(
+            "Sent %s to user %s in tenant '%s': %d connection(s)",
+            message.get("type"),
+            user_id,
+            tenant_id,
+            sent,
+        )
+        return sent
+
     async def broadcast_change(
         self,
         tenant_id: str,

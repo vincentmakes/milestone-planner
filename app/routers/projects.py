@@ -8,7 +8,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -19,6 +19,7 @@ from app.models.assignment import (
     ProjectAssignment,
     SubphaseStaffAssignment,
 )
+from app.models.card_comment import CardComment
 from app.models.equipment import Equipment, EquipmentAssignment
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.site import Site
@@ -855,6 +856,15 @@ async def delete_phase(
     project_id = phase.project_id
     phase_type = phase.type
 
+    # card_comments.entity_id is polymorphic and carries no FK (same shape as
+    # custom_column_values), so the rows must be removed explicitly.
+    await db.execute(
+        delete(CardComment).where(
+            CardComment.entity_type == "phase",
+            CardComment.entity_id == phase_id,
+        )
+    )
+
     await db.delete(phase)
     await db.commit()
 
@@ -1197,6 +1207,15 @@ async def delete_subphase(
     await db.execute(
         SubphaseStaffAssignment.__table__.delete().where(
             SubphaseStaffAssignment.subphase_id.in_(all_ids)
+        )
+    )
+
+    # Comments for every descendant too -- card_comments.entity_id is
+    # polymorphic and has no FK to cascade from.
+    await db.execute(
+        delete(CardComment).where(
+            CardComment.entity_type == "subphase",
+            CardComment.entity_id.in_(all_ids),
         )
     )
 
