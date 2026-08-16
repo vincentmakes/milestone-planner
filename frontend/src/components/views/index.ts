@@ -1,3 +1,4 @@
+export { KanbanView } from './KanbanView';
 export { StaffView } from './StaffView';
 export { EquipmentView } from './EquipmentView';
 export { CrossSiteView } from './CrossSiteView';

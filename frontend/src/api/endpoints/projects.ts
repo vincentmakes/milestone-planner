@@ -16,6 +16,7 @@ import type {
   CreateStaffAssignmentRequest,
   EquipmentAssignment,
   CreateEquipmentAssignmentRequest,
+  CardStatus,
 } from '@/types';
 
 // =============================================================================
@@ -383,6 +384,8 @@ function transformPhase(phase: Record<string, unknown>): Phase {
     color: getPhaseColorWithFallback(),
     order_index: (phase.sort_order ?? 0) as number,
     completion: (phase.completion ?? null) as number | null,
+    // Must default: a tenant mid auto-migration serves rows without `status`.
+    status: (phase.status ?? 'todo') as CardStatus,
     // Handle SQLite integer (0/1) and boolean
     is_milestone: Boolean(phase.is_milestone),
     dependencies: (phase.dependencies ?? []) as Phase['dependencies'],
@@ -408,6 +411,8 @@ function transformSubphase(subphase: Record<string, unknown>, depth: number = 1)
     color: getDepthColorWithFallback(actualDepth),
     order_index: (subphase.sort_order ?? 0) as number,
     completion: (subphase.completion ?? null) as number | null,
+    // Must default: a tenant mid auto-migration serves rows without `status`.
+    status: (subphase.status ?? 'todo') as CardStatus,
     // Handle SQLite integer (0/1) and boolean
     is_milestone: Boolean(subphase.is_milestone),
     dependencies: (subphase.dependencies ?? []) as Subphase['dependencies'],

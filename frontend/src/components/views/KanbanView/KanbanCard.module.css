@@ -1,0 +1,154 @@
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--accent-blue);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.card:hover {
+  border-color: var(--border-color-hover);
+  box-shadow: var(--shadow-md);
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.draggable {
+  cursor: grab;
+}
+
+.draggable:active {
+  cursor: grabbing;
+}
+
+.dragging {
+  opacity: 0.4;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.name {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.milestone {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  background: var(--accent-yellow);
+  transform: rotate(45deg);
+}
+
+.breadcrumb {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dates {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.overdue,
+.dueSoon {
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-xs);
+}
+
+.overdue {
+  background: var(--status-blocked-soft);
+  color: var(--status-blocked);
+}
+
+.dueSoon {
+  background: var(--status-in-progress-soft);
+  color: var(--status-in-progress);
+}
+
+.progressTrack {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--bg-tertiary);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--status-in-progress);
+  border-radius: 2px;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 18px;
+}
+
+.avatars {
+  display: flex;
+  align-items: center;
+}
+
+.avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-on-accent);
+  border: 1.5px solid var(--bg-card);
+  margin-right: -6px;
+}
+
+.avatar:last-child {
+  margin-right: 0;
+}
+
+/* Deterministic palette, keyed by staff id (matches OnlineUsers/ActivityFeed) */
+.avatar0 { background: #3b82f6; }
+.avatar1 { background: #8b5cf6; }
+.avatar2 { background: #ec4899; }
+.avatar3 { background: #f97316; }
+.avatar4 { background: #10b981; }
+.avatar5 { background: #06b6d4; }
+.avatar6 { background: #eab308; }
+.avatar7 { background: #a855f7; }
+
+.comments {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}

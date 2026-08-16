@@ -1,0 +1,71 @@
+.board {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 14px 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.lane {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.laneHeader {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  padding: 3px 2px;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-family: inherit;
+  text-align: left;
+  border-radius: 4px;
+  transition: background var(--transition-fast);
+}
+
+.laneHeader:hover {
+  background: var(--bg-hover);
+}
+
+.chevron {
+  display: inline-flex;
+  color: var(--text-tertiary);
+  transition: transform var(--transition-fast);
+}
+
+.chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.laneLabel {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.laneCount {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border-radius: 9px;
+  padding: 1px 7px;
+}
+
+.columns {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  /* Narrow viewports scroll the columns rather than the page body. */
+  overflow-x: auto;
+}
+
+.empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
