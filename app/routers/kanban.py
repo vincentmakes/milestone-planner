@@ -227,14 +227,21 @@ async def assign_card(
     if not assignee:
         raise HTTPException(status_code=404, detail="Staff member not found")
 
-    model = PhaseStaffAssignment if entity_type == "phase" else SubphaseStaffAssignment
-    fk = model.phase_id if entity_type == "phase" else model.subphase_id
-
-    existing = (
-        await db.execute(
-            select(model).where(fk == entity_id, model.staff_id == data.staff_id).limit(1)
+    # Branch on the concrete model rather than computing one: a
+    # `A if ... else B` variable is a union of model types, and the per-level
+    # foreign key (phase_id vs subphase_id) is not resolvable on that union.
+    if entity_type == "phase":
+        existing_query = select(PhaseStaffAssignment).where(
+            PhaseStaffAssignment.phase_id == entity_id,
+            PhaseStaffAssignment.staff_id == data.staff_id,
         )
-    ).scalar_one_or_none()
+    else:
+        existing_query = select(SubphaseStaffAssignment).where(
+            SubphaseStaffAssignment.subphase_id == entity_id,
+            SubphaseStaffAssignment.staff_id == data.staff_id,
+        )
+
+    existing = (await db.execute(existing_query.limit(1))).scalar_one_or_none()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -244,12 +251,21 @@ async def assign_card(
     # Resolve the booking size server-side; the client must not guess it.
     allocation = data.allocation if data.allocation is not None else assignee.max_capacity or 100
 
-    assignment = model(
-        project_id=card.project_id,
-        staff_id=data.staff_id,
-        allocation=allocation,
-        **{"phase_id" if entity_type == "phase" else "subphase_id": entity_id},
-    )
+    assignment: PhaseStaffAssignment | SubphaseStaffAssignment
+    if entity_type == "phase":
+        assignment = PhaseStaffAssignment(
+            project_id=card.project_id,
+            staff_id=data.staff_id,
+            allocation=allocation,
+            phase_id=entity_id,
+        )
+    else:
+        assignment = SubphaseStaffAssignment(
+            project_id=card.project_id,
+            staff_id=data.staff_id,
+            allocation=allocation,
+            subphase_id=entity_id,
+        )
     db.add(assignment)
 
     card_name = _card_name(card)
@@ -300,12 +316,18 @@ async def unassign_card(
     """Remove a staff member from a card, releasing their booking."""
     card = await _load_card(db, entity_type, entity_id)
 
-    model = PhaseStaffAssignment if entity_type == "phase" else SubphaseStaffAssignment
-    fk = model.phase_id if entity_type == "phase" else model.subphase_id
+    if entity_type == "phase":
+        query = select(PhaseStaffAssignment).where(
+            PhaseStaffAssignment.phase_id == entity_id,
+            PhaseStaffAssignment.staff_id == staff_id,
+        )
+    else:
+        query = select(SubphaseStaffAssignment).where(
+            SubphaseStaffAssignment.subphase_id == entity_id,
+            SubphaseStaffAssignment.staff_id == staff_id,
+        )
 
-    assignment = (
-        await db.execute(select(model).where(fk == entity_id, model.staff_id == staff_id).limit(1))
-    ).scalar_one_or_none()
+    assignment = (await db.execute(query.limit(1))).scalar_one_or_none()
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
 
