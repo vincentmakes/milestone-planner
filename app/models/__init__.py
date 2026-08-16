@@ -4,9 +4,11 @@ All models inherit from the Base class defined in database.py.
 """
 
 from app.models.assignment import PhaseStaffAssignment, ProjectAssignment, SubphaseStaffAssignment
+from app.models.card_comment import CardComment
 from app.models.custom_column import CustomColumn, CustomColumnValue
 from app.models.equipment import Equipment, EquipmentAssignment, EquipmentBlock
 from app.models.note import Note
+from app.models.notification import Notification
 from app.models.organization import Organization, OrganizationSSOConfig
 from app.models.presence import ProjectPresence
 from app.models.project import Project, ProjectPhase, ProjectSubphase
@@ -55,6 +57,8 @@ __all__ = [
     "Tag",
     "ProjectTag",
     "ProjectPresence",
+    "CardComment",
+    "Notification",
     # Multi-tenant admin models (use separate MasterBase)
     "MasterBase",
     "Tenant",

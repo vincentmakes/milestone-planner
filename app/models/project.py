@@ -137,6 +137,12 @@ class ProjectPhase(Base):
     """Project phase model - represents phases within a project."""
 
     __tablename__ = "project_phases"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('todo', 'in_progress', 'blocked', 'done')",
+            name="project_phases_status_check",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(
@@ -150,6 +156,8 @@ class ProjectPhase(Base):
     is_milestone: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     completion: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Kanban column. Kept in sync with `completion` by app/services/card_status.py.
+    status: Mapped[str] = mapped_column(String(20), default="todo", nullable=False)
     dependencies: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
@@ -193,6 +201,10 @@ class ProjectSubphase(Base):
         CheckConstraint(
             "parent_type IN ('phase', 'subphase')", name="project_subphases_parent_type_check"
         ),
+        CheckConstraint(
+            "status IN ('todo', 'in_progress', 'blocked', 'done')",
+            name="project_subphases_status_check",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -210,6 +222,8 @@ class ProjectSubphase(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     depth: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     completion: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Kanban column. Kept in sync with `completion` by app/services/card_status.py.
+    status: Mapped[str] = mapped_column(String(20), default="todo", nullable=False)
     dependencies: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
