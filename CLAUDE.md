@@ -31,7 +31,7 @@ When working on this codebase, follow these conventions:
 - **Node.js compatibility is a contract, not an accident.** This app replaced a Node/Express implementation and keeps wire-level compatibility: `CustomJSONResponse` formats datetimes like `toISOString()` and coerces whole floats to ints; sessions are express-session-compatible (`connect.sid` cookie, `s%3A<id>.` value format, `sessions` table shape); credential encryption uses the Node `iv:authTag:ciphertext` hex format. Changing any of these serialization behaviours is a breaking change.
 - **Optimistic frontend + WebSocket refetch.** The frontend mutates Zustand state immediately and persists after; other clients converge via `change:<entity>` WebSocket events that trigger debounced slice refetches. On a failed persist the frontend reloads everything from the server and clears undo history. Keep new features inside this model — don't invent per-feature sync mechanisms.
 - **Site export is a canonical snapshot.** Any new site-scoped data must be added to `build_site_export_workbook()` — see the Site Export contract under Import & Export below.
-- **There is no client-side router.** `react-router-dom` was removed from `package.json` (it was never imported) — don't re-add it. `App.tsx` branches on `window.location.pathname` (`/admin*` → admin portal, everything else → main app), and in-app views (gantt/staff/equipment/crosssite/archived) are `viewStore` state, not URLs. Don't add routes; add views to `viewStore` + `MainLayout.renderView()`.
+- **There is no client-side router.** `react-router-dom` was removed from `package.json` (it was never imported) — don't re-add it. `App.tsx` branches on `window.location.pathname` (`/admin*` → admin portal, everything else → main app), and in-app views (gantt/kanban/staff/equipment/crosssite/archived) are `viewStore` state, not URLs. Don't add routes; add views to `viewStore` + `MainLayout.renderView()`.
 - **Raw SQL migrations only — never introduce Alembic.** Migrations are idempotent `.sql` files in `migrations/` executed by `run_migration.py` (tenant DBs) / `run_migration_master.py` (master DB).
 
 ### Backend Conventions
@@ -39,7 +39,8 @@ When working on this codebase, follow these conventions:
 - Route handlers live in `app/routers/`, one file per resource domain, and **must be registered in `create_app()` in `app/main.py`** (`app.include_router(...)`). Cautionary tale: a `presence.py` router was once written but never registered — its HTTP endpoints sat dead for a long time before being deleted (presence works over WebSocket). Verify registration when adding a router.
 - Use `async def` and `AsyncSession` for all handlers and DB access. For read-only endpoints on hot paths, prefer the `get_db_readonly` dependency (`app/database.py`) over `get_db` — it skips commit/rollback overhead; `GET /projects` and `GET /projects/{id}` are the reference users.
 - Role gating via dependencies from `app/middleware/auth.py`: `get_current_user` (any authenticated user), `require_superuser` (**admin OR superuser**), `require_admin` (admin only). Always import these — never define a local copy of a role check in a router (skills/tags once did; the duplicates were removed so the role matrix has one source of truth). Admin-portal routes use `get_current_admin` / `require_superadmin` from `app/routers/admin/auth.py` against the master DB. The `is_system` flag on users protects the provisioned admin from deletion.
-- **Real-time broadcast is two-tier.** For user-facing mutations on projects/phases/subphases/assignments, call `broadcast_change(...)` (`app/websocket/broadcast.py`) with rich attribution (entity, action, summary). Everything else is covered automatically: `BroadcastMiddleware` (`app/middleware/broadcast.py`) fires a coarse `change:<entity>` on any successful 2xx write, and its `SKIP_PATTERNS` list suppresses the paths that already do rich broadcasts. When you add rich broadcasting to a new path, add it to `SKIP_PATTERNS` too — otherwise clients receive double events.
+- **Real-time broadcast is two-tier.** For user-facing mutations on projects/phases/subphases/assignments, call `broadcast_change(...)` (`app/websocket/broadcast.py`) with rich attribution (entity, action, summary). Everything else is covered automatically: `BroadcastMiddleware` (`app/middleware/broadcast.py`) fires a coarse `change:<entity>` on any successful 2xx write, and its `SKIP_PATTERNS` list suppresses the paths that already do rich broadcasts (now including `/api/kanban` and `/api/notifications`). When you add rich broadcasting to a new path, add it to `SKIP_PATTERNS` too — otherwise clients receive double events.
+- **`status` and `completion` on phases/subphases are two views of one thing.** Never assign either field directly — go through `apply_status()` / `apply_completion()` in `app/services/card_status.py`, mirrored byte-for-byte by `statusFromCompletion`/`completionForStatus` in `frontend/src/utils/kanbanCards.ts`. The matching test matrices (`tests/test_card_status.py` / `src/utils/__tests__/cardStatusMirror.test.ts`) are the contract; change one, change both.
 - **Schema-change checklist** — when you add/alter a tenant table or column, update ALL of:
   1. The SQLAlchemy model (`app/models/`)
   2. `setup_databases.sql` (canonical fresh-install schema)
@@ -53,9 +54,9 @@ When working on this codebase, follow these conventions:
 
 ### Frontend Conventions
 
-- **Store ownership**: domain data (sites/projects/staff/equipment/vacations/holidays/skills/tags/settings) → `appStore`; view state (mode, zoom, expansion, scroll, current view) → `viewStore`; transient UI (modals, drag/resize, dependency linking, context menus) → `uiStore`; What-If sandbox → `whatIfStore`; undo/redo snapshots → `undoStore`; custom-column data/filters/visibility → `customColumnStore`; admin portal → `adminStore`. Don't put domain data in `uiStore` or UI state in `appStore`.
+- **Store ownership**: domain data (sites/projects/staff/equipment/vacations/holidays/skills/tags/settings) → `appStore`; view state (mode, zoom, expansion, scroll, current view) → `viewStore`; transient UI (modals, drag/resize, dependency linking, context menus) → `uiStore`; What-If sandbox → `whatIfStore`; undo/redo snapshots → `undoStore`; custom-column data/filters/visibility → `customColumnStore`; admin portal → `adminStore`; notification inbox → `notificationStore`. Don't put domain data in `uiStore` or UI state in `appStore`.
 - **All snake_case↔camelCase transforms live in the API layer**, chiefly `src/api/endpoints/projects.ts` (`transformProject/Phase/Subphase/...` — including `type`↔`name` for phases and `sort_order`↔`order_index`). Components consume the frontend model from `src/types/models.ts` only; never transform field names in components.
-- **New write endpoints are What-If-intercepted by default.** The API client queues every PUT/POST/DELETE while What-If mode is active, except URLs under `/api/auth/` and `/api/settings/`. If a new endpoint must bypass What-If (rare), extend the exemption list in `src/api/client.ts` deliberately — and if it must be queued, ensure the local optimistic update is complete since the server won't respond for real.
+- **New write endpoints are What-If-intercepted by default.** The API client queues every PUT/POST/DELETE while What-If mode is active, except URLs under `/api/auth/`, `/api/settings/`, `/api/notifications` and the Kanban *comment* paths (card moves and assignments stay queued — they are plan operations; comments are not, and a queued comment cannot be rolled back on Discard and would be duplicated on Apply). If a new endpoint must bypass What-If (rare), extend the exemption list in `src/api/client.ts` deliberately — and if it must be queued, ensure the local optimistic update is complete since the server won't respond for real.
 - **Optimistic-write failure protocol**: on persist failure, reload the affected data from the server and call `undoStore.clear()` — a stale undo stack against fresh server state corrupts data. `useDragAndDrop` and `useUndoRedo` are the reference implementations.
 - **Modals close only via explicit buttons or the Escape key — never on backdrop/outside click.** Clicking outside a modal must NOT close it (it discards in-progress input, e.g. when a text-selection drag ends on the backdrop). The shared `Modal` component (`src/components/common/Modal/`) enforces this and has no overlay-click prop; new dialogs must use it. Standalone dialogs that can't (like the admin-portal modals in `src/components/admin/modals/`) must not attach close handlers to their overlay and should use the `useEscapeKey` hook for Escape support. This rule is for modals/dialogs only — dropdowns, context menus, and popovers keep their click-outside-to-close behavior.
 - Direct localStorage access goes through the typed helpers and `STORAGE_KEYS` in `src/utils/storage.ts` (which also documents the Zustand `persist` key names — keep that list in sync). Zustand stores declare their persist keys inline (`milestone-app-storage-v3`, `milestone-view-storage-v1`, `milestone-custom-columns-storage-v1`) and serialize `Set`s as arrays with custom `merge` — follow the existing pattern in `viewStore`.
@@ -469,8 +470,8 @@ Two declarative bases: **`Base`** (tenant databases, `app/database.py`) and **`M
 | Table | Model | Purpose |
 |-------|-------|---------|
 | `projects` | `Project` | R&D projects: name, site_id, customer, pm_id, confirmed, volume, dates, notes, archived; `tags` M:N |
-| `project_phases` | `ProjectPhase` | Phases: project_id (CASCADE), `type` (name), dates, `is_milestone`, `sort_order`, `completion`, `dependencies` (JSON text) |
-| `project_subphases` | `ProjectSubphase` | **Recursive** subphases: `parent_id` + `parent_type` CHECK(`phase`/`subphase`), `depth`, dates, milestone/completion/dependencies |
+| `project_phases` | `ProjectPhase` | Phases: project_id (CASCADE), `type` (name), dates, `is_milestone`, `sort_order`, `completion`, `status` (Kanban column), `dependencies` (JSON text) |
+| `project_subphases` | `ProjectSubphase` | **Recursive** subphases: `parent_id` + `parent_type` CHECK(`phase`/`subphase`), `depth`, dates, milestone/completion/`status`/dependencies |
 | `tags` / `project_tags` | `Tag` / `ProjectTag` | Global project tags (shared across sites) + M:N join |
 | `custom_columns` | `CustomColumn` | User-defined Gantt columns: `column_type` CHECK(`text`/`boolean`/`list`), `list_options` JSON, site_id (NULL = global), display_order, width |
 | `custom_column_values` | `CustomColumnValue` | EAV values: `entity_type` CHECK(`project`/`phase`/`subphase`) + entity_id, unique per (column, entity) |
@@ -497,6 +498,8 @@ Two declarative bases: **`Base`** (tenant databases, `app/database.py`) and **`M
 
 | Table | Model | Purpose |
 |-------|-------|---------|
+| `card_comments` | `CardComment` | Comments on Kanban cards. Polymorphic `(entity_type, entity_id)` → phase/subphase (same shape as `custom_column_values`, so **no FK** — `delete_phase`/`delete_subphase` must clear them explicitly). Has a real `author_id` + `updated_at` |
+| `notifications` | `Notification` | Per-recipient inbox: `user_id`, `type` (`assigned`/`comment`/`mention`/`status_change`), `actor_id` (SET NULL), entity/project refs, rendered `title`/`body`, `read_at`. Partial index on unread. Due-soon/overdue are **derived client-side**, never stored |
 | `staff_notes` | `Note` | Notes pinned to a site/date. Class is `Note` but tablename is **`staff_notes`**. All schema sources now create `staff_notes`; a legacy `notes` table on old installs is migrated and dropped by `migrations/add_staff_notes.sql` / the tenant auto-migration |
 | `settings` | `Settings` | Instance key-value settings (e.g. `instance_title`, `show_weekends`) |
 | `predefined_phases` | `PredefinedPhase` | Phase name templates offered in the UI |
@@ -643,6 +646,30 @@ These handlers call rich `broadcast_change()` — their paths are in `BroadcastM
 | GET | `/tags` | user | List tags |
 | POST / PUT / DELETE | `/tags`, `/tags/{id}` | superuser | Tag CRUD |
 
+### Kanban (`kanban.py`, prefix `/kanban`)
+
+The board itself has **no read endpoint** — `GET /projects/{id}` already returns the tree, so the client derives cards from `appStore.projects`. Card = leaf phase/subphase (`frontend/src/utils/kanbanCards.ts`).
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/kanban/projects/{id}/comment-counts` | user | Comment counts per card (kept out of `GET /projects/{id}`, which is called once per project by `loadAllProjects()`) |
+| PUT | `/kanban/cards/{entity_type}/{id}/status` | user **+ assignee-or-superuser** | Move a card; echoes the derived `{status, completion}` so the client reconciles without a refetch |
+| POST / DELETE | `/kanban/cards/{et}/{id}/assignees`, `…/{staff_id}` | superuser | Assign/unassign — **creates the phase/subphase staff assignment** at the assignee's `max_capacity` (409 on duplicate) |
+| GET / POST | `/kanban/cards/{et}/{id}/comments` | user | Comment thread; POST is open to **any authenticated user** |
+| PUT / DELETE | `/kanban/comments/{id}` | user (author; delete also admin/superuser) | Edit / delete a comment |
+
+⚠ `require_card_status_write` (`app/services/card_access.py`) is the only resource-level ACL in the app: superuser/admin, **or** an assignee of that card. It takes `user_id`/`is_privileged` primitives, not a `User`, because `get_current_user` often returns the lightweight `SessionUser`.
+
+### Notifications (`notifications.py`, prefix `/notifications`)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/notifications?unread_only&limit` | user | Own notifications, newest first |
+| GET | `/notifications/unread-count` | user | Badge count (served by the partial unread index) |
+| PUT | `/notifications/{id}/read`, `/notifications/read-all` | user | Mark read |
+
+⚠ Every query is pinned to `Notification.user_id == user.id` — there is **no `user_id` parameter**, by design (it would be an IDOR). Due-soon/overdue are derived client-side (`useDerivedDueNotifications`), never stored.
+
 ### Custom columns (`custom_columns.py`, prefix `/custom-columns`)
 
 | Method | Path | Auth | Description |
@@ -752,9 +779,10 @@ Flow: `GET /auth/sso/login` builds the Entra authorization URL with an **HMAC-si
 ### Backend (`app/websocket/`)
 
 - Endpoints: `/ws` (single-tenant) and `/t/{slug}/ws` (multi-tenant), in `handler.py`. Auth = the `connect.sid` cookie validated against the tenant DB. Close codes **4001–4006** signal auth/session failures (no session, invalid session, user disabled, replaced connection, …).
-- `ConnectionManager` (`manager.py`, global `manager`): per-tenant rooms, multiple connections per user (multi-tab), presence join/leave/list with deduped online users, `broadcast_to_tenant(exclude_user/exclude_connection)`, asyncio-lock guarded.
+- `ConnectionManager` (`manager.py`, global `manager`): per-tenant rooms, multiple connections per user (multi-tab), presence join/leave/list with deduped online users, `broadcast_to_tenant(exclude_user/exclude_connection)`, **`send_to_user(tenant, user_id, message)`** for per-user delivery (notifications), asyncio-lock guarded.
 - **Two broadcast tiers**: routers with meaningful UX events call `broadcast_change(request, user, entity_type, entity_id, project_id, action, summary)` (`broadcast.py`) → clients receive an attributed `change:<entity>` with user name and summary. All other successful writes get a coarse `change:<entity>` from `BroadcastMiddleware` (sender excluded; `SKIP_PATTERNS` prevents doubles).
 - Receive loop handles `ping` → `pong` (client pings every 25 s).
+- **`notification:new`** is sent per-user via `send_notification()` (`websocket/broadcast.py`). It is a *live hint only* — the manager is per-process, so a user on another worker misses it; the DB row is the source of truth and the bell reloads on mount/focus. On the client it needs its **own `case`** in `useWebSocket` (the `default:` branch only handles `change:*`).
 
 ### Frontend
 
@@ -774,7 +802,7 @@ React 18 + TypeScript 5.6, Vite 7, Vitest 4, Zustand 5, TanStack Query 5 (client
 
 - `src/main.tsx` boots the QueryClient, theme, legacy-storage migration, and wires the API client to `whatIfStore` (`configureApiClient`).
 - `src/App.tsx` renders by branching: `window.location.pathname` starting with `/admin` → `AdminApp` (a fully separate admin-portal app: `AdminLoginScreen` / `AdminDashboard` with tenants/organizations/admins/stats tabs); otherwise auth state decides `LoginScreen` vs the main app (`WebSocketProvider` → `MainLayout` + `ModalContainer` + `ContextMenuContainer` + `ActivityFeed`).
-- In-app navigation = `viewStore.currentView` (`gantt` | `staff` | `equipment` | `crosssite` | `archived`) switched by the sidebar; **views are state, not URLs**.
+- In-app navigation = `viewStore.currentView` (`gantt` | `kanban` | `staff` | `equipment` | `crosssite` | `archived`) switched by the sidebar; **views are state, not URLs**.
 - The tenant prefix `/t/{slug}` comes from the URL: `getTenantPrefix()` in `client.ts` prepends it to every `/api/` call. Deep links work because FastAPI's catch-all (prod) or `tenantSpaPlugin` (dev) serve `index.html` for `/t/*` paths.
 
 ### Zustand stores (`src/stores/`)
@@ -787,6 +815,7 @@ React 18 + TypeScript 5.6, Vite 7, Vitest 4, Zustand 5, TanStack Query 5 (client
 | `whatIfStore` | no | What-If mode flag, `structuredClone` snapshot of projects, queued operations |
 | `undoStore` | no | Undo/redo stacks of project-tree snapshots (max 50) |
 | `customColumnStore` | visibility only | Columns, values map (key `"{columnId}-{entityType}-{entityId}"`), per-column filters (`__empty__` sentinel for blanks), visibility |
+| `notificationStore` | no | In-app notification inbox (server-owned; not persisted — the bell reloads on mount/focus) |
 | `adminStore` | no | Admin portal: admin user, tenants, organizations, admin users, stats, active tab |
 
 Persistence gotcha: Sets are serialized as arrays and restored in custom `merge` functions; `currentDate` persists as an ISO string.
@@ -854,7 +883,7 @@ A client-side planning sandbox — the server is never aware of it.
 
 - Endpoint: `GET /t/{slug}/api/export/site/{site_id}/excel` (admin / superuser only; superusers limited to sites they belong to).
 - Implemented in `app/routers/export.py` — `build_site_export_workbook()` generates a multi-sheet `.xlsx` via `openpyxl`.
-- Current sheets: Site, Projects (hierarchy with phases/subphases), Users, Equipment, Skills, User skills, Tags, Project tags, Vacations, Project assignments, Phase assignments, Subphase assignments, Equipment assignments, Custom columns, Custom column values, Bank holidays, Company events, Equipment blocks, Staff notes.
+- Current sheets: Site, Projects (hierarchy with phases/subphases), Users, Equipment, Skills, User skills, Tags, Project tags, Vacations, Project assignments, Phase assignments, Subphase assignments, Equipment assignments, Custom columns, Custom column values, Bank holidays, Company events, Equipment blocks, Staff notes, Card comments (the Projects sheet also carries a `Kanban status` column). Notifications are deliberately excluded — transient per-user inbox state, not site content.
 - **IMPORTANT**: any new data added at the site level through future enhancements (e.g. equipment maintenance/blocks, new event types, additional site-scoped settings, new assignment kinds, etc.) **must** be added as a new sheet (or a new column on the existing sheet) in `build_site_export_workbook()`. The site export is the canonical "everything for this site" snapshot — do not let it drift behind the model.
 
 ### MS Project & CSV

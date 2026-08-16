@@ -117,6 +117,8 @@ Each project and phase has a completion slider (0–100%):
 - Click on the completion area to adjust
 - Purely informational — does not affect scheduling
 
+The slider also drives the item's column on the [Kanban board](kanban-board.md): 0% is To Do, 100% is Done, and anything in between is In Progress. Moving a card on the board changes the percentage here in the same way. A card you have marked **Blocked** keeps that status when you edit its percentage, since a number cannot express why work has stalled.
+
 ## Custom Columns
 
 Add custom data fields to the project panel to track metadata like priority, status codes, budget, or risk levels. Up to **10 columns** can be active per site (including global columns).
