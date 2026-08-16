@@ -39,12 +39,19 @@ Drag a card to another column, or open it and pick a status.
 
 You can move a card if you are an admin or superuser, or if **you are assigned to that card**. Cards you cannot move are not draggable. This is the one place in the application where someone who is not a project manager can change project data — it lets people report progress on their own work without being able to reschedule the plan.
 
+## Choosing what to show
+
+The project picker chooses the board. **All projects** shows everything active at the site at once, which is the natural companion to grouping by project or filtering to My Todo.
+
+Projects appear in the same order as the Gantt chart, including any custom order you have dragged them into there.
+
 ## Grouping into swimlanes
 
 The grouping menu in the toolbar splits the board into rows:
 
-- **No grouping** — one set of columns for the whole project.
-- **By phase** — one lane per top-level phase.
+- **No grouping** — one set of columns for everything shown.
+- **By project** — one lane per project, in Gantt order. Most useful with **All projects**.
+- **By phase** — one lane per top-level phase. When several projects are shown, lanes are labelled *Project — Phase* so two phases with the same name stay apart.
 - **By assignee** — one lane per person, plus an *Unassigned* lane at the bottom. A card with several assignees appears in each of their lanes.
 - **By a custom column** — one lane per option of any list-type custom column, plus *(none)*.
 
@@ -52,7 +59,7 @@ Click a lane heading to collapse it.
 
 ## My Todo
 
-The **My Todo** toggle hides every card you are not assigned to. Combine it with grouping by phase to see where your own work sits in the plan.
+The **My Todo** toggle hides every card you are not assigned to. Combine it with **All projects** to see everything on your plate across the site at once, or with grouping by phase to see where your own work sits in one plan.
 
 ## Assigning people — and booking their time
 
@@ -69,9 +76,23 @@ Adding, removing and changing assignees requires superuser rights.
 
 ## Comments and mentions
 
-Every card has a comment thread. Anyone signed in can comment. Type `@` followed by someone's name to notify them directly. You can delete your own comments; admins and superusers can delete any.
+Every card has a comment thread. Anyone signed in can comment. You can delete your own comments; admins and superusers can delete any.
 
 A card with comments shows a small speech-bubble count on the board.
+
+### Mentioning someone
+
+Type `@` and the list opens: people already assigned to this card first, then everyone else at the card's site. Keep typing to filter, then pick with the arrow keys and Enter, or click.
+
+!!! warning "Only names you pick from the list notify anyone"
+    A picked mention is **highlighted** in the comment box. A name you simply type out is ordinary text and notifies nobody, however correctly it is spelled — the highlight is what tells you the difference.
+
+    Editing a highlighted mention removes the highlight, and with it the notification. That is deliberate: what you see is always what will happen when you post. Note that undoing the edit brings the text back but not the highlight — retype the `@` to pick the person again.
+
+Two limitations worth knowing:
+
+- **You cannot mention yourself.** You would never be notified anyway, so it is left out rather than showing a mention that does nothing.
+- **Administrators do not appear in the list** unless they are assigned to the card. The list is built from staff, and administrators are not staff records. If you need to reach one, assign them to the card first, or mention someone who can.
 
 ## Notifications
 

@@ -207,7 +207,7 @@ describe('groupCards', () => {
   });
 
   it('groups by parent phase, keeping project phase order', () => {
-    const lanes = groupCards(cards, 'phase', { project: p });
+    const lanes = groupCards(cards, 'phase', { projects: [p] });
     expect(lanes.map((l) => l.label)).toEqual(['Design', 'Pilot run']);
     expect(lanes[0].cards.map((c) => c.name)).toEqual(['DoE setup', 'Reactor spec']);
     // The leaf phase is a card inside its own lane.
@@ -297,5 +297,50 @@ describe('dueStateOf', () => {
       project([phase(1, 'Finished', { end_date: '2026-01-01', status: 'done' })])
     );
     expect(dueStateOf(card, today)).toBeNull();
+  });
+});
+
+describe('groupCards across projects', () => {
+  const projectA = project([
+    phase(1, 'Analytics', { children: [sub(10, 'Screening')] }),
+  ]);
+  const projectB = {
+    ...project([phase(2, 'Analytics', { children: [sub(20, 'Assay')] })]),
+    id: 2,
+    name: 'Catalyst Optimization',
+  } as Project;
+  // collectProjectCards stamps projectId/projectName from the project it walks.
+  const cards = [...collectProjectCards(projectA), ...collectProjectCards(projectB)];
+
+  it('groups by project in the given order', () => {
+    const lanes = groupCards(cards, 'project', { projects: [projectA, projectB] });
+    expect(lanes.map((l) => l.label)).toEqual(['Bioprocess Scale-Up', 'Catalyst Optimization']);
+    expect(lanes[0].cards.map((c) => c.name)).toEqual(['Screening']);
+    expect(lanes[1].cards.map((c) => c.name)).toEqual(['Assay']);
+  });
+
+  it('preserves the caller ordering rather than sorting', () => {
+    const lanes = groupCards(cards, 'project', { projects: [projectB, projectA] });
+    expect(lanes.map((l) => l.label)).toEqual(['Catalyst Optimization', 'Bioprocess Scale-Up']);
+  });
+
+  it('qualifies duplicate phase names with the project', () => {
+    const lanes = groupCards(cards, 'phase', { projects: [projectA, projectB] });
+    expect(lanes.map((l) => l.label)).toEqual([
+      'Bioprocess Scale-Up — Analytics',
+      'Catalyst Optimization — Analytics',
+    ]);
+  });
+
+  it('leaves the phase name alone for a single project', () => {
+    const single = collectProjectCards(projectA);
+    const lanes = groupCards(single, 'phase', { projects: [projectA] });
+    expect(lanes.map((l) => l.label)).toEqual(['Analytics']);
+  });
+
+  it('renders an empty lane for a project with no cards', () => {
+    const empty = { ...project([]), id: 3, name: 'Quality System Upgrade' } as Project;
+    const lanes = groupCards(cards, 'project', { projects: [projectA, projectB, empty] });
+    expect(lanes[2]).toMatchObject({ label: 'Quality System Upgrade', cards: [] });
   });
 });

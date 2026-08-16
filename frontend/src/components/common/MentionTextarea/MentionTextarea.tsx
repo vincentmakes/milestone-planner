@@ -66,13 +66,16 @@ export function MentionTextarea({
 
   const [query, setQuery] = useState<ActiveQuery | null>(null);
   const [highlightIndex, setHighlightIndex] = useState(-1);
+  // Escape hides the list until the text changes again; without this, the
+  // caret-tracking below would immediately reopen it.
+  const [dismissed, setDismissed] = useState(false);
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
 
   const filtered = useMemo(
     () => filterCandidates(candidates, query?.query ?? ''),
     [candidates, query]
   );
-  const open = query !== null && filtered.length > 0;
+  const open = query !== null && filtered.length > 0 && !dismissed;
 
   const segments = useMemo(() => segmentDraft(value, anchors), [value, anchors]);
 
@@ -179,16 +182,25 @@ export function MentionTextarea({
   // Editing
   // ---------------------------------------------------------------
 
-  const refreshQuery = useCallback((text: string, caret: number) => {
-    const next = findActiveQuery(text, caret);
+  // Only reset the active option when the query itself changed. Recomputing on
+  // every caret move would wipe the highlight between ArrowDown and Enter.
+  const queryKeyRef = useRef<string | null>(null);
+  const refreshQuery = useCallback((text: string, caret: number, live: MentionAnchor[]) => {
+    const next = findActiveQuery(text, caret, live);
+    const key = next ? `${next.start}:${next.query}` : null;
+    if (key === queryKeyRef.current) return;
+    queryKeyRef.current = key;
     setQuery(next);
     setHighlightIndex(-1);
   }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const next = e.target.value;
-    onChange(next, reconcileAnchors(value, next, anchors));
-    refreshQuery(next, e.target.selectionStart ?? next.length);
+    const nextAnchors = reconcileAnchors(value, next, anchors);
+    onChange(next, nextAnchors);
+    // Typing revives a dismissed list.
+    setDismissed(false);
+    refreshQuery(next, e.target.selectionStart ?? next.length, nextAnchors);
   };
 
   const select = (candidate: MentionCandidate) => {
@@ -199,11 +211,12 @@ export function MentionTextarea({
     });
     pendingCaretRef.current = result.caret;
     onChange(result.text, result.anchors);
-    setQuery(null);
-    setHighlightIndex(-1);
+    setDismissed(false);
+    closeList();
   };
 
   const closeList = () => {
+    queryKeyRef.current = null;
     setQuery(null);
     setHighlightIndex(-1);
   };
@@ -219,7 +232,7 @@ export function MentionTextarea({
       // React's synthetic stopPropagation does not stop Modal's listener on
       // `document`; only this does.
       e.nativeEvent.stopImmediatePropagation();
-      closeList();
+      setDismissed(true);
       return;
     }
 
@@ -241,9 +254,15 @@ export function MentionTextarea({
     }
   };
 
+  /** Keys the dropdown owns; their keyup must not disturb its state. */
+  const NAV_KEYS = ['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'Tab'];
+
   const handleSelectionChange = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+    if ('key' in e.nativeEvent && NAV_KEYS.includes((e.nativeEvent as KeyboardEvent).key)) {
+      return;
+    }
     const textarea = e.currentTarget;
-    refreshQuery(textarea.value, textarea.selectionStart ?? 0);
+    refreshQuery(textarea.value, textarea.selectionStart ?? 0, anchors);
   };
 
   return (

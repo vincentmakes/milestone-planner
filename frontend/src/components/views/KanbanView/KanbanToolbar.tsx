@@ -10,7 +10,8 @@ import styles from './KanbanToolbar.module.css';
 interface KanbanToolbarProps {
   projects: Project[];
   selectedProjectId: number | null;
-  onSelectProject: (projectId: number) => void;
+  /** null = all projects in the site. */
+  onSelectProject: (projectId: number | null) => void;
   grouping: KanbanGrouping;
   groupingColumnId: number | null;
   listColumns: CustomColumn[];
@@ -27,6 +28,8 @@ interface KanbanToolbarProps {
  * mode and which column it groups by.
  */
 const CUSTOM_PREFIX = 'column:';
+/** Sentinel for the "All projects" entry — the picker value must be a string. */
+const ALL_PROJECTS = '__all__';
 
 export function KanbanToolbar({
   projects,
@@ -48,6 +51,7 @@ export function KanbanToolbar({
 
   const groupingOptions = [
     { value: 'none', label: 'No grouping' },
+    { value: 'project', label: 'Group by project' },
     { value: 'phase', label: 'Group by phase' },
     { value: 'assignee', label: 'Group by assignee' },
     ...listColumns.map((c) => ({
@@ -69,11 +73,15 @@ export function KanbanToolbar({
       <Select
         aria-label="Project"
         className={styles.projectSelect}
-        options={projects.map((p) => ({ value: p.id, label: p.name }))}
-        value={selectedProjectId ?? ''}
-        placeholder={projects.length === 0 ? 'No projects' : undefined}
+        options={[
+          { value: ALL_PROJECTS, label: 'All projects' },
+          ...projects.map((p) => ({ value: String(p.id), label: p.name })),
+        ]}
+        value={selectedProjectId === null ? ALL_PROJECTS : String(selectedProjectId)}
         disabled={projects.length === 0}
-        onChange={(e) => onSelectProject(Number(e.target.value))}
+        onChange={(e) =>
+          onSelectProject(e.target.value === ALL_PROJECTS ? null : Number(e.target.value))
+        }
       />
 
       <Select

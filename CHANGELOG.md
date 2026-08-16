@@ -9,14 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 - A **Kanban board** view showing any project's work as cards across four columns — To Do, In Progress, Blocked and Done. The board and the Gantt chart are two views of the same plan: a card is a phase or subphase with no children, so moving a card updates the Gantt chart and vice versa. Parent phases become swimlanes rather than cards.
-- Cards can be dragged between columns, grouped into swimlanes by phase, by assignee or by any list-type custom column, and filtered to just your own work with **My Todo**.
+- Cards can be dragged between columns, grouped into swimlanes by project, by phase, by assignee or by any list-type custom column, and filtered to just your own work with **My Todo**. Choose a single project or **All projects** to see the whole site at once; projects appear in the same order as the Gantt chart, including any custom order you have set there. When several projects are shown, phase lanes are labelled *Project — Phase* so identically named phases stay apart.
 - Assigning someone to a card **books their time**: it creates a staff assignment covering the card's dates at that person's maximum capacity, so the Staff workload view reflects it immediately. The booking follows the card whenever its dates change in the Gantt chart. Assigning the same person twice is now refused instead of silently double-booking them.
-- **Comments on cards**, with `@` mentions. Any signed-in user can comment; you can edit and delete your own comments, and managers can remove any.
+- **Comments on cards, with `@` mentions.** Type `@` and pick someone from the list — people already on the card are offered first. A picked mention is highlighted as you type, and editing it removes both the highlight and the notification, so what you see is always what will happen when you post. Only names picked from the list notify anyone; one simply typed out is ordinary text. Any signed-in user can comment; you can edit and delete your own comments, and managers can remove any.
 - An **in-app notification bell** in the header with an unread count. You are notified when someone assigns you to a card, comments on a card you are on, mentions you, or moves one of your cards to another column. Reminders for cards that are due soon or overdue are worked out in your browser from the plan you already have loaded, so they appear without any extra setup — but they only appear while the application is open, and there is no email or push.
 - People who are not project managers can now move the cards they are assigned to, and comment. Creating, deleting, assigning and rescheduling still require superuser rights.
 - The site export workbook gained a **Kanban status** column on the Projects sheet and a new **Card comments** sheet.
 
 ### Changed
+- Editing a comment now updates who it mentions, notifying anyone newly added without re-notifying people who were already mentioned. Previously an edit changed the text but left the mention list untouched.
 - A phase or subphase's completion percentage and its Kanban status are now kept in step. Setting a card to Done marks it 100% complete, To Do resets it to 0%, and editing the percentage in the Gantt chart moves the card to the matching column. Marking a card Blocked leaves its percentage untouched, and editing the percentage of a blocked card does not silently unblock it.
 - Completion percentages are now validated to be between 0 and 100. Values outside that range were previously accepted and stored.
 
