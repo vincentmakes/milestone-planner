@@ -16,9 +16,11 @@ import {
   createComment,
   deleteComment,
   getComments,
+  getMentionableUsers,
   moveCard,
   unassignCard,
   type CardComment,
+  type MentionableUser,
 } from '@/api/endpoints/kanban';
 import {
   CARD_STATUSES,
@@ -53,6 +55,11 @@ export function KanbanCardModal() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [assigneeToAdd, setAssigneeToAdd] = useState<string>('');
+  // Mentionable people are fetched per site rather than taken from the staff
+  // slice, which excludes administrators.
+  const [mentionable, setMentionable] = useState<{ siteId: number; users: MentionableUser[] } | null>(
+    null
+  );
 
   const isOpen = activeModal === 'kanbanCard';
   const { cardEntityType, cardEntityId, cardProjectId } = modalContext;
@@ -94,11 +101,15 @@ export function KanbanCardModal() {
     () =>
       buildMentionCandidates(
         card?.assignments ?? [],
-        siteStaff.map((s) => ({ id: s.id, name: s.name, role: s.role })),
+        (mentionable?.users ?? []).map((u) => ({
+          id: u.id,
+          name: u.name,
+          role: u.job_title ?? undefined,
+        })),
         // Mentioning yourself would render a pill that notifies nobody.
         currentUser?.id
       ),
-    [card?.assignments, siteStaff, currentUser?.id]
+    [card?.assignments, mentionable, currentUser?.id]
   );
 
   const reloadComments = useCallback(async () => {
@@ -109,6 +120,23 @@ export function KanbanCardModal() {
       console.error('[Kanban] Failed to load comments:', err);
     }
   }, [cardEntityType, cardEntityId]);
+
+  // One request per site per session: the component stays mounted between
+  // card opens, so reopening cards in the same site reuses the list.
+  useEffect(() => {
+    const siteId = project?.site_id;
+    if (!isOpen || siteId === undefined || siteId === null) return;
+    if (mentionable?.siteId === siteId) return;
+    let cancelled = false;
+    getMentionableUsers(siteId)
+      .then((users) => {
+        if (!cancelled) setMentionable({ siteId, users });
+      })
+      .catch((err) => console.error('[Kanban] Failed to load mentionable users:', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, project?.site_id, mentionable?.siteId]);
 
   useEffect(() => {
     if (!isOpen) {

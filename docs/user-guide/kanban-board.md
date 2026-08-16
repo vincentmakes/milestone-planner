@@ -82,17 +82,20 @@ A card with comments shows a small speech-bubble count on the board.
 
 ### Mentioning someone
 
-Type `@` and the list opens: people already assigned to this card first, then everyone else at the card's site. Keep typing to filter, then pick with the arrow keys and Enter, or click.
+Type `@` and the list opens: people already assigned to this card first, then everyone else who works at the card's site — any role, administrators included. Keep typing to filter, then pick with the arrow keys and Enter, or click.
 
 !!! warning "Only names you pick from the list notify anyone"
     A picked mention is **highlighted** in the comment box. A name you simply type out is ordinary text and notifies nobody, however correctly it is spelled — the highlight is what tells you the difference.
 
     Editing a highlighted mention removes the highlight, and with it the notification. That is deliberate: what you see is always what will happen when you post. Note that undoing the edit brings the text back but not the highlight — retype the `@` to pick the person again.
 
-Two limitations worth knowing:
+Who you can reach:
 
-- **You cannot mention yourself.** You would never be notified anyway, so it is left out rather than showing a mention that does nothing.
-- **Administrators do not appear in the list** unless they are assigned to the card. The list is built from staff, and administrators are not staff records. If you need to reach one, assign them to the card first, or mention someone who can.
+- **Everyone at the card's site**, whatever their role — administrators and project managers included, not just the people booked on the card.
+- **Administrators from any site.** They have access to every site, so they can always be mentioned.
+- **Not people from other sites**, unless they are assigned to this card. Someone who cannot see the project would only be confused by the notification.
+- **Not yourself.** You would never be notified anyway, so it is left out rather than showing a mention that does nothing.
+- **Not deactivated accounts**, since they cannot sign in to read the notification.
 
 ## Notifications
 

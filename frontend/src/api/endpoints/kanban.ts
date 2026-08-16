@@ -56,6 +56,20 @@ export async function getSiteCommentCounts(siteId: number): Promise<Map<string, 
   return flattenCommentCounts(raw);
 }
 
+export interface MentionableUser {
+  id: number;
+  name: string;
+  job_title: string | null;
+}
+
+/**
+ * Everyone at a site who can be @-mentioned.
+ * Not the staff list: that excludes administrators.
+ */
+export function getMentionableUsers(siteId: number): Promise<MentionableUser[]> {
+  return apiGet(`/api/kanban/sites/${siteId}/mentionable-users`);
+}
+
 /** Move a card to a different status column. */
 export function moveCard(
   entityType: CardEntityType,

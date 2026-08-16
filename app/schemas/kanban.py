@@ -80,3 +80,11 @@ class CommentCountsResponse(BaseModel):
 
     phase: dict[str, int] = {}
     subphase: dict[str, int] = {}
+
+
+class MentionableUserResponse(BaseModel):
+    """A person who can be @-mentioned in a card comment."""
+
+    id: int
+    name: str
+    job_title: str | None = None
