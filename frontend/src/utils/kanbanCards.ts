@@ -131,6 +131,21 @@ export function cardKey(entityType: 'phase' | 'subphase', entityId: number): str
   return `${entityType}-${entityId}`;
 }
 
+/**
+ * Normalise a date to plain `YYYY-MM-DD`.
+ *
+ * The API serialises phase/subphase dates in the Node-compatible
+ * `2026-01-01T00:00:00.000Z` form (see DateAsDateTimeJS), while the frontend
+ * model is documented as date-only strings. Cards are normalised here so every
+ * consumer -- the card, the modal, the due-date scan -- gets one format.
+ */
+function toDateOnly(value: string | null | undefined): string {
+  if (!value) return '';
+  // Already date-only, or an ISO datetime we can truncate.
+  const tIndex = value.indexOf('T');
+  return tIndex === -1 ? value : value.slice(0, tIndex);
+}
+
 function assigneeIdsOf(assignments: StaffAssignment[]): number[] {
   return Array.from(new Set(assignments.map((a) => a.staff_id)));
 }
@@ -170,8 +185,8 @@ function collectFromSubphases(
       projectId: project.id,
       projectName: project.name,
       name: sub.name,
-      startDate: sub.start_date,
-      endDate: sub.end_date,
+      startDate: toDateOnly(sub.start_date),
+      endDate: toDateOnly(sub.end_date),
       status: sub.status ?? 'todo',
       completion: sub.completion ?? null,
       isMilestone: Boolean(sub.is_milestone),
@@ -205,8 +220,8 @@ export function collectProjectCards(project: Project): KanbanCard[] {
         projectId: project.id,
         projectName: project.name,
         name: phase.name,
-        startDate: phase.start_date,
-        endDate: phase.end_date,
+        startDate: toDateOnly(phase.start_date),
+        endDate: toDateOnly(phase.end_date),
         status: phase.status ?? 'todo',
         completion: phase.completion ?? null,
         isMilestone: Boolean(phase.is_milestone),
