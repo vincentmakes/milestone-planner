@@ -10,6 +10,7 @@ import { WhatIfToggle } from './WhatIfToggle';
 import { InstanceTitle } from './InstanceTitle';
 import { UndoRedoControls } from './UndoRedoControls';
 import { OnlineUsers } from '@/components/common/OnlineUsers';
+import { NotificationBell } from '@/components/common/NotificationBell';
 import { getTheme, isDarkTheme, type Theme } from '@/utils/storage';
 import { getSetting } from '@/api/endpoints/settings';
 import type { ViewMode } from '@/types';
@@ -276,6 +277,9 @@ export function Header() {
         {/* Theme Toggle */}
         <ThemeToggle />
         
+        {/* Notifications */}
+        <NotificationBell />
+
         {/* Online Users */}
         <OnlineUsers />
         

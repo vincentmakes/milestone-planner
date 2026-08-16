@@ -108,6 +108,10 @@ export const STORAGE_KEYS = {
   // Project Order (per site)
   PROJECT_ORDER_PREFIX: 'milestone_project_order_site_',
 
+  // Dismissed due-soon/overdue reminders. These are derived in the browser
+  // rather than stored server-side, so their dismissals live here.
+  KANBAN_DUE_DISMISSED: 'milestone_kanban_due_dismissed',
+
   // Zustand persist() keys (documentation of record — the stores declare
   // these inline in their persist config; keep this list in sync)
   ZUSTAND_APP_STORE: 'milestone-app-storage-v3',

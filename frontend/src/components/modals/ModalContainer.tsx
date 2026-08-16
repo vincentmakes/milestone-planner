@@ -9,6 +9,7 @@ import { lazy, Suspense } from 'react';
 const ProjectModal = lazy(() => import('./ProjectModal').then(m => ({ default: m.ProjectModal })));
 const PhaseModal = lazy(() => import('./PhaseModal').then(m => ({ default: m.PhaseModal })));
 const SubphaseModal = lazy(() => import('./SubphaseModal').then(m => ({ default: m.SubphaseModal })));
+const KanbanCardModal = lazy(() => import('./KanbanCardModal').then(m => ({ default: m.KanbanCardModal })));
 const StaffAssignmentModal = lazy(() => import('./StaffAssignmentModal').then(m => ({ default: m.StaffAssignmentModal })));
 const EquipmentAssignmentModal = lazy(() => import('./EquipmentAssignmentModal').then(m => ({ default: m.EquipmentAssignmentModal })));
 const VacationModal = lazy(() => import('./VacationModal').then(m => ({ default: m.VacationModal })));
@@ -31,6 +32,7 @@ export function ModalContainer() {
       <ProjectModal />
       <PhaseModal />
       <SubphaseModal />
+      <KanbanCardModal />
       <StaffAssignmentModal />
       <EquipmentAssignmentModal />
       <VacationModal />

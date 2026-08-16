@@ -20,6 +20,8 @@ import {
   groupCards,
   type KanbanCard as KanbanCardData,
 } from '@/utils/kanbanCards';
+import { KanbanDragProvider, useKanbanDrag } from '@/contexts/KanbanDragContext';
+import { useUIStore } from '@/stores/uiStore';
 import { KanbanToolbar } from './KanbanToolbar';
 import { KanbanBoard } from './KanbanBoard';
 import styles from './KanbanView.module.css';
@@ -128,11 +130,16 @@ export function KanbanView() {
     staff,
   ]);
 
-  // Read-only board for now: dragging arrives with the move endpoint.
-  const canMoveCard = (_card: KanbanCardData) => false;
+  const openKanbanCard = useUIStore((s) => s.openKanbanCardModal);
 
-  const handleOpenCard = (_card: KanbanCardData) => {
-    // Card detail modal is wired up in a later step.
+  // Mirror the server gate (app/services/card_access.py) so a card the server
+  // would reject with 403 is not draggable in the first place.
+  const isPrivileged = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  const canMoveCard = (card: KanbanCardData) =>
+    Boolean(isPrivileged || (currentUser && card.assigneeIds.includes(currentUser.id)));
+
+  const handleOpenCard = (card: KanbanCardData) => {
+    openKanbanCard(card.entityType, card.entityId, card.projectId);
   };
 
   if (!currentSite) {
@@ -163,13 +170,50 @@ export function KanbanView() {
         totalCount={allCards.length}
       />
 
-      <KanbanBoard
-        lanes={lanes}
-        showLaneHeaders={grouping !== 'none'}
-        commentCounts={commentCounts}
-        canMoveCard={canMoveCard}
-        onOpenCard={handleOpenCard}
-      />
+      <KanbanDragProvider>
+        <DraggableBoard
+          lanes={lanes}
+          showLaneHeaders={grouping !== 'none'}
+          commentCounts={commentCounts}
+          canMoveCard={canMoveCard}
+          onOpenCard={handleOpenCard}
+        />
+      </KanbanDragProvider>
     </div>
+  );
+}
+
+/**
+ * Thin wrapper so the board can consume the drag context, which only exists
+ * below KanbanDragProvider.
+ */
+function DraggableBoard(props: {
+  lanes: ReturnType<typeof groupCards>;
+  showLaneHeaders: boolean;
+  commentCounts: Map<string, number>;
+  canMoveCard: (card: KanbanCardData) => boolean;
+  onOpenCard: (card: KanbanCardData) => void;
+}) {
+  const {
+    draggingCardKey,
+    dropTarget,
+    handleDragStart,
+    handleDragEnd,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+  } = useKanbanDrag();
+
+  return (
+    <KanbanBoard
+      {...props}
+      onCardDragStart={handleDragStart}
+      onCardDragEnd={handleDragEnd}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      dropTarget={dropTarget}
+      draggingCardKey={draggingCardKey}
+    />
   );
 }

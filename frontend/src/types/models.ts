@@ -471,3 +471,35 @@ export interface CustomColumnValue {
 
 // Key format for values map: "{columnId}-{entityType}-{entityId}"
 export type CustomColumnValuesMap = Record<string, string | null>;
+
+// =============================================================================
+// NOTIFICATIONS
+// =============================================================================
+
+export type NotificationType =
+  | 'assigned'
+  | 'comment'
+  | 'mention'
+  | 'status_change'
+  /** Derived in the browser from card end dates; never stored server-side. */
+  | 'due_soon'
+  | 'overdue';
+
+export interface AppNotification {
+  id: number;
+  type: NotificationType;
+  actor_id?: number | null;
+  actor_name?: string | null;
+  entity_type?: 'phase' | 'subphase' | null;
+  entity_id?: number | null;
+  project_id?: number | null;
+  title: string;
+  body?: string | null;
+  read_at?: string | null;
+  created_at: string;
+  /**
+   * 'derived' notifications are computed client-side from loaded project data
+   * and are dismissed into localStorage rather than marked read on the server.
+   */
+  source?: 'server' | 'derived';
+}
