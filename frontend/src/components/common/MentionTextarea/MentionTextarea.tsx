@@ -46,6 +46,25 @@ interface MentionTextareaProps {
 /** Flip the list above the field when it would otherwise run off-screen. */
 const FLIP_THRESHOLD_PX = 200;
 const MAX_DROPDOWN_PX = 240;
+const MIN_DROPDOWN_PX = 96;
+const GAP_PX = 4;
+
+/**
+ * The band of the layout viewport the user can actually see.
+ *
+ * On iPadOS and Android the software keyboard covers the bottom of the screen
+ * without changing `window.innerHeight` — only the *visual* viewport shrinks.
+ * Measuring against `innerHeight` therefore reports room below the composer
+ * that is really underneath the keyboard, and the list opens where it cannot be
+ * seen. `getBoundingClientRect()` and `position: fixed` are both layout-viewport
+ * relative, so `offsetTop` is what converts the visual viewport back into the
+ * same coordinate space.
+ */
+function visibleBand(): { top: number; bottom: number } {
+  const vv = window.visualViewport;
+  if (!vv) return { top: 0, bottom: window.innerHeight };
+  return { top: vv.offsetTop, bottom: vv.offsetTop + vv.height };
+}
 
 export function MentionTextarea({
   value,
@@ -142,15 +161,21 @@ export function MentionTextarea({
       const textarea = textareaRef.current;
       if (!textarea) return;
       const rect = textarea.getBoundingClientRect();
-      const below = window.innerHeight - rect.bottom;
-      const flip = below < FLIP_THRESHOLD_PX && rect.top > below;
-      const maxHeight = Math.min(MAX_DROPDOWN_PX, Math.max(120, flip ? rect.top - 16 : below - 16));
+      const band = visibleBand();
+
+      const below = band.bottom - rect.bottom - GAP_PX;
+      const above = rect.top - band.top - GAP_PX;
+      const flip = below < FLIP_THRESHOLD_PX && above > below;
+      const room = flip ? above : below;
 
       setDropdownStyle({
         left: rect.left,
         width: rect.width,
-        maxHeight,
-        ...(flip ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
+        maxHeight: Math.max(MIN_DROPDOWN_PX, Math.min(MAX_DROPDOWN_PX, room)),
+        // `bottom` is layout-viewport relative like the rect it is derived from.
+        ...(flip
+          ? { bottom: window.innerHeight - rect.top + GAP_PX }
+          : { top: rect.bottom + GAP_PX }),
       });
     };
 
@@ -158,9 +183,15 @@ export function MentionTextarea({
     window.addEventListener('resize', update);
     // Capture, so the modal body's own scroll is caught too.
     window.addEventListener('scroll', update, true);
+    // The keyboard opening fires these and nothing else — no window resize.
+    const vv = window.visualViewport;
+    vv?.addEventListener('resize', update);
+    vv?.addEventListener('scroll', update);
     return () => {
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
+      vv?.removeEventListener('resize', update);
+      vv?.removeEventListener('scroll', update);
     };
   }, [open]);
 
