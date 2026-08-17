@@ -18,6 +18,10 @@
 }
 
 .select {
+  /* Site names come from the database and have no length limit; without a cap
+     one long name overflows the header at any screen size. */
+  max-width: 200px;
+  text-overflow: ellipsis;
   height: 32px;
   padding: 0 1.75rem 0 2rem;
   font-family: var(--font-family);

@@ -21,6 +21,9 @@ export function ViewModeControls() {
           className={`${styles.button} ${viewMode === mode.value ? styles.active : ''}`}
           onClick={() => setViewMode(mode.value)}
           title={`${mode.value.charAt(0).toUpperCase() + mode.value.slice(1)} view`}
+          // Without this the accessible name is the bare letter "W".
+          aria-label={`${mode.value.charAt(0).toUpperCase() + mode.value.slice(1)} view`}
+          aria-pressed={viewMode === mode.value}
         >
           {mode.label}
         </button>
