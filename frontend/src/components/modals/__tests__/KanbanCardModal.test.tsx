@@ -358,11 +358,26 @@ describe('KanbanCardModal @-mentions', () => {
   // -------------------------------------------------------------
 
   const allocationControl = () =>
-    screen.getByLabelText('Allocation for Bob Brown') as HTMLSelectElement;
+    screen.getByLabelText('Allocation for Bob Brown') as HTMLInputElement;
+
+  /** Drag the slider and let go — a range input only commits on release. */
+  function slideTo(input: HTMLInputElement, pct: number) {
+    fireEvent.change(input, { target: { value: String(pct) } });
+    fireEvent.pointerUp(input);
+  }
+
+  it('offers a slider, not a dropdown', () => {
+    render(<KanbanCardModal />);
+    const slider = allocationControl();
+    expect(slider).toHaveAttribute('type', 'range');
+    expect(slider).toHaveAttribute('min', '5');
+    expect(slider).toHaveAttribute('max', '100');
+    expect(slider).toHaveAttribute('step', '5');
+  });
 
   it('lets a manager change an assignee allocation at the card level', async () => {
     render(<KanbanCardModal />);
-    fireEvent.change(allocationControl(), { target: { value: '40' } });
+    slideTo(allocationControl(), 40);
 
     await waitFor(() => expect(updateStaffAssignment).toHaveBeenCalled());
     // Cards are phases and subphases: the project-level route would silently
@@ -370,22 +385,44 @@ describe('KanbanCardModal @-mentions', () => {
     expect(updateStaffAssignment).toHaveBeenCalledWith(1, { allocation: 40 }, 'subphase');
   });
 
+  it('writes once per drag, not once per step', async () => {
+    render(<KanbanCardModal />);
+    const slider = allocationControl();
+    // Dragging across the track fires a change per step; only the release counts.
+    fireEvent.change(slider, { target: { value: '60' } });
+    fireEvent.change(slider, { target: { value: '45' } });
+    fireEvent.change(slider, { target: { value: '30' } });
+    fireEvent.pointerUp(slider);
+
+    await waitFor(() => expect(updateStaffAssignment).toHaveBeenCalledTimes(1));
+    expect(updateStaffAssignment).toHaveBeenCalledWith(1, { allocation: 30 }, 'subphase');
+  });
+
+  it('does not write when the drag ends where it started', async () => {
+    render(<KanbanCardModal />);
+    const slider = allocationControl();
+    fireEvent.change(slider, { target: { value: '50' } });
+    fireEvent.change(slider, { target: { value: '80' } });
+    fireEvent.pointerUp(slider);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(updateStaffAssignment).not.toHaveBeenCalled();
+  });
+
+  it('shows the new percentage while dragging, before anything is saved', () => {
+    render(<KanbanCardModal />);
+    fireEvent.change(allocationControl(), { target: { value: '35' } });
+    expect(screen.getByText('35%')).toBeInTheDocument();
+    expect(updateStaffAssignment).not.toHaveBeenCalled();
+  });
+
   it('shows the allocation as plain text to someone who cannot change it', () => {
     useAppStore.setState({ currentUser: { id: 5, role: 'user' } as never });
     render(<KanbanCardModal />);
     expect(screen.queryByLabelText('Allocation for Bob Brown')).not.toBeInTheDocument();
     expect(screen.getByText('80%')).toBeInTheDocument();
-  });
-
-  it('offers the Gantt slider steps', () => {
-    render(<KanbanCardModal />);
-    const values = within(allocationControl())
-      .getAllByRole('option')
-      .map((o) => (o as HTMLOptionElement).value);
-    expect(values[0]).toBe('5');
-    expect(values[values.length - 1]).toBe('100');
-    expect(values).toContain('50');
-    expect(values).not.toContain('0');
   });
 
   it('flags a booking above the assignee part-time capacity', () => {
@@ -409,14 +446,14 @@ describe('KanbanCardModal @-mentions', () => {
     expect(allocationControl()).not.toHaveAttribute('title');
   });
 
-  it('keeps an off-step allocation selectable rather than displaying a different number', () => {
-    // Imported plans carry any integer; a select without the stored value
-    // renders as though the booking were something it is not.
+  it('reports an off-step allocation as stored rather than rounding it', () => {
+    // Imported plans carry any integer. The slider only speaks in 5s, but the
+    // readout must not claim the booking is a number it is not.
     const project = seedProject();
     project.phases[0].children[0].staffAssignments[0].allocation = 33;
     useAppStore.setState({ projects: [project] });
 
     render(<KanbanCardModal />);
-    expect(allocationControl().value).toBe('33');
+    expect(screen.getByText('33%')).toBeInTheDocument();
   });
 });

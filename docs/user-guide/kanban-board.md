@@ -74,9 +74,9 @@ The dropdown shows what each person will be booked at. Because the booking takes
 
 ### Changing how much time is booked
 
-Someone is booked at their full capacity to begin with, which is rarely what you want for a card they are only partly on. The percentage beside each assignee is editable: pick a new one and the booking changes immediately, in the Gantt chart and the workload heatmap alike. It offers the same 5% steps as the allocation slider in the Gantt chart, so a booking means the same thing whichever view you set it from.
+Someone is booked at their full capacity to begin with, which is rarely what you want for a card they are only partly on. Each assignee has a slider beside their name: drag it and the booking changes as soon as you let go, in the Gantt chart and the workload heatmap alike. It is the same control as the allocation slider in the Gantt chart — the same 5% steps, the same range — so a booking means the same thing whichever view you set it from.
 
-A percentage shown in red is above that person's own maximum capacity — a part-timer at 60% booked onto a card at 80%. That is allowed; it is the heatmap that tells you what someone's whole workload adds up to.
+A slider shown in red is above that person's own maximum capacity: a part-timer at 60% booked onto a card at 80%. That is allowed; it is the heatmap that tells you what someone's whole workload adds up to.
 
 Adding, removing and changing assignees requires superuser rights, and so does changing an allocation. Being assigned to a card lets you move it between columns — it does not let you change what it books, since that is a change to the plan rather than a report of your progress.
 
