@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common';
+import { AllocationSlider } from '@/components/common/AllocationSlider';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { loadAllProjects, updateStaffAssignment } from '@/api/endpoints/projects';
@@ -38,19 +39,6 @@ import { MentionText, MentionTextarea } from '@/components/common/MentionTextare
 import { formatDateShort, parseDateISO } from '@/utils/date';
 import type { CardStatus } from '@/types';
 import styles from './KanbanCardModal.module.css';
-
-/**
- * The same values the Gantt's allocation slider offers, so a booking means the
- * same thing whichever view you set it from. An existing value outside the
- * steps (imported plans carry any integer) is folded in, or the select would
- * quietly display a different number than the one stored.
- */
-function allocationOptions(current: number): number[] {
-  const steps = new Set<number>();
-  for (let pct = 5; pct <= 100; pct += 5) steps.add(pct);
-  if (current >= 1 && current <= 100) steps.add(current);
-  return Array.from(steps).sort((a, b) => a - b);
-}
 
 export function KanbanCardModal() {
   const activeModal = useUIStore((s) => s.activeModal);
@@ -325,24 +313,16 @@ export function KanbanCardModal() {
                   <li key={a.id} className={styles.assignee}>
                     <span>{a.staff_name ?? `Staff ${a.staff_id}`}</span>
                     {isPrivileged ? (
-                      <select
-                        className={`${styles.allocationSelect} ${over ? styles.allocationOver : ''}`}
+                      <AllocationSlider
+                        compact
                         value={a.allocation}
+                        maxCapacity={maxCapacity}
                         disabled={busy}
                         aria-label={`Allocation for ${a.staff_name ?? `staff ${a.staff_id}`}`}
-                        title={
-                          over
-                            ? `Above this person's maximum capacity of ${maxCapacity}%`
-                            : undefined
-                        }
-                        onChange={(e) => handleAllocationChange(a.id, Number(e.target.value))}
-                      >
-                        {allocationOptions(a.allocation).map((pct) => (
-                          <option key={pct} value={pct}>
-                            {pct}%
-                          </option>
-                        ))}
-                      </select>
+                        // Commit on release only: a range input fires a change
+                        // per step, and each one here is a write plus a reload.
+                        onCommit={(pct) => handleAllocationChange(a.id, pct)}
+                      />
                     ) : (
                       <span className={`${styles.allocation} ${over ? styles.allocationOver : ''}`}>
                         {a.allocation}%
