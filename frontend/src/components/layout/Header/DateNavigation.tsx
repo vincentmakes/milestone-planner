@@ -8,7 +8,13 @@ import { useUIStore } from '@/stores/uiStore';
 import { addWeeks, addMonths, startOfWeek, startOfQuarter } from 'date-fns';
 import styles from './DateNavigation.module.css';
 
-export function DateNavigation() {
+interface DateNavigationProps {
+  /** Abbreviates the period ("Aug 2026" rather than "August 2026") when the
+   *  header is short of room. */
+  shortLabel?: boolean;
+}
+
+export function DateNavigation({ shortLabel = false }: DateNavigationProps) {
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
   const setCurrentDate = useViewStore((s) => s.setCurrentDate);
@@ -47,7 +53,10 @@ export function DateNavigation() {
 
   // Format the current period label using browser locale
   const getPeriodLabel = (): string => {
-    const monthYearFormatter = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' });
+    const monthYearFormatter = new Intl.DateTimeFormat(undefined, {
+      month: shortLabel ? 'short' : 'long',
+      year: 'numeric',
+    });
     const dateFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
     const yearFormatter = new Intl.DateTimeFormat(undefined, { year: 'numeric' });
     

@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - People who are not project managers can now move the cards they are assigned to, and comment. Creating, deleting, assigning and rescheduling still require superuser rights.
 - The site export workbook gained a **Kanban status** column on the Projects sheet and a new **Card comments** sheet.
 
+### Fixed
+- The top menu bar no longer overlaps itself on narrow screens. Below roughly 1600px it now collapses in stages — labels become icons, then the least-used controls (zoom, undo/redo, the view switcher, the theme and What If toggles) move into a **"⋯" menu** — so everything stays reachable down to tablet-portrait width. Previously the bar simply overflowed, leaving the date navigator sitting underneath the site picker.
+- The toolbar's zoom buttons now keep the timeline centred while zooming, matching Ctrl+scroll. They previously zoomed from the left edge.
+
 ### Changed
 - Editing a comment now updates who it mentions, notifying anyone newly added without re-notifying people who were already mentioned. Previously an edit changed the text but left the mention list untouched.
 - A phase or subphase's completion percentage and its Kanban status are now kept in step. Setting a card to Done marks it 100% complete, To Do resets it to 0%, and editing the percentage in the Gantt chart moves the card to the matching column. Marking a card Blocked leaves its percentage untouched, and editing the percentage of a blocked card does not silently unblock it.
