@@ -16,16 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - An **in-app notification bell** in the header with an unread count. You are notified when someone assigns you to a card, comments on a card you are on, mentions you, or moves one of your cards to another column. Reminders for cards that are due soon or overdue are worked out in your browser from the plan you already have loaded, so they appear without any extra setup — but they only appear while the application is open, and there is no email or push.
 - People who are not project managers can now move the cards they are assigned to, and comment. Creating, deleting, assigning and rescheduling still require superuser rights.
 - The site export workbook gained a **Kanban status** column on the Projects sheet and a new **Card comments** sheet.
-
-### Fixed
-- The top menu bar no longer overlaps itself on narrow screens. Below roughly 1600px it now collapses in stages — labels become icons, then the least-used controls (zoom, undo/redo, the view switcher, the theme and What If toggles) move into a **"⋯" menu** — so everything stays reachable down to tablet-portrait width. Previously the bar simply overflowed, leaving the date navigator sitting underneath the site picker.
-- The toolbar's zoom buttons now keep the timeline centred while zooming, matching Ctrl+scroll. They previously zoomed from the left edge.
+- Clicking a **phase name** in the Gantt chart's table scrolls the timeline to that phase's start date — the same jump the L1/L2 badges already offer on subphases. Useful for finding work that sits far outside the current view.
 
 ### Changed
 - Editing a comment now updates who it mentions, notifying anyone newly added without re-notifying people who were already mentioned. Previously an edit changed the text but left the mention list untouched.
 - A phase or subphase's completion percentage and its Kanban status are now kept in step. Setting a card to Done marks it 100% complete, To Do resets it to 0%, and editing the percentage in the Gantt chart moves the card to the matching column. Marking a card Blocked leaves its percentage untouched, and editing the percentage of a blocked card does not silently unblock it.
 - Completion percentages are now validated to be between 0 and 100. Values outside that range were previously accepted and stored.
 - Staff allocations on a phase or subphase are now validated to be between 1 and 100. A single booking is a share of one person's time, so it cannot exceed all of it; overlapping bookings are what add up to over-allocation in the workload heatmap. Zero and negative values were previously accepted and quietly distorted that calculation.
+
+### Fixed
+- The top menu bar no longer overlaps itself on narrow screens. Below roughly 1600px it now collapses in stages — labels become icons, then the least-used controls (zoom, undo/redo, the view switcher, the theme and What If toggles) move into a **"⋯" menu** — so everything stays reachable down to tablet-portrait width. Previously the bar simply overflowed, leaving the date navigator sitting underneath the site picker.
+- The toolbar's zoom buttons now keep the timeline centred while zooming, matching Ctrl+scroll. They previously zoomed from the left edge.
 
 ## [1.1.0] - 2026-08-14
 
