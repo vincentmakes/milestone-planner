@@ -96,8 +96,16 @@
   gap: 6px;
 }
 
+/*
+ * name | control | remove, as a grid with a fixed first track — the same
+ * shape as the holiday list in BankHolidayModal. The fixed track is the point:
+ * sized to its own text, each row's slider would start where that row's name
+ * happened to end, so three people all booked at 50% showed their thumbs in
+ * three different places.
+ */
 .assignee {
-  display: flex;
+  display: grid;
+  grid-template-columns: 150px 1fr auto;
   align-items: center;
   gap: 10px;
   padding: 6px 10px;
@@ -106,14 +114,22 @@
   font-size: var(--font-size-sm);
 }
 
-/* The name yields, not the slider: without this a long name squeezes the
-   track back to nothing, which is the original bug wearing a different hat. */
+/* A long name ellipsizes rather than moving the track. min-width is needed
+   because a grid item defaults to min-width: auto, which refuses to shrink
+   below its own text. */
 .assigneeName {
-  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A phone-width modal leaves only ~89px for the track at 150px, narrower than
+   the slider's own floor, so the row would overflow the dialog. */
+@media (max-width: 600px) {
+  .assignee {
+    grid-template-columns: 100px 1fr auto;
+  }
 }
 
 .allocation {
