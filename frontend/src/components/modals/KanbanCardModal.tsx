@@ -10,7 +10,7 @@ import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
-import { loadAllProjects } from '@/api/endpoints/projects';
+import { loadAllProjects, updateStaffAssignment } from '@/api/endpoints/projects';
 import {
   assignCard,
   createComment,
@@ -38,6 +38,19 @@ import { MentionText, MentionTextarea } from '@/components/common/MentionTextare
 import { formatDateShort, parseDateISO } from '@/utils/date';
 import type { CardStatus } from '@/types';
 import styles from './KanbanCardModal.module.css';
+
+/**
+ * The same values the Gantt's allocation slider offers, so a booking means the
+ * same thing whichever view you set it from. An existing value outside the
+ * steps (imported plans carry any integer) is folded in, or the select would
+ * quietly display a different number than the one stored.
+ */
+function allocationOptions(current: number): number[] {
+  const steps = new Set<number>();
+  for (let pct = 5; pct <= 100; pct += 5) steps.add(pct);
+  if (current >= 1 && current <= 100) steps.add(current);
+  return Array.from(steps).sort((a, b) => a - b);
+}
 
 export function KanbanCardModal() {
   const activeModal = useUIStore((s) => s.activeModal);
@@ -96,6 +109,16 @@ export function KanbanCardModal() {
     }
     return Array.from(byId.values());
   }, [staff, project?.site_id]);
+
+  // Assignees can include people absent from `siteStaff` (an admin booked on a
+  // card), so a missing entry means "no capacity to compare against", not 100.
+  const capacityById = useMemo(() => {
+    const byId = new Map<number, number>();
+    for (const s of siteStaff) {
+      if (s.max_capacity !== undefined && s.max_capacity !== null) byId.set(s.id, s.max_capacity);
+    }
+    return byId;
+  }, [siteStaff]);
 
   const mentionCandidates = useMemo(
     () =>
@@ -176,6 +199,22 @@ export function KanbanCardModal() {
       setProjects(await loadAllProjects());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not assign');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAllocationChange = async (assignmentId: number, allocation: number) => {
+    if (!card) return;
+    setBusy(true);
+    setError(null);
+    try {
+      // Cards are phases and subphases, so the level is the card's own type --
+      // never the project-level route.
+      await updateStaffAssignment(assignmentId, { allocation }, card.entityType);
+      setProjects(await loadAllProjects());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not change the allocation');
     } finally {
       setBusy(false);
     }
@@ -279,23 +318,50 @@ export function KanbanCardModal() {
               Assigning someone books their time over this card&apos;s dates.
             </p>
             <ul className={styles.assignees}>
-              {card.assignments.map((a) => (
-                <li key={a.id} className={styles.assignee}>
-                  <span>{a.staff_name ?? `Staff ${a.staff_id}`}</span>
-                  <span className={styles.allocation}>{a.allocation}%</span>
-                  {isPrivileged && (
-                    <button
-                      type="button"
-                      className={styles.removeBtn}
-                      onClick={() => handleUnassign(a.staff_id)}
-                      disabled={busy}
-                      aria-label={`Remove ${a.staff_name ?? 'assignee'}`}
-                    >
-                      &times;
-                    </button>
-                  )}
-                </li>
-              ))}
+              {card.assignments.map((a) => {
+                const maxCapacity = capacityById.get(a.staff_id);
+                const over = maxCapacity !== undefined && a.allocation > maxCapacity;
+                return (
+                  <li key={a.id} className={styles.assignee}>
+                    <span>{a.staff_name ?? `Staff ${a.staff_id}`}</span>
+                    {isPrivileged ? (
+                      <select
+                        className={`${styles.allocationSelect} ${over ? styles.allocationOver : ''}`}
+                        value={a.allocation}
+                        disabled={busy}
+                        aria-label={`Allocation for ${a.staff_name ?? `staff ${a.staff_id}`}`}
+                        title={
+                          over
+                            ? `Above this person's maximum capacity of ${maxCapacity}%`
+                            : undefined
+                        }
+                        onChange={(e) => handleAllocationChange(a.id, Number(e.target.value))}
+                      >
+                        {allocationOptions(a.allocation).map((pct) => (
+                          <option key={pct} value={pct}>
+                            {pct}%
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className={`${styles.allocation} ${over ? styles.allocationOver : ''}`}>
+                        {a.allocation}%
+                      </span>
+                    )}
+                    {isPrivileged && (
+                      <button
+                        type="button"
+                        className={styles.removeBtn}
+                        onClick={() => handleUnassign(a.staff_id)}
+                        disabled={busy}
+                        aria-label={`Remove ${a.staff_name ?? 'assignee'}`}
+                      >
+                        &times;
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
               {card.assignments.length === 0 && <li className={styles.none}>Nobody assigned</li>}
             </ul>
 

@@ -10,6 +10,7 @@ import { KanbanCardModal } from '../KanbanCardModal';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { createComment, getMentionableUsers } from '@/api/endpoints/kanban';
+import { updateStaffAssignment } from '@/api/endpoints/projects';
 import type { Phase, Project, Subphase } from '@/types';
 
 vi.mock('@/api/endpoints/kanban', () => ({
@@ -29,6 +30,7 @@ vi.mock('@/api/endpoints/kanban', () => ({
 
 vi.mock('@/api/endpoints/projects', () => ({
   loadAllProjects: vi.fn().mockResolvedValue([]),
+  updateStaffAssignment: vi.fn().mockResolvedValue({}),
 }));
 
 // The modal derives its card from appStore.projects, so an empty store renders
@@ -349,5 +351,72 @@ describe('KanbanCardModal @-mentions', () => {
     // The modal renders through a portal, so it is not inside `container`.
     render(<KanbanCardModal />);
     expect(document.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------
+  // Allocation
+  // -------------------------------------------------------------
+
+  const allocationControl = () =>
+    screen.getByLabelText('Allocation for Bob Brown') as HTMLSelectElement;
+
+  it('lets a manager change an assignee allocation at the card level', async () => {
+    render(<KanbanCardModal />);
+    fireEvent.change(allocationControl(), { target: { value: '40' } });
+
+    await waitFor(() => expect(updateStaffAssignment).toHaveBeenCalled());
+    // Cards are phases and subphases: the project-level route would silently
+    // update an unrelated assignment id.
+    expect(updateStaffAssignment).toHaveBeenCalledWith(1, { allocation: 40 }, 'subphase');
+  });
+
+  it('shows the allocation as plain text to someone who cannot change it', () => {
+    useAppStore.setState({ currentUser: { id: 5, role: 'user' } as never });
+    render(<KanbanCardModal />);
+    expect(screen.queryByLabelText('Allocation for Bob Brown')).not.toBeInTheDocument();
+    expect(screen.getByText('80%')).toBeInTheDocument();
+  });
+
+  it('offers the Gantt slider steps', () => {
+    render(<KanbanCardModal />);
+    const values = within(allocationControl())
+      .getAllByRole('option')
+      .map((o) => (o as HTMLOptionElement).value);
+    expect(values[0]).toBe('5');
+    expect(values[values.length - 1]).toBe('100');
+    expect(values).toContain('50');
+    expect(values).not.toContain('0');
+  });
+
+  it('flags a booking above the assignee part-time capacity', () => {
+    useAppStore.setState({
+      staff: [
+        { id: 4, name: 'Bob Brown', site_id: 1, active: true, max_capacity: 60 },
+      ] as never,
+    });
+    render(<KanbanCardModal />);
+    expect(allocationControl()).toHaveAttribute(
+      'title',
+      "Above this person's maximum capacity of 60%"
+    );
+  });
+
+  it('does not flag an assignee whose capacity is unknown', () => {
+    // Admins can be booked on a card without appearing in the staff list; a
+    // missing entry means "nothing to compare against", not a capacity of 100.
+    useAppStore.setState({ staff: [] as never });
+    render(<KanbanCardModal />);
+    expect(allocationControl()).not.toHaveAttribute('title');
+  });
+
+  it('keeps an off-step allocation selectable rather than displaying a different number', () => {
+    // Imported plans carry any integer; a select without the stored value
+    // renders as though the booking were something it is not.
+    const project = seedProject();
+    project.phases[0].children[0].staffAssignments[0].allocation = 33;
+    useAppStore.setState({ projects: [project] });
+
+    render(<KanbanCardModal />);
+    expect(allocationControl().value).toBe('33');
   });
 });

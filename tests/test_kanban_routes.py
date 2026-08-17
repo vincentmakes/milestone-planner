@@ -180,6 +180,32 @@ async def test_missing_card_returns_404(authed_client, mock_db_session):
 
 
 # ---------------------------------------------------------
+# Allocation
+# ---------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/api/phase-staff/1", "/api/subphase-staff/1"])
+@pytest.mark.parametrize("allocation", [0, -10, 101, 1000])
+async def test_allocation_outside_1_to_100_is_rejected(authed_client, path, allocation):
+    """A single booking is a share of one person's time; it cannot exceed 100%."""
+    client, set_user = authed_client
+    set_user(FakeUser(9, "superuser"))
+    response = await client.put(path, json={"allocation": allocation})
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/api/phase-staff/1", "/api/subphase-staff/1"])
+async def test_allocation_edit_requires_superuser(authed_client, path):
+    """Changing a booking edits the plan, unlike moving a card you are on."""
+    client, set_user = authed_client
+    set_user(FakeUser(5, "user"))
+    response = await client.put(path, json={"allocation": 50})
+    assert response.status_code == 403
+
+
+# ---------------------------------------------------------
 # Mentionable users
 # ---------------------------------------------------------
 
