@@ -106,6 +106,16 @@
   font-size: var(--font-size-sm);
 }
 
+/* The name yields, not the slider: without this a long name squeezes the
+   track back to nothing, which is the original bug wearing a different hat. */
+.assigneeName {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .allocation {
   margin-left: auto;
   color: var(--text-tertiary);
