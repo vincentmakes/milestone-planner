@@ -109,26 +109,31 @@
    Compact variant: one row of a list, not a form field.
    --------------------------------------------------------------- */
 
+/* Claims the row's spare width rather than sitting at a fixed size — the row
+   is ~580px wide, and a 90px track put each 5% step under 5px. */
 .compact {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-left: auto;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
 }
 
 .compact .slider {
-  width: 90px;
-  height: 5px;
+  flex: 1;
+  width: auto;
+  min-width: 120px;
+  height: 6px;
 }
 
 .compact .slider::-webkit-slider-thumb {
-  width: 13px;
-  height: 13px;
+  width: 16px;
+  height: 16px;
 }
 
 .compact .slider::-moz-range-thumb {
-  width: 13px;
-  height: 13px;
+  width: 16px;
+  height: 16px;
 }
 
 .compactValue {

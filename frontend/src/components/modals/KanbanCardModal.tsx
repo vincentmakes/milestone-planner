@@ -311,7 +311,9 @@ export function KanbanCardModal() {
                 const over = maxCapacity !== undefined && a.allocation > maxCapacity;
                 return (
                   <li key={a.id} className={styles.assignee}>
-                    <span>{a.staff_name ?? `Staff ${a.staff_id}`}</span>
+                    <span className={styles.assigneeName}>
+                      {a.staff_name ?? `Staff ${a.staff_id}`}
+                    </span>
                     {isPrivileged ? (
                       <AllocationSlider
                         compact
