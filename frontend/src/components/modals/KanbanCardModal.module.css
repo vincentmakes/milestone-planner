@@ -112,6 +112,30 @@
   font-size: var(--font-size-xs);
 }
 
+.allocationSelect {
+  margin-left: auto;
+  padding: 2px 4px;
+  border: 1px solid var(--input-border, var(--border-color));
+  border-radius: 4px;
+  background: var(--input-bg, var(--bg-card));
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.allocationSelect:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Booking someone above their part-time capacity is allowed — the workload
+   heatmap is the real warning — but it should not pass unremarked here. */
+.allocationOver {
+  border-color: var(--status-blocked);
+  color: var(--status-blocked);
+}
+
 .none {
   font-size: var(--font-size-sm);
   color: var(--text-disabled);
