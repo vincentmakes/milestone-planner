@@ -122,7 +122,9 @@
 .compact .slider {
   flex: 1;
   width: auto;
-  min-width: 120px;
+  /* A floor, not a size: low enough to fit the narrow track a phone-width
+     row gives it, so the caller's layout wins rather than overflowing. */
+  min-width: 80px;
   height: 6px;
 }
 
