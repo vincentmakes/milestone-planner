@@ -116,6 +116,7 @@ export const PhaseRow = memo(function PhaseRow({
   const projects = useAppStore((s) => s.projects);
   const setProjects = useAppStore((s) => s.setProjects);
   const openPhaseModal = useUIStore((s) => s.openPhaseModal);
+  const triggerScrollToDate = useUIStore((s) => s.triggerScrollToDate);
   
   const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
   
@@ -144,6 +145,12 @@ export const PhaseRow = memo(function PhaseRow({
   const handleEdit = () => {
     openPhaseModal(phase, projectId);
   };
+
+  // Jump the timeline to this phase, the same way a subphase's L1/L2 badge does.
+  const handleNameClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    triggerScrollToDate(phase.start_date);
+  }, [phase.start_date, triggerScrollToDate]);
   
   // Handle clicking on completion badge to show slider
   const handleCompletionClick = useCallback((e: React.MouseEvent) => {
@@ -295,16 +302,18 @@ export const PhaseRow = memo(function PhaseRow({
             {completionResult.completion !== null ? `${completionResult.completion}%` : '—'}
           </span>
 
-          {/* Type badge */}
-          <span
+          {/* Phase name — clickable to scroll to start date */}
+          <button
             className={styles.typeBadge}
-            style={{ 
+            style={{
               backgroundColor: `${phase.color}33`,
-              color: phase.color 
+              color: phase.color
             }}
+            onClick={handleNameClick}
+            title={`${phase.name} - Click to scroll to start date`}
           >
             {phase.is_milestone ? '◆' : ''}{phase.name}
-          </span>
+          </button>
 
           {/* Date display */}
           <span className={styles.dateDisplay}>
