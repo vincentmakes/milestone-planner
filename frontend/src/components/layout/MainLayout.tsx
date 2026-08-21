@@ -9,7 +9,7 @@ import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { GanttContainer } from '@/components/gantt';
 import { ShiftTooltip } from '@/components/gantt/ShiftTooltip';
-import { StaffView, EquipmentView, CrossSiteView, ArchivedView } from '@/components/views';
+import { KanbanView, StaffView, EquipmentView, CrossSiteView, ArchivedView } from '@/components/views';
 import styles from './MainLayout.module.css';
 
 export function MainLayout() {
@@ -23,6 +23,8 @@ export function MainLayout() {
     switch (currentView) {
       case 'gantt':
         return <GanttContainer />;
+      case 'kanban':
+        return <KanbanView />;
       case 'staff':
         return <StaffView />;
       case 'equipment':

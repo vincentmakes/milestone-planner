@@ -37,8 +37,20 @@
   background: var(--bg-secondary);
 }
 
+/*
+ * `width` rather than `min-width`, and this is the single most important line
+ * in the header's layout. A min-width is a floor flexbox cannot cross, so the
+ * old rule made the date navigator incompressible — which is why the centre
+ * section spilled over the right-hand controls instead of shrinking. As a flex
+ * basis it holds the same 120px when there is room and yields when there is not.
+ */
 .periodLabel {
-  min-width: 120px;
+  width: 120px;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: center;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);

@@ -108,6 +108,10 @@ export const STORAGE_KEYS = {
   // Project Order (per site)
   PROJECT_ORDER_PREFIX: 'milestone_project_order_site_',
 
+  // Dismissed due-soon/overdue reminders. These are derived in the browser
+  // rather than stored server-side, so their dismissals live here.
+  KANBAN_DUE_DISMISSED: 'milestone_kanban_due_dismissed',
+
   // Zustand persist() keys (documentation of record — the stores declare
   // these inline in their persist config; keep this list in sync)
   ZUSTAND_APP_STORE: 'milestone-app-storage-v3',
@@ -139,6 +143,31 @@ export function getProjectOrder(siteId: number): number[] {
 export function setProjectOrder(siteId: number, projectIds: number[]): void {
   const key = `${STORAGE_KEYS.PROJECT_ORDER_PREFIX}${siteId}`;
   setLocalStorage(key, projectIds);
+}
+
+/**
+ * Site projects in the order the Gantt shows them.
+ *
+ * Filters to the site, drops archived projects, then applies the user's custom
+ * order if one exists, falling back to confirmed-first-then-name. The Gantt and
+ * the Kanban board must agree, so both call this rather than each re-deriving
+ * the rule.
+ */
+export function orderSiteProjects<
+  T extends { id: number; site_id?: number | null; archived?: boolean; confirmed?: boolean; name: string },
+>(projects: T[], siteId: number | undefined): T[] {
+  if (siteId === undefined) return [];
+
+  const siteProjects = projects.filter((p) => p.site_id === siteId && !p.archived);
+
+  if (getProjectOrder(siteId).length > 0) {
+    return sortProjectsByOrder(siteProjects, siteId);
+  }
+
+  return [...siteProjects].sort((a, b) => {
+    if (a.confirmed !== b.confirmed) return a.confirmed ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
 }
 
 /**

@@ -29,6 +29,7 @@ export * from './endpoints/settings';
 export * from './endpoints/customColumns';
 export * from './endpoints/skills';
 export * from './endpoints/tags';
+export * from './endpoints/health';
 
 // Admin endpoints (multi-tenant management)
 export * from './endpoints/admin';

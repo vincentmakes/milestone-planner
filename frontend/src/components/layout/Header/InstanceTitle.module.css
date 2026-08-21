@@ -16,11 +16,9 @@
   font-weight: 500;
   color: #3b82f6;
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   letter-spacing: 0.01em;
 }
 
-@media (max-width: 768px) {
-  .container {
-    display: none;
-  }
-}

@@ -66,6 +66,7 @@ bash migrations/run_migration.sh <migration_name>
 | `add_project_presence` | Tenant | Real-time presence tracking |
 | `add_is_system_column` | Tenant | System column flag |
 | `add_staff_notes` | Tenant | Staff notes table (migrates and drops the legacy `notes` table) |
+| `add_kanban_tables` | Tenant | Kanban board: `status` column on `project_phases`/`project_subphases` (backfilled from `completion`), plus the `card_comments` and `notifications` tables |
 | `upgrade_to_v90` | Tenant | Major version upgrade |
 
 ### Writing New Migrations

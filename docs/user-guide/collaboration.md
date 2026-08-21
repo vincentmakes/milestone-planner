@@ -35,6 +35,17 @@ When another user modifies a phase, subphase, or assignment, a toast appears in 
 
 Toasts appear for about 6 seconds before fading. The notification includes the user's avatar, name, and a summary of what changed.
 
+## Notifications
+
+The activity feed above is transient and shows what *everyone* is doing. The **notification bell** in the header is the opposite: it is personal, it persists, and it keeps an unread count until you read it.
+
+You are notified when someone assigns you to a Kanban card, comments on a card you are assigned to, mentions you with `@`, or moves one of your cards to another column. You are never notified about your own actions. Clicking a notification opens the card it refers to.
+
+Notifications are stored per user, so they survive a reload or a restart — you will not miss one because a browser tab was closed. See the [Kanban Board guide](kanban-board.md#notifications) for the full list of triggers.
+
+!!! info "Due and overdue reminders are worked out in your browser"
+    Reminders for cards due soon or already overdue are derived from the plan you have loaded, rather than being generated on the server. They need no setup, but they only appear while the application is open — there is no email or push notification, and nothing arrives overnight.
+
 ## WebSocket Connection
 
 The real-time features use a WebSocket connection that:

@@ -26,7 +26,7 @@ Matches Node.js routes:
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -82,7 +82,11 @@ class PhaseStaffAssignmentCreate(BaseModel):
 class PhaseStaffAssignmentUpdate(BaseModel):
     """Request to update a phase staff assignment."""
 
-    allocation: int
+    # A single booking is a share of one person's time, so it cannot exceed
+    # 100%; over-allocation is what several overlapping bookings add up to, and
+    # the workload heatmap is where that shows. 0 or negative would silently
+    # corrupt that calculation rather than mean anything.
+    allocation: int = Field(ge=1, le=100)
 
 
 class SubphaseStaffAssignmentCreate(BaseModel):
@@ -96,7 +100,8 @@ class SubphaseStaffAssignmentCreate(BaseModel):
 class SubphaseStaffAssignmentUpdate(BaseModel):
     """Request to update a subphase staff assignment."""
 
-    allocation: int
+    # Bounded for the same reason as the phase-level update above.
+    allocation: int = Field(ge=1, le=100)
 
 
 class EquipmentAssignmentCreate(BaseModel):

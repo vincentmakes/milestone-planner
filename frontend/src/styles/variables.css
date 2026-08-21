@@ -51,6 +51,16 @@
   --accent-red-hover: #dc2626;
   --accent-red-alpha: rgba(239, 68, 68, 0.15);
   --accent-purple: #8b5cf6;
+
+  /* Kanban status colors (board columns + card accents) */
+  --status-todo: #94a3b8;
+  --status-in-progress: #3b82f6;
+  --status-blocked: #ef4444;
+  --status-done: #10b981;
+  --status-todo-soft: rgba(148, 163, 184, 0.12);
+  --status-in-progress-soft: rgba(59, 130, 246, 0.12);
+  --status-blocked-soft: rgba(239, 68, 68, 0.12);
+  --status-done-soft: rgba(16, 185, 129, 0.12);
   
   /* Hover/Active States */
   --bg-hover: rgba(255, 255, 255, 0.05);
@@ -256,6 +266,16 @@
   --accent-red-hover: #b91c1c;
   --accent-red-alpha: rgba(220, 38, 38, 0.1);
   --accent-purple: #7c3aed;
+
+  /* Kanban status colors (board columns + card accents) */
+  --status-todo: #64748b;
+  --status-in-progress: #2563eb;
+  --status-blocked: #dc2626;
+  --status-done: #059669;
+  --status-todo-soft: rgba(100, 116, 139, 0.1);
+  --status-in-progress-soft: rgba(37, 99, 235, 0.1);
+  --status-blocked-soft: rgba(220, 38, 38, 0.1);
+  --status-done-soft: rgba(5, 150, 105, 0.1);
   
   /* Shadows (subtle for light theme, print-friendly) */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);

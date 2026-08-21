@@ -99,8 +99,19 @@ export async function apiRequest<T>(
   
   // In What If mode, block write operations (except auth and settings) and queue them
   if (clientConfig.isWhatIfMode?.() && ['PUT', 'POST', 'DELETE'].includes(method)) {
-    const allowedPrefixes = ['/api/auth/', '/api/settings/'];
-    const isAllowed = allowedPrefixes.some(prefix => url.includes(prefix));
+    // Card moves and assignments ARE plan operations, so they stay queued.
+    // Comments and notifications are not: a queued comment gets a fake id,
+    // whatIfStore only snapshots appStore.projects so Discard cannot roll it
+    // back, and Apply would replay it into a real second comment.
+    const allowedPrefixes = [
+      '/api/auth/',
+      '/api/settings/',
+      '/api/notifications',
+      '/api/kanban/comments/',
+    ];
+    const isCommentWrite = /\/api\/kanban\/cards\/(phase|subphase)\/\d+\/comments/.test(url);
+    const isAllowed =
+      isCommentWrite || allowedPrefixes.some(prefix => url.includes(prefix));
     
     if (!isAllowed) {
       // Queue the operation for later execution when applying changes

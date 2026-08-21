@@ -184,8 +184,10 @@ def create_app() -> FastAPI:
         equipment,
         export,
         health,
+        kanban,
         mpp_import,
         notes,
+        notifications,
         predefined_phases,
         projects,
         sites,
@@ -217,6 +219,8 @@ def create_app() -> FastAPI:
     app.include_router(custom_columns.router, prefix="/api", tags=["Custom Columns"])
     app.include_router(skills.router, prefix="/api", tags=["Skills"])
     app.include_router(tags.router, prefix="/api", tags=["Tags"])
+    app.include_router(kanban.router, prefix="/api", tags=["Kanban"])
+    app.include_router(notifications.router, prefix="/api", tags=["Notifications"])
 
     # WebSocket for real-time collaboration
     app.include_router(websocket_router, tags=["WebSocket"])

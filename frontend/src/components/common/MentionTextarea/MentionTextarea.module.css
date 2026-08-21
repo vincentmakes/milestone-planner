@@ -1,0 +1,146 @@
+/*
+ * The mirror and the textarea must lay text out identically or the pills drift
+ * off the words they belong to. Every metric below is shared deliberately —
+ * change one, change both.
+ */
+
+.field {
+  --mention-pad-x: 10px;
+  --mention-pad-y: 8px;
+  position: relative;
+  width: 100%;
+  /* Border and background live here, not on the textarea, so the mirror behind
+     it is visible. */
+  border: 1px solid var(--input-border, var(--border-color));
+  border-radius: 5px;
+  background: var(--input-bg, var(--bg-secondary));
+}
+
+.field:focus-within {
+  border-color: var(--accent-primary);
+}
+
+.mirror,
+.textarea {
+  box-sizing: border-box;
+  margin: 0;
+  border: none;
+  padding: var(--mention-pad-y) var(--mention-pad-x);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  /* Numeric: `normal` resolves differently on a div and a textarea. */
+  line-height: 1.45;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-indent: 0;
+  text-align: left;
+  text-transform: none;
+  tab-size: 4;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.mirror {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  color: transparent;
+  z-index: 0;
+}
+
+/* Composition text is in the textarea but not yet in the React value, so the
+   mirror would lag. Hide it rather than trying to model IME state. */
+.composing {
+  opacity: 0;
+}
+
+.textarea {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  background: transparent;
+  color: var(--text-primary);
+  resize: vertical;
+}
+
+.textarea:focus {
+  outline: none;
+}
+
+/* Shared by the composer overlay and the posted thread, so a mention looks the
+   same before and after it is sent. */
+.mention {
+  background: var(--accent-blue-alpha);
+  border-radius: 3px;
+  color: var(--accent-primary);
+}
+
+.mirror .mention {
+  /* In the overlay only the pill is wanted; the real glyphs come from the
+     textarea sitting on top. */
+  color: transparent;
+}
+
+.mentionMe {
+  background: var(--status-in-progress-soft);
+  font-weight: var(--font-weight-medium);
+}
+
+.dropdown {
+  position: fixed;
+  z-index: 9999;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: var(--shadow-lg);
+}
+
+.optionWrapper {
+  display: block;
+}
+
+.groupHeading {
+  display: block;
+  padding: 5px 10px 3px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+.option {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+.optionActive {
+  background: var(--bg-hover);
+}
+
+.optionName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.optionHint {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
