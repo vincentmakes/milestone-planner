@@ -107,8 +107,21 @@
   background: var(--bg-hover);
 }
 
-.menuItem:last-child {
+/* Rounds whichever element ends the menu. The version footer takes over as
+   :last-child when it is present, so this cannot be pinned to .menuItem alone
+   or the menu grows square bottom corners inside a rounded container. */
+.menuItem:last-child,
+.version:last-child {
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+/* The running server version. Informational, so it is deliberately quieter
+   than the Log out item above it. */
+.version {
+  padding: 0.5rem 1rem;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .menuItem svg {

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { logout } from '@/api/endpoints/auth';
+import { getAppVersion } from '@/api/endpoints/health';
 import styles from './UserMenu.module.css';
 
 export function UserMenu() {
@@ -8,6 +9,7 @@ export function UserMenu() {
   const menuRef = useRef<HTMLDivElement>(null);
   const currentUser = useAppStore((s) => s.currentUser);
   const setCurrentUser = useAppStore((s) => s.setCurrentUser);
+  const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -22,6 +24,19 @@ export function UserMenu() {
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    // The previous value stays on screen meanwhile, so reopening the menu does
+    // not flash a placeholder.
+    getAppVersion().then((v) => {
+      if (!cancelled) setVersion(v);
+    });
+    return () => {
+      cancelled = true;
     };
   }, [isOpen]);
 
@@ -85,6 +100,14 @@ export function UserMenu() {
             </svg>
             <span>Log out</span>
           </button>
+          {/* Omitted entirely when the server could not be reached — better a
+              menu without a version than one showing a dash. */}
+          {version && (
+            <>
+              <div className={styles.divider} />
+              <div className={styles.version}>v{version}</div>
+            </>
+          )}
         </div>
       )}
     </div>
