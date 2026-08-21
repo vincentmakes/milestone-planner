@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - An **in-app notification bell** in the header with an unread count. You are notified when someone assigns you to a card, comments on a card you are on, mentions you, or moves one of your cards to another column. Reminders for cards that are due soon or overdue are worked out in your browser from the plan you already have loaded, so they appear without any extra setup — but they only appear while the application is open, and there is no email or push.
 - People who are not project managers can now move the cards they are assigned to, and comment. Creating, deleting, assigning and rescheduling still require superuser rights.
 - The site export workbook gained a **Kanban status** column on the Projects sheet and a new **Card comments** sheet.
+- The **version this instance is running** now appears at the bottom of the user menu. It is read from the server each time the menu is opened, so an upgrade shows up there without reloading the page.
 - Clicking a **phase name** in the Gantt chart's table scrolls the timeline to that phase's start date — the same jump the L1/L2 badges already offer on subphases. Useful for finding work that sits far outside the current view.
 
 ### Changed

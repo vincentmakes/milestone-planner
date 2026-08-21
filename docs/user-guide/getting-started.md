@@ -44,7 +44,7 @@ The sidebar can be collapsed to icon-only mode for more screen space. Administra
 - Arrow buttons to scroll the timeline backward/forward
 - **Today** button to jump to the current date
 - View mode: **W** (Week), **M** (Month), **Q** (Quarter), **Y** (Year)
-- Zoom slider to adjust timeline cell width (12px to 120px)
+- Zoom controls (**−**, the current percentage, **+**) to adjust timeline cell width (12px to 120px)
 
 **Right — Actions & User Menu:**
 
@@ -52,7 +52,14 @@ The sidebar can be collapsed to icon-only mode for more screen space. Administra
 - **What-If** toggle — Enter/exit scenario planning mode
 - Theme toggle (light/dark)
 - Online users indicator
-- User menu (profile, settings, admin portal, logout)
+- User menu (profile, logout, and the version this instance is running)
+
+!!! note "The header adapts to the window width"
+    On a narrower window the bar collapses in stages rather than crowding. Button labels shorten to icons first; below roughly 1280px the zoom and undo/redo controls move into a **⋯** menu beside the notification bell, and below about 1024px the view switcher and the theme and What-If toggles join them. Nothing is removed — everything stays reachable in that menu, and zoom and undo/redo also have [keyboard shortcuts](keyboard-shortcuts.md).
+
+### Checking your version
+
+The bottom of the user menu shows the version this instance is running, for example `v1.2.0`. It is read from the server each time you open the menu, so if your administrator upgrades the instance while you have the application open, the number changes here — reload the page to pick up the new version.
 
 ## User Roles
 
