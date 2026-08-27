@@ -211,6 +211,15 @@ async def create_tenant(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="A tenant with this slug already exists")
 
+    if data.organization_id:
+        from app.models.organization import Organization
+
+        org_result = await db.execute(
+            select(Organization).where(Organization.id == data.organization_id)
+        )
+        if not org_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Organization not found")
+
     db_name = f"milestone_{data.slug.replace('-', '_')}"
     db_user = f"milestone_{data.slug.replace('-', '_')}_user"
     db_password = generate_password(32)
@@ -227,6 +236,7 @@ async def create_tenant(
         plan=data.plan,
         max_users=data.max_users,
         max_projects=data.max_projects,
+        organization_id=data.organization_id,
     )
     db.add(tenant)
     await db.flush()
