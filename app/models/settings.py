@@ -83,8 +83,16 @@ class SSOConfig(Base):
 
     @property
     def is_configured(self) -> bool:
-        """Check if SSO is properly configured."""
-        return bool(self.tenant_id and self.client_id and self.redirect_uri)
+        """
+        Check if SSO is properly configured.
+
+        ``client_secret`` is part of this: without it the callback posts an
+        empty secret to Entra, which answers "invalid client" — a message that
+        sends administrators hunting for a wrong secret rather than a missing
+        one. A row without a secret cannot complete a sign-in, so it does not
+        count as configured and the sign-in button stays hidden.
+        """
+        return bool(self.tenant_id and self.client_id and self.client_secret and self.redirect_uri)
 
     @property
     def should_auto_create_users(self) -> bool:

@@ -12,7 +12,7 @@ import pytest
 
 from app.models.organization import OrganizationSSOConfig
 from app.routers.auth import _sso_error_redirect, get_sso_config_full
-from app.services.sso import SSOService
+from app.services.sso import OrgSSOLookupError, SSOService
 
 # ---------------------------------------------------------------------------
 # _sso_error_redirect
@@ -110,6 +110,101 @@ def test_org_sso_is_not_configured_without_a_redirect_uri():
 
     config.redirect_uri = "https://host/api/auth/sso/callback"
     assert config.is_configured is True
+
+
+# ---------------------------------------------------------------------------
+# SSOConfig.is_configured (tenant level)
+# ---------------------------------------------------------------------------
+
+
+def test_tenant_sso_is_not_configured_without_a_client_secret():
+    """A row with no secret cannot sign anyone in, so it must not advertise SSO."""
+    from app.models.settings import SSOConfig
+
+    config = SSOConfig(
+        tenant_id="tenant",
+        client_id="client",
+        client_secret=None,
+        redirect_uri="https://host/t/acme/api/auth/sso/callback",
+    )
+    assert config.is_configured is False
+
+    config.client_secret = "a-real-secret"
+    assert config.is_configured is True
+
+
+# ---------------------------------------------------------------------------
+# A failed organization lookup is not "no organization SSO"
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_org_lookup_raises_when_the_master_db_is_unreachable():
+    svc = SSOService(MagicMock())
+
+    with (
+        patch(
+            "app.services.master_db.master_db.session",
+            MagicMock(side_effect=RuntimeError("master DB down")),
+        ),
+        pytest.raises(OrgSSOLookupError),
+    ):
+        await svc._get_organization_sso_config("tenant-uuid")
+
+
+@pytest.mark.asyncio
+async def test_org_lookup_raises_when_the_secret_cannot_be_decrypted():
+    """A rotated TENANT_ENCRYPTION_KEY must not read as 'no organization SSO'."""
+    svc = SSOService(MagicMock())
+    tenant = MagicMock(
+        organization=MagicMock(
+            id="org-uuid",
+            name="Acme",
+            slug="acme",
+            sso_config=MagicMock(
+                is_enabled=True,
+                is_configured=True,
+                client_secret_encrypted="iv:tag:cipher",
+            ),
+        )
+    )
+    session = MagicMock()
+    session.execute = AsyncMock(
+        return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=tenant))
+    )
+    session_cm = MagicMock()
+    session_cm.__aenter__ = AsyncMock(return_value=session)
+    session_cm.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("app.services.master_db.master_db.session", MagicMock(return_value=session_cm)),
+        patch("app.services.sso.decrypt", MagicMock(side_effect=ValueError("bad key"))),
+        pytest.raises(OrgSSOLookupError),
+    ):
+        await svc._get_organization_sso_config("tenant-uuid")
+
+
+@pytest.mark.asyncio
+async def test_sso_login_fails_closed_when_the_org_lookup_fails():
+    """Better a 503 than starting a sign-in against the wrong app registration."""
+    from fastapi import HTTPException
+
+    from app.routers.auth import sso_login
+
+    request = MagicMock()
+    request.state.tenant = {"id": "tenant-uuid", "slug": "acme"}
+
+    with (
+        patch.object(
+            SSOService,
+            "get_effective_sso_config",
+            AsyncMock(side_effect=OrgSSOLookupError("master DB down")),
+        ),
+        pytest.raises(HTTPException) as exc,
+    ):
+        await sso_login(request=request, db=MagicMock())
+
+    assert exc.value.status_code == 503
 
 
 # ---------------------------------------------------------------------------

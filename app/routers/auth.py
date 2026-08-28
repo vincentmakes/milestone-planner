@@ -5,6 +5,7 @@ Handles login, logout, session management, and SSO.
 Matches the Node.js API at /api/auth exactly.
 """
 
+import hashlib
 import logging
 from contextlib import asynccontextmanager
 from urllib.parse import quote_plus
@@ -37,6 +38,7 @@ from app.schemas.auth import (
 )
 from app.services.encryption import hash_user_password, password_needs_upgrade, verify_user_password
 from app.services.session import SessionService
+from app.services.sso_errors import parse_entra_token_error
 
 logger = logging.getLogger(__name__)
 
@@ -269,14 +271,21 @@ async def change_password(
 # ---------------------------------------------------------
 
 
-async def _active_org_sso(request: Request, db: AsyncSession) -> dict | None:
+async def _active_org_sso(
+    request: Request, db: AsyncSession, *, strict: bool = False
+) -> dict | None:
     """
     Return the active organization-level SSO config for the request's tenant,
     or None if the organization has no SSO (or in single-tenant mode).
 
     Used to detect when tenant-level SSO would be overridden by (and is
-    therefore redundant with) organization SSO. Never raises — any lookup
-    failure yields None so it can't break the settings screen or a save.
+    therefore redundant with) organization SSO.
+
+    ``strict`` decides what a failed lookup means. Read paths (the settings
+    screen) leave it False and degrade to None rather than break. Write paths
+    set it True: ``_reject_if_org_sso_active`` is a guardrail, and a guardrail
+    that a master-DB blip can silently switch off is not one — those callers
+    get a 503 instead.
     """
     if not settings.multi_tenant:
         return None
@@ -292,6 +301,11 @@ async def _active_org_sso(request: Request, db: AsyncSession) -> dict | None:
         return await SSOService(db).get_active_organization_sso(tenant_id)
     except Exception:
         logger.exception("Organization SSO status lookup failed")
+        if strict:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=("Single sign-on configuration could not be read. Please try again later."),
+            ) from None
         return None
 
 
@@ -440,7 +454,7 @@ async def update_sso_config_new(
     """
     logger.info("SSO Update received: %s", data)
 
-    _reject_if_org_sso_active(data, await _active_org_sso(request, db))
+    _reject_if_org_sso_active(data, await _active_org_sso(request, db, strict=True))
 
     result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
     config = result.scalar_one_or_none()
@@ -528,7 +542,7 @@ async def update_sso_config(
     Requires admin authentication.
     Matches: PUT /api/auth/sso/config
     """
-    _reject_if_org_sso_active(data, await _active_org_sso(request, db))
+    _reject_if_org_sso_active(data, await _active_org_sso(request, db, strict=True))
 
     result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
     config = result.scalar_one_or_none()
@@ -644,6 +658,26 @@ def _sso_error_redirect(tenant_slug: str | None, message: str) -> RedirectRespon
     return RedirectResponse(url=f"{base}?sso_error={quote_plus(message)}", status_code=302)
 
 
+def _config_fingerprint(config: dict, source: str) -> str:
+    """
+    Describe an effective SSO config for the log without leaking the secret.
+
+    The authorization request and the code redemption resolve the config
+    independently, and a redemption that quietly used a *different* config than
+    the sign-in is the hardest SSO failure to see from the outside — Entra just
+    reports a redirect-URI mismatch. Logging this on both hops makes the two
+    directly comparable. The secret is reduced to a short digest, which proves
+    both hops used the same credential without disclosing it.
+    """
+    secret = config.get("client_secret") or ""
+    secret_fp = hashlib.sha256(secret.encode()).hexdigest()[:8] if secret else "none"
+    return (
+        f"source={source} client_id={config.get('client_id')} "
+        f"entra_tenant={config.get('tenant_id')} redirect_uri={config.get('redirect_uri')} "
+        f"secret_fp={secret_fp}"
+    )
+
+
 @asynccontextmanager
 async def _resolve_sso_tenant_session(request: Request, default_db: AsyncSession, tenant_slug):
     """
@@ -701,7 +735,7 @@ async def sso_status(
     Public endpoint - used by login page to show/hide SSO button.
     Matches: GET /api/auth/sso/status
     """
-    from app.services.sso import SSOService
+    from app.services.sso import OrgSSOLookupError, SSOService
 
     _sso_disabled = {
         "enabled": False,
@@ -727,6 +761,16 @@ async def sso_status(
 
     try:
         config, source = await sso_service.get_effective_sso_config(tenant)
+    except OrgSSOLookupError:
+        # The login page degrades to "no SSO" either way, but this one is a
+        # broken deployment rather than an unconfigured one — say so loudly.
+        logger.error(
+            "SSO status: organization SSO lookup failed for tenant '%s'; the sign-in button "
+            "will be hidden until it recovers",
+            getattr(getattr(request, "state", None), "tenant_slug", None),
+            exc_info=True,
+        )
+        return _sso_disabled
     except Exception:
         return _sso_disabled
 
@@ -769,15 +813,24 @@ async def sso_login(
 
     Matches: GET /api/auth/sso/login
     """
-    from app.services.sso import SSOService
+    from app.services.sso import OrgSSOLookupError, SSOService
 
     sso_service = SSOService(db)
 
     # Get tenant from request state (set by tenant middleware in multi-tenant mode)
     tenant = getattr(request.state, "tenant", None) if hasattr(request, "state") else None
 
-    # Get effective SSO config
-    config, source = await sso_service.get_effective_sso_config(tenant)
+    # Get effective SSO config. A failed organization lookup must not fall
+    # through to the tenant-level config: the callback resolves the config
+    # again, and starting a sign-in against one app registration only to redeem
+    # the code against another is the failure this fails closed to avoid.
+    try:
+        config, source = await sso_service.get_effective_sso_config(tenant)
+    except OrgSSOLookupError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Single sign-on is temporarily unavailable. Please try again later.",
+        ) from None
 
     if not config or not config.get("enabled"):
         raise HTTPException(
@@ -801,6 +854,8 @@ async def sso_login(
 
     # Determine if we need groups scope
     has_group_requirements = bool(config.get("required_group_ids"))
+
+    logger.info("SSO login for tenant '%s': %s", tenant_slug, _config_fingerprint(config, source))
 
     # Build authorization URL
     redirect_url = sso_service.build_authorization_url(
@@ -830,7 +885,7 @@ async def sso_callback(
 
     Matches: GET /api/auth/sso/callback
     """
-    from app.services.sso import SSOService
+    from app.services.sso import OrgSSOLookupError, SSOService
 
     # Verify the HMAC-signed state and recover the tenant slug it carries. The
     # slug is only ever used to pick a redirect target, so recovering it up front
@@ -861,21 +916,44 @@ async def sso_callback(
 
         sso_service = SSOService(active_db)
 
-        # Get effective SSO config (organization-level is resolved from the tenant)
-        config, source = await sso_service.get_effective_sso_config(tenant_ctx)
+        # Get effective SSO config (organization-level is resolved from the
+        # tenant). This is a second, independent resolution — the sign-in leg
+        # did its own — so a failed organization lookup must fail the sign-in
+        # rather than fall through to the tenant-level config, which would
+        # redeem the code against a different client and redirect URI than the
+        # one it was issued for.
+        try:
+            config, source = await sso_service.get_effective_sso_config(tenant_ctx)
+        except OrgSSOLookupError:
+            return _sso_error_redirect(
+                tenant_slug, "Single sign-on is temporarily unavailable. Please try again."
+            )
 
         if not config or not config.get("enabled"):
             return _sso_error_redirect(tenant_slug, "SSO not configured")
+
+        fingerprint = _config_fingerprint(config, source)
+        logger.info("SSO callback for tenant '%s': %s", tenant_slug, fingerprint)
 
         # Exchange code for tokens
         entra_tenant_id = config["tenant_id"]
         token_url = f"https://login.microsoftonline.com/{entra_tenant_id}/oauth2/v2.0/token"
 
-        # Determine scopes (need GroupMember.Read.All if groups are required)
+        # Determine scopes (need GroupMember.Read.All if groups are required).
+        # These must match the scopes the authorization URL asked for; see
+        # SSOService.build_authorization_url for why the list is what it is.
         has_group_requirements = bool(config.get("required_group_ids"))
         scopes = ["openid", "profile", "email", "User.Read"]
         if has_group_requirements:
             scopes.append("GroupMember.Read.All")
+
+        # Posting an empty secret gets an "invalid client" back, which reads as
+        # a wrong secret rather than a missing one. Say what is actually wrong.
+        if not (config.get("client_secret") or "").strip():
+            logger.error("SSO: no client secret in the effective config (%s)", fingerprint)
+            return _sso_error_redirect(
+                tenant_slug, "SSO client secret is not configured. Contact administrator."
+            )
 
         token_data = {
             "client_id": config["client_id"],
@@ -886,14 +964,27 @@ async def sso_callback(
             "scope": " ".join(scopes),
         }
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             token_response = await client.post(token_url, data=token_data)
 
             if token_response.status_code != 200:
                 logger.error(
                     "Token exchange failed: %s %s", token_response.status_code, token_response.text
                 )
-                return _sso_error_redirect(tenant_slug, "Failed to exchange authorization code")
+                # Entra names the cause in an AADSTS code. Surfacing it is the
+                # whole point: an operator who cannot read this log otherwise
+                # sees eleven different failures as one sentence.
+                token_error = parse_entra_token_error(
+                    token_response.status_code, token_response.text
+                )
+                logger.error(
+                    "SSO token exchange rejected (%s, %s) [%s]: %s",
+                    token_error.code or "no AADSTS code",
+                    token_error.category,
+                    fingerprint,
+                    token_error.admin_remedy,
+                )
+                return _sso_error_redirect(tenant_slug, token_error.user_message)
 
             tokens = token_response.json()
             access_token = tokens.get("access_token")
@@ -908,6 +999,17 @@ async def sso_callback(
                 logger.error(
                     "Graph API failed: %s %s", graph_response.status_code, graph_response.text
                 )
+                graph_error = parse_entra_token_error(
+                    graph_response.status_code, graph_response.text
+                )
+                if graph_error.code:
+                    logger.error(
+                        "SSO profile lookup rejected (%s) [%s]: %s",
+                        graph_error.code,
+                        fingerprint,
+                        graph_error.admin_remedy,
+                    )
+                    return _sso_error_redirect(tenant_slug, graph_error.user_message)
                 return _sso_error_redirect(tenant_slug, "Failed to fetch user info")
 
             user_info = graph_response.json()

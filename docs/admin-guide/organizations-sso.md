@@ -126,6 +126,51 @@ most common cause is a redirect-URI mismatch — confirm the App Registration, M
 `https://your-domain.com/api/auth/sso/callback`. The server log carries the underlying
 Microsoft error for every failure.
 
+### Troubleshooting sign-in failures
+
+When a sign-in fails, the message above the sign-in form names Microsoft's error code. Look it
+up here.
+
+!!! warning "Check the platform first: **Web**, not Single-page application"
+    This is the one failure that looks like a working configuration. Microsoft issues the
+    authorization code normally — the redirect URI *is* registered — and then refuses to
+    exchange it, because a URI registered under the **Single-page application** platform can
+    only be redeemed from a browser, never from a server holding a client secret.
+
+    One App Registration can hold both platforms, so a workspace-level sign-in using a
+    `/t/{slug}/…` URI registered under **Web** keeps working while the shared organization URI
+    added under **SPA** fails. In the Azure portal: **App registrations → your app →
+    Authentication**, check which platform card lists
+    `https://your-domain.com/api/auth/sso/callback`. Under **Manifest**, its `replyUrlsWithType`
+    entry must read `"type": "Web"`. If it reads `"Spa"`, delete it from the Single-page
+    application platform and add the same URI under Web.
+
+!!! tip "The secret **Value**, not the Secret ID"
+    Azure shows a client secret's *Value* and its *Secret ID* side by side, and only the Value
+    works. A secret that looks like a GUID (`0a1b2c3d-…`) is the Secret ID.
+
+| Code | What it means | What to do |
+|------|---------------|------------|
+| `AADSTS9002327`, `AADSTS9002325` | The redirect URI is registered as a single-page application | Re-register it under the **Web** platform (see above) |
+| `AADSTS9002326` | An `Origin` header reached a Web-registered URI | A forward proxy is injecting `Origin` on the server's outbound requests |
+| `AADSTS7000215` | The client secret is not valid | Re-enter the secret's **Value**; check for truncation and trailing whitespace |
+| `AADSTS7000222` | The client secret has expired | Create a new secret under **Certificates & secrets** and save its Value |
+| `AADSTS7000218` | No client secret reached Microsoft | The stored secret is empty or could not be decrypted — re-enter it |
+| `AADSTS50011` | The redirect URI does not match the registration | Since Microsoft would not have issued a code for an unregistered URI, this usually means the redemption used a different SSO configuration than the sign-in — check the server log, which records the configuration used on both steps |
+| `AADSTS54005`, `AADSTS70008` | The sign-in link was already used or expired | Sign in again. If it happens every time, look for a link prefetcher or a retrying proxy in front of the callback URL |
+| `AADSTS700016` | The client ID is not in that directory | Check the Application (client) ID and Directory (tenant) ID belong to the same App Registration |
+| `AADSTS65001` | Consent has not been granted | Grant admin consent for `User.Read` (and `GroupMember.Read.All` if group access is in use) under **API permissions** |
+| `AADSTS90002`, `AADSTS900023` | The directory could not be found | The Directory (tenant) ID is wrong or malformed — copy it from the App Registration's **Overview** |
+
+Two messages come from Milestone rather than Microsoft:
+
+- **"SSO client secret is not configured"** — the configuration in effect has no client secret.
+  Save one; a configuration without a secret can never complete a sign-in.
+- **"Single sign-on is temporarily unavailable"** — the organization's configuration could not
+  be read, usually a master-database problem or a changed `TENANT_ENCRYPTION_KEY`. Milestone
+  deliberately stops here rather than continuing with the workspace's own settings, which would
+  fail against Microsoft with an unrelated-looking error.
+
 ## Group-Based Access Control
 
 Restrict tenant access to users who belong to specific Microsoft Entra ID (Azure AD) security groups.

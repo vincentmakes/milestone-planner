@@ -22,6 +22,24 @@ from app.services.encryption import decrypt
 logger = logging.getLogger(__name__)
 
 
+class OrgSSOLookupError(RuntimeError):
+    """
+    The organization-level SSO lookup itself failed.
+
+    Distinct from "this tenant has no organization SSO", which is a plain
+    ``None``. The distinction matters: a caller that reads a failed lookup as
+    "no organization SSO" falls through to the tenant-level config and, on the
+    SSO callback, redeems the authorization code against a *different* client
+    and redirect URI than the one ``/authorize`` was called with — which Entra
+    rejects with an error that looks nothing like the real cause.
+    """
+
+
+def _clean(value: Any) -> Any:
+    """Strip whitespace off a config string, leaving non-strings untouched."""
+    return value.strip() if isinstance(value, str) else value
+
+
 class SSOService:
     """Service for SSO operations."""
 
@@ -46,6 +64,11 @@ class SSOService:
             Tuple of (config_dict, source) where:
             - config_dict: SSO configuration as dict, or None if SSO not enabled
             - source: 'organization', 'tenant', or 'none'
+
+        Raises:
+            OrgSSOLookupError: the organization-level lookup failed. Never
+                falls back to the tenant-level config in that case — see the
+                exception's docstring for why that fallback is dangerous.
         """
         # Resolve the tenant id from either an ORM object or the state dict.
         tenant_id = None
@@ -78,10 +101,10 @@ class SSOService:
             return {
                 "enabled": True,
                 "provider": "entra",
-                "tenant_id": config.tenant_id,
-                "client_id": config.client_id,
-                "client_secret": config.client_secret,
-                "redirect_uri": config.redirect_uri,
+                "tenant_id": _clean(config.tenant_id),
+                "client_id": _clean(config.client_id),
+                "client_secret": _clean(config.client_secret),
+                "redirect_uri": _clean(config.redirect_uri),
                 "auto_create_users": config.should_auto_create_users,
                 "default_role": config.default_role,
                 "required_group_ids": [],
@@ -98,6 +121,9 @@ class SSOService:
         organization and its SSO config are loaded fresh (and eagerly) from the
         master database here. Returns the effective config dict when the
         tenant's organization has SSO enabled and configured, otherwise None.
+
+        Raises ``OrgSSOLookupError`` when the lookup cannot be completed, so a
+        caller can tell "no organization SSO" apart from "we do not know".
         """
         from sqlalchemy.orm import selectinload
 
@@ -115,9 +141,11 @@ class SSOService:
                     )
                 )
                 tenant = result.scalar_one_or_none()
-        except Exception:
+        except Exception as exc:
             logger.exception("Failed to load organization SSO config for tenant %s", tenant_id)
-            return None
+            raise OrgSSOLookupError(
+                f"organization SSO lookup failed for tenant {tenant_id}"
+            ) from exc
 
         if not tenant or not tenant.organization:
             return None
@@ -131,19 +159,24 @@ class SSOService:
             client_secret = (
                 decrypt(config.client_secret_encrypted) if config.client_secret_encrypted else None
             )
-        except Exception:
+        except Exception as exc:
             # A wrong/rotated TENANT_ENCRYPTION_KEY would otherwise surface as an
             # opaque 500 from the login and callback routes.
             logger.exception("Failed to decrypt SSO client secret for organization %s", org.id)
-            return None
+            raise OrgSSOLookupError(
+                f"could not decrypt SSO client secret for organization {org.id}"
+            ) from exc
 
         return {
             "enabled": True,
             "provider": config.provider,
-            "tenant_id": config.entra_tenant_id,
-            "client_id": config.client_id,
-            "client_secret": client_secret,
-            "redirect_uri": config.redirect_uri,
+            # Stripped on read, not just on write: configurations saved before
+            # the write-side validators existed can carry a trailing newline
+            # from a copy-paste, which Entra rejects as an invalid secret.
+            "tenant_id": _clean(config.entra_tenant_id),
+            "client_id": _clean(config.client_id),
+            "client_secret": _clean(client_secret),
+            "redirect_uri": _clean(config.redirect_uri),
             "auto_create_users": config.should_auto_create_users,
             "default_role": config.default_user_role,
             "required_group_ids": tenant.required_group_ids or [],
@@ -188,7 +221,7 @@ class SSOService:
         group_ids: list[str] = []
         url = "https://graph.microsoft.com/v1.0/me/memberOf?$select=id,displayName"
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             while url and len(group_ids) < max_groups:
                 response = await client.get(
                     url, headers={"Authorization": f"Bearer {access_token}"}
@@ -246,34 +279,6 @@ class SSOService:
             # User must be member of at least ONE required group (default: 'any')
             return bool(user_set.intersection(required_set))
 
-    def build_sso_callback_url(
-        self, tenant_slug: str | None = None, base_url: str | None = None
-    ) -> str:
-        """
-        Build the SSO callback URL for a tenant.
-
-        Args:
-            tenant_slug: Tenant slug for multi-tenant mode
-            base_url: Base URL of the application (optional, uses settings if not provided)
-
-        Returns:
-            Full callback URL
-        """
-        if not base_url:
-            # Try to get from settings or construct from host/port
-            base_url = getattr(self.settings, "base_url", None)
-            if not base_url:
-                # Fallback to constructing from port
-                port = self.settings.port
-                base_url = f"http://localhost:{port}"
-
-        if tenant_slug:
-            # Multi-tenant mode
-            return f"{base_url}/t/{tenant_slug}/api/auth/sso/callback"
-        else:
-            # Single-tenant mode
-            return f"{base_url}/api/auth/sso/callback"
-
     def build_authorization_url(
         self, sso_config: dict[str, Any], state: str, include_groups_scope: bool = False
     ) -> str:
@@ -291,6 +296,11 @@ class SSOService:
         tenant_id = sso_config["tenant_id"]
         auth_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/authorize"
 
+        # Every value here resolves to a single resource (Microsoft Graph;
+        # openid/profile/email are OIDC scopes), which is what the v2.0
+        # endpoints require. Adding a scope on a second API would make Entra
+        # reject the request with AADSTS28000 — this list is correct as it is.
+        # The callback's redemption must keep using the same scopes.
         scopes = ["openid", "profile", "email", "User.Read"]
         if include_groups_scope:
             scopes.append("GroupMember.Read.All")

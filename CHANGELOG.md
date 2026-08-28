@@ -5,6 +5,15 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.3] - 2026-08-28
+
+### Fixed
+- A failed sign-in with Microsoft now says what actually went wrong — a redirect address registered under the wrong platform, an invalid or expired client secret, missing consent — instead of "Failed to exchange authorization code". The Microsoft error code is shown so an administrator can act on it without reading the server log.
+- Single sign-on no longer falls back to a workspace's own settings when the organization's configuration cannot be read. It previously carried on with the wrong settings, and Microsoft then rejected the sign-in with an error pointing at the wrong thing entirely.
+- Workspace SSO settings saved without a client secret are no longer offered on the sign-in page: signing in with them could never succeed, and it failed as though the secret were wrong rather than missing.
+- Whitespace accidentally saved with an SSO setting — a trailing newline from a copy-paste — is now ignored instead of making Microsoft reject the credentials.
+- Sign-in requests to Microsoft now time out instead of hanging indefinitely when the identity provider is unreachable.
+
 ## [1.2.2] - 2026-08-28
 
 ### Fixed
