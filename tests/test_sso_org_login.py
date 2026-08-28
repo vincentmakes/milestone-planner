@@ -56,11 +56,8 @@ async def test_fetch_user_groups_returns_none_when_the_lookup_fails():
     response = MagicMock(status_code=403, text="Insufficient privileges")
     client = AsyncMock()
     client.get = AsyncMock(return_value=response)
-    client.__aenter__ = AsyncMock(return_value=client)
-    client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.services.sso.httpx.AsyncClient", return_value=client):
-        assert await svc.fetch_user_groups("token") is None
+    assert await svc.fetch_user_groups("token", client=client) is None
 
 
 @pytest.mark.asyncio
@@ -78,11 +75,8 @@ async def test_fetch_user_groups_returns_group_ids_on_success():
     )
     client = AsyncMock()
     client.get = AsyncMock(return_value=response)
-    client.__aenter__ = AsyncMock(return_value=client)
-    client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.services.sso.httpx.AsyncClient", return_value=client):
-        assert await svc.fetch_user_groups("token") == ["group-1"]
+    assert await svc.fetch_user_groups("token", client=client) == ["group-1"]
 
 
 def test_validate_group_membership_denies_when_user_has_no_groups():

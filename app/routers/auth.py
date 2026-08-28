@@ -10,7 +10,6 @@ import logging
 from contextlib import asynccontextmanager
 from urllib.parse import quote_plus
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
@@ -37,6 +36,7 @@ from app.schemas.auth import (
     UserSiteInfo,
 )
 from app.services.encryption import hash_user_password, password_needs_upgrade, verify_user_password
+from app.services.proxy import async_client
 from app.services.session import SessionService
 from app.services.sso_errors import parse_entra_token_error
 
@@ -964,7 +964,7 @@ async def sso_callback(
             "scope": " ".join(scopes),
         }
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with async_client(token_url, timeout=15.0) as client:
             token_response = await client.post(token_url, data=token_data)
 
             if token_response.status_code != 200:

@@ -126,6 +126,25 @@ most common cause is a redirect-URI mismatch — confirm the App Registration, M
 `https://your-domain.com/api/auth/sso/callback`. The server log carries the underlying
 Microsoft error for every failure.
 
+### Test configuration
+
+The organization's **SSO Configuration** tab has a **Test configuration** button. It tests the
+*saved* configuration, so save your changes first.
+
+The test signs in as the application itself, which checks:
+
+- the Directory (tenant) ID, Application (client) ID and client secret look right and, where a
+  secret was pasted from the wrong column, that it is not the Secret ID;
+- the redirect URI is an absolute `https://` URL ending in `/api/auth/sso/callback` with no
+  `/t/{slug}/` path;
+- Microsoft recognises the directory, and accepts the client ID and secret.
+
+What it **cannot** check is the redirect URI's registration, because signing in as the
+application never uses one. A green result therefore reads "Microsoft accepted the credentials",
+not "SSO works", and the last row always asks you to confirm the platform by hand — see the
+warning below. If the test cannot reach Microsoft at all it says so, rather than blaming the
+credentials.
+
 ### Troubleshooting sign-in failures
 
 When a sign-in fails, the message above the sign-in form names Microsoft's error code. Look it

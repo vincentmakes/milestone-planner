@@ -5,6 +5,9 @@ Supports PAC (Proxy Auto-Config) files and direct proxy URLs.
 
 import logging
 import re
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 
@@ -134,3 +137,62 @@ def clear_proxy_cache():
     global _pac_content, _cached_proxy
     _pac_content = None
     _cached_proxy = None
+
+
+def resolve_ssl_verify() -> bool | str:
+    """SSL verification setting - a custom CA cert wins over the boolean flag."""
+    settings = get_settings()
+
+    if settings.proxy_ca_cert:
+        logger.info("Using custom CA certificate: %s", settings.proxy_ca_cert)
+        return settings.proxy_ca_cert
+    if not settings.proxy_verify_ssl:
+        logger.info("SSL verification disabled for proxy")
+    return settings.proxy_verify_ssl
+
+
+async def resolve_proxy(url: str) -> str | None:
+    """Resolve the outbound proxy for a URL, injecting credentials if configured."""
+    settings = get_settings()
+    proxy_url = await get_proxy_for_url(url)
+
+    if not proxy_url:
+        return None
+
+    logger.info("Using proxy: %s", proxy_url)
+
+    if settings.proxy_username and settings.proxy_password:
+        parsed = urlparse(proxy_url)
+        proxy_url = urlunparse(
+            (
+                parsed.scheme,
+                f"{settings.proxy_username}:{settings.proxy_password}@{parsed.netloc}",
+                parsed.path,
+                parsed.params,
+                parsed.query,
+                parsed.fragment,
+            )
+        )
+        logger.info("Proxy authentication enabled for user: %s", settings.proxy_username)
+
+    return proxy_url
+
+
+@asynccontextmanager
+async def async_client(url: str, *, timeout: float = 10.0) -> AsyncIterator[httpx.AsyncClient]:
+    """
+    An ``httpx`` client configured for this deployment's outbound network.
+
+    Everything the app calls out to — the holiday API, Entra, Microsoft Graph —
+    goes through whatever proxy and CA bundle the deployment configured
+    (``HTTP(S)_PROXY``, ``PROXY_PAC_URL``, ``PROXY_USERNAME``/``PROXY_PASSWORD``,
+    ``PROXY_CA_CERT``, ``PROXY_VERIFY_SSL``). Reach for this rather than
+    constructing a bare client, so a corporate network only has to be described
+    once and no call is left with an unbounded timeout.
+    """
+    async with httpx.AsyncClient(
+        timeout=timeout,
+        proxy=await resolve_proxy(url),
+        verify=resolve_ssl_verify(),
+    ) as client:
+        yield client

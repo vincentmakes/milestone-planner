@@ -5,7 +5,13 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.2.3] - 2026-08-28
+## [1.3.0] - 2026-08-28
+
+### Added
+- Administrators can test an organization's Microsoft Entra SSO configuration from the admin portal, which reports each setting Microsoft accepts or rejects without anyone having to attempt a sign-in.
+
+### Changed
+- Requests to Microsoft now go through the configured corporate proxy and custom certificate authority, the same as the public-holiday import already did.
 
 ### Fixed
 - A failed sign-in with Microsoft now says what actually went wrong — a redirect address registered under the wrong platform, an invalid or expired client secret, missing consent — instead of "Failed to exchange authorization code". The Microsoft error code is shown so an administrator can act on it without reading the server log.
