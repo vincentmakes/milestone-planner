@@ -73,7 +73,7 @@ class TenantBase(BaseModel):
 class TenantCreate(TenantBase):
     """Tenant creation request."""
 
-    pass
+    organization_id: UUID | None = Field(None, alias="organizationId")
 
 
 class TenantUpdate(BaseModel):
