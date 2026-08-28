@@ -412,10 +412,16 @@ def _local_sso_checks(config: OrganizationSSOConfig, secret: str | None) -> list
     """Everything that can be judged without asking Microsoft anything."""
     checks = []
 
-    for label, value in (
+    for label, raw in (
         ("Directory (tenant) ID", config.entra_tenant_id),
         ("Application (client) ID", config.client_id),
     ):
+        # These columns use the legacy Column() style rather than
+        # Mapped[str | None], so their declared type is the column object, not
+        # the value it holds. Coerce to the string this is at runtime — which
+        # also strips a pasted newline before the shape check, as everywhere
+        # else here.
+        value = str(raw or "").strip()
         if not value:
             checks.append(_check(label, "fail", "Not set."))
         elif not _GUID_RE.match(value):
