@@ -119,10 +119,12 @@ SSO_REDIRECT_URI=https://your-domain.com/api/auth/sso/callback
 
 After saving the configuration, verify it end to end: open a tenant's login page and click
 **Sign in with Microsoft**. You should be redirected to Microsoft, and after signing in,
-returned to that tenant's workspace. If sign-in fails on the return trip, the most common
-cause is a redirect-URI mismatch — confirm the App Registration, Milestone's **Redirect
-URI** field, and (single-tenant) `SSO_REDIRECT_URI` all read exactly
-`https://your-domain.com/api/auth/sso/callback`.
+returned to that tenant's workspace. If sign-in fails on the return trip, you are sent back
+to that tenant's own sign-in page with the reason shown above the form — start there. The
+most common cause is a redirect-URI mismatch — confirm the App Registration, Milestone's
+**Redirect URI** field, and (single-tenant) `SSO_REDIRECT_URI` all read exactly
+`https://your-domain.com/api/auth/sso/callback`. The server log carries the underlying
+Microsoft error for every failure.
 
 ## Group-Based Access Control
 
@@ -138,6 +140,16 @@ Restrict tenant access to users who belong to specific Microsoft Entra ID (Azure
 4. Save the tenant configuration
 
 When a user logs in via SSO, Milestone fetches their group memberships from the Microsoft Graph API and validates them against the tenant's requirements. If the user doesn't meet the group criteria, access is denied.
+
+!!! warning "Grant GroupMember.Read.All first"
+    Reading group memberships requires the **GroupMember.Read.All** (or
+    **Directory.Read.All**) Microsoft Graph permission on the App Registration,
+    with **admin consent granted**. Without it the group lookup fails for every
+    user, and sign-in reports *"Could not verify group membership. Contact
+    administrator."* Add the permission under **API permissions > Add a
+    permission > Microsoft Graph > Delegated permissions**, then click
+    **Grant admin consent**. Leave the group list empty if you don't need
+    group-based restrictions — the lookup is then skipped entirely.
 
 ### Finding Azure AD Group IDs
 

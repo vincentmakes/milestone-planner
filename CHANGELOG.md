@@ -5,6 +5,15 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.1] - 2026-08-28
+
+### Fixed
+- A failed sign-in with Microsoft now returns to the workspace's own sign-in page and shows why it failed. Previously, when single sign-on was managed by an organization, every failure silently landed on the admin portal login with no explanation, making a working configuration look broken.
+- The workspace SSO settings screen now shows the organization's settings — tenant ID, client ID, redirect URI, auto-create and default role — read-only, with the secret masked, when SSO is managed by an organization. It previously showed an empty, greyed-out form.
+- Sign-in no longer rejects everyone when group-based access is required but the group lookup itself fails (usually a missing `GroupMember.Read.All` consent on the app registration). That case is now reported as a configuration problem instead of "you do not have access".
+- An organization SSO configuration missing its redirect URI is no longer advertised as ready on the sign-in page, where starting a login would fail.
+- A sign-in no longer returns an opaque server error when the organization's stored client secret cannot be decrypted.
+
 ## [1.2.0] - 2026-08-28
 
 ### Added

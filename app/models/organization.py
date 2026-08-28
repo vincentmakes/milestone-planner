@@ -116,8 +116,20 @@ class OrganizationSSOConfig(MasterBase):
 
     @property
     def is_configured(self) -> bool:
-        """Check if SSO is properly configured."""
-        return bool(self.entra_tenant_id and self.client_id and self.client_secret_encrypted)
+        """
+        Check if SSO is properly configured.
+
+        ``redirect_uri`` is part of this: an organization missing it takes
+        precedence over tenant-level SSO all the same, so the login page would
+        advertise SSO while ``/auth/sso/login`` rejects it as not properly
+        configured.
+        """
+        return bool(
+            self.entra_tenant_id
+            and self.client_id
+            and self.client_secret_encrypted
+            and self.redirect_uri
+        )
 
     @property
     def should_auto_create_users(self) -> bool:

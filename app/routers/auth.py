@@ -7,6 +7,7 @@ Matches the Node.js API at /api/auth exactly.
 
 import logging
 from contextlib import asynccontextmanager
+from urllib.parse import quote_plus
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -398,8 +399,28 @@ async def get_sso_config_full(
     # and disable the tenant-level form.
     org_sso = await _active_org_sso(request, db)
     response["org_sso_active"] = org_sso is not None
-    if org_sso and org_sso.get("organization"):
-        response["organization"] = {"name": org_sso["organization"].get("name")}
+    if org_sso:
+        if org_sso.get("organization"):
+            response["organization"] = {"name": org_sso["organization"].get("name")}
+
+        # Organization SSO overrides the tenant-level row, so report what is
+        # actually in effect. Without this the settings screen renders the
+        # dormant tenant config — normally absent entirely — as a blank form,
+        # even though SSO is configured and working at the organization level.
+        # The secret is only ever returned masked.
+        org_secret = org_sso.get("client_secret") or ""
+        response.update(
+            {
+                "enabled": 1 if org_sso.get("enabled") else 0,
+                "tenant_id": org_sso.get("tenant_id"),
+                "client_id": org_sso.get("client_id"),
+                "redirect_uri": org_sso.get("redirect_uri"),
+                "auto_create_users": 1 if org_sso.get("auto_create_users") else 0,
+                "default_role": org_sso.get("default_role") or "user",
+            }
+        )
+        response.pop("client_secret", None)
+        response["client_secret_masked"] = ("****" + org_secret[-4:]) if org_secret else "****"
 
     return response
 
@@ -609,6 +630,20 @@ def _parse_sso_state(state: str | None) -> tuple[str | None, bool]:
     return None, False
 
 
+def _sso_error_redirect(tenant_slug: str | None, message: str) -> RedirectResponse:
+    """
+    Redirect a failed SSO login back to the sign-in screen it started from.
+
+    Organization SSO shares one callback URL with no ``/t/{slug}/`` prefix, so a
+    root-absolute redirect lands on ``/``, which multi-tenant mode bounces to the
+    admin portal (``serve_root``) and drops the query string with it. Once the
+    signed state has given us the slug we send the user back to their own tenant
+    login screen instead, with the reason attached.
+    """
+    base = f"/t/{tenant_slug}/" if tenant_slug else "/"
+    return RedirectResponse(url=f"{base}?sso_error={quote_plus(message)}", status_code=302)
+
+
 @asynccontextmanager
 async def _resolve_sso_tenant_session(request: Request, default_db: AsyncSession, tenant_slug):
     """
@@ -797,27 +832,32 @@ async def sso_callback(
     """
     from app.services.sso import SSOService
 
+    # Verify the HMAC-signed state and recover the tenant slug it carries. The
+    # slug is only ever used to pick a redirect target, so recovering it up front
+    # lets even the earliest failures land back on the right sign-in screen.
+    tenant_slug, state_valid = _parse_sso_state(state)
+
     # Handle error from Entra
     if error:
         # Use a generic error message to avoid reflecting remote input in the redirect URL
-        error_msg = "SSO+authentication+failed"
-        redirect_url = f"/?sso_error={error_msg}"
-        return RedirectResponse(url=redirect_url, status_code=302)
+        return _sso_error_redirect(
+            tenant_slug if state_valid else None, "SSO authentication failed"
+        )
 
     if not code:
-        return RedirectResponse(url="/?sso_error=No+authorization+code+received", status_code=302)
+        return _sso_error_redirect(
+            tenant_slug if state_valid else None, "No authorization code received"
+        )
 
-    # Verify the HMAC-signed state and recover the tenant slug it carries.
-    tenant_slug, state_valid = _parse_sso_state(state)
     if not state_valid:
-        return RedirectResponse(url="/?sso_error=Invalid+SSO+state", status_code=302)
+        return _sso_error_redirect(None, "Invalid SSO state")
 
     # Organization SSO shares one callback URL with no /t/{slug}/ prefix, so the
     # request has no tenant context here — recover it from the (verified) state
     # slug and run the rest of the flow against that tenant's own database.
     async with _resolve_sso_tenant_session(request, db, tenant_slug) as (active_db, tenant_ctx):
         if active_db is None:
-            return RedirectResponse(url="/?sso_error=Unknown+or+inactive+tenant", status_code=302)
+            return _sso_error_redirect(tenant_slug, "Unknown or inactive tenant")
 
         sso_service = SSOService(active_db)
 
@@ -825,7 +865,7 @@ async def sso_callback(
         config, source = await sso_service.get_effective_sso_config(tenant_ctx)
 
         if not config or not config.get("enabled"):
-            return RedirectResponse(url="/?sso_error=SSO+not+configured", status_code=302)
+            return _sso_error_redirect(tenant_slug, "SSO not configured")
 
         # Exchange code for tokens
         entra_tenant_id = config["tenant_id"]
@@ -853,9 +893,7 @@ async def sso_callback(
                 logger.error(
                     "Token exchange failed: %s %s", token_response.status_code, token_response.text
                 )
-                return RedirectResponse(
-                    url="/?sso_error=Failed+to+exchange+authorization+code", status_code=302
-                )
+                return _sso_error_redirect(tenant_slug, "Failed to exchange authorization code")
 
             tokens = token_response.json()
             access_token = tokens.get("access_token")
@@ -870,15 +908,27 @@ async def sso_callback(
                 logger.error(
                     "Graph API failed: %s %s", graph_response.status_code, graph_response.text
                 )
-                return RedirectResponse(
-                    url="/?sso_error=Failed+to+fetch+user+info", status_code=302
-                )
+                return _sso_error_redirect(tenant_slug, "Failed to fetch user info")
 
             user_info = graph_response.json()
 
         # Validate group membership if required
         if has_group_requirements:
             user_groups = await sso_service.fetch_user_groups(access_token)
+
+            if user_groups is None:
+                # The directory lookup itself failed (most often the app
+                # registration is missing consented GroupMember.Read.All), which
+                # is a configuration problem — not a decision about this user.
+                logger.error(
+                    "SSO: group membership lookup failed for tenant '%s'; "
+                    "check that the app registration has GroupMember.Read.All consented",
+                    tenant_slug,
+                )
+                return _sso_error_redirect(
+                    tenant_slug,
+                    "Could not verify group membership. Contact administrator.",
+                )
 
             is_allowed = sso_service.validate_group_membership(
                 user_groups,
@@ -887,18 +937,15 @@ async def sso_callback(
             )
 
             if not is_allowed:
-                return RedirectResponse(
-                    url="/?sso_error=You+do+not+have+access+to+this+tenant.+Contact+administrator.",
-                    status_code=302,
+                return _sso_error_redirect(
+                    tenant_slug, "You do not have access to this tenant. Contact administrator."
                 )
 
         # Find or create user
         email = user_info.get("mail") or user_info.get("userPrincipalName")
 
         if not email:
-            return RedirectResponse(
-                url="/?sso_error=No+email+found+in+Microsoft+account", status_code=302
-            )
+            return _sso_error_redirect(tenant_slug, "No email found in Microsoft account")
 
         # Look up existing user
         user_result = await active_db.execute(
@@ -909,9 +956,7 @@ async def sso_callback(
         if not user:
             # Check if auto-create is enabled
             if not config.get("auto_create_users"):
-                return RedirectResponse(
-                    url="/?sso_error=No+account+found.+Contact+administrator.", status_code=302
-                )
+                return _sso_error_redirect(tenant_slug, "No account found. Contact administrator.")
 
             # Create new user
             user = User(
@@ -941,7 +986,7 @@ async def sso_callback(
                 await active_db.commit()
 
         if not user.is_active:
-            return RedirectResponse(url="/?sso_error=User+account+is+disabled", status_code=302)
+            return _sso_error_redirect(tenant_slug, "User account is disabled")
 
         # Create session
         session_service = SessionService(active_db)

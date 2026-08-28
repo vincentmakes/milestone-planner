@@ -18,6 +18,24 @@ export function LoginScreen() {
   const [ssoEnabled, setSsoEnabled] = useState(false);
   const [theme, setThemeState] = useState<Theme>(() => getTheme());
 
+  // Surface the reason a failed SSO round-trip sent the user back here. The
+  // callback appends ?sso_error=... to the tenant login URL; strip it once read
+  // so a reload doesn't resurrect a stale message.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ssoError = params.get('sso_error');
+    if (!ssoError) return;
+
+    setError(ssoError);
+    params.delete('sso_error');
+    const query = params.toString();
+    window.history.replaceState(
+      {},
+      '',
+      `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`
+    );
+  }, []);
+
   // Check if SSO is enabled
   useEffect(() => {
     const checkSSO = async () => {

@@ -14,12 +14,13 @@ import { apiGet, apiPut } from '@/api/client';
 import styles from './SSOConfigModal.module.css';
 
 interface SSOFullConfig {
-  enabled: boolean;
+  // enabled / auto_create_users arrive as the integer columns (0 | 1)
+  enabled: boolean | number;
   tenant_id: string;
   client_id: string;
   client_secret_masked?: string;
   redirect_uri: string;
-  auto_create_users: boolean;
+  auto_create_users: boolean | number;
   default_role: 'user' | 'superuser' | 'admin';
   org_sso_active?: boolean;
   organization?: { name?: string };
@@ -70,12 +71,12 @@ export function SSOConfigModal() {
     setError(null);
     try {
       const config = await apiGet<SSOFullConfig>('/api/sso/config/full');
-      setEnabled(config.enabled);
+      setEnabled(Boolean(config.enabled));
       setTenantId(config.tenant_id || '');
       setClientId(config.client_id || '');
       setClientSecretPlaceholder(config.client_secret_masked || 'Enter client secret');
       setRedirectUri(config.redirect_uri || redirectHint);
-      setAutoCreateUsers(config.auto_create_users);
+      setAutoCreateUsers(Boolean(config.auto_create_users));
       setDefaultRole(config.default_role || 'user');
       setOrgSSOActive(Boolean(config.org_sso_active));
       setOrgName(config.organization?.name || '');
@@ -154,9 +155,9 @@ export function SSOConfigModal() {
               <div className={styles.notice}>
                 SSO for this workspace is managed by your organization
                 {orgName ? <> <strong>{orgName}</strong></> : null}. Organization
-                SSO takes precedence over tenant-level settings, so this form is
-                disabled and the values below have no effect. To change SSO,
-                contact your organization administrator.
+                SSO takes precedence over tenant-level settings, so the values
+                below are your organization's and are shown read-only. To change
+                SSO, contact your organization administrator.
               </div>
             )}
 
