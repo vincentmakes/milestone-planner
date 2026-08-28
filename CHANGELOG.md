@@ -5,6 +5,14 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.2] - 2026-08-28
+
+### Fixed
+- Provisioning a tenant from the admin portal now reports the new administrator's actual password. It previously showed a different value, so the new administrator could not sign in and the real password was unrecoverable, leaving the tenant to be repaired with a password reset.
+
+### Security
+- Provisioning a tenant no longer returns the PostgreSQL administrator password in the admin portal's response.
+
 ## [1.2.1] - 2026-08-28
 
 ### Fixed

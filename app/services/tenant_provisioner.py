@@ -602,14 +602,14 @@ async def provision_tenant_database(
         # objects in the public schema to the tenant user using the admin
         # connection before we run the schema as the tenant user.
         settings = get_settings()
-        admin_user = settings.pg_admin_user or settings.db_user
-        admin_password = settings.pg_admin_password or settings.db_password
+        pg_admin_user = settings.pg_admin_user or settings.db_user
+        pg_admin_password = settings.pg_admin_password or settings.db_password
         try:
             ownership_conn = await asyncpg.connect(
                 host=settings.db_host,
                 port=settings.db_port,
-                user=admin_user,
-                password=admin_password,
+                user=pg_admin_user,
+                password=pg_admin_password,
                 database=database_name,
             )
             try:
