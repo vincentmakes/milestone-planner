@@ -260,7 +260,13 @@ async def create_tenant(
     )
 
     await db.commit()
-    await db.refresh(tenant)
+
+    # tenant_to_response reads tenant.organization; the relationship is unloaded on a
+    # freshly created tenant, and lazy-loading it here would raise MissingGreenlet.
+    result = await db.execute(
+        select(Tenant).where(Tenant.id == tenant.id).options(selectinload(Tenant.organization))
+    )
+    tenant = result.scalar_one()
 
     return {
         "success": True,
