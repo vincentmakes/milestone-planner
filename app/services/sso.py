@@ -18,7 +18,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.services.encryption import decrypt
-from app.services.proxy import async_client
 
 logger = logging.getLogger(__name__)
 
@@ -203,12 +202,7 @@ class SSOService:
             return None
         return await self._get_organization_sso_config(str(tenant_id))
 
-    async def fetch_user_groups(
-        self,
-        access_token: str,
-        max_groups: int = 500,
-        client: httpx.AsyncClient | None = None,
-    ) -> list[str] | None:
+    async def fetch_user_groups(self, access_token: str, max_groups: int = 500) -> list[str] | None:
         """
         Fetch user's group memberships from Microsoft Graph API.
 
@@ -217,9 +211,6 @@ class SSOService:
         Args:
             access_token: Valid access token with GroupMember.Read.All scope
             max_groups: Maximum number of groups to fetch (default 500)
-            client: An ``httpx.AsyncClient`` to use (the tests inject one);
-                otherwise one is created with this deployment's proxy and SSL
-                settings.
 
         Returns:
             List of group IDs the user is a member of, or ``None`` if the lookup
@@ -227,41 +218,31 @@ class SSOService:
             as "unknown" rather than "member of nothing" — a missing
             GroupMember.Read.All consent would otherwise deny every user.
         """
-        start_url = "https://graph.microsoft.com/v1.0/me/memberOf?$select=id,displayName"
-
-        if client is not None:
-            return await self._page_user_groups(client, start_url, access_token, max_groups)
-
-        async with async_client(start_url, timeout=15.0) as new_client:
-            return await self._page_user_groups(new_client, start_url, access_token, max_groups)
-
-    async def _page_user_groups(
-        self,
-        client: httpx.AsyncClient,
-        url: str,
-        access_token: str,
-        max_groups: int,
-    ) -> list[str] | None:
-        """Walk Graph's paged /me/memberOf response, collecting group ids."""
         group_ids: list[str] = []
+        url = "https://graph.microsoft.com/v1.0/me/memberOf?$select=id,displayName"
 
-        while url and len(group_ids) < max_groups:
-            response = await client.get(url, headers={"Authorization": f"Bearer {access_token}"})
+        async with httpx.AsyncClient() as client:
+            while url and len(group_ids) < max_groups:
+                response = await client.get(
+                    url, headers={"Authorization": f"Bearer {access_token}"}
+                )
 
-            if response.status_code != 200:
-                logger.warning("Failed to fetch groups: %s %s", response.status_code, response.text)
-                return None
+                if response.status_code != 200:
+                    logger.warning(
+                        "Failed to fetch groups: %s %s", response.status_code, response.text
+                    )
+                    return None
 
-            data = response.json()
+                data = response.json()
 
-            # Extract group IDs from response
-            for item in data.get("value", []):
-                # Only include actual groups, not other directory objects
-                if item.get("@odata.type") == "#microsoft.graph.group":
-                    group_ids.append(item["id"])
+                # Extract group IDs from response
+                for item in data.get("value", []):
+                    # Only include actual groups, not other directory objects
+                    if item.get("@odata.type") == "#microsoft.graph.group":
+                        group_ids.append(item["id"])
 
-            # Check for pagination
-            url = data.get("@odata.nextLink")
+                # Check for pagination
+                url = data.get("@odata.nextLink")
 
         return group_ids
 

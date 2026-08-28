@@ -303,3 +303,53 @@ async def test_effective_config_does_not_swallow_an_org_lookup_failure():
 
     # And the tenant-level table was never consulted.
     db.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_callback_reports_a_responder_that_is_not_microsoft(app_client, mock_db_session):
+    """A proxy block page has no AADSTS code — say so, don't blame the config."""
+    state = _sign_sso_state("acme")
+    block_page = httpx.Response(403, text="<html><body>Blocked by corporate gateway</body></html>")
+
+    with (
+        resolved_tenant(mock_db_session),
+        patch.object(
+            SSOService,
+            "get_effective_sso_config",
+            AsyncMock(return_value=(ORG_CONFIG, "organization")),
+        ),
+        patch("httpx.AsyncClient.post", AsyncMock(return_value=block_page)),
+    ):
+        resp = await app_client.get(
+            f"/api/auth/sso/callback?code=abc&state={state}", follow_redirects=False
+        )
+
+    message = sso_error_of(resp)
+    assert "did not respond as expected" in message
+    assert "HTTP 403" in message
+    assert "gateway" not in message
+
+
+@pytest.mark.asyncio
+async def test_callback_reports_an_unreachable_identity_provider(app_client, mock_db_session):
+    """A blocked egress used to surface as an opaque 500 with no explanation."""
+    state = _sign_sso_state("acme")
+
+    with (
+        resolved_tenant(mock_db_session),
+        patch.object(
+            SSOService,
+            "get_effective_sso_config",
+            AsyncMock(return_value=(ORG_CONFIG, "organization")),
+        ),
+        patch(
+            "httpx.AsyncClient.post",
+            AsyncMock(side_effect=httpx.ConnectError("connection refused")),
+        ),
+    ):
+        resp = await app_client.get(
+            f"/api/auth/sso/callback?code=abc&state={state}", follow_redirects=False
+        )
+
+    assert resp.status_code == 302
+    assert "Could not reach the identity provider" in sso_error_of(resp)

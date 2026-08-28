@@ -11,11 +11,13 @@ import logging
 import re
 import uuid
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import get_settings
 from app.models.organization import Organization, OrganizationSSOConfig
 from app.models.tenant import AdminUser, Tenant
 from app.routers.admin.auth import get_current_admin
@@ -34,7 +36,6 @@ from app.schemas.organization import (
 )
 from app.services.encryption import decrypt, encrypt
 from app.services.master_db import get_master_db
-from app.services.proxy import async_client
 from app.services.sso_errors import parse_entra_token_error
 from app.utils import utcnow_naive
 
@@ -471,6 +472,57 @@ def _local_sso_checks(config: OrganizationSSOConfig, secret: str | None) -> list
     return checks
 
 
+def _outbound_network_check() -> OrganizationSSOTestCheck:
+    """
+    Report how this deployment reaches the internet, and what SSO actually uses.
+
+    Two environments running the same version can differ only here, and an
+    operator without access to the container has no other way to see it. The
+    asymmetry is the point: SSO requests are plain httpx, so they follow
+    HTTPS_PROXY/HTTP_PROXY from the environment and nothing else, while
+    PROXY_PAC_URL, PROXY_CA_CERT and the proxy credentials apply only to the
+    holiday import. A deployment configured the second way believes it has told
+    the app about its proxy and has not.
+
+    Never reports the value of PROXY_USERNAME or PROXY_PASSWORD.
+    """
+    settings = get_settings()
+
+    env_proxy = settings.https_proxy or settings.http_proxy
+    unused = [
+        name
+        for name, value in (
+            ("PROXY_PAC_URL", settings.proxy_pac_url),
+            ("PROXY_CA_CERT", settings.proxy_ca_cert),
+            ("PROXY_USERNAME/PROXY_PASSWORD", settings.proxy_username or settings.proxy_password),
+        )
+        if value
+    ]
+    if not settings.proxy_verify_ssl:
+        unused.append("PROXY_VERIFY_SSL=false")
+
+    if not env_proxy and not unused:
+        return _check(
+            "Outbound network",
+            "pass",
+            "No proxy is configured; sign-in requests connect to Microsoft directly.",
+        )
+
+    parts = []
+    if env_proxy:
+        parts.append(f"Sign-in requests use the configured proxy ({env_proxy}).")
+    else:
+        parts.append("Sign-in requests connect to Microsoft directly — no HTTPS_PROXY is set.")
+    if unused:
+        parts.append(
+            f"{', '.join(unused)} {'is' if len(unused) == 1 else 'are'} configured but "
+            "applies only to the public-holiday import, not to sign-in. If Microsoft is only "
+            "reachable through that proxy, sign-in cannot reach it."
+        )
+
+    return _check("Outbound network", "warn" if unused else "pass", " ".join(parts))
+
+
 @router.post("/{org_id}/sso/test", response_model=OrganizationSSOTestResponse)
 async def run_organization_sso_test(
     org_id: str,
@@ -516,6 +568,7 @@ async def run_organization_sso_test(
 
     secret = (secret or "").strip() or None
     checks = _local_sso_checks(config, secret)
+    checks.append(_outbound_network_check())
 
     if any(check.status == "fail" for check in checks):
         checks.append(_check("Microsoft sign-in", "manual", _WEB_PLATFORM_CHECK))
@@ -530,7 +583,7 @@ async def run_organization_sso_test(
     credentials_ok = False
 
     try:
-        async with async_client(base, timeout=10.0) as client:
+        async with httpx.AsyncClient() as client:
             discovery = await client.get(f"{base}/v2.0/.well-known/openid-configuration")
             if discovery.status_code != 200:
                 checks.append(

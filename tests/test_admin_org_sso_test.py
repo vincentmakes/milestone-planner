@@ -7,7 +7,6 @@ not reach Microsoft, and it must never suggest that sign-in will work when all
 it verified was the application's own credentials.
 """
 
-from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -38,18 +37,18 @@ def org_db(config):
 
 
 def fake_client(*, discovery=None, token=None, error=None):
-    """Stand in for the proxy-aware client the endpoint calls Microsoft with."""
+    """Stand in for the plain httpx client the endpoint calls Microsoft with."""
     client = MagicMock()
-    client.get = AsyncMock(return_value=discovery or httpx.Response(200, json={}))
+    client.get = AsyncMock(
+        side_effect=error, return_value=discovery or httpx.Response(200, json={})
+    )
     client.post = AsyncMock(return_value=token or httpx.Response(200, json={"access_token": "t"}))
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
 
-    @asynccontextmanager
-    async def _client(url, timeout=10.0):
-        if error is not None:
-            raise error
-        yield client
-
-    return patch("app.routers.admin_organizations.async_client", _client), client
+    return patch(
+        "app.routers.admin_organizations.httpx.AsyncClient", return_value=client
+    ), client
 
 
 def entra_rejection(code: str) -> httpx.Response:
@@ -201,3 +200,72 @@ async def test_unknown_organization_is_404():
         await run_organization_sso_test(org_id="nope", admin=MagicMock(), db=db)
 
     assert exc.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# What this deployment's outbound network looks like
+# ---------------------------------------------------------------------------
+
+
+def settings_with(**overrides):
+    settings = MagicMock()
+    settings.https_proxy = None
+    settings.http_proxy = None
+    settings.proxy_pac_url = None
+    settings.proxy_ca_cert = None
+    settings.proxy_username = None
+    settings.proxy_password = None
+    settings.proxy_verify_ssl = True
+    for key, value in overrides.items():
+        setattr(settings, key, value)
+    return patch("app.routers.admin_organizations.get_settings", return_value=settings)
+
+
+@pytest.mark.asyncio
+async def test_direct_egress_is_reported_as_such():
+    with settings_with():
+        result, _ = await run_test(org_db(sso_config()))
+
+    network = check_named(result, "Outbound network")
+    assert network.status == "pass"
+    assert "directly" in network.message
+
+
+@pytest.mark.asyncio
+async def test_settings_that_sso_ignores_are_called_out():
+    """The asymmetry that can differ between two environments on one version."""
+    with settings_with(proxy_pac_url="http://proxy.corp/proxy.pac", proxy_ca_cert="/etc/ca.crt"):
+        result, _ = await run_test(org_db(sso_config()))
+
+    network = check_named(result, "Outbound network")
+    assert network.status == "warn"
+    assert "PROXY_PAC_URL" in network.message
+    assert "PROXY_CA_CERT" in network.message
+    assert "not to sign-in" in network.message
+
+
+@pytest.mark.asyncio
+async def test_proxy_credentials_are_never_echoed():
+    with settings_with(
+        https_proxy="http://proxy.corp:8080",
+        proxy_username="svc-milestone",
+        proxy_password="hunter2",
+    ):
+        result, _ = await run_test(org_db(sso_config()))
+
+    rendered = " ".join(check.message for check in result.checks)
+    assert "hunter2" not in rendered
+    assert "svc-milestone" not in rendered
+    assert "http://proxy.corp:8080" in rendered
+
+
+@pytest.mark.asyncio
+async def test_block_page_during_the_probe_is_not_blamed_on_the_credentials():
+    block_page = httpx.Response(403, text="<html><body>Blocked by corporate gateway</body></html>")
+    with settings_with():
+        result, _ = await run_test(org_db(sso_config()), token=block_page)
+
+    credentials = check_named(result, "Client credentials")
+    assert credentials.code is None
+    assert "did not come from Microsoft" in credentials.message
+    assert "Secret ID" not in credentials.message

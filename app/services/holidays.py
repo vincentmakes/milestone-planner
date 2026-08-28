@@ -16,11 +16,11 @@ from dataclasses import dataclass, field
 from datetime import date as date_type
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 
 from app.config import get_settings
-from app.services.proxy import async_client
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +181,47 @@ def is_relevant_holiday(holiday: NagerHoliday, region_code: str | None) -> bool:
     return matches_region(holiday, region_code)
 
 
+def _resolve_ssl_verify() -> bool | str:
+    """SSL verification setting - a custom CA cert wins over the boolean flag."""
+    settings = get_settings()
+
+    if settings.proxy_ca_cert:
+        logger.info("Using custom CA certificate: %s", settings.proxy_ca_cert)
+        return settings.proxy_ca_cert
+    if not settings.proxy_verify_ssl:
+        logger.info("SSL verification disabled for proxy")
+    return settings.proxy_verify_ssl
+
+
+async def _resolve_proxy(url: str) -> str | None:
+    """Resolve the outbound proxy for a URL, injecting credentials if configured."""
+    from app.services.proxy import get_proxy_for_url
+
+    settings = get_settings()
+    proxy_url = await get_proxy_for_url(url)
+
+    if not proxy_url:
+        return None
+
+    logger.info("Using proxy: %s", proxy_url)
+
+    if settings.proxy_username and settings.proxy_password:
+        parsed = urlparse(proxy_url)
+        proxy_url = urlunparse(
+            (
+                parsed.scheme,
+                f"{settings.proxy_username}:{settings.proxy_password}@{parsed.netloc}",
+                parsed.path,
+                parsed.params,
+                parsed.query,
+                parsed.fragment,
+            )
+        )
+        logger.info("Proxy authentication enabled for user: %s", settings.proxy_username)
+
+    return proxy_url
+
+
 async def fetch_holidays(
     country_code: str,
     year: int,
@@ -210,7 +251,10 @@ async def fetch_holidays(
     if client is not None:
         return await _request_holidays(client, url, country_code, year, version)
 
-    async with async_client(settings.nager_api_url) as new_client:
+    proxy_url = await _resolve_proxy(settings.nager_api_url)
+    ssl_verify = _resolve_ssl_verify()
+
+    async with httpx.AsyncClient(timeout=10.0, proxy=proxy_url, verify=ssl_verify) as new_client:
         return await _request_holidays(new_client, url, country_code, year, version)
 
 

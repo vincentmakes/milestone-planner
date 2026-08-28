@@ -103,24 +103,50 @@ def test_unmapped_code_is_still_reported():
     assert "AADSTS123456" in err.user_message
 
 
-def test_body_without_a_code_keeps_the_original_message():
-    """No code to show means the message must not change from what it was."""
-    err = parse_entra_token_error(500, '{"error": "server_error"}')
+def test_body_without_a_code_points_at_the_responder():
+    """Entra always sends a code, so its absence is worth saying out loud."""
+    err = parse_entra_token_error(403, '{"error": "server_error"}')
 
     assert err.code is None
-    assert err.user_message == GENERIC_MESSAGE
-    assert err.category == "unknown"
+    assert err.category == "unexpected_responder"
+    assert "did not respond as expected" in err.user_message
+    assert "HTTP 403" in err.user_message
+    assert "proxy or gateway" in err.admin_remedy
+
+
+def test_proxy_block_page_reads_as_an_unexpected_responder():
+    """The case this exists for: an intercepting proxy answering, not Microsoft."""
+    err = parse_entra_token_error(
+        403,
+        "<html><head><title>403 Forbidden</title></head><body>"
+        "<h1>Access Denied</h1><p>Your request was blocked by the corporate gateway.</p>"
+        "</body></html>",
+    )
+
+    assert err.category == "unexpected_responder"
+    assert "HTTP 403" in err.user_message
+    # Still no remote text in what the user sees.
+    for fragment in ("Access Denied", "corporate gateway", "html"):
+        assert fragment not in err.user_message
 
 
 def test_non_json_body_is_handled():
-    err = parse_entra_token_error(502, "<html><body>502 Bad Gateway</body></html>")
+    err = parse_entra_token_error(502, "502 Bad Gateway")
 
     assert err.code is None
-    assert err.user_message == GENERIC_MESSAGE
+    assert "HTTP 502" in err.user_message
 
 
 def test_empty_body_is_handled():
-    assert parse_entra_token_error(500, "").user_message == GENERIC_MESSAGE
+    err = parse_entra_token_error(500, "")
+
+    assert err.code is None
+    assert err.category == "unexpected_responder"
+
+
+def test_missing_status_falls_back_to_the_generic_message():
+    """With neither a code nor a status there is nothing to say beyond the old line."""
+    assert parse_entra_token_error(0, "").user_message == GENERIC_MESSAGE
 
 
 def test_code_is_recovered_from_error_codes_when_description_lacks_it():
@@ -174,8 +200,9 @@ def test_huge_body_is_bounded_and_harmless():
 
     # The tail is past the scan window, so no code is found — and crucially the
     # call returns promptly with our own message rather than echoing anything.
-    assert err.user_message == GENERIC_MESSAGE
+    assert err.code is None
     assert "x" * 100 not in err.user_message
+    assert len(err.user_message) <= MAX_USER_MESSAGE
 
 
 def test_user_message_is_length_capped():

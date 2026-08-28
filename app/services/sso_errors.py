@@ -45,7 +45,8 @@ _ADMIN_ATTENTION = (
 
 # code -> (user_message, admin_remedy, category)
 #
-# Categories: app_registration | credentials | redirect_uri | retry | unknown.
+# Categories: app_registration | credentials | redirect_uri | retry |
+# unexpected_responder | unknown.
 # Every message here is ours; none of it comes from Microsoft.
 _MAP: dict[str, tuple[str, str, str]] = {
     # --- Redirect URI registered under the wrong platform ------------------
@@ -172,7 +173,7 @@ class EntraTokenError:
     """Our own message, for an administrator. Never remote text."""
 
     category: str
-    """app_registration | credentials | redirect_uri | retry | unknown."""
+    """app_registration | credentials | redirect_uri | retry | unexpected_responder | unknown."""
 
 
 def extract_aadsts_code(body: str) -> str | None:
@@ -211,6 +212,34 @@ def describe_aadsts(code: str | None) -> tuple[str, str, str]:
     return user_message.format(code=code), admin_remedy, category
 
 
+def describe_unexpected_responder(status_code: int) -> tuple[str, str, str]:
+    """
+    Describe a non-200 that carried no ``AADSTS`` code.
+
+    Entra puts a code in every error it returns, so its absence is evidence that
+    something other than Entra answered — an intercepting proxy or gateway
+    returning a block page reads to httpx as an ordinary non-200 response, which
+    is indistinguishable from a rejection unless you look for the code.
+
+    This is a worded inference, not a detection: a 5xx from Microsoft itself
+    would also land here. It narrows the search, it does not end it. Only the
+    status code — our own integer, never remote text — is interpolated.
+    """
+    if not status_code:
+        return describe_aadsts(None)
+
+    return (
+        f"Sign-in failed: the identity provider did not respond as expected "
+        f"(HTTP {status_code}). Contact administrator.",
+        f"The response to the token request carried no AADSTS code, which Entra always "
+        f"includes, so HTTP {status_code} probably did not come from Microsoft. Check whether a "
+        f"proxy or gateway is intercepting requests to login.microsoftonline.com from the "
+        f"server. A fault at Microsoft would look the same; the full response is in the server "
+        f"log. Comparing a working environment against this one separates the two.",
+        "unexpected_responder",
+    )
+
+
 def parse_entra_token_error(status_code: int, body: str) -> EntraTokenError:
     """
     Turn a non-200 Entra token response into a message we are willing to show.
@@ -220,8 +249,6 @@ def parse_entra_token_error(status_code: int, body: str) -> EntraTokenError:
     anywhere in the raw text, since error shapes vary), and nothing else from it
     reaches the return value.
     """
-    del status_code  # The AADSTS code is strictly more informative.
-
     haystack = body[:MAX_BODY_SCAN] if body else ""
     code: str | None = None
 
@@ -244,7 +271,10 @@ def parse_entra_token_error(status_code: int, body: str) -> EntraTokenError:
     if not code:
         code = extract_aadsts_code(haystack)
 
-    user_message, admin_remedy, category = describe_aadsts(code)
+    if code:
+        user_message, admin_remedy, category = describe_aadsts(code)
+    else:
+        user_message, admin_remedy, category = describe_unexpected_responder(status_code)
     return EntraTokenError(
         code=code,
         user_message=user_message[:MAX_USER_MESSAGE],

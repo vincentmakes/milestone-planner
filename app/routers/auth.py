@@ -10,6 +10,7 @@ import logging
 from contextlib import asynccontextmanager
 from urllib.parse import quote_plus
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
@@ -36,7 +37,6 @@ from app.schemas.auth import (
     UserSiteInfo,
 )
 from app.services.encryption import hash_user_password, password_needs_upgrade, verify_user_password
-from app.services.proxy import async_client
 from app.services.session import SessionService
 from app.services.sso_errors import parse_entra_token_error
 
@@ -964,55 +964,66 @@ async def sso_callback(
             "scope": " ".join(scopes),
         }
 
-        async with async_client(token_url, timeout=15.0) as client:
-            token_response = await client.post(token_url, data=token_data)
+        # A refused connection, proxy error or timeout would otherwise reach
+        # the global handler as an opaque 500, telling the user nothing and
+        # leaving no trace of which hop failed.
+        try:
+            async with httpx.AsyncClient() as client:
+                token_response = await client.post(token_url, data=token_data)
 
-            if token_response.status_code != 200:
-                logger.error(
-                    "Token exchange failed: %s %s", token_response.status_code, token_response.text
-                )
-                # Entra names the cause in an AADSTS code. Surfacing it is the
-                # whole point: an operator who cannot read this log otherwise
-                # sees eleven different failures as one sentence.
-                token_error = parse_entra_token_error(
-                    token_response.status_code, token_response.text
-                )
-                logger.error(
-                    "SSO token exchange rejected (%s, %s) [%s]: %s",
-                    token_error.code or "no AADSTS code",
-                    token_error.category,
-                    fingerprint,
-                    token_error.admin_remedy,
-                )
-                return _sso_error_redirect(tenant_slug, token_error.user_message)
-
-            tokens = token_response.json()
-            access_token = tokens.get("access_token")
-
-            # Get user info from Microsoft Graph
-            graph_response = await client.get(
-                "https://graph.microsoft.com/v1.0/me",
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-
-            if graph_response.status_code != 200:
-                logger.error(
-                    "Graph API failed: %s %s", graph_response.status_code, graph_response.text
-                )
-                graph_error = parse_entra_token_error(
-                    graph_response.status_code, graph_response.text
-                )
-                if graph_error.code:
+                if token_response.status_code != 200:
                     logger.error(
-                        "SSO profile lookup rejected (%s) [%s]: %s",
-                        graph_error.code,
-                        fingerprint,
-                        graph_error.admin_remedy,
+                        "Token exchange failed: %s %s",
+                        token_response.status_code,
+                        token_response.text,
                     )
-                    return _sso_error_redirect(tenant_slug, graph_error.user_message)
-                return _sso_error_redirect(tenant_slug, "Failed to fetch user info")
+                    # Entra names the cause in an AADSTS code. Surfacing it is the
+                    # whole point: an operator who cannot read this log otherwise
+                    # sees eleven different failures as one sentence.
+                    token_error = parse_entra_token_error(
+                        token_response.status_code, token_response.text
+                    )
+                    logger.error(
+                        "SSO token exchange rejected (%s, %s) [%s]: %s",
+                        token_error.code or "no AADSTS code",
+                        token_error.category,
+                        fingerprint,
+                        token_error.admin_remedy,
+                    )
+                    return _sso_error_redirect(tenant_slug, token_error.user_message)
 
-            user_info = graph_response.json()
+                tokens = token_response.json()
+                access_token = tokens.get("access_token")
+
+                # Get user info from Microsoft Graph
+                graph_response = await client.get(
+                    "https://graph.microsoft.com/v1.0/me",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+
+                if graph_response.status_code != 200:
+                    logger.error(
+                        "Graph API failed: %s %s", graph_response.status_code, graph_response.text
+                    )
+                    graph_error = parse_entra_token_error(
+                        graph_response.status_code, graph_response.text
+                    )
+                    if graph_error.code:
+                        logger.error(
+                            "SSO profile lookup rejected (%s) [%s]: %s",
+                            graph_error.code,
+                            fingerprint,
+                            graph_error.admin_remedy,
+                        )
+                        return _sso_error_redirect(tenant_slug, graph_error.user_message)
+                    return _sso_error_redirect(tenant_slug, "Failed to fetch user info")
+
+                user_info = graph_response.json()
+        except httpx.HTTPError:
+            logger.exception("SSO: could not reach the identity provider [%s]", fingerprint)
+            return _sso_error_redirect(
+                tenant_slug, "Could not reach the identity provider. Contact administrator."
+            )
 
         # Validate group membership if required
         if has_group_requirements:

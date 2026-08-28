@@ -137,7 +137,9 @@ The test signs in as the application itself, which checks:
   secret was pasted from the wrong column, that it is not the Secret ID;
 - the redirect URI is an absolute `https://` URL ending in `/api/auth/sso/callback` with no
   `/t/{slug}/` path;
-- Microsoft recognises the directory, and accepts the client ID and secret.
+- Microsoft recognises the directory, and accepts the client ID and secret;
+- how the server reaches the internet — whether a proxy is configured, and whether any proxy
+  setting is one that sign-in does not use (see below).
 
 What it **cannot** check is the redirect URI's registration, because signing in as the
 application never uses one. A green result therefore reads "Microsoft accepted the credentials",
@@ -181,7 +183,7 @@ up here.
 | `AADSTS65001` | Consent has not been granted | Grant admin consent for `User.Read` (and `GroupMember.Read.All` if group access is in use) under **API permissions** |
 | `AADSTS90002`, `AADSTS900023` | The directory could not be found | The Directory (tenant) ID is wrong or malformed — copy it from the App Registration's **Overview** |
 
-Two messages come from Milestone rather than Microsoft:
+Some messages come from Milestone rather than Microsoft:
 
 - **"SSO client secret is not configured"** — the configuration in effect has no client secret.
   Save one; a configuration without a secret can never complete a sign-in.
@@ -189,6 +191,28 @@ Two messages come from Milestone rather than Microsoft:
   be read, usually a master-database problem or a changed `TENANT_ENCRYPTION_KEY`. Milestone
   deliberately stops here rather than continuing with the workspace's own settings, which would
   fail against Microsoft with an unrelated-looking error.
+- **"The identity provider did not respond as expected (HTTP …)"** — something answered, but
+  without the `AADSTS` code Microsoft always includes. Usually a proxy or gateway intercepting
+  requests to `login.microsoftonline.com` from the server and returning a block page. A fault at
+  Microsoft looks the same, so check the **Outbound network** row of the SSO test, and whether
+  the server is allowed to reach `login.microsoftonline.com` directly.
+- **"Could not reach the identity provider"** — the request never got a reply at all: outbound
+  access to `login.microsoftonline.com` is blocked, or a configured proxy is unreachable.
+
+!!! tip "Compare a working environment against the failing one"
+    When the same version works in one environment and not another, the message tells you which
+    half to look at. **The same message in both** points at the App Registration, which they
+    share. **A message in only one** points at that environment — its network, or its own SSO
+    configuration.
+
+### What sign-in uses to reach Microsoft
+
+Sign-in requests use `HTTPS_PROXY` / `HTTP_PROXY` from the environment, or connect directly when
+neither is set. They do **not** use `PROXY_PAC_URL`, `PROXY_CA_CERT`, `PROXY_USERNAME` or
+`PROXY_PASSWORD` — those apply only to the public-holiday import. A deployment that describes its
+proxy solely through those settings has not described it to sign-in, and Microsoft will be
+unreachable even though holiday import works. The **Outbound network** row of the SSO test reports
+exactly this.
 
 ## Group-Based Access Control
 
