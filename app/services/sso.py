@@ -127,14 +127,22 @@ class SSOService:
         if not config or not config.is_enabled or not config.is_configured:
             return None
 
+        try:
+            client_secret = (
+                decrypt(config.client_secret_encrypted) if config.client_secret_encrypted else None
+            )
+        except Exception:
+            # A wrong/rotated TENANT_ENCRYPTION_KEY would otherwise surface as an
+            # opaque 500 from the login and callback routes.
+            logger.exception("Failed to decrypt SSO client secret for organization %s", org.id)
+            return None
+
         return {
             "enabled": True,
             "provider": config.provider,
             "tenant_id": config.entra_tenant_id,
             "client_id": config.client_id,
-            "client_secret": decrypt(config.client_secret_encrypted)
-            if config.client_secret_encrypted
-            else None,
+            "client_secret": client_secret,
             "redirect_uri": config.redirect_uri,
             "auto_create_users": config.should_auto_create_users,
             "default_role": config.default_user_role,
@@ -161,7 +169,7 @@ class SSOService:
             return None
         return await self._get_organization_sso_config(str(tenant_id))
 
-    async def fetch_user_groups(self, access_token: str, max_groups: int = 500) -> list[str]:
+    async def fetch_user_groups(self, access_token: str, max_groups: int = 500) -> list[str] | None:
         """
         Fetch user's group memberships from Microsoft Graph API.
 
@@ -172,7 +180,10 @@ class SSOService:
             max_groups: Maximum number of groups to fetch (default 500)
 
         Returns:
-            List of group IDs the user is a member of
+            List of group IDs the user is a member of, or ``None`` if the lookup
+            itself failed. Callers gating access on groups must treat ``None``
+            as "unknown" rather than "member of nothing" — a missing
+            GroupMember.Read.All consent would otherwise deny every user.
         """
         group_ids: list[str] = []
         url = "https://graph.microsoft.com/v1.0/me/memberOf?$select=id,displayName"
@@ -184,11 +195,10 @@ class SSOService:
                 )
 
                 if response.status_code != 200:
-                    # Log error but don't fail - groups might just not be available
                     logger.warning(
                         "Failed to fetch groups: %s %s", response.status_code, response.text
                     )
-                    break
+                    return None
 
                 data = response.json()
 
