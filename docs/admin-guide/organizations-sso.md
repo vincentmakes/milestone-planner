@@ -126,6 +126,94 @@ most common cause is a redirect-URI mismatch — confirm the App Registration, M
 `https://your-domain.com/api/auth/sso/callback`. The server log carries the underlying
 Microsoft error for every failure.
 
+### Test configuration
+
+The organization's **SSO Configuration** tab has a **Test configuration** button. It tests the
+*saved* configuration, so save your changes first.
+
+The test signs in as the application itself, which checks:
+
+- the Directory (tenant) ID, Application (client) ID and client secret look right and, where a
+  secret was pasted from the wrong column, that it is not the Secret ID;
+- the redirect URI is an absolute `https://` URL ending in `/api/auth/sso/callback` with no
+  `/t/{slug}/` path;
+- Microsoft recognises the directory, and accepts the client ID and secret;
+- how the server reaches the internet — whether a proxy is configured, and whether any proxy
+  setting is one that sign-in does not use (see below).
+
+What it **cannot** check is the redirect URI's registration, because signing in as the
+application never uses one. A green result therefore reads "Microsoft accepted the credentials",
+not "SSO works", and the last row always asks you to confirm the platform by hand — see the
+warning below. If the test cannot reach Microsoft at all it says so, rather than blaming the
+credentials.
+
+### Troubleshooting sign-in failures
+
+When a sign-in fails, the message above the sign-in form names Microsoft's error code. Look it
+up here.
+
+!!! warning "Check the platform first: **Web**, not Single-page application"
+    This is the one failure that looks like a working configuration. Microsoft issues the
+    authorization code normally — the redirect URI *is* registered — and then refuses to
+    exchange it, because a URI registered under the **Single-page application** platform can
+    only be redeemed from a browser, never from a server holding a client secret.
+
+    One App Registration can hold both platforms, so a workspace-level sign-in using a
+    `/t/{slug}/…` URI registered under **Web** keeps working while the shared organization URI
+    added under **SPA** fails. In the Azure portal: **App registrations → your app →
+    Authentication**, check which platform card lists
+    `https://your-domain.com/api/auth/sso/callback`. Under **Manifest**, its `replyUrlsWithType`
+    entry must read `"type": "Web"`. If it reads `"Spa"`, delete it from the Single-page
+    application platform and add the same URI under Web.
+
+!!! tip "The secret **Value**, not the Secret ID"
+    Azure shows a client secret's *Value* and its *Secret ID* side by side, and only the Value
+    works. A secret that looks like a GUID (`0a1b2c3d-…`) is the Secret ID.
+
+| Code | What it means | What to do |
+|------|---------------|------------|
+| `AADSTS9002327`, `AADSTS9002325` | The redirect URI is registered as a single-page application | Re-register it under the **Web** platform (see above) |
+| `AADSTS9002326` | An `Origin` header reached a Web-registered URI | A forward proxy is injecting `Origin` on the server's outbound requests |
+| `AADSTS7000215` | The client secret is not valid | Re-enter the secret's **Value**; check for truncation and trailing whitespace |
+| `AADSTS7000222` | The client secret has expired | Create a new secret under **Certificates & secrets** and save its Value |
+| `AADSTS7000218` | No client secret reached Microsoft | The stored secret is empty or could not be decrypted — re-enter it |
+| `AADSTS50011` | The redirect URI does not match the registration | Since Microsoft would not have issued a code for an unregistered URI, this usually means the redemption used a different SSO configuration than the sign-in — check the server log, which records the configuration used on both steps |
+| `AADSTS54005`, `AADSTS70008` | The sign-in link was already used or expired | Sign in again. If it happens every time, look for a link prefetcher or a retrying proxy in front of the callback URL |
+| `AADSTS700016` | The client ID is not in that directory | Check the Application (client) ID and Directory (tenant) ID belong to the same App Registration |
+| `AADSTS65001` | Consent has not been granted | Grant admin consent for `User.Read` (and `GroupMember.Read.All` if group access is in use) under **API permissions** |
+| `AADSTS90002`, `AADSTS900023` | The directory could not be found | The Directory (tenant) ID is wrong or malformed — copy it from the App Registration's **Overview** |
+
+Some messages come from Milestone rather than Microsoft:
+
+- **"SSO client secret is not configured"** — the configuration in effect has no client secret.
+  Save one; a configuration without a secret can never complete a sign-in.
+- **"Single sign-on is temporarily unavailable"** — the organization's configuration could not
+  be read, usually a master-database problem or a changed `TENANT_ENCRYPTION_KEY`. Milestone
+  deliberately stops here rather than continuing with the workspace's own settings, which would
+  fail against Microsoft with an unrelated-looking error.
+- **"The identity provider did not respond as expected (HTTP …)"** — something answered, but
+  without the `AADSTS` code Microsoft always includes. Usually a proxy or gateway intercepting
+  requests to `login.microsoftonline.com` from the server and returning a block page. A fault at
+  Microsoft looks the same, so check the **Outbound network** row of the SSO test, and whether
+  the server is allowed to reach `login.microsoftonline.com` directly.
+- **"Could not reach the identity provider"** — the request never got a reply at all: outbound
+  access to `login.microsoftonline.com` is blocked, or a configured proxy is unreachable.
+
+!!! tip "Compare a working environment against the failing one"
+    When the same version works in one environment and not another, the message tells you which
+    half to look at. **The same message in both** points at the App Registration, which they
+    share. **A message in only one** points at that environment — its network, or its own SSO
+    configuration.
+
+### What sign-in uses to reach Microsoft
+
+Sign-in requests use `HTTPS_PROXY` / `HTTP_PROXY` from the environment, or connect directly when
+neither is set. They do **not** use `PROXY_PAC_URL`, `PROXY_CA_CERT`, `PROXY_USERNAME` or
+`PROXY_PASSWORD` — those apply only to the public-holiday import. A deployment that describes its
+proxy solely through those settings has not described it to sign-in, and Microsoft will be
+unreachable even though holiday import works. The **Outbound network** row of the SSO test reports
+exactly this.
+
 ## Group-Based Access Control
 
 Restrict tenant access to users who belong to specific Microsoft Entra ID (Azure AD) security groups.

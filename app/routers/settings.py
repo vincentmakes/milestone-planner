@@ -96,7 +96,7 @@ async def update_sso_settings(
     Requires admin authentication.
     Matches: PUT /api/settings/sso
     """
-    _reject_if_org_sso_active(data, await _active_org_sso(request, db))
+    _reject_if_org_sso_active(data, await _active_org_sso(request, db, strict=True))
 
     result = await db.execute(select(SSOConfig).where(SSOConfig.id == 1))
     config = result.scalar_one_or_none()

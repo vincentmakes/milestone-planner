@@ -99,7 +99,10 @@ export async function apiRequest<T>(
   
   // In What If mode, block write operations (except auth and settings) and queue them
   if (clientConfig.isWhatIfMode?.() && ['PUT', 'POST', 'DELETE'].includes(method)) {
-    const allowedPrefixes = ['/api/auth/', '/api/settings/'];
+    // /api/admin/ is the admin portal, a separate app with its own session and
+    // no Gantt to sandbox — What-If never applies there, and queuing its writes
+    // would silently swallow them.
+    const allowedPrefixes = ['/api/auth/', '/api/settings/', '/api/admin/'];
     const isAllowed = allowedPrefixes.some(prefix => url.includes(prefix));
     
     if (!isAllowed) {

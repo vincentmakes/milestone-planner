@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from app.routers.auth import _reject_if_org_sso_active
+from app.routers.auth import _active_org_sso, _reject_if_org_sso_active
 from app.schemas.auth import SSOConfigUpdate
 from app.services.sso import SSOService
 
@@ -80,3 +80,45 @@ def test_reject_noop_when_no_org_sso():
 def test_reject_noop_when_enabled_not_set():
     """A partial update that doesn't touch `enabled` is allowed."""
     _reject_if_org_sso_active(SSOConfigUpdate(tenant_id="x"), {"organization": {}})  # no raise
+
+
+# ---------------------------------------------------------------------------
+# _active_org_sso: reads degrade, writes fail closed
+# ---------------------------------------------------------------------------
+
+
+def _tenant_request():
+    request = MagicMock()
+    request.state.tenant = {"id": "tenant-uuid", "slug": "acme"}
+    return request
+
+
+@pytest.mark.asyncio
+async def test_active_org_sso_degrades_to_none_for_read_paths():
+    """The settings screen must still render when the master DB is unhappy."""
+    with (
+        patch("app.routers.auth.settings", MagicMock(multi_tenant=True)),
+        patch.object(
+            SSOService,
+            "get_active_organization_sso",
+            AsyncMock(side_effect=RuntimeError("master DB down")),
+        ),
+    ):
+        assert await _active_org_sso(_tenant_request(), MagicMock()) is None
+
+
+@pytest.mark.asyncio
+async def test_active_org_sso_raises_503_for_write_paths():
+    """A guardrail a database blip can switch off is not a guardrail."""
+    with (
+        patch("app.routers.auth.settings", MagicMock(multi_tenant=True)),
+        patch.object(
+            SSOService,
+            "get_active_organization_sso",
+            AsyncMock(side_effect=RuntimeError("master DB down")),
+        ),
+        pytest.raises(HTTPException) as exc,
+    ):
+        await _active_org_sso(_tenant_request(), MagicMock(), strict=True)
+
+    assert exc.value.status_code == 503

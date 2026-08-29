@@ -285,6 +285,30 @@ export async function deleteOrganizationSSOConfig(orgId: string): Promise<void> 
   await apiDelete(`/api/admin/organizations/${orgId}/sso`);
 }
 
+export interface OrganizationSSOTestCheck {
+  name: string;
+  status: 'pass' | 'warn' | 'fail' | 'manual';
+  message: string;
+  /** Microsoft's AADSTS code, when it supplied one. */
+  code?: string | null;
+}
+
+export interface OrganizationSSOTestResult {
+  /**
+   * Whether Microsoft accepted the client ID and secret — NOT whether a user
+   * sign-in will succeed. The test signs in as the application itself, which
+   * never involves a redirect URI, so it cannot see a redirect URI registered
+   * under the wrong platform. That comes back as a 'manual' check.
+   */
+  credentialsOk: boolean;
+  summary: string;
+  checks: OrganizationSSOTestCheck[];
+}
+
+export async function testOrganizationSSOConfig(orgId: string): Promise<OrganizationSSOTestResult> {
+  return apiPost<OrganizationSSOTestResult>(`/api/admin/organizations/${orgId}/sso/test`, {});
+}
+
 // Tenant Organization Assignment
 export interface AddTenantToOrganizationResult {
   success: boolean;

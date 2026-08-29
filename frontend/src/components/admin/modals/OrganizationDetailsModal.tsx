@@ -9,11 +9,12 @@ import {
   getOrganization, 
   updateOrganization,
   updateOrganizationSSOConfig,
+  testOrganizationSSOConfig,
   removeTenantFromOrganization,
   addTenantToOrganization,
   updateTenantGroupAccess,
 } from '@/api';
-import type { OrganizationDetail, TenantSummary } from '@/api/endpoints/admin';
+import type { OrganizationDetail, OrganizationSSOTestResult, TenantSummary } from '@/api/endpoints/admin';
 import { useEscapeKey } from '@/hooks';
 import styles from './AdminModal.module.css';
 
@@ -48,6 +49,8 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
   const [defaultUserRole, setDefaultUserRole] = useState('user');
   const [isSavingSSO, setIsSavingSSO] = useState(false);
   const [ssoSuccess, setSsoSuccess] = useState<string | null>(null);
+  const [isTestingSSO, setIsTestingSSO] = useState(false);
+  const [ssoTestResult, setSsoTestResult] = useState<OrganizationSSOTestResult | null>(null);
   
   // Tenant management states
   const [tenantNotice, setTenantNotice] = useState<string | null>(null);
@@ -133,12 +136,13 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
         defaultUserRole,
       };
       
-      if (clientSecret) {
-        config.clientSecret = clientSecret;
+      if (clientSecret.trim()) {
+        config.clientSecret = clientSecret.trim();
       }
       
       await updateOrganizationSSOConfig(organization.id, config);
       setSsoSuccess('SSO configuration saved successfully');
+      setSsoTestResult(null);
       setClientSecret('');
       await loadOrganization();
       onRefresh?.();
@@ -146,6 +150,23 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
       setError(err instanceof Error ? err.message : 'Failed to save SSO configuration');
     } finally {
       setIsSavingSSO(false);
+    }
+  };
+
+  const handleTestSSO = async () => {
+    if (!organization) return;
+
+    setError(null);
+    setSsoSuccess(null);
+    setSsoTestResult(null);
+    setIsTestingSSO(true);
+
+    try {
+      setSsoTestResult(await testOrganizationSSOConfig(organization.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to test SSO configuration');
+    } finally {
+      setIsTestingSSO(false);
     }
   };
 
@@ -490,14 +511,72 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                     </select>
                   </div>
 
-                  <button
-                    className={`${styles.btn} ${styles.btnPrimary}`}
-                    onClick={handleSaveSSO}
-                    disabled={isSavingSSO}
-                    style={{ marginTop: '1rem' }}
-                  >
-                    {isSavingSSO ? 'Saving...' : 'Save SSO Configuration'}
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginTop: '1rem' }}>
+                    <button
+                      className={`${styles.btn} ${styles.btnPrimary}`}
+                      onClick={handleSaveSSO}
+                      disabled={isSavingSSO}
+                    >
+                      {isSavingSSO ? 'Saving...' : 'Save SSO Configuration'}
+                    </button>
+                    <button
+                      className={styles.btn}
+                      onClick={handleTestSSO}
+                      disabled={isTestingSSO || isSavingSSO || !organization?.sso_config?.configured}
+                      title="Ask Microsoft whether the saved credentials are accepted"
+                    >
+                      {isTestingSSO ? 'Testing...' : 'Test configuration'}
+                    </button>
+                  </div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem', display: 'block' }}>
+                    The test checks the configuration that is <strong>saved</strong> — save your
+                    changes first.
+                  </span>
+
+                  {ssoTestResult && (
+                    <div style={{
+                      marginTop: '1rem',
+                      padding: '1rem',
+                      background: 'var(--bg-tertiary)',
+                      borderRadius: 'var(--radius-md)',
+                      fontSize: '0.875rem',
+                    }}>
+                      <div style={{ fontWeight: 500, marginBottom: '0.75rem' }}>
+                        {ssoTestResult.summary}
+                      </div>
+                      {ssoTestResult.checks.map((check, index) => (
+                        <div
+                          key={`${check.name}-${index}`}
+                          style={{ display: 'flex', gap: '0.6rem', marginBottom: '0.6rem' }}
+                        >
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              flexShrink: 0,
+                              color: check.status === 'pass' ? 'var(--accent-green)'
+                                : check.status === 'fail' ? 'var(--accent-red)'
+                                : 'var(--text-muted)',
+                            }}
+                          >
+                            {check.status === 'pass' ? '✓'
+                              : check.status === 'fail' ? '✕'
+                              : check.status === 'warn' ? '!' : '?'}
+                          </span>
+                          <div>
+                            <div style={{ fontWeight: 500 }}>
+                              {check.name}
+                              {check.code && (
+                                <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                                  {' '}({check.code})
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ color: 'var(--text-muted)' }}>{check.message}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
