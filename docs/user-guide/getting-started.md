@@ -59,7 +59,7 @@ The sidebar can be collapsed to icon-only mode for more screen space. Administra
 
 ### Checking your version
 
-The bottom of the user menu shows the version this instance is running, for example `v1.2.0`. It is read from the server each time you open the menu, so if your administrator upgrades the instance while you have the application open, the number changes here — reload the page to pick up the new version.
+The bottom of the user menu shows the version this instance is running, for example `v1.4.0`. It is read from the server each time you open the menu, so if your administrator upgrades the instance while you have the application open, the number changes here — reload the page to pick up the new version.
 
 ## User Roles
 
