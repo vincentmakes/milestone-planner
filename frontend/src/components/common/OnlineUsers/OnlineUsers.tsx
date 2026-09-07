@@ -50,7 +50,13 @@ const UserAvatar = memo(function UserAvatar({ user, size = 'small' }: UserAvatar
   );
 });
 
-export const OnlineUsers = memo(function OnlineUsers() {
+interface OnlineUsersProps {
+  /** How many avatars to show before collapsing the rest into a +N chip.
+   *  The header lowers this as it runs out of room. */
+  maxVisible?: number;
+}
+
+export const OnlineUsers = memo(function OnlineUsers({ maxVisible = 3 }: OnlineUsersProps) {
   const { connectionState, onlineUsers, isConnected } = useWebSocketContext();
   const [showDropdown, setShowDropdown] = useState(false);
 
@@ -59,7 +65,6 @@ export const OnlineUsers = memo(function OnlineUsers() {
     return null;
   }
 
-  const maxVisible = 3;
   const visibleUsers = onlineUsers.slice(0, maxVisible);
   const remainingCount = onlineUsers.length - maxVisible;
 

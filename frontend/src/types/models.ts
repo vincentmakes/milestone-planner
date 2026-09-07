@@ -46,6 +46,12 @@ export interface Tag {
   color: string;
 }
 
+/**
+ * Kanban column. Kept in sync with `completion` by utils/kanbanCards.ts,
+ * which mirrors app/services/card_status.py on the backend.
+ */
+export type CardStatus = 'todo' | 'in_progress' | 'blocked' | 'done';
+
 export interface Phase {
   id: number;
   project_id: number;
@@ -55,6 +61,7 @@ export interface Phase {
   color: string;
   order_index: number;
   completion?: number | null;
+  status: CardStatus;
   is_milestone?: boolean;
   dependencies: Dependency[];
   // Nested relations
@@ -74,6 +81,7 @@ export interface Subphase {
   color: string;
   order_index: number;
   completion?: number | null;
+  status: CardStatus;
   is_milestone?: boolean;
   dependencies: Dependency[];
   // Recursive children
@@ -256,7 +264,7 @@ export interface InstanceSettings {
 
 export type ViewMode = 'week' | 'month' | 'quarter' | 'year';
 
-export type CurrentView = 'gantt' | 'staff' | 'equipment' | 'crosssite' | 'archived';
+export type CurrentView = 'gantt' | 'kanban' | 'staff' | 'equipment' | 'crosssite' | 'archived';
 
 export type ResourceTab = 'staff' | 'equipment';
 
@@ -463,3 +471,35 @@ export interface CustomColumnValue {
 
 // Key format for values map: "{columnId}-{entityType}-{entityId}"
 export type CustomColumnValuesMap = Record<string, string | null>;
+
+// =============================================================================
+// NOTIFICATIONS
+// =============================================================================
+
+export type NotificationType =
+  | 'assigned'
+  | 'comment'
+  | 'mention'
+  | 'status_change'
+  /** Derived in the browser from card end dates; never stored server-side. */
+  | 'due_soon'
+  | 'overdue';
+
+export interface AppNotification {
+  id: number;
+  type: NotificationType;
+  actor_id?: number | null;
+  actor_name?: string | null;
+  entity_type?: 'phase' | 'subphase' | null;
+  entity_id?: number | null;
+  project_id?: number | null;
+  title: string;
+  body?: string | null;
+  read_at?: string | null;
+  created_at: string;
+  /**
+   * 'derived' notifications are computed client-side from loaded project data
+   * and are dismissed into localStorage rather than marked read on the server.
+   */
+  source?: 'server' | 'derived';
+}

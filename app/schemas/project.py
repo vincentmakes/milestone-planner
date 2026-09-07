@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.schemas.base import DateAsDateTimeJS, DateTimeJS
 from app.schemas.tag import TagListResponse
+from app.services.card_status import CardStatus
 
 # ---------------------------------------------------------
 # Staff Assignment Schemas (for nested responses)
@@ -83,6 +84,7 @@ class SubphaseResponse(BaseModel):
     sort_order: int
     depth: int
     completion: int | None = None
+    status: CardStatus = "todo"
     dependencies: list[Any] = []
     created_at: DateTimeJS | None = None
     staffAssignments: list[StaffAssignmentInPhase] = []
@@ -112,7 +114,8 @@ class SubphaseUpdate(BaseModel):
     end_date: date | None = None
     is_milestone: bool | None = None
     dependencies: list[Any] | None = None
-    completion: int | None = None
+    completion: int | None = Field(None, ge=0, le=100)
+    status: CardStatus | None = None
 
 
 # ---------------------------------------------------------
@@ -131,6 +134,7 @@ class PhaseResponse(BaseModel):
     is_milestone: bool
     sort_order: int
     completion: int | None = None
+    status: CardStatus = "todo"
     dependencies: list[Any] = []
     created_at: DateTimeJS | None = None
     staffAssignments: list[StaffAssignmentInPhase] = []
@@ -159,7 +163,8 @@ class PhaseUpdate(BaseModel):
     end_date: date | None = None
     is_milestone: bool | None = None
     dependencies: list[Any] | None = None
-    completion: int | None = None
+    completion: int | None = Field(None, ge=0, le=100)
+    status: CardStatus | None = None
 
 
 class PhaseReorderRequest(BaseModel):

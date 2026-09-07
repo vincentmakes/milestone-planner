@@ -8,7 +8,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -19,6 +19,7 @@ from app.models.assignment import (
     ProjectAssignment,
     SubphaseStaffAssignment,
 )
+from app.models.card_comment import CardComment
 from app.models.equipment import Equipment, EquipmentAssignment
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.site import Site
@@ -36,6 +37,7 @@ from app.schemas.project import (
     SubphaseReorderRequest,
     SubphaseUpdate,
 )
+from app.services.card_status import apply_completion, apply_status
 from app.websocket.broadcast import broadcast_change
 
 logger = logging.getLogger(__name__)
@@ -122,6 +124,7 @@ def build_subphase_tree_optimized(
                 "sort_order": sp.sort_order,
                 "depth": sp.depth,
                 "completion": sp.completion,
+                "status": sp.status,
                 "dependencies": deps,
                 "created_at": sp.created_at,
                 "staffAssignments": staff,
@@ -463,6 +466,7 @@ async def get_project(
                 "is_milestone": p.is_milestone == 1,
                 "sort_order": p.sort_order,
                 "completion": p.completion,
+                "status": p.status,
                 "dependencies": deps,
                 "created_at": p.created_at,
                 "staffAssignments": staff,
@@ -809,8 +813,12 @@ async def update_phase(
         phase.is_milestone = 1 if data.is_milestone else 0
     if data.dependencies is not None:
         phase.dependencies = json.dumps(data.dependencies)
+    # Completion first, then status: a request carrying both resolves toward the
+    # explicit status. Both go through card_status so the Kanban board agrees.
     if data.completion is not None:
-        phase.completion = data.completion
+        apply_completion(phase, data.completion)
+    if data.status is not None:
+        apply_status(phase, data.status)
 
     await db.commit()
 
@@ -847,6 +855,15 @@ async def delete_phase(
 
     project_id = phase.project_id
     phase_type = phase.type
+
+    # card_comments.entity_id is polymorphic and carries no FK (same shape as
+    # custom_column_values), so the rows must be removed explicitly.
+    await db.execute(
+        delete(CardComment).where(
+            CardComment.entity_type == "phase",
+            CardComment.entity_id == phase_id,
+        )
+    )
 
     await db.delete(phase)
     await db.commit()
@@ -986,6 +1003,7 @@ async def create_subphase_under_phase(
         "sort_order": subphase.sort_order,
         "depth": subphase.depth,
         "completion": subphase.completion,
+        "status": subphase.status,
         "dependencies": [],
         "staffAssignments": [],
         "children": [],
@@ -1086,6 +1104,7 @@ async def create_child_subphase(
         "sort_order": subphase.sort_order,
         "depth": subphase.depth,
         "completion": subphase.completion,
+        "status": subphase.status,
         "dependencies": [],
         "staffAssignments": [],
         "children": [],
@@ -1123,8 +1142,12 @@ async def update_subphase(
         subphase.is_milestone = 1 if data.is_milestone else 0
     if data.dependencies is not None:
         subphase.dependencies = json.dumps(data.dependencies)
+    # Completion first, then status: a request carrying both resolves toward the
+    # explicit status. Both go through card_status so the Kanban board agrees.
     if data.completion is not None:
-        subphase.completion = data.completion
+        apply_completion(subphase, data.completion)
+    if data.status is not None:
+        apply_status(subphase, data.status)
 
     await db.commit()
 
@@ -1184,6 +1207,15 @@ async def delete_subphase(
     await db.execute(
         SubphaseStaffAssignment.__table__.delete().where(
             SubphaseStaffAssignment.subphase_id.in_(all_ids)
+        )
+    )
+
+    # Comments for every descendant too -- card_comments.entity_id is
+    # polymorphic and has no FK to cascade from.
+    await db.execute(
+        delete(CardComment).where(
+            CardComment.entity_type == "subphase",
+            CardComment.entity_id.in_(all_ids),
         )
     )
 

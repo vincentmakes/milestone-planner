@@ -6,8 +6,10 @@
  */
 
 import React, { createContext, useContext, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useNotificationStore } from '@/stores/notificationStore';
 import { useWebSocket, ConnectionState } from '@/hooks/useWebSocket';
 import type { PresenceUser, ChangePayload } from '@/hooks/useWebSocket';
+import type { AppNotification } from '@/types';
 import { loadAllProjects } from '@/api/endpoints/projects';
 import { getStaff } from '@/api/endpoints/staff';
 import { getEquipment, getEquipmentBlocks } from '@/api/endpoints/equipment';
@@ -84,6 +86,11 @@ function slicesForEntity(entityType: string): Slice[] {
       return ['skills', 'staff'];
     case 'tag':
       return ['tags', 'projects'];
+    case 'card_comment':
+      // Comment threads and counts have their own fetches. Without this case
+      // every comment anyone posts would refetch all eight slices -- including
+      // the per-project project load -- on every connected client.
+      return [];
     default:
       // Unknown type: refresh everything to be safe.
       return ['projects', 'staff', 'equipment', 'equipmentBlocks', 'vacations', 'sites', 'skills', 'tags'];
@@ -163,6 +170,13 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     }
   }, [setProjects, setStaff, setEquipment, setEquipmentBlocks, setVacations, setSites, setSkills, setTags]);
 
+  // A notification push is a live hint; the bell also reloads on mount/focus,
+  // because the connection manager is per-process and cannot reach a user
+  // connected to another worker.
+  const handleNotificationReceived = useCallback((notification: AppNotification) => {
+    useNotificationStore.getState().receive(notification);
+  }, []);
+
   const handleChangeReceived = useCallback((change: ChangePayload) => {
     const target = inFlightRef.current ? restageRef.current : pendingSlicesRef.current;
     for (const slice of slicesForEntity(change.entity_type)) {
@@ -186,6 +200,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   } = useWebSocket({
     autoConnect: true,
     onChangeReceived: handleChangeReceived,
+    onNotificationReceived: handleNotificationReceived,
   });
 
   // Cleanup on unmount

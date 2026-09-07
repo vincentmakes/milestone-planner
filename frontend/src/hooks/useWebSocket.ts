@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getTenantPrefix } from '@/api/client';
+import type { AppNotification } from '@/types';
 
 // Feature flag to disable WebSocket (set to true to disable until proxy/IIS is properly configured).
 // Guards live inside the effect/callback bodies so hook order stays unconditional.
@@ -57,6 +58,8 @@ interface UseWebSocketOptions {
   onPresenceChange?: (users: PresenceUser[]) => void;
   /** Called when another user makes a change */
   onChangeReceived?: (change: ChangePayload) => void;
+  /** Called when a notification addressed to this user arrives */
+  onNotificationReceived?: (notification: AppNotification) => void;
   /** Enable auto-connect (default: true) */
   autoConnect?: boolean;
 }
@@ -109,6 +112,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const { 
     onPresenceChange, 
     onChangeReceived,
+    onNotificationReceived,
     autoConnect = true,
   } = options;
 
@@ -126,6 +130,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   // Store callbacks in refs to avoid reconnection loops when they change
   const onPresenceChangeRef = useRef(onPresenceChange);
   const onChangeReceivedRef = useRef(onChangeReceived);
+  const onNotificationReceivedRef = useRef(onNotificationReceived);
   
   // Keep refs updated
   useEffect(() => {
@@ -135,6 +140,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   useEffect(() => {
     onChangeReceivedRef.current = onChangeReceived;
   }, [onChangeReceived]);
+
+  useEffect(() => {
+    onNotificationReceivedRef.current = onNotificationReceived;
+  }, [onNotificationReceived]);
 
   // Clear expired changes. We expire based on local receipt time, not the
   // server timestamp, so clock skew between client and server can't drop
@@ -194,6 +203,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
             onPresenceChangeRef.current?.(updated);
             return updated;
           });
+          break;
+        }
+
+        case 'notification:new': {
+          // NOT handled by the default branch below, which only recognises
+          // "change:*" -- without this case the push is silently dropped.
+          onNotificationReceivedRef.current?.(message.payload as AppNotification);
           break;
         }
 

@@ -157,6 +157,36 @@ Project tags are colored labels shared across all projects in the instance. See 
 | `PATCH` | `/t/{slug}/api/custom-columns/reorder` | Reorder columns |
 | `PUT` | `/t/{slug}/api/custom-columns/values` | Write a column value (`/values/batch` for bulk) |
 
+### Kanban
+
+The board has no read endpoint of its own — `GET /projects/{id}` already returns the full phase/subphase tree, and the client derives cards from it. A card is a *leaf* phase or subphase.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/t/{slug}/api/kanban/projects/{id}/comment-counts` | Comment counts per card for one project |
+| `PUT` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/status` | Move a card between columns (`entity_type` is `phase` or `subphase`) |
+| `POST` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/assignees` | Assign staff — also books their time |
+| `DELETE` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/assignees/{staff_id}` | Unassign and release the booking |
+| `GET` / `POST` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/comments` | Read / post comments |
+| `PUT` / `DELETE` | `/t/{slug}/api/kanban/comments/{id}` | Edit / delete a comment |
+
+Permissions differ from the rest of the API: moving a card is allowed for admins, superusers **and the card's own assignees**, and any authenticated user may comment. Assigning, creating and deleting still require superuser rights.
+
+The status endpoint returns the resulting `{status, completion}` pair, because the two fields are kept in sync server-side — clients apply the change optimistically and reconcile against this echo.
+
+### Notifications
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/t/{slug}/api/notifications?unread_only=&limit=` | The signed-in user's notifications, newest first |
+| `GET` | `/t/{slug}/api/notifications/unread-count` | Unread count for the bell badge |
+| `PUT` | `/t/{slug}/api/notifications/{id}/read` | Mark one as read |
+| `PUT` | `/t/{slug}/api/notifications/read-all` | Mark all as read |
+
+Every endpoint is implicitly scoped to the session user; there is no user id to pass. Requesting another user's notification returns `404`, not `403`, so the endpoint cannot be used to probe for their existence.
+
+Due-soon and overdue reminders are **not** served here — they are derived in the browser from loaded project data.
+
 ### Real-Time Collaboration
 
 | Method | Endpoint | Description |

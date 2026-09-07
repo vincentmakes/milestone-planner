@@ -9,34 +9,47 @@ import { ThemeToggle } from './ThemeToggle';
 import { WhatIfToggle } from './WhatIfToggle';
 import { InstanceTitle } from './InstanceTitle';
 import { UndoRedoControls } from './UndoRedoControls';
+import { ViewModeControls } from './ViewModeControls';
+import { ZoomControls } from './ZoomControls';
+import { HeaderOverflowMenu, OverflowRow } from './HeaderOverflowMenu';
 import { OnlineUsers } from '@/components/common/OnlineUsers';
+import { NotificationBell } from '@/components/common/NotificationBell';
+import { useHeaderDensity, type HeaderDensity } from '@/hooks/useHeaderDensity';
 import { getTheme, isDarkTheme, type Theme } from '@/utils/storage';
 import { getSetting } from '@/api/endpoints/settings';
-import type { ViewMode } from '@/types';
 import styles from './Header.module.css';
 
-// View mode options
-const VIEW_MODES: { value: ViewMode; label: string; title: string }[] = [
-  { value: 'week', label: 'W', title: 'Week view' },
-  { value: 'month', label: 'M', title: 'Month view' },
-  { value: 'quarter', label: 'Q', title: 'Quarter view' },
-  { value: 'year', label: 'Y', title: 'Year view' },
-];
+/**
+ * Which controls leave the bar for the overflow menu, per density tier.
+ *
+ * This table is the whole responsive contract: every control renders in
+ * exactly one place at any width, and nothing is ever simply dropped. Adding a
+ * control to the bar means giving it a row here — see useHeaderDensity for the
+ * width budget behind the tiers.
+ */
+type HeaderControl = 'zoom' | 'undoRedo' | 'viewModes' | 'theme' | 'whatIf';
 
-// Zoom constants
-const MIN_CELL_WIDTH = 12;
-const MAX_CELL_WIDTH = 120;
-const ZOOM_STEP = 4;
-const DEFAULT_CELL_WIDTH = 36;
+/** Avatars before the "+N" chip takes over. */
+const AVATARS_SHOWN: Record<HeaderDensity, number> = {
+  full: 3,
+  compact: 3,
+  condensed: 2,
+  minimal: 1,
+};
+
+const IN_OVERFLOW_MENU: Record<HeaderDensity, ReadonlySet<HeaderControl>> = {
+  full: new Set(),
+  compact: new Set(),
+  // Zoom and undo/redo go first: both already have keyboard equivalents in
+  // useKeyboardShortcuts (`+`/`-`, Ctrl+Z / Ctrl+Y). View modes have none.
+  condensed: new Set(['zoom', 'undoRedo']),
+  minimal: new Set(['zoom', 'undoRedo', 'viewModes', 'theme', 'whatIf']),
+};
 
 export function Header() {
   const currentUser = useAppStore((s) => s.currentUser);
   const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
   const currentView = useViewStore((s) => s.currentView);
-  const viewMode = useViewStore((s) => s.viewMode);
-  const setViewMode = useViewStore((s) => s.setViewMode);
-  const cellWidth = useViewStore((s) => s.cellWidth);
-  const setCellWidth = useViewStore((s) => s.setCellWidth);
   const showStaffOverview = useViewStore((s) => s.showStaffOverview);
   const showEquipmentOverview = useViewStore((s) => s.showEquipmentOverview);
   const toggleShowStaffOverview = useViewStore((s) => s.toggleShowStaffOverview);
@@ -98,106 +111,101 @@ export function Header() {
   const canUseWhatIf = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
   const canShowPanels = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
   const isGanttView = currentView === 'gantt';
+  // Every view except Kanban renders a timeline, so date navigation, the view-mode
+  // switcher, undo/redo and zoom belong to all of them but the board.
+  const isTimelineView = currentView !== 'kanban';
 
-  // Zoom calculations
-  const zoomPercent = Math.round((cellWidth / DEFAULT_CELL_WIDTH) * 100);
-  const canZoomIn = cellWidth < MAX_CELL_WIDTH;
-  const canZoomOut = cellWidth > MIN_CELL_WIDTH;
-
-  const handleZoomIn = () => {
-    const newWidth = Math.min(cellWidth + ZOOM_STEP, MAX_CELL_WIDTH);
-    if (newWidth !== cellWidth) setCellWidth(newWidth);
-  };
-
-  const handleZoomOut = () => {
-    const newWidth = Math.max(cellWidth - ZOOM_STEP, MIN_CELL_WIDTH);
-    if (newWidth !== cellWidth) setCellWidth(newWidth);
-  };
-
-  const handleResetZoom = () => {
-    if (cellWidth !== DEFAULT_CELL_WIDTH) setCellWidth(DEFAULT_CELL_WIDTH);
-  };
+  const density = useHeaderDensity();
+  const inMenu = IN_OVERFLOW_MENU[density];
 
   // Determine logo source
   const logoSrc = useMemo(() => {
-    if (isDarkTheme(theme)) {
-      return customLogoDark || '/img/milestone_logo_dark_theme.svg';
-    } else {
-      return customLogoLight || '/img/milestone_logo_light_theme.svg';
-    }
-  }, [theme, customLogoDark, customLogoLight]);
+    const custom = isDarkTheme(theme) ? customLogoDark : customLogoLight;
+    // A tenant's own logo is never substituted — only our own wordmark is
+    // traded for the mark when the bar is tight.
+    if (custom) return custom;
+    if (density === 'minimal') return '/img/milestone_logo_no_text.svg';
+    return isDarkTheme(theme)
+      ? '/img/milestone_logo_dark_theme.svg'
+      : '/img/milestone_logo_light_theme.svg';
+  }, [theme, customLogoDark, customLogoLight, density]);
 
   // Count active panels
   const activePanelCount = (showStaffOverview ? 1 : 0) + (showEquipmentOverview ? 1 : 0);
 
+  const menuRows = [
+    isTimelineView && inMenu.has('viewModes') && (
+      <OverflowRow key="view" label="View">
+        <ViewModeControls />
+      </OverflowRow>
+    ),
+    isTimelineView && inMenu.has('zoom') && (
+      <OverflowRow key="zoom" label="Zoom">
+        <ZoomControls />
+      </OverflowRow>
+    ),
+    isTimelineView && inMenu.has('undoRedo') && (
+      <OverflowRow key="history" label="History">
+        <UndoRedoControls />
+      </OverflowRow>
+    ),
+    inMenu.has('theme') && (
+      <OverflowRow key="theme" label="Theme">
+        <ThemeToggle />
+      </OverflowRow>
+    ),
+    // Not while active — the active state stays in the bar instead.
+    canUseWhatIf && inMenu.has('whatIf') && !whatIfMode && (
+      <OverflowRow key="whatif" label="What If">
+        <WhatIfToggle />
+      </OverflowRow>
+    ),
+  ].filter(Boolean);
+
   return (
-    <header className={`${styles.header} ${whatIfMode ? styles.whatIfActive : ''}`}>
+    <header
+      className={`${styles.header} ${whatIfMode ? styles.whatIfActive : ''}`}
+      // Every responsive rule in Header.module.css keys off this, so the
+      // breakpoints stay in useHeaderDensity and out of the stylesheet.
+      data-density={density}
+    >
       {/* LEFT: Branding & Context */}
       <div className={styles.left}>
         <div className={styles.logo}>
           <img src={logoSrc} alt="Milestone" className={styles.logoImg} />
         </div>
-        <InstanceTitle />
+        {/* Branding is the first thing to go: it costs ~150px and tells a
+            returning user nothing they do not already know. */}
+        {(density === 'full' || density === 'compact') && <InstanceTitle />}
         <div className={styles.divider} />
         <SiteSelector />
       </div>
 
       {/* CENTER: Timeline Controls */}
       <div className={styles.center}>
-        <DateNavigation />
-        
-        <div className={styles.divider} />
-        
-        {/* View Mode Switcher */}
-        <div className={styles.viewModes}>
-          {VIEW_MODES.map((mode) => (
-            <button
-              key={mode.value}
-              className={`${styles.viewModeBtn} ${viewMode === mode.value ? styles.active : ''}`}
-              onClick={() => setViewMode(mode.value)}
-              title={mode.title}
-            >
-              {mode.label}
-            </button>
-          ))}
-        </div>
-        
-        <div className={styles.divider} />
+        {isTimelineView && (
+          <>
+            <DateNavigation shortLabel={density !== 'full'} />
 
-        <UndoRedoControls />
+            <div className={styles.divider} />
 
-        <div className={styles.divider} />
+            {!inMenu.has('viewModes') && (
+              <>
+                <ViewModeControls />
+                <div className={styles.divider} />
+              </>
+            )}
 
-        {/* Zoom Controls */}
-        <div className={styles.zoomControls}>
-          <button
-            className={styles.zoomBtn}
-            onClick={handleZoomOut}
-            disabled={!canZoomOut}
-            title="Zoom out"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 13H5v-2h14v2z" />
-            </svg>
-          </button>
-          <button
-            className={styles.zoomLevel}
-            onClick={handleResetZoom}
-            title="Reset zoom to 100%"
-          >
-            {zoomPercent}%
-          </button>
-          <button
-            className={styles.zoomBtn}
-            onClick={handleZoomIn}
-            disabled={!canZoomIn}
-            title="Zoom in"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-            </svg>
-          </button>
-        </div>
+            {!inMenu.has('undoRedo') && (
+              <>
+                <UndoRedoControls />
+                <div className={styles.divider} />
+              </>
+            )}
+
+            {!inMenu.has('zoom') && <ZoomControls />}
+          </>
+        )}
       </div>
 
       {/* RIGHT: Actions & User */}
@@ -261,17 +269,25 @@ export function Header() {
           </div>
         )}
         
-        {/* What-If Toggle */}
-        {canUseWhatIf && <WhatIfToggle />}
-        
+        {/* What-If Toggle. Stays in the bar while active whatever the density:
+            a pending sandbox with unapplied edits must never hide behind a menu. */}
+        {canUseWhatIf && (!inMenu.has('whatIf') || whatIfMode) && <WhatIfToggle />}
+
         <div className={styles.divider} />
-        
-        {/* Theme Toggle */}
-        <ThemeToggle />
-        
+
+        {!inMenu.has('theme') && <ThemeToggle />}
+
+        {/* Whatever no longer fits, reachable rather than dropped. The rows are
+            collected first so the Kanban board — which has no timeline controls
+            to demote — never shows an empty menu. */}
+        {menuRows.length > 0 && <HeaderOverflowMenu>{menuRows}</HeaderOverflowMenu>}
+
+        {/* Notifications */}
+        <NotificationBell />
+
         {/* Online Users */}
-        <OnlineUsers />
-        
+        <OnlineUsers maxVisible={AVATARS_SHOWN[density]} />
+
         {/* User Menu */}
         <UserMenu />
       </div>

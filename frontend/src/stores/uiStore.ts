@@ -47,7 +47,8 @@ type ModalType =
   | 'bankHoliday'
   | 'customHoliday'
   | 'companyEvent'
-  | 'equipmentBlock';
+  | 'equipmentBlock'
+  | 'kanbanCard';
 
 // =============================================================================
 // STATE INTERFACE
@@ -80,6 +81,10 @@ interface UIState {
     staffId?: number;
     equipmentId?: number;
     siteId?: number;
+    // Kanban card detail (a card is a leaf phase or subphase)
+    cardEntityType?: 'phase' | 'subphase';
+    cardEntityId?: number;
+    cardProjectId?: number;
     // Phantom sibling presets
     phantomPreset?: {
       startDate: string;
@@ -217,6 +222,11 @@ interface UIState {
   
   // Convenience modal openers
   openProjectModal: (project?: Project) => void;
+  openKanbanCardModal: (
+    entityType: 'phase' | 'subphase',
+    entityId: number,
+    projectId: number
+  ) => void;
   openPhaseModal: (phase?: Phase, projectId?: number) => void;
   openSubphaseModal: (subphase?: Subphase, phaseId?: number, projectId?: number, parentSubphaseId?: number) => void;
   openVacationModal: (vacation?: Vacation, staffId?: number) => void;
@@ -480,6 +490,16 @@ export const useUIStore = create<UIState>()((set) => ({
     editingProject: project || null,
   }),
   
+  openKanbanCardModal: (entityType, entityId, projectId) => set({
+    activeModal: 'kanbanCard',
+    modalContext: {
+      cardEntityType: entityType,
+      cardEntityId: entityId,
+      cardProjectId: projectId,
+      projectId,
+    },
+  }),
+
   openPhaseModal: (phase, projectId) => set({
     activeModal: 'phase',
     editingPhase: phase || null,

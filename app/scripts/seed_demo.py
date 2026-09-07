@@ -28,6 +28,27 @@ DEMO_ADMIN_EMAIL = "admin@demo.local"
 DEMO_ADMIN_PASSWORD = "demo1234"
 
 
+def _phase_progress(start: date, end: date, today: date) -> tuple[int, str]:
+    """Plausible completion/status for a demo phase, from its dates.
+
+    Finished phases are done, the phase spanning today is part-way through, and
+    future work is untouched. (The caller additionally marks one not-yet-started
+    phase per project as blocked.)
+
+    Keep the pair consistent with app/services/card_status.py: `todo` is 0%,
+    `done` is 100%, and `blocked` keeps whatever progress it had.
+    """
+    if end < today:
+        return 100, "done"
+    if start > today:
+        return 0, "todo"
+    # In flight: progress proportional to elapsed duration.
+    span = max((end - start).days, 1)
+    elapsed = max((today - start).days, 0)
+    pct = min(max(round(elapsed / span * 100), 5), 95)
+    return pct, "in_progress"
+
+
 async def get_admin_conn(settings) -> asyncpg.Connection:
     host = settings.master_db_host or settings.db_host
     port = settings.master_db_port or settings.db_port
@@ -345,19 +366,42 @@ async def apply_schema_and_seed(settings):
             proj_end = proj["end_date"]
             duration = (proj_end - proj_start).days
             phase_len = max(duration // len(phase_types), 7)
+            # The first phase that has not started yet is marked blocked: the
+            # work in flight is holding it up. Without this the Kanban board's
+            # Blocked column is empty in every demo screenshot.
+            blocked_index = next(
+                (
+                    i
+                    for i in range(len(phase_types))
+                    if proj_start + timedelta(days=i * phase_len) > today
+                ),
+                None,
+            )
             for i, ptype in enumerate(phase_types):
                 ps = proj_start + timedelta(days=i * phase_len)
                 pe = min(ps + timedelta(days=phase_len - 1), proj_end)
                 if ps > proj_end:
                     break
+                # Give each phase realistic progress based on where it sits
+                # relative to today, so both the Gantt completion bars and the
+                # Kanban board show a plausible spread instead of everything
+                # sitting untouched in To Do.
+                completion, status = _phase_progress(ps, pe, today)
+                if i == blocked_index:
+                    # Blocked keeps its completion, which is 0 for work that
+                    # never started -- consistent with card_status.py.
+                    status = "blocked"
                 await conn.execute(
-                    """INSERT INTO project_phases (project_id, type, start_date, end_date, sort_order)
-                       VALUES ($1, $2, $3, $4, $5)""",
+                    """INSERT INTO project_phases
+                       (project_id, type, start_date, end_date, sort_order, completion, status)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7)""",
                     proj["id"],
                     ptype,
                     ps,
                     pe,
                     i,
+                    completion,
+                    status,
                 )
 
         # Staff assignments to phases

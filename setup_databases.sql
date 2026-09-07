@@ -217,8 +217,10 @@ CREATE TABLE IF NOT EXISTS project_phases (
     is_milestone INTEGER DEFAULT 0 NOT NULL,
     sort_order INTEGER DEFAULT 0 NOT NULL,
     completion INTEGER,
+    status VARCHAR(20) DEFAULT 'todo' NOT NULL,
     dependencies TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT project_phases_status_check CHECK (status IN ('todo', 'in_progress', 'blocked', 'done'))
 );
 
 -- Project subphases (nested phases)
@@ -234,9 +236,11 @@ CREATE TABLE IF NOT EXISTS project_subphases (
     sort_order INTEGER DEFAULT 0 NOT NULL,
     depth INTEGER DEFAULT 1 NOT NULL,
     completion INTEGER,
+    status VARCHAR(20) DEFAULT 'todo' NOT NULL,
     dependencies TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT project_subphases_parent_type_check CHECK (parent_type IN ('phase', 'subphase'))
+    CONSTRAINT project_subphases_parent_type_check CHECK (parent_type IN ('phase', 'subphase')),
+    CONSTRAINT project_subphases_status_check CHECK (status IN ('todo', 'in_progress', 'blocked', 'done'))
 );
 
 -- Project-level staff assignments
@@ -425,6 +429,36 @@ CREATE TABLE IF NOT EXISTS custom_column_values (
     UNIQUE(custom_column_id, entity_type, entity_id)
 );
 
+-- Kanban card comments (a card is a leaf phase/subphase)
+CREATE TABLE IF NOT EXISTS card_comments (
+    id SERIAL PRIMARY KEY,
+    entity_type VARCHAR(20) NOT NULL,
+    entity_id INTEGER NOT NULL,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body TEXT NOT NULL,
+    mentioned_user_ids TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT card_comments_entity_type_check CHECK (entity_type IN ('phase', 'subphase'))
+);
+
+-- In-app notifications (one row per recipient)
+CREATE TABLE IF NOT EXISTS notifications (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type VARCHAR(30) NOT NULL,
+    actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    entity_type VARCHAR(20),
+    entity_id INTEGER,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    title VARCHAR(200) NOT NULL,
+    body TEXT,
+    read_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT notifications_type_check CHECK (type IN ('assigned', 'comment', 'mention', 'status_change'))
+);
+
 -- Skills (global, shared across all sites)
 CREATE TABLE IF NOT EXISTS skills (
     id SERIAL PRIMARY KEY,
@@ -462,6 +496,10 @@ CREATE INDEX IF NOT EXISTS idx_projects_archived ON projects(archived);
 CREATE INDEX IF NOT EXISTS idx_project_phases_project_id ON project_phases(project_id);
 CREATE INDEX IF NOT EXISTS idx_project_subphases_project_id ON project_subphases(project_id);
 CREATE INDEX IF NOT EXISTS idx_project_subphases_parent ON project_subphases(parent_type, parent_id);
+CREATE INDEX IF NOT EXISTS idx_card_comments_entity ON card_comments(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_card_comments_project ON card_comments(project_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, created_at DESC) WHERE read_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_project_assignments_project_id ON project_assignments(project_id);
 CREATE INDEX IF NOT EXISTS idx_project_assignments_staff_id ON project_assignments(staff_id);
 CREATE INDEX IF NOT EXISTS idx_phase_staff_assignments_phase_id ON phase_staff_assignments(phase_id);

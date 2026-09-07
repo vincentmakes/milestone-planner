@@ -23,6 +23,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.middleware.auth import require_superuser
+from app.models.card_comment import CardComment
 from app.models.custom_column import CustomColumn, CustomColumnValue
 from app.models.equipment import Equipment, EquipmentBlock
 from app.models.note import Note
@@ -605,6 +606,22 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         .all()
     )
 
+    # Kanban card comments, scoped to this site's projects.
+    project_ids = [p.id for p in project_rows]
+    comment_rows = (
+        (
+            await db.execute(
+                select(CardComment)
+                .where(CardComment.project_id.in_(project_ids))
+                .order_by(CardComment.created_at)
+            )
+        )
+        .scalars()
+        .all()
+        if project_ids
+        else []
+    )
+
     # --- Build the workbook ----------------------------------------------------------
     wb = Workbook()
     # Drop the default sheet; we'll add named ones.
@@ -699,6 +716,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                     "",  # Archived
                     "",  # Notes
                     _iso(sp.created_at),
+                    sp.status,
                 ]
             )
             append_subphase_rows(project, ("subphase", sp.id), depth + 1)
@@ -728,6 +746,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                 _yes_no(p.archived),
                 p.notes,
                 _iso(p.created_at),
+                "",  # Kanban status (projects are not cards)
             ]
         )
         for ph in sorted(p.phases, key=lambda x: (x.sort_order or 0, x.start_date)):
@@ -755,6 +774,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                     "",  # Archived
                     "",  # Notes
                     _iso(ph.created_at),
+                    ph.status,
                 ]
             )
             append_subphase_rows(p, ("phase", ph.id), 3)
@@ -784,6 +804,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
             "Archived",
             "Notes",
             "Created at",
+            "Kanban status",
         ],
         hierarchy_rows,
     )
@@ -1153,6 +1174,42 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                 _iso(n.created_at),
             ]
             for n in note_rows
+        ],
+    )
+
+    # Kanban card comments. Notifications are deliberately NOT exported: they
+    # are transient per-user inbox state, not site content.
+    project_name_by_id = {p.id: p.name for p in project_rows}
+    add_sheet(
+        "Card comments",
+        [
+            "ID",
+            "Project ID",
+            "Project name",
+            "Card type",
+            "Card ID",
+            "Author ID",
+            "Author name",
+            "Body",
+            "Mentioned user IDs",
+            "Created at",
+            "Updated at",
+        ],
+        [
+            [
+                c.id,
+                c.project_id,
+                project_name_by_id.get(c.project_id, ""),
+                c.entity_type,
+                c.entity_id,
+                c.author_id,
+                user_by_id[c.author_id].full_name if c.author_id in user_by_id else "",
+                c.body,
+                ", ".join(str(uid) for uid in c.parsed_mentions),
+                _iso(c.created_at),
+                _iso(c.updated_at),
+            ]
+            for c in comment_rows
         ],
     )
 

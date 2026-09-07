@@ -26,6 +26,17 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    view: 'kanban',
+    label: 'Kanban Board',
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="3" width="5" height="18" rx="1" />
+        <rect x="10" y="3" width="5" height="12" rx="1" />
+        <rect x="17" y="3" width="4" height="8" rx="1" />
+      </svg>
+    ),
+  },
+  {
     view: 'staff',
     label: 'Staff Overview',
     icon: (

@@ -1,6 +1,7 @@
 export { Header } from './Header';
 export { SiteSelector } from './SiteSelector';
 export { ViewModeControls } from './ViewModeControls';
+export { ZoomControls } from './ZoomControls';
 export { DateNavigation } from './DateNavigation';
 export { ThemeToggle } from './ThemeToggle';
 export { WhatIfToggle } from './WhatIfToggle';

@@ -1,0 +1,238 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.path {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.meta {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.milestoneTag {
+  color: var(--accent-yellow);
+  font-weight: var(--font-weight-medium);
+}
+
+.error {
+  padding: 8px 10px;
+  border-radius: 5px;
+  background: var(--accent-red-alpha);
+  color: var(--accent-red);
+  font-size: var(--font-size-sm);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+.hint {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.statusRow {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.statusBtn {
+  padding: 6px 13px;
+  border: 1px solid var(--border-color);
+  border-radius: 15px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.statusBtn:hover:not(:disabled) {
+  border-color: var(--border-color-hover);
+  color: var(--text-primary);
+}
+
+.statusBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.statusActive {
+  background: var(--accent-blue-alpha);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.assignees,
+.comments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/*
+ * name | control | remove, as a grid with a fixed first track — the same
+ * shape as the holiday list in BankHolidayModal. The fixed track is the point:
+ * sized to its own text, each row's slider would start where that row's name
+ * happened to end, so three people all booked at 50% showed their thumbs in
+ * three different places.
+ */
+.assignee {
+  display: grid;
+  grid-template-columns: 150px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border-radius: 5px;
+  font-size: var(--font-size-sm);
+}
+
+/* A long name ellipsizes rather than moving the track. min-width is needed
+   because a grid item defaults to min-width: auto, which refuses to shrink
+   below its own text. */
+.assigneeName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A phone-width modal leaves only ~89px for the track at 150px, narrower than
+   the slider's own floor, so the row would overflow the dialog. */
+@media (max-width: 600px) {
+  .assignee {
+    grid-template-columns: 100px 1fr auto;
+  }
+}
+
+.allocation {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+/* Booking someone above their part-time capacity is allowed — the workload
+   heatmap is the real warning — but it should not pass unremarked here. */
+.allocationOver {
+  color: var(--status-blocked);
+}
+
+.none {
+  font-size: var(--font-size-sm);
+  color: var(--text-disabled);
+  font-style: italic;
+}
+
+.removeBtn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.removeBtn:hover:not(:disabled) {
+  color: var(--accent-red);
+}
+
+.assignRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.select {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid var(--input-border, var(--border-color));
+  border-radius: 5px;
+  background: var(--input-bg, var(--bg-secondary));
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+}
+
+.comment {
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border-radius: 5px;
+}
+
+.commentHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.author {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.commentDate {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-right: auto;
+}
+
+.commentBody {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--input-border, var(--border-color));
+  border-radius: 5px;
+  background: var(--input-bg, var(--bg-secondary));
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  resize: vertical;
+}
+
+.missing {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}

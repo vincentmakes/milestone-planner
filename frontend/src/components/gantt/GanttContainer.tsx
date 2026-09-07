@@ -15,7 +15,7 @@ import { generateTimelineCells, generateTimelineHeaders } from './utils';
 import { TimelineScrollProvider } from '@/contexts/TimelineScrollContext';
 import { StaffView } from '@/components/views/StaffView/StaffView';
 import { EquipmentView } from '@/components/views/EquipmentView/EquipmentView';
-import { sortProjectsByOrder, setProjectOrder, getProjectOrder } from '@/utils/storage';
+import { orderSiteProjects, setProjectOrder, getProjectOrder } from '@/utils/storage';
 import styles from './GanttContainer.module.css';
 
 export function GanttContainer() {
@@ -52,29 +52,12 @@ export function GanttContainer() {
     ? customColumns.filter(col => !hiddenCustomColumns.has(col.id))
     : [];
 
-  // Filter and sort projects for current site (non-archived)
-  const filteredProjects = useMemo(() => {
-    if (!currentSite?.id) return [];
-    
-    // First filter to current site and non-archived
-    const siteProjects = projects.filter((p) => p.site_id === currentSite.id && !p.archived);
-    
-    // Check if there's a custom order stored
-    const customOrder = getProjectOrder(currentSite.id);
-    
-    if (customOrder.length > 0) {
-      // Use custom order (sorts projects by their position in the stored order)
-      return sortProjectsByOrder(siteProjects, currentSite.id);
-    }
-    
-    // Default sort: confirmed first, then by name
-    return [...siteProjects].sort((a, b) => {
-      if (a.confirmed !== b.confirmed) {
-        return a.confirmed ? -1 : 1;
-      }
-      return a.name.localeCompare(b.name);
-    });
-  }, [projects, currentSite, projectOrderVersion]); // Include projectOrderVersion to re-sort when order changes
+  // Filter and sort projects for current site (non-archived).
+  // Shared with the Kanban board so the two views cannot drift apart.
+  const filteredProjects = useMemo(
+    () => orderSiteProjects(projects, currentSite?.id),
+    [projects, currentSite, projectOrderVersion] // re-sort when the order changes
+  );
   
   // Handler to reorder projects (called from ProjectPanel)
   const handleProjectReorder = useCallback((fromId: number, toId: number) => {

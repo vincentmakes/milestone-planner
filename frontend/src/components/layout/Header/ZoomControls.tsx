@@ -56,6 +56,7 @@ export function ZoomControls() {
         onClick={handleZoomOut}
         disabled={!canZoomOut}
         title="Zoom out (-)"
+        aria-label="Zoom out"
       >
         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
           <path d="M19 13H5v-2h14v2z" />
@@ -66,6 +67,7 @@ export function ZoomControls() {
         className={styles.zoomLevel}
         onClick={handleResetZoom}
         title="Click to reset zoom (100%)"
+        aria-label="Reset zoom"
       >
         {zoomPercent}%
       </button>
@@ -75,6 +77,7 @@ export function ZoomControls() {
         onClick={handleZoomIn}
         disabled={!canZoomIn}
         title="Zoom in (+)"
+        aria-label="Zoom in"
       >
         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
           <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />

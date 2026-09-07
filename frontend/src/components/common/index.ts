@@ -14,3 +14,7 @@ export { ContextMenu } from './ContextMenu';
 export type { ContextMenuItem } from './ContextMenu';
 
 export { OverlapWarningIcon } from './OverlapWarningIcon';
+
+export { AllocationSlider } from './AllocationSlider';
+
+export { NotificationBell } from './NotificationBell';

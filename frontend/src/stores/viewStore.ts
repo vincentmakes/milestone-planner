@@ -7,6 +7,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import type { KanbanGrouping } from '@/utils/kanbanCards';
 import type {
   ViewMode,
   CurrentView,
@@ -199,6 +200,16 @@ interface ViewState {
   showEquipmentOverview: boolean;
 
   // ---------------------------------------------
+  // KANBAN STATE
+  // ---------------------------------------------
+  /** Project whose board is shown. Null = fall back to the first site project. */
+  kanbanProjectId: number | null;
+  kanbanGrouping: KanbanGrouping;
+  /** Custom column driving the swimlanes when kanbanGrouping === 'customColumn'. */
+  kanbanGroupingColumnId: number | null;
+  kanbanMyTodoOnly: boolean;
+
+  // ---------------------------------------------
   // EXPANDED STATES (for tree views)
   // ---------------------------------------------
   expandedProjects: Set<number>;
@@ -227,6 +238,10 @@ interface ViewState {
   toggleShowAssignments: () => void;
   navigatePeriod: (direction: 1 | -1) => void;
   goToToday: () => void;
+  setKanbanProjectId: (projectId: number | null) => void;
+  setKanbanGrouping: (grouping: KanbanGrouping, columnId?: number | null) => void;
+  setKanbanMyTodoOnly: (only: boolean) => void;
+  toggleKanbanMyTodoOnly: () => void;
   setShowStaffOverview: (show: boolean) => void;
   toggleShowStaffOverview: () => void;
   setShowEquipmentOverview: (show: boolean) => void;
@@ -281,6 +296,12 @@ const initialViewState = {
   showStaffOverview: false,
   showEquipmentOverview: false,
 
+  // Kanban state
+  kanbanProjectId: null as number | null,
+  kanbanGrouping: 'none' as KanbanGrouping,
+  kanbanGroupingColumnId: null as number | null,
+  kanbanMyTodoOnly: false,
+
   // Expanded states
   expandedProjects: new Set<number>(),
   expandedPhases: new Set<number>(),
@@ -324,6 +345,24 @@ export const useViewStore = create<ViewState>()(
       setShowAssignments: (show) => set({ showAssignments: show }),
 
       toggleShowAssignments: () => set((state) => ({ showAssignments: !state.showAssignments })),
+
+      // ---------------------------------------------
+      // Kanban
+      // ---------------------------------------------
+      setKanbanProjectId: (projectId) => set({ kanbanProjectId: projectId }),
+
+      setKanbanGrouping: (grouping, columnId = null) => set({
+        kanbanGrouping: grouping,
+        // Only meaningful for customColumn grouping; cleared otherwise so a
+        // stale column id can't resurrect when switching back.
+        kanbanGroupingColumnId: grouping === 'customColumn' ? columnId : null,
+      }),
+
+      setKanbanMyTodoOnly: (only) => set({ kanbanMyTodoOnly: only }),
+
+      toggleKanbanMyTodoOnly: () => set((state) => ({
+        kanbanMyTodoOnly: !state.kanbanMyTodoOnly,
+      })),
 
       // Staff overview - closes equipment if opening staff
       setShowStaffOverview: (show) => set({
@@ -552,6 +591,10 @@ export const useViewStore = create<ViewState>()(
         timelineScrollLeft: state.timelineScrollLeft,
         showStaffOverview: state.showStaffOverview,
         showEquipmentOverview: state.showEquipmentOverview,
+        kanbanProjectId: state.kanbanProjectId,
+        kanbanGrouping: state.kanbanGrouping,
+        kanbanGroupingColumnId: state.kanbanGroupingColumnId,
+        kanbanMyTodoOnly: state.kanbanMyTodoOnly,
         // Convert Sets to Arrays for JSON serialization
         expandedProjects: Array.from(state.expandedProjects),
         expandedPhases: Array.from(state.expandedPhases),
@@ -582,6 +625,13 @@ export const useViewStore = create<ViewState>()(
           timelineScrollLeft: (persisted?.timelineScrollLeft as number) ?? currentState.timelineScrollLeft,
           showStaffOverview: (persisted?.showStaffOverview as boolean) ?? currentState.showStaffOverview,
           showEquipmentOverview: (persisted?.showEquipmentOverview as boolean) ?? currentState.showEquipmentOverview,
+          // Kanban: every field added to partialize above MUST also be listed
+          // here -- this merge is field-by-field, not a spread of `persisted`,
+          // so an omission silently resets the value on every reload.
+          kanbanProjectId: (persisted?.kanbanProjectId as number | null) ?? currentState.kanbanProjectId,
+          kanbanGrouping: (persisted?.kanbanGrouping as KanbanGrouping) ?? currentState.kanbanGrouping,
+          kanbanGroupingColumnId: (persisted?.kanbanGroupingColumnId as number | null) ?? currentState.kanbanGroupingColumnId,
+          kanbanMyTodoOnly: (persisted?.kanbanMyTodoOnly as boolean) ?? currentState.kanbanMyTodoOnly,
           // Convert Arrays back to Sets
           expandedProjects: Array.isArray(persisted?.expandedProjects)
             ? new Set(persisted.expandedProjects as number[])
