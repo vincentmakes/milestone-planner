@@ -3,8 +3,8 @@ name: Docker Build
 on:
   push:
     branches: [main]
+  # Every pull request, whatever its base (stacked PRs included).
   pull_request:
-    branches: [main]
 
 jobs:
   build:

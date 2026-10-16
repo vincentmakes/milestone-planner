@@ -107,8 +107,12 @@ docker compose -f docker-compose.fresh.yml up -d
 ### Backend Tests
 
 ```bash
-# Local
-pytest --cov=app --cov-report=term-missing
+# Local, with coverage (fails below the floor in pyproject.toml)
+pytest --cov=app --cov-report=term-missing --cov-report=xml
+
+# Coverage of the lines your branch changes (what CI checks on a PR)
+pip install diff-cover
+diff-cover coverage.xml --compare-branch=origin/main
 
 # Docker
 docker exec milestone pytest
@@ -120,8 +124,22 @@ docker exec milestone pytest
 cd frontend
 npm test              # Watch mode
 npx vitest run        # Single run
-npm run test:coverage # With coverage
+npm run test:coverage # Single run with coverage (fails below the floors in vitest.config.ts)
+
+# Coverage of the lines your branch changes (run from frontend/)
+diff-cover coverage/lcov.info --compare-branch=origin/main
 ```
+
+Compare against the branch your pull request targets — `origin/main` in most cases.
+
+### Coverage gates
+
+Every new feature and bug fix ships with automated tests in the same pull request. CI enforces it in two ways:
+
+- **Changed lines**: on every pull request, `diff-cover` fails the backend or frontend test job when less than **80 %** of the lines the PR adds or changes are covered by tests.
+- **Suite floors**: `fail_under` in `pyproject.toml` and `coverage.thresholds` in `frontend/vitest.config.ts` sit just under the measured totals. Raise them in a PR that lifts coverage; never lower them, and never exclude a file to get past one — every frontend `src/**` file is measured, whether a test imports it or not.
+
+Both test jobs write a coverage table to the GitHub Actions job summary. On push to `main`, a `Coverage Badges` job publishes the totals to the `coverage` branch, which the README badges read.
 
 ### Linting
 
@@ -137,13 +155,15 @@ cd frontend && npm run lint
 
 ## CI/CD
 
-GitHub Actions run on every push to `main` and on pull requests (the two dependency-audit jobs also run on weekly crons):
+GitHub Actions run on every push to `main` and on every pull request, whatever branch it targets (the two dependency-audit jobs also run on weekly crons; the version check runs only on pull requests to `main`):
 
 | Workflow | Jobs |
 |----------|------|
-| `backend.yml` | `pip-audit` dependency audit (blocking), Ruff lint + format, pytest with coverage, mypy type checking |
-| `frontend.yml` | `npm audit --audit-level=moderate` (blocking), ESLint, Vitest, TypeScript build |
+| `backend.yml` | `pip-audit` dependency audit (blocking), Ruff lint + format, pytest with coverage (suite floor; diff-cover ≥ 80 % on changed lines in PRs), mypy type checking; `Coverage Badges` on push to `main` |
+| `frontend.yml` | `npm audit --audit-level=moderate` (blocking), ESLint, Vitest with coverage (suite floors; diff-cover ≥ 80 % on changed lines in PRs), TypeScript build; `Coverage Badges` on push to `main` |
 | `docker.yml` | Docker image build |
-| `version-check.yml` | Fails PRs that touch app code without a `VERSION` bump and matching `CHANGELOG.md` entry |
+| `version-check.yml` | Pull requests to `main`: fails those that touch app code without a `VERSION` bump and matching `CHANGELOG.md` entry |
+
+The coverage badges are generated data on the orphan `coverage` branch, written only by the `Coverage Badges` jobs — never edit it by hand.
 
 Documentation is **not** built by GitHub Actions — Cloudflare Pages builds and deploys the MkDocs site from `docs/build.sh` on push.

@@ -3,8 +3,9 @@ name: Backend CI
 on:
   push:
     branches: [main]
+  # Every pull request, whatever its base: a PR stacked on a feature branch
+  # gets the same lint, test, coverage and audit gates as one targeting main.
   pull_request:
-    branches: [main]
   schedule:
     # Tuesdays 06:17 UTC, a day off the frontend audit so the two don't collide.
     # New advisories land against unchanged pins, so the audit needs a trigger
@@ -71,20 +72,146 @@ jobs:
     if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # diff-cover needs the merge base with the base branch
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
+      # coverage and diff-cover are CI-step installs rather than
+      # requirements-dev.txt pins, so the environment pip-audit checks stays
+      # the one the image and the dev setup actually use.
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
+          pip install "coverage[toml]>=7" diff-cover==10.6.0
 
+      # The suite-wide floor is `fail_under` in pyproject.toml
+      # ([tool.coverage.report]) — the one place it is set; pytest-cov reads
+      # it and fails the run below it. The XML report feeds the diff gate.
       - name: Run tests
-        run: pytest --cov=app --cov-report=term-missing
+        run: pytest --cov=app --cov-report=term-missing --cov-report=xml
+
+      # Runs after a failed floor too, which is when the table matters.
+      # Informational (`--fail-under=0`): the floor was enforced above. The
+      # ::notice annotation puts the total on the run page itself.
+      - name: Coverage summary
+        if: always()
+        run: |
+          echo "## Backend coverage" >> "$GITHUB_STEP_SUMMARY"
+          python -m coverage report --format=markdown --skip-covered --sort=-miss --fail-under=0 \
+            >> "$GITHUB_STEP_SUMMARY" || echo "No coverage data." >> "$GITHUB_STEP_SUMMARY"
+          if total=$(python -m coverage report --format=total --precision=1 --fail-under=0); then
+            echo "::notice title=Backend coverage::${total}%"
+          fi
+
+      # Every change must be tested (CLAUDE.md, Testing Conventions): the
+      # lines a PR adds or changes must themselves be >= 80% covered, whatever
+      # the suite-wide total. diff-cover runs offline against the base branch;
+      # a line it cannot attribute to the PR is not counted. Push-to-main has
+      # no base to diff against, so the step runs on pull requests only. The
+      # diff is base...HEAD, so the checkout above keeps the full history: a
+      # shallow clone has no merge base and diff-cover aborts before reporting.
+      - name: Diff coverage (changed lines must be tested)
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          diff-cover coverage.xml --compare-branch="origin/${{ github.base_ref }}" \
+            --fail-under=80 --format markdown:diff-cover.md
+          cat diff-cover.md >> "$GITHUB_STEP_SUMMARY"
+
+      # On main, hand the suite-wide total to the coverage-badges job. Only
+      # reached when the tests and the floor passed (no always()).
+      - name: Record the total for the coverage badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p coverage-badge
+          python -m coverage report --format=total --precision=1 --fail-under=0 \
+            > coverage-badge/backend
+
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-badge-backend
+          path: coverage-badge/
+          if-no-files-found: error
+          overwrite: true # "Re-run failed jobs" uploads the same name again
+          retention-days: 1
+
+  # On main, turns the total the test job hands over into a shields.io
+  # endpoint file (backend.json) on the orphan `coverage` data branch, which
+  # the README badge reads; `main` itself is never written. The job runs only
+  # on push to main, so no pull-request code ever holds the write token.
+  # frontend.yml has the same job writing frontend.json: the two share one
+  # concurrency group so they never push to the branch at the same time, and
+  # each writes only its own file, so the other badge keeps its value.
+  coverage-badges:
+    name: Coverage Badges
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: coverage-badges
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-badge-*
+          merge-multiple: true
+          path: totals
+
+      - name: Commit to the coverage branch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Without nullglob the loop below would run once on the literal
+          # pattern and fail in cat when no total was handed over.
+          shopt -s nullglob
+          totals=(totals/*)
+          if [ "${#totals[@]}" -eq 0 ]; then
+            echo "No coverage total was handed over; the badge keeps its last value."
+            exit 0
+          fi
+          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git init -q branch && cd branch
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # The first run on a repository creates the orphan branch.
+          if git fetch -q --depth 1 "$remote" coverage 2>/dev/null; then
+            git checkout -q -b coverage FETCH_HEAD
+          else
+            git checkout -q --orphan coverage
+          fi
+          for total in ../totals/*; do
+            suite=$(basename "$total")
+            # --argjson rejects anything that is not a number. The colours
+            # follow Google's coverage guidelines (90% exemplary, 75%
+            # commendable, 60% acceptable). The colour is picked from the
+            # rounded figure the badge shows, never the raw one, or 74.6 would
+            # read "75%" in the colour of the band below.
+            jq -n --arg label "$suite coverage" --argjson pct "$(cat "$total")" '
+              ($pct | round) as $shown | {
+              schemaVersion: 1,
+              label: $label,
+              message: "\($shown)%",
+              color: (if $shown >= 90 then "brightgreen" elif $shown >= 75 then "green"
+                      elif $shown >= 60 then "yellowgreen" else "orange" end)
+            }' > "$suite.json"
+          done
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Coverage unchanged; nothing to commit."
+            exit 0
+          fi
+          git commit -q -m "chore: update coverage badges [skip ci]"
+          git push -q "$remote" coverage
 
   typecheck:
     name: Type Check

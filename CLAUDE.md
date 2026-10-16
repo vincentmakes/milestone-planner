@@ -87,8 +87,23 @@ When working on this codebase, follow these conventions:
 - Backend tests live in `tests/` (pytest, `asyncio_mode=auto`, config in `pyproject.toml`). Style is **unit tests with mocks, no live DB**: `mock_db_session` (AsyncMock) and `app_client` (httpx `AsyncClient` + `ASGITransport` with dependency overrides) from `tests/conftest.py`.
 - `tests/test_lint.py` shells out to ruff — lint failures fail the test suite too.
 - `tests/test_migration_parser.py` covers `run_migration_master.py`'s `split_sql_statements()` (including `DO $$ ... END $$;` handling). Extend it when the migration runner must support new SQL constructs.
-- Frontend uses Vitest 4 + Testing Library (`frontend/vitest.config.ts`, jsdom, setup in `src/test/setup.ts`). Coverage is thin but not empty: `Modal.test.tsx` and `CredentialsModal.test.tsx` are the executable guards of the modal no-backdrop-close rule (see Frontend Conventions) — breaking that rule fails CI. Add tests alongside new features rather than retrofitting.
-- Run locally: `pytest --cov=app --cov-report=term-missing` and `cd frontend && npm run test -- --run`.
+- Frontend uses Vitest 4 + Testing Library (`frontend/vitest.config.ts`, jsdom, setup in `src/test/setup.ts`). `Modal.test.tsx` and `CredentialsModal.test.tsx` are the executable guards of the modal no-backdrop-close rule (see Frontend Conventions) — breaking that rule fails CI.
+- Shared test helpers: `frontend/src/test/factories.ts` (`makeProject`, `makePhase`, `makeSubphase`, `makeUser`, `makeStaff`, `makeSite`, `makeEquipment`, `makeVacation`, `makeTag`, `makeCustomColumn` — each takes a `Partial<T>` override) and `tests/support.py` (`scalar_result`, `scalars_result`, `unique_scalar_result` mock `Result` builders, `fake_websocket()`). Use them instead of redeclaring fixtures per file.
+- **Every new feature and bug fix ships with automated tests in the same PR** — no exceptions, no "tests in a follow-up":
+  - bug fix → a regression test that fails without the fix;
+  - new or changed endpoint → a route test through `authed_client` covering success, the 403/404 paths and at least one rejected input;
+  - service / business logic → a unit test;
+  - new or changed component, hook or util → a Vitest test beside it (`__tests__/`);
+  - pure refactor → the existing tests pass unchanged; say so in the PR;
+  - docs- or CI-only change → no test needed; say so in the PR.
+- **Enforcement (CI):**
+  - **Diff coverage**: on every PR, `diff-cover` requires **≥ 80 %** of the lines the PR adds or changes to be covered (backend `coverage.xml`, frontend `coverage/lcov.info`).
+  - **Suite floors**: `fail_under` in `pyproject.toml` (`[tool.coverage.report]`) and `coverage.thresholds` in `frontend/vitest.config.ts` sit just under the measured totals. Raise them in any PR that lifts the number; **never lower one, and never exclude a file to get past one** — the frontend `coverage.include`/`exclude` lists are fixed (every `src/**` file is measured, imported by a test or not).
+  - **Badges**: the README coverage badges read `backend.json` / `frontend.json` from the orphan `coverage` branch, which the `Coverage Badges` jobs write on push to `main`. Never edit that branch or the badge numbers by hand.
+- **Greenlet gotcha**: keep `concurrency = ["greenlet", "thread"]` in `[tool.coverage.run]`. Async SQLAlchemy runs queries on greenlets, and without it coverage.py stops tracing a handler at its first `await db.execute()`. The suite is mock-only today, so it changes nothing yet — but the day a real-DB test lands, a file that looks untested past its first query is this setting, not a missing test.
+- Run locally:
+  - backend: `pytest --cov=app --cov-report=term-missing --cov-report=xml && diff-cover coverage.xml --compare-branch=origin/main` (`pip install diff-cover` once; it is a CI-step install, not a `requirements-dev.txt` pin);
+  - frontend: `cd frontend && npm run test:coverage` (then `diff-cover coverage/lcov.info --compare-branch=origin/main` from `frontend/`); plain `npm run test -- --run` skips coverage.
 
 ### Documentation (MkDocs)
 
@@ -1020,14 +1035,16 @@ Health endpoint responds at **both** `/health` and `/api/health` (status, mode, 
 
 ## CI
 
-Four workflows in `.github/workflows/` (push to `main` + PRs; version-check is PR-only; `backend.yml` and `frontend.yml` additionally run weekly on crons — offset a day apart — where only their `Audit` jobs execute):
+Four workflows in `.github/workflows/`. `backend.yml`, `frontend.yml` and `docker.yml` run on push to `main` **and every PR, whatever its base branch** (so stacked PRs get the full gates); version-check runs only on PRs targeting `main`. `backend.yml` and `frontend.yml` additionally run weekly on crons — offset a day apart — where only their `Audit` jobs execute:
 
 | Workflow | Jobs / enforcement |
 |----------|--------------------|
-| `backend.yml` | `pip-audit --strict` over `requirements*.txt` (**blocking**); ruff check + format check on `app/`; pytest with coverage; mypy |
-| `frontend.yml` | eslint; vitest; `npm run build` (tsc + vite); `npm audit --audit-level=moderate` (**blocking** — see below) |
+| `backend.yml` | `pip-audit --strict` over `requirements*.txt` (**blocking**); ruff check + format check on `app/`; pytest with coverage — the `fail_under` floor, a per-file table + `::notice` total in the job summary, and on PRs **diff-cover ≥ 80 %** on changed lines; mypy; on push to `main`, a `Coverage Badges` job publishes `backend.json` |
+| `frontend.yml` | eslint; vitest with coverage — the `coverage.thresholds` floors, a summary table + `::notice` total, and on PRs **diff-cover ≥ 80 %** on changed lines; `npm run build` (tsc + vite); `npm audit --audit-level=moderate` (**blocking** — see below); on push to `main`, a `Coverage Badges` job publishes `frontend.json` |
 | `docker.yml` | `docker build` of the production image |
-| `version-check.yml` | `dorny/paths-filter` on app-code paths → fails the PR unless `VERSION` changed vs `main` **and** `CHANGELOG.md` has a matching `## [<version>]` heading |
+| `version-check.yml` | PRs to `main` only: `dorny/paths-filter` on app-code paths → fails the PR unless `VERSION` changed vs `main` **and** `CHANGELOG.md` has a matching `## [<version>]` heading |
+
+The README coverage badges are shields.io endpoint badges reading `backend.json` / `frontend.json` from the orphan **`coverage`** data branch. Only the two `Coverage Badges` jobs write it (push to `main`, `contents: write`, one shared `coverage-badges` concurrency group, `[skip ci]` commits, each job touching only its own file) — never commit to it by hand.
 
 Docs are **not** built by Actions — Cloudflare Pages builds them from `docs/build.sh` on push. There are no issue or PR templates in `.github/` (only `FUNDING.yml`).
 

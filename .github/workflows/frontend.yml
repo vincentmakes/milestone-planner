@@ -3,8 +3,9 @@ name: Frontend CI
 on:
   push:
     branches: [main]
+  # Every pull request, whatever its base: a PR stacked on a feature branch
+  # gets the same lint, test, coverage and audit gates as one targeting main.
   pull_request:
-    branches: [main]
   schedule:
     # Mondays 06:17 UTC. New advisories land against an unchanged lockfile, so
     # the audit needs a trigger that doesn't depend on someone opening a PR.
@@ -64,6 +65,8 @@ jobs:
     if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # diff-cover needs the merge base with the base branch
 
       - name: Set up Node.js 24
         uses: actions/setup-node@v5
@@ -75,8 +78,138 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests
-        run: npx vitest run
+      # The floors are `coverage.thresholds` in frontend/vitest.config.ts —
+      # the one place they are set; vitest fails the run below them. The
+      # config also emits coverage/lcov.info (rooted at the repository, for
+      # the diff gate) and coverage/coverage-summary.json (summary + badge).
+      - name: Run tests with coverage
+        run: npx vitest run --coverage.enabled
+
+      # Runs after a failed floor too, which is when the table matters. The
+      # ::notice annotation puts the line total on the run page itself.
+      # `branchesTrue` (an istanbul summary key that reads 100% with nothing
+      # to count) is left out of the table.
+      - name: Coverage summary
+        if: always()
+        run: |
+          echo "## Frontend coverage" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f coverage/coverage-summary.json ]; then
+            jq -r '.total | "| | Covered | Total | % |\n|---|---|---|---|",
+              (to_entries[] | select(.key != "branchesTrue") | "| \(.key) | \(.value.covered) | \(.value.total) | \(.value.pct) |")' \
+              coverage/coverage-summary.json >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice title=Frontend coverage::$(jq -r .total.lines.pct coverage/coverage-summary.json)%"
+          else
+            echo "No coverage data." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Same gate as the backend job: the lines a PR adds or changes must be
+      # >= 80% covered. The LCOV paths are repository-relative
+      # (frontend/src/...), which is what diff-cover matches against the diff;
+      # the checkout above keeps the full history for the merge base.
+      - name: Diff coverage (changed lines must be tested)
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          pip install diff-cover==10.6.0
+          diff-cover coverage/lcov.info --compare-branch="origin/${{ github.base_ref }}" \
+            --fail-under=80 --format markdown:diff-cover.md
+          cat diff-cover.md >> "$GITHUB_STEP_SUMMARY"
+
+      # On main, hand the line total to the coverage-badges job. Only reached
+      # when the tests and the floors passed (no always()). The file goes to
+      # the repository root (../), where the upload below picks it up —
+      # actions resolve `path` from the workspace, not from the default
+      # working-directory.
+      - name: Record the total for the coverage badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p ../coverage-badge
+          jq -r '.total.lines.pct' coverage/coverage-summary.json > ../coverage-badge/frontend
+
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-badge-frontend
+          path: coverage-badge/
+          if-no-files-found: error
+          overwrite: true # "Re-run failed jobs" uploads the same name again
+          retention-days: 1
+
+  # On main, turns the total the test job hands over into a shields.io
+  # endpoint file (frontend.json) on the orphan `coverage` data branch, which
+  # the README badge reads; `main` itself is never written. The job runs only
+  # on push to main, so no pull-request code ever holds the write token.
+  # backend.yml has the same job writing backend.json: the two share one
+  # concurrency group so they never push to the branch at the same time, and
+  # each writes only its own file, so the other badge keeps its value.
+  coverage-badges:
+    name: Coverage Badges
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: coverage-badges
+      cancel-in-progress: false
+    # Nothing here lives in frontend/ (and it is not checked out): run from
+    # the workspace root instead of the workflow-wide default.
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-badge-*
+          merge-multiple: true
+          path: totals
+
+      - name: Commit to the coverage branch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Without nullglob the loop below would run once on the literal
+          # pattern and fail in cat when no total was handed over.
+          shopt -s nullglob
+          totals=(totals/*)
+          if [ "${#totals[@]}" -eq 0 ]; then
+            echo "No coverage total was handed over; the badge keeps its last value."
+            exit 0
+          fi
+          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git init -q branch && cd branch
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # The first run on a repository creates the orphan branch.
+          if git fetch -q --depth 1 "$remote" coverage 2>/dev/null; then
+            git checkout -q -b coverage FETCH_HEAD
+          else
+            git checkout -q --orphan coverage
+          fi
+          for total in ../totals/*; do
+            suite=$(basename "$total")
+            # --argjson rejects anything that is not a number. The colours
+            # follow Google's coverage guidelines (90% exemplary, 75%
+            # commendable, 60% acceptable). The colour is picked from the
+            # rounded figure the badge shows, never the raw one, or 74.6 would
+            # read "75%" in the colour of the band below.
+            jq -n --arg label "$suite coverage" --argjson pct "$(cat "$total")" '
+              ($pct | round) as $shown | {
+              schemaVersion: 1,
+              label: $label,
+              message: "\($shown)%",
+              color: (if $shown >= 90 then "brightgreen" elif $shown >= 75 then "green"
+                      elif $shown >= 60 then "yellowgreen" else "orange" end)
+            }' > "$suite.json"
+          done
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Coverage unchanged; nothing to commit."
+            exit 0
+          fi
+          git commit -q -m "chore: update coverage badges [skip ci]"
+          git push -q "$remote" coverage
 
   build:
     name: Build
