@@ -65,14 +65,14 @@ export interface Tag {
 
 /**
  * A category of tags (e.g. "Project type": Internal / Customer). A
- * single-select group allows one of its tags per project; at most one group
- * may colour the Gantt project bars (`colors_projects`, single-select only).
+ * single-select group allows one of its tags per project. Any group can
+ * colour the Gantt project bars — a per-user choice ("Colour by",
+ * viewStore.ganttColorBy), not a property of the group.
  */
 export interface TagGroup {
   id: number;
   name: string;
   single_select: boolean;
-  colors_projects: boolean;
   sort_order: number;
 }
 

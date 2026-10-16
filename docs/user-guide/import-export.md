@@ -91,7 +91,7 @@ Each kind of data lives on its own sheet, so the file opens cleanly in Excel, Li
 | **Equipment** | Equipment items linked to the site, with type, active status and a **Sites** column listing every site each item belongs to |
 | **Skills** | Skills defined on the instance (name, color, description) |
 | **User skills** | User → Skill associations |
-| **Tag groups** | Tag group definitions (name, single select, colours projects, order) |
+| **Tag groups** | Tag group definitions (name, single select, order) |
 | **Tags** | Project tags that apply to this site (name, color, group, all sites / sites, order) |
 | **Project tags** | Project → Tag associations, with the tag's group |
 | **Absence types** | Absence type definitions (name, color, counts as unavailable, active, order) |

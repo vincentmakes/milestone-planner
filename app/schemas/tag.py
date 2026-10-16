@@ -132,7 +132,6 @@ class TagGroupCreate(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=100)
     single_select: bool = False
-    colors_projects: bool = False
 
 
 class TagGroupUpdate(BaseModel):
@@ -140,7 +139,6 @@ class TagGroupUpdate(BaseModel):
 
     name: str | None = Field(None, min_length=1, max_length=100)
     single_select: bool | None = None
-    colors_projects: bool | None = None
 
 
 class TagGroupResponse(BaseModel):
@@ -151,7 +149,6 @@ class TagGroupResponse(BaseModel):
     id: int
     name: str
     single_select: bool
-    colors_projects: bool
     sort_order: int
     created_at: DateTimeJS
     updated_at: DateTimeJS

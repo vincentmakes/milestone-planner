@@ -978,11 +978,8 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
     )
     add_sheet(
         "Tag groups",
-        ["ID", "Name", "Single select", "Colours projects", "Sort order"],
-        [
-            [g.id, g.name, bool(g.single_select), bool(g.colors_projects), g.sort_order]
-            for g in tag_group_rows
-        ],
+        ["ID", "Name", "Single select", "Sort order"],
+        [[g.id, g.name, bool(g.single_select), g.sort_order] for g in tag_group_rows],
     )
     project_tag_rows = [
         [

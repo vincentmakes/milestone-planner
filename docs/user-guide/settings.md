@@ -461,18 +461,19 @@ In the **Equipment View**, use the type filter dropdown to show/hide equipment b
 
 Tags are coloured labels attached to projects (see [Tags in the Gantt chart](gantt-charts.md#tags)). Admins manage them in **Settings → Tags**; everyone who can edit a project attaches them from the project dialog.
 
-![Settings → Tags: tag groups with single-select and colour toggles, and tags listed per group](../assets/screenshots/settings-tags.png){ loading=lazy }
+![Settings → Tags: tag groups with single-select toggles, and tags listed per group](../assets/screenshots/settings-tags.png){ loading=lazy }
 
 ### Tag Groups
 
 A group turns a set of tags into a category, for example **Project type** with the tags *Internal* and *Customer*.
 
 - **Single select** — A project can carry at most one tag of the group. In the project dialog the group's tags behave like radio buttons: choosing one replaces the other.
-- **Colour projects by this group** — Available for single-select groups only, and for one group at a time (switching it on here switches it off on another group). The project bar on the Gantt chart takes the colour of the project's tag from this group; projects without one keep the default bar colour.
 - **Order** — Drag groups to change the order in which they appear in the picker and the filter.
 - **Delete** — The group's tags are kept and become ungrouped.
 
 Switching a group to single select is refused while any project holds two or more of its tags; the message says how many projects need attention first.
+
+Colouring the Gantt project bars by a group is not set here: each user picks it with **Colour by** in the Gantt chart (see [Project colours](gantt-charts.md#project-colours)).
 
 ### Managing Tags
 

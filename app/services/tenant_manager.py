@@ -30,7 +30,7 @@ from app.services.tenant_provisioner import (
     EQUIPMENT_SITE_FK_NEEDS_FIX_SQL,
     EQUIPMENT_SITE_FK_SQL,
     EQUIPMENT_SITES_BACKFILL_SQL,
-    TAG_GROUPS_COLORS_INDEX_SQL,
+    TAG_GROUPS_DROP_COLORS_STATEMENTS,
     TAG_GROUPS_TABLE_SQL,
     TAG_SITES_SITE_INDEX_SQL,
     TAG_SITES_TABLE_SQL,
@@ -245,11 +245,32 @@ class TenantConnectionManager:
                 await conn.execute(text(TAG_SITES_TABLE_SQL))
                 await conn.execute(text(TAGS_GROUP_INDEX_SQL))
                 await conn.execute(text(TAG_SITES_SITE_INDEX_SQL))
-                await conn.execute(text(TAG_GROUPS_COLORS_INDEX_SQL))
                 await conn.commit()
                 logger.info("Auto-migration: Added tag groups / tag sites on tenant %s", slug)
         except Exception as e:
             logger.warning("Auto-migration (tag groups) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+
+        # Pre-release 1.6.0 builds carried tag_groups.colors_projects; colouring is now a
+        # per-user Gantt preference, so drop the column and its partial index if present.
+        try:
+            colors_check = await conn.execute(
+                text("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'tag_groups'
+                  AND column_name = 'colors_projects'
+            """)
+            )
+            if colors_check.fetchone() is not None:
+                logger.info(
+                    "Auto-migration: Dropping tag_groups.colors_projects on tenant %s...", slug
+                )
+                for statement in TAG_GROUPS_DROP_COLORS_STATEMENTS:
+                    await conn.execute(text(statement))
+                await conn.commit()
+                logger.info("Auto-migration: Dropped tag_groups.colors_projects on tenant %s", slug)
+        except Exception as e:
+            logger.warning("Auto-migration (tag group colours) warning for %s: %s", slug, e)
             await _rollback_quietly(conn)
 
         # equipment_blocks table (added in the equipment maintenance feature).

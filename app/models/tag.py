@@ -3,8 +3,7 @@ Tag, TagGroup, TagSite and ProjectTag models.
 
 Tags are tenant-wide labels assignable to projects. A tag may belong to a
 group (``tag_groups``): a single-select group allows at most one of its tags
-per project, and at most one group "colours projects" (its tag colour tints the
-project bar). A tag is available at every site (``all_sites``) or only at the
+per project. A tag is available at every site (``all_sites``) or only at the
 sites linked in ``tag_sites``.
 """
 
@@ -18,7 +17,6 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
-    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -34,20 +32,10 @@ class TagGroup(Base):
     """A named group of tags (e.g. "Project type")."""
 
     __tablename__ = "tag_groups"
-    __table_args__ = (
-        # At most one group colours projects (partial unique index on a constant).
-        Index(
-            "idx_tag_groups_colors_projects",
-            text("(true)"),
-            unique=True,
-            postgresql_where=text("colors_projects"),
-        ),
-    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     single_select: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    colors_projects: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

@@ -2,9 +2,9 @@
  * TagsPanel (Settings hub > Tags)
  *
  * Tenant-wide project tags and the groups that categorise them. A group can be
- * single-select (a project holds at most one of its tags), and one
- * single-select group may colour the Gantt project bars. Tags may be limited
- * to some sites. Drag to reorder groups, and tags within their group. Writes
+ * single-select (a project holds at most one of its tags). Colouring the
+ * Gantt project bars by a group is a per-user choice in the Gantt ("Colour
+ * by"), not set here. Tags may be limited to some sites. Drag to reorder groups, and tags within their group. Writes
  * are admin only; the server rejects conflicting changes (409) with a message
  * shown inline.
  */
@@ -285,18 +285,7 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   };
 
   const handleSingleSelect = (group: TagGroup, single: boolean) =>
-    run(
-      () =>
-        tagGroupsApi.update(
-          group.id,
-          // A multi-select group can't colour the projects
-          single ? { single_select: true } : { single_select: false, colors_projects: false }
-        ),
-      'Failed to update group'
-    );
-
-  const handleColorsProjects = (group: TagGroup, colors: boolean) =>
-    run(() => tagGroupsApi.update(group.id, { colors_projects: colors }), 'Failed to update group');
+    run(() => tagGroupsApi.update(group.id, { single_select: single }), 'Failed to update group');
 
   const handleDeleteGroup = (group: TagGroup) => {
     if (
@@ -573,19 +562,6 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                       label="Single select"
                       aria-label={`Single select: ${group.name}`}
                     />
-                    <ToggleSwitch
-                      className={styles.toggleLabel}
-                      checked={group.colors_projects}
-                      onChange={(checked) => handleColorsProjects(group, checked)}
-                      disabled={!group.single_select}
-                      title={
-                        group.single_select
-                          ? 'Colour the Gantt project bars by this group'
-                          : 'Only a single-select group can colour the projects'
-                      }
-                      label="Colour projects by this group"
-                      aria-label={`Colour projects by ${group.name}`}
-                    />
                     <div className={styles.actions}>
                       {isEditing ? (
                         <>
@@ -626,9 +602,6 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
             })
           )}
         </div>
-        <p className={styles.hint}>
-          Only one group can colour the Gantt bars; switching it on here switches it off elsewhere.
-        </p>
         <form
           className={styles.addForm}
           onSubmit={(e) => {

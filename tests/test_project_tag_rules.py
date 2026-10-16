@@ -28,8 +28,8 @@ from tests.conftest import FakeUser
 
 STAMP = datetime(2026, 1, 1, 12, 0, 0)
 
-SINGLE = TagGroup(id=5, name="Project type", single_select=True, colors_projects=True)
-MULTI = TagGroup(id=6, name="Topics", single_select=False, colors_projects=False)
+SINGLE = TagGroup(id=5, name="Project type", single_select=True)
+MULTI = TagGroup(id=6, name="Topics", single_select=False)
 
 
 def _tag(tag_id: int, name: str, group: TagGroup | None = None, site_ids=None) -> Tag:

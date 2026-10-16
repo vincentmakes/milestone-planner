@@ -1,5 +1,6 @@
-/* Group-by dropdown — same visual language as TagFilterDropdown (compact
-   trigger) and the column-visibility dropdown. The wrapper is static so the
+/* Tag-group choice dropdown (Gantt "Group by" / "Colour by") — same visual
+   language as TagFilterDropdown (compact trigger) and the column-visibility
+   dropdown. The wrapper is static so the
    panel hangs from ProjectPanel's positioned .headerContent (see
    --dropdown-inset there) and can never spill past the Gantt area. */
 

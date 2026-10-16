@@ -19,3 +19,5 @@ export { useSiteTagFilter, useTagFilteredProjects } from './useTagFilter';
 export type { SiteTagFilter } from './useTagFilter';
 export { useGanttGrouping } from './useGanttGrouping';
 export type { GanttGrouping } from './useGanttGrouping';
+export { useGanttColorBy } from './useGanttColorBy';
+export type { GanttColorBy } from './useGanttColorBy';

@@ -212,8 +212,11 @@ function sanitizeTagFilters(value: unknown): Record<string, TagFilter> | null {
 /** Shape of a Gantt section key (see components/gantt/utils/projectSections.ts). */
 const GANTT_SECTION_KEY_PATTERN = /^(tag-\d+|none)$/;
 
-/** Rebuild persisted Gantt groupings (tagFilterKey → tag group id); null if absent/invalid. */
-function sanitizeGanttGrouping(value: unknown): Record<string, number> | null {
+/**
+ * Rebuild a persisted per-site tag group choice (tagFilterKey → tag group id:
+ * Gantt "Group by" and "Colour by"); null if absent/invalid.
+ */
+function sanitizeSiteGroupIds(value: unknown): Record<string, number> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const out: Record<string, number> = {};
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
@@ -284,6 +287,12 @@ interface ViewState {
   ganttGrouping: Record<string, number>;
   /** Collapsed Gantt sections (`tag-<id>` / `none`) per tenant + site. */
   collapsedGanttSections: Record<string, string[]>;
+  /**
+   * Tag group the Gantt project bars are coloured by, per tenant + site
+   * (`tagFilterKey`). Absent = default colours. Per-browser, like
+   * `ganttGrouping`, and independent of it.
+   */
+  ganttColorBy: Record<string, number>;
 
   // ---------------------------------------------
   // EXPANDED STATES (for tree views)
@@ -330,6 +339,8 @@ interface ViewState {
   toggleGanttSection: (siteId: number, key: string) => void;
   /** Replace a site's collapsed sections (collapse all / expand all = []). */
   setGanttSectionsCollapsed: (siteId: number, keys: string[]) => void;
+  /** Colour a site's Gantt project bars by a tag group; null = default colours. */
+  setGanttColorBy: (siteId: number, groupId: number | null) => void;
   setShowStaffOverview: (show: boolean) => void;
   toggleShowStaffOverview: () => void;
   setShowEquipmentOverview: (show: boolean) => void;
@@ -396,6 +407,9 @@ const initialViewState = {
   // Gantt grouping
   ganttGrouping: {} as Record<string, number>,
   collapsedGanttSections: {} as Record<string, string[]>,
+
+  // Gantt colour by
+  ganttColorBy: {} as Record<string, number>,
 
   // Expanded states
   expandedProjects: new Set<number>(),
@@ -520,6 +534,17 @@ export const useViewStore = create<ViewState>()(
         if (keys.length === 0) delete collapsed[key];
         else collapsed[key] = keys;
         return { collapsedGanttSections: collapsed };
+      }),
+
+      setGanttColorBy: (siteId, groupId) => set((state) => {
+        const key = tagFilterKey(siteId);
+        if (groupId === null ? !(key in state.ganttColorBy) : state.ganttColorBy[key] === groupId) {
+          return state;
+        }
+        const colorBy = { ...state.ganttColorBy };
+        if (groupId === null) delete colorBy[key];
+        else colorBy[key] = groupId;
+        return { ganttColorBy: colorBy };
       }),
 
       // Staff overview - closes equipment if opening staff
@@ -745,6 +770,7 @@ export const useViewStore = create<ViewState>()(
         tagFilters: state.tagFilters,
         ganttGrouping: state.ganttGrouping,
         collapsedGanttSections: state.collapsedGanttSections,
+        ganttColorBy: state.ganttColorBy,
         // Convert Sets to Arrays for JSON serialization
         expandedProjects: Array.from(state.expandedProjects),
         expandedPhases: Array.from(state.expandedPhases),
@@ -781,9 +807,10 @@ export const useViewStore = create<ViewState>()(
           kanbanMyTodoOnly: (persisted?.kanbanMyTodoOnly as boolean) ?? currentState.kanbanMyTodoOnly,
           // Same rule for the tag filter (validated: it is user-editable storage).
           tagFilters: sanitizeTagFilters(persisted?.tagFilters) ?? currentState.tagFilters,
-          ganttGrouping: sanitizeGanttGrouping(persisted?.ganttGrouping) ?? currentState.ganttGrouping,
+          ganttGrouping: sanitizeSiteGroupIds(persisted?.ganttGrouping) ?? currentState.ganttGrouping,
           collapsedGanttSections:
             sanitizeCollapsedGanttSections(persisted?.collapsedGanttSections) ?? currentState.collapsedGanttSections,
+          ganttColorBy: sanitizeSiteGroupIds(persisted?.ganttColorBy) ?? currentState.ganttColorBy,
           // Convert Arrays back to Sets
           expandedProjects: Array.isArray(persisted?.expandedProjects)
             ? new Set(persisted.expandedProjects as number[])

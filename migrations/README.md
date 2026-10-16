@@ -109,7 +109,7 @@ The authoritative list is the set of `.sql` files in this folder — run either 
 | `add_skills_tables` | tenant | Adds skills and user_skills tables for capability tracking |
 | `add_staff_notes` | tenant | Creates staff_notes (migrates rows from and drops the legacy `notes` table) |
 | `add_tags_tables` | tenant | Adds tags and project_tags tables |
-| `add_tag_groups_and_sites` | tenant | Adds tag_groups (single-select groups, at most one colouring projects) and tag_sites, plus tags.group_id / all_sites / sort_order (existing tags stay ungrouped and available at every site) |
+| `add_tag_groups_and_sites` | tenant | Adds tag_groups (single-select groups) and tag_sites, plus tags.group_id / all_sites / sort_order (existing tags stay ungrouped and available at every site) |
 | `card_comments_author_set_null` | tenant | Makes card_comments.author_id nullable with ON DELETE SET NULL, so deleting a user keeps their comments |
 | `cleanup_orphaned_values` | tenant | Removes custom-column values and card comments whose project/phase/subphase no longer exists |
 | `projects_site_fk_cascade` | tenant | Makes the projects.site_id FK ON DELETE CASCADE (deleting a site deletes its projects, as the app does) |

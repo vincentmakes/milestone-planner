@@ -24,6 +24,7 @@ Usage
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -139,6 +140,39 @@ def open_project_modal(page: Page, project: str = "Bioprocess Scale-Up") -> None
     page.wait_for_timeout(800)
 
 
+def open_color_by(page: Page) -> None:
+    """Open the project panel's Colour by dropdown (ColorByDropdown.tsx).
+
+    The trigger's accessible name is "Colour by", or "Coloured by <group>"
+    once a group is chosen; its panel is the dialog "Colour projects".
+    """
+    page.get_by_role("button", name=re.compile(r"^Colou?r(ed)? by")).first.click()
+    page.get_by_role("dialog", name="Colour projects").wait_for()
+    page.wait_for_timeout(300)
+
+
+def _pick_color_by(page: Page, option: str) -> None:
+    open_color_by(page)
+    # The native radio is visually hidden behind a styled span, so click its label.
+    page.get_by_role("dialog", name="Colour projects").locator(
+        f'[role="radiogroup"] label:has-text("{option}")'
+    ).first.click()
+    page.keyboard.press("Escape")  # close the panel; the choice stays
+    page.wait_for_timeout(400)
+
+
+def set_color_by(page: Page, group_name: str) -> None:
+    """Colour the Gantt project bars by a tag group (per-site browser
+    preference in localStorage, so it carries over to the later shots of the
+    shared context)."""
+    _pick_color_by(page, group_name)
+
+
+def clear_color_by(page: Page) -> None:
+    """Back to the default project bar colours."""
+    _pick_color_by(page, "Default")
+
+
 # --------------------------- shots ---------------------------
 
 
@@ -146,6 +180,9 @@ def shot_gantt_main(context: BrowserContext) -> None:
     page = context.new_page()
     login(page)
     go_to_gantt(page)
+    # Coloured project bars, as in the docs. Deliberately not reset: the
+    # preference persists in the shared context, so later Gantt shots keep it.
+    set_color_by(page, "Project type")
     use_quarter_view(page)
     click_today(page)
     expand_all_projects(page)
@@ -616,10 +653,15 @@ def shot_gantt_grouped(context: BrowserContext) -> None:
         page.locator('button[aria-label^="Group"][aria-haspopup="dialog"]').first.click()
         page.wait_for_timeout(300)
 
+    # Coloured bars too (also when this shot is captured on its own); kept.
+    set_color_by(page, "Project type")
+
     try:
         open_group_by()
         # The native radio is visually hidden behind a styled span, so click its label.
-        page.locator('[role="radiogroup"] label:has-text("Project type")').click()
+        page.get_by_role("dialog", name="Group projects").locator(
+            '[role="radiogroup"] label:has-text("Project type")'
+        ).click()
         page.keyboard.press("Escape")  # close the panel; the grouping stays
         page.wait_for_timeout(600)
         page.screenshot(path=str(OUT / "gantt-grouped.png"))
@@ -629,7 +671,26 @@ def shot_gantt_grouped(context: BrowserContext) -> None:
         # shared by every shot: switch it off again so later shots are ungrouped,
         # even when the shot above failed.
         open_group_by()
-        page.locator('[role="radiogroup"] label:has-text("No grouping")').click()
+        page.get_by_role("dialog", name="Group projects").locator(
+            '[role="radiogroup"] label:has-text("No grouping")'
+        ).click()
+        page.keyboard.press("Escape")
+        page.close()
+
+
+def shot_gantt_color_by(context: BrowserContext) -> None:
+    """Colour by dropdown in the Gantt project panel, open, Project type checked."""
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    set_color_by(page, "Project type")
+    try:
+        open_color_by(page)
+        page.screenshot(path=str(OUT / "gantt-color-by.png"))
+        log("[done] gantt-color-by.png")
+    finally:
         page.keyboard.press("Escape")
         page.close()
 
@@ -681,6 +742,8 @@ def shot_dark_theme(context: BrowserContext) -> None:
         page.wait_for_load_state("networkidle")
     page.wait_for_timeout(1500)
     go_to_gantt(page)
+    # Fresh context = fresh localStorage: colour the bars like the light shots.
+    set_color_by(page, "Project type")
     use_quarter_view(page)
     click_today(page)
     expand_all_projects(page)
@@ -731,6 +794,7 @@ TARGETS = {
     "equipment-assign": shot_equipment_assign_modal,
     "tag-filter": shot_tag_filter,
     "grouped": shot_gantt_grouped,
+    "color-by": shot_gantt_color_by,
     "kanban": shot_kanban,
     "dark-theme": shot_dark_theme,  # keep last: the only intentionally dark shot
 }

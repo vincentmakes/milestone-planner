@@ -183,8 +183,8 @@ as the admin-portal modals, must not attach a close handler to their overlay and
 Two toolbars deliberately don't follow the panel button pattern:
 
 - **Gantt header**: the project panel's header actions (staff and equipment toggle, tag filter,
-  group by, column visibility, custom-column manager, import, new project) are compact 28 px
-  buttons, mostly icon-only. The header sits above a dense timeline, where 36 px labelled buttons
+  group by, colour by, column visibility, custom-column manager, import, new project) are compact
+  28 px buttons, mostly icon-only. The header sits above a dense timeline, where 36 px labelled buttons
   would take too much room. Keep them compact, and give each one a `title` and an accessible name.
 - **Kanban filter toolbar** (`KanbanToolbar`): a single row of filter controls (project picker,
   tag filter, swimlane grouping, the **My Todo** toggle with `aria-pressed`, card count) with its

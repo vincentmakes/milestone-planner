@@ -194,7 +194,7 @@ describe('WebSocketProvider refresh runner', () => {
   });
 
   it('writes tags and tag groups together on change:tag_group (no half-loaded render)', async () => {
-    const group = { id: 4, name: 'Phase', sort_order: 0, single_select: true, colors_projects: false } as TagGroup;
+    const group = { id: 4, name: 'Phase', sort_order: 0, single_select: true } as TagGroup;
     const tag = { id: 9, name: 'Pilot', color: '#ff0000', group_id: 4, all_sites: true, site_ids: [] } as unknown as Tag;
     vi.mocked(tagsApi.getAll).mockResolvedValueOnce([tag]);
     // Groups answer later than tags: a separate write per list would render

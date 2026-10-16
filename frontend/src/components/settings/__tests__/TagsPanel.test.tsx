@@ -1,8 +1,8 @@
 /**
  * Settings › Tags: tags are listed per group (group order) with an "Other"
  * section for ungrouped ones; every write reloads both lists into the store;
- * only a single-select group may colour the projects; server conflicts (409)
- * are shown inline; deletes ask first.
+ * there is no group-level colouring switch; server conflicts (409) are shown
+ * inline; deletes ask first.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -37,8 +37,8 @@ const SITES: Site[] = [
 
 const GROUPS: TagGroup[] = [
   // Deliberately out of order: the panel sorts by sort_order
-  { id: 20, name: 'Customer', single_select: false, colors_projects: false, sort_order: 1 },
-  { id: 10, name: 'Status', single_select: true, colors_projects: true, sort_order: 0 },
+  { id: 20, name: 'Customer', single_select: false, sort_order: 1 },
+  { id: 10, name: 'Status', single_select: true, sort_order: 0 },
 ];
 
 const TAGS: Tag[] = [
@@ -90,7 +90,7 @@ describe('TagsPanel', () => {
   });
 
   it('creates a group and reloads both lists', async () => {
-    const created: TagGroup = { id: 30, name: 'Region', single_select: true, colors_projects: false, sort_order: 2 };
+    const created: TagGroup = { id: 30, name: 'Region', single_select: true, sort_order: 2 };
     tagGroupsApi.create.mockResolvedValue(created);
     render(<TagsPanel />);
     await screen.findByText('Pharma');
@@ -111,25 +111,17 @@ describe('TagsPanel', () => {
     expect(screen.getByLabelText('New group name')).toHaveValue('');
   });
 
-  it('only lets a single-select group colour the projects', async () => {
-    render(<TagsPanel />);
-    await screen.findByText('Pharma');
-
-    const customer = screen.getByRole('switch', { name: 'Colour projects by Customer' });
-    expect(customer).toBeDisabled();
-    const status = screen.getByRole('switch', { name: 'Colour projects by Status' });
-    expect(status).toBeEnabled();
-    expect(status).toBeChecked();
-  });
-
-  it('turns colouring off too when a group stops being single-select', async () => {
+  it('toggles single select alone and has no project-colouring switch', async () => {
     tagGroupsApi.update.mockResolvedValue({});
     render(<TagsPanel />);
     await screen.findByText('Pharma');
 
+    // Colouring is a per-user Gantt choice ("Colour by"), not a group setting
+    expect(screen.queryByRole('switch', { name: /^Colour projects/ })).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByRole('switch', { name: 'Single select: Status' }));
     await waitFor(() =>
-      expect(tagGroupsApi.update).toHaveBeenCalledWith(10, { single_select: false, colors_projects: false })
+      expect(tagGroupsApi.update).toHaveBeenCalledWith(10, { single_select: false })
     );
   });
 

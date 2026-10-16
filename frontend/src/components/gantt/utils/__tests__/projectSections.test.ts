@@ -17,7 +17,7 @@ function tag(id: number, name: string, extra: Partial<Tag> = {}): Tag {
   return { id, name, color: '#10b981', group_id: 1, all_sites: true, site_ids: [], sort_order: 0, ...extra };
 }
 
-const AREA: TagGroup = { id: 1, name: 'Area', single_select: false, colors_projects: false, sort_order: 0 };
+const AREA: TagGroup = { id: 1, name: 'Area', single_select: false, sort_order: 0 };
 
 // Display order: Bio (sort 0), Chem (sort 1), Pharma (sort 1, after Chem by name)
 const BIO = tag(10, 'Bio', { sort_order: 0 });

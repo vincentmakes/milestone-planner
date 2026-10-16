@@ -29,6 +29,7 @@ import {
 } from '@/utils/recurringVacation';
 import { getClosureOn } from '@/utils/siteClosure';
 import { indexTags, projectBarColor } from '@/utils/tags';
+import { useGanttColorBy } from '@/hooks/useGanttColorBy';
 import { selectStaffSiteIds } from '@/stores/appStore';
 import { DEFAULT_EVENT_COLOR } from '@/utils/colorSwatches';
 import styles from './ProjectTimeline.module.css';
@@ -187,14 +188,14 @@ export const ProjectTimeline = memo(function ProjectTimeline({
   const currentUser = useAppStore((s) => s.currentUser);
   const canEdit = canEditProject(currentUser, project);
 
-  // Bar colour from the project's tag in the "colours projects" group,
+  // Bar colour from the project's tag in the user's "Colour by" group,
   // resolved through the store (inline project.tags can be stale in What-If).
   // indexTags is cached per tags array, so rows share one map.
   const tags = useAppStore((s) => s.tags);
-  const tagGroups = useAppStore((s) => s.tagGroups);
+  const { group: colorByGroup } = useGanttColorBy();
   const barColor = useMemo(
-    () => projectBarColor(project, indexTags(tags), tagGroups),
-    [project, tags, tagGroups]
+    () => projectBarColor(project, indexTags(tags), colorByGroup),
+    [project, tags, colorByGroup]
   );
 
   // Get critical path items for this project (empty set if not enabled)

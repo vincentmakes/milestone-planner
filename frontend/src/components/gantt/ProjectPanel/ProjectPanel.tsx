@@ -7,6 +7,7 @@ import { forwardRef, useState, useCallback, useRef, useEffect, useMemo } from 'r
 import { ProjectRow } from './ProjectRow';
 import { SectionRow } from './SectionRow';
 import { GroupByDropdown } from './GroupByDropdown';
+import { ColorByDropdown } from './ColorByDropdown';
 import { flatGanttRows } from '../utils/projectSections';
 import type { GanttRow } from '../utils/projectSections';
 import { useUIStore } from '@/stores/uiStore';
@@ -164,6 +165,9 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
 
                   {/* Group the project list by a tag group (only when groups exist) */}
                   <GroupByDropdown />
+
+                  {/* Colour the project bars by a tag group (only when groups exist) */}
+                  <ColorByDropdown />
 
                   {/* Column visibility dropdown (only if columns exist) */}
                   {customColumns.length > 0 && (

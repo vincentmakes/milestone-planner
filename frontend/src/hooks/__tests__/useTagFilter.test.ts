@@ -15,8 +15,8 @@ function tag(id: number, name: string, extra: Partial<Tag> = {}): Tag {
   return { id, name, color: '#10b981', group_id: null, all_sites: true, site_ids: [], sort_order: 0, ...extra };
 }
 
-const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, colors_projects: false, sort_order: 0 };
-const AREA: TagGroup = { id: 2, name: 'Area', single_select: false, colors_projects: false, sort_order: 1 };
+const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, sort_order: 0 };
+const AREA: TagGroup = { id: 2, name: 'Area', single_select: false, sort_order: 1 };
 const tags: Tag[] = [
   tag(1, 'Internal', { group_id: 1 }),
   tag(2, 'Customer', { group_id: 1 }),

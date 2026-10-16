@@ -2,14 +2,12 @@
 Tag groups API endpoints.
 
 A tag group bundles project tags (e.g. "Project type"). A single-select group
-allows at most one of its tags per project; at most one group "colours
-projects" (the colour of the project's tag from that group tints its bar) and
-such a group must be single-select. Every user can read groups; only admins
-manage them.
+allows at most one of its tags per project. Every user can read groups; only
+admins manage them.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,10 +30,7 @@ router = APIRouter(prefix="/tag-groups", tags=["tag-groups"])
 
 DUPLICATE_NAME_DETAIL = "A tag group with this name already exists"
 EMPTY_NAME_DETAIL = "Tag group name cannot be empty"
-COLORS_NEED_SINGLE_SELECT_DETAIL = "A group that colours projects must be single-select"
 NOT_FOUND_DETAIL = "Tag group not found"
-COLORING_TAKEN_DETAIL = "Another group already colours projects"
-COLORS_INDEX = "idx_tag_groups_colors_projects"
 
 
 async def _name_taken(db: AsyncSession, name: str, exclude_id: int | None = None) -> bool:
@@ -47,35 +42,14 @@ async def _name_taken(db: AsyncSession, name: str, exclude_id: int | None = None
 
 
 async def _commit_group(db: AsyncSession) -> None:
-    """
-    Commit; a race lost to a concurrent write is a 409 when another group took
-    the colouring flag first (partial unique index), else a duplicate-name 400.
-    """
+    """Commit; a race lost to a concurrent write of the same name is a 400."""
     try:
         await db.commit()
     except IntegrityError as e:
         await db.rollback()
-        if COLORS_INDEX in str(e.orig):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail=COLORING_TAKEN_DETAIL
-            ) from e
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=DUPLICATE_NAME_DETAIL
         ) from e
-
-
-async def _clear_other_coloring_groups(db: AsyncSession, keep_id: int | None) -> None:
-    """
-    Take the "colours projects" flag off every other group, flushed before the
-    caller sets it: the partial unique index allows only one such group.
-    """
-    query = update(TagGroup).where(TagGroup.colors_projects.is_(True))
-    if keep_id is not None:
-        query = query.where(TagGroup.id != keep_id)
-    await db.execute(
-        query.values(colors_projects=False).execution_options(synchronize_session="fetch")
-    )
-    await db.flush()
 
 
 @router.get("", response_model=list[TagGroupResponse])
@@ -100,19 +74,11 @@ async def create_tag_group(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=EMPTY_NAME_DETAIL)
     if await _name_taken(db, name):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=DUPLICATE_NAME_DETAIL)
-    if data.colors_projects and not data.single_select:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=COLORS_NEED_SINGLE_SELECT_DETAIL
-        )
-
-    if data.colors_projects:
-        await _clear_other_coloring_groups(db, keep_id=None)
 
     max_order = (await db.execute(select(func.max(TagGroup.sort_order)))).scalar()
     group = TagGroup(
         name=name,
         single_select=data.single_select,
-        colors_projects=data.colors_projects,
         sort_order=(max_order + 1) if max_order is not None else 0,
     )
     db.add(group)
@@ -151,8 +117,7 @@ async def update_tag_group(
     Update a tag group (admin only, partial; rules checked on the merged state).
 
     Making a group single-select is refused with 409 while any project holds
-    more than one of its tags. Making it the colouring group takes the flag
-    off the previous one.
+    more than one of its tags.
     """
     group = (await db.execute(select(TagGroup).where(TagGroup.id == group_id))).scalar_one_or_none()
     if group is None:
@@ -169,13 +134,6 @@ async def update_tag_group(
             )
 
     single_select = data.single_select if data.single_select is not None else group.single_select
-    colors_projects = (
-        data.colors_projects if data.colors_projects is not None else group.colors_projects
-    )
-    if colors_projects and not single_select:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=COLORS_NEED_SINGLE_SELECT_DETAIL
-        )
 
     if single_select and not group.single_select:
         conflicts = await count_projects_with_multiple_group_tags(db, group_id)
@@ -185,14 +143,9 @@ async def update_tag_group(
                 detail=multiple_tags_conflict_detail(conflicts),
             )
 
-    # Before touching this group's attributes (autoflush would write them first).
-    if colors_projects and not group.colors_projects:
-        await _clear_other_coloring_groups(db, keep_id=group_id)
-
     if name is not None:
         group.name = name
     group.single_select = single_select
-    group.colors_projects = colors_projects
 
     await _commit_group(db)
     await db.refresh(group)

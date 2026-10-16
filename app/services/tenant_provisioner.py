@@ -560,17 +560,10 @@ TAG_GROUPS_TABLE_SQL = """
       id SERIAL PRIMARY KEY,
       name VARCHAR(100) NOT NULL UNIQUE,
       single_select BOOLEAN NOT NULL DEFAULT FALSE,
-      colors_projects BOOLEAN NOT NULL DEFAULT FALSE,
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )"""
-
-# At most one group colours projects.
-TAG_GROUPS_COLORS_INDEX_SQL = (
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_groups_colors_projects "
-    "ON tag_groups ((true)) WHERE colors_projects"
-)
 
 TAG_SITES_TABLE_SQL = """
     CREATE TABLE IF NOT EXISTS tag_sites (
@@ -592,6 +585,13 @@ TAGS_UPGRADE_STATEMENTS: tuple[str, ...] = (
     _add_column_if_missing("tags", "sort_order", "INTEGER NOT NULL DEFAULT 0"),
 )
 TAGS_UPGRADE_SQL = "".join(TAGS_UPGRADE_STATEMENTS)
+
+# Pre-release 1.6.0 builds had a tag_groups.colors_projects flag (one group coloured the
+# project bars); colouring is now a per-user Gantt preference. Idempotent drop.
+TAG_GROUPS_DROP_COLORS_STATEMENTS: tuple[str, ...] = (
+    "DROP INDEX IF EXISTS idx_tag_groups_colors_projects",
+    "ALTER TABLE tag_groups DROP COLUMN IF EXISTS colors_projects",
+)
 
 
 def _validate_identifier(name: str) -> str:
@@ -1110,7 +1110,7 @@ def get_tenant_schema_sql() -> str:
       PRIMARY KEY (user_id, skill_id)
     );
 
-    -- Tag groups (single-select groups; at most one colours projects)
+    -- Tag groups (a single-select group allows one of its tags per project)
     """
         + TAG_GROUPS_TABLE_SQL
         + """;
@@ -1198,7 +1198,6 @@ def get_tenant_schema_sql() -> str:
     CREATE INDEX IF NOT EXISTS idx_project_tags_tag ON project_tags(tag_id);
     CREATE INDEX IF NOT EXISTS idx_tags_group ON tags(group_id);
     CREATE INDEX IF NOT EXISTS idx_tag_sites_site ON tag_sites(site_id);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_groups_colors_projects ON tag_groups ((true)) WHERE colors_projects;
     CREATE INDEX IF NOT EXISTS idx_project_presence_project ON project_presence(project_id);
     CREATE INDEX IF NOT EXISTS idx_project_presence_user ON project_presence(user_id);
     CREATE INDEX IF NOT EXISTS idx_project_presence_last_seen ON project_presence(last_seen_at);

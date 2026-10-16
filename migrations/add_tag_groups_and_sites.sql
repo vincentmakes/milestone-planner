@@ -1,6 +1,6 @@
 -- Migration: Add tag groups and site-scoped tags (PostgreSQL)
--- Description: Creates tag_groups (single-select groups, at most one colouring
--- projects) and tag_sites (tags restricted to some sites), and adds
+-- Description: Creates tag_groups (single-select groups) and tag_sites (tags
+-- restricted to some sites), and adds
 -- tags.group_id / tags.all_sites / tags.sort_order. Existing tags stay
 -- ungrouped and available at every site.
 --
@@ -40,15 +40,10 @@ CREATE TABLE IF NOT EXISTS tag_groups (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL UNIQUE,
     single_select BOOLEAN NOT NULL DEFAULT FALSE,
-    colors_projects BOOLEAN NOT NULL DEFAULT FALSE,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
--- At most one group colours projects
-CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_groups_colors_projects
-    ON tag_groups ((true)) WHERE colors_projects;
 
 -- New tag columns
 DO $$
@@ -121,3 +116,8 @@ BEGIN
     RAISE NOTICE 'Tag groups migration completed successfully';
     RAISE NOTICE 'Tables created: tag_groups, tag_sites; columns added: tags.group_id, tags.all_sites, tags.sort_order';
 END $$;
+
+-- Pre-release 1.6.0 builds had a tag_groups.colors_projects flag (removed before
+-- 1.6.0 shipped: colouring is a per-user Gantt preference now). Drop it if present.
+DROP INDEX IF EXISTS idx_tag_groups_colors_projects;
+ALTER TABLE tag_groups DROP COLUMN IF EXISTS colors_projects;

@@ -32,13 +32,13 @@ function tag(id: number, name: string, extra: Partial<Tag> = {}): Tag {
 }
 
 function group(id: number, name: string, extra: Partial<TagGroup> = {}): TagGroup {
-  return { id, name, single_select: false, colors_projects: false, sort_order: 0, ...extra };
+  return { id, name, single_select: false, sort_order: 0, ...extra };
 }
 
-// Type (single-select, colours bars): Internal / Customer
+// Type (single-select): Internal / Customer
 // Area (multi): Bio / Chem
 // Ungrouped: Pilot, Urgent
-const TYPE = group(1, 'Type', { single_select: true, colors_projects: true, sort_order: 0 });
+const TYPE = group(1, 'Type', { single_select: true, sort_order: 0 });
 const AREA = group(2, 'Area', { sort_order: 1 });
 const groups = [AREA, TYPE];
 const internal = tag(10, 'Internal', { group_id: 1, color: '#10b981', sort_order: 1 });
@@ -243,16 +243,30 @@ describe('tagFilterKey', () => {
 describe('projectBarColor', () => {
   const tagById = indexTags(tags);
 
-  it('uses the colour of the tag in the colouring group, from the store', () => {
-    expect(projectBarColor(project([20, 10]), tagById, groups)).toBe('#10b981');
-    expect(projectBarColor(project([11]), tagById, groups)).toBe('#f59e0b');
+  it('uses the colour of the project tag in the chosen group, from the store', () => {
+    expect(projectBarColor(project([20, 10]), tagById, TYPE)).toBe('#10b981');
+    expect(projectBarColor(project([11]), tagById, TYPE)).toBe('#f59e0b');
+    // Any group can colour, single-select or not
+    expect(projectBarColor(project([10, 20]), tagById, AREA)).toBe('#3b82f6');
   });
 
-  it('returns null without a colouring group or a tag in it', () => {
-    expect(projectBarColor(project([20, 30]), tagById, groups)).toBeNull();
-    expect(projectBarColor(project([10]), tagById, [AREA, { ...TYPE, colors_projects: false }])).toBeNull();
-    expect(projectBarColor({}, tagById, groups)).toBeNull();
-    expect(projectBarColor(project([555]), tagById, groups)).toBeNull();
+  it('returns null without a chosen group or a project tag in it', () => {
+    expect(projectBarColor(project([10]), tagById, null)).toBeNull();
+    expect(projectBarColor(project([20, 30]), tagById, TYPE)).toBeNull();
+    expect(projectBarColor({}, tagById, TYPE)).toBeNull();
+    expect(projectBarColor(project([555]), tagById, TYPE)).toBeNull();
+  });
+
+  it('takes the first tag in group order when the project has several of the group', () => {
+    const red = tag(40, 'Zeta', { group_id: 2, color: '#ef4444', sort_order: 0 });
+    const green = tag(41, 'Alpha', { group_id: 2, color: '#22c55e', sort_order: 0 });
+    const blue = tag(42, 'Early', { group_id: 2, color: '#3b82f6', sort_order: -1 });
+    const index = indexTags([red, green, blue]);
+    // Same sort_order → name decides, whatever the project's tag order
+    expect(projectBarColor(project([40, 41]), index, AREA)).toBe('#22c55e');
+    expect(projectBarColor(project([41, 40]), index, AREA)).toBe('#22c55e');
+    // sort_order before name
+    expect(projectBarColor(project([40, 41, 42]), index, AREA)).toBe('#3b82f6');
   });
 
   it('caches the index per tags array', () => {

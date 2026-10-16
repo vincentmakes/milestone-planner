@@ -6,3 +6,4 @@ export { AssignmentRow } from './AssignmentRow';
 export { PhantomRow } from './PhantomRow';
 export { SectionRow } from './SectionRow';
 export { GroupByDropdown } from './GroupByDropdown';
+export { ColorByDropdown } from './ColorByDropdown';

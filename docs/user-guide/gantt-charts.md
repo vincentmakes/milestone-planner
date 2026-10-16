@@ -11,6 +11,7 @@ The left panel displays your projects in a tree structure. The header buttons si
 - **Staff & Equipment** — Show or hide the assignment rows
 - **Tags** — [Filter projects by tag](#filtering-projects-by-tag)
 - **Group by** — [Group projects by a tag group](#grouping-projects-by-tag-group) (shown once tag groups exist)
+- **Colour by** — [Colour the project bars by a tag group](#project-colours) (shown once tag groups exist)
 - **Column Visibility** — Show or hide custom columns
 - **+ New Project** — Create a new project
 - **Import** — Import from CSV, XML, or MPP
@@ -98,7 +99,16 @@ Admins see a **Manage tags…** link in the picker that opens Settings → Tags.
 
 ### Project colours
 
-An admin can set one single-select group to **colour projects**. The project bar on the timeline then takes the colour of the project's tag from that group — for example blue for internal projects and green for customer projects — and keeps the default colour when the project has no tag from that group. Unconfirmed projects keep their striped look on top of the colour.
+Each user can colour the project bars by a tag group:
+
+1. Click the **Colour by** button in the project panel header (next to **Group by**).
+2. Pick a tag group — any group, single-select or not. **Default** returns to the standard bar colour.
+
+The project bar on the timeline then takes the colour of the project's tag from that group — for example blue for internal projects and green for customer projects. A project carrying several tags of the group takes the colour of the first of them in the group's order (the same tag *Group by* files it under); a project without a tag from the group keeps the default colour. Unconfirmed projects keep their striped look on top of the colour.
+
+![The Colour by dropdown open above the Gantt chart, Project type selected](../assets/screenshots/gantt-color-by.png){ loading=lazy }
+
+The choice is yours alone: it is remembered per site in your browser, like the tag filter, and does not change what other users see. It is independent of **Group by** — you can group by one group and colour by another.
 
 ### Filtering projects by tag
 
@@ -137,6 +147,7 @@ Each section starts with a header showing the tag as a coloured pill and the num
 | Attach / detach a tag               | Anyone who can edit the project                |
 | Filter by tag                       | Everyone                                       |
 | Group by a tag group                | Everyone                                       |
+| Colour by a tag group               | Everyone                                       |
 | Create, edit, group, delete tags    | Admins (Settings → Tags)                       |
 
 ## Drag & Drop

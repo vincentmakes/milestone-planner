@@ -15,6 +15,7 @@ import { useDragAndDrop } from '../useDragAndDrop';
 import { useResize } from '../useResize';
 import { useDependencyLinking } from '../useDependencyLinking';
 import { useGanttGrouping } from '../useGanttGrouping';
+import { useGanttColorBy } from '../useGanttColorBy';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useViewStore } from '@/stores/viewStore';
@@ -86,6 +87,26 @@ describe('store subscriptions', () => {
     act(() => useViewStore.getState().setGanttGrouping(1, 7));
     expect(renders()).toBeGreaterThan(before);
     act(() => useViewStore.setState({ ganttGrouping: {}, collapsedGanttSections: {} }));
+  });
+
+  it('useGanttColorBy ignores project data, scroll, grouping and other sites\' preferences', () => {
+    useAppStore.setState({ currentSite: { id: 1, name: 'Basel' } as never });
+    const renders = countRenders(() => useGanttColorBy());
+    const before = renders();
+
+    act(() => {
+      useAppStore.setState({ projects: [{ id: 97 } as Project] });
+      useViewStore.setState({ timelineScrollLeft: 5678 });
+      useViewStore.getState().setGanttColorBy(2, 7);
+      useViewStore.getState().setGanttGrouping(1, 7);
+    });
+
+    expect(renders()).toBe(before);
+
+    // ...but follows its own site's colouring.
+    act(() => useViewStore.getState().setGanttColorBy(1, 7));
+    expect(renders()).toBeGreaterThan(before);
+    act(() => useViewStore.setState({ ganttColorBy: {}, ganttGrouping: {}, collapsedGanttSections: {} }));
   });
 
   it('useDragAndDrop still re-renders when the drag state it reads changes', () => {

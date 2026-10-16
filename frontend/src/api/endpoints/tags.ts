@@ -29,13 +29,11 @@ export interface TagUpdate {
 export interface TagGroupCreate {
   name: string;
   single_select?: boolean;
-  colors_projects?: boolean;
 }
 
 export interface TagGroupUpdate {
   name?: string;
   single_select?: boolean;
-  colors_projects?: boolean;
 }
 
 export const tagsApi = {

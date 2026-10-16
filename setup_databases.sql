@@ -402,13 +402,11 @@ CREATE TABLE IF NOT EXISTS sessions (
     expired BIGINT NOT NULL
 );
 
--- Tag groups (a single-select group allows one of its tags per project; at
--- most one group colours projects -- see idx_tag_groups_colors_projects)
+-- Tag groups (a single-select group allows one of its tags per project)
 CREATE TABLE IF NOT EXISTS tag_groups (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL UNIQUE,
     single_select BOOLEAN NOT NULL DEFAULT FALSE,
-    colors_projects BOOLEAN NOT NULL DEFAULT FALSE,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -831,7 +829,6 @@ CREATE INDEX IF NOT EXISTS idx_project_tags_project ON project_tags(project_id);
 CREATE INDEX IF NOT EXISTS idx_project_tags_tag ON project_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_tags_group ON tags(group_id);
 CREATE INDEX IF NOT EXISTS idx_tag_sites_site ON tag_sites(site_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_groups_colors_projects ON tag_groups ((true)) WHERE colors_projects;
 CREATE INDEX IF NOT EXISTS idx_company_events_site_date ON company_events(site_id, date);
 CREATE INDEX IF NOT EXISTS idx_company_event_sites_site ON company_event_sites(site_id);
 CREATE INDEX IF NOT EXISTS idx_staff_notes_site_date ON staff_notes(site_id, date);

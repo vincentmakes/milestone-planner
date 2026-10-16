@@ -7,9 +7,6 @@ Tag groups, site-scoped tags and admin-only tag management.
   404 for unknown group/site ids, append ordering, reorder.
 - The three 409s that protect existing project data carry their count in a
   plain-string detail (the frontend renders `detail` as text).
-- colors_projects requires single_select on the merged state and is exclusive:
-  the previous colouring group is cleared and flushed BEFORE the new one is set
-  (partial unique index).
 - Deleting a site deletes the site-restricted tags it leaves without a site.
 - Site export sheets, schema sources and the broadcast mapping.
 
@@ -75,7 +72,6 @@ def _group(group_id: int = 5, name: str = "Project type", **kwargs) -> TagGroup:
         id=group_id,
         name=name,
         single_select=kwargs.get("single_select", False),
-        colors_projects=kwargs.get("colors_projects", False),
         sort_order=kwargs.get("sort_order", 0),
         created_at=STAMP,
         updated_at=STAMP,
@@ -173,9 +169,7 @@ async def test_any_user_lists_tags_grouped_then_ungrouped(authed_client, mock_db
 async def test_any_user_lists_tag_groups(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(FakeUser(1, "user"))
-    mock_db_session.execute.return_value = _scalars_result(
-        [_group(5, single_select=True, colors_projects=True)]
-    )
+    mock_db_session.execute.return_value = _scalars_result([_group(5, single_select=True)])
 
     response = await client.get("/api/tag-groups")
 
@@ -183,12 +177,10 @@ async def test_any_user_lists_tag_groups(authed_client, mock_db_session):
     body = response.json()
     assert body[0]["name"] == "Project type"
     assert body[0]["single_select"] is True
-    assert body[0]["colors_projects"] is True
     assert set(body[0]) == {
         "id",
         "name",
         "single_select",
-        "colors_projects",
         "sort_order",
         "created_at",
         "updated_at",
@@ -509,101 +501,27 @@ async def test_making_a_group_single_select_without_conflicts(authed_client, moc
     assert response.json()["single_select"] is True
 
 
-# ---------------------------------------------------------
-# colors_projects: requires single_select, exclusive
-# ---------------------------------------------------------
-
-
 @pytest.mark.asyncio
-async def test_coloring_group_must_be_single_select_on_create(authed_client, mock_db_session):
-    client, set_user = authed_client
-    set_user(FakeUser(1, "admin"))
-    mock_db_session.execute.side_effect = [_scalar_result(None)]
-
-    response = await client.post(
-        "/api/tag-groups", json={"name": "Type", "single_select": False, "colors_projects": True}
-    )
-
-    assert response.status_code == 400
-    assert response.json()["detail"] == "A group that colours projects must be single-select"
-
-
-@pytest.mark.asyncio
-async def test_coloring_group_must_stay_single_select_on_the_merged_state(
-    authed_client, mock_db_session
-):
-    client, set_user = authed_client
-    set_user(FakeUser(1, "admin"))
-    group = _group(5, single_select=True, colors_projects=True)
-    mock_db_session.execute.side_effect = [_scalar_result(group)]
-
-    response = await client.put("/api/tag-groups/5", json={"single_select": False})
-
-    assert response.status_code == 400
-    assert response.json()["detail"] == "A group that colours projects must be single-select"
-
-
-@pytest.mark.asyncio
-async def test_both_flags_can_be_cleared_in_one_request(authed_client, mock_db_session):
-    client, set_user = authed_client
-    set_user(FakeUser(1, "admin"))
-    group = _group(5, single_select=True, colors_projects=True)
-    mock_db_session.execute.side_effect = [_scalar_result(group)]
-
-    response = await client.put(
-        "/api/tag-groups/5", json={"single_select": False, "colors_projects": False}
-    )
-
-    assert response.status_code == 200, response.text
-    assert (group.single_select, group.colors_projects) == (False, False)
-
-
-@pytest.mark.asyncio
-async def test_new_coloring_group_clears_the_previous_one_first(authed_client, stamp_on_refresh):
+async def test_admin_creates_a_group_appended_at_the_end(authed_client, stamp_on_refresh):
     client, set_user = authed_client
     set_user(FakeUser(1, "admin"))
     db = stamp_on_refresh
-    order: list[str] = []
-    db.flush.side_effect = lambda: order.append("flush")
-    db.add.side_effect = lambda obj: order.append("add")
     db.execute.side_effect = [
         _scalar_result(None),  # name not taken
-        MagicMock(),  # clear the previous colouring group
         _scalar_result(1),  # max sort_order
     ]
 
+    # A stale client still sending the removed colouring flag is not refused.
     response = await client.post(
         "/api/tag-groups",
-        json={"name": "Project type", "single_select": True, "colors_projects": True},
+        json={"name": " Project type ", "single_select": True, "colors_projects": True},
     )
 
     assert response.status_code == 201, response.text
-    assert response.json()["colors_projects"] is True
-    assert response.json()["sort_order"] == 2
-    assert order == ["flush", "add"]
-    clear_sql = _sql(db)[1]
-    assert clear_sql.startswith("UPDATE tag_groups SET colors_projects=false")
-    assert "tag_groups.colors_projects IS true" in clear_sql
-
-
-@pytest.mark.asyncio
-async def test_existing_group_becomes_the_coloring_one_after_the_flush(
-    authed_client, mock_db_session
-):
-    client, set_user = authed_client
-    set_user(FakeUser(1, "admin"))
-    group = _group(5, single_select=True, colors_projects=False)
-    seen_at_flush: list[bool] = []
-    mock_db_session.flush.side_effect = lambda: seen_at_flush.append(group.colors_projects)
-    mock_db_session.execute.side_effect = [_scalar_result(group), MagicMock()]
-
-    response = await client.put("/api/tag-groups/5", json={"colors_projects": True})
-
-    assert response.status_code == 200, response.text
-    assert seen_at_flush == [False]  # flushed before this group was flagged
-    assert group.colors_projects is True
-    clear_sql = _sql(mock_db_session)[1]
-    assert "tag_groups.id != 5" in clear_sql
+    body = response.json()
+    assert (body["name"], body["single_select"], body["sort_order"]) == ("Project type", True, 2)
+    assert "colors_projects" not in body
+    assert len(_sql(db)) == 2  # no other group is touched
 
 
 @pytest.mark.asyncio
@@ -690,7 +608,7 @@ async def test_site_delete_removes_restricted_tags_left_without_a_site(
 
 def _export_db(captured: list):
     site = _site(1, "Basel")
-    group = _group(4, single_select=True, colors_projects=True)
+    group = _group(4, single_select=True)
     tag = _tag(
         3, "Customer", group_id=4, all_sites=False, sites=[_site(1, "Basel"), _site(2, "Bern")]
     )
@@ -736,8 +654,8 @@ async def test_site_export_tag_sheets():
     assert tags[2][3:6] == ["", True, ""]
 
     groups = sheets["Tag groups"].rows
-    assert groups[0] == ["ID", "Name", "Single select", "Colours projects", "Sort order"]
-    assert groups[1] == [4, "Project type", True, True, 0]
+    assert groups[0] == ["ID", "Name", "Single select", "Sort order"]
+    assert groups[1] == [4, "Project type", True, 0]
 
     project_tags = sheets["Project tags"].rows
     assert project_tags[0][-1] == "Group"
@@ -789,7 +707,7 @@ def test_every_schema_source_has_tag_groups_and_sites(label, sql):
     assert "group_id INTEGER REFERENCES tag_groups(id) ON DELETE SET NULL" in tags_block
     assert "all_sites BOOLEAN NOT NULL DEFAULT TRUE" in tags_block
     assert "sort_order INTEGER NOT NULL DEFAULT 0" in tags_block
-    assert "idx_tag_groups_colors_projects ON tag_groups ((true)) WHERE colors_projects" in norm
+    assert "colors_projects" not in norm, label
     assert "idx_tag_sites_site ON tag_sites(site_id)" in norm
 
 

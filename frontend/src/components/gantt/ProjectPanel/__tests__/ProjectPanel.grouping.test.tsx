@@ -30,7 +30,7 @@ vi.mock('../ProjectRow', () => ({
   ),
 }));
 
-const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, colors_projects: false, sort_order: 0 };
+const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, sort_order: 0 };
 const tags: Tag[] = [
   { id: 1, name: 'Internal', color: '#fde047', group_id: 1, all_sites: true, site_ids: [], sort_order: 0 },
   { id: 2, name: 'Customer', color: '#1d4ed8', group_id: 1, all_sites: true, site_ids: [], sort_order: 1 },
@@ -66,7 +66,7 @@ function GroupedPanel() {
 beforeEach(() => {
   localStorage.clear();
   useCustomColumnStore.setState({ customColumns: [], customColumnValues: {}, customColumnFilters: {} });
-  useViewStore.setState({ ganttGrouping: { ':1': 1 }, collapsedGanttSections: {}, tagFilters: {} });
+  useViewStore.setState({ ganttGrouping: { ':1': 1 }, collapsedGanttSections: {}, ganttColorBy: {}, tagFilters: {} });
   useAppStore.setState({
     tags,
     tagGroups: [TYPE],
@@ -137,13 +137,16 @@ describe('ProjectPanel grouped by a tag group', () => {
     expect(screen.getAllByTestId('project-row').every((r) => r.dataset.reorder === 'yes')).toBe(true);
   });
 
-  it('places the Group-by trigger after the Tags trigger and before the divider', () => {
+  it('orders the view controls Tags, Group by, Colour by, then the divider', () => {
     render(<GroupedPanel />);
     const tagsTrigger = screen.getByRole('button', { name: 'Tags' });
     const groupTrigger = screen.getByRole('button', { name: 'Grouped by Project type' });
+    const colorTrigger = screen.getByRole('button', { name: 'Colour by' });
     const divider = screen.getByTestId('header-divider');
-    expect(tagsTrigger.compareDocumentPosition(groupTrigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(groupTrigger.compareDocumentPosition(divider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const follows = (a: Element, b: Element) => a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(follows(tagsTrigger, groupTrigger)).toBeTruthy();
+    expect(follows(groupTrigger, colorTrigger)).toBeTruthy();
+    expect(follows(colorTrigger, divider)).toBeTruthy();
   });
 
   it('falls back to one row per project without rows', () => {

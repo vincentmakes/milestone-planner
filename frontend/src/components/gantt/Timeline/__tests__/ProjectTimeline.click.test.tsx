@@ -16,7 +16,7 @@ import { generateTimelineCells } from '../../utils';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
-import type { Phase, Project, Subphase, User } from '@/types';
+import type { Phase, Project, Site, Subphase, Tag, TagGroup, User } from '@/types';
 
 vi.mock('@/contexts/WebSocketContext', () => ({
   useWebSocketContext: () => ({ recentChanges: [] }),
@@ -194,3 +194,48 @@ describe('ProjectTimeline subscriptions', () => {
   });
 });
 
+
+/** "Colour by": the bar takes the store colour of the project's tag in the chosen group. */
+describe('ProjectTimeline colour by', () => {
+  const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, sort_order: 0 };
+  const AREA: TagGroup = { id: 2, name: 'Area', single_select: false, sort_order: 1 };
+  const internal: Tag = {
+    id: 10, name: 'Internal', color: '#f59e0b', group_id: 1, all_sites: true, site_ids: [], sort_order: 0,
+  };
+
+  beforeEach(() => {
+    localStorage.clear();
+    asUser(PM, 'user');
+    useAppStore.setState({
+      tags: [internal],
+      tagGroups: [TYPE, AREA],
+      currentSite: { id: 1, name: 'Basel' } as Site,
+    });
+    useViewStore.setState({ ganttColorBy: {} });
+  });
+
+  function taggedProject(): Project {
+    // Inline colour is stale on purpose: the store's tag colour wins.
+    return { ...makeProject(PM), tags: [{ id: 10, name: 'Internal', color: '#000000', group_id: 1 }] };
+  }
+
+  it('has no tag colour while Colour by is unset', () => {
+    const { container } = renderTimeline(taggedProject());
+    expect(container.querySelector('[data-tag-color]')).toBeNull();
+  });
+
+  it('uses the colour of the project tag in the chosen group', () => {
+    useViewStore.setState({ ganttColorBy: { ':1': 1 } });
+    const { container } = renderTimeline(taggedProject());
+    const bar = container.querySelector('[data-tag-color]');
+    expect(bar).not.toBeNull();
+    expect(bar).toHaveAttribute('data-tag-color', '#f59e0b');
+    expect(bar).toHaveStyle({ background: '#f59e0b' });
+  });
+
+  it('keeps the default colour when the project has no tag in the chosen group', () => {
+    useViewStore.setState({ ganttColorBy: { ':1': 2 } });
+    const { container } = renderTimeline(taggedProject());
+    expect(container.querySelector('[data-tag-color]')).toBeNull();
+  });
+});

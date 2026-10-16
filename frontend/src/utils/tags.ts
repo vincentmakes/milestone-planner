@@ -288,21 +288,29 @@ export function indexTags(tags: Tag[]): Map<number, Tag> {
 }
 
 /**
- * Colour of the project's tag in the group flagged `colors_projects`, or null
- * (no such group, or the project has no tag in it → default bar styling).
+ * Bar colour of a project when the Gantt is coloured by `group` ("Colour by"):
+ * the colour of the project's tag in that group, or null (no group chosen, or
+ * the project has no tag in it → default bar styling).
+ *
+ * Tags are resolved by id through the store's tags (inline `project.tags[]`
+ * colours can be stale). With several tags of the group (multi-select), the
+ * first in group display order wins (`sort_order`, then name) — the same tag
+ * the Gantt "Group by" files the project under (projectSections.ts).
  */
 export function projectBarColor(
   project: Pick<Project, 'tags'>,
   tagById: Map<number, Tag>,
-  groups: TagGroup[]
+  group: TagGroup | null
 ): string | null {
-  const colouring = groups.find((g) => g.colors_projects);
-  if (!colouring) return null;
+  if (!group) return null;
+  let best: Tag | null = null;
   for (const ref of project.tags ?? []) {
     const tag = tagById.get(ref.id);
-    if (tag && tag.group_id === colouring.id) return tag.color;
+    if (tag && tag.group_id === group.id && (best === null || bySortThenName(tag, best) < 0)) {
+      best = tag;
+    }
   }
-  return null;
+  return best?.color ?? null;
 }
 
 const LIGHT_TEXT = '#ffffff';

@@ -15,8 +15,8 @@ function tag(id: number, name: string, groupId: number): Tag {
 }
 
 // Display order: Project type (sort 0) before Area (sort 1)
-const AREA: TagGroup = { id: 2, name: 'Area', single_select: false, colors_projects: false, sort_order: 1 };
-const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, colors_projects: false, sort_order: 0 };
+const AREA: TagGroup = { id: 2, name: 'Area', single_select: false, sort_order: 1 };
+const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, sort_order: 0 };
 
 beforeEach(() => {
   localStorage.clear();

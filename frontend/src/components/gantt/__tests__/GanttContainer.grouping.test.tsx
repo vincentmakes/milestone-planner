@@ -37,7 +37,7 @@ vi.mock('@/hooks', () => ({
 vi.mock('@/components/views/StaffView/StaffView', () => ({ StaffView: () => null }));
 vi.mock('@/components/views/EquipmentView/EquipmentView', () => ({ EquipmentView: () => null }));
 
-const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, colors_projects: false, sort_order: 0 };
+const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, sort_order: 0 };
 const tags: Tag[] = [
   { id: 1, name: 'Internal', color: '#fde047', group_id: 1, all_sites: true, site_ids: [], sort_order: 0 },
 ];

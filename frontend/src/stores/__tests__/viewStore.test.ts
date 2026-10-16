@@ -223,3 +223,76 @@ describe('viewStore Gantt grouping', () => {
     expect(useViewStore.getState().collapsedGanttSections).toEqual({});
   });
 });
+
+describe('viewStore Gantt colour by', () => {
+  const KEY = 'milestone-view-storage-v1';
+
+  beforeEach(() => {
+    localStorage.clear();
+    useViewStore.setState({ ganttColorBy: {}, ganttGrouping: {}, collapsedGanttSections: {} });
+  });
+
+  it('keeps a colouring group per site, independent of the grouping', () => {
+    const { setGanttColorBy, setGanttGrouping } = useViewStore.getState();
+    setGanttGrouping(1, 9);
+    setGanttColorBy(1, 4);
+    setGanttColorBy(2, 5);
+    expect(useViewStore.getState().ganttColorBy).toEqual({ ':1': 4, ':2': 5 });
+
+    setGanttColorBy(1, 6);
+    expect(useViewStore.getState().ganttColorBy).toEqual({ ':1': 6, ':2': 5 });
+
+    setGanttColorBy(2, null);
+    expect(useViewStore.getState().ganttColorBy).toEqual({ ':1': 6 });
+    expect(useViewStore.getState().ganttGrouping).toEqual({ ':1': 9 });
+  });
+
+  it('leaves the state untouched when nothing changes', () => {
+    const { setGanttColorBy } = useViewStore.getState();
+    setGanttColorBy(1, 4);
+    const before = useViewStore.getState().ganttColorBy;
+    setGanttColorBy(1, 4);
+    setGanttColorBy(2, null);
+    expect(useViewStore.getState().ganttColorBy).toBe(before);
+  });
+
+  it('survives a reload (partialize + merge round-trip)', async () => {
+    useViewStore.getState().setGanttColorBy(5, 3);
+    const raw = JSON.parse(localStorage.getItem(KEY) as string);
+    expect(raw.state.ganttColorBy).toEqual({ ':5': 3 });
+
+    useViewStore.setState({ ganttColorBy: {} });
+    localStorage.setItem(KEY, JSON.stringify(raw));
+    await useViewStore.persist.rehydrate();
+    expect(useViewStore.getState().ganttColorBy).toEqual({ ':5': 3 });
+  });
+
+  it('drops malformed persisted entries', async () => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        state: {
+          ganttColorBy: {
+            ':1': 2,
+            'acme:2': 3,
+            ':3': '4',
+            ':4': 1.5,
+            ':5': null,
+            // Legacy / malformed keys
+            '6': 7,
+            'Bad Key:7': 8,
+          },
+        },
+        version: 0,
+      })
+    );
+    await useViewStore.persist.rehydrate();
+    expect(useViewStore.getState().ganttColorBy).toEqual({ ':1': 2, 'acme:2': 3 });
+  });
+
+  it('falls back to empty when the persisted value is not an object', async () => {
+    localStorage.setItem(KEY, JSON.stringify({ state: { ganttColorBy: [1] }, version: 0 }));
+    await useViewStore.persist.rehydrate();
+    expect(useViewStore.getState().ganttColorBy).toEqual({});
+  });
+});

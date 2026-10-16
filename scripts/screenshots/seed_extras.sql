@@ -83,15 +83,11 @@ INSERT INTO tags (name, color) VALUES
   ('Customer',      '#0ea5e9')
 ON CONFLICT (name) DO NOTHING;
 
--- Tag group "Project type": single-select and colours the project bars, with
--- Internal / Customer as its two tags. The colouring flag is taken off any
--- other group first (at most one group colours projects).
-UPDATE tag_groups SET colors_projects = FALSE
- WHERE colors_projects AND name <> 'Project type';
-
-INSERT INTO tag_groups (name, single_select, colors_projects, sort_order)
-VALUES ('Project type', TRUE, TRUE, 0)
-ON CONFLICT (name) DO UPDATE SET single_select = TRUE, colors_projects = TRUE;
+-- Tag group "Project type": single-select, with Internal / Customer as its two
+-- tags.
+INSERT INTO tag_groups (name, single_select, sort_order)
+VALUES ('Project type', TRUE, 0)
+ON CONFLICT (name) DO UPDATE SET single_select = TRUE;
 
 UPDATE tags
    SET group_id = (SELECT id FROM tag_groups WHERE name = 'Project type'),

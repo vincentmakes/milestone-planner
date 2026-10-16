@@ -99,6 +99,13 @@ the default General section.
 | `tag-filter` | `tag-filter-dropdown.png` | The project panel's Tags filter dropdown, open, on the Gantt chart |
 | `kanban` | `kanban-board.png` | The Kanban board view |
 | `grouped` | `gantt-grouped.png` | The Gantt chart grouped by the *Project type* tag group (collapsible pill sections) |
+| `color-by` | `gantt-color-by.png` | The Gantt chart's *Colour by* dropdown, open, with *Project type* selected |
+
+Project bar colours are a per-user browser preference (*Colour by*), not
+seeded data. The `main` shot sets *Colour by* = *Project type*, and since all
+`capture.py` shots share one browser context (and so one `localStorage`), the
+later Gantt shots keep the coloured bars. `grouped` sets it too (so it works
+when captured on its own), and `dark-theme` sets it in its fresh context.
 
 ## Conventions
 
