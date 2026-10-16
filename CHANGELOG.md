@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Test coverage is now measured and enforced in CI (backend and frontend floors plus an 80 % gate on the lines a pull request changes), and the README shows live coverage badges.
 
 ### Fixed
+- Reordering custom columns in the manager dialog is saved again (the reorder request was answered with a validation error).
+- A phase or phase template added after one at the first position no longer shares its sort position with it.
 - A tag created or recoloured while What-If mode is on no longer disappears until the plan is applied.
 
 ## [1.5.0] - 2026-10-15

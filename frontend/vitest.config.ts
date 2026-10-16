@@ -21,7 +21,9 @@ export default defineConfig({
       // import: Vitest 4 counts an untested file only when `include` is set,
       // so without it a never-imported component is invisible to the total.
       // Vitest 4 also replaces (rather than merges) the default excludes,
-      // hence the explicit type-only and barrel entries. This list is fixed:
+      // hence the explicit type-only entries. Barrel index.ts files stay measured:
+      // a pure re-export costs nothing, and src/stores/index.ts, src/api/index.ts
+      // and the gantt barrels carry real logic. This list is fixed:
       // never add a file to it to get past a floor — write the test instead.
       include: ['src/**/*.{ts,tsx}'],
       exclude: [
@@ -32,7 +34,6 @@ export default defineConfig({
         'src/vite-env.d.ts',
         'src/**/*.d.ts',
         'src/types/**',
-        'src/**/index.ts',
       ],
       // `text` is what the CI log shows; `lcov` feeds the diff-coverage gate
       // on changed lines and `json-summary` the job summary and the README

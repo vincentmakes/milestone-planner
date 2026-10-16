@@ -365,19 +365,9 @@ async def test_delete_column_is_admin_only(authed_client, mock_db_session):
     mock_db_session.delete.assert_not_awaited()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Known bug: PATCH /custom-columns/reorder is registered after "
-        "PATCH /custom-columns/{column_id}, so Starlette matches the "
-        "parameterised route first, the int conversion fails and the reorder "
-        "handler is unreachable over HTTP (422). Register /reorder before "
-        "/{column_id} in app/routers/custom_columns.py and drop this marker."
-    ),
-)
 @pytest.mark.asyncio
 async def test_reorder_route_reorders_columns_over_http(authed_client, mock_db_session):
-    """PATCH /custom-columns/reorder must reach the reorder handler (currently shadowed)."""
+    """PATCH /custom-columns/reorder must reach the reorder handler (regression: it was shadowed by /{column_id})."""
     client, set_user = authed_client
     set_user(FakeUser(1, "admin"))
     first, second = make_column(1, display_order=1), make_column(2, display_order=2)

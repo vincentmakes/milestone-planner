@@ -19,10 +19,6 @@ from httpx import ASGITransport, AsyncClient
 from app import main
 from app.config import Settings
 
-pytestmark = pytest.mark.skipif(
-    Path("/app/public").exists(), reason="a real /app/public would shadow the temp frontend"
-)
-
 INDEX = "<!doctype html><title>Milestone SPA</title>"
 
 
@@ -46,6 +42,16 @@ def built_app(tmp_path, monkeypatch, *, frontend: str | None = "full", **overrid
             (public / "admin").mkdir()
             (public / "admin" / "index.html").write_text("<title>Legacy admin</title>")
     monkeypatch.chdir(tmp_path)
+    # create_app() probes the image path /app/public before ./public; point that
+    # probe at a missing directory so the temp frontend wins inside Docker too.
+    real_path = Path
+    monkeypatch.setattr(
+        main,
+        "Path",
+        lambda p: real_path(tmp_path / "no-image-public")
+        if str(p) == "/app/public"
+        else real_path(p),
+    )
     with patch.object(main, "get_settings", return_value=settings(**overrides)):
         yield main.create_app()
 

@@ -209,6 +209,61 @@ async def create_custom_column(
     )
 
 
+# Registered before PATCH /{column_id}: Starlette matches routes in order, and
+# "/reorder" would otherwise be captured by the parameterised route and fail
+# the int conversion with a 422.
+@router.patch("/reorder", response_model=list[CustomColumnResponse])
+async def reorder_custom_columns(
+    request: Request,
+    data: CustomColumnReorderRequest,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_admin),
+):
+    """
+    Reorder custom columns by providing a list of column IDs in the new order.
+    """
+    # Get all columns that need to be reordered
+    stmt = select(CustomColumn).where(CustomColumn.id.in_(data.column_order))
+    result = await db.execute(stmt)
+    columns = {col.id: col for col in result.scalars().all()}
+
+    # Update display_order based on position in the list
+    for index, column_id in enumerate(data.column_order):
+        if column_id in columns:
+            columns[column_id].display_order = index
+
+    await db.commit()
+
+    # Return updated columns
+    stmt = (
+        select(CustomColumn)
+        .where(CustomColumn.id.in_(data.column_order))
+        .order_by(CustomColumn.display_order)
+    )
+    result = await db.execute(stmt)
+    updated_columns = result.scalars().all()
+
+    return [
+        CustomColumnResponse(
+            id=col.id,
+            name=col.name,
+            column_type=col.column_type,
+            list_options=col.parsed_list_options if col.list_options else None,
+            site_id=col.site_id,
+            display_order=col.display_order,
+            width=col.width,
+            created_at=col.created_at,
+            updated_at=col.updated_at,
+        )
+        for col in updated_columns
+    ]
+
+
+# ---------------------------------------------------------
+# Value Management Endpoints
+# ---------------------------------------------------------
+
+
 @router.patch("/{column_id}", response_model=CustomColumnResponse)
 async def update_custom_column(
     request: Request,
@@ -280,58 +335,6 @@ async def delete_custom_column(
     await db.commit()
 
     return {"success": True, "message": "Custom column deleted"}
-
-
-@router.patch("/reorder", response_model=list[CustomColumnResponse])
-async def reorder_custom_columns(
-    request: Request,
-    data: CustomColumnReorderRequest,
-    db: AsyncSession = Depends(get_db),
-    _user=Depends(require_admin),
-):
-    """
-    Reorder custom columns by providing a list of column IDs in the new order.
-    """
-    # Get all columns that need to be reordered
-    stmt = select(CustomColumn).where(CustomColumn.id.in_(data.column_order))
-    result = await db.execute(stmt)
-    columns = {col.id: col for col in result.scalars().all()}
-
-    # Update display_order based on position in the list
-    for index, column_id in enumerate(data.column_order):
-        if column_id in columns:
-            columns[column_id].display_order = index
-
-    await db.commit()
-
-    # Return updated columns
-    stmt = (
-        select(CustomColumn)
-        .where(CustomColumn.id.in_(data.column_order))
-        .order_by(CustomColumn.display_order)
-    )
-    result = await db.execute(stmt)
-    updated_columns = result.scalars().all()
-
-    return [
-        CustomColumnResponse(
-            id=col.id,
-            name=col.name,
-            column_type=col.column_type,
-            list_options=col.parsed_list_options if col.list_options else None,
-            site_id=col.site_id,
-            display_order=col.display_order,
-            width=col.width,
-            created_at=col.created_at,
-            updated_at=col.updated_at,
-        )
-        for col in updated_columns
-    ]
-
-
-# ---------------------------------------------------------
-# Value Management Endpoints
-# ---------------------------------------------------------
 
 
 def _validate_value(column: CustomColumn, value: str | None) -> None:

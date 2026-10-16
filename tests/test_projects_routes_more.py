@@ -541,15 +541,6 @@ async def test_create_phase_appends_after_last(authed_client, mock_db_session, b
     assert (phase.sort_order, phase.is_milestone, phase.dependencies) == (5, 1, None)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Known bug: create_phase computes `max(sort_order) or -1`, which reads "
-        "an existing maximum of 0 as 'no phases', so the second phase of a "
-        "project gets sort_order 0 as well. Fix the None check in "
-        "app/routers/projects.py and drop this marker."
-    ),
-)
 @pytest.mark.asyncio
 async def test_create_phase_after_single_phase_at_zero_gets_sort_order_one(
     authed_client, mock_db_session, broadcast
