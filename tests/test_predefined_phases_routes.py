@@ -128,10 +128,18 @@ async def test_create_first_phase_starts_at_zero(authed_client, db_assigns_ids):
     assert response.json()["sort_order"] == 0
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Known bug: create_predefined_phase computes `max(sort_order) or -1`, "
+        "which reads an existing maximum of 0 as 'no rows', so the second "
+        "template is created with sort_order 0 again instead of 1. Fix the "
+        "None check in app/routers/predefined_phases.py and drop this marker."
+    ),
+)
 @pytest.mark.asyncio
-async def test_create_after_single_phase_at_zero_reuses_zero(authed_client, db_assigns_ids):
-    """Current behaviour: ``max(sort_order) or -1`` treats a max of 0 as "no rows",
-    so the second template gets sort_order 0 again (ties the first one)."""
+async def test_create_after_single_phase_at_zero_gets_sort_order_one(authed_client, db_assigns_ids):
+    """A template added after one at sort_order 0 must get sort_order 1."""
     client, set_user = authed_client
     set_user(FakeUser(1, "admin"))
     db_assigns_ids.execute.return_value = scalar_result(0)
@@ -139,7 +147,7 @@ async def test_create_after_single_phase_at_zero_reuses_zero(authed_client, db_a
     response = await client.post("/api/predefined-phases", json={"name": "Second"})
 
     assert response.status_code == 201
-    assert response.json()["sort_order"] == 0
+    assert response.json()["sort_order"] == 1
 
 
 @pytest.mark.asyncio

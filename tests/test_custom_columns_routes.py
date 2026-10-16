@@ -365,22 +365,32 @@ async def test_delete_column_is_admin_only(authed_client, mock_db_session):
     mock_db_session.delete.assert_not_awaited()
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Known bug: PATCH /custom-columns/reorder is registered after "
+        "PATCH /custom-columns/{column_id}, so Starlette matches the "
+        "parameterised route first, the int conversion fails and the reorder "
+        "handler is unreachable over HTTP (422). Register /reorder before "
+        "/{column_id} in app/routers/custom_columns.py and drop this marker."
+    ),
+)
 @pytest.mark.asyncio
-async def test_reorder_route_is_shadowed_by_patch_column_id(authed_client, mock_db_session):
-    """PATCH /custom-columns/reorder is registered after PATCH /{column_id}.
-
-    Starlette matches /{column_id} first and the int conversion fails, so the
-    reorder handler is unreachable over HTTP today (422). Pinned here so a fix
-    (registering /reorder first) shows up as a deliberate test change.
-    """
+async def test_reorder_route_reorders_columns_over_http(authed_client, mock_db_session):
+    """PATCH /custom-columns/reorder must reach the reorder handler (currently shadowed)."""
     client, set_user = authed_client
     set_user(FakeUser(1, "admin"))
+    first, second = make_column(1, display_order=1), make_column(2, display_order=2)
+    mock_db_session.execute.side_effect = [
+        scalars_result([first, second]),
+        scalars_result([second, first]),
+    ]
 
     response = await client.patch("/api/custom-columns/reorder", json={"column_order": [2, 1]})
 
-    assert response.status_code == 422
-    assert response.json()["detail"][0]["loc"] == ["path", "column_id"]
-    mock_db_session.execute.assert_not_awaited()
+    assert response.status_code == 200
+    assert [c["id"] for c in response.json()] == [2, 1]
+    assert (second.display_order, first.display_order) == (0, 1)
 
 
 @pytest.mark.asyncio
