@@ -18,8 +18,21 @@ import { useResize } from '@/hooks/useResize';
 import { useDependencyLinking } from '@/hooks/useDependencyLinking';
 import { usePhantomSibling } from '@/hooks/usePhantomSibling';
 import { useWebSocketContext } from '@/contexts/WebSocketContext';
-import { parseRecurringPattern } from '@/utils/recurringVacation';
+import { canEditProject, canEditAssignment } from '@/utils/permissions';
+import {
+  parseRecurringPattern,
+  indexAbsenceTypes,
+  getAbsenceOn,
+  absenceTypeName,
+  absenceColor,
+  cleanVacationDescription,
+} from '@/utils/recurringVacation';
+import { getClosureOn } from '@/utils/siteClosure';
+import { indexTags, projectBarColor } from '@/utils/tags';
+import { selectStaffSiteIds } from '@/stores/appStore';
+import { DEFAULT_EVENT_COLOR } from '@/utils/colorSwatches';
 import styles from './ProjectTimeline.module.css';
+import { daysBetweenDateStrings } from '@/utils/date';
 
 interface ProjectTimelineProps {
   project: Project;
@@ -57,7 +70,7 @@ function calculateSubphaseCompletion(subphase: Subphase): number | null {
     
     for (const child of children) {
       const childCompletion = calculateSubphaseCompletion(child);
-      const days = Math.max(1, Math.ceil((new Date(child.end_date).getTime() - new Date(child.start_date).getTime()) / (1000*60*60*24)));
+      const days = Math.max(1, daysBetweenDateStrings(child.start_date, child.end_date));
       
       // Unset completion counts as 0% when at least one sibling has a value
       const completion = childCompletion ?? 0;
@@ -101,7 +114,7 @@ function calculatePhaseCompletion(phase: Phase): number | null {
     
     for (const child of children) {
       const childCompletion = calculateSubphaseCompletion(child);
-      const days = Math.max(1, Math.ceil((new Date(child.end_date).getTime() - new Date(child.start_date).getTime()) / (1000*60*60*24)));
+      const days = Math.max(1, daysBetweenDateStrings(child.start_date, child.end_date));
       
       // Unset completion counts as 0% when at least one sibling has a value
       const completion = childCompletion ?? 0;
@@ -130,9 +143,7 @@ function calculateProjectCompletion(project: Project): number | null {
     // Use calculated completion which considers children
     const completion = calculatePhaseCompletion(phase);
     if (completion != null) {
-      const start = new Date(phase.start_date);
-      const end = new Date(phase.end_date);
-      const days = Math.max(1, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      const days = Math.max(1, daysBetweenDateStrings(phase.start_date, phase.end_date));
       weightedSum += completion * days;
       totalWeight += days;
     }
@@ -153,7 +164,12 @@ export const ProjectTimeline = memo(function ProjectTimeline({
   expandedSubphases,
 }: ProjectTimelineProps) {
   // Get UI store actions for opening modals
-  const { openPhaseModal, openSubphaseModal, setEditingPhase, setEditingSubphase } = useUIStore();
+  // Individual selectors: a whole-store subscription re-rendered every
+  // project row on each drag-indicator/tooltip/context-menu update.
+  const openPhaseModal = useUIStore((s) => s.openPhaseModal);
+  const openSubphaseModal = useUIStore((s) => s.openSubphaseModal);
+  const setEditingPhase = useUIStore((s) => s.setEditingPhase);
+  const setEditingSubphase = useUIStore((s) => s.setEditingSubphase);
   const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
   
   // Get viewMode and filter state from stores
@@ -166,10 +182,21 @@ export const ProjectTimeline = memo(function ProjectTimeline({
   const criticalPathEnabled = useAppStore((s) => s.criticalPathEnabled);
   const criticalPathItems = useAppStore((s) => s.criticalPathItems);
 
-  // Permission gate: basic users (role 'user') may not move/resize schedule items.
+  // Permission gate: admins, superusers and the project's manager may move
+  // and resize schedule items.
   const currentUser = useAppStore((s) => s.currentUser);
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
-  
+  const canEdit = canEditProject(currentUser, project);
+
+  // Bar colour from the project's tag in the "colours projects" group,
+  // resolved through the store (inline project.tags can be stale in What-If).
+  // indexTags is cached per tags array, so rows share one map.
+  const tags = useAppStore((s) => s.tags);
+  const tagGroups = useAppStore((s) => s.tagGroups);
+  const barColor = useMemo(
+    () => projectBarColor(project, indexTags(tags), tagGroups),
+    [project, tags, tagGroups]
+  );
+
   // Get critical path items for this project (empty set if not enabled)
   const projectCriticalItems = criticalPathEnabled.has(project.id) 
     ? (criticalPathItems.get(project.id) || new Set<string>())
@@ -269,10 +296,13 @@ export const ProjectTimeline = memo(function ProjectTimeline({
     startPhaseResize(e, phase.id, project.id, edge, phase.start_date, phase.end_date, element);
   }, [startPhaseResize, project.id]);
 
+  // A click on a bar opens the edit modal -- for project editors only. Anyone
+  // else would only get a 403 on save; the bar's tooltip still works for them.
   const handlePhaseClick = useCallback((phase: Phase) => {
+    if (!canEdit) return;
     setEditingPhase(phase);
     openPhaseModal(phase, project.id);
-  }, [setEditingPhase, openPhaseModal, project.id]);
+  }, [canEdit, setEditingPhase, openPhaseModal, project.id]);
 
   // Subphase interaction handlers
   const handleSubphaseDragStart = useCallback((e: React.MouseEvent, subphase: Subphase, phaseId: number, element: HTMLElement) => {
@@ -284,17 +314,18 @@ export const ProjectTimeline = memo(function ProjectTimeline({
   }, [startSubphaseResize, project.id]);
 
   const handleSubphaseClick = useCallback((subphase: Subphase, phaseId: number) => {
+    if (!canEdit) return;
     setEditingSubphase(subphase);
     openSubphaseModal(subphase, phaseId, project.id);
-  }, [setEditingSubphase, openSubphaseModal, project.id]);
+  }, [canEdit, setEditingSubphase, openSubphaseModal, project.id]);
 
   // Staff assignment handlers (project-level)
-  const handleStaffAssignmentDragStart = useCallback((e: React.MouseEvent, assignmentId: number, startDate: string, endDate: string) => {
-    startStaffAssignmentDrag(e, assignmentId, project.id, startDate, endDate);
+  const handleStaffAssignmentDragStart = useCallback((e: React.MouseEvent, assignmentId: number, startDate: string, endDate: string, staffId?: number) => {
+    startStaffAssignmentDrag(e, assignmentId, project.id, startDate, endDate, undefined, staffId);
   }, [startStaffAssignmentDrag, project.id]);
 
-  const handleStaffAssignmentResizeStart = useCallback((e: React.MouseEvent, assignmentId: number, edge: 'left' | 'right', startDate: string, endDate: string) => {
-    startStaffAssignmentResize(e, assignmentId, project.id, edge, startDate, endDate);
+  const handleStaffAssignmentResizeStart = useCallback((e: React.MouseEvent, assignmentId: number, edge: 'left' | 'right', startDate: string, endDate: string, staffId?: number) => {
+    startStaffAssignmentResize(e, assignmentId, project.id, edge, startDate, endDate, undefined, staffId);
   }, [startStaffAssignmentResize, project.id]);
 
   // Equipment assignment handlers (project-level)
@@ -347,6 +378,7 @@ export const ProjectTimeline = memo(function ProjectTimeline({
             startDate={project.start_date || ''}
             endDate={project.end_date || ''}
             onDragStart={canEdit ? handleProjectDragStart : undefined}
+            color={barColor}
           />
         )}
       </div>
@@ -396,7 +428,10 @@ export const ProjectTimeline = memo(function ProjectTimeline({
           })}
 
           {/* Project-level staff assignments (interactive) - filtered by showAssignments */}
-          {showAssignments && (project.staffAssignments ?? []).map((assignment) => (
+          {showAssignments && (project.staffAssignments ?? []).map((assignment) => {
+            // Everyone may move the booking of their own time.
+            const canEditThis = canEditAssignment(currentUser, project, assignment.staff_id);
+            return (
             <div key={`staff-${assignment.id}`} className={styles.row}>
               <AssignmentBar
                 assignmentId={assignment.id}
@@ -411,12 +446,13 @@ export const ProjectTimeline = memo(function ProjectTimeline({
                 name={assignment.staff_name}
                 allocation={assignment.allocation}
                 staffId={assignment.staff_id}
-                interactive={canEdit}
-                onDragStart={canEdit ? (e) => handleStaffAssignmentDragStart(e, assignment.id, assignment.start_date, assignment.end_date) : undefined}
-                onResizeStart={canEdit ? (e, edge) => handleStaffAssignmentResizeStart(e, assignment.id, edge, assignment.start_date, assignment.end_date) : undefined}
+                interactive={canEditThis}
+                onDragStart={canEditThis ? (e) => handleStaffAssignmentDragStart(e, assignment.id, assignment.start_date, assignment.end_date, assignment.staff_id) : undefined}
+                onResizeStart={canEditThis ? (e, edge) => handleStaffAssignmentResizeStart(e, assignment.id, edge, assignment.start_date, assignment.end_date, assignment.staff_id) : undefined}
               />
             </div>
-          ))}
+            );
+          })}
 
           {/* Project-level equipment assignments (interactive) - filtered by showAssignments */}
           {showAssignments && (project.equipmentAssignments ?? []).map((assignment) => (
@@ -501,9 +537,11 @@ const PhaseTimeline = memo(function PhaseTimeline({
   showAssignments,
   criticalPathItems,
 }: PhaseTimelineProps) {
-  // Permission gate: basic users (role 'user') may not move/resize.
+  // Permission gate: admins, superusers and the project's manager may
+  // move/resize, link dependencies and spawn phantom siblings.
   const currentUser = useAppStore((s) => s.currentUser);
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  const pmId = useAppStore((s) => s.projects.find((p) => p.id === projectId)?.pm_id);
+  const canEdit = canEditProject(currentUser, { pm_id: pmId });
 
   // Access phantom mode for subphase phantom rows
   const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
@@ -583,10 +621,10 @@ const PhaseTimeline = memo(function PhaseTimeline({
             onDragStart={canEdit ? handleDragStart : undefined}
             onResizeStart={!canEdit || phase.is_milestone ? undefined : handleResizeStart}
             onClick={handleClick}
-            onLinkZoneClick={handleLinkClick}
+            onLinkZoneClick={canEdit ? handleLinkClick : undefined}
             isLinkingSource={isLinkingSource}
             isLinkingActive={isLinkingDependency}
-            onPhantomStart={handlePhantom}
+            onPhantomStart={canEdit ? handlePhantom : undefined}
           />
         )}
       </div>
@@ -733,9 +771,11 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
   showAssignments,
   criticalPathItems,
 }: SubphaseTimelineProps) {
-  // Permission gate: basic users (role 'user') may not move/resize.
+  // Permission gate: admins, superusers and the project's manager may
+  // move/resize, link dependencies and spawn phantom siblings.
   const currentUser = useAppStore((s) => s.currentUser);
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  const pmId = useAppStore((s) => s.projects.find((p) => p.id === projectId)?.pm_id);
+  const canEdit = canEditProject(currentUser, { pm_id: pmId });
 
   // Access phantom mode for nested subphase phantom rows
   const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
@@ -815,10 +855,10 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
             onDragStart={canEdit ? handleDragStart : undefined}
             onResizeStart={!canEdit || subphase.is_milestone ? undefined : handleResizeStart}
             onClick={handleClick}
-            onLinkZoneClick={handleLinkClick}
+            onLinkZoneClick={canEdit ? handleLinkClick : undefined}
             isLinkingSource={isLinkingSource}
             isLinkingActive={isLinkingDependency}
-            onPhantomStart={handlePhantom}
+            onPhantomStart={canEdit ? handlePhantom : undefined}
           />
         )}
       </div>
@@ -960,6 +1000,10 @@ const AssignmentBar = memo(function AssignmentBar({
 }: AssignmentBarProps) {
   // Get vacations from store to show vacation indicators
   const vacations = useAppStore((s) => s.vacations);
+  const absenceTypes = useAppStore((s) => s.absenceTypes);
+  // Site closures (company events flagged as such) also mark the bar
+  const closureIndex = useAppStore((s) => s.closureIndex);
+  const staffSiteIds = useAppStore(selectStaffSiteIds);
 
   // Live attribution: show "✨ Vincent D." on this bar if another user just
   // changed THIS specific assignment. Staff and equipment assignments live
@@ -983,56 +1027,60 @@ const AssignmentBar = memo(function AssignmentBar({
     [startDate, endDate, cells, cellWidth, viewMode]
   );
 
-  // Calculate vacation cell markers for this staff member across the entire visible timeline
+  // Unavailable-absence and site-closure markers for this staff member across
+  // the visible timeline, coloured by absence type or by the closing event.
+  // Available absences (Home Office) get no marker. Each cell is judged by its
+  // first day; [R:...] recurring absences are only shown in day-cell views
+  // (week/month), where one cell is one day -- in week/month cells a single
+  // weekday would mark the whole cell.
   const vacationCellMarkers = useMemo(() => {
     if (!staffId || assignmentType !== 'staff') return [];
-    
-    // Filter out recurring vacations - only show regular (non-recurring) vacations
-    const staffVacations = vacations.filter(v => {
-      if (v.staff_id !== staffId) return false;
-      // Skip recurring vacations
-      if (parseRecurringPattern(v.description)) return false;
-      return true;
-    });
-    if (staffVacations.length === 0) return [];
-    
-    const markers: Array<{ left: number; width: number; title: string }> = [];
-    
-    // Check each cell to see if it falls within a vacation period
+
+    const dayCells = viewMode === 'week' || viewMode === 'month';
+    const staffVacations = vacations.filter(
+      (v) => v.staff_id === staffId && (dayCells || !parseRecurringPattern(v.description))
+    );
+    const sites = staffSiteIds.get(staffId);
+    const hasClosures = closureIndex.size > 0 && !!sites;
+    if (staffVacations.length === 0 && !hasClosures) return [];
+
+    const typesById = indexAbsenceTypes(absenceTypes);
+    const markers: Array<{ left: number; width: number; title: string; color?: string }> = [];
+
     cells.forEach((cell, index) => {
-      const cellDate = new Date(cell.date);
-      const cellEnd = new Date(cellDate);
-      cellEnd.setDate(cellEnd.getDate() + 1);
-      
-      // Check if any vacation overlaps with this cell
-      const overlappingVacation = staffVacations.find(v => {
-        const vacStart = new Date(v.start_date);
-        const vacEnd = new Date(v.end_date);
-        vacEnd.setDate(vacEnd.getDate() + 1); // Make end date inclusive
-        return vacStart < cellEnd && vacEnd > cellDate;
-      });
-      
-      if (overlappingVacation) {
-        // Check if we can merge with the previous marker
-        const lastMarker = markers[markers.length - 1];
-        const cellLeft = index * cellWidth;
-        
-        if (lastMarker && lastMarker.left + lastMarker.width === cellLeft && lastMarker.title === (overlappingVacation.description || 'Vacation')) {
-          // Extend the previous marker
-          lastMarker.width += cellWidth;
-        } else {
-          // Create a new marker
-          markers.push({
-            left: cellLeft,
-            width: cellWidth,
-            title: overlappingVacation.description || 'Vacation',
-          });
-        }
+      let title: string;
+      let color: string | undefined;
+
+      const absence = staffVacations.length > 0
+        ? getAbsenceOn(staffId, cell.dateStr, staffVacations, typesById)
+        : null;
+      if (absence?.unavailable) {
+        const typeName = absenceTypeName(absence.type);
+        const description = cleanVacationDescription(absence.vacation.description);
+        title = absence.type && description && description !== typeName
+          ? `${typeName}: ${description}`
+          : description || typeName;
+        color = absenceColor(absence.type);
+      } else {
+        const closure = hasClosures && sites ? getClosureOn(sites, cell.dateStr, closureIndex) : null;
+        if (!closure) return;
+        title = `Site closed: ${closure.name}`;
+        color = closure.color || DEFAULT_EVENT_COLOR;
+      }
+
+      const cellLeft = index * cellWidth;
+      const lastMarker = markers[markers.length - 1];
+
+      if (lastMarker && lastMarker.left + lastMarker.width === cellLeft && lastMarker.title === title && lastMarker.color === color) {
+        // Extend the previous marker
+        lastMarker.width += cellWidth;
+      } else {
+        markers.push({ left: cellLeft, width: cellWidth, title, color });
       }
     });
-    
+
     return markers;
-  }, [staffId, assignmentType, vacations, cells, cellWidth]);
+  }, [staffId, assignmentType, vacations, absenceTypes, closureIndex, staffSiteIds, cells, cellWidth, viewMode]);
 
   if (!barPosition) return null;
 
@@ -1088,7 +1136,7 @@ const AssignmentBar = memo(function AssignmentBar({
 
   return (
     <>
-      {/* Vacation cell markers - purple background strips across the row */}
+      {/* Absence cell markers - type-coloured strips (purple when untyped) */}
       {vacationCellMarkers.map((marker, idx) => (
         <div
           key={`vac-${idx}`}
@@ -1096,6 +1144,7 @@ const AssignmentBar = memo(function AssignmentBar({
           style={{
             left: marker.left,
             width: marker.width,
+            ...(marker.color ? ({ ['--absence-color' as string]: marker.color } as React.CSSProperties) : {}),
           }}
           title={marker.title}
         />

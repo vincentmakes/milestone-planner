@@ -15,7 +15,8 @@ docs reference.
 cp .env.example .env   # then edit the three values above (plus SESSION_SECRET)
 
 # 2. Spin up a self-contained demo instance (PostgreSQL + the app).
-#    docker-compose.fresh.yml uses host port 8486.
+#    docker-compose.fresh.yml uses host port 8486 (the scripts' default
+#    target; point them elsewhere with SCREENSHOT_BASE_URL, see below).
 docker compose -f docker-compose.fresh.yml up -d --build
 
 # 3. Seed the canonical demo tenant (Demo Company / slug "demo" with
@@ -48,8 +49,9 @@ python3 -m venv /tmp/pw-venv
 Run all three scripts, in this order:
 
 ```bash
-# 1. Single-user tenant shots (Gantt, views, modals, tags, blocks, what-if,
-#    dependencies, critical path, filters, archived view, dark theme).
+# 1. Single-user tenant shots (Gantt, views, modals, Settings-hub sections,
+#    tags + tag filter, Kanban board, blocks, what-if, dependencies,
+#    critical path, filters, archived view, dark theme).
 /tmp/pw-venv/bin/python scripts/screenshots/capture.py
 
 # 2. Multi-user collab shots (online users, presence dropdown, activity feed toast).
@@ -59,6 +61,16 @@ Run all three scripts, in this order:
 #    read-only tenant SSO form). Needs the admin portal password:
 INIT_ADMIN_PASSWORD=... /tmp/pw-venv/bin/python scripts/screenshots/capture_admin.py
 ```
+
+All three scripts target `http://localhost:8486` by default. Set
+`SCREENSHOT_BASE_URL` (scheme + host + port, no path; a trailing `/` is
+ignored) to capture from another instance, e.g. a second demo stack on 8487:
+
+```bash
+SCREENSHOT_BASE_URL=http://localhost:8487 /tmp/pw-venv/bin/python scripts/screenshots/capture.py
+```
+
+The tenant scripts append `/t/demo/`, `capture_admin.py` appends `/admin/`.
 
 `capture_admin.py` must run **last**: it temporarily attaches the demo tenant
 to an SSO-enabled organization (which adds a "Sign in with Microsoft" button
@@ -74,6 +86,19 @@ to list them), e.g.:
 ```bash
 /tmp/pw-venv/bin/python scripts/screenshots/capture.py main tags block-modal
 ```
+
+Administration shots (`settings-tags`, `sites`, `users`, `equipment-mgmt`,
+`phases`, `skills`, `site-modal`) open the sidebar's single **Settings** entry
+and switch to a hub section by its label (`open_settings_section(page,
+"<label>")`, labels from `SETTINGS_SECTIONS` in
+`frontend/src/components/settings/sections.tsx`); `settings` itself stays on
+the default General section.
+
+| Key | Output | Shows |
+|-----|--------|-------|
+| `tag-filter` | `tag-filter-dropdown.png` | The project panel's Tags filter dropdown, open, on the Gantt chart |
+| `kanban` | `kanban-board.png` | The Kanban board view |
+| `grouped` | `gantt-grouped.png` | The Gantt chart grouped by the *Project type* tag group (collapsible pill sections) |
 
 ## Conventions
 

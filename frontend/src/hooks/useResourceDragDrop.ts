@@ -1,17 +1,19 @@
 /**
  * useResourceDragDrop
- * 
- * Hook for handling drag-drop of staff/equipment from ResourcePanel
- * onto projects/phases/subphases in the Gantt chart.
- * Creates assignments with a default 5-day duration.
- * Staff assignments use the staff member's max_capacity as default allocation.
+ *
+ * Drag *source* side of dropping staff/equipment from the ResourcePanel (and
+ * the Staff/Equipment views) onto the Gantt chart: permission check, drag
+ * data, uiStore drag state and the body class. The drop itself -- creating
+ * the assignment, What-If gating, permission per target -- is handled by
+ * `ResourceDropOverlay` only; this hook deliberately has no create path.
  */
 
 import { useCallback } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
-import { createStaffAssignment, createEquipmentAssignment, loadAllProjects } from '@/api/endpoints/projects';
-import { format, addDays } from 'date-fns';
+import { canManageAnyProject, isSelf } from '@/utils/permissions';
+import { format } from 'date-fns';
+import { addDaysToDateString } from '@/utils/date';
 
 const DEFAULT_DURATION_DAYS = 5;
 
@@ -20,9 +22,9 @@ export function useResourceDragDrop() {
   const startResourceDrag = useUIStore((s) => s.startResourceDrag);
   const updateResourceDragTarget = useUIStore((s) => s.updateResourceDragTarget);
   const endResourceDrag = useUIStore((s) => s.endResourceDrag);
-  const setProjects = useAppStore((s) => s.setProjects);
   const currentUser = useAppStore((s) => s.currentUser);
   const staff = useAppStore((s) => s.staff);
+  const projects = useAppStore((s) => s.projects);
 
   /**
    * Get the default allocation for a staff member (their max_capacity or 100)
@@ -41,8 +43,12 @@ export function useResourceDragDrop() {
     resourceId: number,
     resourceName: string
   ) => {
-    // Only allow superusers/admins to drag
-    if (!currentUser || (currentUser.role !== 'superuser' && currentUser.role !== 'admin')) {
+    // Anyone who manages a project may drag resources onto it; everyone may
+    // drag themselves (the drop target decides whether the project accepts).
+    const allowed =
+      canManageAnyProject(currentUser, projects) ||
+      (type === 'staff' && isSelf(currentUser, resourceId));
+    if (!allowed) {
       e.preventDefault();
       return;
     }
@@ -60,7 +66,7 @@ export function useResourceDragDrop() {
 
     // Add body class for styling
     document.body.classList.add('resource-dragging');
-  }, [currentUser, startResourceDrag]);
+  }, [currentUser, projects, startResourceDrag]);
 
   /**
    * Handle drag over a drop target (project/phase/subphase row)
@@ -78,8 +84,10 @@ export function useResourceDragDrop() {
     e.dataTransfer.dropEffect = 'copy';
 
     // Calculate preview dates
-    let previewStart = dateFromPosition || format(new Date(), 'yyyy-MM-dd');
-    let previewEnd = format(addDays(new Date(previewStart), DEFAULT_DURATION_DAYS - 1), 'yyyy-MM-dd');
+    // previewStart is yyyy-MM-dd: parse it as local midnight, otherwise the
+    // preview is a day short west of UTC (UTC parse + local format).
+    const previewStart = dateFromPosition || format(new Date(), 'yyyy-MM-dd');
+    const previewEnd = addDaysToDateString(previewStart, DEFAULT_DURATION_DAYS - 1);
 
     // Update target in store
     updateResourceDragTarget(projectId, phaseId, subphaseId, previewStart, previewEnd);
@@ -98,61 +106,6 @@ export function useResourceDragDrop() {
     // Clear target but keep drag active
     updateResourceDragTarget(null, null, null, null, null);
   }, [updateResourceDragTarget]);
-
-  /**
-   * Handle drop - create the assignment
-   */
-  const handleDrop = useCallback(async (
-    e: React.DragEvent,
-    projectId: number,
-    phaseId: number | null,
-    subphaseId: number | null,
-    startDate: string,
-    endDate: string
-  ) => {
-    e.preventDefault();
-
-    if (!resourceDrag.active || !resourceDrag.resourceId) {
-      endResourceDrag();
-      return;
-    }
-
-    const { type, resourceId } = resourceDrag;
-
-    try {
-      if (type === 'staff') {
-        // Use staff's max_capacity as default allocation
-        const defaultAllocation = getStaffDefaultAllocation(resourceId);
-        await createStaffAssignment({
-          staff_id: resourceId,
-          allocation: defaultAllocation,
-          start_date: startDate,
-          end_date: endDate,
-          project_id: subphaseId ? undefined : (phaseId ? undefined : projectId),
-          phase_id: subphaseId ? undefined : (phaseId || undefined),
-          subphase_id: subphaseId || undefined,
-        });
-      } else if (type === 'equipment') {
-        await createEquipmentAssignment({
-          equipment_id: resourceId,
-          start_date: startDate,
-          end_date: endDate,
-          project_id: subphaseId ? undefined : (phaseId ? undefined : projectId),
-          phase_id: subphaseId ? undefined : (phaseId || undefined),
-          subphase_id: subphaseId || undefined,
-        });
-      }
-
-      // Reload projects to show new assignment
-      const updatedProjects = await loadAllProjects();
-      setProjects(updatedProjects);
-    } catch (error) {
-      console.error('Failed to create assignment:', error);
-    } finally {
-      endResourceDrag();
-      document.body.classList.remove('resource-dragging');
-    }
-  }, [resourceDrag, endResourceDrag, setProjects, getStaffDefaultAllocation]);
 
   /**
    * Handle drag end (cleanup)
@@ -190,12 +143,8 @@ export function useResourceDragDrop() {
     handleDragStart,
     handleDragOver,
     handleDragLeave,
-    handleDrop,
     handleDragEnd,
     calculateDateFromPosition,
     getStaffDefaultAllocation,
-    
-    // Constants
-    DEFAULT_DURATION_DAYS,
   };
 }

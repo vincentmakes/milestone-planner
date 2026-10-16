@@ -3,7 +3,7 @@
  * Contains the timeline grid and project bars
  */
 
-import { forwardRef, useMemo, useRef, useCallback } from 'react';
+import { forwardRef, memo, useMemo, useRef, useCallback } from 'react';
 import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -16,42 +16,76 @@ import { PhantomOverlay } from './PhantomOverlay';
 import { ResourceDropOverlay } from './ResourceDropOverlay';
 import { calculateTodayPosition, calculateRowPositions } from '../utils';
 import type { TimelineCell } from '../utils';
+import { flatGanttRows } from '../utils/projectSections';
+import type { GanttRow } from '../utils/projectSections';
 import type { Project, ViewMode, Subphase } from '@/types';
 import styles from './TimelineBody.module.css';
 
 interface TimelineBodyProps {
   cells: TimelineCell[];
+  /** Every project of the list (dependency arrows, resource drop targets). */
   projects: Project[];
+  /**
+   * Rows to render, the same list the ProjectPanel gets (Group-by sections +
+   * projects); omitted = one row per project.
+   */
+  rows?: GanttRow[];
   cellWidth: number;
   totalWidth: number;
   viewMode: ViewMode;
 }
 
-export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
-  function TimelineBody({ cells, projects, cellWidth, totalWidth, viewMode }, ref) {
+/**
+ * The drag/resize indicator, subscribed on its own: `dragIndicator` changes on
+ * every mousemove of a drag, and reading it in TimelineBody re-rendered the
+ * whole body (row positions, dependency layer) per frame.
+ */
+function ConnectedDragIndicator() {
+  const dragIndicator = useUIStore((s) => s.dragIndicator);
+  return (
+    <DragIndicator
+      visible={dragIndicator.visible}
+      left={dragIndicator.left}
+      top={dragIndicator.top}
+      type={dragIndicator.type}
+      lagDays={dragIndicator.lagDays}
+      date={dragIndicator.date}
+      duration={dragIndicator.duration}
+      edge={dragIndicator.edge}
+    />
+  );
+}
+
+// memo: Timeline re-renders on its own scroll/zoom bookkeeping; the body only
+// needs to when its props or the store slices it reads change.
+export const TimelineBody = memo(forwardRef<HTMLDivElement, TimelineBodyProps>(
+  function TimelineBody({ cells, projects, rows, cellWidth, totalWidth, viewMode }, ref) {
     const expandedProjects = useViewStore((s) => s.expandedProjects);
     const expandedPhases = useViewStore((s) => s.expandedPhases);
     const expandedSubphases = useViewStore((s) => s.expandedSubphases);
     const showAssignments = useViewStore((s) => s.showAssignments);
     const customColumnFilters = useCustomColumnStore((s) => s.customColumnFilters);
     const customColumnValues = useCustomColumnStore((s) => s.customColumnValues);
-    const dragIndicator = useUIStore((s) => s.dragIndicator);
-    const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
     const resourceDrag = useUIStore((s) => s.resourceDrag);
     const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
     
+    // Memoised so the row positions keep their identity between renders.
+    const flatRows = useMemo(() => flatGanttRows(projects), [projects]);
+    const visibleRows = rows ?? flatRows;
+
     // Internal ref for phantom overlay mouse tracking
     const internalRef = useRef<HTMLDivElement>(null);
     
-    // Combine refs - use callback ref pattern
-    const setRefs = (element: HTMLDivElement | null) => {
+    // Combine refs - use callback ref pattern. Stable, so React does not
+    // detach and re-attach it on every render.
+    const setRefs = useCallback((element: HTMLDivElement | null) => {
       (internalRef as React.MutableRefObject<HTMLDivElement | null>).current = element;
       if (typeof ref === 'function') {
         ref(element);
       } else if (ref) {
         (ref as React.MutableRefObject<HTMLDivElement | null>).current = element;
       }
-    };
+    }, [ref]);
 
     // Calculate today line position
     const todayPosition = useMemo(
@@ -93,13 +127,29 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
     }, [entityPassesFilters]);
 
     // Calculate row positions for dependency arrows (includes phantom row if active)
-    const phantomConfig = phantomSiblingMode ? {
-      projectId: phantomSiblingMode.projectId,
-      sourceId: phantomSiblingMode.sourceId,
-      type: phantomSiblingMode.type,
-      parentId: phantomSiblingMode.parentId,
-      parentType: phantomSiblingMode.parentType,
-    } : null;
+    // Memoised on its primitive fields: a fresh object every render made the
+    // rowPositions memo below recompute on every render.
+    // Selected field by field: the phantom's dates change on every mousemove
+    // and must not re-render the body (PhantomOverlay follows them itself).
+    const phantomActive = useUIStore((s) => s.phantomSiblingMode !== null);
+    const phantomProjectId = useUIStore((s) => s.phantomSiblingMode?.projectId);
+    const phantomSourceId = useUIStore((s) => s.phantomSiblingMode?.sourceId);
+    const phantomType = useUIStore((s) => s.phantomSiblingMode?.type);
+    const phantomParentId = useUIStore((s) => s.phantomSiblingMode?.parentId);
+    const phantomParentType = useUIStore((s) => s.phantomSiblingMode?.parentType);
+    const phantomConfig = useMemo(
+      () =>
+        phantomActive
+          ? {
+              projectId: phantomProjectId!,
+              sourceId: phantomSourceId!,
+              type: phantomType!,
+              parentId: phantomParentId,
+              parentType: phantomParentType,
+            }
+          : null,
+      [phantomActive, phantomProjectId, phantomSourceId, phantomType, phantomParentId, phantomParentType]
+    );
     
     // Check if any filters are active
     const hasActiveFilters = Object.keys(customColumnFilters).some(
@@ -108,7 +158,7 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
     
     const rowPositions = useMemo(
       () => calculateRowPositions(
-        projects, 
+        visibleRows,
         expandedProjects, 
         expandedPhases, 
         expandedSubphases, 
@@ -117,7 +167,7 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
         hasActiveFilters ? entityPassesFilters : undefined,
         hasActiveFilters ? anyDescendantMatches : undefined
       ),
-      [projects, expandedProjects, expandedPhases, expandedSubphases, phantomConfig, showAssignments, hasActiveFilters, entityPassesFilters, anyDescendantMatches]
+      [visibleRows, expandedProjects, expandedPhases, expandedSubphases, phantomConfig, showAssignments, hasActiveFilters, entityPassesFilters, anyDescendantMatches]
     );
 
     // Only show weekend/holiday highlighting for week and month views
@@ -184,7 +234,7 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
               cell.isCompanyEvent ? (
                 <div
                   key={`event-bg-${index}`}
-                  className={`${styles.gridCell} ${styles.companyEvent}`}
+                  className={`${styles.gridCell} ${styles.companyEvent} ${cell.isSiteClosure ? styles.siteClosure : ''}`}
                   style={{
                     left: index * cellWidth,
                     width: cellWidth,
@@ -211,19 +261,31 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
           {/* Today line */}
           {todayPosition !== null && <TodayLine position={todayPosition} />}
 
-          {/* Project rows */}
+          {/* Project rows, with a band per Group-by section header. The band
+              is a direct child of .rows, in flow, so offsetTop-based maths
+              (drag/resize, phantom) and DOM measurement stay correct; its
+              class must not contain "row" and it carries no data-*-id. */}
           <div className={styles.rows}>
-            {projects.map((project) => (
-              <ProjectTimeline
-                key={project.id}
-                project={project}
-                cells={cells}
-                cellWidth={cellWidth}
-                isExpanded={expandedProjects.has(project.id)}
-                expandedPhases={expandedPhases}
-                expandedSubphases={expandedSubphases}
-              />
-            ))}
+            {visibleRows.map((row) =>
+              row.type === 'section' ? (
+                <div
+                  key={`section-${row.section.key}`}
+                  className={styles.groupBand}
+                  data-section-key={row.section.key}
+                  aria-hidden="true"
+                />
+              ) : (
+                <ProjectTimeline
+                  key={row.project.id}
+                  project={row.project}
+                  cells={cells}
+                  cellWidth={cellWidth}
+                  isExpanded={expandedProjects.has(row.project.id)}
+                  expandedPhases={expandedPhases}
+                  expandedSubphases={expandedSubphases}
+                />
+              )
+            )}
           </div>
           
           {/* Holiday/Event tooltip layer - top strip only, doesn't block bars */}
@@ -253,7 +315,7 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
                           ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
                           : {}),
                       }}
-                      data-tooltip={cell.companyEventName || 'Company Event'}
+                      data-tooltip={cell.isSiteClosure ? `Site closed: ${cell.companyEventName || 'Company Event'}` : (cell.companyEventName || 'Company Event')}
                     />
                   );
                 }
@@ -271,7 +333,7 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
           />
           
           {/* Phantom sibling mode overlay */}
-          {phantomSiblingMode && (
+          {phantomActive && (
             <PhantomOverlay
               cells={cells}
               cellWidth={cellWidth}
@@ -284,16 +346,7 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
           )}
           
           {/* Drag/Resize indicator */}
-          <DragIndicator
-            visible={dragIndicator.visible}
-            left={dragIndicator.left}
-            top={dragIndicator.top}
-            type={dragIndicator.type}
-            lagDays={dragIndicator.lagDays}
-            date={dragIndicator.date}
-            duration={dragIndicator.duration}
-            edge={dragIndicator.edge}
-          />
+          <ConnectedDragIndicator />
           
           {/* Resource drag-drop overlay */}
           {resourceDrag.active && (
@@ -310,4 +363,4 @@ export const TimelineBody = forwardRef<HTMLDivElement, TimelineBodyProps>(
       </div>
     );
   }
-);
+));

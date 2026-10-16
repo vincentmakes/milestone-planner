@@ -36,4 +36,4 @@ class PredefinedPhaseUpdate(BaseModel):
 class PhaseReorderRequest(BaseModel):
     """Request model for reordering phases."""
 
-    phaseOrder: list[int] = Field(..., description="List of phase IDs in desired order")
+    phase_order: list[int] = Field(..., description="List of phase IDs in desired order")

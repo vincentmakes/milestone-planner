@@ -11,6 +11,7 @@ import { Button } from '@/components/common';
 import { AllocationSlider } from '@/components/common/AllocationSlider';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useWhatIfStore } from '@/stores/whatIfStore';
 import { loadAllProjects, updateStaffAssignment } from '@/api/endpoints/projects';
 import {
   assignCard,
@@ -26,6 +27,7 @@ import {
 import {
   CARD_STATUSES,
   STATUS_LABELS,
+  applyStatusToCard,
   collectProjectCards,
   type KanbanCard,
 } from '@/utils/kanbanCards';
@@ -37,6 +39,14 @@ import {
 } from '@/utils/mentions';
 import { MentionText, MentionTextarea } from '@/components/common/MentionTextarea';
 import { formatDateShort, parseDateISO } from '@/utils/date';
+import { isPrivileged as isPrivilegedUser, canEditProject, isSelf } from '@/utils/permissions';
+import { findSubphaseById } from '@/utils/subphaseUtils';
+import {
+  patchStaffAssignmentLocally,
+  removeStaffAssignmentLocally,
+  updateProjectLocally,
+} from '@/utils/localProjectTree';
+import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import type { CardStatus } from '@/types';
 import styles from './KanbanCardModal.module.css';
 
@@ -49,6 +59,10 @@ export function KanbanCardModal() {
   const staff = useAppStore((s) => s.staff);
   const currentUser = useAppStore((s) => s.currentUser);
   const setProjects = useAppStore((s) => s.setProjects);
+  // Adding an assignee creates a booking, which cannot show until Apply in
+  // What-If mode; moving, re-allocating and removing stay available.
+  const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
+  const assignBlockedReason = whatIfMode ? whatIfUnavailableMessage('Adding assignees') : null;
 
   const [comments, setComments] = useState<CardComment[]>([]);
   const [draft, setDraft] = useState('');
@@ -81,10 +95,12 @@ export function KanbanCardModal() {
     );
   }, [isOpen, cardEntityType, cardEntityId, project]);
 
-  const isPrivileged = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
-  const canMove = Boolean(
-    isPrivileged || (currentUser && card?.assigneeIds.includes(currentUser.id))
-  );
+  // Admins and superusers; comment moderation stays with them alone.
+  const isPrivileged = isPrivilegedUser(currentUser);
+  // The project's editors (privileged users and its manager) manage assignees.
+  const isEditor = canEditProject(currentUser, project);
+  const isAssigned = Boolean(currentUser && card?.assigneeIds.includes(currentUser.id));
+  const canMove = isEditor || isAssigned;
 
   // staff holds one row per user-site pair, so scope to the CARD's site (not
   // currentSite -- the modal opens from the cross-site view too) and dedupe.
@@ -169,6 +185,14 @@ export function KanbanCardModal() {
     setError(null);
     try {
       await moveCard(card.entityType, card.entityId, status);
+      // Show the move right away (the reload below is a no-op in What-If).
+      updateProjectLocally(card.projectId, (p) => {
+        const item =
+          card.entityType === 'phase'
+            ? p.phases?.find((ph) => ph.id === card.entityId)
+            : findSubphaseById(p.phases ?? [], card.entityId);
+        if (item) applyStatusToCard(item, status);
+      });
       setProjects(await loadAllProjects());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not change the status');
@@ -178,7 +202,7 @@ export function KanbanCardModal() {
   };
 
   const handleAssign = async () => {
-    if (!card || !assigneeToAdd) return;
+    if (!card || !assigneeToAdd || assignBlockedReason) return;
     setBusy(true);
     setError(null);
     try {
@@ -192,6 +216,22 @@ export function KanbanCardModal() {
     }
   };
 
+  // Self-assignment: anyone may join a card, which books their own time at
+  // their max capacity (resolved server-side, like every other assignment).
+  const handleJoin = async () => {
+    if (!card || !currentUser || assignBlockedReason) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await assignCard(card.entityType, card.entityId, currentUser.id);
+      setProjects(await loadAllProjects());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not join the card');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleAllocationChange = async (assignmentId: number, allocation: number) => {
     if (!card) return;
     setBusy(true);
@@ -200,6 +240,7 @@ export function KanbanCardModal() {
       // Cards are phases and subphases, so the level is the card's own type --
       // never the project-level route.
       await updateStaffAssignment(assignmentId, { allocation }, card.entityType);
+      patchStaffAssignmentLocally(card.projectId, assignmentId, card.entityType, { allocation });
       setProjects(await loadAllProjects());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not change the allocation');
@@ -208,12 +249,18 @@ export function KanbanCardModal() {
     }
   };
 
-  const handleUnassign = async (staffId: number) => {
+  const handleUnassign = async (staffId: number, staffName?: string | null) => {
     if (!card) return;
+    // Removing an assignee deletes their booking (allocation and dates) and
+    // cannot be undone -- confirm like the Gantt assignment dialog does.
+    const who = staffName ? `"${staffName}"` : 'this assignee';
+    if (!window.confirm(`Remove ${who} from this card? Their booking on it will be deleted.`)) return;
     setBusy(true);
     setError(null);
     try {
       await unassignCard(card.entityType, card.entityId, staffId);
+      const removed = card.assignments.find((a) => a.staff_id === staffId);
+      if (removed) removeStaffAssignmentLocally(card.projectId, removed.id, card.entityType);
       setProjects(await loadAllProjects());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not remove the assignment');
@@ -244,6 +291,7 @@ export function KanbanCardModal() {
   };
 
   const handleDeleteComment = async (commentId: number) => {
+    if (!window.confirm('Delete this comment? This cannot be undone.')) return;
     setBusy(true);
     try {
       await deleteComment(commentId);
@@ -309,12 +357,14 @@ export function KanbanCardModal() {
               {card.assignments.map((a) => {
                 const maxCapacity = capacityById.get(a.staff_id);
                 const over = maxCapacity !== undefined && a.allocation > maxCapacity;
+                // Editors manage every row; everyone manages their own booking.
+                const canEditRow = isEditor || isSelf(currentUser, a.staff_id);
                 return (
                   <li key={a.id} className={styles.assignee}>
                     <span className={styles.assigneeName}>
                       {a.staff_name ?? `Staff ${a.staff_id}`}
                     </span>
-                    {isPrivileged ? (
+                    {canEditRow ? (
                       <AllocationSlider
                         compact
                         value={a.allocation}
@@ -330,11 +380,11 @@ export function KanbanCardModal() {
                         {a.allocation}%
                       </span>
                     )}
-                    {isPrivileged && (
+                    {canEditRow && (
                       <button
                         type="button"
                         className={styles.removeBtn}
-                        onClick={() => handleUnassign(a.staff_id)}
+                        onClick={() => handleUnassign(a.staff_id, a.staff_name)}
                         disabled={busy}
                         aria-label={`Remove ${a.staff_name ?? 'assignee'}`}
                       >
@@ -347,13 +397,27 @@ export function KanbanCardModal() {
               {card.assignments.length === 0 && <li className={styles.none}>Nobody assigned</li>}
             </ul>
 
-            {isPrivileged && unassignedStaff.length > 0 && (
+            {!isEditor && currentUser && !isAssigned && (
+              <div className={styles.assignRow}>
+                <Button
+                  onClick={handleJoin}
+                  disabled={busy || !!assignBlockedReason}
+                  title={assignBlockedReason ?? undefined}
+                >
+                  Join this card
+                </Button>
+              </div>
+            )}
+
+            {isEditor && unassignedStaff.length > 0 && (
               <div className={styles.assignRow}>
                 <select
                   className={styles.select}
                   value={assigneeToAdd}
                   onChange={(e) => setAssigneeToAdd(e.target.value)}
                   aria-label="Add assignee"
+                  disabled={!!assignBlockedReason}
+                  title={assignBlockedReason ?? undefined}
                 >
                   <option value="">Add someone&hellip;</option>
                   {unassignedStaff.map((s) => (
@@ -362,10 +426,14 @@ export function KanbanCardModal() {
                     </option>
                   ))}
                 </select>
-                <Button onClick={handleAssign} disabled={busy || !assigneeToAdd}>
+                <Button onClick={handleAssign} disabled={busy || !assigneeToAdd || !!assignBlockedReason}>
                   Assign
                 </Button>
               </div>
+            )}
+
+            {assignBlockedReason && (isEditor || (currentUser && !isAssigned)) && (
+              <p className={styles.hint} role="status">{assignBlockedReason}</p>
             )}
           </section>
 
@@ -375,12 +443,15 @@ export function KanbanCardModal() {
               {comments.map((c) => (
                 <li key={c.id} className={styles.comment}>
                   <div className={styles.commentHead}>
-                    <span className={styles.author}>{c.author_name ?? 'Unknown'}</span>
+                    {/* author_id/author_name are null once the author's account is deleted */}
+                    <span className={`${styles.author} ${c.author_name == null ? styles.deletedAuthor : ''}`}>
+                      {c.author_name ?? 'Deleted user'}
+                    </span>
                     <span className={styles.commentDate}>
                       {new Date(c.created_at).toLocaleString()}
                       {c.edited && ' (edited)'}
                     </span>
-                    {(c.author_id === currentUser?.id || isPrivileged) && (
+                    {((c.author_id != null && c.author_id === currentUser?.id) || isPrivileged) && (
                       <button
                         type="button"
                         className={styles.removeBtn}

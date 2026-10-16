@@ -26,7 +26,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ) => {
     const classes = [
       styles.button,
-      styles[variant],
+      // The icon-only variant uses its own class so it can never collide
+      // with the icon wrapper (`.iconSlot`).
+      variant === 'icon' ? styles.iconOnly : styles[variant],
       styles[size],
       loading && styles.loading,
       disabled && styles.disabled,
@@ -44,11 +46,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       >
         {loading && <span className={styles.spinner} />}
         {!loading && icon && iconPosition === 'left' && (
-          <span className={styles.icon}>{icon}</span>
+          <span className={styles.iconSlot}>{icon}</span>
         )}
         {children && <span className={styles.content}>{children}</span>}
         {!loading && icon && iconPosition === 'right' && (
-          <span className={styles.icon}>{icon}</span>
+          <span className={styles.iconSlot}>{icon}</span>
         )}
       </button>
     );

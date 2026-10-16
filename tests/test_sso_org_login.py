@@ -202,7 +202,7 @@ async def test_sso_login_fails_closed_when_the_org_lookup_fails():
         ),
         pytest.raises(HTTPException) as exc,
     ):
-        await sso_login(request=request, db=MagicMock())
+        await sso_login(request=request, response=MagicMock(), db=MagicMock())
 
     assert exc.value.status_code == 503
 

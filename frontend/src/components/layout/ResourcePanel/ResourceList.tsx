@@ -1,4 +1,5 @@
 import { useAppStore } from '@/stores/appStore';
+import { uniqueById } from '@/utils/uniqueById';
 import { useViewStore } from '@/stores/viewStore';
 import { ResourceCard } from './ResourceCard';
 import styles from './ResourceList.module.css';
@@ -19,7 +20,8 @@ export function ResourceList() {
 
   const filteredEquipment = currentSite
     ? equipment.filter((e) => e.site_id === currentSite.id && e.active)
-    : equipment.filter((e) => e.active);
+    : // One row per equipment-site pair: count each item once
+      uniqueById(equipment.filter((e) => e.active));
 
   const resources = currentResourceTab === 'staff' ? filteredStaff : filteredEquipment;
 

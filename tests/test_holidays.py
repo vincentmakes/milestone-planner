@@ -9,10 +9,13 @@ from app.services.holidays import (
     MAX_NAME_LENGTH,
     NagerHoliday,
     build_holidays_url,
+    custom_holiday_dates,
+    custom_holiday_names,
     fetch_holidays,
     is_relevant_holiday,
     nager_api_version,
     parse_holidays,
+    should_skip_nager_holiday,
 )
 
 V4_ITEMS = [
@@ -350,3 +353,63 @@ async def test_fetch_holidays_returns_empty_on_transport_error(monkeypatch):
 
     async with mock_client(handler) as client:
         assert await fetch_holidays("CH", 2026, client=client) == []
+
+
+# ---------------------------------------------------------
+# Custom holidays win over Nager (fetch_and_store_bank_holidays)
+# ---------------------------------------------------------
+
+
+def test_custom_holiday_dates_expands_multi_day_spans():
+    days = custom_holiday_dates(
+        [(date(2026, 12, 24), date(2026, 12, 26)), (date(2026, 8, 1), None)]
+    )
+    assert days == {date(2026, 12, 24), date(2026, 12, 25), date(2026, 12, 26), date(2026, 8, 1)}
+
+
+def test_custom_holiday_dates_treats_inverted_spans_as_one_day():
+    assert custom_holiday_dates([(date(2026, 5, 2), date(2026, 5, 1))]) == {date(2026, 5, 2)}
+
+
+def test_nager_holiday_on_a_custom_date_is_skipped_even_with_another_name():
+    """An edited Nager holiday is custom now; the refresh must not re-add the original."""
+    custom = custom_holiday_dates([(date(2026, 8, 1), date(2026, 8, 1))])
+    assert should_skip_nager_holiday(date(2026, 8, 1), "Swiss National Day", set(), custom)
+
+
+def test_nager_holiday_with_a_taken_date_and_name_is_skipped():
+    taken = {(date(2026, 1, 1), "New Year's Day")}
+    assert should_skip_nager_holiday(date(2026, 1, 1), "New Year's Day", taken, set())
+
+
+def test_unrelated_nager_holiday_is_kept():
+    taken = {(date(2026, 1, 1), "New Year's Day")}
+    custom = {date(2026, 8, 1)}
+    assert not should_skip_nager_holiday(date(2026, 1, 2), "Berchtold's Day", taken, custom)
+    # Same date as a stored *Nager* holiday but a different name is still stored.
+    assert not should_skip_nager_holiday(date(2026, 1, 1), "Other", taken, custom)
+
+
+def test_nager_holiday_moved_to_another_date_is_skipped_by_name():
+    """Swiss National Day moved to Aug 2 must not come back on Aug 1."""
+    moved = [(date(2026, 8, 2), "  swiss national DAY ")]
+    custom = custom_holiday_dates([(date(2026, 8, 2), None)])
+    names = custom_holiday_names(moved)
+    assert should_skip_nager_holiday(date(2026, 8, 1), "Swiss National Day", set(), custom, names)
+
+
+def test_moved_holiday_name_match_is_limited_to_the_same_year():
+    names = custom_holiday_names([(date(2026, 8, 2), "Swiss National Day")])
+    custom = custom_holiday_dates([(date(2026, 8, 2), None)])
+    assert not should_skip_nager_holiday(
+        date(2027, 8, 1), "Swiss National Day", set(), custom, names
+    )
+
+
+def test_renamed_and_moved_holiday_lets_the_original_return():
+    """Known limitation: without a matching name or date, Nager wins again."""
+    names = custom_holiday_names([(date(2026, 8, 2), "National Day (bridge)")])
+    custom = custom_holiday_dates([(date(2026, 8, 2), None)])
+    assert not should_skip_nager_holiday(
+        date(2026, 8, 1), "Swiss National Day", set(), custom, names
+    )

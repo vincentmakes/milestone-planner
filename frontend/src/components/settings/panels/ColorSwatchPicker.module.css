@@ -1,0 +1,53 @@
+/* ColorSwatchPicker */
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.swatch,
+.custom {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.swatch:focus-visible,
+.custom:focus-within {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.selected {
+  border-color: var(--text-primary);
+  outline: 2px solid var(--accent-blue);
+}
+
+.custom {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 2px dashed var(--border-color);
+}
+
+.custom.selected {
+  border-style: solid;
+  border-color: var(--text-primary);
+}
+
+.colorInput {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}

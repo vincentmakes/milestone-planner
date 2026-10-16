@@ -35,20 +35,31 @@
   background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
 }
 
-/* Unconfirmed project - yellow/orange gradient with diagonal stripes */
+/* Unconfirmed project - yellow/orange gradient with diagonal stripes.
+   The stripes are their own layer (::before) so they also sit on top of a
+   tag colour set inline (style.background; the bar then carries
+   data-tag-color, plus .darkText on light colours). */
 .bar.unconfirmed {
-  background: 
-    repeating-linear-gradient(
-      45deg,
-      transparent,
-      transparent 8px,
-      rgba(0, 0, 0, 0.1) 8px,
-      rgba(0, 0, 0, 0.1) 16px
-    ),
-    linear-gradient(135deg, var(--accent-yellow), var(--accent-orange));
+  background: linear-gradient(135deg, var(--accent-yellow), var(--accent-orange));
+}
+
+.bar.unconfirmed::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 8px,
+    rgba(0, 0, 0, 0.1) 8px,
+    rgba(0, 0, 0, 0.1) 16px
+  );
 }
 
 .label {
+  position: relative; /* above the ::before stripes */
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -63,4 +74,10 @@
   background: rgba(0, 0, 0, 0.2);
   padding: 1px 4px;
   border-radius: 2px;
+}
+
+/* Tag-coloured bar: the colour and a contrasting text colour come inline.
+   Dark text (on a light tag colour) must not carry the dark text-shadow. */
+.bar.darkText .label {
+  text-shadow: none;
 }

@@ -2,6 +2,8 @@
 
 The Kanban board shows a project's work as cards moving through four columns. It is not a separate plan — it is the **same data as the Gantt chart, seen differently**. Move a card and the Gantt chart updates; change a percentage in the Gantt chart and the card moves. There is nothing to keep in sync by hand.
 
+![Kanban board with the project picker, tag filter, grouping and My Todo toggle](../assets/screenshots/kanban-board.png){ loading=lazy }
+
 Open it from **Kanban Board** in the sidebar.
 
 ## What becomes a card
@@ -37,11 +39,11 @@ It works the other way too. Editing the percentage in the Gantt chart moves the 
 
 Drag a card to another column, or open it and pick a status.
 
-You can move a card if you are an admin or superuser, or if **you are assigned to that card**. Cards you cannot move are not draggable. This is the one place in the application where someone who is not a project manager can change project data — it lets people report progress on their own work without being able to reschedule the plan.
+You can move a card if you are an admin or superuser, the **project manager** of the card's project, or **assigned to that card**. Cards you cannot move are not draggable. Being assigned lets people report progress on their own work without being able to reschedule the plan.
 
 ## Choosing what to show
 
-The project picker chooses the board. **All projects** shows everything active at the site at once, which is the natural companion to grouping by project or filtering to My Todo.
+The project picker chooses the board. **All projects** shows everything active at the site at once, which is the natural companion to grouping by project or filtering to My Todo. The **Tags** button next to the picker narrows the board to projects carrying the selected tags — the same filter as in the Gantt chart, remembered per site (see [Filtering projects by tag](gantt-charts.md#filtering-projects-by-tag)).
 
 Projects appear in the same order as the Gantt chart, including any custom order you have dragged them into there.
 
@@ -78,11 +80,21 @@ Someone is booked at their full capacity to begin with, which is rarely what you
 
 A slider shown in red is above that person's own maximum capacity: a part-timer at 60% booked onto a card at 80%. That is allowed; it is the heatmap that tells you what someone's whole workload adds up to.
 
-Adding, removing and changing assignees requires superuser rights, and so does changing an allocation. Being assigned to a card lets you move it between columns — it does not let you change what it books, since that is a change to the plan rather than a report of your progress.
+A single booking is always between **1 and 100 %** — the server rejects 0 or anything above 100, here and on every other assignment. Over-allocation is what several overlapping bookings add up to, never one booking on its own.
+
+Adding, removing and changing other people's bookings requires superuser rights or being the project's manager. Your **own** booking is yours to manage: you can change your allocation with your slider and remove yourself with the **×** on your row. Removing an assignee asks for confirmation first, because their booking is deleted with them.
+
+Adding assignees and joining a card are unavailable in [What-If mode](what-if-planning.md), like other creates.
+
+### Joining a card yourself
+
+If you can't manage the project, the card's detail shows a **Join this card** button as long as you are not on it yet. Joining books your time exactly like being assigned by a manager — the card's dates, at your maximum capacity — and lets you move the card from then on. Removing yourself releases the booking again.
 
 ## Comments and mentions
 
-Every card has a comment thread. Anyone signed in can comment. You can delete your own comments; admins and superusers can delete any.
+Every card has a comment thread. Anyone signed in can comment. You can delete your own comments (after a confirmation); admins and superusers can delete any.
+
+When a user account is deleted, their comments stay on the card and are shown as written by **Deleted user**.
 
 A card with comments shows a small speech-bubble count on the board.
 

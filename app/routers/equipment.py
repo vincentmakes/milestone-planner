@@ -6,16 +6,15 @@ Matches the Node.js API at /api/equipment exactly.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_superuser
-from app.models.equipment import Equipment, EquipmentAssignment, EquipmentBlock
+from app.models.equipment import Equipment, EquipmentAssignment, EquipmentBlock, EquipmentSite
 from app.models.site import Site
 from app.models.user import User
-from app.schemas.base import PaginationParams
 from app.schemas.equipment import (
     EquipmentAssignmentResponse,
     EquipmentAssignmentUpdate,
@@ -26,14 +25,38 @@ from app.schemas.equipment import (
     EquipmentResponse,
     EquipmentUpdate,
 )
+from app.services.date_range import ensure_date_order, parse_day_range
+from app.services.project_access import require_project_editor
+from app.services.site_access import can_access_sites, ensure_site_access
 from app.websocket.broadcast import broadcast_change
 
 router = APIRouter()
+
+EQUIPMENT_SITE_ACCESS_DETAIL = "You can only manage equipment for sites you're assigned to"
 
 
 # ---------------------------------------------------------
 # Equipment Types (derived from equipment.type field)
 # ---------------------------------------------------------
+
+
+EQUIPMENT_TYPE_ACCESS_DETAIL = (
+    "This equipment type is also used at sites you're not assigned to; ask an administrator"
+)
+
+
+def _ensure_type_access(user: User, equipment_list) -> None:
+    """
+    403 unless the user may manage every piece of equipment of a type.
+
+    Same rule as _ensure_equipment_access per item (admins anything,
+    superusers only equipment whose every site is theirs).
+    """
+    if user.is_admin:
+        return
+    for equipment in equipment_list:
+        if not equipment.site_ids or not can_access_sites(user, equipment.site_ids):
+            raise HTTPException(status_code=403, detail=EQUIPMENT_TYPE_ACCESS_DETAIL)
 
 
 @router.get("/equipment-types", response_model=list[str])
@@ -69,8 +92,10 @@ async def rename_equipment_type(
     """
     Rename an equipment type.
 
-    Updates all equipment with the old type to use the new type.
-    Requires admin or superuser authentication.
+    Updates all equipment with the old type to use the new type. Types are
+    tenant-wide, so a superuser may only rename one whose every piece of
+    equipment is within their sites (otherwise they would silently rename
+    other sites' equipment); admins may rename any.
     """
     from sqlalchemy import update
 
@@ -83,6 +108,8 @@ async def rename_equipment_type(
 
     if not equipment_list:
         raise HTTPException(status_code=404, detail=f"No equipment found with type '{old_type}'")
+
+    _ensure_type_access(user, equipment_list)
 
     # Update all equipment with this type
     await db.execute(
@@ -108,16 +135,17 @@ async def delete_equipment_type(
     """
     Delete an equipment type.
 
-    Only succeeds if no equipment uses this type.
-    Requires admin or superuser authentication.
+    Only succeeds if no equipment uses this type (409 otherwise). A superuser
+    asking about a type used outside their sites gets 403, like a rename.
     """
     # Check if any equipment uses this type
     result = await db.execute(select(Equipment).where(Equipment.type == type_name))
     equipment_list = result.scalars().all()
 
     if equipment_list:
+        _ensure_type_access(user, equipment_list)
         raise HTTPException(
-            status_code=400,
+            status_code=409,
             detail=f"Cannot delete type '{type_name}': {len(equipment_list)} equipment item(s) still use this type",
         )
 
@@ -126,61 +154,86 @@ async def delete_equipment_type(
     return {"success": True, "type": type_name}
 
 
-def build_equipment_response(equipment: Equipment) -> dict:
-    """Build equipment response dict with site info."""
+def build_equipment_response(equipment: Equipment, site: Site | None = None) -> dict:
+    """
+    Build an equipment response dict with site info.
+
+    ``site`` is the row's site in per-site listings (one row per equipment-site
+    pair); otherwise the primary site (equipment.site_id, the first linked one).
+    """
+    if site is None:
+        site = next((s for s in equipment.sites if s.id == equipment.site_id), None)
+        if site is None and equipment.sites:
+            site = equipment.sites[0]
     return {
         "id": equipment.id,
         "name": equipment.name,
         "type": equipment.type,
-        "site_id": equipment.site_id,
-        "site_name": equipment.site.name if equipment.site else None,
+        "site_id": site.id if site else equipment.site_id,
+        "site_name": site.name if site else None,
+        "site_ids": equipment.site_ids,
+        "site_names": [s.name for s in equipment.sites],
         "description": equipment.description,
         "active": equipment.active,
         "created_at": equipment.created_at,
     }
 
 
-@router.get("/equipment")
+def _ensure_equipment_access(user: User, site_ids: list[int]) -> None:
+    """
+    403 unless the user may manage equipment on every given site.
+
+    Equipment without any site (legacy orphan) can only be managed by admins.
+    """
+    if not site_ids and not user.is_admin:
+        raise HTTPException(status_code=403, detail=EQUIPMENT_SITE_ACCESS_DETAIL)
+    ensure_site_access(user, site_ids, EQUIPMENT_SITE_ACCESS_DETAIL)
+
+
+async def _load_sites(db: AsyncSession, site_ids: list[int]) -> list[Site]:
+    """Return the de-duplicated sites ordered by id; 404 if any does not exist."""
+    wanted = sorted(set(site_ids))
+    result = await db.execute(select(Site).where(Site.id.in_(wanted)).order_by(Site.id))
+    sites = list(result.scalars().all())
+    if {s.id for s in sites} != set(wanted):
+        raise HTTPException(status_code=404, detail="Site not found")
+    return sites
+
+
+@router.get("/equipment", response_model=list[EquipmentResponse])
 async def get_equipment(
     siteId: int | None = Query(None),
     includeAllSites: bool | None = Query(False),
-    pagination: PaginationParams = Depends(),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """
-    Get equipment list with pagination.
+    Get active equipment.
 
-    If siteId provided, returns equipment for that site.
+    If siteId provided, returns equipment linked to that site.
     If includeAllSites=true, returns all equipment.
+
+    Like GET /staff, returns one row per equipment-site pair: equipment shared
+    by several sites appears once per site, with that site as ``site_id`` and
+    every linked site in ``site_ids``.
 
     Matches: GET /api/equipment
     """
-    base_query = select(Equipment).where(Equipment.active == 1)
-
-    if not includeAllSites and siteId:
-        base_query = base_query.where(Equipment.site_id == siteId)
-
-    # Get total count
-    count_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
-    total = count_result.scalar() or 0
-
     query = (
-        base_query.options(selectinload(Equipment.site))
-        .order_by(Equipment.name)
-        .offset(pagination.offset)
-        .limit(pagination.limit)
+        select(Equipment, Site)
+        .outerjoin(EquipmentSite, EquipmentSite.equipment_id == Equipment.id)
+        .outerjoin(Site, EquipmentSite.site_id == Site.id)
+        .where(Equipment.active == 1)
+        .order_by(Equipment.name, Equipment.id, Site.id)
     )
 
-    result = await db.execute(query)
-    equipment_list = result.scalars().all()
+    if siteId and not includeAllSites:
+        query = query.where(EquipmentSite.site_id == siteId)
 
-    return {
-        "items": [build_equipment_response(e) for e in equipment_list],
-        "total": total,
-        "offset": pagination.offset,
-        "limit": pagination.limit,
-    }
+    result = await db.execute(query)
+    rows = result.all()
+
+    return [build_equipment_response(equipment, site) for equipment, site in rows]
 
 
 @router.get("/equipment/all", response_model=list[EquipmentResponse])
@@ -189,14 +242,12 @@ async def get_all_equipment(
     user: User = Depends(require_superuser),
 ):
     """
-    Get all equipment including inactive.
+    Get all equipment including inactive, one row per equipment.
 
     Requires admin or superuser authentication.
     Matches: GET /api/equipment/all
     """
-    result = await db.execute(
-        select(Equipment).options(selectinload(Equipment.site)).order_by(Equipment.name)
-    )
+    result = await db.execute(select(Equipment).order_by(Equipment.name))
     equipment_list = result.scalars().all()
 
     return [build_equipment_response(e) for e in equipment_list]
@@ -213,9 +264,7 @@ async def get_equipment_by_id(
 
     Matches: GET /api/equipment/:id
     """
-    result = await db.execute(
-        select(Equipment).where(Equipment.id == equipment_id).options(selectinload(Equipment.site))
-    )
+    result = await db.execute(select(Equipment).where(Equipment.id == equipment_id))
     equipment = result.scalar_one_or_none()
 
     if not equipment:
@@ -231,36 +280,27 @@ async def create_equipment(
     user: User = Depends(require_superuser),
 ):
     """
-    Create new equipment.
+    Create new equipment on one or more sites.
 
     Requires admin or superuser authentication.
     Superusers can only create equipment in sites they're assigned to.
     Matches: POST /api/equipment
     """
-    # Check site access for non-admin users
-    if user.role != "admin":
-        user_site_ids = [s.id for s in user.sites] if user.sites else []
-        if data.site_id not in user_site_ids:
-            raise HTTPException(
-                status_code=403, detail="You can only create equipment in sites you're assigned to"
-            )
+    sites = await _load_sites(db, data.resolved_site_ids)
+    _ensure_equipment_access(user, [s.id for s in sites])
 
     equipment = Equipment(
         name=data.name,
         type=data.type,
-        site_id=data.site_id,
+        site_id=sites[0].id,
         description=data.description,
         active=1,
     )
+    equipment.sites = sites
 
     db.add(equipment)
     await db.commit()
     await db.refresh(equipment)
-
-    # Load site relationship
-    if equipment.site_id:
-        result = await db.execute(select(Site).where(Site.id == equipment.site_id))
-        equipment.site = result.scalar_one_or_none()
 
     return build_equipment_response(equipment)
 
@@ -273,35 +313,32 @@ async def update_equipment(
     user: User = Depends(require_superuser),
 ):
     """
-    Update equipment.
+    Update equipment. ``site_ids``, when given, replaces its site links.
 
     Requires admin or superuser authentication.
-    Superusers can only update equipment in sites they're assigned to.
+    Superusers must belong to every site the equipment is linked to, before
+    and after the change.
     Matches: PUT /api/equipment/:id
     """
-    result = await db.execute(
-        select(Equipment).where(Equipment.id == equipment_id).options(selectinload(Equipment.site))
-    )
+    result = await db.execute(select(Equipment).where(Equipment.id == equipment_id))
     equipment = result.scalar_one_or_none()
 
     if not equipment:
         raise HTTPException(status_code=404, detail="Equipment not found")
 
-    # Check site access for non-admin users
-    if user.role != "admin":
-        user_site_ids = [s.id for s in user.sites] if user.sites else []
-        if equipment.site_id not in user_site_ids:
-            raise HTTPException(
-                status_code=403, detail="You can only update equipment in sites you're assigned to"
-            )
+    _ensure_equipment_access(user, equipment.site_ids)
+
+    if data.site_ids is not None:
+        sites = await _load_sites(db, data.site_ids)
+        _ensure_equipment_access(user, [s.id for s in sites])
+        equipment.sites = sites
+        equipment.site_id = sites[0].id
 
     # Update fields
     if data.name is not None:
         equipment.name = data.name
     if data.type is not None:
         equipment.type = data.type
-    if data.site_id is not None:
-        equipment.site_id = data.site_id
     if data.description is not None:
         equipment.description = data.description
     if data.active is not None:
@@ -309,11 +346,6 @@ async def update_equipment(
 
     await db.commit()
     await db.refresh(equipment)
-
-    # Reload site relationship
-    if equipment.site_id:
-        result = await db.execute(select(Site).where(Site.id == equipment.site_id))
-        equipment.site = result.scalar_one_or_none()
 
     return build_equipment_response(equipment)
 
@@ -325,10 +357,10 @@ async def delete_equipment(
     user: User = Depends(require_superuser),
 ):
     """
-    Delete equipment.
+    Delete equipment from every site it is linked to.
 
     Requires admin or superuser authentication.
-    Superusers can only delete equipment in sites they're assigned to.
+    Superusers must belong to all of those sites.
     Matches: DELETE /api/equipment/:id
     """
     result = await db.execute(select(Equipment).where(Equipment.id == equipment_id))
@@ -337,13 +369,7 @@ async def delete_equipment(
     if not equipment:
         raise HTTPException(status_code=404, detail="Equipment not found")
 
-    # Check site access for non-admin users
-    if user.role != "admin":
-        user_site_ids = [s.id for s in user.sites] if user.sites else []
-        if equipment.site_id not in user_site_ids:
-            raise HTTPException(
-                status_code=403, detail="You can only delete equipment in sites you're assigned to"
-            )
+    _ensure_equipment_access(user, equipment.site_ids)
 
     await db.delete(equipment)
     await db.commit()
@@ -401,18 +427,16 @@ async def update_equipment_assignment(
     data: EquipmentAssignmentUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Update an equipment assignment.
 
-    Requires admin or superuser authentication.
+    Project editors only: admin, superuser, or the project's manager.
     Matches: PUT /api/equipment-assignments/:id
 
-    NOTE: a near-identical handler exists in `routers/assignments.py`. FastAPI
-    dispatches to whichever route was registered first (this one), so the
-    broadcast must live here too. Removing one of the duplicates is a
-    separate cleanup; for now, keep both call sites in sync.
+    This is the live handler for the path (the router is registered before
+    `routers/assignments.py`, whose shadowed duplicate was removed).
     """
     result = await db.execute(
         select(EquipmentAssignment)
@@ -427,6 +451,23 @@ async def update_equipment_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Equipment assignment not found")
 
+    await require_project_editor(db, user, assignment.project_id)
+
+    # Rebooking onto other equipment: same site rule as creating a booking
+    # (POST /projects/{id}/equipment) -- the equipment must be linked to the
+    # project's site through equipment_sites.
+    if data.equipment_id is not None and data.equipment_id != assignment.equipment_id:
+        equipment = (
+            await db.execute(select(Equipment).where(Equipment.id == data.equipment_id))
+        ).scalar_one_or_none()
+        if equipment is None:
+            raise HTTPException(status_code=404, detail="Equipment not found")
+        project_site_id = assignment.project.site_id if assignment.project else None
+        if project_site_id not in equipment.site_ids:
+            raise HTTPException(
+                status_code=400, detail="Equipment is not available at this project's site"
+            )
+
     # Update fields
     if data.equipment_id is not None:
         assignment.equipment_id = data.equipment_id
@@ -434,6 +475,8 @@ async def update_equipment_assignment(
         assignment.start_date = data.start_date
     if data.end_date is not None:
         assignment.end_date = data.end_date
+    if data.start_date is not None or data.end_date is not None:
+        ensure_date_order(assignment.start_date, assignment.end_date)
 
     await db.commit()
     await db.refresh(assignment)
@@ -472,12 +515,12 @@ async def delete_equipment_assignment(
     assignment_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Delete an equipment assignment.
 
-    Requires admin or superuser authentication.
+    Project editors only: admin, superuser, or the project's manager.
     Matches: DELETE /api/equipment-assignments/:id
     """
     result = await db.execute(
@@ -489,6 +532,7 @@ async def delete_equipment_assignment(
         raise HTTPException(status_code=404, detail="Equipment assignment not found")
 
     project_id = assignment.project_id
+    await require_project_editor(db, user, project_id)
 
     await db.delete(assignment)
     await db.commit()
@@ -518,11 +562,10 @@ async def get_equipment_availability(
 
     Matches: GET /api/equipment/:id/availability
     """
-    from datetime import datetime, timedelta
+    from datetime import timedelta
 
-    # Parse dates
-    start = datetime.strptime(startDate, "%Y-%m-%d").date()
-    end = datetime.strptime(endDate, "%Y-%m-%d").date()
+    # Parse dates (400 on malformed, inverted or oversized ranges)
+    start, end = parse_day_range(startDate, endDate)
 
     # Get assignments in range - use proper date types for comparison
     result = await db.execute(
@@ -592,9 +635,10 @@ async def list_equipment_blocks(
         query = query.where(EquipmentBlock.equipment_id == equipmentId)
 
     if siteId is not None:
-        query = query.join(Equipment, Equipment.id == EquipmentBlock.equipment_id).where(
-            Equipment.site_id == siteId
-        )
+        # Through the junction: equipment shared with the site is included too.
+        query = query.join(
+            EquipmentSite, EquipmentSite.equipment_id == EquipmentBlock.equipment_id
+        ).where(EquipmentSite.site_id == siteId)
 
     query = query.order_by(EquipmentBlock.start_date)
     result = await db.execute(query)
@@ -637,12 +681,7 @@ async def create_equipment_block(
     if not equipment:
         raise HTTPException(status_code=404, detail="Equipment not found")
 
-    if user.role != "admin":
-        user_site_ids = [s.id for s in user.sites] if user.sites else []
-        if equipment.site_id not in user_site_ids:
-            raise HTTPException(
-                status_code=403, detail="You can only block equipment in sites you're assigned to"
-            )
+    _ensure_equipment_access(user, equipment.site_ids)
 
     block = EquipmentBlock(
         equipment_id=data.equipment_id,
@@ -676,11 +715,7 @@ async def update_equipment_block(
     if not block:
         raise HTTPException(status_code=404, detail="Equipment block not found")
 
-    if user.role != "admin":
-        user_site_ids = [s.id for s in user.sites] if user.sites else []
-        site_id = block.equipment.site_id if block.equipment else None
-        if site_id not in user_site_ids:
-            raise HTTPException(status_code=403, detail="Access denied")
+    _ensure_equipment_access(user, block.equipment.site_ids if block.equipment else [])
 
     if data.start_date is not None:
         block.start_date = data.start_date
@@ -716,11 +751,7 @@ async def delete_equipment_block(
     if not block:
         raise HTTPException(status_code=404, detail="Equipment block not found")
 
-    if user.role != "admin":
-        user_site_ids = [s.id for s in user.sites] if user.sites else []
-        site_id = block.equipment.site_id if block.equipment else None
-        if site_id not in user_site_ids:
-            raise HTTPException(status_code=403, detail="Access denied")
+    _ensure_equipment_access(user, block.equipment.site_ids if block.equipment else [])
 
     await db.delete(block)
     await db.commit()

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
-import { logout } from '@/api/endpoints/auth';
+import { useUIStore } from '@/stores/uiStore';
+import { useAuth } from '@/hooks/useAuth';
 import { getAppVersion } from '@/api/endpoints/health';
 import styles from './UserMenu.module.css';
 
@@ -8,7 +9,8 @@ export function UserMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const currentUser = useAppStore((s) => s.currentUser);
-  const setCurrentUser = useAppStore((s) => s.setCurrentUser);
+  const { logout } = useAuth();
+  const openModal = useUIStore((s) => s.openModal);
   const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => {
@@ -40,15 +42,13 @@ export function UserMenu() {
     };
   }, [isOpen]);
 
+  // useAuth().logout destroys the session and resets every store (including
+  // isAuthenticated), so App swaps to the login screen in place, the same path
+  // a revoked session takes. No reload needed: the WebSocket closes when
+  // WebSocketProvider unmounts, and persisted view preferences survive by design.
   const handleLogout = async () => {
-    try {
-      await logout();
-      setCurrentUser(null);
-      // Reload to reset app state
-      window.location.reload();
-    } catch (error) {
-      console.error('Logout failed:', error);
-    }
+    setIsOpen(false);
+    await logout();
   };
 
   if (!currentUser) return null;
@@ -85,6 +85,28 @@ export function UserMenu() {
             <span className={styles.role}>{currentUser.role}</span>
           </div>
           <div className={styles.divider} />
+          <button
+            className={styles.menuItem}
+            onClick={() => {
+              setIsOpen(false);
+              openModal('myAbsences');
+            }}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+            <span>My absences</span>
+          </button>
           <button className={styles.menuItem} onClick={handleLogout}>
             <svg
               width="16"

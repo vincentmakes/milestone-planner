@@ -7,8 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.schemas.base import DateAsDateTimeJS, DateTimeJS
-from app.schemas.tag import TagListResponse
+from app.schemas.base import DateAsDateTimeJS, DateRangeOrdered, DateTimeJS
+from app.schemas.tag import ProjectTagResponse
 from app.services.card_status import CardStatus
 
 # ---------------------------------------------------------
@@ -94,7 +94,7 @@ class SubphaseResponse(BaseModel):
         from_attributes = True
 
 
-class SubphaseCreate(BaseModel):
+class SubphaseCreate(DateRangeOrdered):
     """Request model for creating a subphase."""
 
     name: str = Field(..., min_length=1, max_length=200)
@@ -106,7 +106,7 @@ class SubphaseCreate(BaseModel):
     order_index: int | None = None
 
 
-class SubphaseUpdate(BaseModel):
+class SubphaseUpdate(DateRangeOrdered):
     """Request model for updating a subphase."""
 
     name: str | None = Field(None, min_length=1, max_length=200)
@@ -144,7 +144,7 @@ class PhaseResponse(BaseModel):
         from_attributes = True
 
 
-class PhaseCreate(BaseModel):
+class PhaseCreate(DateRangeOrdered):
     """Request model for creating a phase."""
 
     type: str = Field(..., min_length=1, max_length=100)
@@ -155,7 +155,7 @@ class PhaseCreate(BaseModel):
     order_index: int | None = None
 
 
-class PhaseUpdate(BaseModel):
+class PhaseUpdate(DateRangeOrdered):
     """Request model for updating a phase."""
 
     type: str | None = Field(None, min_length=1, max_length=100)
@@ -197,7 +197,7 @@ class ProjectListResponse(BaseModel):
     archived: int = 0
     created_at: DateTimeJS
     updated_at: DateTimeJS | None = None
-    tags: list[TagListResponse] = []
+    tags: list[ProjectTagResponse] = []
 
     class Config:
         from_attributes = True
@@ -225,13 +225,13 @@ class ProjectDetailResponse(BaseModel):
     phases: list[PhaseResponse] = []
     staffAssignments: list[ProjectStaffAssignmentResponse] = []
     equipmentAssignments: list[EquipmentAssignmentInProject] = []
-    tags: list[TagListResponse] = []
+    tags: list[ProjectTagResponse] = []
 
     class Config:
         from_attributes = True
 
 
-class ProjectCreate(BaseModel):
+class ProjectCreate(DateRangeOrdered):
     """Request model for creating a project."""
 
     name: str = Field(..., min_length=1, max_length=200)
@@ -248,7 +248,7 @@ class ProjectCreate(BaseModel):
     tag_ids: list[int] | None = None
 
 
-class ProjectUpdate(BaseModel):
+class ProjectUpdate(DateRangeOrdered):
     """Request model for updating a project."""
 
     name: str | None = Field(None, min_length=1, max_length=200)

@@ -25,7 +25,11 @@ import type {
   InstanceSettings,
   Skill,
   Tag,
+  TagGroup,
+  AbsenceType,
 } from '@/types';
+import { buildClosureIndex } from '@/utils/siteClosure';
+import type { ClosureIndex } from '@/utils/siteClosure';
 
 // =============================================================================
 // STATE INTERFACE
@@ -51,10 +55,15 @@ interface AppState {
   bankHolidayDates: Set<string>;
   companyEvents: CompanyEvent[];
   companyEventDates: Set<string>;
+  /** Day → site-closure events (derived from companyEvents, not persisted) */
+  closureIndex: ClosureIndex;
   users: User[];
   instanceSettings: InstanceSettings | null;
   skills: Skill[];
   tags: Tag[];
+  tagGroups: TagGroup[];
+  /** Tenant-wide absence categories, including inactive ones */
+  absenceTypes: AbsenceType[];
 
   // ---------------------------------------------
   // CURRENT SELECTIONS
@@ -90,6 +99,8 @@ interface AppState {
   setInstanceSettings: (settings: InstanceSettings | null) => void;
   setSkills: (skills: Skill[]) => void;
   setTags: (tags: Tag[]) => void;
+  setTagGroups: (tagGroups: TagGroup[]) => void;
+  setAbsenceTypes: (absenceTypes: AbsenceType[]) => void;
 
   // ---------------------------------------------
   // ACTIONS - Selection Setters
@@ -137,10 +148,13 @@ const initialState = {
   bankHolidayDates: new Set<string>(),
   companyEvents: [] as CompanyEvent[],
   companyEventDates: new Set<string>(),
+  closureIndex: new Map<string, CompanyEvent[]>() as ClosureIndex,
   users: [] as User[],
   instanceSettings: null as InstanceSettings | null,
   skills: [] as Skill[],
   tags: [] as Tag[],
+  tagGroups: [] as TagGroup[],
+  absenceTypes: [] as AbsenceType[],
 
   // Selections
   currentSite: null as Site | null,
@@ -184,6 +198,7 @@ export const useAppStore = create<AppState>()(
       setCompanyEvents: (events, eventDates) => set({
         companyEvents: events,
         companyEventDates: eventDates,
+        closureIndex: buildClosureIndex(events),
       }),
 
       setUsers: (users) => set({ users }),
@@ -193,6 +208,10 @@ export const useAppStore = create<AppState>()(
       setSkills: (skills) => set({ skills }),
 
       setTags: (tags) => set({ tags }),
+
+      setTagGroups: (tagGroups) => set({ tagGroups }),
+
+      setAbsenceTypes: (absenceTypes) => set({ absenceTypes }),
 
       // -----------------------------------------
       // SELECTION SETTERS
@@ -312,36 +331,32 @@ export const useAppStore = create<AppState>()(
 // SELECTORS (for derived state)
 // =============================================================================
 
-/**
- * Get projects filtered by current site (non-archived)
- */
-export const selectSiteProjects = (state: AppState): Project[] => {
-  return state.projects.filter(
-    p => p.site_id === state.currentSite?.id && !p.archived
-  );
-};
+// Array-returning selectors (site projects/staff/equipment, …) were removed:
+// under Zustand 5 a selector that allocates a new array on every call makes
+// `useAppStore(selector)` re-render forever. Select the raw slice and filter
+// with useMemo, or wrap the selector in useShallow.
 
 /**
- * Get archived projects for current site
+ * Sites of every staff member, keyed by staff id. GET /staff returns one row
+ * per user-site pair, so the sets are rebuilt from the rows. Memoised on the
+ * `staff` array so the Map keeps its identity between renders.
  */
-export const selectArchivedProjects = (state: AppState): Project[] => {
-  return state.projects.filter(
-    p => p.site_id === state.currentSite?.id && p.archived
-  );
-};
-
-/**
- * Get staff for current site
- */
-export const selectSiteStaff = (state: AppState): Staff[] => {
-  return state.staff.filter(s => s.site_id === state.currentSite?.id);
-};
-
-/**
- * Get equipment for current site
- */
-export const selectSiteEquipment = (state: AppState): Equipment[] => {
-  return state.equipment.filter(e => e.site_id === state.currentSite?.id);
+let staffSiteIdsCache: { staff: Staff[]; map: Map<number, Set<number>> } | null = null;
+export const selectStaffSiteIds = (state: AppState): Map<number, Set<number>> => {
+  if (staffSiteIdsCache && staffSiteIdsCache.staff === state.staff) {
+    return staffSiteIdsCache.map;
+  }
+  const map = new Map<number, Set<number>>();
+  for (const row of state.staff) {
+    const sites = map.get(row.id);
+    if (sites) {
+      sites.add(row.site_id);
+    } else {
+      map.set(row.id, new Set([row.site_id]));
+    }
+  }
+  staffSiteIdsCache = { staff: state.staff, map };
+  return map;
 };
 
 /**
@@ -349,11 +364,4 @@ export const selectSiteEquipment = (state: AppState): Equipment[] => {
  */
 export const selectCanManageResources = (state: AppState): boolean => {
   return state.currentUser?.role === 'admin' || state.currentUser?.role === 'superuser';
-};
-
-/**
- * Check if user is admin
- */
-export const selectIsAdmin = (state: AppState): boolean => {
-  return state.currentUser?.role === 'admin';
 };

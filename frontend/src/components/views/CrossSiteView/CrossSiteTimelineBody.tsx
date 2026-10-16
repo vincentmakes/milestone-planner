@@ -73,7 +73,7 @@ export const CrossSiteTimelineBody = forwardRef<HTMLDivElement, CrossSiteTimelin
               cell.isCompanyEvent ? (
                 <div
                   key={`event-${index}`}
-                  className={`${styles.gridCell} ${styles.companyEvent}`}
+                  className={`${styles.gridCell} ${styles.companyEvent} ${cell.isSiteClosure ? styles.siteClosure : ''}`}
                   style={{
                     left: index * cellWidth,
                     width: cellWidth,
@@ -134,7 +134,7 @@ export const CrossSiteTimelineBody = forwardRef<HTMLDivElement, CrossSiteTimelin
                       key={`event-tooltip-${index}`}
                       className={styles.eventTooltipZone}
                       style={{ left: index * cellWidth, width: cellWidth }}
-                      data-tooltip={cell.companyEventName || 'Company Event'}
+                      data-tooltip={cell.isSiteClosure ? `Site closed: ${cell.companyEventName || 'Company Event'}` : (cell.companyEventName || 'Company Event')}
                     />
                   );
                 }

@@ -15,6 +15,7 @@ export function AdminApp() {
   const setAdminUser = useAdminStore((s) => s.setAdminUser);
   const setIsAuthenticated = useAdminStore((s) => s.setIsAuthenticated);
   const setIsLoading = useAdminStore((s) => s.setIsLoading);
+  const setMustChangePassword = useAdminStore((s) => s.setMustChangePassword);
 
   // Check authentication on mount
   useEffect(() => {
@@ -23,7 +24,14 @@ export function AdminApp() {
         const response = await getAdminMe();
         if (response.user) {
           setAdminUser(response.user);
-          setIsAuthenticated(true);
+          if (response.must_change_password) {
+            // A reload mid forced-change: the session is valid but every other
+            // admin route answers 403, so go back to the change-password
+            // screen (AdminLoginScreen renders it off this flag).
+            setMustChangePassword(true);
+          } else {
+            setIsAuthenticated(true);
+          }
         }
       } catch (err) {
         // Not authenticated
@@ -34,7 +42,7 @@ export function AdminApp() {
     };
 
     checkAuth();
-  }, [setAdminUser, setIsAuthenticated, setIsLoading]);
+  }, [setAdminUser, setIsAuthenticated, setIsLoading, setMustChangePassword]);
 
   // Show loading state
   if (isLoading) {

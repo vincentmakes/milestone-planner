@@ -39,7 +39,11 @@ After import, a summary shows the created project, phase count, and subphase cou
 - **Dates** — start and end dates for all phases and subphases
 - **Task names** — preserved as phase/subphase names
 
+- **Completion** — the task's % complete, kept between 0 and 100; tasks at 100 % land in the Kanban **Done** column, partly done ones in **In Progress**
+
 Staff assignments, resource allocations, and custom fields from the source file are not imported — these are configured within Milestone after import.
+
+Import files are limited to **20 MB**; a larger upload is refused (*file too large*). Parsing runs in the background on the server, so a large file no longer slows down other users while it is processed.
 
 ### Troubleshooting Import Issues
 
@@ -49,6 +53,7 @@ Staff assignments, resource allocations, and custom fields from the source file 
 | Phases appear flat (no nesting) | The source file may not have task hierarchy. Check the WBS structure in Microsoft Project before exporting. |
 | Dates look wrong | Ensure the source file uses date formats that can be parsed (ISO 8601 or standard regional formats). |
 | Large file takes too long | Very large project files (hundreds of tasks) may take several seconds to parse. Be patient during the preview step. |
+| "File too large" | The upload exceeds 20 MB. Remove attachments or unused views in Microsoft Project, or export to XML/CSV. |
 
 ## Exporting Projects
 
@@ -63,16 +68,16 @@ The exported file includes the project hierarchy (phases, subphases), dates, ass
 
 ## Site Excel Export
 
-The **Site Excel Export** is a complete snapshot of everything that lives under one site — projects, users, equipment, skills, vacations, assignments, custom columns, bank holidays, and company events — bundled into a single multi-sheet `.xlsx` file. It is the canonical "everything for this site" backup format, useful for archiving, audit, or migration.
+The **Site Excel Export** is a complete snapshot of everything that lives under one site — projects, users, equipment, skills, absence types, vacations, assignments, custom columns, bank holidays, and company events — bundled into a single multi-sheet `.xlsx` file. It is the canonical "everything for this site" backup format, useful for archiving, audit, or migration.
 
 ### How to Export
 
-1. Open the **Manage Sites** modal from the sidebar admin section.
+1. Open **Settings → Sites** from the sidebar's **Settings** entry.
 2. Locate the site you want to export.
 3. Click the **download icon** (↓) next to the edit/pencil icon. Hover tooltip: *"Export site data as Excel"*.
 4. The browser downloads `site_<name>_<YYYY-MM-DD>.xlsx`. Large sites may take several seconds to generate — the icon shows a spinner while the export is being built server-side.
 
-![Manage Sites modal — the download icon next to each site triggers the Excel export](../assets/screenshots/manage-sites.png){ loading=lazy }
+![Sites list — the download icon next to each site triggers the Excel export](../assets/screenshots/manage-sites.png){ loading=lazy }
 
 ### What's in the File
 
@@ -83,12 +88,14 @@ Each kind of data lives on its own sheet, so the file opens cleanly in Excel, Li
 | **Site** | Site metadata: name, city, country, region code, active flag |
 | **Projects** | All projects on the site with their phases and subphases (full hierarchy, dates, project manager, customer, completion %) |
 | **Users** | Users assigned to this site (name, email, role, job title, active flag) |
-| **Equipment** | Equipment items at the site, with type and active status |
+| **Equipment** | Equipment items linked to the site, with type, active status and a **Sites** column listing every site each item belongs to |
 | **Skills** | Skills defined on the instance (name, color, description) |
 | **User skills** | User → Skill associations |
-| **Tags** | Project tag definitions (name, color) |
-| **Project tags** | Project → Tag associations |
-| **Vacations** | All vacation entries for users on this site, including recurring patterns |
+| **Tag groups** | Tag group definitions (name, single select, colours projects, order) |
+| **Tags** | Project tags that apply to this site (name, color, group, all sites / sites, order) |
+| **Project tags** | Project → Tag associations, with the tag's group |
+| **Absence types** | Absence type definitions (name, color, counts as unavailable, active, order) |
+| **Vacations** | All absence entries for users on this site, including recurring patterns, with their **Type** and **Type ID** |
 | **Project assignments** | Staff assigned at the project level |
 | **Phase assignments** | Staff assigned at the phase level (with allocation %) |
 | **Subphase assignments** | Staff assigned at the subphase level |
@@ -96,12 +103,21 @@ Each kind of data lives on its own sheet, so the file opens cleanly in Excel, Li
 | **Custom columns** | Custom column definitions for this site (name, type, scope, options) |
 | **Custom column values** | Custom column values for every project/phase/subphase |
 | **Bank holidays** | Public and custom holidays on the site (with year) |
-| **Company events** | Company events configured for the site |
+| **Company events** | Company events linked to the site, with a **Sites** column listing every site each event applies to and a **Staff unavailable** column marking site closures |
 | **Equipment blocks** | Maintenance/unavailability windows on the site's equipment |
 | **Staff notes** | Notes pinned to the site's staff timeline |
+| **Card comments** | Kanban card comments on the site's phases and subphases |
 
 !!! note
-    The Site Excel Export is restricted to **Admins and Superusers**. Superusers can only export sites they belong to — Admins can export any site.
+    The Site Excel Export is restricted to **Admins and Superusers**. Superusers can only export sites they belong to — Admins can export any site. The Sites section of Settings is admin-only, so superusers export through the API (`GET /api/export/site/{site_id}/excel`).
 
 !!! tip
     Use this export before doing destructive operations (e.g. deleting a site, large bulk edits). The file is small enough to keep alongside regular database backups and is human-readable without needing to restore.
+
+## Spreadsheet Safety
+
+CSV exports and the site Excel workbook escape any cell text that starts with a formula
+character (`=`, `+`, `-`, `@`, tab or carriage return), so a malicious project name or comment
+cannot run as a formula when the file is opened in Excel or another spreadsheet program. Such
+cells start with an apostrophe in the exported file. The project manager is included in CSV and
+XML project exports.

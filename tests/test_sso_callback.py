@@ -13,8 +13,25 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
 
-from app.routers.auth import _parse_sso_state, _sign_sso_state
+from app.routers.auth import (
+    SSO_NONCE_COOKIE,
+    _parse_sso_state,
+    _sign_sso_state,
+    _sso_state_nonce,
+)
 from app.services.sso import OrgSSOLookupError, SSOService
+
+
+def browser_state(client, slug: str | None) -> str:
+    """
+    Sign a state and give ``client`` the matching ``sso_nonce`` cookie.
+
+    /auth/sso/login sets that cookie; the callback requires it (B1-8).
+    """
+    state = _sign_sso_state(slug)
+    client.cookies.set(SSO_NONCE_COOKIE, _sso_state_nonce(state))
+    return state
+
 
 # ---------------------------------------------------------------------------
 # Signed OAuth state round-trip
@@ -176,7 +193,7 @@ def entra_rejection(code: str) -> httpx.Response:
 @pytest.mark.asyncio
 async def test_callback_reports_the_aadsts_cause(app_client, mock_db_session):
     """A rejected exchange must name the cause, not say 'it failed'."""
-    state = _sign_sso_state("acme")
+    state = browser_state(app_client, "acme")
 
     with (
         resolved_tenant(mock_db_session),
@@ -202,7 +219,7 @@ async def test_callback_reports_the_aadsts_cause(app_client, mock_db_session):
 @pytest.mark.asyncio
 async def test_callback_redeems_with_the_resolved_redirect_uri(app_client, mock_db_session):
     """The code must be redeemed against the same URI the sign-in used."""
-    state = _sign_sso_state("acme")
+    state = browser_state(app_client, "acme")
     post = AsyncMock(return_value=entra_rejection("AADSTS54005"))
 
     with (
@@ -233,7 +250,7 @@ async def test_callback_redeems_with_the_resolved_redirect_uri(app_client, mock_
 @pytest.mark.asyncio
 async def test_callback_refuses_to_send_an_empty_client_secret(app_client, mock_db_session):
     """An empty secret earns 'invalid client' from Entra — say what's wrong."""
-    state = _sign_sso_state("acme")
+    state = browser_state(app_client, "acme")
     post = AsyncMock()
 
     with (
@@ -262,7 +279,7 @@ async def test_callback_never_falls_back_when_the_org_lookup_fails(app_client, m
     redirect URI than the one Entra issued it for — which comes back as a
     redirect-URI mismatch and sends everyone hunting in the wrong place.
     """
-    state = _sign_sso_state("acme")
+    state = browser_state(app_client, "acme")
     post = AsyncMock()
 
     with (
@@ -308,7 +325,7 @@ async def test_effective_config_does_not_swallow_an_org_lookup_failure():
 @pytest.mark.asyncio
 async def test_callback_reports_a_responder_that_is_not_microsoft(app_client, mock_db_session):
     """A proxy block page has no AADSTS code — say so, don't blame the config."""
-    state = _sign_sso_state("acme")
+    state = browser_state(app_client, "acme")
     block_page = httpx.Response(403, text="<html><body>Blocked by corporate gateway</body></html>")
 
     with (
@@ -333,7 +350,7 @@ async def test_callback_reports_a_responder_that_is_not_microsoft(app_client, mo
 @pytest.mark.asyncio
 async def test_callback_reports_an_unreachable_identity_provider(app_client, mock_db_session):
     """A blocked egress used to surface as an opaque 500 with no explanation."""
-    state = _sign_sso_state("acme")
+    state = browser_state(app_client, "acme")
 
     with (
         resolved_tenant(mock_db_session),

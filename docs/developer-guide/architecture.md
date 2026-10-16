@@ -22,6 +22,7 @@ app/
 ├── config.py                # Pydantic settings (env vars)
 ├── database.py              # Tenant DB engine/session (Base)
 ├── routers/                 # API endpoint handlers
+│   ├── absence_types.py     # Absence types (admin-managed categories of time off)
 │   ├── admin/               # Multi-tenant admin routes
 │   ├── admin_organizations.py  # Organization CRUD
 │   ├── assignments.py       # Staff/equipment assignments
@@ -35,12 +36,12 @@ app/
 │   ├── predefined_phases.py # Phase templates
 │   ├── projects.py          # Project CRUD
 │   ├── settings.py          # Instance settings
-│   ├── sites.py             # Site management
+│   ├── sites.py             # Sites, bank holidays (edit/import), multi-site company events
 │   ├── skills.py            # Skills management
 │   ├── tags.py              # Project tags
 │   ├── staff.py             # Staff management
 │   ├── users.py             # User management
-│   └── vacations.py         # Vacation/time-off management
+│   └── vacations.py         # Vacation/absence management (+ bulk .ics import)
 ├── models/                  # SQLAlchemy ORM models
 │   ├── tenant.py            # MasterBase + Tenant, TenantCredentials, TenantAuditLog,
 │   │                        #   AdminUser, AdminSession (master DB)
@@ -48,11 +49,13 @@ app/
 │   ├── project.py           # Project, ProjectPhase, ProjectSubphase (recursive)
 │   ├── user.py              # User, UserSite
 │   ├── assignment.py        # ProjectAssignment, PhaseStaffAssignment, SubphaseStaffAssignment
-│   ├── equipment.py         # Equipment, EquipmentAssignment, EquipmentBlock
+│   ├── equipment.py         # Equipment, EquipmentSite (M:N), EquipmentAssignment, EquipmentBlock
 │   │                        #   (equipment "types" are a free-form string, not a model)
-│   ├── site.py              # Site, BankHoliday, CompanyEvent
+│   ├── site.py              # Site, BankHoliday, CompanyEvent (counts_as_unavailable = site closure),
+│   │                        #   CompanyEventSite (M:N)
 │   ├── skill.py             # Skill, UserSkill
-│   ├── vacation.py          # Vacation (recurring pattern encoded in description)
+│   ├── vacation.py          # Vacation (absence_type_id; recurring pattern encoded in description)
+│   ├── absence_type.py      # AbsenceType (counts_as_unavailable, sort_order, is_active)
 │   ├── custom_column.py     # CustomColumn, CustomColumnValue
 │   ├── tag.py               # Tag, ProjectTag
 │   ├── note.py              # Note (tablename: staff_notes)
@@ -63,13 +66,18 @@ app/
 ├── scripts/                 # init_db.py (AUTO_INIT_DB), seed_demo.py
 ├── services/                # Business logic
 │   ├── auth.py              # Authentication logic
-│   ├── encryption.py        # AES-256-GCM credential encryption
+│   ├── date_range.py        # parse_day / parse_day_range / ensure_date_order (date validation)
+│   ├── encryption.py        # AES-256-GCM credential encryption, bcrypt / PBKDF2 hashing
+│   ├── login_throttle.py    # Failed-login throttle (in-memory, per process)
 │   ├── master_db.py         # Master DB connection + auto-migrations
+│   ├── project_access.py    # Per-project rights: project-manager edits, self-assignment
 │   ├── proxy.py             # Proxy service
 │   ├── response_builders.py # Shared response formatting
 │   ├── session.py           # Session management
-│   ├── sso.py               # Microsoft Entra SSO
-│   ├── tenant_manager.py    # Per-tenant connection pool management
+│   ├── site_access.py       # can_access_sites / ensure_site_access (superuser site scoping)
+│   ├── sso.py               # Microsoft Entra SSO + tenant client-secret encryption helpers
+│   ├── tenant_data_migrations.py # run_data_migrations(): FK rewrites + orphan cleanup
+│   ├── tenant_manager.py    # Per-tenant connection pool management + auto-migrations
 │   └── tenant_provisioner.py # DB/user creation for new tenants
 ├── middleware/              # Pure-ASGI middleware + auth dependencies
 │   ├── auth.py              # Session-based authentication dependencies
@@ -86,26 +94,28 @@ app/
 ```
 frontend/src/
 ├── App.tsx                  # Root component (pathname branching: /admin vs main app — no router)
-├── main.tsx                 # React entry point
+├── main.tsx                 # React entry point; wires the API client (What-If, onUnauthorized)
 ├── api/                     # API client
 │   ├── client.ts            # Base HTTP client
 │   ├── index.ts             # Re-exports
 │   └── endpoints/           # Per-resource API functions
-│       ├── admin.ts, auth.ts, customColumns.ts, equipment.ts
+│       ├── absenceTypes.ts, admin.ts, auth.ts, customColumns.ts, equipment.ts
 │       ├── projects.ts, settings.ts, sites.ts
 │       ├── skills.ts, staff.ts, users.ts, vacations.ts
 ├── components/
 │   ├── admin/               # Admin portal (AdminApp, TenantList, OrgList, etc.)
 │   ├── gantt/               # Gantt chart components
 │   ├── views/               # Main views (ArchivedView, CrossSiteView, EquipmentView, StaffView)
-│   ├── screens/             # Full-screen pages (LoginScreen, LoadingScreen)
+│   ├── screens/             # Full-screen pages (LoginScreen, LoadingScreen, LoadErrorScreen)
+│   ├── settings/            # Settings hub (SettingsHub, sections.tsx registry, useReportDirty, panels/)
 │   ├── modals/              # Modal dialogs
-│   ├── common/              # Shared components
-│   └── layout/              # Layout components
-├── stores/                  # Zustand state stores
+│   ├── common/              # Shared components (+ useSubmitGuard double-submit guard)
+│   └── layout/              # Layout components (Header: SyncStatus "Offline" badge, WhatIfToggle)
+├── contexts/                # WebSocketContext + wsSlices.ts (entity → refetch slices), …
+├── stores/                  # Zustand state stores (index.ts: resetAllStores / expireSession)
 │   ├── appStore.ts          # Main application state
 │   ├── adminStore.ts        # Admin portal state
-│   ├── uiStore.ts           # UI state (sidebar, modals)
+│   ├── uiStore.ts           # UI state (modals, Settings hub section, drag/resize)
 │   ├── viewStore.ts         # Current view state
 │   ├── whatIfStore.ts       # What-If mode state
 │   ├── customColumnStore.ts # Custom columns state
@@ -113,10 +123,39 @@ frontend/src/
 ├── types/                   # TypeScript type definitions
 │   ├── models.ts            # Data model types
 │   └── index.ts             # Re-exports
-├── hooks/                   # Custom React hooks
+├── hooks/                   # Custom React hooks (incl. useWhatIfBlocked)
 ├── styles/                  # CSS files
 └── utils/                   # Utility functions
+    ├── permissions.ts       # Per-project gates (canEditProject, canEditAssignment, …) —
+    │                        #   mirrors app/services/project_access.py
+    ├── persistFailure.ts    # recoverFromPersistFailure (reload + clear undo)
+    ├── localProjectTree.ts  # Local patch/remove helpers for the project tree
+    ├── reorder.ts           # Local phase/subphase reorder
+    ├── whatIf.ts            # whatIfUnavailableMessage() for blocked creates
+    ├── uniqueById.ts        # De-duplicate one-row-per-site equipment rows
+    └── siteClosure.ts       # buildClosureIndex / getClosureOn — company events that close a site
 ```
+
+Gantt-specific helpers live in `components/gantt/utils/`: `criticalPath.ts`, `diffProjects.ts` (undo/redo diff, incl. dependency arrays), `dependencies.ts` (`resolveDependencyPredecessor`, `dependencyMatches`, `wouldCreateDependencyCycle`) and `completionStatus.ts`.
+
+### Session expiry and logout
+
+A `401` from any session-bound API call fires the API client's `onUnauthorized` hook, wired in `main.tsx` to `expireSession()` (`stores/index.ts`): it calls `resetAllStores()` — app data (keeping only the persisted site id), the What-If sandbox, undo history, notifications and custom-column data — and returns to the login screen. Logout uses the same `resetAllStores()`, so nothing carries over to the next person on the same tab.
+
+### What-If mode
+
+While What-If is active the API client queues every `POST`/`PUT`/`PATCH`/`DELETE` (except auth, settings, admin-portal, notification and Kanban-comment calls) instead of sending it. Create entry points are disabled (`useWhatIfBlocked`), including absences and equipment blocks. Apply replays the queue in order and **stops at the first failure**: the rest stays queued, the view reloads from the server, and `whatIfApplyError` drives a header banner with Retry / Discard / Dismiss. Edits queued while the post-Apply reload runs are kept. Undo history is cleared on enter, Discard and Apply.
+
+## Permissions Model
+
+Role checks (`get_current_user`, `require_superuser`, `require_admin`) gate routes globally. Two per-project rules sit on top of them, in `app/services/project_access.py` and mirrored by `frontend/src/utils/permissions.ts`:
+
+- **Project manager** — the user in `projects.pm_id` may edit that project as a superuser would (fields, phases, subphases, staff and equipment assignments, Kanban moves) but not delete it.
+- **Own assignment** — anyone may create, change and remove staff assignments that book their own time (`staff_id == user.id`), and join or leave Kanban cards.
+
+Handlers apply these after loading the entity, with a `project_id` derived server-side. Site-scoped writes on multi-site data (company events, equipment) go through `app/services/site_access.py`: admins any site, superusers only sites they belong to.
+
+**Sites scope the UI, not access.** Superusers act tenant-wide on projects, phases, subphases, assignments, vacations and notes — `project_access.py` deliberately has no site check. Site membership is enforced only for bank holidays, company events, equipment, equipment blocks and equipment types. Plain users additionally only see the absences of people who share a site with them (`GET /vacations` without `siteId`), and may write custom-column values but not definitions.
 
 ## Dual-Database Model
 
@@ -133,16 +172,22 @@ The application uses two separate SQLAlchemy base classes:
 ### Tenant Routes (`/t/{slug}/api/*`)
 
 1. Request hits FastAPI
-2. `TenantMiddleware` extracts `{slug}` from URL
-3. `TenantManager` looks up the tenant in master DB and provides a database session
-4. `AuthMiddleware` validates the session cookie against the tenant's user store
+2. `TenantMiddleware` extracts `{slug}` from URL and looks the tenant up through a 60-second cache (misses are cached too); unknown → 404, not active → 403
+3. `TenantManager` provides the tenant's connection pool (created once per slug under a lock); if it can't, the response is a 503 with a fixed message — `get_db` never falls back to the `DB_*` database
+4. The auth dependency validates the session cookie against the tenant's `sessions` table and re-reads the user's `active` flag and role
 5. Router handler executes with the tenant-scoped database session
+
+Error bodies are generic: `/health` reports `database: "error"`, tenant 503s carry a fixed message, unhandled exceptions are opaque 500s. Details go to the server log.
+
+### Startup
+
+The lifespan first calls `Settings.check_startup_security()`: with `DEBUG=false`, an empty or published `SESSION_SECRET` (the old default or an example placeholder) is a fatal error. It then initialises the master database and, in single-tenant mode, the tenant database plus the per-tenant auto-migrations (`run_single_tenant_auto_migrations`). In multi-tenant mode those run on each tenant's first pool creation. Both end with the tenant SSO secret encryption step and `run_data_migrations()` (`app/services/tenant_data_migrations.py`).
 
 ### Admin Routes (`/api/admin/*`)
 
 1. Request hits FastAPI
 2. `get_master_db` dependency provides a master database session
-3. Admin authentication validates against admin user store
+3. Admin authentication validates the `admin_session` cookie against `admin_sessions`; `get_current_admin` also refuses (403) an admin who must still change their password
 4. Router handler executes with the master database session
 
 ### SPA Fallback
@@ -166,10 +211,13 @@ Browser ──── WebSocket ──── FastAPI (app/websocket/)
 ```
 
 - **Endpoints**: `/ws` (single-tenant) and `/t/{slug}/ws` (multi-tenant)
+- **Origin check**: a handshake whose `Origin` is another site is closed with 4003 (must match `Host` / `X-Forwarded-Host` or `CORS_ORIGINS`)
 - **Authentication**: Session cookie (`connect.sid`) validated on connection
+- **Revocation**: deactivating, deleting or demoting a user, or setting their password, destroys their sessions and closes their sockets on that process (`manager.disconnect_user`, close 4001)
 - **Tenant isolation**: Each tenant has a separate connection room — users only see activity within their tenant
 - **Keepalive**: Client sends ping every 25 seconds; server responds with pong
-- **Reconnection**: Exponential backoff (2s base, 60s max, 5 attempts)
+- **Reconnection**: Exponential backoff (2s base, 60s max, 5 attempts), plus an immediate retry on the browser `online` event and when the tab becomes visible. No reconnect after 1000/1001/4000–4006; 4001 and 4003 trigger a session re-check (login screen if gone). The context exposes an `offline` flag shown as the header's **Offline** badge
+- **Refetch slices**: `contexts/wsSlices.ts` maps `change:<entity>` to data slices — e.g. `custom_column` → `customColumns`, `settings` → `settings`, `user` → `staff` + `currentUser` + `projects`, `note` / `card_comment` → nothing, unknown → everything. Project and custom-column refreshes are deferred while What-If is active
 - **Broadcasting**: API routers (`projects.py`, `assignments.py`) call `broadcast_change()` after mutations, which sends a message to all connected users in that tenant
 
 There are no HTTP presence endpoints — presence join/leave/list messages travel over the same WebSocket connection as change broadcasts.

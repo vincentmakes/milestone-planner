@@ -112,7 +112,7 @@ export interface CardComment {
   entity_type: CardEntityType;
   entity_id: number;
   project_id: number;
-  author_id: number;
+  author_id: number | null;
   author_name: string | null;
   body: string;
   mentioned_user_ids: number[];

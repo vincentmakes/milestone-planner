@@ -79,6 +79,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     # Startup
     settings = get_settings()
+    try:
+        settings.check_startup_security()
+    except RuntimeError as e:
+        logger.critical("%s", e)
+        raise
+    if settings.has_insecure_session_secret:
+        logger.warning(
+            "SESSION_SECRET is a published default; allowed only because DEBUG=true. "
+            "Never run like this in production."
+        )
     logger.info("Starting Milestone API v%s", __version__)
     logger.info("Mode: %s", "Multi-Tenant" if settings.multi_tenant else "Single-Tenant")
     logger.info("Debug: %s", settings.debug)
@@ -111,6 +121,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Single-tenant: also connect to the default tenant database
         await init_db()
 
+        # ...and apply the per-tenant auto-migrations, which multi-tenant mode
+        # runs on pool creation but single-tenant mode would otherwise never
+        # run (an upgraded install would 500 on columns added since). Every
+        # step is idempotent; a failure is logged but must not block startup.
+        try:
+            from app.database import get_engine
+            from app.services.tenant_manager import run_single_tenant_auto_migrations
+
+            await run_single_tenant_auto_migrations(get_engine())
+            logger.info("Single-tenant auto-migrations applied")
+        except Exception:
+            logger.exception("Single-tenant auto-migrations failed; continuing startup")
+
     yield
 
     # Shutdown
@@ -142,23 +165,11 @@ def create_app() -> FastAPI:
     )
 
     # CORS middleware - handle credentials properly
-    # When allow_credentials=True, we can't use allow_origins=["*"]
-    if settings.cors_origins:
-        # Production: use explicitly configured origins
-        allowed_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
-    elif settings.debug:
-        # Debug only: allow localhost dev servers
-        allowed_origins = [
-            "http://localhost:3333",  # Vite dev server
-            "http://localhost:8484",
-            "http://localhost:8485",
-            "http://127.0.0.1:3333",
-            "http://127.0.0.1:8484",
-            "http://127.0.0.1:8485",
-        ]
-    else:
-        # Production without explicit config: same-origin only (empty list)
-        allowed_origins = []
+    # When allow_credentials=True, we can't use allow_origins=["*"].
+    # settings.allowed_origins is the single origin list (CORS_ORIGINS, else the
+    # localhost dev servers under DEBUG, else same-origin only); the WebSocket
+    # Origin check reads the same property, so the two cannot drift.
+    allowed_origins = settings.allowed_origins
 
     app.add_middleware(
         CORSMiddleware,
@@ -176,6 +187,7 @@ def create_app() -> FastAPI:
 
     # Include routers
     from app.routers import (
+        absence_types,
         admin,
         admin_organizations,
         assignments,
@@ -193,6 +205,7 @@ def create_app() -> FastAPI:
         sites,
         skills,
         staff,
+        tag_groups,
         tags,
         users,
         vacations,
@@ -211,6 +224,7 @@ def create_app() -> FastAPI:
     app.include_router(staff.router, prefix="/api", tags=["Staff"])
     app.include_router(equipment.router, prefix="/api", tags=["Equipment"])
     app.include_router(vacations.router, prefix="/api", tags=["Vacations"])
+    app.include_router(absence_types.router, prefix="/api", tags=["Absence Types"])
     app.include_router(notes.router, prefix="/api", tags=["Notes"])
     app.include_router(projects.router, prefix="/api", tags=["Projects"])
     app.include_router(assignments.router, prefix="/api", tags=["Assignments"])
@@ -219,6 +233,7 @@ def create_app() -> FastAPI:
     app.include_router(custom_columns.router, prefix="/api", tags=["Custom Columns"])
     app.include_router(skills.router, prefix="/api", tags=["Skills"])
     app.include_router(tags.router, prefix="/api", tags=["Tags"])
+    app.include_router(tag_groups.router, prefix="/api", tags=["Tag Groups"])
     app.include_router(kanban.router, prefix="/api", tags=["Kanban"])
     app.include_router(notifications.router, prefix="/api", tags=["Notifications"])
 
@@ -272,9 +287,9 @@ def create_app() -> FastAPI:
                 """,
                 status_code=401,
             )
-        return get_swagger_ui_html(
-            openapi_url="/api/openapi.json", title=f"{app.title} - Swagger UI"
-        )
+        # Relative URL: resolves to /t/{slug}/api/openapi.json under a tenant
+        # prefix, so the schema request carries the same tenant context.
+        return get_swagger_ui_html(openapi_url="openapi.json", title=f"{app.title} - Swagger UI")
 
     @app.get("/api/redoc", include_in_schema=False)
     async def get_redoc(request: Request):
@@ -296,7 +311,7 @@ def create_app() -> FastAPI:
                 """,
                 status_code=401,
             )
-        return get_redoc_html(openapi_url="/api/openapi.json", title=f"{app.title} - ReDoc")
+        return get_redoc_html(openapi_url="openapi.json", title=f"{app.title} - ReDoc")
 
     # Static file serving for frontend
     public_dir = Path("/app/public")

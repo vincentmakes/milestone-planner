@@ -7,7 +7,10 @@ When you navigate to the application URL, you are presented with the login scree
 ![Login screen](../assets/screenshots/login.png){ loading=lazy }
 
 - Enter your **email** and **password**, then click **Sign In**.
-- If your organization uses **Microsoft Entra ID (SSO)**, click **Sign in with Microsoft** to authenticate through your corporate identity provider. The SSO button only appears if configured by your administrator.
+- If your organization uses **Microsoft Entra ID (SSO)**, click **Sign in with Microsoft** to authenticate through your corporate identity provider. The SSO button only appears if configured by your administrator. Finish the Microsoft sign-in in the same browser window within 10 minutes; otherwise you are asked to start again.
+- After 10 failed sign-in attempts for the same e-mail within 15 minutes, further attempts are refused for a while (*"Too many failed sign-in attempts"*). Wait a few minutes or ask an admin to reset your password.
+- If your session expires or an admin deactivates your account or changes your role, you are returned to the login screen; anything you were doing in What-If mode is discarded.
+- If loading the workspace after sign-in fails, an error screen with a **Retry** button appears instead of an empty workspace.
 
 ## The Main Interface
 
@@ -30,7 +33,7 @@ The application is organized into several areas:
 | Cross-Site | **Cross-Site** | Overview of projects across all sites |
 | Archive | **Archived** | Completed/archived projects |
 
-The sidebar can be collapsed to icon-only mode for more screen space. Administrators see additional **Admin** links for user management, site management, and configuration.
+The sidebar can be collapsed to icon-only mode for more screen space. Admins and superusers also see a **Settings** entry in the **Admin** section, which opens the [Settings window](settings.md) — users, sites, calendars, equipment, phases and SSO, limited to what your role can change. Your own time off is under **My absences** in the user menu (see [Vacations & Time Off](vacations.md#my-absences)).
 
 ### Header Controls
 
@@ -52,6 +55,7 @@ The sidebar can be collapsed to icon-only mode for more screen space. Administra
 - **What-If** toggle — Enter/exit scenario planning mode
 - Theme toggle (light/dark)
 - Online users indicator
+- **Offline** badge — appears only while live updates are disconnected. Your edits still save; you just don't see colleagues' changes until the connection is back. It reconnects by itself when the network returns or you switch back to the tab
 - User menu (profile, logout, and the version this instance is running)
 
 !!! note "The header adapts to the window width"
@@ -67,4 +71,8 @@ The bottom of the user menu shows the version this instance is running, for exam
 |------|-------------|
 | **Admin** | Full access: manage users, sites, settings, projects, assignments |
 | **Superuser** | Manage projects and assignments, use What-If mode; cannot manage users or settings |
-| **User** | View-only access to projects and timelines |
+| **User** | View projects and timelines; book their own absences; add themselves to projects and Kanban cards and manage their own assignments. The **project manager** of a project can also edit that project, its phases, assignments, equipment bookings and cards (but not delete it) |
+
+Sites decide what you **see** (the site selector), not what a superuser may **edit**: superusers can change projects, phases, assignments and absences at every site. Only bank holidays, company events, equipment, equipment blocks and equipment types are limited to the superuser's own sites.
+
+See [Who Can Edit a Project](gantt-charts.md#who-can-edit-a-project) for the details.

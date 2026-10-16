@@ -16,8 +16,10 @@ import { PhantomRow } from './PhantomRow';
 import { usePhantomSibling } from '@/hooks';
 import { CustomColumnCell } from '@/components/gantt/CustomColumns';
 import { CompletionSlider } from '@/components/gantt/CompletionSlider';
+import { statusAfterCompletionWrite } from '@/components/gantt/utils/completionStatus';
 import { updatePhase } from '@/api';
-import { formatShortDateRange, formatSingleDate } from '@/utils/date';
+import { formatShortDateRange, formatSingleDate, daysBetweenDateStrings } from '@/utils/date';
+import { canEditProject } from '@/utils/permissions';
 import type { Phase, Subphase, CustomColumn, CustomColumnEntityType } from '@/types';
 import styles from './PhaseRow.module.css';
 
@@ -81,7 +83,7 @@ function getEffectiveCompletion(item: Phase | Subphase): { completion: number | 
     for (const child of children) {
       if (!child) continue;
       const childResult = getEffectiveCompletion(child);
-      const days = Math.max(1, Math.ceil((new Date(child.end_date).getTime() - new Date(child.start_date).getTime()) / (1000*60*60*24)));
+      const days = Math.max(1, daysBetweenDateStrings(child.start_date, child.end_date));
       
       // Unset completion counts as 0% when at least one sibling has a value
       const completion = childResult.completion ?? 0;
@@ -117,9 +119,10 @@ export const PhaseRow = memo(function PhaseRow({
   const setProjects = useAppStore((s) => s.setProjects);
   const openPhaseModal = useUIStore((s) => s.openPhaseModal);
   const triggerScrollToDate = useUIStore((s) => s.triggerScrollToDate);
-  
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
-  
+
+  // Admins, superusers and the project's manager.
+  const canEdit = canEditProject(currentUser, projects.find((p) => p.id === projectId));
+
   // Completion slider state
   const [sliderAnchor, setSliderAnchor] = useState<HTMLElement | null>(null);
   const showSlider = Boolean(sliderAnchor);
@@ -155,25 +158,33 @@ export const PhaseRow = memo(function PhaseRow({
   // Handle clicking on completion badge to show slider
   const handleCompletionClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!canEdit) return;
     // Don't show slider if calculated from children
     const result = getEffectiveCompletion(phase);
     if (result.isCalculated) return;
     setSliderAnchor(e.currentTarget as HTMLElement);
-  }, [phase]);
+  }, [phase, canEdit]);
   
   // Handle completion change from slider
   const handleCompletionChange = useCallback(async (value: number) => {
     try {
       const newCompletion = value === -1 ? null : value;
-      await updatePhase(phase.id, { completion: newCompletion });
+      const response = await updatePhase(phase.id, { completion: newCompletion });
       
-      // Update local state optimistically
-      const updatedProjects = projects.map(p => {
+      // Apply the write locally, status included: status and completion move
+      // together (the sender gets no broadcast of its own change).
+      const updatedProjects = useAppStore.getState().projects.map(p => {
         if (p.id !== projectId) return p;
         return {
           ...p,
           phases: (p.phases ?? []).map(ph => 
-            ph.id === phase.id ? { ...ph, completion: newCompletion } : ph
+            ph.id === phase.id
+              ? {
+                  ...ph,
+                  completion: newCompletion,
+                  status: statusAfterCompletionWrite(response, newCompletion, ph.status),
+                }
+              : ph
           )
         };
       });
@@ -181,7 +192,7 @@ export const PhaseRow = memo(function PhaseRow({
     } catch (err) {
       console.error('Failed to update phase completion:', err);
     }
-  }, [phase.id, projectId, projects, setProjects]);
+  }, [phase.id, projectId, setProjects]);
 
   const hasChildren =
     (phase.children?.length ?? 0) > 0 ||
@@ -236,7 +247,7 @@ export const PhaseRow = memo(function PhaseRow({
         onDragOver={onDragOver}
         onDragLeave={handleDragLeave}
         onDrop={onDrop}
-        onDoubleClick={handleEdit}
+        onDoubleClick={canEdit ? handleEdit : undefined}
         onContextMenu={handleContextMenu}
       >
         {/* Name column - fixed width */}
@@ -291,11 +302,15 @@ export const PhaseRow = memo(function PhaseRow({
                 ? (completionResult.isCalculated ? styles.calculated : styles.manual)
                 : styles.empty
             }`}
-            style={{ cursor: completionResult.isCalculated ? 'default' : 'pointer' }}
+            style={{ cursor: completionResult.isCalculated || !canEdit ? 'default' : 'pointer' }}
             title={
-              completionResult.completion !== null
-                ? (completionResult.isCalculated ? 'Calculated from children' : 'Click to edit')
-                : 'Click to set completion'
+              completionResult.isCalculated
+                ? 'Calculated from children'
+                : !canEdit
+                  ? 'Completion'
+                  : completionResult.completion !== null
+                    ? 'Click to edit'
+                    : 'Click to set completion'
             }
             onClick={handleCompletionClick}
           >
@@ -334,7 +349,9 @@ export const PhaseRow = memo(function PhaseRow({
                   column={column}
                   entityType="phase"
                   entityId={phase.id}
-                  readOnly={!canEdit}
+                  // Values are self-service for every signed-in user (the
+                  // backend only requires authentication); definitions stay admin-only.
+                  readOnly={!currentUser}
                   childEntities={childEntities}
                 />
               </div>

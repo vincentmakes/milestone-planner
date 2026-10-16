@@ -8,6 +8,8 @@ Multi-tenant SaaS platform for R&D project management: interactive Gantt charts 
 
 ```bash
 # Self-contained fresh install (bundled PostgreSQL, app on port 8486, DB on 5433)
+cp .env.example .env   # REQUIRED first: the compose fails without SESSION_SECRET (${SESSION_SECRET:?…})
+# set SESSION_SECRET in .env to: python -c "import secrets; print(secrets.token_hex(32))"
 docker compose -f docker-compose.fresh.yml up -d
 # AUTO_INIT_DB=true creates the schema and seeds an admin
 # (admin@milestone.local — password printed in the container logs)
@@ -54,22 +56,29 @@ When working on this codebase, follow these conventions:
 
 ### Frontend Conventions
 
-- **Store ownership**: domain data (sites/projects/staff/equipment/vacations/holidays/skills/tags/settings) → `appStore`; view state (mode, zoom, expansion, scroll, current view) → `viewStore`; transient UI (modals, drag/resize, dependency linking, context menus) → `uiStore`; What-If sandbox → `whatIfStore`; undo/redo snapshots → `undoStore`; custom-column data/filters/visibility → `customColumnStore`; admin portal → `adminStore`; notification inbox → `notificationStore`. Don't put domain data in `uiStore` or UI state in `appStore`.
+- **Store ownership**: domain data (sites/projects/staff/equipment/vacations/absence types/holidays/skills/tags + tag groups/settings) → `appStore`; view state (mode, zoom, expansion, scroll, current view, per-site tag filter) → `viewStore`; transient UI (modals, drag/resize, dependency linking, context menus) → `uiStore`; What-If sandbox → `whatIfStore`; undo/redo snapshots → `undoStore`; custom-column data/filters/visibility → `customColumnStore`; admin portal → `adminStore`; notification inbox → `notificationStore`. Don't put domain data in `uiStore` or UI state in `appStore`.
 - **All snake_case↔camelCase transforms live in the API layer**, chiefly `src/api/endpoints/projects.ts` (`transformProject/Phase/Subphase/...` — including `type`↔`name` for phases and `sort_order`↔`order_index`). Components consume the frontend model from `src/types/models.ts` only; never transform field names in components.
-- **New write endpoints are What-If-intercepted by default.** The API client queues every PUT/POST/DELETE while What-If mode is active, except URLs under `/api/auth/`, `/api/settings/`, `/api/admin/`, `/api/notifications` and the Kanban *comment* paths (card moves and assignments stay queued — they are plan operations; comments are not, and a queued comment cannot be rolled back on Discard and would be duplicated on Apply). If a new endpoint must bypass What-If (rare), extend the exemption list in `src/api/client.ts` deliberately — and if it must be queued, ensure the local optimistic update is complete since the server won't respond for real.
-- **Optimistic-write failure protocol**: on persist failure, reload the affected data from the server and call `undoStore.clear()` — a stale undo stack against fresh server state corrupts data. `useDragAndDrop` and `useUndoRedo` are the reference implementations.
+- **New write endpoints are What-If-intercepted by default.** The API client queues every POST/PUT/PATCH/DELETE while What-If mode is active, except URLs under `/api/auth/`, `/api/settings/`, `/api/admin/`, `/api/notifications`, `/api/tags`, `/api/tag-groups` (tags and groups are configuration, not plan operations, and the sandbox never snapshots them) and the Kanban *comment* paths (card moves and assignments stay queued — they are plan operations; comments are not, and a queued comment cannot be rolled back on Discard and would be duplicated on Apply). If a new endpoint must bypass What-If (rare), extend the exemption list in `src/api/client.ts` deliberately — and if it must be queued, ensure the local optimistic update is complete since the server won't respond for real.
+- **Optimistic-write failure protocol**: on persist failure, reload the affected data from the server and call `undoStore.clear()` — a stale undo stack against fresh server state corrupts data. Implemented once in `recoverFromPersistFailure(context, err)` (`src/utils/persistFailure.ts`) — call it from the `catch`, don't open-code the two steps. `useDragAndDrop` and `useUndoRedo` are the reference users.
+- **Dialog writes use `useSubmitGuard`** (`src/components/common/useSubmitGuard.ts`, a ref-based in-flight flag) so Enter-twice / double-click cannot create duplicates; Settings-hub panels report unsaved input with `useReportDirty(onDirtyChange, dirty)` (`src/components/settings/useReportDirty.ts`, one combined flag per panel) so the hub asks before switching section or closing.
+- **Action buttons use the shared `Button`** (`src/components/common/Button`, `md`, `icon` prop with an icon from `components/settings/panels/PanelIcons.tsx`) inside `PanelToolbar` (`src/components/settings/PanelToolbar.tsx`: `left` = filters/counts, `right` = secondary actions then the primary "Add X"; `align="end"` when the left slot holds labelled fields); never a raw `<button>` with local styles for an action. Back links are ghost `md` Buttons with `BackIcon`; `sm` only for actions repeated on every row. Documented exceptions: the Gantt header's compact 28 px icon buttons and the Kanban filter toolbar — see `docs/developer-guide/frontend-ui.md` (UI guidelines).
 - **Modals close only via explicit buttons or the Escape key — never on backdrop/outside click.** Clicking outside a modal must NOT close it (it discards in-progress input, e.g. when a text-selection drag ends on the backdrop). The shared `Modal` component (`src/components/common/Modal/`) enforces this and has no overlay-click prop; new dialogs must use it. Standalone dialogs that can't (like the admin-portal modals in `src/components/admin/modals/`) must not attach close handlers to their overlay and should use the `useEscapeKey` hook for Escape support. This rule is for modals/dialogs only — dropdowns, context menus, and popovers keep their click-outside-to-close behavior.
+- **Per-project permission checks go through `src/utils/permissions.ts`** (`isPrivileged`, `canEditProject`, `canEditProjectById`, `canEditAssignment`, `canManageAnyProject`, `isSelf`) — never an inline `role === 'admin' || role === 'superuser'` check. A project's manager (`project.pm_id === currentUser.id`) edits that project like a superuser (except deleting it), and anyone edits staff assignments that book their own time; the helpers mirror `app/services/project_access.py`. Inline role checks remain only for *global* gates (new project, import, custom-column definitions, settings, What-If).
 - Direct localStorage access goes through the typed helpers and `STORAGE_KEYS` in `src/utils/storage.ts` (which also documents the Zustand `persist` key names — keep that list in sync). Zustand stores declare their persist keys inline (`milestone-app-storage-v3`, `milestone-view-storage-v1`, `milestone-custom-columns-storage-v1`) and serialize `Set`s as arrays with custom `merge` — follow the existing pattern in `viewStore`.
 - ESLint: `react-hooks/rules-of-hooks` is an **error** (fails CI); most other rules are at **warn** level, so CI's lint job will not catch everything else. Treat warnings as errors when writing new code.
-- Frontend model types live in `src/types/models.ts`; dates are `YYYY-MM-DD` strings throughout the frontend.
+- Frontend model types live in `src/types/models.ts`; dates are `YYYY-MM-DD` strings throughout the frontend (the backend may send the midnight form `YYYY-MM-DDT00:00:00.000Z`).
+- **Never parse a model date with `new Date(str)` / `parseISO(str)` or derive one with `toISOString().split('T')[0]`** — both are UTC and shift the day for users west of UTC. Use `parseLocalDate` / `formatLocalDate` / `toDateOnly` / `addDaysToDateString` / `daysBetweenDateStrings` (and `formatDateISO(new Date())` for "today") from `src/utils/date.ts`; day counts between local midnights are `Math.round`ed (DST). Tests pin `process.env.TZ = 'America/New_York'` before imports (`*.newYork.test.ts`). `new Date(str)` is fine only for real timestamps (`created_at`, …).
 - **Node 24** is the required toolchain (declared in `frontend/package.json` `engines`, used by the Dockerfile and all CI jobs) — don't build with older Node locally.
 
 ### Security Requirements
 
 - **Two independent auth systems — never cross them.** Tenant app: `connect.sid` cookie → `sessions` table in the tenant DB. Admin portal: `admin_session` cookie → `admin_sessions` table in the master DB. A tenant session must never grant admin-portal access or vice versa.
-- Every tenant route needs an auth dependency (`get_current_user` at minimum). Every admin route needs `get_current_admin` or `require_superadmin`.
-- Tenant user passwords: bcrypt (rounds=12) with lazy upgrade from legacy PBKDF2/plaintext on login. Admin-portal passwords: PBKDF2-SHA512. Both in `app/services/encryption.py`.
-- SSO `state` parameters are HMAC-signed (carrying the tenant slug through the shared organization callback) — never accept an unsigned or unvalidated state.
+- Every tenant route needs an auth dependency (`get_current_user` at minimum). Every admin route needs `get_current_admin` or `require_superadmin`. `get_current_admin` returns 403 while `must_change_password` is set; only `/admin/auth/change-password` (`get_current_admin_allow_password_change`) and `/admin/auth/me` (`get_current_admin_optional`) let such an admin through.
+- Tenant user passwords: bcrypt (rounds=12) with lazy upgrade from legacy PBKDF2/plaintext on login. Admin-portal passwords: PBKDF2-SHA512 `pbkdf2_sha512$600000$<salt>$<hash>` with lazy upgrade from the legacy `salt:hash` (10 000 iterations) on login. Both in `app/services/encryption.py`. New/changed passwords ≥ 8 chars (both systems).
+- Both login routes go through `app/services/login_throttle.py` (`check_login_allowed` / `record_login_failure` / `record_login_success`) and run a dummy hash verify for unknown e-mails (equal timing). Keep that on any new password route.
+- SSO `state` parameters are HMAC-signed (carrying the tenant slug through the shared organization callback) **and** bound to the browser by a one-time `sso_nonce` cookie (10 min) — never accept an unsigned, unvalidated or nonce-less state.
+- Tenant-level SSO client secrets are encrypted at rest too: read/write `sso_config.client_secret` only through `read_tenant_client_secret` / `store_tenant_client_secret` / `apply_secret_update` (`app/services/sso.py`; the masked `****abcd` form keeps the stored value). Never return it unmasked.
+- Error bodies stay generic (`/health` reports `database: "error"`, the tenant 503 is a fixed message, 500s are opaque) — details go to the log only.
 - Organization-level SSO **takes precedence** over tenant-level SSO; enabling tenant SSO while org SSO is active is rejected with 409 (`_reject_if_org_sso_active`). Preserve this guardrail.
 - API docs (`/api/docs`, `/api/redoc`, `/api/openapi.json`) are gated to `role == "admin"` — keep them gated.
 
@@ -116,6 +125,8 @@ When asked to **add, update, or refresh screenshots in the MkDocs docs** (`docs/
    INIT_ADMIN_PASSWORD=... /tmp/pw-venv/bin/python scripts/screenshots/capture_admin.py  # admin portal
    ```
 4. **Verify** with `mkdocs build --strict` (catches broken image refs).
+
+All three capture scripts default to `http://localhost:8486`; set `SCREENSHOT_BASE_URL` (e.g. `http://localhost:8487`) to capture from another instance.
 
 **Conventions** the scripts enforce:
 - Viewport **1440×900**, **light theme**, **en-US locale** (pinned on the browser context), Gantt **Q (Quarter)** zoom — matches the existing screenshots' visual style.
@@ -230,12 +241,15 @@ Do **not** use an `[Unreleased]` section — every change belongs to a concrete 
 ## Terminology
 
 - **Tenant** — an isolated customer workspace with its own PostgreSQL database (`milestone_<slug>`), reached at `/t/{slug}/`. Managed from the admin portal.
-- **Site** — a physical location *within* a tenant (labs/offices). Most data (projects, equipment, holidays, events) is site-scoped; users belong to one or more sites via `user_sites`.
+- **Site** — a physical location *within* a tenant (labs/offices). Most data (projects, equipment, holidays, events) is site-scoped; users belong to one or more sites via `user_sites`, equipment via `equipment_sites`, company events via `company_event_sites`. **Sites scope the UI, not access**: superusers act tenant-wide on projects/phases/assignments/vacations/notes (deliberate — `project_access.py`); site membership is enforced only for holidays, events, equipment, equipment blocks and equipment types (`site_access.py`).
 - **Organization** — a master-DB grouping of tenants that share one Microsoft Entra SSO configuration.
-- **Tenant roles** (`users.role`): `admin` > `superuser` > `user`. Superusers manage projects/staff/equipment within their sites; admins additionally manage sites, users, and settings.
+- **Tenant roles** (`users.role`): `admin` > `superuser` > `user`. Superusers manage projects/staff/equipment (calendar and equipment data only at their own sites, see Site); admins additionally manage sites, users, and settings. A `user` set as a project's manager (`pm_id`) edits that one project, and anyone manages their own staff assignments (see Tenant role model).
 - **Admin-portal roles** (`admin_users.role`): `superadmin` > `admin`. These are master-DB accounts for the `/admin` portal, completely separate from tenant users. Don't confuse tenant `admin` with portal `admin`.
 - **Phase / Subphase** — projects contain phases; subphases nest recursively under phases or other subphases (`parent_type` = `phase`|`subphase`, with `depth`).
 - **Equipment block** — maintenance/unavailability window on equipment (the equipment analogue of a vacation).
+- **Site closure** — a company event with `counts_as_unavailable = true`: every staff member on one of the event's sites is unavailable for its dates (like an unavailable absence). Plain events and bank holidays never reduce capacity.
+- **Tag / tag group** — tags are coloured project labels, tenant-wide but optionally limited to some sites (`all_sites` + `tag_sites`). A *tag group* (e.g. *Project type*) categorises tags; a **single-select** group allows one of its tags per project, and at most one single-select group may **colour projects** (`colors_projects`: the Gantt project bar takes the colour of the project's tag from that group). Admin-managed in Settings → Tags; attaching is part of editing a project.
+- **Absence / absence type** — a vacation row is an *absence*; its tenant-wide *absence type* (Holidays, Home Office, Illness, …) decides via `counts_as_unavailable` whether it reduces capacity. Home Office is shown but leaves the person plannable.
 - **What-If mode** — a client-side sandbox: edits are queued locally instead of sent to the server, then applied or discarded.
 
 ## Project Structure
@@ -256,17 +270,21 @@ app/
     project.py         # Project, ProjectPhase, ProjectSubphase (recursive)
     user.py            # User (full_name property, role, max_capacity, is_system), UserSite
     assignment.py      # ProjectAssignment, PhaseStaffAssignment, SubphaseStaffAssignment
-    equipment.py       # Equipment, EquipmentAssignment, EquipmentBlock
-    site.py            # Site, BankHoliday, CompanyEvent
+    equipment.py       # Equipment (sites M:N, site_ids), EquipmentSite, EquipmentAssignment, EquipmentBlock
+    site.py            # Site, BankHoliday, CompanyEvent (counts_as_unavailable = closure),
+                       #   CompanyEventSite (event ↔ site M:N)
     skill.py           # Skill, UserSkill
-    vacation.py        # Vacation (recurring pattern encoded in description)
+    vacation.py        # Vacation (absence_type_id; recurring pattern encoded in description)
+    absence_type.py    # AbsenceType (+ DEFAULT_ABSENCE_TYPES seed list)
     custom_column.py   # CustomColumn, CustomColumnValue (EAV)
-    tag.py             # Tag, ProjectTag (global project tags, shared across sites)
+    tag.py             # Tag (group_id, all_sites, sort_order, sites M:N), TagGroup (single_select,
+                       #   colors_projects), TagSite, ProjectTag
     note.py            # Note — tablename is staff_notes
     settings.py        # Settings (KV), PredefinedPhase, SSOConfig (singleton)
     session.py         # Session (express-session compatible)
     presence.py        # ProjectPresence
   routers/             # FastAPI route handlers (registered in main.py)
+    absence_types.py   # Absence type CRUD + reorder (writes admin-only)
     admin/             # Admin portal: auth.py, tenants.py, users.py → /api/admin/*
     admin_organizations.py  # Organization CRUD + org SSO + tenant attach → /api/admin/organizations
     assignments.py     # Staff assignments (3 levels) + equipment assignments
@@ -280,25 +298,40 @@ app/
     predefined_phases.py # Phase template management
     projects.py        # Project/phase/subphase CRUD + reorder
     settings.py        # Instance settings (KV) + tenant SSO settings
-    sites.py           # Sites, bank holidays (incl. Nager refresh), company events
+    sites.py           # Sites, bank holidays (edit, .ics import, Nager refresh), multi-site
+                       #   company events (/events routes + legacy /sites/{id}/events)
     skills.py          # Skills + user-skill assignment
     staff.py           # Staff read endpoints (staff are users; created via /users)
-    tags.py            # Project tag CRUD
+    tag_groups.py      # Tag group CRUD + reorder (admin writes)
+    tags.py            # Project tag CRUD + reorder (admin writes; read for everyone)
     users.py           # User management
-    vacations.py       # Vacation/time-off management
+    vacations.py       # Vacation/absence CRUD + bulk import (/vacations/import)
   schemas/             # Pydantic request/response schemas (one file per domain;
                        #   base.py holds Node-compatible serializers)
   services/
     auth.py            # Shared admin-session validation
+    date_range.py      # parse_day / parse_day_range (400 on bad/inverted/>366-day ranges),
+                       #   ensure_date_order (422) for partial updates
     encryption.py      # AES-256-GCM credentials + bcrypt/PBKDF2 password hashing
+    login_throttle.py  # In-memory, per-process failed-login throttle (tenant + admin portal)
     master_db.py       # Master DB singleton: init, idempotent auto-migrations,
                        #   verify_admin_exists() (auto-creates admin@milestone.local)
+    project_access.py  # Per-project ACL: is_privileged, can_edit_project, require_project_editor
+                       #   (PM rule), require_assignment_write (self-assignment), project_id_for_*
     proxy.py           # Corporate proxy resolution (env vars or PAC file)
     response_builders.py # Shared ORM→dict response helpers
     session.py         # SessionService (express-session compatible)
+    tag_rules.py       # validate_project_tags (site applicability + single-select → 400) and the
+                       #   conflict counters behind the 409s of tag/group edits
+    site_access.py     # can_access_sites / ensure_site_access (superuser site scoping for
+                       #   multi-site events + equipment)
     sso.py             # SSOService: effective config (org > tenant), Graph groups,
-                       #   authorization URL + HMAC-signed state
-    tenant_manager.py  # Lazy per-tenant connection pools + idle cleanup + auto-migrations
+                       #   authorization URL + HMAC-signed state; tenant client-secret
+                       #   at-rest helpers (read_/store_tenant_client_secret, apply_secret_update)
+    tenant_data_migrations.py # run_data_migrations(): guarded FK rewrites + orphan cleanups,
+                       #   called at the end of tenant_manager._run_auto_migrations
+    tenant_manager.py  # Lazy per-tenant connection pools (per-slug creation lock) + idle
+                       #   cleanup + auto-migrations
     tenant_provisioner.py # Tenant DB/user creation, schema, seed; managed-PG support
   middleware/
     auth.py            # Session auth dependencies (get_current_user, require_*)
@@ -314,7 +347,7 @@ frontend/
     App.tsx            # Top-level branching (pathname /admin* vs main app), no router
     api/
       client.ts        # Fetch wrapper: cookie auth, tenant prefix, What-If interception
-      endpoints/       # admin, auth, customColumns, equipment, projects (transform
+      endpoints/       # absenceTypes, admin, auth, customColumns, equipment, projects (transform
                        #   layer), settings, sites, skills, staff, tags, users, vacations
     components/
       admin/           # AdminApp, AdminDashboard, TenantList, OrganizationList,
@@ -322,20 +355,31 @@ frontend/
       gantt/           # GanttContainer, ProjectPanel/ (tree rows), Timeline/ (bars,
                        #   dependencies, phantom overlays), CustomColumns/, CompletionSlider/,
                        #   ShiftTooltip/ (Shift-hover date tooltip), ContextMenuContainer.tsx,
-                       #   utils/ (incl. criticalPath.ts, diffProjects.ts)
+                       #   utils/ (incl. criticalPath, diffProjects, dependencies, completionStatus)
       views/           # StaffView (workload heatmap), EquipmentView, CrossSiteView, ArchivedView
-      screens/         # LoginScreen, LoadingScreen
-      modals/          # ModalContainer (lazy) + all dialogs
-      common/          # Button, Input, Select, Modal, ContextMenu, OnlineUsers, ActivityFeed, …
-      layout/          # MainLayout, Header/ (controls), Sidebar/, ResourcePanel/
-    contexts/          # WebSocketContext (WS → debounced refetch), TimelineScrollContext,
-                       #   ReorderContext (row reordering in ProjectPanel)
+      screens/         # LoginScreen, LoadingScreen, LoadErrorScreen (initial load failed → Retry)
+      settings/        # Settings hub: SettingsHub.tsx (shell), sections.tsx (SETTINGS_SECTIONS
+                       #   registry: group/id/label/minRole/Panel), useReportDirty.ts, panels/
+                       #   (General, Sites, BankHolidays, CompanyEvents, Users, Skills,
+                       #   AbsenceTypes, Equipment, EquipmentTypes, PredefinedPhases, SSO)
+      modals/          # ModalContainer (lazy) + dialogs (incl. MyAbsencesModal, VacationModal,
+                       #   VacationICSImport)
+      common/          # Button, Input, Select, Modal, ContextMenu, OnlineUsers, ActivityFeed,
+                       #   ICSImportPanel (shared .ics preview/import, 5 MB cap),
+                       #   useSubmitGuard.ts (double-submit guard), …
+      layout/          # MainLayout, Header/ (controls incl. SyncStatus "Offline" badge,
+                       #   WhatIfToggle + Apply-failure banner), Sidebar/, ResourcePanel/
+    contexts/          # WebSocketContext (WS → debounced refetch), wsSlices.ts (entity →
+                       #   slice map), TimelineScrollContext, ReorderContext (row reordering)
     stores/            # 7 Zustand stores (see Frontend Architecture)
     types/models.ts    # All frontend entity types (snake_case, YYYY-MM-DD dates)
     hooks/             # useAuth, useDataLoader, useWebSocket, useDragAndDrop, … (see catalog)
-    utils/             # date, storage (STORAGE_KEYS, themes), csvExport, xmlExport,
-                       #   recurringVacation, equipmentOverlap, subphaseUtils, …
-                       #   (criticalPath/diffProjects live in components/gantt/utils/)
+    utils/             # date, storage (STORAGE_KEYS, themes), csvExport, xmlExport, ics,
+                       #   recurringVacation, siteClosure, permissions, equipmentOverlap,
+                       #   subphaseUtils, persistFailure, reorder, localProjectTree, whatIf,
+                       #   uniqueById, …
+                       #   (criticalPath/diffProjects/dependencies/completionStatus live in
+                       #   components/gantt/utils/)
   vite.config.ts       # tenantSpaPlugin (/t/* SPA fallback in dev), @ → src alias, port 3333
   vitest.config.ts     # Vitest (jsdom) config
 docs/                  # MkDocs Material source (user-guide/, admin-guide/, developer-guide/)
@@ -369,7 +413,7 @@ docker run --rm -v $(pwd)/frontend:/app -w /app node:24-alpine sh -c "npm instal
 # Start production
 docker-compose up -d
 
-# Fresh install (includes PostgreSQL)
+# Fresh install (includes PostgreSQL; needs .env with SESSION_SECRET)
 docker compose -f docker-compose.fresh.yml up -d
 
 # Rebuild after backend changes
@@ -423,11 +467,12 @@ Settings are loaded by `app/config.py` (pydantic-settings, `.env`, case-insensit
 | `DATABASE_URL` | *(unset)* | Overrides individual `DB_*` vars (`postgres://` auto-rewritten to `postgresql+asyncpg://`) |
 | `DB_SSL` | `false` | Require SSL to the tenant DB |
 | `DB_POOL_SIZE` / `DB_POOL_MAX_OVERFLOW` / `DB_POOL_TIMEOUT` | `20`/`10`/`30` | Connection pool tuning |
-| `SESSION_SECRET` | insecure default | Session signing secret — **must change in production** |
+| `SESSION_SECRET` | insecure default (`.env.example` ships it empty) | Session signing / SSO-state HMAC secret; single-tenant mode also derives the encryption key from it. **Required in production**: with `DEBUG=false`, startup refuses an empty or published placeholder value (`Settings.check_startup_security()`, `INSECURE_SESSION_SECRETS` in `app/config.py`); `DEBUG=true` only logs |
 | `SESSION_COOKIE_NAME` | `connect.sid` | Tenant session cookie (express-session compatible) |
 | `SESSION_MAX_AGE` | `86400` | Session lifetime (seconds) |
 | `SECURE_COOKIES` | `false` | Set `Secure` on cookies (enable behind HTTPS) |
 | `CORS_ORIGINS` | *(unset)* | Comma-separated allowed origins (localhost defaults in debug; same-origin otherwise) |
+| `FORWARDED_ALLOW_IPS` | *(env-only)* `127.0.0.1` | Read by uvicorn (`--proxy-headers --forwarded-allow-ips` in the Dockerfile `CMD`; passed through by `docker-compose.fresh.yml`): proxy addresses whose `X-Forwarded-For` is trusted. **Set it behind a reverse proxy** — otherwise every client is the proxy's IP and the per-(IP, e-mail) login lockout applies to everyone. `*` only when the app port is reachable solely via the proxy |
 | `MULTI_TENANT` | `false` | Enable multi-tenant mode (TenantMiddleware + master-driven tenant pools) |
 | `DEFAULT_TENANT` | *(unset)* | Optional default tenant slug |
 | `MASTER_DB_HOST` / `MASTER_DB_PORT` / `MASTER_DB_NAME` / `MASTER_DB_USER` / `MASTER_DB_PASSWORD` | `-`/`5432`/`milestone_master`/`-`/`-` | Master DB connection (multi-tenant) |
@@ -455,26 +500,29 @@ Two declarative bases: **`Base`** (tenant databases, `app/database.py`) and **`M
 | `users` | `User` | App users *and* staff resources. email (unique), password, names, job_title, role CHECK(`admin`/`superuser`/`user`), `max_capacity` % (part-time), SSO fields, `active`, `is_system` (protects provisioned admin). Props: `full_name`, `is_admin`, `site_ids`, `can_modify_site()` |
 | `user_sites` | `UserSite` | M:N user ↔ site (composite PK) |
 | `sessions` | `Session` | express-session-compatible session store: `sid` PK, `sess` JSON text, `expired` (ms epoch) |
-| `sso_config` | `SSOConfig` | Tenant-level SSO singleton (CHECK `id = 1`): enabled, Entra tenant/client/secret, redirect URI, auto_create_users, default_role |
+| `sso_config` | `SSOConfig` | Tenant-level SSO singleton (CHECK `id = 1`): enabled, Entra tenant/client id, `client_secret` (**AES-256-GCM encrypted**, legacy plaintext encrypted by the auto-migration — use the `sso.py` helpers), redirect URI, auto_create_users, default_role |
 
 **Sites & calendar**
 
 | Table | Model | Purpose |
 |-------|-------|---------|
 | `sites` | `Site` | Physical locations: name (unique), location, country/region codes, timezone, `last_holiday_fetch` |
-| `bank_holidays` | `BankHoliday` | Public holidays per site (affect working-day calc); `is_custom` for manual entries; refreshable from the Nager API |
-| `company_events` | `CompanyEvent` | Audits/meetings per site with color — displayed but do **not** affect working-day calc |
+| `bank_holidays` | `BankHoliday` | Public holidays per site (affect working-day calc); `is_custom` for manual, imported or edited entries (editing a Nager row sets `is_custom = 1`); refreshable from the Nager API — a refresh replaces only non-custom rows and skips Nager entries on any day a custom holiday covers, or sharing a name (trimmed, case-insensitive) with a custom holiday of the same year (moved holidays) |
+| `company_events` | `CompanyEvent` | Audits/meetings with color — displayed but do **not** affect working-day calc. `counts_as_unavailable` (BOOLEAN NOT NULL DEFAULT FALSE) marks a **site closure**: staff of the event's sites are unavailable for its dates (evaluated client-side). `site_id` is **legacy** (nullable, FK `ON DELETE SET NULL`), kept equal to the first linked site; site links live in `company_event_sites` |
+| `company_event_sites` | `CompanyEventSite` | M:N event ↔ site (composite PK, both FKs CASCADE). Deleting a site deletes events left with no site |
 
 **Projects**
 
 | Table | Model | Purpose |
 |-------|-------|---------|
-| `projects` | `Project` | R&D projects: name, site_id, customer, pm_id, confirmed, volume, dates, notes, archived; `tags` M:N |
+| `projects` | `Project` | R&D projects: name, `site_id` (FK `ON DELETE CASCADE` — deleting a site deletes its projects), customer, pm_id, confirmed, volume, dates, notes, archived; `tags` M:N |
 | `project_phases` | `ProjectPhase` | Phases: project_id (CASCADE), `type` (name), dates, `is_milestone`, `sort_order`, `completion`, `status` (Kanban column), `dependencies` (JSON text) |
 | `project_subphases` | `ProjectSubphase` | **Recursive** subphases: `parent_id` + `parent_type` CHECK(`phase`/`subphase`), `depth`, dates, milestone/completion/`status`/dependencies |
-| `tags` / `project_tags` | `Tag` / `ProjectTag` | Global project tags (shared across sites) + M:N join |
+| `tag_groups` | `TagGroup` | Tag categories: name (unique), `single_select`, `colors_projects` (partial unique index `idx_tag_groups_colors_projects` → at most one group; only allowed with `single_select`), `sort_order` |
+| `tags` / `project_tags` | `Tag` / `ProjectTag` | Project tags: name (unique tenant-wide), color, `group_id` (FK `tag_groups` `ON DELETE SET NULL`), `all_sites` (default true), `sort_order` + M:N join with projects |
+| `tag_sites` | `TagSite` | M:N tag ↔ site, consulted only when `all_sites = false` (both FKs CASCADE). Deleting a site deletes restricted tags left with no site |
 | `custom_columns` | `CustomColumn` | User-defined Gantt columns: `column_type` CHECK(`text`/`boolean`/`list`), `list_options` JSON, site_id (NULL = global), display_order, width |
-| `custom_column_values` | `CustomColumnValue` | EAV values: `entity_type` CHECK(`project`/`phase`/`subphase`) + entity_id, unique per (column, entity) |
+| `custom_column_values` | `CustomColumnValue` | EAV values: `entity_type` CHECK(`project`/`phase`/`subphase`) + entity_id, unique per (column, entity). No FK to the entity: project/site/phase/subphase deletes remove them explicitly, and orphans are cleaned by the tenant data migrations |
 
 **Assignments** (three staff levels + equipment)
 
@@ -489,16 +537,18 @@ Two declarative bases: **`Base`** (tenant databases, `app/database.py`) and **`M
 
 | Table | Model | Purpose |
 |-------|-------|---------|
-| `equipment` | `Equipment` | Lab equipment: name, type (free-form string, managed via `/equipment-types`), site_id |
+| `equipment` | `Equipment` | Lab equipment: name, type (free-form string, managed via `/equipment-types`). `site_id` is **legacy** "primary site" (FK `ON DELETE SET NULL`), kept equal to the lowest linked site id; site links live in `equipment_sites` |
+| `equipment_sites` | `EquipmentSite` | M:N equipment ↔ site (composite PK, both FKs CASCADE, index `idx_equipment_sites_site`). Deleting a site deletes only equipment left with no site and re-points survivors' `site_id` (`Site.equipment` has no delete cascade) |
 | `equipment_blocks` | `EquipmentBlock` | Maintenance/unavailability windows (the vacation analogue for equipment) |
-| `vacations` | `Vacation` | Staff time-off. Recurring absences are encoded in `description` as `[R:0,2,4]` (days of week, 0=Sun) — parsed by `frontend/src/utils/recurringVacation.ts` |
+| `vacations` | `Vacation` | Staff time-off (absences). `absence_type_id` FK → `absence_types` (nullable, `ON DELETE SET NULL`; NULL = treated as unavailable). Recurring absences are encoded in `description` as `[R:0,2,4]` (days of week, 0=Sun) — parsed by `frontend/src/utils/recurringVacation.ts` |
+| `absence_types` | `AbsenceType` | Tenant-wide absence categories: name (unique), color `#RRGGBB`, `counts_as_unavailable` (false = shown but capacity not reduced, e.g. Home Office), `sort_order`, `is_active`. Seeded when empty: Holidays, Home Office, Illness, Business Trip, Training |
 | `skills` / `user_skills` | `Skill` / `UserSkill` | Global skills + M:N with proficiency CHECK(1–5) |
 
 **Misc**
 
 | Table | Model | Purpose |
 |-------|-------|---------|
-| `card_comments` | `CardComment` | Comments on Kanban cards. Polymorphic `(entity_type, entity_id)` → phase/subphase (same shape as `custom_column_values`, so **no FK** — `delete_phase`/`delete_subphase` must clear them explicitly). Has a real `author_id` + `updated_at` |
+| `card_comments` | `CardComment` | Comments on Kanban cards. Polymorphic `(entity_type, entity_id)` → phase/subphase (same shape as `custom_column_values`, so **no FK** — project/site/phase/subphase deletes must clear them explicitly; orphans are cleaned by the tenant data migrations). `author_id` is nullable, FK `ON DELETE SET NULL` (comments survive user deletion; UI shows "Deleted user") + `updated_at` |
 | `notifications` | `Notification` | Per-recipient inbox: `user_id`, `type` (`assigned`/`comment`/`mention`/`status_change`), `actor_id` (SET NULL), entity/project refs, rendered `title`/`body`, `read_at`. Partial index on unread. Due-soon/overdue are **derived client-side**, never stored |
 | `staff_notes` | `Note` | Notes pinned to a site/date. Class is `Note` but tablename is **`staff_notes`**. All schema sources now create `staff_notes`; a legacy `notes` table on old installs is migrated and dropped by `migrations/add_staff_notes.sql` / the tenant auto-migration |
 | `settings` | `Settings` | Instance key-value settings (e.g. `instance_title`, `show_weekends`) |
@@ -509,10 +559,10 @@ Two declarative bases: **`Base`** (tenant databases, `app/database.py`) and **`M
 
 | Table | Model | Purpose |
 |-------|-------|---------|
-| `tenants` | `Tenant` | Tenant registry: UUID id, name, slug (unique), database_name/user, status (`active`/`suspended`/`pending`/`archived`), plan/limits, `organization_id`, `required_group_ids` (JSONB) + `group_membership_mode` (`any`/`all`) for SSO group gating |
+| `tenants` | `Tenant` | Tenant registry: UUID id, name, slug (unique), database_name/user, status (`active`/`suspended`/`pending`/`archived` — `TenantStatus` Literal in `app/schemas/tenant.py`; create/update/status/delete/provision reset the tenant cache, and all but create also close the pool, so changes apply immediately), plan/limits, `organization_id`, `required_group_ids` (JSONB) + `group_membership_mode` (`any`/`all`) for SSO group gating |
 | `tenant_credentials` | `TenantCredentials` | Per-tenant DB password, AES-256-GCM encrypted (`iv:tag:ciphertext` hex) |
 | `tenant_audit_log` | `TenantAuditLog` | Admin actions on tenants (actor, action, JSONB details) |
-| `admin_users` | `AdminUser` | Portal admins: email, PBKDF2 password hash, role (`admin`/`superadmin`), `must_change_password` |
+| `admin_users` | `AdminUser` | Portal admins: email, PBKDF2-SHA512 password hash (`pbkdf2_sha512$600000$salt$hash`; legacy `salt:hash` upgraded on login), role (`admin`/`superadmin`, `Literal`-validated), `must_change_password` (enforced by `get_current_admin`) |
 | `admin_sessions` | `AdminSession` | Admin-portal session store (same shape as tenant `sessions`) |
 | `organizations` | `Organization` | Groups tenants for shared SSO |
 | `organization_sso_config` | `OrganizationSSOConfig` | Org-level Entra SSO: tenant/client id, encrypted secret, redirect URI, auto-create + default role |
@@ -523,51 +573,53 @@ Two declarative bases: **`Base`** (tenant databases, `app/database.py`) and **`M
 - **Tenant migrations**: `python migrations/run_migration.py <name>` — single-tenant: runs against `DB_NAME`; multi-tenant: iterates every `active` tenant from the master DB, connecting with `PG_ADMIN_*` (preferred) or the decrypted per-tenant credentials.
 - **Master migrations**: `python migrations/run_migration_master.py <name>` — statement-by-statement execution via `split_sql_statements()`, which **correctly preserves `DO $$ ... END $$;` blocks** (covered by `tests/test_migration_parser.py`).
 - The list of available migrations is the set of `.sql` files in `migrations/` — run either runner with no argument to list them. One stray legacy migration lives at `scripts/sql/migrations/001_add_max_capacity.sql`.
-- **Auto-migrations run in two places** on top of the SQL files: `master_db._apply_pending_migrations()` (master schema drift, on startup) and `tenant_manager._run_auto_migrations()` (per-tenant drift, on first pool creation). Both are idempotent DDL.
+- **Auto-migrations run in two places** on top of the SQL files: `master_db._apply_pending_migrations()` (master schema drift, on startup) and `tenant_manager._run_auto_migrations()` (per-tenant drift, on first pool creation — and, in single-tenant mode, at startup via `run_single_tenant_auto_migrations()` in the lifespan). Both are idempotent. The tenant one ends with two non-DDL steps: `encrypt_tenant_sso_secret()` (legacy plaintext `sso_config.client_secret` → encrypted; needs the in-process key, so it cannot be a SQL file) and the Python data-migration hook `run_data_migrations()` (`app/services/tenant_data_migrations.py`: guarded FK rewrites `projects.site_id` → CASCADE, `card_comments.author_id` → nullable SET NULL, then orphan cleanup of `custom_column_values` / `card_comments`). Each step runs in its own transaction and never raises. The SQL lives in `tenant_provisioner` constants shared with the fresh-install schema and the `.sql` files — add new data fixes there, not inline.
+- 1.6.0 migration: `add_tag_groups_and_sites.sql` (`tag_groups`, `tag_sites`, the three new `tags` columns; also applied by the tenant auto-migration via the provisioner's `TAGS_UPGRADE_SQL`).
+- 1.5.0 migrations: `projects_site_fk_cascade.sql`, `card_comments_author_set_null.sql`, `cleanup_orphaned_values.sql` (all also applied automatically by the hook above). `migrations/migrate_all_tenants.sh` now **requires** a migration file argument; the legacy `run_migration_all_tenants.sql` / `generate_tenant_migrations.sql` helpers (which created a wrong-shaped `company_events`) were removed.
 - `setup_databases.sql` is the canonical fresh-install schema and must stay in sync with the models (see the schema-change checklist above).
 
 ---
 
 ## API Reference
 
-All routers are mounted under `/api` (multi-tenant deployments reach them at `/t/{slug}/api/...`; the admin portal is always at `/api/admin/*` with no tenant prefix). Auth column: **user** = `get_current_user`, **superuser** = `require_superuser` (admin OR superuser), **admin** = `require_admin`, **portal** = `get_current_admin` (master DB), **superadmin** = `require_superadmin`, **public** = no auth.
+All routers are mounted under `/api` (multi-tenant deployments reach them at `/t/{slug}/api/...`; the admin portal is always at `/api/admin/*` with no tenant prefix). Auth column: **user** = `get_current_user`, **superuser** = `require_superuser` (admin OR superuser), **admin** = `require_admin`, **portal** = `get_current_admin` (master DB), **superadmin** = `require_superadmin`, **public** = no auth. **user (PM)** = `get_current_user` + `require_project_editor` from `app/services/project_access.py` (admin, superuser, or the project's `pm_id`); **user (PM/own-assignment)** = `require_assignment_write` (project editor, or `staff_id == user.id`). Both are checked after loading the entity, against the server-derived `project_id`.
 
 ### Health & diagnostics (`app/routers/health.py`)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/health` and `/api/health` | public | Status, mode, version, backend id, `default_tenant`, DB reachability |
-| GET | `/api/ws-debug` | user | WebSocket diagnostics (tenant, connection/online counts) |
-| POST | `/api/ws-debug/broadcast` | user | Fire a synthetic `change:project` broadcast |
+| GET | `/health` and `/api/health` | public | Status, mode, version, backend id, `default_tenant`, DB reachability (`database: "error"` on failure — details only in the log) |
+| GET | `/api/ws-debug` | admin | WebSocket diagnostics (tenant, connection/online counts) |
+| POST | `/api/ws-debug/broadcast` | admin | Fire a synthetic `change:project` broadcast |
 
 ### Authentication & SSO (`app/routers/auth.py`)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/auth/login` | public | Email/password login → session + `connect.sid` cookie |
+| POST | `/auth/login` | public | Email/password login → session + `connect.sid` cookie. Throttled: 10 failures / 15 min per (tenant, IP, e-mail) → 429 + `Retry-After`; password > 72 bytes → 400 |
 | POST | `/auth/logout` | session | Destroy session, clear cookie |
 | GET | `/auth/me` | public | Current user (fresh from DB) or `{user: null}` |
-| POST | `/auth/change-password` | user | Change own password (verifies current) |
+| POST | `/auth/change-password` | user | Change own password (verifies current; new ≥ 8 chars) |
 | GET | `/sso/config` | public | Public SSO info for the login page (no secret) |
-| GET | `/sso/config/full` | admin | Full SSO config incl. masked secret + org-precedence info |
-| PUT | `/sso/config` | admin | Update tenant SSO (409 if org SSO active) |
+| GET | `/sso/config/full` | admin | Full SSO config incl. masked secret (`****` + last 4, never the plaintext) + org-precedence info |
+| PUT | `/sso/config` | admin | Update tenant SSO (409 if org SSO active). Secret: omitted or masked value keeps the stored one, `""` clears it; stored encrypted (same on every SSO write route) |
 | GET | `/auth/sso/config` | public | Public SSO config (`SSOConfigResponse`) |
 | PUT | `/auth/sso/config` | admin | Update tenant SSO (alternate path, same guardrail) |
 | GET | `/auth/sso/status` | public | Effective SSO status (org vs tenant) + group requirements |
-| GET | `/auth/sso/login` | public | Build the Entra authorization URL (HMAC-signed `state` carries the slug) |
-| GET | `/auth/sso/callback` | public | OAuth callback: token exchange, Graph `/me`, group validation, find/auto-create user, create session |
+| GET | `/auth/sso/login` | public | Build the Entra authorization URL (HMAC-signed `state` carries the slug + a nonce; sets the one-time `sso_nonce` cookie, 10 min) |
+| GET | `/auth/sso/callback` | public | OAuth callback: verify state **and** that its nonce matches this browser's `sso_nonce` cookie (cleared whatever the outcome), token exchange, Graph `/me`, group validation, find/auto-create user, create session |
 
 ### Users & staff (`users.py`, `staff.py`)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/users`, `/users/{id}` | superuser | List / detail |
-| POST | `/users` | admin | Create user |
-| PUT | `/users/{id}` | superuser | Update user |
+| POST | `/users` | admin | Create user (password ≥ 8 chars) |
+| PUT | `/users/{id}` | superuser | Update user (superusers: non-admin targets only, no email/password changes except their own; role/active admin-only; an admin cannot change their own role; password ≥ 8 chars, > 72 bytes → 400; unknown site/skill ids rejected) |
 | DELETE | `/users/{id}` | admin | Delete (rejects `is_system`) |
 | PUT | `/users/{id}/toggle-active` | admin | Enable/disable |
 | GET | `/staff`, `/staff/{id}` | user | Staff read views (staff *are* users — created via `/users`) |
-| GET | `/staff/{id}/availability` | user | Availability calculation |
+| GET | `/staff/{id}/availability` | user | Availability calculation (`startDate`/`endDate` validated, ≤ 366 days, else 400) |
 | GET | `/staff/{id}/assignments` | user | All assignments for a staff member (in `assignments.py`) |
 
 ### Sites, holidays & events (`sites.py`)
@@ -577,12 +629,19 @@ All routers are mounted under `/api` (multi-tenant deployments reach them at `/t
 | GET | `/sites` | user | Current user's sites |
 | GET | `/sites/all` | admin | All sites |
 | GET | `/sites/{id}` | user | Site detail |
-| POST / PUT / DELETE | `/sites`, `/sites/{id}` | admin | Site CRUD |
+| POST / PUT / DELETE | `/sites`, `/sites/{id}` | admin | Site CRUD. PUT: an explicit `null` clears `location`/`city`/`country_code`/`region_code` (`model_fields_set`; omitted = unchanged). DELETE deletes the site's projects (FK CASCADE) and their polymorphic comments/custom-column values; equipment linked to other sites survives |
 | GET | `/sites/{id}/holidays`, `/holidays` | user | Holidays per site / cross-site |
-| POST / DELETE | `/sites/{id}/holidays`, `…/{hid}` | superuser | Add / remove holiday |
+| POST | `/sites/{id}/holidays` | superuser | Add custom holiday |
+| PUT | `/sites/{id}/holidays/{hid}` | superuser | Edit any holiday (sets `is_custom = 1`) |
+| DELETE | `/sites/{id}/holidays/{hid}` | superuser | Delete any holiday — custom or Nager (a Nager one returns on the next refresh) |
+| POST | `/sites/{id}/holidays/import` | superuser | Bulk import `{items:[{date,end_date,name}]}` as custom; dedup on (date, name) → `{created, skipped}` |
 | POST | `/sites/{id}/holidays/refresh` | superuser | Fetch public holidays from the Nager API |
-| GET | `/sites/{id}/events`, `/events` | user | Company events per site / all |
-| POST / DELETE | `/sites/{id}/events`, `…/{eid}` | superuser | Create / delete event |
+| GET | `/sites/{id}/events`, `/events?siteId=` | user | Company events linked to a site (via `company_event_sites`); responses carry `site_ids` + legacy `site_id` + `counts_as_unavailable` |
+| POST / PUT / DELETE | `/events`, `/events/{id}` | superuser | Multi-site event CRUD (`site_ids` + `counts_as_unavailable` on create/update; DELETE removes it from every site) |
+| POST | `/events/import` | superuser | Bulk import `{site_ids, color, counts_as_unavailable, items}` (the flag applies to newly created events only); an existing (date, end_date, name) gains missing site links → `{created, linked, skipped}` |
+| POST / DELETE | `/sites/{id}/events`, `…/{eid}` | superuser | Legacy single-site create / unlink (event deleted only when no site is left) |
+
+All holiday/event writes also enforce site membership for superusers (`ensure_site_access` from `app/services/site_access.py`; admins any site).
 
 ### Projects, phases & subphases (`projects.py`)
 
@@ -590,52 +649,59 @@ All routers are mounted under `/api` (multi-tenant deployments reach them at `/t
 |--------|------|------|-------------|
 | GET | `/projects` | user | List (site-scoped, filters) |
 | GET | `/projects/{id}` | user | Detail with phases/subphases/assignments |
-| POST / PUT / DELETE | `/projects`, `/projects/{id}` | superuser | Project CRUD |
-| POST | `/projects/{id}/phases` | superuser | Add phase |
-| PUT / DELETE | `/phases/{id}` | superuser | Update / delete phase |
-| PUT | `/projects/{id}/phases/reorder` | superuser | Reorder phases |
-| POST | `/phases/{id}/subphases` | superuser | Add subphase to a phase |
-| POST | `/subphases/{id}/children` | superuser | Add nested subphase |
-| PUT / DELETE | `/subphases/{id}` | superuser | Update / delete subphase |
-| PUT | `/subphases/{parent}/reorder` | superuser | Reorder subphases |
+| POST / DELETE | `/projects`, `/projects/{id}` | superuser | Create / delete project (a PM may **not** delete) |
+| PUT | `/projects/{id}` | user (PM) | Update project — the PM may change every field, incl. `pm_id` (hand-over) and `archived` |
+| POST | `/projects/{id}/phases` | user (PM) | Add phase |
+| PUT / DELETE | `/phases/{id}` | user (PM) | Update / delete phase. PUT: explicit `"completion": null` → 0 % via `apply_completion` (omitted = unchanged). DELETE also removes its subphases, their assignments, comments and custom-column values |
+| PUT | `/projects/{id}/phases/reorder` | user (PM) | Reorder phases |
+| POST | `/phases/{id}/subphases` | user (PM) | Add subphase to a phase (`project_id` taken from the phase, body value ignored) |
+| POST | `/subphases/{id}/children` | user (PM) | Add nested subphase (`project_id` taken from the parent) |
+| PUT / DELETE | `/subphases/{id}` | user (PM) | Update / delete subphase (404 if missing; PUT `completion: null` → 0 % like phases) |
+| PUT | `/subphases/{parent}/reorder` | user (PM) | Reorder subphases (parent resolved first; 404 if missing) |
 
 These handlers call rich `broadcast_change()` — their paths are in `BroadcastMiddleware.SKIP_PATTERNS`.
+
+**Validation (all write routes):** dates where `end < start` → 422 (`DateRangeOrdered` mixin in `app/schemas/base.py` on request bodies, `ensure_date_order()` in `app/services/date_range.py` for merged partial updates) on projects, phases, subphases, assignments, equipment bookings/blocks and absences. Unknown referenced ids (site, `pm_id`, staff, skill, …) → 400/404 instead of an FK 500. Date query filters are parsed with `parse_day` / `parse_day_range` (400 on malformed input; availability ranges capped at 366 days).
 
 ### Assignments (`assignments.py` — note the three per-level route families)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/projects/{id}/staff` | superuser | Assign staff at project level |
-| PUT / DELETE | `/assignments/{id}` | superuser | Update / remove project-level assignment |
-| POST | `/phases/{id}/staff` | superuser | Assign staff at phase level |
-| PUT / DELETE | `/phase-staff/{id}` | superuser | Update / remove phase-level assignment |
-| POST | `/subphases/{id}/staff` | superuser | Assign staff at subphase level |
-| PUT / DELETE | `/subphase-staff/{id}` | superuser | Update / remove subphase-level assignment |
-| POST | `/projects/{id}/equipment` | superuser | Book equipment on a project |
+| POST | `/projects/{id}/staff` | user (PM/own-assignment) | Assign staff at project level |
+| PUT / DELETE | `/assignments/{id}` | user (PM/own-assignment) | Update / remove project-level assignment |
+| POST | `/phases/{id}/staff` | user (PM/own-assignment) | Assign staff at phase level (`project_id` resolved from the phase, body value ignored) |
+| PUT / DELETE | `/phase-staff/{id}` | user (PM/own-assignment) | Update / remove phase-level assignment |
+| POST | `/subphases/{id}/staff` | user (PM/own-assignment) | Assign staff at subphase level (`project_id` resolved from the subphase) |
+| PUT / DELETE | `/subphase-staff/{id}` | user (PM/own-assignment) | Update / remove subphase-level assignment |
+| POST | `/projects/{id}/equipment` | user (PM) | Book equipment on a project (no self-service) |
 
-⚠ `PUT/DELETE /equipment-assignments/{id}` is defined in **both** `assignments.py` and `equipment.py`; `equipment.py` is registered first in `main.py`, so its handlers win. Edit the equipment-router versions.
+`PUT/DELETE /equipment-assignments/{id}` live in `equipment.py` only (the shadowed duplicates that once sat in `assignments.py` were removed).
 
 ### Equipment (`equipment.py`)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/equipment-types` | user | Distinct equipment types |
-| PUT / DELETE | `/equipment-types/{name}` | superuser | Rename / delete a type |
-| GET | `/equipment` | user | Site-scoped list |
-| GET | `/equipment/all` | superuser | All equipment |
-| GET | `/equipment/{id}` | user | Detail |
-| POST / PUT / DELETE | `/equipment`, `/equipment/{id}` | superuser | Equipment CRUD |
+| GET | `/equipment-types` | user | Distinct equipment types (no create route — types come from equipment) |
+| PUT / DELETE | `/equipment-types/{name}` | superuser | Rename (`?new_type=`) / delete a type. Superusers only when every equipment of that type is at their sites (403 otherwise). DELETE → 409 while any equipment uses the type |
+| GET | `/equipment?siteId=&includeAllSites=` | user | Active equipment, plain array (no pagination), **one row per equipment–site pair** (like `GET /staff`): `site_id`/`site_name` = that pair, plus `site_ids`/`site_names` |
+| GET | `/equipment/all` | superuser | All equipment incl. inactive, one row each (with `site_ids`) |
+| GET | `/equipment/{id}` | user | Detail (one row, `site_ids`) |
+| POST / PUT / DELETE | `/equipment`, `/equipment/{id}` | superuser | Equipment CRUD; `site_ids: int[]` (legacy `site_id` accepted as `[site_id]`; empty → 422). Superusers only for equipment whose sites are **all** theirs (`ensure_site_access`; admins any) |
 | GET | `/equipment/{id}/assignments` | user | Bookings for one piece of equipment |
-| PUT / DELETE | `/equipment-assignments/{id}` | superuser | Update / delete booking |
-| GET | `/equipment/{id}/availability` | user | Availability calculation |
-| GET | `/equipment-blocks`, `/equipment/{id}/blocks` | user | Maintenance blocks (all / per equipment) |
-| POST / PUT / DELETE | `/equipment-blocks`, `…/{id}` | superuser | Block CRUD |
+| PUT / DELETE | `/equipment-assignments/{id}` | user (PM) | Update / delete booking |
+| GET | `/equipment/{id}/availability` | user | Availability calculation (`startDate`/`endDate` validated, ≤ 366 days, else 400) |
+| GET | `/equipment-blocks`, `/equipment/{id}/blocks` | user | Maintenance blocks (all / per equipment; `?siteId=` joins through `equipment_sites`) |
+| POST / PUT / DELETE | `/equipment-blocks`, `…/{id}` | superuser | Block CRUD (same superuser site rule as the equipment) |
 
-### Vacations, notes, skills, tags (`vacations.py`, `notes.py`, `skills.py`, `tags.py`)
+### Vacations, absence types, notes, skills, tags (`vacations.py`, `absence_types.py`, `notes.py`, `skills.py`, `tags.py`, `tag_groups.py`)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET / POST / PUT / DELETE | `/vacations`, `/vacations/{id}` | user | Vacation CRUD (own-user checks inside handlers) |
+| GET / POST / PUT / DELETE | `/vacations`, `/vacations/{id}` | user | Vacation CRUD (own-user checks inside handlers; superusers any staff, tenant-wide); optional `absence_type_id`. `GET` without `siteId`: admins/superusers get all, a plain user only their own + colleagues sharing a site |
+| POST | `/vacations/import` | user | Bulk import `{staff_id, items:[{start_date,end_date,description,absence_type_id}]}`; same own-user rule; dedup on (staff, start, end) → `{created, skipped}` |
+| GET | `/absence-types` | user | Absence types (active and inactive) |
+| POST / PUT / DELETE | `/absence-types`, `/absence-types/{id}` | admin | Absence type CRUD; DELETE → 409 while any vacation uses the type |
+| PUT | `/absence-types/reorder` | admin | Reorder (`{type_order: [ids]}`) |
 | GET | `/notes` | user | List staff notes |
 | POST / DELETE | `/notes`, `/notes/{id}` | superuser | Create / delete note |
 | GET | `/skills`, `/skills/{id}` | user | Skills list / detail |
@@ -643,8 +709,14 @@ These handlers call rich `broadcast_change()` — their paths are in `BroadcastM
 | GET | `/skills/user/{uid}` | user | A user's skills |
 | PUT | `/skills/user/{uid}` | superuser | Replace a user's skills |
 | POST / DELETE | `/skills/user/{uid}/{sid}` | superuser | Add / remove one skill |
-| GET | `/tags` | user | List tags |
-| POST / PUT / DELETE | `/tags`, `/tags/{id}` | superuser | Tag CRUD |
+| GET | `/tags` | user | List tags (`group_id`, `all_sites`, `site_ids`, `sort_order`; ordered by group, sort order, name) |
+| POST / PUT / DELETE | `/tags`, `/tags/{id}` | admin | Tag CRUD (`all_sites` true clears `site_ids`; unknown group/site → 404). PUT → 409 (string detail with the count) when moving the tag into a single-select group a project already has another tag of, or when restricting sites while projects at a removed site use it |
+| PUT | `/tags/reorder` | admin | `{tag_order: [ids]}` → `sort_order = index` |
+| GET | `/tag-groups` | user | List groups |
+| POST / PUT / DELETE | `/tag-groups`, `/tag-groups/{id}` | admin | Group CRUD. `colors_projects` requires `single_select` (400, checked on the merged state) and is exclusive (setting it clears the other group). PUT `single_select: true` → 409 while a project holds 2+ tags of the group. DELETE ungroups the tags |
+| PUT | `/tag-groups/reorder` | admin | `{group_order: [ids]}` |
+
+Project writes (`POST /projects`, `PUT /projects/{id}`) validate `tag_ids` with `validate_project_tags()` (`app/services/tag_rules.py`): a tag that does not apply to the project's site, or two tags of one single-select group → 400; unknown ids are dropped silently (What-If replay). Inline project tags are `{id, name, color, group_id}`.
 
 ### Kanban (`kanban.py`, prefix `/kanban`)
 
@@ -653,12 +725,12 @@ The board itself has **no read endpoint** — `GET /projects/{id}` already retur
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/kanban/projects/{id}/comment-counts` | user | Comment counts per card (kept out of `GET /projects/{id}`, which is called once per project by `loadAllProjects()`) |
-| PUT | `/kanban/cards/{entity_type}/{id}/status` | user **+ assignee-or-superuser** | Move a card; echoes the derived `{status, completion}` so the client reconciles without a refetch |
-| POST / DELETE | `/kanban/cards/{et}/{id}/assignees`, `…/{staff_id}` | superuser | Assign/unassign — **creates the phase/subphase staff assignment** at the assignee's `max_capacity` (409 on duplicate) |
+| PUT | `/kanban/cards/{entity_type}/{id}/status` | user **+ assignee-or-project-editor** | Move a card (superuser, the PM, or an assignee of that card); echoes the derived `{status, completion}` so the client reconciles without a refetch |
+| POST / DELETE | `/kanban/cards/{et}/{id}/assignees`, `…/{staff_id}` | user (PM/own-assignment) | Assign/unassign (editors manage anyone; any user may join/leave a card themself) — **creates the phase/subphase staff assignment** at `allocation` (1–100) or the assignee's `max_capacity` (409 on duplicate) |
 | GET / POST | `/kanban/cards/{et}/{id}/comments` | user | Comment thread; POST is open to **any authenticated user** |
 | PUT / DELETE | `/kanban/comments/{id}` | user (author; delete also admin/superuser) | Edit / delete a comment |
 
-⚠ `require_card_status_write` (`app/services/card_access.py`) is the only resource-level ACL in the app: superuser/admin, **or** an assignee of that card. It takes `user_id`/`is_privileged` primitives, not a `User`, because `get_current_user` often returns the lightweight `SessionUser`.
+⚠ `require_card_status_write` (`app/services/card_access.py`): project editor (the route passes `is_privileged=await can_edit_project(...)`, so superuser/admin/PM), **or** an assignee of that card. It takes `user_id`/`is_privileged` primitives, not a `User`, because `get_current_user` often returns the lightweight `SessionUser`.
 
 ### Notifications (`notifications.py`, prefix `/notifications`)
 
@@ -677,7 +749,7 @@ The board itself has **no read endpoint** — `GET /projects/{id}` already retur
 | GET | `/custom-columns`, `/custom-columns/with-values` | user | Columns / columns with values |
 | POST / PATCH / DELETE | `/custom-columns`, `…/{id}` | admin | Column CRUD |
 | PATCH | `/custom-columns/reorder` | admin | Reorder columns |
-| PUT | `/custom-columns/values`, `…/values/batch` | user | Write values (single / batch) |
+| PUT | `/custom-columns/values`, `…/values/batch` | user | Write values (single / batch ≤ 500, one transaction, validated like single writes). Any authenticated user; definitions stay admin-only |
 | DELETE | `/custom-columns/values/{col}/{etype}/{eid}` | user | Clear a value |
 
 ### Predefined phases & settings (`predefined_phases.py`, `settings.py`)
@@ -696,8 +768,10 @@ The board itself has **no read endpoint** — `GET /projects/{id}` already retur
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/import/mpp/test` | superuser | Verify the MPP parser (Java/mpxj) is functional |
-| POST | `/import/mpp` | superuser | Parse an uploaded MS Project file |
-| POST | `/import/project` | superuser | Import a parsed project |
+| POST | `/import/mpp` | superuser | Parse an uploaded MS Project file (preview) |
+| POST | `/import/project` | superuser | Upload + parse (CSV/XML/MPP/MPT/MPX) and create the project with its phase tree (completion clamped 0–100 via `apply_completion`, so finished tasks → Done) |
+
+All `/import/*` uploads are read with `read_upload_capped()` — **20 MB** cap (`MAX_IMPORT_UPLOAD_BYTES`, else 413) — and parsing runs via `run_in_threadpool` so mpxj/JPype never blocks the event loop.
 | GET / POST | `/import/test`, `/import/test-upload` | superuser | Import diagnostics |
 | POST | `/export/mpp/{pid}` | superuser | Export project to MPP |
 | GET / POST | `/export/csv/{pid}` | superuser | Export project to CSV |
@@ -707,9 +781,9 @@ The board itself has **no read endpoint** — `GET /projects/{id}` already retur
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/admin/auth/login` / `/admin/auth/logout` | public / portal | Portal login/logout |
-| GET | `/admin/auth/me` | optional | Current admin |
-| POST | `/admin/auth/change-password` | portal | Change password (min 8 chars; clears `must_change_password`) |
+| POST | `/admin/auth/login` / `/admin/auth/logout` | public / portal | Portal login/logout (login throttled like `/auth/login`, scope `admin`) |
+| GET | `/admin/auth/me` | optional | Current admin (also while `must_change_password`) |
+| POST | `/admin/auth/change-password` | portal* | Change password (min 8 chars; clears `must_change_password`). *The only write an admin with `must_change_password` may call — every other portal route returns 403 until then |
 | GET | `/admin/tenants`, `/admin/tenants/{id}` | portal | Tenant list / detail |
 | POST / PUT / DELETE | `/admin/tenants`, `…/{id}` | portal | Tenant CRUD |
 | PUT | `/admin/tenants/{id}/status` | portal | active / suspended / archived |
@@ -744,17 +818,21 @@ There are no HTTP presence endpoints — presence works exclusively through the 
 | Session store | `sessions` table, **tenant DB** | `admin_sessions` table, **master DB** |
 | Users | `users` (tenant DB) | `admin_users` (master DB) |
 | Roles | `admin` > `superuser` > `user` | `superadmin` > `admin` |
-| Password hash | bcrypt (rounds=12), lazy upgrade from legacy PBKDF2/plaintext on login | PBKDF2-SHA512 |
+| Password hash | bcrypt (rounds=12), lazy upgrade from legacy PBKDF2/plaintext on login | PBKDF2-SHA512 `pbkdf2_sha512$600000$salt$hash`, lazy upgrade from legacy `salt:hash` |
+| Login throttle | 10 failures / 15 min per (`tenant:<slug>`, IP, e-mail) → 429; plus 100 / 15 min per public IP (all scopes) | same, scope `admin` |
+| Forced change | — | `must_change_password` → 403 everywhere but change-password / me |
 | Dependencies | `get_current_user`, `require_superuser`, `require_admin` (`app/middleware/auth.py`) | `get_current_admin`, `require_superadmin` (`app/routers/admin/auth.py`) |
 
-- `SessionService` (`app/services/session.py`) stores the full user dict (incl. site ids/names) in the session; `get_current_user_optional` builds a lightweight `SessionUser` from it without a DB hit, while `get_current_user` fetches fresh and also stashes the user into `scope["state"]` for broadcast attribution.
+- `SessionService` (`app/services/session.py`) stores the full user dict (incl. site ids/names) in the session; `get_current_user_optional` builds a lightweight `SessionUser` from it without a DB hit, while `get_current_user` re-reads `active`/`role` from `users` on every request (401 + session destroyed for missing/inactive users; the live role wins over the snapshot) and stashes the user into `scope["state"]` for broadcast attribution. `SessionService.destroy_user_sessions()` is called on deactivate/delete/role change/password set so revocation is immediate — and also closes the user's open WebSockets on this process (`manager.disconnect_user`, close code 4001).
 - On startup, `master_db.verify_admin_exists()` auto-creates `admin@milestone.local` (superadmin, random password logged, `must_change_password=true`) if no admin exists.
 
 ### Tenant role model
 
-- `user` — read access + self-service (own vacations, custom-column values).
-- `superuser` — everything a user can, plus manage projects/phases/assignments, staff-affecting data, equipment, holidays/events, predefined phases, tags, skills — within their sites.
-- `admin` — everything, plus sites, users, settings, SSO config, custom-column definitions, API docs access.
+- **Sites scope the UI, not access.** Superusers (and admins) act **tenant-wide** on projects, phases, subphases, assignments, vacations and staff notes — `project_access.py` deliberately has no site check. Site membership is enforced (`site_access.py`: `can_access_sites` / `ensure_site_access`) only for bank holidays, company events, equipment, equipment blocks and equipment types (a type only when *all* its equipment is at the superuser's sites). Don't add site checks to project routes without a product decision.
+- `user` — read access (absences: `GET /vacations` without `siteId` returns only their own and those of people sharing a site) + self-service (own vacations, custom-column **values** (definitions are admin-only), **own staff assignments**: a user may add/update/remove assignments where `staff_id` is their own id at project/phase/subphase level, and join/leave Kanban cards).
+- **Project manager rule** — the user whose id is `projects.pm_id` gets superuser rights on *that one project*: all project fields (incl. handing over via `pm_id`, `archived`), phases/subphases, staff and equipment assignments, Kanban moves. Not: deleting the project, creating projects, import, tag/group definitions, exports. Enforced by `app/services/project_access.py`; superuser behaviour is unchanged.
+- `superuser` — everything a user can, plus manage projects/phases/assignments, staff-affecting data, equipment, holidays/events, predefined phases, skills (calendar/equipment data within their sites, the rest tenant-wide — see above). May edit non-admin users' details/sites/skills but never their email or password (own account excepted) and never an admin account.
+- `admin` — everything, plus sites, users, settings, SSO config, custom-column definitions, tags and tag groups (Settings → Tags), API docs access.
 - `is_system=true` marks the provisioned admin; deletion is rejected.
 
 ### Microsoft Entra SSO
@@ -762,15 +840,16 @@ There are no HTTP presence endpoints — presence works exclusively through the 
 Two configuration levels, resolved by `SSOService.get_effective_sso_config()`:
 
 1. **Organization SSO** (master DB, `organization_sso_config`) — shared by every tenant in the organization; secret encrypted; **takes precedence**. Tenant-level SSO cannot be enabled while org SSO is active (409, `_reject_if_org_sso_active` — covered by `tests/test_sso_guardrails.py`).
-2. **Tenant SSO** (`sso_config` singleton in the tenant DB) — per-tenant fallback.
+2. **Tenant SSO** (`sso_config` singleton in the tenant DB) — per-tenant fallback. Its `client_secret` is encrypted at rest with the same key as tenant credentials (`TENANT_ENCRYPTION_KEY`; single-tenant: derived from `SESSION_SECRET`). If the key changes, `read_tenant_client_secret` logs once and returns `None` → SSO reports "not configured" until the secret is re-entered.
 
-Flow: `GET /auth/sso/login` builds the Entra authorization URL with an **HMAC-signed `state` carrying the tenant slug** (org SSO uses one shared callback URL with no `/t/{slug}/` prefix, so the slug must survive the round-trip) → `GET /auth/sso/callback` verifies the state, exchanges the code, fetches the profile from Microsoft Graph `/me`, optionally validates group membership (`fetch_user_groups` pages Graph `/me/memberOf`; `required_group_ids` + `group_membership_mode` `any`/`all` on the tenant), finds or auto-creates the user (`auto_create_users`, `default_role`), creates a session, and redirects to `/t/{slug}/`.
+Flow: `GET /auth/sso/login` builds the Entra authorization URL with an **HMAC-signed `state` carrying the tenant slug and a nonce** (org SSO uses one shared callback URL with no `/t/{slug}/` prefix, so the slug must survive the round-trip) and sets the nonce as the `sso_nonce` cookie (10 min) → `GET /auth/sso/callback` verifies the state signature and that its nonce equals this browser's cookie (so the flow only completes in the browser that started it and a callback URL cannot be replayed; the cookie is cleared on every outcome), exchanges the code, fetches the profile from Microsoft Graph `/me`, optionally validates group membership (`fetch_user_groups` pages Graph `/me/memberOf`; `required_group_ids` + `group_membership_mode` `any`/`all` on the tenant), finds or auto-creates the user (`auto_create_users`, `default_role`), creates a session, and redirects to `/t/{slug}/`.
 
 ## Multi-Tenancy Internals
 
-- **`TenantMiddleware`** (`app/middleware/tenant.py`) is a **pure ASGI middleware** (not `BaseHTTPMiddleware` — that breaks WebSockets). It matches `/t/{slug}/...`, resolves the tenant through a 60-second in-memory cache (plain dicts, not ORM objects, to avoid session-detachment issues), rewrites `scope["path"]` to strip the prefix, and stores `tenant` / `tenant_slug` / `tenant_engine` in `scope["state"]`. Missing/inactive/unreachable tenants → 404/403/503. WebSocket scopes are passed through untouched (the WS handler resolves the tenant itself). Only wraps the app when `MULTI_TENANT=true`.
+- **`TenantMiddleware`** (`app/middleware/tenant.py`) is a **pure ASGI middleware** (not `BaseHTTPMiddleware` — that breaks WebSockets). It matches `/t/{slug}/...`, resolves the tenant through a 60-second in-memory cache (plain dicts, not ORM objects, to avoid session-detachment issues), rewrites `scope["path"]` to strip the prefix, and stores `tenant` / `tenant_slug` / `tenant_engine` in `scope["state"]`. Missing/inactive/unreachable tenants → 404/403/503 (the 503 body is a fixed message; the DB error goes only to the log). **Misses are cached too** (60 s, in a separate `_negative_cache` capped at 1 000 entries, expired/oldest evicted first — hits are never evicted by a miss flood), so a flood of unknown slugs doesn't hit the master DB; `clear_tenant_cache(slug)` drops hits and misses. WebSocket scopes are passed through untouched (the WS handler resolves the tenant itself). Only wraps the app when `MULTI_TENANT=true`.
 - **Tenant info lives in `scope["state"]` (a plain dict).** In HTTP handlers, `request.state.tenant_slug` attribute access works — Starlette's `Request.state` lazily wraps `scope["state"]` in a `State` object. In code that handles raw ASGI scopes (middleware, helpers that may not receive a full `Request`), read `scope["state"]["tenant_slug"]` directly; the broadcast helper handles both forms.
-- **`tenant_manager`** (`app/services/tenant_manager.py`) keeps lazy per-tenant engine pools (size 20 + 10 overflow), closes pools idle > 15 min (cleanup loop every 5 min), decrypts the tenant DB password on first connect, and runs idempotent per-tenant auto-migrations on pool creation.
+- **No fallthrough to `DB_*`**: when a request carries a tenant slug but no pool exists, `get_db` / `get_db_readonly` raise 503 (`resolve_tenant_session_factory` in `app/database.py`) instead of silently serving the default database.
+- **`tenant_manager`** (`app/services/tenant_manager.py`) keeps lazy per-tenant engine pools (size 20 + 10 overflow; creation guarded by a per-slug `asyncio.Lock` so concurrent first requests build one pool), closes pools idle > 15 min (cleanup loop every 5 min), decrypts the tenant DB password on first connect, and runs idempotent per-tenant auto-migrations on pool creation.
 - **`tenant_provisioner`** (`app/services/tenant_provisioner.py`) creates the PG role + database, grants, applies the tenant schema, and seeds defaults (predefined phases, skills, "Main Site", admin user). It validates identifiers against injection and handles **managed PostgreSQL** (Azure/RDS/Cloud SQL) where the admin is not a superuser: grants the tenant role to the admin before `CREATE DATABASE` and reassigns `public` schema ownership.
 - Tenant DB credentials are stored AES-256-GCM-encrypted (`iv:tag:ciphertext` hex, key = `TENANT_ENCRYPTION_KEY`) in `tenant_credentials`, Node-compatible format.
 
@@ -778,16 +857,17 @@ Flow: `GET /auth/sso/login` builds the Entra authorization URL with an **HMAC-si
 
 ### Backend (`app/websocket/`)
 
-- Endpoints: `/ws` (single-tenant) and `/t/{slug}/ws` (multi-tenant), in `handler.py`. Auth = the `connect.sid` cookie validated against the tenant DB. Close codes **4001–4006** signal auth/session failures (no session, invalid session, user disabled, replaced connection, …).
-- `ConnectionManager` (`manager.py`, global `manager`): per-tenant rooms, multiple connections per user (multi-tab), presence join/leave/list with deduped online users, `broadcast_to_tenant(exclude_user/exclude_connection)`, **`send_to_user(tenant, user_id, message)`** for per-user delivery (notifications), asyncio-lock guarded.
+- Endpoints: `/ws` (single-tenant) and `/t/{slug}/ws` (multi-tenant), in `handler.py`. **Origin check first** (`is_origin_allowed`: the `Origin` must match `Host`/`X-Forwarded-Host` or a configured CORS origin; absent `Origin` = non-browser client, allowed) → else close **4003**. Auth = the `connect.sid` cookie validated against the tenant DB. Close codes: 4001 no/invalid/expired session **or revoked** (`disconnect_user`), 4002 auth error, 4003 origin not allowed / user disabled, 4004 tenant not found, 4005 tenant not active, 4006 tenant DB not configured.
+- `ConnectionManager` (`manager.py`, global `manager`): per-tenant rooms, multiple connections per user (multi-tab), presence join/leave/list with deduped online users, `broadcast_to_tenant(exclude_user/exclude_connection)`, **`send_to_user(tenant, user_id, message)`** for per-user delivery (notifications), **`disconnect_user(tenant, user_id, except_session_id=…)`** for session revocation (per process, best effort), asyncio-lock guarded.
 - **Two broadcast tiers**: routers with meaningful UX events call `broadcast_change(request, user, entity_type, entity_id, project_id, action, summary)` (`broadcast.py`) → clients receive an attributed `change:<entity>` with user name and summary. All other successful writes get a coarse `change:<entity>` from `BroadcastMiddleware` (sender excluded; `SKIP_PATTERNS` prevents doubles).
 - Receive loop handles `ping` → `pong` (client pings every 25 s).
 - **`notification:new`** is sent per-user via `send_notification()` (`websocket/broadcast.py`). It is a *live hint only* — the manager is per-process, so a user on another worker misses it; the DB row is the source of truth and the bell reloads on mount/focus. On the client it needs its **own `case`** in `useWebSocket` (the `default:` branch only handles `change:*`).
 
 ### Frontend
 
-- `useWebSocket` (`src/hooks/useWebSocket.ts`): connects to `ws(s)://<host><tenantPrefix>/ws`, exponential backoff (2 s base, 60 s max, 5 attempts), does **not** reconnect on close codes 1000/1001/4000–4006, tracks `onlineUsers` (presence messages) and `recentChanges` (any `change:*`, expiring 30 s after local receipt to dodge clock skew).
-- `WebSocketContext` (`src/contexts/WebSocketContext.tsx`) turns changes into data refreshes: `slicesForEntity()` maps entity type → data slices (`phase`→`projects`, `staff`→`staff`+`projects`, unknown → everything), then refreshes via a **200 ms debounced, coalesced** runner with an in-flight guard that re-stages if more changes arrive mid-fetch. A phase drag producing N child updates results in one refetch per slice. Unknown entity types refresh everything, so new backend entities need no client change.
+- `useWebSocket` (`src/hooks/useWebSocket.ts`): connects to `ws(s)://<host><tenantPrefix>/ws`, exponential backoff (2 s base, 60 s max, 5 attempts), does **not** reconnect on close codes 1000/1001/4000–4006; after giving up (or a non-terminal drop) it retries immediately on the browser `online` event and when the tab becomes visible (`visibilitychange`) — never after 4000–4006. 4001/4003 call `onSessionInvalid` → `WebSocketContext` re-checks `/auth/me` and calls `expireSession()` if the session is gone. Exposes `offline` (browser offline, or settled and not connected/connecting) → the Header's `SyncStatus` "Offline" badge. Tracks `onlineUsers` (presence messages) and `recentChanges` (any `change:*`, expiring 30 s after local receipt to dodge clock skew).
+- `WebSocketContext` (`src/contexts/WebSocketContext.tsx`) turns changes into data refreshes: `slicesForEntity()` maps entity type → data slices (`phase`→`projects`, `staff`→`staff`+`projects`, `bank_holiday`/`company_event`→`siteCalendar` (current site's holidays + events), `absence_type`→`absenceTypes`+`vacations`, `tag`→`tags`+`projects`, `tag_group`→`tags` (the `tags` slice reloads tags **and** groups), `custom_column`/`custom_column_value`→`customColumns` (customColumnStore only, no project reload), `settings`→`settings`, `user`→`staff`+`currentUser`+`projects` (role/site changes and deactivation of the signed-in user apply live), `note`/`card_comment`→ nothing, unknown → everything; the mapping lives in `src/contexts/wsSlices.ts`), then refreshes via a **200 ms debounced, coalesced** runner with an in-flight guard that re-stages if more changes arrive mid-fetch. A phase drag producing N child updates results in one refetch per slice. Unknown entity types refresh everything, so new backend entities need no client change.
+- While What-If is active, refreshes of the sandboxed slices (`projects`, `customColumns` — `WHAT_IF_SANDBOXED_SLICES` in `wsSlices.ts`) are deferred and run once What-If ends, so a teammate's change never replaces the plan being edited.
 - `OnlineUsers` and `ActivityFeed` render presence and the change feed (`recentChanges` from `useWebSocket`). A per-entity "changed by X" badge (`ChangeIndicator` + `useEntityChangeIndicator`) was built but never wired up and has been removed as dead code.
 
 ---
@@ -800,18 +880,19 @@ React 18 + TypeScript 5.6, Vite 7, Vitest 4, Zustand 5, TanStack Query 5 (client
 
 ### Routing without a router
 
-- `src/main.tsx` boots the QueryClient, theme, legacy-storage migration, and wires the API client to `whatIfStore` (`configureApiClient`).
+- `src/main.tsx` boots the QueryClient and theme, and wires the API client (`configureApiClient`): What-If check + queue from `whatIfStore`, and `onUnauthorized: expireSession`. (The legacy `rd_*` storage migration was removed.)
 - `src/App.tsx` renders by branching: `window.location.pathname` starting with `/admin` → `AdminApp` (a fully separate admin-portal app: `AdminLoginScreen` / `AdminDashboard` with tenants/organizations/admins/stats tabs); otherwise auth state decides `LoginScreen` vs the main app (`WebSocketProvider` → `MainLayout` + `ModalContainer` + `ContextMenuContainer` + `ActivityFeed`).
 - In-app navigation = `viewStore.currentView` (`gantt` | `kanban` | `staff` | `equipment` | `crosssite` | `archived`) switched by the sidebar; **views are state, not URLs**.
+- **All administration is one Settings hub** (`components/settings/`), a full-size shared `Modal` with a grouped section list. The sidebar `AdminSection` has a single **Settings** entry (admins + superusers). Sections come from the `SETTINGS_SECTIONS` registry, each with a `minRole` mirroring the backend (superusers see General — per-browser theme only, the panel renders instance-wide settings for admins — Bank holidays, Company events, Users, Skills, Equipment, Equipment types, Predefined phases; Sites, Absence types, Tags, SSO are admin-only). Add new admin UI as a registry entry + `…Panel` component (no `<Modal>` wrapper), not as a new sidebar item or standalone modal. The General panel reports unsaved changes to the hub (`onDirtyChange`) so switching section/closing asks first. Custom columns stay in the Gantt project panel. Self-service time off is **My absences** (`MyAbsencesModal`, user menu).
 - The tenant prefix `/t/{slug}` comes from the URL: `getTenantPrefix()` in `client.ts` prepends it to every `/api/` call. Deep links work because FastAPI's catch-all (prod) or `tenantSpaPlugin` (dev) serve `index.html` for `/t/*` paths.
 
 ### Zustand stores (`src/stores/`)
 
 | Store | Persisted | Purpose |
 |-------|-----------|---------|
-| `appStore` | only `_persistedSiteId` | Domain data (sites, projects, staff, equipment, blocks, vacations, holidays+date Sets, events, users, skills, tags, instance settings), auth state, current site/user, critical-path state. Site switch **clears undo history**. Exports selectors (`selectSiteProjects`, `selectCanManageResources`, …) |
-| `viewStore` | yes | View mode (`week`/`month`/`quarter`/`year`) + a single `cellWidth` (per-mode *defaults* applied on mode switch, then freely zoomed — widths are not remembered per mode), current view, current date, resource tab, expansion Sets (persisted: projects/phases/subphases; session-only: staff/equipment/bank-holidays), level-based expand/collapse, scroll position, panel collapse flags, overview toggles (staff/equipment — mutually exclusive) |
-| `uiStore` | no | Active modal + editing context, tooltip, drag/resize state, drag indicator, dependency-linking state, phantom-sibling state, context menu, scroll/zoom triggers, resource drag |
+| `appStore` | only `_persistedSiteId` | Domain data (sites, projects, staff, equipment, blocks, vacations, absence types, holidays+date Sets, events + derived `closureIndex` (built in `setCompanyEvents`), users, skills, tags + `tagGroups`, instance settings), auth state, current site/user, critical-path state. Site switch **clears undo history**. Exports selectors (`selectSiteProjects`, `selectCanManageResources`, `selectStaffSiteIds`, …) |
+| `viewStore` | yes | View mode (`week`/`month`/`quarter`/`year`) + a single `cellWidth` (per-mode *defaults* applied on mode switch, then freely zoomed — widths are not remembered per mode), current view, current date, resource tab, expansion Sets (persisted: projects/phases/subphases; session-only: staff/equipment/bank-holidays), level-based expand/collapse, scroll position, panel collapse flags, overview toggles (staff/equipment — mutually exclusive), `tagFilters` (project tag filter `{tagIds, noneGroupIds}` keyed `"<tenant slug>:<site id>"` via `tagFilterKey()` in `utils/tags.ts` — the storage key is per origin, so tenants must not share entries; persisted, stale ids pruned when applied), `ganttGrouping` (tag group id) + `collapsedGanttSections` (`tag-<id>`/`none` keys) for the Gantt "Group by", same `tagFilterKey` keying and rehydrate sanitising, not cleared on logout |
+| `uiStore` | no | Active modal + editing context, Settings hub state (`openSettings(section?, intent?)` → `activeModal: 'settingsHub'` + `settingsSection` + `settingsIntent` view/add/edit; legacy modal keys `settings`/`manageSites`/`siteManagement`/`site`/`userManagement`/`manageEquipment`/`predefinedPhases`/`ssoConfig`/`bankHoliday`/`customHoliday`/`companyEvent` are aliases that open the hub at the matching section), tooltip, drag/resize state, drag indicator, dependency-linking state, phantom-sibling state, context menu, scroll/zoom triggers, resource drag |
 | `whatIfStore` | no | What-If mode flag, `structuredClone` snapshot of projects, queued operations |
 | `undoStore` | no | Undo/redo stacks of project-tree snapshots (max 50) |
 | `customColumnStore` | visibility only | Columns, values map (key `"{columnId}-{entityType}-{entityId}"`), per-column filters (`__empty__` sentinel for blanks), visibility |
@@ -826,6 +907,7 @@ Persistence gotcha: Sets are serialized as arrays and restored in custom `merge`
 - Cookie auth (`credentials: 'include'`) — no token headers.
 - Dev detection: when the page runs on port 3333, API and WS target `:8485` directly (no Vite proxy).
 - FastAPI 422 validation errors are flattened to `field: message` strings; non-JSON responses raise with the first 200 chars logged (catches proxy HTML).
+- **Session expiry**: a 401 on a session-bound call fires the `onUnauthorized` hook → `expireSession()` (`src/stores/index.ts`): `resetAllStores()` (appStore except the persisted site id, What-If, undo, notifications, custom-column data) and back to the login screen. `useAuth.logout` also calls `resetAllStores()`, so nothing carries over to the next person on the tab. Add new stores to `resetAllStores()`.
 - **What-If interception** happens here (see What-If Mode).
 
 ### Transform layer (`src/api/endpoints/projects.ts`)
@@ -834,48 +916,58 @@ All backend↔frontend field mapping is centralized: `transformProject/Phase/Sub
 
 ### Gantt architecture (`src/components/gantt/`)
 
-- `GanttContainer` orchestrates: filters projects to the current site (non-archived), applies per-site custom ordering (localStorage via `getProjectOrder`/`sortProjectsByOrder`; default = confirmed-first, then name), memoizes timeline cells/headers, and renders **`ProjectPanel` (left tree) + resizer + `Timeline` (right)** inside `TimelineScrollProvider`, with optional embedded staff/equipment overview panels below (admin/superuser only).
-- `ProjectPanel/`: header actions (new/import/manage columns/visibility) + rows `ProjectRow → PhaseRow → SubphaseRow → AssignmentRow` + custom-column cells; wrapped in `ReorderProvider`.
+- `GanttContainer` orchestrates: filters projects to the current site (non-archived), applies per-site custom ordering (localStorage via `getProjectOrder`/`sortProjectsByOrder`; default = confirmed-first, then name), memoizes timeline cells/headers, and renders **`ProjectPanel` (left tree) + resizer + `Timeline` (right)** inside `TimelineScrollProvider`, with optional embedded staff/equipment overview panels below (`canManageAnyProject`: admin/superuser, or the PM of at least one project).
+- `ProjectPanel/`: header actions, right-aligned across the name column + custom columns (new/import/manage columns/visibility/tag filter — `TagFilterDropdown` from `components/common`, also mounted in the Kanban toolbar — and `GroupByDropdown`; the header dropdowns hang from the positioned `.headerContent`, right-aligned and width-capped) + `SectionRow` (Group-by section header) + rows `ProjectRow → PhaseRow → SubphaseRow → AssignmentRow` + custom-column cells; wrapped in `ReorderProvider`.
 - `Timeline/`: `TimelineHeader` + `TimelineBody` — grid cells (weekend/holiday/company-event backgrounds; week separators when weekends are hidden), `TodayLine`, per-project bars (`ProjectBar`/`PhaseBar`), `DependencyLayer` (arrows), phantom overlays, `DragIndicator`, `ResourceDropOverlay`. Handles scroll persist/restore (200 ms debounce), zoom re-centering on the visible center date, view-mode changes preserving the left-edge date, Ctrl+wheel zoom, and scroll-to-today/date triggers.
+- **Group by tag group**: `GanttContainer` turns `useGanttGrouping()` + the tag-filtered projects into one flat `GanttRow[]` (`components/gantt/utils/projectSections.ts`: `buildProjectSections` → `buildGanttRows`; first tag in group order wins, empty sections omitted, "No <group>" last) and hands the **same array** to `ProjectPanel` (`SectionRow`) and `TimelineBody` (`div.groupBand`, a direct child of `.rows`); both panes fall back to a memoised flat list when `rows` is omitted. Section rows are `--section-row-height` (36 px) + 1 px border, content-box, = `SECTION_ROW_TOTAL_HEIGHT` (37) in `calculateRowPositions(rows, …)`, keyed `section-<key>`; collapsed sections' projects get no position (no arrows, no drop target). Section class names must not contain `row` and carry no `data-project-id`/`data-phase-id` (the drag/resize hooks and `DependencyLayer` find rows by `[class*="row"]` / data attributes). Project drag-reorder is off while grouped (`onProjectReorder` undefined).
 - Scroll sync: `TimelineScrollContext` (horizontal, direct DOM with feedback-loop guard) across Gantt/Staff/Equipment timelines; `useScrollSync` (vertical) between tree panel and timeline body.
-- **Drag pipeline** (`useDragAndDrop`): mousedown on a bar → live DOM movement with cell snapping (week/month) and a dependency lag indicator → on drop, `commitDragUpdate` computes new dates from pixels, prompts `window.confirm` for whole-project moves, snapshots undo state, clones and mutates the project tree (cascading children + assignments), updates the store optimistically, then persists via batched `PendingUpdate`s (`savePendingUpdates`). **Any persist error → reload all projects + clear undo.**
+- **Drag pipeline** (`useDragAndDrop`): mousedown on a bar → live DOM movement with cell snapping (week/month) and a dependency lag indicator → on drop, `commitDragUpdate` computes new dates from pixels, prompts `window.confirm` for whole-project moves, snapshots undo state, clones and mutates the project tree (cascading children + assignments), updates the store optimistically, then persists via batched `PendingUpdate`s (`savePendingUpdates`). **Any persist error → reload all projects + clear undo.** The document `mousemove`/`mouseup` listeners (here and in `useResize`) are attached at drag start and removed on mouse-up and on unmount — never left on the document between drags.
 - **Auto-calculation semantics** (`gantt/utils/autoCalculation.ts`): dependencies auto-align **only at creation time**; moving an item does *not* cascade to its dependents (users keep manual lead/lag control). Moves do (a) expand/contract parents to the union of their children and (b) auto-fit project dates to phases. Staff-assignment updates must include `allocation` (backend requirement).
 - **Critical path** (`components/gantt/utils/criticalPath.ts`): full CPM forward/backward pass, `totalFloat <= 0` = critical; loaded via dynamic import from `appStore.toggleCriticalPath` to avoid a circular dependency.
-- **Undo/redo** (`useUndoRedo` + `components/gantt/utils/diffProjects.ts`): restore snapshot, diff old-vs-new date fields into minimal `PendingUpdate`s, persist; on failure reload + clear history.
+- **Undo/redo** (`useUndoRedo` + `components/gantt/utils/diffProjects.ts`): restore snapshot, diff old-vs-new date fields **and dependency arrays** into minimal `PendingUpdate`s, persist; on failure reload + clear history.
+- **Dependencies** are stored per phase/subphase as JSON `[{id, type, lag?, entity?: 'phase'|'subphase'}]`. Phase and subphase ids are separate sequences, so new links always write `entity`; legacy entries without it resolve **phase-first**. Always go through `components/gantt/utils/dependencies.ts`: `resolveDependencyPredecessor` (lookup), `dependencyMatches` (find/delete a link, legacy-aware, missing `type` = FS), `wouldCreateDependencyCycle` (walks phases and subphases alike). Arrows, critical path and linking all use them.
+- **Timeline headers**: week labels are ISO 8601 (`getISOWeek`/`getISOWeekYear` in `utils/date.ts` — 1–3 Jan 2027 is W53); the current month is highlighted.
+- **Custom-column cells** write one value with `setCustomColumnValue`, and a cascade to children with `setCustomColumnValuesBatch` (chunks of ≤ 500, the backend limit); on failure the touched cells are rolled back unless edited again since.
 
 ### Hooks catalog (`src/hooks/`)
 
 | Hook | Purpose |
 |------|---------|
-| `useAuth` | Mount-time `checkAuth()`, login/logout (logout resets `appStore`) |
+| `useAuth` | Mount-time `checkAuth()`, login/logout (logout calls `resetAllStores()`) |
 | `useDataLoader` | Parallel initial data load + site resolution + granular refreshers (`refreshProjects`, `refreshSiteData`, …) used by the WS refetch layer |
 | `useWebSocket` / `WebSocketContext` | See Real-Time Collaboration |
-| `useDragAndDrop` | Gantt bar dragging (see drag pipeline); gated on admin/superuser |
+| `useDragAndDrop` | Gantt bar dragging (see drag pipeline); gated per project (`canEditProjectById`) and per own assignment (`canEditAssignment`) |
 | `useResize` | Bar edge resizing with date recalculation |
-| `useResourceDragDrop` | HTML5 drag of staff/equipment from ResourcePanel onto rows; creates a 5-day default assignment (staff allocation defaults to `max_capacity`) |
+| `useResourceDragDrop` | HTML5 drag of staff/equipment from ResourcePanel onto rows; creates a 5-day default assignment (staff allocation defaults to `max_capacity`). Project editors drag anything; everyone else only their own staff card |
 | `useDependencyLinking` | Two-click dependency creation |
 | `usePhantomSibling` | Shift+click spawns a phantom sibling bar following the cursor (lag computed on placement) |
 | `useUndoRedo` | Undo/redo orchestration (see above) |
-| `useKeyboardShortcuts` | Esc (modal → linking → phantom priority), Home (today), `+`/`-` zoom (12–120 px), Ctrl/Cmd+Z / Ctrl/Cmd+Y / Ctrl/Cmd+Shift+Z |
+| `useKeyboardShortcuts` | Esc (linking → phantom priority), Home (today), `+`/`-` zoom (12–120 px), Ctrl/Cmd+Z / Ctrl/Cmd+Y / Ctrl/Cmd+Shift+Z. **Every shortcut is ignored while a modal is open** (`uiStore.activeModal`) — the modal owns the keyboard, and the shared `Modal` owns Escape so guarded `onClose`s like the Settings hub's run |
+| `useWhatIfBlocked` | `{blocked, reason(action)}` for create entry points during What-If (`whatIfUnavailableMessage()`) — use it for any new create button/dialog |
+| `useGanttGrouping` | Current site's Gantt "Group by" (`{siteId, group, siteTags, collapsedKeys, setGroup, toggleSection, collapseAll, expandAll}`); primitive selectors, stale group id → `group: null` without a write. Import from `@/hooks/useGanttGrouping` (tests mock `@/hooks` partially) |
 | `useEscapeKey` | Escape-to-close for standalone dialogs that can't use the shared `Modal` (e.g. the admin-portal modals) |
 | `useCtrlScrollZoom` | Ctrl+wheel zoom keeping the date under the cursor fixed |
 | `useScrollSync` | Bidirectional vertical scroll sync between two elements (used by GanttContainer and the Staff/Equipment/CrossSite/Archived views) |
-| `useWorkloadCalculation` | Per-cell staff workload for the Staff heatmap (allocations, vacations incl. recurring, visual states) |
+| `useWorkloadCalculation` | Per-cell staff workload for the Staff heatmap (allocations, vacations incl. recurring, visual states). Only absences whose type `counts_as_unavailable` (or untyped ones) zero capacity. An optional closure lookup (`ClosureLookup`, usually `getClosureOn` bound to the person's sites) zeroes capacity on site-closure days → `vacation`/`conflict` state, `closureName`/`closureColor`, tooltip *Site closed: …* |
 | `useEquipmentOverlaps` | Equipment double-booking detection + today-status (`blocked` > `booked` > available) |
 
 ### Utilities worth knowing (`src/utils/`)
 
-`date.ts` (~24 date helpers incl. business-day math), `storage.ts` (typed storage wrappers, `STORAGE_KEYS`, theme system setting `data-theme` on `<html>`, legacy `rd_*` key migration, per-site project order), `themeColors.ts` (phase/depth colors from CSS vars), `recurringVacation.ts` (`[R:0,2,4]` pattern), `equipmentOverlap.ts`, `csvExport.ts` (MS-Project-compatible CSV: outline levels, `ID{FS|SS|FF|SF}±lag` predecessors), `xmlExport.ts` (MS Project XML), `subphaseUtils.ts` (subphase tree helpers). Note: `criticalPath.ts` and `diffProjects.ts` live in `src/components/gantt/utils/`, not here.
+`date.ts` (~24 date helpers incl. business-day math, ISO week labels), `storage.ts` (typed storage wrappers, `STORAGE_KEYS`, theme system setting `data-theme` on `<html>`, per-site project order), `themeColors.ts` (phase/depth colors from CSS vars), `recurringVacation.ts` (`[R:0,2,4]` pattern + absence-type helpers: `getAbsenceOn()` is the single "is this person on an absence / unavailable on this day" check (site closures are separate, see `siteClosure.ts`) — honours recurring patterns and `counts_as_unavailable`; `guessAbsenceTypeId()` for .ics imports), `siteClosure.ts` (`buildClosureIndex()` expands closure events into a day → events index once, in `appStore.setCompanyEvents`; `getClosureOn(staffSiteIds, date, index)` is the closure counterpart of `getAbsenceOn()` — used by the Staff heatmap, StaffView `calcAvailability`, ResourceCard and Gantt assignment-bar markers), `permissions.ts` (per-project gates, mirrors `app/services/project_access.py` — see Frontend Conventions), `ics.ts` (the one `.ics` parser/generator: multi-VEVENT, all-day exclusive DTEND, `RRULE:FREQ=YEARLY` expansion, CATEGORIES, Outlook BUSYSTATUS, UTF-16; `buildICS()` for every export), `equipmentOverlap.ts`, `csvExport.ts` (MS-Project-compatible CSV: outline levels, `ID{FS|SS|FF|SF}±lag` predecessors), `xmlExport.ts` (MS Project XML), `subphaseUtils.ts` (subphase tree helpers), `persistFailure.ts` (`recoverFromPersistFailure` — the failure protocol), `reorder.ts` (local phase/subphase reorder applied before the server call, so it shows in What-If too), `localProjectTree.ts` (clone-and-replace patch/remove helpers for phases, subphases, assignments — dialogs apply edits to the store with these so they show while What-If skips the reload), `whatIf.ts` (`whatIfUnavailableMessage()` for blocked creates), `uniqueById.ts` (dedupe the one-row-per-equipment–site-pair `GET /equipment` rows in unfiltered views), `tags.ts` (pure tag helpers: `tagsForSite`, `groupedTags`, `applyTagSelection` (radio behaviour in single-select groups), `projectPassesTagFilter` (within a group OR, across groups AND, `noneGroupIds` = "no tag from that group", unresolvable ids ignored), `projectBarColor` — always resolve colour/group through `appStore.tags`/`tagGroups` by id, never from the inline `project.tags[].color`, which is stale during What-If). Note: `criticalPath.ts`, `diffProjects.ts`, `dependencies.ts` and `completionStatus.ts` (`statusAfterCompletionWrite` — the slider applies the Kanban status locally, since the rich broadcast excludes the sender) live in `src/components/gantt/utils/`, not here.
 
 ## What-If Mode
 
 A client-side planning sandbox — the server is never aware of it.
 
 - Entering (`WhatIfToggle` → `whatIfStore.enterWhatIfMode`) snapshots `appStore.projects` via `structuredClone` and adds a `what-if-mode` body class.
-- While active, the **API client** intercepts every PUT/POST/DELETE (except `/api/auth/*` and `/api/settings/*`): the request is queued as a `WhatIfOperation {id, method, url, body?, timestamp}` and a fake success `{success: true, whatIfMode: true}` is returned, so optimistic local state updates normally.
-- **Discard**: restore the snapshot, drop the queue. **Apply**: temporarily disable the interception check, replay queued operations sequentially with real requests; on error the snapshot is **not** restored (some writes may have landed — the user should reload). The interception check is always restored in `finally`.
-- Implications for new code: any new write endpoint is queued by default (see Frontend Conventions); operations that depend on real server responses (created IDs used by later operations) do not work correctly inside What-If — the queue replays with the original bodies.
-- Known limitations: MPP import uploads via a raw `fetch` that bypasses the queue, so `ImportProjectModal` blocks importing while What-If is active. Custom-column *definition* changes are queued but live in `customColumnStore`, which is not snapshotted — a definition created/deleted during What-If is not rolled back locally on Discard (reload to resync).
+- While active, the **API client** intercepts every POST/PUT/PATCH/DELETE (exemption list: see Frontend Conventions): the request is queued as a `WhatIfOperation {id, method, url, body?, timestamp}` and a fake success `{success: true, whatIfMode: true}` is returned, so optimistic local state updates normally.
+- **Discard**: restore the snapshot, drop the queue. **Apply**: temporarily disable the interception check (always restored in `finally`), replay queued operations sequentially with real requests, then reload from the server (`fetchAllProjects()`) and exit. **On the first failure Apply stops**: the failed and remaining operations stay queued, What-If stays **active**, projects are reloaded from the server and the snapshot is reset to that state (so a later Discard restores what really landed), and `whatIfApplyError {applied, total, message}` is set — `WhatIfToggle` shows it as a header banner with **Retry / Discard / Dismiss** (`dismissApplyError`), not an alert. Interception is back on during the post-Apply reload, so edits made in that window are queued and **kept** (appended after the remaining operations; on success What-If stays active with just those). If the stores were reset meanwhile (401 → `expireSession`, logout), Apply leaves them reset.
+- Undo history is cleared on enter, Discard and Apply (its snapshots straddle the sandbox boundary); undo/redo *inside* What-If persists through the API client, so it is queued like any edit.
+- `loadAllProjects()` is a **no-op during What-If** (returns the local projects) — every "reload after a write" goes through it, so a reload never wipes the sandbox. Use `fetchAllProjects()` when a real fetch is required. Consequently an edit must update the store locally (optimistically, or with `utils/localProjectTree.ts` after the queued call) or it stays invisible until Apply.
+- **Creates are blocked during What-If** (a queued POST has no server id, and the new item could only appear after Apply): Phase/Subphase/Project dialogs and the Assignment dialog in create mode, absences (`VacationModal`, `MyAbsencesModal`), equipment blocks (`EquipmentBlockModal`), Kanban "add assignee"/"join", resource drops on the timeline and the context-menu "Add …"/"Assign …"/"Assign me" items are disabled via `useWhatIfBlocked()` / `whatIfUnavailableMessage()` (same wording as the import dialogs). Edits and deletes stay allowed.
+- Project and custom-column WebSocket refreshes are deferred until What-If ends (see Real-Time Collaboration).
+- Implications for new code: any new write endpoint is queued by default (see Frontend Conventions); operations that depend on real server responses (created IDs used by later operations) do not work correctly inside What-If — the queue replays with the original bodies. New create entry points must be blocked the same way.
+- Known limitations: MPP import uploads via a raw `fetch` that bypasses the queue, so `ImportProjectModal` blocks importing while What-If is active. `.ics` calendar imports (`ICSImportPanel`: holidays, events, absences) are blocked too — calendar data is not part of the What-If snapshot. Custom-column *definition* changes are queued but live in `customColumnStore`, which is not snapshotted — a definition created/deleted during What-If is not rolled back locally on Discard (reload to resync). Tag and tag-group edits (`/api/tags`, `/api/tag-groups`) bypass the queue entirely; a queued project edit that holds two tags of a group an admin makes single-select meanwhile fails on Apply with the backend 400 (Retry cannot fix it — Discard that edit).
 
 ## Import & Export
 
@@ -883,7 +975,7 @@ A client-side planning sandbox — the server is never aware of it.
 
 - Endpoint: `GET /t/{slug}/api/export/site/{site_id}/excel` (admin / superuser only; superusers limited to sites they belong to).
 - Implemented in `app/routers/export.py` — `build_site_export_workbook()` generates a multi-sheet `.xlsx` via `openpyxl`.
-- Current sheets: Site, Projects (hierarchy with phases/subphases), Users, Equipment, Skills, User skills, Tags, Project tags, Vacations, Project assignments, Phase assignments, Subphase assignments, Equipment assignments, Custom columns, Custom column values, Bank holidays, Company events, Equipment blocks, Staff notes, Card comments (the Projects sheet also carries a `Kanban status` column). Notifications are deliberately excluded — transient per-user inbox state, not site content.
+- Current sheets: Site, Projects (hierarchy with phases/subphases), Users, Equipment (with a Sites column), Skills, User skills, Tag groups, Tags (those applicable to the site, with Group / All sites / Sites columns), Project tags (with Group), Absence types, Vacations (with Type / Type ID columns), Project assignments, Phase assignments, Subphase assignments, Equipment assignments, Custom columns, Custom column values, Bank holidays, Company events (selected via `company_event_sites`, with Sites and Staff unavailable columns), Equipment blocks, Staff notes, Card comments (the Projects sheet also carries a `Kanban status` column). Notifications are deliberately excluded — transient per-user inbox state, not site content.
 - **IMPORTANT**: any new data added at the site level through future enhancements (e.g. equipment maintenance/blocks, new event types, additional site-scoped settings, new assignment kinds, etc.) **must** be added as a new sheet (or a new column on the existing sheet) in `build_site_export_workbook()`. The site export is the canonical "everything for this site" snapshot — do not let it drift behind the model.
 
 ### MS Project & CSV
@@ -893,11 +985,15 @@ A client-side planning sandbox — the server is never aware of it.
 
 ## Security
 
-- **Startup/runtime**: docs endpoints admin-gated; global exception handler returns opaque 500s; Docker runs as non-root `appuser` with a `/health` healthcheck.
-- **Secrets at rest**: tenant DB passwords and SSO client secrets AES-256-GCM encrypted (`app/services/encryption.py`); `TENANT_ENCRYPTION_KEY` (64-char hex) required in multi-tenant mode (single-tenant derives a key from `SESSION_SECRET`).
-- **Passwords**: bcrypt rounds=12 (tenant users, lazy upgrade from legacy hashes on login); PBKDF2-SHA512 (admin users).
-- **Sessions**: HTTP-only cookies; `SECURE_COOKIES=true` for HTTPS deployments; expired-session cleanup in `SessionService`.
-- **SSO**: HMAC-signed state; secrets never returned unmasked (`/sso/config/full` masks); optional Entra group gating per tenant.
+- **Startup/runtime**: the lifespan calls `Settings.check_startup_security()` — with `DEBUG=false` an empty or published `SESSION_SECRET` (`INSECURE_SESSION_SECRETS`) is a `RuntimeError`, so the app does not start; docs endpoints admin-gated; global exception handler returns opaque 500s; `/health` and the tenant 503 never echo DB hosts/users/SQL; Docker runs as non-root `appuser` with a `/health` healthcheck.
+- **Secrets at rest**: tenant DB passwords, org SSO secrets **and tenant-level SSO secrets** (`sso_config.client_secret`, since 1.5.0; legacy plaintext encrypted by the tenant auto-migration) AES-256-GCM encrypted (`app/services/encryption.py`); `TENANT_ENCRYPTION_KEY` (64-char hex) required in multi-tenant mode (single-tenant derives a key from `SESSION_SECRET`).
+- **Passwords**: bcrypt rounds=12 (tenant users, lazy upgrade from legacy hashes on login, > 72 bytes rejected); PBKDF2-SHA512 600 000 iterations, self-describing `pbkdf2_sha512$…` (admin users, lazy upgrade from legacy `salt:hash`). Minimum 8 characters for new/changed passwords in both systems; existing shorter passwords still log in.
+- **Login throttle** (`app/services/login_throttle.py`): sliding window, 10 failures / 15 min per (scope, client IP, e-mail) → 429 with `Retry-After`; success clears the key; plus a per-IP bucket (100 failures / 15 min across scopes and e-mails, **not** cleared by a success) that only applies to *global* addresses — private/loopback/CGNAT ones may be a shared proxy or NAT, where it would be a site-wide lockout switch; ≤ 10 000 tracked keys per bucket. The lockout is per (IP, e-mail), so behind a reverse proxy `FORWARDED_ALLOW_IPS` must list the proxy or every client shares one key. **In-memory and per process** — N workers allow N × 10. Unknown e-mails run a dummy hash (`dummy_verify_user_password` / `dummy_verify_admin_password`) so timing doesn't reveal accounts.
+- **Admin portal**: `must_change_password` is enforced server-side (403 from `get_current_admin`).
+- **Sessions**: HTTP-only cookies; `SECURE_COOKIES=true` for HTTPS deployments; expired-session cleanup in `SessionService`; every request re-checks `active`/`role`; revocation (deactivate/delete/demote/password reset) destroys sessions and closes WebSockets.
+- **WebSocket**: `Origin` checked against the host / CORS origins (close 4003) — cross-site WebSocket hijacking guard; `/api/ws-debug*` admin-only.
+- **SSO**: HMAC-signed state bound to the browser by the `sso_nonce` cookie (one-time, 10 min); secrets never returned unmasked (`/sso/config/full` masks; a masked value submitted back keeps the stored secret on every write route); optional Entra group gating per tenant.
+- **Multi-tenant isolation**: a tenant request without a pool is a 503, never the `DB_*` database; tenant status/edit/delete changes reset the tenant cache and pool on the handling process.
 - **Provisioning**: tenant identifiers validated against SQL injection in `tenant_provisioner`.
 - ⚠ `GET /settings` and `GET /settings/{key}` have no auth dependency — never store sensitive values in the tenant `settings` KV table.
 - ⚠ `/health` is public and includes the backend identifier and `default_tenant` in its response — don't add further config values to it.
@@ -914,7 +1010,7 @@ A client-side planning sandbox — the server is never aware of it.
 | File | Services | Ports | Use case |
 |------|----------|-------|----------|
 | `docker-compose.yml` | `milestone` | 8485 | Production against an external PostgreSQL (`.env`-configured; Unraid-style uploads volume) |
-| `docker-compose.fresh.yml` | `db` (postgres:15-alpine) + `milestone` | 8486 app / 5433 db (overridable via `FRESH_*`) | Self-contained fresh install: `AUTO_INIT_DB=true`, seeded admin, named volumes |
+| `docker-compose.fresh.yml` | `db` (postgres:15-alpine) + `milestone` | 8486 app / 5433 db (overridable via `FRESH_*`) | Self-contained fresh install: `AUTO_INIT_DB=true`, seeded admin, named volumes. **Needs `.env` with `SESSION_SECRET`** (`${SESSION_SECRET:?…}` — compose refuses to start without it) |
 | `docker-compose.external-db.yml` | `milestone` | 8485 | Managed PostgreSQL (RDS/Azure/Cloud SQL) with auto-init (needs `PG_ADMIN_*`) |
 | `docker-compose.dev.yml` | `milestone` + `milestone-react-dev` | 8485 + 3333 | Backend + hot-reload React dev server |
 | `docker-compose.react-dev.yml` | `milestone-api` + `milestone-react-dev` | 8485 + 3333 | Unraid variant of the dev setup |
@@ -942,12 +1038,18 @@ Docs are **not** built by Actions — Cloudflare Pages builds them from `docs/bu
 - `setup_databases.sql`, the provisioner schema (`tenant_provisioner.get_tenant_schema_sql()`), and `scripts/sql/tenant_schema_template.sql` must all stay in sync with the models — follow the schema-change checklist.
 - The `Note` model's tablename is **`staff_notes`**. All schema sources create `staff_notes` now; databases from old installs may carry a legacy `notes` table until `migrations/add_staff_notes.sql` or the tenant auto-migration runs (it migrates the rows and drops `notes`).
 - Presence is WebSocket-only — there is no HTTP presence API (a dead, never-registered presence router and its `usePresence` polling hook were removed).
-- `PUT/DELETE /equipment-assignments/{id}` is defined in both `equipment.py` and `assignments.py`; `equipment.py` wins (registered first). Edit there.
+- `PUT/DELETE /equipment-assignments/{id}` live in `equipment.py` only (the shadowed duplicates in `assignments.py` were removed); `POST /projects/{id}/equipment` stays in `assignments.py`.
+- Per-entity write rules (project manager, self-assignment) live in `app/services/project_access.py`, Kanban's assignee-may-move rule in `app/services/card_access.py`. Both take primitives/`id`+`role` only, because `get_current_user` usually returns a `SessionUser`, not an ORM `User`. Check them *after* loading the entity, with the server-derived `project_id` — never trust a `project_id` from the request body.
 - Tenant info: `TenantMiddleware` writes a plain dict into `scope["state"]`. `request.state.tenant_slug` works in HTTP handlers (Starlette wraps the dict), but code handling raw ASGI scopes must read `scope["state"]["tenant_slug"]` directly.
 - The Vite dev server (:3333) has **no API proxy** — the client targets `:8485` directly, so the backend must be running; full tenant/WS behaviour is best tested on `:8485` with the built frontend.
 - `run_migration_master.py` handles `DO $$ ... END $$;` blocks correctly (`split_sql_statements()`, tested in `tests/test_migration_parser.py`) — but keep migrations idempotent regardless.
 - MPP file import requires Java (JRE 11+), included in the Docker image but not in dev environments by default.
 - The User model has a `full_name` property — use it instead of manual `first_name + last_name` concatenation.
 - Middleware must be **pure ASGI** — `BaseHTTPMiddleware` breaks WebSocket connections (this is why a timing middleware was removed).
-- Zustand persistence: Sets serialize as arrays with custom `merge` restore; don't persist Maps (`appStore` holds a `criticalPathItems` Map that is deliberately excluded from `partialize` — keep it that way).
+- Zustand persistence: Sets serialize as arrays with custom `merge` restore; don't persist Maps (`appStore` holds `criticalPathItems` and `closureIndex` Maps that are deliberately excluded from `partialize` — keep it that way).
 - New backend write endpoints are What-If-queued and coarse-broadcast by default — check both the client exemption list and `BroadcastMiddleware.SKIP_PATTERNS` when that's wrong for your endpoint.
+- **Rotating `SESSION_SECRET` in single-tenant mode invalidates the stored tenant SSO client secret** (its encryption key is derived from it): SSO then reports "not configured" until an admin re-enters the secret in Settings → SSO. Same for changing `TENANT_ENCRYPTION_KEY` in multi-tenant mode (which also breaks tenant DB credentials).
+- The login throttle, `disconnect_user` and the tenant cache/pool reset are all **per process**: with several uvicorn workers the throttle limit multiplies, a revoked user's socket on another worker stays open until it drops (HTTP is already rejected), and other workers see tenant changes within the 60 s cache TTL.
+- WebSocket close code **4003** means both "origin not allowed" and "user disabled"; the client treats it like 4001 (re-check the session, no reconnect).
+- `change:note` and `change:card_comment` map to **no** refetch slice on purpose (nothing in the stores holds notes; comment threads fetch themselves). Don't "fix" them to refresh everything.
+- `GET /vacations?siteId=` returns everyone at that site for any user; only the no-`siteId` form is restricted for plain users.

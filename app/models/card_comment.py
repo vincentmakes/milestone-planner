@@ -42,10 +42,12 @@ class CardComment(Base):
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
     )
-    author_id: Mapped[int] = mapped_column(
+    # NULL once the author's account is deleted (ON DELETE SET NULL): the
+    # comment stays in the thread and is shown as written by a deleted user.
+    author_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
     )
     body: Mapped[str] = mapped_column(Text, nullable=False)
     # JSON array of user ids, following ProjectPhase.dependencies.

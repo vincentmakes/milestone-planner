@@ -7,12 +7,23 @@
  */
 
 import { forwardRef, useMemo } from 'react';
-import { useAppStore } from '@/stores/appStore';
+import { useAppStore, selectStaffSiteIds } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { calculateBarPosition, calculateTodayPosition } from '@/components/gantt/utils';
 import { TodayLine } from '@/components/gantt/Timeline/TodayLine';
 import { useWorkloadCalculation, getWorkloadTooltip, getWorkloadBackground } from '@/hooks';
-import { parseRecurringPattern } from '@/utils/recurringVacation';
+import {
+  parseRecurringPattern,
+  indexAbsenceTypes,
+  absenceTypeFor,
+  absenceTypeName,
+  absenceColorStyle,
+  isUnavailableType,
+  cleanVacationDescription,
+} from '@/utils/recurringVacation';
+import type { AbsenceTypesById } from '@/utils/recurringVacation';
+import { getClosureOn } from '@/utils/siteClosure';
+import type { ClosureIndex } from '@/utils/siteClosure';
 import { BAR_HEIGHT, BAR_GAP, ROW_PADDING, DETAIL_ROW_HEIGHT, INDICATOR_AREA_HEIGHT } from './StaffView';
 import type { TimelineCell } from '@/components/gantt/utils';
 import type { Staff, Vacation, ViewMode } from '@/types';
@@ -51,7 +62,12 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
     const bankHolidays = useAppStore((s) => s.bankHolidays);
     const companyEvents = useAppStore((s) => s.companyEvents);
     const currentUser = useAppStore((s) => s.currentUser);
+    const absenceTypes = useAppStore((s) => s.absenceTypes);
+    const absenceTypesById = useMemo(() => indexAbsenceTypes(absenceTypes), [absenceTypes]);
     const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
+    // Site closures: staff whose sites intersect a closing event's sites are off
+    const closureIndex = useAppStore((s) => s.closureIndex);
+    const staffSiteIds = useAppStore(selectStaffSiteIds);
 
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
     const renderWeekendMarkers = showHighlighting && showWeekends;
@@ -103,7 +119,7 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
               cell.isCompanyEvent ? (
                 <div
                   key={`event-${index}`}
-                  className={`${styles.gridCell} ${styles.companyEvent}`}
+                  className={`${styles.gridCell} ${styles.companyEvent} ${cell.isSiteClosure ? styles.siteClosure : ''}`}
                   style={{
                     left: index * cellWidth,
                     width: cellWidth,
@@ -145,10 +161,14 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
                     staffMember={staffMember}
                     assignments={staffAssignments}
                     vacations={staffVacations}
+                    absenceTypesById={absenceTypesById}
+                    closureIndex={closureIndex}
+                    siteIds={staffSiteIds.get(staffMember.id)}
                     rowHeight={rowHeights.get(staffMember.id) || 44}
                     cells={cells}
                     cellWidth={cellWidth}
                     viewMode={viewMode}
+                    canManage={canManage}
                   />
                   
                   {/* Expanded detail rows */}
@@ -159,6 +179,7 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
                         <VacationDetailRow
                           key={`v-${vacation.id}`}
                           vacation={vacation}
+                          absenceTypesById={absenceTypesById}
                           cells={cells}
                           cellWidth={cellWidth}
                           viewMode={viewMode}
@@ -237,7 +258,7 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
                           ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
                           : {}),
                       }}
-                      data-tooltip={cell.companyEventName || 'Company Event'}
+                      data-tooltip={cell.isSiteClosure ? `Site closed: ${cell.companyEventName || 'Company Event'}` : (cell.companyEventName || 'Company Event')}
                     />
                   );
                 }
@@ -256,20 +277,38 @@ interface StaffRowProps {
   staffMember: Staff;
   assignments: StaffAssignmentWithContext[];
   vacations: Vacation[];
+  absenceTypesById: AbsenceTypesById;
+  /** Day → site-closure events (from the store) */
+  closureIndex: ClosureIndex;
+  /** Every site of this person; falls back to the row's site when unknown */
+  siteIds?: ReadonlySet<number>;
   rowHeight: number;
   cells: TimelineCell[];
   cellWidth: number;
   viewMode: ViewMode;
+  /**
+   * Whether the viewer may edit this person's absences (their own, or
+   * admin/superuser) -- the same rule as the left panel. Otherwise the
+   * vacation bars are display-only.
+   */
+  canManage: boolean;
 }
 
-function StaffRow({ staffMember, assignments, vacations, rowHeight, cells, cellWidth, viewMode }: StaffRowProps) {
+function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closureIndex, siteIds, rowHeight, cells, cellWidth, viewMode, canManage }: StaffRowProps) {
   const { openVacationModal } = useUIStore();
-  
+
   // Get max capacity for this staff member
   const maxCapacity = staffMember.max_capacity ?? 100;
-  
+
+  // Site closures for this person (undefined when no event closes a site)
+  const closures = useMemo(() => {
+    if (closureIndex.size === 0) return undefined;
+    const sites = siteIds ?? new Set([staffMember.site_id]);
+    return (dateStr: string) => getClosureOn(sites, dateStr, closureIndex);
+  }, [closureIndex, siteIds, staffMember.site_id]);
+
   // Calculate workload per cell
-  const workloadCells = useWorkloadCalculation(assignments, vacations, cells, maxCapacity);
+  const workloadCells = useWorkloadCalculation(assignments, vacations, cells, maxCapacity, absenceTypesById, closures);
   
   // Only show workload heatmap in week/month view (not quarter/year - cells too small)
   const showWorkloadHeatmap = viewMode === 'week' || viewMode === 'month';
@@ -284,6 +323,9 @@ function StaffRow({ staffMember, assignments, vacations, rowHeight, cells, cellW
       endDate: string;
       label: string;
       allocation?: number;
+      /** Vacations only: inline --absence-color and whether it blocks capacity */
+      absenceStyle?: React.CSSProperties;
+      available?: boolean;
       data: StaffAssignmentWithContext | Vacation;
     }> = [];
     
@@ -313,12 +355,19 @@ function StaffRow({ staffMember, assignments, vacations, rowHeight, cells, cellW
         return;
       }
       
+      const absenceType = absenceTypeFor(vacation, absenceTypesById);
+      const typeName = absenceTypeName(absenceType);
+      const description = cleanVacationDescription(vacation.description);
       allItems.push({
         type: 'vacation',
         id: vacation.id,
         startDate: vacation.start_date,
         endDate: vacation.end_date,
-        label: vacation.description || 'Vacation',
+        label: absenceType && description && description !== typeName
+          ? `${typeName}: ${description}`
+          : description || typeName,
+        absenceStyle: absenceColorStyle(absenceType),
+        available: !isUnavailableType(absenceType),
         data: vacation,
       });
     });
@@ -356,6 +405,8 @@ function StaffRow({ staffMember, assignments, vacations, rowHeight, cells, cellW
       top: number;
       label: string;
       allocation?: number;
+      absenceStyle?: React.CSSProperties;
+      available?: boolean;
       data: StaffAssignmentWithContext | Vacation;
     }> = [];
     
@@ -371,6 +422,8 @@ function StaffRow({ staffMember, assignments, vacations, rowHeight, cells, cellW
             top: ROW_PADDING + stackIndex * (BAR_HEIGHT + BAR_GAP),
             label: item.label,
             allocation: item.allocation,
+            absenceStyle: item.absenceStyle,
+            available: item.available,
             data: item.data,
           });
         }
@@ -378,10 +431,10 @@ function StaffRow({ staffMember, assignments, vacations, rowHeight, cells, cellW
     });
     
     return positioned;
-  }, [assignments, vacations, cells, cellWidth, viewMode]);
+  }, [assignments, vacations, absenceTypesById, cells, cellWidth, viewMode]);
   
   const handleBarClick = (bar: typeof stackedBars[0]) => {
-    if (bar.type === 'vacation') {
+    if (bar.type === 'vacation' && canManage) {
       openVacationModal(bar.data as Vacation);
     }
     // For assignments, we could open an assignment modal in the future
@@ -394,28 +447,33 @@ function StaffRow({ staffMember, assignments, vacations, rowHeight, cells, cellW
     <div className={styles.row} style={{ height: rowHeight }}>
       {/* Workload heatmap cells - only in the indicator area at bottom */}
       {showWorkloadHeatmap && workloadCells.map((workload, index) => {
-        // Only render cells with actual workload or vacation (skip empty cells)
-        if (workload.total === 0 && !workload.isOnVacation) return null;
+        // Only render cells with workload or an absence (skip empty cells)
+        if (workload.total === 0 && !workload.isOnVacation && !workload.hasAvailableAbsence) return null;
         
         return (
           <div
             key={`workload-${index}`}
-            className={`${styles.workloadCell} ${styles[workload.state]}`}
+            className={`${styles.workloadCell} ${styles[workload.state]} ${workload.hasAvailableAbsence ? styles.availableAbsence : ''}`}
             style={{
               left: index * cellWidth,
               width: cellWidth,
               top: indicatorTop,
               height: INDICATOR_AREA_HEIGHT,
+              ...((workload.closureColor ?? workload.absenceColor)
+                ? ({ ['--absence-color' as string]: workload.closureColor ?? workload.absenceColor } as React.CSSProperties)
+                : {}),
               ...getWorkloadBackground(workload),
             }}
             title={getWorkloadTooltip(workload)}
           >
-            {/* Workload indicator badge */}
-            <div className={`${styles.workloadIndicator} ${styles[workload.state]}`}>
-              {workload.state === 'vacation' ? 'OFF' : 
-               workload.state === 'conflict' ? '0%' :
-               `${workload.total}%`}
-            </div>
+            {/* Workload indicator badge ("OFF" when an absence or a site closure makes them unavailable) */}
+            {workload.state !== 'empty' && (
+              <div className={`${styles.workloadIndicator} ${styles[workload.state]}`}>
+                {workload.state === 'vacation' ? 'OFF' : 
+                 workload.state === 'conflict' ? '0%' :
+                 `${workload.total}%`}
+              </div>
+            )}
           </div>
         );
       })}
@@ -424,14 +482,17 @@ function StaffRow({ staffMember, assignments, vacations, rowHeight, cells, cellW
       {stackedBars.map((bar, index) => (
         <div
           key={`${bar.type}-${bar.id}-${index}`}
-          className={`${styles.bar} ${bar.type === 'vacation' ? styles.vacationBar : styles.assignmentBar}`}
+          className={`${styles.bar} ${bar.type === 'vacation' ? styles.vacationBar : styles.assignmentBar} ${bar.available ? styles.availableAbsenceBar : ''}`}
           style={{ 
+            ...bar.absenceStyle,
             left: bar.left, 
             width: bar.width,
             top: bar.top,
             height: BAR_HEIGHT,
+            ...(bar.type === 'vacation' && !canManage ? { cursor: 'default' } : {}),
           }}
           title={bar.label}
+          data-testid={`staff-bar-${bar.type}-${bar.id}`}
           onClick={() => handleBarClick(bar)}
         >
           <span className={styles.barLabel}>{bar.label}</span>
@@ -444,30 +505,36 @@ function StaffRow({ staffMember, assignments, vacations, rowHeight, cells, cellW
 // Vacation detail row (shown when staff is expanded)
 interface VacationDetailRowProps {
   vacation: Vacation;
+  absenceTypesById: AbsenceTypesById;
   cells: TimelineCell[];
   cellWidth: number;
   viewMode: ViewMode;
 }
 
-function VacationDetailRow({ vacation, cells, cellWidth, viewMode }: VacationDetailRowProps) {
+function VacationDetailRow({ vacation, absenceTypesById, cells, cellWidth, viewMode }: VacationDetailRowProps) {
   const pos = useMemo(() => 
     calculateBarPosition(vacation.start_date, vacation.end_date, cells, cellWidth, viewMode),
     [vacation, cells, cellWidth, viewMode]
   );
   
   if (!pos) return <div className={styles.row} style={{ height: DETAIL_ROW_HEIGHT }} />;
+
+  const absenceType = absenceTypeFor(vacation, absenceTypesById);
+  const typeName = absenceTypeName(absenceType);
+  const description = cleanVacationDescription(vacation.description);
   
   return (
     <div className={styles.row} style={{ height: DETAIL_ROW_HEIGHT }}>
       <div
-        className={`${styles.detailBar} ${styles.vacationDetailBar}`}
+        className={`${styles.detailBar} ${styles.vacationDetailBar} ${isUnavailableType(absenceType) ? '' : styles.availableAbsenceBar}`}
         style={{
+          ...absenceColorStyle(absenceType),
           left: pos.left,
           width: pos.width,
           height: 20,
           top: 6,
         }}
-        title={vacation.description || 'Vacation'}
+        title={absenceType && description && description !== typeName ? `${typeName}: ${description}` : description || typeName}
       />
     </div>
   );

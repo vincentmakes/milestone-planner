@@ -2,7 +2,8 @@
  * Projects API endpoints
  */
 
-import { apiGet, apiPost, apiPut, apiDelete } from '../client';
+import { apiGet, apiPost, apiPut, apiDelete, isWhatIfActive } from '../client';
+import { useAppStore } from '@/stores/appStore';
 import type { 
   Project, 
   CreateProjectRequest, 
@@ -28,8 +29,19 @@ import type {
  * @param archived - Filter: 'all', 'true', 'false' (default: active only)
  */
 export async function getProjects(archived: 'all' | 'true' | 'false' = 'false'): Promise<Project[]> {
-  const response = await apiGet<{ items: Project[]; total: number; offset: number; limit: number }>(`/api/projects?archived=${archived}`);
-  return response.items;
+  // The endpoint is paginated (default 50, max 200 per page); read every page
+  // so sites with many projects -- archived ones count -- are not truncated.
+  const PAGE_SIZE = 200;
+  const all: Project[] = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const response = await apiGet<{ items: Project[]; total: number; offset: number; limit: number }>(
+      `/api/projects?archived=${archived}&limit=${PAGE_SIZE}&offset=${offset}`
+    );
+    all.push(...response.items);
+    if (response.items.length < PAGE_SIZE || all.length >= response.total) {
+      return all;
+    }
+  }
 }
 
 /**
@@ -450,10 +462,33 @@ function transformEquipmentAssignment(assignment: Record<string, unknown>): Equi
 }
 
 /**
- * Load all projects with full nested data
- * This is the main data loading function used at app startup
+ * Load all projects with full nested data for display.
+ *
+ * What-If guard: while What-If mode is active the local project tree IS the
+ * sandbox, and every write is queued instead of sent, so a server reload would
+ * throw the user's What-If edits off the screen (they would stay queued but
+ * invisible). Every "reload after a write" call site in the app goes through
+ * this function, so the guard lives here: in What-If mode it returns the
+ * current local projects unchanged and logs a warning. Objects created during
+ * What-If therefore do not appear until Apply (their server ids are unknown
+ * until then — a documented What-If limitation).
+ *
+ * Code that genuinely needs server state during What-If (whatIfStore after a
+ * failed Apply) uses fetchAllProjects() instead.
  */
 export async function loadAllProjects(): Promise<Project[]> {
+  if (isWhatIfActive()) {
+    console.warn('[What If] Skipping project reload from the server while What-If mode is active');
+    return useAppStore.getState().projects;
+  }
+  return fetchAllProjects();
+}
+
+/**
+ * Fetch all projects with full nested data from the server, unconditionally
+ * (ignores What-If mode — see loadAllProjects).
+ */
+export async function fetchAllProjects(): Promise<Project[]> {
   const projects = await getProjects('all');
   
   if (!projects || projects.length === 0) {

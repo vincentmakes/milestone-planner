@@ -164,24 +164,6 @@
 }
 
 /* Buttons */
-.btnPrimary {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.625rem 1rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #fff;
-  background: var(--accent-blue);
-  border: none;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.btnPrimary:hover {
-  background: var(--accent-blue-hover);
-}
 
 /* Action Buttons */
 .actions {

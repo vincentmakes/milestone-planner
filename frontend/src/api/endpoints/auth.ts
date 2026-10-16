@@ -41,6 +41,16 @@ export async function checkAuth(): Promise<{ user: User | null }> {
 }
 
 /**
+ * The signed-in user, `null` when the session is gone. Unlike checkAuth this
+ * THROWS on network/server errors, so callers can tell "logged out" from
+ * "could not ask" (a dropped connection must not log anyone out).
+ */
+export async function fetchCurrentUser(): Promise<User | null> {
+  const response = await apiGet<{ user: Record<string, unknown> | null }>('/api/auth/me');
+  return response.user ? transformUser(response.user) : null;
+}
+
+/**
  * Login with email and password
  */
 export async function login(email: string, password: string): Promise<AuthResponse> {

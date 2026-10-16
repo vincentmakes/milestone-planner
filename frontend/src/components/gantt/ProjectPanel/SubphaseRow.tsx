@@ -15,9 +15,11 @@ import { AssignmentRow } from './AssignmentRow';
 import { PhantomRow } from './PhantomRow';
 import { usePhantomSibling } from '@/hooks';
 import { CompletionSlider } from '@/components/gantt/CompletionSlider';
+import { statusAfterCompletionWrite } from '@/components/gantt/utils/completionStatus';
 import { CustomColumnCell } from '@/components/gantt/CustomColumns';
 import { updateSubphase } from '@/api/endpoints/projects';
-import { formatShortDateRange, formatSingleDate } from '@/utils/date';
+import { formatShortDateRange, formatSingleDate, daysBetweenDateStrings } from '@/utils/date';
+import { canEditProject } from '@/utils/permissions';
 import type { Subphase, CustomColumn, CustomColumnEntityType } from '@/types';
 import styles from './SubphaseRow.module.css';
 
@@ -85,7 +87,7 @@ function getEffectiveCompletion(item: Subphase): { completion: number | null; is
     for (const child of children) {
       if (!child) continue;
       const childResult = getEffectiveCompletion(child);
-      const days = Math.max(1, Math.ceil((new Date(child.end_date).getTime() - new Date(child.start_date).getTime()) / (1000*60*60*24)));
+      const days = Math.max(1, daysBetweenDateStrings(child.start_date, child.end_date));
       
       // Unset completion counts as 0% when at least one sibling has a value
       const completion = childResult.completion ?? 0;
@@ -125,9 +127,10 @@ export const SubphaseRow = memo(function SubphaseRow({
   const triggerScrollToDate = useUIStore((s) => s.triggerScrollToDate);
   const projects = useAppStore((s) => s.projects);
   const setProjects = useAppStore((s) => s.setProjects);
-  
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
-  
+
+  // Admins, superusers and the project's manager.
+  const canEdit = canEditProject(currentUser, projects.find((p) => p.id === projectId));
+
   // Completion slider state
   const [sliderAnchor, setSliderAnchor] = useState<HTMLElement | null>(null);
   const showSlider = Boolean(sliderAnchor);
@@ -163,20 +166,32 @@ export const SubphaseRow = memo(function SubphaseRow({
   // Handle clicking on completion badge to show slider
   const handleCompletionClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!canEdit) return;
     // Don't show slider if calculated from children
     const result = getEffectiveCompletion(subphase);
     if (result.isCalculated) return;
     setSliderAnchor(e.currentTarget as HTMLElement);
-  }, [subphase]);
+  }, [subphase, canEdit]);
 
   // Helper to update subphase in project tree
-  const updateSubphaseInTree = useCallback((subphases: Subphase[], targetId: number, newCompletion: number | null): Subphase[] => {
+  const updateSubphaseInTree = useCallback((
+    subphases: Subphase[],
+    targetId: number,
+    newCompletion: number | null,
+    response: unknown
+  ): Subphase[] => {
     return subphases.map(sp => {
       if (sp.id === targetId) {
-        return { ...sp, completion: newCompletion };
+        // Status and completion move together (the sender gets no broadcast
+        // of its own change).
+        return {
+          ...sp,
+          completion: newCompletion,
+          status: statusAfterCompletionWrite(response, newCompletion, sp.status),
+        };
       }
       if (sp.children && sp.children.length > 0) {
-        return { ...sp, children: updateSubphaseInTree(sp.children, targetId, newCompletion) };
+        return { ...sp, children: updateSubphaseInTree(sp.children, targetId, newCompletion, response) };
       }
       return sp;
     });
@@ -186,10 +201,10 @@ export const SubphaseRow = memo(function SubphaseRow({
   const handleCompletionChange = useCallback(async (value: number) => {
     try {
       const newCompletion = value === -1 ? null : value;
-      await updateSubphase(subphase.id, { completion: newCompletion });
+      const response = await updateSubphase(subphase.id, { completion: newCompletion });
       
-      // Update local state optimistically
-      const updatedProjects = projects.map(p => {
+      // Apply the write locally
+      const updatedProjects = useAppStore.getState().projects.map(p => {
         if (p.id !== projectId) return p;
         return {
           ...p,
@@ -197,7 +212,7 @@ export const SubphaseRow = memo(function SubphaseRow({
             if (ph.id !== phaseId) return ph;
             return {
               ...ph,
-              children: updateSubphaseInTree(ph.children || [], subphase.id, newCompletion)
+              children: updateSubphaseInTree(ph.children || [], subphase.id, newCompletion, response)
             };
           })
         };
@@ -206,7 +221,7 @@ export const SubphaseRow = memo(function SubphaseRow({
     } catch (err) {
       console.error('Failed to update completion:', err);
     }
-  }, [subphase.id, projectId, phaseId, projects, setProjects, updateSubphaseInTree]);
+  }, [subphase.id, projectId, phaseId, setProjects, updateSubphaseInTree]);
 
   const hasChildren =
     (subphase.children?.length ?? 0) > 0 ||
@@ -261,7 +276,7 @@ export const SubphaseRow = memo(function SubphaseRow({
         onDragOver={onDragOver}
         onDragLeave={handleDragLeave}
         onDrop={onDrop}
-        onDoubleClick={handleEdit}
+        onDoubleClick={canEdit ? handleEdit : undefined}
         onContextMenu={handleContextMenu}
       >
         {/* Name column - fixed width */}
@@ -317,10 +332,15 @@ export const SubphaseRow = memo(function SubphaseRow({
                 : styles.empty
             }`}
             onClick={handleCompletionClick}
+            style={{ cursor: completionResult.isCalculated || !canEdit ? 'default' : 'pointer' }}
             title={
-              completionResult.completion !== null
-                ? (completionResult.isCalculated ? 'Calculated from children' : 'Click to edit')
-                : 'Click to set completion'
+              completionResult.isCalculated
+                ? 'Calculated from children'
+                : !canEdit
+                  ? 'Completion'
+                  : completionResult.completion !== null
+                    ? 'Click to edit'
+                    : 'Click to set completion'
             }
           >
             {completionResult.completion !== null ? `${completionResult.completion}%` : '—'}
@@ -360,7 +380,9 @@ export const SubphaseRow = memo(function SubphaseRow({
                   column={column}
                   entityType="subphase"
                   entityId={subphase.id}
-                  readOnly={!canEdit}
+                  // Values are self-service for every signed-in user (the
+                  // backend only requires authentication); definitions stay admin-only.
+                  readOnly={!currentUser}
                   childEntities={childEntities}
                 />
               </div>

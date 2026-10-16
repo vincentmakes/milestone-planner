@@ -19,11 +19,19 @@ Matches Node.js routes:
 - PUT /api/subphase-staff/:id
 - DELETE /api/subphase-staff/:id
 - POST /api/projects/:projectId/equipment
-- PUT /api/equipment-assignments/:id
-- DELETE /api/equipment-assignments/:id
+
+PUT/DELETE /api/equipment-assignments/:id live in routers/equipment.py (that
+router is registered first; duplicates here used to be shadowed dead code).
+
+Auth: staff-assignment writes go through `require_assignment_write` -- a
+superuser/admin, the project's manager, or the staff member themself
+(self-assignment, `staff_id == user.id`). The `project_id` used for that check
+is always derived server-side from the path or the loaded row, never from the
+request body. Equipment bookings need a project editor (superuser or PM).
 """
 
 from datetime import date
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -31,18 +39,27 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_superuser
+from app.middleware.auth import get_current_user
 from app.models.assignment import (
     PhaseStaffAssignment,
     ProjectAssignment,
     SubphaseStaffAssignment,
 )
-from app.models.equipment import EquipmentAssignment
+from app.models.equipment import Equipment, EquipmentAssignment
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.base import (
+    DateRangeOrdered,
     serialize_date_as_datetime_js,
     serialize_datetime_js,
+)
+from app.services.project_access import (
+    check_assignment_write,
+    project_id_for_phase,
+    project_id_for_subphase,
+    project_pm_id,
+    require_assignment_write,
+    require_project_editor,
 )
 from app.websocket.broadcast import broadcast_change
 
@@ -54,57 +71,69 @@ router = APIRouter(tags=["assignments"])
 # ---------------------------------------------------------
 
 
-class ProjectStaffAssignmentCreate(BaseModel):
+# A single booking is a share of one person's time, so it cannot exceed 100%;
+# over-allocation is what several overlapping bookings add up to, and the
+# workload heatmap is where that shows. 0 or negative would silently corrupt
+# that calculation rather than mean anything. Same bound on every level
+# (project / phase / subphase, create and update) and on Kanban assignees.
+Allocation = Annotated[int, Field(ge=1, le=100)]
+
+
+class ProjectStaffAssignmentCreate(DateRangeOrdered):
     """Request to assign staff to a project."""
 
     staff_id: int
-    allocation: int = 100
+    allocation: Allocation = 100
     start_date: date
     end_date: date
 
 
-class ProjectStaffAssignmentUpdate(BaseModel):
+class ProjectStaffAssignmentUpdate(DateRangeOrdered):
     """Request to update a project staff assignment."""
 
-    allocation: int
+    allocation: Allocation
     start_date: date
     end_date: date
 
 
 class PhaseStaffAssignmentCreate(BaseModel):
-    """Request to assign staff to a phase."""
+    """Request to assign staff to a phase.
+
+    `project_id` is accepted for wire compatibility but ignored: the server
+    resolves it from the phase.
+    """
 
     staff_id: int
     project_id: int
-    allocation: int | None = 100
+    # null keeps the historical meaning "full time" (100).
+    allocation: Allocation | None = 100
 
 
 class PhaseStaffAssignmentUpdate(BaseModel):
     """Request to update a phase staff assignment."""
 
-    # A single booking is a share of one person's time, so it cannot exceed
-    # 100%; over-allocation is what several overlapping bookings add up to, and
-    # the workload heatmap is where that shows. 0 or negative would silently
-    # corrupt that calculation rather than mean anything.
-    allocation: int = Field(ge=1, le=100)
+    allocation: Allocation
 
 
 class SubphaseStaffAssignmentCreate(BaseModel):
-    """Request to assign staff to a subphase."""
+    """Request to assign staff to a subphase.
+
+    `project_id` is accepted for wire compatibility but ignored: the server
+    resolves it from the subphase.
+    """
 
     staff_id: int
     project_id: int
-    allocation: int | None = 100
+    allocation: Allocation | None = 100
 
 
 class SubphaseStaffAssignmentUpdate(BaseModel):
     """Request to update a subphase staff assignment."""
 
-    # Bounded for the same reason as the phase-level update above.
-    allocation: int = Field(ge=1, le=100)
+    allocation: Allocation
 
 
-class EquipmentAssignmentCreate(BaseModel):
+class EquipmentAssignmentCreate(DateRangeOrdered):
     """Request to assign equipment to a project."""
 
     equipment_id: int
@@ -112,11 +141,11 @@ class EquipmentAssignmentCreate(BaseModel):
     end_date: date
 
 
-class EquipmentAssignmentUpdate(BaseModel):
-    """Request to update an equipment assignment."""
-
-    start_date: date
-    end_date: date
+async def _require_staff(db: AsyncSession, staff_id: int) -> None:
+    """404 for an unknown staff member (instead of an FK violation -> 500)."""
+    found = (await db.execute(select(User.id).where(User.id == staff_id))).scalar_one_or_none()
+    if found is None:
+        raise HTTPException(status_code=404, detail="Staff member not found")
 
 
 # ---------------------------------------------------------
@@ -169,13 +198,20 @@ async def create_project_staff_assignment(
     data: ProjectStaffAssignmentCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Assign staff to a project.
 
     Matches: POST /api/projects/:projectId/staff
     """
+    # Resolve the project before anything else (404): the own-row and
+    # privileged short-circuits of require_assignment_write never query it, so
+    # a write to a missing project would otherwise end in an FK error (500).
+    pm_id = await project_pm_id(db, project_id)
+    check_assignment_write(user, pm_id=pm_id, staff_id=data.staff_id)
+    await _require_staff(db, data.staff_id)
+
     assignment = ProjectAssignment(
         project_id=project_id,
         staff_id=data.staff_id,
@@ -206,7 +242,7 @@ async def update_project_staff_assignment(
     data: ProjectStaffAssignmentUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Update a project staff assignment.
@@ -222,6 +258,7 @@ async def update_project_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
+    await require_assignment_write(db, user, project_id=project_id, staff_id=assignment.staff_id)
 
     assignment.allocation = data.allocation
     assignment.start_date = data.start_date
@@ -247,7 +284,7 @@ async def delete_project_staff_assignment(
     assignment_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Delete a project staff assignment.
@@ -263,6 +300,7 @@ async def delete_project_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
+    await require_assignment_write(db, user, project_id=project_id, staff_id=assignment.staff_id)
 
     await db.delete(assignment)
     await db.commit()
@@ -291,16 +329,20 @@ async def create_phase_staff_assignment(
     data: PhaseStaffAssignmentCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Assign staff to a phase.
 
     Matches: POST /api/phases/:phaseId/staff
     """
+    project_id = await project_id_for_phase(db, phase_id)
+    await require_assignment_write(db, user, project_id=project_id, staff_id=data.staff_id)
+    await _require_staff(db, data.staff_id)
+
     assignment = PhaseStaffAssignment(
         phase_id=phase_id,
-        project_id=data.project_id,
+        project_id=project_id,
         staff_id=data.staff_id,
         allocation=data.allocation or 100,
     )
@@ -326,7 +368,7 @@ async def create_phase_staff_assignment(
         user=user,
         entity_type="staff_assignment",
         entity_id=assignment.id,
-        project_id=data.project_id,
+        project_id=project_id,
         action="create",
     )
 
@@ -347,7 +389,7 @@ async def update_phase_staff_assignment(
     data: PhaseStaffAssignmentUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Update a phase staff assignment.
@@ -363,6 +405,7 @@ async def update_phase_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
+    await require_assignment_write(db, user, project_id=project_id, staff_id=assignment.staff_id)
 
     assignment.allocation = data.allocation
 
@@ -386,7 +429,7 @@ async def delete_phase_staff_assignment(
     assignment_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Delete a phase staff assignment.
@@ -402,6 +445,7 @@ async def delete_phase_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
+    await require_assignment_write(db, user, project_id=project_id, staff_id=assignment.staff_id)
 
     await db.delete(assignment)
     await db.commit()
@@ -430,16 +474,20 @@ async def create_subphase_staff_assignment(
     data: SubphaseStaffAssignmentCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Assign staff to a subphase.
 
     Matches: POST /api/subphases/:subphaseId/staff
     """
+    project_id = await project_id_for_subphase(db, subphase_id)
+    await require_assignment_write(db, user, project_id=project_id, staff_id=data.staff_id)
+    await _require_staff(db, data.staff_id)
+
     assignment = SubphaseStaffAssignment(
         subphase_id=subphase_id,
-        project_id=data.project_id,
+        project_id=project_id,
         staff_id=data.staff_id,
         allocation=data.allocation or 100,
     )
@@ -465,7 +513,7 @@ async def create_subphase_staff_assignment(
         user=user,
         entity_type="staff_assignment",
         entity_id=assignment.id,
-        project_id=data.project_id,
+        project_id=project_id,
         action="create",
     )
 
@@ -486,7 +534,7 @@ async def update_subphase_staff_assignment(
     data: SubphaseStaffAssignmentUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Update a subphase staff assignment.
@@ -502,6 +550,7 @@ async def update_subphase_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
+    await require_assignment_write(db, user, project_id=project_id, staff_id=assignment.staff_id)
 
     assignment.allocation = data.allocation
 
@@ -525,7 +574,7 @@ async def delete_subphase_staff_assignment(
     assignment_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Delete a subphase staff assignment.
@@ -541,6 +590,7 @@ async def delete_subphase_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
+    await require_assignment_write(db, user, project_id=project_id, staff_id=assignment.staff_id)
 
     await db.delete(assignment)
     await db.commit()
@@ -569,13 +619,32 @@ async def create_equipment_assignment(
     data: EquipmentAssignmentCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
-    Assign equipment to a project.
+    Assign equipment to a project. Project editors only (superuser or PM).
+    The equipment must be linked to the project's site (`equipment_sites`).
 
     Matches: POST /api/projects/:projectId/equipment
     """
+    await require_project_editor(db, user, project_id)
+
+    project_row = (
+        await db.execute(select(Project.site_id).where(Project.id == project_id))
+    ).first()
+    if project_row is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    equipment = (
+        await db.execute(select(Equipment).where(Equipment.id == data.equipment_id))
+    ).scalar_one_or_none()
+    if equipment is None:
+        raise HTTPException(status_code=404, detail="Equipment not found")
+    if project_row[0] not in equipment.site_ids:
+        raise HTTPException(
+            status_code=400, detail="Equipment is not available at this project's site"
+        )
+
     assignment = EquipmentAssignment(
         project_id=project_id,
         equipment_id=data.equipment_id,
@@ -597,82 +666,3 @@ async def create_equipment_assignment(
     )
 
     return {"id": assignment.id, "success": True}
-
-
-@router.put("/equipment-assignments/{assignment_id}")
-async def update_equipment_assignment(
-    assignment_id: int,
-    data: EquipmentAssignmentUpdate,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
-):
-    """
-    Update an equipment assignment.
-
-    Matches: PUT /api/equipment-assignments/:id
-    """
-    result = await db.execute(
-        select(EquipmentAssignment).where(EquipmentAssignment.id == assignment_id)
-    )
-    assignment = result.scalar_one_or_none()
-
-    if not assignment:
-        raise HTTPException(status_code=404, detail="Assignment not found")
-
-    project_id = assignment.project_id
-
-    assignment.start_date = data.start_date
-    assignment.end_date = data.end_date
-
-    await db.commit()
-
-    # Broadcast change
-    await broadcast_change(
-        request=request,
-        user=user,
-        entity_type="equipment_assignment",
-        entity_id=assignment_id,
-        project_id=project_id,
-        action="update",
-    )
-
-    return {"success": True}
-
-
-@router.delete("/equipment-assignments/{assignment_id}")
-async def delete_equipment_assignment(
-    assignment_id: int,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
-):
-    """
-    Delete an equipment assignment.
-
-    Matches: DELETE /api/equipment-assignments/:id
-    """
-    result = await db.execute(
-        select(EquipmentAssignment).where(EquipmentAssignment.id == assignment_id)
-    )
-    assignment = result.scalar_one_or_none()
-
-    if not assignment:
-        raise HTTPException(status_code=404, detail="Assignment not found")
-
-    project_id = assignment.project_id
-
-    await db.delete(assignment)
-    await db.commit()
-
-    # Broadcast change
-    await broadcast_change(
-        request=request,
-        user=user,
-        entity_type="equipment_assignment",
-        entity_id=assignment_id,
-        project_id=project_id,
-        action="delete",
-    )
-
-    return {"success": True}

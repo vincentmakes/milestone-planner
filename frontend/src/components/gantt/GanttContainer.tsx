@@ -10,18 +10,21 @@ import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { ProjectPanel } from './ProjectPanel';
 import { Timeline } from './Timeline';
-import { useScrollSync } from '@/hooks';
+import { useScrollSync, useTagFilteredProjects } from '@/hooks';
+import { useGanttGrouping } from '@/hooks/useGanttGrouping';
 import { generateTimelineCells, generateTimelineHeaders } from './utils';
+import { buildGanttRows, buildProjectSections, flatGanttRows } from './utils/projectSections';
 import { TimelineScrollProvider } from '@/contexts/TimelineScrollContext';
 import { StaffView } from '@/components/views/StaffView/StaffView';
 import { EquipmentView } from '@/components/views/EquipmentView/EquipmentView';
-import { orderSiteProjects, setProjectOrder, getProjectOrder } from '@/utils/storage';
+import { orderSiteProjects, setProjectOrder, moveProjectInOrder } from '@/utils/storage';
+import { canManageAnyProject } from '@/utils/permissions';
 import styles from './GanttContainer.module.css';
 
 export function GanttContainer() {
   const projectPanelRef = useRef<HTMLDivElement>(null);
   const timelineBodyRef = useRef<HTMLDivElement>(null);
-  const [panelWidth, setPanelWidth] = useState(320);
+  const [panelWidth, setPanelWidth] = useState(360);
   const [overviewHeight, setOverviewHeight] = useState(250);
 
   const projects = useAppStore((s) => s.projects);
@@ -41,8 +44,9 @@ export function GanttContainer() {
   const showAllCustomColumns = useCustomColumnStore((s) => s.showAllCustomColumns);
   const hiddenCustomColumns = useCustomColumnStore((s) => s.hiddenCustomColumns);
 
-  // Only superusers/admins can see overview panels
-  const canShowOverview = currentUser?.role === 'superuser' || currentUser?.role === 'admin';
+  // Overview panels exist to drag resources onto projects, so anyone who
+  // manages at least one project gets them (same rule as the Header dropdown).
+  const canShowOverview = canManageAnyProject(currentUser, projects);
   
   // Track project order changes to trigger re-sorting
   const [projectOrderVersion, setProjectOrderVersion] = useState(0);
@@ -58,32 +62,30 @@ export function GanttContainer() {
     () => orderSiteProjects(projects, currentSite?.id),
     [projects, currentSite, projectOrderVersion] // re-sort when the order changes
   );
+
+  // Projects shown in the tree and on the timeline: the site's projects
+  // narrowed by the per-site tag filter (same filter as the Kanban board).
+  // Reordering still works on the full list so hidden projects keep their place.
+  const visibleProjects = useTagFilteredProjects(filteredProjects);
+
+  // "Group by tag group": the (tag-filtered) projects split into sections.
+  // Both panes render the same flat row list, so they stack identically.
+  const { group, siteTags, collapsedKeys, toggleSection } = useGanttGrouping();
+  const ganttRows = useMemo(
+    () =>
+      group
+        ? buildGanttRows(buildProjectSections(visibleProjects, group, siteTags), collapsedKeys)
+        : flatGanttRows(visibleProjects),
+    [visibleProjects, group, siteTags, collapsedKeys]
+  );
   
   // Handler to reorder projects (called from ProjectPanel)
-  const handleProjectReorder = useCallback((fromId: number, toId: number) => {
+  const handleProjectReorder = useCallback((fromId: number, targetId: number, position: 'before' | 'after') => {
     if (!currentSite?.id) return;
     
-    // Get current order (or create from filtered projects)
-    let order = getProjectOrder(currentSite.id);
-    if (order.length === 0) {
-      // Initialize order from current filtered projects
-      order = filteredProjects.map(p => p.id);
-    }
-    
-    // Find positions
-    const fromIndex = order.indexOf(fromId);
-    const toIndex = order.indexOf(toId);
-    
-    // If project isn't in order yet (shouldn't happen), add it
-    if (fromIndex === -1) {
-      order.push(fromId);
-    }
-    
-    // Move the project
-    if (fromIndex !== -1 && toIndex !== -1) {
-      order.splice(fromIndex, 1);
-      order.splice(toIndex, 0, fromId);
-    }
+    // Start from what is on screen, not the saved list: projects created since
+    // the order was last saved are not in it, and must land where dropped.
+    const order = moveProjectInOrder(filteredProjects.map(p => p.id), fromId, targetId, position);
     
     // Save the new order
     setProjectOrder(currentSite.id, order);
@@ -128,7 +130,7 @@ export function GanttContainer() {
 
     const handleMouseMove = (e: MouseEvent) => {
       const delta = e.clientX - startX;
-      const newWidth = Math.max(200, Math.min(600, startWidth + delta));
+      const newWidth = Math.max(240, Math.min(600, startWidth + delta));
       setPanelWidth(newWidth);
     };
 
@@ -184,7 +186,7 @@ export function GanttContainer() {
   const handleOverviewPanelWidthChange = useCallback((newTotalWidth: number) => {
     // newTotalWidth includes resizer, so subtract it and custom columns width
     const newPanelWidth = newTotalWidth - RESIZER_WIDTH - customColumnsWidth;
-    const constrainedWidth = Math.max(200, Math.min(600, newPanelWidth));
+    const constrainedWidth = Math.max(240, Math.min(600, newPanelWidth));
     setPanelWidth(constrainedWidth);
   }, [customColumnsWidth]);
 
@@ -193,9 +195,13 @@ export function GanttContainer() {
       <div className={styles.ganttArea}>
         <ProjectPanel
           ref={projectPanelRef}
-          projects={filteredProjects}
+          projects={visibleProjects}
+          totalCount={filteredProjects.length}
+          rows={ganttRows}
+          onToggleSection={toggleSection}
           width={panelWidth}
-          onProjectReorder={handleProjectReorder}
+          // Sections reorder nothing: the order is per site, not per section.
+          onProjectReorder={group ? undefined : handleProjectReorder}
         />
         
         <div
@@ -207,7 +213,8 @@ export function GanttContainer() {
           ref={timelineBodyRef}
           cells={timelineCells}
           headers={timelineHeaders}
-          projects={filteredProjects}
+          projects={visibleProjects}
+          rows={ganttRows}
           cellWidth={cellWidth}
           viewMode={viewMode}
           hasCustomColumns={visibleColumns.length > 0}

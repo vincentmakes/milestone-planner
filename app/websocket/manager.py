@@ -38,6 +38,9 @@ class ConnectedUser:
     last_name: str
     websocket: WebSocket
     connected_at: datetime = field(default_factory=utcnow_naive)
+    # Session the socket authenticated with, so revoking "every session but
+    # this one" can keep the caller's own tab connected.
+    session_id: str | None = None
 
     def to_presence_dict(self) -> dict:
         """Convert to dict for presence broadcast."""
@@ -85,6 +88,7 @@ class ConnectionManager:
         user_id: int,
         first_name: str,
         last_name: str,
+        session_id: str | None = None,
     ) -> int:
         """
         Accept a new WebSocket connection.
@@ -109,6 +113,7 @@ class ConnectionManager:
             first_name=first_name,
             last_name=last_name,
             websocket=websocket,
+            session_id=session_id,
         )
 
         async with self._lock:
@@ -190,6 +195,63 @@ class ConnectionManager:
                     "timestamp": utcnow_naive().isoformat() + "Z",
                 },
             )
+
+    async def disconnect_user(
+        self,
+        tenant_id: str,
+        user_id: int,
+        *,
+        except_session_id: str | None = None,
+        code: int = 4001,
+        reason: str = "Session revoked",
+    ) -> int:
+        """
+        Close every connection of ``user_id`` in a tenant (session revocation).
+
+        Connections opened with ``except_session_id`` are kept. Close code 4001
+        makes the client drop to the login screen without reconnecting. Per
+        process and best effort: a socket on another worker is not reached,
+        and a close that fails is ignored. Returns the number of connections
+        removed.
+        """
+        async with self._lock:
+            tenant_conns = self._connections.get(tenant_id, {})
+            doomed = [
+                conn
+                for conn in tenant_conns.values()
+                if conn.user_id == user_id
+                and (except_session_id is None or conn.session_id != except_session_id)
+            ]
+            for conn in doomed:
+                tenant_conns.pop(conn.connection_id, None)
+            still_online = any(c.user_id == user_id for c in tenant_conns.values())
+            if not tenant_conns and tenant_id in self._connections:
+                del self._connections[tenant_id]
+
+        for conn in doomed:
+            try:
+                await conn.websocket.close(code=code, reason=reason)
+            except Exception as e:
+                logger.debug("Close of revoked conn=%s failed: %s", conn.connection_id, e)
+
+        if doomed:
+            logger.info(
+                "Closed %d WebSocket(s) of user %s in tenant '%s' (%s)",
+                len(doomed),
+                user_id,
+                tenant_id,
+                reason,
+            )
+            if not still_online:
+                await self.broadcast_to_tenant(
+                    tenant_id,
+                    {
+                        "type": "presence:leave",
+                        "payload": {"user_id": user_id},
+                        "timestamp": utcnow_naive().isoformat() + "Z",
+                    },
+                )
+        return len(doomed)
 
     async def _send_presence_list(self, websocket: WebSocket, tenant_id: str) -> None:
         """Send list of currently online users (deduplicated by user_id) to a connection."""

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.middleware.auth import require_admin, require_superuser
+from app.middleware.auth import get_session_id, require_admin, require_superuser
 from app.models.site import Site
 from app.models.skill import Skill, UserSkill
 from app.models.user import User, UserSite
@@ -22,10 +22,54 @@ from app.schemas.user import (
     UserDetailResponse,
     UserResponse,
 )
-from app.services.encryption import hash_user_password
+from app.services.encryption import PasswordTooLongError, hash_user_password
 from app.services.response_builders import build_skills_list, build_user_base, get_sorted_sites
+from app.services.session import SessionService
 
 router = APIRouter()
+
+
+def _hash_password_or_400(password: str) -> str:
+    """bcrypt-hash a password, turning bcrypt's 72-byte limit into a 400."""
+    try:
+        return hash_user_password(password)
+    except PasswordTooLongError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+
+def _unique(ids: list[int]) -> list[int]:
+    """De-duplicate, keeping the caller's order (a repeat would hit the PK)."""
+    return list(dict.fromkeys(ids))
+
+
+async def _load_sites(db: AsyncSession, site_ids: list[int] | None) -> list[Site]:
+    """The sites for ``site_ids`` in request order; 400 naming unknown ids."""
+    wanted = _unique(site_ids or [])
+    if not wanted:
+        return []
+    found = {s.id: s for s in (await db.execute(select(Site).where(Site.id.in_(wanted)))).scalars()}
+    missing = [i for i in wanted if i not in found]
+    if missing:
+        raise HTTPException(
+            status_code=400, detail=f"Unknown site: {', '.join(str(i) for i in missing)}"
+        )
+    return [found[i] for i in wanted]
+
+
+async def _load_skills(db: AsyncSession, skill_ids: list[int] | None) -> list[Skill]:
+    """The skills for ``skill_ids`` in request order; 400 naming unknown ids."""
+    wanted = _unique(skill_ids or [])
+    if not wanted:
+        return []
+    found = {
+        s.id: s for s in (await db.execute(select(Skill).where(Skill.id.in_(wanted)))).scalars()
+    }
+    missing = [i for i in wanted if i not in found]
+    if missing:
+        raise HTTPException(
+            status_code=400, detail=f"Unknown skill: {', '.join(str(i) for i in missing)}"
+        )
+    return [found[i] for i in wanted]
 
 
 def build_user_list_response(user: User) -> dict:
@@ -142,7 +186,7 @@ async def create_user(
     # Create user
     user = User(
         email=data.email,
-        password=hash_user_password(data.password),
+        password=_hash_password_or_400(data.password),
         first_name=data.first_name,
         last_name=data.last_name,
         job_title=data.job_title,
@@ -151,34 +195,18 @@ async def create_user(
         active=1,
     )
 
+    # Unknown sites/skills are a 400 before anything is written (they used to
+    # end in an FK violation -> 500 at commit).
+    sites = await _load_sites(db, data.site_ids)
+    skills = await _load_skills(db, data.skill_ids)
+
     db.add(user)
     await db.flush()  # Get the user ID
 
-    # Add site associations
-    sites = []
-    if data.site_ids:
-        for site_id in data.site_ids:
-            user_site = UserSite(user_id=user.id, site_id=site_id)
-            db.add(user_site)
-
-            # Fetch site for response
-            site_result = await db.execute(select(Site).where(Site.id == site_id))
-            site = site_result.scalar_one_or_none()
-            if site:
-                sites.append(site)
-
-    # Add skill associations
-    skills = []
-    if hasattr(data, "skill_ids") and data.skill_ids:
-        for skill_id in data.skill_ids:
-            user_skill = UserSkill(user_id=user.id, skill_id=skill_id)
-            db.add(user_skill)
-
-            # Fetch skill for response
-            skill_result = await db.execute(select(Skill).where(Skill.id == skill_id))
-            skill = skill_result.scalar_one_or_none()
-            if skill:
-                skills.append(skill)
+    for site in sites:
+        db.add(UserSite(user_id=user.id, site_id=site.id))
+    for skill in skills:
+        db.add(UserSkill(user_id=user.id, skill_id=skill.id))
 
     await db.commit()
     await db.refresh(user)
@@ -194,6 +222,7 @@ async def update_user(
     data: StaffUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_superuser),
+    session_id: str | None = Depends(get_session_id),
 ):
     """
     Update a user.
@@ -202,7 +231,12 @@ async def update_user(
     Superusers can only:
     - Assign sites they themselves have access to
     - Assign skills to users
-    - Update basic info (name, job_title) but NOT role or active status
+    - Update basic info (name, job_title, capacity) but NOT role or active status
+    - Change email/password on their OWN account only
+    and cannot modify an admin account at all (no superuser -> admin takeover).
+
+    A role change, deactivation or password change destroys the target's
+    existing sessions (except the caller's own current session).
     Matches: PUT /api/users/:id
     """
     result = await db.execute(
@@ -218,8 +252,23 @@ async def update_user(
 
     is_admin = current_user.role == "admin"
 
-    # Superusers cannot change role or active status
+    # Superusers cannot touch admin accounts, nor change role or active status
     if not is_admin:
+        if user.role == "admin":
+            raise HTTPException(
+                status_code=403, detail="Only administrators can modify administrator accounts"
+            )
+        if user.id != current_user.id:
+            # The settings form re-sends the unchanged email, so only an actual
+            # change is refused.
+            email_changed = (
+                data.email is not None and data.email.lower() != (user.email or "").lower()
+            )
+            if email_changed or data.password is not None:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Only administrators can change another user's email or password",
+                )
         if data.role is not None:
             raise HTTPException(status_code=403, detail="Only administrators can change user roles")
         if data.active is not None:
@@ -244,8 +293,18 @@ async def update_user(
     if is_admin and user.id == current_user.id and data.active is not None and data.active == 0:
         raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
 
+    # Changes that must end the target's existing logins (see B1-1): the
+    # session snapshot would otherwise keep the old role/credentials alive.
+    role_changed = data.role is not None and data.role != user.role
+    deactivated = data.active is not None and data.active == 0 and user.active != 0
+    password_changed = data.password is not None
+    new_password_hash = _hash_password_or_400(data.password) if data.password is not None else None
+
+    # A superuser's re-sent (unchanged) email for someone else is ignored
+    may_set_email = is_admin or user.id == current_user.id
+
     # Update fields
-    if data.email is not None:
+    if data.email is not None and may_set_email:
         # Check for duplicate email
         existing = await db.execute(
             select(User).where(User.email == data.email).where(User.id != user_id)
@@ -254,8 +313,8 @@ async def update_user(
             raise HTTPException(status_code=400, detail="A user with this email already exists")
         user.email = data.email
 
-    if data.password is not None:
-        user.password = hash_user_password(data.password)
+    if new_password_hash is not None:
+        user.password = new_password_hash
     if data.first_name is not None:
         user.first_name = data.first_name
     if data.last_name is not None:
@@ -282,38 +341,27 @@ async def update_user(
                         detail=f"You can only assign sites you have access to (site {site_id} not allowed)",
                     )
 
-        # Remove existing associations
+        sites = await _load_sites(db, data.site_ids)
+
+        # Replace existing associations
         await db.execute(delete(UserSite).where(UserSite.user_id == user_id))
-
-        # Add new associations
-        sites = []
-        for site_id in data.site_ids:
-            user_site = UserSite(user_id=user_id, site_id=site_id)
-            db.add(user_site)
-
-            # Fetch site for response
-            site_result = await db.execute(select(Site).where(Site.id == site_id))
-            site = site_result.scalar_one_or_none()
-            if site:
-                sites.append(site)
+        for site in sites:
+            db.add(UserSite(user_id=user_id, site_id=site.id))
 
     # Update skill associations if provided
     skills = list(user.skills) if user.skills else []
-    if hasattr(data, "skill_ids") and data.skill_ids is not None:
-        # Remove existing skill associations
+    if data.skill_ids is not None:
+        skills = await _load_skills(db, data.skill_ids)
+
+        # Replace existing skill associations
         await db.execute(delete(UserSkill).where(UserSkill.user_id == user_id))
+        for skill in skills:
+            db.add(UserSkill(user_id=user_id, skill_id=skill.id))
 
-        # Add new skill associations
-        skills = []
-        for skill_id in data.skill_ids:
-            user_skill = UserSkill(user_id=user_id, skill_id=skill_id)
-            db.add(user_skill)
-
-            # Fetch skill for response
-            skill_result = await db.execute(select(Skill).where(Skill.id == skill_id))
-            skill = skill_result.scalar_one_or_none()
-            if skill:
-                skills.append(skill)
+    if role_changed or deactivated or password_changed:
+        await SessionService(db).destroy_user_sessions(
+            user_id, except_session_id=session_id, commit=False
+        )
 
     await db.commit()
     await db.refresh(user)
@@ -354,6 +402,9 @@ async def delete_user(
     # Delete site associations first
     await db.execute(delete(UserSite).where(UserSite.user_id == user_id))
 
+    # End any live logins of the deleted user
+    await SessionService(db).destroy_user_sessions(user_id, commit=False)
+
     # Delete user
     await db.delete(user)
     await db.commit()
@@ -384,8 +435,16 @@ async def toggle_user_active(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Same protection as PUT /users/{id}: the provisioned admin cannot be disabled
+    if user.is_system_user and user.active == 1:
+        raise HTTPException(status_code=403, detail="Cannot deactivate system administrator")
+
     # Toggle active status
     user.active = 0 if user.active == 1 else 1
+
+    if user.active == 0:
+        # A deactivated user's existing sessions must stop working now
+        await SessionService(db).destroy_user_sessions(user_id, commit=False)
 
     await db.commit()
     await db.refresh(user)

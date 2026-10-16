@@ -12,15 +12,16 @@ import { PhaseRow } from './PhaseRow';
 import { AssignmentRow } from './AssignmentRow';
 import { PhantomRow } from './PhantomRow';
 import { usePhantomSibling } from '@/hooks';
+import { canEditProject } from '@/utils/permissions';
 import type { Project, Phase, Subphase, CustomColumn } from '@/types';
 import styles from './ProjectRow.module.css';
+import { daysBetweenDateStrings } from '@/utils/date';
 
 interface ProjectRowProps {
   project: Project;
   customColumns?: CustomColumn[];
   nameColumnWidth: number;  // Width of the name/info column
-  onReorder?: (fromId: number, toId: number) => void;  // Callback when project is reordered
-  siblingIds?: number[];  // IDs of all projects for reorder context
+  onReorder?: (fromId: number, targetId: number, position: 'before' | 'after') => void;  // Callback when project is reordered
   index?: number;  // Position in the list
 }
 
@@ -51,7 +52,7 @@ function getEffectiveCompletion(item: Phase | Subphase): { completion: number | 
     for (const child of children) {
       if (!child) continue;
       const childResult = getEffectiveCompletion(child);
-      const days = Math.max(1, Math.ceil((new Date(child.end_date).getTime() - new Date(child.start_date).getTime()) / (1000*60*60*24)));
+      const days = Math.max(1, daysBetweenDateStrings(child.start_date, child.end_date));
       
       // Unset completion counts as 0% when at least one sibling has a value
       const completion = childResult.completion ?? 0;
@@ -79,9 +80,7 @@ function calculateProjectCompletion(project: Project): number | null {
 
   phases.forEach((phase) => {
     const effectiveResult = getEffectiveCompletion(phase);
-    const start = new Date(phase.start_date);
-    const end = new Date(phase.end_date);
-    const days = Math.max(1, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    const days = Math.max(1, daysBetweenDateStrings(phase.start_date, phase.end_date));
     
     // Unset completion counts as 0%
     const completion = effectiveResult.completion ?? 0;
@@ -100,7 +99,6 @@ export const ProjectRow = memo(function ProjectRow({
   customColumns = [], 
   nameColumnWidth,
   onReorder,
-  siblingIds = [],
   index: _index = 0,
 }: ProjectRowProps) {
   const expandedProjects = useViewStore((s) => s.expandedProjects);
@@ -112,7 +110,8 @@ export const ProjectRow = memo(function ProjectRow({
   const staff = useAppStore((s) => s.staff);
   const equipment = useAppStore((s) => s.equipment);
   const currentUser = useAppStore((s) => s.currentUser);
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  // Admins, superusers and this project's manager.
+  const canEdit = canEditProject(currentUser, project);
   const showAssignments = useViewStore((s) => s.showAssignments);
   const toggleCriticalPath = useAppStore((s) => s.toggleCriticalPath);
   const isCriticalPathEnabled = useAppStore((s) => s.isCriticalPathEnabled);
@@ -258,22 +257,12 @@ export const ProjectRow = memo(function ProjectRow({
     const midpoint = rect.top + rect.height / 2;
     const insertBefore = e.clientY < midpoint;
     
-    // Calculate target ID
-    let targetId = project.id;
-    if (!insertBefore && siblingIds.length > 0) {
-      // If dropping below, find the next sibling
-      const currentIndex = siblingIds.indexOf(project.id);
-      if (currentIndex < siblingIds.length - 1) {
-        targetId = siblingIds[currentIndex + 1];
-      }
-    }
-    
     if (onReorder) {
-      onReorder(draggedId, targetId);
+      onReorder(draggedId, project.id, insertBefore ? 'before' : 'after');
     }
     
     setDropPosition(null);
-  }, [project.id, siblingIds, onReorder]);
+  }, [project.id, onReorder]);
 
   return (
     <>
@@ -281,7 +270,7 @@ export const ProjectRow = memo(function ProjectRow({
       <div
         className={`${styles.row} ${!project.confirmed ? styles.unconfirmed : ''} ${dropPosition === 'above' ? styles.dropAbove : ''} ${dropPosition === 'below' ? styles.dropBelow : ''} ${isDragging ? styles.dragging : ''}`}
         data-project-id={project.id}
-        onDoubleClick={handleEdit}
+        onDoubleClick={canEdit ? handleEdit : undefined}
         onContextMenu={handleContextMenu}
         onDragOver={handleProjectDragOver}
         onDragLeave={handleProjectDragLeave}

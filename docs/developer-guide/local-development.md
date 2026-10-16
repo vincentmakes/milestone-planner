@@ -30,8 +30,15 @@ All demo staff accounts also use password `demo1234`.
 git clone https://github.com/vincentmakes/milestone-planner.git
 cd milestone-planner
 cp .env.example .env
-# Edit .env with your database credentials
+# Edit .env with your database credentials and a SESSION_SECRET
 ```
+
+`SESSION_SECRET` ships empty in `.env.example` and is **required**: with `DEBUG=false` the
+backend refuses to start on an empty or published example value, and
+`docker-compose.fresh.yml` refuses to start without it (even for `up -d db`, since compose
+interpolates the whole file). Generate one with
+`python -c "import secrets; print(secrets.token_hex(32))"`. For a throwaway local backend,
+`DEBUG=true` also lets it start with an insecure secret (a warning is logged).
 
 ### 2. Start Dependencies
 

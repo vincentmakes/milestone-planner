@@ -1,6 +1,12 @@
 #!/bin/bash
-# Run migration across all tenant databases
-# Usage: ./migrate_all_tenants.sh [migration_file.sql]
+# Run one migration file across all active tenant databases (pure psql).
+# Usage: ./migrate_all_tenants.sh <migration_file.sql>
+#
+# The file argument is required. (An older version fell back to an inline
+# company_events definition of the wrong shape when no file was given.)
+# Prefer `python migrations/run_migration.py <name>`, which also handles
+# per-tenant credentials; this loop is for environments where Python is
+# impractical.
 
 # Configuration - adjust these for your environment
 PG_HOST="${PG_HOST:-localhost}"
@@ -8,28 +14,18 @@ PG_PORT="${PG_PORT:-5432}"
 PG_USER="${PG_USER:-postgres}"
 ADMIN_DB="${ADMIN_DB:-milestone_admin}"
 
-# Migration SQL file (default to company_events migration)
-MIGRATION_FILE="${1:-add_company_events.sql}"
+MIGRATION_FILE="$1"
 
-# If no file provided, use inline SQL
+if [ -z "$MIGRATION_FILE" ]; then
+    echo "Usage: $0 <migration_file.sql>" >&2
+    echo "Available migrations:" >&2
+    ls "$(dirname "$0")"/*.sql >&2
+    exit 2
+fi
+
 if [ ! -f "$MIGRATION_FILE" ]; then
-    echo "Using inline company_events migration..."
-    MIGRATION_SQL="
-        CREATE TABLE IF NOT EXISTS company_events (
-            id SERIAL PRIMARY KEY,
-            site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
-            name VARCHAR(255) NOT NULL,
-            start_date DATE NOT NULL,
-            end_date DATE NOT NULL,
-            description TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE INDEX IF NOT EXISTS idx_company_events_site_id ON company_events(site_id);
-        CREATE INDEX IF NOT EXISTS idx_company_events_dates ON company_events(start_date, end_date);
-    "
-else
-    MIGRATION_SQL=$(cat "$MIGRATION_FILE")
+    echo "Migration file not found: $MIGRATION_FILE" >&2
+    exit 2
 fi
 
 echo "============================================"
@@ -37,6 +33,7 @@ echo "Multi-Tenant Migration Script"
 echo "============================================"
 echo "Host: $PG_HOST:$PG_PORT"
 echo "Admin DB: $ADMIN_DB"
+echo "Migration: $MIGRATION_FILE"
 echo ""
 
 # Get list of active tenant databases
@@ -60,7 +57,8 @@ FAILED=0
 for DB in $TENANT_DBS; do
     echo -n "Migrating $DB... "
     
-    if psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$DB" -c "$MIGRATION_SQL" > /dev/null 2>&1; then
+    if psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$DB" -v ON_ERROR_STOP=1 \
+        -f "$MIGRATION_FILE" > /dev/null 2>&1; then
         echo "✓ OK"
         ((SUCCESS++))
     else

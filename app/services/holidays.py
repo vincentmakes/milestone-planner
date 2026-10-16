@@ -12,9 +12,10 @@ The two versions return different field names, so responses are normalised into
 """
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date as date_type
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
@@ -179,6 +180,69 @@ def is_relevant_holiday(holiday: NagerHoliday, region_code: str | None) -> bool:
             return False
 
     return matches_region(holiday, region_code)
+
+
+# A custom holiday longer than this is almost certainly a data-entry mistake;
+# cap the expansion so it cannot blow up into a huge date set.
+MAX_CUSTOM_SPAN_DAYS = 366
+
+
+def custom_holiday_dates(spans: Iterable[tuple[date_type, date_type | None]]) -> set[date_type]:
+    """
+    Every calendar day covered by the given custom holidays.
+
+    Each span is (date, end_date); a missing end_date means a single day.
+    """
+    days: set[date_type] = set()
+    for start, end in spans:
+        last = end if end is not None and end >= start else start
+        length = min((last - start).days, MAX_CUSTOM_SPAN_DAYS)
+        days.update(start + timedelta(days=offset) for offset in range(length + 1))
+    return days
+
+
+def holiday_name_key(name: str) -> str:
+    """Normalise a holiday name for matching: trimmed and case-insensitive."""
+    return name.strip().casefold()
+
+
+def custom_holiday_names(holidays: Iterable[tuple[date_type, str]]) -> set[tuple[int, str]]:
+    """
+    (year, normalised name) of every given custom holiday, keyed by start year.
+
+    Lets a refresh recognise a Nager holiday that was edited to another date:
+    the edit keeps its name, so a same-name custom holiday in the same year
+    stands in for it.
+    """
+    return {(start.year, holiday_name_key(name)) for start, name in holidays}
+
+
+def should_skip_nager_holiday(
+    holiday_date: date_type,
+    name: str,
+    taken: set[tuple[date_type, str]],
+    custom_dates: set[date_type],
+    custom_names: set[tuple[int, str]] | None = None,
+) -> bool:
+    """
+    Decide whether a holiday fetched from Nager must not be stored.
+
+    - ``custom_dates``: a custom holiday (added by hand, imported, or an edited
+      Nager holiday) already covers that day. Custom entries win over Nager, so
+      an edit survives the next refresh instead of reappearing as a duplicate.
+    - ``custom_names``: a custom holiday in the same year has the same name
+      (trimmed, case-insensitive) -- typically a Nager holiday moved to another
+      date, which must not come back at its original date. Limitation: a
+      holiday that was both renamed and moved is not recognised, so the Nager
+      original reappears on the next refresh.
+    - ``taken``: the (date, name) pair already exists, which would violate the
+      bank_holidays unique constraint.
+    """
+    if holiday_date in custom_dates or (holiday_date, name) in taken:
+        return True
+    return custom_names is not None and (
+        (holiday_date.year, holiday_name_key(name)) in custom_names
+    )
 
 
 def _resolve_ssl_verify() -> bool | str:

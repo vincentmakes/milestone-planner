@@ -4,3 +4,5 @@ export { PhaseRow } from './PhaseRow';
 export { SubphaseRow } from './SubphaseRow';
 export { AssignmentRow } from './AssignmentRow';
 export { PhantomRow } from './PhantomRow';
+export { SectionRow } from './SectionRow';
+export { GroupByDropdown } from './GroupByDropdown';

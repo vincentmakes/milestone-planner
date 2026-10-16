@@ -6,17 +6,32 @@
 
 -- Vacations: gives Staff Overview vacation bars to display.
 -- (vacations has no unique constraint, so ON CONFLICT can't be used here —
---  guard with NOT EXISTS to stay idempotent.)
-INSERT INTO vacations (staff_id, start_date, end_date, description)
-SELECT v.staff_id, v.start_date::date, v.end_date::date, v.description
+--  guard with NOT EXISTS to stay idempotent.) Absence types are seeded by the
+-- tenant schema; look them up by name (NULL if the type was renamed/removed).
+INSERT INTO vacations (staff_id, start_date, end_date, description, absence_type_id)
+SELECT v.staff_id, v.start_date::date, v.end_date::date, v.description,
+       (SELECT t.id FROM absence_types t WHERE t.name = v.absence_type)
   FROM (VALUES
-    (2, '2026-05-04', '2026-05-15', 'Annual Leave'),
-    (3, '2026-05-25', '2026-05-29', 'Conference - Berlin'),
-    (4, '2026-06-08', '2026-06-12', 'Family Holiday'),
-    (5, '2026-04-27', '2026-05-01', 'Spring Break')
-  ) AS v(staff_id, start_date, end_date, description)
+    (2, '2026-05-04', '2026-05-15', 'Annual Leave',        'Holidays'),
+    (3, '2026-05-25', '2026-05-29', 'Conference - Berlin', 'Business Trip'),
+    (4, '2026-06-08', '2026-06-12', 'Family Holiday',      'Holidays'),
+    (5, '2026-04-27', '2026-05-01', 'Spring Break',        'Holidays')
+  ) AS v(staff_id, start_date, end_date, description, absence_type)
  WHERE NOT EXISTS (SELECT 1 FROM vacations x
                     WHERE x.staff_id = v.staff_id AND x.description = v.description);
+
+-- Rows inserted by an earlier version of this script have no type yet.
+UPDATE vacations x
+   SET absence_type_id = (SELECT t.id FROM absence_types t WHERE t.name = v.absence_type)
+  FROM (VALUES
+    (2, 'Annual Leave',        'Holidays'),
+    (3, 'Conference - Berlin', 'Business Trip'),
+    (4, 'Family Holiday',      'Holidays'),
+    (5, 'Spring Break',        'Holidays')
+  ) AS v(staff_id, description, absence_type)
+ WHERE x.staff_id = v.staff_id
+   AND x.description = v.description
+   AND x.absence_type_id IS NULL;
 
 -- Swiss bank holidays for the Winterthur site (id 1).
 INSERT INTO bank_holidays (site_id, date, name, year) VALUES
@@ -59,18 +74,37 @@ SELECT (SELECT id FROM custom_columns WHERE name='Reviewed'), 'phase', id,
        CASE WHEN id % 3 = 0 THEN 'true' ELSE 'false' END
   FROM project_phases WHERE project_id IN (1,2,3) AND id % 2 = 1;
 
--- Project tags: gives the Gantt tag chips + the tag picker real data.
+-- Project tags: real data for the tag picker, the tag filter and the project
+-- bar colours (Catalyst is Internal so two bar colours show next to each other).
 INSERT INTO tags (name, color) VALUES
   ('Critical',      '#ef4444'),
   ('Internal',      '#6366f1'),
-  ('Tech Transfer', '#10b981')
+  ('Tech Transfer', '#10b981'),
+  ('Customer',      '#0ea5e9')
 ON CONFLICT (name) DO NOTHING;
+
+-- Tag group "Project type": single-select and colours the project bars, with
+-- Internal / Customer as its two tags. The colouring flag is taken off any
+-- other group first (at most one group colours projects).
+UPDATE tag_groups SET colors_projects = FALSE
+ WHERE colors_projects AND name <> 'Project type';
+
+INSERT INTO tag_groups (name, single_select, colors_projects, sort_order)
+VALUES ('Project type', TRUE, TRUE, 0)
+ON CONFLICT (name) DO UPDATE SET single_select = TRUE, colors_projects = TRUE;
+
+UPDATE tags
+   SET group_id = (SELECT id FROM tag_groups WHERE name = 'Project type'),
+       sort_order = CASE name WHEN 'Internal' THEN 0 ELSE 1 END
+ WHERE name IN ('Internal', 'Customer');
 
 INSERT INTO project_tags (project_id, tag_id)
 SELECT p.id, t.id FROM projects p, tags t
  WHERE (p.name = 'Bioprocess Scale-Up'        AND t.name IN ('Critical', 'Tech Transfer'))
-    OR (p.name = 'Catalyst Optimization'      AND t.name = 'Critical')
+    OR (p.name = 'Catalyst Optimization'      AND t.name IN ('Critical', 'Internal'))
     OR (p.name = 'Quality System Upgrade'     AND t.name = 'Internal')
+    OR (p.name IN ('Bioprocess Scale-Up', 'Analytical Method Transfer')
+                                             AND t.name = 'Customer')
 ON CONFLICT DO NOTHING;
 
 -- Equipment blocks: a current maintenance window (shows "Blocked" today on

@@ -36,7 +36,7 @@ from datetime import date, datetime, timedelta
 from typing import Annotated, Generic, TypeVar
 
 from fastapi import Query
-from pydantic import BaseModel, ConfigDict, PlainSerializer
+from pydantic import BaseModel, ConfigDict, PlainSerializer, model_validator
 
 T = TypeVar("T")
 
@@ -147,6 +147,30 @@ class BaseSchema(BaseModel):
     model_config = ConfigDict(
         from_attributes=True,
     )
+
+
+# ---------------------------------------------------------------------------
+# Date ranges
+# ---------------------------------------------------------------------------
+
+DATE_ORDER_MESSAGE = "end_date must be on or after start_date"
+
+
+class DateRangeOrdered(BaseModel):
+    """
+    Mixin for request bodies with ``start_date`` / ``end_date``: an inverted
+    range is a 422 validation error. Only checked when both are present, so
+    partial updates pass here -- their handler checks the merged row with
+    ``app.services.date_range.ensure_date_order``.
+    """
+
+    @model_validator(mode="after")
+    def _check_date_order(self):
+        start = getattr(self, "start_date", None)
+        end = getattr(self, "end_date", None)
+        if start is not None and end is not None and end < start:
+            raise ValueError(DATE_ORDER_MESSAGE)
+        return self
 
 
 # ---------------------------------------------------------------------------

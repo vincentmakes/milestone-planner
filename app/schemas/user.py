@@ -6,6 +6,10 @@ from pydantic import BaseModel, EmailStr, Field
 
 from app.schemas.base import DateTimeJS
 
+# Minimum length of a new or changed tenant password (B1-22). Login never
+# checks it, so accounts with an older, shorter password keep working.
+MIN_PASSWORD_LENGTH = 8
+
 
 class UserSiteResponse(BaseModel):
     """Site info for user response."""
@@ -73,7 +77,8 @@ class StaffCreate(BaseModel):
     """Request model for creating a staff member."""
 
     email: EmailStr
-    password: str = Field(..., min_length=6)
+    # New and changed passwords only; existing logins are unaffected.
+    password: str = Field(..., min_length=MIN_PASSWORD_LENGTH)
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
     job_title: str | None = Field(None, max_length=100)
@@ -87,7 +92,7 @@ class StaffUpdate(BaseModel):
     """Request model for updating a staff member."""
 
     email: EmailStr | None = None
-    password: str | None = Field(None, min_length=6)
+    password: str | None = Field(None, min_length=MIN_PASSWORD_LENGTH)
     first_name: str | None = Field(None, min_length=1, max_length=100)
     last_name: str | None = Field(None, min_length=1, max_length=100)
     job_title: str | None = Field(None, max_length=100)

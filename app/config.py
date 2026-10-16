@@ -7,6 +7,20 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# The built-in default and the placeholders shipped in .env.example /
+# docker-compose.fresh.yml. They are public, so a deployment using one has a
+# guessable secret (forgeable SSO state; in single-tenant mode the key that
+# encrypts stored SSO secrets is derived from it). Refused unless DEBUG=true.
+DEFAULT_SESSION_SECRET = "rd-planning-secret-key-change-in-production"
+INSECURE_SESSION_SECRETS = frozenset(
+    {
+        "",
+        DEFAULT_SESSION_SECRET,
+        "change-me-in-production",
+        "change-this-to-a-random-64-character-string-in-production",
+    }
+)
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
@@ -38,7 +52,7 @@ class Settings(BaseSettings):
     db_pool_timeout: int = 30
 
     # Session & Security
-    session_secret: str = "rd-planning-secret-key-change-in-production"
+    session_secret: str = DEFAULT_SESSION_SECRET
     session_cookie_name: str = "connect.sid"  # Match Express default
     session_max_age: int = 86400  # 24 hours in seconds
 
@@ -90,6 +104,47 @@ class Settings(BaseSettings):
     sso_client_secret: str | None = None
     sso_tenant_id: str | None = None
     sso_redirect_uri: str | None = None
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        """
+        Cross-origin browser origins the app accepts.
+
+        Same rule as the CORS middleware in ``app.main``: ``CORS_ORIGINS`` when
+        set, the localhost dev servers under DEBUG, otherwise none (same-origin
+        only). The WebSocket Origin check uses it too.
+        """
+        if self.cors_origins:
+            return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        if self.debug:
+            return [
+                "http://localhost:3333",  # Vite dev server
+                "http://localhost:8484",
+                "http://localhost:8485",
+                "http://127.0.0.1:3333",
+                "http://127.0.0.1:8484",
+                "http://127.0.0.1:8485",
+            ]
+        return []
+
+    @property
+    def has_insecure_session_secret(self) -> bool:
+        """True when SESSION_SECRET is empty or one of the published placeholders."""
+        return self.session_secret.strip() in INSECURE_SESSION_SECRETS
+
+    def check_startup_security(self) -> None:
+        """
+        Refuse to start production with a published SESSION_SECRET.
+
+        Raises RuntimeError when DEBUG is false and the secret is empty or a
+        known default. DEBUG=true only logs (see the lifespan in app.main).
+        """
+        if self.has_insecure_session_secret and not self.debug:
+            raise RuntimeError(
+                "SESSION_SECRET is empty or a published default. Refusing to start with "
+                "DEBUG=false. Set SESSION_SECRET in .env to a random value, e.g. "
+                'python -c "import secrets; print(secrets.token_hex(32))"'
+            )
 
     @property
     def async_database_url(self) -> str:

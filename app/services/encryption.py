@@ -102,10 +102,49 @@ def decrypt(encrypted_data: str) -> str:
 # ---------------------------------------------------------
 
 
-def hash_user_password(password: str) -> str:
-    """Hash a user password with bcrypt."""
+# bcrypt only looks at the first 72 bytes of its input. bcrypt 4.x silently
+# truncated longer inputs; bcrypt 5.x raises ValueError instead. Both are
+# handled explicitly here so neither surfaces as a 500 from a route.
+BCRYPT_MAX_PASSWORD_BYTES = 72
+PASSWORD_TOO_LONG_MESSAGE = f"Password must be at most {BCRYPT_MAX_PASSWORD_BYTES} bytes"
+
+
+class PasswordTooLongError(ValueError):
+    """Raised by hash_user_password() for passwords bcrypt cannot hash."""
+
+    def __init__(self) -> None:
+        super().__init__(PASSWORD_TOO_LONG_MESSAGE)
+
+
+def password_too_long(password: str) -> bool:
+    """True if the password exceeds bcrypt's 72-byte input limit (UTF-8)."""
+    return len(password.encode("utf-8")) > BCRYPT_MAX_PASSWORD_BYTES
+
+
+def _bcrypt_check(password: str, stored_hash: str) -> bool:
+    """bcrypt verification that never raises: over-long or malformed input is a mismatch."""
     import bcrypt as _bcrypt
 
+    if password_too_long(password):
+        return False
+    try:
+        return _bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8"))
+    except ValueError:
+        # Malformed stored hash (or a future bcrypt input check).
+        return False
+
+
+def hash_user_password(password: str) -> str:
+    """
+    Hash a user password with bcrypt.
+
+    Raises PasswordTooLongError (a ValueError) when the password is longer
+    than 72 bytes; routers turn that into a 400.
+    """
+    import bcrypt as _bcrypt
+
+    if password_too_long(password):
+        raise PasswordTooLongError()
     return _bcrypt.hashpw(password.encode("utf-8"), _bcrypt.gensalt(rounds=12)).decode("utf-8")
 
 
@@ -123,17 +162,18 @@ def verify_user_password(password: str, stored: str) -> bool:
 
     # bcrypt hash
     if stored.startswith(("$2b$", "$2a$", "$2y$")):
-        import bcrypt as _bcrypt
+        return _bcrypt_check(password, stored)
 
-        return _bcrypt.checkpw(password.encode("utf-8"), stored.encode("utf-8"))
-
-    # PBKDF2 hash (salt:hex_hash, both parts are hex)
+    # PBKDF2 hash: self-describing (pbkdf2_sha512$...) or legacy salt:hex_hash
+    if stored.startswith(_PBKDF2_PREFIX + "$"):
+        return verify_password(password, stored)
     parts = stored.split(":")
     if len(parts) == 2 and len(parts[0]) == 32 and len(parts[1]) == 128:
         return verify_password(password, stored)
 
-    # Plain text fallback (legacy)
-    return secrets.compare_digest(stored, password)
+    # Plain text fallback (legacy). Compare as bytes: compare_digest() raises
+    # TypeError for str arguments containing non-ASCII characters.
+    return secrets.compare_digest(stored.encode("utf-8"), password.encode("utf-8"))
 
 
 def password_needs_upgrade(stored: str) -> bool:
@@ -152,25 +192,53 @@ def generate_password(length: int = 32) -> str:
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
-def hash_password(password: str) -> str:
-    """
-    Hash a password for admin users.
+# ---------------------------------------------------------
+# Admin-portal password hashing (PBKDF2-SHA512)
+# ---------------------------------------------------------
 
-    Uses PBKDF2 with SHA-512 to match Node.js implementation.
-    Format: salt:hash (both hex encoded)
-    """
-    import hashlib
+# Current work factor for admin-portal hashes. New hashes are written in the
+# self-describing form ``pbkdf2_sha512$<iterations>$<salt>$<hash>`` so the
+# iteration count can be raised again later without guessing what an old hash
+# used. The legacy ``salt:hash`` form (10 000 iterations, Node-compatible) is
+# still verified and upgraded on the next successful login.
+ADMIN_PBKDF2_ITERATIONS = 600_000
+LEGACY_PBKDF2_ITERATIONS = 10_000
+_PBKDF2_PREFIX = "pbkdf2_sha512"
 
-    # Generate random salt (16 bytes = 32 hex chars)
+
+def _pbkdf2_hex(password: str, salt: str, iterations: int) -> str:
+    return hashlib.pbkdf2_hmac(
+        "sha512", password.encode("utf-8"), salt.encode("utf-8"), iterations, dklen=64
+    ).hex()
+
+
+def _parse_pbkdf2(stored_hash: str) -> tuple[int, str, str] | None:
+    """Return ``(iterations, salt, hash_hex)`` for either PBKDF2 format, else None."""
+    if stored_hash.startswith(_PBKDF2_PREFIX + "$"):
+        parts = stored_hash.split("$")
+        if len(parts) != 4:
+            return None
+        try:
+            iterations = int(parts[1])
+        except ValueError:
+            return None
+        if iterations < 1:
+            return None
+        return iterations, parts[2], parts[3]
+    parts = stored_hash.split(":")
+    if len(parts) == 2:
+        return LEGACY_PBKDF2_ITERATIONS, parts[0], parts[1]
+    return None
+
+
+def hash_password(password: str, iterations: int = ADMIN_PBKDF2_ITERATIONS) -> str:
+    """
+    Hash a password with PBKDF2-SHA512 (admin-portal accounts, provisioner seeds).
+
+    Format: ``pbkdf2_sha512$<iterations>$<salt>$<hash>`` (salt and hash hex).
+    """
     salt = secrets.token_hex(16)
-
-    # Hash with PBKDF2 (10000 iterations, 64 bytes output, SHA-512)
-    hash_bytes = hashlib.pbkdf2_hmac(
-        "sha512", password.encode("utf-8"), salt.encode("utf-8"), 10000, dklen=64
-    )
-    hash_hex = hash_bytes.hex()
-
-    return f"{salt}:{hash_hex}"
+    return f"{_PBKDF2_PREFIX}${iterations}${salt}${_pbkdf2_hex(password, salt, iterations)}"
 
 
 def verify_password(password: str, stored_hash: str) -> bool:
@@ -178,7 +246,8 @@ def verify_password(password: str, stored_hash: str) -> bool:
     Verify a password against its stored hash.
 
     Supports:
-    - PBKDF2 format: salt:hash (both hex encoded)
+    - PBKDF2, self-describing: pbkdf2_sha512$iterations$salt$hash
+    - PBKDF2, legacy: salt:hash (10 000 iterations)
     - bcrypt format: $2b$... / $2a$... / $2y$...
     """
     if not stored_hash:
@@ -186,24 +255,49 @@ def verify_password(password: str, stored_hash: str) -> bool:
 
     # bcrypt hash (used by setup_databases.sql seed)
     if stored_hash.startswith(("$2b$", "$2a$", "$2y$")):
-        import bcrypt as _bcrypt
+        return _bcrypt_check(password, stored_hash)
 
-        return _bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8"))
-
-    # PBKDF2 hash (salt:hex_hash)
-    import hashlib
-
-    parts = stored_hash.split(":")
-    if len(parts) != 2:
+    parsed = _parse_pbkdf2(stored_hash)
+    if parsed is None:
         return False
-
-    salt, expected_hash = parts
-
-    # Hash the provided password with the same salt
-    hash_bytes = hashlib.pbkdf2_hmac(
-        "sha512", password.encode("utf-8"), salt.encode("utf-8"), 10000, dklen=64
-    )
-    actual_hash = hash_bytes.hex()
+    iterations, salt, expected_hash = parsed
 
     # Constant-time comparison to prevent timing attacks
-    return secrets.compare_digest(actual_hash, expected_hash)
+    return secrets.compare_digest(
+        _pbkdf2_hex(password, salt, iterations).encode(), expected_hash.encode()
+    )
+
+
+def admin_password_needs_upgrade(stored_hash: str) -> bool:
+    """True when an admin hash uses an older format or a lower work factor."""
+    parsed = _parse_pbkdf2(stored_hash) if stored_hash else None
+    if parsed is None:
+        # bcrypt (seeded) hashes are left alone; unknown formats cannot verify.
+        return False
+    return not stored_hash.startswith(_PBKDF2_PREFIX + "$") or parsed[0] < ADMIN_PBKDF2_ITERATIONS
+
+
+# ---------------------------------------------------------
+# Timing equalisation for unknown accounts
+# ---------------------------------------------------------
+
+_dummy_bcrypt_hash: str | None = None
+_DUMMY_PBKDF2_SALT = "0" * 32
+
+
+def dummy_verify_user_password(password: str) -> None:
+    """
+    Spend about as long as a real bcrypt check.
+
+    Login runs this when the e-mail does not exist, so the response time does
+    not tell an attacker whether an account exists.
+    """
+    global _dummy_bcrypt_hash
+    if _dummy_bcrypt_hash is None:
+        _dummy_bcrypt_hash = hash_user_password(secrets.token_hex(16))
+    _bcrypt_check(password, _dummy_bcrypt_hash)
+
+
+def dummy_verify_admin_password(password: str) -> None:
+    """Admin-portal counterpart of dummy_verify_user_password (PBKDF2 cost)."""
+    _pbkdf2_hex(password, _DUMMY_PBKDF2_SALT, ADMIN_PBKDF2_ITERATIONS)

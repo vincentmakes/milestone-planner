@@ -3,11 +3,14 @@
  * Handles left/right edge resizing and calculates date changes
  */
 
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useLayoutEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
-import { updatePhase, updateSubphase, updateStaffAssignment, updateEquipmentAssignment, loadAllProjects } from '@/api/endpoints/projects';
+import { updatePhase, updateSubphase, updateStaffAssignment, updateEquipmentAssignment } from '@/api/endpoints/projects';
+import { parseLocalDate, addDaysToDateString, daysBetweenDateStrings } from '@/utils/date';
+import { recoverFromPersistFailure } from '@/utils/persistFailure';
 import { useUndoStore } from '@/stores/undoStore';
 import {
   processPhaseMove,
@@ -16,6 +19,7 @@ import {
   cloneProject
 } from '@/components/gantt/utils';
 import type { PendingUpdate } from '@/components/gantt/utils';
+import { canEditProjectById, canEditAssignment } from '@/utils/permissions';
 import type { ViewMode, Subphase } from '@/types';
 
 type ResizeEdge = 'left' | 'right';
@@ -34,16 +38,63 @@ interface ResizeData {
 }
 
 export function useResize() {
-  const { isResizing, resizeEdge, resizeItemId, resizeItemType, startResize, endResize, showResizeIndicator, hideIndicator } = useUIStore();
+  // Selectors only (useShallow): a whole-store subscription re-rendered every
+  // host of this hook on each tooltip move / indicator update.
+  const { isResizing, resizeEdge, resizeItemId, resizeItemType, startResize, endResize, showResizeIndicator, hideIndicator } = useUIStore(
+    useShallow((s) => ({
+      isResizing: s.isResizing,
+      resizeEdge: s.resizeEdge,
+      resizeItemId: s.resizeItemId,
+      resizeItemType: s.resizeItemType,
+      startResize: s.startResize,
+      endResize: s.endResize,
+      showResizeIndicator: s.showResizeIndicator,
+      hideIndicator: s.hideIndicator,
+    }))
+  );
   const projects = useAppStore((s) => s.projects);
   const setProjects = useAppStore((s) => s.setProjects);
   const currentUser = useAppStore((s) => s.currentUser);
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
-  const { cellWidth, currentView, viewMode } = useViewStore();
-  const { saveState } = useUndoStore();
+  // Per-project rights: admins, superusers and the project's manager may
+  // resize schedule items; a staff booking may also be resized by the person
+  // it books.
+  const canEditProjectId = useCallback(
+    (projectId: number) => canEditProjectById(currentUser, projects, projectId),
+    [currentUser, projects]
+  );
+  const canEditStaffAssignment = useCallback(
+    (projectId: number, staffId?: number) =>
+      canEditAssignment(currentUser, projects.find((p) => p.id === projectId), staffId),
+    [currentUser, projects]
+  );
+  const { cellWidth, currentView, viewMode } = useViewStore(
+    useShallow((s) => ({ cellWidth: s.cellWidth, currentView: s.currentView, viewMode: s.viewMode }))
+  );
+  const saveState = useUndoStore((s) => s.saveState);
   
   const resizeDataRef = useRef<ResizeData | null>(null);
   const currentXRef = useRef(0);
+
+  // Document listeners for an active resize: registered once at resize start,
+  // removed only on mouse-up or unmount. Stable trampolines call the LATEST
+  // handlers through refs, so a `projects` change mid-gesture (WebSocket
+  // refetch) no longer strips the live listeners and abandons the resize.
+  const mouseMoveHandlerRef = useRef<(e: MouseEvent) => void>(() => {});
+  const mouseUpHandlerRef = useRef<() => Promise<void>>(async () => {});
+  const onDocumentMouseMove = useCallback((e: MouseEvent) => {
+    mouseMoveHandlerRef.current(e);
+  }, []);
+  const onDocumentMouseUp = useCallback(() => {
+    void mouseUpHandlerRef.current();
+  }, []);
+  const attachResizeListeners = useCallback(() => {
+    document.addEventListener('mousemove', onDocumentMouseMove);
+    document.addEventListener('mouseup', onDocumentMouseUp);
+  }, [onDocumentMouseMove, onDocumentMouseUp]);
+  const detachResizeListeners = useCallback(() => {
+    document.removeEventListener('mousemove', onDocumentMouseMove);
+    document.removeEventListener('mouseup', onDocumentMouseUp);
+  }, [onDocumentMouseMove, onDocumentMouseUp]);
   
   // Refs to hold current values - prevents stale closure issues in event handlers
   const cellWidthRef = useRef(cellWidth);
@@ -109,20 +160,22 @@ export function useResize() {
     }
 
     // For quarter/year view, use proportional calculation
-    const fcd = new Date(cells[0].date);
+    // data-date attributes are yyyy-MM-dd: parse as LOCAL midnight, matching
+    // the forward path (calculateBarPosition parses dates locally).
+    const fcd = parseLocalDate(cells[0].date);
     fcd.setHours(0, 0, 0, 0);
 
     let lcd: Date;
     const lastCell = cells[cells.length - 1];
 
     if (vm === 'quarter' && lastCell.dateEnd) {
-      lcd = new Date(lastCell.dateEnd);
+      lcd = parseLocalDate(lastCell.dateEnd);
       lcd.setHours(23, 59, 59, 999);
     } else if (vm === 'year') {
-      lcd = new Date(lastCell.date);
+      lcd = parseLocalDate(lastCell.date);
       lcd = new Date(lcd.getFullYear(), lcd.getMonth() + 1, 0, 23, 59, 59, 999);
     } else {
-      lcd = new Date(lastCell.date);
+      lcd = parseLocalDate(lastCell.date);
       lcd.setHours(23, 59, 59, 999);
     }
 
@@ -197,9 +250,7 @@ export function useResize() {
           ? calculateDateFromPosition(newLeft + newWidth, cells, currentCellWidth, currentViewMode, 'right') || data.originalEndDate
           : dateStr;
         
-        const startMs = new Date(startDateStr).getTime();
-        const endMs = new Date(endDateStr).getTime();
-        const durationDays = Math.round((endMs - startMs) / 86400000) + 1;
+        const durationDays = daysBetweenDateStrings(startDateStr, endDateStr) + 1;
         
         // Calculate position relative to timeline body
         const row = data.element.closest('[class*="row"]');
@@ -234,8 +285,7 @@ export function useResize() {
     const currentViewMode = viewModeRef.current;
     
     // Clean up listeners first
-    document.removeEventListener('mousemove', handleMouseMove);
-    document.removeEventListener('mouseup', handleMouseUp);
+    detachResizeListeners();
     
     // Remove resize cursor
     document.body.style.cursor = '';
@@ -278,10 +328,8 @@ export function useResize() {
         if (calculatedStart) {
           newStartDate = calculatedStart;
           // Ensure start doesn't go past end
-          if (new Date(newStartDate) >= new Date(newEndDate)) {
-            const endDate = new Date(newEndDate);
-            endDate.setDate(endDate.getDate() - 1);
-            newStartDate = formatDateLocal(endDate);
+          if (daysBetweenDateStrings(newEndDate, newStartDate) >= 0) {
+            newStartDate = addDaysToDateString(newEndDate, -1);
           }
         }
       } else {
@@ -291,10 +339,8 @@ export function useResize() {
         if (calculatedEnd) {
           newEndDate = calculatedEnd;
           // Ensure end doesn't go before start
-          if (new Date(newEndDate) <= new Date(newStartDate)) {
-            const startDate = new Date(newStartDate);
-            startDate.setDate(startDate.getDate() + 1);
-            newEndDate = formatDateLocal(startDate);
+          if (daysBetweenDateStrings(newStartDate, newEndDate) <= 0) {
+            newEndDate = addDaysToDateString(newStartDate, 1);
           }
         }
       }
@@ -319,21 +365,15 @@ export function useResize() {
       
       const daysDelta = Math.round((deltaX / currentCellWidth) * daysPerCell);
       
-      const addDays = (dateStr: string, days: number): string => {
-        const date = new Date(dateStr);
-        date.setDate(date.getDate() + days);
-        return date.toISOString().split('T')[0];
-      };
-      
       if (data.edge === 'left') {
-        newStartDate = addDays(data.originalStartDate, daysDelta);
-        if (new Date(newStartDate) >= new Date(newEndDate)) {
-          newStartDate = addDays(newEndDate, -1);
+        newStartDate = addDaysToDateString(data.originalStartDate, daysDelta);
+        if (daysBetweenDateStrings(newEndDate, newStartDate) >= 0) {
+          newStartDate = addDaysToDateString(newEndDate, -1);
         }
       } else {
-        newEndDate = addDays(data.originalEndDate, daysDelta);
-        if (new Date(newEndDate) <= new Date(newStartDate)) {
-          newEndDate = addDays(newStartDate, 1);
+        newEndDate = addDaysToDateString(data.originalEndDate, daysDelta);
+        if (daysBetweenDateStrings(newStartDate, newEndDate) <= 0) {
+          newEndDate = addDaysToDateString(newStartDate, 1);
         }
       }
     }
@@ -452,37 +492,19 @@ export function useResize() {
         await savePendingUpdates(pendingUpdates);
       }
     } catch (err) {
-      console.error('Failed to resize item:', err);
-      // On error, reload to get correct state
-      const reloadedProjects = await loadAllProjects();
-      setProjects(reloadedProjects);
-      useUndoStore.getState().clear();
+      // Optimistic-write failure protocol: reload + clear the undo stack.
+      await recoverFromPersistFailure('Resize', err);
     }
     
     resizeDataRef.current = null;
     endResize();
-  }, [endResize, handleMouseMove, saveState, setProjects, projects, hideIndicator, getTimelineCellsFromDOM, calculateDateFromPosition, formatDateLocal]);
-  
-  // Helper to recursively update subphase in tree
-  const updateSubphaseInTree = (
-    subphases: Subphase[], 
-    targetId: number, 
-    newStartDate: string, 
-    newEndDate: string
-  ): Subphase[] => {
-    return subphases.map(sp => {
-      if (sp.id === targetId) {
-        return { ...sp, start_date: newStartDate, end_date: newEndDate };
-      }
-      if (sp.children?.length) {
-        return {
-          ...sp,
-          children: updateSubphaseInTree(sp.children, targetId, newStartDate, newEndDate)
-        };
-      }
-      return sp;
-    });
-  };
+  }, [endResize, detachResizeListeners, saveState, setProjects, projects, hideIndicator, getTimelineCellsFromDOM, calculateDateFromPosition]);
+
+  // Keep the document trampolines pointing at the latest handlers.
+  useLayoutEffect(() => {
+    mouseMoveHandlerRef.current = handleMouseMove;
+    mouseUpHandlerRef.current = handleMouseUp;
+  });
   
   // Start resizing a phase
   const startPhaseResize = useCallback((
@@ -494,7 +516,7 @@ export function useResize() {
     endDate: string,
     element: HTMLElement
   ) => {
-    if (!canEdit) return;
+    if (!canEditProjectId(projectId)) return;
 
     // Don't allow resizing in equipment view (read-only)
     if (currentView === 'equipment') return;
@@ -531,9 +553,8 @@ export function useResize() {
     
     startResize('phase', phaseId, edge);
     
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startResize]);
+    attachResizeListeners();
+  }, [canEditProjectId, currentView, attachResizeListeners, startResize]);
   
   // Start resizing a subphase
   const startSubphaseResize = useCallback((
@@ -545,7 +566,7 @@ export function useResize() {
     endDate: string,
     element: HTMLElement
   ) => {
-    if (!canEdit) return;
+    if (!canEditProjectId(projectId)) return;
 
     // Don't allow resizing in equipment view (read-only)
     if (currentView === 'equipment') return;
@@ -582,9 +603,8 @@ export function useResize() {
     
     startResize('subphase', subphaseId, edge);
     
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startResize]);
+    attachResizeListeners();
+  }, [canEditProjectId, currentView, attachResizeListeners, startResize]);
   
   // Start resizing a staff assignment
   const startStaffAssignmentResize = useCallback((
@@ -594,9 +614,10 @@ export function useResize() {
     edge: ResizeEdge,
     startDate: string,
     endDate: string,
-    targetElement?: HTMLElement
+    targetElement?: HTMLElement,
+    staffId?: number
   ) => {
-    if (!canEdit) return;
+    if (!canEditStaffAssignment(projectId, staffId)) return;
 
     // Don't allow resizing in equipment view (read-only)
     if (currentView === 'equipment') return;
@@ -632,10 +653,9 @@ export function useResize() {
     document.body.style.cursor = 'ew-resize';
     
     startResize('staffAssignment', assignmentId, edge);
-    
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startResize]);
+
+    attachResizeListeners();
+  }, [canEditStaffAssignment, currentView, attachResizeListeners, startResize]);
   
   // Start resizing an equipment assignment
   const startEquipmentAssignmentResize = useCallback((
@@ -647,7 +667,7 @@ export function useResize() {
     endDate: string,
     targetElement?: HTMLElement
   ) => {
-    if (!canEdit) return;
+    if (!canEditProjectId(projectId)) return;
 
     // Don't allow resizing in equipment view (read-only)
     if (currentView === 'equipment') return;
@@ -684,18 +704,23 @@ export function useResize() {
     
     startResize('equipmentAssignment', assignmentId, edge);
     
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startResize]);
+    attachResizeListeners();
+  }, [canEditProjectId, currentView, attachResizeListeners, startResize]);
   
-  // Cleanup on unmount
+  // Cleanup on unmount only: an unmount mid-resize abandons it cleanly.
   useEffect(() => {
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
+      detachResizeListeners();
+      const data = resizeDataRef.current;
+      if (data) {
+        data.element?.classList.remove('resizing');
+        resizeDataRef.current = null;
+        document.body.style.cursor = '';
+        useUIStore.getState().hideIndicator();
+        useUIStore.getState().endResize();
+      }
     };
-  }, [handleMouseMove, handleMouseUp]);
+  }, [detachResizeListeners]);
   
   return {
     isResizing,

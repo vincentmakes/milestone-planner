@@ -2,6 +2,9 @@
  * ModalContainer - Renders all application modals
  * Centralized modal management based on uiStore activeModal state
  * Modals are lazy-loaded to reduce initial bundle size
+ *
+ * Admin dialogs (users, sites, equipment, phases, SSO, settings, holidays,
+ * events) live in the Settings hub; their old modal keys open the hub.
  */
 
 import { lazy, Suspense } from 'react';
@@ -13,18 +16,10 @@ const KanbanCardModal = lazy(() => import('./KanbanCardModal').then(m => ({ defa
 const StaffAssignmentModal = lazy(() => import('./StaffAssignmentModal').then(m => ({ default: m.StaffAssignmentModal })));
 const EquipmentAssignmentModal = lazy(() => import('./EquipmentAssignmentModal').then(m => ({ default: m.EquipmentAssignmentModal })));
 const VacationModal = lazy(() => import('./VacationModal').then(m => ({ default: m.VacationModal })));
-const BankHolidayModal = lazy(() => import('./BankHolidayModal').then(m => ({ default: m.BankHolidayModal })));
-const CustomHolidayModal = lazy(() => import('./CustomHolidayModal').then(m => ({ default: m.CustomHolidayModal })));
-const CompanyEventModal = lazy(() => import('./CompanyEventModal').then(m => ({ default: m.CompanyEventModal })));
+const MyAbsencesModal = lazy(() => import('./MyAbsencesModal').then(m => ({ default: m.MyAbsencesModal })));
 const EquipmentBlockModal = lazy(() => import('./EquipmentBlockModal').then(m => ({ default: m.EquipmentBlockModal })));
-const SiteModal = lazy(() => import('./SiteModal').then(m => ({ default: m.SiteModal })));
-const SiteManagementModal = lazy(() => import('./SiteManagementModal').then(m => ({ default: m.SiteManagementModal })));
-const UserManagementModal = lazy(() => import('./UserManagementModal').then(m => ({ default: m.UserManagementModal })));
-const SSOConfigModal = lazy(() => import('./SSOConfigModal').then(m => ({ default: m.SSOConfigModal })));
-const EquipmentManagementModal = lazy(() => import('./EquipmentManagementModal').then(m => ({ default: m.EquipmentManagementModal })));
-const PredefinedPhasesModal = lazy(() => import('./PredefinedPhasesModal').then(m => ({ default: m.PredefinedPhasesModal })));
 const ImportProjectModal = lazy(() => import('./ImportProjectModal').then(m => ({ default: m.ImportProjectModal })));
-const SettingsModal = lazy(() => import('./SettingsModal').then(m => ({ default: m.SettingsModal })));
+const SettingsHub = lazy(() => import('@/components/settings/SettingsHub').then(m => ({ default: m.SettingsHub })));
 
 export function ModalContainer() {
   return (
@@ -36,18 +31,10 @@ export function ModalContainer() {
       <StaffAssignmentModal />
       <EquipmentAssignmentModal />
       <VacationModal />
-      <BankHolidayModal />
-      <CustomHolidayModal />
-      <CompanyEventModal />
+      <MyAbsencesModal />
       <EquipmentBlockModal />
-      <SiteModal />
-      <SiteManagementModal />
-      <UserManagementModal />
-      <SSOConfigModal />
-      <EquipmentManagementModal />
-      <PredefinedPhasesModal />
       <ImportProjectModal />
-      <SettingsModal />
+      <SettingsHub />
     </Suspense>
   );
 }

@@ -13,10 +13,12 @@ import { ViewModeControls } from './ViewModeControls';
 import { ZoomControls } from './ZoomControls';
 import { HeaderOverflowMenu, OverflowRow } from './HeaderOverflowMenu';
 import { OnlineUsers } from '@/components/common/OnlineUsers';
+import { SyncStatus } from './SyncStatus';
 import { NotificationBell } from '@/components/common/NotificationBell';
 import { useHeaderDensity, type HeaderDensity } from '@/hooks/useHeaderDensity';
 import { getTheme, isDarkTheme, type Theme } from '@/utils/storage';
 import { getSetting } from '@/api/endpoints/settings';
+import { canManageAnyProject } from '@/utils/permissions';
 import styles from './Header.module.css';
 
 /**
@@ -48,6 +50,7 @@ const IN_OVERFLOW_MENU: Record<HeaderDensity, ReadonlySet<HeaderControl>> = {
 
 export function Header() {
   const currentUser = useAppStore((s) => s.currentUser);
+  const projects = useAppStore((s) => s.projects);
   const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
   const currentView = useViewStore((s) => s.currentView);
   const showStaffOverview = useViewStore((s) => s.showStaffOverview);
@@ -109,7 +112,9 @@ export function Header() {
   }, [showPanelsDropdown]);
 
   const canUseWhatIf = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
-  const canShowPanels = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  // Overview panels exist to drag resources onto projects, so anyone who
+  // manages at least one project gets them (same rule as GanttContainer).
+  const canShowPanels = canManageAnyProject(currentUser, projects);
   const isGanttView = currentView === 'gantt';
   // Every view except Kanban renders a timeline, so date navigation, the view-mode
   // switcher, undo/redo and zoom belong to all of them but the board.
@@ -281,6 +286,9 @@ export function Header() {
             collected first so the Kanban board — which has no timeline controls
             to demote — never shows an empty menu. */}
         {menuRows.length > 0 && <HeaderOverflowMenu>{menuRows}</HeaderOverflowMenu>}
+
+        {/* Live-sync status (only rendered while offline) */}
+        <SyncStatus />
 
         {/* Notifications */}
         <NotificationBell />

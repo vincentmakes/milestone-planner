@@ -1,0 +1,224 @@
+/**
+ * Settings › Equipment: equipment can be available on several sites. The form
+ * sends every selected site as `site_ids` (with the first as the legacy
+ * `site_id`), the list shows all of them, and the store is refreshed with the
+ * per-site rows of GET /equipment, not the one-row-per-item /all listing.
+ */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { EquipmentPanel } from '../panels/EquipmentPanel';
+import { useAppStore } from '@/stores/appStore';
+import type { Equipment, Site, User } from '@/types';
+
+const apiGet = vi.fn();
+const apiPost = vi.fn();
+const apiPut = vi.fn();
+const apiDelete = vi.fn();
+vi.mock('@/api/client', () => ({
+  apiGet: (...args: unknown[]) => apiGet(...args),
+  apiPost: (...args: unknown[]) => apiPost(...args),
+  apiPut: (...args: unknown[]) => apiPut(...args),
+  apiDelete: (...args: unknown[]) => apiDelete(...args),
+}));
+
+const getEquipment = vi.fn();
+vi.mock('@/api/endpoints/equipment', () => ({
+  getEquipment: (...args: unknown[]) => getEquipment(...args),
+}));
+
+const sites: Site[] = [
+  { id: 1, name: 'Site A' },
+  { id: 2, name: 'Site B' },
+  { id: 3, name: 'Site C' },
+];
+
+const admin: User = {
+  id: 1,
+  email: 'admin@demo.local',
+  first_name: 'Ada',
+  last_name: 'Admin',
+  name: 'Ada Admin',
+  role: 'admin',
+  active: true,
+  site_ids: [1, 2, 3],
+};
+
+/** /equipment/all: one row per item, with the names of every linked site */
+const allEquipment: Equipment[] = [
+  { id: 1, name: 'HPLC 1', type: 'Analytical Device', site_id: 1, site_ids: [1], site_names: ['Site A'], active: true },
+  { id: 2, name: 'Reactor', type: 'Pilot Plant', site_id: 1, site_ids: [1, 2], site_names: ['Site A', 'Site B'], active: true },
+];
+
+/** /equipment?includeAllSites=true: one row per equipment-site pair */
+const perSiteRows: Equipment[] = [
+  { id: 1, name: 'HPLC 1', type: 'Analytical Device', site_id: 1, site_ids: [1], active: true },
+  { id: 2, name: 'Reactor', type: 'Pilot Plant', site_id: 1, site_ids: [1, 2], active: true },
+  { id: 2, name: 'Reactor', type: 'Pilot Plant', site_id: 2, site_ids: [1, 2], active: true },
+];
+
+describe('EquipmentPanel', () => {
+  beforeEach(() => {
+    apiGet.mockReset().mockResolvedValue(allEquipment);
+    apiPost.mockReset().mockResolvedValue({});
+    apiPut.mockReset().mockResolvedValue({});
+    apiDelete.mockReset().mockResolvedValue(undefined);
+    getEquipment.mockReset().mockResolvedValue(perSiteRows);
+    useAppStore.setState({ sites, currentUser: admin, currentSite: sites[0], equipment: [] });
+  });
+
+  it('lists every site of an item in the Sites column', async () => {
+    render(<EquipmentPanel />);
+    expect(await screen.findByText('Reactor')).toBeInTheDocument();
+    expect(screen.getByText('Site A, Site B')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Sites' })).toBeInTheDocument();
+  });
+
+  it('names sites outside a superuser\'s store from the server response', async () => {
+    // A superuser's store only holds their own sites
+    useAppStore.setState({
+      sites: [sites[0]],
+      currentUser: { ...admin, role: 'superuser', site_ids: [1] },
+    });
+    render(<EquipmentPanel />);
+    await screen.findByText('Reactor');
+
+    expect(screen.getByText('Site A, Site B')).toBeInTheDocument();
+    expect(screen.queryByText(/Unknown/)).not.toBeInTheDocument();
+  });
+
+  it('falls back to the store, then to the site id, without server names', async () => {
+    apiGet.mockResolvedValue([
+      { id: 2, name: 'Reactor', type: 'Pilot Plant', site_id: 1, site_ids: [1, 2], active: true },
+    ]);
+    useAppStore.setState({ sites: [sites[0]] });
+    render(<EquipmentPanel />);
+    await screen.findByText('Reactor');
+
+    expect(screen.getByText('Site A, Site #2')).toBeInTheDocument();
+  });
+
+  it('filters by any of the linked sites', async () => {
+    render(<EquipmentPanel />);
+    await screen.findByText('Reactor');
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '2' } });
+    expect(screen.getByText('Reactor')).toBeInTheDocument();
+    expect(screen.queryByText('HPLC 1')).not.toBeInTheDocument();
+  });
+
+  it('creates equipment on several sites and refreshes the store with per-site rows', async () => {
+    render(<EquipmentPanel />);
+    await screen.findByText('HPLC 1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Equipment' }));
+    fireEvent.change(screen.getByLabelText('Name *'), { target: { value: 'Mass Spec 1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analytical Device' }));
+
+    // The current site is preselected; add a second one
+    const siteA = screen.getByLabelText('Site A') as HTMLInputElement;
+    const siteB = screen.getByLabelText('Site B') as HTMLInputElement;
+    expect(siteA.checked).toBe(true);
+    expect(siteB.checked).toBe(false);
+    fireEvent.click(siteB);
+    expect(siteB.checked).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create Equipment' }));
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
+    expect(apiPost).toHaveBeenCalledWith('/api/equipment', {
+      name: 'Mass Spec 1',
+      type: 'Analytical Device',
+      site_id: 1,
+      site_ids: [1, 2],
+      active: true,
+    });
+    await waitFor(() => expect(getEquipment).toHaveBeenCalledWith(true));
+    await waitFor(() => expect(useAppStore.getState().equipment).toEqual(perSiteRows));
+  });
+
+  it('requires at least one site', async () => {
+    render(<EquipmentPanel />);
+    await screen.findByText('Reactor');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Reactor' }));
+    const siteA = screen.getByLabelText('Site A') as HTMLInputElement;
+    const siteB = screen.getByLabelText('Site B') as HTMLInputElement;
+    expect(siteA.checked).toBe(true);
+    expect(siteB.checked).toBe(true);
+    fireEvent.click(siteA);
+    fireEvent.click(siteB);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    expect(await screen.findByText('Please select at least one site')).toBeInTheDocument();
+    expect(apiPut).not.toHaveBeenCalled();
+  });
+
+  it('sends the remaining sites on edit', async () => {
+    render(<EquipmentPanel />);
+    await screen.findByText('Reactor');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Reactor' }));
+    fireEvent.click(screen.getByLabelText('Site A'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    await waitFor(() => expect(apiPut).toHaveBeenCalledTimes(1));
+    expect(apiPut).toHaveBeenCalledWith('/api/equipment/2', {
+      name: 'Reactor',
+      type: 'Pilot Plant',
+      site_id: 2,
+      site_ids: [2],
+      active: true,
+    });
+  });
+
+  it('lets a superuser edit only equipment on their own sites', async () => {
+    useAppStore.setState({ currentUser: { ...admin, role: 'superuser', site_ids: [1] } });
+    render(<EquipmentPanel />);
+    await screen.findByText('Reactor');
+
+    // HPLC 1 is on Site A only: editable. Reactor is also on Site B: not.
+    expect(screen.getByRole('button', { name: 'Edit HPLC 1' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Edit Reactor' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit HPLC 1' }));
+    // Only the superuser's own sites are offered
+    expect(screen.getByLabelText('Site A')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Site B')).not.toBeInTheDocument();
+  });
+
+  it('reports unsaved input to the hub (name or sites), and clears it on Cancel', async () => {
+    const onDirtyChange = vi.fn();
+    render(<EquipmentPanel onDirtyChange={onDirtyChange} />);
+    await screen.findByText('Reactor');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Equipment' }));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    fireEvent.click(screen.getByLabelText('Site B'));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByLabelText('Site B'));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    fireEvent.change(screen.getByLabelText('Name *'), { target: { value: 'Mass Spec 1' } });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('sends one create when the form is submitted twice', async () => {
+    let finish!: () => void;
+    apiPost.mockReturnValue(new Promise<void>((r) => (finish = r)));
+    render(<EquipmentPanel />);
+    await screen.findByText('Reactor');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Equipment' }));
+    fireEvent.change(screen.getByLabelText('Name *'), { target: { value: 'Mass Spec 1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analytical Device' }));
+    const form = screen.getByLabelText('Name *').closest('form')!;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    expect(apiPost).toHaveBeenCalledTimes(1);
+    finish();
+    await waitFor(() => expect(screen.queryByLabelText('Name *')).not.toBeInTheDocument());
+  });
+});

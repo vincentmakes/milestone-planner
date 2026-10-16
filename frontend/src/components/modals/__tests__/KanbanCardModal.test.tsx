@@ -9,7 +9,7 @@ import { render, screen, fireEvent, within, waitFor, act } from '@testing-librar
 import { KanbanCardModal } from '../KanbanCardModal';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
-import { createComment, getMentionableUsers } from '@/api/endpoints/kanban';
+import { assignCard, createComment, deleteComment, getComments, getMentionableUsers, unassignCard } from '@/api/endpoints/kanban';
 import { updateStaffAssignment } from '@/api/endpoints/projects';
 import type { Phase, Project, Subphase } from '@/types';
 
@@ -455,5 +455,167 @@ describe('KanbanCardModal @-mentions', () => {
 
     render(<KanbanCardModal />);
     expect(screen.getByText('33%')).toBeInTheDocument();
+  });
+});
+
+// -------------------------------------------------------------
+// Who may manage assignees (utils/permissions.ts)
+// -------------------------------------------------------------
+
+describe('KanbanCardModal assignee permissions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    seedStore();
+  });
+
+  const bobSlider = () => screen.getByLabelText('Allocation for Bob Brown') as HTMLInputElement;
+
+  it('offers "Join this card" to a plain user who is not assigned', async () => {
+    useAppStore.setState({ currentUser: { id: 5, role: 'user' } as never });
+    render(<KanbanCardModal />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Join this card' }));
+
+    await waitFor(() => expect(assignCard).toHaveBeenCalledWith('subphase', 10, 5));
+    // No add-assignee picker: that is for the project's editors.
+    expect(screen.queryByLabelText('Add assignee')).not.toBeInTheDocument();
+  });
+
+  it('does not offer "Join this card" to someone already on the card', () => {
+    useAppStore.setState({ currentUser: { id: 4, role: 'user' } as never });
+    render(<KanbanCardModal />);
+    expect(screen.queryByRole('button', { name: 'Join this card' })).not.toBeInTheDocument();
+  });
+
+  it('lets a plain user change and remove their own booking only', async () => {
+    useAppStore.setState({ currentUser: { id: 4, role: 'user' } as never });
+    render(<KanbanCardModal />);
+
+    expect(screen.getByLabelText('Remove Bob Brown')).toBeInTheDocument();
+
+    // The mocked reload returns no projects, so check the controls first and
+    // commit the slider last.
+    fireEvent.change(bobSlider(), { target: { value: '40' } });
+    fireEvent.pointerUp(bobSlider());
+    await waitFor(() => expect(updateStaffAssignment).toHaveBeenCalledWith(1, { allocation: 40 }, 'subphase'));
+  });
+
+  it('shows a plain user no controls on someone else\'s row', () => {
+    useAppStore.setState({ currentUser: { id: 5, role: 'user' } as never });
+    render(<KanbanCardModal />);
+
+    expect(screen.queryByLabelText('Allocation for Bob Brown')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Remove Bob Brown')).not.toBeInTheDocument();
+  });
+
+  it('treats the project manager as an editor', () => {
+    const project = seedProject();
+    (project as { pm_id?: number }).pm_id = 5;
+    useAppStore.setState({ projects: [project], currentUser: { id: 5, role: 'user' } as never });
+    render(<KanbanCardModal />);
+
+    expect(bobSlider()).toBeInTheDocument();
+    expect(screen.getByLabelText('Remove Bob Brown')).toBeInTheDocument();
+    expect(screen.getByLabelText('Add assignee')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Join this card' })).not.toBeInTheDocument();
+  });
+});
+
+// -------------------------------------------------------------
+// Destructive actions ask first
+// -------------------------------------------------------------
+
+describe('KanbanCardModal confirmations', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    seedStore();
+  });
+
+  it('does not remove an assignee when the confirmation is declined', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<KanbanCardModal />);
+
+    fireEvent.click(screen.getByLabelText('Remove Bob Brown'));
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Bob Brown'));
+    expect(unassignCard).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it('removes the assignee once confirmed', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(unassignCard).mockResolvedValue(undefined as never);
+    render(<KanbanCardModal />);
+
+    fireEvent.click(screen.getByLabelText('Remove Bob Brown'));
+
+    await waitFor(() => expect(unassignCard).toHaveBeenCalledWith('subphase', 10, 4));
+    confirm.mockRestore();
+  });
+
+  it('asks before deleting a comment', async () => {
+    vi.mocked(getComments).mockResolvedValue([
+      {
+        id: 33,
+        entity_type: 'subphase',
+        entity_id: 10,
+        project_id: 1,
+        author_id: 1,
+        author_name: 'Ada Admin',
+        body: 'Ready for review',
+        mentioned_user_ids: [],
+        edited: false,
+        created_at: '2026-09-02T10:00:00.000Z',
+        updated_at: '2026-09-02T10:00:00.000Z',
+      },
+    ]);
+    vi.mocked(deleteComment).mockResolvedValue(undefined as never);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<KanbanCardModal />);
+
+    const deleteBtn = await screen.findByLabelText('Delete comment');
+    fireEvent.click(deleteBtn);
+    expect(confirm).toHaveBeenCalled();
+    expect(deleteComment).not.toHaveBeenCalled();
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(deleteBtn);
+    await waitFor(() => expect(deleteComment).toHaveBeenCalledWith(33));
+    confirm.mockRestore();
+    vi.mocked(getComments).mockResolvedValue([]);
+  });
+});
+
+describe('KanbanCardModal comments of deleted users', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    seedStore();
+  });
+
+  it('shows "Deleted user" when the author account no longer exists', async () => {
+    // card_comments.author_id is SET NULL when the author is deleted
+    vi.mocked(getComments).mockResolvedValue([
+      {
+        id: 34,
+        entity_type: 'subphase',
+        entity_id: 10,
+        project_id: 1,
+        author_id: null,
+        author_name: null,
+        body: 'Left before the review',
+        mentioned_user_ids: [],
+        edited: false,
+        created_at: '2026-09-02T10:00:00.000Z',
+        updated_at: '2026-09-02T10:00:00.000Z',
+      },
+    ]);
+    // A plain user without an id match must not be offered the delete button
+    useAppStore.setState({ currentUser: { id: 4, role: 'user' } as never });
+    render(<KanbanCardModal />);
+
+    expect(await screen.findByText('Deleted user')).toBeInTheDocument();
+    expect(screen.getByText('Left before the review')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Delete comment')).not.toBeInTheDocument();
+    vi.mocked(getComments).mockResolvedValue([]);
   });
 });

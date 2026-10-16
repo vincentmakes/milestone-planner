@@ -7,13 +7,14 @@ import { useState, FormEvent, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { checkSSOEnabled, getSSOLoginUrl } from '@/api';
 import { getTheme, isDarkTheme, type Theme } from '@/utils/storage';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import styles from './LoginScreen.module.css';
 
 export function LoginScreen() {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
   const [ssoEnabled, setSsoEnabled] = useState(false);
   const [theme, setThemeState] = useState<Theme>(() => getTheme());
@@ -68,15 +69,15 @@ export function LoginScreen() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!beginSubmit()) return;
     setError(null);
-    setIsSubmitting(true);
 
     try {
       await login(email, password);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Invalid email or password');
     } finally {
-      setIsSubmitting(false);
+      endSubmit();
     }
   };
 

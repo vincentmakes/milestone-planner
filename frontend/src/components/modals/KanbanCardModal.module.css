@@ -97,8 +97,8 @@
 }
 
 /*
- * name | control | remove, as a grid with a fixed first track — the same
- * shape as the holiday list in BankHolidayModal. The fixed track is the point:
+ * name | control | remove, as a grid with a fixed first track. The fixed
+ * track is the point:
  * sized to its own text, each row's slider would start where that row's name
  * happened to end, so three people all booked at 50% showed their thumbs in
  * three different places.
@@ -197,6 +197,11 @@
 .author {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
+}
+
+.deletedAuthor {
+  font-style: italic;
+  color: var(--text-muted);
 }
 
 .commentDate {

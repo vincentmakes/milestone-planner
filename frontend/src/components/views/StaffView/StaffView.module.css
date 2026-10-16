@@ -314,9 +314,10 @@
   flex-shrink: 0;
 }
 
+/* Absence type badge - type colour via --absence-color, purple fallback */
 .detailType.vacation {
-  background: rgba(139, 92, 246, 0.2);
-  color: var(--accent-purple);
+  background: color-mix(in srgb, var(--absence-color, var(--accent-purple)) 20%, transparent);
+  color: var(--absence-color, var(--accent-purple));
 }
 
 .detailType.allocation {

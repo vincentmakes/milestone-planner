@@ -4,17 +4,20 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import styles from './WhatIfToggle.module.css';
 
 export function WhatIfToggle() {
-  const projects = useAppStore((s) => s.projects);
   const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
   const whatIfPendingOperations = useWhatIfStore((s) => s.whatIfPendingOperations);
   const enterWhatIfMode = useWhatIfStore((s) => s.enterWhatIfMode);
   const exitWhatIfMode = useWhatIfStore((s) => s.exitWhatIfMode);
+  const applyError = useWhatIfStore((s) => s.whatIfApplyError);
+  const dismissApplyError = useWhatIfStore((s) => s.dismissApplyError);
   const [isApplying, setIsApplying] = useState(false);
 
   const pendingCount = whatIfPendingOperations.length;
 
+  // Read at click time: subscribing to `projects` re-rendered the header
+  // toggle on every drag/refetch.
   const handleEnter = () => {
-    enterWhatIfMode(projects);
+    enterWhatIfMode(useAppStore.getState().projects);
   };
 
   const handleDiscard = () => {
@@ -28,6 +31,15 @@ export function WhatIfToggle() {
     }
   };
 
+  const runApply = async () => {
+    setIsApplying(true);
+    try {
+      await exitWhatIfMode(true);
+    } finally {
+      setIsApplying(false);
+    }
+  };
+
   const handleApply = async () => {
     if (pendingCount === 0) {
       exitWhatIfMode(false);
@@ -38,12 +50,7 @@ export function WhatIfToggle() {
       `Apply ${pendingCount} change${pendingCount !== 1 ? 's' : ''} to the database?`
     );
     if (confirmed) {
-      setIsApplying(true);
-      try {
-        await exitWhatIfMode(true);
-      } finally {
-        setIsApplying(false);
-      }
+      await runApply();
     }
   };
 
@@ -113,6 +120,39 @@ export function WhatIfToggle() {
       >
         {isApplying ? 'Applying...' : pendingCount > 0 ? 'Apply' : 'Exit'}
       </button>
+
+      {applyError && (
+        <div className={styles.applyErrorBanner} role="alert">
+          <p className={styles.applyErrorText}>
+            {applyError.applied} of {applyError.total} change{applyError.total !== 1 ? 's' : ''} applied,
+            then one failed: {applyError.message}
+          </p>
+          <p className={styles.applyErrorText}>
+            {pendingCount} change{pendingCount !== 1 ? 's are' : ' is'} still queued. The view shows
+            what is saved on the server.
+          </p>
+          <div className={styles.applyErrorActions}>
+            <button
+              className={styles.applyButton}
+              onClick={() => void runApply()}
+              disabled={isApplying || pendingCount === 0}
+            >
+              {isApplying ? 'Retrying...' : 'Retry'}
+            </button>
+            <button className={styles.discardButton} onClick={handleDiscard} disabled={isApplying}>
+              Discard
+            </button>
+            <button
+              className={styles.dismissButton}
+              onClick={dismissApplyError}
+              aria-label="Dismiss"
+              title="Hide this message (the changes stay queued)"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

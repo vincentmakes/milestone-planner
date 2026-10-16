@@ -16,7 +16,12 @@ import {
 } from '@/api';
 import type { OrganizationDetail, OrganizationSSOTestResult, TenantSummary } from '@/api/endpoints/admin';
 import { useEscapeKey } from '@/hooks';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import styles from './AdminModal.module.css';
+
+/** Roles a tenant `users.role` CHECK accepts -- the only valid SSO default roles */
+const SSO_DEFAULT_ROLES = ['user', 'superuser', 'admin'] as const;
+type SsoDefaultRole = (typeof SSO_DEFAULT_ROLES)[number];
 
 interface OrganizationDetailsModalProps {
   organizationId: string;
@@ -59,6 +64,10 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
   const [tenantGroupIds, setTenantGroupIds] = useState('');
   const [tenantGroupMode, setTenantGroupMode] = useState<'any' | 'all'>('any');
 
+  // One write at a time (save details / SSO, add / remove tenant, save
+  // groups): a double click must not send the request twice.
+  const { isSubmitting: isBusy, begin: beginWrite, end: endWrite } = useSubmitGuard();
+
   const redirectHint = typeof window !== 'undefined' 
     ? `${window.location.origin}/api/auth/sso/callback`
     : '/api/auth/sso/callback';
@@ -81,7 +90,13 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
         setClientId(data.sso_config.clientId || '');
         setRedirectUri(data.sso_config.redirectUri || redirectHint);
         setAutoCreateUsers(data.sso_config.autoCreateUsers);
-        setDefaultUserRole(data.sso_config.defaultUserRole);
+        // Tenant users.role only allows these three; an older config may hold
+        // an invalid value (e.g. "viewer") -- fall back to "user".
+        setDefaultUserRole(
+          SSO_DEFAULT_ROLES.includes(data.sso_config.defaultUserRole as SsoDefaultRole)
+            ? data.sso_config.defaultUserRole
+            : 'user'
+        );
       } else {
         setRedirectUri(redirectHint);
       }
@@ -98,6 +113,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
 
   const handleSaveDetails = async () => {
     if (!organization) return;
+    if (!beginWrite()) return;
     
     try {
       await updateOrganization(organization.id, {
@@ -109,6 +125,17 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
       onRefresh?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update organization');
+    } finally {
+      endWrite();
+    }
+  };
+
+  /** Leave the inline details edit, dropping what was typed */
+  const cancelDetailsEdit = () => {
+    setIsEditing(false);
+    if (organization) {
+      setEditName(organization.name);
+      setEditDescription(organization.description || '');
     }
   };
 
@@ -124,6 +151,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
       return;
     }
     
+    if (!beginWrite()) return;
     setIsSavingSSO(true);
     
     try {
@@ -150,6 +178,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
       setError(err instanceof Error ? err.message : 'Failed to save SSO configuration');
     } finally {
       setIsSavingSSO(false);
+      endWrite();
     }
   };
 
@@ -172,6 +201,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
 
   const handleAddTenant = async () => {
     if (!organization || !selectedTenantToAdd) return;
+    if (!beginWrite()) return;
 
     setTenantNotice(null);
     try {
@@ -187,22 +217,26 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
       onRefresh?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add tenant');
+    } finally {
+      endWrite();
     }
   };
 
   const handleRemoveTenant = async (tenantId: string) => {
     if (!organization) return;
     
-    if (!confirm('Remove this tenant from the organization?\n\nThe tenant will no longer use the organization\'s SSO configuration.')) {
-      return;
-    }
-    
+    if (!beginWrite()) return;
     try {
+      if (!confirm('Remove this tenant from the organization?\n\nThe tenant will no longer use the organization\'s SSO configuration.')) {
+        return;
+      }
       await removeTenantFromOrganization(organization.id, tenantId);
       await loadOrganization();
       onRefresh?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to remove tenant');
+    } finally {
+      endWrite();
     }
   };
 
@@ -214,6 +248,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
 
   const handleSaveTenantGroups = async () => {
     if (!editingTenant) return;
+    if (!beginWrite()) return;
     
     try {
       const groupIds = tenantGroupIds
@@ -230,10 +265,22 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
       await loadOrganization();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update tenant groups');
+    } finally {
+      endWrite();
     }
   };
 
-  useEscapeKey(onClose);
+  // Escape first leaves an open inline edit (details, tenant groups); only
+  // with none open does it close the dialog, so typed input isn't lost.
+  useEscapeKey(() => {
+    if (isEditing) {
+      cancelDetailsEdit();
+    } else if (editingTenant) {
+      setEditingTenant(null);
+    } else {
+      onClose();
+    }
+  });
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString(undefined, {
@@ -335,12 +382,13 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                         <button 
                           className={`${styles.btn} ${styles.btnPrimary}`}
                           onClick={handleSaveDetails}
+                          disabled={isBusy}
                         >
                           Save
                         </button>
                         <button 
                           className={`${styles.btn} ${styles.btnSecondary}`}
-                          onClick={() => setIsEditing(false)}
+                          onClick={cancelDetailsEdit}
                         >
                           Cancel
                         </button>
@@ -504,7 +552,6 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                       onChange={(e) => setDefaultUserRole(e.target.value)}
                       disabled={!ssoEnabled || !autoCreateUsers}
                     >
-                      <option value="viewer">Viewer</option>
                       <option value="user">User</option>
                       <option value="superuser">SuperUser</option>
                       <option value="admin">Admin</option>
@@ -515,7 +562,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                     <button
                       className={`${styles.btn} ${styles.btnPrimary}`}
                       onClick={handleSaveSSO}
-                      disabled={isSavingSSO}
+                      disabled={isBusy}
                     >
                       {isSavingSSO ? 'Saving...' : 'Save SSO Configuration'}
                     </button>
@@ -619,7 +666,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                     <button
                       className={`${styles.btn} ${styles.btnPrimary}`}
                       onClick={handleAddTenant}
-                      disabled={!selectedTenantToAdd}
+                      disabled={!selectedTenantToAdd || isBusy}
                     >
                       Add Tenant
                     </button>
@@ -662,6 +709,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                               <button
                                 className={`${styles.btn} ${styles.btnSecondary}`}
                                 onClick={() => handleRemoveTenant(tenant.id)}
+                                disabled={isBusy}
                                 style={{ padding: '0.375rem 0.75rem', fontSize: '0.8125rem', color: 'var(--accent-red)' }}
                               >
                                 Remove
@@ -700,6 +748,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                                 <button
                                   className={`${styles.btn} ${styles.btnPrimary}`}
                                   onClick={handleSaveTenantGroups}
+                                  disabled={isBusy}
                                   style={{ padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}
                                 >
                                   Save

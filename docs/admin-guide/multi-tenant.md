@@ -89,6 +89,30 @@ Admin users have access to the admin portal (separate from tenant application us
 
 - The **Admin Users** tab is only visible to superadmins
 - Regular admins can manage tenants and organizations but cannot create or modify other admin accounts
+- Admin roles are validated: only `admin` and `superadmin` are accepted
+
+#### Admin-portal sign-in and passwords
+
+- **Forced password change.** An admin flagged *must change password* (for example the
+  auto-created `admin@milestone.local`) can
+  sign in and change their password, but every other admin-portal request is refused (403)
+  until they have. This is enforced by the server, not only by the login screen.
+- **Password rules.** New and changed admin passwords must be at least 8 characters.
+- **Password hashing.** Admin passwords are stored as PBKDF2-SHA512 with 600 000 iterations
+  in a self-describing format (`pbkdf2_sha512$600000$<salt>$<hash>`). Hashes created by
+  earlier versions (`salt:hash`, 10 000 iterations) keep working and are upgraded
+  automatically at the admin's next successful sign-in.
+- **Failed-login throttle.** After 10 failed sign-ins for the same e-mail from the same IP
+  address within 15 minutes, further attempts are refused with *"Too many failed sign-in
+  attempts"* (HTTP 429) until the oldest failure is 15 minutes old. A successful sign-in
+  resets the counter, and sign-in takes the same time whether or not the e-mail exists.
+  The lockout is per *IP + e-mail*, not per account, so behind a reverse proxy set
+  `FORWARDED_ALLOW_IPS` (see [Installation](installation.md#trust-the-proxys-x-forwarded-for-forwarded_allow_ips)).
+  A public IP address is additionally limited to 100 failures per 15 minutes across all
+  e-mails.
+  Workspace (tenant) sign-in is throttled the same way, separately per workspace. The
+  counters live in memory per server process: restarting the app clears them, and with
+  several worker processes each keeps its own count.
 
 ### System Statistics
 
@@ -145,7 +169,14 @@ Overview of the platform deployment — tenant counts by status, database connec
 
 ### Suspending a Tenant
 
-Edit the tenant and set its status to **Inactive**. The tenant's database remains intact but users cannot log in.
+Set the tenant's status to **Suspended** (or **Archived**). The tenant's database remains
+intact but its workspace URL answers *"This organization has been suspended"* (or archived)
+and users cannot use it. Status values are validated: `pending`, `active`, `suspended`,
+`archived`.
+
+Status changes, edits and deletion take effect **immediately** on the server process that
+handled them — the tenant lookup cache entry is dropped and the tenant's connection pool is
+closed. Other worker processes pick the change up within the 60-second cache window.
 
 ### Deleting a Tenant
 
@@ -174,8 +205,14 @@ See [Database & Migrations](database.md) for details.
 
 The `TenantManager` service manages database connection pools for each active tenant:
 
-- Connection pools are created on-demand when a tenant is first accessed
+- Connection pools are created on-demand when a tenant is first accessed (one at a time per
+  tenant, so a burst of first requests opens a single pool)
 - Pools are cached and reused for subsequent requests
+- If a workspace's pool cannot be created (credentials missing or unreadable, database
+  down), its requests get a **503 "Organization database is unavailable"** — the server never
+  falls back to the default `DB_*` database
+- Unknown workspace slugs are cached as misses for 60 seconds, so requests for a
+  non-existent slug do not query the master database each time
 - Pool size is configurable via `DB_POOL_SIZE` and `DB_POOL_MAX_OVERFLOW` environment variables
 - Idle connections are reclaimed automatically
 
@@ -184,8 +221,9 @@ The `TenantManager` service manages database connection pools for each active te
 | Area | Implementation |
 |------|---------------|
 | **Data isolation** | Separate PostgreSQL databases per tenant |
-| **Credential storage** | AES-256-GCM encryption for tenant DB credentials |
-| **Authentication** | Session-based with secure cookies; per-tenant user stores |
+| **Credential storage** | AES-256-GCM encryption for tenant DB credentials and for SSO client secrets (organization and tenant level) |
+| **Authentication** | Session-based with secure cookies; per-tenant user stores; failed-login throttle (10 per 15 min per IP + e-mail); deactivating, deleting or demoting a user ends their sessions and live connections at once |
+| **Error messages** | Health checks and tenant errors never reveal database hosts, users or SQL — details go to the server log |
 | **Authorization** | Role-based (Admin, Superuser, User) within each tenant |
 | **SSO** | Microsoft Entra ID configured per organization, shared across org's tenants |
 | **Admin access** | Separate admin user store in master database |

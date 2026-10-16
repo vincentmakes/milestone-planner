@@ -4,16 +4,22 @@
  */
 
 import { useCallback } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
-import { updatePhase, updateSubphase, loadAllProjects } from '@/api/endpoints/projects';
+import { updatePhase, updateSubphase } from '@/api/endpoints/projects';
+import { parseLocalDate, formatLocalDate } from '@/utils/date';
+import { recoverFromPersistFailure } from '@/utils/persistFailure';
 import { 
   cascadeParentDatesUp, 
   autoAdjustProjectDates,
   savePendingUpdates,
   cloneProject,
+  dependencyMatches,
+  wouldCreateDependencyCycle,
 } from '@/components/gantt/utils';
-import type { DependencyType, Phase, Subphase } from '@/types';
+import { canEditProjectById } from '@/utils/permissions';
+import type { Dependency, DependencyType, Phase, Subphase } from '@/types';
 
 type LinkZone = 'start' | 'end';
 type ItemType = 'phase' | 'subphase';
@@ -27,25 +33,30 @@ function determineDependencyType(fromZone: LinkZone, toZone: LinkZone): Dependen
   return 'FS'; // Default
 }
 
-// Format date as YYYY-MM-DD
-function formatDateLocal(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
+// Format date as YYYY-MM-DD (local calendar components)
+const formatDateLocal = formatLocalDate;
 
 export function useDependencyLinking() {
-  const { 
-    isLinkingDependency, 
+  // Selectors only (useShallow), not a whole-store subscription.
+  const {
+    isLinkingDependency,
     linkingFrom,
-    startLinking, 
-    completeLinking, 
-    cancelLinking 
-  } = useUIStore();
+    startLinking,
+    completeLinking,
+    cancelLinking,
+  } = useUIStore(
+    useShallow((s) => ({
+      isLinkingDependency: s.isLinkingDependency,
+      linkingFrom: s.linkingFrom,
+      startLinking: s.startLinking,
+      completeLinking: s.completeLinking,
+      cancelLinking: s.cancelLinking,
+    }))
+  );
   
   const projects = useAppStore((s) => s.projects);
   const setProjects = useAppStore((s) => s.setProjects);
+  const currentUser = useAppStore((s) => s.currentUser);
 
   // Find a phase by ID across all projects
   const findPhase = useCallback((phaseId: number): { project: typeof projects[0], phase: Phase } | null => {
@@ -78,58 +89,17 @@ export function useDependencyLinking() {
     return null;
   }, [projects]);
 
-  // Check for circular dependency
+  // Would linking from -> to close a cycle? Walks phase and subphase
+  // dependencies alike, resolving each entry by its `entity` (legacy entries
+  // phase-first), so a phase <-> subphase cycle is caught too.
   const hasCircularDependency = useCallback((
     projectId: number,
-    startItemId: number, 
-    checkItemId: number,
-    itemType: ItemType
+    from: { id: number; type: ItemType },
+    to: { id: number; type: ItemType }
   ): boolean => {
-    const visited = new Set<number>();
-    const toCheck = [startItemId];
-    
     const project = projects.find(p => p.id === projectId);
     if (!project) return false;
-
-    while (toCheck.length > 0) {
-      const currentId = toCheck.pop()!;
-      if (currentId === checkItemId) return true;
-      if (visited.has(currentId)) continue;
-      visited.add(currentId);
-      
-      // Find the item and its dependencies
-      let deps: { id: number; type: DependencyType }[] = [];
-      
-      if (itemType === 'phase') {
-        const phase = (project.phases ?? []).find(p => p.id === currentId);
-        if (phase?.dependencies) {
-          deps = phase.dependencies;
-        }
-      } else {
-        // Search subphases
-        const searchDeps = (subphases: Subphase[]): { id: number; type: DependencyType }[] => {
-          for (const sp of subphases) {
-            if (sp.id === currentId && sp.dependencies) {
-              return sp.dependencies;
-            }
-            if (sp.children?.length) {
-              const found = searchDeps(sp.children);
-              if (found.length) return found;
-            }
-          }
-          return [];
-        };
-        
-        for (const phase of project.phases ?? []) {
-          deps = searchDeps(phase.children ?? []);
-          if (deps.length) break;
-        }
-      }
-      
-      deps.forEach(d => toCheck.push(d.id));
-    }
-    
-    return false;
+    return wouldCreateDependencyCycle(project, from, to);
   }, [projects]);
 
   // Handle link zone click
@@ -142,6 +112,9 @@ export function useDependencyLinking() {
   ) => {
     e.stopPropagation();
     e.preventDefault();
+
+    // Only the project's editors (admin, superuser, its manager) link items.
+    if (!canEditProjectById(currentUser, projects, projectId)) return;
 
     // If already linking, try to complete the dependency
     if (isLinkingDependency && linkingFrom) {
@@ -159,7 +132,11 @@ export function useDependencyLinking() {
       }
 
       // Check for circular dependency
-      if (hasCircularDependency(projectId, itemId, linkingFrom.itemId, itemType)) {
+      if (hasCircularDependency(
+        projectId,
+        { id: linkingFrom.itemId, type: linkingFrom.itemType as ItemType },
+        { id: itemId, type: itemType }
+      )) {
         alert('Cannot create circular dependency');
         cancelLinking();
         return;
@@ -184,7 +161,7 @@ export function useDependencyLinking() {
 
     // Start new linking
     startLinking(projectId, itemId, itemType, zone);
-  }, [isLinkingDependency, linkingFrom, startLinking, completeLinking, cancelLinking, hasCircularDependency]);
+  }, [isLinkingDependency, linkingFrom, startLinking, completeLinking, cancelLinking, hasCircularDependency, currentUser, projects]);
 
   // Create dependency and save to server
   const createDependency = useCallback(async (
@@ -224,17 +201,22 @@ export function useDependencyLinking() {
       // Get current dependencies
       const currentDeps = toItem.dependencies ?? [];
       
-      // Check if dependency already exists
-      if (currentDeps.some(d => d.id === fromItemId && d.type === depType)) {
+      // Check if dependency already exists (legacy entries without
+      // `entity`/`type` included)
+      const project = projects.find(p => p.id === projectId);
+      const fromRef = { id: fromItemId, type: fromItemType };
+      if (project && currentDeps.some(d => dependencyMatches(project, d, fromRef, depType))) {
         return;
       }
 
-      // Create new dependencies array
-      const newDeps = [...currentDeps, { id: fromItemId, type: depType }];
+      // Create new dependencies array. `entity` names the predecessor's kind:
+      // phase and subphase ids are separate sequences, so the id alone is
+      // ambiguous.
+      const newDeps: Dependency[] = [...currentDeps, { id: fromItemId, type: depType, entity: fromItemType }];
 
       // Calculate duration in days (use exact day difference to preserve duration)
-      const toStartDate = new Date(toItem.start_date);
-      const toEndDate = new Date(toItem.end_date);
+      const toStartDate = parseLocalDate(toItem.start_date);
+      const toEndDate = parseLocalDate(toItem.end_date);
       toStartDate.setHours(0, 0, 0, 0);
       toEndDate.setHours(0, 0, 0, 0);
       const durationDays = Math.round((toEndDate.getTime() - toStartDate.getTime()) / 86400000);
@@ -246,7 +228,7 @@ export function useDependencyLinking() {
 
       if (depType === 'FS') {
         // Finish-to-Start: align target start with source end + 1 day
-        const fromEnd = new Date(fromItem.end_date);
+        const fromEnd = parseLocalDate(fromItem.end_date);
         fromEnd.setHours(0, 0, 0, 0);
         const newStart = new Date(fromEnd);
         newStart.setDate(newStart.getDate() + 1);
@@ -259,7 +241,7 @@ export function useDependencyLinking() {
         dayOffset = Math.round((newStart.getTime() - toStartDate.getTime()) / 86400000);
       } else if (depType === 'SS') {
         // Start-to-Start: align target start with source start
-        const fromStart = new Date(fromItem.start_date);
+        const fromStart = parseLocalDate(fromItem.start_date);
         fromStart.setHours(0, 0, 0, 0);
         const newStart = new Date(fromStart);
         
@@ -278,8 +260,8 @@ export function useDependencyLinking() {
       // Helper to move children by offset
       const moveChildrenByOffset = (children: Subphase[], offset: number) => {
         for (const child of children) {
-          const childStart = new Date(child.start_date);
-          const childEnd = new Date(child.end_date);
+          const childStart = parseLocalDate(child.start_date);
+          const childEnd = parseLocalDate(child.end_date);
           childStart.setDate(childStart.getDate() + offset);
           childEnd.setDate(childEnd.getDate() + offset);
           
@@ -396,10 +378,8 @@ export function useDependencyLinking() {
       }
 
     } catch (err) {
-      console.error('Failed to create dependency:', err);
-      // Reload on error
-      const reloadedProjects = await loadAllProjects();
-      setProjects(reloadedProjects);
+      // Optimistic-write failure protocol: reload + clear the undo stack.
+      await recoverFromPersistFailure('Dependency linking', err);
     }
   }, [projects, setProjects, findPhase, findSubphase]);
 

@@ -116,9 +116,10 @@
   position: absolute;
   top: 0;
   height: 100%;
-  background: rgba(139, 92, 246, 0.15);
-  border-left: 1px solid rgba(139, 92, 246, 0.3);
-  border-right: 1px solid rgba(139, 92, 246, 0.3);
+  /* --absence-color is set inline per absence type; purple fallback */
+  background: color-mix(in srgb, var(--absence-color, rgb(139, 92, 246)) 15%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--absence-color, rgb(139, 92, 246)) 30%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--absence-color, rgb(139, 92, 246)) 30%, transparent);
   z-index: 1;
   pointer-events: none;
 }
@@ -131,7 +132,7 @@
   left: 0;
   right: 0;
   height: 3px;
-  background: var(--accent-purple);
+  background: var(--absence-color, var(--accent-purple));
 }
 
 /* Phantom row placeholder during phantom sibling mode */

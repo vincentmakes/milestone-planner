@@ -12,6 +12,8 @@ import {
   deleteTenant,
 } from '@/api';
 import type { Tenant } from '@/api/endpoints/admin';
+import { Button } from '@/components/common/Button';
+import { PlusIcon } from '@/components/settings/panels/PanelIcons';
 import styles from './TenantList.module.css';
 
 interface TenantListProps {
@@ -147,13 +149,9 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
       <div className={styles.panel}>
         <div className={styles.panelHeader}>
           <h2>Tenants</h2>
-          <button className={styles.btnPrimary} onClick={onCreateNew}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
+          <Button icon={<PlusIcon />} onClick={onCreateNew}>
             Create Tenant
-          </button>
+          </Button>
         </div>
 
         <div className={styles.tableWrapper}>

@@ -51,11 +51,15 @@ Notifications are stored per user, so they survive a reload or a restart — you
 The real-time features use a WebSocket connection that:
 
 - **Auto-connects** when you log in
-- **Reconnects automatically** if the connection drops (with exponential backoff, up to 5 attempts)
+- **Reconnects automatically** if the connection drops (with exponential backoff, up to 5 attempts), and tries again straight away when your network comes back or you switch back to the browser tab
 - **Maintains a keepalive** ping every 25 seconds to prevent timeouts
 - **Gracefully degrades** — if WebSocket is unavailable (e.g., behind a restrictive proxy), the app continues to work normally; you just won't see live updates from other users
 
-The connection status is visible in the Online Users indicator: a connected state shows the user count, while a disconnected state shows a fallback icon.
+The connection status is visible in the Online Users indicator: a connected state shows the user count, while a disconnected state shows a fallback icon. While live updates are disconnected, an **Offline** badge also appears in the header; your own edits keep saving, but colleagues' changes only arrive once the badge is gone.
+
+Live updates now also cover custom-column values and definitions, instance settings (title, weekends) and changes to your own account: if an admin changes your role or sites, it applies without a reload. If your account is deactivated, deleted or demoted, or your password is reset, your session ends at once and you are returned to the login screen.
+
+For security, the server refuses live-update connections opened from other websites.
 
 !!! note
     WebSocket connections require proper proxy configuration. If you're behind nginx or a load balancer, ensure WebSocket upgrade headers are passed through. See the [Installation guide](../admin-guide/installation.md) for reverse proxy configuration examples.

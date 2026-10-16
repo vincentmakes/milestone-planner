@@ -75,10 +75,10 @@ CREATE TABLE sessions (
 CREATE TABLE projects (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL,
+    site_id INTEGER REFERENCES sites(id) ON DELETE CASCADE,
     customer VARCHAR(255),
     pm_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    sales_pm VARCHAR(100),
+    sales_pm VARCHAR(200),
     confirmed INTEGER DEFAULT 0,
     volume REAL,
     start_date DATE NOT NULL,
@@ -110,7 +110,7 @@ CREATE TABLE project_subphases (
     parent_id INTEGER NOT NULL,
     parent_type VARCHAR(20) NOT NULL DEFAULT 'phase' CHECK (parent_type IN ('phase', 'subphase')),
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL,
+    name VARCHAR(200) NOT NULL,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
     is_milestone INTEGER DEFAULT 0,
@@ -161,7 +161,8 @@ CREATE TABLE subphase_staff_assignments (
 -- EQUIPMENT TABLES
 -- ============================================================================
 
--- Equipment inventory
+-- Equipment inventory. Equipment can be shared by several sites
+-- (equipment_sites); site_id is a legacy column (first linked site).
 CREATE TABLE equipment (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -170,6 +171,13 @@ CREATE TABLE equipment (
     description TEXT,
     active INTEGER DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Equipment <-> site links (many-to-many)
+CREATE TABLE equipment_sites (
+    equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    PRIMARY KEY (equipment_id, site_id)
 );
 
 -- Equipment assignments (project-level bookings)
@@ -186,13 +194,27 @@ CREATE TABLE equipment_assignments (
 -- CALENDAR TABLES
 -- ============================================================================
 
--- Vacations
+-- Absence types (Holidays, Home Office, ...; global, admin-managed).
+-- counts_as_unavailable = false keeps the person available for planning.
+CREATE TABLE absence_types (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    color VARCHAR(7) NOT NULL DEFAULT '#8b5cf6',
+    counts_as_unavailable BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Vacations (a NULL absence_type_id counts as unavailable)
 CREATE TABLE vacations (
     id SERIAL PRIMARY KEY,
     staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
     description VARCHAR(200) DEFAULT 'Vacation' NOT NULL,
+    absence_type_id INTEGER REFERENCES absence_types(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -220,15 +242,26 @@ CREATE TABLE bank_holidays (
     UNIQUE(site_id, date, name)
 );
 
--- Company events (audits, meetings, etc.)
+-- Company events (audits, meetings, etc.). An event can apply to several
+-- sites (company_event_sites); site_id is a legacy column (first linked site).
+-- counts_as_unavailable marks a site closure: staff of the linked sites are
+-- unavailable on the event's dates.
 CREATE TABLE company_events (
     id SERIAL PRIMARY KEY,
-    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL,
     date DATE NOT NULL,
     end_date DATE,
     name VARCHAR(200) NOT NULL,
     color VARCHAR(20),
+    counts_as_unavailable BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Company event <-> site links (many-to-many)
+CREATE TABLE company_event_sites (
+    event_id INTEGER NOT NULL REFERENCES company_events(id) ON DELETE CASCADE,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    PRIMARY KEY (event_id, site_id)
 );
 
 -- Staff notes (date-specific annotations pinned to a site)
@@ -311,7 +344,7 @@ CREATE TABLE card_comments (
     entity_type VARCHAR(20) NOT NULL CHECK (entity_type IN ('phase', 'subphase')),
     entity_id INTEGER NOT NULL,
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     body TEXT NOT NULL,
     mentioned_user_ids TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -357,16 +390,38 @@ CREATE TABLE user_skills (
 );
 
 -- ============================================================================
--- TAGS (global project tags, shared across sites)
+-- TAGS (tenant-wide project tags, optionally grouped and site-scoped)
 -- ============================================================================
 
--- Tags definitions
+-- Tag groups (single-select: one tag of the group per project; at most one
+-- group colours projects)
+CREATE TABLE tag_groups (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    single_select BOOLEAN NOT NULL DEFAULT FALSE,
+    colors_projects BOOLEAN NOT NULL DEFAULT FALSE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tags definitions (all_sites = false: only at the sites in tag_sites)
 CREATE TABLE tags (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL UNIQUE,
     color VARCHAR(7) NOT NULL DEFAULT '#6366f1',
+    group_id INTEGER REFERENCES tag_groups(id) ON DELETE SET NULL,
+    all_sites BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tag <-> site links (many-to-many)
+CREATE TABLE tag_sites (
+    tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    PRIMARY KEY (tag_id, site_id)
 );
 
 -- Project tags (many-to-many)
@@ -414,22 +469,30 @@ CREATE INDEX idx_notifications_user_created ON notifications(user_id, created_at
 CREATE INDEX idx_project_assignments_project ON project_assignments(project_id);
 CREATE INDEX idx_project_assignments_staff ON project_assignments(staff_id);
 CREATE INDEX idx_phase_staff_phase ON phase_staff_assignments(phase_id);
+CREATE INDEX idx_phase_staff_project ON phase_staff_assignments(project_id);
 CREATE INDEX idx_phase_staff_staff ON phase_staff_assignments(staff_id);
 CREATE INDEX idx_subphase_staff_subphase ON subphase_staff_assignments(subphase_id);
+CREATE INDEX idx_subphase_staff_project ON subphase_staff_assignments(project_id);
 CREATE INDEX idx_subphase_staff_staff ON subphase_staff_assignments(staff_id);
 CREATE INDEX idx_equipment_site ON equipment(site_id);
+CREATE INDEX idx_equipment_sites_site ON equipment_sites(site_id);
 CREATE INDEX idx_equipment_assignments_equipment ON equipment_assignments(equipment_id);
 CREATE INDEX idx_equipment_assignments_project ON equipment_assignments(project_id);
 CREATE INDEX idx_vacations_staff ON vacations(staff_id);
 CREATE INDEX idx_vacations_dates ON vacations(start_date, end_date);
+CREATE INDEX idx_vacations_absence_type ON vacations(absence_type_id);
 CREATE INDEX idx_bank_holidays_site ON bank_holidays(site_id);
 CREATE INDEX idx_bank_holidays_date ON bank_holidays(date);
 CREATE INDEX idx_company_events_site_date ON company_events(site_id, date);
+CREATE INDEX idx_company_event_sites_site ON company_event_sites(site_id);
 CREATE INDEX idx_staff_notes_site_date ON staff_notes(site_id, date);
 CREATE INDEX idx_equipment_blocks_equipment_id ON equipment_blocks(equipment_id);
 CREATE INDEX idx_equipment_blocks_dates ON equipment_blocks(start_date, end_date);
 CREATE INDEX idx_project_tags_project ON project_tags(project_id);
 CREATE INDEX idx_project_tags_tag ON project_tags(tag_id);
+CREATE INDEX idx_tags_group ON tags(group_id);
+CREATE INDEX idx_tag_sites_site ON tag_sites(site_id);
+CREATE UNIQUE INDEX idx_tag_groups_colors_projects ON tag_groups ((true)) WHERE colors_projects;
 CREATE INDEX idx_custom_columns_site ON custom_columns(site_id);
 CREATE INDEX idx_custom_column_values_column ON custom_column_values(custom_column_id);
 CREATE INDEX idx_custom_column_values_entity ON custom_column_values(entity_type, entity_id);
@@ -468,6 +531,14 @@ INSERT INTO skills (name, description, color) VALUES
     ('Technical Writing', 'Documentation and report writing', '#f59e0b'),
     ('Quality Control', 'QC procedures and compliance', '#ef4444'),
     ('R&D', 'Research and development experience', '#06b6d4');
+
+-- Default absence types
+INSERT INTO absence_types (name, color, counts_as_unavailable, sort_order) VALUES
+    ('Holidays', '#8b5cf6', TRUE, 0),
+    ('Home Office', '#0ea5e9', FALSE, 1),
+    ('Illness', '#ef4444', TRUE, 2),
+    ('Business Trip', '#f59e0b', TRUE, 3),
+    ('Training', '#10b981', TRUE, 4);
 
 -- ============================================================================
 -- VERIFICATION

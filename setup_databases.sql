@@ -193,7 +193,7 @@ CREATE TABLE IF NOT EXISTS user_sites (
 CREATE TABLE IF NOT EXISTS projects (
     id SERIAL PRIMARY KEY,
     name VARCHAR(200) NOT NULL,
-    site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL,
+    site_id INTEGER REFERENCES sites(id) ON DELETE CASCADE,
     customer VARCHAR(200),
     pm_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     sales_pm VARCHAR(200),
@@ -272,7 +272,8 @@ CREATE TABLE IF NOT EXISTS subphase_staff_assignments (
     allocation INTEGER DEFAULT 100 NOT NULL
 );
 
--- Equipment
+-- Equipment. Equipment can be shared by several sites (equipment_sites);
+-- site_id is a legacy column holding the first linked site.
 CREATE TABLE IF NOT EXISTS equipment (
     id SERIAL PRIMARY KEY,
     name VARCHAR(200) NOT NULL,
@@ -281,6 +282,13 @@ CREATE TABLE IF NOT EXISTS equipment (
     description TEXT,
     active INTEGER DEFAULT 1 NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+-- Equipment <-> site links (many-to-many)
+CREATE TABLE IF NOT EXISTS equipment_sites (
+    equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    PRIMARY KEY (equipment_id, site_id)
 );
 
 -- Equipment assignments (bookings)
@@ -293,15 +301,44 @@ CREATE TABLE IF NOT EXISTS equipment_assignments (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
--- Vacations (staff time-off)
+-- Absence types (Holidays, Home Office, ...; global, admin-managed).
+-- counts_as_unavailable = false keeps the person available for planning.
+CREATE TABLE IF NOT EXISTS absence_types (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    color VARCHAR(7) NOT NULL DEFAULT '#8b5cf6',
+    counts_as_unavailable BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Vacations (staff time-off). A NULL absence_type_id counts as unavailable.
 CREATE TABLE IF NOT EXISTS vacations (
     id SERIAL PRIMARY KEY,
     staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
     description VARCHAR(200) DEFAULT 'Vacation' NOT NULL,
+    absence_type_id INTEGER REFERENCES absence_types(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
+
+-- Upgrade of a database that predates absence types (before its index below).
+-- Only adds the column: filing existing absences under "Holidays" is done once
+-- by migrations/add_absence_types_and_event_sites.sql.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'vacations'
+          AND column_name = 'absence_type_id'
+    ) THEN
+        ALTER TABLE vacations ADD COLUMN absence_type_id INTEGER
+            REFERENCES absence_types(id) ON DELETE SET NULL;
+    END IF;
+END $$;
 
 -- Equipment blocks (maintenance / defect / calibration periods)
 CREATE TABLE IF NOT EXISTS equipment_blocks (
@@ -365,13 +402,73 @@ CREATE TABLE IF NOT EXISTS sessions (
     expired BIGINT NOT NULL
 );
 
--- Tags (global, shared across all sites; assignable to projects)
+-- Tag groups (a single-select group allows one of its tags per project; at
+-- most one group colours projects -- see idx_tag_groups_colors_projects)
+CREATE TABLE IF NOT EXISTS tag_groups (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    single_select BOOLEAN NOT NULL DEFAULT FALSE,
+    colors_projects BOOLEAN NOT NULL DEFAULT FALSE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tags (tenant-wide, assignable to projects; all_sites = false restricts a tag
+-- to the sites in tag_sites)
 CREATE TABLE IF NOT EXISTS tags (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL UNIQUE,
     color VARCHAR(7) NOT NULL DEFAULT '#6366f1',
+    group_id INTEGER REFERENCES tag_groups(id) ON DELETE SET NULL,
+    all_sites BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Upgrade of a tags table from before tag groups / site-scoped tags (no-ops on
+-- a fresh install). Same SQL as tenant_provisioner.TAGS_UPGRADE_SQL and
+-- migrations/add_tag_groups_and_sites.sql.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'tags'
+          AND column_name = 'group_id'
+    ) THEN
+        ALTER TABLE tags ADD COLUMN group_id INTEGER
+            REFERENCES tag_groups(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'tags'
+          AND column_name = 'all_sites'
+    ) THEN
+        ALTER TABLE tags ADD COLUMN all_sites BOOLEAN NOT NULL DEFAULT TRUE;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'tags'
+          AND column_name = 'sort_order'
+    ) THEN
+        ALTER TABLE tags ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+    END IF;
+END $$;
+
+-- Tag <-> site links (consulted only when tags.all_sites is false)
+CREATE TABLE IF NOT EXISTS tag_sites (
+    tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    PRIMARY KEY (tag_id, site_id)
 );
 
 -- Project tags association (many-to-many)
@@ -382,15 +479,26 @@ CREATE TABLE IF NOT EXISTS project_tags (
     PRIMARY KEY (project_id, tag_id)
 );
 
--- Company events (audits, meetings, etc. - displayed but don't affect working-day calc)
+-- Company events (audits, meetings, etc. - displayed but don't affect working-day
+-- calc, unless counts_as_unavailable marks the event as a site closure).
+-- An event can apply to several sites (company_event_sites); site_id is a
+-- legacy column holding the first linked site.
 CREATE TABLE IF NOT EXISTS company_events (
     id SERIAL PRIMARY KEY,
-    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL,
     date DATE NOT NULL,
     end_date DATE,
     name TEXT NOT NULL,
     color VARCHAR(20),
+    counts_as_unavailable BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Company event <-> site links (many-to-many)
+CREATE TABLE IF NOT EXISTS company_event_sites (
+    event_id INTEGER NOT NULL REFERENCES company_events(id) ON DELETE CASCADE,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    PRIMARY KEY (event_id, site_id)
 );
 
 -- Staff notes pinned to a site/date
@@ -435,7 +543,7 @@ CREATE TABLE IF NOT EXISTS card_comments (
     entity_type VARCHAR(20) NOT NULL,
     entity_id INTEGER NOT NULL,
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     body TEXT NOT NULL,
     mentioned_user_ids TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -503,22 +611,229 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_
 CREATE INDEX IF NOT EXISTS idx_project_assignments_project_id ON project_assignments(project_id);
 CREATE INDEX IF NOT EXISTS idx_project_assignments_staff_id ON project_assignments(staff_id);
 CREATE INDEX IF NOT EXISTS idx_phase_staff_assignments_phase_id ON phase_staff_assignments(phase_id);
+CREATE INDEX IF NOT EXISTS idx_phase_staff_assignments_project_id ON phase_staff_assignments(project_id);
 CREATE INDEX IF NOT EXISTS idx_phase_staff_assignments_staff_id ON phase_staff_assignments(staff_id);
 CREATE INDEX IF NOT EXISTS idx_subphase_staff_assignments_subphase_id ON subphase_staff_assignments(subphase_id);
+CREATE INDEX IF NOT EXISTS idx_subphase_staff_assignments_project_id ON subphase_staff_assignments(project_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_site_id ON equipment(site_id);
+CREATE INDEX IF NOT EXISTS idx_equipment_sites_site ON equipment_sites(site_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_assignments_project_id ON equipment_assignments(project_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_assignments_equipment_id ON equipment_assignments(equipment_id);
 CREATE INDEX IF NOT EXISTS idx_vacations_staff_id ON vacations(staff_id);
+CREATE INDEX IF NOT EXISTS idx_vacations_absence_type ON vacations(absence_type_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_blocks_equipment_id ON equipment_blocks(equipment_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_blocks_dates ON equipment_blocks(start_date, end_date);
 
 -- Ensure color column exists on pre-existing company_events tables (upgrades)
 ALTER TABLE IF EXISTS company_events ADD COLUMN IF NOT EXISTS color VARCHAR(20);
+
+-- Site closures on pre-existing company_events tables (upgrades)
+ALTER TABLE IF EXISTS company_events
+    ADD COLUMN IF NOT EXISTS counts_as_unavailable BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Multi-site equipment on pre-existing databases (upgrades; no-ops on a fresh
+-- install): the legacy equipment.site_id FK is made ON DELETE SET NULL (site
+-- deletion relies on it to keep shared equipment; dangling ids are cleared
+-- first), then equipment without any site link is linked to its legacy site.
+DO $$
+DECLARE
+    fk_name TEXT;
+BEGIN
+    FOR fk_name IN
+        SELECT c.conname
+        FROM pg_constraint c
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+        WHERE c.conrelid = to_regclass('public.equipment')
+          AND c.contype = 'f'
+          AND a.attname = 'site_id'
+          AND c.confdeltype <> 'n'
+    LOOP
+        EXECUTE format('ALTER TABLE equipment DROP CONSTRAINT %I', fk_name);
+    END LOOP;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint c
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+        WHERE c.conrelid = to_regclass('public.equipment')
+          AND c.contype = 'f'
+          AND a.attname = 'site_id'
+    ) THEN
+        UPDATE equipment SET site_id = NULL
+        WHERE site_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM sites s WHERE s.id = equipment.site_id);
+        ALTER TABLE equipment ADD CONSTRAINT equipment_site_id_fkey
+            FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+INSERT INTO equipment_sites (equipment_id, site_id)
+SELECT e.id, e.site_id
+FROM equipment e
+WHERE e.site_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM equipment_sites s WHERE s.equipment_id = e.id)
+ON CONFLICT DO NOTHING;
+
+-- Multi-site company events on pre-existing databases (upgrades; no-ops on a
+-- fresh install): the legacy site_id becomes nullable, its FK stops cascading,
+-- and events without any site link are linked to their legacy site.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'company_events'
+          AND column_name = 'site_id' AND is_nullable = 'NO'
+    ) THEN
+        ALTER TABLE company_events ALTER COLUMN site_id DROP NOT NULL;
+    END IF;
+END $$;
+
+DO $$
+DECLARE
+    fk_name TEXT;
+BEGIN
+    FOR fk_name IN
+        SELECT c.conname
+        FROM pg_constraint c
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+        WHERE c.conrelid = to_regclass('public.company_events')
+          AND c.contype = 'f'
+          AND a.attname = 'site_id'
+          AND c.confdeltype <> 'n'
+    LOOP
+        EXECUTE format('ALTER TABLE company_events DROP CONSTRAINT %I', fk_name);
+    END LOOP;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint c
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+        WHERE c.conrelid = to_regclass('public.company_events')
+          AND c.contype = 'f'
+          AND a.attname = 'site_id'
+    ) THEN
+        ALTER TABLE company_events ADD CONSTRAINT company_events_site_id_fkey
+            FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+INSERT INTO company_event_sites (event_id, site_id)
+SELECT e.id, e.site_id
+FROM company_events e
+WHERE e.site_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM company_event_sites s WHERE s.event_id = e.id)
+ON CONFLICT DO NOTHING;
+
+-- Deleting a site deletes its projects (pre-existing databases; no-op on a
+-- fresh install): the projects.site_id FK is made ON DELETE CASCADE, matching
+-- the ORM. Same SQL as tenant_provisioner.PROJECTS_SITE_FK_SQL and
+-- migrations/projects_site_fk_cascade.sql.
+DO $$
+DECLARE
+    fk_name TEXT;
+BEGIN
+    FOR fk_name IN
+        SELECT c.conname
+        FROM pg_constraint c
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+        WHERE c.conrelid = to_regclass('public.projects')
+          AND c.contype = 'f'
+          AND a.attname = 'site_id'
+          AND c.confdeltype <> 'c'
+    LOOP
+        EXECUTE format('ALTER TABLE projects DROP CONSTRAINT %I', fk_name);
+    END LOOP;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint c
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+        WHERE c.conrelid = to_regclass('public.projects')
+          AND c.contype = 'f'
+          AND a.attname = 'site_id'
+    ) THEN
+        UPDATE projects SET site_id = NULL
+        WHERE site_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM sites s WHERE s.id = projects.site_id);
+        ALTER TABLE projects ADD CONSTRAINT projects_site_id_fkey
+            FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE;
+    END IF;
+END $$;
+
+-- Comments outlive their author (pre-existing databases; no-op on a fresh
+-- install): card_comments.author_id becomes nullable, ON DELETE SET NULL. Same
+-- SQL as tenant_provisioner.CARD_COMMENTS_AUTHOR_FK_SQL and
+-- migrations/card_comments_author_set_null.sql.
+DO $$
+DECLARE
+    fk_name TEXT;
+BEGIN
+    IF to_regclass('public.card_comments') IS NULL THEN
+        RETURN;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'card_comments'
+          AND column_name = 'author_id' AND is_nullable = 'NO'
+    ) THEN
+        ALTER TABLE card_comments ALTER COLUMN author_id DROP NOT NULL;
+    END IF;
+
+    FOR fk_name IN
+        SELECT c.conname
+        FROM pg_constraint c
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+        WHERE c.conrelid = to_regclass('public.card_comments')
+          AND c.contype = 'f'
+          AND a.attname = 'author_id'
+          AND c.confdeltype <> 'n'
+    LOOP
+        EXECUTE format('ALTER TABLE card_comments DROP CONSTRAINT %I', fk_name);
+    END LOOP;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint c
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+        WHERE c.conrelid = to_regclass('public.card_comments')
+          AND c.contype = 'f'
+          AND a.attname = 'author_id'
+    ) THEN
+        UPDATE card_comments SET author_id = NULL
+        WHERE author_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = card_comments.author_id);
+        ALTER TABLE card_comments ADD CONSTRAINT card_comments_author_id_fkey
+            FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+-- Custom-column values and card comments left behind by deleted projects,
+-- phases and subphases (polymorphic rows, no FK). Same statements as
+-- migrations/cleanup_orphaned_values.sql.
+DELETE FROM custom_column_values v
+WHERE (v.entity_type = 'project'
+       AND NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = v.entity_id))
+   OR (v.entity_type = 'phase'
+       AND NOT EXISTS (SELECT 1 FROM project_phases ph WHERE ph.id = v.entity_id))
+   OR (v.entity_type = 'subphase'
+       AND NOT EXISTS (SELECT 1 FROM project_subphases sp WHERE sp.id = v.entity_id));
+
+DELETE FROM card_comments cc
+WHERE (cc.entity_type = 'phase'
+       AND NOT EXISTS (SELECT 1 FROM project_phases ph WHERE ph.id = cc.entity_id))
+   OR (cc.entity_type = 'subphase'
+       AND NOT EXISTS (SELECT 1 FROM project_subphases sp WHERE sp.id = cc.entity_id));
+
 CREATE INDEX IF NOT EXISTS idx_bank_holidays_site_id ON bank_holidays(site_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired);
 CREATE INDEX IF NOT EXISTS idx_project_tags_project ON project_tags(project_id);
 CREATE INDEX IF NOT EXISTS idx_project_tags_tag ON project_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_tags_group ON tags(group_id);
+CREATE INDEX IF NOT EXISTS idx_tag_sites_site ON tag_sites(site_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_groups_colors_projects ON tag_groups ((true)) WHERE colors_projects;
 CREATE INDEX IF NOT EXISTS idx_company_events_site_date ON company_events(site_id, date);
+CREATE INDEX IF NOT EXISTS idx_company_event_sites_site ON company_event_sites(site_id);
 CREATE INDEX IF NOT EXISTS idx_staff_notes_site_date ON staff_notes(site_id, date);
 CREATE INDEX IF NOT EXISTS idx_custom_columns_site_id ON custom_columns(site_id);
 CREATE INDEX IF NOT EXISTS idx_custom_column_values_column_id ON custom_column_values(custom_column_id);
@@ -537,6 +852,18 @@ INSERT INTO predefined_phases (name, sort_order, is_active) VALUES
     ('Cleaning', 4, 1),
     ('Report', 5, 1)
 ON CONFLICT (name) DO NOTHING;
+
+-- Insert default absence types (only into an empty table)
+INSERT INTO absence_types (name, color, counts_as_unavailable, sort_order)
+SELECT v.name, v.color, v.counts_as_unavailable, v.sort_order
+FROM (VALUES
+    ('Holidays', '#8b5cf6', TRUE, 0),
+    ('Home Office', '#0ea5e9', FALSE, 1),
+    ('Illness', '#ef4444', TRUE, 2),
+    ('Business Trip', '#f59e0b', TRUE, 3),
+    ('Training', '#10b981', TRUE, 4)
+) AS v(name, color, counts_as_unavailable, sort_order)
+WHERE NOT EXISTS (SELECT 1 FROM absence_types);
 
 -- Insert default settings
 INSERT INTO settings (key, value) VALUES

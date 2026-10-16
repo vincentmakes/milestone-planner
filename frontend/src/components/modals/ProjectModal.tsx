@@ -5,14 +5,19 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Modal } from '@/components/common/Modal';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { createProject, updateProject, loadAllProjects } from '@/api/endpoints/projects';
 import { getPredefinedPhases } from '@/api/endpoints/settings';
-import { toInputDateFormat } from '@/utils/date';
+import { useWhatIfStore } from '@/stores/whatIfStore';
+import { toInputDateFormat, formatDateISO, addDaysToDateString, daysBetweenDateStrings } from '@/utils/date';
+import { updateProjectLocally } from '@/utils/localProjectTree';
+import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { exportAndDownload } from '@/utils/csvExport';
 import { exportProjectToXML } from '@/utils/xmlExport';
+import { tagsForSite, violatesSingleSelect } from '@/utils/tags';
 import { TagPicker } from './TagPicker';
 import styles from './ProjectModal.module.css';
 
@@ -30,9 +35,16 @@ export function ProjectModal() {
   const currentSite = useAppStore((s) => s.currentSite);
   const staff = useAppStore((s) => s.staff);
   const setProjects = useAppStore((s) => s.setProjects);
+  const allTags = useAppStore((s) => s.tags);
+  const tagGroups = useAppStore((s) => s.tagGroups);
+  const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
   
   const isOpen = activeModal === 'project';
   const isEditing = !!editingProject;
+  // Tags offered/kept are the ones that apply to the project's own site.
+  const tagSiteId = editingProject?.site_id ?? currentSite?.id ?? null;
+  // Creating inside What-If cannot show the new project until Apply; edits are fine.
+  const createBlockedReason = !isEditing && whatIfMode ? whatIfUnavailableMessage('Creating projects') : null;
   
   // Form state
   const [name, setName] = useState('');
@@ -47,7 +59,7 @@ export function ProjectModal() {
   const [selectedPhases, setSelectedPhases] = useState<Set<string>>(new Set());
   const [predefinedPhases, setPredefinedPhases] = useState<PredefinedPhaseFromAPI[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<Set<number>>(new Set());
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
   
   // Filter staff by current site
@@ -102,8 +114,8 @@ export function ProjectModal() {
         setVolume('');
         setConfirmed(false);
         setArchived(false);
-        setStartDate(today.toISOString().split('T')[0]);
-        setEndDate(nextMonth.toISOString().split('T')[0]);
+        setStartDate(formatDateISO(today));
+        setEndDate(formatDateISO(nextMonth));
         setSelectedTagIds(new Set());
       }
       setError(null);
@@ -125,6 +137,11 @@ export function ProjectModal() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (createBlockedReason) {
+      setError(createBlockedReason);
+      return;
+    }
+    
     if (!name.trim()) {
       setError('Please enter a project name');
       return;
@@ -140,7 +157,16 @@ export function ProjectModal() {
       return;
     }
     
-    setIsSubmitting(true);
+    // Drop selected tags that do not apply to the project's site (stale data,
+    // or a tag re-scoped since the dialog opened) -- the server rejects them.
+    const applicableTagIds = new Set(tagsForSite(allTags, tagSiteId).map((t) => t.id));
+    const tagIds = Array.from(selectedTagIds).filter((id) => applicableTagIds.has(id));
+    if (violatesSingleSelect(tagIds, allTags, tagGroups)) {
+      setError('Pick at most one tag per single-choice tag group');
+      return;
+    }
+
+    if (!beginSubmit()) return;
     setError(null);
     
     try {
@@ -148,24 +174,23 @@ export function ProjectModal() {
       const phases: { type: string; start_date: string; end_date: string }[] = [];
       
       if (selectedPhases.size > 0 && !isEditing) {
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        const totalDuration = end.getTime() - start.getTime();
-        const phaseDuration = totalDuration / selectedPhases.size;
+        // Split the project span evenly, in whole calendar days (never via
+        // UTC milliseconds, which shifts a day west of UTC / across DST).
+        const totalDays = daysBetweenDateStrings(startDate, endDate);
+        const phaseDays = totalDays / selectedPhases.size;
         
         let idx = 0;
         // Maintain order from predefinedPhases
         for (const phase of predefinedPhases) {
           if (selectedPhases.has(phase.name)) {
-            const phaseStart = new Date(start.getTime() + phaseDuration * idx);
-            const phaseEnd = new Date(start.getTime() + phaseDuration * (idx + 1));
+            const startOffset = Math.floor(phaseDays * idx);
             // Don't exceed project end
-            const adjustedEnd = phaseEnd > end ? end : phaseEnd;
+            const endOffset = Math.min(totalDays, Math.floor(phaseDays * (idx + 1)));
             
             phases.push({
               type: phase.name,
-              start_date: phaseStart.toISOString().split('T')[0],
-              end_date: adjustedEnd.toISOString().split('T')[0],
+              start_date: addDaysToDateString(startDate, startOffset),
+              end_date: addDaysToDateString(startDate, endOffset),
             });
             idx++;
           }
@@ -184,11 +209,30 @@ export function ProjectModal() {
         start_date: startDate,
         end_date: endDate,
         phases: isEditing ? undefined : phases,
-        tag_ids: Array.from(selectedTagIds),
+        tag_ids: tagIds,
       };
       
       if (isEditing && editingProject) {
         await updateProject(editingProject.id, projectData);
+        // Show the edit right away (the reload below is a no-op in What-If).
+        updateProjectLocally(editingProject.id, (p) => {
+          p.name = projectData.name;
+          p.customer = projectData.customer;
+          p.pm_id = projectData.pm_id;
+          p.pm_name = projectData.pm_id
+            ? staff.find((s) => s.id === projectData.pm_id)?.name ?? p.pm_name
+            : null;
+          p.sales_pm = projectData.sales_pm;
+          p.volume = projectData.volume;
+          p.confirmed = projectData.confirmed;
+          p.archived = projectData.archived;
+          p.start_date = projectData.start_date;
+          p.end_date = projectData.end_date;
+          // Inline shape of project responses ({id, name, color, group_id}).
+          p.tags = allTags
+            .filter((t) => projectData.tag_ids.includes(t.id))
+            .map(({ id, name, color, group_id }) => ({ id, name, color, group_id }));
+        });
       } else {
         await createProject(projectData);
       }
@@ -200,7 +244,7 @@ export function ProjectModal() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save project');
     } finally {
-      setIsSubmitting(false);
+      endSubmit();
     }
   };
   
@@ -270,7 +314,12 @@ export function ProjectModal() {
         <Button variant="secondary" onClick={closeModal} disabled={isSubmitting}>
           Cancel
         </Button>
-        <Button variant="primary" onClick={handleSubmit} disabled={isSubmitting}>
+        <Button
+          variant="primary"
+          onClick={handleSubmit}
+          disabled={isSubmitting || !!createBlockedReason}
+          title={createBlockedReason ?? undefined}
+        >
           {isSubmitting ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Project'}
         </Button>
       </div>
@@ -286,7 +335,10 @@ export function ProjectModal() {
       footer={footer}
     >
       <form onSubmit={handleSubmit} className={styles.form}>
-        {error && <div className={styles.error}>{error}</div>}
+        {createBlockedReason && (
+          <div className={styles.error} role="status">{createBlockedReason}</div>
+        )}
+        {error && error !== createBlockedReason && <div className={styles.error}>{error}</div>}
         
         <div className={styles.formGroup}>
           <label className={styles.label}>Project Name *</label>
@@ -372,7 +424,12 @@ export function ProjectModal() {
         
         <div className={styles.formGroup}>
           <label className={styles.label}>Tags</label>
-          <TagPicker selectedIds={selectedTagIds} onChange={setSelectedTagIds} />
+          <TagPicker
+            selectedIds={selectedTagIds}
+            onChange={setSelectedTagIds}
+            siteId={tagSiteId}
+            disabled={isSubmitting}
+          />
         </div>
 
         {!isEditing && (

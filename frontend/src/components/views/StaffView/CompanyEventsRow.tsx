@@ -1,15 +1,17 @@
 /**
  * Company Events Row Component
  * Expandable row showing all company events with actions
- * - Add company event button
- * - Delete company events
+ * - Add company event button / click an event to edit it (Settings hub)
+ * - Delete company events (removes the event from this site only)
  * - Export to ICS
  */
 
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { deleteCompanyEvent, getCompanyEvents, buildEventDateSet } from '@/api';
+import { buildICS, downloadICS } from '@/utils/ics';
 import styles from './StaffView.module.css';
+import { parseLocalDate } from '@/utils/date';
 
 interface CompanyEventsRowProps {
   isExpanded: boolean;
@@ -21,13 +23,13 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
   const currentUser = useAppStore((s) => s.currentUser);
   const companyEvents = useAppStore((s) => s.companyEvents);
   const setCompanyEvents = useAppStore((s) => s.setCompanyEvents);
-  const { openModal } = useUIStore();
+  const openSettings = useUIStore((s) => s.openSettings);
   
   const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
   
   // Group events by year
   const eventsByYear = companyEvents.reduce((acc, e) => {
-    const year = new Date(e.date).getFullYear();
+    const year = parseLocalDate(e.date).getFullYear();
     if (!acc[year]) acc[year] = [];
     acc[year].push(e);
     return acc;
@@ -35,7 +37,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
   
   // Format date for display using browser locale
   const formatEventDate = (dateStr: string) => {
-    const date = new Date(dateStr);
+    const date = parseLocalDate(dateStr);
     return date.toLocaleDateString(undefined, { 
       weekday: 'short',
       day: 'numeric', 
@@ -47,52 +49,39 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
   const exportToICS = () => {
     if (companyEvents.length === 0) return;
     
-    const lines = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//Milestone//Company Events//EN',
-      'CALSCALE:GREGORIAN',
-      'METHOD:PUBLISH',
-    ];
-    
-    companyEvents.forEach((event) => {
-      const startDate = event.date.replace(/-/g, '');
-      // End date is the day after for all-day events
-      const endDateObj = new Date(event.end_date || event.date);
-      endDateObj.setDate(endDateObj.getDate() + 1);
-      const endDate = endDateObj.toISOString().split('T')[0].replace(/-/g, '');
-      
-      lines.push('BEGIN:VEVENT');
-      lines.push(`UID:companyevent-${event.id}@milestone`);
-      lines.push(`DTSTART;VALUE=DATE:${startDate}`);
-      lines.push(`DTEND;VALUE=DATE:${endDate}`);
-      lines.push(`SUMMARY:${event.name.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n')}`);
-      lines.push('TRANSP:TRANSPARENT');
-      lines.push('END:VEVENT');
-    });
-    
-    lines.push('END:VCALENDAR');
-    
-    const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `company-events-${currentSite?.name || 'site'}.ics`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // A site closure blocks time (out of office); a plain event is transparent
+    const icsContent = buildICS(
+      companyEvents.map((event) => ({
+        uid: `companyevent-${event.id}@milestone`,
+        summary: event.name,
+        start_date: event.date,
+        end_date: event.end_date,
+        transparency: event.counts_as_unavailable ? ('OPAQUE' as const) : ('TRANSPARENT' as const),
+        ...(event.counts_as_unavailable ? { busyStatus: 'OOF' } : {}),
+      })),
+      'Company Events',
+    );
+    downloadICS(icsContent, `company-events-${currentSite?.name || 'site'}.ics`);
   };
   
-  // Handle opening add company event modal
+  // Events are managed in the Settings hub
   const handleAddEvent = () => {
-    openModal('companyEvent');
+    openSettings('company-events', { type: 'add', siteId: currentSite?.id });
+  };
+  
+  const handleEditEvent = (eventId: number) => {
+    openSettings('company-events', { type: 'edit', id: eventId, siteId: currentSite?.id });
   };
   
   // Handle deleting a company event
-  const handleDeleteEvent = async (eventId: number) => {
+  // An event shared by several sites is only removed from the current site
+  // (the legacy site-scoped DELETE unlinks it); other sites keep it.
+  const handleDeleteEvent = async (eventId: number, siteCount: number) => {
     if (!currentSite) return;
-    if (!confirm('Delete this company event?')) return;
+    const message = siteCount > 1
+      ? `This event is shared by ${siteCount} sites. Remove it from ${currentSite.name} only? The other sites keep it (delete it everywhere from Settings → Company events).`
+      : 'Delete this company event?';
+    if (!confirm(message)) return;
     
     try {
       await deleteCompanyEvent(currentSite.id, eventId);
@@ -170,10 +159,15 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
               return (
                 <div 
                   key={event.id}
-                  className={styles.detailRow}
+                  className={`${styles.detailRow} ${canEdit ? styles.clickable : ''}`}
+                  onClick={canEdit ? () => handleEditEvent(event.id) : undefined}
+                  title={canEdit ? 'Edit in Settings' : undefined}
                 >
-                  <span className={`${styles.detailType} ${styles.companyEvent}`}>
-                    Event
+                  <span
+                    className={`${styles.detailType} ${styles.companyEvent}`}
+                    title={event.counts_as_unavailable ? 'Site closure: staff on this site are unavailable' : undefined}
+                  >
+                    {event.counts_as_unavailable ? 'Closure' : 'Event'}
                   </span>
                   <span className={styles.detailName}>{event.name}</span>
                   <span className={styles.dateBadge}>{dateDisplay}</span>
@@ -182,9 +176,9 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
                       className={styles.deleteAction}
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleDeleteEvent(event.id);
+                        handleDeleteEvent(event.id, event.site_ids?.length ?? 1);
                       }}
-                      title="Delete company event"
+                      title={(event.site_ids?.length ?? 1) > 1 ? 'Remove from this site' : 'Delete company event'}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <line x1="18" y1="6" x2="6" y2="18" />

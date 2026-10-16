@@ -8,6 +8,9 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { KanbanGrouping } from '@/utils/kanbanCards';
+import { TAG_FILTER_KEY_PATTERN, tagFilterKey } from '@/utils/tags';
+import type { TagFilter } from '@/utils/tags';
+import { navigateDate } from '@/utils/date';
 import type {
   ViewMode,
   CurrentView,
@@ -182,6 +185,58 @@ function expandToLevel(
 }
 
 // =============================================================================
+// PERSISTENCE HELPERS
+// =============================================================================
+
+function numberArray(value: unknown): number[] {
+  return Array.isArray(value) ? value.filter((v): v is number => Number.isInteger(v)) : [];
+}
+
+/**
+ * Rebuild persisted tag filters, dropping malformed entries and keys that are
+ * not `tagFilterKey`s (legacy site-id-only keys cannot tell which tenant they
+ * belong to); null if absent/invalid.
+ */
+function sanitizeTagFilters(value: unknown): Record<string, TagFilter> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out: Record<string, TagFilter> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!TAG_FILTER_KEY_PATTERN.test(key) || !raw || typeof raw !== 'object') continue;
+    const entry = raw as Record<string, unknown>;
+    const filter = { tagIds: numberArray(entry.tagIds), noneGroupIds: numberArray(entry.noneGroupIds) };
+    if (filter.tagIds.length > 0 || filter.noneGroupIds.length > 0) out[key] = filter;
+  }
+  return out;
+}
+
+/** Shape of a Gantt section key (see components/gantt/utils/projectSections.ts). */
+const GANTT_SECTION_KEY_PATTERN = /^(tag-\d+|none)$/;
+
+/** Rebuild persisted Gantt groupings (tagFilterKey → tag group id); null if absent/invalid. */
+function sanitizeGanttGrouping(value: unknown): Record<string, number> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (TAG_FILTER_KEY_PATTERN.test(key) && Number.isInteger(raw)) out[key] = raw as number;
+  }
+  return out;
+}
+
+/** Rebuild persisted collapsed Gantt sections (tagFilterKey → section keys); null if absent/invalid. */
+function sanitizeCollapsedGanttSections(value: unknown): Record<string, string[]> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out: Record<string, string[]> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!TAG_FILTER_KEY_PATTERN.test(key) || !Array.isArray(raw)) continue;
+    const keys = [
+      ...new Set(raw.filter((k): k is string => typeof k === 'string' && GANTT_SECTION_KEY_PATTERN.test(k))),
+    ];
+    if (keys.length > 0) out[key] = keys;
+  }
+  return out;
+}
+
+// =============================================================================
 // STATE INTERFACE
 // =============================================================================
 
@@ -208,6 +263,27 @@ interface ViewState {
   /** Custom column driving the swimlanes when kanbanGrouping === 'customColumn'. */
   kanbanGroupingColumnId: number | null;
   kanbanMyTodoOnly: boolean;
+
+  // ---------------------------------------------
+  // TAG FILTER (Gantt + Kanban)
+  // ---------------------------------------------
+  /**
+   * Project tag filter per tenant + site, keyed by `tagFilterKey(siteId)`
+   * (`"<tenant slug>:<site id>"`). Absent = no filter. A per-browser
+   * preference: deliberately not cleared by resetAllStores().
+   */
+  tagFilters: Record<string, TagFilter>;
+
+  // ---------------------------------------------
+  // GANTT GROUPING
+  // ---------------------------------------------
+  /**
+   * Tag group the Gantt project list is grouped by, per tenant + site
+   * (`tagFilterKey`). Absent = no grouping. Per-browser, like `tagFilters`.
+   */
+  ganttGrouping: Record<string, number>;
+  /** Collapsed Gantt sections (`tag-<id>` / `none`) per tenant + site. */
+  collapsedGanttSections: Record<string, string[]>;
 
   // ---------------------------------------------
   // EXPANDED STATES (for tree views)
@@ -242,6 +318,18 @@ interface ViewState {
   setKanbanGrouping: (grouping: KanbanGrouping, columnId?: number | null) => void;
   setKanbanMyTodoOnly: (only: boolean) => void;
   toggleKanbanMyTodoOnly: () => void;
+  /** Set a site's tag filter (current tenant); an empty filter removes the entry. */
+  setTagFilter: (siteId: number, filter: TagFilter) => void;
+  clearTagFilter: (siteId: number) => void;
+  /**
+   * Group a site's Gantt by a tag group; null removes the grouping and that
+   * site's collapsed sections. Switching to another group also clears them
+   * (section keys belong to the previous group's tags).
+   */
+  setGanttGrouping: (siteId: number, groupId: number | null) => void;
+  toggleGanttSection: (siteId: number, key: string) => void;
+  /** Replace a site's collapsed sections (collapse all / expand all = []). */
+  setGanttSectionsCollapsed: (siteId: number, keys: string[]) => void;
   setShowStaffOverview: (show: boolean) => void;
   toggleShowStaffOverview: () => void;
   setShowEquipmentOverview: (show: boolean) => void;
@@ -301,6 +389,13 @@ const initialViewState = {
   kanbanGrouping: 'none' as KanbanGrouping,
   kanbanGroupingColumnId: null as number | null,
   kanbanMyTodoOnly: false,
+
+  // Tag filter
+  tagFilters: {} as Record<string, TagFilter>,
+
+  // Gantt grouping
+  ganttGrouping: {} as Record<string, number>,
+  collapsedGanttSections: {} as Record<string, string[]>,
 
   // Expanded states
   expandedProjects: new Set<number>(),
@@ -364,6 +459,69 @@ export const useViewStore = create<ViewState>()(
         kanbanMyTodoOnly: !state.kanbanMyTodoOnly,
       })),
 
+      // ---------------------------------------------
+      // Tag filter
+      // ---------------------------------------------
+      setTagFilter: (siteId, filter) => set((state) => {
+        const key = tagFilterKey(siteId);
+        const next = { ...state.tagFilters };
+        const tagIds = [...new Set(filter.tagIds)];
+        const noneGroupIds = [...new Set(filter.noneGroupIds)];
+        if (tagIds.length === 0 && noneGroupIds.length === 0) {
+          delete next[key];
+        } else {
+          next[key] = { tagIds, noneGroupIds };
+        }
+        return { tagFilters: next };
+      }),
+
+      clearTagFilter: (siteId) => set((state) => {
+        const key = tagFilterKey(siteId);
+        if (!(key in state.tagFilters)) return state;
+        const next = { ...state.tagFilters };
+        delete next[key];
+        return { tagFilters: next };
+      }),
+
+      // ---------------------------------------------
+      // Gantt grouping
+      // ---------------------------------------------
+      setGanttGrouping: (siteId, groupId) => set((state) => {
+        const key = tagFilterKey(siteId);
+        if (groupId !== null && state.ganttGrouping[key] === groupId) return state;
+        if (groupId === null && !(key in state.ganttGrouping) && !(key in state.collapsedGanttSections)) {
+          return state;
+        }
+        const grouping = { ...state.ganttGrouping };
+        if (groupId === null) delete grouping[key];
+        else grouping[key] = groupId;
+        const collapsed = { ...state.collapsedGanttSections };
+        delete collapsed[key];
+        return { ganttGrouping: grouping, collapsedGanttSections: collapsed };
+      }),
+
+      toggleGanttSection: (siteId, sectionKey) => set((state) => {
+        const key = tagFilterKey(siteId);
+        const current = state.collapsedGanttSections[key] ?? [];
+        const keys = current.includes(sectionKey)
+          ? current.filter((k) => k !== sectionKey)
+          : [...current, sectionKey];
+        const collapsed = { ...state.collapsedGanttSections };
+        if (keys.length === 0) delete collapsed[key];
+        else collapsed[key] = keys;
+        return { collapsedGanttSections: collapsed };
+      }),
+
+      setGanttSectionsCollapsed: (siteId, sectionKeys) => set((state) => {
+        const key = tagFilterKey(siteId);
+        const keys = [...new Set(sectionKeys)];
+        if (keys.length === 0 && !(key in state.collapsedGanttSections)) return state;
+        const collapsed = { ...state.collapsedGanttSections };
+        if (keys.length === 0) delete collapsed[key];
+        else collapsed[key] = keys;
+        return { collapsedGanttSections: collapsed };
+      }),
+
       // Staff overview - closes equipment if opening staff
       setShowStaffOverview: (show) => set({
         showStaffOverview: show,
@@ -388,24 +546,9 @@ export const useViewStore = create<ViewState>()(
 
       navigatePeriod: (direction) => {
         const { viewMode, currentDate } = get();
-        const newDate = new Date(currentDate);
-
-        switch (viewMode) {
-          case 'week':
-            newDate.setDate(newDate.getDate() + direction * 7);
-            break;
-          case 'month':
-            newDate.setMonth(newDate.getMonth() + direction);
-            break;
-          case 'quarter':
-            newDate.setMonth(newDate.getMonth() + direction * 3);
-            break;
-          case 'year':
-            newDate.setFullYear(newDate.getFullYear() + direction);
-            break;
-        }
-
-        set({ currentDate: newDate });
+        // date-fns month arithmetic clamps to the month end (Jan 31 + 1 month
+        // = Feb 28/29); Date#setMonth overflows into March.
+        set({ currentDate: navigateDate(new Date(currentDate), direction, viewMode) });
       },
 
       goToToday: () => set({ currentDate: new Date() }),
@@ -575,12 +718,17 @@ export const useViewStore = create<ViewState>()(
       // -----------------------------------------
       // RESET
       // -----------------------------------------
-      resetView: () => set(initialViewState),
+      // "Today" is read when the view is reset, not when this module loaded.
+      resetView: () => set({ ...initialViewState, currentDate: new Date() }),
     }),
     {
       name: 'milestone-view-storage-v1',
       storage: createJSONStorage(() => localStorage),
-      // Only persist certain fields
+      // Only persist certain fields. Deliberately NOT the timeline scroll
+      // offset or currentDate: the app always opens on today. A restored
+      // pixel offset is relative to a timeline that starts months before the
+      // restored date, so it reopened wherever the user last was (e.g. a
+      // year back). Both stay in memory, so switching views keeps the place.
       partialize: (state) => ({
         viewMode: state.viewMode,
         currentView: state.currentView,
@@ -588,19 +736,19 @@ export const useViewStore = create<ViewState>()(
         currentResourceTab: state.currentResourceTab,
         sidebarCollapsed: state.sidebarCollapsed,
         resourcePanelCollapsed: state.resourcePanelCollapsed,
-        timelineScrollLeft: state.timelineScrollLeft,
         showStaffOverview: state.showStaffOverview,
         showEquipmentOverview: state.showEquipmentOverview,
         kanbanProjectId: state.kanbanProjectId,
         kanbanGrouping: state.kanbanGrouping,
         kanbanGroupingColumnId: state.kanbanGroupingColumnId,
         kanbanMyTodoOnly: state.kanbanMyTodoOnly,
+        tagFilters: state.tagFilters,
+        ganttGrouping: state.ganttGrouping,
+        collapsedGanttSections: state.collapsedGanttSections,
         // Convert Sets to Arrays for JSON serialization
         expandedProjects: Array.from(state.expandedProjects),
         expandedPhases: Array.from(state.expandedPhases),
         expandedSubphases: Array.from(state.expandedSubphases),
-        // Store current date as ISO string
-        currentDateISO: state.currentDate.toISOString(),
       }),
       // Callback when hydration starts/completes
       onRehydrateStorage: () => {
@@ -622,7 +770,6 @@ export const useViewStore = create<ViewState>()(
           currentResourceTab: (persisted?.currentResourceTab as ResourceTab) ?? currentState.currentResourceTab,
           sidebarCollapsed: (persisted?.sidebarCollapsed as boolean) ?? currentState.sidebarCollapsed,
           resourcePanelCollapsed: (persisted?.resourcePanelCollapsed as boolean) ?? currentState.resourcePanelCollapsed,
-          timelineScrollLeft: (persisted?.timelineScrollLeft as number) ?? currentState.timelineScrollLeft,
           showStaffOverview: (persisted?.showStaffOverview as boolean) ?? currentState.showStaffOverview,
           showEquipmentOverview: (persisted?.showEquipmentOverview as boolean) ?? currentState.showEquipmentOverview,
           // Kanban: every field added to partialize above MUST also be listed
@@ -632,6 +779,11 @@ export const useViewStore = create<ViewState>()(
           kanbanGrouping: (persisted?.kanbanGrouping as KanbanGrouping) ?? currentState.kanbanGrouping,
           kanbanGroupingColumnId: (persisted?.kanbanGroupingColumnId as number | null) ?? currentState.kanbanGroupingColumnId,
           kanbanMyTodoOnly: (persisted?.kanbanMyTodoOnly as boolean) ?? currentState.kanbanMyTodoOnly,
+          // Same rule for the tag filter (validated: it is user-editable storage).
+          tagFilters: sanitizeTagFilters(persisted?.tagFilters) ?? currentState.tagFilters,
+          ganttGrouping: sanitizeGanttGrouping(persisted?.ganttGrouping) ?? currentState.ganttGrouping,
+          collapsedGanttSections:
+            sanitizeCollapsedGanttSections(persisted?.collapsedGanttSections) ?? currentState.collapsedGanttSections,
           // Convert Arrays back to Sets
           expandedProjects: Array.isArray(persisted?.expandedProjects)
             ? new Set(persisted.expandedProjects as number[])
@@ -642,10 +794,6 @@ export const useViewStore = create<ViewState>()(
           expandedSubphases: Array.isArray(persisted?.expandedSubphases)
             ? new Set(persisted.expandedSubphases as number[])
             : currentState.expandedSubphases,
-          // Restore current date from ISO string
-          currentDate: persisted?.currentDateISO
-            ? new Date(persisted.currentDateISO as string)
-            : currentState.currentDate,
         };
       },
     }

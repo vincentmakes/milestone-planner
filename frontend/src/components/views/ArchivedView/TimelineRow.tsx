@@ -8,6 +8,7 @@ import { useAppStore } from '@/stores/appStore';
 import type { Project } from '@/types';
 import type { TimelineCell } from '@/components/gantt/utils';
 import styles from './TimelineRow.module.css';
+import { parseLocalDate } from '@/utils/date';
 
 interface TimelineRowProps {
   project: Project;
@@ -33,8 +34,8 @@ export function TimelineRow({
       return null;
     }
     
-    const projectStart = new Date(project.start_date);
-    const projectEnd = new Date(project.end_date);
+    const projectStart = parseLocalDate(project.start_date);
+    const projectEnd = parseLocalDate(project.end_date);
     projectStart.setHours(0, 0, 0, 0);
     projectEnd.setHours(0, 0, 0, 0);
     
@@ -120,7 +121,7 @@ export function TimelineRow({
           return (
             <div
               key={`event-${index}`}
-              className={`${styles.specialCell} ${styles.companyEvent}`}
+              className={`${styles.specialCell} ${styles.companyEvent} ${cell.isSiteClosure ? styles.siteClosure : ''}`}
               style={{
                 left: index * cellWidth,
                 width: cellWidth,
@@ -128,7 +129,7 @@ export function TimelineRow({
                   ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
                   : {}),
               }}
-              data-tooltip={cell.companyEventName || 'Company Event'}
+              data-tooltip={cell.isSiteClosure ? `Site closed: ${cell.companyEventName || 'Company Event'}` : (cell.companyEventName || 'Company Event')}
             />
           );
         }

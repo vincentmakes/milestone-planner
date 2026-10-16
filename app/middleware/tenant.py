@@ -23,9 +23,31 @@ from app.utils import utcnow_naive
 logger = logging.getLogger(__name__)
 
 # Simple in-memory cache for tenant lookups
-# Store primitive values, not ORM objects, to avoid detached session issues
+# Store primitive values, not ORM objects, to avoid detached session issues.
+# Misses are cached too, for the same TTL, so a flood of requests for a
+# non-existent slug does not become one master-DB round trip each. They live
+# in a separate, size-capped map: hits are bounded by the number of real
+# tenants, misses by nothing but the attacker's imagination (/t/<random>/),
+# so at most _NEGATIVE_CACHE_MAX of them are kept and the oldest go first.
+# Per process: creating/changing a tenant clears the entry on the worker that
+# handled the admin request; other workers converge within the TTL.
 _tenant_cache: dict[str, tuple[dict[str, Any], datetime]] = {}
+_negative_cache: dict[str, datetime] = {}  # insertion order = age
+_NEGATIVE_CACHE_MAX = 1000
 _cache_ttl = 60  # seconds
+
+
+def _cache_miss(slug: str) -> None:
+    """Remember that ``slug`` does not exist, evicting the oldest misses."""
+    now = utcnow_naive()
+    _negative_cache.pop(slug, None)  # re-insert at the young end
+    while _negative_cache:
+        oldest_slug, cached_at = next(iter(_negative_cache.items()))
+        expired = (now - cached_at).total_seconds() >= _cache_ttl
+        if not expired and len(_negative_cache) < _NEGATIVE_CACHE_MAX:
+            break
+        del _negative_cache[oldest_slug]
+    _negative_cache[slug] = now
 
 
 async def get_tenant_info_cached(slug: str) -> dict[str, Any] | None:
@@ -35,6 +57,9 @@ async def get_tenant_info_cached(slug: str) -> dict[str, Any] | None:
         tenant_info, timestamp = cached
         if (utcnow_naive() - timestamp).total_seconds() < _cache_ttl:
             return tenant_info
+    missed_at = _negative_cache.get(slug)
+    if missed_at is not None and (utcnow_naive() - missed_at).total_seconds() < _cache_ttl:
+        return None
 
     # Query database
     async with master_db.session() as session:
@@ -57,17 +82,22 @@ async def get_tenant_info_cached(slug: str) -> dict[str, Any] | None:
                 else None,
             }
             _tenant_cache[slug] = (tenant_info, utcnow_naive())
+            _negative_cache.pop(slug, None)
             return tenant_info
 
+        _tenant_cache.pop(slug, None)
+        _cache_miss(slug)
         return None
 
 
 def clear_tenant_cache(slug: str | None = None):
-    """Clear tenant cache."""
+    """Clear tenant cache (hits and cached misses)."""
     if slug:
         _tenant_cache.pop(slug, None)
+        _negative_cache.pop(slug, None)
     else:
         _tenant_cache.clear()
+        _negative_cache.clear()
 
 
 def extract_tenant_slug(path: str) -> tuple[str | None, str]:
@@ -201,7 +231,9 @@ class TenantMiddleware:
                     engine = await tenant_connection_manager.get_pool_from_info(tenant_info)
                     state["tenant_engine"] = engine
                 except Exception as e:
-                    logger.error("Tenant DB connection error: %s", e)
+                    # The detail (DB name, asyncpg/decrypt error) stays in the
+                    # log; unauthenticated clients get a fixed message.
+                    logger.error("Tenant DB connection error for '%s': %s", slug, e)
                     # For WebSocket, let handler deal with it
                     if scope["type"] == "websocket":
                         await self.app(scope, receive, send)
@@ -211,7 +243,8 @@ class TenantMiddleware:
                         status_code=503,
                         content={
                             "error": "Database unavailable",
-                            "message": f"Could not connect to organization database: {str(e)}",
+                            "message": "Could not connect to the organization database. "
+                            "Please try again later.",
                         },
                     )
                     await response(scope, receive, send)

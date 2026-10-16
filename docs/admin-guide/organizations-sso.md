@@ -84,7 +84,7 @@ All tenants in the organization share this SSO setup.
 **Per-Tenant (Multi-Tenant):**
 
 A tenant that does **not** belong to an organization can configure its own SSO from the
-**SSO Configuration** screen inside the application (admin only), using the same fields and
+**Settings → SSO** section inside the application (admin only), using the same fields and
 the same shared redirect URI.
 
 !!! note "Organization SSO takes precedence"
@@ -93,11 +93,11 @@ the same shared redirect URI.
     per-tenant configuration would be ignored. To configure SSO per tenant, remove the
     tenant from the organization (or disable the organization's SSO).
 
-![Tenant SSO Configuration form shown read-only because organization SSO is active](../assets/screenshots/sso-org-precedence.png){ loading=lazy }
+![Tenant SSO form shown read-only because organization SSO is active](../assets/screenshots/sso-org-precedence.png){ loading=lazy }
 
 **Per-Instance (Single-Tenant):**
 
-Configure SSO in the Settings modal within the application, or set environment variables:
+Configure SSO in **Settings → SSO** within the application, or set environment variables:
 
 ```bash
 SSO_ENABLED=true
@@ -110,10 +110,44 @@ SSO_REDIRECT_URI=https://your-domain.com/api/auth/sso/callback
 ### SSO Login Flow
 
 1. User clicks **Sign in with Microsoft** on the login screen
-2. Redirected to Microsoft's login page
-3. After authentication, redirected back to Milestone with an authorization code
-4. Milestone exchanges the code for tokens and creates/updates the user session
-5. If the user doesn't exist in Milestone, their account is automatically created
+2. Milestone sets a short-lived, one-time `sso_nonce` cookie (HttpOnly, 10 minutes) and
+   redirects to Microsoft's login page with a signed `state` that carries the same nonce
+3. After authentication, Microsoft redirects back to Milestone with an authorization code
+4. Milestone checks that the `state` is validly signed **and** that its nonce matches this
+   browser's `sso_nonce` cookie, then clears the cookie — whatever the outcome
+5. Milestone exchanges the code for tokens and creates/updates the user session
+6. If the user doesn't exist in Milestone, their account is automatically created (when
+   **auto-create users** is on)
+
+Because of the nonce check, a sign-in only completes **in the browser that started it**, a
+callback link cannot be reused, and a sign-in left open for more than 10 minutes must be
+restarted. Those cases show *"Your sign-in session expired or was started elsewhere. Please
+try again."* on the sign-in page. Browsers or privacy tools that block first-party cookies on
+the redirect back from Microsoft cause the same message every time.
+
+### Client secret storage
+
+Client secrets are **encrypted at rest** (AES-256-GCM) at both scopes:
+
+- **Organization SSO** — stored in the master database, encrypted with
+  `TENANT_ENCRYPTION_KEY`.
+- **Tenant-level SSO** (Settings → SSO) — stored in the tenant database's `sso_config`
+  table, encrypted with the same key; in single-tenant mode the key is derived from
+  `SESSION_SECRET`. Secrets saved by versions before 1.5.0 were stored in plain text and are
+  encrypted automatically the next time the workspace's database is opened after the upgrade.
+
+The settings screens and `GET /api/sso/config/full` only ever return the **masked** form
+(`****` plus the last four characters). Saving the form with the masked value unchanged keeps
+the stored secret; typing a new value replaces it; clearing the field removes it. This holds
+on every SSO save route.
+
+!!! warning "Rotating `SESSION_SECRET` (single-tenant) or `TENANT_ENCRYPTION_KEY`"
+    The stored secret can only be decrypted with the key it was encrypted with. After
+    changing `SESSION_SECRET` on a single-tenant installation (or `TENANT_ENCRYPTION_KEY` on
+    a multi-tenant one), the server logs *"Could not decrypt the tenant SSO client secret"*
+    once and SSO reports **not configured** — re-enter the client secret in
+    **Settings → SSO**. Changing `TENANT_ENCRYPTION_KEY` also makes existing tenant database
+    credentials unreadable, so only do it with a re-encryption plan.
 
 ### Testing SSO
 
@@ -184,6 +218,11 @@ up here.
 | `AADSTS90002`, `AADSTS900023` | The directory could not be found | The Directory (tenant) ID is wrong or malformed — copy it from the App Registration's **Overview** |
 
 Some messages come from Milestone rather than Microsoft:
+
+- **"Your sign-in session expired or was started elsewhere. Please try again."** — the
+  browser-binding check failed: the sign-in took longer than 10 minutes, was finished in a
+  different browser or profile, the callback link was opened twice, or the `sso_nonce` cookie
+  was blocked (see [SSO Login Flow](#sso-login-flow)).
 
 - **"SSO client secret is not configured"** — the configuration in effect has no client secret.
   Save one; a configuration without a secret can never complete a sign-in.

@@ -7,6 +7,7 @@ import { useState, FormEvent } from 'react';
 import { createTenant } from '@/api';
 import type { Tenant, TenantCreateRequest } from '@/api/endpoints/admin';
 import { useEscapeKey } from '@/hooks';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import styles from './AdminModal.module.css';
 
 interface CreateTenantModalProps {
@@ -24,7 +25,7 @@ export function CreateTenantModal({ onClose, onCreated }: CreateTenantModalProps
     max_users: 10,
     max_projects: 50,
   });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -51,8 +52,8 @@ export function CreateTenantModal({ onClose, onCreated }: CreateTenantModalProps
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!beginSubmit()) return;
     setError(null);
-    setIsSubmitting(true);
 
     try {
       const tenant = await createTenant(formData);
@@ -60,7 +61,7 @@ export function CreateTenantModal({ onClose, onCreated }: CreateTenantModalProps
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create tenant');
     } finally {
-      setIsSubmitting(false);
+      endSubmit();
     }
   };
 

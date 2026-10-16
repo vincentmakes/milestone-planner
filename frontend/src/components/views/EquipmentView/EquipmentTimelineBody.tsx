@@ -87,7 +87,7 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
               cell.isCompanyEvent ? (
                 <div
                   key={`event-${index}`}
-                  className={`${styles.gridCell} ${styles.companyEvent}`}
+                  className={`${styles.gridCell} ${styles.companyEvent} ${cell.isSiteClosure ? styles.siteClosure : ''}`}
                   style={{
                     left: index * cellWidth,
                     width: cellWidth,
@@ -131,6 +131,7 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
                     cells={cells}
                     cellWidth={cellWidth}
                     viewMode={viewMode}
+                    canManage={canManage}
                   />
                   {isExpanded && (
                     <>
@@ -141,6 +142,7 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
                           cells={cells}
                           cellWidth={cellWidth}
                           viewMode={viewMode}
+                          canManage={canManage}
                         />
                       ))}
                       {/* "Add block" placeholder row mirrors panel height */}
@@ -193,7 +195,7 @@ export const EquipmentTimelineBody = forwardRef<HTMLDivElement, EquipmentTimelin
                           ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
                           : {}),
                       }}
-                      data-tooltip={cell.companyEventName || 'Company Event'}
+                      data-tooltip={cell.isSiteClosure ? `Site closed: ${cell.companyEventName || 'Company Event'}` : (cell.companyEventName || 'Company Event')}
                     />
                   );
                 }
@@ -216,9 +218,11 @@ interface EquipmentRowProps {
   cells: TimelineCell[];
   cellWidth: number;
   viewMode: ViewMode;
+  /** Whether block bars open the block editor (admins and superusers) */
+  canManage: boolean;
 }
 
-function EquipmentRow({ bookings, blocks, overlapSegments, cells, cellWidth, viewMode }: EquipmentRowProps) {
+function EquipmentRow({ bookings, blocks, overlapSegments, cells, cellWidth, viewMode, canManage }: EquipmentRowProps) {
   const openEquipmentBlockModal = useUIStore((s) => s.openEquipmentBlockModal);
 
   // Calculate bar positions for bookings
@@ -265,13 +269,13 @@ function EquipmentRow({ bookings, blocks, overlapSegments, cells, cellWidth, vie
       {blockBars.map(({ block, left, width }) => (
         <div
           key={`block-${block.id}`}
-          className={`${styles.blockBar} ${styles[`reason-${block.reason}`] || ''}`}
+          className={`${styles.blockBar} ${styles[`reason-${block.reason}`] || ''} ${canManage ? '' : styles.readOnlyBar}`}
           style={{ left, width }}
           title={`${block.description || 'Blocked'} (${block.reason})`}
-          onClick={(e) => {
+          onClick={canManage ? (e) => {
             e.stopPropagation();
             openEquipmentBlockModal(block);
-          }}
+          } : undefined}
         >
           <span className={styles.barLabel}>
             {block.description || 'Blocked'}
@@ -297,9 +301,10 @@ interface BlockDetailRowProps {
   cells: TimelineCell[];
   cellWidth: number;
   viewMode: ViewMode;
+  canManage: boolean;
 }
 
-function BlockDetailRow({ block, cells, cellWidth, viewMode }: BlockDetailRowProps) {
+function BlockDetailRow({ block, cells, cellWidth, viewMode, canManage }: BlockDetailRowProps) {
   const openEquipmentBlockModal = useUIStore((s) => s.openEquipmentBlockModal);
   const pos = useMemo(
     () => calculateBarPosition(block.start_date, block.end_date, cells, cellWidth, viewMode),
@@ -311,13 +316,13 @@ function BlockDetailRow({ block, cells, cellWidth, viewMode }: BlockDetailRowPro
   return (
     <div className={styles.row} style={{ height: DETAIL_ROW_HEIGHT }}>
       <div
-        className={`${styles.detailBar} ${styles.blockDetailBar} ${styles[`reason-${block.reason}`] || ''}`}
+        className={`${styles.detailBar} ${styles.blockDetailBar} ${styles[`reason-${block.reason}`] || ''} ${canManage ? '' : styles.readOnlyBar}`}
         style={{ left: pos.left, width: pos.width, height: 20, top: 6 }}
         title={`${block.description || 'Blocked'} (${block.reason})`}
-        onClick={(e) => {
+        onClick={canManage ? (e) => {
           e.stopPropagation();
           openEquipmentBlockModal(block);
-        }}
+        } : undefined}
       />
     </div>
   );

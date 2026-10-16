@@ -11,9 +11,9 @@ export interface Site {
   id: number;
   name: string;
   location?: string;
-  city?: string;
-  country_code?: string;
-  region_code?: string;
+  city?: string | null;
+  country_code?: string | null;
+  region_code?: string | null;
   active?: boolean | number;
   last_holiday_fetch?: string;
   created_at?: string;
@@ -37,13 +37,43 @@ export interface Project {
   phases: Phase[];
   staffAssignments: StaffAssignment[];
   equipmentAssignments: EquipmentAssignment[];
-  tags?: Tag[];
+  /**
+   * Inline tag refs as the project endpoints return them. Can be stale (What-If,
+   * a teammate renaming/recolouring a tag): resolve name/colour/group through
+   * appStore.tags by id (utils/tags.ts), never from these fields.
+   */
+  tags?: ProjectTagRef[];
 }
 
+/** Shape of `project.tags[]` in project responses. */
+export type ProjectTagRef = Pick<Tag, 'id' | 'name' | 'color' | 'group_id'>;
+
+/**
+ * Project tag. Tags are tenant-wide but may be limited to some sites
+ * (`all_sites: false` + `site_ids`); an optional group makes them a category
+ * (see TagGroup). Snake_case straight from the API, like Equipment.
+ */
 export interface Tag {
   id: number;
   name: string;
   color: string;
+  group_id: number | null;
+  all_sites: boolean;
+  site_ids: number[];
+  sort_order: number;
+}
+
+/**
+ * A category of tags (e.g. "Project type": Internal / Customer). A
+ * single-select group allows one of its tags per project; at most one group
+ * may colour the Gantt project bars (`colors_projects`, single-select only).
+ */
+export interface TagGroup {
+  id: number;
+  name: string;
+  single_select: boolean;
+  colors_projects: boolean;
+  sort_order: number;
 }
 
 /**
@@ -94,6 +124,12 @@ export interface Dependency {
   id: number;        // Predecessor phase/subphase ID
   type: DependencyType;
   lag?: number;      // Lag in days (positive = lag, negative = lead)
+  /**
+   * Kind of the predecessor. Phase and subphase ids come from separate
+   * sequences, so `id` alone is ambiguous. Written on every new link;
+   * legacy entries without it resolve phase-first.
+   */
+  entity?: 'phase' | 'subphase';
 }
 
 export type DependencyType = 'FS' | 'FF' | 'SS' | 'SF';
@@ -136,7 +172,12 @@ export interface Equipment {
   id: number;
   name: string;
   type: string;
+  /** Site of this row (GET /equipment returns one row per equipment-site pair) */
   site_id: number;
+  /** All sites the equipment is available on */
+  site_ids?: number[];
+  /** Names of site_ids, same order (sent by /equipment/all) */
+  site_names?: string[];
   active: boolean;
 }
 
@@ -203,6 +244,26 @@ export interface Vacation {
   start_date: string;
   end_date: string;
   description?: string;
+  /** Absence type; null/undefined is treated as an unavailable absence */
+  absence_type_id?: number | null;
+  /** Whether the current user may edit/delete this entry (server-computed) */
+  canEdit?: boolean;
+  created_at?: string;
+}
+
+/**
+ * Tenant-wide absence category (Holidays, Home Office, Illness, ...).
+ * Only types with counts_as_unavailable reduce a person's capacity.
+ */
+export interface AbsenceType {
+  id: number;
+  name: string;
+  color: string;
+  counts_as_unavailable: boolean;
+  sort_order: number;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface BankHoliday {
@@ -217,11 +278,16 @@ export interface BankHoliday {
 
 export interface CompanyEvent {
   id: number;
+  /** First linked site (legacy single-site field, kept for compatibility) */
   site_id: number;
+  /** All sites the event applies to */
+  site_ids?: number[];
   date: string;
   end_date?: string | null;
   name: string;
   color?: string | null;
+  /** Site closure: staff on the event's sites are unavailable for its dates */
+  counts_as_unavailable?: boolean;
 }
 
 export interface EquipmentBlock {
@@ -403,11 +469,20 @@ export interface CreateEquipmentAssignmentRequest {
   end_date: string;
 }
 
+/** Result of a bulk calendar import (vacations, holidays, company events) */
+export interface CalendarImportResult {
+  created: number;
+  skipped: number;
+  /** Company events only: existing events that gained a site link */
+  linked?: number;
+}
+
 export interface CreateVacationRequest {
   staff_id: number;
   start_date: string;
   end_date: string;
   description?: string;
+  absence_type_id?: number | null;
 }
 
 export interface CreateEquipmentBlockRequest {

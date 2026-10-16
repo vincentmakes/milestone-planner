@@ -3,11 +3,14 @@
  * Handles mouse events and calculates day offsets based on cell width
  */
 
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useLayoutEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
-import { updatePhase, updateSubphase, updateProject, updateStaffAssignment, updateEquipmentAssignment, loadAllProjects } from '@/api/endpoints/projects';
+import { updatePhase, updateSubphase, updateProject, updateStaffAssignment, updateEquipmentAssignment } from '@/api/endpoints/projects';
+import { parseLocalDate, addDaysToDateString, daysBetweenDateStrings } from '@/utils/date';
+import { recoverFromPersistFailure } from '@/utils/persistFailure';
 import { useUndoStore } from '@/stores/undoStore';
 import { 
   processPhaseMove, 
@@ -15,8 +18,10 @@ import {
   savePendingUpdates,
   cloneProject,
   moveChildrenByOffset,
-  movePhasesWithProject
+  movePhasesWithProject,
+  resolveDependencyPredecessor,
 } from '@/components/gantt/utils';
+import { canEditProjectById, canEditAssignment } from '@/utils/permissions';
 import type { ViewMode, Subphase, Project } from '@/types';
 
 interface DragData {
@@ -35,16 +40,63 @@ interface DragData {
 }
 
 export function useDragAndDrop() {
-  const { isDragging, dragType, dragItemId, startDrag, endDrag, showDragIndicator, hideIndicator } = useUIStore();
+  // Selectors only (useShallow): a whole-store subscription re-rendered every
+  // host of this hook on each tooltip move / indicator update.
+  const { isDragging, dragType, dragItemId, startDrag, endDrag, showDragIndicator, hideIndicator } = useUIStore(
+    useShallow((s) => ({
+      isDragging: s.isDragging,
+      dragType: s.dragType,
+      dragItemId: s.dragItemId,
+      startDrag: s.startDrag,
+      endDrag: s.endDrag,
+      showDragIndicator: s.showDragIndicator,
+      hideIndicator: s.hideIndicator,
+    }))
+  );
   const projects = useAppStore((s) => s.projects);
   const setProjects = useAppStore((s) => s.setProjects);
   const currentUser = useAppStore((s) => s.currentUser);
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
-  const { cellWidth, currentView, viewMode } = useViewStore();
-  const { saveState } = useUndoStore();
+  // Per-project rights: admins, superusers and the project's manager may move
+  // schedule items; a staff booking may also be moved by the person it books.
+  const canEditProjectId = useCallback(
+    (projectId: number) => canEditProjectById(currentUser, projects, projectId),
+    [currentUser, projects]
+  );
+  const canEditStaffAssignment = useCallback(
+    (projectId: number, staffId?: number) =>
+      canEditAssignment(currentUser, projects.find((p) => p.id === projectId), staffId),
+    [currentUser, projects]
+  );
+  const { cellWidth, currentView, viewMode } = useViewStore(
+    useShallow((s) => ({ cellWidth: s.cellWidth, currentView: s.currentView, viewMode: s.viewMode }))
+  );
+  const saveState = useUndoStore((s) => s.saveState);
   
   const dragDataRef = useRef<DragData | null>(null);
   const currentXRef = useRef(0);
+
+  // Document listeners for an active drag. They are registered once at drag
+  // start and removed only on mouse-up or unmount: stable trampolines that
+  // call the LATEST handlers through refs. (Registering the handlers
+  // themselves and removing them from an effect keyed on their deps silently
+  // abandoned the drag whenever `projects` or `cellWidth` changed mid-gesture,
+  // e.g. on a WebSocket refetch or a Ctrl+wheel zoom.)
+  const mouseMoveHandlerRef = useRef<(e: MouseEvent) => void>(() => {});
+  const mouseUpHandlerRef = useRef<() => Promise<void>>(async () => {});
+  const onDocumentMouseMove = useCallback((e: MouseEvent) => {
+    mouseMoveHandlerRef.current(e);
+  }, []);
+  const onDocumentMouseUp = useCallback(() => {
+    void mouseUpHandlerRef.current();
+  }, []);
+  const attachDragListeners = useCallback(() => {
+    document.addEventListener('mousemove', onDocumentMouseMove);
+    document.addEventListener('mouseup', onDocumentMouseUp);
+  }, [onDocumentMouseMove, onDocumentMouseUp]);
+  const detachDragListeners = useCallback(() => {
+    document.removeEventListener('mousemove', onDocumentMouseMove);
+    document.removeEventListener('mouseup', onDocumentMouseUp);
+  }, [onDocumentMouseMove, onDocumentMouseUp]);
   
   // Format date as YYYY-MM-DD
   const formatDateLocal = useCallback((date: Date): string => {
@@ -91,20 +143,22 @@ export function useDragAndDrop() {
     }
     
     // For quarter/year view, use proportional calculation
-    const fcd = new Date(cells[0].date);
+    // data-date attributes are yyyy-MM-dd: parse as LOCAL midnight, matching
+    // the forward path (calculateBarPosition parses dates locally).
+    const fcd = parseLocalDate(cells[0].date);
     fcd.setHours(0, 0, 0, 0);
     
     let lcd: Date;
     const lastCell = cells[cells.length - 1];
     
     if (vm === 'quarter' && lastCell.dateEnd) {
-      lcd = new Date(lastCell.dateEnd);
+      lcd = parseLocalDate(lastCell.dateEnd);
       lcd.setHours(23, 59, 59, 999);
     } else if (vm === 'year') {
-      lcd = new Date(lastCell.date);
+      lcd = parseLocalDate(lastCell.date);
       lcd = new Date(lcd.getFullYear(), lcd.getMonth() + 1, 0, 23, 59, 59, 999);
     } else {
-      lcd = new Date(lastCell.date);
+      lcd = parseLocalDate(lastCell.date);
       lcd.setHours(23, 59, 59, 999);
     }
     
@@ -133,22 +187,24 @@ export function useDragAndDrop() {
     if (deps.length === 0) return null;
     
     // Calculate original duration
-    const origStart = new Date(phase.start_date);
-    const origEnd = new Date(phase.end_date);
+    const origStart = parseLocalDate(phase.start_date);
+    const origEnd = parseLocalDate(phase.end_date);
     const durationMs = origEnd.getTime() - origStart.getTime();
     
-    const newStart = new Date(newStartDate);
+    const newStart = parseLocalDate(newStartDate);
     const newEnd = new Date(newStart.getTime() + durationMs);
     
     // Track worst lag
     let worstLagDays: number | null = null;
     
     for (const dep of deps) {
-      const depPhase = (project.phases ?? []).find(p => p.id === dep.id);
+      // Resolve by `entity` (a phase may depend on a subphase); legacy
+      // entries without it resolve phase-first.
+      const depPhase = resolveDependencyPredecessor(project, dep)?.item;
       if (!depPhase) continue;
       
-      const depStart = new Date(depPhase.start_date);
-      const depEnd = new Date(depPhase.end_date);
+      const depStart = parseLocalDate(depPhase.start_date);
+      const depEnd = parseLocalDate(depPhase.end_date);
       let lagDays: number;
       
       if (dep.type === 'SS') {
@@ -210,23 +266,24 @@ export function useDragAndDrop() {
     if (deps.length === 0) return null;
     
     // Calculate original duration
-    const origStart = new Date(subphase.start_date);
-    const origEnd = new Date(subphase.end_date);
+    const origStart = parseLocalDate(subphase.start_date);
+    const origEnd = parseLocalDate(subphase.end_date);
     const durationMs = origEnd.getTime() - origStart.getTime();
     
-    const newStart = new Date(newStartDate);
+    const newStart = parseLocalDate(newStartDate);
     const newEnd = new Date(newStart.getTime() + durationMs);
     
     // Track worst lag
     let worstLagDays: number | null = null;
     
     for (const dep of deps) {
-      // Find predecessor subphase
-      const depSubphase = findSubphaseInProject(project, dep.id);
+      // Find the predecessor by `entity` (phase or subphase); legacy entries
+      // without it resolve phase-first, like every other dependency reader.
+      const depSubphase = resolveDependencyPredecessor(project, dep)?.item;
       if (!depSubphase) continue;
       
-      const depStart = new Date(depSubphase.start_date);
-      const depEnd = new Date(depSubphase.end_date);
+      const depStart = parseLocalDate(depSubphase.start_date);
+      const depEnd = parseLocalDate(depSubphase.end_date);
       let lagDays: number;
       
       if (dep.type === 'SS') {
@@ -302,89 +359,6 @@ export function useDragAndDrop() {
     }
   }, [cellWidth, viewMode, getTimelineCellsFromDOM, calculateDateFromPosition, calculatePhaseLagDays, calculateSubphaseLagDays, showDragIndicator, hideIndicator]);
   
-  // Handle mouse up - commit the drag
-  const handleMouseUp = useCallback(async () => {
-    // Hide indicator first
-    hideIndicator();
-    
-    if (!dragDataRef.current) {
-      endDrag();
-      return;
-    }
-    
-    const data = dragDataRef.current;
-    
-    // Reset element style immediately
-    if (data.element) {
-      data.element.style.opacity = '1';
-      data.element.style.zIndex = '';
-      data.element.classList.remove('dragging');
-    }
-    
-    // Clean up listeners first
-    document.removeEventListener('mousemove', handleMouseMove);
-    document.removeEventListener('mouseup', handleMouseUp);
-    
-    // Get the final position
-    const finalLeft = data.element ? parseFloat(data.element.style.left) || 0 : data.originalLeft;
-    const deltaX = finalLeft - data.originalLeft;
-    
-    if (Math.abs(deltaX) < 2) {
-      // No significant change, just cleanup
-      dragDataRef.current = null;
-      endDrag();
-      return;
-    }
-    
-    // Get timeline cells for inverse calculation
-    const cells = getTimelineCellsFromDOM();
-    
-    if (!cells || cells.length === 0) {
-      console.warn('Could not get timeline cells for date calculation');
-      // Fall back to simple day calculation
-      const daysDelta = Math.round(deltaX / cellWidth);
-      const addDays = (dateStr: string, days: number): string => {
-        const date = new Date(dateStr);
-        date.setDate(date.getDate() + days);
-        return date.toISOString().split('T')[0];
-      };
-      
-      const newStartDate = addDays(data.originalStartDate, daysDelta);
-      const newEndDate = data.isMilestone ? newStartDate : addDays(data.originalEndDate, daysDelta);
-      
-      await commitDragUpdate(data, newStartDate, newEndDate);
-      return;
-    }
-    
-    // Use inverse of calculateBarPosition to get new date
-    const newStartDate = calculateDateFromPosition(finalLeft, cells, cellWidth, viewMode);
-    
-    if (!newStartDate) {
-      console.warn('Could not calculate date from position');
-      dragDataRef.current = null;
-      endDrag();
-      return;
-    }
-    
-    // Preserve original duration when dragging (use exact day difference)
-    const origStart = new Date(data.originalStartDate);
-    const origEnd = new Date(data.originalEndDate);
-    // Normalize to midnight to avoid timezone issues
-    origStart.setHours(0, 0, 0, 0);
-    origEnd.setHours(0, 0, 0, 0);
-    const durationDays = Math.round((origEnd.getTime() - origStart.getTime()) / 86400000);
-    
-    const newStartDateObj = new Date(newStartDate);
-    newStartDateObj.setHours(0, 0, 0, 0);
-    const newEndDateObj = new Date(newStartDateObj);
-    newEndDateObj.setDate(newEndDateObj.getDate() + durationDays);
-    
-    const startDateStr = formatDateLocal(newStartDateObj);
-    const endDateStr = data.isMilestone ? startDateStr : formatDateLocal(newEndDateObj);
-    
-    await commitDragUpdate(data, startDateStr, endDateStr);
-  }, [cellWidth, viewMode, endDrag, handleMouseMove, saveState, setProjects, projects, hideIndicator]);
-  
   // Helper to commit drag update
   const commitDragUpdate = useCallback(async (
     data: DragData, 
@@ -402,9 +376,7 @@ export function useDragAndDrop() {
       }
       
       // Calculate offset for children movement
-      const oldStartMs = new Date(data.originalStartDate).getTime();
-      const newStartMs = new Date(newStartDate).getTime();
-      const dayOffset = Math.round((newStartMs - oldStartMs) / 86400000);
+      const dayOffset = daysBetweenDateStrings(data.originalStartDate, newStartDate);
       
       // If no movement, just end drag
       if (dayOffset === 0) {
@@ -570,37 +542,95 @@ export function useDragAndDrop() {
       }
       
     } catch (err) {
-      console.error('Failed to update item:', err);
-      // On error, reload to get correct state
-      const reloadedProjects = await loadAllProjects();
-      setProjects(reloadedProjects);
-      useUndoStore.getState().clear();
+      // Optimistic-write failure protocol: reload + clear the undo stack.
+      await recoverFromPersistFailure('Drag', err);
     }
     
     dragDataRef.current = null;
     endDrag();
   }, [saveState, setProjects, projects, endDrag]);
   
-  // Helper to recursively update subphase in tree
-  const updateSubphaseInTree = (
-    subphases: Subphase[], 
-    targetId: number, 
-    newStartDate: string, 
-    newEndDate: string
-  ): Subphase[] => {
-    return subphases.map(sp => {
-      if (sp.id === targetId) {
-        return { ...sp, start_date: newStartDate, end_date: newEndDate };
-      }
-      if (sp.children?.length) {
-        return {
-          ...sp,
-          children: updateSubphaseInTree(sp.children, targetId, newStartDate, newEndDate)
-        };
-      }
-      return sp;
-    });
-  };
+  // Handle mouse up - commit the drag
+  const handleMouseUp = useCallback(async () => {
+    // Hide indicator first
+    hideIndicator();
+    
+    if (!dragDataRef.current) {
+      endDrag();
+      return;
+    }
+    
+    const data = dragDataRef.current;
+    
+    // Reset element style immediately
+    if (data.element) {
+      data.element.style.opacity = '1';
+      data.element.style.zIndex = '';
+      data.element.classList.remove('dragging');
+    }
+    
+    // Clean up listeners first
+    detachDragListeners();
+    
+    // Get the final position
+    const finalLeft = data.element ? parseFloat(data.element.style.left) || 0 : data.originalLeft;
+    const deltaX = finalLeft - data.originalLeft;
+    
+    if (Math.abs(deltaX) < 2) {
+      // No significant change, just cleanup
+      dragDataRef.current = null;
+      endDrag();
+      return;
+    }
+    
+    // Get timeline cells for inverse calculation
+    const cells = getTimelineCellsFromDOM();
+    
+    if (!cells || cells.length === 0) {
+      console.warn('Could not get timeline cells for date calculation');
+      // Fall back to simple day calculation
+      const daysDelta = Math.round(deltaX / cellWidth);
+      const newStartDate = addDaysToDateString(data.originalStartDate, daysDelta);
+      const newEndDate = data.isMilestone ? newStartDate : addDaysToDateString(data.originalEndDate, daysDelta);
+      
+      await commitDragUpdate(data, newStartDate, newEndDate);
+      return;
+    }
+    
+    // Use inverse of calculateBarPosition to get new date
+    const newStartDate = calculateDateFromPosition(finalLeft, cells, cellWidth, viewMode);
+    
+    if (!newStartDate) {
+      console.warn('Could not calculate date from position');
+      dragDataRef.current = null;
+      endDrag();
+      return;
+    }
+    
+    // Preserve original duration when dragging (use exact day difference)
+    const origStart = parseLocalDate(data.originalStartDate);
+    const origEnd = parseLocalDate(data.originalEndDate);
+    // Normalize to midnight to avoid timezone issues
+    origStart.setHours(0, 0, 0, 0);
+    origEnd.setHours(0, 0, 0, 0);
+    const durationDays = Math.round((origEnd.getTime() - origStart.getTime()) / 86400000);
+    
+    const newStartDateObj = parseLocalDate(newStartDate);
+    newStartDateObj.setHours(0, 0, 0, 0);
+    const newEndDateObj = new Date(newStartDateObj);
+    newEndDateObj.setDate(newEndDateObj.getDate() + durationDays);
+    
+    const startDateStr = formatDateLocal(newStartDateObj);
+    const endDateStr = data.isMilestone ? startDateStr : formatDateLocal(newEndDateObj);
+    
+    await commitDragUpdate(data, startDateStr, endDateStr);
+  }, [cellWidth, viewMode, endDrag, detachDragListeners, getTimelineCellsFromDOM, calculateDateFromPosition, formatDateLocal, commitDragUpdate, hideIndicator]);
+
+  // Keep the document trampolines pointing at the latest handlers.
+  useLayoutEffect(() => {
+    mouseMoveHandlerRef.current = handleMouseMove;
+    mouseUpHandlerRef.current = handleMouseUp;
+  });
   
   // Start dragging a phase
   const startPhaseDrag = useCallback((
@@ -612,8 +642,8 @@ export function useDragAndDrop() {
     isMilestone: boolean = false,
     targetElement?: HTMLElement
   ) => {
-    // Only admins/superusers may modify schedule data
-    if (!canEdit) return;
+    // Only the project's editors may modify schedule data
+    if (!canEditProjectId(projectId)) return;
 
     // Don't drag if clicking resize handle
     if ((e.target as HTMLElement).classList.contains('resize-handle')) return;
@@ -659,9 +689,8 @@ export function useDragAndDrop() {
     
     startDrag('phase', phaseId);
     
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startDrag]);
+    attachDragListeners();
+  }, [canEditProjectId, currentView, attachDragListeners, startDrag]);
   
   // Start dragging a subphase
   const startSubphaseDrag = useCallback((
@@ -674,7 +703,7 @@ export function useDragAndDrop() {
     isMilestone: boolean = false,
     targetElement?: HTMLElement
   ) => {
-    if (!canEdit) return;
+    if (!canEditProjectId(projectId)) return;
 
     // Don't drag if clicking resize handle
     if ((e.target as HTMLElement).classList.contains('resize-handle')) return;
@@ -721,9 +750,8 @@ export function useDragAndDrop() {
     
     startDrag('subphase', subphaseId);
     
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startDrag]);
+    attachDragListeners();
+  }, [canEditProjectId, currentView, attachDragListeners, startDrag]);
   
   // Start dragging a project
   const startProjectDrag = useCallback((
@@ -733,7 +761,7 @@ export function useDragAndDrop() {
     endDate: string,
     targetElement?: HTMLElement
   ) => {
-    if (!canEdit) return;
+    if (!canEditProjectId(projectId)) return;
 
     // Don't drag if clicking resize handle
     if ((e.target as HTMLElement).classList.contains('resize-handle')) return;
@@ -779,9 +807,8 @@ export function useDragAndDrop() {
     
     startDrag('project', projectId);
     
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startDrag]);
+    attachDragListeners();
+  }, [canEditProjectId, currentView, attachDragListeners, startDrag]);
   
   // Start dragging a staff assignment
   const startStaffAssignmentDrag = useCallback((
@@ -790,9 +817,10 @@ export function useDragAndDrop() {
     projectId: number,
     startDate: string,
     endDate: string,
-    targetElement?: HTMLElement
+    targetElement?: HTMLElement,
+    staffId?: number
   ) => {
-    if (!canEdit) return;
+    if (!canEditStaffAssignment(projectId, staffId)) return;
 
     // Don't drag if clicking resize handle
     if ((e.target as HTMLElement).classList.contains('resize-handle')) return;
@@ -837,10 +865,9 @@ export function useDragAndDrop() {
     }
     
     startDrag('staffAssignment', assignmentId);
-    
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startDrag]);
+
+    attachDragListeners();
+  }, [canEditStaffAssignment, currentView, attachDragListeners, startDrag]);
   
   // Start dragging an equipment assignment
   const startEquipmentAssignmentDrag = useCallback((
@@ -851,7 +878,7 @@ export function useDragAndDrop() {
     endDate: string,
     targetElement?: HTMLElement
   ) => {
-    if (!canEdit) return;
+    if (!canEditProjectId(projectId)) return;
 
     // Don't drag if clicking resize handle
     if ((e.target as HTMLElement).classList.contains('resize-handle')) return;
@@ -897,17 +924,26 @@ export function useDragAndDrop() {
     
     startDrag('equipmentAssignment', assignmentId);
     
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  }, [canEdit, currentView, handleMouseMove, handleMouseUp, startDrag]);
+    attachDragListeners();
+  }, [canEditProjectId, currentView, attachDragListeners, startDrag]);
   
-  // Cleanup on unmount
+  // Cleanup on unmount only: an unmount mid-drag abandons the drag cleanly.
   useEffect(() => {
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      detachDragListeners();
+      const data = dragDataRef.current;
+      if (data) {
+        if (data.element) {
+          data.element.style.opacity = '';
+          data.element.style.zIndex = '';
+          data.element.classList.remove('dragging');
+        }
+        dragDataRef.current = null;
+        useUIStore.getState().hideIndicator();
+        useUIStore.getState().endDrag();
+      }
     };
-  }, [handleMouseMove, handleMouseUp]);
+  }, [detachDragListeners]);
   
   return {
     isDragging,

@@ -36,8 +36,25 @@ from app.schemas.auth import (
     UserSessionInfo,
     UserSiteInfo,
 )
-from app.services.encryption import hash_user_password, password_needs_upgrade, verify_user_password
+from app.services.encryption import (
+    PasswordTooLongError,
+    dummy_verify_user_password,
+    hash_user_password,
+    password_needs_upgrade,
+    verify_user_password,
+)
+from app.services.login_throttle import (
+    check_login_allowed,
+    record_login_failure,
+    record_login_success,
+)
 from app.services.session import SessionService
+from app.services.sso import (
+    apply_secret_update,
+    mask_secret,
+    read_tenant_client_secret,
+    tenant_sso_is_configured,
+)
 from app.services.sso_errors import parse_entra_token_error
 
 logger = logging.getLogger(__name__)
@@ -103,23 +120,37 @@ async def login(
                 detail="No tenant context. Use tenant-specific URLs (/t/{slug}/api/auth/login).",
             )
 
+    # Failed-attempt throttle per (tenant, client ip, e-mail); 429 once exceeded.
+    throttle_scope = f"tenant:{getattr(request.state, 'tenant_slug', None) or ''}"
+    check_login_allowed(throttle_scope, request, data.email)
+
     # Find user by email
     result = await db.execute(
         select(User).where(User.email == data.email).options(selectinload(User.sites))
     )
     user = result.scalar_one_or_none()
 
-    # Verify credentials
+    # Verify credentials. An unknown e-mail still pays for a bcrypt check, so
+    # the response time does not reveal whether the account exists.
+    if user is None:
+        dummy_verify_user_password(data.password)
     if not user or not verify_user_password(data.password, user.password):
+        record_login_failure(throttle_scope, request, data.email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
+    record_login_success(throttle_scope, request, data.email)
 
     # Lazy upgrade: re-hash plain text or PBKDF2 passwords to bcrypt
     if password_needs_upgrade(user.password):
-        user.password = hash_user_password(data.password)
-        await db.commit()
+        try:
+            user.password = hash_user_password(data.password)
+            await db.commit()
+        except PasswordTooLongError:
+            # A legacy password longer than bcrypt's 72-byte limit cannot be
+            # upgraded; keep the legacy hash rather than failing the login.
+            logger.warning("Legacy password for user %s too long for bcrypt upgrade", user.id)
 
     if not user.is_active:
         raise HTTPException(
@@ -234,13 +265,15 @@ async def get_current_session(
 async def change_password(
     data: ChangePasswordRequest,
     request: Request,
-    user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
+    session_id: str | None = Depends(get_session_id),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Change the current user's password.
 
-    Requires current password verification.
+    Requires current password verification. Ends the user's other sessions;
+    the session making the request stays logged in.
     Matches: POST /api/auth/change-password
     """
     if settings.multi_tenant:
@@ -252,6 +285,16 @@ async def change_password(
                 detail="No tenant context.",
             )
 
+    # get_current_user returns the session snapshot, which carries no password
+    # hash; load the row itself.
+    result = await db.execute(select(User).where(User.id == current_user.id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+
     # Verify current password
     if not verify_user_password(data.currentPassword, user.password):
         raise HTTPException(
@@ -260,7 +303,14 @@ async def change_password(
         )
 
     # Update password (hashed with bcrypt)
-    user.password = hash_user_password(data.newPassword)
+    try:
+        user.password = hash_user_password(data.newPassword)
+    except PasswordTooLongError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
+
+    await SessionService(db).destroy_user_sessions(
+        user.id, except_session_id=session_id, commit=False
+    )
     await db.commit()
 
     return {"success": True}
@@ -374,7 +424,7 @@ async def get_sso_config_full(
     admin: User = Depends(require_admin),
 ):
     """
-    Get full SSO configuration including client_secret.
+    Get full SSO configuration (client secret masked only).
 
     Requires admin authentication.
     Matches: GET /api/sso/config/full
@@ -393,21 +443,22 @@ async def get_sso_config_full(
     if not config:
         response: dict = {"id": 1, "enabled": 0}
     else:
-        # Return snake_case to match Node.js, include client_secret_masked
+        # Return snake_case to match Node.js. The client secret is never
+        # returned, only masked (``****`` + last 4 characters); it is stored
+        # encrypted and decrypted here just to compute the mask.
         response = {
             "id": config.id,
             "enabled": config.enabled,
             "tenant_id": config.tenant_id,
             "client_id": config.client_id,
-            "client_secret": config.client_secret,
             "redirect_uri": config.redirect_uri,
             "auto_create_users": config.auto_create_users,
             "default_role": config.default_role,
         }
 
-        # Mask client_secret for display (show only last 4 chars)
-        if config.client_secret:
-            response["client_secret_masked"] = "****" + config.client_secret[-4:]
+        masked = mask_secret(read_tenant_client_secret(config))
+        if masked:
+            response["client_secret_masked"] = masked
 
     # Surface organization-level SSO precedence so the settings UI can explain
     # and disable the tenant-level form.
@@ -452,7 +503,14 @@ async def update_sso_config_new(
     Requires admin authentication.
     Matches: PUT /api/sso/config
     """
-    logger.info("SSO Update received: %s", data)
+    # Never log the model itself: it carries the Entra client secret.
+    logger.info(
+        "SSO update received: enabled=%s, tenant_id=%s, client_id=%s, secret_provided=%s",
+        data.enabled,
+        data.tenant_id,
+        data.client_id,
+        bool(data.client_secret),
+    )
 
     _reject_if_org_sso_active(data, await _active_org_sso(request, db, strict=True))
 
@@ -471,10 +529,8 @@ async def update_sso_config_new(
     if data.client_id is not None:
         config.client_id = data.client_id or ""
 
-    # If client_secret is not provided or is masked, keep existing
-    if data.client_secret is not None:
-        if not data.client_secret.startswith("****"):
-            config.client_secret = data.client_secret
+    # Omitted or masked (****abcd) keeps the stored secret; stored encrypted.
+    apply_secret_update(config, data.client_secret)
 
     if data.redirect_uri is not None:
         config.redirect_uri = data.redirect_uri or ""
@@ -520,7 +576,7 @@ async def get_sso_config(
 
     return SSOConfigResponse(
         enabled=config.is_enabled,
-        configured=config.is_configured,
+        configured=tenant_sso_is_configured(config),
         tenant_id=config.tenant_id,
         client_id=config.client_id,
         redirect_uri=config.redirect_uri,
@@ -559,8 +615,8 @@ async def update_sso_config(
         config.tenant_id = data.tenant_id
     if data.client_id is not None:
         config.client_id = data.client_id
-    if data.client_secret is not None:
-        config.client_secret = data.client_secret
+    # Omitted or masked (****abcd) keeps the stored secret; stored encrypted.
+    apply_secret_update(config, data.client_secret)
     if data.redirect_uri is not None:
         config.redirect_uri = data.redirect_uri
     if data.auto_create_users is not None:
@@ -573,7 +629,7 @@ async def update_sso_config(
 
     return SSOConfigResponse(
         enabled=config.is_enabled,
-        configured=config.is_configured,
+        configured=tenant_sso_is_configured(config),
         tenant_id=config.tenant_id,
         client_id=config.client_id,
         redirect_uri=config.redirect_uri,
@@ -597,6 +653,60 @@ def _sso_state_sig(payload: str) -> str:
         payload.encode(),
         hashlib.sha256,
     ).hexdigest()[:16]
+
+
+# Browser binding for the OAuth state (login-CSRF / replay protection): the
+# nonce inside the signed state is also set as a short-lived HttpOnly cookie
+# by /auth/sso/login, and the callback requires both to match and clears it.
+# Path "/" because organization SSO uses one shared callback URL with no
+# /t/{slug}/ prefix; SameSite=Lax is sent on Entra's top-level redirect back.
+SSO_NONCE_COOKIE = "sso_nonce"
+SSO_NONCE_MAX_AGE = 10 * 60
+
+
+def _sso_state_nonce(state: str | None) -> str | None:
+    """The nonce carried by a ``{slug}:{nonce}:{sig}`` (or legacy ``{nonce}:{sig}``) state."""
+    if not state:
+        return None
+    parts = state.split(":")
+    if len(parts) == 3:
+        return parts[1] or None
+    if len(parts) == 2:
+        return parts[0] or None
+    return None
+
+
+def _set_sso_nonce_cookie(response: Response, nonce: str) -> None:
+    response.set_cookie(
+        key=SSO_NONCE_COOKIE,
+        value=nonce,
+        max_age=SSO_NONCE_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        secure=settings.secure_cookies,
+        path="/",
+    )
+
+
+def _clear_sso_nonce_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=SSO_NONCE_COOKIE,
+        path="/",
+        httponly=True,
+        samesite="lax",
+        secure=settings.secure_cookies,
+    )
+
+
+def _sso_state_bound_to_browser(request: Request, state: str | None) -> bool:
+    """True when the state's nonce equals the ``sso_nonce`` cookie of this browser."""
+    import hmac
+
+    cookie = request.cookies.get(SSO_NONCE_COOKIE)
+    nonce = _sso_state_nonce(state)
+    if not cookie or not nonce:
+        return False
+    return hmac.compare_digest(cookie.encode(), nonce.encode())
 
 
 def _sign_sso_state(slug: str | None) -> str:
@@ -803,6 +913,7 @@ async def sso_status(
 @router.get("/auth/sso/login")
 async def sso_login(
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -851,6 +962,8 @@ async def sso_login(
     if not tenant_slug and isinstance(tenant, dict):
         tenant_slug = tenant.get("slug")
     state = _sign_sso_state(tenant_slug)
+    # Bind the state to this browser; the callback requires the same nonce.
+    _set_sso_nonce_cookie(response, _sso_state_nonce(state) or "")
 
     # Determine if we need groups scope
     has_group_requirements = bool(config.get("required_group_ids"))
@@ -877,6 +990,38 @@ async def sso_callback(
     db: AsyncSession = Depends(get_db),
 ):
     """
+    Handle SSO callback from Microsoft Entra (see ``_sso_callback``).
+
+    Whatever the outcome, the one-time ``sso_nonce`` cookie is cleared, so a
+    state can be redeemed at most once per sign-in started in this browser.
+    That includes an unexpected error: instead of the global opaque 500 (which
+    would leave the cookie behind) it is logged, the request's DB work is
+    rolled back, and the user lands on the sign-in screen with a generic error.
+    """
+    try:
+        result = await _sso_callback(request, code, state, error, db)
+    except Exception:
+        logger.exception("SSO callback failed unexpectedly")
+        await db.rollback()
+        try:
+            tenant_slug, state_valid = _parse_sso_state(state)
+        except Exception:
+            tenant_slug, state_valid = None, False
+        result = _sso_error_redirect(
+            tenant_slug if state_valid else None, "SSO sign-in failed. Please try again."
+        )
+    _clear_sso_nonce_cookie(result)
+    return result
+
+
+async def _sso_callback(
+    request: Request,
+    code: str | None,
+    state: str | None,
+    error: str | None,
+    db: AsyncSession,
+) -> RedirectResponse:
+    """
     Handle SSO callback from Microsoft Entra.
 
     Supports organization-level SSO with group-based access control.
@@ -885,7 +1030,7 @@ async def sso_callback(
 
     Matches: GET /api/auth/sso/callback
     """
-    from app.services.sso import OrgSSOLookupError, SSOService
+    from app.services.sso import OrgSSOLookupError, SSOService, normalize_sso_default_role
 
     # Verify the HMAC-signed state and recover the tenant slug it carries. The
     # slug is only ever used to pick a redirect target, so recovering it up front
@@ -906,6 +1051,14 @@ async def sso_callback(
 
     if not state_valid:
         return _sso_error_redirect(None, "Invalid SSO state")
+
+    # The signed state must also belong to *this* browser: a state minted by
+    # someone else (login CSRF) or replayed after use carries no matching cookie.
+    if not _sso_state_bound_to_browser(request, state):
+        logger.warning("SSO callback: state not bound to this browser (missing/mismatched nonce)")
+        return _sso_error_redirect(
+            tenant_slug, "Your sign-in session expired or was started elsewhere. Please try again."
+        )
 
     # Organization SSO shares one callback URL with no /t/{slug}/ prefix, so the
     # request has no tenant context here — recover it from the (verified) state
@@ -1078,7 +1231,7 @@ async def sso_callback(
                 first_name=user_info.get("givenName", ""),
                 last_name=user_info.get("surname", ""),
                 job_title=user_info.get("jobTitle"),
-                role=config.get("default_role", "user"),
+                role=normalize_sso_default_role(config.get("default_role")),
                 sso_provider="microsoft",
                 sso_id=user_info.get("id"),
                 active=1,

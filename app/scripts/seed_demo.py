@@ -305,6 +305,13 @@ async def apply_schema_and_seed(settings):
                 etype,
                 site_id,
             )
+        # Site links (equipment can be shared by several sites; the demo
+        # equipment belongs to one each).
+        await conn.execute(
+            """INSERT INTO equipment_sites (equipment_id, site_id)
+               SELECT id, site_id FROM equipment WHERE site_id IS NOT NULL
+               ON CONFLICT DO NOTHING"""
+        )
         print(f"  Created {len(equip_data)} equipment items")
 
         # Projects
@@ -444,21 +451,28 @@ async def apply_schema_and_seed(settings):
         # A couple of vacations
         alice_id = staff_ids.get("alice.anderson@demo.local")
         bob_id = staff_ids.get("bob.brown@demo.local")
+        # Absence types are seeded by the tenant schema; look them up by name.
+        vacation_sql = (
+            "INSERT INTO vacations (staff_id, start_date, end_date, description, absence_type_id) "
+            "VALUES ($1, $2, $3, $4, (SELECT id FROM absence_types WHERE name = $5))"
+        )
         if alice_id:
             await conn.execute(
-                "INSERT INTO vacations (staff_id, start_date, end_date, description) VALUES ($1, $2, $3, $4)",
+                vacation_sql,
                 alice_id,
                 today + timedelta(days=30),
                 today + timedelta(days=37),
                 "Summer vacation",
+                "Holidays",
             )
         if bob_id:
             await conn.execute(
-                "INSERT INTO vacations (staff_id, start_date, end_date, description) VALUES ($1, $2, $3, $4)",
+                vacation_sql,
                 bob_id,
                 today + timedelta(days=60),
                 today + timedelta(days=64),
                 "Conference",
+                "Business Trip",
             )
 
         print("  Demo data seeded successfully")

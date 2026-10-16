@@ -48,17 +48,44 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
 }
 
+/** HTTP methods that write, and are therefore queued while What-If mode is active. */
+export type WriteMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+const WRITE_METHODS: readonly string[] = ['POST', 'PUT', 'PATCH', 'DELETE'];
+
 interface ApiClientConfig {
   /** Check if What If mode is active (blocks write operations) */
   isWhatIfMode?: () => boolean;
   /** Queue a What-If operation for later execution */
-  queueWhatIfOperation?: (op: { method: 'POST' | 'PUT' | 'DELETE'; url: string; body?: unknown }) => void;
+  queueWhatIfOperation?: (op: { method: WriteMethod; url: string; body?: unknown }) => void;
+  /**
+   * Called when a tenant API request comes back 401 (the session expired or
+   * was revoked). Not called for the login or change-password requests (a
+   * wrong password must never end the session) nor for the admin portal,
+   * which has its own session.
+   */
+  onUnauthorized?: () => void;
 }
 
 export let clientConfig: ApiClientConfig = {
   isWhatIfMode: () => false,
   queueWhatIfOperation: undefined,
+  onUnauthorized: undefined,
 };
+
+/**
+ * Whether a 401 from this URL means "the tenant session is gone".
+ * The login call answers 401 for bad credentials; change-password is excluded
+ * too so a mistyped current password can never log the user out (the backend
+ * answers 400 for that, but the dialog must not depend on it); and
+ * /api/admin/* belongs to the separate admin-portal session (adminStore
+ * handles it).
+ */
+function isSessionExpiry(url: string): boolean {
+  const path = url.split('?')[0];
+  return (
+    !/\/api\/auth\/(login|change-password)$/.test(path) && !path.includes('/api/admin/')
+  );
+}
 
 /**
  * Configure the API client
@@ -66,6 +93,16 @@ export let clientConfig: ApiClientConfig = {
  */
 export function configureApiClient(config: ApiClientConfig): void {
   clientConfig = { ...clientConfig, ...config };
+}
+
+/**
+ * Whether writes are currently being queued by What-If mode.
+ *
+ * Read through the client config (not whatIfStore) so the API layer stays free
+ * of store imports; it is false while whatIfStore replays the queue on Apply.
+ */
+export function isWhatIfActive(): boolean {
+  return clientConfig.isWhatIfMode?.() ?? false;
 }
 
 // =============================================================================
@@ -97,8 +134,9 @@ export async function apiRequest<T>(
   
   const method = options.method || 'GET';
   
-  // In What If mode, block write operations (except auth and settings) and queue them
-  if (clientConfig.isWhatIfMode?.() && ['PUT', 'POST', 'DELETE'].includes(method)) {
+  // In What If mode, block write operations (except auth and settings) and queue them.
+  // PATCH is a write like the others (BroadcastMiddleware treats it as one).
+  if (clientConfig.isWhatIfMode?.() && WRITE_METHODS.includes(method)) {
     // /api/admin/ is the admin portal, a separate app with its own session and
     // no Gantt to sandbox — What-If never applies there, and queuing its writes
     // would silently swallow them.
@@ -107,12 +145,18 @@ export async function apiRequest<T>(
     // Comments and notifications are not: a queued comment gets a fake id,
     // whatIfStore only snapshots appStore.projects so Discard cannot roll it
     // back, and Apply would replay it into a real second comment.
+    // Tags and tag groups are configuration (like settings), not plan data:
+    // the What-If snapshot does not cover appStore.tags, so a queued tag write
+    // could not be rolled back on Discard. Assigning tags to a project goes
+    // through PUT /api/projects/{id} and stays queued.
     const allowedPrefixes = [
       '/api/auth/',
       '/api/settings/',
       '/api/admin/',
       '/api/notifications',
       '/api/kanban/comments/',
+      '/api/tags',
+      '/api/tag-groups',
     ];
     const isCommentWrite = /\/api\/kanban\/cards\/(phase|subphase)\/\d+\/comments/.test(url);
     const isAllowed =
@@ -124,7 +168,7 @@ export async function apiRequest<T>(
         // Store the relative URL (without base) for replay
         const relativeUrl = url.replace(baseUrl, '');
         clientConfig.queueWhatIfOperation({
-          method: method as 'POST' | 'PUT' | 'DELETE',
+          method: method as WriteMethod,
           url: relativeUrl,
           body: options.body,
         });
@@ -161,6 +205,10 @@ export async function apiRequest<T>(
     // what status the backend returned. Helpful for tracking down sync issues.
     if (import.meta.env.DEV && method !== 'GET') {
       console.info('[API]', method, url, '->', response.status);
+    }
+
+    if (response.status === 401 && isSessionExpiry(url)) {
+      clientConfig.onUnauthorized?.();
     }
 
     // Handle empty responses (204 No Content)
@@ -254,6 +302,19 @@ export function apiPatch<T>(endpoint: string, body?: unknown): Promise<T> {
 }
 
 /**
+ * Percent-decode a Content-Disposition filename. A malformed escape (a `%`
+ * not followed by two hex digits) makes decodeURIComponent throw URIError;
+ * the download must not fail over the name, so fall back instead.
+ */
+export function decodeFilename(raw: string, fallback: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+/**
  * Download a binary file from the API and trigger a browser save dialog.
  * Filename comes from the Content-Disposition header when available, or the
  * provided fallback otherwise.
@@ -268,6 +329,9 @@ export async function downloadFile(endpoint: string, fallbackFilename: string): 
   url = baseUrl + url;
 
   const response = await fetch(url, { method: 'GET', credentials: 'include' });
+  if (response.status === 401 && isSessionExpiry(url)) {
+    clientConfig.onUnauthorized?.();
+  }
   if (!response.ok) {
     let detail = `HTTP ${response.status}`;
     try {
@@ -282,7 +346,7 @@ export async function downloadFile(endpoint: string, fallbackFilename: string): 
   const blob = await response.blob();
   const disposition = response.headers.get('Content-Disposition') || '';
   const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
-  const filename = match ? decodeURIComponent(match[1]) : fallbackFilename;
+  const filename = match ? decodeFilename(match[1], fallbackFilename) : fallbackFilename;
 
   const objectUrl = URL.createObjectURL(blob);
   const link = document.createElement('a');

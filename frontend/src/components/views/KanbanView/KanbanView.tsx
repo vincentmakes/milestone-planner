@@ -10,7 +10,7 @@
  * converges through the existing `change:phase` WebSocket refetch.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
@@ -21,8 +21,11 @@ import {
   type KanbanCard as KanbanCardData,
 } from '@/utils/kanbanCards';
 import { orderSiteProjects } from '@/utils/storage';
+import { canEditProjectById } from '@/utils/permissions';
+import { useTagFilteredProjects } from '@/hooks/useTagFilter';
 import { KanbanDragProvider, useKanbanDrag } from '@/contexts/KanbanDragContext';
 import { useUIStore } from '@/stores/uiStore';
+import { useWebSocketContext } from '@/contexts/WebSocketContext';
 import { KanbanToolbar } from './KanbanToolbar';
 import { KanbanBoard } from './KanbanBoard';
 import styles from './KanbanView.module.css';
@@ -54,28 +57,65 @@ export function KanbanView() {
     [projects, currentSite?.id]
   );
 
-  // A null id means "All projects"; a stale id (e.g. after a site switch) also
-  // falls back to showing everything rather than silently picking one.
+  // The per-site tag filter (shared with the Gantt) narrows the picker and the
+  // "All projects" board.
+  const tagFilteredProjects = useTagFilteredProjects(siteProjects);
+
+  // A null id means "All projects"; a stale id (e.g. after a site switch, or a
+  // project the tag filter now hides) also falls back to showing everything
+  // rather than silently picking one.
   const activeProject = useMemo(
-    () => (kanbanProjectId === null ? null : siteProjects.find((p) => p.id === kanbanProjectId) ?? null),
-    [siteProjects, kanbanProjectId]
+    () =>
+      kanbanProjectId === null
+        ? null
+        : tagFilteredProjects.find((p) => p.id === kanbanProjectId) ?? null,
+    [tagFilteredProjects, kanbanProjectId]
   );
 
   /** The projects on the board, in Gantt order. */
   const boardProjects = useMemo(
-    () => (activeProject ? [activeProject] : siteProjects),
-    [activeProject, siteProjects]
+    () => (activeProject ? [activeProject] : tagFilteredProjects),
+    [activeProject, tagFilteredProjects]
   );
 
   // Comment counts are fetched only by this view - deliberately NOT folded into
   // GET /projects/{id}, which loadAllProjects() calls once per project.
+  //
+  // Keyed on ids, not on the project object: every projects refetch (each WS
+  // change) replaces the object and used to re-request the counts. They are
+  // refetched when they can actually have changed instead: another user's
+  // comment (a `card_comment` change) or this user closing a card, whose
+  // modal is where comments are written.
+  const activeProjectId = activeProject?.id ?? null;
+  const currentSiteId = currentSite?.id ?? null;
+  const cardModalOpen = useUIStore((s) => s.activeModal === 'kanbanCard');
+  const { recentChanges } = useWebSocketContext();
+  const latestCommentChange = useMemo(
+    () =>
+      recentChanges.reduce(
+        (latest, c) => (c.entity_type === 'card_comment' ? Math.max(latest, c._receivedAt ?? 0) : latest),
+        0
+      ),
+    [recentChanges]
+  );
+  // recentChanges expires entries after 30 s; only a newer change refetches.
+  const [commentRevision, setCommentRevision] = useState(0);
+  const lastCommentChangeRef = useRef(0);
   useEffect(() => {
+    if (latestCommentChange > lastCommentChangeRef.current) {
+      lastCommentChangeRef.current = latestCommentChange;
+      setCommentRevision((r) => r + 1);
+    }
+  }, [latestCommentChange]);
+
+  useEffect(() => {
+    if (cardModalOpen) return;
     let cancelled = false;
     // One site-wide query for "All projects" rather than one request per board.
-    const load = activeProject
-      ? getCommentCounts(activeProject.id)
-      : currentSite
-        ? getSiteCommentCounts(currentSite.id)
+    const load = activeProjectId !== null
+      ? getCommentCounts(activeProjectId)
+      : currentSiteId !== null
+        ? getSiteCommentCounts(currentSiteId)
         : null;
     if (!load) {
       setCommentCounts(new Map());
@@ -89,7 +129,7 @@ export function KanbanView() {
     return () => {
       cancelled = true;
     };
-  }, [activeProject, currentSite]);
+  }, [activeProjectId, currentSiteId, cardModalOpen, commentRevision]);
 
   const allCards = useMemo(() => collectCardsForProjects(boardProjects), [boardProjects]);
 
@@ -134,10 +174,13 @@ export function KanbanView() {
   const openKanbanCard = useUIStore((s) => s.openKanbanCardModal);
 
   // Mirror the server gate (app/services/card_access.py) so a card the server
-  // would reject with 403 is not draggable in the first place.
-  const isPrivileged = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  // would reject with 403 is not draggable in the first place: the project's
+  // editors (admin, superuser, its manager) and the card's assignees.
   const canMoveCard = (card: KanbanCardData) =>
-    Boolean(isPrivileged || (currentUser && card.assigneeIds.includes(currentUser.id)));
+    Boolean(
+      canEditProjectById(currentUser, projects, card.projectId) ||
+        (currentUser && card.assigneeIds.includes(currentUser.id))
+    );
 
   const handleOpenCard = (card: KanbanCardData) => {
     openKanbanCard(card.entityType, card.entityId, card.projectId);
@@ -158,7 +201,7 @@ export function KanbanView() {
   return (
     <div className={styles.container}>
       <KanbanToolbar
-        projects={siteProjects}
+        projects={tagFilteredProjects}
         selectedProjectId={activeProject?.id ?? null}
         onSelectProject={setKanbanProjectId}
         grouping={grouping}
@@ -171,15 +214,22 @@ export function KanbanView() {
         totalCount={allCards.length}
       />
 
-      <KanbanDragProvider>
-        <DraggableBoard
-          lanes={lanes}
-          showLaneHeaders={grouping !== 'none'}
-          commentCounts={commentCounts}
-          canMoveCard={canMoveCard}
-          onOpenCard={handleOpenCard}
-        />
-      </KanbanDragProvider>
+      {tagFilteredProjects.length === 0 ? (
+        // Keep the toolbar (and its tag filter) reachable so the filter can be cleared.
+        <div className={styles.placeholder}>
+          No projects in {currentSite.name} match the tag filter.
+        </div>
+      ) : (
+        <KanbanDragProvider>
+          <DraggableBoard
+            lanes={lanes}
+            showLaneHeaders={grouping !== 'none'}
+            commentCounts={commentCounts}
+            canMoveCard={canMoveCard}
+            onOpenCard={handleOpenCard}
+          />
+        </KanbanDragProvider>
+      )}
     </div>
   );
 }
