@@ -107,4 +107,35 @@ describe('ProjectModal fields', () => {
     });
     expect(updateProject).toHaveBeenCalledWith(9, expect.objectContaining({ name: 'Bioprocess Scale-Up' }));
   });
+
+  it('saves what was typed into each field', async () => {
+    vi.mocked(updateProject).mockResolvedValueOnce({} as never);
+    render(<ProjectModal />);
+
+    const edits: [string, string][] = [
+      ['Project Name *', 'Catalyst Optimization'],
+      ['Start Date *', '2026-09-15'],
+      ['End Date *', '2026-11-30'],
+      ['Customer', 'Acme'],
+      ['Sales PM', 'Sam Sales'],
+    ];
+    for (const [label, value] of edits) {
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
+      expect(screen.getByLabelText(label)).toHaveValue(value);
+    }
+    fireEvent.change(screen.getByLabelText('Project Volume (CHF)'), { target: { value: '250000' } });
+    expect(screen.getByLabelText('Project Volume (CHF)')).toHaveValue(250000);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    });
+    expect(updateProject).toHaveBeenCalledWith(9, expect.objectContaining({
+      name: 'Catalyst Optimization',
+      start_date: '2026-09-15',
+      end_date: '2026-11-30',
+      customer: 'Acme',
+      sales_pm: 'Sam Sales',
+      volume: 250000,
+    }));
+  });
 });

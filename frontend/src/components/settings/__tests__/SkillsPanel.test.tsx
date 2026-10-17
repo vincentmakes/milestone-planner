@@ -70,11 +70,15 @@ describe('SkillsPanel', () => {
     create.mockReturnValue(pending.promise);
     render(<SkillsPanel />);
     await openAddForm();
+    const description = screen.getByLabelText('Description');
+    fireEvent.change(description, { target: { value: 'Gas chromatography' } });
+    expect(description).toHaveValue('Gas chromatography');
 
     const form = screen.getByLabelText('Name *').closest('form')!;
     fireEvent.submit(form);
     fireEvent.submit(form);
     expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: 'GC-MS', description: 'Gas chromatography' }));
     expect(screen.getByRole('button', { name: 'Create Skill' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Create Skill' })).toHaveAttribute('aria-busy', 'true');
 

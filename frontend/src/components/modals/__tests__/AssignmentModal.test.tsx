@@ -101,6 +101,28 @@ describe('AssignmentModal picker', () => {
     render(<AssignmentModal mode="staff" />);
     expect((screen.getByLabelText('Staff Member') as HTMLElement).tagName).toBe('SELECT');
   });
+
+  it('lists the site equipment with its type in equipment mode', () => {
+    seed({ id: 99, role: 'superuser' });
+    useAppStore.setState({
+      equipment: [
+        { id: 11, name: 'Bioreactor', type: 'Reactor', site_id: 1 },
+        { id: 12, name: 'Scale', type: '', site_id: 1 },
+        { id: 13, name: 'Elsewhere', type: 'HPLC', site_id: 2 },
+      ] as never,
+    });
+    useUIStore.setState({ editingEquipmentAssignment: null });
+    useUIStore.getState().openModal('equipmentAssignment', { projectId: 1 });
+    render(<AssignmentModal mode="equipment" />);
+
+    const picker = screen.getByLabelText('Equipment');
+    expect(screen.getByRole('option', { name: 'Bioreactor (Reactor)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Scale (No type)' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Elsewhere/ })).not.toBeInTheDocument();
+    fireEvent.change(picker, { target: { value: '11' } });
+    expect(picker).toHaveValue('11');
+    expect(screen.getByRole('button', { name: 'Assign Equipment' })).toBeInTheDocument();
+  });
 });
 
 describe('AssignmentModal remove button', () => {

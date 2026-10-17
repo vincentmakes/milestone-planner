@@ -174,8 +174,14 @@ describe('SSO tab', () => {
     expect(onRefresh).toHaveBeenCalled();
 
     fireEvent.change(screen.getByPlaceholderText('••••••••••••••••'), { target: { value: ' s3cret ' } });
+    const redirect = screen.getByLabelText('Redirect URI *');
+    fireEvent.change(redirect, { target: { value: 'https://new.example/cb' } });
+    expect(redirect).toHaveValue('https://new.example/cb');
     await click('Save SSO Configuration');
-    expect(vi.mocked(updateOrganizationSSOConfig).mock.calls[1][1]).toMatchObject({ clientSecret: 's3cret' });
+    expect(vi.mocked(updateOrganizationSSOConfig).mock.calls[1][1]).toMatchObject({
+      clientSecret: 's3cret',
+      redirectUri: 'https://new.example/cb',
+    });
   });
 
   it('can save a disabled config without ids and reports save errors', async () => {

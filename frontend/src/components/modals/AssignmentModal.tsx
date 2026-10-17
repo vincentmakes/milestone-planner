@@ -390,9 +390,10 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
 
         {/* Resource selector */}
         {selfOnly ? (
-          // Fixed to the current user: non-editors only book their own time.
+          // Fixed to the current user: non-editors only book their own time
+          // (selfOnly implies a staff assignment).
           <Input
-            label={isStaff ? 'Staff Member *' : 'Equipment *'}
+            label="Staff Member *"
             type="text"
             value="You"
             readOnly

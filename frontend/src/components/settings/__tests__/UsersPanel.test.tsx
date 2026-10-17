@@ -12,7 +12,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { UsersPanel } from '../panels/UsersPanel';
 import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
-import { deleteUser } from '@/api/endpoints/users';
+import { createUser, deleteUser } from '@/api/endpoints/users';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import type { Site, User } from '@/types';
 
@@ -184,6 +184,80 @@ describe('UsersPanel as an admin', () => {
       site_ids: [1, 2],
       role: 'user',
       active: true,
+    });
+  });
+});
+
+describe('UsersPanel filters and new user form (admin)', () => {
+  beforeEach(() => {
+    seed(ada, [siteA, siteB]);
+    useAppStore.setState({ skills: [{ id: 3, name: 'HPLC' }] as never });
+    getUsers.mockResolvedValue([ada, sam, { ...bob, skills: [{ id: 3, name: 'HPLC' }] }]);
+  });
+
+  it('filters the list by status, role, job title, site and skill', async () => {
+    render(<UsersPanel />);
+    await rowOf('Bob Brown');
+    fireEvent.click(screen.getByRole('button', { name: 'Filter' }));
+
+    const pick = (label: string, value: string) => {
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
+      expect(screen.getByLabelText(label)).toHaveValue(value);
+    };
+    const count = (text: string) => expect(screen.getByText(text)).toBeInTheDocument();
+
+    pick('Status', 'disabled');
+    count('0 users (filtered from 3)');
+    pick('Status', 'active');
+    count('3 users');
+
+    pick('Role', 'superuser');
+    count('1 user (filtered from 3)');
+    expect(screen.getByText('Sam Super')).toBeInTheDocument();
+    pick('Role', 'all');
+
+    pick('Job Title', 'Analyst');
+    count('1 user (filtered from 3)');
+    expect(screen.getByText('Bob Brown')).toBeInTheDocument();
+    pick('Job Title', 'all');
+
+    pick('Site', '2');
+    count('2 users (filtered from 3)');
+    expect(screen.queryByText('Sam Super')).not.toBeInTheDocument();
+    pick('Site', 'all');
+
+    pick('Skill', '3');
+    count('1 user (filtered from 3)');
+    expect(screen.getByText('Bob Brown')).toBeInTheDocument();
+  });
+
+  it('creates a user with the typed details and the chosen role', async () => {
+    vi.mocked(createUser).mockResolvedValue({} as never);
+    render(<UsersPanel />);
+    await rowOf('Bob Brown');
+    fireEvent.click(screen.getByRole('button', { name: 'Add User' }));
+
+    const password = screen.getByLabelText('Password *');
+    expect(password).toHaveAttribute('placeholder', 'Min 8 characters');
+    expect(password).toBeRequired();
+
+    fireEvent.change(screen.getByLabelText('First Name *'), { target: { value: 'Cleo' } });
+    expect(screen.getByLabelText('First Name *')).toHaveValue('Cleo');
+    fireEvent.change(screen.getByLabelText('Last Name *'), { target: { value: 'Chen' } });
+    fireEvent.change(screen.getByLabelText('Email *'), { target: { value: 'cleo@demo.local' } });
+    fireEvent.change(password, { target: { value: 'welcome-1' } });
+    const role = screen.getByLabelText('Role *');
+    fireEvent.change(role, { target: { value: 'superuser' } });
+    expect(role).toHaveValue('superuser');
+
+    fireEvent.submit(role.closest('form')!);
+    await waitFor(() => expect(createUser).toHaveBeenCalled());
+    expect(vi.mocked(createUser).mock.calls[0][0]).toMatchObject({
+      first_name: 'Cleo',
+      last_name: 'Chen',
+      email: 'cleo@demo.local',
+      password: 'welcome-1',
+      role: 'superuser',
     });
   });
 });

@@ -227,3 +227,32 @@ describe('Calendar forms report unsaved input', () => {
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
   });
 });
+
+describe('CompanyEventsPanel filters and form fields', () => {
+  it('filters by site and year, and the end date cannot precede the start', async () => {
+    render(<CompanyEventsPanel />);
+    await screen.findByRole('button', { name: 'Edit ISO Audit' });
+
+    const site = screen.getByLabelText('Site');
+    fireEvent.change(site, { target: { value: '2' } });
+    expect(site).toHaveValue('2');
+    expect(screen.queryByText('ISO Audit')).not.toBeInTheDocument();
+    fireEvent.change(site, { target: { value: 'all' } });
+    expect(site).toHaveValue('all');
+    expect(screen.getByText('ISO Audit')).toBeInTheDocument();
+
+    const year = screen.getByLabelText('Year');
+    fireEvent.change(year, { target: { value: '2026' } });
+    expect(year).toHaveValue('2026');
+    expect(screen.getByText('ISO Audit')).toBeInTheDocument();
+    fireEvent.change(year, { target: { value: 'all' } });
+    expect(year).toHaveValue('all');
+
+    fireEvent.click(screen.getByRole('button', { name: /Add event/ }));
+    const end = screen.getByLabelText('End date (optional)');
+    expect(end).not.toHaveAttribute('min');
+    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-07-01' } });
+    expect(screen.getByLabelText('Start date')).toHaveValue('2026-07-01');
+    expect(end).toHaveAttribute('min', '2026-07-01');
+  });
+});

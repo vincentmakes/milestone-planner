@@ -6,7 +6,7 @@
  * the import view with its target sites, and a superuser's site scope.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { BankHolidaysPanel } from '../panels/BankHolidaysPanel';
 import { resetAllStores, useAppStore, useUIStore, useWhatIfStore } from '@/stores';
 import { downloadICS } from '@/utils/ics';
@@ -107,6 +107,16 @@ describe('BankHolidaysPanel list', () => {
     await waitFor(() => expect(api.getBankHolidays).toHaveBeenCalledWith(2));
     const options = within(screen.getByLabelText('Site')).getAllByRole('option');
     expect(options.map((o) => o.textContent)).toEqual(['Zurich']);
+  });
+
+  it('picks a site once the sites arrive after opening', async () => {
+    useAppStore.setState({ sites: [] });
+    render(<BankHolidaysPanel />);
+    expect(screen.getByText('You are not assigned to any site.')).toBeInTheDocument();
+
+    act(() => useAppStore.setState({ sites: [basel, zurich] }));
+    await screen.findByText('National Day');
+    expect(screen.getByLabelText('Site')).toHaveValue('1');
   });
 
   it('says so when the user manages no site', () => {

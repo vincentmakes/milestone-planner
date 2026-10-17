@@ -71,6 +71,17 @@ describe('SiteForm', () => {
     });
   });
 
+  it('sends the renamed site name', async () => {
+    const onBack = vi.fn();
+    render(<SiteForm site={basel} onBack={onBack} />);
+    const name = screen.getByLabelText('Site Name');
+    fireEvent.change(name, { target: { value: 'Basel Lab' } });
+    expect(name).toHaveValue('Basel Lab');
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() => expect(onBack).toHaveBeenCalled());
+    expect(api.updateSite).toHaveBeenCalledWith(1, expect.objectContaining({ name: 'Basel Lab' }));
+  });
+
   it('offers Active as a switch and sends its new value', async () => {
     const onBack = vi.fn();
     render(<SiteForm site={basel} onBack={onBack} />);
