@@ -25,15 +25,16 @@ export const DEFAULT_EVENT_COLOR = EVENT_COLOR_SWATCHES[0].value;
  * Default colours offered for a skill (Settings → Skills). Data colours like
  * the event swatches: fixed hex values, the same in both themes.
  */
-export const SKILL_COLOR_SWATCHES: string[] = [
-  '#3b82f6', // Blue
-  '#8b5cf6', // Purple
-  '#10b981', // Green
-  '#f59e0b', // Amber
-  '#ef4444', // Red
-  '#06b6d4', // Cyan
-  '#ec4899', // Pink
-  '#84cc16', // Lime
-  '#f97316', // Orange
-  '#6366f1', // Indigo
+export const SKILL_COLOR_SWATCHES: ColorSwatch[] = [
+  { value: '#3b82f6', label: 'Blue' },
+  { value: '#8b5cf6', label: 'Purple' },
+  { value: '#10b981', label: 'Green' },
+  { value: '#f59e0b', label: 'Amber' },
+  { value: '#ef4444', label: 'Red' },
+  { value: '#06b6d4', label: 'Cyan' },
+  { value: '#ec4899', label: 'Pink' },
+  { value: '#84cc16', label: 'Lime' },
+  { value: '#f97316', label: 'Orange' },
+  { value: '#6366f1', label: 'Indigo' },
 ];
+export const DEFAULT_SKILL_COLOR = SKILL_COLOR_SWATCHES[0].value;

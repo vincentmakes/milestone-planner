@@ -459,6 +459,14 @@ decision, not an oversight.
   refused dependency link, a Kanban move the server rejected) call `uiStore.showFlash(message,
   tone)`: `layout/FlashNotice` renders it bottom-right above the activity feed and clears it after
   6 s or on Dismiss.
+- **`ColorSwatchPicker`** (`components/settings/panels/ColorSwatchPicker`): the one colour
+  picker — a `role="radiogroup"` (`label`) of round 28 px `role="radio"` swatches named after
+  their colour (`EVENT_COLOR_SWATCHES` by default, `swatches` for another palette such as
+  `SKILL_COLOR_SWATCHES`), with `allowCustom` for a native colour input behind a dashed "+".
+  On touch devices it grows to 40 × 40 so the swatches stay round under the global 40 px
+  touch rule. Used by Tags, Absence types, Company events and Skills. Never hand-roll a row of
+  coloured buttons: the Skills panel had its own copy, which the touch rule stretched into
+  ovals on iPad because only the height was raised.
 - **`AllocationSlider`** (`components/common/AllocationSlider`): the one control for a staff
   allocation, on the Gantt and the Kanban card. 5 % steps from 5 to 100; `onChange` fires on
   every step and `onCommit` once on release, so a caller that saves listens to `onCommit` only.
@@ -734,6 +742,8 @@ has no fixed height).
   `Badge`, `badge`, `Level`, `level`, `expandBtn`, `collapseBtn`, `dragHandle`, `levelBtn`,
   `wbsLevel` for buttons; `Badge`/`badge`/`Level`/`level` for `[role="button"]`; `Cell`/`cell`
   for inputs. Name a deliberately compact inline control accordingly, or expect it to grow.
+  A round control must grow in **both** dimensions or it becomes an oval: raise its width with
+  its height (as `ColorSwatchPicker` does), or exclude it by class name.
 - `@media (hover: none) and (pointer: coarse)` (touch devices at any width) raises buttons to a
   40 px `min-height`, keeps the completion/type badges and `wbsLevel` chips at their own size,
   shows drag handles at 60 % opacity, disables hover transitions and enables touch scrolling on

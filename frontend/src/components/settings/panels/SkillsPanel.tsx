@@ -16,7 +16,8 @@ import { skillsApi } from '@/api/endpoints/skills';
 import type { Skill } from '@/types';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
-import { SKILL_COLOR_SWATCHES } from '@/utils/colorSwatches';
+import { DEFAULT_SKILL_COLOR, SKILL_COLOR_SWATCHES } from '@/utils/colorSwatches';
+import { ColorSwatchPicker } from './ColorSwatchPicker';
 import styles from './SkillsPanel.module.css';
 
 export function SkillsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
@@ -189,7 +190,7 @@ function SkillForm({ skill, onSave, onCancel, onDirtyChange }: SkillFormProps) {
   // Form state
   const [name, setName] = useState(skill?.name || '');
   const [description, setDescription] = useState(skill?.description || '');
-  const [color, setColor] = useState(skill?.color || SKILL_COLOR_SWATCHES[0]);
+  const [color, setColor] = useState(skill?.color || DEFAULT_SKILL_COLOR);
   
   const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
@@ -198,7 +199,7 @@ function SkillForm({ skill, onSave, onCancel, onDirtyChange }: SkillFormProps) {
     onDirtyChange,
     name !== (skill?.name || '') ||
       description !== (skill?.description || '') ||
-      color !== (skill?.color || SKILL_COLOR_SWATCHES[0])
+      color !== (skill?.color || DEFAULT_SKILL_COLOR)
   );
   
   // Handle form submit
@@ -282,27 +283,13 @@ function SkillForm({ skill, onSave, onCancel, onDirtyChange }: SkillFormProps) {
       {/* Color Picker */}
       <div className={styles.field}>
         <label>Color</label>
-        <div className={styles.colorPicker}>
-          {SKILL_COLOR_SWATCHES.map((c) => (
-            <button
-              key={c}
-              type="button"
-              className={`${styles.colorOption} ${color === c ? styles.selected : ''}`}
-              style={{ backgroundColor: c }}
-              onClick={() => setColor(c)}
-              aria-label={`Use colour ${c}`}
-              aria-pressed={color === c}
-              title={c}
-            />
-          ))}
-          <input
-            type="color"
-            value={color}
-            onChange={(e) => setColor(e.target.value)}
-            className={styles.customColor}
-            title="Custom color"
-          />
-        </div>
+        <ColorSwatchPicker
+          value={color}
+          onChange={setColor}
+          label="Skill colour"
+          swatches={SKILL_COLOR_SWATCHES}
+          allowCustom
+        />
         <div className={styles.colorPreview}>
           <span 
             className={styles.previewDot}

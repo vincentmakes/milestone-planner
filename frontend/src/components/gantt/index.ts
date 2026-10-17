@@ -10,6 +10,8 @@ export {
   generateTimelineData,
   calculateBarPosition,
   calculateTodayPosition,
+  calculateTodayCenterScrollLeft,
+  findTodayCell,
   findCellIndex,
   extractDependencies,
   calculateDependencyPath,

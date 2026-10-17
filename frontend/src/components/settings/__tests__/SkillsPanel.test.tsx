@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { SkillsPanel } from '../panels/SkillsPanel';
 import { SettingsHub } from '../SettingsHub';
 import { useAppStore } from '@/stores/appStore';
@@ -111,18 +111,21 @@ describe('SkillsPanel', () => {
     expect(useUIStore.getState().activeModal).toBeNull();
   });
 
-  it('names every row action after its skill and marks the chosen swatch pressed', async () => {
+  it('names every row action after its skill and picks the colour with the shared swatch picker', async () => {
     render(<SkillsPanel />);
     const edit = await screen.findByRole('button', { name: 'Edit HPLC' });
     expect(edit.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
     expect(screen.getByRole('button', { name: 'Delete HPLC' })).toBeInTheDocument();
 
     fireEvent.click(edit);
-    const chosen = screen.getByRole('button', { name: 'Use colour #3b82f6' });
-    expect(chosen).toHaveAttribute('aria-pressed', 'true');
-    const others = screen.getAllByRole('button', { name: /^Use colour/ }).filter((b) => b !== chosen);
-    expect(others.length).toBeGreaterThan(0);
-    others.forEach((b) => expect(b).toHaveAttribute('aria-pressed', 'false'));
+    // One ColorSwatchPicker (round 28 px swatches, 40 px on touch) — not a
+    // hand-rolled swatch row, which is how the Skills picker stretched on iPad.
+    const picker = screen.getByRole('radiogroup', { name: 'Skill colour' });
+    expect(within(picker).getByRole('radio', { name: 'Blue' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(within(picker).getByRole('radio', { name: 'Green' }));
+    expect(within(picker).getByRole('radio', { name: 'Green' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(picker).getByRole('radio', { name: 'Blue' })).toHaveAttribute('aria-checked', 'false');
+    expect(within(picker).getByLabelText('Custom color')).toBeInTheDocument();
   });
 
   it('closes the hub without asking when nothing was typed', async () => {

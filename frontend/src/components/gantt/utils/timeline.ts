@@ -681,15 +681,48 @@ export function findCellIndex(date: Date, cells: TimelineCell[]): number {
 }
 
 /**
+ * Where "today" sits in `cells`: the index of the cell flagged `isToday`, or,
+ * when there is none, the first cell after today. Week and month views drop
+ * weekend cells while weekends are hidden, so on a Saturday or Sunday no cell
+ * is today's — the Today button and the today line then use the following
+ * Monday. `exact` tells the two apart. Null when today is outside the timeline.
+ */
+export function findTodayCell(cells: TimelineCell[]): { index: number; exact: boolean } | null {
+  const exact = cells.findIndex((cell) => cell.isToday);
+  if (exact !== -1) return { index: exact, exact: true };
+  if (cells.length === 0) return null;
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  if (cells[0].dateStr > todayStr) return null;
+  const next = cells.findIndex((cell) => cell.dateStr > todayStr);
+  return next === -1 ? null : { index: next, exact: false };
+}
+
+/**
  * Calculate today line position
  */
 export function calculateTodayPosition(
   cells: TimelineCell[],
   cellWidth: number
 ): number | null {
-  const todayIndex = cells.findIndex((cell) => cell.isToday);
-  if (todayIndex === -1) return null;
-  return todayIndex * cellWidth + cellWidth / 2;
+  const today = findTodayCell(cells);
+  if (!today) return null;
+  // Today's own cell: through its centre. A hidden weekend day: the boundary
+  // just before the next working day.
+  return today.exact ? today.index * cellWidth + cellWidth / 2 : today.index * cellWidth;
+}
+
+/**
+ * scrollLeft that centres the cell holding (or following) today in a viewport
+ * of `containerWidth`, or null when today is outside the timeline.
+ */
+export function calculateTodayCenterScrollLeft(
+  cells: TimelineCell[],
+  cellWidth: number,
+  containerWidth: number
+): number | null {
+  const today = findTodayCell(cells);
+  if (!today) return null;
+  return Math.max(0, today.index * cellWidth - containerWidth / 2 + cellWidth / 2);
 }
 
 /**

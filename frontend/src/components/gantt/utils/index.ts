@@ -4,6 +4,8 @@ export {
   generateTimelineData,
   calculateBarPosition,
   calculateTodayPosition,
+  calculateTodayCenterScrollLeft,
+  findTodayCell,
   findCellIndex,
 } from './timeline';
 

@@ -3,8 +3,15 @@
  * today; scrollLeft 0 would show the past (the "calendar opens in 2025" bug).
  */
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { calculateTodayScrollLeft, generateTimelineCells, generateTimelineHeaders } from '../timeline';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  calculateTodayCenterScrollLeft,
+  calculateTodayPosition,
+  calculateTodayScrollLeft,
+  findTodayCell,
+  generateTimelineCells,
+  generateTimelineHeaders,
+} from '../timeline';
 import type { ViewMode } from '@/types';
 
 const VIEW_MODES: ViewMode[] = ['week', 'month', 'quarter', 'year'];
@@ -141,5 +148,50 @@ describe('current month highlight', () => {
     const primary = generateTimelineHeaders(cells, 'month').primary;
     expect(primary[primary.length - 1]).toMatchObject({ label: 'Jun 2026', isCurrentPeriod: true });
     expect(primary.filter((h) => h.isCurrentPeriod)).toHaveLength(1);
+  });
+});
+
+describe('today on a hidden weekend day', () => {
+  // Saturday 17 October 2026; weekends hidden drops its cell in the day views.
+  const saturday = new Date(2026, 9, 17, 10, 0, 0);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(saturday);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each(['week', 'month'] as const)('falls back to the next working day in %s view', (mode) => {
+    const cells = generateTimelineCells(saturday, mode, new Set(), [], new Set(), [], false);
+    expect(cells.some((c) => c.isToday)).toBe(false);
+
+    const today = findTodayCell(cells);
+    expect(today).not.toBeNull();
+    expect(today!.exact).toBe(false);
+    expect(cells[today!.index].dateStr).toBe('2026-10-19'); // Monday
+
+    // The today line sits on the boundary before Monday; the Today button centres Monday.
+    expect(calculateTodayPosition(cells, 30)).toBe(today!.index * 30);
+    expect(calculateTodayCenterScrollLeft(cells, 30, 600)).toBe(Math.max(0, today!.index * 30 - 300 + 15));
+  });
+
+  it('uses the exact cell when weekends are shown or the cells are weeks', () => {
+    const month = generateTimelineCells(saturday, 'month', new Set(), [], new Set(), [], true);
+    expect(findTodayCell(month)).toEqual({ index: month.findIndex((c) => c.isToday), exact: true });
+    expect(calculateTodayPosition(month, 30)).toBe(month.findIndex((c) => c.isToday) * 30 + 15);
+
+    const quarter = generateTimelineCells(saturday, 'quarter', new Set(), [], new Set(), [], false);
+    expect(findTodayCell(quarter)?.exact).toBe(true);
+  });
+
+  it('is null when today lies outside the timeline', () => {
+    const past = generateTimelineCells(new Date(2024, 0, 15), 'week', new Set(), [], new Set(), [], false);
+    const future = generateTimelineCells(new Date(2029, 0, 15), 'week', new Set(), [], new Set(), [], false);
+    expect(findTodayCell(past)).toBeNull();
+    expect(findTodayCell(future)).toBeNull();
+    expect(findTodayCell([])).toBeNull();
+    expect(calculateTodayCenterScrollLeft(past, 30, 600)).toBeNull();
   });
 });

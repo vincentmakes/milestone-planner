@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Icon-only row actions (edit, delete, rename, activate, export) have one size and are named for screen readers after the row they act on; the admin-portal dialogs are announced as dialogs with a named close button.
 - Presence avatars, activity toasts and Kanban assignees use one shared colour palette, so a person has the same colour everywhere.
 
+### Fixed
+- The skill colour picker is the same round swatch picker as for tags, absence types and events, so its swatches no longer stretch into ovals on iPad.
+- The Today button and the today line work in the Week and Month views on a Saturday or Sunday while weekends are hidden: they go to the next working day instead of doing nothing.
+
 ## [1.6.2] - 2026-10-17
 
 ### Changed

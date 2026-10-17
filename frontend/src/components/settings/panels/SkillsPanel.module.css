@@ -176,49 +176,12 @@
 }
 
 /* Color Picker */
-.colorPicker {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
 
-.colorOption {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
 
-.colorOption:hover {
-  transform: scale(1.1);
-}
 
-.colorOption.selected {
-  border-color: white;
-  box-shadow: 0 0 0 2px var(--text-primary);
-}
 
-.customColor {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid var(--border-color);
-  border-radius: 50%;
-  cursor: pointer;
-  background: none;
-}
 
-.customColor::-webkit-color-swatch-wrapper {
-  padding: 0;
-}
 
-.customColor::-webkit-color-swatch {
-  border: none;
-  border-radius: 50%;
-}
 
 .colorPreview {
   display: flex;

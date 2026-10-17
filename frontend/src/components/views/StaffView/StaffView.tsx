@@ -15,7 +15,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useScrollSync, useCtrlScrollZoom, useResourceDragDrop, useEscapeKey } from '@/hooks';
-import { generateTimelineCells, generateTimelineHeaders, calculateTodayScrollLeft } from '@/components/gantt/utils/timeline';
+import { generateTimelineCells, generateTimelineHeaders, calculateTodayScrollLeft, calculateTodayCenterScrollLeft } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { StaffTimelineBody } from './StaffTimelineBody';
 import { BankHolidaysRow } from './BankHolidaysRow';
@@ -254,15 +254,10 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   useEffect(() => {
     if (embedded || !scrollToTodayTrigger || !timelineScrollRef.current) return;
 
-    const todayIndex = cells.findIndex((cell) => cell.isToday);
-    if (todayIndex === -1) return;
-
     const scrollContainer = timelineScrollRef.current;
-    const containerWidth = scrollContainer.clientWidth;
-    const todayPosition = todayIndex * cellWidth;
-
-    // Center today in the viewport
-    const scrollTo = Math.max(0, todayPosition - containerWidth / 2 + cellWidth / 2);
+    // Centre today's cell, or the next working day on a hidden weekend day
+    const scrollTo = calculateTodayCenterScrollLeft(cells, cellWidth, scrollContainer.clientWidth);
+    if (scrollTo === null) return;
     scrollContainer.scrollTo({ left: scrollTo, behavior: 'smooth' });
   }, [embedded, scrollToTodayTrigger, cells, cellWidth]);
 
