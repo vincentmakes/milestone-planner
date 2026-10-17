@@ -16,7 +16,7 @@ on:
 # one. Pushes to main are never cancelled: each one publishes the coverage
 # badge, and a cancelled run would leave it behind.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

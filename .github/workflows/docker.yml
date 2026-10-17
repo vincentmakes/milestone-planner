@@ -10,7 +10,7 @@ on:
 # one. Pushes to main are never cancelled, so every commit on main is known to
 # build.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
