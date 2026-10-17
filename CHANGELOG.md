@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - The start and end date fields of the phase, subphase, project, assignment, absence and equipment-block dialogs no longer overlap on iPad.
+- Signing in (or signing in again after a session expired) opens the timeline on today, like a page reload does, instead of where the previous session left it.
 - The skill colour picker is the same round swatch picker as for tags, absence types and events, so its swatches no longer stretch into ovals on iPad.
 - The Today button and the today line work in the Week and Month views on a Saturday or Sunday while weekends are hidden: they go to the next working day instead of doing nothing.
 

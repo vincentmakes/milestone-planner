@@ -289,6 +289,8 @@ interface ViewState {
   // ACTIONS - Reset
   // ---------------------------------------------
   resetView: () => void;
+  /** Back to today at scroll 0 — called when a session ends, so the next sign-in opens on today */
+  resetTimelinePosition: () => void;
 }
 
 // =============================================================================
@@ -663,6 +665,7 @@ export const useViewStore = create<ViewState>()(
       // -----------------------------------------
       // "Today" is read when the view is reset, not when this module loaded.
       resetView: () => set({ ...initialViewState, currentDate: new Date() }),
+      resetTimelinePosition: () => set({ currentDate: new Date(), timelineScrollLeft: 0 }),
     }),
     {
       name: 'milestone-view-storage-v1',

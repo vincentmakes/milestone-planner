@@ -89,6 +89,13 @@ describe('resetAllStores', () => {
     expect(useCustomColumnStore.getState().showAllCustomColumns).toBe(false);
   });
 
+  it('forgets the place in the timeline, so the next sign-in opens on today', () => {
+    useViewStore.setState({ timelineScrollLeft: 4321, currentDate: new Date(2024, 0, 15) });
+    resetAllStores();
+    expect(useViewStore.getState().timelineScrollLeft).toBe(0);
+    expect(useViewStore.getState().currentDate.toDateString()).toBe(new Date().toDateString());
+  });
+
   it('keeps store actions working afterwards', () => {
     resetAllStores();
     useUIStore.getState().openModal('project');
