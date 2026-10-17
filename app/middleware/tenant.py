@@ -122,7 +122,8 @@ class TenantMiddleware:
     ASGI Middleware to resolve tenant from /t/{slug}/ URL prefix.
 
     This properly rewrites the URL path BEFORE FastAPI routing happens.
-    Handles both HTTP and WebSocket connections.
+    HTTP only: WebSocket scopes pass through untouched (the handler resolves
+    the tenant itself).
     """
 
     def __init__(self, app: ASGIApp):
@@ -149,10 +150,6 @@ class TenantMiddleware:
 
         path = scope.get("path", "/")
 
-        # Debug logging for WebSocket
-        if scope["type"] == "websocket":
-            logger.debug("TenantMiddleware WebSocket request: path=%s", path)
-
         # Fast path: Skip if not a tenant URL
         if not path.startswith("/t/"):
             # Set empty tenant context
@@ -165,14 +162,6 @@ class TenantMiddleware:
         # Extract tenant slug from URL
         slug, remaining_path = extract_tenant_slug(path)
 
-        # Debug logging
-        if scope["type"] == "websocket":
-            logger.debug(
-                "TenantMiddleware WebSocket tenant extraction: slug=%s, remaining=%s",
-                slug,
-                remaining_path,
-            )
-
         if not slug:
             await self.app(scope, receive, send)
             return
@@ -182,12 +171,6 @@ class TenantMiddleware:
             tenant_info = await get_tenant_info_cached(slug)
 
             if not tenant_info:
-                # For WebSocket, we can't send a JSON response easily before accept
-                # Just let it through and the handler will reject it
-                if scope["type"] == "websocket":
-                    await self.app(scope, receive, send)
-                    return
-
                 response = JSONResponse(
                     status_code=404,
                     content={
@@ -199,11 +182,6 @@ class TenantMiddleware:
                 return
 
             if tenant_info["status"] != "active":
-                # For WebSocket, let handler deal with it
-                if scope["type"] == "websocket":
-                    await self.app(scope, receive, send)
-                    return
-
                 status_messages = {
                     "suspended": "This organization has been suspended. Please contact support.",
                     "pending": "This organization is pending activation.",
@@ -234,11 +212,6 @@ class TenantMiddleware:
                     # The detail (DB name, asyncpg/decrypt error) stays in the
                     # log; unauthenticated clients get a fixed message.
                     logger.error("Tenant DB connection error for '%s': %s", slug, e)
-                    # For WebSocket, let handler deal with it
-                    if scope["type"] == "websocket":
-                        await self.app(scope, receive, send)
-                        return
-
                     response = JSONResponse(
                         status_code=503,
                         content={
@@ -257,18 +230,6 @@ class TenantMiddleware:
             new_scope["raw_path"] = remaining_path.encode()
             new_scope["state"] = state
 
-            # Debug logging for WebSocket
-            if scope["type"] == "websocket":
-                logger.debug(
-                    "TenantMiddleware WebSocket path rewritten: %s -> %s", path, remaining_path
-                )
-                logger.debug("TenantMiddleware WebSocket new_scope path: %s", new_scope.get("path"))
-                logger.debug(
-                    "TenantMiddleware WebSocket state: tenant_slug=%s, has_engine=%s",
-                    state.get("tenant_slug"),
-                    state.get("tenant_engine") is not None,
-                )
-
             # Also update root_path if needed for URL generation
             # new_scope["root_path"] = f"/t/{slug}"
 
@@ -276,11 +237,6 @@ class TenantMiddleware:
 
         except Exception as e:
             logger.exception("Tenant middleware error: %s", e)
-            # For WebSocket, let it fail naturally
-            if scope["type"] == "websocket":
-                await self.app(scope, receive, send)
-                return
-
             response = JSONResponse(
                 status_code=500,
                 content={

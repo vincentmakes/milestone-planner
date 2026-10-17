@@ -522,6 +522,9 @@ async def provision_tenant(
             admin_password=admin_password,
         )
         logger.info("Tenant database provisioned successfully: %s", tenant.slug)
+    except PasswordTooLongError as e:
+        # The tenant admin is bcrypt-hashed (72-byte limit) before anything is created.
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Provisioning failed: {e}") from e
 

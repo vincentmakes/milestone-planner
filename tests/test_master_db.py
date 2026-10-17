@@ -94,6 +94,7 @@ def test_engine_is_created_once_from_the_right_url(master_url, expected):
     create.assert_called_once()
     assert create.call_args.args[0].endswith(expected)
     assert create.call_args.kwargs["pool_pre_ping"] is True
+    assert create.call_args.kwargs["connect_args"] == {"server_settings": {"timezone": "UTC"}}
 
 
 def test_session_factory_is_bound_and_cached():

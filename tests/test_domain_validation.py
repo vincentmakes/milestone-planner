@@ -509,3 +509,16 @@ async def test_changed_user_password_needs_8_characters(authed_client, mock_db_s
 
     assert response.status_code == 422
     mock_db_session.execute.assert_not_awaited()
+
+
+def test_exceeds_max_span_counts_days_inclusively():
+    from datetime import date
+
+    from app.services.date_range import MAX_DAY_RANGE, exceeds_max_span
+
+    assert MAX_DAY_RANGE == 366
+    assert not exceeds_max_span(date(2028, 1, 1), date(2028, 12, 31))  # leap year: 366 days
+    assert not exceeds_max_span(date(2027, 1, 1), date(2028, 1, 1))  # 366 days
+    assert exceeds_max_span(date(2027, 1, 1), date(2028, 1, 2))  # 367 days
+    assert exceeds_max_span(date(2027, 1, 1), date(2027, 1, 3), max_days=2)
+    assert not exceeds_max_span(date(2027, 1, 1), date(2027, 1, 2), max_days=2)

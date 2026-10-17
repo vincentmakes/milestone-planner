@@ -17,7 +17,7 @@ from datetime import date, timedelta
 import asyncpg
 
 from app.config import get_settings
-from app.services.encryption import encrypt, hash_password
+from app.services.encryption import encrypt, hash_user_password
 
 DEMO_TENANT_SLUG = "demo"
 DEMO_TENANT_NAME = "Demo Company"
@@ -204,7 +204,7 @@ async def apply_schema_and_seed(settings):
         """)
 
         # Admin user (known password: demo1234)
-        admin_hash = hash_password(DEMO_ADMIN_PASSWORD)
+        admin_hash = hash_user_password(DEMO_ADMIN_PASSWORD)
         await conn.execute(
             """INSERT INTO users (email, password, first_name, last_name, job_title, role, is_system)
                VALUES ($1, $2, 'Admin', 'User', 'System Administrator', 'admin', 1)
@@ -237,7 +237,7 @@ async def apply_schema_and_seed(settings):
             ("george.garcia@demo.local", "George", "Garcia", "R&D Engineer", "user", ff_id),
             ("hannah.harris@demo.local", "Hannah", "Harris", "Quality Specialist", "user", ff_id),
         ]
-        staff_hash = hash_password("demo1234")
+        staff_hash = hash_user_password("demo1234")
         staff_ids = {}
         for email, first, last, title, role, site_id in staff_data:
             await conn.execute(

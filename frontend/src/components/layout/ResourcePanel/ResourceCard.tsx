@@ -1,14 +1,13 @@
-import { useMemo } from 'react';
 import type { Staff, Equipment, ResourceTab, Project, Vacation } from '@/types';
 import { useAppStore } from '@/stores/appStore';
 import { useResourceDragDrop } from '@/hooks/useResourceDragDrop';
 import { useEquipmentOverlaps, useEquipmentTodayStatus } from '@/hooks/useEquipmentOverlaps';
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
-import { indexAbsenceTypes, isUnavailableOn } from '@/utils/recurringVacation';
+import { isUnavailableOn } from '@/utils/recurringVacation';
 import type { AbsenceTypesById } from '@/utils/recurringVacation';
 import { getClosureOn } from '@/utils/siteClosure';
 import type { ClosureIndex } from '@/utils/siteClosure';
-import { selectStaffSiteIds } from '@/stores/appStore';
+import { selectStaffSiteIds, selectAbsenceTypesById } from '@/stores/appStore';
 import { formatDateISO, parseLocalDate } from '@/utils/date';
 import { canManageAnyProject, isSelf } from '@/utils/permissions';
 import styles from './ResourceCard.module.css';
@@ -96,8 +95,7 @@ function calculateStaffAllocationToday(
 export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
   // Get vacations from store for vacation checking
   const vacations = useAppStore((s) => s.vacations);
-  const absenceTypes = useAppStore((s) => s.absenceTypes);
-  const absenceTypesById = useMemo(() => indexAbsenceTypes(absenceTypes), [absenceTypes]);
+  const absenceTypesById = useAppStore(selectAbsenceTypesById);
   const closureIndex = useAppStore((s) => s.closureIndex);
   const staffSiteIds = useAppStore(selectStaffSiteIds);
   const currentUser = useAppStore((s) => s.currentUser);

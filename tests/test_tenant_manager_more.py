@@ -71,6 +71,8 @@ async def test_create_pool_builds_url_tests_connection_and_migrates(mgr):
     )
     assert create.call_args.kwargs["pool_size"] == 20
     assert create.call_args.kwargs["max_overflow"] == 10
+    # Sessions run in UTC, so CURRENT_TIMESTAMP defaults match utcnow_naive().
+    assert create.call_args.kwargs["connect_args"] == {"server_settings": {"timezone": "UTC"}}
     assert "SELECT 1" in str(engine.conn.execute.await_args.args[0])
     migrate.assert_awaited_once_with(engine.conn, "acme")
     engine.dispose.assert_not_awaited()

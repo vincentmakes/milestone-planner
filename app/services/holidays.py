@@ -22,6 +22,7 @@ from urllib.parse import urlparse, urlunparse
 import httpx
 
 from app.config import get_settings
+from app.services.date_range import MAX_DAY_RANGE
 
 logger = logging.getLogger(__name__)
 
@@ -182,9 +183,9 @@ def is_relevant_holiday(holiday: NagerHoliday, region_code: str | None) -> bool:
     return matches_region(holiday, region_code)
 
 
-# A custom holiday longer than this is almost certainly a data-entry mistake;
-# cap the expansion so it cannot blow up into a huge date set.
-MAX_CUSTOM_SPAN_DAYS = 366
+# Inclusive day count. Holiday/event writes reject longer spans (400 in
+# app/routers/sites.py); the cap still bounds rows stored before that check.
+MAX_CUSTOM_SPAN_DAYS = MAX_DAY_RANGE
 
 
 def custom_holiday_dates(spans: Iterable[tuple[date_type, date_type | None]]) -> set[date_type]:
@@ -196,7 +197,7 @@ def custom_holiday_dates(spans: Iterable[tuple[date_type, date_type | None]]) ->
     days: set[date_type] = set()
     for start, end in spans:
         last = end if end is not None and end >= start else start
-        length = min((last - start).days, MAX_CUSTOM_SPAN_DAYS)
+        length = min((last - start).days, MAX_CUSTOM_SPAN_DAYS - 1)
         days.update(start + timedelta(days=offset) for offset in range(length + 1))
     return days
 

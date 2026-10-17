@@ -11,12 +11,18 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite
+from app.routers.sites import _validate_range
 from tests.conftest import FakeUser
 
 STAMP = datetime(2026, 1, 1, 12, 0, 0)
+
+
+def _sql(stmt) -> str:
+    return str(stmt.compile(compile_kwargs={"literal_binds": True}))
 
 
 def _scalar_result(value):
@@ -136,6 +142,30 @@ async def test_holiday_edit_rejects_end_before_start(authed_client, mock_db_sess
 
 
 @pytest.mark.asyncio
+async def test_holiday_edit_rejects_a_span_over_366_days(authed_client, mock_db_session):
+    """Longer spans used to be stored and silently truncated when expanded."""
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    holiday = _holiday()  # 2026-08-01
+    mock_db_session.execute.return_value = _scalar_result(holiday)
+
+    response = await client.put("/api/sites/1/holidays/5", json={"end_date": "2027-08-02"})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "End date makes the range longer than 366 days"
+    mock_db_session.commit.assert_not_awaited()
+
+
+def test_validate_range_accepts_exactly_366_days():
+    _validate_range(date(2028, 1, 1), date(2028, 12, 31))  # leap year, 366 days
+    _validate_range(date(2026, 1, 1), None)
+    with pytest.raises(HTTPException) as exc:
+        _validate_range(date(2026, 1, 1), date(2027, 1, 2), label="Item 2: end date")
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "Item 2: end date makes the range longer than 366 days"
+
+
+@pytest.mark.asyncio
 async def test_holiday_edit_unique_violation_is_a_400(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(FakeUser(1, "admin"))
@@ -231,6 +261,45 @@ async def test_holiday_import_rejects_inverted_ranges(authed_client, mock_db_ses
 
     assert response.status_code == 400
     mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_holiday_import_rejects_a_span_over_366_days(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.get.return_value = object()
+
+    response = await client.post(
+        "/api/sites/1/holidays/import",
+        json={
+            "items": [
+                {"date": "2026-05-01", "name": "Fine"},
+                {"date": "2026-01-01", "end_date": "2027-01-02", "name": "Too long"},
+            ]
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Item 2: end date makes the range longer than 366 days"
+    mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_holiday_range_returns_holidays_overlapping_the_window(
+    authed_client, mock_db_session
+):
+    """A multi-day holiday that started before the window still shows in it."""
+    client, set_user = authed_client
+    set_user(FakeUser(1, "user"))
+    mock_db_session.execute.return_value = _scalars_result([])
+
+    response = await client.get("/api/holidays?siteId=1&startDate=2026-12-28&endDate=2027-01-03")
+
+    assert response.status_code == 200
+    query = _sql(mock_db_session.execute.await_args.args[0])
+    assert "bank_holidays.date <= '2027-01-03'" in query
+    assert "coalesce(bank_holidays.end_date, bank_holidays.date) >= '2026-12-28'" in query
+    assert "bank_holidays.date >= " not in query
 
 
 @pytest.mark.asyncio
@@ -364,6 +433,65 @@ async def test_create_event_rejects_end_before_start(authed_client, mock_db_sess
     )
 
     assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_event_rejects_a_span_over_366_days(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.return_value = _scalars_result([1])
+
+    response = await client.post(
+        "/api/events",
+        json={"date": "2026-03-10", "end_date": "2027-03-11", "name": "X", "site_ids": [1]},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "End date makes the range longer than 366 days"
+    mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("params", "present", "absent"),
+    [
+        (
+            "&startDate=2026-03-01&endDate=2026-03-31",
+            [
+                "coalesce(company_events.end_date, company_events.date) >= '2026-03-01'",
+                "company_events.date <= '2026-03-31'",
+            ],
+            ["company_events.date >= "],
+        ),
+        (
+            "&startDate=2026-03-01",
+            ["coalesce(company_events.end_date, company_events.date) >= '2026-03-01'"],
+            ["company_events.date <= "],
+        ),
+        (
+            "&endDate=2026-03-31",
+            ["company_events.date <= '2026-03-31'"],
+            ["coalesce("],
+        ),
+    ],
+)
+async def test_event_range_returns_events_overlapping_the_window(
+    authed_client, mock_db_session, params, present, absent
+):
+    """A multi-day event that started before the window still shows in it."""
+    client, set_user = authed_client
+    set_user(FakeUser(1, "user"))
+    mock_db_session.execute.return_value = _scalars_result([])
+
+    response = await client.get(f"/api/events?siteId=1{params}")
+
+    assert response.status_code == 200
+    query = _sql(mock_db_session.execute.await_args.args[0])
+    assert "company_event_sites.site_id = 1" in query
+    for fragment in present:
+        assert fragment in query
+    for fragment in absent:
+        assert fragment not in query
 
 
 @pytest.mark.asyncio

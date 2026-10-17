@@ -4,6 +4,7 @@
 
 import { apiGet, apiPost, apiPut, apiDelete, downloadFile } from '../client';
 import type { Site, BankHoliday, CompanyEvent, CalendarImportResult } from '@/types';
+import { postInChunks } from './importChunks';
 
 // =============================================================================
 // SITES
@@ -113,13 +114,16 @@ export interface HolidayImportItem {
 
 /**
  * Bulk-import custom holidays into a site (e.g. from an .ics file).
- * Existing (date, name) pairs are skipped server-side.
+ * Existing (date, name) pairs are skipped server-side. Large lists are sent
+ * in chunks (see `postInChunks`).
  */
 export async function importBankHolidays(
   siteId: number,
   items: HolidayImportItem[]
 ): Promise<CalendarImportResult> {
-  return apiPost<CalendarImportResult>(`/api/sites/${siteId}/holidays/import`, { items });
+  return postInChunks(items, (chunk) =>
+    apiPost<CalendarImportResult>(`/api/sites/${siteId}/holidays/import`, { items: chunk })
+  );
 }
 
 /**
@@ -195,7 +199,8 @@ export async function deleteCompanyEventById(eventId: number): Promise<void> {
 /**
  * Bulk-import company events onto one or more sites (e.g. from an .ics file).
  * An existing (date, end_date, name) event only gains the missing site links.
- * `counts_as_unavailable` applies to the newly created events only.
+ * `counts_as_unavailable` applies to the newly created events only. Large
+ * lists are sent in chunks (see `postInChunks`).
  */
 export async function importCompanyEvents(data: {
   site_ids: number[];
@@ -203,7 +208,10 @@ export async function importCompanyEvents(data: {
   counts_as_unavailable?: boolean;
   items: HolidayImportItem[];
 }): Promise<CalendarImportResult> {
-  return apiPost<CalendarImportResult>('/api/events/import', data);
+  const { items, ...rest } = data;
+  return postInChunks(items, (chunk) =>
+    apiPost<CalendarImportResult>('/api/events/import', { ...rest, items: chunk })
+  );
 }
 
 // =============================================================================

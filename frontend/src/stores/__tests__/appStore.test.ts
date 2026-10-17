@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
-import { selectCanManageResources, selectStaffSiteIds, useAppStore } from '../appStore';
+import { selectAbsenceTypesById, selectCanManageResources, selectStaffSiteIds, useAppStore } from '../appStore';
 import { useUndoStore } from '../undoStore';
 import { resetAllStores } from '..';
 import { makePhase, makeProject, makeSite, makeStaff, makeUser } from '@/test/factories';
@@ -179,6 +179,25 @@ describe('selectors', () => {
     expect(selectStaffSiteIds(app())).toBe(map);
     app().setStaff([makeStaff({ id: 6, site_id: 3 })]);
     expect(selectStaffSiteIds(app())).not.toBe(map);
+  });
+
+  it('selectAbsenceTypesById indexes by id and memoises on the array', () => {
+    const types = [
+      { id: 1, name: 'Holidays', color: '#8b5cf6', counts_as_unavailable: true, sort_order: 0, is_active: true },
+      { id: 2, name: 'Home Office', color: '#0ea5e9', counts_as_unavailable: false, sort_order: 1, is_active: true },
+    ];
+    app().setAbsenceTypes(types);
+    const map = selectAbsenceTypesById(app());
+    expect(map.get(2)?.name).toBe('Home Office');
+    expect(map.size).toBe(2);
+    // Same array -> same Map (no re-render loop, no per-bar rebuild)
+    expect(selectAbsenceTypesById(app())).toBe(map);
+    expect(selectAbsenceTypesById({ ...app(), absenceTypes: types })).toBe(map);
+
+    app().setAbsenceTypes([types[0]]);
+    const next = selectAbsenceTypesById(app());
+    expect(next).not.toBe(map);
+    expect([...next.keys()]).toEqual([1]);
   });
 
   it('selectCanManageResources is true for admins and superusers only', () => {

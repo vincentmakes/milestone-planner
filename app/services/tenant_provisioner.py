@@ -12,7 +12,7 @@ from typing import Any
 import asyncpg
 
 from app.config import get_settings
-from app.services.encryption import generate_password, hash_password
+from app.services.encryption import generate_password, hash_user_password
 
 logger = logging.getLogger(__name__)
 
@@ -1274,14 +1274,15 @@ async def provision_tenant_database(
     conn = None
     tenant_conn = None
 
+    # Generate admin password if not provided. The tenant admin is a tenant
+    # user, so bcrypt (PasswordTooLongError over 72 bytes, before any change).
+    if not admin_password:
+        admin_password = generate_password(16)
+
+    admin_password_hash = hash_user_password(admin_password)
+
     try:
         conn = await get_admin_connection()
-
-        # Generate admin password if not provided
-        if not admin_password:
-            admin_password = generate_password(16)
-
-        admin_password_hash = hash_password(admin_password)
 
         logger.info("Provisioning tenant database: %s", database_name)
 
@@ -1444,57 +1445,6 @@ async def drop_tenant_database(
 
     finally:
         await conn.close()
-
-
-async def reset_tenant_admin_password(
-    database_name: str,
-    database_user: str,
-    database_password: str,
-    admin_email: str,
-    new_password: str | None = None,
-) -> dict[str, str]:
-    """
-    Reset a tenant admin user's password.
-
-    Returns dict with the new password.
-    """
-    settings = get_settings()
-
-    # Generate new password if not provided
-    if not new_password:
-        new_password = generate_password(16)
-
-    password_hash = hash_password(new_password)
-
-    # Connect to tenant database
-    conn = await asyncpg.connect(
-        host=settings.db_host,
-        port=settings.db_port,
-        user=database_user,
-        password=database_password,
-        database=database_name,
-    )
-
-    try:
-        # Update password (parameterized)
-        result = await conn.execute(
-            "UPDATE users SET password = $1, updated_at = CURRENT_TIMESTAMP WHERE email = $2",
-            password_hash,
-            admin_email,
-        )
-
-        if result == "UPDATE 0":
-            raise ValueError(f"Admin user not found: {admin_email}")
-
-        logger.info("Reset password for %s in %s", admin_email, database_name)
-
-    finally:
-        await conn.close()
-
-    return {
-        "admin_email": admin_email,
-        "admin_password": new_password,
-    }
 
 
 async def test_tenant_connection(

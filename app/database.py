@@ -5,7 +5,6 @@ Uses async SQLAlchemy for PostgreSQL connections.
 
 import logging
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
 
 from fastapi import HTTPException, Request
 from sqlalchemy.ext.asyncio import (
@@ -124,24 +123,6 @@ async def get_db_readonly(request: Request) -> AsyncGenerator[AsyncSession, None
         yield session
 
 
-@asynccontextmanager
-async def get_db_context() -> AsyncGenerator[AsyncSession, None]:
-    """
-    Context manager for database sessions outside of request context.
-    Useful for background tasks and startup operations.
-    """
-    session_factory = get_session_factory()
-    async with session_factory() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
-
-
 async def init_db() -> None:
     """Initialize database connection and verify connectivity."""
     engine = get_engine()
@@ -163,67 +144,3 @@ async def close_db() -> None:
         _async_session_factory = None
 
     logger.info("Database connections closed")
-
-
-# ---------------------------------------------------------
-# Tenant Database Support (for multi-tenant mode)
-# ---------------------------------------------------------
-
-
-class TenantDatabaseManager:
-    """
-    Manages database connections for multiple tenants.
-    Uses connection pooling with lazy initialization.
-    """
-
-    def __init__(self):
-        self._engines: dict[str, AsyncEngine] = {}
-        self._session_factories: dict[str, async_sessionmaker[AsyncSession]] = {}
-
-    async def get_tenant_session(
-        self, database_url: str, tenant_slug: str
-    ) -> AsyncGenerator[AsyncSession, None]:
-        """Get a database session for a specific tenant."""
-        if tenant_slug not in self._engines:
-            # Create engine for this tenant (lazy initialization)
-            self._engines[tenant_slug] = create_async_engine(
-                database_url,
-                pool_size=5,  # Smaller pool per tenant
-                max_overflow=5,
-                pool_timeout=30,
-                pool_pre_ping=True,
-                connect_args={"server_settings": {"timezone": "UTC"}},
-            )
-            self._session_factories[tenant_slug] = async_sessionmaker(
-                bind=self._engines[tenant_slug],
-                class_=AsyncSession,
-                expire_on_commit=False,
-            )
-
-        async with self._session_factories[tenant_slug]() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-            finally:
-                await session.close()
-
-    async def close_all(self) -> None:
-        """Close all tenant database connections."""
-        for engine in self._engines.values():
-            await engine.dispose()
-        self._engines.clear()
-        self._session_factories.clear()
-
-    async def close_tenant(self, tenant_slug: str) -> None:
-        """Close a specific tenant's database connection."""
-        if tenant_slug in self._engines:
-            await self._engines[tenant_slug].dispose()
-            del self._engines[tenant_slug]
-            del self._session_factories[tenant_slug]
-
-
-# Global tenant database manager
-tenant_db_manager = TenantDatabaseManager()

@@ -6,7 +6,7 @@ import { useWhatIfStore } from './whatIfStore';
 import { useCustomColumnStore } from './customColumnStore';
 import { useNotificationStore } from './notificationStore';
 
-export { useAppStore, selectStaffSiteIds, selectCanManageResources } from './appStore';
+export { useAppStore, selectStaffSiteIds, selectAbsenceTypesById, selectCanManageResources } from './appStore';
 export { useUIStore } from './uiStore';
 export { useUndoStore } from './undoStore';
 export { useViewStore } from './viewStore';

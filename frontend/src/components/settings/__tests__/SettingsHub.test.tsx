@@ -86,7 +86,6 @@ describe('SettingsHub', () => {
       activeModal: null,
       settingsSection: null,
       settingsIntent: null,
-      editingSite: null,
     });
   });
 
@@ -172,13 +171,12 @@ describe('SettingsHub', () => {
     });
   });
 
-  it('opens the edited site for the legacy "site" key', () => {
-    useUIStore.getState().setEditingSite({ id: 7, name: 'Lab' });
+  it('opens the Sites section for the legacy "site" key', () => {
     act(() => useUIStore.getState().openModal('site'));
     expect(useUIStore.getState()).toMatchObject({
       activeModal: 'settingsHub',
       settingsSection: 'sites',
-      settingsIntent: { type: 'edit', id: 7 },
+      settingsIntent: null,
     });
   });
 

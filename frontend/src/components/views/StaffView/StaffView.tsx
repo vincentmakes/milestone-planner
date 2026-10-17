@@ -23,7 +23,6 @@ import { useTimelineScrollSync } from '@/contexts/TimelineScrollContext';
 import {
   parseRecurringPattern,
   getRecurringDaysDisplay,
-  indexAbsenceTypes,
   absenceTypeFor,
   absenceTypeName,
   absenceColorStyle,
@@ -31,7 +30,7 @@ import {
 } from '@/utils/recurringVacation';
 import { formatDateISO, parseLocalDate } from '@/utils/date';
 import { getClosureOn } from '@/utils/siteClosure';
-import { selectStaffSiteIds } from '@/stores/appStore';
+import { selectStaffSiteIds, selectAbsenceTypesById } from '@/stores/appStore';
 import { canManageAnyProject, isSelf } from '@/utils/permissions';
 import type { Project, Phase, Subphase, StaffAssignment } from '@/types';
 import styles from './StaffView.module.css';
@@ -79,8 +78,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const projects = useAppStore((s) => s.projects);
   const vacations = useAppStore((s) => s.vacations);
   const setVacations = useAppStore((s) => s.setVacations);
-  const absenceTypes = useAppStore((s) => s.absenceTypes);
-  const absenceTypesById = useMemo(() => indexAbsenceTypes(absenceTypes), [absenceTypes]);
+  const absenceTypesById = useAppStore(selectAbsenceTypesById);
   const currentSite = useAppStore((s) => s.currentSite);
   const currentUser = useAppStore((s) => s.currentUser);
   const skills = useAppStore((s) => s.skills);

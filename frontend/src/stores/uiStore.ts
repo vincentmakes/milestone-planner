@@ -16,7 +16,6 @@ import type {
   Staff,
   Equipment,
   User,
-  Site,
 } from '@/types';
 
 // =============================================================================
@@ -127,7 +126,6 @@ interface UIState {
   editingStaff: Staff | null;
   editingEquipment: Equipment | null;
   editingUser: User | null;
-  editingSite: Site | null;
   
   // Context for creating new items
   modalContext: {
@@ -281,7 +279,6 @@ interface UIState {
   setEditingStaff: (staff: Staff | null) => void;
   setEditingEquipment: (equipment: Equipment | null) => void;
   setEditingUser: (user: User | null) => void;
-  setEditingSite: (site: Site | null) => void;
   
   // Convenience modal openers
   openProjectModal: (project?: Project) => void;
@@ -295,8 +292,6 @@ interface UIState {
   /** Open the vacation dialog; `returnTo` reopens that modal when it closes */
   openVacationModal: (vacation?: Vacation, staffId?: number, returnTo?: ModalType) => void;
   openEquipmentBlockModal: (block?: EquipmentBlock, equipmentId?: number) => void;
-  openBankHolidayModal: () => void;
-  openSiteModal: () => void;
   setActiveModal: (modal: ModalType | string | null) => void;
   
   // ---------------------------------------------
@@ -433,7 +428,6 @@ const initialState = {
   editingStaff: null,
   editingEquipment: null,
   editingUser: null,
-  editingSite: null,
   modalContext: {},
   
   // Tooltip
@@ -514,20 +508,14 @@ const initialState = {
 
 /**
  * State update that opens the Settings hub for a legacy modal key, or null when
- * the key is not an alias. `site` (edit one site) carries the site being edited.
+ * the key is not an alias.
  */
 function settingsAliasState(
-  modal: string,
-  editingSite: Site | null
+  modal: string
 ): Pick<UIState, 'activeModal' | 'settingsSection' | 'settingsIntent'> | null {
   const section = SETTINGS_MODAL_ALIASES.get(modal);
   if (!section) return null;
-  let intent: SettingsIntent | null = null;
-  if (modal === 'site' && editingSite) {
-    intent = { type: 'edit', id: editingSite.id };
-  } else if (SETTINGS_ADD_ALIASES.has(modal)) {
-    intent = { type: 'add' };
-  }
+  const intent: SettingsIntent | null = SETTINGS_ADD_ALIASES.has(modal) ? { type: 'add' } : null;
   return { activeModal: 'settingsHub', settingsSection: section, settingsIntent: intent };
 }
 
@@ -537,10 +525,10 @@ export const useUIStore = create<UIState>()((set) => ({
   // -----------------------------------------
   // MODAL ACTIONS
   // -----------------------------------------
-  openModal: (type, context = {}) => set((state) => ({
-    ...(settingsAliasState(type, state.editingSite) ?? { activeModal: type }),
+  openModal: (type, context = {}) => set({
+    ...(settingsAliasState(type) ?? { activeModal: type }),
     modalContext: context,
-  })),
+  }),
 
   openSettings: (section, intent) => set((state) => ({
     activeModal: 'settingsHub',
@@ -568,7 +556,6 @@ export const useUIStore = create<UIState>()((set) => ({
     editingStaff: null,
     editingEquipment: null,
     editingUser: null,
-    editingSite: null,
     modalContext: {},
   }),
   
@@ -581,7 +568,6 @@ export const useUIStore = create<UIState>()((set) => ({
   setEditingStaff: (staff) => set({ editingStaff: staff }),
   setEditingEquipment: (equipment) => set({ editingEquipment: equipment }),
   setEditingUser: (user) => set({ editingUser: user }),
-  setEditingSite: (site) => set({ editingSite: site }),
   
   // Convenience modal openers
   openProjectModal: (project) => set({
@@ -626,16 +612,8 @@ export const useUIStore = create<UIState>()((set) => ({
     modalContext: equipmentId ? { equipmentId } : {},
   }),
   
-  openBankHolidayModal: () => set({
-    activeModal: 'settingsHub',
-    settingsSection: 'bank-holidays',
-    settingsIntent: null,
-  }),
-  
-  openSiteModal: () => set((state) => settingsAliasState('site', state.editingSite) ?? {}),
-  
-  setActiveModal: (modal) => set((state) =>
-    (modal && settingsAliasState(modal, state.editingSite)) || {
+  setActiveModal: (modal) => set(
+    (modal && settingsAliasState(modal)) || {
       activeModal: modal as ModalType | null,
     }
   ),

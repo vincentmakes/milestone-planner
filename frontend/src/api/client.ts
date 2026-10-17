@@ -106,6 +106,59 @@ export function isWhatIfActive(): boolean {
 }
 
 // =============================================================================
+// WHAT-IF EXEMPTIONS
+// =============================================================================
+
+/**
+ * Writes that bypass the What-If queue, as path prefixes. /api/admin/ is the
+ * admin portal, a separate app with its own session and no Gantt to sandbox —
+ * What-If never applies there, and queuing its writes would silently swallow
+ * them. Kanban comments and notifications are not plan operations: a queued
+ * comment gets a fake id, whatIfStore only snapshots appStore.projects so
+ * Discard cannot roll it back, and Apply would replay it into a real second
+ * comment. (Card moves and assignments ARE plan operations and stay queued.)
+ */
+const WHAT_IF_EXEMPT_PREFIXES: readonly string[] = [
+  '/api/auth/',
+  '/api/settings/',
+  '/api/admin/',
+  '/api/notifications',
+  '/api/kanban/comments/',
+];
+
+/**
+ * Configuration endpoints, exempt like settings: the What-If snapshot covers
+ * only appStore.projects, so a queued configuration write (absence type,
+ * skill, equipment type, phase template, user, tag, tag group, site or
+ * equipment definition) could not be rolled back on Discard and its local
+ * edit would vanish on the next reload. Assigning tags to a project goes
+ * through PUT /api/projects/{id} and stays queued. Calendar and booking data
+ * stays queued: /api/sites/{id}/holidays…, /api/sites/{id}/events…,
+ * /api/events…, /api/equipment-blocks…, /api/equipment-assignments… and the
+ * /api/equipment/{id}/… sub-resources.
+ */
+const WHAT_IF_EXEMPT_PATTERNS: readonly RegExp[] = [
+  /^\/api\/kanban\/cards\/(phase|subphase)\/\d+\/comments/,
+  /^\/api\/(absence-types|skills|equipment-types|predefined-phases|users|tags|tag-groups)(\/|$)/,
+  /^\/api\/sites(\/\d+)?$/,
+  /^\/api\/equipment(\/\d+)?$/,
+];
+
+/**
+ * Whether a write to `endpoint` is sent for real while What-If mode is active.
+ * Matches the endpoint as the API layer passes it (`/api/...`, no tenant
+ * prefix, no base URL); a query string or fragment is ignored.
+ */
+export function isWhatIfExempt(endpoint: string): boolean {
+  let path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  path = path.replace(/^\/t\/[a-z0-9][a-z0-9-]*(?=\/api\/)/, '').split(/[?#]/)[0];
+  return (
+    WHAT_IF_EXEMPT_PREFIXES.some(prefix => path.startsWith(prefix)) ||
+    WHAT_IF_EXEMPT_PATTERNS.some(pattern => pattern.test(path))
+  );
+}
+
+// =============================================================================
 // CORE REQUEST FUNCTION
 // =============================================================================
 
@@ -134,33 +187,10 @@ export async function apiRequest<T>(
   
   const method = options.method || 'GET';
   
-  // In What If mode, block write operations (except auth and settings) and queue them.
+  // In What If mode, queue write operations unless isWhatIfExempt() lets them through.
   // PATCH is a write like the others (BroadcastMiddleware treats it as one).
   if (clientConfig.isWhatIfMode?.() && WRITE_METHODS.includes(method)) {
-    // /api/admin/ is the admin portal, a separate app with its own session and
-    // no Gantt to sandbox — What-If never applies there, and queuing its writes
-    // would silently swallow them.
-    //
-    // Card moves and assignments ARE plan operations, so they stay queued.
-    // Comments and notifications are not: a queued comment gets a fake id,
-    // whatIfStore only snapshots appStore.projects so Discard cannot roll it
-    // back, and Apply would replay it into a real second comment.
-    // Tags and tag groups are configuration (like settings), not plan data:
-    // the What-If snapshot does not cover appStore.tags, so a queued tag write
-    // could not be rolled back on Discard. Assigning tags to a project goes
-    // through PUT /api/projects/{id} and stays queued.
-    const allowedPrefixes = [
-      '/api/auth/',
-      '/api/settings/',
-      '/api/admin/',
-      '/api/notifications',
-      '/api/kanban/comments/',
-      '/api/tags',
-      '/api/tag-groups',
-    ];
-    const isCommentWrite = /\/api\/kanban\/cards\/(phase|subphase)\/\d+\/comments/.test(url);
-    const isAllowed =
-      isCommentWrite || allowedPrefixes.some(prefix => url.includes(prefix));
+    const isAllowed = isWhatIfExempt(endpoint);
     
     if (!isAllowed) {
       // Queue the operation for later execution when applying changes

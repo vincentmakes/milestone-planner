@@ -182,7 +182,7 @@ Use **Import .ics** to load holidays from a calendar export — useful when the 
 
 A summary shows how many holidays were created and skipped. Imported holidays are stored as **custom** holidays. Entries with a recurrence other than yearly, cancelled entries, and entries without a date are listed as *not imported* with the reason.
 
-Calendar files are limited to **5 MB** (for holidays, company events and absences alike); for a larger export, export a shorter date range. `.ics` imports are unavailable in [What-If mode](what-if-planning.md).
+Calendar files are limited to **5 MB** (for holidays, company events and absences alike); for a larger export, export a shorter date range. Large files are imported in batches of 500 entries, so a long export is fine as long as it stays under the size limit. `.ics` imports are unavailable in [What-If mode](what-if-planning.md).
 
 ### Exporting Holidays to Calendar
 

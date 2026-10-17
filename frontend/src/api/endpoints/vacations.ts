@@ -4,6 +4,7 @@
 
 import { apiGet, apiPost, apiPut, apiDelete } from '../client';
 import type { Vacation, CreateVacationRequest, CalendarImportResult } from '@/types';
+import { postInChunks } from './importChunks';
 
 /**
  * Get all vacations
@@ -49,11 +50,14 @@ export interface VacationImportItem {
 
 /**
  * Bulk-import vacations for one staff member (e.g. from an .ics file).
- * Exact (staff, start, end) duplicates are skipped server-side.
+ * Exact (staff, start, end) duplicates are skipped server-side. Large lists
+ * are sent in chunks (see `postInChunks`).
  */
 export async function importVacations(
   staffId: number,
   items: VacationImportItem[]
 ): Promise<CalendarImportResult> {
-  return apiPost<CalendarImportResult>('/api/vacations/import', { staff_id: staffId, items });
+  return postInChunks(items, (chunk) =>
+    apiPost<CalendarImportResult>('/api/vacations/import', { staff_id: staffId, items: chunk })
+  );
 }

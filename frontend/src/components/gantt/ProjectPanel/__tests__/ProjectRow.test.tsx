@@ -166,6 +166,13 @@ describe('ProjectRow expansion', () => {
     expect(useViewStore.getState().expandedPhases.has(10)).toBe(true);
     fireEvent.click(expand);
     expect(useViewStore.getState().expandedSubphases.has(100)).toBe(true);
+    // phase -> subphase -> nested: fully expanded, nothing left for "+"
+    expect(expand).toBeDisabled();
+
+    fireEvent.click(collapse);
+    expect(expand).not.toBeDisabled();
+    fireEvent.click(expand);
+    expect(useViewStore.getState().expandedSubphases.has(100)).toBe(true);
 
     fireEvent.click(collapse);
     expect(useViewStore.getState().expandedSubphases.has(100)).toBe(false);
@@ -174,6 +181,33 @@ describe('ProjectRow expansion', () => {
     fireEvent.click(collapse);
     expect(useViewStore.getState().expandedProjects.has(1)).toBe(false);
     expect(collapse).toBeDisabled();
+  });
+
+  it('disables "+" after two steps when phases only have direct subphases', () => {
+    renderRow(
+      buildProject({
+        phases: [
+          makePhase({ id: 10, name: 'Feasibility', children: [makeSubphase({ id: 100, name: 'Review' })] }),
+          makePhase({ id: 11, name: 'Scale-up' }),
+        ],
+      })
+    );
+    const expand = screen.getByTitle('Expand one level');
+
+    fireEvent.click(expand);
+    expect(expand).not.toBeDisabled();
+    fireEvent.click(expand);
+    expect(useViewStore.getState().expandedPhases.has(10)).toBe(true);
+    expect(screen.getByText('Review')).toBeInTheDocument();
+    expect(expand).toBeDisabled();
+  });
+
+  it('disables "+" once a project whose phases have no subphases is open', () => {
+    renderRow(buildProject({ phases: [makePhase({ id: 10, name: 'Feasibility' })] }));
+    const expand = screen.getByTitle('Expand one level');
+    fireEvent.click(expand);
+    expect(screen.getByText('Feasibility')).toBeInTheDocument();
+    expect(expand).toBeDisabled();
   });
 
   it('allows one level for a project without phases (to add the first one)', () => {

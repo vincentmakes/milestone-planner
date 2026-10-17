@@ -2,8 +2,8 @@
 Default (single-tenant) database plumbing in app/database.py.
 
 Lazy engine / session-factory creation from settings, the request-scoped
-``get_db`` (commit on success, rollback on error), the read-only variant,
-``get_db_context``, init/close, and the legacy ``TenantDatabaseManager``.
+``get_db`` (commit on success, rollback on error), the read-only variant and
+init/close.
 No real database: ``create_async_engine`` and the session factory are faked.
 """
 
@@ -123,7 +123,7 @@ def test_tenant_without_pool_is_503_never_the_default_db():
 
 
 # ---------------------------------------------------------------------------
-# get_db / get_db_readonly / get_db_context
+# get_db / get_db_readonly
 # ---------------------------------------------------------------------------
 
 
@@ -184,34 +184,6 @@ async def test_get_db_readonly_never_commits_or_rolls_back(mock_db_session):
     mock_db_session.rollback.assert_not_awaited()
 
 
-@pytest.mark.asyncio
-async def test_get_db_context_commits_and_closes(mock_db_session):
-    with patch.object(
-        database, "get_session_factory", return_value=factory_yielding(mock_db_session)
-    ):
-        async with database.get_db_context() as session:
-            assert session is mock_db_session
-
-    mock_db_session.commit.assert_awaited_once()
-    mock_db_session.close.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_get_db_context_rolls_back_closes_and_reraises(mock_db_session):
-    with (
-        patch.object(
-            database, "get_session_factory", return_value=factory_yielding(mock_db_session)
-        ),
-        pytest.raises(RuntimeError, match="task failed"),
-    ):
-        async with database.get_db_context():
-            raise RuntimeError("task failed")
-
-    mock_db_session.rollback.assert_awaited_once()
-    mock_db_session.commit.assert_not_awaited()
-    mock_db_session.close.assert_awaited_once()
-
-
 # ---------------------------------------------------------------------------
 # init_db / close_db
 # ---------------------------------------------------------------------------
@@ -262,77 +234,3 @@ async def test_close_db_disposes_and_resets(monkeypatch):
 
     await database.close_db()  # idempotent without an engine
     engine.dispose.assert_awaited_once()
-
-
-# ---------------------------------------------------------------------------
-# TenantDatabaseManager (legacy per-tenant engines)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_tenant_database_manager_reuses_engine_per_slug(mock_db_session):
-    engines: list[MagicMock] = []
-
-    def make_engine(url, **kwargs):
-        engine = MagicMock(url=url, kwargs=kwargs)
-        engine.dispose = AsyncMock()
-        engines.append(engine)
-        return engine
-
-    mgr = database.TenantDatabaseManager()
-    with (
-        patch.object(database, "create_async_engine", side_effect=make_engine),
-        patch.object(
-            database,
-            "async_sessionmaker",
-            side_effect=lambda **kw: factory_yielding(mock_db_session),
-        ),
-    ):
-        for _ in range(2):
-            gen = mgr.get_tenant_session("postgresql+asyncpg://a/acme", "acme")
-            assert await gen.__anext__() is mock_db_session
-            with pytest.raises(StopAsyncIteration):
-                await gen.__anext__()
-        gen = mgr.get_tenant_session("postgresql+asyncpg://b/globex", "globex")
-        await gen.__anext__()
-        await gen.aclose()
-
-    assert [e.url for e in engines] == [
-        "postgresql+asyncpg://a/acme",
-        "postgresql+asyncpg://b/globex",
-    ]
-    assert engines[0].kwargs["pool_size"] == 5
-    assert engines[0].kwargs["pool_pre_ping"] is True
-    # Two sessions ran to completion and committed; the third was closed early
-    # (GeneratorExit is not an Exception: no commit, no rollback, still closed).
-    assert mock_db_session.commit.await_count == 2
-    mock_db_session.rollback.assert_not_awaited()
-    assert mock_db_session.close.await_count == 3
-
-    await mgr.close_tenant("acme")
-    engines[0].dispose.assert_awaited_once()
-    assert set(mgr._engines) == {"globex"}
-    await mgr.close_tenant("unknown")  # no-op
-
-    await mgr.close_all()
-    engines[1].dispose.assert_awaited_once()
-    assert mgr._engines == {} and mgr._session_factories == {}
-
-
-@pytest.mark.asyncio
-async def test_tenant_database_manager_rolls_back_on_error(mock_db_session):
-    mgr = database.TenantDatabaseManager()
-    with (
-        patch.object(database, "create_async_engine", return_value=MagicMock()),
-        patch.object(
-            database, "async_sessionmaker", return_value=factory_yielding(mock_db_session)
-        ),
-    ):
-        gen = mgr.get_tenant_session("postgresql+asyncpg://a/acme", "acme")
-        await gen.__anext__()
-        with pytest.raises(KeyError):
-            await gen.athrow(KeyError("boom"))
-
-    mock_db_session.rollback.assert_awaited_once()
-    mock_db_session.commit.assert_not_awaited()
-    mock_db_session.close.assert_awaited_once()

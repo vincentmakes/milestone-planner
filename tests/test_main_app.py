@@ -9,7 +9,7 @@ directory, so those tests build the app inside a temporary directory.
 
 import json
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -77,10 +77,14 @@ def with_state(app, state: dict):
 
 
 def test_custom_json_serializer_formats_like_node():
-    # Delegates to serialize_datetime_js, which treats a naive value as
-    # Europe/Zurich wall-clock time (CET in January: minus one hour).
+    # Naive datetimes are stored UTC, so they are output unshifted.
     assert main.custom_json_serializer(datetime(2026, 1, 2, 3, 4, 5, 678000)) == (
-        "2026-01-02T02:04:05.678Z"
+        "2026-01-02T03:04:05.678Z"
+    )
+    # An aware value is converted to UTC first (CEST: minus two hours).
+    cest = timezone(timedelta(hours=2))
+    assert main.custom_json_serializer(datetime(2026, 7, 1, 12, 0, tzinfo=cest)) == (
+        "2026-07-01T10:00:00.000Z"
     )
     assert main.custom_json_serializer(date(2026, 1, 2)) == "2026-01-02"
     with pytest.raises(TypeError, match="set"):
@@ -99,8 +103,8 @@ def test_custom_json_response_renders_compact_utf8():
     body = main.CustomJSONResponse(
         {"when": datetime(2026, 5, 1, 12, 0), "pct": 50.0, "name": "Zürich"}
     ).body
-    # CEST in May: minus two hours; whole floats become ints; no ASCII escaping.
-    assert body == '{"when":"2026-05-01T10:00:00.000Z","pct":50,"name":"Zürich"}'.encode()
+    # No offset shift (UTC in, UTC out); whole floats become ints; no ASCII escaping.
+    assert body == '{"when":"2026-05-01T12:00:00.000Z","pct":50,"name":"Zürich"}'.encode()
 
 
 # ---------------------------------------------------------------------------
@@ -135,9 +139,9 @@ async def test_docs_are_refused_to_non_admins(tmp_path, monkeypatch, user):
 
 
 @pytest.mark.asyncio
-# Known app quirk: the multi-method SPA catch-all is not include_in_schema=False,
-# so FastAPI warns about its duplicate operation ids while building the schema.
-@pytest.mark.filterwarnings("ignore:Duplicate Operation ID serve_spa")
+# The multi-method SPA catch-all once leaked into the schema with duplicate
+# operation ids (a UserWarning); fail on that warning should it come back.
+@pytest.mark.filterwarnings("error:Duplicate Operation ID")
 async def test_admin_gets_the_openapi_schema(tmp_path, monkeypatch):
     with (
         patch(
@@ -153,8 +157,10 @@ async def test_admin_gets_the_openapi_schema(tmp_path, monkeypatch):
     schema = resp.json()
     assert schema["info"]["title"] == app.title
     assert "/api/auth/login" in schema["paths"]
-    # Hidden routes stay hidden.
+    # Hidden routes stay hidden, the SPA catch-all included.
     assert "/api/openapi.json" not in schema["paths"]
+    assert any(getattr(r, "path", None) == "/{full_path:path}" for r in app.routes)
+    assert not [path for path in schema["paths"] if "full_path" in path]
 
 
 # ---------------------------------------------------------------------------

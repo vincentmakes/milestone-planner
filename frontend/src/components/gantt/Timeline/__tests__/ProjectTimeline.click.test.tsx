@@ -151,6 +151,19 @@ describe('ProjectTimeline bar click', () => {
     expect(useUIStore.getState().editingSubphase).toBeNull();
   });
 
+  it('opens the phase modal on a touch tap (the converted event keeps stopPropagation)', () => {
+    asUser(PM, 'user');
+    const { container } = renderTimeline(makeProject(PM));
+    const bar = container.querySelector('[data-phase-id="1"][data-project-id="1"]');
+    expect(bar).not.toBeNull();
+
+    fireEvent.touchStart(bar!, { touches: [{ clientX: 10, clientY: 10 }] });
+    expect(() => fireEvent.touchEnd(document)).not.toThrow();
+
+    expect(useUIStore.getState().activeModal).toBe('phase');
+    expect(useUIStore.getState().editingPhase?.id).toBe(1);
+  });
+
   it('does nothing on a project without a manager for a plain user', () => {
     asUser(5, 'user');
     const { container } = renderTimeline(makeProject(null));

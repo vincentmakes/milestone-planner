@@ -1,11 +1,16 @@
 """Tests for the Nager holiday API client (app/services/holidays.py)."""
 
 from datetime import date, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
+from app.models.site import Site
+from app.routers.sites import fetch_and_store_bank_holidays
+from app.services.date_range import MAX_DAY_RANGE
 from app.services.holidays import (
+    MAX_CUSTOM_SPAN_DAYS,
     MAX_NAME_LENGTH,
     NagerHoliday,
     build_holidays_url,
@@ -367,6 +372,14 @@ def test_custom_holiday_dates_expands_multi_day_spans():
     assert days == {date(2026, 12, 24), date(2026, 12, 25), date(2026, 12, 26), date(2026, 8, 1)}
 
 
+def test_custom_holiday_dates_caps_a_legacy_span_at_the_write_limit():
+    """Writes reject > 366 days; an older, longer row expands to 366 days at most."""
+    assert MAX_CUSTOM_SPAN_DAYS == MAX_DAY_RANGE == 366
+    days = custom_holiday_dates([(date(2026, 1, 1), date(2030, 1, 1))])
+    assert len(days) == 366
+    assert max(days) == date(2027, 1, 1)
+
+
 def test_custom_holiday_dates_treats_inverted_spans_as_one_day():
     assert custom_holiday_dates([(date(2026, 5, 2), date(2026, 5, 1))]) == {date(2026, 5, 2)}
 
@@ -413,3 +426,67 @@ def test_renamed_and_moved_holiday_lets_the_original_return():
     assert not should_skip_nager_holiday(
         date(2026, 8, 1), "Swiss National Day", set(), custom, names
     )
+
+
+# ---------------------------------------------------------
+# fetch_and_store_bank_holidays: a failed year keeps its holidays
+# ---------------------------------------------------------
+
+
+def _store_sql(db) -> list[str]:
+    return [
+        str(call.args[0].compile(compile_kwargs={"literal_binds": True}))
+        for call in db.execute.await_args_list
+    ]
+
+
+def _rows_result(rows):
+    result = MagicMock()
+    result.all.return_value = rows
+    return result
+
+
+def _site():
+    return Site(id=3, name="Basel", country_code="CH", region_code=None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("replace_existing", [False, True])
+async def test_store_replaces_only_the_years_that_returned_data(mock_db_session, replace_existing):
+    """A transport error looks like an empty year; that year must keep its holidays."""
+    this_year = datetime.now().year
+    holiday = NagerHoliday(date=date(this_year, 1, 1), name="New Year's Day")
+    mock_db_session.execute.side_effect = [MagicMock(), _rows_result([])]
+
+    with patch("app.routers.sites.fetch_holidays", AsyncMock(side_effect=[[holiday], []])) as fetch:
+        added = await fetch_and_store_bank_holidays(
+            mock_db_session, _site(), replace_existing=replace_existing
+        )
+
+    assert added == 1
+    assert [c.args for c in fetch.await_args_list] == [("CH", this_year), ("CH", this_year + 1)]
+    delete_sql = _store_sql(mock_db_session)[0]
+    assert delete_sql.startswith("DELETE FROM bank_holidays")
+    assert "bank_holidays.is_custom = 0" in delete_sql
+    assert f"bank_holidays.year IN ({this_year})" in delete_sql
+    if replace_existing:
+        # Imported holidays of years outside the fetched pair are still cleared.
+        assert f"bank_holidays.year NOT IN ({this_year}, {this_year + 1})" in delete_sql
+    else:
+        assert "NOT IN" not in delete_sql
+        assert str(this_year + 1) not in delete_sql
+    stored = mock_db_session.add.call_args.args[0]
+    assert (stored.date, stored.year, stored.is_custom) == (date(this_year, 1, 1), this_year, 0)
+    mock_db_session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_store_deletes_nothing_when_every_year_failed(mock_db_session):
+    with patch("app.routers.sites.fetch_holidays", AsyncMock(side_effect=[[], []])):
+        added = await fetch_and_store_bank_holidays(mock_db_session, _site(), replace_existing=True)
+
+    assert added == 0
+    mock_db_session.execute.assert_not_awaited()
+    mock_db_session.add.assert_not_called()
+    # The fetch timestamp is still recorded.
+    mock_db_session.commit.assert_awaited_once()

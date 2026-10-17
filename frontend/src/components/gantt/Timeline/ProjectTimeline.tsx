@@ -21,7 +21,6 @@ import { useWebSocketContext } from '@/contexts/WebSocketContext';
 import { canEditProject, canEditAssignment } from '@/utils/permissions';
 import {
   parseRecurringPattern,
-  indexAbsenceTypes,
   getAbsenceOn,
   absenceTypeName,
   absenceColor,
@@ -30,7 +29,7 @@ import {
 import { getClosureOn } from '@/utils/siteClosure';
 import { indexTags, projectBarColor } from '@/utils/tags';
 import { useGanttColorBy } from '@/hooks/useGanttColorBy';
-import { selectStaffSiteIds } from '@/stores/appStore';
+import { selectStaffSiteIds, selectAbsenceTypesById } from '@/stores/appStore';
 import { DEFAULT_EVENT_COLOR } from '@/utils/colorSwatches';
 import styles from './ProjectTimeline.module.css';
 import { daysBetweenDateStrings } from '@/utils/date';
@@ -1001,7 +1000,7 @@ const AssignmentBar = memo(function AssignmentBar({
 }: AssignmentBarProps) {
   // Get vacations from store to show vacation indicators
   const vacations = useAppStore((s) => s.vacations);
-  const absenceTypes = useAppStore((s) => s.absenceTypes);
+  const typesById = useAppStore(selectAbsenceTypesById);
   // Site closures (company events flagged as such) also mark the bar
   const closureIndex = useAppStore((s) => s.closureIndex);
   const staffSiteIds = useAppStore(selectStaffSiteIds);
@@ -1045,7 +1044,6 @@ const AssignmentBar = memo(function AssignmentBar({
     const hasClosures = closureIndex.size > 0 && !!sites;
     if (staffVacations.length === 0 && !hasClosures) return [];
 
-    const typesById = indexAbsenceTypes(absenceTypes);
     const markers: Array<{ left: number; width: number; title: string; color?: string }> = [];
 
     cells.forEach((cell, index) => {
@@ -1081,7 +1079,7 @@ const AssignmentBar = memo(function AssignmentBar({
     });
 
     return markers;
-  }, [staffId, assignmentType, vacations, absenceTypes, closureIndex, staffSiteIds, cells, cellWidth, viewMode]);
+  }, [staffId, assignmentType, vacations, typesById, closureIndex, staffSiteIds, cells, cellWidth, viewMode]);
 
   if (!barPosition) return null;
 

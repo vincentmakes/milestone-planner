@@ -30,6 +30,8 @@ import type {
 } from '@/types';
 import { buildClosureIndex } from '@/utils/siteClosure';
 import type { ClosureIndex } from '@/utils/siteClosure';
+import { indexAbsenceTypes } from '@/utils/recurringVacation';
+import type { AbsenceTypesById } from '@/utils/recurringVacation';
 
 // =============================================================================
 // STATE INTERFACE
@@ -356,6 +358,21 @@ export const selectStaffSiteIds = (state: AppState): Map<number, Set<number>> =>
     }
   }
   staffSiteIdsCache = { staff: state.staff, map };
+  return map;
+};
+
+/**
+ * Absence types keyed by id. Memoised on the `absenceTypes` array, so every
+ * assignment bar, resource card and staff row shares one Map instead of
+ * rebuilding it per render.
+ */
+let absenceTypesByIdCache: { types: AbsenceType[]; map: AbsenceTypesById } | null = null;
+export const selectAbsenceTypesById = (state: AppState): AbsenceTypesById => {
+  if (absenceTypesByIdCache && absenceTypesByIdCache.types === state.absenceTypes) {
+    return absenceTypesByIdCache.map;
+  }
+  const map = indexAbsenceTypes(state.absenceTypes);
+  absenceTypesByIdCache = { types: state.absenceTypes, map };
   return map;
 };
 
