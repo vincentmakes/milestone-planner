@@ -12,7 +12,8 @@
  * app-wide keyboard shortcuts.
  */
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
+import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import { useViewStore } from '@/stores/viewStore';
 import { useSiteTagFilter } from '@/hooks/useTagFilter';
 import { groupedTags } from '@/utils/tags';
@@ -42,26 +43,8 @@ export function TagFilterDropdown({ compact = false, align = 'left', anchor = 't
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelId = useId();
 
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: MouseEvent) => {
-      if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      // Close only this dropdown; capture phase so it wins ahead of the
-      // app-wide shortcut handler and any enclosing dialog.
-      e.stopPropagation();
-      setOpen(false);
-      triggerRef.current?.focus();
-    };
-    document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown, true);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown, true);
-    };
-  }, [open]);
+  const close = () => setOpen(false);
+  const { onBlur: handleBlur } = useDismissableOverlay({ open, onClose: close, wrapperRef, triggerRef });
 
   const sections = useMemo(() => groupedTags(siteTags, tagGroups), [siteTags, tagGroups]);
 
@@ -94,14 +77,6 @@ export function TagFilterDropdown({ compact = false, align = 'left', anchor = 't
   };
 
   const label = active ? `Tags (${activeCount} selected)` : 'Tags';
-
-  // Tab out closes the panel. A null relatedTarget (focus dropped to the
-  // body, e.g. a mousedown on a label inside the panel) is left to the
-  // outside-mousedown handler, or a click on an option text would close it.
-  const handleBlur = (e: React.FocusEvent<HTMLDivElement>) => {
-    const next = e.relatedTarget as Node | null;
-    if (open && next && !wrapperRef.current?.contains(next)) setOpen(false);
-  };
 
   return (
     <div

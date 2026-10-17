@@ -3,7 +3,8 @@
  * Left panel containing the project tree hierarchy with custom columns support
  */
 
-import { forwardRef, useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
+import { forwardRef, useState, useCallback, useRef, useMemo } from 'react';
 import { ProjectRow } from './ProjectRow';
 import { SectionRow } from './SectionRow';
 import { GroupByDropdown } from './GroupByDropdown';
@@ -63,6 +64,13 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
     const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false);
     const [editingColumn, setEditingColumn] = useState<CustomColumn | null>(null);
     const visibilityDropdownRef = useRef<HTMLDivElement>(null);
+    const visibilityTriggerRef = useRef<HTMLButtonElement>(null);
+    const { onBlur: onVisibilityBlur } = useDismissableOverlay({
+      open: showVisibilityDropdown,
+      onClose: () => setShowVisibilityDropdown(false),
+      wrapperRef: visibilityDropdownRef,
+      triggerRef: visibilityTriggerRef,
+    });
     
     const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
     // Custom-column definitions are admin-only on the backend (require_admin)
@@ -72,19 +80,6 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
     const visibleColumns = showAllCustomColumns
       ? customColumns.filter(col => !hiddenCustomColumns.has(col.id))
       : [];
-    
-    // Close dropdown when clicking outside
-    useEffect(() => {
-      const handleClickOutside = (e: MouseEvent) => {
-        if (visibilityDropdownRef.current && !visibilityDropdownRef.current.contains(e.target as Node)) {
-          setShowVisibilityDropdown(false);
-        }
-      };
-      if (showVisibilityDropdown) {
-        document.addEventListener('mousedown', handleClickOutside);
-      }
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [showVisibilityDropdown]);
     
     const handleManageColumns = () => {
       setShowManagerModal(true);
@@ -173,8 +168,10 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
 
                   {/* Column visibility dropdown (only if columns exist) */}
                   {customColumns.length > 0 && (
-                    <div ref={visibilityDropdownRef} className={styles.visibilityWrapper}>
+                    <div ref={visibilityDropdownRef} className={styles.visibilityWrapper} onBlur={onVisibilityBlur}>
                       <button 
+                        ref={visibilityTriggerRef}
+                        type="button"
                         className={`${styles.toggleBtn} ${hiddenCount > 0 || !showAllCustomColumns ? styles.hasHidden : ''}`}
                         onClick={() => setShowVisibilityDropdown(!showVisibilityDropdown)}
                         title="Column Visibility"
@@ -198,7 +195,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                       </button>
                     
                       {showVisibilityDropdown && (
-                        <div className={styles.visibilityDropdown}>
+                        <div className={styles.visibilityDropdown} role="dialog" aria-label="Column visibility">
                           <div className={styles.visibilityHeader}>
                             <span>Column Visibility</span>
                           </div>

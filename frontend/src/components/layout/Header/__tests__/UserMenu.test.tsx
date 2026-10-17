@@ -44,6 +44,23 @@ beforeEach(() => {
   });
 });
 
+describe('UserMenu dismissal', () => {
+  it('is named "Account menu", closes on Escape with focus back on it, and on Tab out', () => {
+    render(<UserMenu />);
+    const button = screen.getByRole('button', { name: 'Account menu' });
+    fireEvent.click(button);
+    expect(screen.getByRole('button', { name: 'My absences' })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('button', { name: 'My absences' })).not.toBeInTheDocument();
+    expect(button).toHaveFocus();
+
+    fireEvent.click(button);
+    fireEvent.blur(button.parentElement as HTMLElement, { relatedTarget: document.body });
+    expect(screen.queryByRole('button', { name: 'My absences' })).not.toBeInTheDocument();
+  });
+});
+
 describe('UserMenu version', () => {
   it('does not ask the server until the menu is opened', () => {
     render(<UserMenu />);

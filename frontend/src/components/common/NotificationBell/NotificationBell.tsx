@@ -2,14 +2,15 @@
  * Notification bell + panel.
  *
  * This is a popover, not a modal: click-outside-to-close is the correct
- * behaviour here (the no-backdrop-close rule covers dialogs only). The
- * click-outside pattern follows the panels dropdown in Header.tsx.
+ * behaviour here (the no-backdrop-close rule covers dialogs only). Dismissal
+ * (outside click, Tab out, Escape) is the shared `useDismissableOverlay`.
  *
  * Server notifications and browser-derived due reminders are merged for
  * display; only the former are marked read against the API.
  */
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef } from 'react';
+import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
@@ -59,6 +60,8 @@ function relativeTime(iso: string): string {
 
 export function NotificationBell() {
   const panelRef = useRef<HTMLDivElement>(null);
+  const bellRef = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
 
   const items = useNotificationStore((s) => s.items);
   const unreadCount = useNotificationStore((s) => s.unreadCount);
@@ -100,17 +103,12 @@ export function NotificationBell() {
     return () => window.removeEventListener('focus', onFocus);
   }, [refresh]);
 
-  // Click outside closes the popover (same pattern as the Header panels menu).
-  useEffect(() => {
-    if (!panelOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        setPanelOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [panelOpen, setPanelOpen]);
+  const { onBlur } = useDismissableOverlay({
+    open: panelOpen,
+    onClose: () => setPanelOpen(false),
+    wrapperRef: panelRef,
+    triggerRef: bellRef,
+  });
 
   const merged = useMemo(() => {
     // Derived reminders first: they are actionable now.
@@ -161,16 +159,19 @@ export function NotificationBell() {
   if (!currentUser) return null;
 
   return (
-    <div ref={panelRef} className={styles.wrapper}>
+    <div ref={panelRef} className={styles.wrapper} onBlur={onBlur}>
       <button
+        ref={bellRef}
         type="button"
         className={`${styles.bell} ${totalBadge > 0 ? styles.hasUnread : ''}`}
         onClick={togglePanel}
         aria-label={`Notifications${totalBadge > 0 ? ` (${totalBadge} unread)` : ''}`}
         aria-expanded={panelOpen}
+        aria-haspopup="dialog"
+        aria-controls={panelOpen ? panelId : undefined}
         title="Notifications"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
@@ -180,7 +181,7 @@ export function NotificationBell() {
       </button>
 
       {panelOpen && (
-        <div className={styles.panel} role="dialog" aria-label="Notifications">
+        <div id={panelId} className={styles.panel} role="dialog" aria-label="Notifications">
           <div className={styles.panelHeader}>
             <span className={styles.panelTitle}>Notifications</span>
             {unreadCount > 0 && (

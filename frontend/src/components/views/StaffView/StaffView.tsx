@@ -9,6 +9,8 @@
  */
 
 import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
+import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
+
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -59,6 +61,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const timelineBodyRef = useRef<HTMLDivElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
+  const filterTriggerRef = useRef<HTMLButtonElement>(null);
   
   // Refs for measuring actual row heights (keyed by staff ID)
   const rowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -193,22 +196,12 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
     return filtered;
   }, [allSiteStaff, selectedRoles, selectedSkills]);
   
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
-        setIsFilterOpen(false);
-      }
-    };
-    
-    if (isFilterOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isFilterOpen]);
+  const { onBlur: onFilterBlur } = useDismissableOverlay({
+    open: isFilterOpen,
+    onClose: () => setIsFilterOpen(false),
+    wrapperRef: filterRef,
+    triggerRef: filterTriggerRef,
+  });
   
   // Toggle role selection
   const toggleRole = (role: string) => {
@@ -645,12 +638,14 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
           </div>
           
           {/* Filter Dropdown */}
-          <div ref={filterRef} className={styles.filterWrapper}>
+          <div ref={filterRef} className={styles.filterWrapper} onBlur={onFilterBlur}>
             <button 
+              ref={filterTriggerRef}
+              type="button"
               className={`${styles.filterTrigger} ${hasActiveFilters ? styles.hasFilters : ''}`}
               onClick={() => setIsFilterOpen(!isFilterOpen)}
               aria-expanded={isFilterOpen}
-              aria-haspopup="true"
+              aria-haspopup="dialog"
             >
               <svg
                 width="14"
@@ -659,6 +654,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
+                aria-hidden="true"
               >
                 <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
               </svg>
@@ -677,7 +673,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
             </button>
             
             {isFilterOpen && (
-              <div className={styles.filterDropdown} style={filterDropdownStyle}>
+              <div className={styles.filterDropdown} style={filterDropdownStyle} role="dialog" aria-label="Filter staff">
                 {/* Clear all button */}
                 {hasActiveFilters && (
                   <div className={styles.filterActions}>

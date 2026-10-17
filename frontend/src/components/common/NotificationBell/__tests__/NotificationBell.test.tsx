@@ -119,6 +119,21 @@ describe('NotificationBell', () => {
     expect(bell()).toHaveAccessibleName('Notifications');
   });
 
+  it('owns its panel (aria-controls) and closes it on Escape with focus back on the bell', async () => {
+    render(<NotificationBell />);
+    await screen.findByRole('button', { name: /^Notifications/ });
+    expect(bell()).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(bell()).not.toHaveAttribute('aria-controls');
+
+    fireEvent.click(bell());
+    const panel = screen.getByRole('dialog', { name: 'Notifications' });
+    expect(bell()).toHaveAttribute('aria-controls', panel.id);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Notifications' })).not.toBeInTheDocument();
+    expect(bell()).toHaveFocus();
+  });
+
   it('lists notifications with relative times and an empty state', async () => {
     vi.mocked(getNotifications).mockResolvedValue([
       note({ id: 1, created_at: new Date().toISOString(), body: null }),

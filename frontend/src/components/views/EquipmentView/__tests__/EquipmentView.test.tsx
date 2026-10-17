@@ -142,6 +142,18 @@ describe('EquipmentView panel', () => {
 });
 
 describe('EquipmentView expanded rows', () => {
+  it('opens the type filter as a dialog that Escape closes, focus back on the trigger', () => {
+    seed();
+    render(<EquipmentView />);
+    const trigger = screen.getByRole('button', { name: /All Types/ });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: 'Filter equipment' })).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Filter equipment' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
   it('lists bookings with their level and the project/phase names', () => {
     seed();
     render(<EquipmentView />);

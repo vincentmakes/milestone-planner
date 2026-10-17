@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useAuth } from '@/hooks/useAuth';
@@ -8,26 +9,18 @@ import styles from './UserMenu.module.css';
 export function UserMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const currentUser = useAppStore((s) => s.currentUser);
   const { logout } = useAuth();
   const openModal = useUIStore((s) => s.openModal);
   const [version, setVersion] = useState<string | null>(null);
 
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isOpen]);
+  const { onBlur } = useDismissableOverlay({
+    open: isOpen,
+    onClose: () => setIsOpen(false),
+    wrapperRef: menuRef,
+    triggerRef,
+  });
 
   useEffect(() => {
     if (!isOpen) return;
@@ -56,14 +49,17 @@ export function UserMenu() {
   const initials = `${currentUser.first_name?.[0] || ''}${currentUser.last_name?.[0] || ''}`.toUpperCase() || '?';
 
   return (
-    <div ref={menuRef} className={styles.wrapper}>
+    <div ref={menuRef} className={styles.wrapper} onBlur={onBlur}>
       <button
+        ref={triggerRef}
+        type="button"
         className={styles.trigger}
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
         aria-haspopup="true"
+        aria-label="Account menu"
       >
-        <span className={styles.avatar}>{initials}</span>
+        <span className={styles.avatar} aria-hidden="true">{initials}</span>
         <svg
           className={`${styles.chevron} ${isOpen ? styles.open : ''}`}
           width="12"
@@ -72,6 +68,7 @@ export function UserMenu() {
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
+          aria-hidden="true"
         >
           <polyline points="6 9 12 15 18 9" />
         </svg>

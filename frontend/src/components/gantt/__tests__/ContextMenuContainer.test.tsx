@@ -103,13 +103,13 @@ describe('ContextMenuContainer subphase target', () => {
   it('enables "Assign me" on a depth-2 subphase for a plain user', () => {
     render(<ContextMenuContainer />);
 
-    expect(screen.getByRole('button', { name: /assign me/i })).toBeEnabled();
+    expect(screen.getByRole('menuitem', { name: /assign me/i })).toBeEnabled();
   });
 
   it('books the nested subphase with its own dates', async () => {
     render(<ContextMenuContainer />);
 
-    fireEvent.click(screen.getByRole('button', { name: /assign me/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /assign me/i }));
 
     await waitFor(() => expect(createStaffAssignment).toHaveBeenCalledTimes(1));
     expect(createStaffAssignment).toHaveBeenCalledWith(
@@ -137,7 +137,7 @@ describe('ContextMenuContainer subphase target', () => {
 
     render(<ContextMenuContainer />);
 
-    expect(screen.getByRole('button', { name: /assigned to me/i })).toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: /assigned to me/i })).toBeDisabled();
   });
 });
 
@@ -162,7 +162,7 @@ describe('ContextMenuContainer deletes', () => {
     useUIStore.getState().showContextMenu(kind, id, 10, 10, project.id, phase.id);
 
     render(<ContextMenuContainer />);
-    fireEvent.click(screen.getByRole('button', { name: label }));
+    fireEvent.click(screen.getByRole('menuitem', { name: label }));
 
     await waitFor(() => expect(recoverFromPersistFailure).toHaveBeenCalledWith(`Delete ${kind}`, error));
     await waitFor(() => expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('Server unavailable')));

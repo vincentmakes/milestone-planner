@@ -1,9 +1,14 @@
 /**
  * ContextMenu
- * Right-click context menu for quick actions
+ * Right-click context menu for quick actions.
+ *
+ * A `role="menu"` of `menuitem`s. Dismissal (outside click, Tab out, Escape in
+ * the capture phase, so only the menu closes) is the shared
+ * `useDismissableOverlay`; every item click closes the menu too.
  */
 
 import { useEffect, useRef } from 'react';
+import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import styles from './ContextMenu.module.css';
 
 export interface ContextMenuItem {
@@ -26,28 +31,7 @@ interface ContextMenuProps {
 
 export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [onClose]);
+  const { onBlur } = useDismissableOverlay({ open: true, onClose, wrapperRef: menuRef });
 
   // Adjust position to stay within viewport
   useEffect(() => {
@@ -77,15 +61,19 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
       ref={menuRef}
       className={styles.menu}
       style={{ left: x, top: y }}
+      role="menu"
+      onBlur={onBlur}
     >
       {items.map((item, index) => {
         if (item.divider) {
-          return <div key={index} className={styles.divider} />;
+          return <div key={index} className={styles.divider} role="separator" />;
         }
 
         return (
           <button
             key={index}
+            type="button"
+            role="menuitem"
             className={`${styles.item} ${item.danger ? styles.danger : ''} ${item.disabled ? styles.disabled : ''}`}
             onClick={() => {
               if (!item.disabled) {
