@@ -11,6 +11,8 @@ export interface ContextMenuItem {
   icon?: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
+  /** Tooltip, e.g. why the item is disabled */
+  title?: string;
   danger?: boolean;
   divider?: boolean;
 }
@@ -92,6 +94,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
               }
             }}
             disabled={item.disabled}
+            title={item.title}
           >
             {item.icon && <span className={styles.icon}>{item.icon}</span>}
             <span className={styles.label}>{item.label}</span>

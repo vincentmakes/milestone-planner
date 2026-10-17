@@ -11,6 +11,11 @@
  * the existing reload-on-error pattern in useDragAndDrop / useResize) and the
  * undo history is cleared (snapshots become invalid relative to server truth).
  *
+ * What-If: the undo history is cleared when What-If mode is entered and when
+ * it is left (whatIfStore), so inside the sandbox the stacks only hold
+ * sandbox-era snapshots; the writes an undo produces there are queued like any
+ * other What-If edit. No undo entry ever crosses the sandbox boundary.
+ *
  * Limitation: snapshots can become stale if WebSocket events apply external
  * mutations between the recorded action and the undo. We accept that risk
  * here — affected items will simply be re-asserted to the snapshot's values.
@@ -19,7 +24,7 @@ import { useCallback } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { diffProjects, savePendingUpdates } from '@/components/gantt/utils';
-import { loadAllProjects } from '@/api/endpoints/projects';
+import { recoverFromPersistFailure } from '@/utils/persistFailure';
 
 export function useUndoRedo() {
   const canUndo = useUndoStore((s) => s.canUndo);
@@ -38,10 +43,7 @@ export function useUndoRedo() {
     try {
       await savePendingUpdates(updates);
     } catch (err) {
-      console.error('Failed to persist undo:', err);
-      const reloaded = await loadAllProjects();
-      setProjects(reloaded);
-      useUndoStore.getState().clear();
+      await recoverFromPersistFailure('Undo/redo: undo', err);
     }
   }, []);
 
@@ -58,10 +60,7 @@ export function useUndoRedo() {
     try {
       await savePendingUpdates(updates);
     } catch (err) {
-      console.error('Failed to persist redo:', err);
-      const reloaded = await loadAllProjects();
-      setProjects(reloaded);
-      useUndoStore.getState().clear();
+      await recoverFromPersistFailure('Undo/redo: redo', err);
     }
   }, []);
 

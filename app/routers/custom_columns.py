@@ -6,7 +6,7 @@ Endpoints for managing custom column definitions and values.
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -209,6 +209,61 @@ async def create_custom_column(
     )
 
 
+# Registered before PATCH /{column_id}: Starlette matches routes in order, and
+# "/reorder" would otherwise be captured by the parameterised route and fail
+# the int conversion with a 422.
+@router.patch("/reorder", response_model=list[CustomColumnResponse])
+async def reorder_custom_columns(
+    request: Request,
+    data: CustomColumnReorderRequest,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(require_admin),
+):
+    """
+    Reorder custom columns by providing a list of column IDs in the new order.
+    """
+    # Get all columns that need to be reordered
+    stmt = select(CustomColumn).where(CustomColumn.id.in_(data.column_order))
+    result = await db.execute(stmt)
+    columns = {col.id: col for col in result.scalars().all()}
+
+    # Update display_order based on position in the list
+    for index, column_id in enumerate(data.column_order):
+        if column_id in columns:
+            columns[column_id].display_order = index
+
+    await db.commit()
+
+    # Return updated columns
+    stmt = (
+        select(CustomColumn)
+        .where(CustomColumn.id.in_(data.column_order))
+        .order_by(CustomColumn.display_order)
+    )
+    result = await db.execute(stmt)
+    updated_columns = result.scalars().all()
+
+    return [
+        CustomColumnResponse(
+            id=col.id,
+            name=col.name,
+            column_type=col.column_type,
+            list_options=col.parsed_list_options if col.list_options else None,
+            site_id=col.site_id,
+            display_order=col.display_order,
+            width=col.width,
+            created_at=col.created_at,
+            updated_at=col.updated_at,
+        )
+        for col in updated_columns
+    ]
+
+
+# ---------------------------------------------------------
+# Value Management Endpoints
+# ---------------------------------------------------------
+
+
 @router.patch("/{column_id}", response_model=CustomColumnResponse)
 async def update_custom_column(
     request: Request,
@@ -282,56 +337,18 @@ async def delete_custom_column(
     return {"success": True, "message": "Custom column deleted"}
 
 
-@router.patch("/reorder", response_model=list[CustomColumnResponse])
-async def reorder_custom_columns(
-    request: Request,
-    data: CustomColumnReorderRequest,
-    db: AsyncSession = Depends(get_db),
-    _user=Depends(require_admin),
-):
-    """
-    Reorder custom columns by providing a list of column IDs in the new order.
-    """
-    # Get all columns that need to be reordered
-    stmt = select(CustomColumn).where(CustomColumn.id.in_(data.column_order))
-    result = await db.execute(stmt)
-    columns = {col.id: col for col in result.scalars().all()}
-
-    # Update display_order based on position in the list
-    for index, column_id in enumerate(data.column_order):
-        if column_id in columns:
-            columns[column_id].display_order = index
-
-    await db.commit()
-
-    # Return updated columns
-    stmt = (
-        select(CustomColumn)
-        .where(CustomColumn.id.in_(data.column_order))
-        .order_by(CustomColumn.display_order)
-    )
-    result = await db.execute(stmt)
-    updated_columns = result.scalars().all()
-
-    return [
-        CustomColumnResponse(
-            id=col.id,
-            name=col.name,
-            column_type=col.column_type,
-            list_options=col.parsed_list_options if col.list_options else None,
-            site_id=col.site_id,
-            display_order=col.display_order,
-            width=col.width,
-            created_at=col.created_at,
-            updated_at=col.updated_at,
-        )
-        for col in updated_columns
-    ]
-
-
-# ---------------------------------------------------------
-# Value Management Endpoints
-# ---------------------------------------------------------
+def _validate_value(column: CustomColumn, value: str | None) -> None:
+    """400 unless ``value`` fits the column type (null always clears)."""
+    if value is None:
+        return
+    if column.column_type == "boolean" and value.lower() not in ("true", "false"):
+        raise HTTPException(status_code=400, detail="Boolean values must be 'true' or 'false'")
+    if column.column_type == "list":
+        options = column.parsed_list_options
+        if value not in options:
+            raise HTTPException(
+                status_code=400, detail=f"Value must be one of: {', '.join(options)}"
+            )
 
 
 @router.put("/values", response_model=CustomColumnValueResponse)
@@ -353,18 +370,7 @@ async def set_custom_column_value(
     if not column:
         raise HTTPException(status_code=404, detail="Custom column not found")
 
-    # Validate value for boolean type
-    if column.column_type == "boolean" and data.value is not None:
-        if data.value.lower() not in ("true", "false"):
-            raise HTTPException(status_code=400, detail="Boolean values must be 'true' or 'false'")
-
-    # Validate value for list type
-    if column.column_type == "list" and data.value is not None:
-        options = column.parsed_list_options
-        if data.value not in options:
-            raise HTTPException(
-                status_code=400, detail=f"Value must be one of: {', '.join(options)}"
-            )
+    _validate_value(column, data.value)
 
     # Check if value already exists
     stmt = select(CustomColumnValue).where(
@@ -415,49 +421,64 @@ async def set_custom_column_values_batch(
     """
     Bulk update custom column values.
     Used for drag-fill and other multi-cell operations.
+
+    Values are validated exactly like the single write (400 for the whole
+    batch, nothing written); updates for a column that no longer exists are
+    skipped, as before. At most MAX_BATCH_UPDATES updates per request
+    (schema-enforced, 422); one query loads the columns and one query per
+    column the existing values. A key repeated in the batch is written once
+    (last one wins).
     """
-    results = []
+    # Last write wins for a repeated (column, entity) key.
+    updates: dict[tuple[int, str, int], str | None] = {}
+    for item in data.updates:
+        updates[(item.custom_column_id, item.entity_type, item.entity_id)] = item.value
 
-    for update in data.updates:
-        # Verify the column exists
-        col_stmt = select(CustomColumn).where(CustomColumn.id == update.custom_column_id)
-        col_result = await db.execute(col_stmt)
-        column = col_result.scalar_one_or_none()
+    column_ids = sorted({key[0] for key in updates})
+    columns: dict[int, CustomColumn] = {}
+    if column_ids:
+        col_result = await db.execute(select(CustomColumn).where(CustomColumn.id.in_(column_ids)))
+        columns = {col.id: col for col in col_result.scalars().all()}
 
-        if not column:
+    # Validate everything before writing anything.
+    for (column_id, _entity_type, _entity_id), value in updates.items():
+        column = columns.get(column_id)
+        if column is not None:
+            _validate_value(column, value)
+
+    results: list[CustomColumnValue] = []
+    for column_id in column_ids:
+        if column_id not in columns:
             continue  # Skip invalid columns
-
-        # Check if value already exists
-        stmt = select(CustomColumnValue).where(
-            and_(
-                CustomColumnValue.custom_column_id == update.custom_column_id,
-                CustomColumnValue.entity_type == update.entity_type,
-                CustomColumnValue.entity_id == update.entity_id,
+        keys = [(etype, eid) for (cid, etype, eid) in updates if cid == column_id]
+        existing_result = await db.execute(
+            select(CustomColumnValue).where(
+                CustomColumnValue.custom_column_id == column_id,
+                tuple_(CustomColumnValue.entity_type, CustomColumnValue.entity_id).in_(keys),
             )
         )
-        result = await db.execute(stmt)
-        existing = result.scalar_one_or_none()
+        existing = {(v.entity_type, v.entity_id): v for v in existing_result.scalars().all()}
 
-        if existing:
-            existing.value = update.value
-            value_obj = existing
-        else:
-            value_obj = CustomColumnValue(
-                custom_column_id=update.custom_column_id,
-                entity_type=update.entity_type,
-                entity_id=update.entity_id,
-                value=update.value,
-            )
-            db.add(value_obj)
+        for entity_type, entity_id in keys:
+            value = updates[(column_id, entity_type, entity_id)]
+            value_obj = existing.get((entity_type, entity_id))
+            if value_obj is not None:
+                value_obj.value = value
+            else:
+                value_obj = CustomColumnValue(
+                    custom_column_id=column_id,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                    value=value,
+                )
+                db.add(value_obj)
+            results.append(value_obj)
 
-        await db.flush()
-        results.append(value_obj)
-
+    # The session does not expire on commit and the timestamps are Python-side
+    # defaults, so ids and timestamps are on the objects after the flush --
+    # no per-row refresh.
+    await db.flush()
     await db.commit()
-
-    # Refresh all objects
-    for obj in results:
-        await db.refresh(obj)
 
     return [
         CustomColumnValueResponse(

@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import { createOrganization } from '@/api';
 import { useEscapeKey } from '@/hooks';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import styles from './AdminModal.module.css';
 
 interface CreateOrganizationModalProps {
@@ -17,7 +18,7 @@ export function CreateOrganizationModal({ onClose, onCreated }: CreateOrganizati
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [description, setDescription] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
 
   const generateSlug = (name: string) => {
@@ -51,7 +52,7 @@ export function CreateOrganizationModal({ onClose, onCreated }: CreateOrganizati
       return;
     }
 
-    setIsSubmitting(true);
+    if (!beginSubmit()) return;
 
     try {
       await createOrganization({
@@ -63,7 +64,7 @@ export function CreateOrganizationModal({ onClose, onCreated }: CreateOrganizati
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create organization');
     } finally {
-      setIsSubmitting(false);
+      endSubmit();
     }
   };
 

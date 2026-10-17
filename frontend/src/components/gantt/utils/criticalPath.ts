@@ -7,6 +7,7 @@
  */
 
 import type { Project, Subphase, Dependency } from '@/types';
+import { parseLocalDate, daysBetweenDateStrings } from '@/utils/date';
 
 // Represents a node in the project network
 interface NetworkNode {
@@ -30,10 +31,9 @@ interface NetworkNode {
  * Calculate the duration in days between two dates
  */
 function calculateDuration(startDate: string, endDate: string): number {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const diffTime = end.getTime() - start.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  // Calendar days on the strings: `new Date('YYYY-MM-DD')` is UTC midnight
+  // and shifts a day west of UTC.
+  const diffDays = daysBetweenDateStrings(startDate, endDate);
   return Math.max(1, diffDays + 1); // Include both start and end day, minimum 1 day
 }
 
@@ -41,9 +41,11 @@ function calculateDuration(startDate: string, endDate: string): number {
  * Convert a date string to a day number (days since project start)
  */
 function dateToDayNumber(dateStr: string, projectStartDate: Date): number {
-  const date = new Date(dateStr);
+  const date = parseLocalDate(dateStr);
   const diffTime = date.getTime() - projectStartDate.getTime();
-  return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  // Rounded, not floored: both are local midnights, so a DST switch in
+  // between makes the span 23h/25h short of whole days.
+  return Math.round(diffTime / (1000 * 60 * 60 * 24));
 }
 
 /**
@@ -59,8 +61,8 @@ function buildNetworkNodes(project: Project, projectStartDate: Date): NetworkNod
       type: 'phase',
       entityId: phase.id,
       name: phase.name,
-      startDate: new Date(phase.start_date),
-      endDate: new Date(phase.end_date),
+      startDate: parseLocalDate(phase.start_date),
+      endDate: parseLocalDate(phase.end_date),
       duration: calculateDuration(phase.start_date, phase.end_date),
       dependencies: phase.dependencies ?? [],
       earlyStart: dateToDayNumber(phase.start_date, projectStartDate),
@@ -78,8 +80,8 @@ function buildNetworkNodes(project: Project, projectStartDate: Date): NetworkNod
           type: 'subphase',
           entityId: subphase.id,
           name: subphase.name,
-          startDate: new Date(subphase.start_date),
-          endDate: new Date(subphase.end_date),
+          startDate: parseLocalDate(subphase.start_date),
+          endDate: parseLocalDate(subphase.end_date),
           duration: calculateDuration(subphase.start_date, subphase.end_date),
           dependencies: subphase.dependencies ?? [],
           earlyStart: dateToDayNumber(subphase.start_date, projectStartDate),
@@ -103,113 +105,214 @@ function buildNetworkNodes(project: Project, projectStartDate: Date): NetworkNod
   return nodes;
 }
 
+/** A dependency edge between two resolved network nodes */
+interface NetworkEdge {
+  pred: NetworkNode;
+  succ: NetworkNode;
+  dep: Dependency;
+}
+
 /**
- * Perform forward pass to calculate early start and early finish times
+ * Resolve a dependency's predecessor. Phase and subphase ids come from
+ * separate sequences: an entry carrying `entity` names its predecessor's
+ * kind exactly (never falling back to the other kind); legacy entries
+ * without it try a phase id first (same rule as `resolveDependencyPredecessor`).
  */
-function forwardPass(nodes: NetworkNode[], nodeMap: Map<string, NetworkNode>): void {
-  // Sort nodes by early start (which is initially based on actual start dates)
-  const sortedNodes = [...nodes].sort((a, b) => a.earlyStart - b.earlyStart);
-  
-  for (const node of sortedNodes) {
-    // Calculate early finish
-    node.earlyFinish = node.earlyStart + node.duration - 1;
-    
-    // For nodes with dependencies, early start must be after all predecessors finish
+function resolvePredecessor(dep: Dependency, nodeMap: Map<string, NetworkNode>): NetworkNode | undefined {
+  if (dep.entity === 'phase' || dep.entity === 'subphase') {
+    return nodeMap.get(`${dep.entity}-${dep.id}`);
+  }
+  return nodeMap.get(`phase-${dep.id}`) || nodeMap.get(`subphase-${dep.id}`);
+}
+
+/** Every resolvable dependency as a predecessor -> successor edge (self-links dropped) */
+function buildEdges(nodes: NetworkNode[], nodeMap: Map<string, NetworkNode>): NetworkEdge[] {
+  const edges: NetworkEdge[] = [];
+  for (const node of nodes) {
     for (const dep of node.dependencies) {
-      const predecessorId = `phase-${dep.id}`;
-      const predecessorIdSub = `subphase-${dep.id}`;
-      const predNode = nodeMap.get(predecessorId) || nodeMap.get(predecessorIdSub);
-      
-      if (predNode) {
-        let requiredStart: number;
-        const lag = dep.lag ?? 0;
-        
-        switch (dep.type) {
-          case 'FS': // Finish-to-Start
-            requiredStart = predNode.earlyFinish + 1 + lag;
-            break;
-          case 'SS': // Start-to-Start
-            requiredStart = predNode.earlyStart + lag;
-            break;
-          case 'FF': // Finish-to-Finish
-            requiredStart = predNode.earlyFinish - node.duration + 1 + lag;
-            break;
-          case 'SF': // Start-to-Finish
-            requiredStart = predNode.earlyStart - node.duration + 1 + lag;
-            break;
-          default:
-            requiredStart = predNode.earlyFinish + 1 + lag;
+      const pred = resolvePredecessor(dep, nodeMap);
+      if (pred && pred !== node) edges.push({ pred, succ: node, dep });
+    }
+  }
+  return edges;
+}
+
+/**
+ * Ids of the nodes that sit on a dependency cycle (strongly connected
+ * components with more than one node, Tarjan's algorithm). CPM is undefined
+ * on a cycle, so these nodes are left out of the calculation.
+ */
+function findCycleMembers(nodes: NetworkNode[], edges: NetworkEdge[]): Set<string> {
+  const successors = new Map<string, string[]>();
+  for (const { pred, succ } of edges) {
+    if (!successors.has(pred.id)) successors.set(pred.id, []);
+    successors.get(pred.id)!.push(succ.id);
+  }
+
+  const index = new Map<string, number>();
+  const lowLink = new Map<string, number>();
+  const onStack = new Set<string>();
+  const stack: string[] = [];
+  const members = new Set<string>();
+  let counter = 0;
+
+  // Iterative DFS so a long dependency chain cannot overflow the call stack
+  for (const root of nodes) {
+    if (index.has(root.id)) continue;
+    const work: Array<{ id: string; next: number }> = [{ id: root.id, next: 0 }];
+    index.set(root.id, counter);
+    lowLink.set(root.id, counter);
+    counter++;
+    stack.push(root.id);
+    onStack.add(root.id);
+
+    while (work.length > 0) {
+      const frame = work[work.length - 1];
+      const succs = successors.get(frame.id) ?? [];
+      if (frame.next < succs.length) {
+        const w = succs[frame.next++];
+        if (!index.has(w)) {
+          index.set(w, counter);
+          lowLink.set(w, counter);
+          counter++;
+          stack.push(w);
+          onStack.add(w);
+          work.push({ id: w, next: 0 });
+        } else if (onStack.has(w)) {
+          lowLink.set(frame.id, Math.min(lowLink.get(frame.id)!, index.get(w)!));
         }
-        
-        if (requiredStart > node.earlyStart) {
-          node.earlyStart = requiredStart;
-          node.earlyFinish = node.earlyStart + node.duration - 1;
-        }
+        continue;
+      }
+
+      // All successors visited: close the component rooted here, if any
+      work.pop();
+      if (work.length > 0) {
+        const parent = work[work.length - 1].id;
+        lowLink.set(parent, Math.min(lowLink.get(parent)!, lowLink.get(frame.id)!));
+      }
+      if (lowLink.get(frame.id) === index.get(frame.id)) {
+        const component: string[] = [];
+        let w: string;
+        do {
+          w = stack.pop()!;
+          onStack.delete(w);
+          component.push(w);
+        } while (w !== frame.id);
+        if (component.length > 1) component.forEach((id) => members.add(id));
       }
     }
+  }
+
+  return members;
+}
+
+/**
+ * Topological order of the nodes (Kahn's algorithm). Ties are broken by
+ * actual start date, then by tree order, so the result is deterministic.
+ * The edges must be acyclic (cycle members removed beforehand).
+ */
+function topologicalOrder(nodes: NetworkNode[], edges: NetworkEdge[]): NetworkNode[] {
+  const position = new Map<string, number>();
+  nodes.forEach((n, i) => position.set(n.id, i));
+  const byStart = (a: NetworkNode, b: NetworkNode) =>
+    a.earlyStart - b.earlyStart || position.get(a.id)! - position.get(b.id)!;
+
+  const inDegree = new Map<string, number>();
+  const outgoing = new Map<string, NetworkNode[]>();
+  for (const n of nodes) inDegree.set(n.id, 0);
+  for (const { pred, succ } of edges) {
+    inDegree.set(succ.id, (inDegree.get(succ.id) ?? 0) + 1);
+    if (!outgoing.has(pred.id)) outgoing.set(pred.id, []);
+    outgoing.get(pred.id)!.push(succ);
+  }
+
+  const ready = nodes.filter((n) => inDegree.get(n.id) === 0).sort(byStart);
+  const order: NetworkNode[] = [];
+  while (ready.length > 0) {
+    const node = ready.shift()!;
+    order.push(node);
+    let added = false;
+    for (const succ of outgoing.get(node.id) ?? []) {
+      const remaining = inDegree.get(succ.id)! - 1;
+      inDegree.set(succ.id, remaining);
+      if (remaining === 0) {
+        ready.push(succ);
+        added = true;
+      }
+    }
+    if (added) ready.sort(byStart);
+  }
+  return order;
+}
+
+/**
+ * Forward pass over a topological order: every predecessor is final before
+ * its successors are visited, so constraints propagate down whole chains.
+ * Early start begins at the item's actual start date ("start no earlier
+ * than") and is pushed later by its predecessors.
+ */
+function forwardPass(order: NetworkNode[], incoming: Map<string, NetworkEdge[]>): void {
+  for (const node of order) {
+    for (const { pred, dep } of incoming.get(node.id) ?? []) {
+      const lag = dep.lag ?? 0;
+      let requiredStart: number;
+
+      switch (dep.type) {
+        case 'SS': // Start-to-Start
+          requiredStart = pred.earlyStart + lag;
+          break;
+        case 'FF': // Finish-to-Finish
+          requiredStart = pred.earlyFinish - node.duration + 1 + lag;
+          break;
+        case 'SF': // Start-to-Finish
+          requiredStart = pred.earlyStart - node.duration + 1 + lag;
+          break;
+        case 'FS': // Finish-to-Start
+        default:
+          requiredStart = pred.earlyFinish + 1 + lag;
+      }
+
+      if (requiredStart > node.earlyStart) {
+        node.earlyStart = requiredStart;
+      }
+    }
+    node.earlyFinish = node.earlyStart + node.duration - 1;
   }
 }
 
 /**
- * Perform backward pass to calculate late start and late finish times
+ * Backward pass over the reverse topological order: every successor's late
+ * dates are final before its predecessors are visited.
  */
-function backwardPass(nodes: NetworkNode[], nodeMap: Map<string, NetworkNode>, projectEndDay: number): void {
-  // Initialize late finish for all nodes to project end
-  for (const node of nodes) {
+function backwardPass(order: NetworkNode[], outgoing: Map<string, NetworkEdge[]>, projectEndDay: number): void {
+  for (let i = order.length - 1; i >= 0; i--) {
+    const node = order[i];
     node.lateFinish = projectEndDay;
-    node.lateStart = node.lateFinish - node.duration + 1;
-  }
-  
-  // Sort nodes by early finish in descending order
-  const sortedNodes = [...nodes].sort((a, b) => b.earlyFinish - a.earlyFinish);
-  
-  // Build reverse dependency map (successor -> predecessors)
-  const reverseDeps = new Map<string, Array<{ node: NetworkNode; dep: Dependency }>>();
-  for (const node of nodes) {
-    for (const dep of node.dependencies) {
-      const predecessorId = `phase-${dep.id}`;
-      const predecessorIdSub = `subphase-${dep.id}`;
-      const predNode = nodeMap.get(predecessorId) || nodeMap.get(predecessorIdSub);
-      
-      if (predNode) {
-        if (!reverseDeps.has(predNode.id)) {
-          reverseDeps.set(predNode.id, []);
-        }
-        reverseDeps.get(predNode.id)!.push({ node, dep });
-      }
-    }
-  }
-  
-  for (const node of sortedNodes) {
-    // Find all successors and adjust late finish
-    const successors = reverseDeps.get(node.id) || [];
-    
-    for (const { node: succNode, dep } of successors) {
-      let requiredFinish: number;
+
+    for (const { succ, dep } of outgoing.get(node.id) ?? []) {
       const lag = dep.lag ?? 0;
-      
+      let requiredFinish: number;
+
       switch (dep.type) {
-        case 'FS': // Finish-to-Start
-          requiredFinish = succNode.lateStart - 1 - lag;
-          break;
         case 'SS': // Start-to-Start
-          requiredFinish = succNode.lateStart + node.duration - 1 - lag;
+          requiredFinish = succ.lateStart + node.duration - 1 - lag;
           break;
         case 'FF': // Finish-to-Finish
-          requiredFinish = succNode.lateFinish - lag;
+          requiredFinish = succ.lateFinish - lag;
           break;
         case 'SF': // Start-to-Finish
-          requiredFinish = succNode.lateFinish + node.duration - 1 - lag;
+          requiredFinish = succ.lateFinish + node.duration - 1 - lag;
           break;
+        case 'FS': // Finish-to-Start
         default:
-          requiredFinish = succNode.lateStart - 1 - lag;
+          requiredFinish = succ.lateStart - 1 - lag;
       }
-      
+
       if (requiredFinish < node.lateFinish) {
         node.lateFinish = requiredFinish;
-        node.lateStart = node.lateFinish - node.duration + 1;
       }
     }
+    node.lateStart = node.lateFinish - node.duration + 1;
   }
 }
 
@@ -278,8 +381,8 @@ export function calculateCriticalPath(project: Project): CriticalPathResult {
   let projectEndDate: Date | null = null;
   
   for (const phase of phases) {
-    const phaseStart = new Date(phase.start_date);
-    const phaseEnd = new Date(phase.end_date);
+    const phaseStart = parseLocalDate(phase.start_date);
+    const phaseEnd = parseLocalDate(phase.end_date);
     
     if (!projectStartDate || phaseStart < projectStartDate) {
       projectStartDate = phaseStart;
@@ -306,16 +409,39 @@ export function calculateCriticalPath(project: Project): CriticalPathResult {
     nodeMap.set(node.id, node);
   }
   
-  // Calculate project end day number
-  const projectEndDay = Math.ceil((projectEndDate.getTime() - projectStartDate.getTime()) / (1000 * 60 * 60 * 24));
-  
+  // Dependency graph. Items on a dependency cycle have no defined schedule:
+  // they are skipped (never critical) and their links ignored, so the passes
+  // always terminate and the rest of the project is still analysed.
+  const allEdges = buildEdges(nodes, nodeMap);
+  const cycleMembers = findCycleMembers(nodes, allEdges);
+  const scheduled = nodes.filter((n) => !cycleMembers.has(n.id));
+  const edges = allEdges.filter((e) => !cycleMembers.has(e.pred.id) && !cycleMembers.has(e.succ.id));
+
+  const incoming = new Map<string, NetworkEdge[]>();
+  const outgoing = new Map<string, NetworkEdge[]>();
+  for (const edge of edges) {
+    if (!incoming.has(edge.succ.id)) incoming.set(edge.succ.id, []);
+    incoming.get(edge.succ.id)!.push(edge);
+    if (!outgoing.has(edge.pred.id)) outgoing.set(edge.pred.id, []);
+    outgoing.get(edge.pred.id)!.push(edge);
+  }
+
+  const order = topologicalOrder(scheduled, edges);
+
   // Perform CPM calculations
-  forwardPass(nodes, nodeMap);
-  backwardPass(nodes, nodeMap, projectEndDay);
-  calculateFloat(nodes);
+  forwardPass(order, incoming);
+
+  // The project ends at its last early finish (dependencies can push items
+  // past the planned end), and never before the planned end date.
+  // Rounded: both are local midnights, so a DST switch makes the span 23h/25h off whole days.
+  const plannedEndDay = Math.round((projectEndDate.getTime() - projectStartDate.getTime()) / (1000 * 60 * 60 * 24));
+  const projectEndDay = order.reduce((end, n) => Math.max(end, n.earlyFinish), plannedEndDay);
+
+  backwardPass(order, outgoing, projectEndDay);
+  calculateFloat(order);
   
   // Identify critical path
-  const criticalItems = identifyCriticalPath(nodes);
+  const criticalItems = identifyCriticalPath(order);
   
   return { criticalItems, hasDependencies };
 }

@@ -12,15 +12,17 @@ import { PhaseRow } from './PhaseRow';
 import { AssignmentRow } from './AssignmentRow';
 import { PhantomRow } from './PhantomRow';
 import { usePhantomSibling } from '@/hooks';
+import { canEditProject } from '@/utils/permissions';
 import type { Project, Phase, Subphase, CustomColumn } from '@/types';
 import styles from './ProjectRow.module.css';
+import { daysBetweenDateStrings } from '@/utils/date';
+import { getProjectLevelItems, expansionLevelOf } from '@/utils/projectLevels';
 
 interface ProjectRowProps {
   project: Project;
   customColumns?: CustomColumn[];
   nameColumnWidth: number;  // Width of the name/info column
-  onReorder?: (fromId: number, toId: number) => void;  // Callback when project is reordered
-  siblingIds?: number[];  // IDs of all projects for reorder context
+  onReorder?: (fromId: number, targetId: number, position: 'before' | 'after') => void;  // Callback when project is reordered
   index?: number;  // Position in the list
 }
 
@@ -51,7 +53,7 @@ function getEffectiveCompletion(item: Phase | Subphase): { completion: number | 
     for (const child of children) {
       if (!child) continue;
       const childResult = getEffectiveCompletion(child);
-      const days = Math.max(1, Math.ceil((new Date(child.end_date).getTime() - new Date(child.start_date).getTime()) / (1000*60*60*24)));
+      const days = Math.max(1, daysBetweenDateStrings(child.start_date, child.end_date));
       
       // Unset completion counts as 0% when at least one sibling has a value
       const completion = childResult.completion ?? 0;
@@ -79,9 +81,7 @@ function calculateProjectCompletion(project: Project): number | null {
 
   phases.forEach((phase) => {
     const effectiveResult = getEffectiveCompletion(phase);
-    const start = new Date(phase.start_date);
-    const end = new Date(phase.end_date);
-    const days = Math.max(1, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    const days = Math.max(1, daysBetweenDateStrings(phase.start_date, phase.end_date));
     
     // Unset completion counts as 0%
     const completion = effectiveResult.completion ?? 0;
@@ -100,7 +100,6 @@ export const ProjectRow = memo(function ProjectRow({
   customColumns = [], 
   nameColumnWidth,
   onReorder,
-  siblingIds = [],
   index: _index = 0,
 }: ProjectRowProps) {
   const expandedProjects = useViewStore((s) => s.expandedProjects);
@@ -112,7 +111,8 @@ export const ProjectRow = memo(function ProjectRow({
   const staff = useAppStore((s) => s.staff);
   const equipment = useAppStore((s) => s.equipment);
   const currentUser = useAppStore((s) => s.currentUser);
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  // Admins, superusers and this project's manager.
+  const canEdit = canEditProject(currentUser, project);
   const showAssignments = useViewStore((s) => s.showAssignments);
   const toggleCriticalPath = useAppStore((s) => s.toggleCriticalPath);
   const isCriticalPathEnabled = useAppStore((s) => s.isCriticalPathEnabled);
@@ -126,52 +126,15 @@ export const ProjectRow = memo(function ProjectRow({
   // Get critical path items for this project
   const projectCriticalPathItems = criticalPathItems.get(project.id) || new Set<string>();
 
-  // Calculate current expansion level for this project
-  const currentLevel = useMemo(() => {
-    if (!expandedProjects.has(project.id)) return 0;
-    const phases = project.phases ?? [];
-    const anyPhaseExpanded = phases.some(p => expandedPhases.has(p.id));
-    if (!anyPhaseExpanded) return 1;
-    
-    // Check if any subphases are expanded
-    let anySubphaseExpanded = false;
-    phases.forEach(phase => {
-      const checkSubphases = (children: typeof phase.children) => {
-        children?.forEach(child => {
-          if (expandedSubphases.has(child.id)) anySubphaseExpanded = true;
-          checkSubphases(child.children);
-        });
-      };
-      checkSubphases(phase.children);
-    });
-    
-    return anySubphaseExpanded ? 3 : 2;
-  }, [project, expandedProjects, expandedPhases, expandedSubphases]);
-
-  // Calculate max possible level
-  // Always allow at least level 1 so users can expand to add phases
-  const maxLevel = useMemo(() => {
-    const phases = project.phases ?? [];
-    
-    // Always allow expanding to level 1 (to add phases)
-    let maxDepth = 1;
-    
-    phases.forEach(phase => {
-      if (phase.children?.length > 0) {
-        maxDepth = Math.max(maxDepth, 2);
-        const checkDepth = (children: typeof phase.children, depth: number) => {
-          children?.forEach(child => {
-            maxDepth = Math.max(maxDepth, depth);
-            if (child.children?.length > 0) {
-              checkDepth(child.children, depth + 1);
-            }
-          });
-        };
-        checkDepth(phase.children, 3);
-      }
-    });
-    return maxDepth;
-  }, [project]);
+  // Current and deepest expansion level — the same definition the store's
+  // expandProjectLevel/collapseProjectLevel step through, so "+" disables
+  // exactly when there is nothing left to expand.
+  const levelItems = useMemo(() => getProjectLevelItems(project), [project]);
+  const maxLevel = levelItems.maxLevel;
+  const currentLevel = useMemo(
+    () => (isExpanded ? expansionLevelOf(levelItems, expandedPhases, expandedSubphases) : 0),
+    [isExpanded, levelItems, expandedPhases, expandedSubphases]
+  );
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -258,22 +221,12 @@ export const ProjectRow = memo(function ProjectRow({
     const midpoint = rect.top + rect.height / 2;
     const insertBefore = e.clientY < midpoint;
     
-    // Calculate target ID
-    let targetId = project.id;
-    if (!insertBefore && siblingIds.length > 0) {
-      // If dropping below, find the next sibling
-      const currentIndex = siblingIds.indexOf(project.id);
-      if (currentIndex < siblingIds.length - 1) {
-        targetId = siblingIds[currentIndex + 1];
-      }
-    }
-    
     if (onReorder) {
-      onReorder(draggedId, targetId);
+      onReorder(draggedId, project.id, insertBefore ? 'before' : 'after');
     }
     
     setDropPosition(null);
-  }, [project.id, siblingIds, onReorder]);
+  }, [project.id, onReorder]);
 
   return (
     <>
@@ -281,7 +234,7 @@ export const ProjectRow = memo(function ProjectRow({
       <div
         className={`${styles.row} ${!project.confirmed ? styles.unconfirmed : ''} ${dropPosition === 'above' ? styles.dropAbove : ''} ${dropPosition === 'below' ? styles.dropBelow : ''} ${isDragging ? styles.dragging : ''}`}
         data-project-id={project.id}
-        onDoubleClick={handleEdit}
+        onDoubleClick={canEdit ? handleEdit : undefined}
         onContextMenu={handleContextMenu}
         onDragOver={handleProjectDragOver}
         onDragLeave={handleProjectDragLeave}

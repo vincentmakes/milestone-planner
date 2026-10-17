@@ -4,8 +4,9 @@
  * and equipment assignment modes.
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Modal } from '@/components/common/Modal';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
@@ -18,8 +19,17 @@ import {
   deleteEquipmentAssignment,
   loadAllProjects
 } from '@/api/endpoints/projects';
-import { toInputDateFormat } from '@/utils/date';
+import { useWhatIfStore } from '@/stores/whatIfStore';
+import { toInputDateFormat, formatDateISO } from '@/utils/date';
+import {
+  patchEquipmentAssignmentLocally,
+  patchStaffAssignmentLocally,
+  removeEquipmentAssignmentLocally,
+  removeStaffAssignmentLocally,
+} from '@/utils/localProjectTree';
+import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { findSubphaseById } from '@/utils/subphaseUtils';
+import { canEditProject, isSelf } from '@/utils/permissions';
 import { AllocationSlider, snapToStep } from '@/components/common/AllocationSlider';
 import styles from './AssignmentModal.module.css';
 
@@ -41,6 +51,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   const staff = useAppStore((s) => s.staff);
   const equipment = useAppStore((s) => s.equipment);
   const currentSite = useAppStore((s) => s.currentSite);
+  const currentUser = useAppStore((s) => s.currentUser);
   const setProjects = useAppStore((s) => s.setProjects);
 
   const isOpen = isStaff
@@ -49,19 +60,40 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
 
   const editingAssignment = isStaff ? editingStaffAssignment : editingEquipmentAssignment;
   const isEditing = !!editingAssignment;
+  const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
+  // Creating inside What-If cannot show the new booking until Apply; edits are fine.
+  const createBlockedReason = !isEditing && whatIfMode
+    ? whatIfUnavailableMessage(isStaff ? 'Assigning staff' : 'Assigning equipment')
+    : null;
 
   // Form state
   const [resourceId, setResourceId] = useState<string>('');
   const [allocation, setAllocation] = useState(100);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
 
   // Get context (project, phase, or subphase)
   const projectId = editingAssignment?.project_id || modalContext.projectId;
   const phaseId = editingAssignment?.phase_id || modalContext.phaseId;
   const subphaseId = editingAssignment?.subphase_id || modalContext.subphaseId;
+
+  // Project editors (admin, superuser, the project's manager) assign anyone.
+  // Everyone else may only book their own time: the picker is fixed to them
+  // and only their own booking can be removed.
+  const isEditor = canEditProject(currentUser, projects.find((p) => p.id === projectId));
+  const selfOnly = isStaff && !isEditor && Boolean(currentUser);
+  const ownMaxCapacity = useMemo(() => {
+    if (!currentUser) return 100;
+    const row = staff.find((s) => s.id === currentUser.id);
+    return row?.max_capacity ?? currentUser.max_capacity ?? 100;
+  }, [staff, currentUser]);
+  const canRemove = isEditing && (
+    isStaff
+      ? isEditor || isSelf(currentUser, editingStaffAssignment?.staff_id)
+      : isEditor
+  );
 
   // Filter resources by current site
   const siteResources = useMemo(() => {
@@ -96,30 +128,45 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
     return project;
   }, [projects, projectId, phaseId, subphaseId]);
 
-  // Initialize form when modal opens
+  // Initialize form when modal opens -- once per open. The inputs below
+  // (staff, projects) are refetched on WebSocket changes; without the guard a
+  // colleague's edit would wipe what the user has typed. The key changes when
+  // the dialog is reopened on another assignment or target.
+  const initializedForRef = useRef<string | null>(null);
+  const initKey = `${mode}:${editingAssignment?.id ?? 'new'}:${projectId ?? ''}:${phaseId ?? ''}:${subphaseId ?? ''}`;
   useEffect(() => {
-    if (isOpen) {
-      if (editingAssignment) {
-        // Editing mode - convert ISO datetime to input format
-        if (isStaff && editingStaffAssignment) {
-          setResourceId(editingStaffAssignment.staff_id.toString());
-          setAllocation(editingStaffAssignment.allocation);
-        } else if (!isStaff && editingEquipmentAssignment) {
-          setResourceId(editingEquipmentAssignment.equipment_id.toString());
-        }
-        setStartDate(toInputDateFormat(editingAssignment.start_date));
-        setEndDate(toInputDateFormat(editingAssignment.end_date));
+    if (!isOpen) {
+      initializedForRef.current = null;
+      return;
+    }
+    if (initializedForRef.current === initKey) return;
+    initializedForRef.current = initKey;
+    if (editingAssignment) {
+      // Editing mode - convert ISO datetime to input format
+      if (isStaff && editingStaffAssignment) {
+        setResourceId(editingStaffAssignment.staff_id.toString());
+        setAllocation(editingStaffAssignment.allocation);
+      } else if (!isStaff && editingEquipmentAssignment) {
+        setResourceId(editingEquipmentAssignment.equipment_id.toString());
+      }
+      setStartDate(toInputDateFormat(editingAssignment.start_date));
+      setEndDate(toInputDateFormat(editingAssignment.end_date));
+    } else {
+      // New assignment mode - use target item dates as default
+      const today = formatDateISO(new Date());
+      if (selfOnly && currentUser) {
+        // Non-editors can only assign themselves, at their own capacity.
+        setResourceId(String(currentUser.id));
+        setAllocation(snapToStep(ownMaxCapacity));
       } else {
-        // New assignment mode - use target item dates as default
-        const today = new Date().toISOString().split('T')[0];
         setResourceId('');
         setAllocation(100);
-        setStartDate(toInputDateFormat(targetItem?.start_date) || today);
-        setEndDate(toInputDateFormat(targetItem?.end_date) || today);
       }
-      setError(null);
+      setStartDate(toInputDateFormat(targetItem?.start_date) || today);
+      setEndDate(toInputDateFormat(targetItem?.end_date) || today);
     }
-  }, [isOpen, editingAssignment, editingStaffAssignment, editingEquipmentAssignment, isStaff, targetItem]);
+    setError(null);
+  }, [isOpen, initKey, editingAssignment, editingStaffAssignment, editingEquipmentAssignment, isStaff, targetItem, selfOnly, currentUser, ownMaxCapacity]);
 
   // Handle resource selection - for staff, auto-set allocation to their max capacity
   const handleResourceChange = useCallback((newResourceId: string) => {
@@ -138,6 +185,11 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (createBlockedReason) {
+      setError(createBlockedReason);
+      return;
+    }
 
     if (!resourceId) {
       setError(isStaff ? 'Please select a staff member' : 'Please select equipment');
@@ -162,7 +214,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       }
     }
 
-    setIsSubmitting(true);
+    if (!beginSubmit()) return;
     setError(null);
 
     try {
@@ -173,6 +225,10 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
             ? { allocation }
             : { allocation, start_date: startDate, end_date: endDate };
           await updateStaffAssignment(editingStaffAssignment.id, updateData, assignmentLevel);
+          // Show the edit right away (the reload below is a no-op in What-If).
+          if (projectId) {
+            patchStaffAssignmentLocally(projectId, editingStaffAssignment.id, assignmentLevel, updateData);
+          }
         } else {
           const assignmentData = {
             staff_id: parseInt(resourceId),
@@ -197,6 +253,12 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
 
         if (isEditing && editingEquipmentAssignment) {
           await updateEquipmentAssignment(editingEquipmentAssignment.id, assignmentData);
+          if (projectId) {
+            patchEquipmentAssignmentLocally(projectId, editingEquipmentAssignment.id, {
+              start_date: startDate,
+              end_date: endDate,
+            });
+          }
         } else {
           await createEquipmentAssignment(assignmentData);
         }
@@ -209,7 +271,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save assignment');
     } finally {
-      setIsSubmitting(false);
+      endSubmit();
     }
   };
 
@@ -224,14 +286,16 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       return;
     }
 
-    setIsSubmitting(true);
+    if (!beginSubmit()) return;
     setError(null);
 
     try {
       if (isStaff && editingStaffAssignment) {
         await deleteStaffAssignment(editingStaffAssignment.id, assignmentLevel);
+        if (projectId) removeStaffAssignmentLocally(projectId, editingStaffAssignment.id, assignmentLevel);
       } else if (!isStaff && editingEquipmentAssignment) {
         await deleteEquipmentAssignment(editingEquipmentAssignment.id);
+        if (projectId) removeEquipmentAssignmentLocally(projectId, editingEquipmentAssignment.id);
       }
       // Reload projects
       const updatedProjects = await loadAllProjects();
@@ -240,7 +304,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete assignment');
     } finally {
-      setIsSubmitting(false);
+      endSubmit();
     }
   };
 
@@ -252,7 +316,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
 
   const footer = (
     <div className={styles.footer}>
-      {isEditing && (
+      {canRemove && (
         <Button
           variant="danger"
           onClick={handleDelete}
@@ -266,8 +330,13 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
         <Button variant="secondary" onClick={closeModal} disabled={isSubmitting}>
           Cancel
         </Button>
-        <Button variant="primary" onClick={handleSubmit} disabled={isSubmitting}>
-          {isSubmitting ? 'Saving...' : isEditing ? 'Save Changes' : `Assign ${resourceLabel}`}
+        <Button
+          variant="primary"
+          onClick={handleSubmit}
+          disabled={isSubmitting || !!createBlockedReason}
+          title={createBlockedReason ?? undefined}
+        >
+          {isSubmitting ? 'Saving...' : isEditing ? 'Save Changes' : selfOnly ? 'Assign me' : `Assign ${resourceLabel}`}
         </Button>
       </div>
     </div>
@@ -286,7 +355,10 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       footer={footer}
     >
       <form onSubmit={handleSubmit} className={styles.form}>
-        {error && <div className={styles.error}>{error}</div>}
+        {createBlockedReason && (
+          <div className={styles.error} role="status">{createBlockedReason}</div>
+        )}
+        {error && error !== createBlockedReason && <div className={styles.error}>{error}</div>}
 
         <div className={styles.contextInfo}>
           {assignmentLevelLabel}: <strong>{targetName}</strong>
@@ -297,11 +369,23 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
           <label className={styles.label}>
             {isStaff ? 'Staff Member *' : 'Equipment *'}
           </label>
+          {selfOnly ? (
+            // Fixed to the current user: non-editors only book their own time.
+            <input
+              type="text"
+              className={styles.input}
+              value="You"
+              readOnly
+              aria-label="Staff Member"
+              title={currentUser?.name}
+            />
+          ) : (
           <select
             className={styles.input}
             value={resourceId}
             onChange={(e) => handleResourceChange(e.target.value)}
             disabled={isEditing}
+            aria-label={isStaff ? 'Staff Member' : 'Equipment'}
           >
             <option value="">
               {isStaff ? 'Select staff member' : 'Select equipment'}
@@ -323,6 +407,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
                 ))
             }
           </select>
+          )}
         </div>
 
         {/* Allocation slider - staff mode only */}

@@ -9,6 +9,7 @@ Provides:
 """
 
 import logging
+import re
 from typing import Any
 from urllib.parse import urlencode
 
@@ -17,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.services.encryption import decrypt
+from app.services.encryption import decrypt, encrypt
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,112 @@ class OrgSSOLookupError(RuntimeError):
     and redirect URI than the one ``/authorize`` was called with — which Entra
     rejects with an error that looks nothing like the real cause.
     """
+
+
+# Roles a tenant ``users`` row may carry (``users_role_check``).
+VALID_USER_ROLES = ("user", "superuser", "admin")
+
+
+def normalize_sso_default_role(role: Any) -> str:
+    """
+    Return the role to give an SSO auto-created user.
+
+    Falls back to ``user`` for anything that is not a valid tenant role, so a
+    bad stored default (e.g. an organization config saved before the role was
+    validated, with ``viewer``) cannot make every first SSO sign-in fail on
+    the ``users`` role CHECK constraint.
+    """
+    if isinstance(role, str) and role.strip().lower() in VALID_USER_ROLES:
+        return role.strip().lower()
+    return "user"
+
+
+# ---------------------------------------------------------
+# Tenant-level client secret at rest
+# ---------------------------------------------------------
+
+# ``encrypt()`` output: 12-byte IV, 16-byte GCM tag, ciphertext — all hex.
+_ENCRYPTED_SECRET_RE = re.compile(r"^[0-9a-f]{24}:[0-9a-f]{32}:[0-9a-f]*$")
+
+# Prefix the settings UI echoes back for "keep the stored secret".
+MASKED_SECRET_PREFIX = "****"
+
+_decrypt_failure_logged = False
+
+
+def is_encrypted_secret(value: Any) -> bool:
+    """True when ``value`` has the ``iv:tag:ciphertext`` shape ``encrypt()`` writes."""
+    return isinstance(value, str) and bool(_ENCRYPTED_SECRET_RE.match(value))
+
+
+def read_tenant_client_secret(config: Any) -> str | None:
+    """
+    Return the plaintext client secret of a tenant ``SSOConfig`` row.
+
+    Encrypted values are decrypted; a legacy plaintext value (written before
+    secrets were encrypted at rest) is returned as is — callers upgrade it with
+    :func:`store_tenant_client_secret`. When decryption fails (the encryption
+    key changed — in single-tenant mode it is derived from ``SESSION_SECRET``)
+    the failure is logged once and ``None`` is returned, so SSO reports "not
+    configured" instead of failing with a 500.
+    """
+    global _decrypt_failure_logged
+    stored = getattr(config, "client_secret", None)
+    if not stored:
+        return None
+    if not is_encrypted_secret(stored):
+        return stored
+    try:
+        return decrypt(stored)
+    except Exception:
+        if not _decrypt_failure_logged:
+            _decrypt_failure_logged = True
+            logger.error(
+                "Could not decrypt the tenant SSO client secret; the encryption key "
+                "(TENANT_ENCRYPTION_KEY, or SESSION_SECRET in single-tenant mode) has "
+                "probably changed. Re-enter the client secret in Settings > SSO."
+            )
+        return None
+
+
+def store_tenant_client_secret(config: Any, secret: str | None) -> None:
+    """Write ``secret`` to a tenant ``SSOConfig`` row, encrypted at rest."""
+    if secret:
+        config.client_secret = encrypt(secret)
+    else:
+        config.client_secret = None if secret is None else ""
+
+
+def apply_secret_update(config: Any, submitted: str | None) -> bool:
+    """
+    Apply a client secret submitted to one of the SSO write routes.
+
+    ``None`` (field omitted) and the masked form the settings UI displays
+    (``****abcd``) keep the stored secret; anything else replaces it (an empty
+    string clears it). Returns True when the stored secret changed.
+    """
+    if submitted is None or submitted.startswith(MASKED_SECRET_PREFIX):
+        return False
+    store_tenant_client_secret(config, submitted)
+    return True
+
+
+def mask_secret(secret: str | None) -> str | None:
+    """``****`` plus the last four characters, or None for no secret."""
+    if not secret:
+        return None
+    return MASKED_SECRET_PREFIX + secret[-4:]
+
+
+def tenant_sso_is_configured(config: Any) -> bool:
+    """Like ``SSOConfig.is_configured``, but requires a *readable* client secret."""
+    return bool(
+        config is not None
+        and config.tenant_id
+        and config.client_id
+        and config.redirect_uri
+        and read_tenant_client_secret(config)
+    )
 
 
 def _clean(value: Any) -> Any:
@@ -98,20 +205,43 @@ class SSOService:
             return None, "none"
 
         if config and config.is_enabled and config.is_configured:
-            return {
+            client_secret = read_tenant_client_secret(config)
+            if not client_secret:
+                # Stored encrypted under a key we no longer have.
+                return None, "none"
+            effective = {
                 "enabled": True,
                 "provider": "entra",
                 "tenant_id": _clean(config.tenant_id),
                 "client_id": _clean(config.client_id),
-                "client_secret": _clean(config.client_secret),
+                "client_secret": _clean(client_secret),
                 "redirect_uri": _clean(config.redirect_uri),
                 "auto_create_users": config.should_auto_create_users,
-                "default_role": config.default_role,
+                "default_role": normalize_sso_default_role(config.default_role),
                 "required_group_ids": [],
                 "group_membership_mode": "any",
-            }, "tenant"
+            }
+            if not is_encrypted_secret(config.client_secret):
+                # Lazy upgrade of a secret saved before encryption at rest. Runs
+                # after the dict is built: a failed commit rolls back and
+                # expires the row.
+                await self._upgrade_plaintext_secret(config, client_secret)
+            return effective, "tenant"
 
         return None, "none"
+
+    async def _upgrade_plaintext_secret(self, config: Any, plaintext: str) -> None:
+        """Re-store a legacy plaintext secret encrypted. Best effort, never raises."""
+        try:
+            store_tenant_client_secret(config, plaintext)
+            await self.db.commit()
+            logger.info("Encrypted the tenant SSO client secret at rest (lazy upgrade)")
+        except Exception:
+            logger.warning("Could not encrypt the legacy tenant SSO client secret", exc_info=True)
+            try:
+                await self.db.rollback()
+            except Exception:  # pragma: no cover - best effort
+                pass
 
     async def _get_organization_sso_config(self, tenant_id: str) -> dict[str, Any] | None:
         """
@@ -178,7 +308,7 @@ class SSOService:
             "client_secret": _clean(client_secret),
             "redirect_uri": _clean(config.redirect_uri),
             "auto_create_users": config.should_auto_create_users,
-            "default_role": config.default_user_role,
+            "default_role": normalize_sso_default_role(config.default_user_role),
             "required_group_ids": tenant.required_group_ids or [],
             "group_membership_mode": tenant.group_membership_mode or "any",
             "organization": {

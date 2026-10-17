@@ -13,7 +13,8 @@ import { PhaseRow } from '../PhaseRow';
 import { ReorderProvider } from '@/contexts/ReorderContext';
 import { useUIStore } from '@/stores/uiStore';
 import { useViewStore } from '@/stores/viewStore';
-import type { Phase } from '@/types';
+import { useAppStore } from '@/stores/appStore';
+import type { Phase, Project } from '@/types';
 
 // The completion slider imports these; nothing here exercises them.
 vi.mock('@/api', () => ({
@@ -53,8 +54,9 @@ const nameButton = (phase: Phase) =>
   screen.getByRole('button', { name: new RegExp(phase.name, 'i') });
 
 beforeEach(() => {
-  useUIStore.setState({ scrollToDateTrigger: null });
+  useUIStore.setState({ scrollToDateTrigger: null, activeModal: null });
   useViewStore.setState({ expandedPhases: new Set() });
+  useAppStore.setState({ projects: [], currentUser: null });
 });
 
 describe('PhaseRow name click', () => {
@@ -95,5 +97,64 @@ describe('PhaseRow name click', () => {
 
     expect(useUIStore.getState().scrollToDateTrigger).toBeNull();
     expect(useViewStore.getState().expandedPhases.has(phase.id)).toBe(true);
+  });
+});
+
+/**
+ * Per-project rights (utils/permissions.ts): the project's manager edits its
+ * phases like a superuser, a plain user does not. The row exposes editing
+ * through the reorder handle and the double-click, so those are what we check.
+ */
+describe('PhaseRow permissions', () => {
+  const project = {
+    id: 1,
+    name: 'Bioprocess Scale-Up',
+    site_id: 1,
+    pm_id: 42,
+    confirmed: true,
+    archived: false,
+    phases: [],
+    staffAssignments: [],
+    equipmentAssignments: [],
+  } as unknown as Project;
+
+  function seed(user: { id: number; role: 'admin' | 'superuser' | 'user' }) {
+    useAppStore.setState({ projects: [project], currentUser: user as never });
+  }
+
+  it('lets the project manager reorder and open the phase', () => {
+    seed({ id: 42, role: 'user' });
+    const phase = makePhase();
+    renderRow(phase);
+
+    expect(screen.getByTitle('Drag to reorder')).toBeInTheDocument();
+
+    fireEvent.doubleClick(screen.getByTitle('Drag to reorder').parentElement!.parentElement!);
+    expect(useUIStore.getState().activeModal).toBe('phase');
+  });
+
+  it('gives a plain user neither the reorder handle nor the editor', () => {
+    seed({ id: 43, role: 'user' });
+    const phase = makePhase();
+    const { container } = renderRow(phase);
+
+    expect(screen.queryByTitle('Drag to reorder')).not.toBeInTheDocument();
+
+    fireEvent.doubleClick(container.querySelector('[data-phase-id="1"]')!);
+    expect(useUIStore.getState().activeModal).toBeNull();
+  });
+
+  it('does not open the completion slider for a plain user', () => {
+    seed({ id: 43, role: 'user' });
+    renderRow(makePhase({ completion: 40 }));
+
+    fireEvent.click(screen.getByText('40%'));
+    expect(screen.queryByRole('slider')).not.toBeInTheDocument();
+  });
+
+  it('keeps superusers unchanged, whoever manages the project', () => {
+    seed({ id: 99, role: 'superuser' });
+    renderRow(makePhase());
+    expect(screen.getByTitle('Drag to reorder')).toBeInTheDocument();
   });
 });

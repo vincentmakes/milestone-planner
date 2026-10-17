@@ -3,7 +3,8 @@
  */
 
 import { apiGet, apiPost, apiPut, apiDelete, downloadFile } from '../client';
-import type { Site, BankHoliday, CompanyEvent } from '@/types';
+import type { Site, BankHoliday, CompanyEvent, CalendarImportResult } from '@/types';
+import { postInChunks } from './importChunks';
 
 // =============================================================================
 // SITES
@@ -94,6 +95,38 @@ export async function deleteCustomHoliday(siteId: number, holidayId: number): Pr
 export const deleteBankHoliday = deleteCustomHoliday;
 
 /**
+ * Update a bank holiday. Editing a holiday fetched from the Nager API turns it
+ * into a custom one, which then takes precedence over Nager for that date.
+ */
+export async function updateBankHoliday(
+  siteId: number,
+  holidayId: number,
+  data: { date?: string; end_date?: string | null; name?: string }
+): Promise<BankHoliday> {
+  return apiPut<BankHoliday>(`/api/sites/${siteId}/holidays/${holidayId}`, data);
+}
+
+export interface HolidayImportItem {
+  date: string;
+  end_date?: string | null;
+  name: string;
+}
+
+/**
+ * Bulk-import custom holidays into a site (e.g. from an .ics file).
+ * Existing (date, name) pairs are skipped server-side. Large lists are sent
+ * in chunks (see `postInChunks`).
+ */
+export async function importBankHolidays(
+  siteId: number,
+  items: HolidayImportItem[]
+): Promise<CalendarImportResult> {
+  return postInChunks(items, (chunk) =>
+    apiPost<CalendarImportResult>(`/api/sites/${siteId}/holidays/import`, { items: chunk })
+  );
+}
+
+/**
  * Refresh bank holidays from external source (Nager holiday API)
  */
 export async function refreshBankHolidays(siteId: number): Promise<BankHoliday[]> {
@@ -122,10 +155,63 @@ export async function createCompanyEvent(
 }
 
 /**
- * Delete a company event
+ * Remove a company event from a site. The event itself is deleted only when
+ * no other site is linked to it.
  */
 export async function deleteCompanyEvent(siteId: number, eventId: number): Promise<void> {
   await apiDelete(`/api/sites/${siteId}/events/${eventId}`);
+}
+
+export interface CompanyEventInput {
+  date: string;
+  end_date?: string | null;
+  name: string;
+  color?: string | null;
+  site_ids: number[];
+  /** Site closure: staff on the event's sites are unavailable for its dates */
+  counts_as_unavailable?: boolean;
+}
+
+/**
+ * Create a company event on one or more sites
+ */
+export async function createCompanyEventMultiSite(data: CompanyEventInput): Promise<CompanyEvent> {
+  return apiPost<CompanyEvent>('/api/events', data);
+}
+
+/**
+ * Update a company event (any field, including the set of linked sites)
+ */
+export async function updateCompanyEvent(
+  eventId: number,
+  data: Partial<CompanyEventInput>
+): Promise<CompanyEvent> {
+  return apiPut<CompanyEvent>(`/api/events/${eventId}`, data);
+}
+
+/**
+ * Delete a company event from every site it is linked to
+ */
+export async function deleteCompanyEventById(eventId: number): Promise<void> {
+  await apiDelete(`/api/events/${eventId}`);
+}
+
+/**
+ * Bulk-import company events onto one or more sites (e.g. from an .ics file).
+ * An existing (date, end_date, name) event only gains the missing site links.
+ * `counts_as_unavailable` applies to the newly created events only. Large
+ * lists are sent in chunks (see `postInChunks`).
+ */
+export async function importCompanyEvents(data: {
+  site_ids: number[];
+  color?: string | null;
+  counts_as_unavailable?: boolean;
+  items: HolidayImportItem[];
+}): Promise<CalendarImportResult> {
+  const { items, ...rest } = data;
+  return postInChunks(items, (chunk) =>
+    apiPost<CalendarImportResult>('/api/events/import', { ...rest, items: chunk })
+  );
 }
 
 // =============================================================================

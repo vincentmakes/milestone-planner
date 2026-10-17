@@ -14,9 +14,11 @@ import {
   getEquipmentBlocks,
 } from '@/api';
 import { Modal } from '@/components/common/Modal';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
-import { toInputDateFormat } from '@/utils/date';
-import styles from './CustomHolidayModal.module.css';
+import { toInputDateFormat, formatDateISO, daysBetweenDateStrings } from '@/utils/date';
+import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
+import styles from './EquipmentBlockModal.module.css';
 
 const REASON_OPTIONS: { value: string; label: string; defaultDescription: string }[] = [
   { value: 'maintenance', label: 'Maintenance', defaultDescription: 'Maintenance' },
@@ -33,6 +35,10 @@ export function EquipmentBlockModal() {
 
   const isOpen = activeModal === 'equipmentBlock';
   const isEditing = !!editingEquipmentBlock;
+  // A create during What-If would only be queued and stay invisible until
+  // Apply (blocks are not part of the What-If snapshot); edits stay allowed.
+  const whatIf = useWhatIfBlocked();
+  const createBlockedReason = !isEditing && whatIf.blocked ? whatIf.reason('Blocking equipment') : null;
 
   const [equipmentId, setEquipmentId] = useState<number | null>(null);
   const [startDate, setStartDate] = useState('');
@@ -40,7 +46,7 @@ export function EquipmentBlockModal() {
   const [reason, setReason] = useState<string>('maintenance');
   const [description, setDescription] = useState('Maintenance');
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,8 +71,8 @@ export function EquipmentBlockModal() {
       const today = new Date();
       const tomorrow = new Date(today);
       tomorrow.setDate(today.getDate() + 1);
-      setStartDate(toInputDateFormat(today.toISOString()));
-      setEndDate(toInputDateFormat(tomorrow.toISOString()));
+      setStartDate(formatDateISO(today));
+      setEndDate(formatDateISO(tomorrow));
       setReason('maintenance');
       setDescription('Maintenance');
     }
@@ -74,10 +80,7 @@ export function EquipmentBlockModal() {
 
   const duration = useMemo(() => {
     if (!startDate || !endDate) return 0;
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const diff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    return diff;
+    return daysBetweenDateStrings(startDate, endDate) + 1;
   }, [startDate, endDate]);
 
   const handleReasonChange = (value: string) => {
@@ -98,6 +101,10 @@ export function EquipmentBlockModal() {
   };
 
   const handleSave = async () => {
+    if (createBlockedReason) {
+      setError(createBlockedReason);
+      return;
+    }
     if (!equipmentId) {
       setError('Please select equipment');
       return;
@@ -111,7 +118,7 @@ export function EquipmentBlockModal() {
       return;
     }
 
-    setIsSubmitting(true);
+    if (!beginSubmit()) return;
     setError(null);
     try {
       const fallbackDesc = REASON_OPTIONS.find((o) => o.value === reason)?.defaultDescription ?? 'Unavailable';
@@ -133,7 +140,7 @@ export function EquipmentBlockModal() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save equipment block');
     } finally {
-      setIsSubmitting(false);
+      endSubmit();
     }
   };
 
@@ -141,6 +148,7 @@ export function EquipmentBlockModal() {
     if (!editingEquipmentBlock) return;
     if (!window.confirm('Delete this equipment block?')) return;
 
+    if (!beginSubmit()) return;
     setIsDeleting(true);
     setError(null);
     try {
@@ -151,6 +159,7 @@ export function EquipmentBlockModal() {
       setError(err instanceof Error ? err.message : 'Failed to delete equipment block');
     } finally {
       setIsDeleting(false);
+      endSubmit();
     }
   };
 
@@ -165,8 +174,13 @@ export function EquipmentBlockModal() {
         <Button variant="secondary" onClick={closeModal} disabled={isSubmitting || isDeleting}>
           Cancel
         </Button>
-        <Button variant="primary" onClick={handleSave} disabled={isSubmitting || isDeleting}>
-          {isSubmitting ? 'Saving...' : isEditing ? 'Save Changes' : 'Block Equipment'}
+        <Button
+          variant="primary"
+          onClick={handleSave}
+          disabled={isSubmitting || isDeleting || !!createBlockedReason}
+          title={createBlockedReason ?? undefined}
+        >
+          {isSubmitting && !isDeleting ? 'Saving...' : isEditing ? 'Save Changes' : 'Block Equipment'}
         </Button>
       </div>
     </div>
@@ -180,7 +194,10 @@ export function EquipmentBlockModal() {
       size="sm"
       footer={footer}
     >
-      {error && <div className={styles.error}>{error}</div>}
+      {createBlockedReason && (
+        <div className={styles.error} role="status">{createBlockedReason}</div>
+      )}
+      {error && error !== createBlockedReason && <div className={styles.error}>{error}</div>}
 
       <div className={styles.formGroup}>
         <label className={styles.label}>Equipment</label>

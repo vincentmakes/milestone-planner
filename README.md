@@ -1,5 +1,10 @@
 # Milestone
 
+[![Backend CI](https://github.com/vincentmakes/milestone-planner/actions/workflows/backend.yml/badge.svg?branch=main)](https://github.com/vincentmakes/milestone-planner/actions/workflows/backend.yml)
+[![Frontend CI](https://github.com/vincentmakes/milestone-planner/actions/workflows/frontend.yml/badge.svg?branch=main)](https://github.com/vincentmakes/milestone-planner/actions/workflows/frontend.yml)
+[![Backend coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/vincentmakes/milestone-planner/coverage/backend.json)](https://github.com/vincentmakes/milestone-planner/actions/workflows/backend.yml?query=branch%3Amain)
+[![Frontend coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/vincentmakes/milestone-planner/coverage/frontend.json)](https://github.com/vincentmakes/milestone-planner/actions/workflows/frontend.yml?query=branch%3Amain)
+
 <img width="1034" height="139" alt="Screenshot 2026-05-04 at 22 55 43" src="https://github.com/user-attachments/assets/277f8f49-e300-4134-8ded-247b6ce9eb22" />  
 
 A comprehensive R&D project management platform for multi-site organizations.

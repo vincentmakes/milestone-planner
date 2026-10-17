@@ -3,13 +3,23 @@
  * Functions for extracting dependencies and calculating arrow paths
  */
 
-import type { Project, Phase, Subphase, DependencyLink, DependencyType } from '@/types';
+import type { Project, Phase, Subphase, Dependency, DependencyLink, DependencyType } from '@/types';
 import { getPhaseColor } from '@/utils/themeColors';
+
+/** Kind of a dependency endpoint (phase and subphase ids are separate sequences) */
+export type DependencyEntity = 'phase' | 'subphase';
+
+/** A phase or subphase identified by kind + id */
+export interface DependencyItemRef {
+  id: number;
+  type: DependencyEntity;
+}
 
 /**
  * Extract all dependency links from projects
- * Dependencies are stored on each phase/subphase as an array of {id, type} 
- * where id is the predecessor's ID
+ * Dependencies are stored on each phase/subphase as an array of
+ * {id, type, lag?, entity?} where id is the predecessor's ID and entity its
+ * kind (see `resolveDependencyPredecessor`).
  */
 export function extractDependencies(projects: Project[]): DependencyLink[] {
   const links: DependencyLink[] = [];
@@ -18,16 +28,16 @@ export function extractDependencies(projects: Project[]): DependencyLink[] {
     // Extract from phases
     (project.phases ?? []).forEach((phase) => {
       (phase.dependencies ?? []).forEach((dep) => {
-        // Determine if predecessor is phase or subphase
-        const { item: predItem, type: predType } = findPhaseOrSubphase(project, dep.id);
-        if (predItem) {
+        const pred = resolveDependencyPredecessor(project, dep);
+        if (pred) {
+          const type = dep.type || 'FS';
           links.push({
-            id: `dep-${predType}-${dep.id}-phase-${phase.id}`,
+            id: `dep-${pred.type}-${dep.id}-${type}-phase-${phase.id}`,
             fromId: dep.id,
-            fromType: predType,
+            fromType: pred.type,
             toId: phase.id,
             toType: 'phase',
-            type: dep.type || 'FS',
+            type,
             lag: dep.lag ?? 0,
             projectId: project.id,
           });
@@ -52,15 +62,16 @@ function extractSubphaseDependencies(
 ): void {
   subphases.forEach((subphase) => {
     (subphase.dependencies ?? []).forEach((dep) => {
-      const { item: predItem, type: predType } = findPhaseOrSubphase(project, dep.id);
-      if (predItem) {
+      const pred = resolveDependencyPredecessor(project, dep);
+      if (pred) {
+        const type = dep.type || 'FS';
         links.push({
-          id: `dep-${predType}-${dep.id}-subphase-${subphase.id}`,
+          id: `dep-${pred.type}-${dep.id}-${type}-subphase-${subphase.id}`,
           fromId: dep.id,
-          fromType: predType,
+          fromType: pred.type,
           toId: subphase.id,
           toType: 'subphase',
-          type: dep.type || 'FS',
+          type,
           lag: dep.lag ?? 0,
           projectId: project.id,
         });
@@ -74,28 +85,91 @@ function extractSubphaseDependencies(
   });
 }
 
-/**
- * Find a phase or subphase by ID within a project
- */
-function findPhaseOrSubphase(
+/** Find a phase or subphase of a project by kind + id */
+export function findDependencyItem(
   project: Project,
-  id: number
-): { item: Phase | Subphase | null; type: 'phase' | 'subphase' } {
-  // Check phases first
-  const phase = (project.phases ?? []).find((p) => p.id === id);
-  if (phase) {
-    return { item: phase, type: 'phase' };
+  ref: DependencyItemRef
+): Phase | Subphase | null {
+  if (ref.type === 'phase') {
+    return (project.phases ?? []).find((p) => p.id === ref.id) ?? null;
   }
-
-  // Check subphases recursively
   for (const p of project.phases ?? []) {
-    const subphase = findSubphaseById(p.children ?? [], id);
-    if (subphase) {
-      return { item: subphase, type: 'subphase' };
+    const subphase = findSubphaseById(p.children ?? [], ref.id);
+    if (subphase) return subphase;
+  }
+  return null;
+}
+
+/**
+ * Resolve a dependency's predecessor within its project.
+ *
+ * An entry carrying `entity` is looked up as exactly that kind (and is
+ * dangling when that item is gone — it never falls back to the other kind,
+ * which is the id clash it exists to prevent). Legacy entries without it
+ * keep the historical phase-first lookup.
+ */
+export function resolveDependencyPredecessor(
+  project: Project,
+  dep: Pick<Dependency, 'id' | 'entity'>
+): { item: Phase | Subphase; type: DependencyEntity } | null {
+  if (dep.entity === 'phase' || dep.entity === 'subphase') {
+    const item = findDependencyItem(project, { id: dep.id, type: dep.entity });
+    return item ? { item, type: dep.entity } : null;
+  }
+  const phase = findDependencyItem(project, { id: dep.id, type: 'phase' });
+  if (phase) return { item: phase, type: 'phase' };
+  const subphase = findDependencyItem(project, { id: dep.id, type: 'subphase' });
+  if (subphase) return { item: subphase, type: 'subphase' };
+  return null;
+}
+
+/**
+ * Whether a stored dependency entry is the link from `from` with the given
+ * type. A missing `type` counts as FS (as everywhere else), and a legacy entry
+ * without `entity` matches when it resolves to `from`'s kind — so links
+ * created before either field existed can still be found and deleted.
+ */
+export function dependencyMatches(
+  project: Project,
+  dep: Dependency,
+  from: DependencyItemRef,
+  type: DependencyType
+): boolean {
+  if (dep.id !== from.id || (dep.type || 'FS') !== type) return false;
+  const kind = dep.entity ?? resolveDependencyPredecessor(project, dep)?.type;
+  return kind === from.type;
+}
+
+/**
+ * Whether adding the link `from` -> `to` (i.e. `to` depends on `from`) would
+ * close a cycle: true when `to` is `from` itself or already a transitive
+ * predecessor of `from`. Walks phase and subphase dependencies alike, so a
+ * cycle running through both kinds is caught.
+ */
+export function wouldCreateDependencyCycle(
+  project: Project,
+  from: DependencyItemRef,
+  to: DependencyItemRef
+): boolean {
+  const key = (ref: DependencyItemRef) => `${ref.type}-${ref.id}`;
+  const target = key(to);
+  const visited = new Set<string>();
+  const stack: DependencyItemRef[] = [from];
+
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    const currentKey = key(current);
+    if (currentKey === target) return true;
+    if (visited.has(currentKey)) continue;
+    visited.add(currentKey);
+
+    const item = findDependencyItem(project, current);
+    for (const dep of item?.dependencies ?? []) {
+      const pred = resolveDependencyPredecessor(project, dep);
+      if (pred) stack.push({ id: dep.id, type: pred.type });
     }
   }
-
-  return { item: null, type: 'subphase' };
+  return false;
 }
 
 /**
@@ -118,9 +192,9 @@ function findSubphaseById(subphases: Subphase[], id: number): Subphase | null {
 export function getItemDates(
   project: Project,
   id: number,
-  _type: 'phase' | 'subphase'
+  type: DependencyEntity
 ): { start_date: string; end_date: string } | null {
-  const { item } = findPhaseOrSubphase(project, id);
+  const item = findDependencyItem(project, { id, type });
   if (item) {
     return { start_date: item.start_date, end_date: item.end_date };
   }

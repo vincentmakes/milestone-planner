@@ -14,14 +14,17 @@ import csv
 import io
 import json
 import logging
+import math
 import os
 import re
 import sys
 import tempfile
+import threading
 from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,10 +32,71 @@ from app.database import get_db
 from app.middleware.auth import require_superuser
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.user import User
+from app.services.card_status import apply_completion
 from app.websocket.broadcast import broadcast_change
 
 router = APIRouter(tags=["import"])
 logger = logging.getLogger(__name__)
+
+# Upload cap for the import routes. Real MS Project files are a few MB; the
+# whole upload is held in memory and handed to the JVM, so an unbounded one
+# can exhaust the worker. Larger uploads are refused with 413.
+MAX_IMPORT_UPLOAD_BYTES = 20 * 1024 * 1024
+UPLOAD_CHUNK_BYTES = 1024 * 1024
+
+
+async def read_upload_capped(file: UploadFile, max_bytes: int | None = None) -> bytes:
+    """
+    Read an upload into memory, refusing it (413) once it exceeds ``max_bytes``
+    (default MAX_IMPORT_UPLOAD_BYTES, read at call time).
+
+    Reads in chunks so an oversized body is rejected after at most
+    ``max_bytes`` + one chunk, never buffered whole.
+    """
+    if max_bytes is None:
+        max_bytes = MAX_IMPORT_UPLOAD_BYTES
+    size = getattr(file, "size", None)
+    if isinstance(size, int) and size > max_bytes:
+        raise HTTPException(status_code=413, detail=_too_large_detail(max_bytes))
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(UPLOAD_CHUNK_BYTES)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(status_code=413, detail=_too_large_detail(max_bytes))
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _too_large_detail(max_bytes: int) -> str:
+    return f"File too large (maximum {max_bytes // (1024 * 1024)} MB)"
+
+
+def normalize_percent_complete(value: Any) -> int:
+    """
+    A task's "% complete" as an int in 0..100.
+
+    MPXJ yields a float (``50.0``), MS-Project CSV a string that may carry a
+    ``%`` or decimals, and values outside 0..100 occur in the wild, while
+    ``completion`` is an INTEGER column the API validates to 0..100. Anything
+    unparseable counts as 0.
+    """
+    if value is None or isinstance(value, bool):
+        return 0
+    if isinstance(value, str):
+        value = value.strip().rstrip("%").strip()
+        if not value:
+            return 0
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0
+    if not math.isfinite(number):
+        return 0
+    return max(0, min(100, round(number)))
 
 
 def find_java_home() -> str | None:
@@ -234,7 +298,22 @@ def get_mpxj_classpath() -> str:
         return ""
 
 
+# Parses run in worker threads (run_in_threadpool), so two first imports could
+# race to start the JVM; jpype.startJVM may only ever be called once.
+_JVM_START_LOCK = threading.Lock()
+
+
 def ensure_jvm_started() -> None:
+    """Start the JVM once, even when two worker threads ask at the same time."""
+    import jpype
+
+    if jpype.isJVMStarted():
+        return
+    with _JVM_START_LOCK:
+        _start_jvm()
+
+
+def _start_jvm() -> None:
     """
     Ensure the JVM is started with proper configuration.
     Raises a detailed HTTPException if Java is not available.
@@ -473,7 +552,7 @@ def parse_mpp_file(file_path: str) -> dict[str, Any]:
             "start": java_date_to_str(task.getStart()) if task.getStart() else None,
             "finish": java_date_to_str(task.getFinish()) if task.getFinish() else None,
             "duration": str(task.getDuration()) if task.getDuration() else None,
-            "percent_complete": float(task.getPercentageComplete() or 0),
+            "percent_complete": normalize_percent_complete(task.getPercentageComplete()),
             "outline_level": int(task.getOutlineLevel() or 0),
             "parent_id": int(task.getParentTask().getID())
             if task.getParentTask() and task.getParentTask().getID()
@@ -661,15 +740,8 @@ def parse_csv_file(content: str) -> dict[str, Any]:
 
         # Parse percent complete
         percent_complete = 0
-        if (
-            cols["percent_complete"] >= 0
-            and cols["percent_complete"] < len(row)
-            and row[cols["percent_complete"]].strip()
-        ):
-            try:
-                percent_complete = int(row[cols["percent_complete"]].strip().rstrip("%"))
-            except ValueError:
-                pass
+        if cols["percent_complete"] >= 0 and cols["percent_complete"] < len(row):
+            percent_complete = normalize_percent_complete(row[cols["percent_complete"]])
 
         # Parse milestone
         is_milestone = False
@@ -884,15 +956,16 @@ async def import_mpp_file(
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
 
         # Write uploaded content
-        content = await file.read()
+        content = await read_upload_capped(file)
         if not content:
             raise HTTPException(status_code=400, detail="Empty file")
 
         temp_file.write(content)
         temp_file.close()
 
-        # Parse the file
-        project_data = parse_mpp_file(temp_file.name)
+        # Parse the file in a worker thread: the JVM parse is blocking and
+        # would otherwise stall every request on this worker.
+        project_data = await run_in_threadpool(parse_mpp_file, temp_file.name)
 
         return {
             "success": True,
@@ -929,7 +1002,7 @@ async def test_upload_endpoint(
     user: User = Depends(require_superuser),
 ):
     """Test file upload (superuser-gated diagnostic)."""
-    content = await file.read()
+    content = await read_upload_capped(file)
     return {
         "status": "ok",
         "filename": file.filename,
@@ -967,7 +1040,7 @@ async def import_project_full(
         raise HTTPException(status_code=400, detail="No file provided")
 
     filename_lower = file.filename.lower()
-    content = await file.read()
+    content = await read_upload_capped(file)
 
     logger.info("File size: %d bytes", len(content))
 
@@ -981,7 +1054,7 @@ async def import_project_full(
         if filename_lower.endswith(".csv"):
             # Parse CSV directly
             text_content = content.decode("utf-8-sig")  # Handle BOM
-            project_data = parse_csv_file(text_content)
+            project_data = await run_in_threadpool(parse_csv_file, text_content)
         elif filename_lower.endswith((".mpp", ".mpt", ".mpx", ".xml")):
             # Save to temp file for MPXJ
             suffix = os.path.splitext(file.filename)[1]
@@ -989,7 +1062,7 @@ async def import_project_full(
             temp_file.write(content)
             temp_file.close()
 
-            project_data = parse_mpp_file(temp_file.name)
+            project_data = await run_in_threadpool(parse_mpp_file, temp_file.name)
         else:
             raise HTTPException(
                 status_code=400, detail="Invalid file type. Supported: .csv, .mpp, .mpt, .mpx, .xml"
@@ -1054,8 +1127,10 @@ async def import_project_full(
                     end_date=parse_date_str(task.get("finish")) or project.end_date,
                     is_milestone=1 if task.get("milestone") else 0,
                     sort_order=phase_order,
-                    completion=task.get("percent_complete", 0),
                 )
+                # Never assign completion directly: status must follow it, or a
+                # finished task lands in the Kanban "To Do" column.
+                apply_completion(phase, normalize_percent_complete(task.get("percent_complete")))
                 db.add(phase)
                 await db.flush()
 
@@ -1088,7 +1163,9 @@ async def import_project_full(
                     is_milestone=1 if child.get("milestone") else 0,
                     sort_order=order,
                     depth=depth,
-                    completion=child.get("percent_complete", 0),
+                )
+                apply_completion(
+                    subphase, normalize_percent_complete(child.get("percent_complete"))
                 )
                 db.add(subphase)
                 await db.flush()
@@ -1121,7 +1198,15 @@ async def import_project_full(
             for pred in task["predecessors"]:
                 pred_info = csv_id_to_db.get(pred["id"])
                 if pred_info:
-                    deps.append({"id": pred_info["db_id"], "type": pred.get("type", "FS")})
+                    # `entity` disambiguates the id: phase and subphase ids
+                    # come from separate sequences.
+                    deps.append(
+                        {
+                            "id": pred_info["db_id"],
+                            "type": pred.get("type", "FS"),
+                            "entity": pred_info["type"],
+                        }
+                    )
 
             if deps:
                 deps_json = json.dumps(deps)

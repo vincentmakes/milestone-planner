@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useAppStore } from './stores/appStore';
 import { useWhatIfStore } from './stores/whatIfStore';
 import { useAuth } from './hooks/useAuth';
 import { useDataLoader } from './hooks/useDataLoader';
 import { LoadingScreen } from './components/screens/LoadingScreen';
 import { LoginScreen } from './components/screens/LoginScreen';
+import { LoadErrorScreen } from './components/screens/LoadErrorScreen';
 import { MainLayout } from './components/layout/MainLayout';
 import { ModalContainer } from './components/modals';
 import { ContextMenuContainer } from './components/gantt/ContextMenuContainer';
@@ -13,38 +14,33 @@ import { WebSocketProvider } from './contexts/WebSocketContext';
 import { ActivityFeed } from './components/common/ActivityFeed/ActivityFeed';
 import './App.css';
 
-function App() {
+/** The admin portal lives under /admin; everything else is the tenant app. */
+function isAdminPath(pathname: string): boolean {
+  return pathname === '/admin' || pathname.startsWith('/admin/');
+}
+
+/**
+ * The tenant application. Kept separate from App so the tenant auth check
+ * (GET /api/auth/me) only runs outside the admin portal, which has its own
+ * session and its own login.
+ */
+function TenantApp() {
   const { isLoading, isAuthenticated } = useAuth();
-  const { loadAllData, isLoading: isDataLoading } = useDataLoader();
+  const { loadAllData, isLoading: isDataLoading, error: loadError } = useDataLoader();
   const whatIfMode = useWhatIfStore((state) => state.whatIfMode);
   const instanceSettings = useAppStore((state) => state.instanceSettings);
 
-  // Check if we're on the admin route
-  const [isAdminRoute, setIsAdminRoute] = useState(false);
-
+  // Load data when authenticated
   useEffect(() => {
-    // Check URL path for /admin
-    const path = window.location.pathname;
-    const isAdmin = path === '/admin' || path === '/admin/' || path.startsWith('/admin/');
-    setIsAdminRoute(isAdmin);
-  }, []);
-
-  // Load data when authenticated (only for main app)
-  useEffect(() => {
-    if (isAuthenticated && !isAdminRoute) {
+    if (isAuthenticated) {
       loadAllData();
     }
-  }, [isAuthenticated, loadAllData, isAdminRoute]);
+  }, [isAuthenticated, loadAllData]);
 
   // Update document title when instance settings change
   useEffect(() => {
-    if (isAdminRoute) {
-      document.title = 'Milestone Admin';
-    } else {
-      const title = instanceSettings?.instance_title || 'Milestone';
-      document.title = title;
-    }
-  }, [instanceSettings, isAdminRoute]);
+    document.title = instanceSettings?.instance_title || 'Milestone';
+  }, [instanceSettings]);
 
   // Add/remove what-if-mode class on body
   useEffect(() => {
@@ -57,11 +53,6 @@ function App() {
       document.body.classList.remove('what-if-mode');
     };
   }, [whatIfMode]);
-
-  // Render Admin app if on /admin route
-  if (isAdminRoute) {
-    return <AdminApp />;
-  }
 
   // Show loading screen while checking auth
   if (isLoading) {
@@ -78,6 +69,11 @@ function App() {
     return <LoadingScreen message="Loading data..." />;
   }
 
+  // The initial load failed: an empty workspace would look like "no data".
+  if (loadError) {
+    return <LoadErrorScreen message={loadError} onRetry={loadAllData} />;
+  }
+
   // Render main application with WebSocket provider for real-time updates
   return (
     <WebSocketProvider>
@@ -87,6 +83,18 @@ function App() {
       <ActivityFeed />
     </WebSocketProvider>
   );
+}
+
+function AdminPortal() {
+  useEffect(() => {
+    document.title = 'Milestone Admin';
+  }, []);
+  return <AdminApp />;
+}
+
+function App() {
+  // There is no client-side router: the path is fixed for the page's lifetime.
+  return isAdminPath(window.location.pathname) ? <AdminPortal /> : <TenantApp />;
 }
 
 export default App;

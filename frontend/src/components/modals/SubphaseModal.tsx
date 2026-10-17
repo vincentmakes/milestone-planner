@@ -4,15 +4,31 @@
  * Can create under a phase or under another subphase
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Modal } from '@/components/common/Modal';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { createSubphase, createChildSubphase, updateSubphase, deleteSubphase, loadAllProjects, updatePhase, updateProject } from '@/api/endpoints/projects';
-import { toInputDateFormat } from '@/utils/date';
+import { useWhatIfStore } from '@/stores/whatIfStore';
+import {
+  toInputDateFormat,
+  parseLocalDate,
+  formatLocalDate,
+  formatDateISO,
+  addDaysToDateString,
+  daysBetweenDateStrings,
+} from '@/utils/date';
 import { getDepthColor } from '@/utils/themeColors';
+import {
+  patchPhaseLocally,
+  patchSubphaseLocally,
+  removeSubphaseLocally,
+  updateProjectLocally,
+} from '@/utils/localProjectTree';
+import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import type { Phase, Subphase, Project, CreateSubphaseRequest } from '@/types';
 import { findSubphaseById, findPhaseContainingSubphase } from '@/utils/subphaseUtils';
 import styles from './PhaseModal.module.css'; // Reuse phase modal styles
@@ -47,8 +63,8 @@ function calculatePhaseDateRange(phase: Phase): { start: Date; end: Date } | nul
   
   const processSubphases = (subphases: Subphase[]) => {
     for (const sub of subphases) {
-      const start = new Date(sub.start_date);
-      const end = new Date(sub.end_date);
+      const start = parseLocalDate(sub.start_date);
+      const end = parseLocalDate(sub.end_date);
       
       if (!minStart || start < minStart) minStart = start;
       if (!maxEnd || end > maxEnd) maxEnd = end;
@@ -76,8 +92,8 @@ function calculateProjectDateRange(project: Project): { start: Date; end: Date }
   let maxEnd: Date | null = null;
   
   for (const phase of phases) {
-    const start = new Date(phase.start_date);
-    const end = new Date(phase.end_date);
+    const start = parseLocalDate(phase.start_date);
+    const end = parseLocalDate(phase.end_date);
     
     if (!minStart || start < minStart) minStart = start;
     if (!maxEnd || end > maxEnd) maxEnd = end;
@@ -106,8 +122,8 @@ function calculateSubphaseDateRange(subphase: Subphase): { start: Date; end: Dat
   
   const processChildren = (subs: Subphase[]) => {
     for (const sub of subs) {
-      const start = new Date(sub.start_date);
-      const end = new Date(sub.end_date);
+      const start = parseLocalDate(sub.start_date);
+      const end = parseLocalDate(sub.end_date);
       
       if (!minStart || start < minStart) minStart = start;
       if (!maxEnd || end > maxEnd) maxEnd = end;
@@ -154,7 +170,7 @@ function findParentSubphaseChain(phases: Phase[], subphaseId: number): Subphase[
 }
 
 async function cascadeDatesUpward(
-  project: Project,
+  sourceProject: Project,
   phaseId: number,
   mode: 'expand' | 'shrink',
   newChildStart?: Date,
@@ -162,6 +178,9 @@ async function cascadeDatesUpward(
   parentSubphaseId?: number // The immediate parent subphase (if any)
 ): Promise<CascadeResult> {
   const result: CascadeResult = { subphasesUpdated: 0, phaseUpdated: false, projectUpdated: false };
+  // Work on a copy: the walk below updates parent dates in place as it goes,
+  // and `project` may be the live store object.
+  const project = structuredClone(sourceProject);
   const phase = project.phases?.find(p => p.id === phaseId);
   if (!phase) return result;
   
@@ -183,8 +202,8 @@ async function cascadeDatesUpward(
     
     // Process each parent subphase from closest to furthest
     for (const parentSubphase of parentChain) {
-      const subStart = new Date(parentSubphase.start_date);
-      const subEnd = new Date(parentSubphase.end_date);
+      const subStart = parseLocalDate(parentSubphase.start_date);
+      const subEnd = parseLocalDate(parentSubphase.end_date);
       
       let updatedStart = subStart;
       let updatedEnd = subEnd;
@@ -205,15 +224,13 @@ async function cascadeDatesUpward(
       // Update subphase if dates changed
       if (updatedStart.getTime() !== subStart.getTime() || 
           updatedEnd.getTime() !== subEnd.getTime()) {
-        await updateSubphase(parentSubphase.id, {
-          start_date: updatedStart.toISOString().split('T')[0],
-          end_date: updatedEnd.toISOString().split('T')[0],
-        });
+        const dates = { start_date: formatLocalDate(updatedStart), end_date: formatLocalDate(updatedEnd) };
+        await updateSubphase(parentSubphase.id, dates);
+        patchSubphaseLocally(project.id, parentSubphase.id, dates);
         result.subphasesUpdated++;
         
         // Update local object for next iteration
-        parentSubphase.start_date = updatedStart.toISOString().split('T')[0];
-        parentSubphase.end_date = updatedEnd.toISOString().split('T')[0];
+        Object.assign(parentSubphase, dates);
       }
       
       // Update current bounds for next parent
@@ -223,8 +240,8 @@ async function cascadeDatesUpward(
   }
   
   // Now cascade to phase
-  const phaseStart = new Date(phase.start_date);
-  const phaseEnd = new Date(phase.end_date);
+  const phaseStart = parseLocalDate(phase.start_date);
+  const phaseEnd = parseLocalDate(phase.end_date);
   
   let updatedPhaseStart = phaseStart;
   let updatedPhaseEnd = phaseEnd;
@@ -245,20 +262,18 @@ async function cascadeDatesUpward(
   // Update phase if dates changed
   if (updatedPhaseStart.getTime() !== phaseStart.getTime() || 
       updatedPhaseEnd.getTime() !== phaseEnd.getTime()) {
-    await updatePhase(phaseId, {
-      start_date: updatedPhaseStart.toISOString().split('T')[0],
-      end_date: updatedPhaseEnd.toISOString().split('T')[0],
-    });
+    const dates = { start_date: formatLocalDate(updatedPhaseStart), end_date: formatLocalDate(updatedPhaseEnd) };
+    await updatePhase(phaseId, dates);
+    patchPhaseLocally(project.id, phaseId, dates);
     result.phaseUpdated = true;
     
     // Update local phase object for project cascade calculation
-    phase.start_date = updatedPhaseStart.toISOString().split('T')[0];
-    phase.end_date = updatedPhaseEnd.toISOString().split('T')[0];
+    Object.assign(phase, dates);
   }
   
   // Now cascade to project
-  const projectStart = new Date(project.start_date);
-  const projectEnd = new Date(project.end_date);
+  const projectStart = parseLocalDate(project.start_date);
+  const projectEnd = parseLocalDate(project.end_date);
   
   let updatedProjectStart = projectStart;
   let updatedProjectEnd = projectEnd;
@@ -279,10 +294,9 @@ async function cascadeDatesUpward(
   // Update project if dates changed
   if (updatedProjectStart.getTime() !== projectStart.getTime() || 
       updatedProjectEnd.getTime() !== projectEnd.getTime()) {
-    await updateProject(project.id, {
-      start_date: updatedProjectStart.toISOString().split('T')[0],
-      end_date: updatedProjectEnd.toISOString().split('T')[0],
-    });
+    const dates = { start_date: formatLocalDate(updatedProjectStart), end_date: formatLocalDate(updatedProjectEnd) };
+    await updateProject(project.id, dates);
+    updateProjectLocally(project.id, (p) => Object.assign(p, dates));
     result.projectUpdated = true;
   }
   
@@ -294,9 +308,12 @@ export function SubphaseModal() {
   const projects = useAppStore((s) => s.projects);
   const setProjects = useAppStore((s) => s.setProjects);
   const { ensurePhaseExpanded, ensureSubphaseExpanded } = useViewStore();
+  const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
   
   const isOpen = activeModal === 'subphase';
   const isEditing = !!editingSubphase;
+  // Creating inside What-If cannot show the new subphase until Apply; edits are fine.
+  const createBlockedReason = !isEditing && whatIfMode ? whatIfUnavailableMessage('Adding subphases') : null;
   const projectId = modalContext.projectId;
   const phaseId = editingSubphase?.parent_phase_id || modalContext.phaseId;
   const parentSubphaseId = modalContext.subphaseId; // For creating nested subphases
@@ -306,7 +323,7 @@ export function SubphaseModal() {
   const [isMilestone, setIsMilestone] = useState(false);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
   
   // Get parent phase for date constraints
@@ -320,36 +337,47 @@ export function SubphaseModal() {
     return project.phases?.find(ph => ph.id === phaseId) || null;
   }, [project, phaseId]);
   
-  // Initialize form when modal opens
+  // Initialize form when modal opens -- once per open. `parentPhase` is
+  // derived from `projects`, which a WebSocket refetch replaces with new
+  // objects; without the guard a colleague's edit would wipe what the user
+  // has typed. The key changes when the dialog is reopened on another
+  // subphase / parent.
+  const initializedForRef = useRef<string | null>(null);
+  const phantomPreset = modalContext.phantomPreset;
+  const initKey = `${isEditing ? 'edit' : 'new'}:${editingSubphase?.id ?? 'new'}:${projectId ?? ''}:${phaseId ?? ''}:${parentSubphaseId ?? ''}:${phantomPreset ? `${phantomPreset.startDate}:${phantomPreset.endDate}` : ''}`;
   useEffect(() => {
-    if (isOpen) {
-      if (editingSubphase) {
-        // Editing mode - convert ISO datetime to input format
-        setName(editingSubphase.name);
-        // Handle both boolean true and integer 1 from SQLite
-        setIsMilestone(Boolean(editingSubphase.is_milestone));
-        setStartDate(toInputDateFormat(editingSubphase.start_date));
-        setEndDate(toInputDateFormat(editingSubphase.end_date));
-      } else if (modalContext.phantomPreset) {
-        // Phantom sibling mode - use preset dates
-        setName('');
-        setIsMilestone(false);
-        setStartDate(toInputDateFormat(modalContext.phantomPreset.startDate));
-        setEndDate(toInputDateFormat(modalContext.phantomPreset.endDate));
-      } else {
-        // New subphase mode - use parent phase dates as default
-        const today = new Date().toISOString().split('T')[0];
-        const defaultStart = toInputDateFormat(parentPhase?.start_date) || today;
-        const defaultEnd = toInputDateFormat(parentPhase?.end_date) || today;
-        
-        setName('');
-        setIsMilestone(false);
-        setStartDate(defaultStart);
-        setEndDate(defaultEnd);
-      }
-      setError(null);
+    if (!isOpen) {
+      initializedForRef.current = null;
+      return;
     }
-  }, [isOpen, editingSubphase, parentPhase, modalContext.phantomPreset]);
+    if (initializedForRef.current === initKey) return;
+    initializedForRef.current = initKey;
+    if (editingSubphase) {
+      // Editing mode - convert ISO datetime to input format
+      setName(editingSubphase.name);
+      // Handle both boolean true and integer 1 from SQLite
+      setIsMilestone(Boolean(editingSubphase.is_milestone));
+      setStartDate(toInputDateFormat(editingSubphase.start_date));
+      setEndDate(toInputDateFormat(editingSubphase.end_date));
+    } else if (modalContext.phantomPreset) {
+      // Phantom sibling mode - use preset dates
+      setName('');
+      setIsMilestone(false);
+      setStartDate(toInputDateFormat(modalContext.phantomPreset.startDate));
+      setEndDate(toInputDateFormat(modalContext.phantomPreset.endDate));
+    } else {
+      // New subphase mode - use parent phase dates as default
+      const today = formatDateISO(new Date());
+      const defaultStart = toInputDateFormat(parentPhase?.start_date) || today;
+      const defaultEnd = toInputDateFormat(parentPhase?.end_date) || today;
+
+      setName('');
+      setIsMilestone(false);
+      setStartDate(defaultStart);
+      setEndDate(defaultEnd);
+    }
+    setError(null);
+  }, [isOpen, initKey, editingSubphase, parentPhase, modalContext.phantomPreset]);
   
   // Sync end date with start date for milestones
   useEffect(() => {
@@ -360,6 +388,11 @@ export function SubphaseModal() {
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (createBlockedReason) {
+      setError(createBlockedReason);
+      return;
+    }
     
     if (!name.trim()) {
       setError('Please enter a subphase name');
@@ -381,7 +414,7 @@ export function SubphaseModal() {
       return;
     }
     
-    setIsSubmitting(true);
+    if (!beginSubmit()) return;
     setError(null);
     
     try {
@@ -419,24 +452,19 @@ export function SubphaseModal() {
         if (sourceSubphase) {
           // Calculate lag based on dependency type
           let lag = 0;
-          const newStart = new Date(startDate);
-          const sourceStart = new Date(sourceSubphase.start_date.split('T')[0]);
-          const sourceEnd = new Date(sourceSubphase.end_date.split('T')[0]);
-          
           if (dependencyType === 'SS') {
             // Start-to-Start: lag = new start - source start
-            lag = Math.round((newStart.getTime() - sourceStart.getTime()) / (1000 * 60 * 60 * 24));
+            lag = daysBetweenDateStrings(sourceSubphase.start_date, startDate);
           } else {
             // Finish-to-Start: lag = new start - (source end + 1)
-            const expectedStart = new Date(sourceEnd);
-            expectedStart.setDate(expectedStart.getDate() + 1);
-            lag = Math.round((newStart.getTime() - expectedStart.getTime()) / (1000 * 60 * 60 * 24));
+            lag = daysBetweenDateStrings(addDaysToDateString(sourceSubphase.end_date, 1), startDate);
           }
           
           subphaseData.dependencies = [{
             id: predecessorId,
             type: dependencyType,
             lag,
+            entity: 'subphase',
           }];
           
           // Use the source subphase's order_index + 1 to insert after it
@@ -451,6 +479,15 @@ export function SubphaseModal() {
       
       if (isEditing && editingSubphase) {
         await updateSubphase(editingSubphase.id, subphaseData);
+        // Show the edit right away (the reload below is a no-op in What-If).
+        if (projectId) {
+          patchSubphaseLocally(projectId, editingSubphase.id, {
+            name: subphaseData.name,
+            start_date: subphaseData.start_date,
+            end_date: subphaseData.end_date,
+            is_milestone: subphaseData.is_milestone,
+          });
+        }
       } else if (parentSubphaseId && projectId) {
         // Creating nested subphase under another subphase
         await createChildSubphase(parentSubphaseId, projectId, subphaseData);
@@ -472,8 +509,8 @@ export function SubphaseModal() {
       
       // Cascade parent dates if the new subphase extends beyond bounds
       if (cascadePhaseId && !isEditing && project) {
-        const newSubphaseStart = new Date(subphaseData.start_date);
-        const newSubphaseEnd = new Date(subphaseData.end_date);
+        const newSubphaseStart = parseLocalDate(subphaseData.start_date);
+        const newSubphaseEnd = parseLocalDate(subphaseData.end_date);
         
         await cascadeDatesUpward(
           project,
@@ -492,7 +529,7 @@ export function SubphaseModal() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save subphase');
     } finally {
-      setIsSubmitting(false);
+      endSubmit();
     }
   };
   
@@ -503,7 +540,7 @@ export function SubphaseModal() {
       return;
     }
     
-    setIsSubmitting(true);
+    if (!beginSubmit()) return;
     setError(null);
     
     try {
@@ -513,6 +550,7 @@ export function SubphaseModal() {
       const parentSubphaseIdForCascade = editingSubphase.parent_subphase_id || undefined;
       
       await deleteSubphase(editingSubphase.id);
+      if (project) removeSubphaseLocally(project.id, editingSubphase.id);
       
       // Reload projects to get updated structure
       const updatedProjects = await loadAllProjects();
@@ -544,7 +582,7 @@ export function SubphaseModal() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete subphase');
     } finally {
-      setIsSubmitting(false);
+      endSubmit();
     }
   };
   
@@ -564,7 +602,12 @@ export function SubphaseModal() {
         <Button variant="secondary" onClick={closeModal} disabled={isSubmitting}>
           Cancel
         </Button>
-        <Button variant="primary" onClick={handleSubmit} disabled={isSubmitting}>
+        <Button
+          variant="primary"
+          onClick={handleSubmit}
+          disabled={isSubmitting || !!createBlockedReason}
+          title={createBlockedReason ?? undefined}
+        >
           {isSubmitting ? 'Saving...' : isEditing ? 'Save Changes' : 'Add Subphase'}
         </Button>
       </div>
@@ -580,7 +623,10 @@ export function SubphaseModal() {
       footer={footer}
     >
       <form onSubmit={handleSubmit} className={styles.form}>
-        {error && <div className={styles.error}>{error}</div>}
+        {createBlockedReason && (
+          <div className={styles.error} role="status">{createBlockedReason}</div>
+        )}
+        {error && error !== createBlockedReason && <div className={styles.error}>{error}</div>}
         
         {parentPhase && (
           <div className={styles.contextInfo}>

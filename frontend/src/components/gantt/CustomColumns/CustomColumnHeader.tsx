@@ -1,11 +1,16 @@
 /**
  * CustomColumnHeader Component
  * Displays the column header with resize handle, filter dropdown, and context menu
+ *
+ * Column *definitions* (name, type, width) are admin-only on the backend
+ * (`require_admin`), so the double-click editor and the resize handle are only
+ * offered to admins. Filtering is a local view setting and stays open to all.
  */
 
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { updateCustomColumn } from '@/api';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
+import { useAppStore } from '@/stores/appStore';
 import type { CustomColumn } from '@/types';
 import styles from './CustomColumnHeader.module.css';
 
@@ -23,6 +28,8 @@ export function CustomColumnHeader({
   const headerRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
+  // Global gate: custom-column definitions are admin-only
+  const isAdmin = useAppStore((s) => s.currentUser?.role === 'admin');
   
   const customColumnValues = useCustomColumnStore((s) => s.customColumnValues);
   const customColumnFilters = useCustomColumnStore((s) => s.customColumnFilters);
@@ -66,12 +73,15 @@ export function CustomColumnHeader({
     
     const startX = e.clientX;
     const startWidth = column.width;
+    // The latest width: `column.width` in this closure is the pre-resize value
+    let latestWidth = startWidth;
     
     setIsResizing(true);
     
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const delta = moveEvent.clientX - startX;
       const newWidth = Math.max(60, Math.min(400, startWidth + delta));
+      latestWidth = newWidth;
       onWidthChange(column.id, newWidth);
     };
     
@@ -81,8 +91,9 @@ export function CustomColumnHeader({
       document.removeEventListener('mouseup', handleMouseUp);
       
       // Persist the new width
+      if (latestWidth === startWidth) return;
       try {
-        await updateCustomColumn(column.id, { width: column.width });
+        await updateCustomColumn(column.id, { width: latestWidth });
       } catch (err) {
         console.error('[CustomColumnHeader] Failed to save width:', err);
       }
@@ -93,6 +104,7 @@ export function CustomColumnHeader({
   }, [column.id, column.width, onWidthChange]);
   
   const handleDoubleClick = () => {
+    if (!isAdmin) return;
     onEdit(column);
   };
   
@@ -156,7 +168,7 @@ export function CustomColumnHeader({
       className={`${styles.header} ${isResizing ? styles.resizing : ''} ${hasActiveFilter ? styles.filtered : ''}`}
       style={{ width: column.width }}
       onDoubleClick={handleDoubleClick}
-      title={`${column.name} (double-click to edit)`}
+      title={isAdmin ? `${column.name} (double-click to edit)` : column.name}
     >
       <div className={styles.content}>
         <span className={styles.icon}>{getTypeIcon()}</span>
@@ -225,10 +237,13 @@ export function CustomColumnHeader({
         </div>
       )}
       
-      <div 
-        className={styles.resizeHandle}
-        onMouseDown={handleMouseDown}
-      />
+      {isAdmin && (
+        <div 
+          className={styles.resizeHandle}
+          onMouseDown={handleMouseDown}
+          data-testid="custom-column-resize-handle"
+        />
+      )}
     </div>
   );
 }

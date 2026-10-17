@@ -3,16 +3,27 @@
  * Supports phase creation, editing, milestone mode, and staff assignments
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Modal } from '@/components/common/Modal';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { createPhase, updatePhase, deletePhase, loadAllProjects, updateProject } from '@/api/endpoints/projects';
-import { toInputDateFormat } from '@/utils/date';
+import { useWhatIfStore } from '@/stores/whatIfStore';
+import {
+  toInputDateFormat,
+  parseLocalDate,
+  formatLocalDate,
+  formatDateISO,
+  addDaysToDateString,
+  daysBetweenDateStrings,
+} from '@/utils/date';
 import { getPhaseColor } from '@/utils/themeColors';
-import type { Project } from '@/types';
+import { patchPhaseLocally, removePhaseLocally, updateProjectLocally } from '@/utils/localProjectTree';
+import { whatIfUnavailableMessage } from '@/utils/whatIf';
+import type { Dependency, Project } from '@/types';
 import styles from './PhaseModal.module.css';
 
 // Calculate the date range that encompasses all phases of a project
@@ -24,8 +35,8 @@ function calculateProjectDateRange(project: Project): { start: Date; end: Date }
   let maxEnd: Date | null = null;
   
   for (const phase of phases) {
-    const start = new Date(phase.start_date);
-    const end = new Date(phase.end_date);
+    const start = parseLocalDate(phase.start_date);
+    const end = parseLocalDate(phase.end_date);
     
     if (!minStart || start < minStart) minStart = start;
     if (!maxEnd || end > maxEnd) maxEnd = end;
@@ -47,8 +58,8 @@ async function cascadeProjectDates(
   // Project must have dates
   if (!project.start_date || !project.end_date) return false;
   
-  const projectStart = new Date(project.start_date);
-  const projectEnd = new Date(project.end_date);
+  const projectStart = parseLocalDate(project.start_date);
+  const projectEnd = parseLocalDate(project.end_date);
   
   let updatedProjectStart = projectStart;
   let updatedProjectEnd = projectEnd;
@@ -69,10 +80,13 @@ async function cascadeProjectDates(
   // Update project if dates changed
   if (updatedProjectStart.getTime() !== projectStart.getTime() || 
       updatedProjectEnd.getTime() !== projectEnd.getTime()) {
-    await updateProject(project.id, {
-      start_date: updatedProjectStart.toISOString().split('T')[0],
-      end_date: updatedProjectEnd.toISOString().split('T')[0],
-    });
+    const dates = {
+      start_date: formatLocalDate(updatedProjectStart),
+      end_date: formatLocalDate(updatedProjectEnd),
+    };
+    await updateProject(project.id, dates);
+    // Mirror locally: during What-If the write is only queued.
+    updateProjectLocally(project.id, (p) => Object.assign(p, dates));
     return true;
   }
   return false;
@@ -83,9 +97,12 @@ export function PhaseModal() {
   const projects = useAppStore((s) => s.projects);
   const setProjects = useAppStore((s) => s.setProjects);
   const { ensureProjectExpanded } = useViewStore();
+  const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
   
   const isOpen = activeModal === 'phase';
   const isEditing = !!editingPhase;
+  // Creating inside What-If cannot show the new phase until Apply; edits are fine.
+  const createBlockedReason = !isEditing && whatIfMode ? whatIfUnavailableMessage('Adding phases') : null;
   const projectId = editingPhase?.project_id || modalContext.projectId;
   
   // Form state
@@ -93,7 +110,7 @@ export function PhaseModal() {
   const [isMilestone, setIsMilestone] = useState(false);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
   
   // Get parent project for date constraints
@@ -101,36 +118,46 @@ export function PhaseModal() {
     return projects.find(p => p.id === projectId);
   }, [projects, projectId]);
   
-  // Initialize form when modal opens
+  // Initialize form when modal opens -- once per open. `project` is derived
+  // from `projects`, which a WebSocket refetch replaces with new objects;
+  // without the guard a colleague's edit would wipe what the user has typed.
+  // The key changes when the dialog is reopened on another phase / project.
+  const initializedForRef = useRef<string | null>(null);
+  const phantomPreset = modalContext.phantomPreset;
+  const initKey = `${isEditing ? 'edit' : 'new'}:${editingPhase?.id ?? 'new'}:${projectId ?? ''}:${phantomPreset ? `${phantomPreset.startDate}:${phantomPreset.endDate}` : ''}`;
   useEffect(() => {
-    if (isOpen) {
-      if (editingPhase) {
-        // Editing mode - convert ISO datetime to input format
-        setName(editingPhase.name);
-        // Handle both boolean true and integer 1 from SQLite
-        setIsMilestone(Boolean(editingPhase.is_milestone));
-        setStartDate(toInputDateFormat(editingPhase.start_date));
-        setEndDate(toInputDateFormat(editingPhase.end_date));
-      } else if (modalContext.phantomPreset) {
-        // Phantom sibling mode - use preset dates
-        setName('');
-        setIsMilestone(false);
-        setStartDate(toInputDateFormat(modalContext.phantomPreset.startDate));
-        setEndDate(toInputDateFormat(modalContext.phantomPreset.endDate));
-      } else {
-        // New phase mode - use project dates as default
-        const today = new Date().toISOString().split('T')[0];
-        const defaultStart = toInputDateFormat(project?.start_date) || today;
-        const defaultEnd = toInputDateFormat(project?.end_date) || today;
-        
-        setName('');
-        setIsMilestone(false);
-        setStartDate(defaultStart);
-        setEndDate(defaultEnd);
-      }
-      setError(null);
+    if (!isOpen) {
+      initializedForRef.current = null;
+      return;
     }
-  }, [isOpen, editingPhase, project, modalContext.phantomPreset]);
+    if (initializedForRef.current === initKey) return;
+    initializedForRef.current = initKey;
+    if (editingPhase) {
+      // Editing mode - convert ISO datetime to input format
+      setName(editingPhase.name);
+      // Handle both boolean true and integer 1 from SQLite
+      setIsMilestone(Boolean(editingPhase.is_milestone));
+      setStartDate(toInputDateFormat(editingPhase.start_date));
+      setEndDate(toInputDateFormat(editingPhase.end_date));
+    } else if (modalContext.phantomPreset) {
+      // Phantom sibling mode - use preset dates
+      setName('');
+      setIsMilestone(false);
+      setStartDate(toInputDateFormat(modalContext.phantomPreset.startDate));
+      setEndDate(toInputDateFormat(modalContext.phantomPreset.endDate));
+    } else {
+      // New phase mode - use project dates as default
+      const today = formatDateISO(new Date());
+      const defaultStart = toInputDateFormat(project?.start_date) || today;
+      const defaultEnd = toInputDateFormat(project?.end_date) || today;
+      
+      setName('');
+      setIsMilestone(false);
+      setStartDate(defaultStart);
+      setEndDate(defaultEnd);
+    }
+    setError(null);
+  }, [isOpen, initKey, editingPhase, project, modalContext.phantomPreset]);
   
   // Sync end date with start date for milestones
   useEffect(() => {
@@ -141,6 +168,11 @@ export function PhaseModal() {
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (createBlockedReason) {
+      setError(createBlockedReason);
+      return;
+    }
     
     if (!name.trim()) {
       setError('Please enter a phase name');
@@ -162,7 +194,7 @@ export function PhaseModal() {
       return;
     }
     
-    setIsSubmitting(true);
+    if (!beginSubmit()) return;
     setError(null);
     
     try {
@@ -173,7 +205,7 @@ export function PhaseModal() {
         end_date: string;
         is_milestone: boolean;
         color: string;
-        dependencies?: { id: number; type: 'FS' | 'FF' | 'SS' | 'SF'; lag: number }[];
+        dependencies?: Dependency[];
         order_index?: number;
       } = {
         name: name.trim(),
@@ -192,24 +224,19 @@ export function PhaseModal() {
         if (sourcePhase) {
           // Calculate lag based on dependency type
           let lag = 0;
-          const newStart = new Date(startDate);
-          const sourceStart = new Date(sourcePhase.start_date.split('T')[0]);
-          const sourceEnd = new Date(sourcePhase.end_date.split('T')[0]);
-          
           if (dependencyType === 'SS') {
             // Start-to-Start: lag = new start - source start
-            lag = Math.round((newStart.getTime() - sourceStart.getTime()) / (1000 * 60 * 60 * 24));
+            lag = daysBetweenDateStrings(sourcePhase.start_date, startDate);
           } else {
             // Finish-to-Start: lag = new start - (source end + 1)
-            const expectedStart = new Date(sourceEnd);
-            expectedStart.setDate(expectedStart.getDate() + 1);
-            lag = Math.round((newStart.getTime() - expectedStart.getTime()) / (1000 * 60 * 60 * 24));
+            lag = daysBetweenDateStrings(addDaysToDateString(sourcePhase.end_date, 1), startDate);
           }
           
           phaseData.dependencies = [{
             id: predecessorId,
             type: dependencyType,
             lag,
+            entity: 'phase',
           }];
           
           // Use the source phase's order_index to insert after it
@@ -222,6 +249,13 @@ export function PhaseModal() {
       
       if (isEditing && editingPhase) {
         await updatePhase(editingPhase.id, phaseData);
+        // Show the edit right away (the reload below is a no-op in What-If).
+        patchPhaseLocally(projectId, editingPhase.id, {
+          name: phaseData.name,
+          start_date: phaseData.start_date,
+          end_date: phaseData.end_date,
+          is_milestone: phaseData.is_milestone,
+        });
       } else {
         await createPhase(projectId, phaseData);
         // Expand project so new phase is visible
@@ -229,8 +263,8 @@ export function PhaseModal() {
         
         // Cascade project dates if the new phase extends beyond project bounds
         if (project) {
-          const newPhaseStart = new Date(phaseData.start_date);
-          const newPhaseEnd = new Date(phaseData.end_date);
+          const newPhaseStart = parseLocalDate(phaseData.start_date);
+          const newPhaseEnd = parseLocalDate(phaseData.end_date);
           await cascadeProjectDates(project, 'expand', newPhaseStart, newPhaseEnd);
         }
       }
@@ -242,7 +276,7 @@ export function PhaseModal() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save phase');
     } finally {
-      setIsSubmitting(false);
+      endSubmit();
     }
   };
   
@@ -253,11 +287,12 @@ export function PhaseModal() {
       return;
     }
     
-    setIsSubmitting(true);
+    if (!beginSubmit()) return;
     setError(null);
     
     try {
       await deletePhase(editingPhase.id);
+      removePhaseLocally(projectId, editingPhase.id);
       
       // Reload projects to get updated structure
       const updatedProjects = await loadAllProjects();
@@ -285,7 +320,7 @@ export function PhaseModal() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete phase');
     } finally {
-      setIsSubmitting(false);
+      endSubmit();
     }
   };
   
@@ -305,7 +340,12 @@ export function PhaseModal() {
         <Button variant="secondary" onClick={closeModal} disabled={isSubmitting}>
           Cancel
         </Button>
-        <Button variant="primary" onClick={handleSubmit} disabled={isSubmitting}>
+        <Button
+          variant="primary"
+          onClick={handleSubmit}
+          disabled={isSubmitting || !!createBlockedReason}
+          title={createBlockedReason ?? undefined}
+        >
           {isSubmitting ? 'Saving...' : isEditing ? 'Save Changes' : 'Add Phase'}
         </Button>
       </div>
@@ -321,7 +361,10 @@ export function PhaseModal() {
       footer={footer}
     >
       <form onSubmit={handleSubmit} className={styles.form}>
-        {error && <div className={styles.error}>{error}</div>}
+        {createBlockedReason && (
+          <div className={styles.error} role="status">{createBlockedReason}</div>
+        )}
+        {error && error !== createBlockedReason && <div className={styles.error}>{error}</div>}
         
         <div className={styles.formGroup}>
           <label className={styles.label}>Phase Name *</label>

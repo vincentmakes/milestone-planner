@@ -41,9 +41,11 @@ class Project(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # ON DELETE CASCADE, matching Site.projects (cascade="all, delete-orphan"):
+    # deleting a site deletes its projects whichever way the row goes.
     site_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("sites.id", ondelete="SET NULL"),
+        ForeignKey("sites.id", ondelete="CASCADE"),
         nullable=True,
     )
     customer: Mapped[str | None] = mapped_column(String(200), nullable=True)

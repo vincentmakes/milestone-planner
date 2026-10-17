@@ -15,9 +15,14 @@ export {
   getDependencyEdges,
   getDependencyColor,
   DEPENDENCY_STYLES,
+  resolveDependencyPredecessor,
+  dependencyMatches,
+  wouldCreateDependencyCycle,
+  findDependencyItem,
 } from './dependencies';
+export type { DependencyEntity, DependencyItemRef } from './dependencies';
 
-export { calculateRowPositions } from './rowPositions';
+export { calculateRowPositions, SECTION_ROW_TOTAL_HEIGHT } from './rowPositions';
 export type { RowPosition, RowPositionsResult } from './rowPositions';
 
 export {
@@ -43,3 +48,12 @@ export {
 export type { CriticalPathResult } from './criticalPath';
 
 export { diffProjects } from './diffProjects';
+
+export {
+  buildProjectSections,
+  buildGanttRows,
+  flatGanttRows,
+  allSectionKeys,
+  ganttSectionKey,
+} from './projectSections';
+export type { GanttSection, GanttSectionKey, GanttRow } from './projectSections';

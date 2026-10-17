@@ -95,16 +95,10 @@ export function removeSessionStorage(key: string): void {
  * Centralized storage keys to avoid typos and enable easy refactoring
  */
 export const STORAGE_KEYS = {
-  // Preferences
-  PREF_SITE_ID: 'milestone_pref_site_id',
-  PREF_VIEW: 'milestone_pref_view',
-  PREF_VIEW_MODE: 'milestone_pref_view_mode',
+  // Preferences. The remembered site, view mode, current view and panel
+  // collapse flags live in the Zustand persist keys below.
   PREF_THEME: 'milestone_theme',
-  
-  // UI State
-  SIDEBAR_COLLAPSED: 'milestone_sidebar_collapsed',
-  RESOURCE_PANEL_COLLAPSED: 'milestone_resource_panel_collapsed',
-  
+
   // Project Order (per site)
   PROJECT_ORDER_PREFIX: 'milestone_project_order_site_',
 
@@ -117,11 +111,6 @@ export const STORAGE_KEYS = {
   ZUSTAND_APP_STORE: 'milestone-app-storage-v3',
   ZUSTAND_VIEW_STORE: 'milestone-view-storage-v1',
   ZUSTAND_CUSTOM_COLUMN_STORE: 'milestone-custom-columns-storage-v1',
-
-  // Legacy keys (for migration from old vanilla JS app)
-  LEGACY_SITE_ID: 'rd_pref_site_id',
-  LEGACY_VIEW: 'rd_pref_view',
-  LEGACY_VIEW_MODE: 'rd_pref_view_mode',
 } as const;
 
 // =============================================================================
@@ -145,6 +134,17 @@ export function setProjectOrder(siteId: number, projectIds: number[]): void {
   setLocalStorage(key, projectIds);
 }
 
+type OrderableProject = { id: number; confirmed?: boolean; name: string };
+
+/**
+ * The default project order: confirmed first, then name, then id. The id makes
+ * it total, so equal names never fall back to whatever order the server sent.
+ */
+export function compareProjectsDefault(a: OrderableProject, b: OrderableProject): number {
+  if (!!a.confirmed !== !!b.confirmed) return a.confirmed ? -1 : 1;
+  return a.name.localeCompare(b.name) || a.id - b.id;
+}
+
 /**
  * Site projects in the order the Gantt shows them.
  *
@@ -164,16 +164,15 @@ export function orderSiteProjects<
     return sortProjectsByOrder(siteProjects, siteId);
   }
 
-  return [...siteProjects].sort((a, b) => {
-    if (a.confirmed !== b.confirmed) return a.confirmed ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
+  return [...siteProjects].sort(compareProjectsDefault);
 }
 
 /**
- * Sort projects by user's preferred order (projects not in order list go at the end)
+ * Sort projects by user's preferred order. Projects not in the order list go
+ * at the end, in the default order -- never in the order the server returned
+ * them, which changes as their dates move.
  */
-export function sortProjectsByOrder<T extends { id: number }>(projects: T[], siteId: number): T[] {
+export function sortProjectsByOrder<T extends OrderableProject>(projects: T[], siteId: number): T[] {
   const order = getProjectOrder(siteId);
   if (order.length === 0) {
     return projects; // No custom order, return as-is
@@ -196,33 +195,28 @@ export function sortProjectsByOrder<T extends { id: number }>(projects: T[], sit
     if (orderA !== undefined) return -1;
     // Only B has custom order - B comes first
     if (orderB !== undefined) return 1;
-    // Neither has custom order - maintain original order
-    return 0;
+    // Neither has custom order
+    return compareProjectsDefault(a, b);
   });
 }
 
-// =============================================================================
-// MIGRATION HELPERS
-// =============================================================================
-
 /**
- * Migrate data from legacy storage keys to new keys
- * Call this once during app initialization
+ * Move `fromId` next to `targetId` in a list of project ids, returning a new
+ * list. `ids` should be the order on screen, so projects never saved into a
+ * custom order are placed exactly where the user dropped them.
  */
-export function migrateLegacyStorage(): void {
-  const migrations: [string, string][] = [
-    [STORAGE_KEYS.LEGACY_SITE_ID, STORAGE_KEYS.PREF_SITE_ID],
-    [STORAGE_KEYS.LEGACY_VIEW, STORAGE_KEYS.PREF_VIEW],
-    [STORAGE_KEYS.LEGACY_VIEW_MODE, STORAGE_KEYS.PREF_VIEW_MODE],
-  ];
-  
-  migrations.forEach(([oldKey, newKey]) => {
-    const oldValue = localStorage.getItem(oldKey);
-    if (oldValue !== null && localStorage.getItem(newKey) === null) {
-      localStorage.setItem(newKey, oldValue);
-      // Successfully migrated
-    }
-  });
+export function moveProjectInOrder(
+  ids: number[],
+  fromId: number,
+  targetId: number,
+  position: 'before' | 'after'
+): number[] {
+  if (fromId === targetId) return [...ids];
+  const without = ids.filter((id) => id !== fromId);
+  const targetIndex = without.indexOf(targetId);
+  if (targetIndex === -1) return [...ids];
+  without.splice(position === 'before' ? targetIndex : targetIndex + 1, 0, fromId);
+  return without;
 }
 
 // =============================================================================

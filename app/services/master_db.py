@@ -53,6 +53,8 @@ class MasterDatabase:
                 max_overflow=5,
                 pool_timeout=30,
                 pool_pre_ping=True,  # Test connections before use, replace stale ones
+                # Same pin as the tenant engines: DB-side defaults and casts in UTC.
+                connect_args={"server_settings": {"timezone": "UTC"}},
             )
         return self._engine
 

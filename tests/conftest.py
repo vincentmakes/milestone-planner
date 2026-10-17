@@ -10,6 +10,15 @@ from httpx import ASGITransport, AsyncClient
 
 from app.config import Settings
 
+# ``--shard K/N`` (CI runs the suite as shards on parallel runners). Importing the
+# hooks registers them on this conftest; the implementation lives in its own
+# module so tests/test_shard_option.py can load it under ``pytester``.
+from tests.shard_plugin import (  # noqa: F401
+    pytest_addoption,
+    pytest_collection_modifyitems,
+    pytest_configure,
+)
+
 
 @pytest.fixture
 def test_settings():

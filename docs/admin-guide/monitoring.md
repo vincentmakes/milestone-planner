@@ -10,6 +10,11 @@ curl http://localhost:8485/health
 
 The Docker container includes a built-in health check that polls this endpoint every 30 seconds.
 
+The response carries `status`, `mode`, `version`, `backend`, `default_tenant`, `timestamp`
+and `database`. `database` is `connected` or, when the probe query fails, just `error` — the
+endpoint is public, so the underlying driver error (host, port, user) is written to the
+server log only. Look there for the cause.
+
 ## Logging
 
 ### View Application Logs
@@ -53,6 +58,17 @@ open http://localhost:8485/api/docs
 
 ### Container won't start
 
+If the log ends with *"SESSION_SECRET is empty or a published default. Refusing to start with
+DEBUG=false"*, set `SESSION_SECRET` in `.env` to a fresh random value
+(`python -c "import secrets; print(secrets.token_hex(32))"`) and start again. With
+`docker-compose.fresh.yml`, a missing value stops `docker compose` itself with
+*"Set SESSION_SECRET in .env"*. In single-tenant mode, changing `SESSION_SECRET` later means
+re-entering the SSO client secret (see
+[Organization & SSO](organizations-sso.md#client-secret-storage)).
+
+If the database initialisation (`AUTO_INIT_DB=true`) fails, the container now exits instead
+of serving a half-initialised schema — fix the database error shown in the log and restart.
+
 ```bash
 # Check logs for errors
 docker compose logs
@@ -77,8 +93,11 @@ psql -U milestone -h localhost -d milestone -c "SELECT 1;"
 
 ### Tenant not accessible
 
-1. Verify the tenant exists and is active in the admin portal
-2. Test the database connection from the admin portal
+1. Verify the tenant exists and is active in the admin portal (status changes apply at
+   once on the process that made them, within 60 seconds on others)
+2. Test the database connection from the admin portal — a workspace that answers
+   *"Could not connect to the organization database"* or *"Organization database is
+   unavailable"* (503) has a pool problem; the cause is in the server log
 3. Check that the URL matches the slug: `/t/{slug}/`
 4. Check backend logs for connection errors
 
@@ -89,6 +108,19 @@ psql -U milestone -h localhost -d milestone -c "SELECT 1;"
 3. Use the "Test Connection" button in SSO configuration
 4. Check browser developer tools for OAuth errors
 5. Verify the client secret hasn't expired
+6. *"Your sign-in session expired or was started elsewhere"* means the browser-binding
+   cookie (`sso_nonce`) did not match — see
+   [SSO Login Flow](organizations-sso.md#sso-login-flow)
+
+### "Too many failed sign-in attempts"
+
+Workspace and admin-portal sign-in refuse further attempts (HTTP 429, with a `Retry-After`
+header) after 10 failures for the same e-mail from the same IP address within 15 minutes, and
+for every e-mail after 100 failures from the same public IP address. Wait for the window to
+pass, or restart the application to clear the in-memory counters. Behind a reverse proxy every
+user appears to come from the proxy's address unless `FORWARDED_ALLOW_IPS` lists it (see
+[Installation → Reverse Proxy](installation.md#trust-the-proxys-x-forwarded-for-forwarded_allow_ips));
+until then a user locked out this way is locked out from every computer.
 
 ### WebSocket disconnections
 
@@ -97,6 +129,11 @@ WebSocket connections require proper proxy configuration:
 - nginx: Set `proxy_http_version 1.1` and `Connection "upgrade"` headers
 - Cloudflare: Enable WebSockets in the dashboard
 - Load balancers: Enable sticky sessions or WebSocket support
+- Connections closed immediately with code **4003** usually mean the `Origin` check failed:
+  the proxy rewrote `Host` without setting `X-Forwarded-Host`, or the app is opened from an
+  origin not listed in `CORS_ORIGINS`. (4003 is also used for a disabled user.)
+- Users see an **Offline** badge in the header while live updates are disconnected; the
+  client reconnects by itself when the network returns or the tab becomes visible again
 
 ## System Statistics (Multi-Tenant)
 
@@ -167,7 +204,7 @@ Adjust under `deploy.resources` in the compose file you deploy with, if needed.
 
 Before deploying to production:
 
-- [ ] Set `SESSION_SECRET` to a cryptographically random value
+- [ ] Set `SESSION_SECRET` to a cryptographically random value (required — the server refuses to start with `DEBUG=false` on an empty or example value)
 - [ ] Set `TENANT_ENCRYPTION_KEY` (if multi-tenant)
 - [ ] Set `SECURE_COOKIES=true` (when serving over HTTPS)
 - [ ] Set `DEBUG=false`

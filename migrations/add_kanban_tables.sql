@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS card_comments (
     entity_type VARCHAR(20) NOT NULL,
     entity_id INTEGER NOT NULL,
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,  -- NULL once the author is deleted
     body TEXT NOT NULL,
     mentioned_user_ids TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,

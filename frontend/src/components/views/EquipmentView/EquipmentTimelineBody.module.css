@@ -73,6 +73,15 @@
   background: color-mix(in srgb, var(--event-color, #ef4444) 15%, transparent);
 }
 
+/* Site closure (staff unavailable) - stronger hatched tint in the event colour */
+.gridCell.companyEvent.siteClosure {
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--event-color, #ef4444) 32%, transparent) 0 4px,
+    color-mix(in srgb, var(--event-color, #ef4444) 16%, transparent) 4px 8px
+  );
+}
+
 /* Week separator line (drawn between weeks when weekends are hidden) */
 .weekSeparator {
   position: absolute;
@@ -298,6 +307,11 @@
 
 .bookingDetailBar {
   background: rgba(20, 184, 166, 0.6);
+  cursor: default;
+}
+
+/* Block bars for viewers who cannot edit blocks: tooltip only, no click */
+.readOnlyBar {
   cursor: default;
 }
 

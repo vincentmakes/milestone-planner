@@ -6,7 +6,7 @@
  * When used within TimelineScrollProvider, syncs scroll with other timelines (e.g., StaffView).
  */
 
-import { forwardRef, useRef, useEffect, useCallback, useState } from 'react';
+import { forwardRef, useRef, useEffect, useCallback } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useCtrlScrollZoom } from '@/hooks/useCtrlScrollZoom';
@@ -14,7 +14,9 @@ import { TimelineHeader } from './TimelineHeader';
 import { TimelineBody } from './TimelineBody';
 import { useTimelineScrollSync } from '@/contexts/TimelineScrollContext';
 import type { TimelineCell, TimelineHeader as TimelineHeaderType } from '../utils';
+import { calculateTodayScrollLeft } from '../utils/timeline';
 import type { Project, ViewMode } from '@/types';
+import type { GanttRow } from '../utils/projectSections';
 import styles from './Timeline.module.css';
 
 interface TimelineProps {
@@ -24,6 +26,8 @@ interface TimelineProps {
     secondary: TimelineHeaderType[];
   };
   projects: Project[];
+  /** Rows (Group-by sections + projects) shared with the ProjectPanel. */
+  rows?: GanttRow[];
   cellWidth: number;
   viewMode: ViewMode;
   hasCustomColumns?: boolean;
@@ -33,7 +37,7 @@ interface TimelineProps {
 const SCROLL_SAVE_DELAY = 200;
 
 export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
-  function Timeline({ cells, headers, projects, cellWidth, viewMode, hasCustomColumns = false }, ref) {
+  function Timeline({ cells, headers, projects, rows, cellWidth, viewMode, hasCustomColumns = false }, ref) {
     const totalWidth = cells.length * cellWidth;
     const horizontalScrollRef = useRef<HTMLDivElement>(null);
     const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
@@ -52,8 +56,6 @@ export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
     const visibleDateRef = useRef<string | null>(null);
     const lastZoomTimestampRef = useRef<number>(0);
     
-    // Track current scroll position for print styles
-    const [currentScrollLeft, setCurrentScrollLeft] = useState(timelineScrollLeft);
 
     // Enable Ctrl+Scroll zoom
     useCtrlScrollZoom({ containerRef: horizontalScrollRef, cellWidth });
@@ -123,25 +125,27 @@ export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
       scrollContainer.scrollLeft = Math.max(0, scrollTo);
     }, [cells, cellWidth]);
 
-    // Restore scroll position on mount (only once)
+    // Position the timeline on mount (only once): restore this session's
+    // scroll position when coming back from another view, otherwise open on
+    // today. The offset is not persisted across reloads (see viewStore).
     useEffect(() => {
       const scrollContainer = horizontalScrollRef.current;
-      if (!scrollContainer || hasRestoredScroll.current) return;
+      if (!scrollContainer || hasRestoredScroll.current || cells.length === 0) return;
+      hasRestoredScroll.current = true;
       
-      if (timelineScrollLeft > 0) {
-        // Use requestAnimationFrame to ensure DOM is ready
-        requestAnimationFrame(() => {
-          scrollContainer.scrollLeft = timelineScrollLeft;
-          hasRestoredScroll.current = true;
-          // Store the visible date for view mode changes
-          visibleDateRef.current = getVisibleDate();
-          // Sync with other timelines
-          syncScrollPosition(timelineScrollLeft);
-        });
-      } else {
-        hasRestoredScroll.current = true;
-      }
-    }, [timelineScrollLeft, getVisibleDate]); // syncScrollPosition is stable, no need in deps
+      // Use requestAnimationFrame to ensure DOM is ready
+      requestAnimationFrame(() => {
+        const scrollTo = timelineScrollLeft > 0
+          ? timelineScrollLeft
+          : calculateTodayScrollLeft(cells, cellWidth, scrollContainer.clientWidth) ?? 0;
+        scrollContainer.scrollLeft = scrollTo;
+        setTimelineScrollLeft(scrollContainer.scrollLeft);
+        // Store the visible date for view mode changes
+        visibleDateRef.current = getVisibleDate();
+        // Sync with other timelines
+        syncScrollPosition(scrollContainer.scrollLeft);
+      });
+    }, [timelineScrollLeft, cells, cellWidth, getVisibleDate, setTimelineScrollLeft]); // syncScrollPosition is stable, no need in deps
 
     // Handle zoom trigger from buttons/keyboard (center around viewport center)
     useEffect(() => {
@@ -198,13 +202,16 @@ export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
     // Also syncs with other timelines via the scroll sync hook
     const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
       const scrollContainer = horizontalScrollRef.current;
-      if (!scrollContainer || !hasRestoredScroll.current) return;
+      if (!scrollContainer) return;
+
+      // Scroll offset for the print styles, set imperatively: keeping it in
+      // state re-rendered the whole timeline body on every scroll event.
+      scrollContainer.style.setProperty('--print-scroll-left', `${-scrollContainer.scrollLeft}px`);
+
+      if (!hasRestoredScroll.current) return;
       
       // Update visible date immediately
       visibleDateRef.current = getVisibleDate();
-      
-      // Update current scroll position for print styles (immediate)
-      setCurrentScrollLeft(scrollContainer.scrollLeft);
       
       // Clear existing timeout
       if (scrollSaveTimeout.current) {
@@ -303,7 +310,6 @@ export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
           ref={horizontalScrollRef} 
           className={styles.horizontalScroll}
           onScroll={handleScroll}
-          style={{ '--print-scroll-left': `${-currentScrollLeft}px` } as React.CSSProperties}
         >
           <div className={styles.scrollContent} style={{ width: totalWidth }}>
             <TimelineHeader
@@ -318,6 +324,7 @@ export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
               ref={ref}
               cells={cells}
               projects={projects}
+              rows={rows}
               cellWidth={cellWidth}
               totalWidth={totalWidth}
               viewMode={viewMode}

@@ -4,6 +4,10 @@ Pydantic schemas for Authentication.
 
 from pydantic import BaseModel, Field
 
+# Minimum length for new or changed tenant passwords (login is unaffected, so
+# existing shorter passwords keep working until they are changed).
+MIN_PASSWORD_LENGTH = 8
+
 
 class LoginRequest(BaseModel):
     """Request model for login."""
@@ -68,7 +72,8 @@ class ChangePasswordRequest(BaseModel):
     """Request model for changing password."""
 
     currentPassword: str = Field(..., min_length=1)
-    newPassword: str = Field(..., min_length=6)
+    # New passwords only; existing shorter passwords still log in.
+    newPassword: str = Field(..., min_length=MIN_PASSWORD_LENGTH)
 
 
 class SSOConfigResponse(BaseModel):
@@ -84,13 +89,13 @@ class SSOConfigResponse(BaseModel):
 
 
 class SSOConfigFullResponse(BaseModel):
-    """Response model for SSO configuration (admin - includes all fields)."""
+    """Response model for SSO configuration (admin). The secret is only ever masked."""
 
     enabled: bool
     configured: bool
     tenant_id: str | None = None
     client_id: str | None = None
-    client_secret: str | None = None
+    client_secret_masked: str | None = None
     redirect_uri: str | None = None
     auto_create_users: bool = False
     default_role: str = "user"
@@ -102,7 +107,9 @@ class SSOConfigUpdate(BaseModel):
     enabled: bool | None = None
     tenant_id: str | None = None
     client_id: str | None = None
-    client_secret: str | None = None
+    # Stored encrypted in a VARCHAR(500): 200 characters is far above any
+    # Entra secret and keeps the ciphertext within the column.
+    client_secret: str | None = Field(None, max_length=200)
     redirect_uri: str | None = None
     auto_create_users: bool | None = None
     default_role: str | None = Field(None, pattern="^(superuser|user)$")

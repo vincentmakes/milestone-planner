@@ -10,7 +10,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useScrollSync, useCtrlScrollZoom } from '@/hooks';
-import { generateTimelineCells, generateTimelineHeaders } from '@/components/gantt/utils/timeline';
+import { generateTimelineCells, generateTimelineHeaders, calculateTodayScrollLeft } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { CrossSiteTimelineBody } from './CrossSiteTimelineBody';
 import styles from './CrossSiteView.module.css';
@@ -67,6 +67,18 @@ export function CrossSiteView() {
     const scrollTo = Math.max(0, todayPosition - containerWidth / 2 + cellWidth / 2);
     scrollContainer.scrollTo({ left: scrollTo, behavior: 'smooth' });
   }, [scrollToTodayTrigger, cells, cellWidth]);
+
+  // Open on today: the timeline starts months before the current date.
+  const hasPositioned = useRef(false);
+  useEffect(() => {
+    const scrollContainer = timelineScrollRef.current;
+    if (hasPositioned.current || !scrollContainer || cells.length === 0) return;
+    hasPositioned.current = true;
+    requestAnimationFrame(() => {
+      scrollContainer.scrollLeft =
+        calculateTodayScrollLeft(cells, cellWidth, scrollContainer.clientWidth) ?? 0;
+    });
+  }, [cells, cellWidth]);
   
   // Group projects by site (non-archived only)
   const projectsBySite = useMemo(() => {

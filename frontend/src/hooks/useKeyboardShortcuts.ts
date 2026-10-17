@@ -4,7 +4,11 @@
  * Global keyboard shortcuts for common operations.
  *
  * Shortcuts:
- * - Escape: Cancel current operation (phantom mode, dependency linking)
+ * - Escape: Cancel current operation (dependency linking, then phantom mode).
+ *
+ * Every shortcut is ignored while a modal is open: the shared Modal owns
+ * Escape and calls its own (possibly guarded, e.g. unsaved-changes) onClose,
+ * and undo/redo must not change the Gantt behind a dialog.
  * - Ctrl+Z: Undo
  * - Ctrl+Y / Ctrl+Shift+Z: Redo
  * - Home: Jump to today
@@ -28,7 +32,6 @@ export function useKeyboardShortcuts() {
   const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
   const cancelLinking = useUIStore((s) => s.cancelLinking);
   const isLinkingDependency = useUIStore((s) => s.isLinkingDependency);
-  const closeModal = useUIStore((s) => s.closeModal);
   const activeModal = useUIStore((s) => s.activeModal);
 
   const cellWidth = useViewStore((s) => s.cellWidth);
@@ -43,14 +46,16 @@ export function useKeyboardShortcuts() {
       return;
     }
 
+    // Nothing global while a modal is open: the modal owns the keyboard.
+    // An open modal handles Escape itself (shared Modal / useEscapeKey), and
+    // closing it from here would bypass its guarded onClose; Ctrl+Z/Ctrl+Y
+    // with focus on one of its buttons would undo/redo (and persist) the
+    // Gantt hidden behind it; Home/+/- would scroll or zoom it.
+    if (activeModal) return;
+
     // Escape - Cancel current operation
     if (e.key === 'Escape') {
-      // Priority: Modal > Dependency Linking > Phantom Mode
-      if (activeModal) {
-        closeModal();
-        e.preventDefault();
-        return;
-      }
+      // Priority: Dependency Linking > Phantom Mode
       if (isLinkingDependency) {
         cancelLinking();
         e.preventDefault();
@@ -113,7 +118,6 @@ export function useKeyboardShortcuts() {
     }
   }, [
     activeModal,
-    closeModal,
     isLinkingDependency,
     cancelLinking,
     phantomSiblingMode,

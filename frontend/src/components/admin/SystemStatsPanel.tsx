@@ -4,6 +4,8 @@
  */
 
 import { useAdminStore } from '@/stores/adminStore';
+import { Button } from '@/components/common/Button';
+import { RefreshIcon } from '@/components/settings/panels/PanelIcons';
 import styles from './SystemStatsPanel.module.css';
 
 interface SystemStatsPanelProps {
@@ -34,14 +36,9 @@ export function SystemStatsPanel({ onRefresh }: SystemStatsPanelProps) {
     <div className={styles.container}>
       <div className={styles.header}>
         <h2>System Statistics</h2>
-        <button className={styles.refreshBtn} onClick={onRefresh}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="23 4 23 10 17 10" />
-            <polyline points="1 20 1 14 7 14" />
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-          </svg>
+        <Button variant="secondary" icon={<RefreshIcon />} onClick={onRefresh}>
           Refresh
-        </button>
+        </Button>
       </div>
 
       {/* Stats Grid */}

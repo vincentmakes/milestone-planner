@@ -12,6 +12,7 @@ import {
   extractDependencies, 
   calculateDependencyPath, 
   getDependencyEdges,
+  dependencyMatches,
   DEPENDENCY_STYLES 
 } from '../utils/dependencies';
 import { calculateBarPosition } from '../utils/timeline';
@@ -19,7 +20,9 @@ import { getPhaseColor } from '@/utils/themeColors';
 import type { TimelineCell } from '../utils/timeline';
 import type { Project, DependencyType, Subphase, Dependency } from '@/types';
 import { DependencyPopup } from './DependencyPopup';
-import { updatePhase, updateSubphase, loadAllProjects } from '@/api/endpoints/projects';
+import { updatePhase, updateSubphase } from '@/api/endpoints/projects';
+import { canEditProjectById } from '@/utils/permissions';
+import { recoverFromPersistFailure } from '@/utils/persistFailure';
 import styles from './DependencyLayer.module.css';
 
 interface DependencyLayerProps {
@@ -66,6 +69,10 @@ export const DependencyLayer = memo(function DependencyLayer({
   
   // Selected dependency for popup
   const [selectedDep, setSelectedDep] = useState<SelectedDependency | null>(null);
+
+  // Only the project's editors (admin, superuser, its manager) may delete a link.
+  const currentUser = useAppStore((s) => s.currentUser);
+  const canDeleteSelected = canEditProjectById(currentUser, projects, selectedDep?.projectId);
   
   // Force re-measurement during drag with throttling
   useEffect(() => {
@@ -295,9 +302,18 @@ export const DependencyLayer = memo(function DependencyLayer({
 
   // Delete dependency
   const handleDeleteDependency = useCallback(async () => {
-    if (!selectedDep) return;
-    
+    if (!selectedDep || !canDeleteSelected) return;
+
     try {
+      const sourceProject = projects.find(p => p.id === selectedDep.projectId);
+      if (!sourceProject) return;
+      const from = { id: selectedDep.fromId, type: selectedDep.fromType };
+      // Keeps every entry except the selected link. Legacy entries without
+      // `type`/`entity` match too (FS, phase-first resolution) — the arrow was
+      // drawn from them, so deleting it must remove them.
+      const withoutSelected = (deps: Dependency[] | undefined): Dependency[] =>
+        (deps ?? []).filter(d => !dependencyMatches(sourceProject, d, from, selectedDep.type));
+
       // Find the target item and remove the dependency
       const updatedProjects = projects.map(project => {
         if (project.id !== selectedDep.projectId) return project;
@@ -307,11 +323,7 @@ export const DependencyLayer = memo(function DependencyLayer({
             ...project,
             phases: (project.phases ?? []).map(phase => {
               if (phase.id !== selectedDep.toId) return phase;
-              
-              const newDeps = (phase.dependencies ?? []).filter(
-                d => !(d.id === selectedDep.fromId && d.type === selectedDep.type)
-              );
-              return { ...phase, dependencies: newDeps };
+              return { ...phase, dependencies: withoutSelected(phase.dependencies) };
             })
           };
         } else {
@@ -319,10 +331,7 @@ export const DependencyLayer = memo(function DependencyLayer({
           const updateSubphaseInTree = (subphases: Subphase[]): Subphase[] => {
             return subphases.map(sp => {
               if (sp.id === selectedDep.toId) {
-                const newDeps = (sp.dependencies ?? []).filter(
-                  (d: Dependency) => !(d.id === selectedDep.fromId && d.type === selectedDep.type)
-                );
-                return { ...sp, dependencies: newDeps };
+                return { ...sp, dependencies: withoutSelected(sp.dependencies) };
               }
               if (sp.children?.length) {
                 return { ...sp, children: updateSubphaseInTree(sp.children) };
@@ -346,15 +355,12 @@ export const DependencyLayer = memo(function DependencyLayer({
       setSelectedDep(null);
 
       // Find the target item to get its current data for the API call
-      const targetProject = projects.find(p => p.id === selectedDep.projectId);
-      if (!targetProject) return;
+      const targetProject = sourceProject;
 
       if (selectedDep.toType === 'phase') {
         const targetPhase = (targetProject.phases ?? []).find(p => p.id === selectedDep.toId);
         if (targetPhase) {
-          const newDeps = (targetPhase.dependencies ?? []).filter(
-            d => !(d.id === selectedDep.fromId && d.type === selectedDep.type)
-          );
+          const newDeps = withoutSelected(targetPhase.dependencies);
           await updatePhase(selectedDep.toId, {
             start_date: targetPhase.start_date,
             end_date: targetPhase.end_date,
@@ -381,9 +387,7 @@ export const DependencyLayer = memo(function DependencyLayer({
         }
 
         if (targetSubphase) {
-          const newDeps = (targetSubphase.dependencies ?? []).filter(
-            (d: Dependency) => !(d.id === selectedDep.fromId && d.type === selectedDep.type)
-          );
+          const newDeps = withoutSelected(targetSubphase.dependencies);
           await updateSubphase(selectedDep.toId, {
             start_date: targetSubphase.start_date,
             end_date: targetSubphase.end_date,
@@ -392,12 +396,10 @@ export const DependencyLayer = memo(function DependencyLayer({
         }
       }
     } catch (err) {
-      console.error('Failed to delete dependency:', err);
-      // Reload on error
-      const reloadedProjects = await loadAllProjects();
-      setProjects(reloadedProjects);
+      // Optimistic-write failure protocol: reload + clear the undo stack.
+      await recoverFromPersistFailure('Delete dependency', err);
     }
-  }, [selectedDep, projects, setProjects]);
+  }, [selectedDep, canDeleteSelected, projects, setProjects]);
 
   // Always render the SVG to allow DOM measurement, but hide if no arrows
   return (
@@ -464,6 +466,7 @@ export const DependencyLayer = memo(function DependencyLayer({
         toName={selectedDep?.toName ?? ''}
         onClose={handleClosePopup}
         onDelete={handleDeleteDependency}
+        canDelete={canDeleteSelected}
       />
     </>
   );

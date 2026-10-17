@@ -10,7 +10,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import noload, selectinload
 
 from app.database import get_db, get_db_readonly
 from app.middleware.auth import get_current_user, require_superuser
@@ -20,6 +20,7 @@ from app.models.assignment import (
     SubphaseStaffAssignment,
 )
 from app.models.card_comment import CardComment
+from app.models.custom_column import CustomColumnValue
 from app.models.equipment import Equipment, EquipmentAssignment
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.site import Site
@@ -38,6 +39,14 @@ from app.schemas.project import (
     SubphaseUpdate,
 )
 from app.services.card_status import apply_completion, apply_status
+from app.services.date_range import ensure_date_order
+from app.services.project_access import (
+    check_project_editor,
+    project_id_for_phase,
+    project_id_for_subphase,
+    require_project_editor,
+)
+from app.services.tag_rules import validate_project_tags
 from app.websocket.broadcast import broadcast_change
 
 logger = logging.getLogger(__name__)
@@ -144,6 +153,146 @@ def build_subphase_tree(
     return build_subphase_tree_optimized(subphases, subphase_staff, parent_id, parent_type)
 
 
+async def collect_descendant_subphase_ids(
+    db: AsyncSession, parent_id: int, parent_type: str
+) -> list[int]:
+    """
+    IDs of every subphase nested (at any depth) under a phase or subphase.
+
+    ``project_subphases.parent_id`` is polymorphic and carries no FK, so
+    nothing cascades from a deleted parent -- callers must collect the whole
+    subtree themselves. Walks level by level (one query per depth, not per
+    node); the starting parent itself is not included.
+    """
+    result = await db.execute(
+        select(ProjectSubphase.id).where(
+            and_(
+                ProjectSubphase.parent_id == parent_id,
+                ProjectSubphase.parent_type == parent_type,
+            )
+        )
+    )
+    frontier = [r[0] for r in result.all()]
+    collected: list[int] = []
+    seen: set[int] = set()
+    while frontier:
+        frontier = [i for i in frontier if i not in seen]
+        if not frontier:
+            break
+        collected.extend(frontier)
+        seen.update(frontier)
+        result = await db.execute(
+            select(ProjectSubphase.id).where(
+                and_(
+                    ProjectSubphase.parent_id.in_(frontier),
+                    ProjectSubphase.parent_type == "subphase",
+                )
+            )
+        )
+        frontier = [r[0] for r in result.all()]
+    return collected
+
+
+async def delete_subphases_and_dependents(db: AsyncSession, subphase_ids: list[int]) -> None:
+    """
+    Delete subphase rows plus everything that hangs off them without an FK.
+
+    Staff assignments are FK-linked but removed explicitly (bulk delete, no
+    ORM cascade); card comments and custom-column values are polymorphic
+    ``(entity_type, entity_id)`` rows with no FK at all.
+    """
+    if not subphase_ids:
+        return
+    await db.execute(
+        delete(SubphaseStaffAssignment).where(SubphaseStaffAssignment.subphase_id.in_(subphase_ids))
+    )
+    await db.execute(
+        delete(CardComment).where(
+            CardComment.entity_type == "subphase",
+            CardComment.entity_id.in_(subphase_ids),
+        )
+    )
+    await db.execute(
+        delete(CustomColumnValue).where(
+            CustomColumnValue.entity_type == "subphase",
+            CustomColumnValue.entity_id.in_(subphase_ids),
+        )
+    )
+    # parent_id has no FK, so one statement removes the whole subtree.
+    await db.execute(delete(ProjectSubphase).where(ProjectSubphase.id.in_(subphase_ids)))
+
+
+async def delete_project_polymorphic_rows(db: AsyncSession, project_ids: list[int]) -> None:
+    """
+    Delete what hangs off whole projects through polymorphic rows (no FK).
+
+    Card comments and custom-column values point at a project / phase /
+    subphase by ``(entity_type, entity_id)`` and nothing cascades to them, so
+    deleting a project -- directly or with its site -- must remove them
+    explicitly (B2-8). Subphases go through delete_subphases_and_dependents
+    (their staff assignments, comments, values and rows); the phase and
+    project rows themselves are left to the caller (bulk or ORM delete).
+    """
+    if not project_ids:
+        return
+    subphase_ids = list(
+        (
+            await db.execute(
+                select(ProjectSubphase.id).where(ProjectSubphase.project_id.in_(project_ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    await delete_subphases_and_dependents(db, subphase_ids)
+
+    phase_ids = select(ProjectPhase.id).where(ProjectPhase.project_id.in_(project_ids))
+    await db.execute(
+        delete(CustomColumnValue).where(
+            or_(
+                and_(
+                    CustomColumnValue.entity_type == "project",
+                    CustomColumnValue.entity_id.in_(project_ids),
+                ),
+                and_(
+                    CustomColumnValue.entity_type == "phase",
+                    CustomColumnValue.entity_id.in_(phase_ids),
+                ),
+            )
+        )
+    )
+    # Every comment carries its project_id (FK CASCADE in the database, but
+    # explicit here so the ORM delete path and the DB agree).
+    await db.execute(delete(CardComment).where(CardComment.project_id.in_(project_ids)))
+
+
+async def _require_user_exists(db: AsyncSession, user_id: int, detail: str) -> None:
+    found = (await db.execute(select(User.id).where(User.id == user_id))).scalar_one_or_none()
+    if found is None:
+        raise HTTPException(status_code=404, detail=detail)
+
+
+# Responses embed {id, name, color, group_id} only: skip the tags' site links
+# (Tag.sites is selectin-loaded by default -- one more query per request).
+# NEVER combine this loader with validate_project_tags() in the same session:
+# noload sets Tag.sites to an empty list on every tag it loads, and a later
+# query (even validate_project_tags' own selectinload) does not refresh an
+# object already in the identity map -- a site-restricted tag would then
+# wrongly fail the site check.
+_PROJECT_TAGS_FOR_RESPONSE = selectinload(Project.tags).options(noload(Tag.sites))
+
+
+def _tag_dict(tag: Tag) -> dict:
+    """A tag as embedded in a project response."""
+    return {"id": tag.id, "name": tag.name, "color": tag.color, "group_id": tag.group_id}
+
+
+async def _require_site_exists(db: AsyncSession, site_id: int) -> None:
+    found = (await db.execute(select(Site.id).where(Site.id == site_id))).scalar_one_or_none()
+    if found is None:
+        raise HTTPException(status_code=404, detail="Site not found")
+
+
 # ---------------------------------------------------------
 # Project Routes
 # ---------------------------------------------------------
@@ -196,7 +345,7 @@ async def get_projects(
         )
         .outerjoin(Site, Project.site_id == Site.id)
         .outerjoin(User, Project.pm_id == User.id)
-        .options(selectinload(Project.tags))
+        .options(_PROJECT_TAGS_FOR_RESPONSE)
     )
 
     if archived == "true":
@@ -207,7 +356,12 @@ async def get_projects(
     if siteId and includeOtherSites != "true":
         query = query.where(Project.site_id == int(siteId))
 
-    query = query.order_by(Project.start_date).offset(pagination.offset).limit(pagination.limit)
+    # id breaks start_date ties so the order (and page boundaries) is deterministic.
+    query = (
+        query.order_by(Project.start_date, Project.id)
+        .offset(pagination.offset)
+        .limit(pagination.limit)
+    )
 
     result = await db.execute(query)
     rows = result.all()
@@ -260,7 +414,7 @@ async def get_projects(
                     "archived": project.archived,
                     "created_at": project.created_at,
                     "updated_at": project.updated_at,
-                    "tags": [{"id": t.id, "name": t.name, "color": t.color} for t in project.tags],
+                    "tags": [_tag_dict(t) for t in project.tags],
                 }
             )
 
@@ -299,7 +453,7 @@ async def get_project(
             )
             .outerjoin(Site, Project.site_id == Site.id)
             .outerjoin(User, Project.pm_id == User.id)
-            .options(selectinload(Project.tags))
+            .options(_PROJECT_TAGS_FOR_RESPONSE)
             .where(Project.id == project_id)
         )
 
@@ -534,7 +688,7 @@ async def get_project(
         "phases": phases,
         "staffAssignments": staff_assignments,
         "equipmentAssignments": equipment_assignments,
-        "tags": [{"id": t.id, "name": t.name, "color": t.color} for t in project.tags],
+        "tags": [_tag_dict(t) for t in project.tags],
     }
 
 
@@ -550,10 +704,14 @@ async def create_project(
 
     Matches: POST /api/projects
     """
-    tag_objs: list[Tag] = []
-    if data.tag_ids:
-        tag_result = await db.execute(select(Tag).where(Tag.id.in_(data.tag_ids)))
-        tag_objs = list(tag_result.scalars().all())
+    # Unknown references are a 404, not an FK violation (500).
+    if data.site_id is not None:
+        await _require_site_exists(db, data.site_id)
+    if data.pm_id is not None:
+        await _require_user_exists(db, data.pm_id, "Project manager not found")
+
+    # Site applicability + single-select groups (400); unknown ids dropped.
+    tag_objs = await validate_project_tags(db, data.site_id, data.tag_ids or [])
 
     project = Project(
         name=data.name,
@@ -606,10 +764,13 @@ async def update_project(
     data: ProjectUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Update a project.
+
+    Superusers/admins, or the project's manager (who may change every field,
+    including handing the project over via `pm_id`).
 
     Matches: PUT /api/projects/:id
     """
@@ -621,12 +782,16 @@ async def update_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    check_project_editor(user, project.pm_id)
+
     # Update fields if provided
     if data.name is not None:
         project.name = data.name
     if data.customer is not None:
         project.customer = data.customer
     if data.pm_id is not None:
+        if data.pm_id != project.pm_id:
+            await _require_user_exists(db, data.pm_id, "Project manager not found")
         project.pm_id = data.pm_id
     if data.sales_pm is not None:
         project.sales_pm = data.sales_pm
@@ -638,18 +803,17 @@ async def update_project(
         project.start_date = data.start_date
     if data.end_date is not None:
         project.end_date = data.end_date
+    if data.start_date is not None or data.end_date is not None:
+        ensure_date_order(project.start_date, project.end_date)
     if data.notes is not None:
         project.notes = data.notes
     if data.archived is not None:
         project.archived = 1 if data.archived else 0
 
     # Replace tag assignments if provided (None = no change, [] = clear all)
+    # Checked against the project's own site (ProjectUpdate cannot move it).
     if data.tag_ids is not None:
-        if data.tag_ids:
-            tag_result = await db.execute(select(Tag).where(Tag.id.in_(data.tag_ids)))
-            project.tags = list(tag_result.scalars().all())
-        else:
-            project.tags = []
+        project.tags = await validate_project_tags(db, project.site_id, data.tag_ids)
 
     await db.commit()
 
@@ -686,11 +850,12 @@ async def delete_project(
 
     project_name = project.name
 
+    # Polymorphic rows first (comments, custom-column values, the subphase
+    # subtree with its assignments) -- nothing cascades to them.
+    await delete_project_polymorphic_rows(db, [project_id])
+
     # Delete related data (cascade should handle most, but be explicit)
     await db.execute(ProjectPhase.__table__.delete().where(ProjectPhase.project_id == project_id))
-    await db.execute(
-        ProjectSubphase.__table__.delete().where(ProjectSubphase.project_id == project_id)
-    )
     await db.execute(
         ProjectAssignment.__table__.delete().where(ProjectAssignment.project_id == project_id)
     )
@@ -725,17 +890,15 @@ async def create_phase(
     data: PhaseCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Add a phase to a project.
 
     Matches: POST /api/projects/:id/phases
     """
-    # Verify project exists
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Project not found")
+    # 404 if the project does not exist, 403 unless editor (superuser or PM)
+    await require_project_editor(db, user, project_id)
 
     # Determine sort_order
     if data.order_index is not None:
@@ -752,7 +915,9 @@ async def create_phase(
         max_result = await db.execute(
             select(func.max(ProjectPhase.sort_order)).where(ProjectPhase.project_id == project_id)
         )
-        max_order = max_result.scalar() or -1
+        # A maximum of 0 is a real row, not "no rows": compare with None.
+        current_max = max_result.scalar()
+        max_order = -1 if current_max is None else current_max
         sort_order = max_order + 1
 
     # Create phase
@@ -788,7 +953,7 @@ async def update_phase(
     data: PhaseUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Update a phase.
@@ -802,6 +967,7 @@ async def update_phase(
         raise HTTPException(status_code=404, detail="Phase not found")
 
     project_id = phase.project_id
+    await require_project_editor(db, user, project_id)
 
     if data.type is not None:
         phase.type = data.type
@@ -809,14 +975,18 @@ async def update_phase(
         phase.start_date = data.start_date
     if data.end_date is not None:
         phase.end_date = data.end_date
+    if data.start_date is not None or data.end_date is not None:
+        ensure_date_order(phase.start_date, phase.end_date)
     if data.is_milestone is not None:
         phase.is_milestone = 1 if data.is_milestone else 0
     if data.dependencies is not None:
         phase.dependencies = json.dumps(data.dependencies)
     # Completion first, then status: a request carrying both resolves toward the
     # explicit status. Both go through card_status so the Kanban board agrees.
-    if data.completion is not None:
-        apply_completion(phase, data.completion)
+    # An explicit `"completion": null` (the slider's "clear") resets to 0 % /
+    # To Do; an omitted field leaves completion untouched.
+    if "completion" in data.model_fields_set:
+        apply_completion(phase, data.completion if data.completion is not None else 0)
     if data.status is not None:
         apply_status(phase, data.status)
 
@@ -840,7 +1010,7 @@ async def delete_phase(
     phase_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Delete a phase.
@@ -854,17 +1024,31 @@ async def delete_phase(
         raise HTTPException(status_code=404, detail="Phase not found")
 
     project_id = phase.project_id
+    await require_project_editor(db, user, project_id)
     phase_type = phase.type
 
-    # card_comments.entity_id is polymorphic and carries no FK (same shape as
-    # custom_column_values), so the rows must be removed explicitly.
+    # Subphases point at the phase through a polymorphic parent_id with no
+    # FK, so the whole subtree (and its assignments, comments and column
+    # values) must be removed explicitly or it is orphaned.
+    subphase_ids = await collect_descendant_subphase_ids(db, phase_id, "phase")
+    await delete_subphases_and_dependents(db, subphase_ids)
+
+    # card_comments / custom_column_values are polymorphic and carry no FK
+    # either, so the phase's own rows go explicitly too.
     await db.execute(
         delete(CardComment).where(
             CardComment.entity_type == "phase",
             CardComment.entity_id == phase_id,
         )
     )
+    await db.execute(
+        delete(CustomColumnValue).where(
+            CustomColumnValue.entity_type == "phase",
+            CustomColumnValue.entity_id == phase_id,
+        )
+    )
 
+    # ORM cascade covers phase.staff_assignments.
     await db.delete(phase)
     await db.commit()
 
@@ -887,13 +1071,15 @@ async def reorder_phases(
     data: PhaseReorderRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Reorder phases within a project.
 
     Matches: PUT /api/projects/:id/phases/reorder
     """
+    await require_project_editor(db, user, project_id)
+
     for index, phase_id in enumerate(data.phase_order):
         await db.execute(
             ProjectPhase.__table__.update()
@@ -927,7 +1113,7 @@ async def create_subphase_under_phase(
     data: SubphaseCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Add a subphase to a phase.
@@ -939,6 +1125,11 @@ async def create_subphase_under_phase(
     phase = result.scalar_one_or_none()
     if not phase:
         raise HTTPException(status_code=404, detail="Phase not found")
+
+    # The subphase belongs to the phase's project; `data.project_id` is ignored
+    # (a client could otherwise file it under a project it cannot edit).
+    project_id = phase.project_id
+    await require_project_editor(db, user, project_id)
 
     # Determine sort_order
     if data.order_index is not None:
@@ -968,7 +1159,7 @@ async def create_subphase_under_phase(
     subphase = ProjectSubphase(
         parent_id=phase_id,
         parent_type="phase",
-        project_id=data.project_id,
+        project_id=project_id,
         name=data.name,
         start_date=data.start_date,
         end_date=data.end_date,
@@ -1016,7 +1207,7 @@ async def create_child_subphase(
     data: SubphaseCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Add a child subphase to an existing subphase.
@@ -1030,8 +1221,9 @@ async def create_child_subphase(
     if not parent:
         raise HTTPException(status_code=404, detail="Parent subphase not found")
 
-    # Use parent's project_id if not provided
-    project_id = data.project_id or parent.project_id
+    # The child belongs to the parent's project; `data.project_id` is ignored.
+    project_id = parent.project_id
+    await require_project_editor(db, user, project_id)
 
     # Check max depth
     new_depth = (parent.depth or 1) + 1
@@ -1117,7 +1309,7 @@ async def update_subphase(
     data: SubphaseUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Update a subphase.
@@ -1131,6 +1323,7 @@ async def update_subphase(
         raise HTTPException(status_code=404, detail="Subphase not found")
 
     project_id = subphase.project_id
+    await require_project_editor(db, user, project_id)
 
     if data.name is not None:
         subphase.name = data.name
@@ -1138,14 +1331,18 @@ async def update_subphase(
         subphase.start_date = data.start_date
     if data.end_date is not None:
         subphase.end_date = data.end_date
+    if data.start_date is not None or data.end_date is not None:
+        ensure_date_order(subphase.start_date, subphase.end_date)
     if data.is_milestone is not None:
         subphase.is_milestone = 1 if data.is_milestone else 0
     if data.dependencies is not None:
         subphase.dependencies = json.dumps(data.dependencies)
     # Completion first, then status: a request carrying both resolves toward the
     # explicit status. Both go through card_status so the Kanban board agrees.
-    if data.completion is not None:
-        apply_completion(subphase, data.completion)
+    # An explicit `"completion": null` (the slider's "clear") resets to 0 % /
+    # To Do; an omitted field leaves completion untouched.
+    if "completion" in data.model_fields_set:
+        apply_completion(subphase, data.completion if data.completion is not None else 0)
     if data.status is not None:
         apply_status(subphase, data.status)
 
@@ -1169,7 +1366,7 @@ async def delete_subphase(
     subphase_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Delete a subphase and all its descendants.
@@ -1178,63 +1375,28 @@ async def delete_subphase(
     """
     sp_result = await db.execute(select(ProjectSubphase).where(ProjectSubphase.id == subphase_id))
     target = sp_result.scalar_one_or_none()
-    project_id = target.project_id if target else None
-    sp_name = target.name if target else None
 
-    # For SQLite/PostgreSQL, we need to recursively delete descendants
-    # PostgreSQL doesn't support recursive CTEs in DELETE directly through SQLAlchemy
-    # So we'll do it iteratively
+    if not target:
+        raise HTTPException(status_code=404, detail="Subphase not found")
 
-    async def get_descendant_ids(parent_id: int) -> list[int]:
-        """Get all descendant subphase IDs recursively."""
-        ids = [parent_id]
-        result = await db.execute(
-            select(ProjectSubphase.id).where(
-                and_(
-                    ProjectSubphase.parent_id == parent_id,
-                    ProjectSubphase.parent_type == "subphase",
-                )
-            )
-        )
-        child_ids = [r[0] for r in result.all()]
-        for child_id in child_ids:
-            ids.extend(await get_descendant_ids(child_id))
-        return ids
+    project_id = target.project_id
+    sp_name = target.name
+    await require_project_editor(db, user, project_id)
 
-    all_ids = await get_descendant_ids(subphase_id)
-
-    # Delete all staff assignments for these subphases
-    await db.execute(
-        SubphaseStaffAssignment.__table__.delete().where(
-            SubphaseStaffAssignment.subphase_id.in_(all_ids)
-        )
-    )
-
-    # Comments for every descendant too -- card_comments.entity_id is
-    # polymorphic and has no FK to cascade from.
-    await db.execute(
-        delete(CardComment).where(
-            CardComment.entity_type == "subphase",
-            CardComment.entity_id.in_(all_ids),
-        )
-    )
-
-    # Delete subphases (children first due to potential FK constraints)
-    for sp_id in reversed(all_ids):
-        await db.execute(ProjectSubphase.__table__.delete().where(ProjectSubphase.id == sp_id))
+    all_ids = [subphase_id] + await collect_descendant_subphase_ids(db, subphase_id, "subphase")
+    await delete_subphases_and_dependents(db, all_ids)
 
     await db.commit()
 
-    if project_id is not None:
-        await broadcast_change(
-            request=request,
-            user=user,
-            entity_type="subphase",
-            entity_id=subphase_id,
-            project_id=project_id,
-            action="delete",
-            summary=sp_name,
-        )
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="subphase",
+        entity_id=subphase_id,
+        project_id=project_id,
+        action="delete",
+        summary=sp_name,
+    )
 
     return {"success": True}
 
@@ -1245,14 +1407,21 @@ async def reorder_subphases(
     data: SubphaseReorderRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Reorder subphases within a parent.
 
     Matches: PUT /api/subphases/:parentId/reorder
     """
-    project_id: int | None = None
+    # Resolve the project from the parent (404 if missing) before any write,
+    # so the permission check covers the whole request.
+    if data.parent_type == "phase":
+        project_id = await project_id_for_phase(db, parent_id)
+    else:
+        project_id = await project_id_for_subphase(db, parent_id)
+    await require_project_editor(db, user, project_id)
+
     for index, subphase_id in enumerate(data.subphase_order):
         await db.execute(
             ProjectSubphase.__table__.update()
@@ -1265,23 +1434,17 @@ async def reorder_subphases(
             )
             .values(sort_order=index)
         )
-        if project_id is None:
-            sp_result = await db.execute(
-                select(ProjectSubphase.project_id).where(ProjectSubphase.id == subphase_id)
-            )
-            project_id = sp_result.scalar_one_or_none()
 
     await db.commit()
 
-    if project_id is not None:
-        await broadcast_change(
-            request=request,
-            user=user,
-            entity_type="project",
-            entity_id=project_id,
-            project_id=project_id,
-            action="update",
-            summary="reordered subphases",
-        )
+    await broadcast_change(
+        request=request,
+        user=user,
+        entity_type="project",
+        entity_id=project_id,
+        project_id=project_id,
+        action="update",
+        summary="reordered subphases",
+    )
 
     return {"success": True}

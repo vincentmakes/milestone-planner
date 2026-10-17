@@ -3,7 +3,7 @@ Schemas for organization management in multi-tenant admin API.
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -79,7 +79,11 @@ class OrganizationSSOConfigCreate(BaseModel):
     client_secret: str | None = Field(None, alias="clientSecret")
     redirect_uri: str | None = Field(None, alias="redirectUri")
     auto_create_users: bool | None = Field(None, alias="autoCreateUsers")
-    default_user_role: str | None = Field(None, alias="defaultUserRole")
+    # Validated: the value becomes users.role for auto-created SSO users, and
+    # anything outside the users_role_check set made every first sign-in 500.
+    default_user_role: Literal["user", "superuser", "admin"] | None = Field(
+        None, alias="defaultUserRole"
+    )
 
     class Config:
         populate_by_name = True

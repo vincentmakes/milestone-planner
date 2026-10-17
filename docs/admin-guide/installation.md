@@ -11,11 +11,22 @@ cd milestone-planner
 
 # Create environment file
 cp .env.example .env
-# Edit .env — at minimum set SESSION_SECRET to a random string
+# Edit .env — SESSION_SECRET is REQUIRED (it ships empty). Generate one with:
+#   python -c "import secrets; print(secrets.token_hex(32))"
 
 # Start everything (PostgreSQL + app)
 docker compose -f docker-compose.fresh.yml up -d
 ```
+
+!!! warning "`SESSION_SECRET` is required"
+    `docker-compose.fresh.yml` reads `SESSION_SECRET` from `.env` and refuses to start
+    when it is missing (`Set SESSION_SECRET in .env …`). The application itself also
+    refuses to start with `DEBUG=false` when `SESSION_SECRET` is empty or one of the
+    published example values (the old built-in default or the placeholders from earlier
+    `.env.example` / compose files). Pick a fresh random value per installation — it signs
+    sessions and SSO sign-in state, and in single-tenant mode it is also the source of the
+    key that encrypts the stored SSO client secret (see
+    [Organization & SSO](organizations-sso.md#client-secret-storage)).
 
 The fresh install will:
 
@@ -54,6 +65,7 @@ DB_USER=milestone
 DB_PASSWORD=<strong-password>
 
 # Security (generate with: python -c "import secrets; print(secrets.token_hex(32))")
+# REQUIRED: with DEBUG=false the server will not start on an empty or example value.
 SESSION_SECRET=<64-char-random-string>
 
 # HTTPS
@@ -182,6 +194,32 @@ For production, place a reverse proxy (nginx, Caddy, or Cloudflare Tunnel) in fr
 
 Set `SECURE_COOKIES=true` in `.env` when serving over HTTPS.
 
+### Trust the proxy's `X-Forwarded-For` (`FORWARDED_ALLOW_IPS`)
+
+The container starts uvicorn with `--proxy-headers --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-127.0.0.1}"`:
+the client address is taken from `X-Forwarded-For` **only** for requests coming from the
+listed addresses. When the proxy runs in another container or on another host (the usual
+case: nginx / Traefik / Nginx Proxy Manager on a Docker network), it is not `127.0.0.1`, so
+by default every visitor appears to come from the proxy's address.
+
+That matters for the failed-login lockout, which is keyed on **client IP + e-mail** (10
+failures in 15 minutes → HTTP 429): if all clients share the proxy's address, ten wrong
+passwords from *anyone* lock that e-mail out for *everyone* — a way to block a known account.
+Set in `.env`:
+
+```bash
+# The proxy's IP address(es), comma-separated
+FORWARDED_ALLOW_IPS=172.18.0.2
+# Or trust any sender — ONLY if port 8485 is reachable solely through the proxy
+# (private Docker network, port not published to the outside); otherwise clients
+# could forge X-Forwarded-For and pick their own address.
+# FORWARDED_ALLOW_IPS=*
+```
+
+A second limit, 100 failures in 15 minutes per client IP (any e-mail), stops password
+spraying from one address. It only applies to public client addresses — never to private,
+loopback or carrier-NAT ones, which a proxy or NAT may share between many users.
+
 ## Ports
 
 | Port | Service | Description |
@@ -252,10 +290,18 @@ For it to work through a reverse proxy or corporate proxy:
 - **Use a generous idle timeout.** The client sends a keepalive ping every ~25 seconds, so
   set the proxy's WebSocket/idle timeout to **at least 60 seconds** to avoid premature
   disconnects.
+- **Keep the `Host` header (or set `X-Forwarded-Host`).** The server refuses WebSocket
+  handshakes whose `Origin` belongs to another site (cross-site WebSocket hijacking guard,
+  close code 4003). The `Origin` host must equal the request's `Host` or
+  `X-Forwarded-Host`, or be listed in `CORS_ORIGINS`. The nginx example above passes
+  `Host $host`; a proxy that rewrites `Host` to the upstream address must send
+  `X-Forwarded-Host` instead.
 
 !!! note "Milestone still works without WebSockets"
     If WebSocket connections are blocked, the application remains fully usable over normal
     HTTPS — you lose only live presence and automatic refresh (users reload to see others'
-    changes). The client retries a few times, then stops silently; there is no long-polling
-    fallback. As a last resort the frontend has a `WEBSOCKET_DISABLED` build flag that turns
+    changes). While live updates are disconnected the header shows an **Offline** badge.
+    The client retries a few times with backoff, then waits and tries again as soon as the
+    browser reports the network is back or the tab becomes visible; there is no
+    long-polling fallback. As a last resort the frontend has a `WEBSOCKET_DISABLED` build flag that turns
     the real-time layer off entirely.

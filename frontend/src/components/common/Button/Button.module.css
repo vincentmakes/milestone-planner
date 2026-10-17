@@ -10,6 +10,8 @@
   cursor: pointer;
   transition: all var(--transition-fast);
   white-space: nowrap;
+  /* Anchors the absolutely positioned loading spinner */
+  position: relative;
 }
 
 .button:focus-visible {
@@ -80,7 +82,7 @@
   color: var(--text-primary);
 }
 
-.icon {
+.iconOnly {
   background: transparent;
   color: var(--text-secondary);
   padding: 0;
@@ -88,17 +90,17 @@
   height: 36px;
 }
 
-.icon.sm {
+.iconOnly.sm {
   width: 28px;
   height: 28px;
 }
 
-.icon.lg {
+.iconOnly.lg {
   width: 44px;
   height: 44px;
 }
 
-.icon:hover:not(:disabled) {
+.iconOnly:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
@@ -115,7 +117,7 @@
 }
 
 .loading .content,
-.loading .icon {
+.loading .iconSlot {
   visibility: hidden;
 }
 
@@ -135,15 +137,22 @@
   align-items: center;
 }
 
-.icon {
+/* Icon wrapper (the `icon` prop): sized to its svg, which inherits the text colour */
+.iconSlot {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
-.icon svg {
-  width: 1em;
-  height: 1em;
+.iconSlot svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sm .iconSlot svg {
+  width: 12px;
+  height: 12px;
 }
 
 @keyframes spin {

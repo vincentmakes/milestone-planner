@@ -13,11 +13,13 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_superuser
 from app.models.note import Note
+from app.models.site import Site
 from app.models.user import User
 from app.schemas.note import (
     NoteCreate,
     NoteResponse,
 )
+from app.services.date_range import parse_day
 
 router = APIRouter()
 
@@ -55,10 +57,12 @@ async def get_notes(
     """
     query = select(Note).where(Note.site_id == siteId).options(selectinload(Note.staff))
 
+    # Parsed (400 on junk): a raw string compared to a DATE column used to
+    # reach asyncpg and come back as a DataError (500).
     if startDate:
-        query = query.where(Note.date >= startDate)
+        query = query.where(Note.date >= parse_day(startDate, "startDate"))
     if endDate:
-        query = query.where(Note.date <= endDate)
+        query = query.where(Note.date <= parse_day(endDate, "endDate"))
 
     query = query.order_by(Note.date)
 
@@ -81,6 +85,15 @@ async def create_note(
 
     Matches: POST /api/notes
     """
+    # Unknown references are a 404, not an FK violation (500).
+    site = await db.execute(select(Site.id).where(Site.id == data.site_id))
+    if site.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Site not found")
+    if data.staff_id is not None:
+        staff = await db.execute(select(User.id).where(User.id == data.staff_id))
+        if staff.scalar_one_or_none() is None:
+            raise HTTPException(status_code=404, detail="Staff member not found")
+
     note = Note(
         site_id=data.site_id,
         staff_id=data.staff_id,

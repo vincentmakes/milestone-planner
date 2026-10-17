@@ -11,10 +11,15 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { UserMenu } from '../UserMenu';
 import { useAppStore } from '@/stores/appStore';
+import { useUIStore } from '@/stores/uiStore';
+import { useUndoStore } from '@/stores/undoStore';
 import { getAppVersion } from '@/api/endpoints/health';
+import { logout } from '@/api/endpoints/auth';
 
 vi.mock('@/api/endpoints/auth', () => ({
   logout: vi.fn().mockResolvedValue(undefined),
+  login: vi.fn(),
+  checkAuth: vi.fn().mockResolvedValue({ user: null }),
 }));
 vi.mock('@/api/endpoints/health', () => ({
   getAppVersion: vi.fn().mockResolvedValue('1.2.0'),
@@ -26,6 +31,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getAppVersion).mockResolvedValue('1.2.0');
   useAppStore.setState({
+    isAuthChecking: false,
+    isAuthenticated: true,
     currentUser: {
       id: 1,
       name: 'Alice Anderson',
@@ -77,5 +84,44 @@ describe('UserMenu version', () => {
     });
     expect(screen.getByText('Log out')).toBeInTheDocument();
     expect(screen.queryByText(/^v\d/)).not.toBeInTheDocument();
+  });
+});
+
+describe('UserMenu My absences', () => {
+  it('opens the My absences dialog and closes the menu', async () => {
+    useUIStore.setState({ activeModal: null });
+    render(<UserMenu />);
+    fireEvent.click(trigger());
+    fireEvent.click(await screen.findByText('My absences'));
+
+    expect(useUIStore.getState().activeModal).toBe('myAbsences');
+    expect(screen.queryByText('Log out')).not.toBeInTheDocument();
+  });
+});
+
+describe('UserMenu Log out', () => {
+  it('logs out through useAuth: session destroyed, every store reset, no reload', async () => {
+    const reload = vi.fn();
+    const originalLocation = window.location;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...originalLocation, reload },
+    });
+    useUndoStore.setState({ undoStack: [{} as never] } as never);
+
+    try {
+      render(<UserMenu />);
+      fireEvent.click(trigger());
+      fireEvent.click(await screen.findByText('Log out'));
+
+      await waitFor(() => expect(useAppStore.getState().isAuthenticated).toBe(false));
+      expect(logout).toHaveBeenCalledTimes(1);
+      expect(useAppStore.getState().currentUser).toBeNull();
+      expect(useAppStore.getState().isAuthChecking).toBe(false);
+      expect(useUndoStore.getState().undoStack).toHaveLength(0);
+      expect(reload).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
+    }
   });
 });

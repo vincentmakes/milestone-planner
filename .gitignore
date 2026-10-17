@@ -22,12 +22,18 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 .coverage
+.coverage.*
+coverage.xml
+coverage.shard-*
+diff-cover.md
 htmlcov/
 dist/
 
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/coverage/
+frontend/.vitest-reports/
 *.tsbuildinfo
 
 # Data and uploads

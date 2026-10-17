@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { orderSiteProjects, setProjectOrder, STORAGE_KEYS } from '../storage';
+import { moveProjectInOrder, orderSiteProjects, setProjectOrder, STORAGE_KEYS } from '../storage';
 
 interface TestProject {
   id: number;
@@ -63,6 +63,19 @@ describe('orderSiteProjects', () => {
     expect(result.slice(1).map((x) => x.id).sort()).toEqual([1, 3]);
   });
 
+  it('orders projects missing from the stored order by the default rule, whatever order they arrive in', () => {
+    setProjectOrder(1, [2]);
+    const projects = [p(5, 'Delta'), p(4, 'Charlie', { confirmed: true }), p(2, 'B'), p(3, 'Alpha')];
+    const expected = [2, 4, 3, 5];
+    expect(orderSiteProjects(projects, 1).map((x) => x.id)).toEqual(expected);
+    expect(orderSiteProjects([...projects].reverse(), 1).map((x) => x.id)).toEqual(expected);
+  });
+
+  it('breaks name ties by id so the fallback order is stable', () => {
+    const result = orderSiteProjects([p(9, 'Same'), p(3, 'Same')], 1);
+    expect(result.map((x) => x.id)).toEqual([3, 9]);
+  });
+
   it('reads the order for the requested site only', () => {
     setProjectOrder(2, [3, 1]);
     const result = orderSiteProjects([p(1, 'B'), p(3, 'A')], 1);
@@ -73,5 +86,34 @@ describe('orderSiteProjects', () => {
   it('stores order under a per-site key', () => {
     setProjectOrder(1, [2, 1]);
     expect(localStorage.getItem(`${STORAGE_KEYS.PROJECT_ORDER_PREFIX}1`)).toBeTruthy();
+  });
+});
+
+describe('moveProjectInOrder', () => {
+  const ids = [1, 2, 3, 4];
+
+  it('moves a project up, before the target', () => {
+    expect(moveProjectInOrder(ids, 4, 2, 'before')).toEqual([1, 4, 2, 3]);
+  });
+
+  it('moves a project down, before the target, without overshooting', () => {
+    expect(moveProjectInOrder(ids, 1, 3, 'before')).toEqual([2, 1, 3, 4]);
+  });
+
+  it('moves a project down, after the target', () => {
+    expect(moveProjectInOrder(ids, 1, 3, 'after')).toEqual([2, 3, 1, 4]);
+  });
+
+  it('can drop below the last row', () => {
+    expect(moveProjectInOrder(ids, 2, 4, 'after')).toEqual([1, 3, 4, 2]);
+  });
+
+  it('leaves the order unchanged when dropped next to itself', () => {
+    expect(moveProjectInOrder(ids, 1, 2, 'before')).toEqual(ids);
+    expect(moveProjectInOrder(ids, 2, 2, 'after')).toEqual(ids);
+  });
+
+  it('leaves the order unchanged for an unknown target', () => {
+    expect(moveProjectInOrder(ids, 1, 99, 'before')).toEqual(ids);
   });
 });

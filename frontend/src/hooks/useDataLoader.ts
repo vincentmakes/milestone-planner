@@ -4,6 +4,7 @@
  */
 
 import { useState, useCallback } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '@/stores/appStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import {
@@ -21,6 +22,8 @@ import {
   getCustomColumnsWithValues,
   skillsApi,
   tagsApi,
+  tagGroupsApi,
+  absenceTypesApi,
 } from '@/api';
 
 interface UseDataLoaderReturn {
@@ -32,12 +35,15 @@ interface UseDataLoaderReturn {
   refreshCustomColumns: (siteId: number) => Promise<void>;
   refreshStaff: () => Promise<void>;
   refreshEquipmentBlocks: () => Promise<void>;
+  refreshAbsenceTypes: () => Promise<void>;
 }
 
 export function useDataLoader(): UseDataLoaderReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
+  // Select the setters only (useShallow): destructuring the whole store
+  // re-rendered the host (App) on every store change, e.g. each drag tick.
   const {
     setSites,
     setProjects,
@@ -51,15 +57,29 @@ export function useDataLoader(): UseDataLoaderReturn {
     setInstanceSettings,
     setSkills,
     setTags,
-  } = useAppStore();
+    setTagGroups,
+    setAbsenceTypes,
+  } = useAppStore(
+    useShallow((s) => ({
+      setSites: s.setSites,
+      setProjects: s.setProjects,
+      setStaff: s.setStaff,
+      setEquipment: s.setEquipment,
+      setEquipmentBlocks: s.setEquipmentBlocks,
+      setVacations: s.setVacations,
+      setBankHolidays: s.setBankHolidays,
+      setCompanyEvents: s.setCompanyEvents,
+      setCurrentSite: s.setCurrentSite,
+      setInstanceSettings: s.setInstanceSettings,
+      setSkills: s.setSkills,
+      setTags: s.setTags,
+      setTagGroups: s.setTagGroups,
+      setAbsenceTypes: s.setAbsenceTypes,
+    }))
+  );
 
-  const {
-    setCustomColumns,
-    setCustomColumnValues,
-  } = useCustomColumnStore();
-
-  // Get persisted site ID from store (restored by Zustand persist)
-  const persistedSiteId = useAppStore((s) => s._persistedSiteId);
+  const setCustomColumns = useCustomColumnStore((s) => s.setCustomColumns);
+  const setCustomColumnValues = useCustomColumnStore((s) => s.setCustomColumnValues);
 
   /**
    * Load all initial data
@@ -70,7 +90,7 @@ export function useDataLoader(): UseDataLoaderReturn {
 
     try {
       // Load core data in parallel
-      const [sites, staff, equipment, equipmentBlocks, vacations, instanceSettings, skills, tags] = await Promise.all([
+      const [sites, staff, equipment, equipmentBlocks, vacations, instanceSettings, skills, tags, tagGroups, absenceTypes] = await Promise.all([
         getSites(),
         getStaff(true), // Include all sites
         getEquipment(true), // Include all sites
@@ -79,6 +99,8 @@ export function useDataLoader(): UseDataLoaderReturn {
         getInstanceSettings().catch(() => null), // Don't fail if settings not available
         skillsApi.getAll().catch(() => []), // Don't fail if skills not available
         tagsApi.getAll().catch(() => []), // Don't fail if tags not available
+        tagGroupsApi.getAll().catch(() => []),
+        absenceTypesApi.getAll().catch(() => []), // Don't fail on servers without absence types
       ]);
 
       // Update store
@@ -89,6 +111,8 @@ export function useDataLoader(): UseDataLoaderReturn {
       setVacations(vacations);
       setSkills(skills);
       setTags(tags);
+      setTagGroups(tagGroups);
+      setAbsenceTypes(absenceTypes);
       if (instanceSettings) {
         setInstanceSettings(instanceSettings);
       }
@@ -98,7 +122,11 @@ export function useDataLoader(): UseDataLoaderReturn {
         // Sort sites by ID for consistent ordering
         const sortedSites = [...sites].sort((a, b) => a.id - b.id);
         
-        // Check for persisted site ID from store (restored by Zustand persist)
+        // Read the persisted site ID now, not from a render-time selector:
+        // this callback is memoised on stable setters only, so a captured
+        // value would be the site from when the component mounted -- and a
+        // reload after switching site would jump back to it.
+        const persistedSiteId = useAppStore.getState()._persistedSiteId;
         let targetSite = sortedSites[0];
         
         if (persistedSiteId != null) {
@@ -156,6 +184,8 @@ export function useDataLoader(): UseDataLoaderReturn {
     setInstanceSettings,
     setSkills,
     setTags,
+    setTagGroups,
+    setAbsenceTypes,
     setCustomColumns,
     setCustomColumnValues,
   ]);
@@ -226,6 +256,18 @@ export function useDataLoader(): UseDataLoaderReturn {
     }
   }, [setEquipmentBlocks]);
 
+  /**
+   * Refresh absence types (tenant-wide)
+   */
+  const refreshAbsenceTypes = useCallback(async () => {
+    try {
+      const absenceTypes = await absenceTypesApi.getAll();
+      setAbsenceTypes(absenceTypes);
+    } catch (err) {
+      console.error('[DataLoader] Failed to refresh absence types:', err);
+    }
+  }, [setAbsenceTypes]);
+
   return {
     isLoading,
     error,
@@ -235,5 +277,6 @@ export function useDataLoader(): UseDataLoaderReturn {
     refreshCustomColumns,
     refreshStaff,
     refreshEquipmentBlocks,
+    refreshAbsenceTypes,
   };
 }

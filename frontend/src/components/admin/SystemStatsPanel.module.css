@@ -25,26 +25,6 @@
   margin: 0;
 }
 
-.refreshBtn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.refreshBtn:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-
 .grid {
   display: grid;
   gap: 1.5rem;

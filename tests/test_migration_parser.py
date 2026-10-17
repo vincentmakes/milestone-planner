@@ -73,3 +73,52 @@ END $$;"""
     assert len(stmts) == 1
     assert "DROP TABLE" in stmts[0]
     assert "CREATE TABLE" in stmts[0]
+
+
+def test_declare_loop_dollar_block_stays_whole():
+    """A DO block with DECLARE, a FOR ... LOOP and an IF (the FK-rewrite shape)
+    is one statement, inner semicolons included."""
+    sql = """CREATE INDEX IF NOT EXISTS idx_x ON x(y);
+
+DO $$
+DECLARE
+    fk_name TEXT;
+BEGIN
+    FOR fk_name IN
+        SELECT c.conname FROM pg_constraint c WHERE c.confdeltype <> 'n'
+    LOOP
+        EXECUTE format('ALTER TABLE equipment DROP CONSTRAINT %I', fk_name);
+    END LOOP;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint) THEN
+        UPDATE equipment SET site_id = NULL WHERE site_id IS NOT NULL;
+        ALTER TABLE equipment ADD CONSTRAINT equipment_site_id_fkey
+            FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+INSERT INTO equipment_sites (equipment_id, site_id) SELECT 1, 1;
+"""
+    stmts = split_sql_statements(sql)
+    assert len(stmts) == 3
+    assert stmts[1].lstrip().startswith("DO $$")
+    assert "END LOOP;" in stmts[1]
+    assert "ON DELETE SET NULL;" in stmts[1]
+    assert stmts[1].rstrip().endswith("END $$;")
+    assert "INSERT INTO equipment_sites" in stmts[2]
+
+
+def test_equipment_sites_migration_splits_cleanly():
+    """The real migration file: every DO block is kept whole."""
+    path = Path(__file__).parent.parent / "migrations" / "add_equipment_sites_and_site_closures.sql"
+    stmts = split_sql_statements(path.read_text())
+    do_blocks = [s for s in stmts if s.lstrip().startswith("DO $$")]
+    assert len(do_blocks) == 3  # FK rewrite, grants, completion notice
+    assert all(s.rstrip().endswith("END $$;") for s in do_blocks)
+    fk_block = do_blocks[0]
+    assert "DROP CONSTRAINT" in fk_block and "ON DELETE SET NULL" in fk_block
+    # No statement leaks out of a block: everything else is plain DDL/DML.
+    for s in stmts:
+        if s not in do_blocks:
+            assert "$$" not in s
+            assert "END IF" not in s and "END LOOP" not in s

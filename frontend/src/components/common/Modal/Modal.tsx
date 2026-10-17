@@ -7,9 +7,12 @@ export interface ModalProps {
   onClose: () => void;
   title: string;
   children: ReactNode;
-  size?: 'sm' | 'md' | 'lg' | 'xl' | 'xxl' | 'full';
+  /** 'wide' is a large centered workspace (capped at 1360×900) for the Settings hub */
+  size?: 'sm' | 'md' | 'lg' | 'xl' | 'xxl' | 'wide';
   footer?: ReactNode;
   closeOnEscape?: boolean;
+  /** Drop the body padding and scrolling so the content can lay out its own panes */
+  flushBody?: boolean;
 }
 
 export function Modal({
@@ -20,6 +23,7 @@ export function Modal({
   size = 'md',
   footer,
   closeOnEscape = true,
+  flushBody = false,
 }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const wasOpenRef = useRef(false);
@@ -96,7 +100,9 @@ export function Modal({
             </svg>
           </button>
         </div>
-        <div className={styles.body}>{children}</div>
+        <div className={flushBody ? `${styles.body} ${styles.bodyFlush}` : styles.body}>
+          {children}
+        </div>
         {footer && <div className={styles.footer}>{footer}</div>}
       </div>
     </div>,

@@ -1,0 +1,84 @@
+/* Group-by section header (left pane). Same height as TimelineBody .groupBand:
+   --section-row-height content + 1px border, content-box. No class name here
+   may contain "row" (see SectionRow.tsx). */
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.75rem 0 0.5rem;
+  height: var(--section-row-height);
+  box-sizing: content-box;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.groupHeader:hover {
+  background: var(--bg-hover);
+}
+
+.collapseBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.collapseBtn:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.collapseBtn:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
+}
+
+.chevron {
+  transition: transform var(--transition-fast);
+}
+
+.chevronCollapsed {
+  transform: rotate(-90deg);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  /* Keep pill + count inside the name column (chevron, gaps, count ≈ 9rem). */
+  max-width: calc(var(--name-column-width, 360px) - 9rem);
+  padding: 0.2rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.2;
+  border-radius: 999px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* "No <group>" section: outlined neutral pill */
+.pillNone {
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border-color-hover);
+  font-weight: var(--font-weight-medium);
+}
+
+.count {
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}

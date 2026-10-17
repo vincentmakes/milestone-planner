@@ -1,12 +1,13 @@
 """
-Site and BankHoliday models.
-Maps to the sites and bank_holidays tables in PostgreSQL.
+Site, BankHoliday and CompanyEvent models.
+Maps to the sites, bank_holidays, company_events and company_event_sites tables.
 """
 
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -56,10 +57,13 @@ class Site(Base):
         cascade="all, delete-orphan",
     )
 
+    # Equipment can be shared by several sites (equipment_sites), so deleting a
+    # site must not delete it: the FK sets equipment.site_id to NULL and the
+    # site delete handler removes equipment left without any linked site.
     equipment: Mapped[list["Equipment"]] = relationship(
         "Equipment",
         back_populates="site",
-        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     bank_holidays: Mapped[list["BankHoliday"]] = relationship(
@@ -74,11 +78,9 @@ class Site(Base):
         cascade="all, delete-orphan",
     )
 
-    company_events: Mapped[list["CompanyEvent"]] = relationship(
-        "CompanyEvent",
-        back_populates="site",
-        cascade="all, delete-orphan",
-    )
+    # Company events link to sites through company_event_sites (an event can
+    # span several sites), so there is no direct relationship here. The site
+    # delete handler removes events left without any linked site.
 
     # Note: staff_notes relationship removed - feature not in use
 
@@ -130,26 +132,31 @@ class BankHoliday(Base):
 class CompanyEvent(Base):
     """
     Company events (audits, company meetings, etc.)
-    Similar to holidays but don't impact working days calculation.
+    Similar to holidays but don't impact working days calculation -- unless
+    counts_as_unavailable is set (a site closure), in which case the staff of
+    the event's sites are unavailable for its dates.
+
+    An event can apply to several sites; the links live in company_event_sites.
     """
 
     __tablename__ = "company_events"
     __table_args__ = (Index("ix_company_events_site_date", "site_id", "date"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    site_id: Mapped[int] = mapped_column(
+    # Legacy single-site column, kept for compatibility: set to the first linked
+    # site on create. company_event_sites is the source of truth.
+    site_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("sites.id", ondelete="CASCADE"),
-        nullable=False,
+        ForeignKey("sites.id", ondelete="SET NULL"),
+        nullable=True,
     )
     date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     color: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Site closure: staff of the linked sites are unavailable on the event's dates.
+    counts_as_unavailable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
-
-    # Relationships
-    site: Mapped["Site"] = relationship("Site", back_populates="company_events")
 
     @property
     def is_multi_day(self) -> bool:
@@ -158,3 +165,21 @@ class CompanyEvent(Base):
 
     def __repr__(self) -> str:
         return f"<CompanyEvent {self.name} ({self.date})>"
+
+
+class CompanyEventSite(Base):
+    """Association table for CompanyEvent-Site many-to-many relationship."""
+
+    __tablename__ = "company_event_sites"
+    __table_args__ = (Index("idx_company_event_sites_site", "site_id"),)
+
+    event_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("company_events.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    site_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("sites.id", ondelete="CASCADE"),
+        primary_key=True,
+    )

@@ -9,6 +9,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useEquipmentOverlaps } from '@/hooks/useEquipmentOverlaps';
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
+import { canEditProject, canEditAssignment } from '@/utils/permissions';
 import styles from './AssignmentRow.module.css';
 
 interface AssignmentRowProps {
@@ -50,11 +51,17 @@ export const AssignmentRow = memo(function AssignmentRow({
 }: AssignmentRowProps) {
   const showContextMenu = useUIStore((s) => s.showContextMenu);
   const currentUser = useAppStore((s) => s.currentUser);
+  // Only the manager id matters here; a primitive selector keeps the memo cheap.
+  const pmId = useAppStore((s) => s.projects.find((p) => p.id === projectId)?.pm_id);
   const overlapMap = useEquipmentOverlaps();
   const hasEquipmentConflict =
     type === 'equipment' && equipmentId !== undefined && overlapMap.get(equipmentId)?.hasOverlap === true;
 
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  // Equipment bookings follow the project's editors; a staff booking may also
+  // be changed by the person whose time it books.
+  const canEdit = type === 'equipment'
+    ? canEditProject(currentUser, { pm_id: pmId })
+    : canEditAssignment(currentUser, { pm_id: pmId }, staffId);
   
   const paddingLeft = depth * 16 + 28; // Extra offset for no expand button
 

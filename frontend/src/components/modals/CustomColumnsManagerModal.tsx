@@ -6,10 +6,11 @@
 import { useState, useCallback, useRef } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useAppStore } from '@/stores/appStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import {
-  updateCustomColumn,
+  reorderCustomColumns,
   deleteCustomColumn,
   getCustomColumnsWithValues,
   type CustomColumn,
@@ -37,6 +38,11 @@ export function CustomColumnsManagerModal({
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   
   const dragItemRef = useRef<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // One reorder at a time: a second drop during the first would interleave
+  // writes; deletes are guarded the same way.
+  const reorderGuard = useSubmitGuard();
+  const deleteGuard = useSubmitGuard();
 
   const refreshColumns = useCallback(async () => {
     if (!currentSite) return;
@@ -83,18 +89,17 @@ export function CustomColumnsManagerModal({
       setDragOverIndex(null);
       return;
     }
+    if (!reorderGuard.begin()) {
+      setDragOverIndex(null);
+      return;
+    }
+    setError(null);
     
     try {
       // Create new array with reordered columns
       const newColumns = [...customColumns];
       const [removed] = newColumns.splice(dragItemRef.current, 1);
       newColumns.splice(targetIndex, 0, removed);
-      
-      // Update display_order for all affected columns
-      const updates = newColumns.map((col, idx) => ({
-        id: col.id,
-        display_order: idx,
-      }));
       
       // Update locally first for responsiveness
       const updatedColumns = newColumns.map((col, idx) => ({
@@ -103,29 +108,33 @@ export function CustomColumnsManagerModal({
       }));
       setCustomColumns(updatedColumns);
       
-      // Persist to server
-      for (const update of updates) {
-        await updateCustomColumn(update.id, { display_order: update.display_order });
-      }
+      // Persist to server in one request
+      await reorderCustomColumns(newColumns.map((col) => col.id));
     } catch (err) {
       console.error('Failed to reorder columns:', err);
+      setError(err instanceof Error && err.message ? err.message : 'Failed to reorder the columns');
       // Refresh to restore correct order
-      refreshColumns();
+      await refreshColumns();
     } finally {
       setDragOverIndex(null);
+      reorderGuard.end();
     }
   };
 
   const handleDelete = async (column: CustomColumn) => {
-    if (!confirm(`Delete column "${column.name}"? All values will be lost.`)) {
-      return;
-    }
-
+    if (!deleteGuard.begin()) return;
     try {
+      if (!confirm(`Delete column "${column.name}"? All values will be lost.`)) {
+        return;
+      }
+      setError(null);
       await deleteCustomColumn(column.id);
-      refreshColumns();
+      await refreshColumns();
     } catch (err) {
       console.error('Failed to delete column:', err);
+      setError(err instanceof Error && err.message ? err.message : `Failed to delete the column "${column.name}"`);
+    } finally {
+      deleteGuard.end();
     }
   };
 
@@ -171,8 +180,16 @@ export function CustomColumnsManagerModal({
         onClose={onClose}
         title="Manage Custom Columns"
         size="lg"
+        // While the nested add/edit dialog is open, Escape belongs to it:
+        // one Escape must not close both dialogs.
+        closeOnEscape={!editingColumn && !showAddModal}
       >
         <div className={styles.content}>
+          {error && (
+            <div className={styles.error} role="alert">
+              {error}
+            </div>
+          )}
           {customColumns.length === 0 ? (
             <div className={styles.empty}>
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -200,7 +217,7 @@ export function CustomColumnsManagerModal({
                 <div
                   key={column.id}
                   className={`${styles.columnItem} ${dragOverIndex === index ? styles.dragOver : ''} ${draggedColumn?.id === column.id ? styles.dragging : ''}`}
-                  draggable
+                  draggable={!reorderGuard.isSubmitting}
                   onDragStart={(e) => handleDragStart(e, column, index)}
                   onDragEnd={handleDragEnd}
                   onDragOver={(e) => handleDragOver(e, index)}
@@ -244,6 +261,7 @@ export function CustomColumnsManagerModal({
                     <button
                       className={`${styles.actionBtn} ${styles.deleteBtn}`}
                       onClick={() => handleDelete(column)}
+                      disabled={deleteGuard.isSubmitting}
                       title="Delete column"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

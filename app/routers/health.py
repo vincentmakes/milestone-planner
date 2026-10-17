@@ -2,6 +2,8 @@
 Health check endpoints.
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -10,11 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import __version__
 from app.config import get_settings
 from app.database import get_db
-from app.middleware.auth import get_current_user
+from app.middleware.auth import require_admin
 from app.models.user import User
 from app.utils import utcnow_naive
 from app.websocket.broadcast import broadcast_change, get_tenant_from_request
 from app.websocket.manager import manager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -44,7 +48,10 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     try:
         await db.execute(text("SELECT 1"))
     except Exception as e:
-        db_status = f"error: {str(e)}"
+        # Public endpoint: the driver error names hosts, ports and DB users, so
+        # it goes to the log only.
+        logger.warning("Health check: database probe failed: %s", e)
+        db_status = "error"
 
     return HealthResponse(
         status="ok",
@@ -68,10 +75,10 @@ async def api_health_check(db: AsyncSession = Depends(get_db)):
 @router.get("/api/ws-debug")
 async def ws_debug(
     request: Request,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     """
-    Diagnostic endpoint to verify the WebSocket broadcast pipeline.
+    Diagnostic endpoint (admin only) to verify the WebSocket broadcast pipeline.
 
     Returns the tenant the request resolves to and the count of active
     WebSocket connections (and distinct online users) the broadcast manager
@@ -93,10 +100,10 @@ async def ws_debug(
 @router.post("/api/ws-debug/broadcast")
 async def ws_debug_broadcast(
     request: Request,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     """
-    Diagnostic endpoint that fires a synthetic change broadcast. Use this
+    Diagnostic endpoint (admin only) that fires a synthetic change broadcast. Use this
     from the editor's browser to confirm that other tabs/users actually
     receive a `change:project` event without needing to coordinate a real
     Gantt edit.

@@ -6,15 +6,16 @@ import { apiGet, apiPost, apiPut, apiDelete } from '../client';
 import type { Equipment, EquipmentBlock, CreateEquipmentBlockRequest } from '@/types';
 
 /**
- * Get all equipment
+ * Get equipment, one row per equipment-site pair (like GET /staff): an item on
+ * two sites comes back twice with the `site_id` of each pair and the full
+ * `site_ids`. Not paginated.
  * @param includeAllSites - If true, return equipment from all sites
  */
 export async function getEquipment(includeAllSites = false): Promise<Equipment[]> {
   const url = includeAllSites
     ? '/api/equipment?includeAllSites=true'
     : '/api/equipment';
-  const response = await apiGet<{ items: Equipment[]; total: number; offset: number; limit: number }>(url);
-  return response.items;
+  return apiGet<Equipment[]>(url);
 }
 
 /**

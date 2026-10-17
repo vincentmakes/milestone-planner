@@ -4,8 +4,12 @@
 # No external database required - everything runs in Docker.
 #
 # First run:
-#   cp .env.example .env   # then edit .env with your settings
+#   cp .env.example .env   # then set SESSION_SECRET (required) and, for
+#                          # MULTI_TENANT=true, TENANT_ENCRYPTION_KEY:
+#                          #   python -c "import secrets; print(secrets.token_hex(32))"
 #   docker compose -f docker-compose.fresh.yml up -d
+#
+# (scripts/fresh_install.py generates a .env with random secrets as well.)
 #
 # The app will:
 #   1. Start PostgreSQL
@@ -82,9 +86,13 @@ services:
       - MASTER_DB_NAME=${MASTER_DB_NAME:-milestone_admin}
       - MASTER_DB_USER=${PG_ADMIN_USER:-postgres}
       - MASTER_DB_PASSWORD=${PG_ADMIN_PASSWORD:-milestone_secret}
-      # Security
-      - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
+      # Security — read from .env. No usable default: the app refuses to start
+      # with DEBUG=false on an empty or published SESSION_SECRET.
+      - SESSION_SECRET=${SESSION_SECRET:?Set SESSION_SECRET in .env - see the header of docker-compose.fresh.yml}
       - TENANT_ENCRYPTION_KEY=${TENANT_ENCRYPTION_KEY:-}
+      # Reverse proxy in front? Its address(es), so client ips come from
+      # X-Forwarded-For (see .env.example).
+      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
       # Auto-initialization
       - AUTO_INIT_DB=true
       - INIT_ADMIN_EMAIL=${INIT_ADMIN_EMAIL:-admin@milestone.local}

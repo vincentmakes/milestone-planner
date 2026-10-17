@@ -55,13 +55,19 @@ if [ "${MULTI_TENANT}" = "true" ] && [ -n "${MASTER_DB_HOST}" ] && [ "${MASTER_D
     wait_for_db "$MASTER_DB_HOST" "$MASTER_DB_PORT" "(master DB)"
 fi
 
-# Run auto-initialization if AUTO_INIT_DB is set
+# Run auto-initialization if AUTO_INIT_DB is set. A failed run means a
+# missing or half-applied schema, so the container exits non-zero instead of
+# serving traffic against it (the orchestrator's restart policy retries, and
+# the cause is in the log right above).
 if [ "${AUTO_INIT_DB}" = "true" ]; then
     echo "Running database auto-initialization..."
-    if python -m app.scripts.init_db; then
+    init_status=0
+    python -m app.scripts.init_db || init_status=$?
+    if [ "$init_status" -eq 0 ]; then
         echo "Database initialization complete."
     else
-        echo "ERROR: Database initialization failed (exit code $?). Starting app anyway..."
+        echo "ERROR: Database initialization failed (exit code ${init_status}). Not starting the app." >&2
+        exit "$init_status"
     fi
 fi
 

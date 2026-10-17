@@ -374,6 +374,15 @@ def create_equipment(session: Session, site_ids: List[int],
                 }
             )
             equip_id = result.fetchone()[0]
+            # Site link (equipment can be shared by several sites)
+            session.execute(
+                text("""
+                    INSERT INTO equipment_sites (equipment_id, site_id)
+                    VALUES (:equipment_id, :site_id)
+                    ON CONFLICT DO NOTHING
+                """),
+                {"equipment_id": equip_id, "site_id": site_id},
+            )
             equipment_ids.append(equip_id)
             print(f"  Created: {equip_data['name']} ({equip_data['type']}) - site_id={site_id}")
     

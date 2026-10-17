@@ -10,9 +10,12 @@ import { useCallback, useMemo, useEffect, useState, useRef } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
+import { useWhatIfStore } from '@/stores/whatIfStore';
 import { createStaffAssignment, createEquipmentAssignment, loadAllProjects } from '@/api/endpoints/projects';
-import { format, addDays } from 'date-fns';
+import { whatIfUnavailableMessage } from '@/utils/whatIf';
+import { canEditProject, canEditAssignment } from '@/utils/permissions';
 import type { TimelineCell } from '../utils';
+import { calculateBarPosition, centredDayRangeAtX } from '../utils/timeline';
 import type { Project } from '@/types';
 import styles from './ResourceDropOverlay.module.css';
 
@@ -39,9 +42,14 @@ export function ResourceDropOverlay({
   const endResourceDrag = useUIStore((s) => s.endResourceDrag);
   const setProjects = useAppStore((s) => s.setProjects);
   const staff = useAppStore((s) => s.staff);
+  const currentUser = useAppStore((s) => s.currentUser);
   const ensureProjectExpanded = useViewStore((s) => s.ensureProjectExpanded);
   const ensurePhaseExpanded = useViewStore((s) => s.ensurePhaseExpanded);
   const ensureSubphaseExpanded = useViewStore((s) => s.ensureSubphaseExpanded);
+  const viewMode = useViewStore((s) => s.viewMode);
+  // A drop creates an assignment, which cannot show until Apply in What-If.
+  const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
+  const dropBlockedReason = whatIfMode ? whatIfUnavailableMessage('Dropping resources') : null;
   const overlayRef = useRef<HTMLDivElement>(null);
   
   // Track position for preview bar
@@ -79,17 +87,28 @@ export function ResourceDropOverlay({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [handleCancel]);
 
-  // Calculate date from X position
-  const getDateFromX = useCallback((x: number): string => {
-    if (cells.length === 0) return format(new Date(), 'yyyy-MM-dd');
-    const cellIndex = Math.floor(x / cellWidth);
-    const clampedIndex = Math.max(0, Math.min(cellIndex, cells.length - 1));
-    return cells[clampedIndex]?.dateStr || format(new Date(), 'yyyy-MM-dd');
-  }, [cells, cellWidth]);
+  // The 5-day range a drop at pixel x creates, centred on the pointer. Shared
+  // by the preview and the drop so the bar shows exactly what gets booked —
+  // 5 calendar days in every view mode (not 5 weeks/months when zoomed out).
+  const getDropRange = useCallback(
+    (x: number) => centredDayRangeAtX(x, cells, cellWidth, viewMode, DEFAULT_DURATION_DAYS),
+    [cells, cellWidth, viewMode]
+  );
 
-  // Find target row from Y position
+  // Whether the dragged resource may land on this project: equipment follows
+  // the project's editors, a person may also be dropped by themselves.
+  const canDropOn = useCallback((project: Project): boolean => {
+    if (resourceDrag.type === 'staff') {
+      return canEditAssignment(currentUser, project, resourceDrag.resourceId);
+    }
+    return canEditProject(currentUser, project);
+  }, [currentUser, resourceDrag.type, resourceDrag.resourceId]);
+
+  // Find target row from Y position. Projects the user may not drop on are
+  // skipped, so they never light up as a target.
   const findTargetFromY = useCallback((y: number): typeof hoveredTarget => {
     for (const project of projects) {
+      if (!canDropOn(project)) continue;
       const projectKey = `project-${project.id}`;
       const projectPos = rowPositions.get(projectKey);
       
@@ -144,7 +163,7 @@ export function ResourceDropOverlay({
       }
     }
     return null;
-  }, [projects, rowPositions]);
+  }, [projects, rowPositions, canDropOn]);
 
   // Update position from event coordinates
   const updatePositionFromEvent = useCallback((clientX: number, clientY: number) => {
@@ -165,23 +184,38 @@ export function ResourceDropOverlay({
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (dropBlockedReason) {
+      e.dataTransfer.dropEffect = 'none';
+      return;
+    }
     e.dataTransfer.dropEffect = 'copy';
     updatePositionFromEvent(e.clientX, e.clientY);
-  }, [updatePositionFromEvent]);
+  }, [updatePositionFromEvent, dropBlockedReason]);
 
   // Handle drop - create the assignment
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     
-    if (!hoveredTarget || !resourceDrag.resourceId || mouseX === null) {
+    const targetProject = hoveredTarget
+      ? projects.find((p) => p.id === hoveredTarget.projectId)
+      : undefined;
+    if (dropBlockedReason || !hoveredTarget || !resourceDrag.resourceId || mouseX === null || !targetProject || !canDropOn(targetProject)) {
       endResourceDrag();
       document.body.classList.remove('resource-dragging');
       return;
     }
 
-    const startDate = getDateFromX(mouseX - (cellWidth * DEFAULT_DURATION_DAYS) / 2);
-    const endDate = format(addDays(new Date(startDate), DEFAULT_DURATION_DAYS - 1), 'yyyy-MM-dd');
+    // Calendar-day arithmetic on the strings (see centredDayRangeAtX):
+    // `new Date('YYYY-MM-DD')` is UTC midnight and would land a day early
+    // west of UTC (a 4-day booking).
+    const range = getDropRange(mouseX);
+    if (!range) {
+      endResourceDrag();
+      document.body.classList.remove('resource-dragging');
+      return;
+    }
+    const { start_date: startDate, end_date: endDate } = range;
 
     // Determine the assignment target level
     const isProjectLevel = !hoveredTarget.phaseId && !hoveredTarget.subphaseId;
@@ -235,7 +269,7 @@ export function ResourceDropOverlay({
       endResourceDrag();
       document.body.classList.remove('resource-dragging');
     }
-  }, [hoveredTarget, resourceDrag, mouseX, cellWidth, getDateFromX, endResourceDrag, setProjects, ensureProjectExpanded, ensurePhaseExpanded, ensureSubphaseExpanded, getStaffDefaultAllocation]);
+  }, [dropBlockedReason, hoveredTarget, resourceDrag, mouseX, projects, canDropOn, getDropRange, endResourceDrag, setProjects, ensureProjectExpanded, ensurePhaseExpanded, ensureSubphaseExpanded, getStaffDefaultAllocation]);
 
   // Handle drag leave - clean up when leaving
   const handleDragLeave = useCallback((e: React.DragEvent) => {
@@ -254,17 +288,21 @@ export function ResourceDropOverlay({
     const rowPos = rowPositions.get(hoveredTarget.rowKey);
     if (!rowPos) return null;
 
-    const barWidth = cellWidth * DEFAULT_DURATION_DAYS;
-    const barLeft = mouseX - barWidth / 2;
+    // Drawn from the range the drop will create, with the same scale as
+    // every other bar, so its width is 5 days in any view mode.
+    const range = getDropRange(mouseX);
+    if (!range) return null;
+    const bar = calculateBarPosition(range.start_date, range.end_date, cells, cellWidth, viewMode);
+    if (!bar) return null;
     const barTop = rowPos.top + (rowPos.height - 20) / 2;
 
     return {
-      left: Math.max(0, barLeft),
+      left: Math.max(0, bar.left),
       top: barTop,
-      width: barWidth,
+      width: bar.width,
       height: 20,
     };
-  }, [hoveredTarget, mouseX, cellWidth, rowPositions]);
+  }, [hoveredTarget, mouseX, rowPositions, getDropRange, cells, cellWidth, viewMode]);
 
   // Only render when resource drag is active
   if (!resourceDrag.active) return null;
@@ -278,7 +316,7 @@ export function ResourceDropOverlay({
       onDragLeave={handleDragLeave}
     >
       {/* Drop zone highlights */}
-      {hoveredTarget && (
+      {hoveredTarget && !dropBlockedReason && (
         <div
           className={styles.dropZone}
           style={{
@@ -290,7 +328,7 @@ export function ResourceDropOverlay({
       )}
 
       {/* Preview bar */}
-      {previewBar && (
+      {previewBar && !dropBlockedReason && (
         <div
           className={`${styles.previewBar} ${resourceDrag.type === 'staff' ? styles.staff : styles.equipment}`}
           style={{
@@ -308,7 +346,11 @@ export function ResourceDropOverlay({
 
       {/* Instructions */}
       <div className={styles.instructions}>
-        <span>Drop to place {resourceDrag.type === 'staff' ? 'staff' : 'equipment'} assignment</span>
+        {dropBlockedReason ? (
+          <span role="status">{dropBlockedReason}</span>
+        ) : (
+          <span>Drop to place {resourceDrag.type === 'staff' ? 'staff' : 'equipment'} assignment</span>
+        )}
         <span className={styles.hint}>Press Esc to cancel</span>
       </div>
     </div>

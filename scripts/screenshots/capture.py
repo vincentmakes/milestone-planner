@@ -6,6 +6,7 @@ Outputs PNGs at 1440x900 to docs/assets/screenshots/.
 Prerequisites
 -------------
 1. Demo instance running at http://localhost:8486/t/demo/ — see scripts/screenshots/README.md.
+   Set SCREENSHOT_BASE_URL (e.g. http://localhost:8487) to capture from another instance.
 2. seed_extras.sql applied so custom columns, vacations, and bank holidays are populated:
        docker exec -i milestone-fresh-db psql -U milestone_demo -d milestone_demo \\
          < scripts/screenshots/seed_extras.sql
@@ -22,12 +23,15 @@ Usage
 
 from __future__ import annotations
 
+import os
+import re
 import sys
 from pathlib import Path
 
 from playwright.sync_api import BrowserContext, Page, sync_playwright
 
-URL = "http://localhost:8486/t/demo/"
+BASE = os.environ.get("SCREENSHOT_BASE_URL", "http://localhost:8486").rstrip("/")
+URL = f"{BASE}/t/demo/"
 EMAIL = "admin@demo.local"
 PASSWORD = "demo1234"
 REPO = Path(__file__).resolve().parents[2]
@@ -55,7 +59,9 @@ def login(page: Page) -> None:
 
 
 def use_quarter_view(page: Page) -> None:
-    page.locator('header').get_by_role('button', name='Q', exact=True).click()
+    # The view-mode buttons carry aria-label="<Mode> view" (the visible text is
+    # just the letter), so the accessible name is "Quarter view", not "Q".
+    page.locator('header').get_by_role('button', name='Quarter view', exact=True).click()
     page.wait_for_timeout(400)
 
 
@@ -105,6 +111,17 @@ def open_sidebar_item(page: Page, label: str) -> None:
     page.wait_for_timeout(800)
 
 
+def open_settings_section(page: Page, label: str) -> None:
+    """Open the Settings hub from the sidebar and switch to one section.
+
+    Labels come from SETTINGS_SECTIONS in
+    frontend/src/components/settings/sections.tsx (e.g. "Sites", "Users").
+    """
+    open_sidebar_item(page, "Settings")
+    page.get_by_role("dialog").get_by_role("button", name=label, exact=True).click()
+    page.wait_for_timeout(800)
+
+
 def right_click_row(page: Page, name: str) -> None:
     """Right-click a project-panel row by its visible text to open the context menu."""
     row = page.get_by_text(name, exact=True).first
@@ -123,6 +140,39 @@ def open_project_modal(page: Page, project: str = "Bioprocess Scale-Up") -> None
     page.wait_for_timeout(800)
 
 
+def open_color_by(page: Page) -> None:
+    """Open the project panel's Colour by dropdown (ColorByDropdown.tsx).
+
+    The trigger's accessible name is "Colour by", or "Coloured by <group>"
+    once a group is chosen; its panel is the dialog "Colour projects".
+    """
+    page.get_by_role("button", name=re.compile(r"^Colou?r(ed)? by")).first.click()
+    page.get_by_role("dialog", name="Colour projects").wait_for()
+    page.wait_for_timeout(300)
+
+
+def _pick_color_by(page: Page, option: str) -> None:
+    open_color_by(page)
+    # The native radio is visually hidden behind a styled span, so click its label.
+    page.get_by_role("dialog", name="Colour projects").locator(
+        f'[role="radiogroup"] label:has-text("{option}")'
+    ).first.click()
+    page.keyboard.press("Escape")  # close the panel; the choice stays
+    page.wait_for_timeout(400)
+
+
+def set_color_by(page: Page, group_name: str) -> None:
+    """Colour the Gantt project bars by a tag group (per-site browser
+    preference in localStorage, so it carries over to the later shots of the
+    shared context)."""
+    _pick_color_by(page, group_name)
+
+
+def clear_color_by(page: Page) -> None:
+    """Back to the default project bar colours."""
+    _pick_color_by(page, "Default")
+
+
 # --------------------------- shots ---------------------------
 
 
@@ -130,6 +180,9 @@ def shot_gantt_main(context: BrowserContext) -> None:
     page = context.new_page()
     login(page)
     go_to_gantt(page)
+    # Coloured project bars, as in the docs. Deliberately not reset: the
+    # preference persists in the shared context, so later Gantt shots keep it.
+    set_color_by(page, "Project type")
     use_quarter_view(page)
     click_today(page)
     expand_all_projects(page)
@@ -265,22 +318,32 @@ def shot_project_modal(context: BrowserContext) -> None:
 
 
 def shot_project_tags(context: BrowserContext) -> None:
-    """Tag picker inside the project modal, with the tag edit/color panel open."""
+    """Tag picker inside the project modal, with the grouped dropdown open."""
     page = context.new_page()
     login(page)
     open_project_modal(page)
-    page.click('input[placeholder="Find or create a tag..."]')
+    # Placeholder = TAG_PICKER_PLACEHOLDER in frontend/src/components/modals/TagPicker.tsx
+    page.click('input[placeholder="Find a tag..."]')
     page.wait_for_timeout(400)
-    page.locator('button[title="Edit tag"]').first.click()
-    page.wait_for_timeout(400)
-    # Bring the edit panel's color palette fully into the modal's scroll view.
+    # The grouped list opens below the field; bring it fully into the modal's
+    # scroll view so the "pick one" group heading and its options are visible.
     try:
-        page.get_by_role("button", name="Done", exact=True).scroll_into_view_if_needed()
+        page.locator('[role="listbox"]').first.scroll_into_view_if_needed()
         page.wait_for_timeout(300)
     except Exception:
         pass
     page.screenshot(path=str(OUT / "project-tags.png"))
     log("[done] project-tags.png")
+    page.close()
+
+
+def shot_settings_tags(context: BrowserContext) -> None:
+    """Settings -> Tags: tag groups and the per-group tag lists (admin only)."""
+    page = context.new_page()
+    login(page)
+    open_settings_section(page, "Tags")
+    page.screenshot(path=str(OUT / "settings-tags.png"))
+    log("[done] settings-tags.png")
     page.close()
 
 
@@ -314,36 +377,38 @@ def _sidebar_modal_shot(context: BrowserContext, label: str, outfile: str) -> No
     page.close()
 
 
+def _settings_section_shot(context: BrowserContext, label: str, outfile: str) -> None:
+    page = context.new_page()
+    login(page)
+    open_settings_section(page, label)
+    page.screenshot(path=str(OUT / outfile))
+    log(f"[done] {outfile}")
+    page.close()
+
+
 def shot_settings_modal(context: BrowserContext) -> None:
     _sidebar_modal_shot(context, "Settings", "settings-modal.png")
 
 
 def shot_manage_sites(context: BrowserContext) -> None:
-    _sidebar_modal_shot(context, "Manage Sites", "manage-sites.png")
+    _settings_section_shot(context, "Sites", "manage-sites.png")
 
 
 def shot_manage_users(context: BrowserContext) -> None:
-    _sidebar_modal_shot(context, "Manage Users", "manage-users.png")
+    _settings_section_shot(context, "Users", "manage-users.png")
 
 
 def shot_manage_equipment(context: BrowserContext) -> None:
-    _sidebar_modal_shot(context, "Manage Equipment", "manage-equipment.png")
+    _settings_section_shot(context, "Equipment", "manage-equipment.png")
 
 
 def shot_predefined_phases(context: BrowserContext) -> None:
-    _sidebar_modal_shot(context, "Predefined Phases", "predefined-phases.png")
+    _settings_section_shot(context, "Predefined phases", "predefined-phases.png")
 
 
 def shot_skills_mgmt(context: BrowserContext) -> None:
-    """Skills management, reached from within Manage Users."""
-    page = context.new_page()
-    login(page)
-    open_sidebar_item(page, "Manage Users")
-    page.click('button:has-text("Manage Skills")')
-    page.wait_for_timeout(800)
-    page.screenshot(path=str(OUT / "skills-mgmt.png"))
-    log("[done] skills-mgmt.png")
-    page.close()
+    """Settings -> Skills."""
+    _settings_section_shot(context, "Skills", "skills-mgmt.png")
 
 
 def shot_import_modal(context: BrowserContext) -> None:
@@ -547,14 +612,98 @@ def shot_archived_view(context: BrowserContext) -> None:
 
 
 def shot_site_modal(context: BrowserContext) -> None:
-    """Site edit modal (country/region codes) from Manage Sites."""
+    """Site edit form (country/region codes) from Settings -> Sites."""
     page = context.new_page()
     login(page)
-    open_sidebar_item(page, "Manage Sites")
-    page.locator('button[title="Edit site"]').first.click()
+    open_settings_section(page, "Sites")
+    # Title from frontend/src/components/settings/panels/SitesPanel.tsx
+    page.get_by_role("dialog").locator('button[title="Edit site"]').first.click()
     page.wait_for_timeout(600)
     page.screenshot(path=str(OUT / "site-edit-modal.png"))
     log("[done] site-edit-modal.png")
+    page.close()
+
+
+def shot_tag_filter(context: BrowserContext) -> None:
+    """Tag filter dropdown in the Gantt project panel, open."""
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    # The compact trigger in the project panel (the Kanban toolbar's twin is
+    # not rendered on the Gantt). aria-label is "Tags" or "Tags (n selected)".
+    page.locator('button[aria-label^="Tags"]').first.click()
+    page.wait_for_timeout(400)
+    page.screenshot(path=str(OUT / "tag-filter-dropdown.png"))
+    log("[done] tag-filter-dropdown.png")
+    page.close()
+
+
+def shot_gantt_grouped(context: BrowserContext) -> None:
+    """Gantt project list grouped by the "Project type" tag group."""
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+
+    def open_group_by() -> None:
+        # aria-label is "Group by" or "Grouped by <group>" (GroupByDropdown.tsx)
+        page.locator('button[aria-label^="Group"][aria-haspopup="dialog"]').first.click()
+        page.wait_for_timeout(300)
+
+    # Coloured bars too (also when this shot is captured on its own); kept.
+    set_color_by(page, "Project type")
+
+    try:
+        open_group_by()
+        # The native radio is visually hidden behind a styled span, so click its label.
+        page.get_by_role("dialog", name="Group projects").locator(
+            '[role="radiogroup"] label:has-text("Project type")'
+        ).click()
+        page.keyboard.press("Escape")  # close the panel; the grouping stays
+        page.wait_for_timeout(600)
+        page.screenshot(path=str(OUT / "gantt-grouped.png"))
+        log("[done] gantt-grouped.png")
+    finally:
+        # The grouping is persisted per site in localStorage and the context is
+        # shared by every shot: switch it off again so later shots are ungrouped,
+        # even when the shot above failed.
+        open_group_by()
+        page.get_by_role("dialog", name="Group projects").locator(
+            '[role="radiogroup"] label:has-text("No grouping")'
+        ).click()
+        page.keyboard.press("Escape")
+        page.close()
+
+
+def shot_gantt_color_by(context: BrowserContext) -> None:
+    """Colour by dropdown in the Gantt project panel, open, Project type checked."""
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    set_color_by(page, "Project type")
+    try:
+        open_color_by(page)
+        page.screenshot(path=str(OUT / "gantt-color-by.png"))
+        log("[done] gantt-color-by.png")
+    finally:
+        page.keyboard.press("Escape")
+        page.close()
+
+
+def shot_kanban(context: BrowserContext) -> None:
+    """Kanban board view."""
+    page = context.new_page()
+    login(page)
+    # Label from frontend/src/components/layout/Sidebar/Navigation.tsx
+    open_sidebar_item(page, "Kanban Board")
+    page.wait_for_timeout(1000)
+    page.screenshot(path=str(OUT / "kanban-board.png"))
+    log("[done] kanban-board.png")
     page.close()
 
 
@@ -593,6 +742,8 @@ def shot_dark_theme(context: BrowserContext) -> None:
         page.wait_for_load_state("networkidle")
     page.wait_for_timeout(1500)
     go_to_gantt(page)
+    # Fresh context = fresh localStorage: colour the bars like the light shots.
+    set_color_by(page, "Project type")
     use_quarter_view(page)
     click_today(page)
     expand_all_projects(page)
@@ -617,6 +768,7 @@ TARGETS = {
     "login": shot_login,
     "project-modal": shot_project_modal,
     "tags": shot_project_tags,
+    "settings-tags": shot_settings_tags,
     "assign-staff": shot_assign_staff_modal,
     "settings": shot_settings_modal,
     "sites": shot_manage_sites,
@@ -640,6 +792,10 @@ TARGETS = {
     "archived": shot_archived_view,
     "site-modal": shot_site_modal,
     "equipment-assign": shot_equipment_assign_modal,
+    "tag-filter": shot_tag_filter,
+    "grouped": shot_gantt_grouped,
+    "color-by": shot_gantt_color_by,
+    "kanban": shot_kanban,
     "dark-theme": shot_dark_theme,  # keep last: the only intentionally dark shot
 }
 

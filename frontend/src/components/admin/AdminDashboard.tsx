@@ -13,6 +13,8 @@ import {
   getOrganizations,
 } from '@/api';
 import { getTheme, isDarkTheme, type Theme } from '@/utils/storage';
+import { Button } from '@/components/common/Button';
+import { LogoutIcon } from '@/components/settings/panels/PanelIcons';
 import { TenantList } from './TenantList';
 import { OrganizationList } from './OrganizationList';
 import { AdminUserList } from './AdminUserList';
@@ -149,9 +151,9 @@ export function AdminDashboard() {
               <span className={styles.roleBadge}>Superadmin</span>
             )}
           </span>
-          <button className={styles.logoutBtn} onClick={handleLogout}>
+          <Button variant="ghost" icon={<LogoutIcon />} onClick={handleLogout}>
             Logout
-          </button>
+          </Button>
         </div>
       </header>
 

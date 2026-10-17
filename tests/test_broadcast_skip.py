@@ -40,3 +40,33 @@ def test_existing_entity_paths_still_resolve():
     assert _resolve_entity_type("/api/notes") == "note"
     assert _resolve_entity_type("/api/vacations/3") == "vacation"
     assert _resolve_entity_type("/api/tags") == "tag"
+
+
+@pytest.mark.parametrize(
+    ("path", "entity"),
+    [
+        ("/api/absence-types", "absence_type"),
+        ("/api/absence-types/reorder", "absence_type"),
+        ("/api/absence-types/3", "absence_type"),
+        ("/api/events", "company_event"),
+        ("/api/events/7", "company_event"),
+        ("/api/events/import", "company_event"),
+        ("/api/sites/2/events", "company_event"),
+        ("/api/sites/2/events/7", "company_event"),
+        ("/api/sites/2/holidays/9", "bank_holiday"),
+        ("/api/sites/2/holidays/import", "bank_holiday"),
+        ("/api/vacations/import", "vacation"),
+        ("/api/tag-groups", "tag_group"),
+        ("/api/tag-groups/reorder", "tag_group"),
+        ("/api/tag-groups/4", "tag_group"),
+        ("/api/tags/reorder", "tag"),
+    ],
+)
+def test_calendar_paths_broadcast_their_entity(path, entity):
+    """Calendar writes have no rich broadcast, so the middleware must cover them."""
+    assert _resolve_entity_type(path) == entity
+
+
+def test_events_pattern_does_not_shadow_sites():
+    assert _resolve_entity_type("/api/sites/2") == "site"
+    assert _resolve_entity_type("/api/eventsfoo") is None
