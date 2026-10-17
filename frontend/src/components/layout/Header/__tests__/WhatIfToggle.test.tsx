@@ -14,6 +14,7 @@ vi.mock('@/api/endpoints/projects', () => ({ fetchAllProjects: vi.fn(async () =>
 import { WhatIfToggle } from '../WhatIfToggle';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { apiRequest, clientConfig } from '@/api/client';
+import { stubConfirm } from '@/test/confirmDialog';
 
 function queue(n: number) {
   for (let i = 1; i <= n; i++) {
@@ -26,7 +27,7 @@ describe('WhatIfToggle apply-failure banner', () => {
     useWhatIfStore.getState().reset();
     clientConfig.isWhatIfMode = () => useWhatIfStore.getState().whatIfMode;
     vi.mocked(apiRequest).mockReset().mockResolvedValue({});
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stubConfirm(true);
     vi.spyOn(window, 'alert').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
     useWhatIfStore.getState().enterWhatIfMode([]);
@@ -99,5 +100,117 @@ describe('WhatIfToggle apply-failure banner', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(useWhatIfStore.getState().whatIfPendingOperations).toHaveLength(2);
     expect(useWhatIfStore.getState().whatIfMode).toBe(true);
+  });
+});
+
+describe('WhatIfToggle confirmations', () => {
+  beforeEach(() => {
+    useWhatIfStore.getState().reset();
+    clientConfig.isWhatIfMode = () => useWhatIfStore.getState().whatIfMode;
+    vi.mocked(apiRequest).mockReset().mockResolvedValue({});
+    useWhatIfStore.getState().enterWhatIfMode([]);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it('keeps the sandbox when the discard is cancelled', async () => {
+    queue(2);
+    const confirm = stubConfirm(false);
+    render(<WhatIfToggle />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    });
+
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Discard 2 pending changes? This cannot be undone.',
+        destructive: true,
+      })
+    );
+    expect(useWhatIfStore.getState().whatIfMode).toBe(true);
+    expect(useWhatIfStore.getState().whatIfPendingOperations).toHaveLength(2);
+  });
+
+  it('discards the queue once confirmed', async () => {
+    queue(1);
+    const confirm = stubConfirm(true);
+    render(<WhatIfToggle />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    });
+
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Discard 1 pending change? This cannot be undone.' })
+    );
+    expect(useWhatIfStore.getState().whatIfMode).toBe(false);
+    expect(useWhatIfStore.getState().whatIfPendingOperations).toEqual([]);
+    expect(apiRequest).not.toHaveBeenCalled();
+  });
+
+  it('asks to exit when nothing is queued', async () => {
+    const confirm = stubConfirm(true);
+    render(<WhatIfToggle />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    });
+
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Exit What If mode?' })
+    );
+    expect(useWhatIfStore.getState().whatIfMode).toBe(false);
+  });
+
+  it('Exit with nothing queued leaves without asking', async () => {
+    const confirm = stubConfirm(true);
+    render(<WhatIfToggle />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Exit' }));
+    });
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(useWhatIfStore.getState().whatIfMode).toBe(false);
+  });
+
+  it('applies nothing when the apply is cancelled', async () => {
+    queue(2);
+    const confirm = stubConfirm(false);
+    render(<WhatIfToggle />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    });
+
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Apply 2 changes to the database?',
+        confirmLabel: 'Apply',
+      })
+    );
+    expect(apiRequest).not.toHaveBeenCalled();
+    expect(useWhatIfStore.getState().whatIfMode).toBe(true);
+    expect(useWhatIfStore.getState().whatIfPendingOperations).toHaveLength(2);
+  });
+
+  it('replays the queue once the apply is confirmed', async () => {
+    queue(1);
+    const confirm = stubConfirm(true);
+    render(<WhatIfToggle />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    });
+
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Apply 1 change to the database?' })
+    );
+    expect(vi.mocked(apiRequest).mock.calls.map((c) => c[0])).toEqual(['/api/phases/1']);
+    expect(useWhatIfStore.getState().whatIfMode).toBe(false);
   });
 });

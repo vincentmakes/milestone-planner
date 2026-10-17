@@ -51,6 +51,7 @@ import {
 } from './PanelIcons';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './CalendarPanel.module.css';
 
 /** Key of a holiday for duplicate checks: same first day and name */
@@ -193,9 +194,9 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
       ? `Delete the holiday "${holiday.name}"?`
       : `Delete the holiday "${holiday.name}"?\n\nIt comes from Nager, so it will return on the next refresh from Nager.`;
     // A second click while the first DELETE runs would 404 and show an error
+    if (!(await confirmAction({ title: 'Delete holiday', message, destructive: true }))) return;
     if (!deleteGuard.begin()) return;
     try {
-      if (!window.confirm(message)) return;
       setError(null);
       await deleteBankHoliday(siteId, holiday.id);
       if (form?.mode === 'edit' && form.holiday.id === holiday.id) setForm(null);
@@ -209,7 +210,12 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
 
   const handleRefresh = async () => {
     if (!site) return;
-    if (!window.confirm(`Refresh the bank holidays of ${site.name} from the Nager holiday API?`)) return;
+    const confirmed = await confirmAction({
+      title: 'Refresh holidays',
+      message: `Refresh the bank holidays of ${site.name} from the Nager holiday API?`,
+      confirmLabel: 'Refresh',
+    });
+    if (!confirmed) return;
     setIsRefreshing(true);
     setError(null);
     setNotice(null);

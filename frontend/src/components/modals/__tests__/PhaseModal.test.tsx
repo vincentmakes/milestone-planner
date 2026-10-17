@@ -15,6 +15,7 @@ import {
   updateProject,
 } from '@/api/endpoints/projects';
 import { makePhase, makeProject, makeUser } from '@/test/factories';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { Project } from '@/types';
 
 vi.mock('@/api/endpoints/projects', () => ({
@@ -222,7 +223,7 @@ describe('PhaseModal edit and delete', () => {
     act(() => useUIStore.getState().openPhaseModal(build, 1));
     render(<PhaseModal />);
     expect(screen.queryByText('Assigned Staff')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('switch', { name: /Milestone/ }));
     expect(screen.getByLabelText('Date *')).toHaveValue('2026-03-02');
     expect(dateInputs()).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
@@ -234,17 +235,25 @@ describe('PhaseModal edit and delete', () => {
     });
   });
 
-  it('asks before deleting', () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('asks before deleting', async () => {
+    const confirm = stubConfirm(false);
     act(() => useUIStore.getState().openPhaseModal(build, 1));
     render(<PhaseModal />);
     fireEvent.click(screen.getByRole('button', { name: 'Delete Phase' }));
+    await waitFor(() =>
+      expect(confirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Are you sure you want to delete this phase? This will also delete all subphases and assignments.',
+          destructive: true,
+        })
+      )
+    );
     expect(deletePhase).not.toHaveBeenCalled();
-    confirm.mockRestore();
+    expect(useUIStore.getState().activeModal).toBe('phase');
   });
 
   it('deletes and shrinks the project to the remaining phases', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stubConfirm(true);
     const remaining = { ...buildProject(), phases: [design] };
     const final = { ...remaining, end_date: '2026-02-27' };
     vi.mocked(loadAllProjects).mockResolvedValueOnce([remaining]).mockResolvedValueOnce([final]);
@@ -256,11 +265,10 @@ describe('PhaseModal edit and delete', () => {
     expect(deletePhase).toHaveBeenCalledWith(11);
     expect(updateProject).toHaveBeenCalledWith(1, { start_date: '2026-02-02', end_date: '2026-02-27' });
     expect(useAppStore.getState().projects).toEqual([final]);
-    confirm.mockRestore();
   });
 
   it('keeps the reloaded projects when no shrink is needed', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stubConfirm(true);
     const remaining = { ...buildProject(), phases: [design, build] };
     vi.mocked(loadAllProjects).mockResolvedValue([remaining]);
     act(() => useUIStore.getState().openPhaseModal(build, 1));
@@ -270,16 +278,14 @@ describe('PhaseModal edit and delete', () => {
     expect(updateProject).not.toHaveBeenCalled();
     expect(loadAllProjects).toHaveBeenCalledTimes(1);
     expect(useAppStore.getState().projects).toEqual([remaining]);
-    confirm.mockRestore();
   });
 
   it('shows the delete error', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stubConfirm(true);
     vi.mocked(deletePhase).mockRejectedValue(new Error('Has bookings'));
     act(() => useUIStore.getState().openPhaseModal(build, 1));
     render(<PhaseModal />);
     fireEvent.click(screen.getByRole('button', { name: 'Delete Phase' }));
     expect(await screen.findByText('Has bookings')).toBeInTheDocument();
-    confirm.mockRestore();
   });
 });

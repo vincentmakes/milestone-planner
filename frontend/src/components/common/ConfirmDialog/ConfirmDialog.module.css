@@ -1,0 +1,13 @@
+.message {
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  overflow-wrap: anywhere;
+}
+
+.message p {
+  margin: 0;
+}
+
+.message p + p {
+  margin-top: 0.75rem;
+}

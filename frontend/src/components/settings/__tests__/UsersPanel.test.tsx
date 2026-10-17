@@ -14,6 +14,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { createUser, deleteUser } from '@/api/endpoints/users';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { Site, User } from '@/types';
 
 const getUsers = vi.fn();
@@ -432,7 +433,7 @@ describe('UsersPanel during What-If', () => {
   });
 
   it("disables Delete on other people's rows with the What-If hint", async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = stubConfirm(true);
     render(<UsersPanel />);
     await openEditor('Bob Brown');
 
@@ -445,7 +446,7 @@ describe('UsersPanel during What-If', () => {
   });
 
   it('deletes other people again once What-If ends', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = stubConfirm(false);
     vi.mocked(deleteUser).mockResolvedValue(undefined as never);
     await useWhatIfStore.getState().exitWhatIfMode(false);
     render(<UsersPanel />);
@@ -454,6 +455,18 @@ describe('UsersPanel during What-If', () => {
     const del = screen.getByRole('button', { name: 'Delete User' });
     expect(del).toBeEnabled();
     expect(del).not.toHaveAttribute('title');
+    fireEvent.click(del);
+    await waitFor(() =>
+      expect(confirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Are you sure you want to delete "Bob Brown"?\n\nThis action cannot be undone.',
+          destructive: true,
+        })
+      )
+    );
+    expect(deleteUser).not.toHaveBeenCalled();
+
+    confirm.mockResolvedValue(true);
     fireEvent.click(del);
     await waitFor(() => expect(deleteUser).toHaveBeenCalledWith(4));
   });

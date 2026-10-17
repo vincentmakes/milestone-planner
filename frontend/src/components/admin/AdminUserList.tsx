@@ -9,6 +9,7 @@ import { deleteAdminUser, updateAdminUser } from '@/api';
 import { Button } from '@/components/common/Button';
 import { Notice } from '@/components/common/Notice';
 import { PlusIcon } from '@/components/settings/panels/PanelIcons';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './TenantList.module.css'; // Reuse styles
 
 interface AdminUserListProps {
@@ -41,7 +42,12 @@ export function AdminUserList({ onCreateNew, onRefresh }: AdminUserListProps) {
       return;
     }
     
-    if (!confirm(`Delete admin user "${email}"?`)) return;
+    if (!(await confirmAction({
+      message: `Delete admin user "${email}"?`,
+      title: 'Delete admin',
+      confirmLabel: 'Delete',
+      destructive: true,
+    }))) return;
     
     setError(null);
     setActionLoading(id);

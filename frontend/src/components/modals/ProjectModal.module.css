@@ -31,22 +31,6 @@
   color: var(--text-secondary);
 }
 
-/* Checkbox styling */
-.checkbox {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.checkbox input[type="checkbox"] {
-  width: 1rem;
-  height: 1rem;
-  accent-color: var(--accent-blue);
-}
-
 /* Phase tags */
 .phaseTags {
   display: flex;

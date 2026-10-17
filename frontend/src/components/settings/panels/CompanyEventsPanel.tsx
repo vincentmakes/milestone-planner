@@ -58,6 +58,7 @@ import {
 } from './PanelIcons';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './CalendarPanel.module.css';
 
 /** Sites an event is linked to (older servers only send site_id) */
@@ -203,9 +204,9 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
       names.length > 1
         ? `Delete the event "${event.name}"?\n\nIt is removed from all of its sites: ${names.join(', ')}.`
         : `Delete the event "${event.name}"?`;
+    if (!(await confirmAction({ title: 'Delete event', message, destructive: true }))) return;
     if (!deleteGuard.begin()) return;
     try {
-      if (!window.confirm(message)) return;
       setError(null);
       await deleteCompanyEventById(event.id);
       if (form?.mode === 'edit' && form.event.id === event.id) setForm(null);
@@ -223,16 +224,17 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
     const mine = eventSiteIds(event).filter((id) => manageableIds.includes(id));
     if (mine.length === 0) return;
     const names = mine.map((id) => siteNames.get(id) ?? `#${id}`);
+    const confirmed = await confirmAction({
+      title: 'Remove event',
+      message:
+        `Remove the event "${event.name}" from ${names.join(', ')}?\n\n` +
+        'It stays on the other sites it is linked to.',
+      confirmLabel: 'Remove',
+      destructive: true,
+    });
+    if (!confirmed) return;
     if (!deleteGuard.begin()) return;
     try {
-      if (
-        !window.confirm(
-          `Remove the event "${event.name}" from ${names.join(', ')}?\n\n` +
-            'It stays on the other sites it is linked to.'
-        )
-      ) {
-        return;
-      }
       setError(null);
       await unlinkFromSites(event, mine);
     } finally {

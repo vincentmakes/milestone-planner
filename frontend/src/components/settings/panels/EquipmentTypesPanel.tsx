@@ -22,6 +22,7 @@ import type { Equipment } from '@/types';
 import { useAppStore } from '@/stores/appStore';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './EquipmentTypesPanel.module.css';
 
 interface TypeInfo {
@@ -103,13 +104,18 @@ export function EquipmentTypesPanel({ onDirtyChange }: Partial<SettingsPanelProp
   
   // Handle delete: the backend decides (the list may be stale), then reload
   const handleDelete = async (typeInfo: TypeInfo) => {
+    const usage =
+      typeInfo.count > 0
+        ? `\n\n${typeInfo.count} equipment item${typeInfo.count !== 1 ? 's' : ''} use it; a type can only be deleted once no equipment uses it.`
+        : '';
+    const confirmed = await confirmAction({
+      title: 'Delete equipment type',
+      message: `Delete the equipment type "${typeInfo.name}"?${usage}`,
+      destructive: true,
+    });
+    if (!confirmed) return;
     if (!deleteGuard.begin()) return;
     try {
-      const usage =
-        typeInfo.count > 0
-          ? `\n\n${typeInfo.count} equipment item${typeInfo.count !== 1 ? 's' : ''} use it; a type can only be deleted once no equipment uses it.`
-          : '';
-      if (!window.confirm(`Delete the equipment type "${typeInfo.name}"?${usage}`)) return;
       setError(null);
       try {
         await apiDelete(`/api/equipment-types/${encodeURIComponent(typeInfo.name)}`);

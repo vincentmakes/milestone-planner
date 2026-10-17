@@ -30,9 +30,11 @@ import {
   updateProjectLocally,
 } from '@/utils/localProjectTree';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
+import { confirmAction } from '@/utils/confirmDialog';
 import type { Phase, Subphase, Project, CreateSubphaseRequest } from '@/types';
 import { findSubphaseById, findPhaseContainingSubphase } from '@/utils/subphaseUtils';
 import styles from './PhaseModal.module.css'; // Reuse phase modal styles
+import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 
 // Calculate the depth of a subphase (1-based)
 function getSubphaseDepth(phases: Phase[], subphaseId: number): number {
@@ -537,7 +539,13 @@ export function SubphaseModal() {
   const handleDelete = async () => {
     if (!isEditing || !editingSubphase) return;
     
-    if (!confirm('Are you sure you want to delete this subphase? This will also delete all nested subphases and assignments.')) {
+    if (
+      !(await confirmAction({
+        title: 'Delete subphase',
+        message: 'Are you sure you want to delete this subphase? This will also delete all nested subphases and assignments.',
+        destructive: true,
+      }))
+    ) {
       return;
     }
     
@@ -647,14 +655,11 @@ export function SubphaseModal() {
         />
         
         <div className={styles.formGroup}>
-          <label className={styles.checkbox}>
-            <input
-              type="checkbox"
-              checked={isMilestone}
-              onChange={(e) => setIsMilestone(e.target.checked)}
-            />
-            <span>Milestone (single date, shown as diamond)</span>
-          </label>
+          <ToggleSwitch
+            checked={isMilestone}
+            onChange={setIsMilestone}
+            label="Milestone (single date, shown as diamond)"
+          />
         </div>
         
         <div className={styles.formRow}>

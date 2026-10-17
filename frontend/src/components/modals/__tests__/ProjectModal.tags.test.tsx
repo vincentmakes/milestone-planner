@@ -138,4 +138,23 @@ describe('ProjectModal fields', () => {
       volume: 250000,
     }));
   });
+
+  it('offers Confirmed and Archived as switches and saves their new values', async () => {
+    vi.mocked(updateProject).mockResolvedValueOnce({} as never);
+    render(<ProjectModal />);
+
+    const confirmed = screen.getByRole('switch', { name: 'Project Confirmed' });
+    const archived = screen.getByRole('switch', { name: 'Archived' });
+    expect(confirmed).not.toBeChecked();
+    expect(archived).not.toBeChecked();
+    fireEvent.click(confirmed);
+    fireEvent.click(archived);
+    expect(confirmed).toBeChecked();
+    expect(archived).toBeChecked();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    });
+    expect(updateProject).toHaveBeenCalledWith(9, expect.objectContaining({ confirmed: true, archived: true }));
+  });
 });

@@ -50,6 +50,7 @@ import {
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import type { CardStatus } from '@/types';
 import styles from './KanbanCardModal.module.css';
+import { confirmAction } from '@/utils/confirmDialog';
 
 export function KanbanCardModal() {
   const activeModal = useUIStore((s) => s.activeModal);
@@ -255,7 +256,14 @@ export function KanbanCardModal() {
     // Removing an assignee deletes their booking (allocation and dates) and
     // cannot be undone -- confirm like the Gantt assignment dialog does.
     const who = staffName ? `"${staffName}"` : 'this assignee';
-    if (!window.confirm(`Remove ${who} from this card? Their booking on it will be deleted.`)) return;
+    if (
+      !(await confirmAction({
+        title: 'Remove assignee',
+        message: `Remove ${who} from this card? Their booking on it will be deleted.`,
+        destructive: true,
+      }))
+    )
+      return;
     if (!begin()) return; // another write on this card is still running
     setError(null);
     try {
@@ -292,7 +300,14 @@ export function KanbanCardModal() {
   };
 
   const handleDeleteComment = async (commentId: number) => {
-    if (!window.confirm('Delete this comment? This cannot be undone.')) return;
+    if (
+      !(await confirmAction({
+        title: 'Delete comment',
+        message: 'Delete this comment? This cannot be undone.',
+        destructive: true,
+      }))
+    )
+      return;
     if (!begin()) return; // another write on this card is still running
     try {
       await deleteComment(commentId);

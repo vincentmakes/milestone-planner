@@ -20,6 +20,8 @@ import {
 import type { OrganizationDetail, OrganizationSSOTestResult, TenantSummary } from '@/api/endpoints/admin';
 import { useEscapeKey } from '@/hooks';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
+import { ToggleSwitch } from '@/components/common/ToggleSwitch';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './AdminModal.module.css';
 
 /** Roles a tenant `users.role` CHECK accepts -- the only valid SSO default roles */
@@ -238,12 +240,18 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
 
   const handleRemoveTenant = async (tenantId: string) => {
     if (!organization) return;
-    
+    // Ask first, then take the guard: an open confirm must not hold the
+    // in-flight flag and disable every other write while the user decides.
+    if (!(await confirmAction({
+      message: 'Remove this tenant from the organization?\n\nThe tenant will no longer use the organization\'s SSO configuration.',
+      title: 'Detach tenant',
+      confirmLabel: 'Remove',
+      destructive: true,
+    }))) {
+      return;
+    }
     if (!beginWrite()) return;
     try {
-      if (!confirm('Remove this tenant from the organization?\n\nThe tenant will no longer use the organization\'s SSO configuration.')) {
-        return;
-      }
       await removeTenantFromOrganization(organization.id, tenantId);
       await loadOrganization();
       onRefresh?.();
@@ -471,15 +479,11 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                   
                   {/* Enable Toggle */}
                   <div className={styles.formGroup}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={ssoEnabled}
-                        onChange={(e) => setSsoEnabled(e.target.checked)}
-                        style={{ width: 18, height: 18 }}
-                      />
-                      <span style={{ fontWeight: 500 }}>Enable SSO for this organization</span>
-                    </label>
+                    <ToggleSwitch
+                      checked={ssoEnabled}
+                      onChange={setSsoEnabled}
+                      label="Enable SSO for this organization"
+                    />
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
                       When enabled, all tenants in this organization can use SSO login.
                       Organization SSO takes precedence over any SSO a member tenant
@@ -533,16 +537,12 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                   <h4 className={styles.sectionTitle}>User Management</h4>
                   
                   <div className={styles.formGroup}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={autoCreateUsers}
-                        onChange={(e) => setAutoCreateUsers(e.target.checked)}
-                        disabled={!ssoEnabled}
-                        style={{ width: 16, height: 16 }}
-                      />
-                      <span>Auto-create users on first SSO login</span>
-                    </label>
+                    <ToggleSwitch
+                      checked={autoCreateUsers}
+                      onChange={setAutoCreateUsers}
+                      disabled={!ssoEnabled}
+                      label="Auto-create users on first SSO login"
+                    />
                   </div>
 
                   <Select

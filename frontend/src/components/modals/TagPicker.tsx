@@ -25,6 +25,7 @@ import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { applyTagSelection, barTextColor, groupedTags, tagsForSite } from '@/utils/tags';
 import type { Tag } from '@/types';
 import styles from './TagPicker.module.css';
+import { confirmAction } from '@/utils/confirmDialog';
 
 /** Search box placeholder (referenced by scripts/screenshots). */
 export const TAG_PICKER_PLACEHOLDER = 'Find a tag...';
@@ -118,8 +119,14 @@ export function TagPicker({ selectedIds, onChange, siteId, disabled = false }: T
     setOpen(false);
   };
 
-  const handleManageTags = () => {
-    if (disabled || manageBlockedReason || !window.confirm(MANAGE_TAGS_CONFIRM)) return;
+  const handleManageTags = async () => {
+    if (disabled || manageBlockedReason) return;
+    const confirmed = await confirmAction({
+      title: 'Manage tags',
+      message: MANAGE_TAGS_CONFIRM,
+      confirmLabel: 'Open settings',
+    });
+    if (!confirmed) return;
     // Close the project dialog first so its editing context is cleared,
     // then open the hub on the Tags section.
     const ui = useUIStore.getState();

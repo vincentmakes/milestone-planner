@@ -17,6 +17,7 @@ import {
 } from '@/api';
 import { CustomColumnModal } from './CustomColumnModal';
 import styles from './CustomColumnsManagerModal.module.css';
+import { confirmAction } from '@/utils/confirmDialog';
 
 interface CustomColumnsManagerModalProps {
   isOpen: boolean;
@@ -122,11 +123,15 @@ export function CustomColumnsManagerModal({
   };
 
   const handleDelete = async (column: CustomColumn) => {
+    // Confirm before taking the guard: a dialog left open must not block other deletes.
+    const confirmed = await confirmAction({
+      title: 'Delete column',
+      message: `Delete column "${column.name}"? All values will be lost.`,
+      destructive: true,
+    });
+    if (!confirmed) return;
     if (!deleteGuard.begin()) return;
     try {
-      if (!confirm(`Delete column "${column.name}"? All values will be lost.`)) {
-        return;
-      }
       setError(null);
       await deleteCustomColumn(column.id);
       await refreshColumns();

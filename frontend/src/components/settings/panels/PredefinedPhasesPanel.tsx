@@ -14,6 +14,7 @@ import { useAppStore } from '@/stores/appStore';
 import { apiGet, apiPost, apiPut, apiDelete } from '@/api/client';
 import type { PredefinedPhase } from '@/types';
 import { CheckCircleIcon, CircleIcon, PlusIcon, TrashIcon } from './PanelIcons';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './PredefinedPhasesPanel.module.css';
 
 export function PredefinedPhasesPanel() {
@@ -104,9 +105,11 @@ export function PredefinedPhasesPanel() {
   
   // Delete phase
   const handleDelete = async (phase: PredefinedPhase) => {
-    const confirmed = window.confirm(
-      `Are you sure you want to delete "${phase.name}"?`
-    );
+    const confirmed = await confirmAction({
+      title: 'Delete phase template',
+      message: `Are you sure you want to delete "${phase.name}"?`,
+      destructive: true,
+    });
     if (!confirmed) return;
     setError(null);
     

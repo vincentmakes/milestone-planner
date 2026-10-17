@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './WhatIfToggle.module.css';
 
 export function WhatIfToggle() {
@@ -20,11 +21,16 @@ export function WhatIfToggle() {
     enterWhatIfMode(useAppStore.getState().projects);
   };
 
-  const handleDiscard = () => {
-    const confirmed = window.confirm(
+  const handleDiscard = async () => {
+    const confirmed = await confirmAction(
       pendingCount > 0
-        ? `Discard ${pendingCount} pending change${pendingCount !== 1 ? 's' : ''}? This cannot be undone.`
-        : 'Exit What If mode?'
+        ? {
+            title: 'Discard What-If changes',
+            message: `Discard ${pendingCount} pending change${pendingCount !== 1 ? 's' : ''}? This cannot be undone.`,
+            confirmLabel: 'Discard',
+            destructive: true,
+          }
+        : { title: 'Exit What-If mode', message: 'Exit What If mode?', confirmLabel: 'Exit' }
     );
     if (confirmed) {
       exitWhatIfMode(false);
@@ -46,9 +52,11 @@ export function WhatIfToggle() {
       return;
     }
     
-    const confirmed = window.confirm(
-      `Apply ${pendingCount} change${pendingCount !== 1 ? 's' : ''} to the database?`
-    );
+    const confirmed = await confirmAction({
+      title: 'Apply What-If changes',
+      message: `Apply ${pendingCount} change${pendingCount !== 1 ? 's' : ''} to the database?`,
+      confirmLabel: 'Apply',
+    });
     if (confirmed) {
       await runApply();
     }
@@ -105,7 +113,7 @@ export function WhatIfToggle() {
       
       <button
         className={styles.discardButton}
-        onClick={handleDiscard}
+        onClick={() => void handleDiscard()}
         disabled={isApplying}
         title="Discard all changes"
       >
@@ -114,7 +122,7 @@ export function WhatIfToggle() {
       
       <button
         className={styles.applyButton}
-        onClick={handleApply}
+        onClick={() => void handleApply()}
         disabled={isApplying}
         title={pendingCount > 0 ? `Apply ${pendingCount} change${pendingCount !== 1 ? 's' : ''}` : 'Exit What If mode'}
       >
@@ -139,7 +147,11 @@ export function WhatIfToggle() {
             >
               {isApplying ? 'Retrying...' : 'Retry'}
             </button>
-            <button className={styles.discardButton} onClick={handleDiscard} disabled={isApplying}>
+            <button
+              className={styles.discardButton}
+              onClick={() => void handleDiscard()}
+              disabled={isApplying}
+            >
               Discard
             </button>
             <button

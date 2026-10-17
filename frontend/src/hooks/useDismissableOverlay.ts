@@ -15,12 +15,18 @@
  * Nothing is installed while closed, and the listeners are removed on close
  * and on unmount. `onClose` is read through a ref, so an inline arrow is fine.
  *
+ * While an in-app confirmation (`confirmAction()`) is pending, nothing is
+ * installed either: the confirm sits on top, Escape and the click on its
+ * buttons belong to it, and the overlay that asked stays open underneath
+ * until the answer (a cancelled delete leaves the popover where it was).
+ *
  * Modals are not overlays: the shared `Modal` never closes on an outside
  * click, by rule — do not use this hook for a dialog.
  */
 
 import { useCallback, useEffect, useRef } from 'react';
 import type { FocusEvent, RefObject } from 'react';
+import { useConfirmStore } from '@/stores/confirmStore';
 
 interface UseDismissableOverlayOptions {
   open: boolean;
@@ -34,9 +40,10 @@ interface UseDismissableOverlayOptions {
 export function useDismissableOverlay({ open, onClose, wrapperRef, triggerRef }: UseDismissableOverlayOptions) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const confirmPending = useConfirmStore((s) => s.queue.length > 0);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || confirmPending) return;
 
     const onPointerDown = (e: MouseEvent) => {
       if (!wrapperRef.current?.contains(e.target as Node)) onCloseRef.current();
@@ -54,14 +61,14 @@ export function useDismissableOverlay({ open, onClose, wrapperRef, triggerRef }:
       document.removeEventListener('mousedown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [open, wrapperRef, triggerRef]);
+  }, [open, confirmPending, wrapperRef, triggerRef]);
 
   const onBlur = useCallback(
     (e: FocusEvent<HTMLElement>) => {
       const next = e.relatedTarget as Node | null;
-      if (open && next && !wrapperRef.current?.contains(next)) onCloseRef.current();
+      if (open && !confirmPending && next && !wrapperRef.current?.contains(next)) onCloseRef.current();
     },
-    [open, wrapperRef]
+    [open, confirmPending, wrapperRef]
   );
 
   return { onBlur };

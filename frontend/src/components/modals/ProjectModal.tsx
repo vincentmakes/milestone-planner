@@ -22,6 +22,7 @@ import { exportProjectToXML } from '@/utils/xmlExport';
 import { tagsForSite, violatesSingleSelect } from '@/utils/tags';
 import { TagPicker } from './TagPicker';
 import styles from './ProjectModal.module.css';
+import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 
 // Local interface for predefined phases from API
 interface PredefinedPhaseFromAPI {
@@ -448,25 +449,11 @@ export function ProjectModal() {
         
         <div className={styles.formRow}>
           <div className={styles.formGroup}>
-            <label className={styles.checkbox}>
-              <input
-                type="checkbox"
-                checked={confirmed}
-                onChange={(e) => setConfirmed(e.target.checked)}
-              />
-              <span>Project Confirmed</span>
-            </label>
+            <ToggleSwitch checked={confirmed} onChange={setConfirmed} label="Project Confirmed" />
           </div>
           {isEditing && (
             <div className={styles.formGroup}>
-              <label className={styles.checkbox}>
-                <input
-                  type="checkbox"
-                  checked={archived}
-                  onChange={(e) => setArchived(e.target.checked)}
-                />
-                <span>Archived</span>
-              </label>
+              <ToggleSwitch checked={archived} onChange={setArchived} label="Archived" />
             </div>
           )}
         </div>

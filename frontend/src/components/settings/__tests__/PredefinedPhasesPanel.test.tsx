@@ -9,6 +9,7 @@ import { PredefinedPhasesPanel } from '../panels/PredefinedPhasesPanel';
 import { resetAllStores, useAppStore } from '@/stores';
 import { apiGet, apiPost, apiPut, apiDelete } from '@/api/client';
 import { makeUser } from '@/test/factories';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { PredefinedPhase } from '@/types';
 
 vi.mock('@/api/client', () => ({
@@ -155,11 +156,18 @@ describe('PredefinedPhasesPanel', () => {
   });
 
   it('deletes only after confirmation', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true);
+    let answer = false;
+    const confirm = stubConfirm(() => answer);
     await renderPanel();
-    fireEvent.click(screen.getAllByTitle('Delete')[1]);
-    expect(confirm).toHaveBeenCalledWith('Are you sure you want to delete "Scale-up"?');
+    await act(async () => {
+      fireEvent.click(screen.getAllByTitle('Delete')[1]);
+    });
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Are you sure you want to delete "Scale-up"?', destructive: true })
+    );
     expect(apiDelete).not.toHaveBeenCalled();
+
+    answer = true;
 
     fireEvent.click(screen.getAllByTitle('Delete')[1]);
     await waitFor(() => expect(apiDelete).toHaveBeenCalledWith('/api/predefined-phases/2'));
@@ -167,7 +175,6 @@ describe('PredefinedPhasesPanel', () => {
     vi.mocked(apiDelete).mockRejectedValueOnce(new Error('In use'));
     fireEvent.click(screen.getAllByTitle('Delete')[0]);
     expect(await screen.findByRole('alert')).toHaveTextContent('In use');
-    confirm.mockRestore();
   });
 
   it('reorders by drag and drop', async () => {

@@ -7,12 +7,13 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { SettingsHub } from '../SettingsHub';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { SettingsPanelProps } from '../types';
 import type { User, UserRole } from '@/types';
 
@@ -233,20 +234,56 @@ describe('SettingsHub', () => {
     render(<SettingsHub />);
     fireEvent.click(await screen.findByRole('button', { name: 'Make dirty' }));
 
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    let answer = false;
+    const confirmSpy = stubConfirm(() => answer);
 
-    fireEvent.click(navButton('Users')!);
+    await act(async () => {
+      fireEvent.click(navButton('Users')!);
+    });
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(confirmSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'You have unsaved changes. Discard them and switch section?',
+        confirmLabel: 'Discard',
+      })
+    );
+    expect(sectionTitle()).toBe('General');
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: 'Escape' });
+    });
+    expect(confirmSpy).toHaveBeenCalledTimes(2);
+    expect(confirmSpy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ message: 'You have unsaved changes. Are you sure you want to close?' })
+    );
+    expect(useUIStore.getState().activeModal).toBe('settingsHub');
+
+    answer = true;
+    await act(async () => {
+      fireEvent.click(navButton('Users')!);
+    });
+    expect(sectionTitle()).toBe('Users');
+    expect(await screen.findByText('Users panel')).toBeInTheDocument();
+  });
+
+  it('switches through the compact section select only once the discard is confirmed', async () => {
+    setRole('admin');
+    act(() => useUIStore.getState().openSettings('general'));
+    render(<SettingsHub />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Make dirty' }));
+
+    const confirmSpy = stubConfirm(false);
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Section'), { target: { value: 'users' } });
+    });
     expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(sectionTitle()).toBe('General');
 
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(confirmSpy).toHaveBeenCalledTimes(2);
-    expect(useUIStore.getState().activeModal).toBe('settingsHub');
-
-    confirmSpy.mockReturnValue(true);
-    fireEvent.click(navButton('Users')!);
-    expect(sectionTitle()).toBe('Users');
-    expect(await screen.findByText('Users panel')).toBeInTheDocument();
+    confirmSpy.mockResolvedValue(true);
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Section'), { target: { value: 'users' } });
+    });
+    await waitFor(() => expect(sectionTitle()).toBe('Users'));
   });
 
   it('keeps the unsaved-changes guard when the global Escape shortcut is mounted', async () => {
@@ -255,15 +292,19 @@ describe('SettingsHub', () => {
     render(<HubWithShortcuts />);
     fireEvent.click(await screen.findByRole('button', { name: 'Make dirty' }));
 
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    fireEvent.keyDown(document, { key: 'Escape' });
+    const confirmSpy = stubConfirm(false);
+    await act(async () => {
+      fireEvent.keyDown(document, { key: 'Escape' });
+    });
 
     expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(useUIStore.getState().activeModal).toBe('settingsHub');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-    confirmSpy.mockReturnValue(true);
-    fireEvent.keyDown(document, { key: 'Escape' });
+    confirmSpy.mockResolvedValue(true);
+    await act(async () => {
+      fireEvent.keyDown(document, { key: 'Escape' });
+    });
     expect(useUIStore.getState().activeModal).toBeNull();
   });
 });

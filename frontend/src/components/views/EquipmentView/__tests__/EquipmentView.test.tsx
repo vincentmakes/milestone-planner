@@ -4,12 +4,13 @@
  * project/phase bookings, and the panel resizer.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { EquipmentView } from '../EquipmentView';
 import { resetAllStores, useAppStore, useUIStore } from '@/stores';
 import { deleteEquipmentBlock } from '@/api';
 import { formatDateISO } from '@/utils/date';
 import { makeEquipment, makePhase, makeProject, makeSite, makeUser } from '@/test/factories';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { EquipmentBlock } from '@/types';
 
 const refreshEquipmentBlocks = vi.fn();
@@ -188,24 +189,30 @@ describe('EquipmentView expanded rows', () => {
 
   it('deletes a block after confirmation and refreshes the blocks', async () => {
     seed();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true);
+    let answer = false;
+    const confirm = stubConfirm(() => answer);
     vi.mocked(deleteEquipmentBlock).mockResolvedValue(undefined as never);
     render(<EquipmentView />);
     fireEvent.click(rowFor('HPLC Agilent'));
 
-    fireEvent.click(screen.getByTitle('Delete block'));
+    await act(async () => {
+      fireEvent.click(screen.getByTitle('Delete block'));
+    });
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Delete this equipment block?', destructive: true })
+    );
     expect(deleteEquipmentBlock).not.toHaveBeenCalled();
 
+    answer = true;
     fireEvent.click(screen.getByTitle('Delete block'));
     await waitFor(() => expect(refreshEquipmentBlocks).toHaveBeenCalled());
     expect(deleteEquipmentBlock).toHaveBeenCalledWith(90);
     expect(useUIStore.getState().activeModal).toBeNull();
-    confirm.mockRestore();
   });
 
   it('logs and skips the refresh when the delete fails', async () => {
     seed();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stubConfirm(true);
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.mocked(deleteEquipmentBlock).mockRejectedValue(new Error('x'));
     render(<EquipmentView />);
@@ -213,7 +220,6 @@ describe('EquipmentView expanded rows', () => {
     fireEvent.click(screen.getByTitle('Delete block'));
     await waitFor(() => expect(err).toHaveBeenCalled());
     expect(refreshEquipmentBlocks).not.toHaveBeenCalled();
-    confirm.mockRestore();
     err.mockRestore();
   });
 

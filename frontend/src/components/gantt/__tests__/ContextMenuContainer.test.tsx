@@ -15,6 +15,7 @@ import { useAppStore } from '@/stores/appStore';
 import { createStaffAssignment, deletePhase, deleteSubphase } from '@/api';
 import { recoverFromPersistFailure } from '@/utils/persistFailure';
 import type { Phase, Project, Subphase, User } from '@/types';
+import { stubConfirm } from '@/test/confirmDialog';
 
 vi.mock('@/api', () => ({
   deleteProject: vi.fn(),
@@ -156,7 +157,7 @@ describe('ContextMenuContainer deletes', () => {
     const error = new Error('Server unavailable');
     vi.mocked(deleteFn).mockRejectedValueOnce(error);
     vi.mocked(recoverFromPersistFailure).mockClear();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stubConfirm(true);
     useAppStore.setState({ currentUser: admin });
     useUIStore.getState().showContextMenu(kind, id, 10, 10, project.id, phase.id);
 
@@ -169,7 +170,6 @@ describe('ContextMenuContainer deletes', () => {
     // Nothing was removed locally
     expect(useAppStore.getState().projects[0].phases[0].children[0].id).toBe(20);
 
-    confirmSpy.mockRestore();
   });
 });
 

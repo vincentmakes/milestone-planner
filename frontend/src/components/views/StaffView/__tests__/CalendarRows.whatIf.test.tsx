@@ -14,6 +14,7 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { deleteCustomHoliday, deleteCompanyEvent, getCompanyEvents } from '@/api';
 import { makeSite, makeUser } from '@/test/factories';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { BankHoliday, CompanyEvent } from '@/types';
 
 vi.mock('@/api', async (importOriginal) => ({
@@ -71,7 +72,7 @@ describe.each([
   },
 ])('$name during What-If', ({ renderRow, addLabel, addHint, editHint, entry, deleteTitle, deleteHint, deleteApi }) => {
   it('disables Add, the edit shortcut and delete', () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirmSpy = stubConfirm(true);
     useWhatIfStore.getState().enterWhatIfMode([]);
     renderRow();
 
@@ -97,7 +98,6 @@ describe.each([
     fireEvent.click(del);
     expect(confirmSpy).not.toHaveBeenCalled();
     expect(deleteApi).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
   });
 
   it('offers the shortcuts again once What-If ends', () => {
@@ -120,16 +120,17 @@ describe('CompanyEventsRow outside What-If', () => {
     useAppStore.setState({ companyEvents: [legacy] });
     vi.mocked(deleteCompanyEvent).mockResolvedValue(undefined as never);
     vi.mocked(getCompanyEvents).mockResolvedValue([]);
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirmSpy = stubConfirm(true);
     render(<CompanyEventsRow isExpanded />);
 
     const del = screen.getByTitle('Delete company event');
     expect(del).toBeEnabled();
     fireEvent.click(del);
 
-    expect(confirmSpy).toHaveBeenCalledWith('Delete this company event?');
+    expect(confirmSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Delete this company event?' })
+    );
     await waitFor(() => expect(useAppStore.getState().companyEvents).toEqual([]));
     expect(deleteCompanyEvent).toHaveBeenCalledWith(1, 12);
-    confirmSpy.mockRestore();
   });
 });

@@ -11,6 +11,7 @@ import { EquipmentPanel } from '../panels/EquipmentPanel';
 import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { Equipment, Site, User } from '@/types';
 
 const apiGet = vi.fn();
@@ -107,6 +108,23 @@ describe('EquipmentPanel', () => {
     fireEvent.change(screen.getByLabelText('Site'), { target: { value: '2' } });
     expect(screen.getByText('Reactor')).toBeInTheDocument();
     expect(screen.queryByText('HPLC 1')).not.toBeInTheDocument();
+  });
+
+  it('hides inactive equipment until the Show inactive switch is on', async () => {
+    apiGet.mockResolvedValue([
+      ...allEquipment,
+      { id: 3, name: 'Old Balance', type: 'Analytical Device', site_id: 1, site_ids: [1], site_names: ['Site A'], active: false },
+    ]);
+    render(<EquipmentPanel />);
+    await screen.findByText('Reactor');
+    expect(screen.queryByText('Old Balance')).not.toBeInTheDocument();
+
+    const showInactive = screen.getByRole('switch', { name: 'Show inactive' });
+    expect(showInactive).not.toBeChecked();
+    fireEvent.click(showInactive);
+    expect(screen.getByText('Old Balance')).toBeInTheDocument();
+    fireEvent.click(showInactive);
+    expect(screen.queryByText('Old Balance')).not.toBeInTheDocument();
   });
 
   it('creates equipment on several sites and refreshes the store with per-site rows', async () => {
@@ -266,7 +284,7 @@ describe('EquipmentPanel during What-If', () => {
   });
 
   it('disables Delete with the What-If hint and never deletes', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = stubConfirm(true);
     useWhatIfStore.getState().enterWhatIfMode([]);
     render(<EquipmentPanel />);
     await screen.findByText('Reactor');
@@ -281,7 +299,7 @@ describe('EquipmentPanel during What-If', () => {
   });
 
   it('deletes again once What-If ends', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = stubConfirm(false);
     render(<EquipmentPanel />);
     await screen.findByText('Reactor');
     fireEvent.click(screen.getByRole('button', { name: 'Edit Reactor' }));
@@ -289,6 +307,19 @@ describe('EquipmentPanel during What-If', () => {
     const del = screen.getByRole('button', { name: 'Delete Equipment' });
     expect(del).toBeEnabled();
     expect(del).not.toHaveAttribute('title');
+    fireEvent.click(del);
+    await waitFor(() =>
+      expect(confirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message:
+            'Are you sure you want to delete "Reactor"?\n\nThis will also remove all assignments for this equipment.',
+          destructive: true,
+        })
+      )
+    );
+    expect(apiDelete).not.toHaveBeenCalled();
+
+    confirm.mockResolvedValue(true);
     fireEvent.click(del);
     await waitFor(() => expect(apiDelete).toHaveBeenCalledWith('/api/equipment/2'));
   });

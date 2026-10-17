@@ -4,7 +4,7 @@
  * workspace (F1-16).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import type { User } from '@/types';
 
@@ -47,6 +47,7 @@ vi.mock('@/api', () => ({
 
 import App from '../App';
 import { useAppStore } from '@/stores/appStore';
+import { confirmAction } from '@/utils/confirmDialog';
 
 function setPath(path: string) {
   window.history.replaceState({}, '', path);
@@ -110,5 +111,22 @@ describe('App', () => {
     expireSession();
 
     expect(await screen.findByText('login-screen')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['the admin portal', '/admin', 'admin-portal'],
+    ['the tenant app', '/t/demo/', 'main-layout'],
+  ])('mounts the shared confirm dialog in %s', async (_label, path, marker) => {
+    setPath(path);
+    render(<App />);
+    expect(await screen.findByText(marker)).toBeInTheDocument();
+
+    let answer!: Promise<boolean>;
+    act(() => {
+      answer = confirmAction('Really?');
+    });
+    expect(screen.getByRole('dialog', { name: 'Please confirm' })).toHaveTextContent('Really?');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await expect(answer).resolves.toBe(true);
   });
 });

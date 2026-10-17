@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, ReactNode } from 'react';
+import { useEffect, useId, useRef, MutableRefObject, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useUIStore } from '@/stores/uiStore';
 import styles from './Modal.module.css';
@@ -27,6 +27,15 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), ' +
   'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+/** Drop the container this dialog registered from the open-dialog stack. */
+function unregister(registeredRef: MutableRefObject<HTMLElement | null>): void {
+  const registered = registeredRef.current;
+  registeredRef.current = null;
+  if (!registered) return;
+  const i = openModals.indexOf(registered);
+  if (i !== -1) openModals.splice(i, 1);
+}
+
 function focusables(root: HTMLElement): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
     (el) => !el.hasAttribute('hidden') && el.getAttribute('aria-hidden') !== 'true'
@@ -46,6 +55,11 @@ export function Modal({
   const modalRef = useRef<HTMLDivElement>(null);
   const wasOpenRef = useRef(false);
   const openerRef = useRef<HTMLElement | null>(null);
+  // The container pushed onto `openModals`. modalRef is already null when the
+  // close/unmount effects run (the dialog has left the DOM), so the entry is
+  // removed through this ref — otherwise a closed child stays "innermost" and
+  // its parent stops trapping Tab and answering Escape.
+  const registeredRef = useRef<HTMLElement | null>(null);
   const titleId = useId();
   const modalOpened = useUIStore((s) => s.modalOpened);
   const modalClosed = useUIStore((s) => s.modalClosed);
@@ -58,10 +72,13 @@ export function Modal({
   useEffect(() => {
     if (!isOpen || !closeOnEscape) return;
     
+    // Only the innermost open dialog closes, like the Tab trap below: a
+    // confirmation over an edit dialog must not close both.
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onCloseRef.current();
-      }
+      if (e.key !== 'Escape') return;
+      const container = modalRef.current;
+      if (!container || openModals[openModals.length - 1] !== container) return;
+      onCloseRef.current();
     };
     
     document.addEventListener('keydown', handleEscape);
@@ -106,17 +123,17 @@ export function Modal({
       // Modal just opened - remember the opener, focus the dialog, lock scroll
       openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       document.body.style.overflow = 'hidden';
-      if (container) openModals.push(container);
+      if (container) {
+        openModals.push(container);
+        registeredRef.current = container;
+      }
       modalOpened();
       container?.focus();
       wasOpenRef.current = true;
     } else if (!isOpen && wasOpenRef.current) {
       // Modal just closed - restore scroll and the opener's focus
       document.body.style.overflow = '';
-      if (container) {
-        const i = openModals.indexOf(container);
-        if (i !== -1) openModals.splice(i, 1);
-      }
+      unregister(registeredRef);
       modalClosed();
       wasOpenRef.current = false;
       const opener = openerRef.current;
@@ -130,11 +147,7 @@ export function Modal({
     return () => {
       if (!wasOpenRef.current) return;
       document.body.style.overflow = '';
-      const container = modalRef.current;
-      if (container) {
-        const i = openModals.indexOf(container);
-        if (i !== -1) openModals.splice(i, 1);
-      }
+      unregister(registeredRef);
       useUIStore.getState().modalClosed();
       wasOpenRef.current = false;
       const opener = openerRef.current;

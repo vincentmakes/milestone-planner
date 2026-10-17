@@ -9,9 +9,10 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { EquipmentTypesPanel } from '../panels/EquipmentTypesPanel';
 import { useAppStore } from '@/stores/appStore';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { Equipment } from '@/types';
 
 const apiGet = vi.fn();
@@ -48,7 +49,7 @@ describe('EquipmentTypesPanel', () => {
   });
 
   it('deletes a type through the API after confirmation and reloads the list', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = stubConfirm(true);
     render(<EquipmentTypesPanel />);
     await screen.findByText('Pilot Plant');
 
@@ -56,22 +57,48 @@ describe('EquipmentTypesPanel', () => {
     apiGet.mockResolvedValue(equipment.filter((e) => e.id !== 3));
     fireEvent.click(screen.getByRole('button', { name: 'Delete Pilot Plant' }));
 
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Delete the equipment type "Pilot Plant"?'));
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message:
+          'Delete the equipment type "Pilot Plant"?\n\n1 equipment item use it; a type can only be deleted once no equipment uses it.',
+        destructive: true,
+      })
+    );
     await waitFor(() => expect(screen.queryByText('Pilot Plant')).not.toBeInTheDocument());
     expect(apiDelete).toHaveBeenCalledWith('/api/equipment-types/Pilot%20Plant');
     expect(screen.getByText('1 type')).toBeInTheDocument();
   });
 
   it('does nothing when the confirmation is declined', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const confirm = stubConfirm(false);
+    render(<EquipmentTypesPanel />);
+    await screen.findByText('Pilot Plant');
+    const del = screen.getByRole('button', { name: 'Delete Pilot Plant' });
+    await act(async () => {
+      fireEvent.click(del);
+    });
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(apiDelete).not.toHaveBeenCalled();
+    // The delete guard is taken only after the confirmation, so a cancel leaves nothing in flight
+    expect(del).toBeEnabled();
+  });
+
+  it('sends the DELETE only once the confirmation resolves', async () => {
+    let answer!: (ok: boolean) => void;
+    const confirm = stubConfirm(true);
+    confirm.mockImplementation(() => new Promise<boolean>((r) => (answer = r)));
     render(<EquipmentTypesPanel />);
     await screen.findByText('Pilot Plant');
     fireEvent.click(screen.getByRole('button', { name: 'Delete Pilot Plant' }));
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
     expect(apiDelete).not.toHaveBeenCalled();
+
+    await act(async () => answer(true));
+    await waitFor(() => expect(apiDelete).toHaveBeenCalledWith('/api/equipment-types/Pilot%20Plant'));
   });
 
   it('shows why the backend refused to delete a type that is still in use', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stubConfirm(true);
     apiDelete.mockRejectedValue(
       new Error("Cannot delete type 'Analytical Device': 2 equipment item(s) still use this type")
     );

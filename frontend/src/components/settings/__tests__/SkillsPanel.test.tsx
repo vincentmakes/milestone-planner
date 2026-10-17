@@ -13,16 +13,18 @@ import { SkillsPanel } from '../panels/SkillsPanel';
 import { SettingsHub } from '../SettingsHub';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { Skill, User } from '@/types';
 
 const getAll = vi.fn();
 const create = vi.fn();
+const remove = vi.fn();
 vi.mock('@/api/endpoints/skills', () => ({
   skillsApi: {
     getAll: (...args: unknown[]) => getAll(...args),
     create: (...args: unknown[]) => create(...args),
     update: vi.fn(),
-    delete: vi.fn(),
+    delete: (...args: unknown[]) => remove(...args),
   },
 }));
 
@@ -51,6 +53,7 @@ function deferred<T>() {
 beforeEach(() => {
   getAll.mockReset().mockResolvedValue(skills);
   create.mockReset();
+  remove.mockReset().mockResolvedValue(undefined);
   useAppStore.setState({ currentUser: admin, skills: [] });
 });
 
@@ -101,18 +104,24 @@ describe('SkillsPanel', () => {
   });
 
   it('makes the Settings hub ask before Escape discards a half-filled skill', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const confirm = stubConfirm(false);
     act(() => useUIStore.getState().openSettings('skills'));
     render(<SettingsHub />);
     await openAddForm();
 
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(confirm).toHaveBeenCalledWith('You have unsaved changes. Are you sure you want to close?');
+    await act(async () => {
+      fireEvent.keyDown(document, { key: 'Escape' });
+    });
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'You have unsaved changes. Are you sure you want to close?' })
+    );
     expect(useUIStore.getState().activeModal).toBe('settingsHub');
     expect(screen.getByLabelText('Name *')).toHaveValue('GC-MS');
 
-    confirm.mockReturnValue(true);
-    fireEvent.keyDown(document, { key: 'Escape' });
+    confirm.mockResolvedValue(true);
+    await act(async () => {
+      fireEvent.keyDown(document, { key: 'Escape' });
+    });
     expect(useUIStore.getState().activeModal).toBeNull();
   });
 
@@ -134,7 +143,7 @@ describe('SkillsPanel', () => {
   });
 
   it('closes the hub without asking when nothing was typed', async () => {
-    const confirm = vi.spyOn(window, 'confirm');
+    const confirm = stubConfirm(true);
     act(() => useUIStore.getState().openSettings('skills'));
     render(<SettingsHub />);
     fireEvent.click(await screen.findByRole('button', { name: /Add Skill/ }));
@@ -142,5 +151,31 @@ describe('SkillsPanel', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(confirm).not.toHaveBeenCalled();
     expect(useUIStore.getState().activeModal).toBeNull();
+  });
+
+  it('deletes a skill only after confirmation', async () => {
+    const confirm = stubConfirm(false);
+    render(<SkillsPanel />);
+    const del = await screen.findByRole('button', { name: 'Delete HPLC' });
+
+    await act(async () => {
+      fireEvent.click(del);
+    });
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message:
+          'Are you sure you want to delete "HPLC"?\n\nThis will remove the skill from all users who have it assigned.',
+        destructive: true,
+      })
+    );
+    expect(remove).not.toHaveBeenCalled();
+
+    confirm.mockResolvedValue(true);
+    getAll.mockClear();
+    await act(async () => {
+      fireEvent.click(del);
+    });
+    expect(remove).toHaveBeenCalledWith(1);
+    await waitFor(() => expect(getAll).toHaveBeenCalled());
   });
 });

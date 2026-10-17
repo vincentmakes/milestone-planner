@@ -10,13 +10,14 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useState } from 'react';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { Modal } from '@/components/common/Modal';
-import { TagPicker, TAG_PICKER_PLACEHOLDER } from '../TagPicker';
+import { TagPicker, TAG_PICKER_PLACEHOLDER, MANAGE_TAGS_CONFIRM } from '../TagPicker';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { Tag, TagGroup } from '@/types';
 
 function tag(id: number, name: string, extra: Partial<Tag> = {}): Tag {
@@ -180,7 +181,7 @@ describe('TagPicker "Manage tags…"', () => {
   });
 
   it('is disabled with the search box and pills while the dialog is saving', () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = stubConfirm(true);
     useUIStore.setState({ activeModal: 'project', editingProject: { id: 9 } as never });
     render(<TagPicker selectedIds={new Set([1])} onChange={vi.fn()} siteId={1} disabled />);
     const link = screen.getByRole('button', { name: 'Manage tags…' });
@@ -193,25 +194,33 @@ describe('TagPicker "Manage tags…"', () => {
     expect(useUIStore.getState().activeModal).toBe('project');
   });
 
-  it('closes the project dialog and opens Settings → Tags after confirming', () => {
+  it('closes the project dialog and opens Settings → Tags after confirming', async () => {
     useUIStore.setState({ activeModal: 'project', editingProject: { id: 9 } as never });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    let answer = false;
+    const confirm = stubConfirm(() => answer);
     render(<Harness />);
     const link = screen.getByRole('button', { name: 'Manage tags…' });
 
     fireEvent.click(link);
-    expect(useUIStore.getState().activeModal).toBe('project');
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    expect(confirm).toHaveBeenCalledWith({
+      title: 'Manage tags',
+      message: MANAGE_TAGS_CONFIRM,
+      confirmLabel: 'Open settings',
+    });
+    expect(useUIStore.getState()).toMatchObject({ activeModal: 'project', editingProject: { id: 9 } });
 
+    answer = true;
     fireEvent.click(link);
+    await waitFor(() => expect(useUIStore.getState().activeModal).toBe('settingsHub'));
     expect(confirm).toHaveBeenCalledTimes(2);
     const ui = useUIStore.getState();
-    expect(ui.activeModal).toBe('settingsHub');
     expect(ui.settingsSection).toBe('tags');
     expect(ui.editingProject).toBeNull();
   });
 
   it('is disabled with the What-If hint while What-If is active, keeping the dialog', () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = stubConfirm(true);
     useUIStore.setState({ activeModal: 'project', editingProject: { id: 9 } as never });
     useWhatIfStore.getState().enterWhatIfMode([]);
     render(<Harness />);

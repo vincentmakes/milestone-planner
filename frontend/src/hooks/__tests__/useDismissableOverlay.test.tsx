@@ -7,9 +7,10 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { useRef, useState } from 'react';
 import { useDismissableOverlay } from '../useDismissableOverlay';
+import { useConfirmStore } from '@/stores/confirmStore';
 
 function Overlay({ onClose, initiallyOpen = true }: { onClose?: () => void; initiallyOpen?: boolean }) {
   const [open, setOpen] = useState(initiallyOpen);
@@ -141,5 +142,24 @@ describe('useDismissableOverlay', () => {
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledTimes(1);
     expect(add.mock.calls.filter(([type]) => type === 'mousedown')).toHaveLength(1);
+  });
+
+  it('stands down while an in-app confirmation is pending, and resumes after', () => {
+    const onClose = vi.fn();
+    render(<Overlay onClose={onClose} />);
+    let id = 0;
+    act(() => {
+      id = useConfirmStore.getState().enqueue({ message: 'Delete?' }, vi.fn());
+    });
+
+    // Escape and an outside mousedown belong to the confirm on top.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.mouseDown(document.body);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Panel' })).toBeInTheDocument();
+
+    act(() => useConfirmStore.getState().settle(id, false));
+    fireEvent.mouseDown(document.body);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

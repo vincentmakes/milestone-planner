@@ -30,6 +30,8 @@ import {
 } from '@/api/endpoints/projects';
 import { makePhase, makeProject, makeSubphase, makeUser } from '@/test/factories';
 import type { Project } from '@/types';
+import { stubConfirm } from '@/test/confirmDialog';
+import { setConfirmHandler } from '@/utils/confirmDialog';
 
 function buildProject(): Project {
   return makeProject({
@@ -150,7 +152,7 @@ afterEach(() => {
 describe('useDragAndDrop: whole project', () => {
   it('moves every phase, subphase and booking after confirmation', async () => {
     marchCells();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = stubConfirm(true);
     const bar = makeBar({ projectId: '1' }, 30);
     const { result } = renderHook(() => useDragAndDrop());
 
@@ -161,7 +163,12 @@ describe('useDragAndDrop: whole project', () => {
     up();
 
     await waitFor(() => expect(updateProject).toHaveBeenCalledWith(1, { start_date: '2026-03-04', end_date: '2026-03-22' }));
-    expect(confirm.mock.calls[0][0]).toMatch(/Move project by \+2 days\?[\s\S]*all 2 phase\(s\)/);
+    expect(confirm).toHaveBeenCalledWith({
+      title: 'Move project',
+      message:
+        'Move project by +2 days?\n\nThis will move all 2 phase(s), their subphases, and all staff/equipment assignments.',
+      confirmLabel: 'Move',
+    });
     await waitFor(() => expect(useUIStore.getState().isDragging).toBe(false));
 
     expect([phaseOf(10).start_date, phaseOf(10).end_date]).toEqual(['2026-03-04', '2026-03-08']);
@@ -174,7 +181,7 @@ describe('useDragAndDrop: whole project', () => {
 
   it('puts the bar back when the move is declined', async () => {
     marchCells();
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const confirm = stubConfirm(false);
     const bar = makeBar({ projectId: '1' }, 30);
     const { result } = renderHook(() => useDragAndDrop());
 
@@ -183,10 +190,40 @@ describe('useDragAndDrop: whole project', () => {
     up();
 
     await waitFor(() => expect(useUIStore.getState().isDragging).toBe(false));
+    expect(confirm).toHaveBeenCalledTimes(1);
     expect(bar.style.left).toBe('30px');
+    expect(bar.classList.contains('dragging')).toBe(false);
     expect(updateProject).not.toHaveBeenCalled();
     expect(useAppStore.getState().projects[0].start_date).toBe('2026-03-02');
     expect(useUndoStore.getState().canUndo).toBe(false);
+  });
+
+  it('holds the bar at the drop while the dialog is open, ignoring the pointer, then snaps back on cancel', async () => {
+    marchCells();
+    let answer!: (ok: boolean) => void;
+    const confirm = vi.fn(() => new Promise<boolean>((resolve) => (answer = resolve)));
+    setConfirmHandler(confirm);
+    const bar = makeBar({ projectId: '1' }, 30);
+    const { result } = renderHook(() => useDragAndDrop());
+
+    act(() => result.current.startProjectDrag(mouseDown(bar, 100), 1, '2026-03-02', '2026-03-20', bar));
+    move(160);
+    up();
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+
+    // Dialog open: the bar stays where it was dropped and the document
+    // listeners are already gone, so pointer movement does not reach it.
+    expect(bar.style.left).toBe('90px');
+    move(300);
+    touchMove(300);
+    expect(bar.style.left).toBe('90px');
+    expect(updateProject).not.toHaveBeenCalled();
+
+    await act(async () => answer(false));
+    await waitFor(() => expect(useUIStore.getState().isDragging).toBe(false));
+    expect(bar.style.left).toBe('30px');
+    expect(updateProject).not.toHaveBeenCalled();
+    expect(useAppStore.getState().projects[0].start_date).toBe('2026-03-02');
   });
 });
 
@@ -477,7 +514,7 @@ describe('useDragAndDrop: touch', () => {
   it('puts the bar back without saving on touchcancel', async () => {
     marchCells();
     const bar = makeBar({ projectId: '1' }, 30);
-    const confirm = vi.spyOn(window, 'confirm');
+    const confirm = stubConfirm(true);
     const { result } = renderHook(() => useDragAndDrop());
 
     act(() => result.current.startProjectDrag(mouseDown(bar, 100), 1, '2026-03-02', '2026-03-20', bar));

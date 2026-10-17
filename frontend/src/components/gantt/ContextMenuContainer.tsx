@@ -23,6 +23,7 @@ import {
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { recoverFromPersistFailure } from '@/utils/persistFailure';
 import type { Project, Phase, Subphase } from '@/types';
+import { confirmAction } from '@/utils/confirmDialog';
 
 /**
  * Run a delete from the context menu. A failed delete must not be an
@@ -195,7 +196,13 @@ export function ContextMenuContainer() {
           icon: <DeleteIcon />,
           danger: true,
           onClick: async () => {
-            if (confirm(`Delete project "${project?.name}"? This cannot be undone.`)) {
+            if (
+              await confirmAction({
+                title: 'Delete project',
+                message: `Delete project "${project?.name}"? This cannot be undone.`,
+                destructive: true,
+              })
+            ) {
               await runDelete('project', async () => {
                 await deleteProject(targetId);
                 // Mirror locally: the refresh is a no-op in What-If mode.
@@ -255,7 +262,13 @@ export function ContextMenuContainer() {
           icon: <DeleteIcon />,
           danger: true,
           onClick: async () => {
-            if (confirm(`Delete phase "${phase?.name}"? This cannot be undone.`)) {
+            if (
+              await confirmAction({
+                title: 'Delete phase',
+                message: `Delete phase "${phase?.name}"? This cannot be undone.`,
+                destructive: true,
+              })
+            ) {
               await runDelete('phase', async () => {
                 await deletePhase(targetId);
                 if (projectId) removePhaseLocally(projectId, targetId);
@@ -316,7 +329,13 @@ export function ContextMenuContainer() {
           icon: <DeleteIcon />,
           danger: true,
           onClick: async () => {
-            if (confirm(`Delete subphase "${subphase?.name}"? This cannot be undone.`)) {
+            if (
+              await confirmAction({
+                title: 'Delete subphase',
+                message: `Delete subphase "${subphase?.name}"? This cannot be undone.`,
+                destructive: true,
+              })
+            ) {
               await runDelete('subphase', async () => {
                 await deleteSubphase(targetId);
                 if (projectId) removeSubphaseLocally(projectId, targetId);
@@ -364,7 +383,13 @@ export function ContextMenuContainer() {
           icon: <DeleteIcon />,
           danger: true,
           onClick: async () => {
-            if (confirm(`Remove ${assignmentName} from this assignment?`)) {
+            if (
+              await confirmAction({
+                title: 'Remove assignment',
+                message: `Remove ${assignmentName} from this assignment?`,
+                destructive: true,
+              })
+            ) {
               await runDelete('assignment', async () => {
                 await deleteStaffAssignment(targetId, assignmentLevel);
                 if (projectId) removeStaffAssignmentLocally(projectId, targetId, assignmentLevel);
@@ -406,7 +431,13 @@ export function ContextMenuContainer() {
           icon: <DeleteIcon />,
           danger: true,
           onClick: async () => {
-            if (confirm(`Remove ${assignmentName} from this assignment?`)) {
+            if (
+              await confirmAction({
+                title: 'Remove assignment',
+                message: `Remove ${assignmentName} from this assignment?`,
+                destructive: true,
+              })
+            ) {
               // Equipment assignments use a single endpoint for all levels
               await runDelete('equipment assignment', async () => {
                 await deleteEquipmentAssignment(targetId);

@@ -13,6 +13,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { deleteCompanyEvent, getCompanyEvents, buildEventDateSet } from '@/api';
 import { buildICS, downloadICS } from '@/utils/ics';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './StaffView.module.css';
 import { parseLocalDate } from '@/utils/date';
 
@@ -96,7 +97,13 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
     const message = siteCount > 1
       ? `This event is shared by ${siteCount} sites. Remove it from ${currentSite.name} only? The other sites keep it (delete it everywhere from Settings → Company events).`
       : 'Delete this company event?';
-    if (!confirm(message)) return;
+    const confirmed = await confirmAction({
+      title: siteCount > 1 ? 'Remove event' : 'Delete event',
+      message,
+      confirmLabel: siteCount > 1 ? 'Remove' : 'Delete',
+      destructive: true,
+    });
+    if (!confirmed) return;
     setError(null);
     
     try {

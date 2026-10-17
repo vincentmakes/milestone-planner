@@ -9,6 +9,7 @@ import { TenantList } from '../TenantList';
 import { useAdminStore } from '@/stores/adminStore';
 import { deleteTenant, provisionTenant, resetTenantAdminPassword, updateTenantStatus } from '@/api';
 import { makeStats, makeTenant } from './adminFixtures';
+import { stubConfirm } from '@/test/confirmDialog';
 
 vi.mock('@/api', () => ({
   updateTenantStatus: vi.fn(),
@@ -24,7 +25,7 @@ const props = {
   onRefresh: vi.fn(),
 };
 
-let confirmSpy: ReturnType<typeof vi.spyOn>;
+let confirmSpy: ReturnType<typeof stubConfirm>;
 
 beforeEach(() => {
   useAdminStore.setState(useAdminStore.getInitialState());
@@ -33,7 +34,7 @@ beforeEach(() => {
   vi.mocked(provisionTenant).mockReset();
   vi.mocked(resetTenantAdminPassword).mockReset();
   vi.mocked(deleteTenant).mockReset().mockResolvedValue(undefined);
-  confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  confirmSpy = stubConfirm(true);
 });
 
 afterEach(() => {
@@ -110,18 +111,39 @@ describe('TenantList', () => {
     useAdminStore.setState({ tenants: [makeTenant({ id: 'p', name: 'Pending Co', status: 'pending', database_status: { exists: false, accessible: false } })] });
     render(<TenantList {...props} />);
     await click(row('Pending Co').getByTitle('Provision Database'));
-    expect(confirmSpy).toHaveBeenCalledWith('This will create the database for this tenant. Continue?');
+    expect(confirmSpy).toHaveBeenCalledWith({
+      message: 'This will create the database for this tenant. Continue?',
+      title: 'Provision database',
+      confirmLabel: 'Provision',
+    });
     expect(provisionTenant).toHaveBeenCalledWith('p');
     expect(props.onShowCredentials).toHaveBeenCalledWith('Database Provisioned!', 'a@p', 'Secr3t!');
     expect(props.onRefresh).toHaveBeenCalled();
   });
 
   it('does nothing when an action is not confirmed', async () => {
-    confirmSpy.mockReturnValue(false);
-    useAdminStore.setState({ tenants: [makeTenant({ status: 'pending', database_status: undefined })] });
+    confirmSpy = stubConfirm(false);
+    useAdminStore.setState({
+      tenants: [
+        makeTenant({ status: 'pending', database_status: undefined }),
+        makeTenant({ id: 'a', name: 'Live Co' }),
+        makeTenant({ id: 's', name: 'Paused', status: 'suspended' }),
+      ],
+    });
     render(<TenantList {...props} />);
     await click(row('Demo Company').getByTitle('Provision Database'));
+    await click(row('Live Co').getByTitle('Reset Admin Password'));
+    await click(row('Live Co').getByTitle('Suspend'));
+    await click(row('Paused').getByTitle('Activate'));
+    await click(row('Paused').getByTitle('Delete Tenant'));
+    expect(confirmSpy).toHaveBeenCalledTimes(5);
     expect(provisionTenant).not.toHaveBeenCalled();
+    expect(resetTenantAdminPassword).not.toHaveBeenCalled();
+    expect(updateTenantStatus).not.toHaveBeenCalled();
+    expect(deleteTenant).not.toHaveBeenCalled();
+    expect(props.onShowCredentials).not.toHaveBeenCalled();
+    expect(props.onRefresh).not.toHaveBeenCalled();
+    expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
   });
 
   it('shows a failed provision in place', async () => {
@@ -138,6 +160,11 @@ describe('TenantList', () => {
     useAdminStore.setState({ tenants: [makeTenant()] });
     render(<TenantList {...props} />);
     await click(row('Demo Company').getByTitle('Reset Admin Password'));
+    expect(confirmSpy).toHaveBeenCalledWith({
+      message: 'This will generate a new password for the tenant admin. Continue?',
+      title: 'Reset admin password',
+      confirmLabel: 'Reset',
+    });
     expect(resetTenantAdminPassword).toHaveBeenCalledWith('t-demo');
     expect(props.onShowCredentials).toHaveBeenCalledWith('Password Reset!', 'admin@demo.local', 'n3w');
 
@@ -150,9 +177,18 @@ describe('TenantList', () => {
     useAdminStore.setState({ tenants: [makeTenant(), makeTenant({ id: 's', name: 'Paused', status: 'suspended' })] });
     render(<TenantList {...props} />);
     await click(row('Demo Company').getByTitle('Suspend'));
-    expect(confirmSpy).toHaveBeenCalledWith('Change tenant status to suspended?');
+    expect(confirmSpy).toHaveBeenCalledWith({
+      message: 'Change tenant status to suspended?',
+      title: 'Suspend tenant',
+      confirmLabel: 'Suspend',
+    });
     expect(updateTenantStatus).toHaveBeenCalledWith('t-demo', 'suspended');
     await click(row('Paused').getByTitle('Activate'));
+    expect(confirmSpy).toHaveBeenLastCalledWith({
+      message: 'Change tenant status to active?',
+      title: 'Activate tenant',
+      confirmLabel: 'Activate',
+    });
     expect(updateTenantStatus).toHaveBeenLastCalledWith('s', 'active');
     expect(props.onRefresh).toHaveBeenCalledTimes(2);
 
@@ -179,11 +215,21 @@ describe('TenantList', () => {
     });
     render(<TenantList {...props} />);
     await click(row('Demo Company').getByTitle('Delete Tenant'));
-    expect(confirmSpy).toHaveBeenLastCalledWith(expect.stringContaining('The tenant database and all its data'));
+    expect(confirmSpy).toHaveBeenLastCalledWith({
+      message:
+        'Delete tenant "Demo Company"?\n\n⚠️ This will permanently delete:\n• The tenant record\n'
+        + '• The tenant database and all its data\n\nThis action cannot be undone.',
+      title: 'Delete tenant',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
     expect(deleteTenant).toHaveBeenCalledWith('t-demo', true);
 
     await click(row('No DB').getByTitle('Delete Tenant'));
-    expect(confirmSpy).toHaveBeenLastCalledWith(expect.stringContaining('This will remove the tenant record.'));
+    expect(confirmSpy).toHaveBeenLastCalledWith(expect.objectContaining({
+      message: 'Delete tenant "No DB"?\n\nThis will remove the tenant record.\nThis action cannot be undone.',
+      destructive: true,
+    }));
     expect(deleteTenant).toHaveBeenLastCalledWith('x', true);
 
     vi.mocked(deleteTenant).mockRejectedValue(new Error('locked'));

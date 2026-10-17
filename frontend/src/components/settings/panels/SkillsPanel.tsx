@@ -19,6 +19,7 @@ import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { DEFAULT_SKILL_COLOR, SKILL_COLOR_SWATCHES } from '@/utils/colorSwatches';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './SkillsPanel.module.css';
 
 export function SkillsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
@@ -80,9 +81,11 @@ export function SkillsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
     const skill = skills.find(s => s.id === skillId);
     if (!skill) return;
     
-    const confirmed = window.confirm(
-      `Are you sure you want to delete "${skill.name}"?\n\nThis will remove the skill from all users who have it assigned.`
-    );
+    const confirmed = await confirmAction({
+      title: 'Delete skill',
+      message: `Are you sure you want to delete "${skill.name}"?\n\nThis will remove the skill from all users who have it assigned.`,
+      destructive: true,
+    });
     
     if (!confirmed) return;
     

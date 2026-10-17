@@ -5,7 +5,7 @@
  * the staff / equipment assignment menus.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { ContextMenuContainer } from '../ContextMenuContainer';
 import { resetAllStores, useAppStore, useUIStore, useWhatIfStore } from '@/stores';
 import {
@@ -17,6 +17,7 @@ import {
   deleteSubphase,
 } from '@/api';
 import { makePhase, makeProject, makeStaff, makeSubphase, makeUser } from '@/test/factories';
+import { stubConfirm } from '@/test/confirmDialog';
 
 const refreshProjects = vi.fn();
 
@@ -92,24 +93,26 @@ describe('project menu', () => {
   });
 
   it('deletes the project after confirmation', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = stubConfirm(true);
     useUIStore.getState().showContextMenu('project', 1, 0, 0);
     render(<ContextMenuContainer />);
     fireEvent.click(item('Delete Project'));
-    expect(confirm).toHaveBeenCalledWith('Delete project "Bioprocess Scale-Up"? This cannot be undone.');
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ message: 'Delete project "Bioprocess Scale-Up"? This cannot be undone.', destructive: true }));
     await waitFor(() => expect(refreshProjects).toHaveBeenCalled());
     expect(deleteProject).toHaveBeenCalledWith(1);
     expect(useAppStore.getState().projects).toEqual([]);
-    confirm.mockRestore();
   });
 
-  it('keeps the project when the deletion is cancelled', () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('keeps the project when the deletion is cancelled', async () => {
+    const confirm = stubConfirm(false);
     useUIStore.getState().showContextMenu('project', 1, 0, 0);
     render(<ContextMenuContainer />);
     fireEvent.click(item('Delete Project'));
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    await act(async () => {});
     expect(deleteProject).not.toHaveBeenCalled();
-    confirm.mockRestore();
+    expect(refreshProjects).not.toHaveBeenCalled();
+    expect(useAppStore.getState().projects).toHaveLength(1);
   });
 
   it('lets the project manager edit but not delete', () => {
@@ -189,14 +192,13 @@ describe('phase and subphase menus', () => {
   });
 
   it('deletes a phase and removes it locally', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = stubConfirm(true);
     useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
     render(<ContextMenuContainer />);
     fireEvent.click(item('Delete Phase'));
-    expect(confirm).toHaveBeenCalledWith('Delete phase "Design"? This cannot be undone.');
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ message: 'Delete phase "Design"? This cannot be undone.', destructive: true }));
     await waitFor(() => expect(deletePhase).toHaveBeenCalledWith(10));
     expect(useAppStore.getState().projects[0].phases).toEqual([]);
-    confirm.mockRestore();
   });
 
   it('subphase entries open the right dialogs and delete', async () => {
@@ -217,11 +219,15 @@ describe('phase and subphase menus', () => {
     open('Assign Equipment');
     expect(useUIStore.getState().activeModal).toBe('equipmentAssignment');
 
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = stubConfirm(true);
     open('Delete Subphase');
+    expect(confirm).toHaveBeenCalledWith({
+      title: 'Delete subphase',
+      message: 'Delete subphase "Screening"? This cannot be undone.',
+      destructive: true,
+    });
     await waitFor(() => expect(deleteSubphase).toHaveBeenCalledWith(20));
     expect(useAppStore.getState().projects[0].phases[0].children).toEqual([]);
-    confirm.mockRestore();
   });
 });
 
@@ -251,14 +257,13 @@ describe('assignment menus', () => {
   });
 
   it('deletes a phase-level staff booking through the phase route', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = stubConfirm(true);
     useUIStore.getState().showContextMenu('staffAssignment', 71, 0, 0, 1, 10, undefined, { staffId: 4, name: 'Bob Brown' });
     render(<ContextMenuContainer />);
     fireEvent.click(item('Delete Assignment'));
-    expect(confirm).toHaveBeenCalledWith('Remove Bob Brown from this assignment?');
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ message: 'Remove Bob Brown from this assignment?', destructive: true }));
     await waitFor(() => expect(deleteStaffAssignment).toHaveBeenCalledWith(71, 'phase'));
     expect(useAppStore.getState().projects[0].phases[0].staffAssignments).toEqual([]);
-    confirm.mockRestore();
   });
 
   it('lets people change only their own booking on a project they do not manage', () => {
@@ -288,14 +293,13 @@ describe('assignment menus', () => {
       equipment_name: 'Bioreactor 50L',
     });
 
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = stubConfirm(true);
     useUIStore.getState().showContextMenu('equipmentAssignment', 60, 0, 0, 1);
     rerender(<ContextMenuContainer />);
     fireEvent.click(item('Delete Assignment'));
-    expect(confirm).toHaveBeenCalledWith('Remove Equipment Assignment from this assignment?');
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ message: 'Remove Equipment Assignment from this assignment?', destructive: true }));
     await waitFor(() => expect(deleteEquipmentAssignment).toHaveBeenCalledWith(60));
     expect(useAppStore.getState().projects[0].equipmentAssignments).toEqual([]);
-    confirm.mockRestore();
   });
 
   it('renders nothing while hidden', () => {

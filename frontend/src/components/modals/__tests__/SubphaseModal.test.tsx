@@ -18,6 +18,7 @@ import {
   updateProject,
 } from '@/api/endpoints/projects';
 import { makePhase, makeProject, makeSubphase, makeUser } from '@/test/factories';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { Project } from '@/types';
 
 vi.mock('@/api/endpoints/projects', () => ({
@@ -265,7 +266,7 @@ describe('SubphaseModal edit and delete', () => {
   it('turns into a single-date milestone', async () => {
     openEdit();
     render(<SubphaseModal />);
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('switch', { name: /Milestone/ }));
     expect(screen.getByLabelText('Date *')).toHaveValue('2026-02-16');
     expect(dateInputs()).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
@@ -277,17 +278,26 @@ describe('SubphaseModal edit and delete', () => {
     });
   });
 
-  it('does nothing when the delete is not confirmed', () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('does nothing when the delete is not confirmed', async () => {
+    const confirm = stubConfirm(false);
     openEdit();
     render(<SubphaseModal />);
     fireEvent.click(screen.getByRole('button', { name: 'Delete Subphase' }));
+    await waitFor(() =>
+      expect(confirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message:
+            'Are you sure you want to delete this subphase? This will also delete all nested subphases and assignments.',
+          destructive: true,
+        })
+      )
+    );
     expect(deleteSubphase).not.toHaveBeenCalled();
-    confirm.mockRestore();
+    expect(useUIStore.getState().activeModal).toBe('subphase');
   });
 
   it('deletes and shrinks the phase and project to the remaining children', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stubConfirm(true);
     const afterDelete = buildProject();
     afterDelete.phases[0].children = [{ ...screening, children: [] }];
     const final = buildProject();
@@ -302,11 +312,10 @@ describe('SubphaseModal edit and delete', () => {
     expect(updateProject).toHaveBeenCalledWith(1, { start_date: '2026-02-02', end_date: '2026-02-13' });
     expect(loadAllProjects).toHaveBeenCalledTimes(2);
     expect(useAppStore.getState().projects).toEqual([final]);
-    confirm.mockRestore();
   });
 
   it('shrinks the parent subphase when a nested subphase is deleted', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stubConfirm(true);
     const afterDelete = buildProject();
     afterDelete.phases[0].children = [
       { ...screening, children: [{ ...grandchild, start_date: '2026-02-04', end_date: '2026-02-05' }] },
@@ -322,18 +331,16 @@ describe('SubphaseModal edit and delete', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete Subphase' }));
     await waitFor(() => expect(useUIStore.getState().activeModal).toBeNull());
     expect(updateSubphase).toHaveBeenCalledWith(20, { start_date: '2026-02-04', end_date: '2026-02-05' });
-    confirm.mockRestore();
   });
 
   it('keeps the dialog open with the error when the delete fails', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stubConfirm(true);
     vi.mocked(deleteSubphase).mockRejectedValue(new Error('Locked'));
     openEdit();
     render(<SubphaseModal />);
     fireEvent.click(screen.getByRole('button', { name: 'Delete Subphase' }));
     expect(await screen.findByText('Locked')).toBeInTheDocument();
     expect(useUIStore.getState().activeModal).toBe('subphase');
-    confirm.mockRestore();
   });
 
   it('closes via Cancel without saving', () => {

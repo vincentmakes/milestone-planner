@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { AbsenceTypesPanel } from '../panels/AbsenceTypesPanel';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { AbsenceType } from '@/types';
 
 const absenceTypesApi = vi.hoisted(() => ({
@@ -62,5 +63,28 @@ describe('AbsenceTypesPanel', () => {
     fireEvent.submit(form);
     expect(absenceTypesApi.create).toHaveBeenCalledTimes(1);
     await act(async () => finish());
+  });
+
+  it('deletes a type only after confirmation and reloads the list', async () => {
+    const confirm = stubConfirm(false);
+    absenceTypesApi.remove.mockResolvedValue(undefined);
+    render(<AbsenceTypesPanel />);
+    const del = await screen.findByRole('button', { name: 'Delete Home Office' });
+
+    await act(async () => {
+      fireEvent.click(del);
+    });
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Delete the absence type "Home Office"?', destructive: true })
+    );
+    expect(absenceTypesApi.remove).not.toHaveBeenCalled();
+
+    confirm.mockResolvedValue(true);
+    absenceTypesApi.getAll.mockClear();
+    await act(async () => {
+      fireEvent.click(del);
+    });
+    expect(absenceTypesApi.remove).toHaveBeenCalledWith(2);
+    expect(absenceTypesApi.getAll).toHaveBeenCalled();
   });
 });

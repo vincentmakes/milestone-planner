@@ -26,6 +26,7 @@ import { useManageableSites } from './calendarUtils';
 import { BackIcon, CheckIcon, CloseIcon, EditIcon, GearIcon, PlusIcon } from './PanelIcons';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './EquipmentPanel.module.css';
 
 /** Sites an equipment item is on (older servers only send site_id) */
@@ -184,14 +185,7 @@ export function EquipmentPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                 onChange={(e) => setSelectedSiteId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
               />
             
-              <label className={styles.checkbox}>
-                <input
-                  type="checkbox"
-                  checked={showInactive}
-                  onChange={(e) => setShowInactive(e.target.checked)}
-                />
-                <span>Show inactive</span>
-              </label>
+              <ToggleSwitch checked={showInactive} onChange={setShowInactive} label="Show inactive" />
             </div>
           }
           right={
@@ -407,9 +401,11 @@ function EquipmentForm({
   const handleDelete = async () => {
     if (!equipment || deleteBlockedReason) return;
     
-    const confirmed = window.confirm(
-      `Are you sure you want to delete "${equipment.name}"?\n\nThis will also remove all assignments for this equipment.`
-    );
+    const confirmed = await confirmAction({
+      title: 'Delete equipment',
+      message: `Are you sure you want to delete "${equipment.name}"?\n\nThis will also remove all assignments for this equipment.`,
+      destructive: true,
+    });
     
     if (!confirmed) return;
     
