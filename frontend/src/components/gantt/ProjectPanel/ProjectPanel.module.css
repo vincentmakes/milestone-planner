@@ -177,7 +177,7 @@
 }
 
 .newProjectBtn:hover {
-  background: var(--accent-blue-hover, #5b9fef);
+  background: var(--accent-blue-hover);
 }
 
 .newProjectBtn svg {

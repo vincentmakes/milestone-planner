@@ -3,10 +3,10 @@
   align-items: center;
   gap: 6px;
   padding: 2px 8px;
-  border: 1px solid var(--status-warning, #f59e0b);
-  border-radius: var(--radius-full, 9999px);
-  color: var(--status-warning, #f59e0b);
-  font-size: var(--font-size-xs, 11px);
+  border: 1px solid var(--status-warning);
+  border-radius: var(--radius-full);
+  color: var(--status-warning);
+  font-size: var(--font-size-xs);
   font-weight: 600;
   white-space: nowrap;
   flex-shrink: 0;

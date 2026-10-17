@@ -137,7 +137,7 @@
   gap: 0.5rem;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 640px) {
   .row {
     flex-wrap: wrap;
   }

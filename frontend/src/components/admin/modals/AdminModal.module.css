@@ -217,7 +217,7 @@
 }
 
 .codeLink:hover {
-  background: var(--accent-blue-alpha, rgba(59, 130, 246, 0.12));
+  background: var(--accent-blue-alpha);
   border-color: var(--accent-blue);
   text-decoration: underline;
 }

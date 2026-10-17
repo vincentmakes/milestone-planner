@@ -7,6 +7,7 @@
 
 import { memo, useRef, useCallback } from 'react';
 import { armTouchGesture, getEventCoordinates, isTouchEvent, toMouseLikeEvent, NON_PASSIVE } from '@/utils/touchEvents';
+import { barTextColor } from '@/utils/tags';
 import styles from './PhaseBar.module.css';
 
 interface PhaseBarProps {
@@ -317,6 +318,10 @@ export const PhaseBar = memo(function PhaseBar({
     ? { 'data-subphase-id': phaseId, 'data-project-id': projectId }
     : { 'data-phase-id': phaseId, 'data-project-id': projectId };
 
+  // Light custom colours get dark text (same rule as ProjectBar / barTextColor)
+  const textColor = barTextColor(color);
+  const darkTextClass = textColor === '#111827' ? styles.darkText : '';
+
   // Build title with completion and critical path info
   let barTitle = name;
   if (hasCompletion) barTitle += ` (${completion}%)`;
@@ -325,12 +330,13 @@ export const PhaseBar = memo(function PhaseBar({
   return (
     <div
       ref={barRef}
-      className={`${styles.bar} ${interactiveClass} ${isSubphase ? styles.subphase : ''} ${isLinkingSource ? styles.linkingSource : ''} ${isCriticalPath ? styles.criticalPath : ''} ${changedBy ? styles.recentlyChanged : ''}`}
+      className={`${styles.bar} ${interactiveClass} ${isSubphase ? styles.subphase : ''} ${isLinkingSource ? styles.linkingSource : ''} ${isCriticalPath ? styles.criticalPath : ''} ${changedBy ? styles.recentlyChanged : ''} ${darkTextClass}`}
       style={{
         left,
         width,
         height,
         backgroundColor: color,
+        color: textColor,
       }}
       title={barTitle}
       onMouseDown={handlePointerDown}

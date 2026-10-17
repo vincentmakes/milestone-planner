@@ -7,6 +7,7 @@
 
 import { memo, useState } from 'react';
 import { useWebSocketContext, PresenceUser } from '@/contexts/WebSocketContext';
+import { avatarColorFor } from '@/utils/avatarColor';
 import styles from './OnlineUsers.module.css';
 
 /**
@@ -14,23 +15,6 @@ import styles from './OnlineUsers.module.css';
  */
 function getInitials(firstName: string, lastName: string): string {
   return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
-}
-
-/**
- * Get consistent color for user based on ID
- */
-function getAvatarColor(userId: number): string {
-  const colors = [
-    '#3b82f6', // blue
-    '#8b5cf6', // purple
-    '#ec4899', // pink
-    '#f97316', // orange
-    '#10b981', // green
-    '#06b6d4', // cyan
-    '#f59e0b', // amber
-    '#ef4444', // red
-  ];
-  return colors[userId % colors.length];
 }
 
 interface UserAvatarProps {
@@ -42,7 +26,7 @@ const UserAvatar = memo(function UserAvatar({ user, size = 'small' }: UserAvatar
   return (
     <div
       className={`${styles.avatar} ${styles[size]}`}
-      style={{ backgroundColor: getAvatarColor(user.user_id) }}
+      style={{ backgroundColor: avatarColorFor(user.user_id) }}
       title={`${user.first_name} ${user.last_name}`}
     >
       {getInitials(user.first_name, user.last_name)}

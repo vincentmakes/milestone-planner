@@ -18,6 +18,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import rawColorAllowlist from './rawColorAllowlist.json';
 
 const SRC = join(__dirname, '..', '..');
 const STYLES = join(SRC, 'styles');
@@ -51,6 +52,31 @@ function definedTokens(files: string[], pattern: RegExp): Set<string> {
   return defined;
 }
 
+/**
+ * `var(--name, fallback)` reads of a *global* token. A fallback on a defined
+ * token is dead weight that hides a typo (the test above would catch the typo;
+ * the fallback would silently paint the wrong colour instead).
+ */
+function fallbackReads(files: string[], globalTokens: Set<string>): string[] {
+  const hits: string[] = [];
+  for (const file of files) {
+    readFileSync(file, 'utf8')
+      .split('\n')
+      .forEach((line, index) => {
+        for (const match of line.matchAll(/var\(\s*(--[a-zA-Z0-9-]+)\s*,/g)) {
+          if (globalTokens.has(match[1])) hits.push(`${match[1]} (${relative(SRC, file)}:${index + 1})`);
+        }
+      });
+  }
+  return hits;
+}
+
+/** Hex and rgb()/rgba() literals in a stylesheet — colours that bypass the tokens. */
+const RAW_COLOR = /#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)/g;
+function rawColorCount(file: string): number {
+  return (readFileSync(file, 'utf8').match(RAW_COLOR) ?? []).length;
+}
+
 /** `var(--name` reads, with the file and line they come from. */
 function readTokens(files: string[]): Array<{ token: string; where: string }> {
   const reads: Array<{ token: string; where: string }> = [];
@@ -82,6 +108,26 @@ describe('CSS design tokens', () => {
   it('defines every custom property that a stylesheet reads', () => {
     const undefinedReads = readTokens(stylesheets).filter((read) => !tokens.has(read.token));
     expect(undefinedReads.map((r) => `${r.token} (${r.where})`)).toEqual([]);
+  });
+
+  it('reads a defined token without a fallback value', () => {
+    expect(fallbackReads(stylesheets, globalTokens)).toEqual([]);
+  });
+
+  it('never adds raw colour literals to a component stylesheet (ratchet)', () => {
+    // rawColorAllowlist.json holds the count per *.module.css at the time the
+    // ratchet was set. A file may only go down (lower its number when it
+    // does); a new file starts at 0; a count that rises fails here. Shadows
+    // are counted too — use the --shadow-* tokens.
+    const allowlist: Record<string, number> = rawColorAllowlist;
+    const over: string[] = [];
+    for (const file of stylesheets.filter((f) => f.endsWith('.module.css'))) {
+      const key = relative(SRC, file);
+      const count = rawColorCount(file);
+      const allowed = allowlist[key] ?? 0;
+      if (count > allowed) over.push(`${key}: ${count} raw colours, allowlist says ${allowed}`);
+    }
+    expect(over).toEqual([]);
   });
 
   it('keeps the tokens the fixed stylesheets rely on', () => {

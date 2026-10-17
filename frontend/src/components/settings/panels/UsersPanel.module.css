@@ -313,7 +313,7 @@
   gap: 1rem;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 640px) {
   .formGrid {
     grid-template-columns: 1fr;
   }
@@ -395,7 +395,7 @@
 
 .autocompleteOption:hover,
 .autocompleteOptionActive {
-  background: var(--bg-hover, rgba(59, 130, 246, 0.12));
+  background: var(--bg-hover);
 }
 
 /* Toggle Label */
@@ -586,7 +586,7 @@
 }
 
 .confirmBtn {
-  background: var(--accent-green, #10b981);
+  background: var(--accent-green);
   color: white;
 }
 

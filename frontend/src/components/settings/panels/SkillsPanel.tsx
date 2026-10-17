@@ -16,21 +16,8 @@ import { skillsApi } from '@/api/endpoints/skills';
 import type { Skill } from '@/types';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
+import { SKILL_COLOR_SWATCHES } from '@/utils/colorSwatches';
 import styles from './SkillsPanel.module.css';
-
-// Default colors for skills
-const SKILL_COLORS = [
-  '#3b82f6', // Blue
-  '#8b5cf6', // Purple
-  '#10b981', // Green
-  '#f59e0b', // Amber
-  '#ef4444', // Red
-  '#06b6d4', // Cyan
-  '#ec4899', // Pink
-  '#84cc16', // Lime
-  '#f97316', // Orange
-  '#6366f1', // Indigo
-];
 
 export function SkillsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const setSkills = useAppStore((s) => s.setSkills);
@@ -202,7 +189,7 @@ function SkillForm({ skill, onSave, onCancel, onDirtyChange }: SkillFormProps) {
   // Form state
   const [name, setName] = useState(skill?.name || '');
   const [description, setDescription] = useState(skill?.description || '');
-  const [color, setColor] = useState(skill?.color || SKILL_COLORS[0]);
+  const [color, setColor] = useState(skill?.color || SKILL_COLOR_SWATCHES[0]);
   
   const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
@@ -211,7 +198,7 @@ function SkillForm({ skill, onSave, onCancel, onDirtyChange }: SkillFormProps) {
     onDirtyChange,
     name !== (skill?.name || '') ||
       description !== (skill?.description || '') ||
-      color !== (skill?.color || SKILL_COLORS[0])
+      color !== (skill?.color || SKILL_COLOR_SWATCHES[0])
   );
   
   // Handle form submit
@@ -296,7 +283,7 @@ function SkillForm({ skill, onSave, onCancel, onDirtyChange }: SkillFormProps) {
       <div className={styles.field}>
         <label>Color</label>
         <div className={styles.colorPicker}>
-          {SKILL_COLORS.map((c) => (
+          {SKILL_COLOR_SWATCHES.map((c) => (
             <button
               key={c}
               type="button"

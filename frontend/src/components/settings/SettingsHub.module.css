@@ -149,7 +149,7 @@
   color: var(--text-muted);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .hub {
     flex-direction: column;
   }

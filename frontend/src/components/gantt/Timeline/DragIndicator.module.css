@@ -16,12 +16,12 @@
 }
 
 .lagIndicator.positive {
-  background: var(--accent-green, #27ae60);
+  background: var(--accent-green);
   color: white;
 }
 
 .lagIndicator.negative {
-  background: var(--accent-red, #e74c3c);
+  background: var(--accent-red);
   color: white;
 }
 
@@ -39,7 +39,7 @@
   z-index: 100;
   pointer-events: none;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-  background: var(--accent-blue, #3498db);
+  background: var(--accent-blue);
   color: white;
   gap: 2px;
 }

@@ -35,7 +35,7 @@
 }
 
 .weekend {
-  background: var(--bg-weekend, rgba(0, 0, 0, 0.04));
+  background: var(--bg-weekend);
 }
 
 .bankHoliday {
@@ -66,8 +66,8 @@
 .companyEvent[data-tooltip]::after {
   content: attr(data-tooltip);
   position: absolute;
-  background: var(--bg-tertiary, #3d3d3d);
-  color: var(--text-primary, #e0e0e0);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 12px;

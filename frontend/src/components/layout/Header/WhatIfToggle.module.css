@@ -126,7 +126,7 @@
   background: var(--bg-secondary);
   border: 1px solid var(--accent-red);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg, 0 4px 16px rgba(0, 0, 0, 0.3));
+  box-shadow: var(--shadow-lg);
 }
 
 .applyErrorText {

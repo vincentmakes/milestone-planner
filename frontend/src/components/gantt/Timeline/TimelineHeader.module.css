@@ -78,7 +78,7 @@
 }
 
 .bgCell.weekendBg {
-  background: var(--bg-weekend, rgba(0, 0, 0, 0.04));
+  background: var(--bg-weekend);
 }
 
 /* All holidays (public and custom) - orange, matching body */

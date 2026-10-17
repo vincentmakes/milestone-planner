@@ -67,12 +67,12 @@
 }
 
 .gridCell.weekend {
-  background: var(--bg-weekend, rgba(0, 0, 0, 0.04));
+  background: var(--bg-weekend);
 }
 
 /* All holidays (public and custom) - orange tint */
 .gridCell.holiday {
-  background: rgba(249, 115, 22, 0.12);
+  background: color-mix(in srgb, var(--accent-orange) 12%, transparent);
 }
 
 /* Company events - tinted using --event-color (set inline per event), red fallback */
@@ -123,7 +123,7 @@
 
 /* Holiday tooltip cells - orange line */
 .tooltipCell.holiday {
-  --tooltip-line-color: var(--accent-orange, #f97316);
+  --tooltip-line-color: var(--accent-orange);
 }
 
 /* Company event tooltip cells - line uses --event-color (set inline per event), red fallback */
@@ -138,8 +138,8 @@
   top: 14px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--bg-tertiary, #3d3d3d);
-  color: var(--text-primary, #e0e0e0);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
   padding: 6px 10px;
   border-radius: 4px;
   font-size: 12px;
@@ -149,7 +149,7 @@
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-md);
 }
 
 .tooltipCell:hover::after {

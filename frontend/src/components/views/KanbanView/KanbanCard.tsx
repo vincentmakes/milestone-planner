@@ -6,6 +6,7 @@ import { useMemo } from 'react';
 import type { KanbanCard as KanbanCardData } from '@/utils/kanbanCards';
 import { dueStateOf } from '@/utils/kanbanCards';
 import { formatDateShort, parseDateISO } from '@/utils/date';
+import { avatarColorFor } from '@/utils/avatarColor';
 import styles from './KanbanCard.module.css';
 
 interface KanbanCardProps {
@@ -17,11 +18,6 @@ interface KanbanCardProps {
   onDragStart?: (e: React.DragEvent, card: KanbanCardData) => void;
   onDragEnd?: () => void;
   isDragging?: boolean;
-}
-
-/** Deterministic avatar colour, matching OnlineUsers/ActivityFeed. */
-function avatarColorIndex(staffId: number): number {
-  return staffId % 8;
 }
 
 function initials(name: string): string {
@@ -102,7 +98,8 @@ export function KanbanCard({
           {card.assignments.map((a) => (
             <span
               key={a.id}
-              className={`${styles.avatar} ${styles[`avatar${avatarColorIndex(a.staff_id)}`]}`}
+              className={styles.avatar}
+              style={{ background: avatarColorFor(a.staff_id) }}
               title={`${a.staff_name ?? 'Staff'} - ${a.allocation}%`}
             >
               {initials(a.staff_name ?? '?')}

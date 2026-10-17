@@ -3,10 +3,10 @@
 .popup {
   position: fixed;
   z-index: 2000;
-  background: var(--bg-secondary, #2d2d2d);
-  border: 1px solid var(--border-color, #404040);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-lg);
   min-width: 220px;
   max-width: 280px;
   overflow: hidden;
@@ -17,20 +17,20 @@
   justify-content: space-between;
   align-items: center;
   padding: 10px 12px;
-  background: var(--bg-tertiary, #252525);
-  border-bottom: 1px solid var(--border-color, #404040);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .typeLabel {
   font-weight: 600;
   font-size: 13px;
-  color: var(--text-primary, #e0e0e0);
+  color: var(--text-primary);
 }
 
 .closeButton {
   background: transparent;
   border: none;
-  color: var(--text-secondary, #888);
+  color: var(--text-secondary);
   font-size: 20px;
   cursor: pointer;
   padding: 0;
@@ -43,8 +43,8 @@
 }
 
 .closeButton:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text-primary, #e0e0e0);
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .content {
@@ -64,12 +64,12 @@
 }
 
 .fromTo {
-  color: var(--text-secondary, #888);
+  color: var(--text-secondary);
   min-width: 35px;
 }
 
 .name {
-  color: var(--text-primary, #e0e0e0);
+  color: var(--text-primary);
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -78,16 +78,16 @@
 
 .footer {
   padding: 10px 12px;
-  background: var(--bg-tertiary, #252525);
-  border-top: 1px solid var(--border-color, #404040);
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-color);
 }
 
 .deleteButton {
   width: 100%;
   padding: 8px 12px;
   background: transparent;
-  border: 1px solid var(--accent-red, #e74c3c);
-  color: var(--accent-red, #e74c3c);
+  border: 1px solid var(--accent-red);
+  color: var(--accent-red);
   border-radius: 4px;
   font-size: 12px;
   cursor: pointer;
@@ -95,6 +95,6 @@
 }
 
 .deleteButton:hover {
-  background: var(--accent-red, #e74c3c);
+  background: var(--accent-red);
   color: white;
 }
