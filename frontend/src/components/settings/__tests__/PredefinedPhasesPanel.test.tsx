@@ -144,6 +144,18 @@ describe('PredefinedPhasesPanel', () => {
     await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('nope'));
   });
 
+  it('exposes the active toggle as a pressed button named after the phase', async () => {
+    await renderPanel();
+    const feasibility = screen.getByRole('button', { name: 'Deactivate Feasibility' });
+    expect(feasibility).toHaveAttribute('aria-pressed', 'true');
+    expect(feasibility.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+
+    const scaleUp = screen.getByRole('button', { name: 'Activate Scale-up' });
+    expect(scaleUp).toHaveAttribute('aria-pressed', 'false');
+
+    expect(screen.getByRole('button', { name: 'Delete Transfer' })).toHaveAttribute('title', 'Delete');
+  });
+
   it('deletes only after confirmation', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true);
     await renderPanel();

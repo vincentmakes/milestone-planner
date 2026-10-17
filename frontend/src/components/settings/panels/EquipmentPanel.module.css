@@ -145,8 +145,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: none;
   border-radius: var(--radius-sm);
@@ -347,8 +347,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;

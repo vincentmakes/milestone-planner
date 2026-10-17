@@ -96,6 +96,21 @@ describe('EquipmentTypesPanel', () => {
     expect(apiGet).toHaveBeenCalledWith('/api/equipment/all');
   });
 
+  it('names the rename and delete actions after the type they act on', async () => {
+    render(<EquipmentTypesPanel />);
+    await screen.findByText('Pilot Plant');
+
+    for (const type of ['Analytical Device', 'Pilot Plant']) {
+      const rename = screen.getByRole('button', { name: `Rename ${type}` });
+      expect(rename).toHaveAttribute('title', 'Rename type');
+      expect(rename.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+      expect(screen.getByRole('button', { name: `Delete ${type}` }).querySelector('svg')).toHaveAttribute(
+        'aria-hidden',
+        'true'
+      );
+    }
+  });
+
   it('renames a type and refreshes the equipment in the store', async () => {
     render(<EquipmentTypesPanel />);
     await screen.findByText('Pilot Plant');

@@ -21,7 +21,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import { Button } from '@/components/common/Button';
 import { PanelToolbar } from '../PanelToolbar';
-import { BackIcon, GearIcon, PlusIcon } from './PanelIcons';
+import { BackIcon, CheckIcon, CloseIcon, EditIcon, GearIcon, PlusIcon } from './PanelIcons';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { useUIStore } from '@/stores/uiStore';
@@ -318,11 +318,14 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                       <td className={styles.sitesCell} title={getSiteNames(user.site_ids)}>{getSiteNames(user.site_ids)}</td>
                       <td>
                         {canEditUser(user) && (
-                          <button className={styles.editBtn} onClick={() => handleEdit(user)} title="Edit user">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                            </svg>
+                          <button
+                            type="button"
+                            className={styles.editBtn}
+                            onClick={() => handleEdit(user)}
+                            title="Edit user"
+                            aria-label={`Edit ${user.first_name} ${user.last_name}`}
+                          >
+                            <EditIcon />
                           </button>
                         )}
                       </td>
@@ -846,16 +849,11 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
                   }
                 }}
               />
-              <button type="button" className={styles.confirmBtn} onClick={confirmNewSkill} disabled={isCreatingSkill}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
+              <button type="button" className={styles.confirmBtn} onClick={confirmNewSkill} disabled={isCreatingSkill} aria-label="Add skill" title="Add skill">
+                <CheckIcon />
               </button>
-              <button type="button" className={styles.cancelBtn} onClick={cancelNewSkill} disabled={isCreatingSkill}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
+              <button type="button" className={styles.cancelBtn} onClick={cancelNewSkill} disabled={isCreatingSkill} aria-label="Cancel adding a skill" title="Cancel">
+                <CloseIcon />
               </button>
             </div>
           ) : (

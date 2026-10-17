@@ -81,19 +81,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 10px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  color: var(--text-secondary);
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
 }
 
 .editBtn:hover {
   background: var(--bg-secondary);
   color: var(--text-primary);
-  border-color: var(--border-hover);
 }
 
 .addSection {

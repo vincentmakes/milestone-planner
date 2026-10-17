@@ -101,6 +101,17 @@ describe('SitesPanel', () => {
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
   });
 
+  it('names the export and edit actions after the site', () => {
+    render(<SitesPanel />);
+    const exportBtn = screen.getByRole('button', { name: 'Export Basel as Excel' });
+    expect(exportBtn).toHaveAttribute('title', 'Export site data as Excel');
+    expect(exportBtn.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+
+    const edit = screen.getByRole('button', { name: 'Edit Basel' });
+    expect(edit).toHaveAttribute('title', 'Edit site');
+    expect(edit.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+  });
+
   it('creates one site when Enter is pressed twice', async () => {
     let finish!: (site: Site) => void;
     api.createSite.mockReturnValue(new Promise<Site>((r) => (finish = r)));

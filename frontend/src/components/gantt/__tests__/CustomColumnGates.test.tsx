@@ -64,6 +64,29 @@ describe('ProjectPanel "Manage Custom Columns"', () => {
   });
 });
 
+describe('ProjectPanel header accessible names', () => {
+  it('names every icon button, hides its svg and exposes the overview toggle state', () => {
+    seedUser('admin');
+    useCustomColumnStore.setState({ customColumns: [column] });
+    render(<ProjectPanel projects={[]} width={320} />);
+
+    // The overview is shown by default; the pressed state follows the toggle
+    const toggle = screen.getByRole('button', { name: 'Show staff and equipment' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: 'Show staff and equipment' })).toHaveAttribute('aria-pressed', 'false');
+
+    const visibility = screen.getByRole('button', { name: 'Column visibility' });
+    expect(visibility).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(visibility).toHaveAttribute('aria-expanded', 'false');
+
+    for (const name of ['Manage custom columns', 'Import project', 'New project']) {
+      const btn = screen.getByRole('button', { name });
+      expect(btn.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    }
+  });
+});
+
 describe('ProjectPanel header grouping', () => {
   it('separates the view controls from the actions with a divider for admins', () => {
     seedUser('admin');

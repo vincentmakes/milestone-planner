@@ -111,6 +111,20 @@ describe('SkillsPanel', () => {
     expect(useUIStore.getState().activeModal).toBeNull();
   });
 
+  it('names every row action after its skill and marks the chosen swatch pressed', async () => {
+    render(<SkillsPanel />);
+    const edit = await screen.findByRole('button', { name: 'Edit HPLC' });
+    expect(edit.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByRole('button', { name: 'Delete HPLC' })).toBeInTheDocument();
+
+    fireEvent.click(edit);
+    const chosen = screen.getByRole('button', { name: 'Use colour #3b82f6' });
+    expect(chosen).toHaveAttribute('aria-pressed', 'true');
+    const others = screen.getAllByRole('button', { name: /^Use colour/ }).filter((b) => b !== chosen);
+    expect(others.length).toBeGreaterThan(0);
+    others.forEach((b) => expect(b).toHaveAttribute('aria-pressed', 'false'));
+  });
+
   it('closes the hub without asking when nothing was typed', async () => {
     const confirm = vi.spyOn(window, 'confirm');
     act(() => useUIStore.getState().openSettings('skills'));

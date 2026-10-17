@@ -10,7 +10,7 @@ import { Button } from '@/components/common/Button';
 import { useAppStore } from '@/stores/appStore';
 import { apiGet, apiPost, apiPut, apiDelete } from '@/api/client';
 import type { PredefinedPhase } from '@/types';
-import { PlusIcon } from './PanelIcons';
+import { CheckCircleIcon, CircleIcon, PlusIcon, TrashIcon } from './PanelIcons';
 import styles from './PredefinedPhasesPanel.module.css';
 
 export function PredefinedPhasesPanel() {
@@ -265,27 +265,18 @@ export function PredefinedPhasesPanel() {
                     className={`${styles.actionBtn} ${phase.is_active ? styles.active : ''}`}
                     onClick={() => handleToggleActive(phase)}
                     title={phase.is_active ? 'Deactivate' : 'Activate'}
+                    aria-label={`${phase.is_active ? 'Deactivate' : 'Activate'} ${phase.name}`}
+                    aria-pressed={!!phase.is_active}
                   >
-                    {phase.is_active ? (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                        <polyline points="22 4 12 14.01 9 11.01" />
-                      </svg>
-                    ) : (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10" />
-                      </svg>
-                    )}
+                    {phase.is_active ? <CheckCircleIcon /> : <CircleIcon />}
                   </button>
                   <button
                     className={`${styles.actionBtn} ${styles.delete}`}
                     onClick={() => handleDelete(phase)}
                     title="Delete"
+                    aria-label={`Delete ${phase.name}`}
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
+                    <TrashIcon />
                   </button>
                 </div>
               )}

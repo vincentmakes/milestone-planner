@@ -139,6 +139,21 @@ describe('EquipmentPanel', () => {
     await waitFor(() => expect(useAppStore.getState().equipment).toEqual(perSiteRows));
   });
 
+  it('hides the row icon from screen readers and labels the inline type confirm/cancel', async () => {
+    render(<EquipmentPanel />);
+    const edit = await screen.findByRole('button', { name: 'Edit Reactor' });
+    expect(edit.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Equipment' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ New type' }));
+    expect(screen.getByRole('button', { name: 'Add type' }).querySelector('svg')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel adding a type' }));
+    expect(screen.queryByRole('button', { name: 'Add type' })).not.toBeInTheDocument();
+  });
+
   it('requires at least one site', async () => {
     render(<EquipmentPanel />);
     await screen.findByText('Reactor');

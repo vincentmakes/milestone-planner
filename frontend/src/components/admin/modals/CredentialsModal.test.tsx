@@ -27,6 +27,13 @@ describe('CredentialsModal (admin portal modal close behavior)', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('is a modal dialog labelled by its title, with a separate labelled close icon', () => {
+    const { onClose } = renderModal();
+    expect(screen.getByRole('dialog', { name: 'Tenant Credentials' })).toHaveAttribute('aria-modal', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('closes when the Close button is clicked', () => {
     const { onClose } = renderModal();
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
