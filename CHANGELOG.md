@@ -5,6 +5,11 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.1] - 2026-10-17
+
+### Changed
+- Milestone Planner is now licensed under the Functional Source License 1.1 with MIT Future License (FSL-1.1-MIT). Self-hosting, internal use and modification stay free of charge; offering it to third parties as a competing product or hosted service is not permitted; each release becomes MIT two years after publication. Releases up to and including 1.6.0 remain under the MIT license.
+
 ## [1.6.0] - 2026-10-16
 
 ### Added

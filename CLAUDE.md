@@ -4,6 +4,8 @@ Multi-tenant SaaS platform for R&D project management: interactive Gantt charts 
 
 **Current version**: see `/VERSION` (single source of truth, one line, no `v` prefix). The backend reads it at import in `app/__init__.py` and exposes it via `/health`.
 
+**License**: Functional Source License 1.1 with MIT Future License (**FSL-1.1-MIT**, `/LICENSE`) since 1.6.1 — releases up to and including 1.6.0 were MIT. Each release converts to MIT two years after publication, so the README keeps describing Milestone as an open-source platform. Never re-add MIT wording or an MIT `license` field anywhere: the README License section, the README license badge, `frontend/package.json` `license` (mirrored in `package-lock.json`'s root entry) and `/LICENSE` must all say FSL-1.1-MIT.
+
 ## Quick Start
 
 ```bash
@@ -33,7 +35,7 @@ When working on this codebase, follow these conventions:
 - **Node.js compatibility is a contract, not an accident.** This app replaced a Node/Express implementation and keeps wire-level compatibility: `CustomJSONResponse` formats datetimes like `toISOString()` (stored values are UTC and are emitted as UTC with a `Z` suffix — no local-offset shift) and coerces whole floats to ints; sessions are express-session-compatible (`connect.sid` cookie, `s%3A<id>.` value format, `sessions` table shape); credential encryption uses the Node `iv:authTag:ciphertext` hex format. Changing any of these serialization behaviours is a breaking change.
 - **Optimistic frontend + WebSocket refetch.** The frontend mutates Zustand state immediately and persists after; other clients converge via `change:<entity>` WebSocket events that trigger debounced slice refetches. On a failed persist the frontend reloads everything from the server and clears undo history. Keep new features inside this model — don't invent per-feature sync mechanisms.
 - **Site export is a canonical snapshot.** Any new site-scoped data must be added to `build_site_export_workbook()` — see the Site Export contract under Import & Export below.
-- **There is no client-side router.** `react-router-dom` was removed from `package.json` (it was never imported) — don't re-add it. `App.tsx` branches on `window.location.pathname` (`/admin*` → admin portal, everything else → main app), and in-app views (gantt/kanban/staff/equipment/crosssite/archived) are `viewStore` state, not URLs. Don't add routes; add views to `viewStore` + `MainLayout.renderView()`.
+- **There is no client-side router.** `react-router-dom` was removed from `package.json` (it was never imported) — don't re-add it. `App.tsx` branches on `window.location.pathname` (exactly `/admin` or `/admin/…` → admin portal, everything else → main app), and in-app views (gantt/kanban/staff/equipment/crosssite/archived) are `viewStore` state, not URLs. Don't add routes; add views to `viewStore` + `MainLayout.renderView()`.
 - **Raw SQL migrations only — never introduce Alembic.** Migrations are idempotent `.sql` files in `migrations/` executed by `run_migration.py` (tenant DBs) / `run_migration_master.py` (master DB).
 
 ### Backend Conventions
@@ -43,6 +45,8 @@ When working on this codebase, follow these conventions:
 - Role gating via dependencies from `app/middleware/auth.py`: `get_current_user` (any authenticated user), `require_superuser` (**admin OR superuser**), `require_admin` (admin only). Always import these — never define a local copy of a role check in a router (skills/tags once did; the duplicates were removed so the role matrix has one source of truth). Admin-portal routes use `get_current_admin` / `require_superadmin` from `app/routers/admin/auth.py` against the master DB. The `is_system` flag on users protects the provisioned admin from deletion.
 - **Real-time broadcast is two-tier.** For user-facing mutations on projects/phases/subphases/assignments, call `broadcast_change(...)` (`app/websocket/broadcast.py`) with rich attribution (entity, action, summary). Everything else is covered automatically: `BroadcastMiddleware` (`app/middleware/broadcast.py`) fires a coarse `change:<entity>` on any successful 2xx write, and its `SKIP_PATTERNS` list suppresses the paths that already do rich broadcasts (now including `/api/kanban` and `/api/notifications`). When you add rich broadcasting to a new path, add it to `SKIP_PATTERNS` too — otherwise clients receive double events.
 - **`status` and `completion` on phases/subphases are two views of one thing.** Never assign either field directly — go through `apply_status()` / `apply_completion()` in `app/services/card_status.py`, mirrored byte-for-byte by `statusFromCompletion`/`completionForStatus` in `frontend/src/utils/kanbanCards.ts`. The matching test matrices (`tests/test_card_status.py` / `src/utils/__tests__/cardStatusMirror.test.ts`) are the contract; change one, change both.
+- **The `@`-mention wire format is a second mirror contract.** A comment body stores mentions as `@[Name](id)`; `app/services/mentions.py` (`parse_mention_ids`, `strip_mention_tokens`) and `frontend/src/utils/mentions.ts` must stay equivalent — change one, change both (shared table asserted in `tests/test_mentions.py` and `src/utils/__tests__/mentions.test.ts`). Who gets notified is derived from the body on the server, never from a client-supplied id list, so the pills a reader sees and the people notified cannot drift apart. Strip the tokens before truncating a preview.
+- **SSO failures show only our own words.** The only remote-derived text that may reach a user is a regex-validated `AADSTS\d{4,7}` code; everything else is a fixed string from `app/services/sso_errors.py` (`parse_entra_token_error`). Never echo Entra's `error` / `error_description` into a response or redirect URL.
 - **Schema-change checklist** — when you add/alter a tenant table or column, update ALL of:
   1. The SQLAlchemy model (`app/models/`)
   2. `setup_databases.sql` (canonical fresh-install schema)
@@ -56,8 +60,8 @@ When working on this codebase, follow these conventions:
 
 ### Frontend Conventions
 
-- **Store ownership**: domain data (sites/projects/staff/equipment/vacations/absence types/holidays/skills/tags + tag groups/settings) → `appStore`; view state (mode, zoom, expansion, scroll, current view, per-site tag filter) → `viewStore`; transient UI (modals, drag/resize, dependency linking, context menus) → `uiStore`; What-If sandbox → `whatIfStore`; undo/redo snapshots → `undoStore`; custom-column data/filters/visibility → `customColumnStore`; admin portal → `adminStore`; notification inbox → `notificationStore`. Don't put domain data in `uiStore` or UI state in `appStore`.
-- **All snake_case↔camelCase transforms live in the API layer**, chiefly `src/api/endpoints/projects.ts` (`transformProject/Phase/Subphase/...` — including `type`↔`name` for phases and `sort_order`↔`order_index`). Components consume the frontend model from `src/types/models.ts` only; never transform field names in components.
+- **Store ownership**: domain data (sites/projects/staff/equipment/vacations/absence types/holidays/skills/tags + tag groups/settings) → `appStore`; view state (mode, zoom, expansion, scroll, current view, per-site tag filter, Gantt group-by / colour-by, Kanban board preferences) → `viewStore`; transient UI (modals, drag/resize, dependency linking, context menus) → `uiStore`; What-If sandbox → `whatIfStore`; undo/redo snapshots → `undoStore`; custom-column data/filters/visibility → `customColumnStore`; admin portal → `adminStore`; notification inbox → `notificationStore`. Don't put domain data in `uiStore` or UI state in `appStore`. Selectors must not return a freshly allocated array or object (Zustand 5 re-renders forever — the old `selectSiteProjects`-style array selectors were removed for this): select the raw slice and filter with `useMemo`, or wrap the selector in `useShallow`.
+- **All backend↔frontend field mapping lives in the API layer**, chiefly `src/api/endpoints/projects.ts` (`transformProject/Phase/Subphase/...` — phase `type`↔`name`, `sort_order`→`order_index`, the tree reshaping; see Transform layer). The frontend model is mostly snake_case like the API. Components consume the frontend model from `src/types/models.ts` only; never transform field names in components.
 - **New write endpoints are What-If-intercepted by default.** The API client queues every POST/PUT/PATCH/DELETE while What-If mode is active, except URLs under `/api/auth/`, `/api/settings/`, `/api/admin/`, `/api/notifications`, the Kanban *comment* paths, and the **configuration endpoints** `/api/tags`, `/api/tag-groups`, `/api/absence-types`, `/api/skills`, `/api/equipment-types`, `/api/predefined-phases`, `/api/users`, plus site and equipment *definitions* only (`/api/sites`, `/api/sites/{id}`, `/api/equipment`, `/api/equipment/{id}` — their calendar and booking sub-resources `/api/sites/{id}/holidays|events`, `/api/events`, `/api/equipment-blocks`, `/api/equipment-assignments` stay queued, they are plan data). Configuration is never part of the What-If snapshot, so queuing it only makes edits vanish and deletes fail on Apply; `isWhatIfExempt()` in `src/api/client.ts` is the one list (card moves and assignments stay queued — they are plan operations; comments are not, and a queued comment cannot be rolled back on Discard and would be duplicated on Apply). If a new endpoint must bypass What-If (rare), extend the exemption list in `src/api/client.ts` deliberately — and if it must be queued, ensure the local optimistic update is complete since the server won't respond for real.
 - **Optimistic-write failure protocol**: on persist failure, reload the affected data from the server and call `undoStore.clear()` — a stale undo stack against fresh server state corrupts data. Implemented once in `recoverFromPersistFailure(context, err)` (`src/utils/persistFailure.ts`) — call it from the `catch`, don't open-code the two steps. `useDragAndDrop` and `useUndoRedo` are the reference users.
 - **Dialog writes use `useSubmitGuard`** (`src/components/common/useSubmitGuard.ts`, a ref-based in-flight flag) so Enter-twice / double-click cannot create duplicates; Settings-hub panels report unsaved input with `useReportDirty(onDirtyChange, dirty)` (`src/components/settings/useReportDirty.ts`, one combined flag per panel) so the hub asks before switching section or closing.
@@ -69,6 +73,18 @@ When working on this codebase, follow these conventions:
 - Frontend model types live in `src/types/models.ts`; dates are `YYYY-MM-DD` strings throughout the frontend (the backend may send the midnight form `YYYY-MM-DDT00:00:00.000Z`).
 - **Never parse a model date with `new Date(str)` / `parseISO(str)` or derive one with `toISOString().split('T')[0]`** — both are UTC and shift the day for users west of UTC. Use `parseLocalDate` / `formatLocalDate` / `toDateOnly` / `addDaysToDateString` / `daysBetweenDateStrings` (and `formatDateISO(new Date())` for "today") from `src/utils/date.ts`; day counts between local midnights are `Math.round`ed (DST). Tests pin `process.env.TZ = 'America/New_York'` before imports (`*.newYork.test.ts`). `new Date(str)` is fine only for real timestamps (`created_at`, …).
 - **Node 24** is the required toolchain (declared in `frontend/package.json` `engines`, used by the Dockerfile and all CI jobs) — don't build with older Node locally.
+- **The header has no pixel breakpoints in CSS.** `useHeaderDensity()` is the one definition of its width tiers (`full` / `compact` / `condensed` / `minimal`); the Header applies it as a `data-density` attribute, every header rule selects on that, and the same tier decides which controls move into `HeaderOverflowMenu`.
+- **Bulk imports are chunked.** The import routes (`/vacations/import`, `/sites/{id}/holidays/import`, `/events/import`) reject more than 1 000 items (422), so `.ics` importers send through `postInChunks()` (`src/api/endpoints/importChunks.ts`, 500-item slices, counts added up) — never one big POST.
+- **The running version comes from `/health`** (`getAppVersion()` in `src/api/endpoints/health.ts`), never a build-time constant — a build constant would keep showing the old number in a tab opened before an upgrade.
+
+### Repository tooling (Trail)
+
+The repo ships [Trail](https://github.com/trailhq/Trail-Code) for Claude Code sessions. `.claude/settings.json` wires its hooks (SessionStart, UserPromptSubmit, PostToolUse, Stop, SessionEnd → `.trail/hook.cjs`), and `.claude/hooks/session-start.sh` installs `@trailhq/trail-code` and runs `trail build` in cloud sessions (`CLAUDE_CODE_REMOTE=true`, telemetry off). The workflow is in `.claude/skills/trail/SKILL.md`:
+
+- Read `.trail/learnings/` (or run `trail ask "<task>" --source`) before exploring — past sessions' decisions and dead ends live there.
+- When a task took real digging, or the user corrected how something is done here, save a learning with `trail note` and commit it with the change.
+- Run `trail check` before committing, pushing or opening a PR.
+- `.trail/cache/` is per-machine (`.trail/.gitignore`); everything else under `.trail/` and `.claude/` is committed.
 
 ### Security Requirements
 
@@ -99,7 +115,7 @@ When working on this codebase, follow these conventions:
 - **Enforcement (CI):**
   - **Diff coverage**: on every PR, `diff-cover` requires **≥ 80 %** of the lines the PR adds or changes to be covered (backend `coverage.xml`, frontend `coverage/lcov.info`).
   - **Suite floors**: `fail_under` in `pyproject.toml` (`[tool.coverage.report]`) and `coverage.thresholds` in `frontend/vitest.config.ts` sit just under the measured totals. Raise them in any PR that lifts the number; **never lower one, and never exclude a file to get past one** — the frontend `coverage.include`/`exclude` lists are fixed (every `src/**` file is measured, imported by a test or not).
-  - **Badges**: the README coverage badges read `backend.json` / `frontend.json` from the orphan `coverage` branch, which the `Coverage Badges` jobs write on push to `main`. Never edit that branch or the badge numbers by hand.
+  - **Badges**: the README coverage badges read `backend.json` / `frontend.json` from the orphan `coverage` branch, which the `Coverage Badges` jobs write on push to `main`. Never edit that branch or the badge numbers by hand. The remaining README badges are static shields.io badges in the same style as `vincentmakes/turbo-ea` (license FSL-1.1-MIT, Python, React): bump the Python badge together with the Dockerfile/CI Python version and the React badge together with the `react` dependency. There is no GHCR-pulls badge because `docker.yml` only builds the image, it publishes nothing, and no GitHub Sponsors badge by choice (`.github/FUNDING.yml` still powers the repo's Sponsor button).
 - **Greenlet gotcha**: keep `concurrency = ["greenlet", "thread"]` in `[tool.coverage.run]`. Async SQLAlchemy runs queries on greenlets, and without it coverage.py stops tracing a handler at its first `await db.execute()`. The suite is mock-only today, so it changes nothing yet — but the day a real-DB test lands, a file that looks untested past its first query is this setting, not a missing test.
 - Run locally:
   - backend: `pytest --cov=app --cov-report=term-missing --cov-report=xml && diff-cover coverage.xml --compare-branch=origin/main` (`pip install diff-cover` once; it is a CI-step install, not a `requirements-dev.txt` pin);
@@ -108,11 +124,11 @@ When working on this codebase, follow these conventions:
 
 ### Documentation (MkDocs)
 
-- The user/admin/developer manual lives in `docs/`, built with **MkDocs Material** (`mkdocs.yml`; nav: User Guide / Admin Guide / Developer Guide).
+- The user/admin/developer manual lives in `docs/`, built with **MkDocs Material** (`mkdocs.yml`; nav: Home (`index.md`) / User Guide / Admin Guide / Developer Guide, with Release Notes under Developer Guide).
 - **Deployment is Cloudflare Pages, not GitHub Actions** — there is no `docs.yml` workflow. Cloudflare runs `docs/build.sh` (`pip install -r docs/requirements.txt && mkdocs build --strict`) with output dir `site/`.
 - `docs/release-notes.md` embeds the root `CHANGELOG.md` via a pymdownx snippet — don't duplicate release notes in docs.
 - Validate any docs change with `mkdocs build --strict` (catches broken links/images).
-- User-facing feature changes should update the relevant `docs/user-guide/` or `docs/admin-guide/` page.
+- User-facing feature changes should update the relevant `docs/user-guide/` or `docs/admin-guide/` page. Map: Gantt, tags, grouping → `gantt-charts.md`; Kanban, comments, notifications → `kanban-board.md`; staff, workload → `staff-management.md`; equipment → `equipment-booking.md`; absences, holidays, closures, `.ics` imports → `vacations.md` (calendar `.ics` in Settings → `settings.md`); What-If → `what-if-planning.md`; Settings hub → `settings.md`; presence, live updates → `collaboration.md`; shortcuts → `keyboard-shortcuts.md`; MS Project, CSV, Excel export → `import-export.md`; SSO and organizations → `admin-guide/organizations-sso.md`; tenants → `admin-guide/multi-tenant.md`; migrations → `admin-guide/database.md`.
 
 ### Documentation Screenshots
 
@@ -172,7 +188,7 @@ You MUST bump `VERSION` and add a `CHANGELOG.md` entry — in the same PR — fo
 
 - `README.md`, `CLAUDE.md`, `CHANGELOG.md` itself
 - `docs/**`, `mkdocs.yml`, `docs/requirements.txt` — MkDocs end-user / admin / developer docs
-- `LICENSE.txt`, `.gitignore`, `.dockerignore`, `.editorconfig`
+- `LICENSE`, `.gitignore`, `.dockerignore`, `.editorconfig`
 - `.github/**` — workflows and repo metadata
 - `.devcontainer/**` — Codespaces config
 
@@ -242,7 +258,7 @@ Do **not** use an `[Unreleased]` section — every change belongs to a concrete 
         │                              │
 ┌───────▼───────────┐   ┌──────────────▼───────────────────────┐
 │  Master DB        │   │  Tenant DBs (one per tenant)         │
-│  milestone_admin  │   │  milestone_<slug>                    │
+│  milestone_master │   │  milestone_<slug>                    │
 │  MasterBase models│   │  Base models                         │
 │  tenants, admins, │   │  lazy per-tenant asyncpg pools       │
 │  orgs, org SSO    │   │  (tenant_manager, 15-min idle close) │
@@ -271,10 +287,24 @@ Do **not** use an `[Unreleased]` section — every change belongs to a concrete 
 ## Project Structure
 
 ```
+VERSION                # Single source of truth for the app version (one line, no `v`)
+CHANGELOG.md           # Keep a Changelog; one `## [x.y.z] - date` heading per release
+LICENSE                # FSL-1.1-MIT (each release becomes MIT two years after publication)
+README.md              # Badges, features, quick start, license summary
+CONTRIBUTING.md / SECURITY.md  # Pointers to the contributing guide / private vulnerability reporting
+pyproject.toml         # pytest (asyncio_mode=auto), coverage (fail_under, greenlet concurrency)
+requirements.txt / requirements-dev.txt
+mkdocs.yml             # MkDocs Material nav (Home, User / Admin / Developer Guide)
+Dockerfile             # 3-stage build (see Docker & Deployment)
+docker-compose*.yml    # yml (Unraid prod), fresh, external-db, dev, react-dev
+docker-entrypoint.sh   # DB wait + optional AUTO_INIT_DB, then uvicorn
+deploy-react.sh        # Copies frontend/dist → public/ atomically
+setup_databases.sql    # Canonical full schema for fresh installs
+.env.example           # Environment template
 app/
   __init__.py          # Reads /VERSION → __version__
   main.py              # create_app()/create_wrapped_app(), lifespan, router registration,
-                       #   CustomJSONResponse, CORS, static mounts + SPA catch-all
+                       #   CustomJSONResponse, CORS, gated API docs, static mounts + SPA catch-all
   config.py            # Pydantic settings (env vars); get_settings() lru_cached
   database.py          # Tenant DB engine/session (get_db / get_db_readonly) + declarative Base
   utils.py             # utcnow_naive() — all DB datetime columns are naive TIMESTAMP holding UTC
@@ -295,6 +325,9 @@ app/
     custom_column.py   # CustomColumn, CustomColumnValue (EAV)
     tag.py             # Tag (group_id, all_sites, sort_order, sites M:N), TagGroup (single_select),
                        #   TagSite, ProjectTag
+    card_comment.py    # CardComment — Kanban card comments, polymorphic (entity_type, entity_id),
+                       #   mentioned_user_ids derived from the body
+    notification.py    # Notification — per-recipient inbox (due-soon/overdue are derived client-side)
     note.py            # Note — tablename is staff_notes
     settings.py        # Settings (KV), PredefinedPhase, SSOConfig (singleton)
     session.py         # Session (express-session compatible)
@@ -302,15 +335,19 @@ app/
   routers/             # FastAPI route handlers (registered in main.py)
     absence_types.py   # Absence type CRUD + reorder (writes admin-only)
     admin/             # Admin portal: auth.py, tenants.py, users.py → /api/admin/*
-    admin_organizations.py  # Organization CRUD + org SSO + tenant attach → /api/admin/organizations
+    admin_organizations.py  # Organization CRUD + org SSO (+ /sso/test diagnostic) + tenant attach
+                       #   → /api/admin/organizations
     assignments.py     # Staff assignments (3 levels) + equipment assignments
     auth.py            # Login/logout/me, password change, SSO config/login/callback
     custom_columns.py  # Custom column + value CRUD
     equipment.py       # Equipment, equipment types, bookings, blocks
     export.py          # MPP/CSV project export + full site export to Excel (.xlsx)
     health.py          # /health + /api/health + WS debug endpoints
+    kanban.py          # Card status moves, assignees, comments (+ @-mentions), comment counts,
+                       #   mentionable users — the board itself has no read endpoint
     mpp_import.py      # Microsoft Project file import (requires Java)
     notes.py           # Staff notes
+    notifications.py   # Own inbox only (list, unread count, mark read) — no user_id parameter
     predefined_phases.py # Phase template management
     projects.py        # Project/phase/subphase CRUD + reorder
     settings.py        # Instance settings (KV) + tenant SSO settings
@@ -323,27 +360,36 @@ app/
     users.py           # User management
     vacations.py       # Vacation/absence CRUD + bulk import (/vacations/import)
   schemas/             # Pydantic request/response schemas (one file per domain;
-                       #   base.py holds Node-compatible serializers)
+                       #   base.py holds Node-compatible serializers + DateRangeOrdered)
   services/
     auth.py            # Shared admin-session validation
+    card_access.py     # require_card_status_write: project editor or assignee of that card
+    card_status.py     # apply_status / apply_completion — the only writers of status/completion
+                       #   (mirrored in frontend/src/utils/kanbanCards.ts)
     date_range.py      # parse_day / parse_day_range (400 on bad/inverted/>366-day ranges),
                        #   ensure_date_order (422) for partial updates
     encryption.py      # AES-256-GCM credentials + bcrypt/PBKDF2 password hashing
+    holidays.py        # Nager API client (v4, legacy v3 auto-detected), parsing, region matching
     login_throttle.py  # In-memory, per-process failed-login throttle (tenant + admin portal)
     master_db.py       # Master DB singleton: init, idempotent auto-migrations,
                        #   verify_admin_exists() (auto-creates admin@milestone.local)
+    mentions.py        # @[Name](id) mention tokens: parse_mention_ids / strip_mention_tokens
+                       #   (mirrored in frontend/src/utils/mentions.ts)
+    notifications.py   # Notification rows for Kanban events (actor excluded, one per recipient)
     project_access.py  # Per-project ACL: is_privileged, can_edit_project, require_project_editor
                        #   (PM rule), require_assignment_write (self-assignment), project_id_for_*
     proxy.py           # Corporate proxy resolution (env vars or PAC file)
     response_builders.py # Shared ORM→dict response helpers
     session.py         # SessionService (express-session compatible)
-    tag_rules.py       # validate_project_tags (site applicability + single-select → 400) and the
-                       #   conflict counters behind the 409s of tag/group edits
     site_access.py     # can_access_sites / ensure_site_access (superuser site scoping for
                        #   multi-site events + equipment)
     sso.py             # SSOService: effective config (org > tenant), Graph groups,
                        #   authorization URL + HMAC-signed state; tenant client-secret
                        #   at-rest helpers (read_/store_tenant_client_secret, apply_secret_update)
+    sso_errors.py      # Entra token-endpoint failures → fixed messages (only an AADSTS code
+                       #   may reach the user)
+    tag_rules.py       # validate_project_tags (site applicability + single-select → 400) and the
+                       #   conflict counters behind the 409s of tag/group edits
     tenant_data_migrations.py # run_data_migrations(): guarded FK rewrites + orphan cleanups,
                        #   called at the end of tenant_manager._run_auto_migrations
     tenant_manager.py  # Lazy per-tenant connection pools (per-slug creation lock) + idle
@@ -354,67 +400,93 @@ app/
     tenant.py          # Pure-ASGI tenant resolution (/t/{slug}/* rewrite, 60s cache)
     broadcast.py       # Pure-ASGI coarse change:<entity> broadcast on 2xx writes
   websocket/
-    manager.py         # ConnectionManager: per-tenant rooms, multi-tab, presence
+    manager.py         # ConnectionManager: per-tenant rooms, multi-tab, presence, send_to_user
     handler.py         # /ws and /t/{slug}/ws endpoints, cookie auth, close codes
-    broadcast.py       # broadcast_change() helper for routers (rich attribution)
+    broadcast.py       # broadcast_change() (rich attribution) + send_notification()
 frontend/
+  package.json         # Node ≥ 24 (engines), license FSL-1.1-MIT, "version" is a static placeholder
+  vite.config.ts       # tenantSpaPlugin (/t/* SPA fallback in dev), @ → src alias, port 3333
+  vitest.config.ts     # Vitest (jsdom) config, coverage include/exclude + thresholds
   src/
     main.tsx           # Entry: QueryClientProvider, initTheme, configureApiClient (What-If wiring)
-    App.tsx            # Top-level branching (pathname /admin* vs main app), no router
+    App.tsx            # Top-level branching (/admin vs main app), no router; TenantApp shows
+                       #   Loading/LoadError screens, sets the what-if-mode body class
     api/
       client.ts        # Fetch wrapper: cookie auth, tenant prefix, What-If interception
       endpoints/       # absenceTypes, admin, auth, customColumns, equipment, projects (transform
-                       #   layer), settings, sites, skills, staff, tags, users, vacations
+                       #   layer), settings, sites, skills, staff, tags, users, vacations,
+                       #   health (getAppVersion), importChunks (postInChunks), kanban, notifications
     components/
-      admin/           # AdminApp, AdminDashboard, TenantList, OrganizationList,
-                       #   AdminUserList, SystemStatsPanel + admin modals
-      gantt/           # GanttContainer, ProjectPanel/ (tree rows), Timeline/ (bars,
-                       #   dependencies, phantom overlays), CustomColumns/, CompletionSlider/,
+      admin/           # AdminApp, AdminLoginScreen, AdminDashboard, TenantList, OrganizationList,
+                       #   AdminUserList, SystemStatsPanel + modals/ (Create*/…DetailsModal,
+                       #   CredentialsModal — standalone, useEscapeKey, no overlay close)
+      gantt/           # GanttContainer, ProjectPanel/ (ProjectRow → PhaseRow → SubphaseRow →
+                       #   AssignmentRow, SectionRow, GroupBy/ColorBy dropdowns over
+                       #   TagGroupChoiceDropdown), Timeline/ (bars, DependencyLayer, phantom
+                       #   overlays, ResourceDropOverlay), CustomColumns/, CompletionSlider/,
                        #   ShiftTooltip/ (Shift-hover date tooltip), ContextMenuContainer.tsx,
-                       #   utils/ (incl. criticalPath, diffProjects, dependencies, completionStatus)
-      views/           # StaffView (workload heatmap), EquipmentView, CrossSiteView, ArchivedView
+                       #   utils/ (autoCalculation, completionStatus, criticalPath, dependencies,
+                       #   diffProjects, projectSections, rowPositions, timeline)
+      views/           # StaffView (workload heatmap), EquipmentView, CrossSiteView, ArchivedView,
+                       #   KanbanView/ (KanbanView, KanbanBoard, KanbanColumn, KanbanCard, KanbanToolbar)
       screens/         # LoginScreen, LoadingScreen, LoadErrorScreen (initial load failed → Retry)
       settings/        # Settings hub: SettingsHub.tsx (shell), sections.tsx (SETTINGS_SECTIONS
-                       #   registry: group/id/label/minRole/Panel), useReportDirty.ts, panels/
-                       #   (General, Sites, BankHolidays, CompanyEvents, Users, Skills,
-                       #   AbsenceTypes, Equipment, EquipmentTypes, PredefinedPhases, SSO)
-      modals/          # ModalContainer (lazy) + dialogs (incl. MyAbsencesModal, VacationModal,
-                       #   VacationICSImport)
-      common/          # Button, Input, Select, Modal, ContextMenu, OnlineUsers, ActivityFeed,
+                       #   registry: group/id/label/minRole/Panel), PanelToolbar.tsx, types.ts,
+                       #   useReportDirty.ts, panels/ (General, Sites, BankHolidays, CompanyEvents,
+                       #   Users, Skills, AbsenceTypes, Equipment, EquipmentTypes, PredefinedPhases,
+                       #   Tags, SSO + helpers ColorSwatchPicker, SiteChecklist, SiteForm,
+                       #   calendarUtils, PanelIcons)
+      modals/          # ModalContainer (lazy) + dialogs: Project/Phase/Subphase, Assignment
+                       #   (Staff/Equipment), EquipmentBlock, KanbanCardModal, TagPicker,
+                       #   CustomColumn(+sManager), ImportProjectModal, MyAbsencesModal,
+                       #   VacationModal, VacationICSImport, AbsenceTypeSelect
+      common/          # Button, Input, Select, ToggleSwitch, Modal, ContextMenu, OnlineUsers,
+                       #   ActivityFeed, NotificationBell, MentionTextarea (+ MentionText),
+                       #   TagFilterDropdown, AllocationSlider, OverlapWarningIcon,
                        #   ICSImportPanel (shared .ics preview/import, 5 MB cap),
-                       #   useSubmitGuard.ts (double-submit guard), …
-      layout/          # MainLayout, Header/ (controls incl. SyncStatus "Offline" badge,
-                       #   WhatIfToggle + Apply-failure banner), Sidebar/, ResourcePanel/
+                       #   useSubmitGuard.ts (double-submit guard)
+      layout/          # MainLayout, Header/ (density tiers + HeaderOverflowMenu, SyncStatus
+                       #   "Offline" badge, WhatIfToggle + Apply-failure banner, UserMenu, …),
+                       #   Sidebar/ (Navigation, AdminSection, QuickStats), ResourcePanel/
     contexts/          # WebSocketContext (WS → debounced refetch), wsSlices.ts (entity →
-                       #   slice map), TimelineScrollContext, ReorderContext (row reordering)
-    stores/            # 7 Zustand stores (see Frontend Architecture)
+                       #   slice map), TimelineScrollContext, ReorderContext (row reordering),
+                       #   KanbanDragContext (card drag, optimistic move)
+    stores/            # 8 Zustand stores + index.ts (resetAllStores, expireSession) — see
+                       #   Frontend Architecture
     types/models.ts    # All frontend entity types (snake_case, YYYY-MM-DD dates)
-    hooks/             # useAuth, useDataLoader, useWebSocket, useDragAndDrop, … (see catalog)
-    utils/             # date, storage (STORAGE_KEYS, themes), csvExport, xmlExport, ics,
-                       #   recurringVacation, siteClosure, permissions, equipmentOverlap,
-                       #   subphaseUtils, persistFailure, reorder, localProjectTree, whatIf,
-                       #   uniqueById, …
+    hooks/             # useAuth, useDataLoader, useWebSocket, useDragAndDrop, useTagFilter,
+                       #   useHeaderDensity, useDerivedDueNotifications, … (see catalog)
+    utils/             # date, storage (STORAGE_KEYS, themes, project order), csvExport,
+                       #   xmlExport, ics, recurringVacation, siteClosure, permissions, tags,
+                       #   kanbanCards, mentions, equipmentOverlap, subphaseUtils, persistFailure,
+                       #   reorder, localProjectTree, whatIf, uniqueById, touchEvents,
+                       #   themeColors, colorSwatches, projectLevels
                        #   (criticalPath/diffProjects/dependencies/completionStatus live in
                        #   components/gantt/utils/)
-  vite.config.ts       # tenantSpaPlugin (/t/* SPA fallback in dev), @ → src alias, port 3333
-  vitest.config.ts     # Vitest (jsdom) config
-docs/                  # MkDocs Material source (user-guide/, admin-guide/, developer-guide/)
+    styles/            # global.css, variables.css (design tokens), themes/themes.css
+    test/              # setup.ts (Vitest setup), factories.ts (make* test builders)
+docs/                  # MkDocs Material source (user-guide/, admin-guide/, developer-guide/,
+                       #   index.md, release-notes.md embedding CHANGELOG.md)
   build.sh             # Cloudflare Pages build command (mkdocs build --strict)
-migrations/            # Raw SQL migrations + run_migration.py / run_migration_master.py
+migrations/            # Raw idempotent SQL migrations + run_migration.py / run_migration_master.py,
+                       #   shell wrappers (run_migration.sh, migrate_all_tenants.sh), README.md
 scripts/
+  README.md            # Script usage
   fresh_install.py     # Automated master-DB installer (+ .env generation)
   seed_tenant_data.py  # Seed a tenant with sample data
   setup_admin_password.py
   sql/                 # milestone_master_fresh_install.sql, tenant_schema_template.sql,
                        #   migrations/001_add_max_capacity.sql
-  screenshots/         # Playwright screenshot pipeline (capture.py, capture_collab.py)
-tests/                 # Backend pytest suite (mock-based, no live DB)
+  screenshots/         # Playwright screenshot pipeline (capture.py, capture_collab.py,
+                       #   capture_admin.py, seed_extras.sql, README.md)
+tests/                 # Backend pytest suite (mock-based, no live DB): conftest.py (fixtures),
+                       #   support.py (mock Result builders), shard_plugin.py (--shard=K/N)
 public/                # Built frontend served by FastAPI (deploy-react.sh copies dist/ here)
 .devcontainer/         # Codespaces: multi-tenant dev env, demo seed, uvicorn autostart
-.github/workflows/     # CI: backend.yml, frontend.yml, docker.yml, version-check.yml
-setup_databases.sql    # Canonical full schema for fresh installs
-deploy-react.sh        # Copies frontend/dist → public/ atomically
-docker-entrypoint.sh   # DB wait + optional AUTO_INIT_DB, then uvicorn
+.github/               # FUNDING.yml + workflows/ (backend.yml, frontend.yml, docker.yml,
+                       #   version-check.yml)
+.claude/               # settings.json (Trail hooks), hooks/session-start.sh, skills/trail/
+.trail/                # learnings/ (committed session notes), hook.cjs; cache/ is git-ignored
 ```
 
 ## Common Commands
@@ -446,8 +518,9 @@ pytest --cov=app --cov-report=term-missing
 # Frontend dev server (hot reload, port 3333)
 cd frontend && npm install && npm run dev
 
-# Frontend tests
-cd frontend && npm test
+# Frontend tests (plain `npm test` starts Vitest in watch mode)
+cd frontend && npm test -- --run
+cd frontend && npm run test:coverage
 
 # Linting
 ruff check app/ && ruff format --check app/
@@ -466,7 +539,7 @@ python migrations/run_migration.py <migration_name>
 # Build documentation locally
 pip install -r docs/requirements.txt
 mkdocs serve   # Preview at http://localhost:8000
-mkdocs build   # Output to site/
+mkdocs build --strict   # Output to site/ (what Cloudflare runs)
 ```
 
 **Dev-server nuance**: the Vite dev server (:3333) serves `/t/{slug}/…` SPA paths via the custom `tenantSpaPlugin` in `vite.config.ts`, but there is **no API proxy** — `src/api/client.ts` detects port 3333 and sends API/WS traffic directly to `:8485`, so the backend must be running (e.g. via `docker-compose.dev.yml`, which runs both). For full tenant/WebSocket behaviour, test against `:8485` serving the built frontend from `public/`.
@@ -478,6 +551,7 @@ Settings are loaded by `app/config.py` (pydantic-settings, `.env`, case-insensit
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DEBUG` | `false` | Debug mode (enables localhost CORS defaults) |
+| `APP_NAME` | `Milestone API` | FastAPI title (API docs) |
 | `PORT` | `8485` | Backend HTTP port |
 | `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | `localhost`/`5432`/`milestone_dev`/`milestone_dev_user`/`""` | Tenant DB (single-tenant mode) |
 | `DATABASE_URL` | *(unset)* | Overrides individual `DB_*` vars (`postgres://` auto-rewritten to `postgresql+asyncpg://`) |
@@ -491,15 +565,17 @@ Settings are loaded by `app/config.py` (pydantic-settings, `.env`, case-insensit
 | `FORWARDED_ALLOW_IPS` | *(env-only)* `127.0.0.1` | Read by uvicorn (`--proxy-headers --forwarded-allow-ips` in the Dockerfile `CMD`; passed through by `docker-compose.fresh.yml`): proxy addresses whose `X-Forwarded-For` is trusted. **Set it behind a reverse proxy** — otherwise every client is the proxy's IP and the per-(IP, e-mail) login lockout applies to everyone. `*` only when the app port is reachable solely via the proxy |
 | `MULTI_TENANT` | `false` | Enable multi-tenant mode (TenantMiddleware + master-driven tenant pools) |
 | `DEFAULT_TENANT` | *(unset)* | Optional default tenant slug |
-| `MASTER_DB_HOST` / `MASTER_DB_PORT` / `MASTER_DB_NAME` / `MASTER_DB_USER` / `MASTER_DB_PASSWORD` | `-`/`5432`/`milestone_master`/`-`/`-` | Master DB connection (multi-tenant) |
+| `MASTER_DB_HOST` / `MASTER_DB_PORT` / `MASTER_DB_NAME` / `MASTER_DB_USER` / `MASTER_DB_PASSWORD` | `DB_HOST`/`5432`/`milestone_master`/`DB_USER`/`DB_PASSWORD` | Master DB connection (host, user and password fall back to the `DB_*` values). ⚠ The migration runners and `docker-compose.fresh.yml` default the name to `milestone_admin` — set `MASTER_DB_NAME` explicitly |
 | `PG_ADMIN_USER` / `PG_ADMIN_PASSWORD` | *(unset)* | PostgreSQL admin (CREATEROLE+CREATEDB) for tenant provisioning and cross-tenant migrations |
 | `TENANT_ENCRYPTION_KEY` | *(env-only)* | 64-char hex AES-256-GCM key for tenant credentials — **required** in multi-tenant mode |
-| `SSO_ENABLED` / `SSO_CLIENT_ID` / `SSO_CLIENT_SECRET` / `SSO_TENANT_ID` / `SSO_REDIRECT_URI` | `false`/unset | Env-level SSO bootstrap (normally configured in-app instead) |
+| `SSO_ENABLED` / `SSO_CLIENT_ID` / `SSO_CLIENT_SECRET` / `SSO_TENANT_ID` / `SSO_REDIRECT_URI` | `false`/unset | ⚠ **Ignored.** Defined in `Settings` but read nowhere: SSO comes only from the tenant `sso_config` table or the organization SSO config (configure it in-app) |
 | `NAGER_API_URL` | `https://nagerholidays.com/api/v4` | Public-holiday API for bank-holiday refresh (v3 URLs still detected; v3 EOL 2027-01-31) |
-| `HTTP_PROXY` / `HTTPS_PROXY` / `PROXY_USERNAME` / `PROXY_PASSWORD` / `PROXY_PAC_URL` / `PROXY_VERIFY_SSL` / `PROXY_CA_CERT` | *(unset)* | Corporate proxy for outbound HTTP (Nager, Microsoft Graph); PAC files supported |
-| `AUTO_INIT_DB` | *(env-only)* `false` | Run `app.scripts.init_db` on container start (fresh installs) |
+| `HTTP_PROXY` / `HTTPS_PROXY` / `PROXY_USERNAME` / `PROXY_PASSWORD` / `PROXY_PAC_URL` / `PROXY_VERIFY_SSL` / `PROXY_CA_CERT` | *(unset)* | Corporate proxy. ⚠ The full resolution (PAC file, credentials, CA, verify) applies to the **Nager holiday import only** (`app/services/holidays.py`). SSO token exchange and Microsoft Graph use plain `httpx` clients, which follow only the process `HTTP(S)_PROXY` environment variables |
+| `AUTO_INIT_DB` | *(env-only)* `false` | Run `app.scripts.init_db` on container start (fresh installs); a failed init exits the container non-zero |
+| `DB_WAIT_ATTEMPTS` | *(env-only)* `30` | Database wait attempts in `docker-entrypoint.sh` before starting anyway (the wait is non-fatal) |
 | `INIT_ADMIN_EMAIL` / `INIT_ADMIN_PASSWORD` | *(env-only)* | Initial admin credentials for auto-init (password auto-generated if empty) |
-| `TZ` | `Europe/Zurich` | Container timezone |
+| `TZ` | *(env-only)* `Europe/Zurich` | Container timezone |
+| `JAVA_HOME` | *(env-only)* `/usr/lib/jvm/default-java` (Dockerfile) | JVM for MPP import; `mpp_import.py` searches common locations when unset |
 
 Fresh-compose overrides: `FRESH_APP_PORT` (default 8486), `FRESH_DB_PORT` (5433).
 
@@ -522,8 +598,8 @@ Two declarative bases: **`Base`** (tenant databases, `app/database.py`) and **`M
 
 | Table | Model | Purpose |
 |-------|-------|---------|
-| `sites` | `Site` | Physical locations: name (unique), location, country/region codes, timezone, `last_holiday_fetch` |
-| `bank_holidays` | `BankHoliday` | Public holidays per site (affect working-day calc); `is_custom` for manual, imported or edited entries (editing a Nager row sets `is_custom = 1`); refreshable from the Nager API — a refresh replaces only non-custom rows, only for the years the API actually returned (a failed year keeps its rows; `replace_existing` also clears stale years), and skips Nager entries on any day a custom holiday covers, or sharing a name (trimmed, case-insensitive) with a custom holiday of the same year (moved holidays) |
+| `sites` | `Site` | Physical locations: name (unique), location, `city`, country/region codes, timezone, `active`, `last_holiday_fetch` |
+| `bank_holidays` | `BankHoliday` | Public holidays per site (affect working-day calc); `date` + optional `end_date` (multi-day), `year` (NOT NULL); `is_custom` for manual, imported or edited entries (editing a Nager row sets `is_custom = 1`); refreshable from the Nager API — a refresh replaces only non-custom rows, only for the years the API actually returned (a failed year keeps its rows; `replace_existing` also clears stale years), and skips Nager entries on any day a custom holiday covers, or sharing a name (trimmed, case-insensitive) with a custom holiday of the same year (moved holidays) |
 | `company_events` | `CompanyEvent` | Audits/meetings with color — displayed but do **not** affect working-day calc. `counts_as_unavailable` (BOOLEAN NOT NULL DEFAULT FALSE) marks a **site closure**: staff of the event's sites are unavailable for its dates (evaluated client-side). `site_id` is **legacy** (nullable, FK `ON DELETE SET NULL`), kept equal to the first linked site; site links live in `company_event_sites` |
 | `company_event_sites` | `CompanyEventSite` | M:N event ↔ site (composite PK, both FKs CASCADE). Deleting a site deletes events left with no site |
 
@@ -531,7 +607,7 @@ Two declarative bases: **`Base`** (tenant databases, `app/database.py`) and **`M
 
 | Table | Model | Purpose |
 |-------|-------|---------|
-| `projects` | `Project` | R&D projects: name, `site_id` (FK `ON DELETE CASCADE` — deleting a site deletes its projects), customer, pm_id, confirmed, volume, dates, notes, archived; `tags` M:N |
+| `projects` | `Project` | R&D projects: name, `site_id` (FK `ON DELETE CASCADE` — deleting a site deletes its projects), customer, `pm_id` (FK `users` `ON DELETE SET NULL`), `sales_pm` (free text), confirmed, volume, dates, notes, archived, `updated_at`; `tags` M:N |
 | `project_phases` | `ProjectPhase` | Phases: project_id (CASCADE), `type` (name), dates, `is_milestone`, `sort_order`, `completion`, `status` (Kanban column), `dependencies` (JSON text) |
 | `project_subphases` | `ProjectSubphase` | **Recursive** subphases: `parent_id` + `parent_type` CHECK(`phase`/`subphase`), `depth`, dates, milestone/completion/`status`/dependencies |
 | `tag_groups` | `TagGroup` | Tag categories: name (unique), `single_select`, `sort_order`. Colouring the Gantt by a group is a per-user frontend preference (`viewStore.ganttColorBy`), not stored here |
@@ -564,14 +640,14 @@ Two declarative bases: **`Base`** (tenant databases, `app/database.py`) and **`M
 
 | Table | Model | Purpose |
 |-------|-------|---------|
-| `card_comments` | `CardComment` | Comments on Kanban cards. Polymorphic `(entity_type, entity_id)` → phase/subphase (same shape as `custom_column_values`, so **no FK** — project/site/phase/subphase deletes must clear them explicitly; orphans are cleaned by the tenant data migrations). `author_id` is nullable, FK `ON DELETE SET NULL` (comments survive user deletion; UI shows "Deleted user") + `updated_at` |
-| `notifications` | `Notification` | Per-recipient inbox: `user_id`, `type` (`assigned`/`comment`/`mention`/`status_change`), `actor_id` (SET NULL), entity/project refs, rendered `title`/`body`, `read_at`. Partial index on unread. Due-soon/overdue are **derived client-side**, never stored |
+| `card_comments` | `CardComment` | Comments on Kanban cards. Polymorphic `(entity_type, entity_id)` → phase/subphase, `entity_type` CHECK(`phase`/`subphase`) (same shape as `custom_column_values`, so **no FK on `entity_id`** — phase/subphase deletes must clear them explicitly; orphans are cleaned by the tenant data migrations). `project_id` FK `ON DELETE CASCADE`. `body` stores `@[Name](id)` mention tokens; `mentioned_user_ids` (TEXT, JSON id list) is derived from them server-side. `author_id` is nullable, FK `ON DELETE SET NULL` (comments survive user deletion; UI shows "Deleted user") + `created_at`/`updated_at`. Indexes `idx_card_comments_entity`, `idx_card_comments_project` |
+| `notifications` | `Notification` | Per-recipient inbox: `user_id` (FK CASCADE), `type` CHECK(`assigned`/`comment`/`mention`/`status_change`), `actor_id` (SET NULL), entity refs, `project_id` (FK CASCADE), rendered `title`/`body`, `read_at`. Indexes: partial `idx_notifications_user_unread` + `idx_notifications_user_created`. Due-soon/overdue are **derived client-side**, never stored |
 | `staff_notes` | `Note` | Notes pinned to a site/date. Class is `Note` but tablename is **`staff_notes`**. All schema sources now create `staff_notes`; a legacy `notes` table on old installs is migrated and dropped by `migrations/add_staff_notes.sql` / the tenant auto-migration |
 | `settings` | `Settings` | Instance key-value settings (e.g. `instance_title`, `show_weekends`) |
 | `predefined_phases` | `PredefinedPhase` | Phase name templates offered in the UI |
 | `project_presence` | `ProjectPresence` | Active-viewer rows (60s timeout). Written by the WS layer; presence has no HTTP API |
 
-### Master database tables (`milestone_admin`)
+### Master database tables (`MASTER_DB_NAME`, app default `milestone_master`)
 
 | Table | Model | Purpose |
 |-------|-------|---------|
@@ -591,7 +667,9 @@ Two declarative bases: **`Base`** (tenant databases, `app/database.py`) and **`M
 - The list of available migrations is the set of `.sql` files in `migrations/` — run either runner with no argument to list them. One stray legacy migration lives at `scripts/sql/migrations/001_add_max_capacity.sql`.
 - **Auto-migrations run in two places** on top of the SQL files: `master_db._apply_pending_migrations()` (master schema drift, on startup) and `tenant_manager._run_auto_migrations()` (per-tenant drift, on first pool creation — and, in single-tenant mode, at startup via `run_single_tenant_auto_migrations()` in the lifespan). Both are idempotent. The tenant one ends with two non-DDL steps: `encrypt_tenant_sso_secret()` (legacy plaintext `sso_config.client_secret` → encrypted; needs the in-process key, so it cannot be a SQL file) and the Python data-migration hook `run_data_migrations()` (`app/services/tenant_data_migrations.py`: guarded FK rewrites `projects.site_id` → CASCADE, `card_comments.author_id` → nullable SET NULL, then orphan cleanup of `custom_column_values` / `card_comments`). Each step runs in its own transaction and never raises. The SQL lives in `tenant_provisioner` constants shared with the fresh-install schema and the `.sql` files — add new data fixes there, not inline.
 - 1.6.0 migration: `add_tag_groups_and_sites.sql` (`tag_groups`, `tag_sites`, the three new `tags` columns; also applied by the tenant auto-migration via the provisioner's `TAGS_UPGRADE_SQL`).
-- 1.5.0 migrations: `projects_site_fk_cascade.sql`, `card_comments_author_set_null.sql`, `cleanup_orphaned_values.sql` (all also applied automatically by the hook above). `migrations/migrate_all_tenants.sh` now **requires** a migration file argument; the legacy `run_migration_all_tenants.sql` / `generate_tenant_migrations.sql` helpers (which created a wrong-shaped `company_events`) were removed.
+- 1.5.0 migrations: `add_absence_types_and_event_sites.sql` (`absence_types`, `vacations.absence_type_id`, `company_event_sites`), `add_equipment_sites_and_site_closures.sql` (`equipment_sites`, `company_events.counts_as_unavailable`), plus `projects_site_fk_cascade.sql`, `card_comments_author_set_null.sql`, `cleanup_orphaned_values.sql` (all also applied automatically by the tenant auto-migration and the hook above). `migrations/migrate_all_tenants.sh` now **requires** a migration file argument; the legacy `run_migration_all_tenants.sql` / `generate_tenant_migrations.sql` helpers (which created a wrong-shaped `company_events`) were removed.
+- 1.4.0 migration: `add_kanban_tables.sql` (`status` + CHECK on `project_phases` / `project_subphases`, `card_comments`, `notifications`).
+- `upgrade_to_v90.sql` is a **legacy** pre-1.0 catch-up script, superseded by the tenant auto-migrations. ⚠ It also adds `predefined_phases.is_system` and `predefined_phases.color`, which no model or schema source has, so running it leaves schema drift behind.
 - `setup_databases.sql` is the canonical fresh-install schema and must stay in sync with the models (see the schema-change checklist above).
 
 ---
@@ -607,6 +685,7 @@ All routers are mounted under `/api` (multi-tenant deployments reach them at `/t
 | GET | `/health` and `/api/health` | public | Status, mode, version, backend id, `default_tenant`, DB reachability (`database: "error"` on failure — details only in the log) |
 | GET | `/api/ws-debug` | admin | WebSocket diagnostics (tenant, connection/online counts) |
 | POST | `/api/ws-debug/broadcast` | admin | Fire a synthetic `change:project` broadcast |
+| GET | `/api/docs`, `/api/redoc`, `/api/openapi.json` | admin | Swagger / ReDoc / schema, defined in `app/main.py` (not a router). Checked against the **session snapshot** role (`get_current_user_from_session`), 401 otherwise |
 
 ### Authentication & SSO (`app/routers/auth.py`)
 
@@ -650,11 +729,11 @@ All routers are mounted under `/api` (multi-tenant deployments reach them at `/t
 | POST | `/sites/{id}/holidays` | superuser | Add custom holiday (a span over 366 days → 400, like every holiday/event write and import) |
 | PUT | `/sites/{id}/holidays/{hid}` | superuser | Edit any holiday (sets `is_custom = 1`) |
 | DELETE | `/sites/{id}/holidays/{hid}` | superuser | Delete any holiday — custom or Nager (a Nager one returns on the next refresh) |
-| POST | `/sites/{id}/holidays/import` | superuser | Bulk import `{items:[{date,end_date,name}]}` as custom; dedup on (date, name) → `{created, skipped}` |
+| POST | `/sites/{id}/holidays/import` | superuser | Bulk import `{items:[{date,end_date,name}]}` (≤ 1 000 items, else 422) as custom; dedup on (date, name) → `{created, skipped}` |
 | POST | `/sites/{id}/holidays/refresh` | superuser | Fetch public holidays from the Nager API |
 | GET | `/sites/{id}/events`, `/events?siteId=` | user | Company events linked to a site (via `company_event_sites`; date bounds match overlapping events, each bound optional); responses carry `site_ids` + legacy `site_id` + `counts_as_unavailable` |
 | POST / PUT / DELETE | `/events`, `/events/{id}` | superuser | Multi-site event CRUD (`site_ids` + `counts_as_unavailable` on create/update; DELETE removes it from every site) |
-| POST | `/events/import` | superuser | Bulk import `{site_ids, color, counts_as_unavailable, items}` (the flag applies to newly created events only); an existing (date, end_date, name) gains missing site links → `{created, linked, skipped}` |
+| POST | `/events/import` | superuser | Bulk import `{site_ids, color, counts_as_unavailable, items}` (≤ 1 000 items, else 422; the flag applies to newly created events only); an existing (date, end_date, name) gains missing site links → `{created, linked, skipped}` |
 | POST / DELETE | `/sites/{id}/events`, `…/{eid}` | superuser | Legacy single-site create / unlink (event deleted only when no site is left) |
 
 All holiday/event writes also enforce site membership for superusers (`ensure_site_access` from `app/services/site_access.py`; admins any site).
@@ -714,7 +793,7 @@ These handlers call rich `broadcast_change()` — their paths are in `BroadcastM
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET / POST / PUT / DELETE | `/vacations`, `/vacations/{id}` | user | Vacation CRUD (own-user checks inside handlers; superusers any staff, tenant-wide); optional `absence_type_id`. `GET` without `siteId`: admins/superusers get all, a plain user only their own + colleagues sharing a site; `GET /vacations/{id}` answers 404 to a plain user for an absence of someone outside their sites |
-| POST | `/vacations/import` | user | Bulk import `{staff_id, items:[{start_date,end_date,description,absence_type_id}]}`; same own-user rule; dedup on (staff, start, end) → `{created, skipped}` |
+| POST | `/vacations/import` | user | Bulk import `{staff_id, items:[{start_date,end_date,description,absence_type_id}]}` (≤ 1 000 items, else 422); same own-user rule; dedup on (staff, start, end) → `{created, skipped}` |
 | GET | `/absence-types` | user | Absence types (active and inactive) |
 | POST / PUT / DELETE | `/absence-types`, `/absence-types/{id}` | admin | Absence type CRUD; DELETE → 409 while any vacation uses the type |
 | PUT | `/absence-types/reorder` | admin | Reorder (`{type_order: [ids]}`) |
@@ -740,11 +819,13 @@ The board itself has **no read endpoint** — `GET /projects/{id}` already retur
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/kanban/projects/{id}/comment-counts` | user | Comment counts per card (kept out of `GET /projects/{id}`, which is called once per project by `loadAllProjects()`) |
+| GET | `/kanban/projects/{id}/comment-counts` | user | Comment counts per card (kept out of `GET /projects/{id}`, which `fetchAllProjects()` calls once per project) |
+| GET | `/kanban/sites/{site_id}/comment-counts` | user | Counts for every card of a site in one query (the board's "All projects" mode) |
+| GET | `/kanban/sites/{site_id}/mentionable-users` | user | Mention picker: active members of the site plus all active admins → `{id, name, job_title}`. Deliberately not `GET /staff`, which leaves admins out |
 | PUT | `/kanban/cards/{entity_type}/{id}/status` | user **+ assignee-or-project-editor** | Move a card (superuser, the PM, or an assignee of that card); echoes the derived `{status, completion}` so the client reconciles without a refetch |
 | POST / DELETE | `/kanban/cards/{et}/{id}/assignees`, `…/{staff_id}` | user (PM/own-assignment) | Assign/unassign (editors manage anyone; any user may join/leave a card themself) — **creates the phase/subphase staff assignment** at `allocation` (1–100) or the assignee's `max_capacity` (409 on duplicate) |
-| GET / POST | `/kanban/cards/{et}/{id}/comments` | user | Comment thread; POST is open to **any authenticated user** |
-| PUT / DELETE | `/kanban/comments/{id}` | user (author; delete also admin/superuser) | Edit / delete a comment |
+| GET / POST | `/kanban/cards/{et}/{id}/comments` | user | Comment thread; POST is open to **any authenticated user**. Mentions are parsed from the body (`@[Name](id)`, unknown ids dropped) into `mentioned_user_ids`; POST notifies the mentioned users and the card's assignees (someone both gets only the mention) |
+| PUT / DELETE | `/kanban/comments/{id}` | user (author; delete also admin/superuser) | Edit / delete a comment; an edit re-reads the mentions and notifies only people newly mentioned |
 
 ⚠ `require_card_status_write` (`app/services/card_access.py`): project editor (the route passes `is_privileged=await can_edit_project(...)`, so superuser/admin/PM), **or** an assignee of that card. It takes `user_id`/`is_privileged` primitives, not a `User`, because `get_current_user` often returns the lightweight `SessionUser`.
 
@@ -786,18 +867,18 @@ The board itself has **no read endpoint** — `GET /projects/{id}` already retur
 | GET | `/import/mpp/test` | superuser | Verify the MPP parser (Java/mpxj) is functional |
 | POST | `/import/mpp` | superuser | Parse an uploaded MS Project file (preview) |
 | POST | `/import/project` | superuser | Upload + parse (CSV/XML/MPP/MPT/MPX) and create the project with its phase tree (completion clamped 0–100 via `apply_completion`, so finished tasks → Done) |
-
-All `/import/*` uploads are read with `read_upload_capped()` — **20 MB** cap (`MAX_IMPORT_UPLOAD_BYTES`, else 413) — and parsing runs via `run_in_threadpool` so mpxj/JPype never blocks the event loop.
 | GET / POST | `/import/test`, `/import/test-upload` | superuser | Import diagnostics |
 | POST | `/export/mpp/{pid}` | superuser | Export project to MPP |
 | GET / POST | `/export/csv/{pid}` | superuser | Export project to CSV |
 | GET | `/export/site/{sid}/excel` | superuser | Full site export to `.xlsx` (see Site Export contract) |
 
+All `/import/*` uploads are read with `read_upload_capped()` — **20 MB** cap (`MAX_IMPORT_UPLOAD_BYTES`, else 413) — and parsing runs via `run_in_threadpool` so mpxj/JPype never blocks the event loop.
+
 ### Admin portal (`routers/admin/*` → `/api/admin/*`, master DB, `admin_session` cookie)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/admin/auth/login` / `/admin/auth/logout` | public / portal | Portal login/logout (login throttled like `/auth/login`, scope `admin`) |
+| POST | `/admin/auth/login` / `/admin/auth/logout` | public / public | Portal login/logout (login throttled like `/auth/login`, scope `admin`; logout has no auth dependency — it deletes the cookie's session if there is one) |
 | GET | `/admin/auth/me` | optional | Current admin (also while `must_change_password`) |
 | POST | `/admin/auth/change-password` | portal* | Change password (min 8 chars; clears `must_change_password`). *The only write an admin with `must_change_password` may call — every other portal route returns 403 until then |
 | GET | `/admin/tenants`, `/admin/tenants/{id}` | portal | Tenant list / detail |
@@ -807,7 +888,8 @@ All `/import/*` uploads are read with `read_upload_capped()` — **20 MB** cap (
 | POST | `/admin/tenants/{id}/reset-admin-password` | portal | Reset the tenant's admin password |
 | GET | `/admin/tenants/{id}/audit` | portal | Tenant audit log |
 | GET | `/admin/stats` | portal | System statistics |
-| GET / POST / PUT / DELETE | `/admin/users`, `…/{id}` | superadmin | Admin-user CRUD |
+| GET / POST | `/admin/users` | superadmin | List / create portal admins |
+| PUT / DELETE | `/admin/users/{id}` | superadmin | Update / delete a portal admin (there is no `GET /admin/users/{id}`) |
 
 ### Organizations (`admin_organizations.py` → `/api/admin/organizations`, all portal auth)
 
@@ -815,6 +897,7 @@ All `/import/*` uploads are read with `read_upload_capped()` — **20 MB** cap (
 |--------|------|-------------|
 | GET / POST / PUT / DELETE | ``, `/{id}` | Organization CRUD |
 | GET / PUT / DELETE | `/{id}/sso` | Organization SSO config (encrypted secret) |
+| POST | `/{id}/sso/test` | SSO diagnostic: local checks, outbound-proxy report, Entra discovery and a client-credentials token request → `{credentials_ok, summary, checks[]}`. Proves the directory id, client id and secret, not the redirect URI (reported as a manual check); failures go through `parse_entra_token_error` |
 | PUT / DELETE | `/{id}/tenants/{tid}` | Attach / detach a tenant |
 | PATCH | `/tenants/{tid}/groups` | Set tenant SSO group access (`required_group_ids`, `group_membership_mode`) |
 
@@ -860,6 +943,14 @@ Two configuration levels, resolved by `SSOService.get_effective_sso_config()`:
 
 Flow: `GET /auth/sso/login` builds the Entra authorization URL with an **HMAC-signed `state` carrying the tenant slug and a nonce** (org SSO uses one shared callback URL with no `/t/{slug}/` prefix, so the slug must survive the round-trip) and sets the nonce as the `sso_nonce` cookie (10 min) → `GET /auth/sso/callback` verifies the state signature and that its nonce equals this browser's cookie (so the flow only completes in the browser that started it and a callback URL cannot be replayed; the cookie is cleared on every outcome), exchanges the code, fetches the profile from Microsoft Graph `/me`, optionally validates group membership (`fetch_user_groups` pages Graph `/me/memberOf`; `required_group_ids` + `group_membership_mode` `any`/`all` on the tenant), finds or auto-creates the user (`auto_create_users`, `default_role`), creates a session, and redirects to `/t/{slug}/`.
 
+**Failure handling** (`app/routers/auth.py`, `app/services/sso_errors.py`):
+- Entra token-endpoint and Graph failures go through `parse_entra_token_error()`: the only remote-derived text a user can see is a regex-validated `AADSTS\d{4,7}` code, mapped to one of our fixed messages; Entra's `error` / `error_description` are never reflected.
+- Callback failures redirect to `/t/{slug}/?sso_error=<message>` (`_sso_error_redirect`, slug recovered from the signed state); unexpected exceptions are caught and redirected the same way instead of a 500, and an unreachable identity provider reads "Could not reach the identity provider".
+- An organization-SSO lookup or decrypt failure **fails closed** (`OrgSSOLookupError` → "temporarily unavailable"); it never falls back to tenant-level SSO.
+- Both hops log a config fingerprint (`_config_fingerprint`, no secrets) so an operator can see which config served a sign-in; config values are whitespace-stripped.
+- `SSOConfig.is_configured` requires a client secret, so a row without one hides the sign-in button instead of failing with Entra's misleading "invalid client".
+- Admins can test an organization's credentials without a user sign-in: `POST /api/admin/organizations/{id}/sso/test`.
+
 ## Multi-Tenancy Internals
 
 - **`TenantMiddleware`** (`app/middleware/tenant.py`) is a **pure ASGI middleware** (not `BaseHTTPMiddleware` — that breaks WebSockets). It matches `/t/{slug}/...`, resolves the tenant through a 60-second in-memory cache (plain dicts, not ORM objects, to avoid session-detachment issues), rewrites `scope["path"]` to strip the prefix, and stores `tenant` / `tenant_slug` / `tenant_engine` in `scope["state"]`. Missing/inactive/unreachable tenants → 404/403/503 (the 503 body is a fixed message; the DB error goes only to the log). **Misses are cached too** (60 s, in a separate `_negative_cache` capped at 1 000 entries, expired/oldest evicted first — hits are never evicted by a miss flood), so a flood of unknown slugs doesn't hit the master DB; `clear_tenant_cache(slug)` drops hits and misses. WebSocket scopes are passed through untouched (the WS handler resolves the tenant itself). Only wraps the app when `MULTI_TENANT=true`.
@@ -881,10 +972,11 @@ Flow: `GET /auth/sso/login` builds the Entra authorization URL with an **HMAC-si
 
 ### Frontend
 
-- `useWebSocket` (`src/hooks/useWebSocket.ts`): connects to `ws(s)://<host><tenantPrefix>/ws`, exponential backoff (2 s base, 60 s max, 5 attempts), does **not** reconnect on close codes 1000/1001/4000–4006; after giving up (or a non-terminal drop) it retries immediately on the browser `online` event and when the tab becomes visible (`visibilitychange`) — never after 4000–4006. 4001/4003 call `onSessionInvalid` → `WebSocketContext` re-checks `/auth/me` and calls `expireSession()` if the session is gone. Exposes `offline` (browser offline, or settled and not connected/connecting) → the Header's `SyncStatus` "Offline" badge. Tracks `onlineUsers` (presence messages) and `recentChanges` (any `change:*`, expiring 30 s after local receipt to dodge clock skew).
-- `WebSocketContext` (`src/contexts/WebSocketContext.tsx`) turns changes into data refreshes: `slicesForEntity()` maps entity type → data slices (`phase`→`projects`, `staff`→`staff`+`projects`, `bank_holiday`/`company_event`→`siteCalendar` (current site's holidays + events), `absence_type`→`absenceTypes`+`vacations`, `site`→`sites`+`siteCalendar`+`projects`+`tags`+`equipment` (site writes are rare; a site delete cascades its projects, site-only tags and site-only equipment), `tag`→`tags`+`projects`, `tag_group`→`tags` (the `tags` slice reloads tags **and** groups), `custom_column`/`custom_column_value`→`customColumns` (customColumnStore only, no project reload), `settings`→`settings`, `user`→`staff`+`currentUser`+`projects` (role/site changes and deactivation of the signed-in user apply live), `note`/`card_comment`→ nothing, unknown → everything; the mapping lives in `src/contexts/wsSlices.ts`), then refreshes via a **200 ms debounced, coalesced** runner with an in-flight guard that re-stages if more changes arrive mid-fetch. A phase drag producing N child updates results in one refetch per slice. Unknown entity types refresh everything, so new backend entities need no client change.
+- `useWebSocket` (`src/hooks/useWebSocket.ts`): connects to `ws(s)://<host><tenantPrefix>/ws`, exponential backoff (2 s base, 60 s max, 5 attempts), does **not** reconnect on close codes 1000/1001/4000–4006; after giving up (or a non-terminal drop) it retries immediately on the browser `online` event and when the tab becomes visible (`visibilitychange`) — never after 4000–4006. 4001/4003 call `onSessionInvalid` → `WebSocketContext` re-checks `/auth/me` and calls `expireSession()` if the session is gone; if `/auth/me` says the session is still valid (a handshake cookie race), the hook retries **once** with a fresh backoff budget, and a repeated 4001/4003 stays terminal. Exposes `offline` (browser offline, or settled and not connected/connecting) → the Header's `SyncStatus` "Offline" badge. Tracks `onlineUsers` (presence messages) and `recentChanges` (any `change:*`, expiring 30 s after local receipt to dodge clock skew).
+- `WebSocketContext` (`src/contexts/WebSocketContext.tsx`) turns changes into data refreshes: `slicesForEntity()` maps entity type → data slices (`project`/`phase`/`subphase`/`assignment`/`staff_assignment`/`equipment_assignment`/`predefined_phase`→`projects`, `staff`→`staff`+`projects`, `equipment`→`equipment`+`projects`, `equipment_block`→`equipmentBlocks`, `vacation`→`vacations`, `skill`→`skills`+`staff`, `bank_holiday`/`company_event`→`siteCalendar` (current site's holidays + events), `absence_type`→`absenceTypes`+`vacations`, `site`→`sites`+`siteCalendar`+`projects`+`tags`+`equipment` (site writes are rare; a site delete cascades its projects, site-only tags and site-only equipment), `tag`→`tags`+`projects`, `tag_group`→`tags` (the `tags` slice reloads tags **and** groups), `custom_column`/`custom_column_value`→`customColumns` (customColumnStore only, no project reload), `settings`→`settings`, `user`→`staff`+`currentUser`+`projects` (role/site changes and deactivation of the signed-in user apply live), `note`/`card_comment`→ nothing, unknown → everything; the mapping lives in `src/contexts/wsSlices.ts`; Kanban writes reuse `phase`/`subphase`/`staff_assignment`/`card_comment`, there is no Kanban-specific entity), then refreshes via a **200 ms debounced, coalesced** runner with an in-flight guard that re-stages if more changes arrive mid-fetch. A phase drag producing N child updates results in one refetch per slice. Unknown entity types refresh everything, so new backend entities need no client change.
 - While What-If is active, refreshes of the sandboxed slices (`projects`, `customColumns` — `WHAT_IF_SANDBOXED_SLICES` in `wsSlices.ts`) are deferred and run once What-If ends, so a teammate's change never replaces the plan being edited.
-- `OnlineUsers` and `ActivityFeed` render presence and the change feed (`recentChanges` from `useWebSocket`). A per-entity "changed by X" badge (`ChangeIndicator` + `useEntityChangeIndicator`) was built but never wired up and has been removed as dead code.
+- `notification:new` → `WebSocketContext.handleNotificationReceived` → `notificationStore.receive()` (dedupes by id). It is only a live hint; the bell reloads from the server on mount and focus.
+- `OnlineUsers` and `ActivityFeed` render presence and the change feed (`recentChanges` from `useWebSocket`). A per-entity "changed by X" badge (`ChangeIndicator` + `useEntityChangeIndicator`) was built but never wired up and has been removed as dead code; its query helpers are still exposed but have no consumers (`getChangesForEntity` / `isRecentlyChanged` on the context, `isChangeRecent` / `getChangeInfo` on the hook).
 
 ---
 
@@ -892,12 +984,12 @@ Flow: `GET /auth/sso/login` builds the Entra authorization URL with an **HMAC-si
 
 ### Tech stack
 
-React 18 + TypeScript 5.6, Vite 7, Vitest 4, Zustand 5, TanStack Query 5 (client cache defaults: staleTime 5 min, gcTime 30 min, retry 1, no refetch-on-focus; mutations retry 0), date-fns 4, CSS Modules. There is **no router package** — `react-router-dom` was removed as unused; there is no route tree.
+React 18 + TypeScript 5.6, Vite 7, Vitest 4, Zustand 5, date-fns 4, CSS Modules. TanStack Query 5 is installed and its `QueryClientProvider` configured in `main.tsx` (staleTime 5 min, gcTime 30 min, retry 1, no refetch-on-focus; mutations retry 0), but **no component uses `useQuery` / `useMutation`** — all data flows through the Zustand stores. There is **no router package** — `react-router-dom` was removed as unused; there is no route tree.
 
 ### Routing without a router
 
 - `src/main.tsx` boots the QueryClient and theme, and wires the API client (`configureApiClient`): What-If check + queue from `whatIfStore`, and `onUnauthorized: expireSession`. (The legacy `rd_*` storage migration was removed.)
-- `src/App.tsx` renders by branching: `window.location.pathname` starting with `/admin` → `AdminApp` (a fully separate admin-portal app: `AdminLoginScreen` / `AdminDashboard` with tenants/organizations/admins/stats tabs); otherwise auth state decides `LoginScreen` vs the main app (`WebSocketProvider` → `MainLayout` + `ModalContainer` + `ContextMenuContainer` + `ActivityFeed`).
+- `src/App.tsx` renders by branching: `window.location.pathname` exactly `/admin` or under `/admin/` (`isAdminPath`) → `AdminApp` (a fully separate admin-portal app: `AdminLoginScreen` / `AdminDashboard` with tenants/organizations/admins/stats tabs); otherwise `TenantApp`: auth state decides `LoginScreen` vs the main app, with `LoadingScreen` during the initial load and `LoadErrorScreen` (Retry) if it failed, then `WebSocketProvider` → `MainLayout` + `ModalContainer` + `ContextMenuContainer` + `ActivityFeed`. `TenantApp` also owns the `what-if-mode` body class.
 - In-app navigation = `viewStore.currentView` (`gantt` | `kanban` | `staff` | `equipment` | `crosssite` | `archived`) switched by the sidebar; **views are state, not URLs**. `setCurrentView` refuses every view but `gantt` while What-If is active (see What-If Mode).
 - **All administration is one Settings hub** (`components/settings/`), a full-size shared `Modal` with a grouped section list. The sidebar `AdminSection` has a single **Settings** entry (admins + superusers). Sections come from the `SETTINGS_SECTIONS` registry, each with a `minRole` mirroring the backend (superusers see General — per-browser theme only, the panel renders instance-wide settings for admins — Bank holidays, Company events, Users, Skills, Equipment, Equipment types, Predefined phases; Sites, Absence types, Tags, SSO are admin-only). Add new admin UI as a registry entry + `…Panel` component (no `<Modal>` wrapper), not as a new sidebar item or standalone modal. The General panel reports unsaved changes to the hub (`onDirtyChange`) so switching section/closing asks first. Custom columns stay in the Gantt project panel. Self-service time off is **My absences** (`MyAbsencesModal`, user menu).
 - The tenant prefix `/t/{slug}` comes from the URL: `getTenantPrefix()` in `client.ts` prepends it to every `/api/` call. Deep links work because FastAPI's catch-all (prod) or `tenantSpaPlugin` (dev) serve `index.html` for `/t/*` paths.
@@ -906,16 +998,16 @@ React 18 + TypeScript 5.6, Vite 7, Vitest 4, Zustand 5, TanStack Query 5 (client
 
 | Store | Persisted | Purpose |
 |-------|-----------|---------|
-| `appStore` | only `_persistedSiteId` | Domain data (sites, projects, staff, equipment, blocks, vacations, absence types, holidays+date Sets, events + derived `closureIndex` (built in `setCompanyEvents`), users, skills, tags + `tagGroups`, instance settings), auth state, current site/user, critical-path state. Site switch **clears undo history**. Exports selectors (`selectSiteProjects`, `selectCanManageResources`, `selectStaffSiteIds`, …) |
-| `viewStore` | yes | View mode (`week`/`month`/`quarter`/`year`) + a single `cellWidth` (per-mode *defaults* applied on mode switch, then freely zoomed — widths are not remembered per mode), current view, current date, resource tab, expansion Sets (persisted: projects/phases/subphases; session-only: staff/equipment/bank-holidays), level-based expand/collapse, scroll position, panel collapse flags, overview toggles (staff/equipment — mutually exclusive), `tagFilters` (project tag filter `{tagIds, noneGroupIds}` keyed `"<tenant slug>:<site id>"` via `tagFilterKey()` in `utils/tags.ts` — the storage key is per origin, so tenants must not share entries; persisted, stale ids pruned when applied), `ganttGrouping` (tag group id) + `collapsedGanttSections` (`tag-<id>`/`none` keys) for the Gantt "Group by", and `ganttColorBy` (tag group id) for the Gantt "Colour by" (independent of Group by), same `tagFilterKey` keying and rehydrate sanitising (`sanitizeSiteGroupIds`), not cleared on logout |
-| `uiStore` | no | Active modal + editing context, Settings hub state (`openSettings(section?, intent?)` → `activeModal: 'settingsHub'` + `settingsSection` + `settingsIntent` view/add/edit; legacy modal keys `settings`/`manageSites`/`siteManagement`/`site`/`userManagement`/`manageEquipment`/`predefinedPhases`/`ssoConfig`/`bankHoliday`/`customHoliday`/`companyEvent` are aliases that open the hub at the matching section; `openSettings`, `setActiveModal('settingsHub')` and the alias keys are no-ops while What-If is active), tooltip, drag/resize state, drag indicator, dependency-linking state, phantom-sibling state, context menu, scroll/zoom triggers, resource drag |
-| `whatIfStore` | no | What-If mode flag, `structuredClone` snapshot of projects, queued operations |
+| `appStore` | only `_persistedSiteId` | Domain data (sites, projects, staff, equipment, blocks, vacations, absence types, holidays+date Sets, events + derived `closureIndex` (built in `setCompanyEvents`), users, skills, tags + `tagGroups`, instance settings), auth state, current site/user, critical-path state. Site switch **clears undo history**. Exports only non-array selectors (`selectStaffSiteIds`, `selectAbsenceTypesById`, `selectCanManageResources`) — array selectors were removed because they re-render forever under Zustand 5 |
+| `viewStore` | yes | View mode (`week`/`month`/`quarter`/`year`) + a single `cellWidth` (per-mode *defaults* applied on mode switch, then freely zoomed — widths are not remembered per mode), current view, current date (memory-only), resource tab, expansion Sets (persisted: projects/phases/subphases; session-only: staff/equipment/bank-holidays), level-based expand/collapse, scroll position, panel collapse flags, overview toggles (staff/equipment — mutually exclusive), `tagFilters` (project tag filter `{tagIds, noneGroupIds}` keyed `"<tenant slug>:<site id>"` via `tagFilterKey()` in `utils/tags.ts` — the storage key is per origin, so tenants must not share entries; persisted, stale ids pruned when applied), `ganttGrouping` (tag group id) + `collapsedGanttSections` (`tag-<id>`/`none` keys) for the Gantt "Group by", and `ganttColorBy` (tag group id) for the Gantt "Colour by" (independent of Group by), same `tagFilterKey` keying and rehydrate sanitising (`sanitizeSiteGroupIds`), not cleared on logout; Kanban board prefs `kanbanProjectId`, `kanbanGrouping` (`none`/`project`/`phase`/`assignee`/`customColumn`) + `kanbanGroupingColumnId`, `kanbanMyTodoOnly` (persisted) |
+| `uiStore` | no | Active modal + editing context, Settings hub state (`openSettings(section?, intent?)` → `activeModal: 'settingsHub'` + `settingsSection` + `settingsIntent` view/add/edit; legacy modal keys `settings`/`manageSites`/`siteManagement`/`site`/`userManagement`/`manageEquipment`/`predefinedPhases`/`ssoConfig`/`bankHoliday`/`customHoliday`/`companyEvent` are aliases that open the hub at the matching section; `openSettings`, `setActiveModal('settingsHub')` and the alias keys are no-ops while What-If is active), tooltip, drag/resize state, drag indicator, dependency-linking state, phantom-sibling state, context menu, scroll/zoom triggers, resource drag, Kanban card dialog (`openKanbanCardModal`), `modalContext.returnTo` (reopen the previous modal on close, e.g. My absences → absence dialog), `isLoading` / `loadingMessage` |
+| `whatIfStore` | no | What-If mode flag, `structuredClone` snapshot of projects, queued operations, `whatIfApplyError` `{applied, total, message}` + `dismissApplyError`, `reset` |
 | `undoStore` | no | Undo/redo stacks of project-tree snapshots (max 50) |
 | `customColumnStore` | visibility only | Columns, values map (key `"{columnId}-{entityType}-{entityId}"`), per-column filters (`__empty__` sentinel for blanks), visibility |
-| `notificationStore` | no | In-app notification inbox (server-owned; not persisted — the bell reloads on mount/focus) |
-| `adminStore` | no | Admin portal: admin user, tenants, organizations, admin users, stats, active tab |
+| `notificationStore` | no | In-app notification inbox (server-owned; not persisted — the bell reloads on mount/focus), `unreadCount`, `panelOpen`; `receive()` dedupes live pushes by id. Derived due-soon/overdue reminders are **not** here — the bell merges them in from `useDerivedDueNotifications` |
+| `adminStore` | no | Admin portal: admin user + `mustChangePassword`, tenants, organizations, admin users, stats, active tab, `selectedTenantId` / `selectedOrganizationId`. Not re-exported from `stores/index.ts` and not touched by `resetAllStores()` |
 
-Persistence gotcha: Sets are serialized as arrays and restored in custom `merge` functions; `currentDate` persists as an ISO string.
+Persistence gotchas: Sets are serialized as arrays and restored in custom `merge` functions. viewStore's `merge` is **field by field**, so every field added to `partialize` must also be listed in `merge`, or it silently resets on every reload. `currentDate` and `timelineScrollLeft` are memory-only — the app always opens on today.
 
 ### API client (`src/api/client.ts`)
 
@@ -923,16 +1015,17 @@ Persistence gotcha: Sets are serialized as arrays and restored in custom `merge`
 - Cookie auth (`credentials: 'include'`) — no token headers.
 - Dev detection: when the page runs on port 3333, API and WS target `:8485` directly (no Vite proxy).
 - FastAPI 422 validation errors are flattened to `field: message` strings; non-JSON responses raise with the first 200 chars logged (catches proxy HTML).
-- **Session expiry**: a 401 on a session-bound call fires the `onUnauthorized` hook → `expireSession()` (`src/stores/index.ts`): `resetAllStores()` (appStore except the persisted site id, What-If, undo, notifications, custom-column data) and back to the login screen. `useAuth.logout` also calls `resetAllStores()`, so nothing carries over to the next person on the tab. Add new stores to `resetAllStores()`.
+- **Session expiry**: a 401 on a session-bound call fires the `onUnauthorized` hook → `expireSession()` (`src/stores/index.ts`): `resetAllStores()` (appStore except the persisted site id, What-If, undo, notifications, custom-column data, `uiStore` back to its initial state, and the transient body classes `phantom-sibling-mode` / `resource-dragging` / `kanban-dragging` / `what-if-mode` removed; viewStore and column visibility are kept, adminStore is left alone) and back to the login screen. `useAuth.logout` also calls `resetAllStores()`, so nothing carries over to the next person on the tab. Add new stores to `resetAllStores()`.
 - **What-If interception** happens here (see What-If Mode).
+- Endpoint modules beyond the per-domain ones: `health.ts` (`getAppVersion()`), `importChunks.ts` (`postInChunks()`, used by `sites.ts` / `vacations.ts`), `kanban.ts`, `notifications.ts`. The last three are imported directly, not re-exported from `api/index.ts`.
 
 ### Transform layer (`src/api/endpoints/projects.ts`)
 
-All backend↔frontend field mapping is centralized: `transformProject/Phase/Subphase/StaffAssignment/EquipmentAssignment` handle snake_case↔camelCase, phase `type`↔`name`, `sort_order`↔`order_index`, and inject theme colors (`getPhaseColor`, `getDepthColor`) client-side. `loadAllProjects()` fetches the list then each project detail in parallel. Assignment CRUD routes differ by level (`/assignments/{id}` vs `/phase-staff/{id}` vs `/subphase-staff/{id}`) — the endpoint module picks the right one.
+All backend↔frontend field mapping is centralized. The frontend model is mostly snake_case like the API. Inbound, `transformProject/Phase/Subphase/StaffAssignment/EquipmentAssignment` map phase `type`→`name` and `sort_order`→`order_index`, reshape the tree (`subphases`→`children`, `parent_type`/`parent_id`→`parent_phase_id`/`parent_subphase_id`), camelCase the assignment arrays, default `status` to `todo`, and inject theme colors (`getPhaseColor`, `getDepthColor`). Outbound, only phase `name`→`type` is mapped. `fetchAllProjects()` fetches the list then each project detail in parallel; `loadAllProjects()` wraps it and is a no-op during What-If. Assignment CRUD routes differ by level (`/assignments/{id}` vs `/phase-staff/{id}` vs `/subphase-staff/{id}`) — the endpoint module picks the right one.
 
 ### Gantt architecture (`src/components/gantt/`)
 
-- `GanttContainer` orchestrates: filters projects to the current site (non-archived), applies per-site custom ordering (localStorage via `getProjectOrder`/`sortProjectsByOrder`; default = confirmed-first, then name), memoizes timeline cells/headers, and renders **`ProjectPanel` (left tree) + resizer + `Timeline` (right)** inside `TimelineScrollProvider`, with optional embedded staff/equipment overview panels below (`canManageAnyProject`: admin/superuser, or the PM of at least one project).
+- `GanttContainer` orchestrates: filters projects to the current site (non-archived), orders them with `orderSiteProjects()` (`utils/storage.ts`, shared with the Kanban board: per-site custom order from localStorage, default = confirmed-first, then name), applies the tag filter (`useTagFilteredProjects`), memoizes timeline cells/headers, and renders **`ProjectPanel` (left tree) + resizer + `Timeline` (right)** inside `TimelineScrollProvider`, with optional embedded staff/equipment overview panels below (`canManageAnyProject`: admin/superuser, or the PM of at least one project).
 - `ProjectPanel/`: header actions, right-aligned across the name column + custom columns (new/import/manage columns/visibility/tag filter — `TagFilterDropdown` from `components/common`, also mounted in the Kanban toolbar — then `GroupByDropdown` and `ColorByDropdown`, both thin wrappers over the shared `TagGroupChoiceDropdown` shell; the header dropdowns hang from the positioned `.headerContent`, right-aligned and width-capped) + `SectionRow` (Group-by section header) + rows `ProjectRow → PhaseRow → SubphaseRow → AssignmentRow` + custom-column cells; wrapped in `ReorderProvider`.
 - `Timeline/`: `TimelineHeader` + `TimelineBody` — grid cells (weekend/holiday/company-event backgrounds; week separators when weekends are hidden), `TodayLine`, per-project bars (`ProjectBar`/`PhaseBar`), `DependencyLayer` (arrows), phantom overlays, `DragIndicator`, `ResourceDropOverlay`. Handles scroll persist/restore (200 ms debounce), zoom re-centering on the visible center date, view-mode changes preserving the left-edge date, Ctrl+wheel zoom, and scroll-to-today/date triggers.
 - **Group by tag group**: `GanttContainer` turns `useGanttGrouping()` + the tag-filtered projects into one flat `GanttRow[]` (`components/gantt/utils/projectSections.ts`: `buildProjectSections` → `buildGanttRows`; first tag in group order wins, empty sections omitted, "No <group>" last) and hands the **same array** to `ProjectPanel` (`SectionRow`) and `TimelineBody` (`div.groupBand`, a direct child of `.rows`); both panes fall back to a memoised flat list when `rows` is omitted. Section rows are `--section-row-height` (36 px) + 1 px border, content-box, = `SECTION_ROW_TOTAL_HEIGHT` (37) in `calculateRowPositions(rows, …)`, keyed `section-<key>`; collapsed sections' projects get no position (no arrows, no drop target). Section class names must not contain `row` and carry no `data-project-id`/`data-phase-id` (the drag/resize hooks and `DependencyLayer` find rows by `[class*="row"]` / data attributes). Project drag-reorder is off while grouped (`onProjectReorder` undefined).
@@ -942,23 +1035,30 @@ All backend↔frontend field mapping is centralized: `transformProject/Phase/Sub
 - **Critical path** (`components/gantt/utils/criticalPath.ts`): full CPM forward/backward pass, `totalFloat <= 0` = critical; loaded via dynamic import from `appStore.toggleCriticalPath` to avoid a circular dependency.
 - **Undo/redo** (`useUndoRedo` + `components/gantt/utils/diffProjects.ts`): restore snapshot, diff old-vs-new date fields **and dependency arrays** into minimal `PendingUpdate`s, persist; on failure reload + clear history.
 - **Dependencies** are stored per phase/subphase as JSON `[{id, type, lag?, entity?: 'phase'|'subphase'}]`. Phase and subphase ids are separate sequences, so new links always write `entity`; legacy entries without it resolve **phase-first**. Always go through `components/gantt/utils/dependencies.ts`: `resolveDependencyPredecessor` (lookup), `dependencyMatches` (find/delete a link, legacy-aware, missing `type` = FS), `wouldCreateDependencyCycle` (walks phases and subphases alike). Arrows, critical path and linking all use them.
-- **Timeline headers**: week labels are ISO 8601 (`getISOWeek`/`getISOWeekYear` in `utils/date.ts` — 1–3 Jan 2027 is W53); the current month is highlighted.
+- **Timeline headers**: generated in `components/gantt/utils/timeline.ts` (`generateTimelineCells` / `generateTimelineHeaders`); week labels are ISO 8601 (date-fns `getISOWeek` / `getISOWeekYear` — 1–3 Jan 2027 is W53); the current month is highlighted.
 - **Custom-column cells** write one value with `setCustomColumnValue`, and a cascade to children with `setCustomColumnValuesBatch` (chunks of ≤ 500, the backend limit); on failure the touched cells are rolled back unless edited again since.
+
+### Kanban architecture (`src/components/views/KanbanView/`)
+
+- The board is a second rendering of the Gantt tree, not a separate dataset: `KanbanView` takes `appStore.projects`, orders them with `orderSiteProjects()`, filters with `useTagFilteredProjects()`, and derives cards with `utils/kanbanCards.ts` (card = leaf phase/subphase, milestones included; `groupCards()` builds the swimlanes for the `viewStore.kanbanGrouping` choice). `KanbanBoard` → `KanbanColumn` → `KanbanCard`; `KanbanToolbar` holds the project picker, grouping, tag filter and My-to-do toggle.
+- Comment counts come from `api/endpoints/kanban.ts` (`getCommentCounts` for one project, `getSiteCommentCounts` in "All projects" mode); the card dialog is `modals/KanbanCardModal.tsx` (assignees with `AllocationSlider`, comments with `MentionTextarea`, mention candidates from `getMentionableUsers`).
+- Dragging is `contexts/KanbanDragContext.tsx` — hand-rolled HTML5 drag events like `ReorderContext` and `useResourceDragDrop`, no DnD library. The move is optimistic; the server echoes `{status, completion}` and the client reconciles without a refetch.
+- Server writes broadcast as `phase` / `subphase` / `staff_assignment` / `card_comment` (see Real-Time Collaboration); a card status change from the Gantt slider is applied locally by `statusAfterCompletionWrite` because the rich broadcast excludes the sender.
 
 ### Hooks catalog (`src/hooks/`)
 
 | Hook | Purpose |
 |------|---------|
 | `useAuth` | Mount-time `checkAuth()`, login/logout (logout calls `resetAllStores()`) |
-| `useDataLoader` | Parallel initial data load + site resolution + granular refreshers (`refreshProjects`, `refreshSiteData`, …) used by the WS refetch layer |
+| `useDataLoader` | Parallel initial data load + site resolution + granular refreshers (`refreshProjects`, `refreshSiteData`, `refreshCustomColumns`, `refreshStaff`, `refreshEquipmentBlocks`, `refreshAbsenceTypes`) that components call after their own writes. `WebSocketContext` does **not** use it — it fetches on its own |
 | `useWebSocket` / `WebSocketContext` | See Real-Time Collaboration |
 | `useDragAndDrop` | Gantt bar dragging, mouse and touch (see drag pipeline); gated per project (`canEditProjectById`) and per own assignment (`canEditAssignment`) |
 | `useResize` | Bar edge resizing with date recalculation (mouse and touch; a `touchcancel` restores the bar without saving) |
-| `useResourceDragDrop` | HTML5 drag of staff/equipment from ResourcePanel onto rows; creates a 5-day default assignment (staff allocation defaults to `max_capacity`). Project editors drag anything; everyone else only their own staff card |
+| `useResourceDragDrop` | Drag **source** only for staff/equipment from ResourcePanel and the Staff/Equipment views: permission check (project editors drag anything; everyone else only their own staff card), drag data, uiStore drag state and body class. It deliberately has no create path: `Timeline/ResourceDropOverlay.tsx` creates the 5-day default assignment (staff allocation defaults to `max_capacity`), checks the target's permission and blocks drops during What-If |
 | `useDependencyLinking` | Two-click dependency creation |
 | `usePhantomSibling` | Shift+click spawns a phantom sibling bar following the cursor (lag computed on placement) |
 | `useUndoRedo` | Undo/redo orchestration (see above) |
-| `useKeyboardShortcuts` | Esc (linking → phantom priority), Home (today), `+`/`-` zoom (12–120 px), Ctrl/Cmd+Z / Ctrl/Cmd+Y / Ctrl/Cmd+Shift+Z. **Every shortcut is ignored while a modal is open** (`uiStore.activeModal`) — the modal owns the keyboard, and the shared `Modal` owns Escape so guarded `onClose`s like the Settings hub's run |
+| `useKeyboardShortcuts` | Esc (linking → phantom priority), Home (today), `+`/`-` zoom (±4 px, 12–120 px), Ctrl/Cmd+Z / Ctrl/Cmd+Y / Ctrl/Cmd+Shift+Z. **Every shortcut is ignored while a modal is open** (`uiStore.activeModal`) — the modal owns the keyboard, and the shared `Modal` owns Escape so guarded `onClose`s like the Settings hub's run. Also ignored while focus is in an input, textarea or contentEditable |
 | `useWhatIfBlocked` | `{blocked, reason(action)}` for create entry points during What-If (`whatIfUnavailableMessage()`) — use it for any new create button/dialog |
 | `useGanttGrouping` | Current site's Gantt "Group by" (`{siteId, group, siteTags, collapsedKeys, setGroup, toggleSection, collapseAll, expandAll}`); primitive selectors, stale group id → `group: null` without a write. Import from `@/hooks/useGanttGrouping` (tests mock `@/hooks` partially) |
 | `useGanttColorBy` | Current site's Gantt "Colour by" (`{siteId, group, setGroup}`), read by every `ProjectTimeline` row and the `ColorByDropdown`; same rules as `useGanttGrouping` (primitive selectors, stale id → `null` without a write, no-op without a site). Import from `@/hooks/useGanttColorBy` |
@@ -966,22 +1066,25 @@ All backend↔frontend field mapping is centralized: `transformProject/Phase/Sub
 | `useCtrlScrollZoom` | Ctrl+wheel zoom keeping the date under the cursor fixed |
 | `useScrollSync` | Bidirectional vertical scroll sync between two elements (used by GanttContainer and the Staff/Equipment/CrossSite/Archived views) |
 | `useWorkloadCalculation` | Per-cell staff workload for the Staff heatmap (allocations, vacations incl. recurring, visual states). Only absences whose type `counts_as_unavailable` (or untyped ones) zero capacity. An optional closure lookup (`ClosureLookup`, usually `getClosureOn` bound to the person's sites) zeroes capacity on site-closure days → `vacation`/`conflict` state, `closureName`/`closureColor`, tooltip *Site closed: …* |
-| `useEquipmentOverlaps` | Equipment double-booking detection + today-status (`blocked` > `booked` > available) |
+| `useEquipmentOverlaps` / `useEquipmentTodayStatus` | Equipment double-booking detection / today-status (`blocked` > `booked` > available) — two hooks in one file |
+| `useTagFilter` | `useSiteTagFilter()` (the current site's `viewStore.tagFilters` entry, shared by the Gantt, the Kanban board and `TagFilterDropdown`; ids of tags deleted or re-scoped away from the site are ignored on read and pruned on the next write) + `useTagFilteredProjects(projects)` |
+| `useHeaderDensity` | The one definition of the header's width tiers: `full` ≥ 1600 px, `compact` ≥ 1280, `condensed` ≥ 1024, `minimal` below (matchMedia). The Header sets it as `data-density` and moves controls into `HeaderOverflowMenu` by tier; header CSS must contain no pixel breakpoints |
+| `useDerivedDueNotifications` | Due-soon (`DUE_SOON_DAYS` = 7) and overdue reminders for the current user's cards, derived from `appStore.projects` (no scheduler server-side; nothing fires while the app is closed). Negative ids, `source: 'derived'`; dismissals in localStorage (`STORAGE_KEYS.KANBAN_DUE_DISMISSED`) keyed by card + due date, so a rescheduled card notifies afresh. Only consumer: `NotificationBell` |
 
 ### Utilities worth knowing (`src/utils/`)
 
-`date.ts` (~24 date helpers incl. business-day math, ISO week labels), `storage.ts` (typed storage wrappers, `STORAGE_KEYS`, theme system setting `data-theme` on `<html>`, per-site project order), `themeColors.ts` (phase/depth colors from CSS vars), `recurringVacation.ts` (`[R:0,2,4]` pattern + absence-type helpers: `getAbsenceOn()` is the single "is this person on an absence / unavailable on this day" check (site closures are separate, see `siteClosure.ts`) — honours recurring patterns and `counts_as_unavailable`; `guessAbsenceTypeId()` for .ics imports), `siteClosure.ts` (`buildClosureIndex()` expands closure events into a day → events index once, in `appStore.setCompanyEvents`; `getClosureOn(staffSiteIds, date, index)` is the closure counterpart of `getAbsenceOn()` — used by the Staff heatmap, StaffView `calcAvailability`, ResourceCard and Gantt assignment-bar markers), `permissions.ts` (per-project gates, mirrors `app/services/project_access.py` — see Frontend Conventions), `ics.ts` (the one `.ics` parser/generator: multi-VEVENT, all-day exclusive DTEND, `RRULE:FREQ=YEARLY` expansion, CATEGORIES, Outlook BUSYSTATUS, UTF-16; `buildICS()` for every export), `equipmentOverlap.ts`, `csvExport.ts` (MS-Project-compatible CSV: outline levels, `ID{FS|SS|FF|SF}±lag` predecessors), `xmlExport.ts` (MS Project XML), `subphaseUtils.ts` (subphase tree helpers), `persistFailure.ts` (`recoverFromPersistFailure` — the failure protocol), `reorder.ts` (local phase/subphase reorder applied before the server call, so it shows in What-If too), `localProjectTree.ts` (clone-and-replace patch/remove helpers for phases, subphases, assignments — dialogs apply edits to the store with these so they show while What-If skips the reload), `whatIf.ts` (`whatIfUnavailableMessage()` for blocked creates), `touchEvents.ts` (`getEventCoordinates`/`getPointerClientX`/`isTouchEvent`/`toMouseLikeEvent`/`armTouchGesture`/`NON_PASSIVE` — the one touch→mouse-like mapping used by `PhaseBar`, `ProjectBar`, the assignment bars and the drag/resize hooks), `uniqueById.ts` (dedupe the one-row-per-equipment–site-pair `GET /equipment` rows in unfiltered views), `tags.ts` (pure tag helpers: `tagsForSite`, `groupedTags`, `applyTagSelection` (radio behaviour in single-select groups), `projectPassesTagFilter` (within a group OR, across groups AND, `noneGroupIds` = "no tag from that group", unresolvable ids ignored), `projectBarColor(project, tagById, group)` — the colour of the project's tag in the "Colour by" group, first in group order (`sort_order`, name — the tag Group by files it under), null for no group / no tag; always resolve colour/group through `appStore.tags`/`tagGroups` by id (`indexTags`), never from the inline `project.tags[].color`, which is stale during What-If). Note: `criticalPath.ts`, `diffProjects.ts`, `dependencies.ts` and `completionStatus.ts` (`statusAfterCompletionWrite` — the slider applies the Kanban status locally, since the rich broadcast excludes the sender) live in `src/components/gantt/utils/`, not here.
+`date.ts` (~28 date helpers incl. business-day math, week labels, plus date-fns re-exports), `storage.ts` (typed storage wrappers, `STORAGE_KEYS` incl. `KANBAN_DUE_DISMISSED`, theme system setting `data-theme` on `<html>`, per-site project order + `orderSiteProjects()` / `compareProjectsDefault()` — the one ordering rule for the Gantt and the Kanban board), `kanbanCards.ts` (card derivation from the project tree, `groupCards()` / `KanbanGrouping`, `dueStateOf()`, `cardKey()`, and the status↔completion mirror of `app/services/card_status.py` guarded by `cardStatusMirror.test.ts`), `mentions.ts` (`@[Name](id)` tokens — mirror of `app/services/mentions.py` — plus the composer's offset-anchored mentions, which survive edits instead of being re-matched by name), `colorSwatches.ts` (`EVENT_COLOR_SWATCHES` / `DEFAULT_EVENT_COLOR` for events and absence types), `projectLevels.ts` (expansion levels shared by viewStore's level expand/collapse and the project row's +/- buttons), `themeColors.ts` (phase/depth colors from CSS vars), `recurringVacation.ts` (`[R:0,2,4]` pattern + absence-type helpers: `getAbsenceOn()` is the single "is this person on an absence / unavailable on this day" check (site closures are separate, see `siteClosure.ts`) — honours recurring patterns and `counts_as_unavailable`; `guessAbsenceTypeId()` for .ics imports), `siteClosure.ts` (`buildClosureIndex()` expands closure events into a day → events index once, in `appStore.setCompanyEvents`; `getClosureOn(staffSiteIds, date, index)` is the closure counterpart of `getAbsenceOn()` — used by the Staff heatmap, StaffView `calcAvailability`, ResourceCard and Gantt assignment-bar markers), `permissions.ts` (per-project gates, mirrors `app/services/project_access.py` — see Frontend Conventions), `ics.ts` (the one `.ics` parser/generator: multi-VEVENT, all-day exclusive DTEND, `RRULE:FREQ=YEARLY` expansion, CATEGORIES, Outlook BUSYSTATUS, UTF-16; `buildICS()` for every export), `equipmentOverlap.ts`, `csvExport.ts` (MS-Project-compatible CSV: outline levels, `ID{FS|SS|FF|SF}±lag` predecessors), `xmlExport.ts` (MS Project XML), `subphaseUtils.ts` (subphase tree helpers), `persistFailure.ts` (`recoverFromPersistFailure` — the failure protocol), `reorder.ts` (local phase/subphase reorder applied before the server call, so it shows in What-If too), `localProjectTree.ts` (clone-and-replace patch/remove helpers for phases, subphases, assignments — dialogs apply edits to the store with these so they show while What-If skips the reload), `whatIf.ts` (`whatIfUnavailableMessage()` for blocked creates), `touchEvents.ts` (`getEventCoordinates`/`getPointerClientX`/`isTouchEvent`/`toMouseLikeEvent`/`armTouchGesture`/`NON_PASSIVE` — the one touch→mouse-like mapping used by `PhaseBar`, `ProjectBar`, the assignment bars and the drag/resize hooks), `uniqueById.ts` (dedupe the one-row-per-equipment–site-pair `GET /equipment` rows in unfiltered views), `tags.ts` (pure tag helpers: `tagsForSite`, `groupedTags`, `applyTagSelection` (radio behaviour in single-select groups), `projectPassesTagFilter` (within a group OR, across groups AND, `noneGroupIds` = "no tag from that group", unresolvable ids ignored), `projectBarColor(project, tagById, group)` — the colour of the project's tag in the "Colour by" group, first in group order (`sort_order`, name — the tag Group by files it under), null for no group / no tag; always resolve colour/group through `appStore.tags`/`tagGroups` by id (`indexTags`), never from the inline `project.tags[].color`, which is stale during What-If; also `normalizeSiteTagFilter`, `isTagFilterActive`, `violatesSingleSelect`, `barTextColor`). Note: the Gantt utilities live in `src/components/gantt/utils/`, not here — `autoCalculation.ts`, `completionStatus.ts` (`statusAfterCompletionWrite` — the slider applies the Kanban status locally, since the rich broadcast excludes the sender), `criticalPath.ts`, `dependencies.ts`, `diffProjects.ts`, `projectSections.ts`, `rowPositions.ts` (`calculateRowPositions`, row heights incl. `SECTION_ROW_TOTAL_HEIGHT`) and `timeline.ts` (timeline cells and headers, `calculateBarPosition`, today position / scroll, `centredDayRangeAtX`).
 
 ## What-If Mode
 
 A client-side planning sandbox — the server is never aware of it.
 
-- Entering (`WhatIfToggle` → `whatIfStore.enterWhatIfMode`) snapshots `appStore.projects` via `structuredClone` and adds a `what-if-mode` body class.
-- While active, the **API client** intercepts every POST/PUT/PATCH/DELETE (exemption list: see Frontend Conventions): the request is queued as a `WhatIfOperation {id, method, url, body?, timestamp}` and a fake success `{success: true, whatIfMode: true}` is returned, so optimistic local state updates normally.
+- Entering (`WhatIfToggle`, shown to admins and superusers only → `whatIfStore.enterWhatIfMode`) snapshots `appStore.projects` via `structuredClone`; `TenantApp` adds the `what-if-mode` body class while the flag is on.
+- While active, the **API client** intercepts every POST/PUT/PATCH/DELETE (exemption list: see Frontend Conventions): the request is queued as a `WhatIfOperation {id, method, url, body?, timestamp}` and a fake success `{success: true, whatIfMode: true, id: Date.now()}` is returned, so optimistic local state updates normally.
 - **Discard**: restore the snapshot, drop the queue. **Apply**: temporarily disable the interception check (always restored in `finally`), replay queued operations sequentially with real requests, then reload from the server (`fetchAllProjects()`) and exit. **On the first failure Apply stops**: the failed and remaining operations stay queued, What-If stays **active**, projects are reloaded from the server and the snapshot is reset to that state (so a later Discard restores what really landed), and `whatIfApplyError {applied, total, message}` is set — `WhatIfToggle` shows it as a header banner with **Retry / Discard / Dismiss** (`dismissApplyError`), not an alert. Interception is back on during the post-Apply reload, so edits made in that window are queued and **kept** (appended after the remaining operations; on success What-If stays active with just those). If the stores were reset meanwhile (401 → `expireSession`, logout), Apply leaves them reset.
 - Undo history is cleared on enter, Discard and Apply (its snapshots straddle the sandbox boundary); undo/redo *inside* What-If persists through the API client, so it is queued like any edit.
 - `loadAllProjects()` is a **no-op during What-If** (returns the local projects) — every "reload after a write" goes through it, so a reload never wipes the sandbox. Use `fetchAllProjects()` when a real fetch is required. Consequently an edit must update the store locally (optimistically, or with `utils/localProjectTree.ts` after the queued call) or it stays invisible until Apply.
-- **Gantt-only.** `Header.tsx` renders `WhatIfToggle` only while `currentView === 'gantt'` (or a sandbox is already open). While What-If is active, view switching and the Settings hub are blocked in two layers: store guards (`viewStore.setCurrentView` accepts only `'gantt'`; `uiStore.openSettings`, `setActiveModal('settingsHub')` and the legacy `openModal` settings aliases are no-ops) cover every present or future caller, and `useWhatIfBlocked()` visibly disables the controls with the reason (`Sidebar/Navigation.tsx`, the Kanban deep link in `NotificationBell.tsx`, and every Gantt-reachable entry point is visibly disabled with the reason (`AdminSection`, `TagPicker` "Manage tags…", the embedded Staff view's `BankHolidaysRow`/`CompanyEventsRow`). The Delete buttons in `EquipmentPanel`/`UsersPanel` are disabled too (their bookings are plan data), and so are the holiday/event deletes in the embedded rows (calendar data is not in the snapshot, and the refetch after a queued delete would resurrect the row). Nothing is auto-discarded. Keep new navigation or Settings entry points behind the same hook.
+- **Gantt-only.** `Header.tsx` renders `WhatIfToggle` only while `currentView === 'gantt'` (or a sandbox is already open). While What-If is active, view switching and the Settings hub are blocked in two layers: store guards (`viewStore.setCurrentView` accepts only `'gantt'`; `uiStore.openSettings`, `setActiveModal('settingsHub')` and the legacy `openModal` settings aliases are no-ops) cover every present or future caller, and `useWhatIfBlocked()` visibly disables the controls with the reason. That covers `Sidebar/Navigation.tsx`, the Kanban deep link in `NotificationBell.tsx`, and every Gantt-reachable entry point: `AdminSection`, `TagPicker` "Manage tags…", and the embedded Staff view's `BankHolidaysRow` / `CompanyEventsRow`. The Delete buttons in `EquipmentPanel`/`UsersPanel` are disabled too (their bookings are plan data), and so are the holiday/event deletes in the embedded rows (calendar data is not in the snapshot, and the refetch after a queued delete would resurrect the row). Nothing is auto-discarded. Keep new navigation or Settings entry points behind the same hook.
 - **Creates are blocked during What-If** (a queued POST has no server id, and the new item could only appear after Apply): Phase/Subphase/Project dialogs and the Assignment dialog in create mode, absences (`VacationModal`, `MyAbsencesModal`), equipment blocks (`EquipmentBlockModal`), Kanban "add assignee"/"join", resource drops on the timeline and the context-menu "Add …"/"Assign …"/"Assign me" items are disabled via `useWhatIfBlocked()` / `whatIfUnavailableMessage()` (same wording as the import dialogs). Edits and deletes stay allowed, except holiday/event deletes in the Staff view rows (not snapshotted).
 - Project and custom-column WebSocket refreshes are deferred until What-If ends (see Real-Time Collaboration).
 - Implications for new code: any new write endpoint is queued by default (see Frontend Conventions); operations that depend on real server responses (created IDs used by later operations) do not work correctly inside What-If — the queue replays with the original bodies. New create entry points must be blocked the same way.
@@ -1010,7 +1113,7 @@ A client-side planning sandbox — the server is never aware of it.
 - **Admin portal**: `must_change_password` is enforced server-side (403 from `get_current_admin`).
 - **Sessions**: HTTP-only cookies; `SECURE_COOKIES=true` for HTTPS deployments; expired-session cleanup in `SessionService`; every request re-checks `active`/`role`; revocation (deactivate/delete/demote/password reset) destroys sessions and closes WebSockets.
 - **WebSocket**: `Origin` checked against the host / CORS origins (close 4003) — cross-site WebSocket hijacking guard; `/api/ws-debug*` admin-only.
-- **SSO**: HMAC-signed state bound to the browser by the `sso_nonce` cookie (one-time, 10 min); secrets never returned unmasked (`/sso/config/full` masks; a masked value submitted back keeps the stored secret on every write route); optional Entra group gating per tenant.
+- **SSO**: HMAC-signed state bound to the browser by the `sso_nonce` cookie (one-time, 10 min); only a validated `AADSTS` code from Microsoft ever reaches a user, Entra's own error text is never reflected; secrets never returned unmasked (`/sso/config/full` masks; a masked value submitted back keeps the stored secret on every write route); optional Entra group gating per tenant.
 - **Multi-tenant isolation**: a tenant request without a pool is a 503, never the `DB_*` database; tenant status/edit/delete changes reset the tenant cache and pool on the handling process.
 - **Provisioning**: tenant identifiers validated against SQL injection in `tenant_provisioner`.
 - ⚠ `GET /settings` and `GET /settings/{key}` have no auth dependency — never store sensitive values in the tenant `settings` KV table.
@@ -1021,17 +1124,17 @@ A client-side planning sandbox — the server is never aware of it.
 **Dockerfile** (3 stages):
 1. `builder` (`python:3.11-slim-bookworm` + libpq-dev/gcc/g++) — pip-installs `requirements.txt` to `/install` (g++ needed for `psutil`/`jpype1` source builds).
 2. `frontend` (`node:24-alpine`) — `npm ci && npm run build`.
-3. `runtime` (`python:3.11-slim-bookworm`) — runtime libs only (`libpq5`, **`default-jre-headless`** for MPP import, `curl`), non-root `appuser`, copies `VERSION` + `app/` + `migrations/` + built frontend → `public/`, healthcheck on `/health`, `EXPOSE 8485`, uvicorn via `docker-entrypoint.sh` (waits for DB(s), optional `AUTO_INIT_DB`).
+3. `runtime` (`python:3.11-slim-bookworm`) — runtime libs only (`libpq5`, **`default-jre-headless`** for MPP import, `curl`), non-root `appuser`, sets `PORT=8485` and `JAVA_HOME`, copies `VERSION` + `app/` + `migrations/` + built frontend → `public/` + the static `public/img/` logos, creates `/app/uploads`, healthcheck on `/health`, `EXPOSE 8485`, uvicorn via `docker-entrypoint.sh` (waits for DB(s) — non-fatal after `DB_WAIT_ATTEMPTS` — then optional `AUTO_INIT_DB`, whose failure exits the container non-zero).
 
 **Compose files**:
 
 | File | Services | Ports | Use case |
 |------|----------|-------|----------|
-| `docker-compose.yml` | `milestone` | 8485 | Production against an external PostgreSQL (`.env`-configured; Unraid-style uploads volume) |
+| `docker-compose.yml` | `milestone` | 8485 | Production against an external PostgreSQL (`.env`-configured). Unraid-specific: joins the external `guac-net` network and bind-mounts `/mnt/user/appdata/milestone/uploads` — adapt before using elsewhere |
 | `docker-compose.fresh.yml` | `db` (postgres:15-alpine) + `milestone` | 8486 app / 5433 db (overridable via `FRESH_*`) | Self-contained fresh install: `AUTO_INIT_DB=true`, seeded admin, named volumes. **Needs `.env` with `SESSION_SECRET`** (`${SESSION_SECRET:?…}` — compose refuses to start without it) |
 | `docker-compose.external-db.yml` | `milestone` | 8485 | Managed PostgreSQL (RDS/Azure/Cloud SQL) with auto-init (needs `PG_ADMIN_*`) |
-| `docker-compose.dev.yml` | `milestone` + `milestone-react-dev` | 8485 + 3333 | Backend + hot-reload React dev server |
-| `docker-compose.react-dev.yml` | `milestone-api` + `milestone-react-dev` | 8485 + 3333 | Unraid variant of the dev setup |
+| `docker-compose.dev.yml` | `milestone` + `milestone-react-dev` | 8485 + 3333 | Backend + hot-reload React dev server (also expects the external `guac-net` network) |
+| `docker-compose.react-dev.yml` | `milestone-api` + `milestone-react-dev` | 8485 + 3333 | Unraid variant of the dev setup (`guac-net`) |
 
 Health endpoint responds at **both** `/health` and `/api/health` (status, mode, version, DB check).
 
@@ -1047,7 +1150,7 @@ Four workflows in `.github/workflows/`. `backend.yml`, `frontend.yml` and `docke
 | `backend.yml` | `pip-audit --strict` over `requirements*.txt` (**blocking**); ruff check + format check on `app/`; pytest in 3 shards + aggregate `Tests` with the combined coverage — the `fail_under` floor, a per-file table + `::notice` total in the job summary, and on PRs **diff-cover ≥ 80 %** on changed lines; mypy; on push to `main`, a `Coverage Badges` job publishes `backend.json` |
 | `frontend.yml` | eslint; vitest in 2 shards + aggregate `Tests` with the merged coverage — the `coverage.thresholds` floors, a summary table + `::notice` total, and on PRs **diff-cover ≥ 80 %** on changed lines; `npm run build` (tsc + vite); `npm audit --audit-level=moderate` (**blocking** — see below); on push to `main`, a `Coverage Badges` job publishes `frontend.json` |
 | `docker.yml` | `docker build` of the production image (only when an image input changed) |
-| `version-check.yml` | PRs to `main` only: `dorny/paths-filter` on app-code paths → fails the PR unless `VERSION` changed vs `main` **and** `CHANGELOG.md` has a matching `## [<version>]` heading |
+| `version-check.yml` | PRs to `main` only: `dorny/paths-filter` on app-code paths → fails the PR unless `VERSION` changed vs the PR's **base commit** (not the live `main`, so a race with a merge cannot false-fail) **and** `CHANGELOG.md` has a matching `## [<version>]` heading. ⚠ Unlike the other three workflows, its paths-filter runs in the default REST mode (no `token: ""`), so it shares the 3000-file blind spot described above |
 
 The README coverage badges are shields.io endpoint badges reading `backend.json` / `frontend.json` from the orphan **`coverage`** data branch. Only the two `Coverage Badges` jobs write it (push to `main`, `contents: write`, one shared `coverage-badges` concurrency group, `[skip ci]` commits, each job touching only its own file) — never commit to it by hand.
 
@@ -1076,3 +1179,8 @@ Docs are **not** built by Actions — Cloudflare Pages builds them from `docs/bu
 - WebSocket close code **4003** means both "origin not allowed" and "user disabled"; the client treats it like 4001 (re-check the session, no reconnect).
 - `change:note` and `change:card_comment` map to **no** refetch slice on purpose (nothing in the stores holds notes; comment threads fetch themselves). Don't "fix" them to refresh everything.
 - `GET /vacations?siteId=` returns everyone at that site for any user; only the no-`siteId` form and `GET /vacations/{id}` are restricted for plain users (own + colleagues sharing a site; anything else is a 404).
+- **`MASTER_DB_NAME` has two defaults.** The app (`app/config.py`) defaults to `milestone_master`, but `migrations/run_migration.py`, `run_migration_master.py`, `migrate_all_tenants.sh` and `docker-compose.fresh.yml` default to `milestone_admin`. Set it explicitly wherever both run.
+- **Notification rules live in `app/services/notifications.py`**, not in routers: the actor never notifies themselves, one row per recipient per event (priority mention > assigned > status_change > comment), and rows are staged before the caller's commit so a notification lands in the same transaction as the change that caused it.
+- **Nager v3/v4** (`app/services/holidays.py`): the version is read from the last segment of `NAGER_API_URL` (anything unrecognised is treated as v4 with a warning); v3 logs its 2027-01-31 end-of-life warning when fetching; only `public`/`bank` holidays are stored (entries without a type are kept), so school or observance days never reduce capacity.
+- **The proxy settings are not symmetric**: PAC, proxy credentials, `PROXY_CA_CERT` and `PROXY_VERIFY_SSL` reach only the Nager import. SSO token exchange, Graph and the org SSO test use plain `httpx` clients that honour only the process `HTTP(S)_PROXY` variables.
+- The `SSO_*` environment variables are dead settings — nothing reads them. Configure SSO in-app (tenant Settings → SSO, or organization SSO in the admin portal).
