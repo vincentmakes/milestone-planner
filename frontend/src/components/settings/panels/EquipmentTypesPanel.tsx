@@ -328,9 +328,9 @@ function TypeForm({ typeName, existingTypes, allEquipment, onSave, onCancel, onD
         </Button>
         <Button
           type="submit"
-          disabled={isSubmitting}
+          loading={isSubmitting}
         >
-          {isSubmitting ? 'Saving...' : 'Rename Type'}
+          Rename Type
         </Button>
       </div>
     </form>

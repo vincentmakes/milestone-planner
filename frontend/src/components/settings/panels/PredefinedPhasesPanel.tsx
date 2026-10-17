@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useAppStore } from '@/stores/appStore';
 import { apiGet, apiPost, apiPut, apiDelete } from '@/api/client';
 import type { PredefinedPhase } from '@/types';
@@ -24,7 +25,7 @@ export function PredefinedPhasesPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [newPhaseName, setNewPhaseName] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [isAdding, setIsAdding] = useState(false);
+  const { isSubmitting: isAdding, begin: beginAdd, end: endAdd } = useSubmitGuard();
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingName, setEditingName] = useState('');
   
@@ -54,8 +55,8 @@ export function PredefinedPhasesPanel() {
   const handleAdd = async () => {
     if (!newPhaseName.trim()) return;
     
+    if (!beginAdd()) return; // Enter twice while the first add is in flight
     setError(null);
-    setIsAdding(true);
     try {
       await apiPost('/api/predefined-phases', { name: newPhaseName.trim() });
       setNewPhaseName('');
@@ -64,7 +65,7 @@ export function PredefinedPhasesPanel() {
       console.error('Failed to add phase:', err);
       setError(err instanceof Error ? err.message : 'Failed to add phase');
     } finally {
-      setIsAdding(false);
+      endAdd();
     }
   };
   
@@ -309,8 +310,8 @@ export function PredefinedPhasesPanel() {
               if (e.key === 'Enter') handleAdd();
             }}
           />
-          <Button icon={<PlusIcon />} onClick={handleAdd} disabled={isAdding || !newPhaseName.trim()}>
-            {isAdding ? 'Adding...' : 'Add Phase'}
+          <Button icon={<PlusIcon />} onClick={handleAdd} disabled={!newPhaseName.trim()} loading={isAdding}>
+            Add Phase
           </Button>
         </div>
       )}

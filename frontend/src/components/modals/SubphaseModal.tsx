@@ -607,8 +607,9 @@ export function SubphaseModal() {
           onClick={handleSubmit}
           disabled={isSubmitting || !!createBlockedReason}
           title={createBlockedReason ?? undefined}
+          loading={isSubmitting}
         >
-          {isSubmitting ? 'Saving...' : isEditing ? 'Save Changes' : 'Add Subphase'}
+          {isEditing ? 'Save Changes' : 'Add Subphase'}
         </Button>
       </div>
     </div>

@@ -155,6 +155,11 @@
   height: 12px;
 }
 
+.lg .iconSlot svg {
+  width: 20px;
+  height: 20px;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

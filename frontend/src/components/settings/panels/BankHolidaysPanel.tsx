@@ -632,8 +632,8 @@ function HolidayForm({ siteId, siteName, holiday, onCancel, onSaved, onDirtyChan
         <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit" disabled={isSaving}>
-          {isSaving ? 'Saving...' : holiday ? 'Save changes' : 'Add holiday'}
+        <Button type="submit" loading={isSaving}>
+          {holiday ? 'Save changes' : 'Add holiday'}
         </Button>
       </div>
     </form>

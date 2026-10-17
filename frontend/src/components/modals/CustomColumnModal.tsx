@@ -272,16 +272,17 @@ export function CustomColumnModal({
             variant="danger"
             onClick={handleDelete}
             disabled={isDeleting || isSaving}
+            loading={isDeleting}
           >
-            {isDeleting ? 'Deleting...' : 'Delete'}
+            Delete
           </Button>
         )}
         <div className={styles.rightActions}>
-          <Button variant="ghost" onClick={onClose} disabled={isSaving || isDeleting}>
+          <Button variant="secondary" onClick={onClose} disabled={isSaving || isDeleting}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={isSaving || isDeleting}>
-            {isSaving ? 'Saving...' : isEditing ? 'Update' : 'Create'}
+          <Button onClick={handleSave} disabled={isSaving || isDeleting} loading={isSaving}>
+            {isEditing ? 'Update' : 'Create'}
           </Button>
         </div>
       </div>

@@ -298,7 +298,7 @@ export function CustomColumnsManagerModal({
             </svg>
             Drag columns to reorder. Changes apply to phases and subphases.
           </div>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             Close
           </Button>
         </div>

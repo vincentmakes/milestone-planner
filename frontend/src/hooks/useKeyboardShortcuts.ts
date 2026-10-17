@@ -33,6 +33,7 @@ export function useKeyboardShortcuts() {
   const cancelLinking = useUIStore((s) => s.cancelLinking);
   const isLinkingDependency = useUIStore((s) => s.isLinkingDependency);
   const activeModal = useUIStore((s) => s.activeModal);
+  const openModalCount = useUIStore((s) => s.openModalCount);
 
   const cellWidth = useViewStore((s) => s.cellWidth);
   const setCellWidth = useViewStore((s) => s.setCellWidth);
@@ -50,8 +51,10 @@ export function useKeyboardShortcuts() {
     // An open modal handles Escape itself (shared Modal / useEscapeKey), and
     // closing it from here would bypass its guarded onClose; Ctrl+Z/Ctrl+Y
     // with focus on one of its buttons would undo/redo (and persist) the
-    // Gantt hidden behind it; Home/+/- would scroll or zoom it.
-    if (activeModal) return;
+    // Gantt hidden behind it; Home/+/- would scroll or zoom it. The shared
+    // Modal registers itself (openModalCount), so dialogs opened from local
+    // state (the custom-column dialogs) count too.
+    if (activeModal || openModalCount > 0) return;
 
     // Escape - Cancel current operation
     if (e.key === 'Escape') {
@@ -118,6 +121,7 @@ export function useKeyboardShortcuts() {
     }
   }, [
     activeModal,
+    openModalCount,
     isLinkingDependency,
     cancelLinking,
     phantomSiblingMode,

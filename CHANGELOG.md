@@ -5,6 +5,18 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] - 2026-10-17
+
+### Changed
+- Dialogs keep the keyboard: Tab and Shift+Tab stay inside the open dialog, and closing it puts the focus back on the button that opened it.
+- Buttons keep their label while saving and show a spinner instead of changing to "Saving...", and screen readers hear that the button is busy.
+- The sign-in buttons on both login screens and the admin portal's "Back to Application" link use the shared button style.
+- Form fields announce their validation message to screen readers.
+
+### Fixed
+- Pressing Enter twice or double-clicking while a save, import, comment, delete or add was still running could send it twice (General and SSO settings, phase templates, project import, Kanban comments, My absences).
+- Keyboard shortcuts no longer fire behind the custom-column dialogs.
+
 ## [1.7.0] - 2026-10-17
 
 ### Added

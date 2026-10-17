@@ -51,6 +51,20 @@ describe('Input', () => {
   });
 });
 
+describe('Input accessibility', () => {
+  it('flags an invalid value and points at the message, or at the hint', () => {
+    const { rerender } = render(<Input label="Name" error="Required" />);
+    const input = screen.getByLabelText('Name');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAccessibleDescription('Required');
+    expect(screen.getByRole('alert')).toHaveTextContent('Required');
+
+    rerender(<Input label="Name" hint="Letters only" />);
+    expect(screen.getByLabelText('Name')).not.toHaveAttribute('aria-invalid');
+    expect(screen.getByLabelText('Name')).toHaveAccessibleDescription('Letters only');
+  });
+});
+
 describe('Select', () => {
   const options = [
     { value: 'week', label: 'Week' },
@@ -78,6 +92,18 @@ describe('Select', () => {
     expect(screen.getByText('Pick one')).toBeInTheDocument();
     expect(screen.queryByText('hidden')).not.toBeInTheDocument();
     expect(screen.getByTestId('icon')).toBeInTheDocument();
+  });
+});
+
+describe('Select accessibility', () => {
+  it('flags an invalid value, describes it, and hides the chevron from assistive tech', () => {
+    const { container } = render(
+      <Select label="Role" error="Pick one" options={[{ value: 'a', label: 'A' }]} />
+    );
+    const select = screen.getByLabelText('Role');
+    expect(select).toHaveAttribute('aria-invalid', 'true');
+    expect(select).toHaveAccessibleDescription('Pick one');
+    expect(container.querySelector('svg')!.parentElement).toHaveAttribute('aria-hidden', 'true');
   });
 });
 

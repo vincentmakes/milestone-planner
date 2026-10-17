@@ -48,7 +48,8 @@ describe('LoginScreen', () => {
     login.mockImplementation(() => new Promise<void>((r) => (finish = r)));
     render(<LoginScreen />);
     await fillAndSubmit();
-    expect(screen.getByRole('button', { name: 'Signing in...' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Sign In' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Sign In' })).toHaveAttribute('aria-busy', 'true');
     expect(screen.getByLabelText('Email')).toBeDisabled();
     await act(async () => finish());
     expect(screen.getByRole('button', { name: 'Sign In' })).toBeEnabled();

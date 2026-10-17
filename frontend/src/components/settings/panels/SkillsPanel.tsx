@@ -311,9 +311,9 @@ function SkillForm({ skill, onSave, onCancel, onDirtyChange }: SkillFormProps) {
         </Button>
         <Button
           type="submit"
-          disabled={isSubmitting}
+          loading={isSubmitting}
         >
-          {isSubmitting ? 'Saving...' : (isEditing ? 'Save Changes' : 'Create Skill')}
+          {isEditing ? 'Save Changes' : 'Create Skill'}
         </Button>
       </div>
     </form>

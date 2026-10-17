@@ -33,28 +33,6 @@
   margin: 0;
 }
 
-.ssoButton {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.ssoButton:hover {
-  background: var(--bg-card);
-  border-color: var(--border-light);
-}
-
 .divider {
   display: flex;
   align-items: center;
@@ -129,24 +107,6 @@
   text-align: center;
 }
 
-.submitButton {
+.fullWidth {
   width: 100%;
-  padding: 12px 16px;
-  background: var(--accent-blue);
-  border: none;
-  border-radius: var(--radius-md);
-  color: white;
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
-  transition: background var(--transition-fast);
-}
-
-.submitButton:hover:not(:disabled) {
-  background: var(--accent-blue-dim);
-}
-
-.submitButton:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }

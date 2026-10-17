@@ -706,8 +706,8 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
         <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit" disabled={isSaving}>
-          {isSaving ? 'Saving...' : event ? 'Save changes' : 'Add event'}
+        <Button type="submit" loading={isSaving}>
+          {event ? 'Save changes' : 'Add event'}
         </Button>
       </div>
     </form>

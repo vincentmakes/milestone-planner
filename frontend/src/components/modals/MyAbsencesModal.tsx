@@ -10,6 +10,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { BackIcon, PlusIcon, UploadIcon } from '@/components/settings/panels/PanelIcons';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore, selectAbsenceTypesById } from '@/stores/appStore';
@@ -52,6 +53,7 @@ export function MyAbsencesModal() {
 
   const [showImport, setShowImport] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const { begin, end } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
 
   const isOpen = activeModal === 'myAbsences';
@@ -100,6 +102,7 @@ export function MyAbsencesModal() {
   const handleDelete = useCallback(
     async (vacation: Vacation) => {
       if (!confirm('Delete this absence?')) return;
+      if (!begin()) return; // a delete is already running
       setDeletingId(vacation.id);
       setError(null);
       try {
@@ -110,9 +113,10 @@ export function MyAbsencesModal() {
         setError(err instanceof Error ? err.message : 'Failed to delete the absence');
       } finally {
         setDeletingId(null);
+        end();
       }
     },
-    [setVacations]
+    [setVacations, begin, end]
   );
 
   if (!isOpen || !currentUser) return null;
@@ -159,10 +163,10 @@ export function MyAbsencesModal() {
             size="sm"
             className={styles.deleteBtn}
             onClick={() => void handleDelete(vacation)}
-            disabled={deletingId === vacation.id}
+            loading={deletingId === vacation.id}
             aria-label={`Delete ${typeName} ${start}`}
           >
-            {deletingId === vacation.id ? 'Deleting...' : 'Delete'}
+            Delete
           </Button>
         </span>
       </li>

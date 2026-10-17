@@ -361,9 +361,9 @@ export function SiteForm({ site, onBack, onDirtyChange }: SiteFormProps) {
         <Button 
           variant="primary" 
           onClick={handleSave}
-          disabled={isSubmitting}
+          loading={isSubmitting}
         >
-          {isSubmitting ? 'Saving...' : 'Save Changes'}
+          Save Changes
         </Button>
       </div>
     </div>

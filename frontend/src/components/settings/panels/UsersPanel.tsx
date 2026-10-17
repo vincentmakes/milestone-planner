@@ -888,7 +888,7 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
         )}
         <div className={styles.rightActions}>
           <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>Cancel</Button>
-          <Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Saving...' : (isEditing ? 'Save Changes' : 'Create User')}</Button>
+          <Button type="submit" loading={isSubmitting}>{isEditing ? 'Save Changes' : 'Create User'}</Button>
         </div>
       </div>
     </form>

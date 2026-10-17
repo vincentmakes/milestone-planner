@@ -335,8 +335,9 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
           onClick={handleSubmit}
           disabled={isSubmitting || !!createBlockedReason}
           title={createBlockedReason ?? undefined}
+          loading={isSubmitting}
         >
-          {isSubmitting ? 'Saving...' : isEditing ? 'Save Changes' : selfOnly ? 'Assign me' : `Assign ${resourceLabel}`}
+          {isEditing ? 'Save Changes' : selfOnly ? 'Assign me' : `Assign ${resourceLabel}`}
         </Button>
       </div>
     </div>

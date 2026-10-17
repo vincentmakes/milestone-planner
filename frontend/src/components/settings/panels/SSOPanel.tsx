@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { useAppStore } from '@/stores/appStore';
 import { apiGet, apiPut } from '@/api/client';
@@ -46,7 +47,7 @@ export function SSOPanel() {
   const [orgName, setOrgName] = useState('');
 
   const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const { isSubmitting: isSaving, begin: beginSave, end: endSave } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   
@@ -96,7 +97,7 @@ export function SSOPanel() {
       }
     }
     
-    setIsSaving(true);
+    if (!beginSave()) return; // a save is already running
     
     try {
       const config: Record<string, unknown> = {
@@ -123,7 +124,7 @@ export function SSOPanel() {
       console.error('Failed to save SSO config:', err);
       setError(err instanceof Error ? err.message : 'Failed to save configuration');
     } finally {
-      setIsSaving(false);
+      endSave();
     }
   };
   
@@ -257,8 +258,8 @@ export function SSOPanel() {
           
           {/* Actions */}
           <div className={styles.actions}>
-            <Button onClick={handleSave} disabled={isSaving || orgSSOActive}>
-              {isSaving ? 'Saving...' : 'Save Configuration'}
+            <Button onClick={handleSave} disabled={isSaving || orgSSOActive} loading={isSaving}>
+              Save Configuration
             </Button>
           </div>
         </>

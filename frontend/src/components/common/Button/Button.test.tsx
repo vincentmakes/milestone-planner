@@ -79,6 +79,7 @@ describe('Button', () => {
     const btn = screen.getByRole('button');
     expect(btn).toBeDisabled();
     expect(btn).toHaveClass(styles.loading);
+    expect(btn).toHaveAttribute('aria-busy', 'true');
     expect(screen.queryByTestId('svg')).not.toBeInTheDocument();
     expect(container.querySelector(`.${styles.spinner}`)).not.toBeNull();
   });

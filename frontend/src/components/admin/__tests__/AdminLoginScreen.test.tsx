@@ -47,7 +47,16 @@ describe('AdminLoginScreen', () => {
   it('signs in and marks the portal session authenticated', async () => {
     vi.mocked(adminLogin).mockResolvedValue({ success: true, user: admin });
     render(<AdminLoginScreen />);
-    expect(screen.getByRole('link', { name: /Back to Application/ })).toHaveAttribute('href', '/');
+    // The back link is a ghost Button that navigates to the application root
+    const originalLocation = window.location;
+    const assign = vi.fn();
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...originalLocation, assign } });
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Application' }));
+      expect(assign).toHaveBeenCalledWith('/');
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
+    }
     await signIn();
     expect(adminLogin).toHaveBeenCalledWith('admin@milestone.local', 'initial-pw');
     expect(useAdminStore.getState()).toMatchObject({ isAuthenticated: true, adminUser: admin, isLoading: false });

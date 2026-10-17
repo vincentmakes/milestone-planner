@@ -166,8 +166,8 @@ export function EquipmentBlockModal() {
   const footer = (
     <div className={styles.footer} style={{ width: '100%', justifyContent: isEditing ? 'space-between' : 'flex-end' }}>
       {isEditing && (
-        <Button variant="danger" onClick={handleDelete} disabled={isSubmitting || isDeleting}>
-          {isDeleting ? 'Deleting...' : 'Delete'}
+        <Button variant="danger" onClick={handleDelete} disabled={isSubmitting || isDeleting} loading={isDeleting}>
+          Delete
         </Button>
       )}
       <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -179,8 +179,9 @@ export function EquipmentBlockModal() {
           onClick={handleSave}
           disabled={isSubmitting || isDeleting || !!createBlockedReason}
           title={createBlockedReason ?? undefined}
+          loading={isSubmitting && !isDeleting}
         >
-          {isSubmitting && !isDeleting ? 'Saving...' : isEditing ? 'Save Changes' : 'Block Equipment'}
+          {isEditing ? 'Save Changes' : 'Block Equipment'}
         </Button>
       </div>
     </div>

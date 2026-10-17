@@ -1,6 +1,6 @@
 {
   "components/admin/AdminDashboard.module.css": 1,
-  "components/admin/AdminLogin.module.css": 2,
+  "components/admin/AdminLogin.module.css": 1,
   "components/admin/TenantList.module.css": 5,
   "components/admin/modals/AdminModal.module.css": 6,
   "components/common/ActivityFeed/ActivityFeed.module.css": 4,

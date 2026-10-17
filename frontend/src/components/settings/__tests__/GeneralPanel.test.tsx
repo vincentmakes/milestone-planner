@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { GeneralPanel } from '../panels/GeneralPanel';
 import { useAppStore } from '@/stores/appStore';
 import type { User, UserRole } from '@/types';
@@ -66,5 +66,29 @@ describe('GeneralPanel', () => {
     expect(await screen.findByText('Settings saved successfully')).toBeInTheDocument();
     expect(updateSetting).toHaveBeenCalledWith('instance_title', 'Lab Planner');
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+
+  it('saves once when Save is clicked twice before the first save settles', async () => {
+    setRole('admin');
+    let finish: (value: unknown) => void = () => {};
+    updateSetting.mockImplementation(() => new Promise((r) => { finish = r; }));
+    render(<GeneralPanel onDirtyChange={vi.fn()} />);
+    const title = await screen.findByLabelText('Application Title');
+    fireEvent.change(title, { target: { value: 'Lab Planner' } });
+
+    // Both clicks in one act(): React batches the first click's state update,
+    // so the button is still enabled when the second click lands.
+    const save = screen.getByRole('button', { name: 'Save Changes' });
+    act(() => {
+      fireEvent.click(save);
+      fireEvent.click(save);
+    });
+    expect(updateSetting).toHaveBeenCalledTimes(1);
+    expect(save).toHaveAttribute('aria-busy', 'true');
+
+    await act(async () => finish({}));
+    expect(await screen.findByText('Settings saved successfully')).toBeInTheDocument();
+    expect(updateSetting).toHaveBeenCalledTimes(1);
   });
 });

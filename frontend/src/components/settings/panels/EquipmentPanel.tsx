@@ -586,9 +586,9 @@ function EquipmentForm({
           </Button>
           <Button
             type="submit"
-            disabled={isSubmitting}
+            loading={isSubmitting}
           >
-            {isSubmitting ? 'Saving...' : (isEditing ? 'Save Changes' : 'Create Equipment')}
+            {isEditing ? 'Save Changes' : 'Create Equipment'}
           </Button>
         </div>
       </div>

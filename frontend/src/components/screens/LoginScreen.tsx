@@ -7,6 +7,7 @@ import { useState, FormEvent, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { checkSSOEnabled, getSSOLoginUrl } from '@/api';
 import { getTheme, isDarkTheme, type Theme } from '@/utils/storage';
+import { Button } from '@/components/common/Button';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import styles from './LoginScreen.module.css';
 
@@ -114,24 +115,23 @@ export function LoginScreen() {
 
         {ssoEnabled && (
           <>
-            <button
+            <Button
               type="button"
-              className={styles.ssoButton}
+              variant="secondary"
+              size="lg"
+              className={styles.fullWidth}
               onClick={handleSSOLogin}
+              icon={
+                <svg viewBox="0 0 23 23" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path fill="#f35325" d="M1 1h10v10H1z" />
+                  <path fill="#81bc06" d="M12 1h10v10H12z" />
+                  <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                  <path fill="#ffba08" d="M12 12h10v10H12z" />
+                </svg>
+              }
             >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 23 23"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path fill="#f35325" d="M1 1h10v10H1z" />
-                <path fill="#81bc06" d="M12 1h10v10H12z" />
-                <path fill="#05a6f0" d="M1 12h10v10H1z" />
-                <path fill="#ffba08" d="M12 12h10v10H12z" />
-              </svg>
               Sign in with Microsoft
-            </button>
+            </Button>
             <div className={styles.divider}>
               <span>or sign in with email</span>
             </div>
@@ -174,13 +174,9 @@ export function LoginScreen() {
 
           {error && <div className={styles.error}>{error}</div>}
 
-          <button
-            type="submit"
-            className={styles.submitButton}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? 'Signing in...' : 'Sign In'}
-          </button>
+          <Button type="submit" size="lg" className={styles.fullWidth} loading={isSubmitting}>
+            Sign In
+          </Button>
         </form>
       </div>
     </div>
