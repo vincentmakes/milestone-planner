@@ -104,6 +104,23 @@ textarea::placeholder {
   color: var(--text-muted);
 }
 
+/* iOS Safari renders a date input as a native control with its own intrinsic
+   width (and centred text) and ignores `width` on it; two in a row then
+   overflow their grid tracks and overlap. Dropping the native appearance makes
+   it a plain box that honours width: 100% and can shrink to its track. */
+input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+}
+
+input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+  min-height: 1.4em; /* iOS collapses an empty value to zero height */
+}
+
 input:disabled,
 textarea:disabled,
 select:disabled {

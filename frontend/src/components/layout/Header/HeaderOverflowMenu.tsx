@@ -10,10 +10,11 @@
  * positioned from right-click coordinates. What lives in here is a
  * `− 100% +` triplet and a segmented view-mode switcher: pressing `+` three
  * times has to keep the panel open and the percentage live. Only an outside
- * click or Escape closes this one.
+ * click, Tab out or Escape closes this one (`useDismissableOverlay`).
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import styles from './HeaderOverflowMenu.module.css';
 
 interface HeaderOverflowMenuProps {
@@ -25,32 +26,13 @@ interface HeaderOverflowMenuProps {
 export function HeaderOverflowMenu({ children, label = 'More controls' }: HeaderOverflowMenuProps) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const onPointerDown = (e: MouseEvent) => {
-      if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      // Close only this menu — anything open behind it stays open.
-      e.stopPropagation();
-      setOpen(false);
-    };
-
-    document.addEventListener('mousedown', onPointerDown);
-    // Capture, so the menu wins Escape ahead of the app-wide shortcut handler.
-    document.addEventListener('keydown', onKeyDown, true);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown, true);
-    };
-  }, [open]);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const { onBlur } = useDismissableOverlay({ open, onClose: () => setOpen(false), wrapperRef, triggerRef });
 
   return (
-    <div ref={wrapperRef} className={styles.wrapper}>
+    <div ref={wrapperRef} className={styles.wrapper} onBlur={onBlur}>
       <button
+        ref={triggerRef}
         type="button"
         className={styles.trigger}
         onClick={() => setOpen((o) => !o)}

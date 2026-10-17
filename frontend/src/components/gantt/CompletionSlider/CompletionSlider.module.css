@@ -60,7 +60,7 @@
   top: 0;
   left: 0;
   height: 100%;
-  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  background: linear-gradient(90deg, var(--accent-blue), color-mix(in srgb, var(--accent-blue) 70%, white));
   border-radius: 4px;
   transition: width 0.1s ease;
   pointer-events: none;
@@ -86,8 +86,8 @@
   appearance: none;
   width: 18px;
   height: 18px;
-  background: #fff;
-  border: 3px solid #3b82f6;
+  background: var(--text-on-accent);
+  border: 3px solid var(--accent-blue);
   border-radius: 50%;
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
@@ -96,19 +96,19 @@
 
 .sliderInput::-webkit-slider-thumb:hover {
   transform: scale(1.15);
-  box-shadow: 0 3px 10px rgba(59, 130, 246, 0.4);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--accent-blue) 40%, transparent);
 }
 
 .sliderInput::-webkit-slider-thumb:active {
   transform: scale(1.1);
-  background: #f0f9ff;
+  background: color-mix(in srgb, var(--accent-blue) 8%, white);
 }
 
 .sliderInput::-moz-range-thumb {
   width: 18px;
   height: 18px;
-  background: #fff;
-  border: 3px solid #3b82f6;
+  background: var(--text-on-accent);
+  border: 3px solid var(--accent-blue);
   border-radius: 50%;
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
@@ -157,8 +157,8 @@
 }
 
 .quickBtn.active {
-  background: #3b82f6;
-  border-color: #3b82f6;
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
   color: white;
 }
 
@@ -192,7 +192,7 @@
   padding: 0.5rem 1.25rem;
   font-size: 0.8125rem;
   font-weight: 600;
-  background: #3b82f6;
+  background: var(--accent-blue);
   border: none;
   border-radius: var(--radius-md);
   color: white;
@@ -201,5 +201,5 @@
 }
 
 .applyBtn:hover {
-  background: #2563eb;
+  background: var(--accent-blue-hover);
 }

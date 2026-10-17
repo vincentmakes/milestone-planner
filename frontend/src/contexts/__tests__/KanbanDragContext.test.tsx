@@ -10,6 +10,7 @@ import { KanbanDragProvider, useKanbanDrag } from '../KanbanDragContext';
 import { moveCard } from '@/api/endpoints/kanban';
 import { loadAllProjects } from '@/api/endpoints/projects';
 import { useAppStore } from '@/stores/appStore';
+import { useUIStore } from '@/stores/uiStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { resetAllStores } from '@/stores';
 import { makePhase, makeProject, makeSubphase } from '@/test/factories';
@@ -216,9 +217,8 @@ describe('KanbanDragProvider', () => {
     expect(storedSub().status).toBe('todo');
   });
 
-  it('reloads, clears undo and alerts when the move fails', async () => {
+  it('reloads, clears undo and shows a flash notice when the move fails', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
     vi.mocked(moveCard).mockRejectedValue(new Error('403'));
     const fresh = [makeProject({ id: 1, name: 'From server' })];
     vi.mocked(loadAllProjects).mockResolvedValue(fresh);
@@ -227,7 +227,7 @@ describe('KanbanDragProvider', () => {
     renderBoard();
     dragTo('done');
     await waitFor(() =>
-      expect(alert).toHaveBeenCalledWith('Could not move the card. The board has been refreshed.')
+      expect(useUIStore.getState().flashNotice?.message).toBe('Could not move the card. The board has been refreshed.')
     );
     expect(useAppStore.getState().projects).toBe(fresh);
     expect(useUndoStore.getState().canUndo).toBe(false);
@@ -239,7 +239,6 @@ describe('KanbanDragProvider', () => {
 
   it('still clears undo when the reload after a failure also fails', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.spyOn(window, 'alert').mockImplementation(() => {});
     vi.mocked(moveCard).mockRejectedValue(new Error('500'));
     vi.mocked(loadAllProjects).mockRejectedValue(new Error('offline'));
     useUndoStore.getState().saveState([], 'earlier edit');

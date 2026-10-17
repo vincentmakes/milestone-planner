@@ -71,6 +71,18 @@ describe('SiteForm', () => {
     });
   });
 
+  it('offers Active as a switch and sends its new value', async () => {
+    const onBack = vi.fn();
+    render(<SiteForm site={basel} onBack={onBack} />);
+    const active = screen.getByRole('switch', { name: 'Active' });
+    expect(active).toBeChecked();
+    fireEvent.click(active);
+    expect(active).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() => expect(onBack).toHaveBeenCalled());
+    expect(api.updateSite).toHaveBeenCalledWith(1, expect.objectContaining({ active: false }));
+  });
+
   it('reports unsaved input, and a value typed back is clean again', () => {
     const onDirtyChange = vi.fn();
     render(<SiteForm site={basel} onBack={vi.fn()} onDirtyChange={onDirtyChange} />);
@@ -99,6 +111,17 @@ describe('SitesPanel', () => {
     // A typed new site name is unsaved input too
     fireEvent.change(screen.getByPlaceholderText('New site name'), { target: { value: 'Zurich' } });
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it('names the export and edit actions after the site', () => {
+    render(<SitesPanel />);
+    const exportBtn = screen.getByRole('button', { name: 'Export Basel as Excel' });
+    expect(exportBtn).toHaveAttribute('title', 'Export site data as Excel');
+    expect(exportBtn.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+
+    const edit = screen.getByRole('button', { name: 'Edit Basel' });
+    expect(edit).toHaveAttribute('title', 'Edit site');
+    expect(edit.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('creates one site when Enter is pressed twice', async () => {

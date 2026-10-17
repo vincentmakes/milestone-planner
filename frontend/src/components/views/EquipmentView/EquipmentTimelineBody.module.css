@@ -62,11 +62,11 @@
 }
 
 .gridCell.weekend {
-  background: var(--bg-weekend, rgba(0, 0, 0, 0.04));
+  background: var(--bg-weekend);
 }
 
 .gridCell.holiday {
-  background: rgba(249, 115, 22, 0.12);
+  background: color-mix(in srgb, var(--accent-orange) 12%, transparent);
 }
 
 .gridCell.companyEvent {
@@ -116,7 +116,7 @@
 
 /* Holiday tooltip cells - orange line */
 .tooltipCell.holiday {
-  --tooltip-line-color: var(--accent-orange, #f97316);
+  --tooltip-line-color: var(--accent-orange);
 }
 
 /* Company event tooltip cells - line uses --event-color, red fallback */
@@ -131,8 +131,8 @@
   top: 14px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--bg-tertiary, #3d3d3d);
-  color: var(--text-primary, #e0e0e0);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
   padding: 6px 10px;
   border-radius: 4px;
   font-size: 12px;
@@ -142,7 +142,7 @@
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-md);
 }
 
 .tooltipCell:hover::after {
@@ -170,7 +170,7 @@
   top: 50%;
   transform: translateY(-50%);
   height: calc(100% - 10px);
-  background: rgba(249, 115, 22, 0.85);
+  background: color-mix(in srgb, var(--accent-orange) 85%, transparent);
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
@@ -195,12 +195,12 @@
   height: calc(100% - 10px);
   background: repeating-linear-gradient(
     45deg,
-    rgba(239, 68, 68, 0.85),
-    rgba(239, 68, 68, 0.85) 6px,
-    rgba(220, 38, 38, 0.95) 6px,
-    rgba(220, 38, 38, 0.95) 12px
+    color-mix(in srgb, var(--accent-red) 85%, transparent),
+    color-mix(in srgb, var(--accent-red) 85%, transparent) 6px,
+    color-mix(in srgb, var(--accent-red-hover) 95%, transparent) 6px,
+    color-mix(in srgb, var(--accent-red-hover) 95%, transparent) 12px
   );
-  border: 1px solid rgba(220, 38, 38, 1);
+  border: 1px solid var(--accent-red-hover);
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
@@ -220,34 +220,34 @@
 .blockBar.reason-maintenance {
   background: repeating-linear-gradient(
     45deg,
-    rgba(245, 158, 11, 0.85),
-    rgba(245, 158, 11, 0.85) 6px,
-    rgba(217, 119, 6, 0.95) 6px,
-    rgba(217, 119, 6, 0.95) 12px
+    color-mix(in srgb, var(--accent-yellow) 85%, transparent),
+    color-mix(in srgb, var(--accent-yellow) 85%, transparent) 6px,
+    color-mix(in srgb, var(--accent-yellow) 85%, black) 6px,
+    color-mix(in srgb, var(--accent-yellow) 85%, black) 12px
   );
-  border-color: rgba(217, 119, 6, 1);
+  border-color: color-mix(in srgb, var(--accent-yellow) 85%, black);
 }
 
 .blockBar.reason-calibration {
   background: repeating-linear-gradient(
     45deg,
-    rgba(139, 92, 246, 0.85),
-    rgba(139, 92, 246, 0.85) 6px,
-    rgba(124, 58, 237, 0.95) 6px,
-    rgba(124, 58, 237, 0.95) 12px
+    color-mix(in srgb, var(--accent-purple) 85%, transparent),
+    color-mix(in srgb, var(--accent-purple) 85%, transparent) 6px,
+    color-mix(in srgb, var(--accent-purple) 85%, black) 6px,
+    color-mix(in srgb, var(--accent-purple) 85%, black) 12px
   );
-  border-color: rgba(124, 58, 237, 1);
+  border-color: color-mix(in srgb, var(--accent-purple) 85%, black);
 }
 
 .blockBar.reason-other {
   background: repeating-linear-gradient(
     45deg,
-    rgba(107, 114, 128, 0.85),
-    rgba(107, 114, 128, 0.85) 6px,
-    rgba(75, 85, 99, 0.95) 6px,
-    rgba(75, 85, 99, 0.95) 12px
+    color-mix(in srgb, var(--text-secondary) 85%, transparent),
+    color-mix(in srgb, var(--text-secondary) 85%, transparent) 6px,
+    color-mix(in srgb, var(--text-tertiary) 95%, transparent) 6px,
+    color-mix(in srgb, var(--text-tertiary) 95%, transparent) 12px
   );
-  border-color: rgba(75, 85, 99, 1);
+  border-color: var(--text-tertiary);
 }
 
 /*
@@ -260,18 +260,18 @@
   top: 50%;
   transform: translateY(-50%);
   height: calc(100% - 6px);
-  border: 2px solid var(--accent-red, #ef4444);
+  border: 2px solid var(--accent-red);
   border-radius: var(--radius-sm);
   background: repeating-linear-gradient(
     -45deg,
-    rgba(239, 68, 68, 0.25),
-    rgba(239, 68, 68, 0.25) 4px,
-    rgba(239, 68, 68, 0) 4px,
-    rgba(239, 68, 68, 0) 10px
+    color-mix(in srgb, var(--accent-red) 25%, transparent),
+    color-mix(in srgb, var(--accent-red) 25%, transparent) 4px,
+    transparent 4px,
+    transparent 10px
   );
   pointer-events: none;
   z-index: 4;
-  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.4);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-red) 40%, transparent);
 }
 
 /* Wrapper for an equipment + its expanded detail rows */
@@ -289,24 +289,24 @@
 }
 
 .blockDetailBar {
-  background: rgba(249, 115, 22, 0.7);
+  background: color-mix(in srgb, var(--accent-orange) 70%, transparent);
   opacity: 0.85;
 }
 
 .blockDetailBar.reason-defect {
-  background: rgba(239, 68, 68, 0.7);
+  background: color-mix(in srgb, var(--accent-red) 70%, transparent);
 }
 
 .blockDetailBar.reason-calibration {
-  background: rgba(139, 92, 246, 0.7);
+  background: color-mix(in srgb, var(--accent-purple) 70%, transparent);
 }
 
 .blockDetailBar.reason-other {
-  background: rgba(107, 114, 128, 0.7);
+  background: color-mix(in srgb, var(--text-secondary) 70%, transparent);
 }
 
 .bookingDetailBar {
-  background: rgba(20, 184, 166, 0.6);
+  background: color-mix(in srgb, var(--accent-teal) 60%, transparent);
   cursor: default;
 }
 

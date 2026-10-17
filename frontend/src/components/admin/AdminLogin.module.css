@@ -97,7 +97,7 @@
 .success {
   padding: 0.75rem;
   font-size: 0.875rem;
-  color: var(--accent-green, #22c55e);
+  color: var(--accent-green);
   background: var(--accent-green-alpha);
   border-radius: var(--radius-md);
   text-align: center;

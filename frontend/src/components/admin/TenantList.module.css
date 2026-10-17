@@ -129,7 +129,7 @@
 }
 
 .slug:hover {
-  background: var(--accent-blue-alpha, rgba(59, 130, 246, 0.15));
+  background: var(--accent-blue-alpha);
   text-decoration: underline;
 }
 
@@ -221,7 +221,7 @@
 }
 
 /* Responsive */
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .panelHeader {
     flex-direction: column;
     gap: 1rem;
@@ -237,4 +237,9 @@
   .actions {
     flex-wrap: wrap;
   }
+}
+
+/* Inline error above the table (admin lists share this sheet) */
+.listNotice {
+  margin: 0 1.25rem 1rem;
 }

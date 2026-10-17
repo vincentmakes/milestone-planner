@@ -1,6 +1,7 @@
 // Re-export all stores from a single entry point
 import { useAppStore } from './appStore';
 import { useUIStore } from './uiStore';
+import { useViewStore } from './viewStore';
 import { useUndoStore } from './undoStore';
 import { useWhatIfStore } from './whatIfStore';
 import { useCustomColumnStore } from './customColumnStore';
@@ -56,6 +57,10 @@ export function resetAllStores(): void {
     customColumnFilters: {},
   });
   useUIStore.setState(useUIStore.getInitialState());
+  // The place in the timeline is per session, not per browser: the next
+  // sign-in (or the same person after a session expiry) opens on today, as a
+  // reload does. Every other view setting survives.
+  useViewStore.getState().resetTimelinePosition();
   if (typeof document !== 'undefined') {
     document.body.classList.remove(...TRANSIENT_BODY_CLASSES);
   }

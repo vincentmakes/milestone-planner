@@ -21,6 +21,7 @@
 
 .formRow .formGroup {
   flex: 1;
+  min-width: 0; /* a date input's intrinsic width must not push its sibling */
 }
 
 .label {

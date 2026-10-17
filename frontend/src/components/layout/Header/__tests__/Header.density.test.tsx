@@ -131,6 +131,33 @@ describe('Header density', () => {
     expect(screen.queryByRole('group', { name: 'More controls' })).not.toBeInTheDocument();
   });
 
+  it('closes the overflow menu when focus leaves it, and refocuses the trigger after Escape', () => {
+    renderAt('minimal');
+    fireEvent.click(overflowTrigger()!);
+    const panel = screen.getByRole('group', { name: 'More controls' });
+    fireEvent.blur(panel.parentElement as HTMLElement, { relatedTarget: document.body });
+    expect(screen.queryByRole('group', { name: 'More controls' })).not.toBeInTheDocument();
+
+    fireEvent.click(overflowTrigger()!);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(overflowTrigger()).toHaveFocus();
+  });
+
+  it('opens the Panels dropdown as a dialog that Escape closes, focus back on the trigger', () => {
+    renderAt('full');
+    const trigger = screen.getByRole('button', { name: /Panels/ });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: 'Overview panels' })).toBeInTheDocument();
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Overview panels' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
   it('shows fewer avatars as the bar tightens', () => {
     const seen = TIERS.map((tier) => {
       const { unmount } = renderAt(tier);

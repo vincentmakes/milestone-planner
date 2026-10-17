@@ -14,7 +14,7 @@ import { TimelineHeader } from './TimelineHeader';
 import { TimelineBody } from './TimelineBody';
 import { useTimelineScrollSync } from '@/contexts/TimelineScrollContext';
 import type { TimelineCell, TimelineHeader as TimelineHeaderType } from '../utils';
-import { calculateTodayScrollLeft } from '../utils/timeline';
+import { calculateTodayCenterScrollLeft, calculateTodayScrollLeft } from '../utils/timeline';
 import type { Project, ViewMode } from '@/types';
 import type { GanttRow } from '../utils/projectSections';
 import styles from './Timeline.module.css';
@@ -234,15 +234,11 @@ export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
       const scrollContainer = horizontalScrollRef.current;
       if (!scrollContainer) return;
       
-      // Find the index of today's cell
-      const todayIndex = cells.findIndex((cell) => cell.isToday);
+      // Centre today's cell — or the next working day when today is a hidden
+      // weekend day (see findTodayCell).
+      const scrollTo = calculateTodayCenterScrollLeft(cells, cellWidth, scrollContainer.clientWidth);
       
-      if (todayIndex !== -1) {
-        // Calculate scroll position to center today in view
-        const containerWidth = scrollContainer.clientWidth;
-        const todayPosition = todayIndex * cellWidth;
-        const scrollTo = Math.max(0, todayPosition - containerWidth / 2 + cellWidth / 2);
-        
+      if (scrollTo !== null) {
         // For smooth scroll with sync, we need to sync after animation completes
         // Use scrollTo without smooth when panels are open to avoid conflicts
         if (showAnyOverview) {

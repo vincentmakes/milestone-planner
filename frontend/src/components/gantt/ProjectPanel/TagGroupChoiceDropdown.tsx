@@ -18,8 +18,9 @@
  * dropdowns.
  */
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import type { FocusEvent, ReactNode } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import { sortTagGroups } from '@/utils/tags';
 import type { TagGroup } from '@/types';
 import styles from './TagGroupChoiceDropdown.module.css';
@@ -69,37 +70,14 @@ export function TagGroupChoiceDropdown({
   const panelId = useId();
   const radioName = useId();
 
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: MouseEvent) => {
-      if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      setOpen(false);
-      triggerRef.current?.focus();
-    };
-    document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown, true);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown, true);
-    };
-  }, [open]);
+  const close = () => setOpen(false);
+  const { onBlur: handleBlur } = useDismissableOverlay({ open, onClose: close, wrapperRef, triggerRef });
 
   const sorted = useMemo(() => sortTagGroups(groups), [groups]);
 
   if (sorted.length === 0) return null;
 
   const label = value ? activeLabel(value) : triggerLabel;
-
-  // Tab out closes the panel; a null relatedTarget (focus dropped to the
-  // body by a mousedown inside the panel) is left to the mousedown handler.
-  const handleBlur = (e: FocusEvent<HTMLDivElement>) => {
-    const next = e.relatedTarget as Node | null;
-    if (open && next && !wrapperRef.current?.contains(next)) setOpen(false);
-  };
 
   return (
     <div ref={wrapperRef} className={styles.wrapper} onBlur={handleBlur}>

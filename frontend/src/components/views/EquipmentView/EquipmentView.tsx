@@ -6,6 +6,8 @@
  */
 
 import { useCallback, useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
+import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
+
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -20,7 +22,7 @@ import { useDataLoader } from '@/hooks/useDataLoader';
 import { useTimelineScrollSync } from '@/contexts/TimelineScrollContext';
 import { deleteEquipmentBlock } from '@/api';
 import { canManageAnyProject, isPrivileged } from '@/utils/permissions';
-import { generateTimelineCells, generateTimelineHeaders, calculateTodayScrollLeft } from '@/components/gantt/utils/timeline';
+import { generateTimelineCells, generateTimelineHeaders, calculateTodayScrollLeft, calculateTodayCenterScrollLeft } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
 import { EquipmentTimelineBody } from './EquipmentTimelineBody';
@@ -46,6 +48,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   const timelineBodyRef = useRef<HTMLDivElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
+  const filterTriggerRef = useRef<HTMLButtonElement>(null);
   
   // Local panel width state for standalone mode only
   const [localPanelWidth, setLocalPanelWidth] = useState(320);
@@ -186,22 +189,12 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
     return allSiteEquipment.filter((e) => e.type && selectedTypes.has(e.type));
   }, [allSiteEquipment, selectedTypes]);
   
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
-        setIsFilterOpen(false);
-      }
-    };
-    
-    if (isFilterOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isFilterOpen]);
+  const { onBlur: onFilterBlur } = useDismissableOverlay({
+    open: isFilterOpen,
+    onClose: () => setIsFilterOpen(false),
+    wrapperRef: filterRef,
+    triggerRef: filterTriggerRef,
+  });
   
   // Toggle a type selection
   const toggleType = (type: string) => {
@@ -242,15 +235,10 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   useEffect(() => {
     if (embedded || !scrollToTodayTrigger || !timelineScrollRef.current) return;
     
-    const todayIndex = cells.findIndex((cell) => cell.isToday);
-    if (todayIndex === -1) return;
-    
     const scrollContainer = timelineScrollRef.current;
-    const containerWidth = scrollContainer.clientWidth;
-    const todayPosition = todayIndex * cellWidth;
-    
-    // Center today in the viewport
-    const scrollTo = Math.max(0, todayPosition - containerWidth / 2 + cellWidth / 2);
+    // Centre today's cell, or the next working day on a hidden weekend day
+    const scrollTo = calculateTodayCenterScrollLeft(cells, cellWidth, scrollContainer.clientWidth);
+    if (scrollTo === null) return;
     scrollContainer.scrollTo({ left: scrollTo, behavior: 'smooth' });
   }, [embedded, scrollToTodayTrigger, cells, cellWidth]);
 
@@ -395,12 +383,14 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
           
           {/* Type Filter Dropdown */}
           {equipmentTypes.length > 0 && (
-            <div ref={filterRef} className={styles.filterWrapper}>
+            <div ref={filterRef} className={styles.filterWrapper} onBlur={onFilterBlur}>
               <button 
+                ref={filterTriggerRef}
+                type="button"
                 className={`${styles.filterTrigger} ${selectedTypes.size > 0 ? styles.hasFilters : ''}`}
                 onClick={() => setIsFilterOpen(!isFilterOpen)}
                 aria-expanded={isFilterOpen}
-                aria-haspopup="true"
+                aria-haspopup="dialog"
               >
                 <svg
                   width="14"
@@ -409,6 +399,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
+                  aria-hidden="true"
                 >
                   <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
                 </svg>
@@ -433,7 +424,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
               </button>
               
               {isFilterOpen && (
-                <div className={styles.filterDropdown} style={filterDropdownStyle}>
+                <div className={styles.filterDropdown} style={filterDropdownStyle} role="dialog" aria-label="Filter equipment">
                   <div className={styles.filterActions}>
                     <button 
                       className={styles.filterActionBtn}

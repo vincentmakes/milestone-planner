@@ -1,0 +1,66 @@
+/* Notice — inline message box. Colours come from the accent tokens only. */
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-md);
+  line-height: 1.4;
+  box-sizing: border-box;
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.error {
+  color: var(--accent-red);
+  background: var(--accent-red-alpha);
+  border-color: var(--accent-red);
+}
+
+.warning {
+  color: var(--accent-yellow);
+  background: color-mix(in srgb, var(--accent-yellow) 15%, transparent);
+  border-color: var(--accent-yellow);
+}
+
+.info {
+  color: var(--accent-blue);
+  background: var(--accent-blue-alpha);
+  border-color: var(--accent-blue);
+}
+
+.success {
+  color: var(--accent-green);
+  background: var(--accent-green-alpha);
+  border-color: var(--accent-green);
+}
+
+.dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  margin: -4px -6px -4px 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.dismiss:hover {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}

@@ -3,7 +3,8 @@
  * Modal showing detailed tenant information including organization membership
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useId, useState, useEffect, useCallback } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { getTenant, getTenantAuditLog } from '@/api';
 import type { Tenant, AuditLogEntry } from '@/api/endpoints/admin';
 import { useEscapeKey } from '@/hooks';
@@ -43,6 +44,7 @@ export function TenantDetailsModal({ tenantId, onClose }: TenantDetailsModalProp
     loadTenantDetails();
   }, [loadTenantDetails]);
 
+  const titleId = useId();
   useEscapeKey(onClose);
 
   const getStatusBadge = (status: Tenant['status']) => {
@@ -74,11 +76,11 @@ export function TenantDetailsModal({ tenantId, onClose }: TenantDetailsModalProp
 
   return (
     <div className={styles.overlay}>
-      <div className={`${styles.modal} ${styles.wide}`}>
+      <div className={`${styles.modal} ${styles.wide}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className={styles.header}>
-          <h2 className={styles.title}>Tenant Details</h2>
-          <button className={styles.closeBtn} onClick={onClose}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <h2 id={titleId} className={styles.title}>Tenant Details</h2>
+          <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Close dialog">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -91,7 +93,7 @@ export function TenantDetailsModal({ tenantId, onClose }: TenantDetailsModalProp
               Loading...
             </div>
           ) : error ? (
-            <div className={styles.error}>{error}</div>
+            <Notice tone="error">{error}</Notice>
           ) : tenant ? (
             <>
               {/* Header Info */}

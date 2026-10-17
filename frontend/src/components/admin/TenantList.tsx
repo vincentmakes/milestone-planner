@@ -13,6 +13,7 @@ import {
 } from '@/api';
 import type { Tenant } from '@/api/endpoints/admin';
 import { Button } from '@/components/common/Button';
+import { Notice } from '@/components/common/Notice';
 import { PlusIcon } from '@/components/settings/panels/PanelIcons';
 import styles from './TenantList.module.css';
 
@@ -26,18 +27,20 @@ interface TenantListProps {
 export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRefresh }: TenantListProps) {
   const tenants = useAdminStore((s) => s.tenants);
   const systemStats = useAdminStore((s) => s.systemStats);
+  const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const handleProvision = async (tenant: Tenant) => {
     if (!confirm('This will create the database for this tenant. Continue?')) return;
     
+    setError(null);
     setActionLoading(tenant.id);
     try {
       const result = await provisionTenant(tenant.id);
       onShowCredentials('Database Provisioned!', result.adminEmail, result.adminPassword);
       onRefresh();
     } catch (err) {
-      alert('Error: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setActionLoading(null);
     }
@@ -46,12 +49,13 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
   const handleResetPassword = async (tenant: Tenant) => {
     if (!confirm('This will generate a new password for the tenant admin. Continue?')) return;
     
+    setError(null);
     setActionLoading(tenant.id);
     try {
       const result = await resetTenantAdminPassword(tenant.id);
       onShowCredentials('Password Reset!', result.email, result.password);
     } catch (err) {
-      alert('Error: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setActionLoading(null);
     }
@@ -60,12 +64,13 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
   const handleStatusChange = async (tenant: Tenant, status: Tenant['status']) => {
     if (!confirm(`Change tenant status to ${status}?`)) return;
     
+    setError(null);
     setActionLoading(tenant.id);
     try {
       await updateTenantStatus(tenant.id, status);
       onRefresh();
     } catch (err) {
-      alert('Error: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setActionLoading(null);
     }
@@ -74,7 +79,7 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
   const handleDelete = async (tenant: Tenant) => {
     // Must be suspended first
     if (tenant.status === 'active') {
-      alert('You must suspend the tenant before deleting it. This ensures no users are actively using the system.');
+      setError('You must suspend the tenant before deleting it. This ensures no users are actively using the system.');
       return;
     }
     
@@ -84,13 +89,14 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
     
     if (!confirm(confirmMsg)) return;
     
+    setError(null);
     setActionLoading(tenant.id);
     try {
       // Always delete database if it exists
       await deleteTenant(tenant.id, true);
       onRefresh();
     } catch (err) {
-      alert('Error: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setActionLoading(null);
     }
@@ -153,6 +159,12 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
             Create Tenant
           </Button>
         </div>
+
+        {error && (
+          <Notice tone="error" onDismiss={() => setError(null)} className={styles.listNotice}>
+            {error}
+          </Notice>
+        )}
 
         <div className={styles.tableWrapper}>
           <table className={styles.table}>

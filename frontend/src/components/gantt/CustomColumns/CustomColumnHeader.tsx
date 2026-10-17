@@ -7,7 +7,8 @@
  * offered to admins. Filtering is a local view setting and stays open to all.
  */
 
-import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import { useRef, useState, useCallback, useMemo } from 'react';
+import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import { updateCustomColumn } from '@/api';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useAppStore } from '@/stores/appStore';
@@ -26,6 +27,7 @@ export function CustomColumnHeader({
   onWidthChange 
 }: CustomColumnHeaderProps) {
   const headerRef = useRef<HTMLDivElement>(null);
+  const filterTriggerRef = useRef<HTMLButtonElement>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
   // Global gate: custom-column definitions are admin-only
@@ -50,22 +52,13 @@ export function CustomColumnHeader({
     return Array.from(values).sort();
   }, [column.id, customColumnValues]);
   
-  // Close filter when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (headerRef.current && !headerRef.current.contains(e.target as Node)) {
-        setShowFilter(false);
-      }
-    };
-    
-    if (showFilter) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showFilter]);
+  // The header wraps the filter button and its panel, so it is the dismiss boundary
+  const { onBlur: onFilterBlur } = useDismissableOverlay({
+    open: showFilter,
+    onClose: () => setShowFilter(false),
+    wrapperRef: headerRef,
+    triggerRef: filterTriggerRef,
+  });
   
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -168,6 +161,7 @@ export function CustomColumnHeader({
       className={`${styles.header} ${isResizing ? styles.resizing : ''} ${hasActiveFilter ? styles.filtered : ''}`}
       style={{ width: column.width }}
       onDoubleClick={handleDoubleClick}
+      onBlur={onFilterBlur}
       title={isAdmin ? `${column.name} (double-click to edit)` : column.name}
     >
       <div className={styles.content}>
@@ -177,18 +171,23 @@ export function CustomColumnHeader({
       
       {/* Filter button */}
       <button
+        ref={filterTriggerRef}
+        type="button"
         className={`${styles.filterBtn} ${hasActiveFilter ? styles.active : ''}`}
         onClick={handleFilterClick}
         title="Filter column"
+        aria-label={`Filter ${column.name}`}
+        aria-expanded={showFilter}
+        aria-haspopup="dialog"
       >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
         </svg>
       </button>
       
       {/* Filter dropdown */}
       {showFilter && (
-        <div className={styles.filterDropdown}>
+        <div className={styles.filterDropdown} role="dialog" aria-label={`Filter ${column.name}`}>
           <div className={styles.filterHeader}>
             <span>Filter by value</span>
             {hasActiveFilter && (

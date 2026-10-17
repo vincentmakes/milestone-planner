@@ -188,6 +188,42 @@ describe('UsersPanel as an admin', () => {
   });
 });
 
+describe('UsersPanel accessible names', () => {
+  beforeEach(() => seed(ada, [siteA, siteB]));
+
+  it('names the Edit action after the person on the row', async () => {
+    render(<UsersPanel />);
+    const edit = within(await rowOf('Bob Brown')).getByRole('button', { name: 'Edit Bob Brown' });
+    expect(edit).toHaveAttribute('title', 'Edit user');
+    expect(edit.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(within(await rowOf('Sam Super')).getByRole('button', { name: 'Edit Sam Super' })).toBeInTheDocument();
+  });
+
+  it('offers Active as a switch an admin can flip for someone else', async () => {
+    render(<UsersPanel />);
+    await openEditor('Bob Brown');
+    const active = screen.getByRole('switch', { name: 'Active' });
+    expect(active).toBeChecked();
+    expect(active).toBeEnabled();
+    fireEvent.click(active);
+    expect(active).not.toBeChecked();
+    save();
+    await waitFor(() => expect(updateUser).toHaveBeenCalledWith(4, expect.objectContaining({ active: false })));
+  });
+
+  it('labels the inline new-skill confirm and cancel buttons', async () => {
+    render(<UsersPanel />);
+    await openEditor('Bob Brown');
+    fireEvent.click(screen.getByRole('button', { name: '+ New skill' }));
+    expect(screen.getByRole('button', { name: 'Add skill' }).querySelector('svg')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel adding a skill' }));
+    expect(screen.queryByRole('button', { name: 'Add skill' })).not.toBeInTheDocument();
+  });
+});
+
 describe('UsersPanel nested pickers and Escape', () => {
   beforeEach(() => seed(ada, [siteA, siteB]));
 

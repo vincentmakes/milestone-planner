@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { useAppStore } from '@/stores/appStore';
@@ -137,7 +138,7 @@ export function SSOPanel() {
         <div className={styles.loading}>Loading configuration...</div>
       ) : (
         <>
-          {error && <div className={styles.error}>{error}</div>}
+          {error && <Notice tone="error">{error}</Notice>}
           {success && <div className={styles.success}>{success}</div>}
 
           {orgSSOActive && (
@@ -232,15 +233,13 @@ export function SSOPanel() {
           <div className={styles.section}>
             <h4>User Management</h4>
             
-            <label className={styles.checkbox}>
-              <input
-                type="checkbox"
-                checked={autoCreateUsers}
-                onChange={(e) => setAutoCreateUsers(e.target.checked)}
-                disabled={!enabled || orgSSOActive}
-              />
-              <span>Auto-create users on first SSO login</span>
-            </label>
+            <ToggleSwitch
+              className={styles.checkbox}
+              checked={autoCreateUsers}
+              onChange={setAutoCreateUsers}
+              disabled={!enabled || orgSSOActive}
+              label="Auto-create users on first SSO login"
+            />
             
             <div className={styles.field}>
               <label htmlFor="defaultRole">Default role for new users</label>

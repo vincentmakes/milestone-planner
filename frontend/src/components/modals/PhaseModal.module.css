@@ -9,12 +9,14 @@
 .formGroup {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   gap: 0.375rem;
 }
 
 .formRow {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, …): a track must be able to shrink below a date input's intrinsic width */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1rem;
 }
 
@@ -153,9 +155,9 @@
 }
 
 /* Responsive */
-@media (max-width: 500px) {
+@media (max-width: 640px) {
   .formRow {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   
   .footer {

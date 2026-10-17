@@ -105,7 +105,7 @@
  */
 .assignee {
   display: grid;
-  grid-template-columns: 150px 1fr auto;
+  grid-template-columns: 150px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 6px 10px;
@@ -126,9 +126,9 @@
 
 /* A phone-width modal leaves only ~89px for the track at 150px, narrower than
    the slider's own floor, so the row would overflow the dialog. */
-@media (max-width: 600px) {
+@media (max-width: 640px) {
   .assignee {
-    grid-template-columns: 100px 1fr auto;
+    grid-template-columns: 100px minmax(0, 1fr) auto;
   }
 }
 
@@ -173,9 +173,9 @@
 .select {
   flex: 1;
   padding: 7px 10px;
-  border: 1px solid var(--input-border, var(--border-color));
+  border: 1px solid var(--input-border);
   border-radius: 5px;
-  background: var(--input-bg, var(--bg-secondary));
+  background: var(--input-bg);
   color: var(--text-primary);
   font-family: inherit;
   font-size: var(--font-size-sm);
@@ -228,9 +228,9 @@
 .textarea {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid var(--input-border, var(--border-color));
+  border: 1px solid var(--input-border);
   border-radius: 5px;
-  background: var(--input-bg, var(--bg-secondary));
+  background: var(--input-bg);
   color: var(--text-primary);
   font-family: inherit;
   font-size: var(--font-size-sm);

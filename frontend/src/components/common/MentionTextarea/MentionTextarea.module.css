@@ -11,9 +11,9 @@
   width: 100%;
   /* Border and background live here, not on the textarea, so the mirror behind
      it is visible. */
-  border: 1px solid var(--input-border, var(--border-color));
+  border: 1px solid var(--input-border);
   border-radius: 5px;
-  background: var(--input-bg, var(--bg-secondary));
+  background: var(--input-bg);
 }
 
 .field:focus-within {

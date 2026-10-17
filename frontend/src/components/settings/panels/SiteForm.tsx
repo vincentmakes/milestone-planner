@@ -6,10 +6,12 @@
  */
 
 import { useState, useEffect } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { updateSite, getBankHolidays, refreshBankHolidays, buildHolidayDateSet } from '@/api';
 import { Button } from '@/components/common/Button';
+import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useReportDirty } from '../useReportDirty';
 import { BackIcon, RefreshIcon } from './PanelIcons';
@@ -220,7 +222,7 @@ export function SiteForm({ site, onBack, onDirtyChange }: SiteFormProps) {
       <h4 className={styles.formTitle}>Edit site: {site.name}</h4>
       
       {error && (
-        <div className={styles.error}>{error}</div>
+        <Notice tone="error" className={styles.formNotice}>{error}</Notice>
       )}
       
       {/* Site Details Section */}
@@ -298,14 +300,7 @@ export function SiteForm({ site, onBack, onDirtyChange }: SiteFormProps) {
         </p>
         
         <div className={styles.checkbox}>
-          <label>
-            <input
-              type="checkbox"
-              checked={isActive}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setIsActive(e.target.checked)}
-            />
-            <span>Active</span>
-          </label>
+          <ToggleSwitch checked={isActive} onChange={setIsActive} label="Active" />
         </div>
       </div>
       

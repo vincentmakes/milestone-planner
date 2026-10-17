@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
@@ -63,6 +64,13 @@ export function Header() {
   const [customLogoLight, setCustomLogoLight] = useState<string>('');
   const [showPanelsDropdown, setShowPanelsDropdown] = useState(false);
   const panelsDropdownRef = useRef<HTMLDivElement>(null);
+  const panelsTriggerRef = useRef<HTMLButtonElement>(null);
+  const { onBlur: onPanelsBlur } = useDismissableOverlay({
+    open: showPanelsDropdown,
+    onClose: () => setShowPanelsDropdown(false),
+    wrapperRef: panelsDropdownRef,
+    triggerRef: panelsTriggerRef,
+  });
 
   // Load custom logos
   useEffect(() => {
@@ -97,19 +105,6 @@ export function Header() {
 
     return () => observer.disconnect();
   }, [theme]);
-
-  // Close panels dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (panelsDropdownRef.current && !panelsDropdownRef.current.contains(e.target as Node)) {
-        setShowPanelsDropdown(false);
-      }
-    };
-    if (showPanelsDropdown) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showPanelsDropdown]);
 
   const canUseWhatIf = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
   // Overview panels exist to drag resources onto projects, so anyone who
@@ -221,13 +216,17 @@ export function Header() {
       <div className={styles.right}>
         {/* Panels Toggle (Staff/Equipment) - only for admins in Gantt view */}
         {canShowPanels && isGanttView && (
-          <div ref={panelsDropdownRef} className={styles.panelsWrapper}>
+          <div ref={panelsDropdownRef} className={styles.panelsWrapper} onBlur={onPanelsBlur}>
             <button
+              ref={panelsTriggerRef}
+              type="button"
               className={`${styles.panelsBtn} ${activePanelCount > 0 ? styles.hasActive : ''}`}
               onClick={() => setShowPanelsDropdown(!showPanelsDropdown)}
               title="Toggle overview panels"
+              aria-expanded={showPanelsDropdown}
+              aria-haspopup="dialog"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                 <rect x="3" y="3" width="18" height="18" rx="2" />
                 <line x1="3" y1="15" x2="21" y2="15" />
               </svg>
@@ -238,7 +237,7 @@ export function Header() {
             </button>
             
             {showPanelsDropdown && (
-              <div className={styles.panelsDropdown}>
+              <div className={styles.panelsDropdown} role="dialog" aria-label="Overview panels">
                 <div className={styles.panelsDropdownHeader}>Overview Panels</div>
                 <div className={styles.panelButtons}>
                   <button

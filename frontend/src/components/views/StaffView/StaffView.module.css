@@ -934,3 +934,8 @@
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* Inline failure message inside the bank-holiday / company-event rows */
+.rowNotice {
+  margin: 0.5rem 0.75rem;
+}

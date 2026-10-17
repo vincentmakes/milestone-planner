@@ -35,6 +35,30 @@ beforeEach(() => {
   vi.mocked(getTenantAuditLog).mockReset();
 });
 
+describe('admin modal dialog semantics', () => {
+  it('exposes every create modal as a labelled modal dialog with a labelled close button', () => {
+    for (const [Modal, title] of [
+      [CreateTenantModal, 'Create Tenant'],
+      [CreateOrganizationModal, 'Create Organization'],
+      [CreateAdminModal, 'Create Admin User'],
+    ] as const) {
+      const { unmount } = render(<Modal onClose={vi.fn()} onCreated={vi.fn()} />);
+      const dialog = screen.getByRole('dialog', { name: title });
+      expect(dialog).toHaveAttribute('aria-modal', 'true');
+      expect(screen.getByRole('button', { name: 'Close dialog' })).toHaveAttribute('type', 'button');
+      unmount();
+    }
+  });
+
+  it('labels the tenant details dialog by its heading', async () => {
+    vi.mocked(getTenant).mockResolvedValue(makeTenant());
+    vi.mocked(getTenantAuditLog).mockResolvedValue([]);
+    render(<TenantDetailsModal tenantId="t-1" onClose={vi.fn()} />);
+    expect(screen.getByRole('dialog', { name: 'Tenant Details' })).toHaveAttribute('aria-modal', 'true');
+    await screen.findByText(makeTenant().name);
+  });
+});
+
 describe('CreateTenantModal', () => {
   it('derives the slug from the name and submits the full request', async () => {
     const tenant = makeTenant({ id: 'new' });

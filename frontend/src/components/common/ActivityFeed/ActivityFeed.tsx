@@ -11,27 +11,13 @@ import { memo, useEffect, useState, useMemo, useRef } from 'react';
 import { useWebSocketContext } from '@/contexts/WebSocketContext';
 import type { ChangePayload } from '@/hooks/useWebSocket';
 import { useAppStore } from '@/stores/appStore';
+import { avatarColorFor } from '@/utils/avatarColor';
 import styles from './ActivityFeed.module.css';
 
 const TOAST_LIFETIME = 6000;
 const MAX_VISIBLE = 4;
 /** Coalesce additional changes from the same user/project into one toast within this window. */
 const COALESCE_WINDOW = 2500;
-
-const AVATAR_COLORS = [
-  '#3b82f6',
-  '#8b5cf6',
-  '#ec4899',
-  '#f97316',
-  '#10b981',
-  '#06b6d4',
-  '#f59e0b',
-  '#ef4444',
-];
-
-function getAvatarColor(userId: number): string {
-  return AVATAR_COLORS[userId % AVATAR_COLORS.length];
-}
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -128,7 +114,7 @@ const ActivityToast = memo(function ActivityToast({ toast, projectName, onDismis
   }, [toast._key, toast._at, onDismiss]);
 
   const description = describe(toast, projectName);
-  const color = getAvatarColor(toast.user_id);
+  const color = avatarColorFor(toast.user_id);
 
   return (
     <div className={`${styles.toast} ${closing ? styles.closing : ''}`}>

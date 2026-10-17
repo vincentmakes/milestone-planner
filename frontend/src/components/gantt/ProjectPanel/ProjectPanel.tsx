@@ -3,7 +3,8 @@
  * Left panel containing the project tree hierarchy with custom columns support
  */
 
-import { forwardRef, useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
+import { forwardRef, useState, useCallback, useRef, useMemo } from 'react';
 import { ProjectRow } from './ProjectRow';
 import { SectionRow } from './SectionRow';
 import { GroupByDropdown } from './GroupByDropdown';
@@ -63,6 +64,13 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
     const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false);
     const [editingColumn, setEditingColumn] = useState<CustomColumn | null>(null);
     const visibilityDropdownRef = useRef<HTMLDivElement>(null);
+    const visibilityTriggerRef = useRef<HTMLButtonElement>(null);
+    const { onBlur: onVisibilityBlur } = useDismissableOverlay({
+      open: showVisibilityDropdown,
+      onClose: () => setShowVisibilityDropdown(false),
+      wrapperRef: visibilityDropdownRef,
+      triggerRef: visibilityTriggerRef,
+    });
     
     const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
     // Custom-column definitions are admin-only on the backend (require_admin)
@@ -72,19 +80,6 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
     const visibleColumns = showAllCustomColumns
       ? customColumns.filter(col => !hiddenCustomColumns.has(col.id))
       : [];
-    
-    // Close dropdown when clicking outside
-    useEffect(() => {
-      const handleClickOutside = (e: MouseEvent) => {
-        if (visibilityDropdownRef.current && !visibilityDropdownRef.current.contains(e.target as Node)) {
-          setShowVisibilityDropdown(false);
-        }
-      };
-      if (showVisibilityDropdown) {
-        document.addEventListener('mousedown', handleClickOutside);
-      }
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [showVisibilityDropdown]);
     
     const handleManageColumns = () => {
       setShowManagerModal(true);
@@ -151,8 +146,10 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                     className={`${styles.toggleBtn} ${!showAssignments ? styles.toggleOff : ''}`}
                     onClick={toggleShowAssignments}
                     title={showAssignments ? 'Hide Staff & Equipment' : 'Show Staff & Equipment'}
+                    aria-label="Show staff and equipment"
+                    aria-pressed={showAssignments}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                       <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
                       <circle cx="9" cy="7" r="4" />
                       <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
@@ -171,13 +168,18 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
 
                   {/* Column visibility dropdown (only if columns exist) */}
                   {customColumns.length > 0 && (
-                    <div ref={visibilityDropdownRef} className={styles.visibilityWrapper}>
+                    <div ref={visibilityDropdownRef} className={styles.visibilityWrapper} onBlur={onVisibilityBlur}>
                       <button 
+                        ref={visibilityTriggerRef}
+                        type="button"
                         className={`${styles.toggleBtn} ${hiddenCount > 0 || !showAllCustomColumns ? styles.hasHidden : ''}`}
                         onClick={() => setShowVisibilityDropdown(!showVisibilityDropdown)}
                         title="Column Visibility"
+                        aria-label="Column visibility"
+                        aria-expanded={showVisibilityDropdown}
+                        aria-haspopup="dialog"
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                           {showAllCustomColumns && hiddenCount === 0 ? (
                             <>
                               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
@@ -193,7 +195,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                       </button>
                     
                       {showVisibilityDropdown && (
-                        <div className={styles.visibilityDropdown}>
+                        <div className={styles.visibilityDropdown} role="dialog" aria-label="Column visibility">
                           <div className={styles.visibilityHeader}>
                             <span>Column Visibility</span>
                           </div>
@@ -251,9 +253,10 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                           className={styles.columnsBtn}
                           onClick={handleManageColumns}
                           title="Manage Custom Columns"
+                          aria-label="Manage custom columns"
                         >
                           {/* Table/spreadsheet icon - more explicit for columns */}
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                             <line x1="3" y1="9" x2="21" y2="9" />
                             <line x1="9" y1="21" x2="9" y2="9" />
@@ -264,8 +267,9 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                         className={styles.importBtn}
                         onClick={() => setActiveModal('importProject')}
                         title="Import Project"
+                        aria-label="Import project"
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                           <polyline points="17 8 12 3 7 8" />
                           <line x1="12" y1="3" x2="12" y2="15" />
@@ -275,8 +279,9 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                         className={styles.newProjectBtn}
                         onClick={() => openProjectModal()}
                         title="New Project"
+                        aria-label="New project"
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                           <line x1="12" y1="5" x2="12" y2="19" />
                           <line x1="5" y1="12" x2="19" y2="12" />
                         </svg>

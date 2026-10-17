@@ -63,6 +63,13 @@ describe('OrganizationDetailsModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('is a modal dialog named after the organization once loaded', async () => {
+    render(<OrganizationDetailsModal organizationId="org-1" onClose={vi.fn()} />);
+    expect(screen.getByRole('dialog', { name: 'Organization Details' })).toHaveAttribute('aria-modal', 'true');
+    expect(await screen.findByRole('dialog', { name: 'Acme Labs' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close dialog' })).toHaveAttribute('type', 'button');
+  });
+
   it('Escape closes the tenant group editor, not the dialog', async () => {
     const onClose = vi.fn();
     render(<OrganizationDetailsModal organizationId="org-1" onClose={onClose} />);

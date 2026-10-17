@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Notice } from '@/components/common/Notice';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/common/Button';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
@@ -271,7 +272,9 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
                   onChange={(value) => {
                     setSettings(prev => ({ ...prev, header_logo_dark: value }));
                     setSuccess(null);
+                    setError(null);
                   }}
+                  onError={setError}
                   theme="dark"
                 />
                 <span className={styles.hint}>
@@ -286,7 +289,9 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
                   onChange={(value) => {
                     setSettings(prev => ({ ...prev, header_logo_light: value }));
                     setSuccess(null);
+                    setError(null);
                   }}
+                  onError={setError}
                   theme="light"
                 />
                 <span className={styles.hint}>
@@ -380,7 +385,7 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
           
           {/* Messages */}
           {error && (
-            <div className={styles.error}>{error}</div>
+            <Notice tone="error">{error}</Notice>
           )}
           
           {success && (
@@ -419,10 +424,12 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
 interface LogoUploaderProps {
   value: string;
   onChange: (value: string) => void;
+  /** A rejected file is reported here and shown by the panel's Notice. */
+  onError: (message: string) => void;
   theme: 'dark' | 'light';
 }
 
-function LogoUploader({ value, onChange, theme }: LogoUploaderProps) {
+function LogoUploader({ value, onChange, onError, theme }: LogoUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
   
@@ -434,13 +441,13 @@ function LogoUploader({ value, onChange, theme }: LogoUploaderProps) {
     // Validate file type
     const validTypes = ['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp'];
     if (!validTypes.includes(file.type)) {
-      alert('Please upload a PNG, JPG, SVG, or WebP image');
+      onError('Please upload a PNG, JPG, SVG, or WebP image');
       return;
     }
     
     // Validate file size (max 500KB)
     if (file.size > 500 * 1024) {
-      alert('Logo must be smaller than 500KB');
+      onError('Logo must be smaller than 500KB');
       return;
     }
     
@@ -451,7 +458,7 @@ function LogoUploader({ value, onChange, theme }: LogoUploaderProps) {
       onChange(result);
     };
     reader.readAsDataURL(file);
-  }, [onChange]);
+  }, [onChange, onError]);
   
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();

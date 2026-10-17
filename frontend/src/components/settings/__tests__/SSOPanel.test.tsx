@@ -52,7 +52,7 @@ describe('SSOPanel', () => {
     expect(screen.getByText('Loading configuration...')).toBeInTheDocument();
     expect(await screen.findByDisplayValue('tenant-guid')).toBeInTheDocument();
     expect(apiGet).toHaveBeenCalledWith('/api/sso/config/full');
-    expect(screen.getByRole('switch')).toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Enable SSO' })).toBeChecked();
     expect(field(/Client ID/)).toHaveValue('client-guid');
     expect(field(/Client Secret/)).toHaveValue('');
     expect(field(/Client Secret/)).toHaveAttribute('placeholder', '••••••ab12');
@@ -66,8 +66,20 @@ describe('SSOPanel', () => {
     render(<SSOPanel />);
     await waitFor(() => expect(field(/Redirect URI/)).toHaveValue(`${window.location.origin}/api/auth/sso/callback`));
     expect(field(/Client Secret/)).toHaveAttribute('placeholder', 'Enter client secret');
-    expect(screen.getByRole('switch')).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Enable SSO' })).not.toBeChecked();
     expect(field(/Tenant ID/)).toBeDisabled();
+  });
+
+  it('offers auto-create as a switch that follows the Enable SSO state', async () => {
+    vi.mocked(apiGet).mockResolvedValue({ ...fullConfig, enabled: 0 });
+    render(<SSOPanel />);
+    await screen.findByDisplayValue('tenant-guid');
+    const autoCreate = screen.getByRole('switch', { name: /Auto-create users/ });
+    expect(autoCreate).toBeDisabled();
+    fireEvent.click(screen.getByRole('switch', { name: 'Enable SSO' }));
+    expect(autoCreate).toBeEnabled();
+    fireEvent.click(autoCreate);
+    expect(autoCreate).toBeChecked();
   });
 
   it('shows the load error', async () => {
@@ -80,7 +92,7 @@ describe('SSOPanel', () => {
     vi.mocked(apiGet).mockResolvedValue({ ...fullConfig, enabled: 0, tenant_id: '' });
     render(<SSOPanel />);
     await screen.findByDisplayValue('client-guid');
-    fireEvent.click(screen.getByRole('switch'));
+    fireEvent.click(screen.getByRole('switch', { name: 'Enable SSO' }));
     fireEvent.click(save());
     expect(
       screen.getByText('Please fill in Tenant ID, Client ID, and Redirect URI to enable SSO')
@@ -92,7 +104,7 @@ describe('SSOPanel', () => {
     render(<SSOPanel />);
     await screen.findByDisplayValue('tenant-guid');
     fireEvent.change(field(/Tenant ID/), { target: { value: '  new-tenant  ' } });
-    fireEvent.click(screen.getByRole('checkbox', { name: /Auto-create users/ }));
+    fireEvent.click(screen.getByRole('switch', { name: /Auto-create users/ }));
     fireEvent.change(field(/Default role/), { target: { value: 'superuser' } });
     fireEvent.click(save());
 
@@ -133,7 +145,7 @@ describe('SSOPanel', () => {
     render(<SSOPanel />);
     expect(await screen.findByText('Acme Group')).toBeInTheDocument();
     expect(screen.getByText(/managed by your organization/)).toBeInTheDocument();
-    expect(screen.getByRole('switch')).toBeDisabled();
+    expect(screen.getByRole('switch', { name: 'Enable SSO' })).toBeDisabled();
     expect(field(/Tenant ID/)).toBeDisabled();
     expect(field(/Default role/)).toBeDisabled();
     expect(save()).toBeDisabled();

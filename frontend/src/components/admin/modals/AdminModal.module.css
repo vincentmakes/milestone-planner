@@ -97,7 +97,7 @@
 
 .formRow {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1rem;
 }
 
@@ -134,13 +134,6 @@
   cursor: not-allowed;
 }
 
-.error {
-  padding: 0.75rem;
-  font-size: 0.875rem;
-  color: var(--accent-red);
-  background: var(--accent-red-alpha);
-  border-radius: var(--radius-md);
-}
 
 /* Buttons */
 .btn {
@@ -224,7 +217,7 @@
 }
 
 .codeLink:hover {
-  background: var(--accent-blue-alpha, rgba(59, 130, 246, 0.12));
+  background: var(--accent-blue-alpha);
   border-color: var(--accent-blue);
   text-decoration: underline;
 }

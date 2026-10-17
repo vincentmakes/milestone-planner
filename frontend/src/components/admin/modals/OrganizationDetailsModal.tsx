@@ -3,7 +3,8 @@
  * Modal showing organization details with SSO configuration and tenant management
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useId, useState, useEffect, useCallback } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { useAdminStore } from '@/stores/adminStore';
 import { 
   getOrganization, 
@@ -272,6 +273,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
 
   // Escape first leaves an open inline edit (details, tenant groups); only
   // with none open does it close the dialog, so typed input isn't lost.
+  const titleId = useId();
   useEscapeKey(() => {
     if (isEditing) {
       cancelDetailsEdit();
@@ -299,13 +301,13 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
 
   return (
     <div className={styles.overlay}>
-      <div className={`${styles.modal} ${styles.wide}`} style={{ maxWidth: 800 }}>
+      <div className={`${styles.modal} ${styles.wide}`} style={{ maxWidth: 800 }} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className={styles.header}>
-          <h2 className={styles.title}>
+          <h2 id={titleId} className={styles.title}>
             {organization?.name || 'Organization Details'}
           </h2>
-          <button className={styles.closeBtn} onClick={onClose}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Close dialog">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -350,10 +352,10 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
               Loading...
             </div>
           ) : error && !organization ? (
-            <div className={styles.error}>{error}</div>
+            <Notice tone="error">{error}</Notice>
           ) : organization ? (
             <>
-              {error && <div className={styles.error} style={{ marginBottom: '1rem' }}>{error}</div>}
+              {error && <Notice tone="error" style={{ marginBottom: '1rem' }}>{error}</Notice>}
               
               {/* Details Tab */}
               {activeTab === 'details' && (

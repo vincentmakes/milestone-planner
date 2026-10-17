@@ -13,14 +13,6 @@
   color: var(--text-muted);
 }
 
-.error {
-  padding: 0.75rem;
-  font-size: var(--font-size-md);
-  color: var(--accent-red);
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid var(--accent-red);
-  border-radius: var(--radius-md);
-}
 
 .list {
   display: flex;
@@ -228,7 +220,7 @@
   height: 36px;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .editRow {
     padding-left: 0;
   }

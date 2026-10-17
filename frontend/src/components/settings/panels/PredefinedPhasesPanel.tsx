@@ -6,11 +6,12 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { useAppStore } from '@/stores/appStore';
 import { apiGet, apiPost, apiPut, apiDelete } from '@/api/client';
 import type { PredefinedPhase } from '@/types';
-import { PlusIcon } from './PanelIcons';
+import { CheckCircleIcon, CircleIcon, PlusIcon, TrashIcon } from './PanelIcons';
 import styles from './PredefinedPhasesPanel.module.css';
 
 export function PredefinedPhasesPanel() {
@@ -22,6 +23,7 @@ export function PredefinedPhasesPanel() {
   const [phases, setPhases] = useState<PredefinedPhase[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [newPhaseName, setNewPhaseName] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingName, setEditingName] = useState('');
@@ -52,6 +54,7 @@ export function PredefinedPhasesPanel() {
   const handleAdd = async () => {
     if (!newPhaseName.trim()) return;
     
+    setError(null);
     setIsAdding(true);
     try {
       await apiPost('/api/predefined-phases', { name: newPhaseName.trim() });
@@ -59,7 +62,7 @@ export function PredefinedPhasesPanel() {
       await loadPhases();
     } catch (err) {
       console.error('Failed to add phase:', err);
-      alert(err instanceof Error ? err.message : 'Failed to add phase');
+      setError(err instanceof Error ? err.message : 'Failed to add phase');
     } finally {
       setIsAdding(false);
     }
@@ -72,18 +75,20 @@ export function PredefinedPhasesPanel() {
       return;
     }
     
+    setError(null);
     try {
       await apiPut(`/api/predefined-phases/${id}`, { name: editingName.trim() });
       setEditingId(null);
       await loadPhases();
     } catch (err) {
       console.error('Failed to update phase:', err);
-      alert(err instanceof Error ? err.message : 'Failed to update phase');
+      setError(err instanceof Error ? err.message : 'Failed to update phase');
     }
   };
   
   // Toggle active status
   const handleToggleActive = async (phase: PredefinedPhase) => {
+    setError(null);
     try {
       await apiPut(`/api/predefined-phases/${phase.id}`, { 
         is_active: !phase.is_active 
@@ -91,7 +96,7 @@ export function PredefinedPhasesPanel() {
       await loadPhases();
     } catch (err) {
       console.error('Failed to toggle phase:', err);
-      alert(err instanceof Error ? err.message : 'Failed to update phase');
+      setError(err instanceof Error ? err.message : 'Failed to update phase');
     }
   };
   
@@ -101,13 +106,14 @@ export function PredefinedPhasesPanel() {
       `Are you sure you want to delete "${phase.name}"?`
     );
     if (!confirmed) return;
+    setError(null);
     
     try {
       await apiDelete(`/api/predefined-phases/${phase.id}`);
       await loadPhases();
     } catch (err) {
       console.error('Failed to delete phase:', err);
-      alert(err instanceof Error ? err.message : 'Failed to delete phase');
+      setError(err instanceof Error ? err.message : 'Failed to delete phase');
     }
   };
   
@@ -194,6 +200,12 @@ export function PredefinedPhasesPanel() {
         Predefined phases appear as quick-add options when creating new projects.
         Drag to reorder. Inactive phases won't appear in the list.
       </p>
+
+      {error && (
+        <Notice tone="error" onDismiss={() => setError(null)}>
+          {error}
+        </Notice>
+      )}
       
       {/* Phase List */}
       <div className={styles.phaseList}>
@@ -265,27 +277,18 @@ export function PredefinedPhasesPanel() {
                     className={`${styles.actionBtn} ${phase.is_active ? styles.active : ''}`}
                     onClick={() => handleToggleActive(phase)}
                     title={phase.is_active ? 'Deactivate' : 'Activate'}
+                    aria-label={`${phase.is_active ? 'Deactivate' : 'Activate'} ${phase.name}`}
+                    aria-pressed={!!phase.is_active}
                   >
-                    {phase.is_active ? (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                        <polyline points="22 4 12 14.01 9 11.01" />
-                      </svg>
-                    ) : (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10" />
-                      </svg>
-                    )}
+                    {phase.is_active ? <CheckCircleIcon /> : <CircleIcon />}
                   </button>
                   <button
                     className={`${styles.actionBtn} ${styles.delete}`}
                     onClick={() => handleDelete(phase)}
                     title="Delete"
+                    aria-label={`Delete ${phase.name}`}
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
+                    <TrashIcon />
                   </button>
                 </div>
               )}

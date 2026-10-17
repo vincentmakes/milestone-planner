@@ -109,18 +109,20 @@ describe('ContextMenu', () => {
     return { onClose, edit, remove, locked };
   }
 
-  it('runs an item and closes', () => {
+  it('is a menu of menuitems that runs an item and closes', () => {
     const { onClose, edit } = menu();
-    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Edit', 'Locked', 'Delete']);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    expect(screen.getAllByRole('menuitem').map((b) => b.textContent)).toEqual(['Edit', 'Locked', 'Delete']);
+    expect(screen.getByRole('separator')).toBeInTheDocument();
     expect(screen.getByTestId('edit-icon')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }));
     expect(edit).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('ignores disabled items', () => {
     const { onClose, locked } = menu();
-    const item = screen.getByRole('button', { name: 'Locked' });
+    const item = screen.getByRole('menuitem', { name: 'Locked' });
     expect(item).toBeDisabled();
     expect(item).toHaveAttribute('title', 'Read-only');
     fireEvent.click(item);
@@ -130,13 +132,22 @@ describe('ContextMenu', () => {
 
   it('closes on Escape and on an outside click, not on an inside click', () => {
     const { onClose } = menu();
-    fireEvent.mouseDown(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.mouseDown(screen.getByRole('menuitem', { name: 'Delete' }));
     expect(onClose).not.toHaveBeenCalled();
     fireEvent.keyDown(document, { key: 'Enter' });
     expect(onClose).not.toHaveBeenCalled();
     fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.mouseDown(screen.getByText('outside'));
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('closes when focus leaves the menu (Tab out), but not when it moves between items', () => {
+    const { onClose } = menu();
+    const menuEl = screen.getByRole('menu');
+    fireEvent.blur(menuEl, { relatedTarget: screen.getByRole('menuitem', { name: 'Delete' }) });
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.blur(menuEl, { relatedTarget: screen.getByText('outside') });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('moves back inside the viewport when it would overflow', () => {
@@ -159,7 +170,7 @@ describe('ContextMenu', () => {
         items={[{ label: 'Edit', onClick: vi.fn() }]}
       />
     );
-    const el = screen.getByRole('button', { name: 'Edit' }).parentElement as HTMLElement;
+    const el = screen.getByRole('menuitem', { name: 'Edit' }).parentElement as HTMLElement;
     expect(el.style.left).toBe(`${window.innerWidth - 208}px`);
     expect(el.style.top).toBe(`${window.innerHeight - 158}px`);
   });

@@ -1,14 +1,5 @@
 /* SiteForm (Settings hub > Sites > edit) */
 
-.error {
-  padding: 0.75rem;
-  margin-bottom: 1rem;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid var(--accent-red);
-  border-radius: var(--radius-md);
-  color: var(--accent-red);
-  font-size: var(--font-size-base);
-}
 
 .section {
   margin-bottom: 1.5rem;
@@ -225,4 +216,8 @@
 .holidayInfo {
   flex: 1;
   min-width: 0;
+}
+
+.formNotice {
+  margin-bottom: 1rem;
 }

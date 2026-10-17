@@ -1,0 +1,10 @@
+/* Bottom-right slot, above the activity feed (which starts at 1.25rem). */
+.slot {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 5rem;
+  z-index: 10000;
+  width: min(380px, calc(100vw - 2rem));
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-md);
+}

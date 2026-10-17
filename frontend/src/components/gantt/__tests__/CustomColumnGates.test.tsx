@@ -64,6 +64,44 @@ describe('ProjectPanel "Manage Custom Columns"', () => {
   });
 });
 
+describe('ProjectPanel header accessible names', () => {
+  it('names every icon button, hides its svg and exposes the overview toggle state', () => {
+    seedUser('admin');
+    useCustomColumnStore.setState({ customColumns: [column] });
+    render(<ProjectPanel projects={[]} width={320} />);
+
+    // The overview is shown by default; the pressed state follows the toggle
+    const toggle = screen.getByRole('button', { name: 'Show staff and equipment' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: 'Show staff and equipment' })).toHaveAttribute('aria-pressed', 'false');
+
+    const visibility = screen.getByRole('button', { name: 'Column visibility' });
+    expect(visibility).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(visibility).toHaveAttribute('aria-expanded', 'false');
+
+    for (const name of ['Manage custom columns', 'Import project', 'New project']) {
+      const btn = screen.getByRole('button', { name });
+      expect(btn.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    }
+  });
+});
+
+describe('ProjectPanel column visibility dropdown', () => {
+  it('is a dialog that Escape closes, focus back on the trigger', () => {
+    seedUser('admin');
+    useCustomColumnStore.setState({ customColumns: [column] });
+    render(<ProjectPanel projects={[]} width={320} />);
+    const trigger = screen.getByRole('button', { name: 'Column visibility' });
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: 'Column visibility' })).toBeInTheDocument();
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Column visibility' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+});
+
 describe('ProjectPanel header grouping', () => {
   it('separates the view controls from the actions with a divider for admins', () => {
     seedUser('admin');
@@ -99,6 +137,18 @@ describe('CustomColumnHeader definition controls', () => {
     render(<CustomColumnHeader column={column} onEdit={onEdit} onWidthChange={onWidthChange} />);
     return { onEdit, onWidthChange, header: screen.getByText('Priority').closest('div')!.parentElement! };
   };
+
+  it('opens the value filter as a dialog named after the column; Escape closes it', () => {
+    seedUser('user');
+    renderHeader();
+    const trigger = screen.getByRole('button', { name: 'Filter Priority' });
+    expect(trigger).toHaveAttribute('title', 'Filter column');
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: 'Filter Priority' })).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Filter Priority' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
 
   it('opens the editor on double-click and offers resizing for admins', () => {
     seedUser('admin');

@@ -6,30 +6,19 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { PanelToolbar } from '../PanelToolbar';
-import { BackIcon, PlusIcon } from './PanelIcons';
+import { BackIcon, EditIcon, PlusIcon, TrashIcon } from './PanelIcons';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useAppStore } from '@/stores/appStore';
 import { skillsApi } from '@/api/endpoints/skills';
 import type { Skill } from '@/types';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
+import { DEFAULT_SKILL_COLOR, SKILL_COLOR_SWATCHES } from '@/utils/colorSwatches';
+import { ColorSwatchPicker } from './ColorSwatchPicker';
 import styles from './SkillsPanel.module.css';
-
-// Default colors for skills
-const SKILL_COLORS = [
-  '#3b82f6', // Blue
-  '#8b5cf6', // Purple
-  '#10b981', // Green
-  '#f59e0b', // Amber
-  '#ef4444', // Red
-  '#06b6d4', // Cyan
-  '#ec4899', // Pink
-  '#84cc16', // Lime
-  '#f97316', // Orange
-  '#6366f1', // Indigo
-];
 
 export function SkillsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const setSkills = useAppStore((s) => s.setSkills);
@@ -127,7 +116,7 @@ export function SkillsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
           />
           
           {error && (
-            <div className={styles.error}>{error}</div>
+            <Notice tone="error">{error}</Notice>
           )}
           
           {/* Skills list */}
@@ -160,21 +149,17 @@ export function SkillsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                         className={styles.actionBtn}
                         onClick={() => handleEdit(skill)}
                         title="Edit skill"
+                        aria-label={`Edit ${skill.name}`}
                       >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                        </svg>
+                        <EditIcon />
                       </button>
                       <button 
                         className={`${styles.actionBtn} ${styles.deleteBtn}`}
                         onClick={() => handleDelete(skill.id)}
                         title="Delete skill"
+                        aria-label={`Delete ${skill.name}`}
                       >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <polyline points="3 6 5 6 21 6" />
-                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                        </svg>
+                        <TrashIcon />
                       </button>
                     </div>
                   </div>
@@ -205,7 +190,7 @@ function SkillForm({ skill, onSave, onCancel, onDirtyChange }: SkillFormProps) {
   // Form state
   const [name, setName] = useState(skill?.name || '');
   const [description, setDescription] = useState(skill?.description || '');
-  const [color, setColor] = useState(skill?.color || SKILL_COLORS[0]);
+  const [color, setColor] = useState(skill?.color || DEFAULT_SKILL_COLOR);
   
   const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
@@ -214,7 +199,7 @@ function SkillForm({ skill, onSave, onCancel, onDirtyChange }: SkillFormProps) {
     onDirtyChange,
     name !== (skill?.name || '') ||
       description !== (skill?.description || '') ||
-      color !== (skill?.color || SKILL_COLORS[0])
+      color !== (skill?.color || DEFAULT_SKILL_COLOR)
   );
   
   // Handle form submit
@@ -266,7 +251,7 @@ function SkillForm({ skill, onSave, onCancel, onDirtyChange }: SkillFormProps) {
       </div>
       
       {error && (
-        <div className={styles.error}>{error}</div>
+        <Notice tone="error">{error}</Notice>
       )}
       
       {/* Skill Name */}
@@ -298,25 +283,13 @@ function SkillForm({ skill, onSave, onCancel, onDirtyChange }: SkillFormProps) {
       {/* Color Picker */}
       <div className={styles.field}>
         <label>Color</label>
-        <div className={styles.colorPicker}>
-          {SKILL_COLORS.map((c) => (
-            <button
-              key={c}
-              type="button"
-              className={`${styles.colorOption} ${color === c ? styles.selected : ''}`}
-              style={{ backgroundColor: c }}
-              onClick={() => setColor(c)}
-              title={c}
-            />
-          ))}
-          <input
-            type="color"
-            value={color}
-            onChange={(e) => setColor(e.target.value)}
-            className={styles.customColor}
-            title="Custom color"
-          />
-        </div>
+        <ColorSwatchPicker
+          value={color}
+          onChange={setColor}
+          label="Skill colour"
+          swatches={SKILL_COLOR_SWATCHES}
+          allowCustom
+        />
         <div className={styles.colorPreview}>
           <span 
             className={styles.previewDot}

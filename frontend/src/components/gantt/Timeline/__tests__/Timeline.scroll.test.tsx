@@ -108,6 +108,27 @@ describe('Timeline triggers', () => {
     expect(scroller.scrollLeft).toBe(Math.max(0, today * CW - 300 + CW / 2));
   });
 
+  it('centres the next working day when today is a hidden weekend day (Week/Month views)', async () => {
+    // Saturday 17 October 2026 with weekends hidden: no cell is "today".
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 9, 17, 10));
+    try {
+      const noWeekends = generateTimelineCells(new Date(), 'month', new Set(), [], new Set(), [], false);
+      expect(noWeekends.some((c) => c.isToday)).toBe(false);
+      const { scroller } = renderTimeline(noWeekends);
+      await nextFrame();
+      act(() => useUIStore.getState().triggerScrollToToday());
+      const monday = indexOf(noWeekends, '2026-10-19');
+      expect(monday).toBeGreaterThan(0);
+      expect(scroller.scrollTo).toHaveBeenCalledWith({
+        left: Math.max(0, monday * CW - 300 + CW / 2),
+        behavior: 'smooth',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps the centre date in view after a zoom', async () => {
     const { scroller } = renderTimeline();
     await nextFrame();

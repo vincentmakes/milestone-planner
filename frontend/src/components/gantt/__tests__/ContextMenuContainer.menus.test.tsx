@@ -60,7 +60,7 @@ function seed(user = makeUser({ id: 1, role: 'admin' })) {
   });
 }
 
-const item = (label: string) => screen.getByRole('button', { name: label });
+const item = (label: string) => screen.getByRole('menuitem', { name: label });
 
 beforeEach(() => {
   resetAllStores();

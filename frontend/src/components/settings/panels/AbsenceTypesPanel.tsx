@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { Notice } from '@/components/common/Notice';
 import type { KeyboardEvent } from 'react';
 import { Button } from '@/components/common/Button';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
@@ -210,7 +211,7 @@ export function AbsenceTypesPanel({ onDirtyChange }: Partial<SettingsPanelProps>
         reduce capacity. Drag to reorder.
       </p>
 
-      {error && <div className={styles.error} role="alert">{error}</div>}
+      {error && <Notice tone="error">{error}</Notice>}
 
       <div className={styles.list}>
         {isLoading ? (

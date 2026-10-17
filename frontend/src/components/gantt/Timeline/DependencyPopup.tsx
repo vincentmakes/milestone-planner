@@ -4,7 +4,8 @@
  * Shows on click of a dependency arrow
  */
 
-import { memo, useCallback, useEffect, useRef } from 'react';
+import { memo, useCallback, useRef } from 'react';
+import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import styles from './DependencyPopup.module.css';
 import type { DependencyType } from '@/types';
 
@@ -41,40 +42,10 @@ export const DependencyPopup = memo(function DependencyPopup({
 }: DependencyPopupProps) {
   const popupRef = useRef<HTMLDivElement>(null);
 
-  // Close on click outside
-  useEffect(() => {
-    if (!visible) return;
-
-    const handleClickOutside = (e: MouseEvent) => {
-      if (popupRef.current && !popupRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-
-    // Delay to prevent immediate close from the click that opened it
-    const timeoutId = setTimeout(() => {
-      document.addEventListener('mousedown', handleClickOutside);
-    }, 100);
-
-    return () => {
-      clearTimeout(timeoutId);
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [visible, onClose]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!visible) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [visible, onClose]);
+  // Outside click, Tab out and Escape close it. The arrow click that opens the
+  // popup has finished (mousedown and mouseup) before this mounts, so no delay
+  // is needed to keep it from closing itself.
+  const { onBlur } = useDismissableOverlay({ open: visible, onClose, wrapperRef: popupRef });
 
   const handleDelete = useCallback(() => {
     if (confirm(`Remove this ${dependencyType} dependency?`)) {
@@ -96,11 +67,14 @@ export const DependencyPopup = memo(function DependencyPopup({
         left: adjustedX,
         top: adjustedY,
       }}
+      role="dialog"
+      aria-label={`${DEPENDENCY_TYPE_LABELS[dependencyType]} dependency`}
+      onBlur={onBlur}
     >
       <div className={styles.header}>
         <span className={styles.typeLabel}>{DEPENDENCY_TYPE_LABELS[dependencyType]}</span>
-        <button className={styles.closeButton} onClick={onClose} title="Close">
-          ×
+        <button type="button" className={styles.closeButton} onClick={onClose} title="Close" aria-label="Close dependency details">
+          <span aria-hidden="true">×</span>
         </button>
       </div>
 

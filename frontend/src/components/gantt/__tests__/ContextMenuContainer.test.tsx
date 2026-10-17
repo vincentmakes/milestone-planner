@@ -103,13 +103,13 @@ describe('ContextMenuContainer subphase target', () => {
   it('enables "Assign me" on a depth-2 subphase for a plain user', () => {
     render(<ContextMenuContainer />);
 
-    expect(screen.getByRole('button', { name: /assign me/i })).toBeEnabled();
+    expect(screen.getByRole('menuitem', { name: /assign me/i })).toBeEnabled();
   });
 
   it('books the nested subphase with its own dates', async () => {
     render(<ContextMenuContainer />);
 
-    fireEvent.click(screen.getByRole('button', { name: /assign me/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /assign me/i }));
 
     await waitFor(() => expect(createStaffAssignment).toHaveBeenCalledTimes(1));
     expect(createStaffAssignment).toHaveBeenCalledWith(
@@ -137,7 +137,7 @@ describe('ContextMenuContainer subphase target', () => {
 
     render(<ContextMenuContainer />);
 
-    expect(screen.getByRole('button', { name: /assigned to me/i })).toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: /assigned to me/i })).toBeDisabled();
   });
 });
 
@@ -157,20 +157,19 @@ describe('ContextMenuContainer deletes', () => {
     vi.mocked(deleteFn).mockRejectedValueOnce(error);
     vi.mocked(recoverFromPersistFailure).mockClear();
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
     useAppStore.setState({ currentUser: admin });
     useUIStore.getState().showContextMenu(kind, id, 10, 10, project.id, phase.id);
 
     render(<ContextMenuContainer />);
-    fireEvent.click(screen.getByRole('button', { name: label }));
+    fireEvent.click(screen.getByRole('menuitem', { name: label }));
 
     await waitFor(() => expect(recoverFromPersistFailure).toHaveBeenCalledWith(`Delete ${kind}`, error));
-    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('Server unavailable')));
+    await waitFor(() => expect(useUIStore.getState().flashNotice?.message).toContain('Server unavailable'));
+    expect(useUIStore.getState().flashNotice?.tone).toBe('error');
     // Nothing was removed locally
     expect(useAppStore.getState().projects[0].phases[0].children[0].id).toBe(20);
 
     confirmSpy.mockRestore();
-    alertSpy.mockRestore();
   });
 });
 
