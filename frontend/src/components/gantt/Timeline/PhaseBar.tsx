@@ -6,7 +6,7 @@
  */
 
 import { memo, useRef, useCallback } from 'react';
-import { getEventCoordinates, isTouchEvent, toMouseLikeEvent, NON_PASSIVE } from '@/utils/touchEvents';
+import { armTouchGesture, getEventCoordinates, isTouchEvent, toMouseLikeEvent, NON_PASSIVE } from '@/utils/touchEvents';
 import styles from './PhaseBar.module.css';
 
 interface PhaseBarProps {
@@ -75,8 +75,10 @@ export const PhaseBar = memo(function PhaseBar({
     isTouch: false,
   });
   const height = isSubphase ? 16 : 20;
-  // Draggable / resizable bars take touch gestures (CSS touch-action: none)
-  const interactiveClass = onDragStart || onResizeStart ? styles.interactive : '';
+  // Draggable / resizable bars take touch gestures (CSS touch-action: none);
+  // read-only bars leave a swipe to the browser, which scrolls the timeline.
+  const isInteractive = Boolean(onDragStart || onResizeStart);
+  const interactiveClass = isInteractive ? styles.interactive : '';
 
   const handlePointerDown = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     // Check if clicking on resize handle
@@ -85,10 +87,13 @@ export const PhaseBar = memo(function PhaseBar({
       return; // Let resize handle its own event
     }
     
-    // Prevent default to avoid text selection / scrolling
-    e.preventDefault();
-    
     const isTouch = isTouchEvent(e);
+    
+    // Prevent default to avoid text selection. Not for a touch: React
+    // registers touchstart passively, so it would be a no-op that Chrome
+    // warns about (scrolling is held off by touch-action and handleMove).
+    if (!isTouch) e.preventDefault();
+
     const coords = getEventCoordinates(e);
     
     // Convert touch to a mouse-like event for the drag / click handlers
@@ -110,8 +115,9 @@ export const PhaseBar = memo(function PhaseBar({
       if (!state.isDragging) return;
       
       // The finger drags the bar, not the page (CSS touch-action: none is
-      // the primary guard; this covers browsers that ignore it).
-      if (isTouchEvent(moveEvent) && moveEvent.cancelable) {
+      // the primary guard; this covers browsers that ignore it). A read-only
+      // bar must let the browser pan the timeline.
+      if (isInteractive && isTouchEvent(moveEvent) && moveEvent.cancelable) {
         moveEvent.preventDefault();
       }
       
@@ -180,33 +186,41 @@ export const PhaseBar = memo(function PhaseBar({
     document.addEventListener('touchmove', handleMove, NON_PASSIVE);
     document.addEventListener('touchend', handleUp);
     document.addEventListener('touchcancel', handleCancel);
-  }, [onDragStart, onClick]);
+  }, [onDragStart, onClick, isInteractive]);
 
-  const handleLeftResizePointerDown = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+  // Resize handles: the mouse starts the resize at once; a touch is armed
+  // and starts it only past the threshold, so a jittery tap resizes nothing.
+  const handleResizePointerDown = useCallback((e: React.MouseEvent | React.TouchEvent, edge: 'left' | 'right') => {
     e.stopPropagation();
-    e.preventDefault();
     // Mark as moved to prevent click
     dragStateRef.current.hasMoved = true;
+    if (!onResizeStart) return;
     
-    const mouseEvent = isTouchEvent(e) ? toMouseLikeEvent(e as React.TouchEvent) : (e as React.MouseEvent);
+    if (isTouchEvent(e)) {
+      // No preventDefault: the passive touchstart would ignore it (see above)
+      armTouchGesture(e as React.TouchEvent, {
+        onStart: (mouseLike) => {
+          if (barRef.current) onResizeStart(mouseLike, edge, barRef.current);
+        },
+      });
+      return;
+    }
     
-    if (onResizeStart && barRef.current) {
-      onResizeStart(mouseEvent, 'left', barRef.current);
+    e.preventDefault();
+    if (barRef.current) {
+      onResizeStart(e as React.MouseEvent, edge, barRef.current);
     }
   }, [onResizeStart]);
 
-  const handleRightResizePointerDown = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    // Mark as moved to prevent click
-    dragStateRef.current.hasMoved = true;
-    
-    const mouseEvent = isTouchEvent(e) ? toMouseLikeEvent(e as React.TouchEvent) : (e as React.MouseEvent);
-    
-    if (onResizeStart && barRef.current) {
-      onResizeStart(mouseEvent, 'right', barRef.current);
-    }
-  }, [onResizeStart]);
+  const handleLeftResizePointerDown = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => handleResizePointerDown(e, 'left'),
+    [handleResizePointerDown]
+  );
+
+  const handleRightResizePointerDown = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => handleResizePointerDown(e, 'right'),
+    [handleResizePointerDown]
+  );
 
   // Link zone click handlers
   const handleStartLinkZoneClick = useCallback((e: React.MouseEvent) => {

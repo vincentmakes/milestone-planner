@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useViewStore } from '../viewStore';
+import { useWhatIfStore } from '../whatIfStore';
 
 describe('viewStore.navigatePeriod', () => {
   beforeEach(() => {
@@ -294,5 +295,38 @@ describe('viewStore Gantt colour by', () => {
     localStorage.setItem(KEY, JSON.stringify({ state: { ganttColorBy: [1] }, version: 0 }));
     await useViewStore.persist.rehydrate();
     expect(useViewStore.getState().ganttColorBy).toEqual({});
+  });
+});
+
+describe('viewStore.setCurrentView during What-If', () => {
+  beforeEach(() => {
+    useViewStore.setState({ currentView: 'gantt' });
+    useWhatIfStore.getState().enterWhatIfMode([]);
+  });
+
+  afterEach(async () => {
+    if (useWhatIfStore.getState().whatIfMode) await useWhatIfStore.getState().exitWhatIfMode(false);
+  });
+
+  it('refuses every view other than the Gantt', () => {
+    useViewStore.getState().setCurrentView('kanban');
+    expect(useViewStore.getState().currentView).toBe('gantt');
+    useViewStore.getState().setCurrentView('staff');
+    expect(useViewStore.getState().currentView).toBe('gantt');
+  });
+
+  it('always allows going back to the Gantt', () => {
+    // A sandbox entered from a stale state can still be returned to
+    useViewStore.setState({ currentView: 'kanban' });
+    useViewStore.getState().setCurrentView('gantt');
+    expect(useViewStore.getState().currentView).toBe('gantt');
+  });
+
+  it('switches views again once What-If ends', async () => {
+    useViewStore.getState().setCurrentView('kanban');
+    expect(useViewStore.getState().currentView).toBe('gantt');
+    await useWhatIfStore.getState().exitWhatIfMode(false);
+    useViewStore.getState().setCurrentView('kanban');
+    expect(useViewStore.getState().currentView).toBe('kanban');
   });
 });

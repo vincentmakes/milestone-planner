@@ -11,6 +11,7 @@ import type { KanbanGrouping } from '@/utils/kanbanCards';
 import { TAG_FILTER_KEY_PATTERN, tagFilterKey } from '@/utils/tags';
 import type { TagFilter } from '@/utils/tags';
 import { navigateDate } from '@/utils/date';
+import { useWhatIfStore } from './whatIfStore';
 import type {
   ViewMode,
   CurrentView,
@@ -352,7 +353,13 @@ export const useViewStore = create<ViewState>()(
         cellWidth: VIEW_MODE_CELL_WIDTHS[mode],
       }),
 
-      setCurrentView: (view) => set({ currentView: view }),
+      // What-If is Gantt-only: mirror of the uiStore Settings-hub guard, so
+      // any present or future caller is refused, not just the gated buttons.
+      // 'gantt' stays allowed so the sandbox can always be returned to.
+      setCurrentView: (view) => {
+        if (view !== 'gantt' && useWhatIfStore.getState().whatIfMode) return;
+        set({ currentView: view });
+      },
 
       setCurrentDate: (date) => set({ currentDate: date }),
 

@@ -475,6 +475,20 @@
   color: var(--accent-red);
 }
 
+/* Blocked during What-If: still visible on hover, but inert */
+.deleteAction:disabled {
+  cursor: not-allowed;
+}
+
+.detailRow:hover .deleteAction:disabled {
+  opacity: 0.4;
+}
+
+.deleteAction:disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
+}
+
 /* Bank holidays row */
 .bankHolidaysRow {
   height: 44px;

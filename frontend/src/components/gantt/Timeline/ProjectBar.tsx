@@ -2,12 +2,13 @@
  * ProjectBar
  * Visual bar representing a project on the timeline with confirmed/unconfirmed styling
  * Supports dragging to move entire project (with confirmation on release),
- * with the mouse or a finger (a touch is handed on as a mouse-like event).
+ * with the mouse or a finger (a touch is handed on as a mouse-like event once
+ * the finger has moved past a small threshold, so a jittery tap is no move).
  */
 
 import { memo, useCallback } from 'react';
 import { barTextColor } from '@/utils/tags';
-import { toMouseLikeEvent } from '@/utils/touchEvents';
+import { armTouchGesture } from '@/utils/touchEvents';
 import styles from './ProjectBar.module.css';
 
 interface ProjectBarProps {
@@ -42,7 +43,9 @@ export const ProjectBar = memo(function ProjectBar({
 }: ProjectBarProps) {
   const textColor = color ? barTextColor(color) : null;
   const handleTouchStart = useCallback(
-    (e: React.TouchEvent) => onDragStart?.(toMouseLikeEvent(e)),
+    (e: React.TouchEvent) => {
+      if (onDragStart) armTouchGesture(e, { onStart: onDragStart });
+    },
     [onDragStart]
   );
   return (

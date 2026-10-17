@@ -1,16 +1,18 @@
 /**
  * The Bank Holidays and Company Events rows also render in the Gantt's embedded
  * staff overview. Their Settings-hub shortcuts (Add, click-to-edit) are out of
- * reach during What-If — the hub cannot open then — while deleting an entry
- * (queued plan data) stays available.
+ * reach during What-If — the hub cannot open then — and so is deleting an
+ * entry: holidays and events are not in the What-If snapshot, so a queued
+ * DELETE would leave the row on screen and could not be undone by Discard.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { BankHolidaysRow } from '../BankHolidaysRow';
 import { CompanyEventsRow } from '../CompanyEventsRow';
 import { resetAllStores, useAppStore, useUIStore } from '@/stores';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
+import { deleteCustomHoliday, deleteCompanyEvent, getCompanyEvents } from '@/api';
 import { makeSite, makeUser } from '@/test/factories';
 import type { BankHoliday, CompanyEvent } from '@/types';
 
@@ -53,6 +55,8 @@ describe.each([
     editHint: whatIfUnavailableMessage('Editing holidays in Settings'),
     entry: 'National Day',
     deleteTitle: 'Delete holiday (returns on the next Nager refresh)',
+    deleteHint: whatIfUnavailableMessage('Deleting holidays'),
+    deleteApi: deleteCustomHoliday,
   },
   {
     name: 'CompanyEventsRow',
@@ -62,9 +66,12 @@ describe.each([
     editHint: whatIfUnavailableMessage('Editing company events in Settings'),
     entry: 'Audit',
     deleteTitle: 'Delete company event',
+    deleteHint: whatIfUnavailableMessage('Deleting company events'),
+    deleteApi: deleteCompanyEvent,
   },
-])('$name during What-If', ({ renderRow, addLabel, addHint, editHint, entry, deleteTitle }) => {
-  it('disables Add and the edit shortcut, keeping delete', () => {
+])('$name during What-If', ({ renderRow, addLabel, addHint, editHint, entry, deleteTitle, deleteHint, deleteApi }) => {
+  it('disables Add, the edit shortcut and delete', () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     useWhatIfStore.getState().enterWhatIfMode([]);
     renderRow();
 
@@ -83,7 +90,14 @@ describe.each([
     fireEvent.click(chip);
 
     expect(useUIStore.getState().activeModal).toBeNull();
-    expect(screen.getByTitle(deleteTitle)).toBeEnabled();
+
+    expect(screen.queryByTitle(deleteTitle)).toBeNull();
+    const del = screen.getByTitle(deleteHint);
+    expect(del).toBeDisabled();
+    fireEvent.click(del);
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(deleteApi).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 
   it('offers the shortcuts again once What-If ends', () => {
@@ -96,5 +110,26 @@ describe.each([
     expect(chip).toHaveAttribute('title', 'Edit in Settings');
     fireEvent.click(chip);
     expect(useUIStore.getState().activeModal).toBe('settingsHub');
+    expect(screen.getByTitle(deleteTitle)).toBeEnabled();
+  });
+});
+
+describe('CompanyEventsRow outside What-If', () => {
+  it('deletes a legacy event without site links as a single-site event', async () => {
+    const legacy = { id: 12, site_id: 1, date: '2026-06-01', name: 'Legacy audit', counts_as_unavailable: false } as CompanyEvent;
+    useAppStore.setState({ companyEvents: [legacy] });
+    vi.mocked(deleteCompanyEvent).mockResolvedValue(undefined as never);
+    vi.mocked(getCompanyEvents).mockResolvedValue([]);
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<CompanyEventsRow isExpanded />);
+
+    const del = screen.getByTitle('Delete company event');
+    expect(del).toBeEnabled();
+    fireEvent.click(del);
+
+    expect(confirmSpy).toHaveBeenCalledWith('Delete this company event?');
+    await waitFor(() => expect(useAppStore.getState().companyEvents).toEqual([]));
+    expect(deleteCompanyEvent).toHaveBeenCalledWith(1, 12);
+    confirmSpy.mockRestore();
   });
 });

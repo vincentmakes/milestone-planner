@@ -33,7 +33,7 @@ import { selectStaffSiteIds, selectAbsenceTypesById } from '@/stores/appStore';
 import { DEFAULT_EVENT_COLOR } from '@/utils/colorSwatches';
 import styles from './ProjectTimeline.module.css';
 import { daysBetweenDateStrings } from '@/utils/date';
-import { isTouchEvent, toMouseLikeEvent } from '@/utils/touchEvents';
+import { armTouchGesture, isTouchEvent } from '@/utils/touchEvents';
 
 interface ProjectTimelineProps {
   project: Project;
@@ -1117,23 +1117,31 @@ const AssignmentBar = memo(function AssignmentBar({
     ? (allocation ? `${name} (${allocation}%)` : name)
     : (allocation ? `${allocation}%` : '');
 
-  // Mouse and touch share these: a touch is handed on as a mouse-like event
+  // Mouse and touch share these. A touch is armed with armTouchGesture and
+  // handed on as a mouse-like event only once the finger has moved past the
+  // threshold, so a jittery tap is not committed as a move/resize
   // (toMouseLikeEvent keeps target/currentTarget, so the resize hook still
   // finds the bar with closest('[data-assignment-id]') from the handle).
   const handlePointerDown = (e: React.MouseEvent | React.TouchEvent) => {
     // Check if clicking on resize handle
     const target = e.target as HTMLElement;
     if (target.classList.contains('resize-handle')) return;
+    if (!onDragStart) return;
     
-    if (onDragStart) {
-      onDragStart(isTouchEvent(e) ? toMouseLikeEvent(e as React.TouchEvent) : (e as React.MouseEvent));
+    if (isTouchEvent(e)) {
+      armTouchGesture(e as React.TouchEvent, { onStart: onDragStart });
+    } else {
+      onDragStart(e as React.MouseEvent);
     }
   };
 
   const handleResizePointerDown = (e: React.MouseEvent | React.TouchEvent, edge: 'left' | 'right') => {
     e.stopPropagation();
-    if (onResizeStart) {
-      onResizeStart(isTouchEvent(e) ? toMouseLikeEvent(e as React.TouchEvent) : (e as React.MouseEvent), edge);
+    if (!onResizeStart) return;
+    if (isTouchEvent(e)) {
+      armTouchGesture(e as React.TouchEvent, { onStart: (mouseLike) => onResizeStart(mouseLike, edge) });
+    } else {
+      onResizeStart(e as React.MouseEvent, edge);
     }
   };
 

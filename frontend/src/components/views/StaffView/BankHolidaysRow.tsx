@@ -29,10 +29,14 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
   const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
   // Holidays are managed in the Settings hub, which cannot open during
   // What-If (this row also shows in the Gantt's embedded staff overview).
-  // Deleting a holiday stays allowed: it is queued plan data.
+  // Deleting is blocked too: holidays are not in the What-If snapshot, so a
+  // queued DELETE would leave the row on screen (the reload reads the real
+  // server list), a second try would queue a DELETE that 404s on Apply, and
+  // Discard could not bring the holiday back.
   const whatIf = useWhatIfBlocked();
   const addBlockedReason = whatIf.blocked ? whatIf.reason('Adding holidays') : null;
   const editBlockedReason = whatIf.blocked ? whatIf.reason('Editing holidays in Settings') : null;
+  const deleteBlockedReason = whatIf.blocked ? whatIf.reason('Deleting holidays') : null;
   const canOpenEditor = canEdit && !editBlockedReason;
   
   // Group holidays by year
@@ -82,7 +86,7 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
   // Handle deleting a holiday. Nager (public) holidays can be deleted too,
   // but come back the next time the site's holidays are refreshed from Nager.
   const handleDeleteHoliday = async (holidayId: number, isCustom: boolean) => {
-    if (!currentSite) return;
+    if (!currentSite || deleteBlockedReason) return;
     const message = isCustom
       ? 'Delete this custom holiday?'
       : 'Delete this public holiday? It will come back the next time holidays are refreshed from Nager.';
@@ -182,7 +186,8 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
                         e.stopPropagation();
                         handleDeleteHoliday(holiday.id, !!holiday.is_custom);
                       }}
-                      title={holiday.is_custom ? 'Delete custom holiday' : 'Delete holiday (returns on the next Nager refresh)'}
+                      disabled={deleteBlockedReason !== null}
+                      title={deleteBlockedReason ?? (holiday.is_custom ? 'Delete custom holiday' : 'Delete holiday (returns on the next Nager refresh)')}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <line x1="18" y1="6" x2="6" y2="18" />

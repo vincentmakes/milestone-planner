@@ -11,10 +11,19 @@
  * & co. on the SyntheticEvent prototype, which a spread drops — the handlers
  * would then throw on `e.stopPropagation()` (the bug fixed in #72).
  *
- * Scrolling is not suppressed from here: React registers `touchstart` and
+ * Scrolling is not suppressed from here: React 18 registers `touchstart` and
  * `touchmove` passively on its root, so `preventDefault()` in an
- * `onTouchStart` is a no-op. The bars carry CSS `touch-action: none`, and the
- * document `touchmove` listeners are registered with {@link NON_PASSIVE}.
+ * `onTouchStart` is a no-op — and Chrome logs an "[Intervention] Unable to
+ * preventDefault inside passive event listener" warning for every call. The
+ * mouse-like event of a `touchstart` therefore does not forward
+ * `preventDefault` at all (the drag/resize hooks call it on the event they
+ * receive). Scroll suppression comes from CSS `touch-action: none` on the
+ * interactive bars and from the document `touchmove` listeners, registered
+ * with {@link NON_PASSIVE}.
+ *
+ * {@link armTouchGesture} keeps finger jitter during a tap from being
+ * committed as a move: the drag/resize starts only once the finger has
+ * travelled past a threshold, like PhaseBar's body drag.
  */
 
 import type React from 'react';
@@ -53,13 +62,17 @@ export function getPointerClientX(e: AnyPointerEvent): number {
  * A mouse-like event from a React touch event, so the drag/resize/click
  * handlers (typed for React.MouseEvent) work on touch screens. `target` and
  * `currentTarget` are those of the touch event at conversion time; the
- * event methods forward to the touch event.
+ * event methods forward to the touch event — except `preventDefault` on a
+ * `touchstart`, which React registers passively (see the header comment):
+ * there it is a no-op, and `isDefaultPrevented` keeps reporting the touch
+ * event's own (unprevented) state.
  */
 export function toMouseLikeEvent(
   e: React.TouchEvent,
   type: 'mousedown' | 'mouseup' = 'mousedown'
 ): React.MouseEvent {
   const touch = e.touches[0] || e.changedTouches[0];
+  const passive = e.type === 'touchstart';
   const synthetic = {
     type,
     target: e.target,
@@ -84,11 +97,69 @@ export function toMouseLikeEvent(
     buttons: 1,
     relatedTarget: null,
     getModifierState: (key: React.ModifierKey) => e.getModifierState(key),
-    preventDefault: () => e.preventDefault(),
+    preventDefault: () => {
+      if (!passive) e.preventDefault();
+    },
     stopPropagation: () => e.stopPropagation(),
     isDefaultPrevented: () => e.isDefaultPrevented(),
     isPropagationStopped: () => e.isPropagationStopped(),
     persist: () => {},
   };
   return synthetic as unknown as React.MouseEvent;
+}
+
+/** Options for {@link armTouchGesture}. */
+export interface TouchGestureOptions {
+  /** Distance in px (Euclidean) the finger must travel before the gesture starts. */
+  threshold?: number;
+  /** Called once, with a mouse-like event at the START coordinate, when the threshold is passed. */
+  onStart: (mouseLike: React.MouseEvent) => void;
+}
+
+/**
+ * Arms a touch drag/resize on an interactive element: nothing happens until
+ * the finger has moved more than `threshold` px from where it touched down.
+ * Then the gesture's own document listeners are detached and `onStart` gets
+ * a mouse-like event built at touchstart (start coordinates, original
+ * target/currentTarget), so the drag/resize hook attaches its listeners and
+ * measures from the start point — exactly like PhaseBar's body drag. A
+ * touchend or touchcancel before the threshold just detaches: a tap does
+ * nothing (the touchend is prevented so the browser does not synthesize a
+ * mousedown that would start a mouse drag).
+ *
+ * Cancelable touchmoves are prevented while armed (the element is
+ * interactive: the finger drags the bar, not the page).
+ *
+ * Returns a function that disarms the gesture early.
+ */
+export function armTouchGesture(
+  e: React.TouchEvent,
+  { threshold = 5, onStart }: TouchGestureOptions
+): () => void {
+  const { clientX: startX, clientY: startY } = getEventCoordinates(e);
+  const mouseLike = toMouseLikeEvent(e);
+
+  const detach = () => {
+    document.removeEventListener('touchmove', handleMove, NON_PASSIVE);
+    document.removeEventListener('touchend', handleEnd);
+    document.removeEventListener('touchcancel', detach);
+  };
+
+  function handleMove(moveEvent: TouchEvent) {
+    if (moveEvent.cancelable) moveEvent.preventDefault();
+    const { clientX, clientY } = getEventCoordinates(moveEvent);
+    if (Math.hypot(clientX - startX, clientY - startY) <= threshold) return;
+    detach();
+    onStart(mouseLike);
+  }
+
+  function handleEnd(endEvent: TouchEvent) {
+    if (endEvent.cancelable) endEvent.preventDefault();
+    detach();
+  }
+
+  document.addEventListener('touchmove', handleMove, NON_PASSIVE);
+  document.addEventListener('touchend', handleEnd);
+  document.addEventListener('touchcancel', detach);
+  return detach;
 }
