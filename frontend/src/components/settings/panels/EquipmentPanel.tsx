@@ -12,6 +12,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/common/Button';
 import { PanelToolbar } from '../PanelToolbar';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
+import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { apiGet, apiPost, apiPut, apiDelete } from '@/api/client';
@@ -319,6 +320,11 @@ function EquipmentForm({
   };
   
   const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
+  // Deleting equipment cascades on the server (it bypasses the What-If queue as
+  // configuration) while the sandbox keeps showing the orphaned plan data, so
+  // it is unavailable during What-If.
+  const whatIf = useWhatIfBlocked();
+  const deleteBlockedReason = whatIf.blocked ? whatIf.reason('Deleting equipment') : null;
   const [error, setError] = useState<string | null>(null);
 
   // The site links the form opened with (the default site is fixed at open)
@@ -396,7 +402,7 @@ function EquipmentForm({
   
   // Handle delete
   const handleDelete = async () => {
-    if (!equipment) return;
+    if (!equipment || deleteBlockedReason) return;
     
     const confirmed = window.confirm(
       `Are you sure you want to delete "${equipment.name}"?\n\nThis will also remove all assignments for this equipment.`
@@ -570,7 +576,8 @@ function EquipmentForm({
             type="button"
             variant="danger"
             onClick={handleDelete}
-            disabled={isSubmitting}
+            disabled={isSubmitting || deleteBlockedReason !== null}
+            title={deleteBlockedReason ?? undefined}
           >
             Delete Equipment
           </Button>

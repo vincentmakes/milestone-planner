@@ -14,11 +14,14 @@
  * - `disabled` (the enclosing dialog is saving) locks the search box, the
  *   pills and "Manage tags…": opening the hub mid-save would be closed again
  *   by the save's own closeModal().
+ * - "Manage tags…" is also disabled during What-If: the Settings hub cannot
+ *   open then (uiStore), and closing the dialog first would lose its input.
  */
 
 import { useState, useMemo, useRef, useEffect, useId } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
+import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { applyTagSelection, barTextColor, groupedTags, tagsForSite } from '@/utils/tags';
 import type { Tag } from '@/types';
 import styles from './TagPicker.module.css';
@@ -43,6 +46,8 @@ export function TagPicker({ selectedIds, onChange, siteId, disabled = false }: T
   const tags = useAppStore((s) => s.tags);
   const tagGroups = useAppStore((s) => s.tagGroups);
   const isAdmin = useAppStore((s) => s.currentUser?.role === 'admin');
+  const whatIf = useWhatIfBlocked();
+  const manageBlockedReason = whatIf.blocked ? whatIf.reason('Managing tags') : null;
 
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
@@ -114,7 +119,7 @@ export function TagPicker({ selectedIds, onChange, siteId, disabled = false }: T
   };
 
   const handleManageTags = () => {
-    if (disabled || !window.confirm(MANAGE_TAGS_CONFIRM)) return;
+    if (disabled || manageBlockedReason || !window.confirm(MANAGE_TAGS_CONFIRM)) return;
     // Close the project dialog first so its editing context is cleared,
     // then open the hub on the Tags section.
     const ui = useUIStore.getState();
@@ -180,7 +185,8 @@ export function TagPicker({ selectedIds, onChange, siteId, disabled = false }: T
               type="button"
               className={styles.manageLink}
               onClick={handleManageTags}
-              disabled={disabled}
+              disabled={disabled || manageBlockedReason !== null}
+              title={manageBlockedReason ?? undefined}
             >
               Manage tags…
             </button>

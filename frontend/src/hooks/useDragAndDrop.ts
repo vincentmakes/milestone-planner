@@ -1,6 +1,8 @@
 /**
  * useDragAndDrop - Hook for dragging phases/subphases/assignments on the timeline
- * Handles mouse events and calculates day offsets based on cell width
+ * Handles mouse and touch events and calculates day offsets based on cell width.
+ * The bars hand the start functions a mouse-like event (a touch is converted
+ * with toMouseLikeEvent); the document listeners take mouse and touch alike.
  */
 
 import { useCallback, useRef, useEffect, useLayoutEffect } from 'react';
@@ -11,6 +13,7 @@ import { useViewStore } from '@/stores/viewStore';
 import { updatePhase, updateSubphase, updateProject, updateStaffAssignment, updateEquipmentAssignment } from '@/api/endpoints/projects';
 import { parseLocalDate, addDaysToDateString, daysBetweenDateStrings } from '@/utils/date';
 import { recoverFromPersistFailure } from '@/utils/persistFailure';
+import { getPointerClientX, NON_PASSIVE } from '@/utils/touchEvents';
 import { useUndoStore } from '@/stores/undoStore';
 import { 
   processPhaseMove, 
@@ -32,6 +35,8 @@ interface DragData {
   startX: number;
   element: HTMLElement | null;
   originalLeft: number;
+  /** The element's inline `left` at drag start, restored on cancel. */
+  originalInlineLeft: string;
   originalStartDate: string;
   originalEndDate: string;
   isMilestone: boolean;
@@ -75,28 +80,42 @@ export function useDragAndDrop() {
   const dragDataRef = useRef<DragData | null>(null);
   const currentXRef = useRef(0);
 
-  // Document listeners for an active drag. They are registered once at drag
-  // start and removed only on mouse-up or unmount: stable trampolines that
-  // call the LATEST handlers through refs. (Registering the handlers
-  // themselves and removing them from an effect keyed on their deps silently
-  // abandoned the drag whenever `projects` or `cellWidth` changed mid-gesture,
-  // e.g. on a WebSocket refetch or a Ctrl+wheel zoom.)
-  const mouseMoveHandlerRef = useRef<(e: MouseEvent) => void>(() => {});
-  const mouseUpHandlerRef = useRef<() => Promise<void>>(async () => {});
-  const onDocumentMouseMove = useCallback((e: MouseEvent) => {
-    mouseMoveHandlerRef.current(e);
+  // Document listeners for an active drag (mouse and touch). They are
+  // registered once at drag start and removed only on mouse-up / touch-end /
+  // touch-cancel or unmount: stable trampolines that call the LATEST handlers
+  // through refs. (Registering the handlers themselves and removing them from
+  // an effect keyed on their deps silently abandoned the drag whenever
+  // `projects` or `cellWidth` changed mid-gesture, e.g. on a WebSocket
+  // refetch or a Ctrl+wheel zoom.)
+  const pointerMoveHandlerRef = useRef<(e: MouseEvent | TouchEvent) => void>(() => {});
+  const pointerUpHandlerRef = useRef<() => Promise<void>>(async () => {});
+  const cancelHandlerRef = useRef<() => void>(() => {});
+  const onDocumentPointerMove = useCallback((e: MouseEvent | TouchEvent) => {
+    pointerMoveHandlerRef.current(e);
   }, []);
-  const onDocumentMouseUp = useCallback(() => {
-    void mouseUpHandlerRef.current();
+  const onDocumentPointerUp = useCallback((e: MouseEvent | TouchEvent) => {
+    // A handled touchend must not also produce the synthesized
+    // mousedown/mouseup/click (which would restart the drag or double-click).
+    if (e.type === 'touchend' && e.cancelable) e.preventDefault();
+    void pointerUpHandlerRef.current();
+  }, []);
+  const onDocumentTouchCancel = useCallback(() => {
+    cancelHandlerRef.current();
   }, []);
   const attachDragListeners = useCallback(() => {
-    document.addEventListener('mousemove', onDocumentMouseMove);
-    document.addEventListener('mouseup', onDocumentMouseUp);
-  }, [onDocumentMouseMove, onDocumentMouseUp]);
+    document.addEventListener('mousemove', onDocumentPointerMove);
+    document.addEventListener('mouseup', onDocumentPointerUp);
+    document.addEventListener('touchmove', onDocumentPointerMove, NON_PASSIVE);
+    document.addEventListener('touchend', onDocumentPointerUp);
+    document.addEventListener('touchcancel', onDocumentTouchCancel);
+  }, [onDocumentPointerMove, onDocumentPointerUp, onDocumentTouchCancel]);
   const detachDragListeners = useCallback(() => {
-    document.removeEventListener('mousemove', onDocumentMouseMove);
-    document.removeEventListener('mouseup', onDocumentMouseUp);
-  }, [onDocumentMouseMove, onDocumentMouseUp]);
+    document.removeEventListener('mousemove', onDocumentPointerMove);
+    document.removeEventListener('mouseup', onDocumentPointerUp);
+    document.removeEventListener('touchmove', onDocumentPointerMove, NON_PASSIVE);
+    document.removeEventListener('touchend', onDocumentPointerUp);
+    document.removeEventListener('touchcancel', onDocumentTouchCancel);
+  }, [onDocumentPointerMove, onDocumentPointerUp, onDocumentTouchCancel]);
   
   // Format date as YYYY-MM-DD
   const formatDateLocal = useCallback((date: Date): string => {
@@ -307,13 +326,17 @@ export function useDragAndDrop() {
     return worstLagDays;
   }, [projects, findSubphaseInProject]);
   
-  // Handle mouse move during drag
-  const handleMouseMove = useCallback((e: MouseEvent) => {
+  // Handle pointer (mouse or touch) move during drag
+  const handlePointerMove = useCallback((e: MouseEvent | TouchEvent) => {
     if (!dragDataRef.current) return;
     
-    currentXRef.current = e.clientX;
+    // The finger moves the bar, not the page.
+    if ('touches' in e && e.cancelable) e.preventDefault();
+    
+    const clientX = getPointerClientX(e);
+    currentXRef.current = clientX;
     const data = dragDataRef.current;
-    const deltaX = e.clientX - data.startX;
+    const deltaX = clientX - data.startX;
     let newLeft = data.originalLeft + deltaX;
     
     // Snap to cell boundaries in week and month views for cleaner movement
@@ -626,10 +649,28 @@ export function useDragAndDrop() {
     await commitDragUpdate(data, startDateStr, endDateStr);
   }, [cellWidth, viewMode, endDrag, detachDragListeners, getTimelineCellsFromDOM, calculateDateFromPosition, formatDateLocal, commitDragUpdate, hideIndicator]);
 
+  // Abandon the drag without saving (touchcancel, unmount): the bar goes
+  // back to where it was and no API call is made.
+  const cancelDrag = useCallback(() => {
+    detachDragListeners();
+    const data = dragDataRef.current;
+    if (!data) return;
+    if (data.element) {
+      data.element.style.left = data.originalInlineLeft;
+      data.element.style.opacity = '';
+      data.element.style.zIndex = '';
+      data.element.classList.remove('dragging');
+    }
+    dragDataRef.current = null;
+    useUIStore.getState().hideIndicator();
+    useUIStore.getState().endDrag();
+  }, [detachDragListeners]);
+
   // Keep the document trampolines pointing at the latest handlers.
   useLayoutEffect(() => {
-    mouseMoveHandlerRef.current = handleMouseMove;
-    mouseUpHandlerRef.current = handleMouseUp;
+    pointerMoveHandlerRef.current = handlePointerMove;
+    pointerUpHandlerRef.current = handleMouseUp;
+    cancelHandlerRef.current = cancelDrag;
   });
   
   // Start dragging a phase
@@ -675,6 +716,7 @@ export function useDragAndDrop() {
       startX: e.clientX,
       element,
       originalLeft: parseInt(element?.style.left || '0') || 0,
+      originalInlineLeft: element.style.left,
       originalStartDate: startDate,
       originalEndDate: endDate,
       isMilestone,
@@ -736,6 +778,7 @@ export function useDragAndDrop() {
       startX: e.clientX,
       element,
       originalLeft: parseInt(element?.style.left || '0') || 0,
+      originalInlineLeft: element.style.left,
       originalStartDate: startDate,
       originalEndDate: endDate,
       isMilestone,
@@ -793,6 +836,7 @@ export function useDragAndDrop() {
       startX: e.clientX,
       element,
       originalLeft: parseInt(element?.style.left || '0') || 0,
+      originalInlineLeft: element.style.left,
       originalStartDate: startDate,
       originalEndDate: endDate,
       isMilestone: false,
@@ -852,6 +896,7 @@ export function useDragAndDrop() {
       startX: e.clientX,
       element,
       originalLeft: parseInt(element?.style.left || '0') || 0,
+      originalInlineLeft: element.style.left,
       originalStartDate: startDate,
       originalEndDate: endDate,
       isMilestone: false,
@@ -910,6 +955,7 @@ export function useDragAndDrop() {
       startX: e.clientX,
       element,
       originalLeft: parseInt(element?.style.left || '0') || 0,
+      originalInlineLeft: element.style.left,
       originalStartDate: startDate,
       originalEndDate: endDate,
       isMilestone: false,
@@ -928,22 +974,7 @@ export function useDragAndDrop() {
   }, [canEditProjectId, currentView, attachDragListeners, startDrag]);
   
   // Cleanup on unmount only: an unmount mid-drag abandons the drag cleanly.
-  useEffect(() => {
-    return () => {
-      detachDragListeners();
-      const data = dragDataRef.current;
-      if (data) {
-        if (data.element) {
-          data.element.style.opacity = '';
-          data.element.style.zIndex = '';
-          data.element.classList.remove('dragging');
-        }
-        dragDataRef.current = null;
-        useUIStore.getState().hideIndicator();
-        useUIStore.getState().endDrag();
-      }
-    };
-  }, [detachDragListeners]);
+  useEffect(() => cancelDrag, [cancelDrag]);
   
   return {
     isDragging,

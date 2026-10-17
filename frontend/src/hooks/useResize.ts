@@ -1,6 +1,8 @@
 /**
  * useResize - Hook for resizing phases/subphases/assignments on the timeline
- * Handles left/right edge resizing and calculates date changes
+ * Handles left/right edge resizing (mouse and touch) and calculates date
+ * changes. The bars hand the start functions a mouse-like event (a touch is
+ * converted with toMouseLikeEvent); the document listeners take both.
  */
 
 import { useCallback, useRef, useEffect, useLayoutEffect } from 'react';
@@ -11,6 +13,7 @@ import { useViewStore } from '@/stores/viewStore';
 import { updatePhase, updateSubphase, updateStaffAssignment, updateEquipmentAssignment } from '@/api/endpoints/projects';
 import { parseLocalDate, addDaysToDateString, daysBetweenDateStrings } from '@/utils/date';
 import { recoverFromPersistFailure } from '@/utils/persistFailure';
+import { getPointerClientX, NON_PASSIVE } from '@/utils/touchEvents';
 import { useUndoStore } from '@/stores/undoStore';
 import {
   processPhaseMove,
@@ -33,6 +36,9 @@ interface ResizeData {
   element: HTMLElement | null;
   originalLeft: number;
   originalWidth: number;
+  /** The element's inline `left` / `width` at resize start, restored on cancel. */
+  originalInlineLeft: string;
+  originalInlineWidth: string;
   originalStartDate: string;
   originalEndDate: string;
 }
@@ -75,26 +81,40 @@ export function useResize() {
   const resizeDataRef = useRef<ResizeData | null>(null);
   const currentXRef = useRef(0);
 
-  // Document listeners for an active resize: registered once at resize start,
-  // removed only on mouse-up or unmount. Stable trampolines call the LATEST
-  // handlers through refs, so a `projects` change mid-gesture (WebSocket
-  // refetch) no longer strips the live listeners and abandons the resize.
-  const mouseMoveHandlerRef = useRef<(e: MouseEvent) => void>(() => {});
-  const mouseUpHandlerRef = useRef<() => Promise<void>>(async () => {});
-  const onDocumentMouseMove = useCallback((e: MouseEvent) => {
-    mouseMoveHandlerRef.current(e);
+  // Document listeners for an active resize (mouse and touch): registered
+  // once at resize start, removed only on mouse-up / touch-end / touch-cancel
+  // or unmount. Stable trampolines call the LATEST handlers through refs, so
+  // a `projects` change mid-gesture (WebSocket refetch) no longer strips the
+  // live listeners and abandons the resize.
+  const pointerMoveHandlerRef = useRef<(e: MouseEvent | TouchEvent) => void>(() => {});
+  const pointerUpHandlerRef = useRef<() => Promise<void>>(async () => {});
+  const cancelHandlerRef = useRef<() => void>(() => {});
+  const onDocumentPointerMove = useCallback((e: MouseEvent | TouchEvent) => {
+    pointerMoveHandlerRef.current(e);
   }, []);
-  const onDocumentMouseUp = useCallback(() => {
-    void mouseUpHandlerRef.current();
+  const onDocumentPointerUp = useCallback((e: MouseEvent | TouchEvent) => {
+    // A handled touchend must not also produce the synthesized
+    // mousedown/mouseup/click (which would restart the gesture or click).
+    if (e.type === 'touchend' && e.cancelable) e.preventDefault();
+    void pointerUpHandlerRef.current();
+  }, []);
+  const onDocumentTouchCancel = useCallback(() => {
+    cancelHandlerRef.current();
   }, []);
   const attachResizeListeners = useCallback(() => {
-    document.addEventListener('mousemove', onDocumentMouseMove);
-    document.addEventListener('mouseup', onDocumentMouseUp);
-  }, [onDocumentMouseMove, onDocumentMouseUp]);
+    document.addEventListener('mousemove', onDocumentPointerMove);
+    document.addEventListener('mouseup', onDocumentPointerUp);
+    document.addEventListener('touchmove', onDocumentPointerMove, NON_PASSIVE);
+    document.addEventListener('touchend', onDocumentPointerUp);
+    document.addEventListener('touchcancel', onDocumentTouchCancel);
+  }, [onDocumentPointerMove, onDocumentPointerUp, onDocumentTouchCancel]);
   const detachResizeListeners = useCallback(() => {
-    document.removeEventListener('mousemove', onDocumentMouseMove);
-    document.removeEventListener('mouseup', onDocumentMouseUp);
-  }, [onDocumentMouseMove, onDocumentMouseUp]);
+    document.removeEventListener('mousemove', onDocumentPointerMove);
+    document.removeEventListener('mouseup', onDocumentPointerUp);
+    document.removeEventListener('touchmove', onDocumentPointerMove, NON_PASSIVE);
+    document.removeEventListener('touchend', onDocumentPointerUp);
+    document.removeEventListener('touchcancel', onDocumentTouchCancel);
+  }, [onDocumentPointerMove, onDocumentPointerUp, onDocumentTouchCancel]);
   
   // Refs to hold current values - prevents stale closure issues in event handlers
   const cellWidthRef = useRef(cellWidth);
@@ -194,18 +214,22 @@ export function useResize() {
     return formatDateLocal(newDate);
   }, [formatDateLocal]);
   
-  // Handle mouse move during resize
-  const handleMouseMove = useCallback((e: MouseEvent) => {
+  // Handle pointer (mouse or touch) move during resize
+  const handlePointerMove = useCallback((e: MouseEvent | TouchEvent) => {
     if (!resizeDataRef.current) return;
     
-    currentXRef.current = e.clientX;
+    // The finger resizes the bar, not the page.
+    if ('touches' in e && e.cancelable) e.preventDefault();
+    
+    const clientX = getPointerClientX(e);
+    currentXRef.current = clientX;
     const data = resizeDataRef.current;
     
     // Get current values from refs to avoid stale closures
     const currentCellWidth = cellWidthRef.current;
     const currentViewMode = viewModeRef.current;
     
-    let deltaX = e.clientX - data.startX;
+    let deltaX = clientX - data.startX;
     
     // For week/month view, snap to day boundaries (cellWidth increments)
     if (currentViewMode === 'week' || currentViewMode === 'month') {
@@ -500,10 +524,28 @@ export function useResize() {
     endResize();
   }, [endResize, detachResizeListeners, saveState, setProjects, projects, hideIndicator, getTimelineCellsFromDOM, calculateDateFromPosition]);
 
+  // Abandon the resize without saving (touchcancel, unmount): the bar gets
+  // its original position and size back and no API call is made.
+  const cancelResize = useCallback(() => {
+    detachResizeListeners();
+    const data = resizeDataRef.current;
+    if (!data) return;
+    if (data.element) {
+      data.element.style.left = data.originalInlineLeft;
+      data.element.style.width = data.originalInlineWidth;
+      data.element.classList.remove('resizing');
+    }
+    document.body.style.cursor = '';
+    resizeDataRef.current = null;
+    useUIStore.getState().hideIndicator();
+    useUIStore.getState().endResize();
+  }, [detachResizeListeners]);
+
   // Keep the document trampolines pointing at the latest handlers.
   useLayoutEffect(() => {
-    mouseMoveHandlerRef.current = handleMouseMove;
-    mouseUpHandlerRef.current = handleMouseUp;
+    pointerMoveHandlerRef.current = handlePointerMove;
+    pointerUpHandlerRef.current = handleMouseUp;
+    cancelHandlerRef.current = cancelResize;
   });
   
   // Start resizing a phase
@@ -539,6 +581,8 @@ export function useResize() {
       element,
       originalLeft: parseFloat(style.left) || 0,
       originalWidth: rect.width,
+      originalInlineLeft: element.style.left,
+      originalInlineWidth: element.style.width,
       originalStartDate: startDate,
       originalEndDate: endDate,
     };
@@ -589,6 +633,8 @@ export function useResize() {
       element,
       originalLeft: parseFloat(style.left) || 0,
       originalWidth: rect.width,
+      originalInlineLeft: element.style.left,
+      originalInlineWidth: element.style.width,
       originalStartDate: startDate,
       originalEndDate: endDate,
     };
@@ -640,6 +686,8 @@ export function useResize() {
       element,
       originalLeft: parseInt(element.style.left || '0') || 0,
       originalWidth: parseInt(element.style.width || '0') || element.offsetWidth,
+      originalInlineLeft: element.style.left,
+      originalInlineWidth: element.style.width,
       originalStartDate: startDate,
       originalEndDate: endDate,
     };
@@ -690,6 +738,8 @@ export function useResize() {
       element,
       originalLeft: parseInt(element.style.left || '0') || 0,
       originalWidth: parseInt(element.style.width || '0') || element.offsetWidth,
+      originalInlineLeft: element.style.left,
+      originalInlineWidth: element.style.width,
       originalStartDate: startDate,
       originalEndDate: endDate,
     };
@@ -708,19 +758,7 @@ export function useResize() {
   }, [canEditProjectId, currentView, attachResizeListeners, startResize]);
   
   // Cleanup on unmount only: an unmount mid-resize abandons it cleanly.
-  useEffect(() => {
-    return () => {
-      detachResizeListeners();
-      const data = resizeDataRef.current;
-      if (data) {
-        data.element?.classList.remove('resizing');
-        resizeDataRef.current = null;
-        document.body.style.cursor = '';
-        useUIStore.getState().hideIndicator();
-        useUIStore.getState().endResize();
-      }
-    };
-  }, [detachResizeListeners]);
+  useEffect(() => cancelResize, [cancelResize]);
   
   return {
     isResizing,

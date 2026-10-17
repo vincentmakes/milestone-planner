@@ -3,11 +3,12 @@
  * state, not URLs) next to the real sidebar; switching through the sidebar
  * swaps the main view.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MainLayout } from '../MainLayout';
 import { useViewStore } from '@/stores/viewStore';
 import { useAppStore } from '@/stores/appStore';
+import { useWhatIfStore } from '@/stores/whatIfStore';
 import { resetAllStores } from '@/stores';
 import { useKeyboardShortcuts } from '@/hooks';
 import { makeUser } from '@/test/factories';
@@ -29,6 +30,10 @@ beforeEach(() => {
   resetAllStores();
   useViewStore.getState().resetView();
   useAppStore.setState({ currentUser: makeUser({ role: 'user' }) });
+});
+
+afterEach(async () => {
+  if (useWhatIfStore.getState().whatIfMode) await useWhatIfStore.getState().exitWhatIfMode(false);
 });
 
 describe('MainLayout', () => {
@@ -54,5 +59,14 @@ describe('MainLayout', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Staff Overview' }));
     expect(useViewStore.getState().currentView).toBe('staff');
     expect(screen.getByRole('main')).toHaveTextContent('Staff view');
+  });
+
+  it('stays on the Gantt while What-If is active', () => {
+    useAppStore.setState({ currentUser: makeUser({ role: 'admin' }) });
+    useWhatIfStore.getState().enterWhatIfMode([]);
+    render(<MainLayout />);
+    fireEvent.click(screen.getByRole('button', { name: 'Staff Overview' }));
+    expect(useViewStore.getState().currentView).toBe('gantt');
+    expect(screen.getByRole('main')).toHaveTextContent('Gantt view');
   });
 });

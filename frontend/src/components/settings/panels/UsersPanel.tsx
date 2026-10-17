@@ -23,6 +23,7 @@ import { Button } from '@/components/common/Button';
 import { PanelToolbar } from '../PanelToolbar';
 import { BackIcon, GearIcon, PlusIcon } from './PanelIcons';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
+import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useDataLoader } from '@/hooks/useDataLoader';
@@ -527,6 +528,11 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
   const setGlobalSkills = useAppStore((s) => s.setSkills);
   
   const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
+  // Deleting a user cascades on the server (it bypasses the What-If queue as
+  // configuration) while the sandbox keeps showing the orphaned plan data, so
+  // it is unavailable during What-If.
+  const whatIf = useWhatIfBlocked();
+  const deleteBlockedReason = whatIf.blocked ? whatIf.reason('Deleting users') : null;
   const [error, setError] = useState<string | null>(null);
   
   useReportDirty(
@@ -678,7 +684,7 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
   };
   
   const handleDelete = async () => {
-    if (!user) return;
+    if (!user || deleteBlockedReason) return;
     const confirmed = window.confirm(`Are you sure you want to delete "${user.first_name} ${user.last_name}"?\n\nThis action cannot be undone.`);
     if (!confirmed) return;
     
@@ -871,8 +877,8 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
             type="button"
             variant="danger"
             onClick={handleDelete}
-            disabled={isSubmitting || isOwnAccount}
-            title={isOwnAccount ? "You can't delete your own account" : undefined}
+            disabled={isSubmitting || isOwnAccount || deleteBlockedReason !== null}
+            title={isOwnAccount ? "You can't delete your own account" : deleteBlockedReason ?? undefined}
           >
             Delete User
           </Button>

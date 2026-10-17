@@ -52,7 +52,7 @@ The sidebar can be collapsed to icon-only mode for more screen space. Admins and
 **Right — Actions & User Menu:**
 
 - **Panels** toggle — Show/hide Staff and Equipment panels below the Gantt chart
-- **What-If** toggle — Enter/exit scenario planning mode
+- **What-If** toggle — Enter/exit scenario planning mode (Gantt chart only)
 - Theme toggle (light/dark)
 - Online users indicator
 - **Offline** badge — appears only while live updates are disconnected. Your edits still save; you just don't see colleagues' changes until the connection is back. It reconnects by itself when the network returns or you switch back to the tab

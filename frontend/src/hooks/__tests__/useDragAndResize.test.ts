@@ -227,6 +227,32 @@ describe('Gantt drag & resize (America/New_York)', () => {
     await waitFor(() => expect(useUIStore.getState().isResizing).toBe(false));
   });
 
+  it('unmounting mid-gesture removes the touch listeners too', () => {
+    marchCells();
+    const bar = makeBar(30);
+    const remove = vi.spyOn(document, 'removeEventListener');
+    const drag = renderHook(() => useDragAndDrop());
+    const resize = renderHook(() => useResize());
+
+    act(() => {
+      drag.result.current.startPhaseDrag(mouseDown(bar, 100), 10, 1, '2026-03-02', '2026-03-06', false, bar);
+    });
+    drag.unmount();
+    act(() => {
+      resize.result.current.startPhaseResize(mouseDown(bar, 180), 10, 1, 'right', '2026-03-02', '2026-03-06', bar);
+    });
+    resize.unmount();
+
+    const removed = remove.mock.calls.map((c) => c[0]);
+    for (const type of ['touchmove', 'touchend', 'touchcancel']) {
+      expect(removed.filter((t) => t === type)).toHaveLength(2);
+    }
+    expect(useUIStore.getState().isDragging).toBe(false);
+    expect(useUIStore.getState().isResizing).toBe(false);
+    expect(bar.style.left).toBe('30px');
+    remove.mockRestore();
+  });
+
   it('unmounting mid-drag detaches the listeners and ends the drag', () => {
     marchCells();
     const bar = makeBar(30);

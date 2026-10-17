@@ -25,6 +25,7 @@ import {
   useDerivedDueNotifications,
 } from '@/hooks/useDerivedDueNotifications';
 import { cardKey } from '@/utils/kanbanCards';
+import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import type { AppNotification } from '@/types';
 import styles from './NotificationBell.module.css';
 
@@ -36,6 +37,13 @@ const TYPE_ICONS: Record<string, string> = {
   due_soon: 'M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
   overdue: 'M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z',
 };
+
+/** Does clicking this notification jump to its card on the Kanban board? */
+function opensCard(n: AppNotification): boolean {
+  return Boolean(n.project_id && n.entity_type && n.entity_id);
+}
+
+const OPEN_CARD_ACTION = 'Opening a card from a notification';
 
 function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
@@ -68,6 +76,9 @@ export function NotificationBell() {
   const openKanbanCard = useUIStore((s) => s.openKanbanCardModal);
 
   const derived = useDerivedDueNotifications();
+  // What-If is Gantt-only and the card opens on the Kanban board, so card
+  // links are blocked while the sandbox is active (other rows stay usable).
+  const whatIf = useWhatIfBlocked();
 
   const refresh = useCallback(async () => {
     if (!currentUser) return;
@@ -109,6 +120,7 @@ export function NotificationBell() {
   const totalBadge = unreadCount + derived.length;
 
   const handleOpen = async (n: AppNotification) => {
+    if (opensCard(n) && whatIf.blocked) return;
     if (n.project_id && n.entity_type && n.entity_id) {
       setKanbanProjectId(n.project_id);
       setCurrentView('kanban');
@@ -178,28 +190,39 @@ export function NotificationBell() {
             )}
           </div>
 
+          {whatIf.blocked && (
+            <p className={styles.whatIfNote} role="note">
+              {whatIf.reason(OPEN_CARD_ACTION)}
+            </p>
+          )}
+
           <ul className={styles.list}>
-            {merged.map((n) => (
-              <li key={`${n.source ?? 'server'}-${n.id}`}>
-                <button
-                  type="button"
-                  className={`${styles.item} ${!n.read_at ? styles.unread : ''}`}
-                  onClick={() => handleOpen(n)}
-                >
-                  <span className={`${styles.icon} ${styles[n.type] ?? ''}`}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d={TYPE_ICONS[n.type] ?? TYPE_ICONS.comment} />
-                    </svg>
-                  </span>
-                  <span className={styles.text}>
-                    <span className={styles.title}>{n.title}</span>
-                    {n.body && <span className={styles.body}>{n.body}</span>}
-                    <span className={styles.time}>{relativeTime(n.created_at)}</span>
-                  </span>
-                  {!n.read_at && <span className={styles.dot} aria-hidden="true" />}
-                </button>
-              </li>
-            ))}
+            {merged.map((n) => {
+              const cardBlocked = whatIf.blocked && opensCard(n);
+              return (
+                <li key={`${n.source ?? 'server'}-${n.id}`}>
+                  <button
+                    type="button"
+                    className={`${styles.item} ${!n.read_at ? styles.unread : ''}`}
+                    onClick={() => handleOpen(n)}
+                    disabled={cardBlocked}
+                    title={cardBlocked ? whatIf.reason(OPEN_CARD_ACTION) : undefined}
+                  >
+                    <span className={`${styles.icon} ${styles[n.type] ?? ''}`}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d={TYPE_ICONS[n.type] ?? TYPE_ICONS.comment} />
+                      </svg>
+                    </span>
+                    <span className={styles.text}>
+                      <span className={styles.title}>{n.title}</span>
+                      {n.body && <span className={styles.body}>{n.body}</span>}
+                      <span className={styles.time}>{relativeTime(n.created_at)}</span>
+                    </span>
+                    {!n.read_at && <span className={styles.dot} aria-hidden="true" />}
+                  </button>
+                </li>
+              );
+            })}
             {merged.length === 0 && <li className={styles.empty}>Nothing new</li>}
           </ul>
         </div>

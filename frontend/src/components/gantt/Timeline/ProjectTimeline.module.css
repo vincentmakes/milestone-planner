@@ -63,6 +63,16 @@
   z-index: 100;
 }
 
+/* A draggable assignment bar and its handles belong to the finger (see
+   PhaseBar.module.css) */
+.assignmentBar.interactive,
+.assignmentBar.interactive .resizeHandle {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
 /* Resize handles for interactive assignment bars */
 .assignmentBar .resizeHandle {
   position: absolute;
@@ -88,6 +98,15 @@
 .assignmentBar .resizeHandle.right {
   right: 0;
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+/* Touch devices have no hover: show the handles, wider for a finger */
+@media (hover: none) and (pointer: coarse) {
+  .assignmentBar.interactive .resizeHandle {
+    opacity: 1;
+    width: 14px;
+    background: rgba(255, 255, 255, 0.3);
+  }
 }
 
 /* Phase staff - solid color with dashed border */

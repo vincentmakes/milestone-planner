@@ -3,8 +3,9 @@
  * hub), editing context, tooltip, drag/resize indicators, phantom sibling,
  * context menu, scroll/zoom triggers and resource drag.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { useUIStore } from '../uiStore';
+import { useWhatIfStore } from '../whatIfStore';
 import { makeEquipment, makeProject, makeStaff, makeUser, makeVacation } from '@/test/factories';
 
 const ui = () => useUIStore.getState();
@@ -79,6 +80,49 @@ describe('modals', () => {
       editingUser: null,
       modalContext: {},
     });
+  });
+});
+
+describe('settings hub during What-If', () => {
+  beforeEach(() => {
+    useWhatIfStore.getState().enterWhatIfMode([]);
+  });
+
+  afterEach(async () => {
+    if (useWhatIfStore.getState().whatIfMode) await useWhatIfStore.getState().exitWhatIfMode(false);
+  });
+
+  it('refuses openSettings and every legacy alias', () => {
+    ui().openSettings('tags');
+    expect(ui().activeModal).toBeNull();
+
+    ui().openModal('userManagement');
+    expect(ui().activeModal).toBeNull();
+
+    ui().openModal('customHoliday' as never, { siteId: 1 } as never);
+    expect(ui()).toMatchObject({ activeModal: null, settingsIntent: null, modalContext: {} });
+
+    ui().setActiveModal('ssoConfig');
+    expect(ui().activeModal).toBeNull();
+    ui().setActiveModal('settingsHub');
+    expect(ui().activeModal).toBeNull();
+  });
+
+  it('still opens the other modals', () => {
+    ui().openModal('phase');
+    expect(ui().activeModal).toBe('phase');
+    ui().setActiveModal('project');
+    expect(ui().activeModal).toBe('project');
+    ui().setActiveModal(null);
+    expect(ui().activeModal).toBeNull();
+  });
+
+  it('opens the hub again once What-If ends', async () => {
+    ui().openSettings('tags');
+    expect(ui().activeModal).toBeNull();
+    await useWhatIfStore.getState().exitWhatIfMode(false);
+    ui().openSettings('tags');
+    expect(ui()).toMatchObject({ activeModal: 'settingsHub', settingsSection: 'tags' });
   });
 });
 

@@ -92,7 +92,11 @@ export function slicesForEntity(entityType: string): Slice[] {
     case 'site':
       // Site writes include holiday refreshes and site-scoped event links, so
       // the current site's calendar (holidays/events) is refetched as well.
-      return ['sites', 'siteCalendar'];
+      // Site writes are rare admin actions, and a delete cascades on the
+      // server to the site's projects (FK CASCADE), site-only tags and
+      // site-only equipment, which other clients would otherwise keep
+      // showing — so those slices reload too.
+      return ['sites', 'siteCalendar', 'projects', 'tags', 'equipment'];
     case 'skill':
       return ['skills', 'staff'];
     case 'tag':

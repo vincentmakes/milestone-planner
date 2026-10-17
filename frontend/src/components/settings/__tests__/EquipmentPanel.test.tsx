@@ -5,10 +5,12 @@
  * per-site rows of GET /equipment, not the one-row-per-item /all listing.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { EquipmentPanel } from '../panels/EquipmentPanel';
 import { useAppStore } from '@/stores/appStore';
+import { useWhatIfStore } from '@/stores/whatIfStore';
+import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import type { Equipment, Site, User } from '@/types';
 
 const apiGet = vi.fn();
@@ -220,5 +222,47 @@ describe('EquipmentPanel', () => {
     expect(apiPost).toHaveBeenCalledTimes(1);
     finish();
     await waitFor(() => expect(screen.queryByLabelText('Name *')).not.toBeInTheDocument());
+  });
+});
+
+describe('EquipmentPanel during What-If', () => {
+  beforeEach(() => {
+    apiGet.mockReset().mockResolvedValue(allEquipment);
+    apiDelete.mockReset().mockResolvedValue(undefined);
+    getEquipment.mockReset().mockResolvedValue(perSiteRows);
+    useAppStore.setState({ sites, currentUser: admin, currentSite: sites[0], equipment: [] });
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    if (useWhatIfStore.getState().whatIfMode) await useWhatIfStore.getState().exitWhatIfMode(false);
+  });
+
+  it('disables Delete with the What-If hint and never deletes', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    useWhatIfStore.getState().enterWhatIfMode([]);
+    render(<EquipmentPanel />);
+    await screen.findByText('Reactor');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Reactor' }));
+
+    const del = screen.getByRole('button', { name: 'Delete Equipment' });
+    expect(del).toBeDisabled();
+    expect(del).toHaveAttribute('title', whatIfUnavailableMessage('Deleting equipment'));
+    fireEvent.click(del);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(apiDelete).not.toHaveBeenCalled();
+  });
+
+  it('deletes again once What-If ends', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<EquipmentPanel />);
+    await screen.findByText('Reactor');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Reactor' }));
+
+    const del = screen.getByRole('button', { name: 'Delete Equipment' });
+    expect(del).toBeEnabled();
+    expect(del).not.toHaveAttribute('title');
+    fireEvent.click(del);
+    await waitFor(() => expect(apiDelete).toHaveBeenCalledWith('/api/equipment/2'));
   });
 });

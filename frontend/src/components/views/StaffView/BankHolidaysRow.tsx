@@ -8,6 +8,7 @@
 
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
+import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { deleteCustomHoliday, getBankHolidays, buildHolidayDateSet } from '@/api';
 import { buildICS, downloadICS } from '@/utils/ics';
 import styles from './StaffView.module.css';
@@ -26,6 +27,17 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
   const openSettings = useUIStore((s) => s.openSettings);
   
   const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  // Holidays are managed in the Settings hub, which cannot open during
+  // What-If (this row also shows in the Gantt's embedded staff overview).
+  // Deleting is blocked too: holidays are not in the What-If snapshot, so a
+  // queued DELETE would leave the row on screen (the reload reads the real
+  // server list), a second try would queue a DELETE that 404s on Apply, and
+  // Discard could not bring the holiday back.
+  const whatIf = useWhatIfBlocked();
+  const addBlockedReason = whatIf.blocked ? whatIf.reason('Adding holidays') : null;
+  const editBlockedReason = whatIf.blocked ? whatIf.reason('Editing holidays in Settings') : null;
+  const deleteBlockedReason = whatIf.blocked ? whatIf.reason('Deleting holidays') : null;
+  const canOpenEditor = canEdit && !editBlockedReason;
   
   // Group holidays by year
   const holidaysByYear = bankHolidays.reduce((acc, h) => {
@@ -74,7 +86,7 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
   // Handle deleting a holiday. Nager (public) holidays can be deleted too,
   // but come back the next time the site's holidays are refreshed from Nager.
   const handleDeleteHoliday = async (holidayId: number, isCustom: boolean) => {
-    if (!currentSite) return;
+    if (!currentSite || deleteBlockedReason) return;
     const message = isCustom
       ? 'Delete this custom holiday?'
       : 'Delete this public holiday? It will come back the next time holidays are refreshed from Nager.';
@@ -133,7 +145,9 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
             <button 
               className={styles.iconBtn}
               onClick={handleAddCustom}
-              title="Add custom holiday"
+              disabled={addBlockedReason !== null}
+              title={addBlockedReason ?? 'Add custom holiday'}
+              aria-label="Add custom holiday"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="12" y1="5" x2="12" y2="19" />
@@ -156,9 +170,9 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
               return (
                 <div 
                   key={holiday.id}
-                  className={`${styles.detailRow} ${holiday.is_custom ? styles.customHoliday : ''} ${canEdit ? styles.clickable : ''}`}
-                  onClick={canEdit ? () => handleEditHoliday(holiday.id) : undefined}
-                  title={canEdit ? 'Edit in Settings' : undefined}
+                  className={`${styles.detailRow} ${holiday.is_custom ? styles.customHoliday : ''} ${canOpenEditor ? styles.clickable : ''}`}
+                  onClick={canOpenEditor ? () => handleEditHoliday(holiday.id) : undefined}
+                  title={canEdit ? (editBlockedReason ?? 'Edit in Settings') : undefined}
                 >
                   <span className={`${styles.detailType} ${styles.bankHoliday}`}>
                     {holiday.is_custom ? 'Custom' : 'Holiday'}
@@ -172,7 +186,8 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
                         e.stopPropagation();
                         handleDeleteHoliday(holiday.id, !!holiday.is_custom);
                       }}
-                      title={holiday.is_custom ? 'Delete custom holiday' : 'Delete holiday (returns on the next Nager refresh)'}
+                      disabled={deleteBlockedReason !== null}
+                      title={deleteBlockedReason ?? (holiday.is_custom ? 'Delete custom holiday' : 'Delete holiday (returns on the next Nager refresh)')}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <line x1="18" y1="6" x2="6" y2="18" />
@@ -194,8 +209,10 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
           {/* Add custom holiday row at bottom */}
           {canEdit && (
             <div 
-              className={`${styles.detailRow} ${styles.addRow}`}
-              onClick={handleAddCustom}
+              className={`${styles.detailRow} ${styles.addRow} ${addBlockedReason ? styles.addRowDisabled : ''}`}
+              onClick={addBlockedReason ? undefined : handleAddCustom}
+              aria-disabled={addBlockedReason ? true : undefined}
+              title={addBlockedReason ?? undefined}
             >
               <span className={styles.addIcon}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

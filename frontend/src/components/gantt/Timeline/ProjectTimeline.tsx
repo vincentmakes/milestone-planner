@@ -33,6 +33,7 @@ import { selectStaffSiteIds, selectAbsenceTypesById } from '@/stores/appStore';
 import { DEFAULT_EVENT_COLOR } from '@/utils/colorSwatches';
 import styles from './ProjectTimeline.module.css';
 import { daysBetweenDateStrings } from '@/utils/date';
+import { armTouchGesture, isTouchEvent } from '@/utils/touchEvents';
 
 interface ProjectTimelineProps {
   project: Project;
@@ -1116,20 +1117,31 @@ const AssignmentBar = memo(function AssignmentBar({
     ? (allocation ? `${name} (${allocation}%)` : name)
     : (allocation ? `${allocation}%` : '');
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  // Mouse and touch share these. A touch is armed with armTouchGesture and
+  // handed on as a mouse-like event only once the finger has moved past the
+  // threshold, so a jittery tap is not committed as a move/resize
+  // (toMouseLikeEvent keeps target/currentTarget, so the resize hook still
+  // finds the bar with closest('[data-assignment-id]') from the handle).
+  const handlePointerDown = (e: React.MouseEvent | React.TouchEvent) => {
     // Check if clicking on resize handle
     const target = e.target as HTMLElement;
     if (target.classList.contains('resize-handle')) return;
+    if (!onDragStart) return;
     
-    if (onDragStart) {
-      onDragStart(e);
+    if (isTouchEvent(e)) {
+      armTouchGesture(e as React.TouchEvent, { onStart: onDragStart });
+    } else {
+      onDragStart(e as React.MouseEvent);
     }
   };
 
-  const handleResizeMouseDown = (e: React.MouseEvent, edge: 'left' | 'right') => {
+  const handleResizePointerDown = (e: React.MouseEvent | React.TouchEvent, edge: 'left' | 'right') => {
     e.stopPropagation();
-    if (onResizeStart) {
-      onResizeStart(e, edge);
+    if (!onResizeStart) return;
+    if (isTouchEvent(e)) {
+      armTouchGesture(e as React.TouchEvent, { onStart: (mouseLike) => onResizeStart(mouseLike, edge) });
+    } else {
+      onResizeStart(e as React.MouseEvent, edge);
     }
   };
 
@@ -1158,13 +1170,15 @@ const AssignmentBar = memo(function AssignmentBar({
         data-assignment-type={assignmentType}
         data-start={startDate}
         data-end={endDate}
-        onMouseDown={interactive ? handleMouseDown : undefined}
+        onMouseDown={interactive ? handlePointerDown : undefined}
+        onTouchStart={interactive ? handlePointerDown : undefined}
       >
         {/* Left resize handle */}
         {interactive && (
           <div
             className={`${styles.resizeHandle} ${styles.left} resize-handle`}
-            onMouseDown={(e) => handleResizeMouseDown(e, 'left')}
+            onMouseDown={(e) => handleResizePointerDown(e, 'left')}
+            onTouchStart={(e) => handleResizePointerDown(e, 'left')}
           />
         )}
 
@@ -1174,7 +1188,8 @@ const AssignmentBar = memo(function AssignmentBar({
         {interactive && (
           <div
             className={`${styles.resizeHandle} ${styles.right} resize-handle`}
-            onMouseDown={(e) => handleResizeMouseDown(e, 'right')}
+            onMouseDown={(e) => handleResizePointerDown(e, 'right')}
+            onTouchStart={(e) => handleResizePointerDown(e, 'right')}
           />
         )}
       </div>

@@ -42,7 +42,7 @@ Someone who belongs to several sites is unavailable as soon as **one** of their 
 
 Admins and superusers can assign anyone to any project — at every site; sites decide what the Gantt shows, not which projects a superuser may change. The **project manager** of a project can do the same on that project. Everyone else can [add themselves](#adding-yourself-to-a-project).
 
-New assignments (drag-and-drop, **Assign Staff**, **Assign me**) can't be created while [What-If mode](what-if-planning.md) is active; existing ones can still be edited, moved and removed there.
+New assignments (drag-and-drop, **Assign Staff**, **Assign me**) can't be created while [What-If mode](what-if-planning.md) is active; existing ones can still be edited, moved and removed there. What-If is entered from the Gantt chart, and the Staff Overview itself is not reachable while a plan is open.
 
 ### Method 1: Drag & Drop
 

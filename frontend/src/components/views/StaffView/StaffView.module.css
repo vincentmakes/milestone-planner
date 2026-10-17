@@ -276,6 +276,17 @@
   color: var(--text-primary);
 }
 
+.iconBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.iconBtn:disabled:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+
 /* Expanded content */
 .expandedContent {
   background: var(--bg-primary);
@@ -376,6 +387,16 @@
   background: rgba(139, 92, 246, 0.1);
 }
 
+/* Settings-hub shortcuts are unavailable during What-If. */
+.addRowDisabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.addRowDisabled:hover {
+  background: transparent;
+}
+
 .addIcon {
   display: flex;
   align-items: center;
@@ -452,6 +473,20 @@
 .deleteAction:hover {
   background: rgba(239, 68, 68, 0.1);
   color: var(--accent-red);
+}
+
+/* Blocked during What-If: still visible on hover, but inert */
+.deleteAction:disabled {
+  cursor: not-allowed;
+}
+
+.detailRow:hover .deleteAction:disabled {
+  opacity: 0.4;
+}
+
+.deleteAction:disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
 }
 
 /* Bank holidays row */

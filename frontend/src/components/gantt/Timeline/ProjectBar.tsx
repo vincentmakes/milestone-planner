@@ -1,11 +1,14 @@
 /**
  * ProjectBar
  * Visual bar representing a project on the timeline with confirmed/unconfirmed styling
- * Supports dragging to move entire project (with confirmation on release)
+ * Supports dragging to move entire project (with confirmation on release),
+ * with the mouse or a finger (a touch is handed on as a mouse-like event once
+ * the finger has moved past a small threshold, so a jittery tap is no move).
  */
 
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 import { barTextColor } from '@/utils/tags';
+import { armTouchGesture } from '@/utils/touchEvents';
 import styles from './ProjectBar.module.css';
 
 interface ProjectBarProps {
@@ -39,9 +42,15 @@ export const ProjectBar = memo(function ProjectBar({
   color,
 }: ProjectBarProps) {
   const textColor = color ? barTextColor(color) : null;
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (onDragStart) armTouchGesture(e, { onStart: onDragStart });
+    },
+    [onDragStart]
+  );
   return (
     <div
-      className={`${styles.bar} ${confirmed ? styles.confirmed : styles.unconfirmed} ${textColor === '#111827' ? styles.darkText : ''} gantt-bar`}
+      className={`${styles.bar} ${onDragStart ? styles.interactive : ''} ${confirmed ? styles.confirmed : styles.unconfirmed} ${textColor === '#111827' ? styles.darkText : ''} gantt-bar`}
       style={color ? { left, width, background: color, color: textColor ?? undefined } : { left, width }}
       data-tag-color={color ?? undefined}
       title={`${name}${completion != null ? ` (${completion}%)` : ''}\nDrag to move project`}
@@ -49,6 +58,7 @@ export const ProjectBar = memo(function ProjectBar({
       data-start={startDate}
       data-end={endDate}
       onMouseDown={onDragStart}
+      onTouchStart={onDragStart ? handleTouchStart : undefined}
     >
       {width > 60 && <span className={styles.label}>{name}</span>}
     </div>

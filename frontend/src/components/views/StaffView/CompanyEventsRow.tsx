@@ -8,6 +8,7 @@
 
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
+import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { deleteCompanyEvent, getCompanyEvents, buildEventDateSet } from '@/api';
 import { buildICS, downloadICS } from '@/utils/ics';
 import styles from './StaffView.module.css';
@@ -26,6 +27,17 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
   const openSettings = useUIStore((s) => s.openSettings);
   
   const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  // Events are managed in the Settings hub, which cannot open during
+  // What-If (this row also shows in the Gantt's embedded staff overview).
+  // Deleting is blocked too: events are not in the What-If snapshot, so a
+  // queued DELETE would leave the row on screen (the reload reads the real
+  // server list), a second try would queue a DELETE that 404s on Apply, and
+  // Discard could not bring the event back.
+  const whatIf = useWhatIfBlocked();
+  const addBlockedReason = whatIf.blocked ? whatIf.reason('Adding company events') : null;
+  const editBlockedReason = whatIf.blocked ? whatIf.reason('Editing company events in Settings') : null;
+  const deleteBlockedReason = whatIf.blocked ? whatIf.reason('Deleting company events') : null;
+  const canOpenEditor = canEdit && !editBlockedReason;
   
   // Group events by year
   const eventsByYear = companyEvents.reduce((acc, e) => {
@@ -77,7 +89,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
   // An event shared by several sites is only removed from the current site
   // (the legacy site-scoped DELETE unlinks it); other sites keep it.
   const handleDeleteEvent = async (eventId: number, siteCount: number) => {
-    if (!currentSite) return;
+    if (!currentSite || deleteBlockedReason) return;
     const message = siteCount > 1
       ? `This event is shared by ${siteCount} sites. Remove it from ${currentSite.name} only? The other sites keep it (delete it everywhere from Settings → Company events).`
       : 'Delete this company event?';
@@ -136,7 +148,9 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
             <button 
               className={styles.iconBtn}
               onClick={handleAddEvent}
-              title="Add company event"
+              disabled={addBlockedReason !== null}
+              title={addBlockedReason ?? 'Add company event'}
+              aria-label="Add company event"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="12" y1="5" x2="12" y2="19" />
@@ -159,9 +173,9 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
               return (
                 <div 
                   key={event.id}
-                  className={`${styles.detailRow} ${canEdit ? styles.clickable : ''}`}
-                  onClick={canEdit ? () => handleEditEvent(event.id) : undefined}
-                  title={canEdit ? 'Edit in Settings' : undefined}
+                  className={`${styles.detailRow} ${canOpenEditor ? styles.clickable : ''}`}
+                  onClick={canOpenEditor ? () => handleEditEvent(event.id) : undefined}
+                  title={canEdit ? (editBlockedReason ?? 'Edit in Settings') : undefined}
                 >
                   <span
                     className={`${styles.detailType} ${styles.companyEvent}`}
@@ -178,7 +192,8 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
                         e.stopPropagation();
                         handleDeleteEvent(event.id, event.site_ids?.length ?? 1);
                       }}
-                      title={(event.site_ids?.length ?? 1) > 1 ? 'Remove from this site' : 'Delete company event'}
+                      disabled={deleteBlockedReason !== null}
+                      title={deleteBlockedReason ?? ((event.site_ids?.length ?? 1) > 1 ? 'Remove from this site' : 'Delete company event')}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <line x1="18" y1="6" x2="6" y2="18" />
@@ -200,8 +215,10 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
           {/* Add event row at bottom */}
           {canEdit && (
             <div 
-              className={`${styles.detailRow} ${styles.addRow}`}
-              onClick={handleAddEvent}
+              className={`${styles.detailRow} ${styles.addRow} ${addBlockedReason ? styles.addRowDisabled : ''}`}
+              onClick={addBlockedReason ? undefined : handleAddEvent}
+              aria-disabled={addBlockedReason ? true : undefined}
+              title={addBlockedReason ?? undefined}
             >
               <span className={styles.addIcon}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
