@@ -258,11 +258,13 @@ export function MentionTextarea({
 
     if (e.key === 'Escape') {
       if (!open) return; // let it through: Modal closes
+      // Close only the suggestion list: the shared Modal listens for Escape on
+      // `document`, and React's synthetic stopPropagation keeps the event from
+      // reaching it (React 17+ dispatches from the root container, below
+      // `document`). Prefer it over stopImmediatePropagation, which would also
+      // silence unrelated listeners on the same node.
       e.preventDefault();
       e.stopPropagation();
-      // React's synthetic stopPropagation does not stop Modal's listener on
-      // `document`; only this does.
-      e.nativeEvent.stopImmediatePropagation();
       setDismissed(true);
       return;
     }

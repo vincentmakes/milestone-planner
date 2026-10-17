@@ -11,6 +11,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { getPhaseColor, getDepthColor } from '@/utils/themeColors';
+import { canEditProject } from '@/utils/permissions';
 import type { Phase, Subphase, Project } from '@/types';
 import type { TimelineCell } from '@/components/gantt/utils';
 import { format, addDays, differenceInDays } from 'date-fns';
@@ -100,6 +101,7 @@ export interface PhantomSiblingConfig {
 
 export function usePhantomSibling() {
   const projects = useAppStore((s) => s.projects);
+  const currentUser = useAppStore((s) => s.currentUser);
   const phantomSiblingMode = useUIStore((s) => s.phantomSiblingMode);
   const startPhantomSibling = useUIStore((s) => s.startPhantomSibling);
   const updatePhantomPosition = useUIStore((s) => s.updatePhantomPosition);
@@ -117,6 +119,8 @@ export function usePhantomSibling() {
       const { projectId, sourceId, type, zone } = config;
       const project = projects.find((p) => p.id === projectId);
       if (!project) return;
+      // Only the project's editors (admin, superuser, its manager) add siblings.
+      if (!canEditProject(currentUser, project)) return;
 
       let sourceItem: Phase | Subphase | undefined;
       let phantomColor: string;
@@ -203,7 +207,7 @@ export function usePhantomSibling() {
       // Add body class for styling
       document.body.classList.add('phantom-sibling-mode');
     },
-    [projects, startPhantomSibling]
+    [projects, currentUser, startPhantomSibling]
   );
 
   /**

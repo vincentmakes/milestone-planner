@@ -7,11 +7,13 @@ Handles WebSocket connections with session-based authentication.
 import json
 import logging
 import time
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.database import get_session_factory
 from app.models.session import Session
 from app.models.user import User
@@ -109,6 +111,53 @@ def extract_session_id(cookie_value: str) -> str | None:
     return cookie_value
 
 
+_DEFAULT_PORTS = {"http": "80", "https": "443", "ws": "80", "wss": "443"}
+
+
+def _normalise_host(host: str, scheme: str | None = None) -> str:
+    """Lower-case ``host[:port]``, dropping the scheme's default port."""
+    host = host.strip().lower()
+    if scheme and host.endswith(":" + _DEFAULT_PORTS.get(scheme, "")):
+        host = host.rsplit(":", 1)[0]
+    elif not scheme and (host.endswith(":80") or host.endswith(":443")):
+        host = host.rsplit(":", 1)[0]
+    return host
+
+
+def is_origin_allowed(websocket: WebSocket) -> bool:
+    """
+    Cross-site WebSocket hijacking guard.
+
+    Browsers always send ``Origin`` on a WebSocket handshake; non-browser
+    clients usually do not, and they are allowed (the session cookie is still
+    required). When the header is present its host must equal the request's
+    ``Host`` (or ``X-Forwarded-Host``, for reverse proxies that rewrite
+    ``Host``), or the origin must be one of the configured CORS origins (the
+    Vite dev server on :3333 connects to :8485 directly).
+    """
+    origin = websocket.headers.get("origin")
+    if origin is None:
+        return True
+
+    parts = urlsplit(origin.strip())
+    if not parts.scheme or not parts.netloc:
+        return False  # "null" (sandboxed iframe, file://) or garbage
+    origin_host = _normalise_host(parts.netloc, parts.scheme.lower())
+
+    request_hosts = set()
+    host = websocket.headers.get("host")
+    if host:
+        request_hosts.add(_normalise_host(host))
+    forwarded = websocket.headers.get("x-forwarded-host")
+    if forwarded:
+        request_hosts.update(_normalise_host(h) for h in forwarded.split(",") if h.strip())
+    if origin_host in request_hosts:
+        return True
+
+    allowed = {o.rstrip("/").lower() for o in get_settings().allowed_origins}
+    return origin.strip().rstrip("/").lower() in allowed
+
+
 def get_tenant_from_scope(websocket: WebSocket) -> str:
     """
     Extract tenant slug from WebSocket scope.
@@ -170,6 +219,16 @@ async def handle_websocket_connection(websocket: WebSocket, tenant_slug: str | N
         tenant_slug: Tenant slug from URL path (None for single-tenant)
     """
     logger.info("WebSocket connection attempt from %s", websocket.client)
+
+    if not is_origin_allowed(websocket):
+        logger.warning(
+            "WebSocket refused: Origin %r does not match host %r",
+            websocket.headers.get("origin"),
+            websocket.headers.get("host"),
+        )
+        await websocket.accept()
+        await websocket.close(code=4003, reason="Origin not allowed")
+        return
 
     # Get session cookie
     cookies = websocket.cookies
@@ -255,6 +314,7 @@ async def handle_websocket_connection(websocket: WebSocket, tenant_slug: str | N
         user_id=user_id,
         first_name=first_name,
         last_name=last_name,
+        session_id=session_id,
     )
 
     logger.debug("Starting receive loop for user %s conn=%s", user_id, connection_id)

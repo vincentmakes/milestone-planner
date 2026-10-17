@@ -3,21 +3,81 @@ name: Frontend CI
 on:
   push:
     branches: [main]
+  # Every pull request, whatever its base: a PR stacked on a feature branch
+  # gets the same lint, test, coverage and audit gates as one targeting main.
   pull_request:
-    branches: [main]
   schedule:
     # Mondays 06:17 UTC. New advisories land against an unchanged lockfile, so
     # the audit needs a trigger that doesn't depend on someone opening a PR.
     - cron: "17 6 * * 1"
+
+# A new push to a pull request supersedes the run still going for the previous
+# one. Pushes to main are never cancelled: each one publishes the coverage
+# badge, and a cancelled run would leave it behind.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:
     working-directory: frontend
 
 jobs:
+  # Every job below runs only when frontend/ changed, so a backend- or
+  # docs-only pull request does not re-test an untouched SPA. A change to this
+  # workflow file re-runs the whole workflow, so CI config changes are
+  # validated by the jobs they configure rather than landing untested.
+  # Skipped on the weekly schedule: there is no diff to filter, and only the
+  # audit runs then.
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    permissions:
+      contents: read
+      pull-requests: read
+    # Compare with `== 'true'` explicitly: paths-filter emits the *string*
+    # 'false', which is truthy in GitHub expressions, so the shorthand
+    # `outputs.frontend || outputs.ci` returns 'false' and the fallback never
+    # fires. Do not simplify this back to `||` between the raw outputs; the
+    # consumers below compare against 'true' for the same reason.
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend == 'true' || steps.filter.outputs.ci == 'true' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          # Detect changes with local git, NOT the REST API. On a pull request
+          # the action's default is `GET /pulls/{n}/files`, which returns at
+          # most 3000 entries — and a PR past that limit does not fail, it
+          # reports the files that fell off the end as *unchanged*, so a suite
+          # is skipped and CI goes green having never run it. A skipped suite
+          # is worse than a red one: nothing on the PR says the tests did not
+          # run.
+          #
+          # An empty `token` is the action's documented switch to git mode; it
+          # then uses `git merge-base` against `base` (the PR's own base, so a
+          # stacked PR is diffed against its parent branch, not main) and
+          # fetches history as needed. `base` is empty on push-to-main, where
+          # the action compares against the commit before the push.
+          token: ""
+          base: ${{ github.event.pull_request.base.ref }}
+          filters: |
+            frontend:
+              - 'frontend/**'
+            ci:
+              - '.github/workflows/frontend.yml'
+
   audit:
     name: Audit
     runs-on: ubuntu-latest
+    # The weekly schedule is what this job exists for, and `changes` is
+    # skipped then: without `!cancelled()` the skipped dependency would skip
+    # the audit too. On a push or PR it runs only when the frontend changed.
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || needs.changes.outputs.frontend == 'true') }}
     steps:
       - uses: actions/checkout@v5
 
@@ -41,7 +101,8 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    if: github.event_name != 'schedule'
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     steps:
       - uses: actions/checkout@v5
 
@@ -58,10 +119,27 @@ jobs:
       - name: ESLint
         run: npm run lint
 
-  test:
-    name: Tests
+  # The Vitest suite took ~3 min on one runner, so it runs as two shards on
+  # two runners and the aggregate `test` job below merges their results and
+  # coverage. Vitest's own `--shard` assigns every test file to one shard;
+  # `--reporter=blob` writes the results AND the raw coverage map to
+  # .vitest-reports/ for the merge. Vitest checks the coverage thresholds on
+  # every run, sharded or not, so a shard zeroes them — half the suite cannot
+  # meet the suite-wide floors in vitest.config.ts; the merge run enforces
+  # them. The matrix is the ONLY place the shard count is set:
+  # `strategy.job-total` carries it into the job name, the vitest command and
+  # the aggregate's count check.
+  test-shards:
+    name: Tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
-    if: github.event_name != 'schedule'
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    outputs:
+      count: ${{ steps.meta.outputs.count }} # every leg writes the same value
     steps:
       - uses: actions/checkout@v5
 
@@ -75,13 +153,212 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests
-        run: npx vitest run
+      - id: meta
+        run: echo "count=${{ strategy.job-total }}" >> "$GITHUB_OUTPUT"
+
+      # `--reporter=default` keeps the console output a failing shard needs;
+      # `blob` alone prints nothing.
+      - name: Run shard ${{ matrix.shard }} of ${{ strategy.job-total }} with coverage
+        run: >-
+          npx vitest run --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+          --reporter=default --reporter=blob --coverage.enabled
+          --coverage.thresholds.lines=0 --coverage.thresholds.statements=0
+          --coverage.thresholds.branches=0 --coverage.thresholds.functions=0
+
+      # Actions resolve `path` from the workspace root, not from the
+      # workflow-wide working-directory, hence the frontend/ prefix.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: frontend-blob-${{ matrix.shard }}
+          path: frontend/.vitest-reports/
+          if-no-files-found: error
+          include-hidden-files: true # the directory is a dotdir
+          overwrite: true # "Re-run failed jobs" uploads the same name again
+          retention-days: 1
+
+  # The check to require in branch protection — the shard jobs need no rule
+  # of their own. Same shape as Tests in backend.yml: it must RUN when a shard
+  # fails and fail itself, because `needs` alone would skip it and a skipped
+  # required check reads as passing. When the frontend did not change,
+  # `changes` gates it off like every other job here.
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    needs: [changes, test-shards]
+    if: ${{ !cancelled() && needs.changes.outputs.frontend == 'true' }}
+    steps:
+      - name: Every shard must have passed
+        id: shards-ok
+        run: |
+          echo "shard jobs: ${{ needs.test-shards.result }}"
+          test "${{ needs.test-shards.result }}" = "success"
+        working-directory: . # frontend/ does not exist before the checkout
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # diff-cover needs the merge base with the base branch
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # vitest and @vitest/coverage-v8 do the merge, so the install is needed.
+      - name: Install dependencies
+        run: npm ci
+
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: frontend-blob-*
+          merge-multiple: true
+          path: frontend/.vitest-reports
+
+      # A missing blob is silent at download, so the count is checked first.
+      # The merge re-emits the reporters configured in vitest.config.ts (text,
+      # lcov — rooted at the repository, for the diff gate — and json-summary,
+      # for the summary and the badge) from the merged coverage map and checks
+      # the floors there: `coverage.thresholds`, the one place they are set.
+      - name: Merge the shards' results and coverage, enforce the floors
+        run: |
+          expected="${{ needs.test-shards.outputs.count }}"
+          found=$(ls .vitest-reports/blob-*.json | wc -l)
+          test "$found" -eq "$expected" || { echo "::error::$found of $expected shard reports"; exit 1; }
+          npx vitest run --merge-reports --coverage.enabled
+
+      # Runs after a failed floor too, which is when the table matters — but
+      # not after a failed shard guard: nothing is checked out then. The
+      # ::notice annotation puts the line total on the run page itself.
+      # `branchesTrue` (an istanbul summary key that reads 100% with nothing
+      # to count) is left out of the table.
+      - name: Coverage summary
+        if: always() && steps.shards-ok.outcome == 'success'
+        run: |
+          echo "## Frontend coverage" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f coverage/coverage-summary.json ]; then
+            jq -r '.total | "| | Covered | Total | % |\n|---|---|---|---|",
+              (to_entries[] | select(.key != "branchesTrue") | "| \(.key) | \(.value.covered) | \(.value.total) | \(.value.pct) |")' \
+              coverage/coverage-summary.json >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice title=Frontend coverage::$(jq -r .total.lines.pct coverage/coverage-summary.json)%"
+          else
+            echo "No coverage data." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Same gate as the backend job: the lines a PR adds or changes must be
+      # >= 80% covered. The LCOV paths are repository-relative
+      # (frontend/src/...), which is what diff-cover matches against the diff;
+      # the checkout above keeps the full history for the merge base.
+      - name: Diff coverage (changed lines must be tested)
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          pip install diff-cover==10.6.0
+          diff-cover coverage/lcov.info --compare-branch="origin/${{ github.base_ref }}" \
+            --fail-under=80 --format markdown:diff-cover.md
+          cat diff-cover.md >> "$GITHUB_STEP_SUMMARY"
+
+      # On main, hand the line total to the coverage-badges job. Only reached
+      # when the shards and the floors passed (no always()). The file goes to
+      # the repository root (../), where the upload below picks it up —
+      # actions resolve `path` from the workspace, not from the default
+      # working-directory.
+      - name: Record the total for the coverage badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p ../coverage-badge
+          jq -r '.total.lines.pct' coverage/coverage-summary.json > ../coverage-badge/frontend
+
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-badge-frontend
+          path: coverage-badge/
+          if-no-files-found: error
+          overwrite: true # "Re-run failed jobs" uploads the same name again
+          retention-days: 1
+
+  # On main, turns the total the test job hands over into a shields.io
+  # endpoint file (frontend.json) on the orphan `coverage` data branch, which
+  # the README badge reads; `main` itself is never written. The job runs only
+  # on push to main, so no pull-request code ever holds the write token.
+  # backend.yml has the same job writing backend.json: the two share one
+  # concurrency group so they never push to the branch at the same time, and
+  # each writes only its own file, so the other badge keeps its value.
+  coverage-badges:
+    name: Coverage Badges
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: coverage-badges
+      cancel-in-progress: false
+    # Nothing here lives in frontend/ (and it is not checked out): run from
+    # the workspace root instead of the workflow-wide default.
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: coverage-badge-*
+          merge-multiple: true
+          path: totals
+
+      - name: Commit to the coverage branch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Without nullglob the loop below would run once on the literal
+          # pattern and fail in cat when no total was handed over.
+          shopt -s nullglob
+          totals=(totals/*)
+          if [ "${#totals[@]}" -eq 0 ]; then
+            echo "No coverage total was handed over; the badge keeps its last value."
+            exit 0
+          fi
+          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git init -q branch && cd branch
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # The first run on a repository creates the orphan branch.
+          if git fetch -q --depth 1 "$remote" coverage 2>/dev/null; then
+            git checkout -q -b coverage FETCH_HEAD
+          else
+            git checkout -q --orphan coverage
+          fi
+          for total in ../totals/*; do
+            suite=$(basename "$total")
+            # --argjson rejects anything that is not a number. The colours
+            # follow Google's coverage guidelines (90% exemplary, 75%
+            # commendable, 60% acceptable). The colour is picked from the
+            # rounded figure the badge shows, never the raw one, or 74.6 would
+            # read "75%" in the colour of the band below.
+            jq -n --arg label "$suite coverage" --argjson pct "$(cat "$total")" '
+              ($pct | round) as $shown | {
+              schemaVersion: 1,
+              label: $label,
+              message: "\($shown)%",
+              color: (if $shown >= 90 then "brightgreen" elif $shown >= 75 then "green"
+                      elif $shown >= 60 then "yellowgreen" else "orange" end)
+            }' > "$suite.json"
+          done
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Coverage unchanged; nothing to commit."
+            exit 0
+          fi
+          git commit -q -m "chore: update coverage badges [skip ci]"
+          git push -q "$remote" coverage
 
   build:
     name: Build
     runs-on: ubuntu-latest
-    if: github.event_name != 'schedule'
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     steps:
       - uses: actions/checkout@v5
 

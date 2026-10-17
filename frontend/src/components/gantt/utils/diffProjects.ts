@@ -2,12 +2,37 @@
  * diffProjects
  *
  * Compares two project trees and produces a list of `PendingUpdate` entries
- * for items whose start_date / end_date differ. Used by the undo/redo
- * subsystem to persist only the dates that actually need to change when
- * restoring a snapshot.
+ * for items whose start_date / end_date differ, and for phases/subphases
+ * whose dependency links differ. Used by the undo/redo subsystem to persist
+ * only what actually needs to change when restoring a snapshot (a link
+ * created after the snapshot is removed on the server too, instead of
+ * reappearing on the next refetch).
  */
-import type { Project, Phase, Subphase } from '@/types';
+import type { Project, Phase, Subphase, Dependency } from '@/types';
 import type { PendingUpdate } from './autoCalculation';
+
+/** Order-sensitive comparison; a missing list equals an empty one. */
+function sameDependencies(a: Dependency[] | undefined, b: Dependency[] | undefined): boolean {
+  return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+}
+
+/** The update for a phase/subphase whose dates and/or links changed, or null. */
+function scheduleItemUpdate(
+  type: 'phase' | 'subphase',
+  prev: Phase | Subphase,
+  next: Phase | Subphase,
+): PendingUpdate | null {
+  const datesChanged = prev.start_date !== next.start_date || prev.end_date !== next.end_date;
+  const depsChanged = !sameDependencies(prev.dependencies, next.dependencies);
+  if (!datesChanged && !depsChanged) return null;
+  return {
+    type,
+    id: next.id,
+    start_date: next.start_date,
+    end_date: next.end_date,
+    ...(depsChanged ? { dependencies: next.dependencies ?? [] } : {}),
+  };
+}
 
 function diffSubphases(
   oldList: Subphase[],
@@ -17,14 +42,8 @@ function diffSubphases(
   const oldMap = new Map(oldList.map((s) => [s.id, s]));
   for (const next of newList) {
     const prev = oldMap.get(next.id);
-    if (prev && (prev.start_date !== next.start_date || prev.end_date !== next.end_date)) {
-      updates.push({
-        type: 'subphase',
-        id: next.id,
-        start_date: next.start_date,
-        end_date: next.end_date,
-      });
-    }
+    const update = prev ? scheduleItemUpdate('subphase', prev, next) : null;
+    if (update) updates.push(update);
     if (next.children?.length || prev?.children?.length) {
       diffSubphases(prev?.children ?? [], next.children ?? [], updates);
     }
@@ -35,14 +54,8 @@ function diffPhases(oldList: Phase[], newList: Phase[], updates: PendingUpdate[]
   const oldMap = new Map(oldList.map((p) => [p.id, p]));
   for (const next of newList) {
     const prev = oldMap.get(next.id);
-    if (prev && (prev.start_date !== next.start_date || prev.end_date !== next.end_date)) {
-      updates.push({
-        type: 'phase',
-        id: next.id,
-        start_date: next.start_date,
-        end_date: next.end_date,
-      });
-    }
+    const update = prev ? scheduleItemUpdate('phase', prev, next) : null;
+    if (update) updates.push(update);
     diffSubphases(prev?.children ?? [], next.children ?? [], updates);
   }
 }

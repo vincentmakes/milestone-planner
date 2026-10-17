@@ -6,6 +6,7 @@
 import { useState, FormEvent } from 'react';
 import { createAdminUser } from '@/api';
 import { useEscapeKey } from '@/hooks';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import styles from './AdminModal.module.css';
 
 interface CreateAdminModalProps {
@@ -20,7 +21,7 @@ export function CreateAdminModal({ onClose, onCreated }: CreateAdminModalProps) 
     name: '',
     role: 'admin',
   });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -33,8 +34,8 @@ export function CreateAdminModal({ onClose, onCreated }: CreateAdminModalProps) 
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!beginSubmit()) return;
     setError(null);
-    setIsSubmitting(true);
 
     try {
       await createAdminUser(formData);
@@ -42,7 +43,7 @@ export function CreateAdminModal({ onClose, onCreated }: CreateAdminModalProps) 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create admin user');
     } finally {
-      setIsSubmitting(false);
+      endSubmit();
     }
   };
 

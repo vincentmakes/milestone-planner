@@ -30,6 +30,21 @@ def _scalar_result(value):
     return result
 
 
+def _pm_result(pm_id):
+    """Result of the `SELECT projects.pm_id` lookup a plain user now costs."""
+    result = MagicMock()
+    result.first.return_value = (pm_id,)
+    return result
+
+
+def _staff_row(staff_id: int, project_id: int = 1):
+    row = MagicMock()
+    row.id = 1
+    row.project_id = project_id
+    row.staff_id = staff_id
+    return row
+
+
 # ---------------------------------------------------------
 # Authentication
 # ---------------------------------------------------------
@@ -38,9 +53,7 @@ def _scalar_result(value):
 @pytest.mark.asyncio
 async def test_move_requires_authentication(app_client):
     """No session -> 401, before any permission logic runs."""
-    response = await app_client.put(
-        "/api/kanban/cards/phase/1/status", json={"status": "done"}
-    )
+    response = await app_client.put("/api/kanban/cards/phase/1/status", json={"status": "done"})
     assert response.status_code == 401
 
 
@@ -58,18 +71,14 @@ async def test_notifications_require_authentication(app_client):
 @pytest.mark.asyncio
 async def test_unknown_status_is_rejected(authed_client):
     client, _ = authed_client
-    response = await client.put(
-        "/api/kanban/cards/phase/1/status", json={"status": "nope"}
-    )
+    response = await client.put("/api/kanban/cards/phase/1/status", json={"status": "nope"})
     assert response.status_code == 422
 
 
 @pytest.mark.asyncio
 async def test_unknown_entity_type_is_rejected(authed_client):
     client, _ = authed_client
-    response = await client.put(
-        "/api/kanban/cards/widget/1/status", json={"status": "done"}
-    )
+    response = await client.put("/api/kanban/cards/widget/1/status", json={"status": "done"})
     assert response.status_code == 422
 
 
@@ -103,11 +112,10 @@ async def test_non_assignee_cannot_move_a_card(authed_client, mock_db_session):
     card_result = _scalar_result(_card())
     assignee_result = MagicMock()
     assignee_result.first.return_value = None  # not assigned
-    mock_db_session.execute.side_effect = [card_result, assignee_result]
+    # card load, pm lookup (not the PM), assignee lookup
+    mock_db_session.execute.side_effect = [card_result, _pm_result(99), assignee_result]
 
-    response = await client.put(
-        "/api/kanban/cards/phase/1/status", json={"status": "done"}
-    )
+    response = await client.put("/api/kanban/cards/phase/1/status", json={"status": "done"})
     assert response.status_code == 403
 
 
@@ -124,13 +132,12 @@ async def test_assignee_can_move_their_card(authed_client, mock_db_session):
 
     mock_db_session.execute.side_effect = [
         _scalar_result(card),
+        _pm_result(99),
         assignee_result,
         assignees_result,
     ]
 
-    response = await client.put(
-        "/api/kanban/cards/phase/1/status", json={"status": "done"}
-    )
+    response = await client.put("/api/kanban/cards/phase/1/status", json={"status": "done"})
     assert response.status_code == 200
     body = response.json()
     # The server echoes the derived pair so the client can reconcile.
@@ -149,22 +156,23 @@ async def test_superuser_can_move_any_card(authed_client, mock_db_session):
 
     mock_db_session.execute.side_effect = [_scalar_result(card), assignees_result]
 
-    response = await client.put(
-        "/api/kanban/cards/phase/1/status", json={"status": "in_progress"}
-    )
+    response = await client.put("/api/kanban/cards/phase/1/status", json={"status": "in_progress"})
     assert response.status_code == 200
     assert response.json()["completion"] == 50
 
 
 @pytest.mark.asyncio
-async def test_assigning_requires_superuser(authed_client, mock_db_session):
+async def test_user_cannot_assign_someone_else(authed_client, mock_db_session):
+    """Assigning others needs a project editor (superuser or the PM); joining
+    a card yourself is covered in test_project_access_routes.py."""
     client, set_user = authed_client
     set_user(FakeUser(5, "user"))
+    # card load, then the pm lookup shows user 5 is not the PM
+    mock_db_session.execute.side_effect = [_scalar_result(_card()), _pm_result(1)]
 
-    response = await client.post(
-        "/api/kanban/cards/phase/1/assignees", json={"staff_id": 7}
-    )
+    response = await client.post("/api/kanban/cards/phase/1/assignees", json={"staff_id": 7})
     assert response.status_code == 403
+    mock_db_session.add.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -173,9 +181,7 @@ async def test_missing_card_returns_404(authed_client, mock_db_session):
     set_user(FakeUser(9, "superuser"))
     mock_db_session.execute.return_value = _scalar_result(None)
 
-    response = await client.put(
-        "/api/kanban/cards/phase/999/status", json={"status": "done"}
-    )
+    response = await client.put("/api/kanban/cards/phase/999/status", json={"status": "done"})
     assert response.status_code == 404
 
 
@@ -197,12 +203,43 @@ async def test_allocation_outside_1_to_100_is_rejected(authed_client, path, allo
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("path", ["/api/phase-staff/1", "/api/subphase-staff/1"])
-async def test_allocation_edit_requires_superuser(authed_client, path):
-    """Changing a booking edits the plan, unlike moving a card you are on."""
+async def test_allocation_edit_on_someone_elses_row_is_forbidden(
+    authed_client, mock_db_session, path
+):
+    """Changing another person's booking edits the plan: editors only."""
     client, set_user = authed_client
     set_user(FakeUser(5, "user"))
+    mock_db_session.execute.side_effect = [_scalar_result(_staff_row(staff_id=7)), _pm_result(1)]
+
     response = await client.put(path, json={"allocation": 50})
     assert response.status_code == 403
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/api/phase-staff/1", "/api/subphase-staff/1"])
+async def test_user_can_edit_their_own_allocation(authed_client, mock_db_session, path):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "user"))
+    row = _staff_row(staff_id=5)
+    mock_db_session.execute.side_effect = [_scalar_result(row)]
+
+    response = await client.put(path, json={"allocation": 50})
+    assert response.status_code == 200
+    assert row.allocation == 50
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/api/phase-staff/1", "/api/subphase-staff/1"])
+async def test_pm_can_edit_anyones_allocation(authed_client, mock_db_session, path):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "user"))
+    row = _staff_row(staff_id=7)
+    mock_db_session.execute.side_effect = [_scalar_result(row), _pm_result(5)]
+
+    response = await client.put(path, json={"allocation": 50})
+    assert response.status_code == 200
+    assert row.allocation == 50
 
 
 # ---------------------------------------------------------
@@ -232,9 +269,7 @@ async def test_mentionable_users_open_to_plain_users(authed_client, mock_db_sess
 
 
 @pytest.mark.asyncio
-async def test_mentionable_users_query_covers_admins_and_members(
-    authed_client, mock_db_session
-):
+async def test_mentionable_users_query_covers_admins_and_members(authed_client, mock_db_session):
     """Admins span every site, so membership alone would hide them."""
     client, set_user = authed_client
     set_user(FakeUser(5, "user"))
@@ -249,3 +284,37 @@ async def test_mentionable_users_query_covers_admins_and_members(
     assert "user_sites" in rendered  # site membership
     assert "role" in rendered  # ... OR is an admin
     assert "active" in rendered  # inactive users cannot be notified
+
+
+# ---------------------------------------------------------
+# Clearing completion from the Gantt slider
+# ---------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/api/phases/1", "/api/subphases/1"], ids=["phase", "subphase"])
+async def test_explicit_null_completion_clears_to_todo(authed_client, mock_db_session, path):
+    """`"completion": null` is a clear, not a no-op: 0 % and back to To Do."""
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    card = _card(status="in_progress", completion=60)
+    mock_db_session.execute.side_effect = [_scalar_result(card)]
+
+    response = await client.put(path, json={"completion": None})
+
+    assert response.status_code == 200
+    assert (card.completion, card.status) == (0, "todo")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/api/phases/1", "/api/subphases/1"], ids=["phase", "subphase"])
+async def test_omitted_completion_is_left_untouched(authed_client, mock_db_session, path):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    card = _card(status="blocked", completion=40)
+    mock_db_session.execute.side_effect = [_scalar_result(card)]
+
+    response = await client.put(path, json={"is_milestone": False})
+
+    assert response.status_code == 200
+    assert (card.completion, card.status) == (40, "blocked")

@@ -5,7 +5,17 @@ The **Equipment View** provides a timeline for tracking equipment availability a
 ![Equipment view showing inventory and the booking timeline](../assets/screenshots/equipment-view.png){ loading=lazy }
 
 !!! tip
-    Admins and superusers can dock the Equipment view directly below the Gantt chart via the **Panels** button — see [Resource Panels](gantt-charts.md#resource-panels).
+    Admins, superusers and project managers can dock the Equipment view directly below the Gantt chart via the **Panels** button — see [Resource Panels](gantt-charts.md#resource-panels).
+
+## Equipment on Several Sites
+
+Like staff, a piece of equipment can belong to **several sites** — a shared instrument is entered once and linked to every site that uses it. It then:
+
+- appears in the Equipment view, the Equipment panel and the booking lists of **each** linked site;
+- can be booked by projects on any of those sites;
+- keeps a single set of [maintenance blocks](#maintenance-blocks), which apply on every linked site.
+
+Which sites an item belongs to is set in [Settings → Equipment](#managing-equipment). Deleting a site only removes its link: equipment still linked to another site is kept, and only equipment left with no site at all is deleted.
 
 ## Equipment List Panel
 
@@ -14,7 +24,7 @@ The left panel lists all equipment items for the selected site with:
 - **Status indicator**: Green dot (available) or Red dot (currently booked)
 - **Equipment name**: Primary identifier
 - **Type and status**: Equipment type badge and "In use" / "Available" label
-- **Drag handle**: Admins and Superusers can drag equipment onto the Gantt timeline to create bookings
+- **Drag handle**: Admins, Superusers and project managers can drag equipment onto the Gantt timeline to create bookings (a project manager only onto their own projects)
 
 The panel is resizable — drag the divider between the panel and timeline (200px–500px).
 
@@ -33,7 +43,7 @@ The right side shows a horizontal timeline with booking bars:
 
 1. Grab an equipment item by the drag handle in the Equipment panel
 2. Drag it onto a project or phase bar on the Gantt timeline
-3. The Equipment Assignment Modal opens pre-filled with the target project/phase dates
+3. A five-day booking is created where you drop it — click it afterwards to adjust the dates
 
 ### Method 2: Context Menu
 
@@ -60,9 +70,11 @@ Click the **filter button** in the Equipment panel header to filter by equipment
 
 ## Managing Equipment
 
-Open the **Equipment Management** modal from the sidebar admin section (Admins and Superusers only).
+Open **Settings → Equipment** from the sidebar's **Settings** entry (Admins and Superusers only).
 
-![Equipment Management modal — inventory by site, type filter, and Manage Types](../assets/screenshots/manage-equipment.png){ loading=lazy }
+![Equipment inventory by site, with type filter and Manage Types](../assets/screenshots/manage-equipment.png){ loading=lazy }
+
+The list can be filtered by **Site** (or **All Sites**); an item linked to several sites shows them all, comma-separated, in the **Sites** column.
 
 ### Adding Equipment
 
@@ -70,14 +82,17 @@ Open the **Equipment Management** modal from the sidebar admin section (Admins a
 2. Fill in:
    - **Name** (required, e.g., "Pilot Plant A", "Mass Spec 1")
    - **Type** — select an existing type or click **+ New type** to create one inline
-   - **Site** (required) — select which site the equipment belongs to
+   - **Sites** (required) — click every site where the equipment can be booked; at least one. The site you are filtering on (or viewing) is preselected
 3. Click **Create Equipment**
 
 ### Editing Equipment
 
 1. Click the **edit icon** on an equipment row
-2. Modify the name, type, description, or active status
+2. Modify the name, type, description, sites, or active status — adding or removing a site links or unlinks the item there
 3. Click **Save Changes**
+
+!!! note "Superusers and shared equipment"
+    Superusers only see their own sites in the site picker, and can only edit or delete equipment whose sites are **all** sites they belong to. An item that is also linked to a site they don't manage shows a disabled edit icon (*"Shared with sites you don't manage"*); an admin, or a superuser of every linked site, has to change it.
 
 Setting equipment to **inactive** removes it from booking lists and the Equipment View. Inactive equipment and their existing bookings are preserved.
 
@@ -87,7 +102,7 @@ Click **Delete Equipment** in the edit form. A confirmation dialog warns that al
 
 ### Equipment Types
 
-Types are managed via the **Manage Types** button in the Equipment Management modal. See [Settings — Equipment Types](settings.md#equipment-types) for details on creating, renaming, and deleting types.
+Types are managed in **Settings → Equipment types** (or via the **Manage Types** button in the Equipment section). See [Settings — Equipment Types](settings.md#equipment-types) for details on creating, renaming, and deleting types.
 
 ## Maintenance Blocks
 
@@ -121,14 +136,16 @@ The duration is shown live as you change dates so you can confirm the window bef
 
 ### Permissions
 
-Only **Admins** and **Superusers** can create, edit, or delete equipment blocks. Regular users see them on the timeline but cannot modify them. Superusers are limited to equipment on sites they have access to.
+Only **Admins** and **Superusers** can create, edit, or delete equipment blocks. Regular users see them on the timeline but cannot modify them. Superusers are limited to equipment whose sites are all sites they belong to.
+
+A block (or booking) whose end date is before its start date is rejected. New blocks can't be added while [What-If mode](what-if-planning.md) is active; existing blocks can still be edited and deleted there. Equipment itself cannot be deleted while a What-If plan is open, and What-If is entered from the Gantt chart only.
 
 ## Permissions
 
 | Action | Admin | Superuser | User |
 |--------|-------|-----------|------|
 | View equipment & bookings | Yes | Yes | Yes |
-| Assign equipment to projects | Yes | Yes | No |
-| Add/edit/delete equipment | Yes | Yes (own sites only) | No |
+| Assign equipment to projects | Yes | Yes | Project manager of that project only |
+| Add/edit/delete equipment | Yes | Yes (all of the item's sites must be their own) | No |
 | Manage equipment types | Yes | Yes | No |
-| Create/edit equipment blocks | Yes | Yes (own sites only) | No |
+| Create/edit equipment blocks | Yes | Yes (all of the item's sites must be their own) | No |

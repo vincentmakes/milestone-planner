@@ -3,7 +3,7 @@ Schemas for multi-tenant admin API.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
@@ -41,6 +41,9 @@ class AdminMeResponse(BaseModel):
     """Admin session check response."""
 
     user: AdminUserInfo | None = None
+    # Mirrors the login response so a reload can send a flagged admin back to
+    # the change-password screen (every other admin route answers 403).
+    must_change_password: bool = False
 
 
 class ChangeAdminPasswordRequest(BaseModel):
@@ -53,6 +56,13 @@ class ChangeAdminPasswordRequest(BaseModel):
 # ---------------------------------------------------------
 # Tenant Schemas
 # ---------------------------------------------------------
+
+TenantStatus = Literal["pending", "active", "suspended", "archived"]
+AdminRole = Literal["admin", "superadmin"]
+
+# Minimum length for tenant passwords set from the portal and for admin-portal
+# passwords (the portal's change-password route enforces the same).
+MIN_PASSWORD_LENGTH = 8
 
 
 class TenantBase(BaseModel):
@@ -82,7 +92,7 @@ class TenantUpdate(BaseModel):
     name: str | None = None
     company_name: str | None = Field(None, alias="companyName")
     admin_email: EmailStr | None = Field(None, alias="adminEmail")
-    status: str | None = None
+    status: TenantStatus | None = None
     plan: str | None = None
     max_users: int | None = Field(None, alias="maxUsers")
     max_projects: int | None = Field(None, alias="maxProjects")
@@ -159,7 +169,7 @@ class TenantProvisionRequest(BaseModel):
     """Request to provision tenant database."""
 
     admin_email: EmailStr | None = Field(None, alias="adminEmail")
-    admin_password: str | None = Field(None, alias="adminPassword")
+    admin_password: str | None = Field(None, alias="adminPassword", min_length=MIN_PASSWORD_LENGTH)
 
     class Config:
         populate_by_name = True
@@ -178,7 +188,7 @@ class ResetAdminPasswordRequest(BaseModel):
     """Request to reset tenant admin password."""
 
     email: EmailStr | None = None
-    password: str | None = None
+    password: str | None = Field(None, min_length=MIN_PASSWORD_LENGTH)
 
 
 class ResetAdminPasswordResponse(BaseModel):
@@ -237,18 +247,18 @@ class AdminUserCreate(BaseModel):
     """Create admin user request."""
 
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=MIN_PASSWORD_LENGTH)
     name: str | None = None
-    role: str = "admin"
+    role: AdminRole = "admin"
 
 
 class AdminUserUpdate(BaseModel):
     """Update admin user request."""
 
     name: str | None = None
-    role: str | None = None
+    role: AdminRole | None = None
     active: bool | None = None
-    password: str | None = None
+    password: str | None = Field(None, min_length=MIN_PASSWORD_LENGTH)
 
 
 class AdminUserResponse(BaseModel):

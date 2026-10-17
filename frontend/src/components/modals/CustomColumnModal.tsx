@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { Modal } from '@/components/common/Modal';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { Select } from '@/components/common/Select';
@@ -38,7 +39,7 @@ export function CustomColumnModal({
   const [isGlobal, setIsGlobal] = useState(false);
   const [listOptions, setListOptions] = useState<string[]>(['']);
   const [width, setWidth] = useState(120);
-  const [isSaving, setIsSaving] = useState(false);
+  const { isSubmitting: isSaving, begin: beginSave, end: endSave } = useSubmitGuard();
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,7 +95,7 @@ export function CustomColumnModal({
       }
     }
 
-    setIsSaving(true);
+    if (!beginSave()) return;
     setError(null);
 
     try {
@@ -126,7 +127,7 @@ export function CustomColumnModal({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save column');
     } finally {
-      setIsSaving(false);
+      endSave();
     }
   };
 

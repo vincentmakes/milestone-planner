@@ -12,15 +12,26 @@ import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect } fr
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
-import { useScrollSync, useCtrlScrollZoom, useResourceDragDrop } from '@/hooks';
-import { generateTimelineCells, generateTimelineHeaders } from '@/components/gantt/utils/timeline';
+import { useScrollSync, useCtrlScrollZoom, useResourceDragDrop, useEscapeKey } from '@/hooks';
+import { generateTimelineCells, generateTimelineHeaders, calculateTodayScrollLeft } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { StaffTimelineBody } from './StaffTimelineBody';
 import { BankHolidaysRow } from './BankHolidaysRow';
 import { CompanyEventsRow } from './CompanyEventsRow';
 import { deleteVacation, getVacations } from '@/api/endpoints/vacations';
 import { useTimelineScrollSync } from '@/contexts/TimelineScrollContext';
-import { parseRecurringPattern, getRecurringDaysDisplay } from '@/utils/recurringVacation';
+import {
+  parseRecurringPattern,
+  getRecurringDaysDisplay,
+  absenceTypeFor,
+  absenceTypeName,
+  absenceColorStyle,
+  isUnavailableOn,
+} from '@/utils/recurringVacation';
+import { formatDateISO, parseLocalDate } from '@/utils/date';
+import { getClosureOn } from '@/utils/siteClosure';
+import { selectStaffSiteIds, selectAbsenceTypesById } from '@/stores/appStore';
+import { canManageAnyProject, isSelf } from '@/utils/permissions';
 import type { Project, Phase, Subphase, StaffAssignment } from '@/types';
 import styles from './StaffView.module.css';
 
@@ -67,6 +78,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const projects = useAppStore((s) => s.projects);
   const vacations = useAppStore((s) => s.vacations);
   const setVacations = useAppStore((s) => s.setVacations);
+  const absenceTypesById = useAppStore(selectAbsenceTypesById);
   const currentSite = useAppStore((s) => s.currentSite);
   const currentUser = useAppStore((s) => s.currentUser);
   const skills = useAppStore((s) => s.skills);
@@ -74,6 +86,8 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const bankHolidays = useAppStore((s) => s.bankHolidays);
   const companyEventDates = useAppStore((s) => s.companyEventDates);
   const companyEvents = useAppStore((s) => s.companyEvents);
+  const closureIndex = useAppStore((s) => s.closureIndex);
+  const staffSiteIds = useAppStore(selectStaffSiteIds);
   const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
@@ -259,20 +273,20 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
     scrollContainer.scrollTo({ left: scrollTo, behavior: 'smooth' });
   }, [embedded, scrollToTodayTrigger, cells, cellWidth]);
 
-  // Restore horizontal timeline scroll on mount (standalone only — Gantt's Timeline persists when embedded).
+  // Position the timeline on mount (standalone only — Gantt's Timeline handles it when embedded).
   useEffect(() => {
     if (embedded || hasRestoredScroll.current) return;
     const scrollContainer = timelineScrollRef.current;
     if (!scrollContainer) return;
-    if (timelineScrollLeft > 0) {
-      requestAnimationFrame(() => {
-        scrollContainer.scrollLeft = timelineScrollLeft;
-        hasRestoredScroll.current = true;
-      });
-    } else {
-      hasRestoredScroll.current = true;
-    }
-  }, [embedded, timelineScrollLeft]);
+    if (cells.length === 0) return;
+    hasRestoredScroll.current = true;
+    // This session's position when coming back from another view, else today.
+    requestAnimationFrame(() => {
+      scrollContainer.scrollLeft = timelineScrollLeft > 0
+        ? timelineScrollLeft
+        : calculateTodayScrollLeft(cells, cellWidth, scrollContainer.clientWidth) ?? 0;
+    });
+  }, [embedded, timelineScrollLeft, cells, cellWidth]);
 
   // Save scroll position (debounced) on every scroll, while also forwarding to the embedded sync hook.
   const handleTimelineScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
@@ -464,9 +478,9 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const isActiveToday = (startDate: string, endDate: string): boolean => {
     const today = new Date();
     today.setHours(12, 0, 0, 0); // Noon to avoid timezone issues
-    const start = new Date(startDate);
+    const start = parseLocalDate(startDate);
     start.setHours(0, 0, 0, 0);
-    const end = new Date(endDate);
+    const end = parseLocalDate(endDate);
     end.setHours(23, 59, 59, 999);
     return today >= start && today <= end;
   };
@@ -477,11 +491,17 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
     const staffMember = siteStaff.find(s => s.id === staffId) || allSiteStaff.find(s => s.id === staffId);
     const maxCapacity = staffMember?.max_capacity ?? 100;
     
-    // Check if on vacation today
+    // Check if unavailable today (recurring patterns honoured; available
+    // absence types such as Home Office leave capacity untouched), or whether
+    // a company event closes one of their sites today
+    const todayStr = formatDateISO(new Date());
     const staffVacations = staffVacationsMap.get(staffId) || [];
-    const onVacation = staffVacations.some(v => isActiveToday(v.start_date, v.end_date));
-    if (onVacation) {
-      return { available: 0, maxCapacity }; // No availability during vacation
+    if (isUnavailableOn(staffId, todayStr, staffVacations, absenceTypesById)) {
+      return { available: 0, maxCapacity }; // No availability during the absence
+    }
+    const sites = staffSiteIds.get(staffId) ?? new Set(currentSite ? [currentSite.id] : []);
+    if (getClosureOn(sites, todayStr, closureIndex)) {
+      return { available: 0, maxCapacity }; // Site closed today
     }
     
     const assignments = staffAssignmentsMap.get(staffId) || [];
@@ -513,13 +533,18 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
     return currentUser.id === staffId;
   }, [currentUser]);
   
-  // Check if user can drag staff to assign
-  const canDrag = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  // Check if user can drag staff to assign: anyone who manages a project may
+  // drag anyone, everyone may drag their own row.
+  const canDragAny = canManageAnyProject(currentUser, projects);
+  const canDragStaff = useCallback(
+    (staffId: number) => canDragAny || isSelf(currentUser, staffId),
+    [canDragAny, currentUser]
+  );
   
   // Format date range for display using browser locale
   const formatDateRange = (start: string, end: string) => {
-    const s = new Date(start);
-    const e = new Date(end);
+    const s = parseLocalDate(start);
+    const e = parseLocalDate(end);
     const formatDate = (d: Date) => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
     if (start === end) return formatDate(s);
     return `${formatDate(s)} - ${formatDate(e)}`;
@@ -556,6 +581,10 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const handleCancelDelete = useCallback(() => {
     setDeleteConfirm(null);
   }, []);
+
+  // The confirmation closes via its buttons or Escape -- never on a backdrop
+  // click (CLAUDE.md modal rule). Escape is ignored while the delete runs.
+  useEscapeKey(handleCancelDelete, !!deleteConfirm && !isDeleting);
   
   // Handle panel resize (horizontal - width)
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -740,7 +769,8 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
               const staffVacations = staffVacationsMap.get(staffMember.id) || [];
               const staffAssignments = staffAssignmentsMap.get(staffMember.id) || [];
               const canManage = canManageVacation(staffMember.id);
-              
+              const canDrag = canDragStaff(staffMember.id);
+
               return (
                 <div key={staffMember.id} className={styles.staffWrapper}>
                   {/* Main staff row */}
@@ -801,6 +831,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                       {/* Vacation rows */}
                       {staffVacations.map((vacation) => {
                         const recurringPattern = parseRecurringPattern(vacation.description);
+                        const absenceType = absenceTypeFor(vacation, absenceTypesById);
                         const displayDescription = recurringPattern 
                           ? recurringPattern.cleanDescription 
                           : (vacation.description || 'Time Off');
@@ -811,8 +842,15 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                             className={`${styles.detailRow} ${canManage ? styles.clickable : ''} ${styles.vacationRow} ${recurringPattern ? styles.recurringRow : ''}`}
                             onClick={canManage ? () => openVacationModal(vacation, staffMember.id) : undefined}
                           >
-                            <span className={`${styles.detailType} ${styles.vacation}`}>
-                              {recurringPattern ? (
+                            <span
+                              className={`${styles.detailType} ${styles.vacation}`}
+                              style={absenceColorStyle(absenceType)}
+                              title={absenceType && !absenceType.counts_as_unavailable ? 'Does not reduce availability' : undefined}
+                            >
+                              {absenceTypeName(absenceType)}
+                            </span>
+                            {recurringPattern && (
+                              <span className={`${styles.detailType} ${styles.vacation}`}>
                                 <span className={styles.recurringBadge} title={getRecurringDaysDisplay(recurringPattern.daysOfWeek)}>
                                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                     <path d="M17 1l4 4-4 4" />
@@ -822,8 +860,8 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                                   </svg>
                                   Recurring
                                 </span>
-                              ) : 'Vacation'}
-                            </span>
+                              </span>
+                            )}
                             <span className={styles.detailName}>
                               {displayDescription}
                               {recurringPattern && (
@@ -963,8 +1001,8 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
       
       {/* Delete Confirmation Modal */}
       {deleteConfirm && (
-        <div className={styles.confirmOverlay} onClick={handleCancelDelete}>
-          <div className={styles.confirmModal} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.confirmOverlay} role="dialog" aria-modal="true" aria-labelledby="staff-delete-vacation-title">
+          <div className={styles.confirmModal}>
             <div className={styles.confirmIcon}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M3 6h18" />
@@ -974,7 +1012,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                 <line x1="14" y1="11" x2="14" y2="17" />
               </svg>
             </div>
-            <h3 className={styles.confirmTitle}>Delete Vacation</h3>
+            <h3 id="staff-delete-vacation-title" className={styles.confirmTitle}>Delete Vacation</h3>
             <p className={styles.confirmText}>
               Are you sure you want to delete <strong>{deleteConfirm.description}</strong> for <strong>{deleteConfirm.staffName}</strong>?
             </p>

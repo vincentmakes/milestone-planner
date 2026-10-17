@@ -83,4 +83,7 @@ EXPOSE 8485
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:${PORT:-8485}/health || exit 1
 
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8485}"]
+# Behind a reverse proxy, set FORWARDED_ALLOW_IPS to the proxy's address(es)
+# so the client ip comes from X-Forwarded-For (login throttling, logs);
+# otherwise every client appears as the proxy. Default: trust only loopback.
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8485} --proxy-headers --forwarded-allow-ips \"${FORWARDED_ALLOW_IPS:-127.0.0.1}\""]

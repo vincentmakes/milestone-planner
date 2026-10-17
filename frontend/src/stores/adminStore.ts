@@ -127,5 +127,8 @@ export const useAdminStore = create<AdminState>((set) => ({
     adminUsers: [user, ...state.adminUsers],
   })),
   
-  reset: () => set(initialState),
+  // Reset is used on logout: the auth check has already run, so leave
+  // `isLoading` false -- `initialState.isLoading` is true only for the first
+  // mount, and restoring it here left the portal stuck on "Loading...".
+  reset: () => set({ ...initialState, isLoading: false }),
 }));

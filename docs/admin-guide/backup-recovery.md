@@ -83,7 +83,7 @@ psql -U postgres -d milestone_acme -c "GRANT ALL ON ALL SEQUENCES IN SCHEMA publ
 
 ## File Backups
 
-All application data lives in PostgreSQL — there are no user-uploaded files stored on disk, so database backups cover everything. Back up your `.env` file (or however you manage the environment variables) separately: it holds `SESSION_SECRET` and `TENANT_ENCRYPTION_KEY`, and the encrypted tenant credentials in the master database cannot be decrypted without the original `TENANT_ENCRYPTION_KEY`.
+All application data lives in PostgreSQL — there are no user-uploaded files stored on disk, so database backups cover everything. Back up your `.env` file (or however you manage the environment variables) separately: it holds `SESSION_SECRET` and `TENANT_ENCRYPTION_KEY`, and the encrypted tenant credentials and SSO client secrets cannot be decrypted without the original `TENANT_ENCRYPTION_KEY` — or, on a single-tenant installation, the original `SESSION_SECRET`, from which the key for the stored SSO client secret is derived. Restoring with a different value means re-entering the SSO client secret in **Settings → SSO**.
 
 ## Testing Backups
 

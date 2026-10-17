@@ -3,11 +3,13 @@
  * Calculates the position of each phase/subphase row based on expanded state
  */
 
-import type { Project, Subphase } from '@/types';
+import type { Subphase } from '@/types';
+import type { GanttRow } from './projectSections';
 
 // Row heights - CSS variables
 // --row-height: 44px (project rows)
 // --detail-row-height: 32px (phase, subphase, assignment rows)
+// --section-row-height: 36px (Group-by section headers / timeline bands)
 // All rows have border-bottom: 1px with box-sizing: content-box
 // So total occupied space = height + 1px border
 
@@ -17,6 +19,7 @@ const DETAIL_ROW_VISIBLE_HEIGHT = 32;
 // Total height including border (for position advancement)
 const PROJECT_ROW_TOTAL_HEIGHT = 45;  // 44 + 1
 const DETAIL_ROW_TOTAL_HEIGHT = 33;   // 32 + 1
+export const SECTION_ROW_TOTAL_HEIGHT = 37;  // 36 + 1
 
 export interface RowPosition {
   top: number;
@@ -45,10 +48,15 @@ export type DescendantMatchFn = (subphases: Subphase[]) => boolean;
 
 /**
  * Calculate row positions for all visible phases and subphases
- * Optionally includes a phantom row for phantom sibling mode
+ * Optionally includes a phantom row for phantom sibling mode.
+ *
+ * `rows` is the flat Gantt row list both panes render (projectSections.ts):
+ * a section header row occupies SECTION_ROW_TOTAL_HEIGHT under
+ * `section-<key>`; projects of a collapsed section are not in `rows`, so they
+ * get no position (no dependency arrows, no resource drop target).
  */
 export function calculateRowPositions(
-  projects: Project[],
+  rows: GanttRow[],
   expandedProjects: Set<number>,
   expandedPhases: Set<number>,
   expandedSubphases: Set<number>,
@@ -69,7 +77,13 @@ export function calculateRowPositions(
     return selfMatches || descendantMatches;
   };
 
-  projects.forEach((project) => {
+  rows.forEach((row) => {
+    if (row.type === 'section') {
+      positions.set(`section-${row.section.key}`, { top: currentTop, height: SECTION_ROW_TOTAL_HEIGHT });
+      currentTop += SECTION_ROW_TOTAL_HEIGHT;
+      return;
+    }
+    const { project } = row;
     // Project row - record position and advance past it
     const projectTop = currentTop;
     positions.set(`project-${project.id}`, { top: projectTop, height: PROJECT_ROW_TOTAL_HEIGHT });

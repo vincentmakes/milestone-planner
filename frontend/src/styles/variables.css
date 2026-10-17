@@ -155,6 +155,9 @@
   /* Gantt Row Heights */
   --row-height: 44px;
   --detail-row-height: 32px;
+  /* Gantt "Group by" section header / timeline band. No mobile override:
+     both panes and rowPositions.ts (SECTION_ROW_TOTAL_HEIGHT = 36 + 1). */
+  --section-row-height: 36px;
   --timeline-header-height: 40px;
   
   /* =========================================

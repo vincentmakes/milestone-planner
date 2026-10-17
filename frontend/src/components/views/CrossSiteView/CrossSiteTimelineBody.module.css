@@ -73,6 +73,15 @@
   background: color-mix(in srgb, var(--event-color, #ef4444) 15%, transparent);
 }
 
+/* Site closure (staff unavailable) - stronger hatched tint in the event colour */
+.gridCell.companyEvent.siteClosure {
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--event-color, #ef4444) 32%, transparent) 0 4px,
+    color-mix(in srgb, var(--event-color, #ef4444) 16%, transparent) 4px 8px
+  );
+}
+
 /* Tooltip overlay - sits above all content */
 .holidayTooltipOverlay {
   position: absolute;

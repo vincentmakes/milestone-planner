@@ -1,0 +1,31 @@
+/* VacationICSImport - default type picker above the shared ICS import panel */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.defaultType {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.defaultSelect {
+  max-width: 20rem;
+}
+
+.help {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}

@@ -3,6 +3,13 @@ import { useAppStore } from '@/stores/appStore';
 import { useResourceDragDrop } from '@/hooks/useResourceDragDrop';
 import { useEquipmentOverlaps, useEquipmentTodayStatus } from '@/hooks/useEquipmentOverlaps';
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
+import { isUnavailableOn } from '@/utils/recurringVacation';
+import type { AbsenceTypesById } from '@/utils/recurringVacation';
+import { getClosureOn } from '@/utils/siteClosure';
+import type { ClosureIndex } from '@/utils/siteClosure';
+import { selectStaffSiteIds, selectAbsenceTypesById } from '@/stores/appStore';
+import { formatDateISO, parseLocalDate } from '@/utils/date';
+import { canManageAnyProject, isSelf } from '@/utils/permissions';
 import styles from './ResourceCard.module.css';
 
 interface ResourceCardProps {
@@ -13,8 +20,8 @@ interface ResourceCardProps {
 
 // Helper to check if a date range contains the current date
 function isActiveToday(startDate: string, endDate: string, today: Date): boolean {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+  const start = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
   // Set times to compare dates only
   start.setHours(0, 0, 0, 0);
   end.setHours(23, 59, 59, 999);
@@ -23,21 +30,25 @@ function isActiveToday(startDate: string, endDate: string, today: Date): boolean
 
 // Helper to calculate staff allocation for TODAY from projects
 function calculateStaffAllocationToday(
-  projects: Project[], 
-  staffId: number, 
-  vacations: Vacation[]
+  projects: Project[],
+  staffId: number,
+  vacations: Vacation[],
+  absenceTypesById: AbsenceTypesById,
+  staffSiteIds: ReadonlySet<number>,
+  closureIndex: ClosureIndex
 ): number {
   const today = new Date();
   today.setHours(12, 0, 0, 0); // Noon to avoid timezone issues
-  
-  // Check if currently on vacation
-  const onVacation = vacations.some(v => {
-    if (v.staff_id !== staffId) return false;
-    return isActiveToday(v.start_date, v.end_date, today);
-  });
-  
-  if (onVacation) {
-    return 100; // Fully allocated (no availability) during vacation
+  const todayStr = formatDateISO(today);
+
+  // Unavailable today? Recurring patterns are honoured, and absence types that
+  // don't count as unavailable (Home Office) leave the allocation untouched.
+  if (isUnavailableOn(staffId, todayStr, vacations, absenceTypesById)) {
+    return 100; // Fully allocated (no availability) during the absence
+  }
+  // A company event closing one of their sites today also takes them off
+  if (getClosureOn(staffSiteIds, todayStr, closureIndex)) {
+    return 100;
   }
   
   let total = 0;
@@ -84,16 +95,28 @@ function calculateStaffAllocationToday(
 export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
   // Get vacations from store for vacation checking
   const vacations = useAppStore((s) => s.vacations);
+  const absenceTypesById = useAppStore(selectAbsenceTypesById);
+  const closureIndex = useAppStore((s) => s.closureIndex);
+  const staffSiteIds = useAppStore(selectStaffSiteIds);
   const currentUser = useAppStore((s) => s.currentUser);
   const { handleDragStart, handleDragEnd } = useResourceDragDrop();
   const overlapMap = useEquipmentOverlaps();
   const todayStatusMap = useEquipmentTodayStatus();
   const hasEquipmentConflict = type === 'equipment' && overlapMap.get(resource.id)?.hasOverlap === true;
-  
+
   // Calculate allocation for TODAY.
   // For equipment, both bookings and active blocks count as "in use" (100%).
+  // Staff listed under the current site: their closure check uses every site
+  // they belong to (a closure on any of them takes them off).
   const allocation = type === 'staff'
-    ? calculateStaffAllocationToday(projects, resource.id, vacations)
+    ? calculateStaffAllocationToday(
+        projects,
+        resource.id,
+        vacations,
+        absenceTypesById,
+        staffSiteIds.get(resource.id) ?? new Set([resource.site_id]),
+        closureIndex
+      )
     : todayStatusMap.get(resource.id) ? 100 : 0;
   
   const available = 100 - allocation;
@@ -105,8 +128,10 @@ export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
   // Get max capacity (only for staff, equipment is always 100%)
   const maxCapacity = isStaff ? (staffResource.max_capacity ?? 100) : 100;
 
-  // Check if user can drag (superuser or admin)
-  const canDrag = Boolean(currentUser && (currentUser.role === 'superuser' || currentUser.role === 'admin'));
+  // Anyone who manages a project here may drag resources onto it; everyone
+  // may drag their own card to book themselves.
+  const canDrag =
+    canManageAnyProject(currentUser, projects) || (isStaff && isSelf(currentUser, resource.id));
 
   // Color based on allocation vs max capacity:
   // - Below capacity: green

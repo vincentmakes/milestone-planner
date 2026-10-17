@@ -7,7 +7,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
-import { setCustomColumnValue as setCustomColumnValueApi, getValueKey } from '@/api';
+import { setCustomColumnValue as setCustomColumnValueApi, setCustomColumnValuesBatch, getValueKey } from '@/api';
 import type { CustomColumn, CustomColumnEntityType } from '@/types';
 import styles from './CustomColumnCell.module.css';
 
@@ -17,10 +17,17 @@ interface ChildEntity {
   entityId: number;
 }
 
+/** Largest batch the backend accepts in one PUT /custom-columns/values/batch */
+const BATCH_LIMIT = 500;
+
 interface CustomColumnCellProps {
   column: CustomColumn;
   entityType: CustomColumnEntityType;
   entityId: number;
+  /**
+   * Values are self-service: every signed-in user may edit them (the backend
+   * only requires authentication). Definitions stay admin-only elsewhere.
+   */
   readOnly?: boolean;
   // All descendant entities to cascade value changes to
   childEntities?: ChildEntity[];
@@ -40,34 +47,52 @@ export function CustomColumnCell({
   const value = customColumnValues[valueKey] ?? null;
   
   const handleChange = useCallback(async (newValue: string | null) => {
-    // Update local state immediately for responsiveness - this entity
-    setCustomColumnValueLocal(column.id, entityType, entityId, newValue);
-    
-    // Also update all child entities (cascade)
-    for (const child of childEntities) {
-      setCustomColumnValueLocal(column.id, child.entityType, child.entityId, newValue);
+    // The entity and every descendant it cascades to, with their current
+    // values so a failed save can put them back.
+    const targets = [{ entityType, entityId }, ...childEntities];
+    const before = useCustomColumnStore.getState().customColumnValues;
+    const previous = targets.map((t) => ({
+      ...t,
+      value: before[getValueKey(column.id, t.entityType, t.entityId)] ?? null,
+    }));
+
+    // Update local state immediately for responsiveness (entity + cascade)
+    for (const t of targets) {
+      setCustomColumnValueLocal(column.id, t.entityType, t.entityId, newValue);
     }
-    
-    // Persist to server - this entity
+
     try {
-      await setCustomColumnValueApi({
-        custom_column_id: column.id,
-        entity_type: entityType,
-        entity_id: entityId,
-        value: newValue,
-      });
-      
-      // Persist all children to server
-      for (const child of childEntities) {
+      if (childEntities.length === 0) {
         await setCustomColumnValueApi({
           custom_column_id: column.id,
-          entity_type: child.entityType,
-          entity_id: child.entityId,
+          entity_type: entityType,
+          entity_id: entityId,
           value: newValue,
         });
+      } else {
+        // One transactional request per chunk instead of N sequential PUTs:
+        // a failure cannot leave half of the subtree updated (bounded by the
+        // backend's batch limit; chunking only matters past it).
+        const updates = targets.map((t) => ({
+          custom_column_id: column.id,
+          entity_type: t.entityType,
+          entity_id: t.entityId,
+          value: newValue,
+        }));
+        for (let i = 0; i < updates.length; i += BATCH_LIMIT) {
+          await setCustomColumnValuesBatch(updates.slice(i, i + BATCH_LIMIT));
+        }
       }
     } catch (err) {
-      console.error('[CustomColumnCell] Failed to save value:', err);
+      console.error('[CustomColumnCell] Failed to save value, restoring the previous values:', err);
+      // Roll back every cell this change touched — unless the user has
+      // changed it again in the meantime.
+      const now = useCustomColumnStore.getState().customColumnValues;
+      for (const p of previous) {
+        if ((now[getValueKey(column.id, p.entityType, p.entityId)] ?? null) === newValue) {
+          setCustomColumnValueLocal(column.id, p.entityType, p.entityId, p.value);
+        }
+      }
     }
   }, [column.id, entityType, entityId, setCustomColumnValueLocal, childEntities]);
   

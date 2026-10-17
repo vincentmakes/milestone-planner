@@ -17,6 +17,20 @@ export {
   getDependencyColor,
   DEPENDENCY_STYLES,
   calculateRowPositions,
+  SECTION_ROW_TOTAL_HEIGHT,
+  buildProjectSections,
+  buildGanttRows,
+  flatGanttRows,
+  allSectionKeys,
+  ganttSectionKey,
 } from './utils';
 
-export type { TimelineCell, TimelineHeader, RowPosition, RowPositionsResult } from './utils';
+export type {
+  TimelineCell,
+  TimelineHeader,
+  RowPosition,
+  RowPositionsResult,
+  GanttSection,
+  GanttSectionKey,
+  GanttRow,
+} from './utils';

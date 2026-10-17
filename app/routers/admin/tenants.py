@@ -23,8 +23,19 @@ from app.schemas.tenant import (
     TenantProvisionRequest,
     TenantUpdate,
 )
-from app.services.encryption import decrypt, encrypt, generate_password
+from app.services.encryption import (
+    PasswordTooLongError,
+    decrypt,
+    encrypt,
+    generate_password,
+    hash_user_password,
+)
 from app.services.master_db import get_master_db
+from app.services.session import (
+    disconnect_user_websockets,
+    session_ids_for_user,
+    session_user_id_patterns,
+)
 from app.services.tenant_manager import tenant_connection_manager
 from app.services.tenant_provisioner import (
     check_tenant_database,
@@ -85,6 +96,25 @@ def tenant_to_response(tenant: Tenant, db_status: dict | None = None) -> dict:
         "required_group_ids": tenant.required_group_ids or [],
         "group_membership_mode": tenant.group_membership_mode or "any",
     }
+
+
+async def _reset_tenant_runtime_state(slug: str, *, close_pool: bool = True) -> None:
+    """
+    Make a tenant change take effect on this process right away.
+
+    Drops the 60 s tenant-info cache entry (including a cached "not found")
+    and, unless ``close_pool`` is False, disposes the tenant's connection pool
+    so the next request re-reads the tenant row (status, credentials). Other
+    workers converge within the cache TTL. Never raises.
+    """
+    from app.middleware.tenant import clear_tenant_cache
+
+    clear_tenant_cache(slug)
+    if close_pool:
+        try:
+            await tenant_connection_manager._close_pool(slug)
+        except Exception:
+            logger.warning("Could not close the connection pool of tenant %s", slug, exc_info=True)
 
 
 # ---------------------------------------------------------
@@ -260,6 +290,8 @@ async def create_tenant(
     )
 
     await db.commit()
+    # A request for this slug before it existed may have cached "not found".
+    await _reset_tenant_runtime_state(data.slug, close_pool=False)
 
     # tenant_to_response reads tenant.organization; the relationship is unloaded on a
     # freshly created tenant, and lazy-loading it here would raise MissingGreenlet.
@@ -322,7 +354,11 @@ async def update_tenant(
     if changes:
         await add_audit_log(db, tenant.id, "updated", details=changes, actor=admin.email)
 
+    slug = tenant.slug
     await db.commit()
+    if changes:
+        # Status (or any other cached field) must not linger for the cache TTL.
+        await _reset_tenant_runtime_state(slug)
 
     result = await db.execute(
         select(Tenant).where(Tenant.id == tenant_id).options(selectinload(Tenant.organization))
@@ -365,13 +401,12 @@ async def update_tenant_status(
         actor=admin.email,
     )
 
-    if new_status != "active":
-        try:
-            await tenant_connection_manager._close_pool(tenant.slug)
-        except Exception:
-            pass
-
+    slug = tenant.slug
     await db.commit()
+
+    # Without this the per-process cache keeps answering the old status for
+    # up to 60 s and get_pool_from_info simply rebuilds a closed pool.
+    await _reset_tenant_runtime_state(slug)
 
     # Re-select with the organization eager-loaded: tenant_to_response reads
     # tenant.organization, and a lazy load after commit raises MissingGreenlet
@@ -414,8 +449,10 @@ async def delete_tenant(
         except Exception:
             logger.exception("Error dropping database for tenant %s", tenant.slug)
 
+    slug = tenant.slug
     await db.delete(tenant)
     await db.commit()
+    await _reset_tenant_runtime_state(slug)
 
     return {
         "success": True,
@@ -485,6 +522,9 @@ async def provision_tenant(
             admin_password=admin_password,
         )
         logger.info("Tenant database provisioned successfully: %s", tenant.slug)
+    except PasswordTooLongError as e:
+        # The tenant admin is bcrypt-hashed (72-byte limit) before anything is created.
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Provisioning failed: {e}") from e
 
@@ -498,7 +538,10 @@ async def provision_tenant(
         actor=admin.email,
     )
 
+    slug = tenant.slug
     await db.commit()
+    # Cached "pending" (and possibly stale credentials) must not linger.
+    await _reset_tenant_runtime_state(slug)
 
     return {
         "success": True,
@@ -544,6 +587,13 @@ async def reset_tenant_admin_password(
     new_password = data.password if data and data.password else generate_password(16)
     admin_email = data.email if data and data.email else tenant.admin_email
 
+    # Tenant user passwords are stored bcrypt-hashed, never in plaintext. The
+    # plaintext is only returned once, in this response, to the portal admin.
+    try:
+        new_password_hash = hash_user_password(new_password)
+    except PasswordTooLongError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
     import asyncpg
 
     conn = await asyncpg.connect(
@@ -557,7 +607,7 @@ async def reset_tenant_admin_password(
     try:
         result = await conn.execute(
             "UPDATE users SET password = $1 WHERE email = $2 AND role = 'admin'",
-            new_password,
+            new_password_hash,
             admin_email,
         )
 
@@ -567,7 +617,7 @@ async def reset_tenant_admin_password(
                 admin_email = row["email"]
                 await conn.execute(
                     "UPDATE users SET password = $1 WHERE email = $2",
-                    new_password,
+                    new_password_hash,
                     admin_email,
                 )
             else:
@@ -575,6 +625,22 @@ async def reset_tenant_admin_password(
                     status_code=404,
                     detail="No admin user found in tenant database",
                 )
+
+        # A reset is often a lockout/compromise recovery: end the admin's
+        # existing logins too. Best effort — the password is already changed.
+        try:
+            admin_row = await conn.fetchrow("SELECT id FROM users WHERE email = $1", admin_email)
+            if admin_row:
+                rows = await conn.fetch(
+                    "SELECT sid, sess FROM sessions WHERE sess LIKE ANY($1::text[])",
+                    session_user_id_patterns(admin_row["id"]),
+                )
+                sids = session_ids_for_user([(r["sid"], r["sess"]) for r in rows], admin_row["id"])
+                if sids:
+                    await conn.execute("DELETE FROM sessions WHERE sid = ANY($1::text[])", sids)
+                await disconnect_user_websockets(tenant.slug, admin_row["id"])
+        except Exception:
+            logger.exception("Could not end existing sessions for %s", admin_email)
     finally:
         await conn.close()
 

@@ -3,6 +3,16 @@
   min-height: 300px;
 }
 
+.error {
+  margin-bottom: 0.75rem;
+  padding: 0.75rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--accent-red);
+  font-size: 0.875rem;
+}
+
 .empty {
   display: flex;
   flex-direction: column;

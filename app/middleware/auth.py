@@ -8,6 +8,7 @@ and role-based access control.
 from typing import Any
 
 from fastapi import Cookie, Depends, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -19,10 +20,14 @@ async def get_current_user_from_session(request: Request) -> dict[str, Any] | No
     """
     Get current user data directly from request session.
 
-    This is a standalone function (not a dependency) for use in custom routes.
-    Returns the raw user dict from session, or None if not authenticated.
+    This is a standalone function (not a dependency) for use in custom routes
+    (the API-docs gate). The session is resolved in the *request's* database —
+    the tenant's in multi-tenant mode, never the ``DB_*`` default for a tenant
+    URL — and the live ``role``/``active`` are re-read like ``get_current_user``
+    does. Returns the user dict (with the live role), or None.
     """
-    from app.database import get_session_factory
+    from app.config import get_settings
+    from app.database import get_session_factory, resolve_tenant_session_factory
 
     # Get session cookie
     connect_sid = request.cookies.get("connect.sid")
@@ -33,12 +38,26 @@ async def get_current_user_from_session(request: Request) -> dict[str, Any] | No
     if not session_id:
         return None
 
-    # Get user from session
-    session_factory = get_session_factory()
+    try:
+        session_factory = resolve_tenant_session_factory(request)
+    except HTTPException:
+        return None
+    if session_factory is None:
+        if get_settings().multi_tenant:
+            # No tenant context: there is no sessions table to consult.
+            return None
+        session_factory = get_session_factory()
+
     async with session_factory() as db:
-        session_service = SessionService(db)
-        user_data = await session_service.get_user_from_session(session_id)
-        return user_data
+        user_data = await SessionService(db).get_user_from_session(session_id)
+        if not user_data or not user_data.get("id"):
+            return None
+        live = (
+            await db.execute(select(User.active, User.role).where(User.id == user_data["id"]))
+        ).one_or_none()
+        if live is None or not live[0]:
+            return None
+        return {**user_data, "role": live[1]}
 
 
 async def get_session_id(
@@ -127,12 +146,21 @@ async def get_current_user_optional(
 async def get_current_user(
     request: Request,
     user: User | None = Depends(get_current_user_optional),
+    session_id: str | None = Depends(get_session_id),
+    db: AsyncSession = Depends(get_db),
 ) -> User:
     """
     Get current authenticated user.
 
     Raises 401 if not authenticated.
     Use this for routes that require authentication.
+
+    The session holds a login-time snapshot of the user, so the live
+    ``active`` flag and ``role`` are re-read from ``users`` (one primary-key
+    lookup) on every call: a deactivated or deleted user is rejected with 401
+    and their session destroyed, and a role change takes effect on the next
+    request rather than when the cookie expires. Other snapshot fields (name,
+    sites) are still served from the session.
 
     Side-effect: stashes a small dict identifying the authenticated user in
     `scope["state"]["current_user"]` so ASGI middleware running outside the
@@ -145,11 +173,19 @@ async def get_current_user(
             detail="Not authenticated",
         )
 
-    if not user.is_active:
+    live = (
+        await db.execute(select(User.active, User.role).where(User.id == user.id))
+    ).one_or_none()
+
+    if live is None or not live[0]:
+        if session_id:
+            await SessionService(db).delete_session(session_id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User account is disabled",
         )
+
+    user.role = live[1]
 
     state = request.scope.get("state")
     if isinstance(state, dict):

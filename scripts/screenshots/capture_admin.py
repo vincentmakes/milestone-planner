@@ -9,7 +9,7 @@ Outputs PNGs at 1440x900 to docs/assets/screenshots/.
 
 Prerequisites
 -------------
-1. Demo instance running at http://localhost:8486/ with the demo tenant
+1. Demo instance running at http://localhost:8486/ (or $SCREENSHOT_BASE_URL) with the demo tenant
    seeded — see scripts/screenshots/README.md.
 2. A known admin-portal password: set INIT_ADMIN_PASSWORD before the first
    boot (docker-compose.fresh.yml passes it through), and export the same
@@ -43,7 +43,7 @@ from pathlib import Path
 
 from playwright.sync_api import BrowserContext, Page, sync_playwright
 
-BASE = "http://localhost:8486"
+BASE = os.environ.get("SCREENSHOT_BASE_URL", "http://localhost:8486").rstrip("/")
 ADMIN_URL = f"{BASE}/admin/"
 ADMIN_EMAIL = os.environ.get("INIT_ADMIN_EMAIL", "admin@milestone.local")
 ADMIN_PASSWORD = os.environ.get("INIT_ADMIN_PASSWORD", "")
@@ -239,11 +239,10 @@ def shot_sso_org_precedence(context: BrowserContext) -> None:
     organization SSO takes precedence."""
     page = context.new_page()
     tenant_login(page)
-    nav = page.locator("aside, nav").first
-    try:
-        nav.get_by_role("button", name="SSO Configuration", exact=True).click()
-    except Exception:
-        page.click('button:has-text("SSO Configuration")')
+    # Tenant SSO lives in the Settings hub (sidebar "Settings" -> section "SSO").
+    page.locator("aside, nav").first.get_by_role("button", name="Settings", exact=True).click()
+    page.wait_for_timeout(800)
+    page.get_by_role("dialog").get_by_role("button", name="SSO", exact=True).click()
     page.wait_for_timeout(1000)
     page.screenshot(path=str(OUT / "sso-org-precedence.png"))
     log("[done] sso-org-precedence.png")

@@ -95,10 +95,14 @@ class CustomColumnValueResponse(CustomColumnValueBase):
         from_attributes = True
 
 
+# Upper bound on one batch write (drag-fill across a large plan stays well below).
+MAX_BATCH_UPDATES = 500
+
+
 class CustomColumnValueBulkUpdate(BaseModel):
     """Request model for bulk updating custom column values (drag-fill)."""
 
-    updates: list[CustomColumnValueCreate]
+    updates: list[CustomColumnValueCreate] = Field(..., max_length=MAX_BATCH_UPDATES)
 
 
 class CustomColumnValueBatchRequest(BaseModel):

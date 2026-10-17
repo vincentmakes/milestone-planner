@@ -5,9 +5,11 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/stores/appStore';
-import { differenceInDays, eachDayOfInterval, isWeekend, parseISO, format } from 'date-fns';
-import type { Phase, Subphase, Project, Tag } from '@/types';
+import { differenceInDays, eachDayOfInterval, isWeekend, format } from 'date-fns';
+import type { Phase, Subphase, Project, Tag, TagGroup } from '@/types';
 import styles from './ShiftTooltip.module.css';
+import { parseLocalDate } from '@/utils/date';
+import { barTextColor, groupedTags } from '@/utils/tags';
 
 interface StaffInfo {
   name: string;
@@ -33,13 +35,36 @@ interface TooltipData {
   customer?: string | null;
   pmName?: string | null;
   confirmed?: boolean;
-  tags?: Tag[];
+  tags?: TooltipTag[];
+}
+
+interface TooltipTag {
+  id: number;
+  /** "Group: Tag" for grouped tags, the tag name otherwise. */
+  label: string;
+  color: string;
+}
+
+/**
+ * The project's tags resolved through the store (inline project.tags can be
+ * stale, e.g. in What-If), in group order; deleted tags are dropped.
+ */
+function resolveTooltipTags(project: Project, tags: Tag[], groups: TagGroup[]): TooltipTag[] {
+  const ids = new Set((project.tags ?? []).map((t) => t.id));
+  if (ids.size === 0) return [];
+  return groupedTags(tags.filter((t) => ids.has(t.id)), groups).flatMap((section) =>
+    section.tags.map((t) => ({
+      id: t.id,
+      label: section.group ? `${section.group.name}: ${t.name}` : t.name,
+      color: t.color,
+    }))
+  );
 }
 
 // Calculate work days excluding weekends and holidays
 function calculateDurationStats(startDate: string, endDate: string, bankHolidayDates: Set<string>) {
-  const start = parseISO(startDate);
-  const end = parseISO(endDate);
+  const start = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
   
   const totalDays = differenceInDays(end, start) + 1;
   
@@ -92,8 +117,8 @@ function getEffectiveCompletion(item: Phase | Subphase): { completion: number | 
     
     for (const child of children) {
       const childResult = getEffectiveCompletion(child);
-      const start = parseISO(child.start_date);
-      const end = parseISO(child.end_date);
+      const start = parseLocalDate(child.start_date);
+      const end = parseLocalDate(child.end_date);
       const days = Math.max(1, differenceInDays(end, start) + 1);
       // Unset completion counts as 0% when at least one sibling has a value
       const completion = childResult.completion ?? 0;
@@ -112,8 +137,8 @@ function getEffectiveCompletion(item: Phase | Subphase): { completion: number | 
 
 // Format date range nicely using browser locale
 function formatDateRange(startDate: string, endDate: string): string {
-  const start = parseISO(startDate);
-  const end = parseISO(endDate);
+  const start = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
   
   const formatter = new Intl.DateTimeFormat(undefined, {
     month: 'short',
@@ -190,6 +215,8 @@ export function ShiftTooltip() {
   const [isShiftHeld, setIsShiftHeld] = useState(false);
   const projects = useAppStore((s) => s.projects);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
+  const storeTags = useAppStore((s) => s.tags);
+  const tagGroups = useAppStore((s) => s.tagGroups);
   const currentBarRef = useRef<HTMLElement | null>(null);
 
   // Track shift key
@@ -331,8 +358,8 @@ export function ShiftTooltip() {
         
         for (const phase of project.phases ?? []) {
           const result = getEffectiveCompletion(phase);
-          const start = parseISO(phase.start_date);
-          const end = parseISO(phase.end_date);
+          const start = parseLocalDate(phase.start_date);
+          const end = parseLocalDate(phase.end_date);
           const days = Math.max(1, differenceInDays(end, start) + 1);
           const comp = result.completion ?? 0;
           weightedSum += comp * days;
@@ -359,12 +386,12 @@ export function ShiftTooltip() {
         customer: project.customer,
         pmName: project.pm_name,
         confirmed: project.confirmed,
-        tags: project.tags ?? [],
+        tags: resolveTooltipTags(project, storeTags, tagGroups),
         x,
         y,
       });
     }
-  }, [projects, bankHolidayDates]);
+  }, [projects, bankHolidayDates, storeTags, tagGroups]);
 
   // Handle mouse move to track hover and update position
   useEffect(() => {
@@ -494,9 +521,9 @@ export function ShiftTooltip() {
                   <span
                     key={tag.id}
                     className={styles.tagPill}
-                    style={{ backgroundColor: tag.color }}
+                    style={{ backgroundColor: tag.color, color: barTextColor(tag.color) }}
                   >
-                    {tag.name}
+                    {tag.label}
                   </span>
                 ))}
               </div>

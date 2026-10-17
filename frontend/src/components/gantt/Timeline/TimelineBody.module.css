@@ -80,6 +80,15 @@
   background: color-mix(in srgb, var(--event-color, #ef4444) 15%, transparent);
 }
 
+/* Site closure (staff unavailable) - stronger hatched tint in the event colour */
+.gridCell.companyEvent.siteClosure {
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--event-color, #ef4444) 32%, transparent) 0 4px,
+    color-mix(in srgb, var(--event-color, #ef4444) 16%, transparent) 4px 8px
+  );
+}
+
 /* Week separator line (drawn between weeks when weekends are hidden) */
 .weekSeparator {
   position: absolute;
@@ -151,6 +160,17 @@
 .rows {
   position: relative;
   z-index: 2;
+}
+
+/* Group-by section band: same height as ProjectPanel's SectionRow
+   (--section-row-height content + 1px border, content-box). Translucent so
+   the grid lines and holiday/event markers still show through. */
+.groupBand {
+  height: var(--section-row-height);
+  box-sizing: content-box;
+  border-bottom: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--bg-tertiary) 70%, transparent);
+  pointer-events: none;
 }
 
 /* When in resource drag mode */

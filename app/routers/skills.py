@@ -204,8 +204,8 @@ async def update_user_skills(
     # Delete existing assignments
     await db.execute(delete(UserSkill).where(UserSkill.user_id == user_id))
 
-    # Create new assignments
-    for skill_id in assignment.skill_ids:
+    # Create new assignments (a repeated id would violate the primary key)
+    for skill_id in dict.fromkeys(assignment.skill_ids):
         user_skill = UserSkill(
             user_id=user_id,
             skill_id=skill_id,

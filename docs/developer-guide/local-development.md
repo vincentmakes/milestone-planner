@@ -30,8 +30,15 @@ All demo staff accounts also use password `demo1234`.
 git clone https://github.com/vincentmakes/milestone-planner.git
 cd milestone-planner
 cp .env.example .env
-# Edit .env with your database credentials
+# Edit .env with your database credentials and a SESSION_SECRET
 ```
+
+`SESSION_SECRET` ships empty in `.env.example` and is **required**: with `DEBUG=false` the
+backend refuses to start on an empty or published example value, and
+`docker-compose.fresh.yml` refuses to start without it (even for `up -d db`, since compose
+interpolates the whole file). Generate one with
+`python -c "import secrets; print(secrets.token_hex(32))"`. For a throwaway local backend,
+`DEBUG=true` also lets it start with an insecure secret (a warning is logged).
 
 ### 2. Start Dependencies
 
@@ -100,8 +107,12 @@ docker compose -f docker-compose.fresh.yml up -d
 ### Backend Tests
 
 ```bash
-# Local
-pytest --cov=app --cov-report=term-missing
+# Local, with coverage (fails below the floor in pyproject.toml)
+pytest --cov=app --cov-report=term-missing --cov-report=xml
+
+# Coverage of the lines your branch changes (what CI checks on a PR)
+pip install diff-cover
+diff-cover coverage.xml --compare-branch=origin/main
 
 # Docker
 docker exec milestone pytest
@@ -113,8 +124,22 @@ docker exec milestone pytest
 cd frontend
 npm test              # Watch mode
 npx vitest run        # Single run
-npm run test:coverage # With coverage
+npm run test:coverage # Single run with coverage (fails below the floors in vitest.config.ts)
+
+# Coverage of the lines your branch changes (run from frontend/)
+diff-cover coverage/lcov.info --compare-branch=origin/main
 ```
+
+Compare against the branch your pull request targets — `origin/main` in most cases.
+
+### Coverage gates
+
+Every new feature and bug fix ships with automated tests in the same pull request. CI enforces it in two ways:
+
+- **Changed lines**: on every pull request, `diff-cover` fails the backend or frontend test job when less than **80 %** of the lines the PR adds or changes are covered by tests.
+- **Suite floors**: `fail_under` in `pyproject.toml` and `coverage.thresholds` in `frontend/vitest.config.ts` sit just under the measured totals. Raise them in a PR that lifts coverage; never lower them, and never exclude a file to get past one — every frontend `src/**` file is measured, whether a test imports it or not.
+
+Both test jobs write a coverage table to the GitHub Actions job summary. On push to `main`, a `Coverage Badges` job publishes the totals to the `coverage` branch, which the README badges read.
 
 ### Linting
 
@@ -130,13 +155,17 @@ cd frontend && npm run lint
 
 ## CI/CD
 
-GitHub Actions run on every push to `main` and on pull requests (the two dependency-audit jobs also run on weekly crons):
+GitHub Actions trigger on every push to `main` and on every pull request, whatever branch it targets (the two dependency-audit jobs also run on weekly crons; the version check runs only on pull requests to `main`). Each of the backend, frontend and Docker workflows first runs a **Detect Changes** job and skips the rest when nothing relevant changed (backend: `app/`, `tests/`, `migrations/`, `requirements*.txt`, `pyproject.toml`, `VERSION`; frontend: `frontend/`; Docker: whatever the image is built from). Editing a workflow file re-runs that whole workflow.
 
 | Workflow | Jobs |
 |----------|------|
-| `backend.yml` | `pip-audit` dependency audit (blocking), Ruff lint + format, pytest with coverage, mypy type checking |
-| `frontend.yml` | `npm audit --audit-level=moderate` (blocking), ESLint, Vitest, TypeScript build |
+| `backend.yml` | `pip-audit` dependency audit (blocking), Ruff lint + format, pytest in 3 parallel shards + an aggregate **Tests** job on the combined coverage (suite floor; diff-cover ≥ 80 % on changed lines in PRs), mypy type checking; `Coverage Badges` on push to `main` |
+| `frontend.yml` | `npm audit --audit-level=moderate` (blocking), ESLint, Vitest in 2 parallel shards + an aggregate **Tests** job on the merged coverage (suite floors; diff-cover ≥ 80 % on changed lines in PRs), TypeScript build; `Coverage Badges` on push to `main` |
 | `docker.yml` | Docker image build |
-| `version-check.yml` | Fails PRs that touch app code without a `VERSION` bump and matching `CHANGELOG.md` entry |
+| `version-check.yml` | Pull requests to `main`: fails those that touch app code without a `VERSION` bump and matching `CHANGELOG.md` entry |
+
+The shard jobs (`Tests (shard K/N)`) only run their slice and hand over raw results; the aggregate `Tests` job is the one that enforces the coverage gates and the one to require in branch protection. The shard count is set in each workflow's `matrix` and nowhere else. To run a backend shard locally: `pytest --shard=1/3` (whole test files are dealt to shards, so pass the same paths and `-k` to each); frontend: `npx vitest run --shard=1/2`.
+
+The coverage badges are generated data on the orphan `coverage` branch, written only by the `Coverage Badges` jobs — never edit it by hand.
 
 Documentation is **not** built by GitHub Actions — Cloudflare Pages builds and deploys the MkDocs site from `docs/build.sh` on push.

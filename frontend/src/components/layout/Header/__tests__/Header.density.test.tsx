@@ -21,6 +21,9 @@ vi.mock('@/api/endpoints/settings', () => ({
 vi.mock('@/components/common/NotificationBell', () => ({
   NotificationBell: () => <div data-testid="bell" />,
 }));
+vi.mock('@/contexts/WebSocketContext', () => ({
+  useWebSocketContext: () => ({ offline: false, recentChanges: [] }),
+}));
 vi.mock('@/components/common/OnlineUsers', () => ({
   OnlineUsers: ({ maxVisible }: { maxVisible?: number }) => (
     <div data-testid="online-users" data-max-visible={maxVisible} />

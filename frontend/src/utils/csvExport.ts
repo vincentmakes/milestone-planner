@@ -17,7 +17,8 @@
  */
 
 import type { Project, Subphase, Dependency } from '@/types';
-import { format, differenceInDays, parseISO } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
+import { parseLocalDate } from './date';
 
 interface ExportRow {
   id: number;
@@ -44,7 +45,10 @@ interface IdMapping {
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '';
   try {
-    const date = parseISO(dateStr);
+    // Model dates are calendar days (YYYY-MM-DD or midnight-UTC ISO): parse
+    // them as local midnight, or the export is a day early west of UTC.
+    const date = parseLocalDate(dateStr);
+    if (isNaN(date.getTime())) return dateStr;
     return format(date, 'MM/dd/yyyy');
   } catch {
     return dateStr;
@@ -57,8 +61,9 @@ function formatDate(dateStr: string | null | undefined): string {
 function calculateDuration(startDate: string | null | undefined, endDate: string | null | undefined): number {
   if (!startDate || !endDate) return 1;
   try {
-    const start = parseISO(startDate);
-    const end = parseISO(endDate);
+    const start = parseLocalDate(startDate);
+    const end = parseLocalDate(endDate);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return 1;
     return differenceInDays(end, start) + 1; // Inclusive
   } catch {
     return 1;
@@ -70,6 +75,25 @@ function calculateDuration(startDate: string | null | undefined, endDate: string
  */
 function isMilestone(startDate: string | null | undefined, endDate: string | null | undefined): boolean {
   return startDate === endDate;
+}
+
+/** Leading characters a spreadsheet treats as the start of a formula. */
+const FORMULA_TRIGGER = /^[=+\-@\t\r]/;
+
+/**
+ * Quote a free-text CSV cell.
+ *
+ * Doubles embedded quotes (RFC 4180) and neutralises spreadsheet formula
+ * injection (OWASP "CSV Injection"): a value starting with =, +, -, @, tab or
+ * CR is evaluated by Excel/LibreOffice on open even inside quotes, so it is
+ * prefixed with a single quote, which makes the spreadsheet treat it as text.
+ */
+export function csvTextCell(value: string | null | undefined): string {
+  let text = value ?? '';
+  if (FORMULA_TRIGGER.test(text)) {
+    text = `'${text}`;
+  }
+  return `"${text.replace(/"/g, '""')}"`;
 }
 
 /**
@@ -86,14 +110,12 @@ function formatPredecessors(
   
   return dependencies
     .map(dep => {
-      // The dependency.id is the predecessor's ID
-      // We need to find it in our mapping
-      // Since we don't know if the predecessor is a phase or subphase,
-      // we try both
-      const phaseKey = `phase-${dep.id}`;
-      const subphaseKey = `subphase-${dep.id}`;
-      
-      let sourceRowId = idMapping[phaseKey] || idMapping[subphaseKey];
+      // dep.id is the predecessor's ID. Phase and subphase ids come from
+      // separate sequences, so an entry naming its `entity` is looked up as
+      // exactly that kind; legacy entries without it fall back phase-first.
+      const sourceRowId = dep.entity
+        ? idMapping[`${dep.entity}-${dep.id}`]
+        : idMapping[`phase-${dep.id}`] || idMapping[`subphase-${dep.id}`];
       if (!sourceRowId) return null;
       
       // Format: ID + Type + Lag
@@ -271,15 +293,15 @@ export function exportProjectsToCSV(projects: Project[]): string {
     headers.join(','),
     ...rows.map(row => [
       row.id,
-      `"${row.name.replace(/"/g, '""')}"`, // Escape quotes
+      csvTextCell(row.name), // Quotes escaped, formulas neutralised
       row.outlineLevel,
       row.start,
       row.finish,
       row.duration,
-      row.predecessors,
+      csvTextCell(row.predecessors), // Several predecessors are comma-separated
       row.percentComplete,
       row.milestone,
-      `"${row.notes.replace(/"/g, '""')}"`,
+      csvTextCell(row.notes),
     ].join(',')),
   ];
   

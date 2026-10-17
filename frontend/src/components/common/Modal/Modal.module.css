@@ -52,9 +52,10 @@
   max-width: 1000px;
 }
 
-.full {
-  width: calc(100vw - 2rem);
-  height: calc(100vh - 2rem);
+/* Large workspace: fills a laptop screen, stays a centered dialog on a big one */
+.wide {
+  width: min(100vw - 2rem, 1360px);
+  height: min(100vh - 2rem, 900px);
   max-width: none;
   max-height: none;
 }
@@ -104,6 +105,13 @@
   flex: 1;
   padding: 1.25rem;
   overflow-y: auto;
+}
+
+.bodyFlush {
+  display: flex;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
 .footer {

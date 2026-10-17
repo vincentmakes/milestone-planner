@@ -22,11 +22,13 @@ Usage
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright
 
-URL = "http://localhost:8486/t/demo/"
+BASE = os.environ.get("SCREENSHOT_BASE_URL", "http://localhost:8486").rstrip("/")
+URL = f"{BASE}/t/demo/"
 REPO = Path(__file__).resolve().parents[2]
 OUT = REPO / "docs" / "assets" / "screenshots"
 OUT.mkdir(parents=True, exist_ok=True)
@@ -54,7 +56,7 @@ def login(page: Page, email: str, password: str) -> None:
 def quarter_today_expand(page: Page) -> None:
     page.click('button:has-text("Gantt Chart")')
     page.wait_for_timeout(400)
-    page.locator('header').get_by_role('button', name='Q', exact=True).click()
+    page.locator('header').get_by_role('button', name='Quarter view', exact=True).click()
     page.wait_for_timeout(400)
     page.click('button:has-text("Today")')
     page.wait_for_timeout(600)

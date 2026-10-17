@@ -3,18 +3,86 @@ name: Backend CI
 on:
   push:
     branches: [main]
+  # Every pull request, whatever its base: a PR stacked on a feature branch
+  # gets the same lint, test, coverage and audit gates as one targeting main.
   pull_request:
-    branches: [main]
   schedule:
     # Tuesdays 06:17 UTC, a day off the frontend audit so the two don't collide.
     # New advisories land against unchanged pins, so the audit needs a trigger
     # that doesn't depend on someone opening a PR.
     - cron: "17 6 * * 2"
 
+# A new push to a pull request supersedes the run still going for the previous
+# one. Pushes to main are never cancelled: each one publishes the coverage
+# badge, and a cancelled run would leave it behind.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # Every job below runs only when the backend changed, so a frontend- or
+  # docs-only pull request does not spend six minutes re-testing an untouched
+  # API. A change to this workflow file re-runs the whole workflow, so CI
+  # config changes are validated by the jobs they configure rather than
+  # landing untested. Skipped on the weekly schedule: there is no diff to
+  # filter, and only the audit runs then.
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    permissions:
+      contents: read
+      pull-requests: read
+    # Compare with `== 'true'` explicitly: paths-filter emits the *string*
+    # 'false', which is truthy in GitHub expressions, so the shorthand
+    # `outputs.backend || outputs.ci` returns 'false' and the fallback never
+    # fires. Do not simplify this back to `||` between the raw outputs; the
+    # consumers below compare against 'true' for the same reason.
+    outputs:
+      backend: ${{ steps.filter.outputs.backend == 'true' || steps.filter.outputs.ci == 'true' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          # Detect changes with local git, NOT the REST API. On a pull request
+          # the action's default is `GET /pulls/{n}/files`, which returns at
+          # most 3000 entries — and a PR past that limit does not fail, it
+          # reports the files that fell off the end as *unchanged*, so a suite
+          # is skipped and CI goes green having never run it. A skipped suite
+          # is worse than a red one: nothing on the PR says the tests did not
+          # run.
+          #
+          # An empty `token` is the action's documented switch to git mode; it
+          # then uses `git merge-base` against `base` (the PR's own base, so a
+          # stacked PR is diffed against its parent branch, not main) and
+          # fetches history as needed. `base` is empty on push-to-main, where
+          # the action compares against the commit before the push.
+          token: ""
+          base: ${{ github.event.pull_request.base.ref }}
+          # migrations/ holds the runners' Python (run_migration_master.py is
+          # tested by tests/test_migration_parser.py); VERSION is read at
+          # import by app/__init__.py and reported by /health.
+          filters: |
+            backend:
+              - 'app/**'
+              - 'tests/**'
+              - 'requirements*.txt'
+              - 'pyproject.toml'
+              - 'migrations/**'
+              - 'VERSION'
+            ci:
+              - '.github/workflows/backend.yml'
+
   audit:
     name: Audit
     runs-on: ubuntu-latest
+    # The weekly schedule is what this job exists for, and `changes` is
+    # skipped then: without `!cancelled()` the skipped dependency would skip
+    # the audit too. On a push or PR it runs only when the backend changed.
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || needs.changes.outputs.backend == 'true') }}
     steps:
       - uses: actions/checkout@v5
 
@@ -45,7 +113,8 @@ jobs:
   lint:
     name: Lint & Format
     runs-on: ubuntu-latest
-    if: github.event_name != 'schedule'
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     steps:
       - uses: actions/checkout@v5
 
@@ -65,10 +134,28 @@ jobs:
       - name: Ruff format check
         run: ruff format --check app/
 
-  test:
-    name: Tests
+  # The suite took ~5 min of pytest on one runner, so it runs as three
+  # shards on three runners and the aggregate `test` job below combines their
+  # coverage. `--shard K/N` is a hook in tests/shard_plugin.py (imported by
+  # tests/conftest.py) that deals every test FILE to one shard, largest first
+  # into the lightest shard, so the shards partition the suite exactly and are
+  # balanced (tests/test_shard_option.py proves it). A shard measures coverage
+  # but neither reports nor gates on it: the suite-wide floor (`fail_under`
+  # in pyproject.toml) and the diff-coverage gate only mean something on the
+  # combined data. The matrix is the ONLY place the shard count is set:
+  # `strategy.job-total` carries it into the job name, the pytest command and
+  # the aggregate's count check.
+  test-shards:
+    name: Tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
-    if: github.event_name != 'schedule'
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    outputs:
+      count: ${{ steps.meta.outputs.count }} # every leg writes the same value
     steps:
       - uses: actions/checkout@v5
 
@@ -76,20 +163,222 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements*.txt
 
+      # coverage is a CI-step install rather than a requirements-dev.txt pin,
+      # so the environment pip-audit checks stays the one the image and the
+      # dev setup actually use. requirements-dev.txt brings ruff, which
+      # tests/test_lint.py shells out to.
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
+          pip install "coverage[toml]>=7"
 
-      - name: Run tests
-        run: pytest --cov=app --cov-report=term-missing
+      - id: meta
+        run: echo "count=${{ strategy.job-total }}" >> "$GITHUB_OUTPUT"
+
+      # `--cov-report=` skips the per-shard report and `--cov-fail-under=0`
+      # the per-shard floor (a third of the suite cannot meet it); both
+      # belong to the aggregate job.
+      - name: Run shard ${{ matrix.shard }} of ${{ strategy.job-total }} with coverage
+        run: >-
+          pytest --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+          --cov=app --cov-report= --cov-fail-under=0 -q
+
+      - name: Hand the coverage data to the aggregate job
+        # Not a dotfile: upload-artifact skips hidden files by default.
+        run: mv .coverage "coverage.shard-${{ matrix.shard }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: backend-coverage-${{ matrix.shard }}
+          path: coverage.shard-${{ matrix.shard }}
+          if-no-files-found: error
+          overwrite: true # "Re-run failed jobs" uploads the same name again
+          retention-days: 1
+
+  # The check to require in branch protection — the shard jobs need no rule
+  # of their own. It combines the shards' coverage data, enforces the
+  # suite-wide floor and the diff-coverage gate, and writes the per-file table
+  # to the job summary. It must RUN when a shard fails, and fail itself:
+  # `needs` alone would skip it, and branch protection treats a skipped
+  # required check as passing. When the backend did not change, `changes`
+  # gates it off like every other job here.
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    needs: [changes, test-shards]
+    if: ${{ !cancelled() && needs.changes.outputs.backend == 'true' }}
+    steps:
+      - name: Every shard must have passed
+        id: shards-ok
+        run: |
+          echo "shard jobs: ${{ needs.test-shards.result }}"
+          test "${{ needs.test-shards.result }}" = "success"
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # diff-cover needs the merge base with the base branch
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      # coverage reads [tool.coverage.*] from pyproject.toml; the report needs
+      # the sources checked out above, the data comes from the shards. The
+      # app's own dependencies are not needed to report.
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "coverage[toml]>=7" diff-cover==10.6.0
+
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: backend-coverage-*
+          merge-multiple: true
+
+      # A missing artifact is silent at download, so the count is checked
+      # first: a shard whose data never arrived would otherwise drop its files
+      # from the total. `coverage report` exits non-zero when the total is
+      # under `fail_under` (pyproject.toml, [tool.coverage.report] — the one
+      # place it is set); `xml` would too, so it runs after. The XML report
+      # feeds the diff-coverage gate below.
+      - name: Combine the shards' coverage and enforce the floor
+        run: |
+          expected="${{ needs.test-shards.outputs.count }}"
+          found=$(ls coverage.shard-* | wc -l)
+          test "$found" -eq "$expected" || { echo "::error::$found of $expected shard data files"; exit 1; }
+          python -m coverage combine coverage.shard-*
+          python -m coverage report
+          python -m coverage xml
+
+      # Runs after a failed floor too, which is when the table matters — but
+      # not after a failed shard guard: nothing is checked out then.
+      # Informational (`--fail-under=0`): the floor was enforced above. The
+      # ::notice annotation puts the total on the run page itself.
+      - name: Coverage summary
+        if: always() && steps.shards-ok.outcome == 'success'
+        run: |
+          echo "## Backend coverage" >> "$GITHUB_STEP_SUMMARY"
+          python -m coverage report --format=markdown --skip-covered --sort=-miss --fail-under=0 \
+            >> "$GITHUB_STEP_SUMMARY" || echo "No coverage data." >> "$GITHUB_STEP_SUMMARY"
+          if total=$(python -m coverage report --format=total --precision=1 --fail-under=0); then
+            echo "::notice title=Backend coverage::${total}%"
+          fi
+
+      # Every change must be tested (CLAUDE.md, Testing Conventions): the
+      # lines a PR adds or changes must themselves be >= 80% covered, whatever
+      # the suite-wide total. diff-cover runs offline against the base branch;
+      # a line it cannot attribute to the PR is not counted. Push-to-main has
+      # no base to diff against, so the step runs on pull requests only. The
+      # diff is base...HEAD, so the checkout above keeps the full history: a
+      # shallow clone has no merge base and diff-cover aborts before reporting.
+      - name: Diff coverage (changed lines must be tested)
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          diff-cover coverage.xml --compare-branch="origin/${{ github.base_ref }}" \
+            --fail-under=80 --format markdown:diff-cover.md
+          cat diff-cover.md >> "$GITHUB_STEP_SUMMARY"
+
+      # On main, hand the suite-wide total to the coverage-badges job. Only
+      # reached when the shards and the floor passed (no always()).
+      - name: Record the total for the coverage badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p coverage-badge
+          python -m coverage report --format=total --precision=1 --fail-under=0 \
+            > coverage-badge/backend
+
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-badge-backend
+          path: coverage-badge/
+          if-no-files-found: error
+          overwrite: true # "Re-run failed jobs" uploads the same name again
+          retention-days: 1
+
+  # On main, turns the total the test job hands over into a shields.io
+  # endpoint file (backend.json) on the orphan `coverage` data branch, which
+  # the README badge reads; `main` itself is never written. The job runs only
+  # on push to main, so no pull-request code ever holds the write token.
+  # frontend.yml has the same job writing frontend.json: the two share one
+  # concurrency group so they never push to the branch at the same time, and
+  # each writes only its own file, so the other badge keeps its value.
+  coverage-badges:
+    name: Coverage Badges
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: coverage-badges
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: coverage-badge-*
+          merge-multiple: true
+          path: totals
+
+      - name: Commit to the coverage branch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Without nullglob the loop below would run once on the literal
+          # pattern and fail in cat when no total was handed over.
+          shopt -s nullglob
+          totals=(totals/*)
+          if [ "${#totals[@]}" -eq 0 ]; then
+            echo "No coverage total was handed over; the badge keeps its last value."
+            exit 0
+          fi
+          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git init -q branch && cd branch
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # The first run on a repository creates the orphan branch.
+          if git fetch -q --depth 1 "$remote" coverage 2>/dev/null; then
+            git checkout -q -b coverage FETCH_HEAD
+          else
+            git checkout -q --orphan coverage
+          fi
+          for total in ../totals/*; do
+            suite=$(basename "$total")
+            # --argjson rejects anything that is not a number. The colours
+            # follow Google's coverage guidelines (90% exemplary, 75%
+            # commendable, 60% acceptable). The colour is picked from the
+            # rounded figure the badge shows, never the raw one, or 74.6 would
+            # read "75%" in the colour of the band below.
+            jq -n --arg label "$suite coverage" --argjson pct "$(cat "$total")" '
+              ($pct | round) as $shown | {
+              schemaVersion: 1,
+              label: $label,
+              message: "\($shown)%",
+              color: (if $shown >= 90 then "brightgreen" elif $shown >= 75 then "green"
+                      elif $shown >= 60 then "yellowgreen" else "orange" end)
+            }' > "$suite.json"
+          done
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Coverage unchanged; nothing to commit."
+            exit 0
+          fi
+          git commit -q -m "chore: update coverage badges [skip ci]"
+          git push -q "$remote" coverage
 
   typecheck:
     name: Type Check
     runs-on: ubuntu-latest
-    if: github.event_name != 'schedule'
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     steps:
       - uses: actions/checkout@v5
 

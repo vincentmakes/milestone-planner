@@ -3,13 +3,40 @@
  * Renders context menus based on uiStore state
  */
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useWhatIfStore } from '@/stores/whatIfStore';
 import { useDataLoader } from '@/hooks/useDataLoader';
 import { ContextMenu, type ContextMenuItem } from '@/components/common';
-import { deleteProject, deletePhase, deleteSubphase, deleteStaffAssignment, deleteEquipmentAssignment } from '@/api';
+import { deleteProject, deletePhase, deleteSubphase, deleteStaffAssignment, deleteEquipmentAssignment, createStaffAssignment } from '@/api';
+import { isPrivileged, canEditProject, canEditAssignment } from '@/utils/permissions';
+import { findSubphaseById } from '@/utils/subphaseUtils';
+import { formatDateISO } from '@/utils/date';
+import {
+  removeEquipmentAssignmentLocally,
+  removePhaseLocally,
+  removeProjectLocally,
+  removeStaffAssignmentLocally,
+  removeSubphaseLocally,
+} from '@/utils/localProjectTree';
+import { whatIfUnavailableMessage } from '@/utils/whatIf';
+import { recoverFromPersistFailure } from '@/utils/persistFailure';
 import type { Project, Phase, Subphase } from '@/types';
+
+/**
+ * Run a delete from the context menu. A failed delete must not be an
+ * unhandled rejection: follow the persist-failure protocol (reload the
+ * projects, clear the undo history) and tell the user.
+ */
+async function runDelete(what: string, action: () => Promise<void>): Promise<void> {
+  try {
+    await action();
+  } catch (err) {
+    await recoverFromPersistFailure(`Delete ${what}`, err);
+    alert(`Failed to delete ${what}: ${err instanceof Error ? err.message : 'unknown error'}`);
+  }
+}
 
 export function ContextMenuContainer() {
   const contextMenu = useUIStore((s) => s.contextMenu);
@@ -22,10 +49,35 @@ export function ContextMenuContainer() {
   const setEditingEquipmentAssignment = useUIStore((s) => s.setEditingEquipmentAssignment);
 
   const projects = useAppStore((s) => s.projects);
+  const staff = useAppStore((s) => s.staff);
   const currentUser = useAppStore((s) => s.currentUser);
-  const { loadAllData } = useDataLoader();
+  // Items that CREATE something are disabled in What-If mode: the new object
+  // would only appear after Apply. Edits and deletes stay available.
+  const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
+  const createBlockedReason = whatIfMode ? whatIfUnavailableMessage('Adding items') : undefined;
+  // Deletes only change projects. A full loadAllData() would also re-resolve
+  // the current site, and switch away from the one the user is looking at.
+  const { refreshProjects } = useDataLoader();
 
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  // The project the menu was opened on. For a project menu it is the target
+  // itself; everything below a project carries contextMenu.projectId.
+  const menuProject = useMemo(() => {
+    const id = contextMenu.type === 'project' ? contextMenu.targetId : contextMenu.projectId;
+    return projects.find((p) => p.id === id);
+  }, [projects, contextMenu.type, contextMenu.targetId, contextMenu.projectId]);
+
+  // Per-project rights: admins, superusers and the project's manager.
+  const canEdit = canEditProject(currentUser, menuProject);
+  // Deleting a project stays with admins and superusers, even for its manager.
+  const canDeleteProject = isPrivileged(currentUser);
+
+  // "Assign me" books the current user's own time at their max capacity, the
+  // same default the assignment modal and resource drag use.
+  const ownDefaultAllocation = useMemo(() => {
+    if (!currentUser) return 100;
+    const row = staff.find((s) => s.id === currentUser.id);
+    return row?.max_capacity ?? currentUser.max_capacity ?? 100;
+  }, [staff, currentUser]);
 
   // Find the target project/phase/subphase
   const findTarget = useCallback(() => {
@@ -43,7 +95,9 @@ export function ContextMenuContainer() {
     if (contextMenu.type === 'subphase' && contextMenu.projectId && contextMenu.phaseId) {
       const project = projects.find((p) => p.id === contextMenu.projectId);
       const phase = project?.phases?.find((ph) => ph.id === contextMenu.phaseId);
-      return phase?.children?.find((sp) => sp.id === contextMenu.targetId);
+      // Nested subphase rows carry their top-level phase's id, so the target
+      // can sit at any depth below it: search the whole subtree.
+      return phase ? findSubphaseById([phase], contextMenu.targetId) ?? undefined : undefined;
     }
 
     return null;
@@ -54,6 +108,44 @@ export function ContextMenuContainer() {
     const target = findTarget();
 
     if (!type || !targetId) return [];
+
+    // "Assign me" for people who cannot manage the project: a self-assignment
+    // on the project, phase or subphase the menu was opened on. Hidden for
+    // editors (they have the full "Assign Staff" dialog) and once assigned.
+    const assignMeItem = (): ContextMenuItem[] => {
+      if (canEdit || !currentUser) return [];
+      const item = target as Project | Phase | Subphase | undefined;
+      const alreadyAssigned = (item?.staffAssignments ?? []).some(
+        (a) => a.staff_id === currentUser.id
+      );
+      return [
+        {
+          label: alreadyAssigned ? 'Assigned to me' : 'Assign me',
+          icon: <PersonIcon />,
+          onClick: async () => {
+            if (!item) return;
+            // A project may have no dates yet; the assignment still needs some.
+            const today = formatDateISO(new Date());
+            try {
+              await createStaffAssignment({
+                staff_id: currentUser.id,
+                allocation: ownDefaultAllocation,
+                start_date: item.start_date || today,
+                end_date: item.end_date || today,
+                project_id: type === 'project' ? targetId : projectId,
+                phase_id: type === 'phase' ? targetId : undefined,
+                subphase_id: type === 'subphase' ? targetId : undefined,
+              });
+              refreshProjects();
+            } catch (err) {
+              console.error('Failed to self-assign:', err);
+            }
+          },
+          disabled: alreadyAssigned || !item || whatIfMode,
+          title: alreadyAssigned ? undefined : createBlockedReason,
+        },
+      ];
+    };
 
     // Project context menu
     if (type === 'project') {
@@ -73,7 +165,8 @@ export function ContextMenuContainer() {
           onClick: () => {
             openPhaseModal(undefined, targetId);
           },
-          disabled: !canEdit,
+          disabled: !canEdit || whatIfMode,
+          title: createBlockedReason,
         },
         {
           label: 'Assign Staff',
@@ -81,15 +174,18 @@ export function ContextMenuContainer() {
           onClick: () => {
             openModal('staffAssignment', { projectId: targetId });
           },
-          disabled: !canEdit,
+          disabled: !canEdit || whatIfMode,
+          title: createBlockedReason,
         },
+        ...assignMeItem(),
         {
           label: 'Assign Equipment',
           icon: <EquipmentIcon />,
           onClick: () => {
             openModal('equipmentAssignment', { projectId: targetId });
           },
-          disabled: !canEdit,
+          disabled: !canEdit || whatIfMode,
+          title: createBlockedReason,
         },
         { label: '', divider: true, onClick: () => {} },
         {
@@ -98,11 +194,15 @@ export function ContextMenuContainer() {
           danger: true,
           onClick: async () => {
             if (confirm(`Delete project "${project?.name}"? This cannot be undone.`)) {
-              await deleteProject(targetId);
-              loadAllData();
+              await runDelete('project', async () => {
+                await deleteProject(targetId);
+                // Mirror locally: the refresh is a no-op in What-If mode.
+                removeProjectLocally(targetId);
+                refreshProjects();
+              });
             }
           },
-          disabled: !canEdit,
+          disabled: !canDeleteProject,
         },
       ];
     }
@@ -125,7 +225,8 @@ export function ContextMenuContainer() {
           onClick: () => {
             openSubphaseModal(undefined, targetId, projectId);
           },
-          disabled: !canEdit,
+          disabled: !canEdit || whatIfMode,
+          title: createBlockedReason,
         },
         {
           label: 'Assign Staff',
@@ -133,15 +234,18 @@ export function ContextMenuContainer() {
           onClick: () => {
             openModal('staffAssignment', { phaseId: targetId, projectId });
           },
-          disabled: !canEdit,
+          disabled: !canEdit || whatIfMode,
+          title: createBlockedReason,
         },
+        ...assignMeItem(),
         {
           label: 'Assign Equipment',
           icon: <EquipmentIcon />,
           onClick: () => {
             openModal('equipmentAssignment', { phaseId: targetId, projectId });
           },
-          disabled: !canEdit,
+          disabled: !canEdit || whatIfMode,
+          title: createBlockedReason,
         },
         { label: '', divider: true, onClick: () => {} },
         {
@@ -150,8 +254,11 @@ export function ContextMenuContainer() {
           danger: true,
           onClick: async () => {
             if (confirm(`Delete phase "${phase?.name}"? This cannot be undone.`)) {
-              await deletePhase(targetId);
-              loadAllData();
+              await runDelete('phase', async () => {
+                await deletePhase(targetId);
+                if (projectId) removePhaseLocally(projectId, targetId);
+                refreshProjects();
+              });
             }
           },
           disabled: !canEdit,
@@ -179,7 +286,8 @@ export function ContextMenuContainer() {
             // phaseId stays the same, but we pass targetId as parentSubphaseId
             openSubphaseModal(undefined, phaseId, projectId, targetId);
           },
-          disabled: !canEdit,
+          disabled: !canEdit || whatIfMode,
+          title: createBlockedReason,
         },
         {
           label: 'Assign Staff',
@@ -187,15 +295,18 @@ export function ContextMenuContainer() {
           onClick: () => {
             openModal('staffAssignment', { subphaseId: targetId, phaseId, projectId });
           },
-          disabled: !canEdit,
+          disabled: !canEdit || whatIfMode,
+          title: createBlockedReason,
         },
+        ...assignMeItem(),
         {
           label: 'Assign Equipment',
           icon: <EquipmentIcon />,
           onClick: () => {
             openModal('equipmentAssignment', { subphaseId: targetId, phaseId, projectId });
           },
-          disabled: !canEdit,
+          disabled: !canEdit || whatIfMode,
+          title: createBlockedReason,
         },
         { label: '', divider: true, onClick: () => {} },
         {
@@ -204,8 +315,11 @@ export function ContextMenuContainer() {
           danger: true,
           onClick: async () => {
             if (confirm(`Delete subphase "${subphase?.name}"? This cannot be undone.`)) {
-              await deleteSubphase(targetId);
-              loadAllData();
+              await runDelete('subphase', async () => {
+                await deleteSubphase(targetId);
+                if (projectId) removeSubphaseLocally(projectId, targetId);
+                refreshProjects();
+              });
             }
           },
           disabled: !canEdit,
@@ -219,7 +333,9 @@ export function ContextMenuContainer() {
       const assignmentName = assignmentData?.name || 'Staff Assignment';
       // Determine assignment level for API routing
       const assignmentLevel = subphaseId ? 'subphase' : (phaseId ? 'phase' : 'project');
-      
+      // Project editors may change anyone's booking; everyone may change their own.
+      const canEditThis = canEditAssignment(currentUser, menuProject, assignmentData?.staffId);
+
       return [
         {
           label: 'Edit Assignment',
@@ -238,7 +354,7 @@ export function ContextMenuContainer() {
             });
             openModal('staffAssignment', { projectId, phaseId, subphaseId });
           },
-          disabled: !canEdit,
+          disabled: !canEditThis,
         },
         { label: '', divider: true, onClick: () => {} },
         {
@@ -247,11 +363,14 @@ export function ContextMenuContainer() {
           danger: true,
           onClick: async () => {
             if (confirm(`Remove ${assignmentName} from this assignment?`)) {
-              await deleteStaffAssignment(targetId, assignmentLevel);
-              loadAllData();
+              await runDelete('assignment', async () => {
+                await deleteStaffAssignment(targetId, assignmentLevel);
+                if (projectId) removeStaffAssignmentLocally(projectId, targetId, assignmentLevel);
+                refreshProjects();
+              });
             }
           },
-          disabled: !canEdit,
+          disabled: !canEditThis,
         },
       ];
     }
@@ -287,8 +406,11 @@ export function ContextMenuContainer() {
           onClick: async () => {
             if (confirm(`Remove ${assignmentName} from this assignment?`)) {
               // Equipment assignments use a single endpoint for all levels
-              await deleteEquipmentAssignment(targetId);
-              loadAllData();
+              await runDelete('equipment assignment', async () => {
+                await deleteEquipmentAssignment(targetId);
+                if (projectId) removeEquipmentAssignmentLocally(projectId, targetId);
+                refreshProjects();
+              });
             }
           },
           disabled: !canEdit,
@@ -297,7 +419,7 @@ export function ContextMenuContainer() {
     }
 
     return [];
-  }, [contextMenu, findTarget, canEdit, openProjectModal, openPhaseModal, openSubphaseModal, openModal, setEditingStaffAssignment, setEditingEquipmentAssignment, loadAllData]);
+  }, [contextMenu, findTarget, canEdit, whatIfMode, createBlockedReason, canDeleteProject, currentUser, menuProject, ownDefaultAllocation, openProjectModal, openPhaseModal, openSubphaseModal, openModal, setEditingStaffAssignment, setEditingEquipmentAssignment, refreshProjects]);
 
   if (!contextMenu.visible) return null;
 

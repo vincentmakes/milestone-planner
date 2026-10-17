@@ -24,6 +24,8 @@ import {
   isSameDay,
   isWithinInterval,
   getWeek,
+  getISOWeek,
+  getISOWeekYear,
   getYear,
 } from 'date-fns';
 
@@ -108,8 +110,8 @@ export function formatDateShortLocale(date: Date): string {
  * @returns Formatted date range like "15 Jan - 28 Feb" (EU) or "Jan 15 - Feb 28" (US)
  */
 export function formatShortDateRange(startDate: string, endDate: string): string {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+  const start = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
   
   const startFormatted = formatDateShortLocale(start);
   const endFormatted = formatDateShortLocale(end);
@@ -124,7 +126,7 @@ export function formatShortDateRange(startDate: string, endDate: string): string
  * @returns Formatted date string
  */
 export function formatSingleDate(dateString: string): string {
-  const date = new Date(dateString);
+  const date = parseLocalDate(dateString);
   return formatDateShortLocale(date);
 }
 
@@ -139,7 +141,7 @@ export function formatMonthYear(date: Date): string {
  * Format a date for week display (e.g., "W3")
  */
 export function formatWeekNumber(date: Date): string {
-  return `W${getWeek(date, { weekStartsOn: 1 })}`;
+  return `W${getISOWeek(date)}`;
 }
 
 /**
@@ -162,15 +164,67 @@ export function parseDateISO(dateString: string): Date {
 }
 
 /**
+ * A calendar date: `YYYY-MM-DD`, optionally followed by a midnight time —
+ * the backend serializes DATE columns as `YYYY-MM-DDT00:00:00.000Z`
+ * (`serialize_date_as_datetime_js`), which names a calendar day, not an instant.
+ */
+const CALENDAR_DATE_RE =
+  /^(\d{4})-(\d{2})-(\d{2})(?:[T ]00:00(?::00(?:\.0+)?)?(?:Z|[+-]00:?00)?)?$/;
+
+/**
+ * Parse a model date string as LOCAL midnight of that calendar day.
+ *
+ * `new Date('2026-03-02')` (and `new Date('2026-03-02T00:00:00.000Z')`) is UTC
+ * midnight, which every browser west of UTC reads back — via getDate(),
+ * format(), setHours() — as March 1st. Every date-only string coming from the
+ * model, the API or a `data-date` attribute must go through this helper.
+ *
+ * Strings carrying a real time of day are instants and are parsed as such.
+ */
+export function parseLocalDate(value: string): Date {
+  const m = CALENDAR_DATE_RE.exec(value.trim());
+  if (m) {
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  }
+  return new Date(value);
+}
+
+/**
+ * Format a Date as `YYYY-MM-DD` from its LOCAL calendar components
+ * (never `toISOString()`, which is UTC).
+ */
+export function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/** The `YYYY-MM-DD` part of a model date string (date-only or midnight ISO). */
+export function toDateOnly(value: string): string {
+  return formatLocalDate(parseLocalDate(value));
+}
+
+/** Add `days` calendar days to a model date string; returns `YYYY-MM-DD`. */
+export function addDaysToDateString(value: string, days: number): string {
+  const d = parseLocalDate(value);
+  d.setDate(d.getDate() + days);
+  return formatLocalDate(d);
+}
+
+/**
+ * Whole calendar days from `from` to `to` (both model date strings).
+ * Rounded, so a DST switch in between (23h/25h day) does not lose a day.
+ */
+export function daysBetweenDateStrings(from: string, to: string): number {
+  return Math.round((parseLocalDate(to).getTime() - parseLocalDate(from).getTime()) / 86400000);
+}
+
+/**
  * Parse a date string, handling both ISO and other common formats
  */
 export function parseDate(dateString: string): Date {
-  // Handle ISO format
-  if (dateString.includes('T')) {
-    return new Date(dateString);
-  }
-  // Handle YYYY-MM-DD format
-  return parseDateISO(dateString);
+  return parseLocalDate(dateString);
 }
 
 // =============================================================================
@@ -226,10 +280,13 @@ export function addBusinessDays(date: Date, days: number): Date {
 }
 
 /**
- * Get the ISO week number (1-52/53)
+ * Get the ISO week number (1-52/53). Week 1 is the week with the year's
+ * first Thursday, so Jan 1 can be in week 52/53 of the previous year.
+ * (`getWeek(…, { weekStartsOn: 1 })` is NOT ISO: it numbers the week that
+ * contains Jan 1 as week 1.)
  */
 export function getISOWeekNumber(date: Date): number {
-  return getWeek(date, { weekStartsOn: 1 });
+  return getISOWeek(date);
 }
 
 // =============================================================================
@@ -306,7 +363,8 @@ export function navigateDate(
 export function getPeriodLabel(date: Date, viewMode: 'week' | 'month' | 'quarter' | 'year'): string {
   switch (viewMode) {
     case 'week':
-      return `Week ${getISOWeekNumber(date)}, ${getYear(date)}`;
+      // The ISO week-numbering year: Jan 1 2027 is "Week 53, 2026".
+      return `Week ${getISOWeekNumber(date)}, ${getISOWeekYear(date)}`;
     case 'month':
       return formatMonthYear(date);
     case 'quarter':

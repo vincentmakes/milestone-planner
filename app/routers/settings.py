@@ -19,6 +19,7 @@ from app.models.user import User
 from app.routers.auth import _active_org_sso, _reject_if_org_sso_active
 from app.schemas.auth import SSOConfigResponse, SSOConfigUpdate
 from app.schemas.settings import SettingsResponse, SettingUpdate
+from app.services.sso import apply_secret_update
 
 logger = logging.getLogger(__name__)
 
@@ -113,8 +114,8 @@ async def update_sso_settings(
         config.tenant_id = data.tenant_id
     if data.client_id is not None:
         config.client_id = data.client_id
-    if data.client_secret is not None:
-        config.client_secret = data.client_secret
+    # Omitted or masked (****abcd) keeps the stored secret; stored encrypted.
+    apply_secret_update(config, data.client_secret)
     if data.redirect_uri is not None:
         config.redirect_uri = data.redirect_uri
     if data.auto_create_users is not None:

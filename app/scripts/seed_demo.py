@@ -17,7 +17,7 @@ from datetime import date, timedelta
 import asyncpg
 
 from app.config import get_settings
-from app.services.encryption import encrypt, hash_password
+from app.services.encryption import encrypt, hash_user_password
 
 DEMO_TENANT_SLUG = "demo"
 DEMO_TENANT_NAME = "Demo Company"
@@ -204,7 +204,7 @@ async def apply_schema_and_seed(settings):
         """)
 
         # Admin user (known password: demo1234)
-        admin_hash = hash_password(DEMO_ADMIN_PASSWORD)
+        admin_hash = hash_user_password(DEMO_ADMIN_PASSWORD)
         await conn.execute(
             """INSERT INTO users (email, password, first_name, last_name, job_title, role, is_system)
                VALUES ($1, $2, 'Admin', 'User', 'System Administrator', 'admin', 1)
@@ -237,7 +237,7 @@ async def apply_schema_and_seed(settings):
             ("george.garcia@demo.local", "George", "Garcia", "R&D Engineer", "user", ff_id),
             ("hannah.harris@demo.local", "Hannah", "Harris", "Quality Specialist", "user", ff_id),
         ]
-        staff_hash = hash_password("demo1234")
+        staff_hash = hash_user_password("demo1234")
         staff_ids = {}
         for email, first, last, title, role, site_id in staff_data:
             await conn.execute(
@@ -305,6 +305,13 @@ async def apply_schema_and_seed(settings):
                 etype,
                 site_id,
             )
+        # Site links (equipment can be shared by several sites; the demo
+        # equipment belongs to one each).
+        await conn.execute(
+            """INSERT INTO equipment_sites (equipment_id, site_id)
+               SELECT id, site_id FROM equipment WHERE site_id IS NOT NULL
+               ON CONFLICT DO NOTHING"""
+        )
         print(f"  Created {len(equip_data)} equipment items")
 
         # Projects
@@ -444,21 +451,28 @@ async def apply_schema_and_seed(settings):
         # A couple of vacations
         alice_id = staff_ids.get("alice.anderson@demo.local")
         bob_id = staff_ids.get("bob.brown@demo.local")
+        # Absence types are seeded by the tenant schema; look them up by name.
+        vacation_sql = (
+            "INSERT INTO vacations (staff_id, start_date, end_date, description, absence_type_id) "
+            "VALUES ($1, $2, $3, $4, (SELECT id FROM absence_types WHERE name = $5))"
+        )
         if alice_id:
             await conn.execute(
-                "INSERT INTO vacations (staff_id, start_date, end_date, description) VALUES ($1, $2, $3, $4)",
+                vacation_sql,
                 alice_id,
                 today + timedelta(days=30),
                 today + timedelta(days=37),
                 "Summer vacation",
+                "Holidays",
             )
         if bob_id:
             await conn.execute(
-                "INSERT INTO vacations (staff_id, start_date, end_date, description) VALUES ($1, $2, $3, $4)",
+                vacation_sql,
                 bob_id,
                 today + timedelta(days=60),
                 today + timedelta(days=64),
                 "Conference",
+                "Business Trip",
             )
 
         print("  Demo data seeded successfully")

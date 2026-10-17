@@ -1,6 +1,7 @@
 """
-Equipment and EquipmentAssignment models.
-Maps to the equipment and equipment_assignments tables in PostgreSQL.
+Equipment, EquipmentSite, EquipmentAssignment and EquipmentBlock models.
+Maps to the equipment, equipment_sites, equipment_assignments and
+equipment_blocks tables in PostgreSQL.
 """
 
 from datetime import date, datetime
@@ -10,6 +11,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -25,13 +27,19 @@ if TYPE_CHECKING:
 
 
 class Equipment(Base):
-    """Equipment model - represents lab equipment and resources."""
+    """
+    Equipment model - represents lab equipment and resources.
+
+    Equipment can be shared by several sites; the links live in equipment_sites.
+    """
 
     __tablename__ = "equipment"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Legacy single-site column, kept for compatibility: always the first
+    # linked site. equipment_sites is the source of truth.
     site_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("sites.id", ondelete="SET NULL"),
@@ -43,6 +51,15 @@ class Equipment(Base):
 
     # Relationships
     site: Mapped[Optional["Site"]] = relationship("Site", back_populates="equipment")
+
+    # Every site the equipment belongs to, loaded with the equipment (selectin)
+    # so responses never trigger a lazy load. Ordered by id: site_id is the first.
+    sites: Mapped[list["Site"]] = relationship(
+        "Site",
+        secondary="equipment_sites",
+        lazy="selectin",
+        order_by="Site.id",
+    )
 
     assignments: Mapped[list["EquipmentAssignment"]] = relationship(
         "EquipmentAssignment",
@@ -68,8 +85,31 @@ class Equipment(Base):
             return self.site.name
         return None
 
+    @property
+    def site_ids(self) -> list[int]:
+        """Ids of every linked site, ascending (the first one is site_id)."""
+        return [site.id for site in self.sites]
+
     def __repr__(self) -> str:
         return f"<Equipment {self.name} ({self.type})>"
+
+
+class EquipmentSite(Base):
+    """Association table for Equipment-Site many-to-many relationship."""
+
+    __tablename__ = "equipment_sites"
+    __table_args__ = (Index("idx_equipment_sites_site", "site_id"),)
+
+    equipment_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("equipment.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    site_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("sites.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
 
 
 class EquipmentAssignment(Base):

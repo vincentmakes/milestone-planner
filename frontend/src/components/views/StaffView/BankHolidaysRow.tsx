@@ -1,15 +1,18 @@
 /**
  * Bank Holidays Row Component
  * Expandable row showing all bank holidays with actions
- * - Add custom holiday button
- * - Delete custom holidays
+ * - Add custom holiday button / click a holiday to edit it (Settings hub)
+ * - Delete holidays (Nager holidays come back on the next refresh)
  * - Export to ICS
  */
 
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
+import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { deleteCustomHoliday, getBankHolidays, buildHolidayDateSet } from '@/api';
+import { buildICS, downloadICS } from '@/utils/ics';
 import styles from './StaffView.module.css';
+import { parseLocalDate } from '@/utils/date';
 
 interface BankHolidaysRowProps {
   isExpanded: boolean;
@@ -21,13 +24,24 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
   const currentUser = useAppStore((s) => s.currentUser);
   const bankHolidays = useAppStore((s) => s.bankHolidays);
   const setBankHolidays = useAppStore((s) => s.setBankHolidays);
-  const { openModal } = useUIStore();
+  const openSettings = useUIStore((s) => s.openSettings);
   
   const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  // Holidays are managed in the Settings hub, which cannot open during
+  // What-If (this row also shows in the Gantt's embedded staff overview).
+  // Deleting is blocked too: holidays are not in the What-If snapshot, so a
+  // queued DELETE would leave the row on screen (the reload reads the real
+  // server list), a second try would queue a DELETE that 404s on Apply, and
+  // Discard could not bring the holiday back.
+  const whatIf = useWhatIfBlocked();
+  const addBlockedReason = whatIf.blocked ? whatIf.reason('Adding holidays') : null;
+  const editBlockedReason = whatIf.blocked ? whatIf.reason('Editing holidays in Settings') : null;
+  const deleteBlockedReason = whatIf.blocked ? whatIf.reason('Deleting holidays') : null;
+  const canOpenEditor = canEdit && !editBlockedReason;
   
   // Group holidays by year
   const holidaysByYear = bankHolidays.reduce((acc, h) => {
-    const year = h.year || new Date(h.date).getFullYear();
+    const year = h.year || parseLocalDate(h.date).getFullYear();
     if (!acc[year]) acc[year] = [];
     acc[year].push(h);
     return acc;
@@ -35,7 +49,7 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
   
   // Format date for display using browser locale
   const formatHolidayDate = (dateStr: string) => {
-    const date = new Date(dateStr);
+    const date = parseLocalDate(dateStr);
     return date.toLocaleDateString(undefined, { 
       weekday: 'short',
       day: 'numeric', 
@@ -47,52 +61,36 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
   const exportToICS = () => {
     if (bankHolidays.length === 0) return;
     
-    const lines = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//Milestone//Bank Holidays//EN',
-      'CALSCALE:GREGORIAN',
-      'METHOD:PUBLISH',
-    ];
-    
-    bankHolidays.forEach((holiday) => {
-      const startDate = holiday.date.replace(/-/g, '');
-      // End date is the day after for all-day events
-      const endDateObj = new Date(holiday.end_date || holiday.date);
-      endDateObj.setDate(endDateObj.getDate() + 1);
-      const endDate = endDateObj.toISOString().split('T')[0].replace(/-/g, '');
-      
-      lines.push('BEGIN:VEVENT');
-      lines.push(`UID:bankholiday-${holiday.id}@milestone`);
-      lines.push(`DTSTART;VALUE=DATE:${startDate}`);
-      lines.push(`DTEND;VALUE=DATE:${endDate}`);
-      lines.push(`SUMMARY:${holiday.name.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n')}`);
-      lines.push('TRANSP:TRANSPARENT');
-      lines.push('END:VEVENT');
-    });
-    
-    lines.push('END:VCALENDAR');
-    
-    const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `bank-holidays-${currentSite?.name || 'site'}.ics`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const icsContent = buildICS(
+      bankHolidays.map((holiday) => ({
+        uid: `bankholiday-${holiday.id}@milestone`,
+        summary: holiday.name,
+        start_date: holiday.date,
+        end_date: holiday.end_date,
+        transparency: 'TRANSPARENT' as const,
+      })),
+      'Bank Holidays',
+    );
+    downloadICS(icsContent, `bank-holidays-${currentSite?.name || 'site'}.ics`);
   };
   
-  // Handle opening add custom holiday modal
+  // Holidays are managed in the Settings hub
   const handleAddCustom = () => {
-    openModal('customHoliday');
+    openSettings('bank-holidays', { type: 'add', siteId: currentSite?.id });
   };
   
-  // Handle deleting a custom holiday
-  const handleDeleteCustom = async (holidayId: number) => {
-    if (!currentSite) return;
-    if (!confirm('Delete this custom holiday?')) return;
+  const handleEditHoliday = (holidayId: number) => {
+    openSettings('bank-holidays', { type: 'edit', id: holidayId, siteId: currentSite?.id });
+  };
+  
+  // Handle deleting a holiday. Nager (public) holidays can be deleted too,
+  // but come back the next time the site's holidays are refreshed from Nager.
+  const handleDeleteHoliday = async (holidayId: number, isCustom: boolean) => {
+    if (!currentSite || deleteBlockedReason) return;
+    const message = isCustom
+      ? 'Delete this custom holiday?'
+      : 'Delete this public holiday? It will come back the next time holidays are refreshed from Nager.';
+    if (!confirm(message)) return;
     
     try {
       await deleteCustomHoliday(currentSite.id, holidayId);
@@ -102,8 +100,8 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
       const holidayDates = buildHolidayDateSet(holidays);
       setBankHolidays(holidays, holidayDates);
     } catch (err) {
-      console.error('Failed to delete custom holiday:', err);
-      alert('Failed to delete custom holiday');
+      console.error('Failed to delete holiday:', err);
+      alert('Failed to delete holiday');
     }
   };
   
@@ -147,7 +145,9 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
             <button 
               className={styles.iconBtn}
               onClick={handleAddCustom}
-              title="Add custom holiday"
+              disabled={addBlockedReason !== null}
+              title={addBlockedReason ?? 'Add custom holiday'}
+              aria-label="Add custom holiday"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="12" y1="5" x2="12" y2="19" />
@@ -170,21 +170,24 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
               return (
                 <div 
                   key={holiday.id}
-                  className={`${styles.detailRow} ${holiday.is_custom ? styles.customHoliday : ''}`}
+                  className={`${styles.detailRow} ${holiday.is_custom ? styles.customHoliday : ''} ${canOpenEditor ? styles.clickable : ''}`}
+                  onClick={canOpenEditor ? () => handleEditHoliday(holiday.id) : undefined}
+                  title={canEdit ? (editBlockedReason ?? 'Edit in Settings') : undefined}
                 >
                   <span className={`${styles.detailType} ${styles.bankHoliday}`}>
                     {holiday.is_custom ? 'Custom' : 'Holiday'}
                   </span>
                   <span className={styles.detailName}>{holiday.name}</span>
                   <span className={styles.dateBadge}>{dateDisplay}</span>
-                  {canEdit && holiday.is_custom && (
+                  {canEdit && (
                     <button
                       className={styles.deleteAction}
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleDeleteCustom(holiday.id);
+                        handleDeleteHoliday(holiday.id, !!holiday.is_custom);
                       }}
-                      title="Delete custom holiday"
+                      disabled={deleteBlockedReason !== null}
+                      title={deleteBlockedReason ?? (holiday.is_custom ? 'Delete custom holiday' : 'Delete holiday (returns on the next Nager refresh)')}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <line x1="18" y1="6" x2="6" y2="18" />
@@ -206,8 +209,10 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
           {/* Add custom holiday row at bottom */}
           {canEdit && (
             <div 
-              className={`${styles.detailRow} ${styles.addRow}`}
-              onClick={handleAddCustom}
+              className={`${styles.detailRow} ${styles.addRow} ${addBlockedReason ? styles.addRowDisabled : ''}`}
+              onClick={addBlockedReason ? undefined : handleAddCustom}
+              aria-disabled={addBlockedReason ? true : undefined}
+              title={addBlockedReason ?? undefined}
             >
               <span className={styles.addIcon}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

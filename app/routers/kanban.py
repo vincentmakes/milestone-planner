@@ -6,10 +6,12 @@ whole phase/subphase tree, so the client derives cards from data it already
 holds. What lives here is everything that tree does not carry -- status moves,
 card assignees (which also book staff time), and comments.
 
-Auth note: this is the one router where a plain `user` may write to project
-data. Moving a card is allowed for superusers/admins, or for the assignees of
-that specific card (see app/services/card_access.py); commenting is open to any
-authenticated user. Every other board write stays require_superuser.
+Auth note: moving a card is allowed for project editors (superusers/admins and
+the project's manager, see app/services/project_access.py) or for the assignees
+of that specific card (see app/services/card_access.py). Assigning and
+unassigning follow the staff-assignment rule: project editors may manage anyone,
+and any user may join or leave a card themself. Commenting is open to any
+authenticated user.
 """
 
 import logging
@@ -20,7 +22,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, get_db_readonly
-from app.middleware.auth import get_current_user, require_superuser
+from app.middleware.auth import get_current_user
 from app.models.assignment import PhaseStaffAssignment, SubphaseStaffAssignment
 from app.models.card_comment import CardComment
 from app.models.project import Project, ProjectPhase, ProjectSubphase
@@ -45,6 +47,7 @@ from app.services.notifications import (
     dedupe_by_recipient,
     notification_payload,
 )
+from app.services.project_access import can_edit_project, require_assignment_write
 from app.utils import utcnow_naive
 from app.websocket.broadcast import broadcast_change, send_notification
 
@@ -229,12 +232,14 @@ async def update_card_status(
     """Move a card to a different status column, keeping completion in step."""
     card = await _load_card(db, entity_type, entity_id)
 
+    # Project editors (superuser/admin or the PM) move any card; everyone else
+    # must be assigned to it.
     await require_card_status_write(
         db,
         entity_type=entity_type,
         entity_id=entity_id,
         user_id=user.id,
-        is_privileged=bool(user.is_admin or user.is_superuser),
+        is_privileged=await can_edit_project(db, user, card.project_id),
     )
 
     previous_status = card.status
@@ -292,16 +297,19 @@ async def assign_card(
     data: CardAssigneeCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
     """
     Assign a staff member to a card, booking their time over the card's dates.
+
+    Project editors may assign anyone; any user may join a card themself.
 
     Phase- and subphase-level assignments carry no dates of their own -- they
     inherit the card's -- so the booking stays in step when the card moves in
     the Gantt chart, with no second write.
     """
     card = await _load_card(db, entity_type, entity_id)
+    await require_assignment_write(db, user, project_id=card.project_id, staff_id=data.staff_id)
 
     assignee = (await db.execute(select(User).where(User.id == data.staff_id))).scalar_one_or_none()
     if not assignee:
@@ -391,10 +399,14 @@ async def unassign_card(
     staff_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(get_current_user),
 ):
-    """Remove a staff member from a card, releasing their booking."""
+    """Remove a staff member from a card, releasing their booking.
+
+    Project editors may remove anyone; any user may leave a card themself.
+    """
     card = await _load_card(db, entity_type, entity_id)
+    await require_assignment_write(db, user, project_id=card.project_id, staff_id=staff_id)
 
     if entity_type == "phase":
         query = select(PhaseStaffAssignment).where(

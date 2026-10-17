@@ -1,4 +1,5 @@
 import { useAppStore } from '@/stores/appStore';
+import { uniqueById } from '@/utils/uniqueById';
 import styles from './QuickStats.module.css';
 
 export function QuickStats() {
@@ -18,7 +19,8 @@ export function QuickStats() {
 
   const siteEquipment = currentSite
     ? equipment.filter((e) => e.site_id === currentSite.id && e.active)
-    : equipment.filter((e) => e.active);
+    : // One row per equipment-site pair: count each item once
+      uniqueById(equipment.filter((e) => e.active));
 
   const confirmedProjects = siteProjects.filter((p) => p.confirmed).length;
   const unconfirmedProjects = siteProjects.filter((p) => !p.confirmed).length;

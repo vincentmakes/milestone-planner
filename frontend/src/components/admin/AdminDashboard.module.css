@@ -60,23 +60,6 @@
   border-radius: var(--radius-sm);
 }
 
-.logoutBtn {
-  padding: 0.5rem 1rem;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.logoutBtn:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-
 /* Navigation Tabs */
 .tabs {
   display: flex;

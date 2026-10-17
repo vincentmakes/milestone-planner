@@ -80,6 +80,9 @@ export interface AdminLoginResponse {
 
 export interface AdminMeResponse {
   user: AdminUser | null;
+  /** Set for a flagged admin (e.g. the auto-created default one): every other
+   *  admin route answers 403 until the password is changed. */
+  must_change_password?: boolean;
 }
 
 export interface Tenant {

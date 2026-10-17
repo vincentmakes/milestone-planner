@@ -9,6 +9,7 @@
 
 import { memo } from 'react';
 import styles from './DragIndicator.module.css';
+import { parseLocalDate } from '@/utils/date';
 
 interface DragIndicatorProps {
   visible: boolean;
@@ -25,7 +26,7 @@ interface DragIndicatorProps {
 
 // Format date for display using browser locale
 function formatDisplayDate(dateStr: string): string {
-  const date = new Date(dateStr);
+  const date = parseLocalDate(dateStr);
   return date.toLocaleDateString(undefined, {
     day: 'numeric',
     month: 'short',

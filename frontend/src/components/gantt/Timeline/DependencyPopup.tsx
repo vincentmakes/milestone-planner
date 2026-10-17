@@ -17,6 +17,8 @@ interface DependencyPopupProps {
   toName: string;
   onClose: () => void;
   onDelete: () => void;
+  /** Whether the viewer may delete the link (the project's editors only). */
+  canDelete?: boolean;
 }
 
 const DEPENDENCY_TYPE_LABELS: Record<DependencyType, string> = {
@@ -35,6 +37,7 @@ export const DependencyPopup = memo(function DependencyPopup({
   toName,
   onClose,
   onDelete,
+  canDelete = true,
 }: DependencyPopupProps) {
   const popupRef = useRef<HTMLDivElement>(null);
 
@@ -112,11 +115,13 @@ export const DependencyPopup = memo(function DependencyPopup({
         </div>
       </div>
 
-      <div className={styles.footer}>
-        <button className={styles.deleteButton} onClick={handleDelete}>
-          Delete Dependency
-        </button>
-      </div>
+      {canDelete && (
+        <div className={styles.footer}>
+          <button className={styles.deleteButton} onClick={handleDelete}>
+            Delete Dependency
+          </button>
+        </div>
+      )}
     </div>
   );
 });

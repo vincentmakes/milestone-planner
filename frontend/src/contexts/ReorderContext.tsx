@@ -8,6 +8,8 @@ import { createContext, useContext, useState, useCallback, useRef, ReactNode } f
 import { apiPut } from '@/api/client';
 import { loadAllProjects } from '@/api/endpoints/projects';
 import { useAppStore } from '@/stores/appStore';
+import { applyLocalReorder } from '@/utils/reorder';
+import { recoverFromPersistFailure } from '@/utils/persistFailure';
 
 export type ReorderItemType = 'phase' | 'subphase';
 
@@ -167,6 +169,18 @@ export function ReorderProvider({ children }: { children: ReactNode }) {
     if (dropTarget.position === 'after') dropIndex += 1;
     currentOrder.splice(dropIndex, 0, dragState.id);
     
+    // Optimistic: show the new order now. In What-If mode the PUT below is
+    // queued and the reload is a no-op, so this is the only visible effect.
+    const optimistic = applyLocalReorder(
+      useAppStore.getState().projects,
+      type,
+      dragState.projectId,
+      currentOrder,
+      parentId,
+      parentType
+    );
+    if (optimistic) setProjects(optimistic);
+
     try {
       if (type === 'phase') {
         await apiPut(`/api/projects/${dragState.projectId}/phases/reorder`, {
@@ -179,11 +193,12 @@ export function ReorderProvider({ children }: { children: ReactNode }) {
         });
       }
       
-      // Reload projects to get updated order
+      // Reload projects to get the server's order (no-op in What-If mode).
       const updatedProjects = await loadAllProjects();
       setProjects(updatedProjects);
     } catch (err) {
-      console.error('Failed to reorder:', err);
+      // Optimistic-write failure protocol: reload + clear the undo stack.
+      await recoverFromPersistFailure('Reorder', err);
     }
     
     cleanup();

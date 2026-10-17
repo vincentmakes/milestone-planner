@@ -1,4 +1,5 @@
 import { useViewStore } from '@/stores/viewStore';
+import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import type { CurrentView } from '@/types';
 import styles from './Navigation.module.css';
 
@@ -85,20 +86,30 @@ const NAV_ITEMS: NavItem[] = [
 export function Navigation({ collapsed = false }: NavigationProps) {
   const currentView = useViewStore((s) => s.currentView);
   const setCurrentView = useViewStore((s) => s.setCurrentView);
+  // What-If is a Gantt-only sandbox: while it is active the other views are
+  // out of reach (nothing is discarded behind the user's back). The Gantt
+  // itself stays enabled so the sandbox can always be returned to.
+  const { blocked, reason } = useWhatIfBlocked();
 
   return (
     <nav className={`${styles.nav} ${collapsed ? styles.collapsed : ''}`}>
-      {NAV_ITEMS.map((item) => (
-        <button
-          key={item.view}
-          className={`${styles.navItem} ${currentView === item.view ? styles.active : ''}`}
-          onClick={() => setCurrentView(item.view)}
-          title={collapsed ? item.label : undefined}
-        >
-          <span className={styles.icon}>{item.icon}</span>
-          {!collapsed && <span className={styles.label}>{item.label}</span>}
-        </button>
-      ))}
+      {NAV_ITEMS.map((item) => {
+        const isBlocked = blocked && item.view !== currentView && item.view !== 'gantt';
+        return (
+          <button
+            key={item.view}
+            type="button"
+            className={`${styles.navItem} ${currentView === item.view ? styles.active : ''}`}
+            onClick={() => setCurrentView(item.view)}
+            disabled={isBlocked}
+            title={isBlocked ? reason('Switching views') : collapsed ? item.label : undefined}
+            aria-label={item.label}
+          >
+            <span className={styles.icon}>{item.icon}</span>
+            {!collapsed && <span className={styles.label}>{item.label}</span>}
+          </button>
+        );
+      })}
     </nav>
   );
 }

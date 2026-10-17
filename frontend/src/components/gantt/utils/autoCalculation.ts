@@ -7,8 +7,9 @@
  * 3. Project date adjustment - project dates encompass all phases
  */
 
-import type { Project, Phase, Subphase, DependencyType, StaffAssignment, EquipmentAssignment } from '@/types';
+import type { Project, Phase, Subphase, Dependency, DependencyType, StaffAssignment, EquipmentAssignment } from '@/types';
 import { updatePhase, updateSubphase, updateProject, updateStaffAssignment, updateEquipmentAssignment } from '@/api/endpoints/projects';
+import { parseLocalDate, formatLocalDate, toDateOnly } from '@/utils/date';
 
 // Accumulated updates to batch save to server
 export interface PendingUpdate {
@@ -25,17 +26,18 @@ export interface PendingUpdate {
   confirmed?: boolean;
   // Additional fields for staff assignment update
   allocation?: number;
+  /**
+   * Phase/subphase only: the full dependency list to write. Set by undo/redo
+   * (diffProjects) when a snapshot's links differ from the current ones, so a
+   * link created or removed after the snapshot is restored on the server too.
+   */
+  dependencies?: Dependency[];
 }
 
-/**
- * Format date as YYYY-MM-DD
- */
-function formatDateLocal(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
+// Every model date string is parsed with parseLocalDate (local midnight) and
+// written back with formatLocalDate (local components). Never `new Date(str)`:
+// that is UTC midnight and lands on the previous day west of UTC.
+const formatDateLocal = formatLocalDate;
 
 /**
  * Move staff assignments by offset
@@ -52,8 +54,8 @@ function moveStaffAssignmentsByOffset(
       continue;
     }
     
-    const oldStart = new Date(assignment.start_date);
-    const oldEnd = new Date(assignment.end_date);
+    const oldStart = parseLocalDate(assignment.start_date);
+    const oldEnd = parseLocalDate(assignment.end_date);
     
     // Skip if dates are invalid
     if (isNaN(oldStart.getTime()) || isNaN(oldEnd.getTime())) {
@@ -95,8 +97,8 @@ function moveEquipmentAssignmentsByOffset(
       continue;
     }
     
-    const oldStart = new Date(assignment.start_date);
-    const oldEnd = new Date(assignment.end_date);
+    const oldStart = parseLocalDate(assignment.start_date);
+    const oldEnd = parseLocalDate(assignment.end_date);
     
     // Skip if dates are invalid
     if (isNaN(oldStart.getTime()) || isNaN(oldEnd.getTime())) {
@@ -133,8 +135,8 @@ export function moveChildrenByOffset(
   pendingUpdates: PendingUpdate[]
 ): void {
   for (const child of children) {
-    const oldStart = new Date(child.start_date);
-    const oldEnd = new Date(child.end_date);
+    const oldStart = parseLocalDate(child.start_date);
+    const oldEnd = parseLocalDate(child.end_date);
     
     const newStart = new Date(oldStart);
     newStart.setDate(newStart.getDate() + dayOffset);
@@ -180,8 +182,8 @@ export function movePhasesWithProject(
   pendingUpdates: PendingUpdate[]
 ): void {
   for (const phase of project.phases ?? []) {
-    const oldStart = new Date(phase.start_date);
-    const oldEnd = new Date(phase.end_date);
+    const oldStart = parseLocalDate(phase.start_date);
+    const oldEnd = parseLocalDate(phase.end_date);
     
     const newStart = new Date(oldStart);
     newStart.setDate(newStart.getDate() + dayOffset);
@@ -363,17 +365,18 @@ export function cascadeDependentPhases(
   const changedPhase = findPhaseById(project, changedPhaseId);
   if (!changedPhase) return;
   
-  const predecessorEnd = new Date(changedPhase.end_date);
-  const predecessorStart = new Date(changedPhase.start_date);
+  const predecessorEnd = parseLocalDate(changedPhase.end_date);
+  const predecessorStart = parseLocalDate(changedPhase.start_date);
   
   // Find all phases that depend on the changed phase
   for (const phase of project.phases ?? []) {
     const deps = phase.dependencies ?? [];
-    const dep = deps.find(d => d.id === changedPhaseId);
+    // Entries naming a subphase predecessor are not about this phase
+    const dep = deps.find(d => d.id === changedPhaseId && d.entity !== 'subphase');
     
     if (dep) {
-      const successorStart = new Date(phase.start_date);
-      const successorEnd = new Date(phase.end_date);
+      const successorStart = parseLocalDate(phase.start_date);
+      const successorEnd = parseLocalDate(phase.end_date);
       
       const { newStart, newEnd } = calculateDependentDates(
         predecessorStart,
@@ -417,18 +420,19 @@ export function cascadeDependentSubphases(
   const changedSubphase = findSubphaseById(project, changedSubphaseId);
   if (!changedSubphase) return;
   
-  const predecessorEnd = new Date(changedSubphase.end_date);
-  const predecessorStart = new Date(changedSubphase.start_date);
+  const predecessorEnd = parseLocalDate(changedSubphase.end_date);
+  const predecessorStart = parseLocalDate(changedSubphase.start_date);
   
   // Helper to search for dependent subphases recursively
   const findDependentSubphases = (children: Subphase[]): void => {
     for (const subphase of children) {
       const deps = subphase.dependencies ?? [];
-      const dep = deps.find(d => d.id === changedSubphaseId);
+      // Entries naming a phase predecessor are not about this subphase
+      const dep = deps.find(d => d.id === changedSubphaseId && d.entity !== 'phase');
       
       if (dep) {
-        const successorStart = new Date(subphase.start_date);
-        const successorEnd = new Date(subphase.end_date);
+        const successorStart = parseLocalDate(subphase.start_date);
+        const successorEnd = parseLocalDate(subphase.end_date);
         
         const { newStart, newEnd } = calculateDependentDates(
           predecessorStart,
@@ -499,16 +503,16 @@ export function cascadeParentDatesUp(
     let latestEnd: Date | null = null;
     
     for (const child of children) {
-      const start = new Date(child.start_date);
-      const end = new Date(child.end_date);
+      const start = parseLocalDate(child.start_date);
+      const end = parseLocalDate(child.end_date);
       if (!earliestStart || start < earliestStart) earliestStart = start;
       if (!latestEnd || end > latestEnd) latestEnd = end;
     }
     
     if (!earliestStart || !latestEnd) break;
     
-    const currentStart = new Date(parent.start_date);
-    const currentEnd = new Date(parent.end_date);
+    const currentStart = parseLocalDate(parent.start_date);
+    const currentEnd = parseLocalDate(parent.end_date);
     
     let needsUpdate = false;
     
@@ -561,16 +565,16 @@ export function cascadePhaseDatesFromChildren(
   let latestEnd: Date | null = null;
   
   for (const child of phase.children) {
-    const start = new Date(child.start_date);
-    const end = new Date(child.end_date);
+    const start = parseLocalDate(child.start_date);
+    const end = parseLocalDate(child.end_date);
     if (!earliestStart || start < earliestStart) earliestStart = start;
     if (!latestEnd || end > latestEnd) latestEnd = end;
   }
   
   if (!earliestStart || !latestEnd) return;
   
-  const currentStart = new Date(phase.start_date);
-  const currentEnd = new Date(phase.end_date);
+  const currentStart = parseLocalDate(phase.start_date);
+  const currentEnd = parseLocalDate(phase.end_date);
   
   let needsUpdate = false;
   
@@ -615,8 +619,8 @@ export function autoAdjustProjectDates(
   let latestEnd: Date | null = null;
   
   for (const phase of phases) {
-    const phaseStart = new Date(phase.start_date);
-    const phaseEnd = new Date(phase.end_date);
+    const phaseStart = parseLocalDate(phase.start_date);
+    const phaseEnd = parseLocalDate(phase.end_date);
     
     if (!earliestStart || phaseStart < earliestStart) {
       earliestStart = phaseStart;
@@ -631,7 +635,9 @@ export function autoAdjustProjectDates(
   const newStartDate = formatDateLocal(earliestStart);
   const newEndDate = formatDateLocal(latestEnd);
   
-  if (project.start_date !== newStartDate || project.end_date !== newEndDate) {
+  const currentStartDate = project.start_date ? toDateOnly(project.start_date) : project.start_date;
+  const currentEndDate = project.end_date ? toDateOnly(project.end_date) : project.end_date;
+  if (currentStartDate !== newStartDate || currentEndDate !== newEndDate) {
     project.start_date = newStartDate;
     project.end_date = newEndDate;
     
@@ -662,22 +668,48 @@ export function autoAdjustProjectDates(
   }
 }
 
+/** One cascaded write that the server rejected. */
+export interface PendingUpdateFailure {
+  update: PendingUpdate;
+  error: unknown;
+}
+
 /**
- * Save all pending updates to the server
+ * Thrown by savePendingUpdates when at least one write failed. Every update is
+ * still attempted (they are independent rows), then the failures are reported
+ * together so the caller runs the optimistic-write failure protocol once
+ * (reload from the server + clear the undo stack).
  */
-export async function savePendingUpdates(pendingUpdates: PendingUpdate[]): Promise<void> {
-  const promises = pendingUpdates.map(update => {
-    if (update.type === 'phase') {
+export class PendingUpdatesError extends Error {
+  readonly failures: PendingUpdateFailure[];
+  readonly total: number;
+
+  constructor(failures: PendingUpdateFailure[], total: number) {
+    super(
+      `${failures.length} of ${total} update(s) failed to save: ` +
+        failures.map((f) => `${f.update.type} ${f.update.id}`).join(', ')
+    );
+    this.name = 'PendingUpdatesError';
+    this.failures = failures;
+    this.total = total;
+  }
+}
+
+function persistPendingUpdate(update: PendingUpdate): Promise<unknown> {
+  switch (update.type) {
+    case 'phase':
       return updatePhase(update.id, {
         start_date: update.start_date,
         end_date: update.end_date,
-      }).catch(err => console.error(`Failed to save phase ${update.id}:`, err));
-    } else if (update.type === 'subphase') {
+        ...(update.dependencies !== undefined ? { dependencies: update.dependencies } : {}),
+      });
+    case 'subphase':
       return updateSubphase(update.id, {
         start_date: update.start_date,
         end_date: update.end_date,
-      }).catch(err => console.error(`Failed to save subphase ${update.id}:`, err));
-    } else if (update.type === 'project') {
+        ...(update.dependencies !== undefined ? { dependencies: update.dependencies } : {}),
+      });
+    case 'project':
       return updateProject(update.id, {
         name: update.name!,
         start_date: update.start_date,
@@ -687,23 +719,46 @@ export async function savePendingUpdates(pendingUpdates: PendingUpdate[]): Promi
         sales_pm: update.sales_pm,
         volume: update.volume,
         confirmed: update.confirmed,
-      }).catch(err => console.error(`Failed to save project ${update.id}:`, err));
-    } else if (update.type === 'staffAssignment') {
+      });
+    case 'staffAssignment':
       return updateStaffAssignment(update.id, {
         start_date: update.start_date,
         end_date: update.end_date,
         allocation: update.allocation ?? 100, // Backend requires allocation
-      }).catch(err => console.error(`Failed to save staff assignment ${update.id}:`, err));
-    } else if (update.type === 'equipmentAssignment') {
+      });
+    case 'equipmentAssignment':
       return updateEquipmentAssignment(update.id, {
         start_date: update.start_date,
         end_date: update.end_date,
-      }).catch(err => console.error(`Failed to save equipment assignment ${update.id}:`, err));
+      });
+    default:
+      return Promise.resolve();
+  }
+}
+
+/**
+ * Save all pending updates to the server.
+ *
+ * All updates are attempted; if any fails, a PendingUpdatesError listing the
+ * failures is thrown after the others settle. Callers must treat that like
+ * any other persist failure: reload from the server and clear the undo stack
+ * (see utils/persistFailure.ts).
+ */
+export async function savePendingUpdates(pendingUpdates: PendingUpdate[]): Promise<void> {
+  const results = await Promise.allSettled(pendingUpdates.map(persistPendingUpdate));
+
+  const failures: PendingUpdateFailure[] = [];
+  results.forEach((result, i) => {
+    if (result.status === 'rejected') {
+      const update = pendingUpdates[i];
+      console.error(`Failed to save ${update.type} ${update.id}:`, result.reason);
+      failures.push({ update, error: result.reason });
     }
-    return Promise.resolve();
   });
-  
-  await Promise.all(promises);
+
+  if (failures.length > 0) {
+    throw new PendingUpdatesError(failures, pendingUpdates.length);
+  }
 }
 
 /**

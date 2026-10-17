@@ -24,7 +24,18 @@ from app.schemas.tenant import (
     ChangeAdminPasswordRequest,
 )
 from app.services.auth import validate_admin_session
-from app.services.encryption import generate_password, hash_password, verify_password
+from app.services.encryption import (
+    admin_password_needs_upgrade,
+    dummy_verify_admin_password,
+    generate_password,
+    hash_password,
+    verify_password,
+)
+from app.services.login_throttle import (
+    check_login_allowed,
+    record_login_failure,
+    record_login_success,
+)
 from app.services.master_db import get_master_db
 from app.utils import utcnow_naive
 
@@ -46,13 +57,15 @@ async def get_admin_session_id(request: Request) -> str | None:
     return cookie
 
 
-async def get_current_admin(
+async def get_current_admin_allow_password_change(
     request: Request,
     db: AsyncSession = Depends(get_master_db),
 ) -> AdminUser:
-    """Get current authenticated admin user.
+    """
+    Authenticated admin, even one who still has to change their password.
 
-    Uses the shared validate_admin_session service for session lookup/validation.
+    Only for the routes such an admin must reach: ``/auth/change-password``
+    and ``/auth/me``. Everything else uses ``get_current_admin``.
     """
     session_id = await get_admin_session_id(request)
 
@@ -72,13 +85,33 @@ async def get_current_admin(
     return admin
 
 
+MUST_CHANGE_PASSWORD_DETAIL = "Password change required before using the admin portal"
+
+
+async def get_current_admin(
+    admin: AdminUser = Depends(get_current_admin_allow_password_change),
+) -> AdminUser:
+    """Get current authenticated admin user.
+
+    Uses the shared validate_admin_session service for session lookup/validation.
+    An admin flagged ``must_change_password`` (e.g. the auto-created default
+    admin) gets 403 here until the password is changed.
+    """
+    if admin.must_change_password == 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=MUST_CHANGE_PASSWORD_DETAIL,
+        )
+    return admin
+
+
 async def get_current_admin_optional(
     request: Request,
     db: AsyncSession = Depends(get_master_db),
 ) -> AdminUser | None:
-    """Get current admin if authenticated, None otherwise."""
+    """Get current admin if authenticated (password change pending or not), else None."""
     try:
-        return await get_current_admin(request, db)
+        return await get_current_admin_allow_password_change(request, db)
     except HTTPException:
         return None
 
@@ -103,18 +136,30 @@ async def require_superadmin(
 @router.post("/auth/login", response_model=AdminLoginResponse)
 async def admin_login(
     data: AdminLoginRequest,
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_master_db),
 ):
     """Admin login."""
+    check_login_allowed("admin", request, data.email)
+
     result = await db.execute(select(AdminUser).where(AdminUser.email == data.email))
     admin = result.scalar_one_or_none()
 
+    if admin is None:
+        # Same PBKDF2 cost as a real check: timing must not reveal the account.
+        dummy_verify_admin_password(data.password)
     if not admin or not verify_password(data.password, admin.password_hash):
+        record_login_failure("admin", request, data.email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
         )
+    record_login_success("admin", request, data.email)
+
+    # Lazy upgrade of legacy (10 000-iteration salt:hash) or weaker hashes.
+    if admin_password_needs_upgrade(admin.password_hash):
+        admin.password_hash = hash_password(data.password)
 
     if not admin.is_active:
         raise HTTPException(
@@ -199,7 +244,8 @@ async def admin_me(
                 email=admin.email,
                 name=admin.name,
                 role=admin.role,
-            )
+            ),
+            must_change_password=admin.must_change_password == 1,
         )
     return AdminMeResponse(user=None)
 
@@ -207,7 +253,7 @@ async def admin_me(
 @router.post("/auth/change-password")
 async def change_admin_password(
     data: ChangeAdminPasswordRequest,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin_allow_password_change),
     db: AsyncSession = Depends(get_master_db),
 ):
     """Change current admin user's password."""

@@ -12,7 +12,7 @@ Staff CUD (Create/Update/Delete) operations are handled via
 User Management (/api/users routes). Staff = non-admin users assigned to sites.
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, select
@@ -28,6 +28,7 @@ from app.schemas.user import (
     StaffDetailResponse,
     StaffResponse,
 )
+from app.services.date_range import parse_day_range
 from app.services.response_builders import build_skills_list, get_max_capacity
 
 router = APIRouter()
@@ -145,8 +146,7 @@ async def get_staff_availability(
     Returns daily allocation percentages showing how much of
     the staff member's time is allocated and available.
     """
-    start = datetime.strptime(startDate, "%Y-%m-%d").date()
-    end = datetime.strptime(endDate, "%Y-%m-%d").date()
+    start, end = parse_day_range(startDate, endDate)
 
     # Get all assignments for this staff member that overlap with date range
     result = await db.execute(

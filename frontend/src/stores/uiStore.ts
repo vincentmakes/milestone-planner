@@ -2,9 +2,15 @@
  * UI Store
  * Manages transient UI state like modals, tooltips, and editing states
  * This state is NOT persisted - it resets on page refresh
+ *
+ * The Settings hub is unreachable while What-If mode is active: openSettings()
+ * and every legacy alias key refuse to open it. Configuration deletes (sites,
+ * equipment, users, ...) bypass the What-If queue and cascade on the server,
+ * while the sandbox keeps showing the orphaned plan data.
  */
 
 import { create } from 'zustand';
+import { useWhatIfStore } from './whatIfStore';
 import type {
   Project,
   Phase,
@@ -16,14 +22,13 @@ import type {
   Staff,
   Equipment,
   User,
-  Site,
 } from '@/types';
 
 // =============================================================================
 // MODAL TYPES
 // =============================================================================
 
-type ModalType = 
+export type ModalType = 
   | 'project'
   | 'phase'
   | 'subphase'
@@ -48,7 +53,59 @@ type ModalType =
   | 'customHoliday'
   | 'companyEvent'
   | 'equipmentBlock'
-  | 'kanbanCard';
+  | 'kanbanCard'
+  | 'settingsHub'
+  | 'myAbsences';
+
+// =============================================================================
+// SETTINGS HUB
+// =============================================================================
+
+/** Sections of the Settings hub (see components/settings/sections.tsx) */
+export type SettingsSectionId =
+  | 'general'
+  | 'sites'
+  | 'bank-holidays'
+  | 'company-events'
+  | 'users'
+  | 'skills'
+  | 'absence-types'
+  | 'equipment'
+  | 'equipment-types'
+  | 'predefined-phases'
+  | 'tags'
+  | 'sso';
+
+/**
+ * What the opened section should do first: show a site, open its "add" form,
+ * or open the item with this id in edit mode. `siteId` scopes site-bound items
+ * (holidays, events).
+ */
+export type SettingsIntent =
+  | { type: 'view'; siteId: number }
+  | { type: 'add'; siteId?: number }
+  | { type: 'edit'; id: number; siteId?: number };
+
+/**
+ * Legacy modal keys that now open the Settings hub at a section. Callers keep
+ * using openModal()/setActiveModal() with these keys; the hub opens instead.
+ */
+const SETTINGS_MODAL_ALIASES = new Map<string, SettingsSectionId>([
+  ['settings', 'general'],
+  ['manageSites', 'sites'],
+  ['siteManagement', 'sites'],
+  ['site', 'sites'],
+  ['bankHoliday', 'bank-holidays'],
+  ['customHoliday', 'bank-holidays'],
+  ['companyEvent', 'company-events'],
+  ['userManagement', 'users'],
+  ['manageEquipment', 'equipment'],
+  ['predefinedPhases', 'predefined-phases'],
+  ['ssoConfig', 'sso'],
+]);
+
+/** Legacy keys whose old modal was an "add" form */
+const SETTINGS_ADD_ALIASES = new Set(['customHoliday', 'companyEvent']);
 
 // =============================================================================
 // STATE INTERFACE
@@ -60,6 +117,10 @@ interface UIState {
   // ---------------------------------------------
   activeModal: ModalType | null;
   
+  // Settings hub: active section and the action it should take on open
+  settingsSection: SettingsSectionId | null;
+  settingsIntent: SettingsIntent | null;
+
   // Editing context for modals
   editingProject: Project | null;
   editingPhase: Phase | null;
@@ -71,7 +132,6 @@ interface UIState {
   editingStaff: Staff | null;
   editingEquipment: Equipment | null;
   editingUser: User | null;
-  editingSite: Site | null;
   
   // Context for creating new items
   modalContext: {
@@ -85,6 +145,8 @@ interface UIState {
     cardEntityType?: 'phase' | 'subphase';
     cardEntityId?: number;
     cardProjectId?: number;
+    // Modal to reopen when this one closes (e.g. VacationModal opened from My absences)
+    returnTo?: ModalType;
     // Phantom sibling presets
     phantomPreset?: {
       startDate: string;
@@ -207,6 +269,11 @@ interface UIState {
   // ---------------------------------------------
   openModal: (type: ModalType, context?: UIState['modalContext']) => void;
   closeModal: () => void;
+
+  // Settings hub. Without a section it reopens the last one shown.
+  openSettings: (section?: SettingsSectionId, intent?: SettingsIntent) => void;
+  setSettingsSection: (section: SettingsSectionId) => void;
+  clearSettingsIntent: () => void;
   
   // Edit mode setters
   setEditingProject: (project: Project | null) => void;
@@ -218,7 +285,6 @@ interface UIState {
   setEditingStaff: (staff: Staff | null) => void;
   setEditingEquipment: (equipment: Equipment | null) => void;
   setEditingUser: (user: User | null) => void;
-  setEditingSite: (site: Site | null) => void;
   
   // Convenience modal openers
   openProjectModal: (project?: Project) => void;
@@ -229,10 +295,9 @@ interface UIState {
   ) => void;
   openPhaseModal: (phase?: Phase, projectId?: number) => void;
   openSubphaseModal: (subphase?: Subphase, phaseId?: number, projectId?: number, parentSubphaseId?: number) => void;
-  openVacationModal: (vacation?: Vacation, staffId?: number) => void;
+  /** Open the vacation dialog; `returnTo` reopens that modal when it closes */
+  openVacationModal: (vacation?: Vacation, staffId?: number, returnTo?: ModalType) => void;
   openEquipmentBlockModal: (block?: EquipmentBlock, equipmentId?: number) => void;
-  openBankHolidayModal: () => void;
-  openSiteModal: () => void;
   setActiveModal: (modal: ModalType | string | null) => void;
   
   // ---------------------------------------------
@@ -357,6 +422,8 @@ interface UIState {
 const initialState = {
   // Modals
   activeModal: null,
+  settingsSection: null,
+  settingsIntent: null,
   editingProject: null,
   editingPhase: null,
   editingSubphase: null,
@@ -367,7 +434,6 @@ const initialState = {
   editingStaff: null,
   editingEquipment: null,
   editingUser: null,
-  editingSite: null,
   modalContext: {},
   
   // Tooltip
@@ -446,19 +512,64 @@ const initialState = {
 // STORE CREATION
 // =============================================================================
 
+/**
+ * State update that opens the Settings hub for a legacy modal key, or null when
+ * the key is not an alias.
+ */
+function settingsAliasState(
+  modal: string
+): Pick<UIState, 'activeModal' | 'settingsSection' | 'settingsIntent'> | null {
+  const section = SETTINGS_MODAL_ALIASES.get(modal);
+  if (!section) return null;
+  const intent: SettingsIntent | null = SETTINGS_ADD_ALIASES.has(modal) ? { type: 'add' } : null;
+  return { activeModal: 'settingsHub', settingsSection: section, settingsIntent: intent };
+}
+
+/** True while What-If mode is active — the Settings hub must not open then. */
+function settingsHubBlocked(): boolean {
+  return useWhatIfStore.getState().whatIfMode;
+}
+
+/** Does this modal key open the Settings hub (directly or as a legacy alias)? */
+function opensSettingsHub(modal: string): boolean {
+  return modal === 'settingsHub' || SETTINGS_MODAL_ALIASES.has(modal);
+}
+
 export const useUIStore = create<UIState>()((set) => ({
   ...initialState,
   
   // -----------------------------------------
   // MODAL ACTIONS
   // -----------------------------------------
-  openModal: (type, context = {}) => set({
-    activeModal: type,
-    modalContext: context,
+  openModal: (type, context = {}) => set((state) =>
+    opensSettingsHub(type) && settingsHubBlocked()
+      ? state
+      : {
+          ...(settingsAliasState(type) ?? { activeModal: type }),
+          modalContext: context,
+        }
+  ),
+
+  openSettings: (section, intent) => set((state) =>
+    settingsHubBlocked()
+      ? state
+      : {
+          activeModal: 'settingsHub',
+          settingsSection: section ?? state.settingsSection,
+          settingsIntent: intent ?? null,
+        }
+  ),
+
+  setSettingsSection: (section) => set({
+    settingsSection: section,
+    settingsIntent: null,
   }),
+
+  clearSettingsIntent: () => set({ settingsIntent: null }),
   
   closeModal: () => set({
     activeModal: null,
+    settingsIntent: null,
     editingProject: null,
     editingPhase: null,
     editingSubphase: null,
@@ -469,7 +580,6 @@ export const useUIStore = create<UIState>()((set) => ({
     editingStaff: null,
     editingEquipment: null,
     editingUser: null,
-    editingSite: null,
     modalContext: {},
   }),
   
@@ -482,7 +592,6 @@ export const useUIStore = create<UIState>()((set) => ({
   setEditingStaff: (staff) => set({ editingStaff: staff }),
   setEditingEquipment: (equipment) => set({ editingEquipment: equipment }),
   setEditingUser: (user) => set({ editingUser: user }),
-  setEditingSite: (site) => set({ editingSite: site }),
   
   // Convenience modal openers
   openProjectModal: (project) => set({
@@ -512,10 +621,13 @@ export const useUIStore = create<UIState>()((set) => ({
     modalContext: { phaseId, projectId, subphaseId: parentSubphaseId },
   }),
   
-  openVacationModal: (vacation, staffId) => set({
+  openVacationModal: (vacation, staffId, returnTo) => set({
     activeModal: 'vacation',
     editingVacation: vacation || null,
-    modalContext: staffId ? { staffId } : {},
+    modalContext: {
+      ...(staffId ? { staffId } : {}),
+      ...(returnTo ? { returnTo } : {}),
+    },
   }),
 
   openEquipmentBlockModal: (block, equipmentId) => set({
@@ -524,17 +636,13 @@ export const useUIStore = create<UIState>()((set) => ({
     modalContext: equipmentId ? { equipmentId } : {},
   }),
   
-  openBankHolidayModal: () => set({
-    activeModal: 'bankHoliday',
-  }),
-  
-  openSiteModal: () => set({
-    activeModal: 'site',
-  }),
-  
-  setActiveModal: (modal) => set({
-    activeModal: modal as ModalType | null,
-  }),
+  setActiveModal: (modal) => set((state) =>
+    modal && opensSettingsHub(modal) && settingsHubBlocked()
+      ? state
+      : (modal && settingsAliasState(modal)) || {
+          activeModal: modal as ModalType | null,
+        }
+  ),
   
   // -----------------------------------------
   // TOOLTIP ACTIONS

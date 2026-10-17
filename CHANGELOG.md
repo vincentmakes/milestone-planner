@@ -5,6 +5,149 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] - 2026-10-16
+
+### Added
+- **Tag groups.** Tags can be organised into groups such as *Project type* → Internal / Customer. A group can be **single-select**, so a project carries at most one of its tags, and the project dialog switches between them like radio buttons.
+- **Tags for one, several or all sites.** Each tag applies everywhere or only at the sites an admin picks; the project dialog and the filter only offer tags that apply to the project's site.
+- **Colour projects by a tag group.** A *Colour by* control in the Gantt header colours each project bar with the colour of the project's tag from the chosen group (Default keeps the standard colour). Remembered per site, like the tag filter and Group by.
+- **Filter projects by tag.** A **Tags** dropdown in the Gantt chart's project panel and in the Kanban toolbar lists the tags by group: pick any combination (several tags of a group match any of them, several groups narrow down) or "(No tag)" for projects without a tag from a group. The selection is remembered per site, like the custom-column visibility, and the panel shows how many projects are visible.
+- **Group the Gantt chart by a tag group.** A **Group by** button in the project panel splits the project list into collapsible sections, one per tag of the chosen group (shown as its coloured pill, with a project count, and as a band across the timeline), plus a last section for projects without a tag of that group. The grouping and the collapsed sections are remembered per site; Collapse all / Expand all act on every section at once.
+- **Settings → Tags** (admins): create, rename, recolour, group, reorder and delete tags and groups in one place, with the sites each tag applies to.
+- The site export workbook gained a **Tag groups** sheet and **Group**, **All sites** and **Sites** columns on the Tags sheet.
+
+### Changed
+- Tags and tag groups are managed by admins in Settings; the project dialog's tag field is now a picker only and no longer creates, renames or deletes tags. Attaching tags to a project still only needs the right to edit the project.
+- A tag or group change that would leave a project with two tags of a single-select group, or with a tag that no longer applies to its site, is refused with a message telling the admin how many projects are affected.
+- Deleting a site also deletes tags that were limited to that site only.
+- The Gantt project panel's header separates the view controls (staff & equipment, tag filter, column visibility) from the actions (manage columns, import, new project) with a divider and more spacing.
+- The Gantt project panel's header buttons now sit at the right edge of the whole panel, after the custom columns, instead of at the end of the name column; its dropdowns open towards the chart and never spill off its left edge.
+- Settings panels share one button style: every panel's toolbar has the same layout and divider, the Add buttons have the same size and plus icon everywhere, back links look alike, and the admin portal and My absences use the same buttons. Disabled buttons are dimmed the same way throughout the app.
+- Test coverage is now measured and enforced in CI (backend and frontend floors plus an 80 % gate on the lines a pull request changes), and the README shows live coverage badges.
+- Configuration edits made in Settings (absence types, skills, equipment types, phase templates, users, sites and equipment definitions) now take effect immediately even while What-If mode is on, like tags already did; What-If only sandboxes plan data.
+- What-If mode is offered in the Gantt chart only. While a What-If plan is open, the other views, the Settings window and notification links to the Kanban board wait until you apply or discard it; the controls say so, and nothing is lost.
+- Equipment and users cannot be deleted while a What-If plan is open, so the plan can never show bookings of something that no longer exists.
+
+### Fixed
+- On iPad and other touch devices, tag pills and colour swatches are no longer stretched vertically.
+- Reordering custom columns in the manager dialog is saved again (the reorder request was answered with a validation error).
+- A phase or phase template added after one at the first position no longer shares its sort position with it.
+- A tag created or recoloured while What-If mode is on no longer disappears until the plan is applied.
+- Refreshing public holidays no longer deletes a year's holidays when the holiday service could not be reached for that year.
+- A multi-day holiday or company event that starts before a requested date range but overlaps it is now returned by the date-range endpoints.
+- A custom holiday or company event longer than a year is rejected with a clear message instead of being silently cut at 366 days.
+- Timestamps such as comment times and audit entries are no longer shown 1–2 hours early; stored UTC values are sent as UTC.
+- A description typed for a new absence is kept when switching to the Import .ics tab and back.
+- Large .ics imports are sent in batches, so a calendar export with more than 1 000 entries no longer fails.
+- The project tree's expand button is disabled once every level is open, instead of staying active.
+- Tapping a Gantt bar on a touch screen works again instead of failing silently.
+- Dragging and resizing bars on the Gantt chart now works with a finger on touch screens: phases, subphases, projects and staff/equipment bookings. A swipe that starts on a bar you can edit moves the bar; swipe on empty space to scroll.
+- A touch that is cancelled mid-drag (an incoming call, for example) no longer opens the dialog or saves a half-moved bar.
+- Colleagues' screens now drop the projects of a deleted site at once, instead of showing them until the next reload.
+- The end-date check on the holiday and company-event forms shows the in-app message instead of the browser's own tooltip.
+- A WebSocket connection whose browser went away no longer counts as online.
+
+### Security
+- A user can no longer read another site's absence by requesting it by id; only their own absences and those of colleagues at their sites are visible.
+
+## [1.5.0] - 2026-10-15
+
+### Added
+- **Absence types.** Admins define the kinds of time off used across all sites — Holidays, Home Office, Illness, Business Trip and Training come ready-made — each with a colour and a "counts as unavailable" switch. Every absence is booked with a type. Only types that count as unavailable reduce someone's capacity in the workload views, so a Home Office day is shown on the timeline without taking the person out of the plan.
+- **Import `.ics` calendars into bank holidays and company events.** One file can hold many dates, and yearly recurring entries are expanded, so sites that cannot reach the public-holiday service can still be filled from a calendar export. A preview shows what will be imported and flags dates that already exist.
+- **Edit bank holidays and company events** after they have been created. An edited public holiday becomes a custom one and is kept when holidays are refreshed from the holiday service, instead of being overwritten or duplicated.
+- **Company events can apply to several sites** at once, so an audit or shutdown is entered once instead of once per site.
+- **My absences** in the user menu: everyone can list, add, edit and delete their own absences and import them from an `.ics` file, with the type prefilled from Outlook's "working elsewhere" status or a matching category.
+- The site export workbook gained an **Absence types** sheet, a **Type** column on the Vacations sheet and a **Sites** column on the Company events sheet.
+- **Equipment can belong to several sites**, the same way staff can. A shared instrument is entered once, appears in every site it is linked to, and can be booked by projects on any of them.
+- **Project managers can edit their own projects.** The person set as project manager may change the project's details, phases, subphases, assignments, equipment bookings and Kanban cards even with the User role; deleting the project still needs a superuser.
+- **Add yourself to a project.** Anyone can assign themselves to a project, phase or subphase ("Assign me" in the right-click menu, "Join this card" on the Kanban board), change or remove their own allocation, and leave again. Assigning other people is unchanged.
+- **Company events can close a site.** Tick "Site closure" on an event and everyone on the event's sites is unavailable for its dates: the Staff workload view shows 0% with the event's name, and assignments on those days are flagged.
+- The site export workbook now has a **Sites** column on the Equipment sheet and a **Staff unavailable** column on the Company events sheet.
+
+### Changed
+- All administration now lives in a single **Settings** window, grouped into General, Sites & calendar, People, Resources, Projects and Integrations. The sidebar's admin section is reduced to one Settings entry, and each person only sees the sections their role can change — superusers no longer see settings they are not allowed to save.
+- Bank holidays and company events have their own sections in Settings, with a site picker, year filter, add, edit, delete, import and export.
+- Public holidays fetched from the holiday service can now be deleted; they return on the next refresh.
+- Changes to bank holidays and company events now appear for other signed-in users straight away, without reloading the page.
+- The server refuses to start in production when `SESSION_SECRET` is empty or one of the published example values; the self-contained compose file now reads it from `.env`.
+- New and changed passwords must be at least 8 characters, in the workspace and in the admin portal. Existing passwords keep working.
+- Staff allocations must be between 1 and 100 % everywhere, including Kanban assignees; 0 is no longer accepted.
+- Deleting a site now consistently deletes its projects, whichever path deletes it.
+- Deleting a user keeps their Kanban comments, shown as written by "Deleted user".
+- Plain users can edit custom-column values; column definitions stay admin-only.
+- A superuser can rename or delete an equipment type only when every piece of equipment of that type is at one of their sites.
+- Plain users see the absences of colleagues who share a site with them, not of everyone in the workspace.
+- Sites scope what the interface shows, not what a superuser may edit: superusers act across the whole workspace, as before. The documentation now says so.
+- Equipment types no longer offer "Add type" (types are created through equipment); Delete now really deletes a type, or explains that it is still in use.
+- Calendar (`.ics`) imports are limited to 5 MB.
+- Adding absences and equipment blocks is unavailable in What-If mode, like other creates.
+- A failed What-If Apply shows a banner in the header with Retry, Discard and Dismiss instead of a one-off alert; changes made while Apply was reloading are kept.
+- An "Offline" badge appears in the header while live updates are disconnected, and live sync reconnects by itself when the network returns or the tab becomes visible again.
+- The WebSocket diagnostic endpoints are admin-only, and admin-portal roles and workspace status values are validated.
+- Behind a reverse proxy, set `FORWARDED_ALLOW_IPS` to the proxy's address so sign-in limits apply per visitor instead of to everyone at once; a public IP address is also limited to 100 failed sign-ins per 15 minutes across all accounts.
+
+### Fixed
+- Superusers can edit users' details, sites and skills again. Every save was rejected because the form always sent the role and active status, which only admins may change; superusers now see those fields read-only, and the actions reserved for admins (adding, deactivating and deleting users) are no longer offered to them.
+- Today's availability in the Staff view and on resource cards now respects recurring absences (for example "every Wednesday"). The whole date range of a recurring absence was previously treated as time off.
+- Deleting a phase, subphase, project or assignment from the right-click menu no longer switches the Gantt chart to a different site. It could jump back to the site that was open when the page was loaded.
+- Reordering predefined phases now saves. Every reorder was previously rejected and the list quietly snapped back to its old order.
+- Projects in the Gantt chart and on the Kanban board keep a stable order. Projects with the same start date could swap places on every refresh, projects added after a custom order was set drifted as their dates changed, and dragging a project downward or below the last row put it in the wrong place.
+- Sites with more than 50 projects (archived ones included) now load all of them; the rest were previously left out.
+- The timeline now opens centred on today in every view, instead of on a date months in the past (for example, the previous year).
+- Deleting a site no longer deletes equipment that is also linked to other sites; it is only removed from the deleted site.
+- The equipment list no longer stops at 50 items.
+- Dates no longer shift by one day for people whose computer is set to a timezone west of UTC. Dragging, resizing or linking a bar from the Americas used to store the phase, its parent and the project one day early, and phase rows and CSV exports showed dates a day off.
+- Undo after discarding or applying a What-If plan no longer writes the discarded changes to the server; the undo history is cleared when What-If starts and ends.
+- What-If plans are no longer wiped from the screen by a colleague's change or by creating something inside the sandbox, and a failed Apply now stops, shows the error and reloads instead of silently dropping the rest of the plan.
+- A drag or resize is no longer abandoned mid-gesture when a colleague's change arrives or the chart is zoomed.
+- Custom-column values and definitions now update live for other users.
+- Deleting a phase now also removes its subphases and their assignments, comments and custom-column values instead of leaving them behind.
+- Importing an MS Project or CSV file now puts finished tasks in the Kanban "Done" column and keeps completion between 0 and 100.
+- Single-site installations that auto-initialise the database on start now get every schema update applied in place when upgrading from a version before 1.4.
+- Project managers and superusers no longer see custom-column, absence or archived-project editors that the server would reject; superusers can again save edits to users who belong to sites they do not manage.
+- Typed input in the phase, subphase and assignment dialogs survives live updates from other users, pressing Escape in a picker closes only the picker, and removing an assignee or a comment on a Kanban card asks for confirmation first.
+- The critical path no longer drops the end of a dependency chain when a successor starts before its predecessor finishes.
+- Logging out of the admin portal returns to the login screen instead of a blank loading page.
+- Choosing "Viewer" as an organisation's default SSO role no longer breaks the first sign-in of new users; the option is gone and the server rejects invalid roles.
+- Changing your own password works again (it always failed before).
+- An expired or revoked session returns to the login screen instead of leaving every save failing silently, and logging out clears the What-If sandbox, undo history, notifications and custom-column data so nothing carries over to the next person on the same tab.
+- Pressing Enter twice or double-clicking no longer creates duplicates in the project, phase, subphase, assignment, absence, equipment-block, holiday, event, skill, equipment, user, site, absence-type, custom-column and admin-portal dialogs, and a second click on a calendar Delete no longer shows a false error.
+- The Settings window now asks before discarding unsaved input in Users, Equipment, Sites, Skills, Bank holidays, Company events, Absence types and Equipment types.
+- Week numbers follow ISO 8601 (1–3 January 2027 show as week 53), and the current month is highlighted in the timeline header.
+- Setting completion with the slider also moves the card's Kanban status for the person who made the change.
+- In quarter and year views, dropping a staff member or equipment books five days where the pointer is; in week and month views the preview snaps to whole days.
+- Dependency arrows and the critical path no longer attach to the wrong item when a phase and a subphase share an id; cycle checks catch cycles between phases and subphases and no longer block valid shortcut links; "Delete Dependency" works on older links; undo and redo also restore dependency links on the server.
+- Dates where the end comes before the start are rejected on projects, phases, subphases, assignments, bookings and absences, and unknown sites, managers, staff, skills or malformed date filters give a clear error instead of a server error.
+- Deleting projects or sites no longer leaves custom-column values and comments behind; existing leftovers are cleaned up on the next start.
+- Batch custom-column edits are validated like single edits, a failed change that cascades to sub-items is undone, custom-column delete errors are shown and reordering is a single request.
+- A site's city, country and region can be cleared, a person on several sites appears once in the absence staff picker, and the company-event import no longer marks an event as existing when it is missing on one of the selected sites.
+- An admin can no longer try to change their own role or delete their own account, and in the admin portal, Escape inside an inline edit of the organisation dialog cancels the edit instead of closing the dialog. Logging out of the admin portal no longer sends a workspace session check.
+- The project manager is included in CSV and XML exports again, oversized import files are refused, and MS Project parsing no longer blocks other requests.
+- The API documentation works under workspace URLs in multi-tenant mode; suspending, archiving, editing or deleting a workspace takes effect immediately instead of up to a minute later; a workspace whose database connection is missing shows "unavailable" instead of possibly reading another database.
+- The container stops when database initialisation fails instead of serving a half-initialised schema, and the legacy migration helpers that created a wrong-shaped events table are removed.
+- Instance-settings changes and changes to the signed-in user (role, sites, deactivation) sync live; staff-note changes no longer trigger a full reload on every client; Kanban comment counts are no longer re-requested on every live update.
+- If loading the workspace after login fails, an error screen with Retry appears; keyboard shortcuts no longer act on the Gantt behind an open dialog; month navigation from the 31st no longer skips a month; a download no longer fails on an unusual file name. Gantt scrolling and dragging re-render less.
+- CSV exports of phases or subphases with several predecessors no longer shift the following columns (the Predecessors cell is now quoted).
+
+### Security
+- A superuser can no longer change the email address or password of other users, or edit administrator accounts, which previously allowed taking over an admin account.
+- Deactivating, deleting or demoting a user now ends their sessions immediately; every request re-checks the live account status and role.
+- Resetting a tenant admin's password from the admin portal now stores it hashed; it was stored in plain text until the next login.
+- The Entra client secret is no longer written to the application log when SSO settings are saved.
+- Passwords longer than 72 bytes are rejected with a clear message instead of crashing the login, and the bcrypt dependency is pinned to the 4.x line. An account whose password was longer than 72 bytes when it was set must have its password reset by an admin, because earlier versions silently kept only the first 72 bytes.
+- Spreadsheet and CSV exports escape cell text that starts with a formula character, so a malicious name or comment cannot run as a formula when the file is opened.
+- The staff and equipment availability endpoints now validate their dates and cap the range at one year; an unbounded range could exhaust the server.
+- Frontend build dependencies were updated so the security audit passes again.
+- The workspace-level SSO client secret is now stored encrypted; existing plaintext secrets are encrypted automatically on the next start, the settings screen only ever shows it masked, and saving with the masked value no longer overwrites the real secret on any save route.
+- Single sign-on now only completes in the browser that started it and a sign-in link cannot be reused; a sign-in left open for more than 10 minutes has to be restarted.
+- After 10 failed sign-in attempts for the same e-mail from the same address within 15 minutes, further attempts are refused for a while, in the workspace and in the admin portal; sign-in takes the same time whether or not the e-mail exists.
+- Admin-portal passwords use a much stronger hash, upgraded automatically on the next sign-in, and an admin who must change their password can do nothing else in the portal until they have.
+- Health checks and error messages no longer reveal database hosts, users or SQL details.
+- Real-time connections opened from other websites are refused, and people who are deactivated, deleted, demoted or have their password reset are disconnected from live updates immediately. When the connection is refused but the session turns out to be valid, live updates reconnect once instead of showing "Offline" for good.
+- An unexpected error during single sign-on now returns to the sign-in page with a message and clears the sign-in cookie, instead of a blank server error.
+- The admin-portal login no longer keeps the plaintext password in memory after a forced password change.
+
 ## [1.4.0] - 2026-09-07
 
 ### Added

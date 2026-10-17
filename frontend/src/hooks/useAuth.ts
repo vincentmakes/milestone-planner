@@ -5,6 +5,7 @@
 
 import { useEffect, useCallback } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { resetAllStores } from '@/stores';
 import { checkAuth, login as apiLogin, logout as apiLogout } from '@/api';
 import type { User } from '@/types';
 
@@ -23,7 +24,6 @@ export function useAuth(): UseAuthReturn {
   const setCurrentUser = useAppStore((s) => s.setCurrentUser);
   const setAuthChecking = useAppStore((s) => s.setAuthChecking);
   const setAuthenticated = useAppStore((s) => s.setAuthenticated);
-  const reset = useAppStore((s) => s.reset);
 
   // Check authentication status on mount
   useEffect(() => {
@@ -69,11 +69,12 @@ export function useAuth(): UseAuthReturn {
     } catch (err) {
       console.error('Logout error:', err);
     } finally {
-      setCurrentUser(null);
-      setAuthenticated(false);
-      reset();
+      // Every store, not just appStore: a What-If queue, undo history or
+      // inbox left behind would carry over to the next user on this tab.
+      resetAllStores();
+      setAuthChecking(false);
     }
-  }, [setCurrentUser, setAuthenticated, reset]);
+  }, [setAuthChecking]);
 
   return {
     isLoading: isAuthChecking,

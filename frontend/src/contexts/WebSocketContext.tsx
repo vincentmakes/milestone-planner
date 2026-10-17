@@ -14,10 +14,25 @@ import { loadAllProjects } from '@/api/endpoints/projects';
 import { getStaff } from '@/api/endpoints/staff';
 import { getEquipment, getEquipmentBlocks } from '@/api/endpoints/equipment';
 import { getVacations } from '@/api/endpoints/vacations';
-import { getSites } from '@/api/endpoints/sites';
+import {
+  getSites,
+  getBankHolidays,
+  getCompanyEvents,
+  buildHolidayDateSet,
+  buildEventDateSet,
+} from '@/api/endpoints/sites';
 import { skillsApi } from '@/api/endpoints/skills';
-import { tagsApi } from '@/api/endpoints/tags';
+import { tagsApi, tagGroupsApi } from '@/api/endpoints/tags';
+import { absenceTypesApi } from '@/api/endpoints/absenceTypes';
+import { getCustomColumnsWithValues } from '@/api/endpoints/customColumns';
+import { getInstanceSettings } from '@/api/endpoints/settings';
+import { fetchCurrentUser } from '@/api/endpoints/auth';
 import { useAppStore } from '@/stores/appStore';
+import { expireSession } from '@/stores';
+import { useCustomColumnStore } from '@/stores/customColumnStore';
+import { useWhatIfStore } from '@/stores/whatIfStore';
+import { slicesForEntity, WHAT_IF_SANDBOXED_SLICES } from './wsSlices';
+import type { Slice } from './wsSlices';
 
 // Re-export types for convenience
 export type { PresenceUser, ChangePayload } from '@/hooks/useWebSocket';
@@ -27,6 +42,11 @@ interface WebSocketContextValue {
   connectionState: ConnectionState;
   /** Whether connected to WebSocket */
   isConnected: boolean;
+  /**
+   * Live sync is down right now (browser offline, or the socket dropped and
+   * has not come back yet). For a small header indicator; see useWebSocket.
+   */
+  offline: boolean;
   /** List of online users (excluding self) */
   onlineUsers: PresenceUser[];
   /** Recent changes from other users */
@@ -45,58 +65,6 @@ interface WebSocketProviderProps {
   children: React.ReactNode;
 }
 
-/** Map an entity_type from the server to the data slice that needs to be reloaded. */
-type Slice =
-  | 'projects'
-  | 'staff'
-  | 'equipment'
-  | 'equipmentBlocks'
-  | 'vacations'
-  | 'sites'
-  | 'skills'
-  | 'tags';
-
-function slicesForEntity(entityType: string): Slice[] {
-  switch (entityType) {
-    // Project tree (and assignments live inside projects)
-    case 'project':
-    case 'phase':
-    case 'subphase':
-    case 'assignment':            // legacy generic, kept for back-compat
-    case 'staff_assignment':
-    case 'equipment_assignment':
-    case 'predefined_phase':
-    case 'note':
-    case 'custom_column':
-    case 'bank_holiday':
-    case 'company_event':
-      return ['projects'];
-    case 'staff':
-    case 'user':
-      return ['staff', 'projects'];
-    case 'equipment':
-      return ['equipment', 'projects'];
-    case 'equipment_block':
-      return ['equipmentBlocks'];
-    case 'vacation':
-      return ['vacations'];
-    case 'site':
-      return ['sites'];
-    case 'skill':
-      return ['skills', 'staff'];
-    case 'tag':
-      return ['tags', 'projects'];
-    case 'card_comment':
-      // Comment threads and counts have their own fetches. Without this case
-      // every comment anyone posts would refetch all eight slices -- including
-      // the per-project project load -- on every connected client.
-      return [];
-    default:
-      // Unknown type: refresh everything to be safe.
-      return ['projects', 'staff', 'equipment', 'equipmentBlocks', 'vacations', 'sites', 'skills', 'tags'];
-  }
-}
-
 export function WebSocketProvider({ children }: WebSocketProviderProps) {
   const setProjects = useAppStore((s) => s.setProjects);
   const setStaff = useAppStore((s) => s.setStaff);
@@ -106,6 +74,12 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   const setSites = useAppStore((s) => s.setSites);
   const setSkills = useAppStore((s) => s.setSkills);
   const setTags = useAppStore((s) => s.setTags);
+  const setTagGroups = useAppStore((s) => s.setTagGroups);
+  const setAbsenceTypes = useAppStore((s) => s.setAbsenceTypes);
+  const setBankHolidays = useAppStore((s) => s.setBankHolidays);
+  const setCompanyEvents = useAppStore((s) => s.setCompanyEvents);
+  const setInstanceSettings = useAppStore((s) => s.setInstanceSettings);
+  const setCurrentUser = useAppStore((s) => s.setCurrentUser);
 
   // Debounce refresh to avoid multiple rapid requests
   const refreshTimeoutRef = useRef<number | null>(null);
@@ -116,6 +90,9 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   const pendingSlicesRef = useRef<Set<Slice>>(new Set());
   // If a change arrives while we're already refreshing, schedule another pass.
   const restageRef = useRef<Set<Slice>>(new Set());
+  // Sandboxed slices (projects, custom columns) whose refresh arrived during
+  // What-If mode. Refreshed once What-If exits — see WHAT_IF_SANDBOXED_SLICES.
+  const deferredWhatIfRef = useRef<Set<Slice>>(new Set());
 
   const runRefresh = useCallback(async () => {
     if (inFlightRef.current) return;
@@ -123,10 +100,25 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     if (slices.size === 0) return;
 
     inFlightRef.current = true;
-    const batch = Array.from(slices);
     pendingSlicesRef.current = new Set();
 
-    console.info('[WS] refreshing slices', batch);
+    // Never replace the What-If sandbox with server state: defer those slices.
+    const whatIfActive = useWhatIfStore.getState().whatIfMode;
+    const batch: Slice[] = [];
+    for (const slice of slices) {
+      if (whatIfActive && WHAT_IF_SANDBOXED_SLICES.has(slice)) {
+        deferredWhatIfRef.current.add(slice);
+      } else {
+        batch.push(slice);
+      }
+    }
+
+    if (batch.length > 0) {
+      console.info('[WS] refreshing slices', batch);
+    }
+    if (whatIfActive && deferredWhatIfRef.current.size > 0) {
+      console.info('[WS] What-If active, deferring', Array.from(deferredWhatIfRef.current));
+    }
 
     const tasks: Array<Promise<unknown>> = [];
     for (const slice of batch) {
@@ -153,7 +145,70 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
           tasks.push(skillsApi.getAll().then(setSkills).catch((e) => console.error('[WS] skills refresh failed', e)));
           break;
         case 'tags':
-          tasks.push(tagsApi.getAll().then(setTags).catch((e) => console.error('[WS] tags refresh failed', e)));
+          // Groups and tags are one slice: a group edit can re-group or recolour tags.
+          // Fetched together and written back to back, so no render sees a
+          // tag whose group_id points at a not-yet-loaded group.
+          tasks.push(
+            Promise.all([tagsApi.getAll(), tagGroupsApi.getAll()])
+              .then(([tags, groups]) => {
+                setTags(tags);
+                setTagGroups(groups);
+              })
+              .catch((e) => console.error('[WS] tags refresh failed', e))
+          );
+          break;
+        case 'absenceTypes':
+          tasks.push(absenceTypesApi.getAll().then(setAbsenceTypes).catch((e) => console.error('[WS] absence types refresh failed', e)));
+          break;
+        case 'siteCalendar': {
+          // Read the site at refresh time, not render time, and drop the
+          // result if the user switched site while it was in flight.
+          const siteId = useAppStore.getState().currentSite?.id;
+          if (siteId == null) break;
+          const isStillCurrent = () => useAppStore.getState().currentSite?.id === siteId;
+          tasks.push(
+            getBankHolidays(siteId)
+              .then((holidays) => {
+                if (isStillCurrent()) setBankHolidays(holidays, buildHolidayDateSet(holidays));
+              })
+              .catch((e) => console.error('[WS] bank holidays refresh failed', e)),
+            getCompanyEvents(siteId)
+              .then((events) => {
+                if (isStillCurrent()) setCompanyEvents(events, buildEventDateSet(events));
+              })
+              .catch((e) => console.error('[WS] company events refresh failed', e)),
+          );
+          break;
+        }
+        case 'customColumns': {
+          // Same "still the current site" guard as siteCalendar.
+          const siteId = useAppStore.getState().currentSite?.id;
+          if (siteId == null) break;
+          tasks.push(
+            getCustomColumnsWithValues(siteId)
+              .then((data) => {
+                if (useAppStore.getState().currentSite?.id !== siteId) return;
+                const store = useCustomColumnStore.getState();
+                store.setCustomColumns(data.columns);
+                store.setCustomColumnValues(data.values);
+              })
+              .catch((e) => console.error('[WS] custom columns refresh failed', e)),
+          );
+          break;
+        }
+        case 'settings':
+          tasks.push(getInstanceSettings().then(setInstanceSettings).catch((e) => console.error('[WS] settings refresh failed', e)));
+          break;
+        case 'currentUser':
+          tasks.push(
+            fetchCurrentUser()
+              .then((user) => {
+                // null = this session is no longer valid (user deleted/disabled).
+                if (user) setCurrentUser(user);
+                else expireSession();
+              })
+              .catch((e) => console.error('[WS] current user refresh failed', e)),
+          );
           break;
       }
     }
@@ -168,7 +223,11 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       for (const s of next) pendingSlicesRef.current.add(s);
       runRefresh();
     }
-  }, [setProjects, setStaff, setEquipment, setEquipmentBlocks, setVacations, setSites, setSkills, setTags]);
+  }, [
+    setProjects, setStaff, setEquipment, setEquipmentBlocks, setVacations, setSites,
+    setSkills, setTags, setTagGroups, setAbsenceTypes, setBankHolidays, setCompanyEvents,
+    setInstanceSettings, setCurrentUser,
+  ]);
 
   // A notification push is a live hint; the bell also reloads on mount/focus,
   // because the connection manager is per-process and cannot reach a user
@@ -190,9 +249,31 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     // refresh, but the receiving user still feels the change near-instantly.
     refreshTimeoutRef.current = window.setTimeout(runRefresh, 200);
   }, [runRefresh]);
+
+  // The server closed the socket for an invalid / revoked session (4001), a
+  // disabled user or a disallowed Origin (both 4003). Confirm with
+  // GET /api/auth/me before logging out: only a definite "no user" ends the
+  // session; a network error or a still-valid session (Origin case) leaves it.
+  // Resolves to true when the session is still valid, so the socket retries
+  // once instead of staying offline for the tab's lifetime.
+  const handleSessionInvalid = useCallback((): Promise<boolean> => {
+    return fetchCurrentUser()
+      .then((user) => {
+        if (!user) {
+          expireSession();
+          return false;
+        }
+        return true;
+      })
+      .catch((e) => {
+        console.warn('[WS] session check failed', e);
+        return false;
+      });
+  }, []);
   
   const {
     connectionState,
+    offline,
     onlineUsers,
     recentChanges,
     connect,
@@ -201,7 +282,24 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     autoConnect: true,
     onChangeReceived: handleChangeReceived,
     onNotificationReceived: handleNotificationReceived,
+    onSessionInvalid: handleSessionInvalid,
   });
+
+  // When What-If mode exits, run the refreshes that were deferred during it.
+  useEffect(() => {
+    return useWhatIfStore.subscribe((state, prev) => {
+      if (!prev.whatIfMode || state.whatIfMode) return;
+      const deferred = deferredWhatIfRef.current;
+      if (deferred.size === 0) return;
+      deferredWhatIfRef.current = new Set();
+      const target = inFlightRef.current ? restageRef.current : pendingSlicesRef.current;
+      for (const slice of deferred) target.add(slice);
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+      refreshTimeoutRef.current = window.setTimeout(runRefresh, 200);
+    });
+  }, [runRefresh]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -241,6 +339,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     () => ({
       connectionState,
       isConnected,
+      offline,
       onlineUsers,
       recentChanges,
       getChangesForEntity,
@@ -250,6 +349,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     [
       connectionState,
       isConnected,
+      offline,
       onlineUsers,
       recentChanges,
       getChangesForEntity,

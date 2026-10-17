@@ -35,7 +35,8 @@ class CardAssigneeCreate(BaseModel):
 
     staff_id: int
     # Resolved server-side from the assignee's max_capacity when omitted.
-    allocation: int | None = Field(None, ge=0, le=100)
+    # 1..100 like every other staff booking (0 would be a booking of nobody).
+    allocation: int | None = Field(None, ge=1, le=100)
 
 
 class CardAssigneeResponse(BaseModel):
@@ -63,7 +64,8 @@ class CardCommentResponse(BaseModel):
     entity_type: str
     entity_id: int
     project_id: int
-    author_id: int
+    # Both null once the author's account was deleted (the comment stays).
+    author_id: int | None = None
     author_name: str | None = None
     body: str
     mentioned_user_ids: list[int] = []

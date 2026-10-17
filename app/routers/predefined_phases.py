@@ -5,6 +5,8 @@ Handles CRUD operations for phase templates.
 Matches the Node.js API at /api/predefined-phases exactly.
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +21,8 @@ from app.schemas.predefined_phases import (
     PredefinedPhaseResponse,
     PredefinedPhaseUpdate,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -73,7 +77,9 @@ async def create_predefined_phase(
     """
     # Get max sort_order
     result = await db.execute(select(func.max(PredefinedPhase.sort_order)))
-    max_order = result.scalar() or -1
+    # A maximum of 0 is a real row, not "no rows": compare with None.
+    current_max = result.scalar()
+    max_order = -1 if current_max is None else current_max
 
     # Create new phase
     phase = PredefinedPhase(
@@ -92,7 +98,8 @@ async def create_predefined_phase(
             raise HTTPException(
                 status_code=400, detail="A phase with this name already exists"
             ) from e
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        logger.exception("Database error while saving predefined phases")
+        raise HTTPException(status_code=500, detail="Could not save the changes") from e
 
     return phase
 
@@ -157,7 +164,8 @@ async def update_predefined_phase(
             raise HTTPException(
                 status_code=400, detail="A phase with this name already exists"
             ) from e
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        logger.exception("Database error while saving predefined phases")
+        raise HTTPException(status_code=500, detail="Could not save the changes") from e
 
     return phase
 

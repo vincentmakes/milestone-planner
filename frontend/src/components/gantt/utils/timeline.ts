@@ -11,12 +11,13 @@ import {
   startOfWeek,
   startOfMonth,
   endOfMonth,
-  getWeek,
+  getISOWeek,
   isWeekend,
   isSameDay,
   startOfQuarter,
 } from 'date-fns';
 import type { ViewMode } from '@/types';
+import { addDaysToDateString } from '@/utils/date';
 
 // =============================================================================
 // TYPES
@@ -35,12 +36,23 @@ export interface TimelineCell {
   isCompanyEvent: boolean;
   companyEventName?: string;
   companyEventColor?: string | null;
+  /** A company event flagged as a site closure covers this day */
+  isSiteClosure: boolean;
   dayOfWeek: number;
   isFirstOfWeek: boolean;
   isFirstOfMonth: boolean;
   weekNumber: number;
   monthLabel: string;
   yearLabel: string;
+}
+
+/** What a company event contributes to one day's cell */
+interface EventInfo {
+  name?: string;
+  isEvent: boolean;
+  color?: string | null;
+  /** The covering event is flagged as a site closure */
+  isClosure: boolean;
 }
 
 export interface TimelineHeader {
@@ -79,7 +91,7 @@ export function generateTimelineCells(
   bankHolidayDates: Set<string>,
   bankHolidays: Array<{ date: string; end_date?: string | null; name: string; is_custom?: boolean }>,
   companyEventDates: Set<string> = new Set(),
-  companyEvents: Array<{ date: string; end_date?: string | null; name: string; color?: string | null }> = [],
+  companyEvents: Array<{ date: string; end_date?: string | null; name: string; color?: string | null; counts_as_unavailable?: boolean }> = [],
   showWeekends: boolean = true
 ): TimelineCell[] {
   const today = new Date();
@@ -102,18 +114,21 @@ export function generateTimelineCells(
     };
   };
   
-  const getEventInfo = (date: Date): { name?: string; isEvent: boolean; color?: string | null } => {
+  const getEventInfo = (date: Date): EventInfo => {
     const dateStr = format(date, 'yyyy-MM-dd');
-    // Find event that includes this date (handles multi-day events)
-    const event = companyEvents.find((e) => {
+    // Find events that include this date (handles multi-day events); a site
+    // closure wins over a plain event on the same day
+    const covering = companyEvents.filter((e) => {
       const startDate = normalizeDate(e.date);
       const endDate = normalizeDate(e.end_date || e.date);
       return dateStr >= startDate && dateStr <= endDate;
     });
+    const event = covering.find((e) => e.counts_as_unavailable) ?? covering[0];
     return {
       name: event?.name,
       isEvent: companyEventDates.has(dateStr),
       color: event?.color,
+      isClosure: !!event?.counts_as_unavailable,
     };
   };
 
@@ -151,7 +166,7 @@ function generateWeekViewCells(
   today: Date,
   bankHolidayDates: Set<string>,
   getHolidayInfo: (date: Date) => { name?: string; isCustom: boolean },
-  getEventInfo: (date: Date) => { name?: string; isEvent: boolean; color?: string | null }
+  getEventInfo: (date: Date) => EventInfo
 ): TimelineCell[] {
   const cells: TimelineCell[] = [];
   const { before, after } = PERIODS_CONFIG.week;
@@ -178,7 +193,7 @@ function generateMonthViewCells(
   today: Date,
   bankHolidayDates: Set<string>,
   getHolidayInfo: (date: Date) => { name?: string; isCustom: boolean },
-  getEventInfo: (date: Date) => { name?: string; isEvent: boolean; color?: string | null }
+  getEventInfo: (date: Date) => EventInfo
 ): TimelineCell[] {
   const cells: TimelineCell[] = [];
   const { before, after } = PERIODS_CONFIG.month;
@@ -205,7 +220,7 @@ function generateQuarterViewCells(
   today: Date,
   bankHolidayDates: Set<string>,
   getHolidayInfo: (date: Date) => { name?: string; isCustom: boolean },
-  getEventInfo: (date: Date) => { name?: string; isEvent: boolean; color?: string | null }
+  getEventInfo: (date: Date) => EventInfo
 ): TimelineCell[] {
   const cells: TimelineCell[] = [];
   const { before, after } = PERIODS_CONFIG.quarter;
@@ -242,7 +257,7 @@ function generateYearViewCells(
   _today: Date,
   _bankHolidayDates: Set<string>,
   _getHolidayInfo: (date: Date) => { name?: string; isCustom: boolean },
-  _getEventInfo: (date: Date) => { name?: string; isEvent: boolean; color?: string | null }
+  _getEventInfo: (date: Date) => EventInfo
 ): TimelineCell[] {
   const cells: TimelineCell[] = [];
   const { before, after } = PERIODS_CONFIG.year;
@@ -285,10 +300,11 @@ function createYearViewCell(
     bankHolidayName: undefined,
     isCompanyEvent: false, // Not applicable for month-level cells
     companyEventName: undefined,
+    isSiteClosure: false,
     dayOfWeek,
     isFirstOfWeek: date.getDate() <= 7 && dayOfWeek === 1,
     isFirstOfMonth: true, // Every cell is start of month
-    weekNumber: getWeek(date, { weekStartsOn: 1 }),
+    weekNumber: getISOWeek(date), // ISO 8601 (Monday start, week 1 holds Jan 4)
     monthLabel: format(date, 'MMM'),
     yearLabel: format(date, 'yyyy'),
   };
@@ -302,7 +318,7 @@ function createCell(
   today: Date,
   bankHolidayDates: Set<string>,
   getHolidayInfo: (date: Date) => { name?: string; isCustom: boolean },
-  getEventInfo: (date: Date) => { name?: string; isEvent: boolean; color?: string | null }
+  getEventInfo: (date: Date) => EventInfo
 ): TimelineCell {
   const dateStr = format(date, 'yyyy-MM-dd');
   const dayOfWeek = date.getDay();
@@ -321,10 +337,11 @@ function createCell(
     isCompanyEvent: eventInfo.isEvent,
     companyEventName: eventInfo.name,
     companyEventColor: eventInfo.color,
+    isSiteClosure: eventInfo.isEvent && eventInfo.isClosure,
     dayOfWeek,
     isFirstOfWeek: dayOfWeek === 1, // Monday
     isFirstOfMonth: date.getDate() === 1,
-    weekNumber: getWeek(date, { weekStartsOn: 1 }),
+    weekNumber: getISOWeek(date), // ISO 8601 (Monday start, week 1 holds Jan 4)
     monthLabel: format(date, 'MMM'),
     yearLabel: format(date, 'yyyy'),
   };
@@ -371,7 +388,8 @@ function generateMonthHeaders(cells: TimelineCell[]): TimelineHeader[] {
   const headers: TimelineHeader[] = [];
   let currentMonth = '';
   let currentSpan = 0;
-  const today = new Date();
+  // Same key shape as monthKey below (yearLabel = 'yyyy', monthLabel = 'MMM')
+  const todayKey = format(new Date(), 'yyyy-MMM');
 
   cells.forEach((cell, index) => {
     const monthKey = `${cell.yearLabel}-${cell.monthLabel}`;
@@ -381,7 +399,7 @@ function generateMonthHeaders(cells: TimelineCell[]): TimelineHeader[] {
         headers.push({
           label: currentMonth.split('-')[1] + ' ' + currentMonth.split('-')[0],
           span: currentSpan,
-          isCurrentPeriod: false,
+          isCurrentPeriod: currentMonth === todayKey,
         });
       }
       currentMonth = monthKey;
@@ -395,7 +413,7 @@ function generateMonthHeaders(cells: TimelineCell[]): TimelineHeader[] {
       headers.push({
         label: currentMonth.split('-')[1] + ' ' + currentMonth.split('-')[0],
         span: currentSpan,
-        isCurrentPeriod: format(today, 'yyyy-MMM') === currentMonth,
+        isCurrentPeriod: currentMonth === todayKey,
       });
     }
   });
@@ -608,6 +626,52 @@ export function calculateBarPosition(
   return { left, width };
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The `days`-day date range whose bar, drawn with `calculateBarPosition`, is
+ * centred on pixel `x` — used to preview and create a resource drop.
+ *
+ * Daily-cell views (week/month) count cells, as before. Quarter (week cells)
+ * and year (month cells) views invert the proportional time scale of
+ * `calculateBarPosition`, so "5 days" stays 5 calendar days at any zoom
+ * instead of 5 weeks or 5 months.
+ */
+export function centredDayRangeAtX(
+  x: number,
+  cells: TimelineCell[],
+  cellWidth: number,
+  viewMode: ViewMode,
+  days: number
+): { start_date: string; end_date: string } | null {
+  if (!cells.length || cellWidth <= 0 || days < 1) return null;
+
+  let start: string;
+  if (viewMode === 'week' || viewMode === 'month') {
+    const idx = Math.floor(x / cellWidth - days / 2);
+    start = cells[Math.max(0, Math.min(idx, cells.length - 1))].dateStr;
+  } else {
+    const first = new Date(cells[0].date);
+    first.setHours(0, 0, 0, 0);
+    const last = cells[cells.length - 1];
+    const end =
+      viewMode === 'quarter' && last.dateEnd
+        ? new Date(last.dateEnd)
+        : new Date(last.date.getFullYear(), last.date.getMonth() + 1, 0);
+    end.setHours(23, 59, 59, 999);
+
+    const totalWidth = cells.length * cellWidth;
+    const clampedX = Math.max(0, Math.min(x, totalWidth));
+    const pointer = new Date(first.getTime() + (clampedX / totalWidth) * (end.getTime() - first.getTime()));
+    const pointerDay = format(pointer, 'yyyy-MM-dd');
+    const midnight = new Date(pointer.getFullYear(), pointer.getMonth(), pointer.getDate());
+    const fraction = (pointer.getTime() - midnight.getTime()) / DAY_MS;
+    // Nearest whole-day start of a bar centred on the pointer
+    start = addDaysToDateString(pointerDay, Math.round(fraction - days / 2));
+  }
+  return { start_date: start, end_date: addDaysToDateString(start, days - 1) };
+}
+
 /**
  * Find the cell index for a given date
  */
@@ -626,6 +690,21 @@ export function calculateTodayPosition(
   const todayIndex = cells.findIndex((cell) => cell.isToday);
   if (todayIndex === -1) return null;
   return todayIndex * cellWidth + cellWidth / 2;
+}
+
+/**
+ * scrollLeft that centres today in a viewport of `containerWidth`, or null when
+ * today is outside the timeline. Timelines open here: they start months before
+ * the current date, so scrollLeft 0 shows the past.
+ */
+export function calculateTodayScrollLeft(
+  cells: TimelineCell[],
+  cellWidth: number,
+  containerWidth: number
+): number | null {
+  const todayPosition = calculateTodayPosition(cells, cellWidth);
+  if (todayPosition === null) return null;
+  return Math.max(0, todayPosition - containerWidth / 2);
 }
 
 /**

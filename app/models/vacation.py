@@ -36,6 +36,12 @@ class Vacation(Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     description: Mapped[str] = mapped_column(String(200), default="Vacation", nullable=False)
+    # NULL (legacy rows, or a deleted type) is treated as "unavailable".
+    absence_type_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("absence_types.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
     # Relationships

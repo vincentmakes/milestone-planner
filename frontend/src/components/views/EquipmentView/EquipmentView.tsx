@@ -19,7 +19,8 @@ import {
 import { useDataLoader } from '@/hooks/useDataLoader';
 import { useTimelineScrollSync } from '@/contexts/TimelineScrollContext';
 import { deleteEquipmentBlock } from '@/api';
-import { generateTimelineCells, generateTimelineHeaders } from '@/components/gantt/utils/timeline';
+import { canManageAnyProject, isPrivileged } from '@/utils/permissions';
+import { generateTimelineCells, generateTimelineHeaders, calculateTodayScrollLeft } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
 import { EquipmentTimelineBody } from './EquipmentTimelineBody';
@@ -88,8 +89,13 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   // What is each equipment doing right now: 'blocked' | 'booked' | (absent = available)
   const todayStatusMap = useEquipmentTodayStatus();
 
-  // Check if user can drag equipment to assign / manage blocks
-  const canDrag = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  // Dragging an equipment row onto the Gantt books it on the drop target's
+  // project, so it is open to anyone who manages at least one project; the
+  // drop overlay (ResourceDropOverlay.canDropOn) then accepts only projects
+  // the user may edit. Equipment blocks (maintenance / defect windows) are
+  // not project data and stay with admins and superusers.
+  const canBook = canManageAnyProject(currentUser, projects);
+  const canManageBlocks = isPrivileged(currentUser);
 
   // Per-row expansion state (mirrors StaffView)
   const [expandedEquipment, setExpandedEquipment] = useState<Set<number>>(new Set());
@@ -248,20 +254,20 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
     scrollContainer.scrollTo({ left: scrollTo, behavior: 'smooth' });
   }, [embedded, scrollToTodayTrigger, cells, cellWidth]);
 
-  // Restore horizontal timeline scroll on mount (standalone only — Gantt's Timeline persists when embedded).
+  // Position the timeline on mount (standalone only — Gantt's Timeline handles it when embedded).
   useEffect(() => {
     if (embedded || hasRestoredScroll.current) return;
     const scrollContainer = timelineScrollRef.current;
     if (!scrollContainer) return;
-    if (timelineScrollLeft > 0) {
-      requestAnimationFrame(() => {
-        scrollContainer.scrollLeft = timelineScrollLeft;
-        hasRestoredScroll.current = true;
-      });
-    } else {
-      hasRestoredScroll.current = true;
-    }
-  }, [embedded, timelineScrollLeft]);
+    if (cells.length === 0) return;
+    hasRestoredScroll.current = true;
+    // This session's position when coming back from another view, else today.
+    requestAnimationFrame(() => {
+      scrollContainer.scrollLeft = timelineScrollLeft > 0
+        ? timelineScrollLeft
+        : calculateTodayScrollLeft(cells, cellWidth, scrollContainer.clientWidth) ?? 0;
+    });
+  }, [embedded, timelineScrollLeft, cells, cellWidth]);
 
   // Save scroll position (debounced) on every scroll, while also forwarding to the embedded sync hook.
   const handleTimelineScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
@@ -489,16 +495,16 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
               return (
                 <div key={equip.id} className={styles.equipmentWrapper}>
                   <div
-                    className={`${styles.equipmentRow} ${canDrag ? styles.draggable : ''}`}
+                    className={`${styles.equipmentRow} ${canBook ? styles.draggable : ''}`}
                     onClick={() => toggleEquipmentExpand(equip.id)}
-                    draggable={canDrag}
-                    onDragStart={canDrag ? (e) => {
+                    draggable={canBook}
+                    onDragStart={canBook ? (e) => {
                       e.stopPropagation();
                       handleDragStart(e, 'equipment', equip.id, equip.name);
                     } : undefined}
-                    onDragEnd={canDrag ? handleDragEnd : undefined}
+                    onDragEnd={canBook ? handleDragEnd : undefined}
                   >
-                    {canDrag && (
+                    {canBook && (
                       <div className={styles.dragHandle} title="Drag to assign">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                           <circle cx="9" cy="5" r="2" />
@@ -542,8 +548,8 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
                       {equipBlocks.map((block) => (
                         <div
                           key={`b-${block.id}`}
-                          className={`${styles.detailRow} ${canDrag ? styles.clickable : ''} ${styles.blockRow}`}
-                          onClick={canDrag ? () => openEquipmentBlockModal(block) : undefined}
+                          className={`${styles.detailRow} ${canManageBlocks ? styles.clickable : ''} ${styles.blockRow}`}
+                          onClick={canManageBlocks ? () => openEquipmentBlockModal(block) : undefined}
                         >
                           <span className={`${styles.detailType} ${styles.block}`}>
                             {block.reason || 'Block'}
@@ -554,7 +560,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
                           <span className={styles.dateBadge}>
                             {formatBlockDateRange(block.start_date, block.end_date)}
                           </span>
-                          {canDrag && (
+                          {canManageBlocks && (
                             <span
                               className={styles.deleteBtn}
                               onClick={(e) => {
@@ -573,7 +579,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
                       ))}
 
                       {/* Add block placeholder */}
-                      {canDrag && (
+                      {canManageBlocks && (
                         <div
                           className={`${styles.detailRow} ${styles.addRow}`}
                           onClick={() => openEquipmentBlockModal(undefined, equip.id)}
@@ -607,7 +613,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
                         </div>
                       ))}
 
-                      {equipBookings.length === 0 && equipBlocks.length === 0 && !canDrag && (
+                      {equipBookings.length === 0 && equipBlocks.length === 0 && !canManageBlocks && (
                         <div className={styles.detailRow}>
                           <span className={styles.noAssignments}>No bookings or blocks</span>
                         </div>
@@ -655,7 +661,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
               blocksMap={equipmentBlocksMap}
               overlapMap={overlapMap}
               expandedEquipment={expandedEquipment}
-              canManage={canDrag}
+              canManage={canManageBlocks}
               cells={cells}
               cellWidth={cellWidth}
               totalWidth={totalWidth}
