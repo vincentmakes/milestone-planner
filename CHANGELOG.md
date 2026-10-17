@@ -5,6 +5,18 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] - 2026-10-17
+
+### Added
+- Light phase and subphase colours now get dark text, so labels stay readable on any bar colour.
+
+### Changed
+- Errors show where they happen instead of in a browser pop-up: settings panels, the admin portal and the project export dialog display the message in place, and actions without a form of their own (deleting from the right-click menu, a refused dependency link, a card move the server rejected) show a notice at the bottom right that clears itself.
+- The on/off settings for a site, a user, equipment, SSO auto-create and the company-event site closure are real switches, like the absence-type settings.
+- Every dropdown, filter panel, popover and menu closes the same way: with Escape (which puts the focus back on its button), by clicking outside it, or by tabbing out of it. Escape closes only the innermost one.
+- Icon-only row actions (edit, delete, rename, activate, export) have one size and are named for screen readers after the row they act on; the admin-portal dialogs are announced as dialogs with a named close button.
+- Presence avatars, activity toasts and Kanban assignees use one shared colour palette, so a person has the same colour everywhere.
+
 ## [1.6.2] - 2026-10-17
 
 ### Changed

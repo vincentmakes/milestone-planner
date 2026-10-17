@@ -297,8 +297,8 @@ Debt: 103 raw `z-index` literals versus 14 token reads. New code uses the scale.
 
 The header does not use these. Its four density tiers (`full` ≥ 1600, `compact` ≥ 1280,
 `condensed` ≥ 1024, `minimal` below) are defined once in `hooks/useHeaderDensity.ts` and applied
-as `data-density` (§3.11). Debt: off-scale `@media` widths remain in a few stylesheets (768 px ×6,
-600 px ×4, 500 px ×1) — don't add more.
+as `data-density` (§3.11). Every other `@media` width in a stylesheet is 640 or 1024 px — don't
+add an off-scale one.
 
 ### 2.13 The S-Theme palette
 
@@ -431,12 +431,11 @@ its top: a ghost `md` `Button` with `BackIcon`, labelled with where it goes (**B
 **Row actions.** Edit, delete and similar actions repeated on every row are compact **28 px**
 icon-only buttons (`.iconBtn` / `.actionBtn` / `.editBtn` in the panel's module) with
 `PanelIcons` at their default size, each with an `aria-label` that names the row (`Delete ISO
-Audit`) and usually a `title`. They stay compact so a long list remains scannable. Debt: the
-Equipment, Users, Equipment types and Skills panels use 32 px, Sites has no fixed size, several
-rows carry a `title` but no `aria-label`, two icon-only confirm/cancel pairs (`UsersPanel`,
-`EquipmentPanel` inline edits) have no accessible name, and *My absences* uses text `ghost sm`
-buttons. None of these class names is on the mobile exclusion list, so on phones they grow to
-44 px (§7).
+Audit`) and usually a `title`. They stay compact so a long list remains scannable. The inline
+confirm/cancel pairs (`UsersPanel`, `EquipmentPanel` inline type/skill add) are 28 px too, named
+**Add type** / **Cancel adding a type**. Debt: *My absences* uses text `ghost sm` buttons. None
+of these class names is on the mobile exclusion list, so on phones they grow to 44 px (§7) — a
+decision, not an oversight.
 
 ### 3.4 Forms
 
@@ -448,10 +447,18 @@ buttons. None of these class names is on the mobile exclusion list, so on phones
   `fullWidth`. 36 px.
 - **`ToggleSwitch`** (`components/common/ToggleSwitch`): every on/off *setting* or preference. A
   visually hidden checkbox with `role="switch"`, so keyboard, screen-reader and label behaviour
-  come for free; pass `label` for visible text or `aria-label` when there is none. Used by
-  General, Tags, SSO and Absence types. Debt: bare checkboxes remain for the Active flags in
-  `SiteForm`, `UsersPanel` and `EquipmentPanel`, SSO auto-create, the site-closure flag, and the
-  entity flags in dialogs (Confirmed, Archived, Milestone).
+  come for free; pass `label` for visible text or `aria-label` when there is none. Every setting
+  flag uses it (General, Tags, SSO incl. auto-create, Absence types, the Active flags of sites,
+  users and equipment, the company-event site-closure flag). Entity flags inside dialogs
+  (Confirmed, Archived, Milestone) stay checkboxes — the rule is scoped to settings.
+- **`Notice`** (`components/common/Notice`): the one inline message box. `tone` = `error` |
+  `warning` | `info` | `success` (accent token text and border on its alpha tint, `0.75rem 1rem`,
+  `--radius-md`); `role` defaults to `alert` for errors and `status` otherwise; `onDismiss` adds a
+  labelled close button; `className` / `style` for spacing. Every settings panel and admin modal
+  renders its error through it. For an action with no form of its own (a context-menu delete, a
+  refused dependency link, a Kanban move the server rejected) call `uiStore.showFlash(message,
+  tone)`: `layout/FlashNotice` renders it bottom-right above the activity feed and clears it after
+  6 s or on Dismiss.
 - **`AllocationSlider`** (`components/common/AllocationSlider`): the one control for a staff
   allocation, on the Gantt and the Kanban card. 5 % steps from 5 to 100; `onChange` fires on
   every step and `onCommit` once on release, so a caller that saves listens to `onCommit` only.
@@ -501,8 +508,9 @@ guard the rule.
   nest).
 - Standalone dialogs that can't use `Modal` — the admin-portal modals in
   `components/admin/modals/` — must not attach a close handler to their overlay and use the
-  `useEscapeKey` hook (`src/hooks/useEscapeKey.ts`) for Escape. Debt: they lack `role="dialog"`
-  and a labelled close button.
+  `useEscapeKey` hook (`src/hooks/useEscapeKey.ts`) for Escape, and carry `role="dialog"`,
+  `aria-modal="true"`, `aria-labelledby` pointing at their `<h2>` (a `useId`) and a close button
+  named **Close dialog**.
 
 ### 3.6 Dropdowns, popovers and context menus
 
@@ -513,26 +521,26 @@ A new non-modal overlay (dropdown, filter panel, popover, context menu) closes:
 - on Escape — listened for in the capture phase with propagation stopped, so the key closes only
   this panel and never reaches the app-wide shortcuts — after which focus returns to the trigger.
 
-`TagFilterDropdown` and `TagGroupChoiceDropdown` are the reference implementations. A panel with
-checkboxes or radios is a non-modal `role="dialog"` (not a `menu`) with an `aria-label`; its
-trigger carries `aria-expanded` and `aria-haspopup="dialog"`.
+All three come from one hook, `useDismissableOverlay({ open, onClose, wrapperRef, triggerRef? })`
+(`src/hooks/useDismissableOverlay.ts`), which returns the `onBlur` to put on the wrapper. Never
+hand-roll a click-outside effect. `TagFilterDropdown` and `TagGroupChoiceDropdown` are the
+reference users; the header overflow menu, `UserMenu`, the Panels dropdown, `NotificationBell`
+(which also `aria-controls` its panel), the `ProjectPanel` column-visibility dropdown,
+`CustomColumnHeader` filters, the Staff and Equipment view filters, `DependencyPopup` and
+`ContextMenu` all use it. A panel with checkboxes or radios is a non-modal `role="dialog"` (not
+a `menu`) with an `aria-label`; its trigger carries `aria-expanded` and `aria-haspopup="dialog"`.
 
-`ContextMenu` (`components/common/ContextMenu`) is the right-click menu: items take `danger`,
-`divider`, `disabled` plus a `title` giving the reason, and the menu keeps itself inside the
-viewport.
-
-Debt (closing on mousedown only, no focus-out, bubble-phase Escape, or `aria-haspopup="true"`):
-`HeaderOverflowMenu`, `ContextMenu`, `Header`, `UserMenu`, `NotificationBell`, the
-`ProjectPanel` column-visibility dropdown, `CustomColumnHeader`, the Staff and Equipment view
-filters, `DependencyPopup`. Bring them to the rule when you touch them; don't copy them.
+`ContextMenu` (`components/common/ContextMenu`) is the right-click menu: a `role="menu"` of
+`role="menuitem"` buttons (tests select them by that role); items take `danger`, `divider`,
+`disabled` plus a `title` giving the reason, and the menu keeps itself inside the viewport.
 
 ### 3.7 Tags and pills
 
 Tags are rounded pills filled with the tag colour. The text colour always comes from
 `barTextColor(tag.color)` (`utils/tags.ts`): white or near-black, whichever contrasts more, so
-a pill stays readable on light colours. Don't hard-code `color: white` on a coloured background
-(debt: `PhaseBar` and `ProjectBar` still do on user-chosen colours; `ProjectBar` uses
-`barTextColor` only in colour-by mode).
+a pill stays readable on light colours. Don't hard-code `color: white` on a coloured background:
+`PhaseBar` and `ProjectBar` set their text colour inline from `barTextColor(color)` too (the
+`.darkText` class drops the label shadow).
 
 ```tsx
 <span className={styles.pill} style={{ backgroundColor: tag.color, color: barTextColor(tag.color) }}>
@@ -609,11 +617,11 @@ allowed in `Header.module.css` / `WhatIfToggle.module.css` are the ≤ 640 px mo
   `Loading X...` text in the list's slot. A busy button swaps its label (§3.2).
 - **Empty**: centred `--text-muted` text that distinguishes *nothing yet* (`No tags yet. Add one
   below.`) from *nothing matches* (`No cards match the current filter.`).
-- **Errors**: an inline `.error` box in the dialog or panel — `--accent-red` text on
-  `--accent-red-alpha` (older panels: `rgba(239,68,68,.1)`), `0.75rem` padding, `role="alert"`.
-  What-If "blocked" notices use the same box with `role="status"`. A failed initial load shows
-  `LoadErrorScreen` with **Retry**. Debt: `alert()` remains in 23 places (10 in the admin portal);
-  replace with the inline box when you touch them.
+- **Errors**: `<Notice tone="error">` in the dialog or panel (§3.2), next to what it is about;
+  an action without a form reports through `uiStore.showFlash()`. There is no `alert()` left in
+  the app — don't add one. What-If "blocked" notices use the dialogs' `.error` box with
+  `role="status"` (debt: those dialog boxes still predate `Notice`; move them when you touch a
+  dialog). A failed initial load shows `LoadErrorScreen` with **Retry**.
 - **Confirmation**: destructive actions confirm with `window.confirm` before the call (44 call
   sites), worded `Delete X "Name"? … This cannot be undone.` There is no shared confirm dialog
   yet (the custom one in `StaffView` for deleting an absence is the lone exception); adding one is
@@ -626,10 +634,11 @@ allowed in `Header.module.css` / `WhatIfToggle.module.css` are the ≤ 640 px mo
 
 ### 3.13 Presence, notifications and activity
 
-- `OnlineUsers` shows avatars coloured by `id % 8` (debt: the palette is duplicated in
-  `ActivityFeed`); the header tier caps how many render.
+- `OnlineUsers`, `ActivityFeed` and the Kanban card assignees colour a person with
+  `avatarColorFor(id)` (`utils/avatarColor.ts`, one eight-colour palette keyed by id); the header
+  tier caps how many avatars render.
 - `NotificationBell` is a popover with an unread count, relative times (`5m ago`) and the derived
-  due reminders merged in; it follows the mousedown-outside close only (§3.6 debt).
+  due reminders merged in; it dismisses through `useDismissableOverlay` (§3.6).
 - `ActivityFeed` is a polite live region (`role="status" aria-live="polite"`) of bottom-right
   toasts.
 
@@ -653,16 +662,18 @@ and tests select buttons by role and exact name.
 | Log out | `LogoutIcon` | 14 px |
 | Drag handle | `DragHandleIcon` | 16 px |
 
-Debt: inline 16 px svgs remain in the row actions of the Equipment types, Skills, Predefined
-phases, Users, Sites and Equipment panels.
+Row actions in the Settings panels are 28 px buttons rendering these icons (`CheckIcon`,
+`CloseIcon` for an inline confirm/cancel pair, `CheckCircleIcon` / `CircleIcon` for an
+activate toggle), each with an `aria-label` naming the row (`Edit Bob Brown`, `Delete HPLC`)
+next to its `title`.
 
 **Documented exception — the Gantt header.** The project panel's header actions (staff and
 equipment toggle, tag filter, group by, colour by, column visibility, custom-column manager,
 import, new project) are compact 28 px buttons, mostly icon-only, because the header sits above
 a dense timeline where 36 px labelled buttons would take too much room. Keep them compact, give
-each a `title` *and* an accessible name, mark svgs `aria-hidden`, and give on/off toggles
-`aria-pressed` (debt: the staff/equipment toggle lacks it, the raw header buttons have `title`
-only, and `.newProjectBtn` has no fixed height).
+each a `title` *and* an `aria-label`, mark svgs `aria-hidden`, give on/off toggles
+`aria-pressed` and dropdown triggers `aria-expanded` + `aria-haspopup` (debt: `.newProjectBtn`
+has no fixed height).
 
 ---
 
@@ -711,8 +722,7 @@ only, and `.newProjectBtn` has no fixed height).
   `docs/user-guide/keyboard-shortcuts.md`.
 - Kanban cards are `role="button"`, focusable, Enter/Space activate; the activity feed is a
   polite live region; error boxes are `role="alert"`.
-- Known gaps: no focus trap or focus restore in `Modal`; admin modals without `role="dialog"`;
-  the unlabelled row actions listed in §3.3.
+- Known gaps: no focus trap or focus restore in `Modal` (next PR).
 
 ---
 
@@ -736,16 +746,16 @@ only, and `.newProjectBtn` has no fixed height).
 
 | Do | Don't |
 | --- | --- |
-| `var(--accent-red)` | `#ef4444`, `rgba(239, 68, 68, …)` — debt: 137 hex literals in 39 module files, 59 red rgba literals; worst files `DependencyPopup` (12), `StaffTimelineBody` (9), `KanbanCard` (8), `EquipmentTimelineBody` (8), `CompletionSlider` (8), `TimelineBody` (7); in TSX `SkillsPanel` (10), `OnlineUsers` (8), `ActivityFeed` (8) |
+| `var(--accent-red)`, `color-mix(in srgb, var(--accent-red) 25%, transparent)` for a tint, `var(--shadow-md)` for a shadow | `#ef4444`, `rgba(239, 68, 68, …)` — the per-file counts in `src/styles/__tests__/rawColorAllowlist.json` (357 literals in 71 module files at 1.7.0) are a ratchet: the guard test fails when a file's count rises; lower a file's number when you pay its debt |
 | `--border-color`, `--accent-blue`, `--radius-md`, `--font-size-sm` (the tokens in use) | The alias tokens `--border-default`, `--accent-primary`, or a new spacing token for one file |
-| A `var(--x)` only when `--x` is defined in `styles/` or set by the component itself | A fallback inside `var()` to paper over an undefined token (the guard test rejects both) |
+| A `var(--x)` only when `--x` is defined in `styles/` or set by the component itself | A fallback inside `var()` — on an undefined token it hides the typo, on a defined one it is dead weight; the guard test rejects both |
 | `<Button>` for actions, `md` in toolbars and footers | A raw `<button>` with local styles for an action; `sm` in a toolbar |
 | `Modal` with explicit Close / Cancel and Escape | Backdrop-click close, in any dialog |
 | `ToggleSwitch` for a setting | A bare checkbox for a setting |
 | `data-density` selectors in header CSS | Pixel breakpoints in header CSS above 640 px |
 | Select a raw store slice and `useMemo`, or `useShallow` | A store selector that returns a new array or object (Zustand 5 re-renders forever) |
 | `parseLocalDate` / `formatLocalDate` | `new Date('2026-01-05')` |
-| The `.error` box with `role="alert"` | `alert()` for a recoverable error |
+| `<Notice tone="error">` in place, `uiStore.showFlash()` for a detached action | `alert()` — there are none left |
 | `aria-label` naming the row on an icon button | A `title` alone |
 | Classes joined with `[…].filter(Boolean).join(' ')` or a template string | A class-name library (`clsx` was removed as unused) |
 | camelCase class names in a co-located `X.module.css` | Global utility classes (`.flex`, `.gap-*`, `.sr-only` in `global.css` are unused) or snake_case classes keyed off API values (`NotificationBell` debt) |
