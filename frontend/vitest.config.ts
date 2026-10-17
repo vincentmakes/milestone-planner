@@ -51,10 +51,10 @@ export default defineConfig({
       // them. Set from the CI totals (Node 24, 2026-10-16: lines 88.4,
       // statements 87.16, functions 87.8, branches 76.59), not a local run.
       thresholds: {
-        lines: 87.9,
-        statements: 86.6,
-        functions: 87.3,
-        branches: 76.0,
+        lines: 88.2,
+        statements: 87.0,
+        functions: 87.6,
+        branches: 76.5,
       },
     },
   },
