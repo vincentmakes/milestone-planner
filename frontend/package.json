@@ -2,6 +2,7 @@
   "name": "milestone-frontend",
   "private": true,
   "version": "1.0.0",
+  "license": "FSL-1.1-MIT",
   "type": "module",
   "engines": {
     "node": ">=24"

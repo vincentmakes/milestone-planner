@@ -4,10 +4,16 @@
 [![Frontend CI](https://github.com/vincentmakes/milestone-planner/actions/workflows/frontend.yml/badge.svg?branch=main)](https://github.com/vincentmakes/milestone-planner/actions/workflows/frontend.yml)
 [![Backend coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/vincentmakes/milestone-planner/coverage/backend.json)](https://github.com/vincentmakes/milestone-planner/actions/workflows/backend.yml?query=branch%3Amain)
 [![Frontend coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/vincentmakes/milestone-planner/coverage/frontend.json)](https://github.com/vincentmakes/milestone-planner/actions/workflows/frontend.yml?query=branch%3Amain)
+[![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue)](LICENSE)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-3776AB.svg)](https://www.python.org/)
+[![React 18](https://img.shields.io/badge/react-18-61DAFB.svg)](https://react.dev/)
+[![GitHub Sponsors Badge](https://img.shields.io/badge/GitHub%20Sponsors-FF009D?logo=githubsponsors&logoColor=fff&style=flat-square)](https://github.com/sponsors/vincentmakes)
+
+[Documentation](https://docs-milestone.verdet.me) | [User Guide](https://docs-milestone.verdet.me/user-guide/getting-started/) | [Admin Guide](https://docs-milestone.verdet.me/admin-guide/overview/) | [Changelog](CHANGELOG.md)
 
 <img width="1034" height="139" alt="Screenshot 2026-05-04 at 22 55 43" src="https://github.com/user-attachments/assets/277f8f49-e300-4134-8ded-247b6ce9eb22" />  
 
-A comprehensive R&D project management platform for multi-site organizations.
+An open-source R&D project management platform for multi-site organizations.
 
 
 <img width="1440" height="481" alt="Screenshot 2026-05-04 at 22 53 48" src="https://github.com/user-attachments/assets/1ce98a58-67b6-4a28-815b-1372c1b118c2" />  
@@ -20,15 +26,19 @@ A comprehensive R&D project management platform for multi-site organizations.
 
 ## Features
 
-- **Gantt chart visualization** — Interactive timeline with drag & drop, resize phases
-- **Resource management** — Staff allocation with percentage-based assignments
-- **Equipment scheduling** — Book equipment across projects and phases
+- **Gantt chart visualization** — Interactive timeline with drag & drop, resize phases, dependencies and critical path
+- **Kanban board** — Phases and subphases as cards with status, assignees and comment threads, kept in sync with the Gantt
+- **Tags and tag groups** — Colour-coded project labels per site; group, filter and colour the Gantt by them
+- **Resource management** — Staff allocation with percentage-based assignments and a workload heatmap
+- **Absences and site calendars** — Vacation types, bank holidays and company events, with `.ics` import
+- **Equipment scheduling** — Book equipment across projects with conflict detection and maintenance blocks
 - **Multi-tenant architecture** — Separate databases per organization
 - **Organization-level SSO** — Microsoft Entra ID with group-based access control
 - **Cross-site visibility** — View resources across locations while maintaining confidentiality
 - **What-If planning** — Scenario planning without affecting production data
 - **Real-time collaboration** — WebSocket-powered live updates
-- **Import/Export** — Microsoft Project (CSV, XML, MPP) support
+- **Notifications** — In-app inbox for assignments, comments, mentions and status changes
+- **Import/Export** — Microsoft Project (CSV, XML, MPP) support and a full site export to Excel
 - **Mobile responsive** — Touch-optimized for tablets
 
 ## Tech Stack
@@ -102,8 +112,8 @@ milestone-planner/
 │   ├── main.py            # Application entry point
 │   ├── config.py          # Pydantic settings
 │   ├── database.py        # Tenant DB engine/session
-│   ├── routers/           # API endpoints (18 modules + admin/ package)
-│   ├── models/            # SQLAlchemy models (15 modules)
+│   ├── routers/           # API endpoints (22 modules + admin/ package)
+│   ├── models/            # SQLAlchemy models (18 modules)
 │   ├── schemas/           # Pydantic schemas
 │   ├── scripts/           # init_db (auto-init), seed_demo
 │   ├── services/          # Business logic (encryption, SSO, tenant management)
@@ -166,4 +176,14 @@ Key variables (see `.env.example` for full list):
 
 ## License
 
-MIT
+Milestone Planner is licensed under the [Functional Source License 1.1 with MIT Future License (FSL-1.1-MIT)](LICENSE).
+
+**What this means in practice:**
+
+- ✅ **Use it freely.** Self-host Milestone Planner in your company, for any internal purpose, commercial or not. No fees, no seat limits, no strings.
+- ✅ **Modify it.** Fork it, adapt it, build on it for your own use.
+- ✅ **Consult with it.** Professional services helping organizations adopt and run Milestone Planner are explicitly permitted.
+- ✅ **It becomes MIT.** Each release automatically converts to the MIT license two years after publication. The code always returns to fully permissive open source.
+- ❌ **Don't resell it.** You may not offer Milestone Planner (or a derivative) to third parties as a competing commercial product, or as a hosted/managed service.
+
+Versions up to and including 1.6.0 remain under the MIT license.

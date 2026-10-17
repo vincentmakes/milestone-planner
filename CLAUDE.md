@@ -4,6 +4,8 @@ Multi-tenant SaaS platform for R&D project management: interactive Gantt charts 
 
 **Current version**: see `/VERSION` (single source of truth, one line, no `v` prefix). The backend reads it at import in `app/__init__.py` and exposes it via `/health`.
 
+**License**: Functional Source License 1.1 with MIT Future License (**FSL-1.1-MIT**, `/LICENSE`) since 1.6.1 — releases up to and including 1.6.0 were MIT. Each release converts to MIT two years after publication, so the README keeps describing Milestone as an open-source platform. Never re-add MIT wording or an MIT `license` field anywhere: the README License section, the README license badge, `frontend/package.json` `license` (mirrored in `package-lock.json`'s root entry) and `/LICENSE` must all say FSL-1.1-MIT.
+
 ## Quick Start
 
 ```bash
@@ -99,7 +101,7 @@ When working on this codebase, follow these conventions:
 - **Enforcement (CI):**
   - **Diff coverage**: on every PR, `diff-cover` requires **≥ 80 %** of the lines the PR adds or changes to be covered (backend `coverage.xml`, frontend `coverage/lcov.info`).
   - **Suite floors**: `fail_under` in `pyproject.toml` (`[tool.coverage.report]`) and `coverage.thresholds` in `frontend/vitest.config.ts` sit just under the measured totals. Raise them in any PR that lifts the number; **never lower one, and never exclude a file to get past one** — the frontend `coverage.include`/`exclude` lists are fixed (every `src/**` file is measured, imported by a test or not).
-  - **Badges**: the README coverage badges read `backend.json` / `frontend.json` from the orphan `coverage` branch, which the `Coverage Badges` jobs write on push to `main`. Never edit that branch or the badge numbers by hand.
+  - **Badges**: the README coverage badges read `backend.json` / `frontend.json` from the orphan `coverage` branch, which the `Coverage Badges` jobs write on push to `main`. Never edit that branch or the badge numbers by hand. The remaining README badges are static shields.io badges in the same style as `vincentmakes/turbo-ea` (license FSL-1.1-MIT, Python, React, GitHub Sponsors): bump the Python badge together with the Dockerfile/CI Python version and the React badge together with the `react` dependency. There is no GHCR-pulls badge because `docker.yml` only builds the image, it publishes nothing.
 - **Greenlet gotcha**: keep `concurrency = ["greenlet", "thread"]` in `[tool.coverage.run]`. Async SQLAlchemy runs queries on greenlets, and without it coverage.py stops tracing a handler at its first `await db.execute()`. The suite is mock-only today, so it changes nothing yet — but the day a real-DB test lands, a file that looks untested past its first query is this setting, not a missing test.
 - Run locally:
   - backend: `pytest --cov=app --cov-report=term-missing --cov-report=xml && diff-cover coverage.xml --compare-branch=origin/main` (`pip install diff-cover` once; it is a CI-step install, not a `requirements-dev.txt` pin);
@@ -172,7 +174,7 @@ You MUST bump `VERSION` and add a `CHANGELOG.md` entry — in the same PR — fo
 
 - `README.md`, `CLAUDE.md`, `CHANGELOG.md` itself
 - `docs/**`, `mkdocs.yml`, `docs/requirements.txt` — MkDocs end-user / admin / developer docs
-- `LICENSE.txt`, `.gitignore`, `.dockerignore`, `.editorconfig`
+- `LICENSE`, `.gitignore`, `.dockerignore`, `.editorconfig`
 - `.github/**` — workflows and repo metadata
 - `.devcontainer/**` — Codespaces config
 

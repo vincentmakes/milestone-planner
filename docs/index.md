@@ -1,6 +1,6 @@
 # Milestone Planner
 
-**Milestone Planner** is a web-based R&D project management platform designed for multi-site organizations. It provides interactive Gantt charts, staff allocation with capacity tracking, equipment booking, and real-time collaboration.
+**Milestone Planner** is a web-based R&D project management platform designed for multi-site organizations. It provides interactive Gantt charts, staff allocation with capacity tracking, equipment booking, and real-time collaboration. It is open source under the [Functional Source License 1.1 with MIT Future License (FSL-1.1-MIT)](https://github.com/vincentmakes/milestone-planner/blob/main/LICENSE): free to self-host, use internally and modify, and each release becomes MIT two years after publication.
 
 !!! info inline end "Current release"
     See the [Release Notes](release-notes.md) for the current version and full history.

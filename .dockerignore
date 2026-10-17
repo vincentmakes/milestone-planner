@@ -11,7 +11,7 @@ frontend/dist
 
 # Documentation
 *.md
-LICENSE.txt
+LICENSE
 
 # Environment and secrets
 .env

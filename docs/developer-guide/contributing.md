@@ -8,6 +8,14 @@
 4. Run tests and linting locally
 5. Submit a pull request
 
+## Licensing of Contributions
+
+From 1.6.1 onward, Milestone Planner is licensed under the
+[Functional Source License 1.1 with MIT Future License (FSL-1.1-MIT)](https://github.com/vincentmakes/milestone-planner/blob/main/LICENSE).
+Any contribution that lands in the project is accepted under that same license — which means
+your work is guaranteed to become MIT two years after the release it ships in. Releases up to and
+including 1.6.0 remain under the MIT license.
+
 ## Code Standards
 
 ### Backend (Python)
@@ -60,7 +68,7 @@ Changes confined to the following paths do **not** trigger a bump:
 
 - `README.md`, `CLAUDE.md`, `CHANGELOG.md` itself
 - `docs/**`, `mkdocs.yml`, `docs/requirements.txt` — MkDocs site
-- `LICENSE.txt`, `.gitignore`, `.dockerignore`, `.editorconfig`
+- `LICENSE`, `.gitignore`, `.dockerignore`, `.editorconfig`
 - `.github/**` — workflows and repo metadata
 - `.devcontainer/**` — Codespaces config
 
