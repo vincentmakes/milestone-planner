@@ -237,6 +237,13 @@ interface UIState {
   // ---------------------------------------------
   flashNotice: FlashNotice | null;
 
+  /**
+   * Shared `Modal` instances currently open, whether or not they were opened
+   * through `activeModal` (the custom-column dialogs live in ProjectPanel's
+   * local state). `useKeyboardShortcuts` stands down while this is > 0.
+   */
+  openModalCount: number;
+
   // ---------------------------------------------
   // LOADING STATES
   // ---------------------------------------------
@@ -363,6 +370,10 @@ interface UIState {
   // ACTIONS - Loading
   // ---------------------------------------------
   setLoading: (loading: boolean, message?: string) => void;
+
+  /** Called by the shared Modal on open / close (registry for the keyboard shortcuts). */
+  modalOpened: () => void;
+  modalClosed: () => void;
 
   /** Show a detached message bottom-right (errors from actions with no form of their own). */
   showFlash: (message: string, tone?: FlashNotice['tone']) => void;
@@ -503,6 +514,7 @@ const initialState = {
   isLoading: false,
   loadingMessage: '',
   flashNotice: null,
+  openModalCount: 0,
   
   // Timeline scroll
   scrollToTodayTrigger: 0,
@@ -780,6 +792,9 @@ export const useUIStore = create<UIState>()((set) => ({
     isLoading: loading,
     loadingMessage: message,
   }),
+
+  modalOpened: () => set((state) => ({ openModalCount: state.openModalCount + 1 })),
+  modalClosed: () => set((state) => ({ openModalCount: Math.max(0, state.openModalCount - 1) })),
 
   showFlash: (message, tone = 'error') => set({
     flashNotice: { id: Date.now() + Math.random(), message, tone },

@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Notice } from '@/components/common/Notice';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/common/Button';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { useAppStore } from '@/stores/appStore';
 import { getSetting, updateSetting } from '@/api/endpoints/settings';
@@ -129,7 +130,7 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
   const [settings, setSettings] = useState<SettingsData>(DEFAULT_SETTINGS);
   const [originalSettings, setOriginalSettings] = useState<SettingsData>(DEFAULT_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const { isSubmitting: isSaving, begin: beginSave, end: endSave } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   
@@ -184,7 +185,7 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
   
   const handleSave = async () => {
-    setIsSaving(true);
+    if (!beginSave()) return; // a save is already running
     setError(null);
     setSuccess(null);
     
@@ -214,7 +215,7 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
       setError('Failed to save settings');
       console.error('Save settings error:', err);
     } finally {
-      setIsSaving(false);
+      endSave();
     }
   };
   
@@ -406,8 +407,9 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
               <Button 
                 onClick={handleSave} 
                 disabled={!hasChanges || isSaving}
+                loading={isSaving}
               >
-                {isSaving ? 'Saving...' : 'Save Changes'}
+                Save Changes
               </Button>
             </div>
           </div>

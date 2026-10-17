@@ -4,7 +4,7 @@
  * error alerts, and a read-only list for plain users.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, createEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, createEvent, waitFor, act } from '@testing-library/react';
 import { PredefinedPhasesPanel } from '../panels/PredefinedPhasesPanel';
 import { resetAllStores, useAppStore } from '@/stores';
 import { apiGet, apiPost, apiPut, apiDelete } from '@/api/client';
@@ -222,5 +222,22 @@ describe('PredefinedPhasesPanel', () => {
     expect(screen.queryByPlaceholderText('New phase name...')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('Feasibility'));
     expect(screen.queryByDisplayValue('Feasibility')).not.toBeInTheDocument();
+  });
+
+
+  it('adds once when Enter is pressed twice before the first add settles', async () => {
+    let finish: (value: unknown) => void = () => {};
+    vi.mocked(apiPost).mockImplementation(() => new Promise((r) => { finish = r; }));
+    await renderPanel();
+    const input = screen.getByPlaceholderText('New phase name...');
+    fireEvent.change(input, { target: { value: 'Validation' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(apiPost).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Add Phase' })).toHaveAttribute('aria-busy', 'true');
+
+    await act(async () => finish({}));
+    await waitFor(() => expect(input).toHaveValue(''));
+    expect(apiPost).toHaveBeenCalledTimes(1);
   });
 });

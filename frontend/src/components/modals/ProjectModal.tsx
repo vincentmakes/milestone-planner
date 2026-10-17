@@ -319,8 +319,9 @@ export function ProjectModal() {
           onClick={handleSubmit}
           disabled={isSubmitting || !!createBlockedReason}
           title={createBlockedReason ?? undefined}
+          loading={isSubmitting}
         >
-          {isSubmitting ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Project'}
+          {isEditing ? 'Save Changes' : 'Create Project'}
         </Button>
       </div>
     </div>

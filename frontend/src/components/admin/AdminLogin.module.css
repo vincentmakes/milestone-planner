@@ -103,25 +103,8 @@
   text-align: center;
 }
 
-.submitBtn {
-  padding: 0.875rem 1.5rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #fff;
-  background: var(--accent-blue);
-  border: none;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.submitBtn:hover:not(:disabled) {
-  background: var(--accent-blue-hover);
-}
-
-.submitBtn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.fullWidth {
+  width: 100%;
 }
 
 .footer {
@@ -131,21 +114,3 @@
   text-align: center;
 }
 
-.backLink {
-  font-size: 0.875rem;
-  color: var(--text-muted);
-  text-decoration: none;
-  transition: color 0.15s;
-}
-
-.backLink:hover {
-  color: var(--accent-blue);
-}
-
-button.backLink {
-  background: none;
-  border: none;
-  padding: 0;
-  font-family: inherit;
-  cursor: pointer;
-}

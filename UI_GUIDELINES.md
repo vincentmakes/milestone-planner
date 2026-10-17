@@ -369,26 +369,30 @@ import { PlusIcon } from '@/components/settings/panels/PanelIcons';
 | --- | --- | --- | --- |
 | `md` (default) | 36 px | `0 1rem`, `--font-size-sm` | Everything: toolbars, add rows, back links, dialog footers. The Settings add-row inputs are 36 px too, so they line up. |
 | `sm` | 28 px | `0 0.75rem`, `--font-size-xs` | Only for actions repeated on every row of a dense list (**Edit** / **Delete** in *My absences*). |
-| `lg` | 44 px | `0 1.5rem`, `--font-size-base` | Large standalone calls to action. **Unused today**: both login screens still use raw buttons (debt). |
+| `lg` | 44 px | `0 1.5rem`, `--font-size-base` | Large standalone calls to action: the sign-in buttons of both login screens (`className={styles.fullWidth}` stretches them to the card). |
 
 Don't use `sm` in a toolbar. A small primary button next to medium ones was the drift this
 guide was written to stop.
 
 **Icons.** Pass icons through the `icon` prop (`iconPosition="right"` puts it after the label).
-The button sizes the svg — 14 px in `md`, 12 px in `sm` — and the icon inherits the text colour
+The button sizes the svg — 14 px in `md`, 12 px in `sm`, 20 px in `lg` — and the icon inherits the text colour
 through `currentColor`. Don't put an inline `<svg>` with a hand-tuned margin in the children.
 
-**States.** `disabled` dims to 50 % opacity (the global `button:disabled` rule). `loading` shows
-a spinner over the label and disables the button; no caller uses it yet — dialogs swap the label
-instead (`isSubmitting ? 'Saving...' : 'Save Changes'`), and that is the convention until
-`loading` is adopted. Inside a `<form>`, set `type="button"` on every button that must not
+**States.** `disabled` dims to 50 % opacity (the global `button:disabled` rule). `loading` is
+**the** way to show an in-flight write: `<Button loading={isSubmitting}>Save Changes</Button>`
+shows the spinner over the label, disables the button and sets `aria-busy`. The label never
+changes, so a test selects the button by its resting name and asserts `aria-busy`. Don't swap
+the label (`isSubmitting ? 'Saving...' : 'Save Changes'` was the old convention; none is left).
+Inside a `<form>`, set `type="button"` on every button that must not
 submit (back links, Cancel) and `type="submit"` on the one that does, as the Tags and Absence
 types add rows do; Enter in the input then submits.
 
-Writes from a dialog are guarded with `useSubmitGuard` (`components/common/useSubmitGuard.ts`,
-24 files) so Enter-twice or a double click cannot create duplicates. Debt: `KanbanCardModal`
-(a `useState` busy flag), `ImportProjectModal`, the delete in `MyAbsencesModal`, `GeneralPanel`,
-`SSOPanel` and `PredefinedPhasesPanel` are not guarded.
+Writes from a dialog or a Settings panel are guarded with `useSubmitGuard`
+(`components/common/useSubmitGuard.ts`, 30 files) so Enter-twice or a double click cannot create
+duplicates; its `isSubmitting` is what feeds `loading`. One guard per dialog: `KanbanCardModal`
+shares it between moves, assignments and comments, so no two writes on a card overlap. The test
+for a guard fires both clicks inside one `act()` (React batches the first click's state update,
+so the button is still enabled for the second) and asserts one API call.
 
 ### 3.3 Panel toolbar, back links and row actions
 
@@ -425,8 +429,8 @@ Predefined phases, Tags, Absence types). That control is still a `md` primary `B
 
 **Back links.** A view that replaces a list (an edit form, an import view) has a back link at
 its top: a ghost `md` `Button` with `BackIcon`, labelled with where it goes (**Back to list**,
-**Back to holidays**, **All sites**). Don't use a text arrow or a styled link (debt:
-`AdminLoginScreen` still has a `← Back to Application` anchor).
+**Back to holidays**, **All sites**; the admin portal's **Back to Application**). Don't use a text
+arrow or a styled link.
 
 **Row actions.** Edit, delete and similar actions repeated on every row are compact **28 px**
 icon-only buttons (`.iconBtn` / `.actionBtn` / `.editBtn` in the panel's module) with
@@ -441,7 +445,9 @@ decision, not an oversight.
 
 - **`Input`** (`components/common/Input`): `label`, `error`, `hint`, `leftIcon`, `rightIcon`,
   `fullWidth`, plus every native input prop. 36 px tall; the label is linked through `htmlFor`
-  (an id is generated when none is given); an `error` replaces the `hint`.
+  (an id is generated when none is given); an `error` replaces the `hint`, sets `aria-invalid`
+  and is announced (`role="alert"`, linked through `aria-describedby`; a `hint` is linked the
+  same way).
 - **Two fields side by side** (a start/end date pair): a grid of `minmax(0, 1fr) minmax(0, 1fr)`
   (or a flex row whose items have `min-width: 0`), never `1fr 1fr`. A `1fr` track cannot shrink
   below its content and iOS Safari gives a date input a wide intrinsic width, so the two fields
@@ -516,9 +522,13 @@ guard the rule.
 - `modalContext.returnTo` reopens the previous dialog when a chained one closes (My absences →
   absence dialog). Unsaved changes are guarded with `onDirtyChange` + `window.confirm`
   (`SettingsHub`).
-- The container receives focus on open (`tabIndex={-1}`). Known gaps: no focus trap, focus is
-  not restored on close, and the title id is a fixed `modal-title` (duplicated when dialogs
-  nest).
+- The container receives focus on open (`tabIndex={-1}`); Tab and Shift+Tab cycle inside the
+  **innermost** open dialog (a module-level stack of open containers — a nested dialog is
+  portaled to `<body>`, outside its parent, so only the top one traps); the element that had
+  focus before the dialog opened gets it back on close; the title id comes from `useId`, so
+  nested dialogs don't collide. Every mounted `Modal` reports itself to `uiStore.openModalCount`
+  (`modalOpened` / `modalClosed`), which is how the global shortcuts stand down for dialogs that
+  are opened through local state rather than `activeModal` (the custom-column dialogs).
 - Standalone dialogs that can't use `Modal` — the admin-portal modals in
   `components/admin/modals/` — must not attach a close handler to their overlay and use the
   `useEscapeKey` hook (`src/hooks/useEscapeKey.ts`) for Escape, and carry `role="dialog"`,
@@ -627,7 +637,7 @@ allowed in `Header.module.css` / `WhatIfToggle.module.css` are the ≤ 640 px mo
 ### 3.12 Loading, empty, error and confirmation
 
 - **Loading**: no skeletons. `LoadingScreen` covers app boot; a panel shows muted
-  `Loading X...` text in the list's slot. A busy button swaps its label (§3.2).
+  `Loading X...` text in the list's slot. A busy button shows the `loading` spinner (§3.2).
 - **Empty**: centred `--text-muted` text that distinguishes *nothing yet* (`No tags yet. Add one
   below.`) from *nothing matches* (`No cards match the current filter.`).
 - **Errors**: `<Notice tone="error">` in the dialog or panel (§3.2), next to what it is about;
@@ -713,7 +723,8 @@ has no fixed height).
 - Sentence case everywhere except proper names: *Add holiday*, *Manage Skills* is the one legacy
   Title Case family (the Settings panels' Manage buttons) — don't add more.
 - Button labels are imperative and name the object: **Add holiday**, **Save Changes**,
-  **Import .ics**. A busy label is the verb in progress with three dots: *Saving...*.
+  **Import .ics**. A busy button keeps its label and shows the spinner (`loading`, §3.2) — no
+  *Saving...* labels.
 - Confirmations: `Delete X "Name"?` followed by what else is removed and `This cannot be undone.`
 - A deleted author reads **Deleted user**; a blocked action's reason is the
   `whatIfUnavailableMessage()` text; the empty-state wording is in §3.12.
@@ -730,12 +741,14 @@ has no fixed height).
   is a non-modal `role="dialog"` with an `aria-label`.
 - Focus is always visible: the global `:focus-visible` ring, 2 px `--accent-blue`, offset 2 px.
 - Escape closes the innermost layer only (§3.5, §3.6); global shortcuts (`Esc`, `Home`, `+`/`-`,
-  Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z) are ignored while a registered dialog is open or focus is in an
-  input, textarea or contentEditable. The user-facing list is
+  Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z) are ignored while any dialog is open (`activeModal` set or a
+  `Modal` mounted, `openModalCount`) or focus is in an input, textarea or contentEditable. The
+  user-facing list is
   `docs/user-guide/keyboard-shortcuts.md`.
 - Kanban cards are `role="button"`, focusable, Enter/Space activate; the activity feed is a
   polite live region; error boxes are `role="alert"`.
-- Known gaps: no focus trap or focus restore in `Modal` (next PR).
+- `Modal` traps Tab inside the innermost dialog and returns focus to the opener on close (§3.5);
+  a busy `Button` reports `aria-busy`; `Input` / `Select` errors are `aria-invalid` + `role="alert"`.
 
 ---
 
@@ -764,7 +777,7 @@ has no fixed height).
 | `var(--accent-red)`, `color-mix(in srgb, var(--accent-red) 25%, transparent)` for a tint, `var(--shadow-md)` for a shadow | `#ef4444`, `rgba(239, 68, 68, …)` — the per-file counts in `src/styles/__tests__/rawColorAllowlist.json` (357 literals in 71 module files at 1.7.0) are a ratchet: the guard test fails when a file's count rises; lower a file's number when you pay its debt |
 | `--border-color`, `--accent-blue`, `--radius-md`, `--font-size-sm` (the tokens in use) | The alias tokens `--border-default`, `--accent-primary`, or a new spacing token for one file |
 | A `var(--x)` only when `--x` is defined in `styles/` or set by the component itself | A fallback inside `var()` — on an undefined token it hides the typo, on a defined one it is dead weight; the guard test rejects both |
-| `<Button>` for actions, `md` in toolbars and footers | A raw `<button>` with local styles for an action; `sm` in a toolbar |
+| `<Button>` for actions, `md` in toolbars and footers, `loading` while a write runs | A raw `<button>` with local styles for an action; `sm` in a toolbar; a `'Saving...'` label swap |
 | `Modal` with explicit Close / Cancel and Escape | Backdrop-click close, in any dialog |
 | `ToggleSwitch` for a setting | A bare checkbox for a setting |
 | `data-density` selectors in header CSS | Pixel breakpoints in header CSS above 640 px |

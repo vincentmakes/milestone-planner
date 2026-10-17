@@ -345,8 +345,9 @@ export function PhaseModal() {
           onClick={handleSubmit}
           disabled={isSubmitting || !!createBlockedReason}
           title={createBlockedReason ?? undefined}
+          loading={isSubmitting}
         >
-          {isSubmitting ? 'Saving...' : isEditing ? 'Save Changes' : 'Add Phase'}
+          {isEditing ? 'Save Changes' : 'Add Phase'}
         </Button>
       </div>
     </div>

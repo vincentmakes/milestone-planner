@@ -7,7 +7,9 @@
 import { useState, FormEvent, useEffect } from 'react';
 import { adminLogin, adminLogout, changeAdminPassword } from '@/api';
 import { useAdminStore } from '@/stores/adminStore';
+import { Button } from '@/components/common/Button';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
+import { BackIcon } from '@/components/settings/panels/PanelIcons';
 import { getTheme, isDarkTheme, type Theme } from '@/utils/storage';
 import styles from './AdminLogin.module.css';
 
@@ -211,21 +213,17 @@ export function AdminLoginScreen() {
 
               {error && <div className={styles.error}>{error}</div>}
 
-              <button
-                type="submit"
-                className={styles.submitBtn}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? 'Changing...' : 'Set New Password'}
-              </button>
+              <Button type="submit" size="lg" className={styles.fullWidth} loading={isSubmitting}>
+                Set New Password
+              </Button>
             </form>
           )}
 
           {!changeSuccess && (
             <div className={styles.footer}>
-              <button type="button" className={styles.backLink} onClick={handleSignOut}>
+              <Button type="button" variant="ghost" onClick={handleSignOut}>
                 Sign out
-              </button>
+              </Button>
             </div>
           )}
         </div>
@@ -274,19 +272,20 @@ export function AdminLoginScreen() {
 
           {error && <div className={styles.error}>{error}</div>}
 
-          <button
-            type="submit"
-            className={styles.submitBtn}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? 'Signing in...' : 'Sign In'}
-          </button>
+          <Button type="submit" size="lg" className={styles.fullWidth} loading={isSubmitting}>
+            Sign In
+          </Button>
         </form>
 
         <div className={styles.footer}>
-          <a href="/" className={styles.backLink}>
-            ← Back to Application
-          </a>
+          <Button
+            type="button"
+            variant="ghost"
+            icon={<BackIcon />}
+            onClick={() => window.location.assign('/')}
+          >
+            Back to Application
+          </Button>
         </div>
       </div>
     </div>

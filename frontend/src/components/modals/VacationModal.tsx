@@ -91,8 +91,9 @@ const ModalFooter = memo(function ModalFooter({
         onClick={onSave}
         disabled={isSubmitting || !canSubmit || !!blockedReason}
         title={blockedReason ?? undefined}
+        loading={isSubmitting}
       >
-        {isSubmitting ? 'Saving...' : 'Save'}
+        Save
       </Button>
     </div>
   );

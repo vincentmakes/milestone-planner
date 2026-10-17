@@ -8,6 +8,7 @@
 import { useState, useRef } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
@@ -42,7 +43,7 @@ export function ImportProjectModal() {
   // State
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
+  const { isSubmitting: isImporting, begin: beginImport, end: endImport } = useSubmitGuard();
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -103,7 +104,7 @@ export function ImportProjectModal() {
       return;
     }
 
-    setIsImporting(true);
+    if (!beginImport()) return; // an upload is already running
     setError(null);
     setResult(null);
     
@@ -201,7 +202,7 @@ Note: Java must also be installed:
       setError(err instanceof Error ? err.message : 'Failed to import project');
       setProgress(null);
     } finally {
-      setIsImporting(false);
+      endImport();
     }
   };
   
@@ -211,7 +212,7 @@ Note: Java must also be installed:
     setProgress(null);
     setError(null);
     setResult(null);
-    setIsImporting(false);
+    endImport();
     closeModal();
   };
   
@@ -385,8 +386,9 @@ Note: Java must also be installed:
             <Button 
               onClick={handleImport} 
               disabled={!selectedFile || isImporting}
+              loading={isImporting}
             >
-              {isImporting ? 'Importing...' : 'Import Project'}
+              Import Project
             </Button>
           )}
         </div>

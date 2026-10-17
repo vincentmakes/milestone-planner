@@ -435,8 +435,9 @@ export function ICSImportPanel<TExtra = undefined>({
              
               onClick={handleImport}
               disabled={disabled || isImporting || selectedCount === 0}
+              loading={isImporting}
             >
-              {isImporting ? 'Importing...' : `Import ${plural(selectedCount, itemLabel)}`}
+              {`Import ${plural(selectedCount, itemLabel)}`}
             </Button>
           </div>
         </div>

@@ -62,8 +62,11 @@ describe('ProjectModal tag picker during save', () => {
     const link = screen.getByRole('button', { name: 'Manage tags…' });
     expect(link).toBeEnabled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
-    expect(screen.getByRole('button', { name: 'Saving...' })).toBeDisabled();
+    const save = screen.getByRole('button', { name: 'Save Changes' });
+    fireEvent.click(save);
+    // The label stays; the shared Button shows the spinner and reports aria-busy
+    expect(save).toBeDisabled();
+    expect(save).toHaveAttribute('aria-busy', 'true');
     expect(link).toBeDisabled();
     expect(screen.getByRole('combobox', { name: 'Find a tag' })).toBeDisabled();
 

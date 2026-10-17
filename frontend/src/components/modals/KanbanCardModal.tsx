@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { AllocationSlider } from '@/components/common/AllocationSlider';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
@@ -67,7 +68,7 @@ export function KanbanCardModal() {
   const [comments, setComments] = useState<CardComment[]>([]);
   const [draft, setDraft] = useState('');
   const [anchors, setAnchors] = useState<MentionAnchor[]>([]);
-  const [busy, setBusy] = useState(false);
+  const { isSubmitting: busy, begin: begin, end: end } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
   const [assigneeToAdd, setAssigneeToAdd] = useState<string>('');
   // Mentionable people are fetched per site rather than taken from the staff
@@ -181,7 +182,7 @@ export function KanbanCardModal() {
 
   const handleStatusChange = async (status: CardStatus) => {
     if (!card || status === card.status) return;
-    setBusy(true);
+    if (!begin()) return; // another write on this card is still running
     setError(null);
     try {
       await moveCard(card.entityType, card.entityId, status);
@@ -197,13 +198,13 @@ export function KanbanCardModal() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not change the status');
     } finally {
-      setBusy(false);
+      end();
     }
   };
 
   const handleAssign = async () => {
     if (!card || !assigneeToAdd || assignBlockedReason) return;
-    setBusy(true);
+    if (!begin()) return; // another write on this card is still running
     setError(null);
     try {
       await assignCard(card.entityType, card.entityId, Number(assigneeToAdd));
@@ -212,7 +213,7 @@ export function KanbanCardModal() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not assign');
     } finally {
-      setBusy(false);
+      end();
     }
   };
 
@@ -220,7 +221,7 @@ export function KanbanCardModal() {
   // their max capacity (resolved server-side, like every other assignment).
   const handleJoin = async () => {
     if (!card || !currentUser || assignBlockedReason) return;
-    setBusy(true);
+    if (!begin()) return; // another write on this card is still running
     setError(null);
     try {
       await assignCard(card.entityType, card.entityId, currentUser.id);
@@ -228,13 +229,13 @@ export function KanbanCardModal() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not join the card');
     } finally {
-      setBusy(false);
+      end();
     }
   };
 
   const handleAllocationChange = async (assignmentId: number, allocation: number) => {
     if (!card) return;
-    setBusy(true);
+    if (!begin()) return; // another write on this card is still running
     setError(null);
     try {
       // Cards are phases and subphases, so the level is the card's own type --
@@ -245,7 +246,7 @@ export function KanbanCardModal() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not change the allocation');
     } finally {
-      setBusy(false);
+      end();
     }
   };
 
@@ -255,7 +256,7 @@ export function KanbanCardModal() {
     // cannot be undone -- confirm like the Gantt assignment dialog does.
     const who = staffName ? `"${staffName}"` : 'this assignee';
     if (!window.confirm(`Remove ${who} from this card? Their booking on it will be deleted.`)) return;
-    setBusy(true);
+    if (!begin()) return; // another write on this card is still running
     setError(null);
     try {
       await unassignCard(card.entityType, card.entityId, staffId);
@@ -265,13 +266,13 @@ export function KanbanCardModal() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not remove the assignment');
     } finally {
-      setBusy(false);
+      end();
     }
   };
 
   const handleComment = async () => {
     if (!card || !draft.trim()) return;
-    setBusy(true);
+    if (!begin()) return; // another write on this card is still running
     setError(null);
     try {
       // Serialize first, then trim: trimming the draft would shift every anchor
@@ -286,20 +287,20 @@ export function KanbanCardModal() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not post the comment');
     } finally {
-      setBusy(false);
+      end();
     }
   };
 
   const handleDeleteComment = async (commentId: number) => {
     if (!window.confirm('Delete this comment? This cannot be undone.')) return;
-    setBusy(true);
+    if (!begin()) return; // another write on this card is still running
     try {
       await deleteComment(commentId);
       await reloadComments();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not delete the comment');
     } finally {
-      setBusy(false);
+      end();
     }
   };
 

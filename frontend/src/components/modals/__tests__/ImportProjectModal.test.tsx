@@ -210,4 +210,17 @@ describe('ImportProjectModal upload', () => {
     rerender(<ImportProjectModal />);
     expect(screen.getByText('Drop file here or click to browse')).toBeInTheDocument();
   });
+
+
+  it('uploads once when Import is clicked twice before the upload settles', () => {
+    fetchMock.mockReturnValue(new Promise(() => {}));
+    open();
+    choose('plan.xml');
+    act(() => {
+      fireEvent.click(importButton());
+      fireEvent.click(importButton());
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(importButton()).toHaveAttribute('aria-busy', 'true');
+  });
 });

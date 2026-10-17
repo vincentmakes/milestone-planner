@@ -75,7 +75,8 @@ describe('SkillsPanel', () => {
     fireEvent.submit(form);
     fireEvent.submit(form);
     expect(create).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('button', { name: 'Saving...' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Create Skill' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Create Skill' })).toHaveAttribute('aria-busy', 'true');
 
     await act(async () => pending.resolve({ id: 2, name: 'GC-MS', color: '#3b82f6' } as Skill));
     await waitFor(() => expect(screen.queryByLabelText('Name *')).not.toBeInTheDocument());

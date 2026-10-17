@@ -64,6 +64,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             ref={ref}
             id={selectId}
             className={selectClasses}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? `${selectId}-error` : hint ? `${selectId}-hint` : undefined}
             {...props}
           >
             {placeholder && (
@@ -81,14 +83,22 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
               </option>
             ))}
           </select>
-          <span className={styles.chevron}>
+          <span className={styles.chevron} aria-hidden="true">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polyline points="6 9 12 15 18 9" />
             </svg>
           </span>
         </div>
-        {error && <span className={styles.errorText}>{error}</span>}
-        {hint && !error && <span className={styles.hint}>{hint}</span>}
+        {error && (
+          <span id={`${selectId}-error`} className={styles.errorText} role="alert">
+            {error}
+          </span>
+        )}
+        {hint && !error && (
+          <span id={`${selectId}-hint`} className={styles.hint}>
+            {hint}
+          </span>
+        )}
       </div>
     );
   }

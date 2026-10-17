@@ -618,4 +618,24 @@ describe('KanbanCardModal comments of deleted users', () => {
     expect(screen.queryByLabelText('Delete comment')).not.toBeInTheDocument();
     vi.mocked(getComments).mockResolvedValue([]);
   });
+
+
+  it('posts one comment when Comment is clicked twice before the first post settles', async () => {
+    let finish: (value: unknown) => void = () => {};
+    vi.mocked(createComment).mockImplementationOnce(() => new Promise((r) => { finish = r; }) as never);
+    await renderReady();
+    type(composer(), 'Looks good');
+
+    const post = screen.getByRole('button', { name: 'Comment' });
+    act(() => {
+      fireEvent.click(post);
+      fireEvent.click(post);
+    });
+    expect(createComment).toHaveBeenCalledTimes(1);
+    expect(post).toBeDisabled();
+
+    await act(async () => finish({}));
+    await waitFor(() => expect(composer()).toHaveValue(''));
+    expect(createComment).toHaveBeenCalledTimes(1);
+  });
 });

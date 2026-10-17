@@ -4,7 +4,7 @@
  * turns read-only when the organization's SSO takes precedence.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { SSOPanel } from '../panels/SSOPanel';
 import { resetAllStores, useAppStore } from '@/stores';
 import { apiGet, apiPut } from '@/api/client';
@@ -157,5 +157,24 @@ describe('SSOPanel', () => {
     const notice = await screen.findByText(/managed by your organization/);
     expect(notice).toHaveTextContent(/managed by your organization\. Organization SSO takes precedence/);
     expect(notice.querySelector('strong')).toBeNull();
+  });
+
+
+  it('sends one PUT when Save is clicked twice before the first save settles', async () => {
+    let finish: (value: unknown) => void = () => {};
+    vi.mocked(apiPut).mockImplementation(() => new Promise((r) => { finish = r; }));
+    render(<SSOPanel />);
+    await screen.findByDisplayValue('tenant-guid');
+
+    act(() => {
+      fireEvent.click(save());
+      fireEvent.click(save());
+    });
+    expect(apiPut).toHaveBeenCalledTimes(1);
+    expect(save()).toHaveAttribute('aria-busy', 'true');
+
+    await act(async () => finish({}));
+    expect(await screen.findByText('SSO configuration saved successfully')).toBeInTheDocument();
+    expect(apiPut).toHaveBeenCalledTimes(1);
   });
 });

@@ -42,6 +42,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         className={classes}
         disabled={loading || disabled}
+        aria-busy={loading || undefined}
         {...props}
       >
         {loading && <span className={styles.spinner} />}

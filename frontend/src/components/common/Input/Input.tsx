@@ -57,12 +57,22 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             ref={ref}
             id={inputId}
             className={inputClasses}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined}
             {...props}
           />
           {rightIcon && <span className={styles.rightIcon}>{rightIcon}</span>}
         </div>
-        {error && <span className={styles.errorText}>{error}</span>}
-        {hint && !error && <span className={styles.hint}>{hint}</span>}
+        {error && (
+          <span id={`${inputId}-error`} className={styles.errorText} role="alert">
+            {error}
+          </span>
+        )}
+        {hint && !error && (
+          <span id={`${inputId}-hint`} className={styles.hint}>
+            {hint}
+          </span>
+        )}
       </div>
     );
   }

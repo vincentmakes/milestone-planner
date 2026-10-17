@@ -101,6 +101,16 @@ describe('useKeyboardShortcuts – while a modal is open', () => {
     useUIStore.setState({ activeModal: null, triggerScrollToToday: originalTriggerScrollToToday });
   });
 
+  it('stands down while a shared Modal opened from local state is up (openModalCount)', () => {
+    useUIStore.setState({ activeModal: null, openModalCount: 1 });
+    const scroll = vi.fn();
+    useUIStore.setState({ triggerScrollToToday: scroll });
+    renderHook(() => useKeyboardShortcuts());
+    fireEvent.keyDown(document, { key: 'Home' });
+    expect(scroll).not.toHaveBeenCalled();
+    useUIStore.setState({ openModalCount: 0 });
+  });
+
   it('does not undo/redo the Gantt behind an open modal (focus on one of its buttons)', () => {
     useUIStore.setState({ activeModal: 'phase' });
     renderHook(() => useKeyboardShortcuts());

@@ -109,4 +109,24 @@ describe('MyAbsencesModal', () => {
     expect(ui.editingVacation).toBeNull();
     expect(ui.modalContext).toMatchObject({ staffId: 7, returnTo: 'myAbsences' });
   });
+
+
+  it('deletes once when Delete is clicked twice before the first delete settles', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    let finish: () => void = () => {};
+    vi.mocked(deleteVacation).mockImplementationOnce(() => new Promise<void>((r) => { finish = r; }));
+    render(<MyAbsencesModal />);
+
+    const remove = screen.getByRole('button', { name: new RegExp(`^Delete Holidays ${inDays(10)}`) });
+    act(() => {
+      fireEvent.click(remove);
+      fireEvent.click(remove);
+    });
+    expect(deleteVacation).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveAttribute('aria-busy', 'true');
+
+    await act(async () => finish());
+    await waitFor(() => expect(getVacations).toHaveBeenCalled());
+    expect(deleteVacation).toHaveBeenCalledTimes(1);
+  });
 });
