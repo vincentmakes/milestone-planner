@@ -24,6 +24,7 @@ __pycache__/
 .coverage
 .coverage.*
 coverage.xml
+coverage.shard-*
 diff-cover.md
 htmlcov/
 dist/
@@ -32,6 +33,7 @@ dist/
 frontend/node_modules/
 frontend/dist/
 frontend/coverage/
+frontend/.vitest-reports/
 *.tsbuildinfo
 
 # Data and uploads

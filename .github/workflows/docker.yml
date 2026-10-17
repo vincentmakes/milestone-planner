@@ -6,10 +6,74 @@ on:
   # Every pull request, whatever its base (stacked PRs included).
   pull_request:
 
+# A new push to a pull request supersedes the run still going for the previous
+# one. Pushes to main are never cancelled, so every commit on main is known to
+# build.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # The image build runs only when something it COPYs (or the build recipe
+  # itself) changed, so a docs- or tests-only pull request skips it. A change
+  # to this workflow file re-runs it, so CI config changes are validated by
+  # the job they configure rather than landing untested.
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    # Compare with `== 'true'` explicitly: paths-filter emits the *string*
+    # 'false', which is truthy in GitHub expressions, so the shorthand
+    # `outputs.docker || outputs.ci` returns 'false' and the fallback never
+    # fires. Do not simplify this back to `||` between the raw outputs; the
+    # consumer below compares against 'true' for the same reason.
+    outputs:
+      docker: ${{ steps.filter.outputs.docker == 'true' || steps.filter.outputs.ci == 'true' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          # Detect changes with local git, NOT the REST API. On a pull request
+          # the action's default is `GET /pulls/{n}/files`, which returns at
+          # most 3000 entries — and a PR past that limit does not fail, it
+          # reports the files that fell off the end as *unchanged*, so the
+          # build is skipped and CI goes green having never run it. A skipped
+          # check is worse than a red one: nothing on the PR says the image was
+          # not built.
+          #
+          # An empty `token` is the action's documented switch to git mode; it
+          # then uses `git merge-base` against `base` (the PR's own base, so a
+          # stacked PR is diffed against its parent branch, not main) and
+          # fetches history as needed. `base` is empty on push-to-main, where
+          # the action compares against the commit before the push.
+          token: ""
+          base: ${{ github.event.pull_request.base.ref }}
+          # The build inputs: the recipe, its ignore list and entrypoint, and
+          # every path the Dockerfile COPYs (public/ for the static images).
+          # requirements-dev.txt is not installed in the image.
+          filters: |
+            docker:
+              - 'Dockerfile'
+              - '.dockerignore'
+              - 'docker-entrypoint.sh'
+              - 'requirements.txt'
+              - 'app/**'
+              - 'frontend/**'
+              - 'migrations/**'
+              - 'VERSION'
+              - 'public/**'
+            ci:
+              - '.github/workflows/docker.yml'
+
   build:
     name: Build Image
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
     steps:
       - uses: actions/checkout@v5
 

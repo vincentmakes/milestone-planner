@@ -155,14 +155,16 @@ cd frontend && npm run lint
 
 ## CI/CD
 
-GitHub Actions run on every push to `main` and on every pull request, whatever branch it targets (the two dependency-audit jobs also run on weekly crons; the version check runs only on pull requests to `main`):
+GitHub Actions trigger on every push to `main` and on every pull request, whatever branch it targets (the two dependency-audit jobs also run on weekly crons; the version check runs only on pull requests to `main`). Each of the backend, frontend and Docker workflows first runs a **Detect Changes** job and skips the rest when nothing relevant changed (backend: `app/`, `tests/`, `migrations/`, `requirements*.txt`, `pyproject.toml`, `VERSION`; frontend: `frontend/`; Docker: whatever the image is built from). Editing a workflow file re-runs that whole workflow.
 
 | Workflow | Jobs |
 |----------|------|
-| `backend.yml` | `pip-audit` dependency audit (blocking), Ruff lint + format, pytest with coverage (suite floor; diff-cover ≥ 80 % on changed lines in PRs), mypy type checking; `Coverage Badges` on push to `main` |
-| `frontend.yml` | `npm audit --audit-level=moderate` (blocking), ESLint, Vitest with coverage (suite floors; diff-cover ≥ 80 % on changed lines in PRs), TypeScript build; `Coverage Badges` on push to `main` |
+| `backend.yml` | `pip-audit` dependency audit (blocking), Ruff lint + format, pytest in 3 parallel shards + an aggregate **Tests** job on the combined coverage (suite floor; diff-cover ≥ 80 % on changed lines in PRs), mypy type checking; `Coverage Badges` on push to `main` |
+| `frontend.yml` | `npm audit --audit-level=moderate` (blocking), ESLint, Vitest in 2 parallel shards + an aggregate **Tests** job on the merged coverage (suite floors; diff-cover ≥ 80 % on changed lines in PRs), TypeScript build; `Coverage Badges` on push to `main` |
 | `docker.yml` | Docker image build |
 | `version-check.yml` | Pull requests to `main`: fails those that touch app code without a `VERSION` bump and matching `CHANGELOG.md` entry |
+
+The shard jobs (`Tests (shard K/N)`) only run their slice and hand over raw results; the aggregate `Tests` job is the one that enforces the coverage gates and the one to require in branch protection. The shard count is set in each workflow's `matrix` and nowhere else. To run a backend shard locally: `pytest --shard=1/3` (whole test files are dealt to shards, so pass the same paths and `-k` to each); frontend: `npx vitest run --shard=1/2`.
 
 The coverage badges are generated data on the orphan `coverage` branch, written only by the `Coverage Badges` jobs — never edit it by hand.
 
