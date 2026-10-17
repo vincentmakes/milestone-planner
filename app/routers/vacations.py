@@ -6,7 +6,7 @@ Matches the Node.js API at /api/vacations exactly.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_, select
+from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -57,6 +57,19 @@ async def ensure_absence_types_exist(db: AsyncSession, type_ids: set[int]) -> No
         )
 
 
+def _visible_staff_clause(current_user: User) -> ColumnElement[bool]:
+    """Absences a plain user may read: their own and their site colleagues'.
+
+    Site memberships come from the database, not the session snapshot.
+    """
+    my_sites = select(UserSite.site_id).where(UserSite.user_id == current_user.id)
+    colleagues = select(UserSite.user_id).where(UserSite.site_id.in_(my_sites))
+    return or_(
+        Vacation.staff_id == current_user.id,
+        Vacation.staff_id.in_(colleagues),
+    )
+
+
 @router.get("/vacations", response_model=list[VacationResponse])
 async def get_vacations(
     siteId: int | None = Query(None),
@@ -89,17 +102,9 @@ async def get_vacations(
             select(Vacation).options(selectinload(Vacation.staff)).order_by(Vacation.start_date)
         )
     else:
-        # Site memberships come from the database, not the session snapshot.
-        my_sites = select(UserSite.site_id).where(UserSite.user_id == current_user.id)
-        colleagues = select(UserSite.user_id).where(UserSite.site_id.in_(my_sites))
         result = await db.execute(
             select(Vacation)
-            .where(
-                or_(
-                    Vacation.staff_id == current_user.id,
-                    Vacation.staff_id.in_(colleagues),
-                )
-            )
+            .where(_visible_staff_clause(current_user))
             .options(selectinload(Vacation.staff))
             .order_by(Vacation.start_date)
         )
@@ -126,10 +131,15 @@ async def get_vacation(
 ):
     """
     Get a specific vacation by ID.
+
+    A plain user only sees their own absences and those of people sharing a
+    site with them (same scope as the list); anything else is a 404 so the
+    id does not reveal that the absence exists.
     """
-    result = await db.execute(
-        select(Vacation).where(Vacation.id == vacation_id).options(selectinload(Vacation.staff))
-    )
+    query = select(Vacation).where(Vacation.id == vacation_id)
+    if not (current_user.is_admin or current_user.is_superuser):
+        query = query.where(_visible_staff_clause(current_user))
+    result = await db.execute(query.options(selectinload(Vacation.staff)))
     vacation = result.scalar_one_or_none()
 
     if not vacation:

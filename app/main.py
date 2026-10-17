@@ -372,7 +372,11 @@ def create_app() -> FastAPI:
 
         # SPA fallback - serve index.html for non-API routes
         # Handle all methods to return 404 instead of 405 for unmatched routes
-        @app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+        @app.api_route(
+            "/{full_path:path}",
+            methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+            include_in_schema=False,
+        )
         async def serve_spa(request: Request, full_path: str):
             """Serve the SPA frontend for non-API routes."""
             logger.debug("SPA Fallback: path=%s, method=%s", full_path, request.method)

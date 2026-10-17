@@ -839,6 +839,9 @@ class TenantConnectionManager:
             pool_size=20,
             max_overflow=10,
             pool_timeout=30,
+            # Like the default engine: TIMESTAMP columns hold UTC, so
+            # CURRENT_TIMESTAMP defaults must be UTC too (app/schemas/base.py).
+            connect_args={"server_settings": {"timezone": "UTC"}},
         )
 
         # Test connection and run auto-migrations

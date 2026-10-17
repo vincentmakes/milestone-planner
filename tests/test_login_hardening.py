@@ -92,7 +92,7 @@ def test_malformed_self_describing_hash_does_not_verify():
 
 
 def test_tenant_users_seeded_with_the_new_format_can_log_in():
-    """The provisioner/init_db seed tenant admins with hash_password()."""
+    """Tenant admins seeded with hash_password() (before bcrypt seeding) still log in."""
     stored = hash_password("seeded-admin-pass")
     assert verify_user_password("seeded-admin-pass", stored)
     assert not verify_user_password("other", stored)

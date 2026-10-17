@@ -127,6 +127,46 @@ async def test_get_colleague_vacation_is_read_only(authed_client, mock_db_sessio
 
     assert response.status_code == 200
     assert response.json()["canEdit"] is False
+    # The read is scoped to own + shared-site absences, like the list.
+    query = sql(mock_db_session)
+    assert "vacations.id = 40" in query
+    assert "vacations.staff_id = 9" in query
+    assert "vacations.staff_id IN (SELECT user_sites.user_id" in query
+    assert "user_sites.user_id = 9" in query
+
+
+@pytest.mark.asyncio
+async def test_get_non_colleague_vacation_is_404(authed_client, mock_db_session):
+    """A plain user cannot read an absence of someone sharing no site with them.
+
+    The scoped query finds nothing, so the answer is 404 (not 403): the id
+    must not reveal that the absence exists.
+    """
+    client, set_user = authed_client
+    set_user(FakeUser(9, "user"))
+    mock_db_session.execute.return_value = scalar_result(None)
+
+    response = await client.get("/api/vacations/40")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Vacation not found"
+    assert "vacations.staff_id IN (SELECT user_sites.user_id" in sql(mock_db_session)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["superuser", "admin"])
+async def test_get_vacation_is_unscoped_for_privileged_users(authed_client, mock_db_session, role):
+    client, set_user = authed_client
+    set_user(FakeUser(1, role))
+    mock_db_session.execute.return_value = scalar_result(make_vacation(40, 5))
+
+    response = await client.get("/api/vacations/40")
+
+    assert response.status_code == 200
+    assert response.json()["canEdit"] is True
+    query = sql(mock_db_session)
+    assert "vacations.id = 40" in query
+    assert "user_sites" not in query
 
 
 @pytest.mark.asyncio

@@ -15,6 +15,7 @@ import bcrypt
 import pytest
 
 from app.scripts import init_db
+from app.services.encryption import verify_user_password
 
 _real_gensalt = bcrypt.gensalt
 
@@ -354,7 +355,7 @@ async def test_tenant_schema_and_seed_with_configured_password(monkeypatch):
     with (
         server.patch(),
         patch("app.services.tenant_provisioner.run_seed_data", seed),
-        patch("app.services.encryption.hash_password", side_effect=lambda p: f"hashed:{p}"),
+        patch("app.services.encryption.hash_user_password", side_effect=lambda p: f"hashed:{p}"),
         patch("app.services.tenant_provisioner.get_tenant_schema_sql", return_value="-- SCHEMA"),
     ):
         await init_db.apply_tenant_schema(settings())
@@ -379,7 +380,7 @@ async def test_tenant_schema_generates_a_password_when_unset(capsys):
     with (
         server.patch(),
         patch("app.services.tenant_provisioner.run_seed_data", seed),
-        patch("app.services.encryption.hash_password", side_effect=lambda p: f"hashed:{p}"),
+        patch("app.services.encryption.hash_user_password", side_effect=lambda p: f"hashed:{p}"),
         patch.object(init_db, "generate_password", return_value="Auto-Gen-7"),
     ):
         await init_db.apply_tenant_schema(settings())
@@ -391,12 +392,49 @@ async def test_tenant_schema_generates_a_password_when_unset(capsys):
 
 
 @pytest.mark.asyncio
+async def test_tenant_admin_is_seeded_with_bcrypt(monkeypatch):
+    """The tenant admin is a tenant user: bcrypt, not the admin-portal PBKDF2."""
+    monkeypatch.setenv("INIT_ADMIN_PASSWORD", "Tenant-Pass-1")
+    server = FakeServer(databases={"milestone_dev"})
+    seed = AsyncMock()
+    with (
+        server.patch(),
+        patch("app.services.tenant_provisioner.run_seed_data", seed),
+        patch("app.services.tenant_provisioner.get_tenant_schema_sql", return_value="-- SCHEMA"),
+    ):
+        await init_db.apply_tenant_schema(settings())
+
+    stored = seed.await_args.args[2]
+    assert stored.startswith("$2b$")  # bcrypt (cost lowered by fast_bcrypt)
+    assert verify_user_password("Tenant-Pass-1", stored)
+
+
+@pytest.mark.asyncio
+async def test_over_long_init_admin_password_stops_with_a_clear_error(monkeypatch):
+    monkeypatch.setenv("INIT_ADMIN_PASSWORD", "x" * 73)
+    server = FakeServer(databases={"milestone_dev"})
+    seed = AsyncMock()
+    with (
+        server.patch(),
+        patch("app.services.tenant_provisioner.run_seed_data", seed),
+        pytest.raises(SystemExit, match="INIT_ADMIN_PASSWORD is longer than 72 bytes"),
+    ):
+        await init_db.apply_tenant_schema(settings())
+
+    # Nothing was written to the tenant database, and the connection is closed.
+    seed.assert_not_awaited()
+    tenant = server.conn("milestone_dev")
+    assert tenant.sql() == []
+    assert tenant.closed
+
+
+@pytest.mark.asyncio
 async def test_tenant_connection_is_closed_when_the_seed_fails():
     server = FakeServer(databases={"milestone_dev"})
     with (
         server.patch(),
         patch("app.services.tenant_provisioner.run_seed_data", AsyncMock(side_effect=RuntimeError)),
-        patch("app.services.encryption.hash_password", return_value="h"),
+        patch("app.services.encryption.hash_user_password", return_value="h"),
         pytest.raises(RuntimeError),
     ):
         await init_db.apply_tenant_schema(settings())

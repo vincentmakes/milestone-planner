@@ -1,38 +1,17 @@
 """
 Base schema classes with custom serialization.
 
-This module provides datetime/date serialization that matches Node.js output.
+This module provides datetime/date serialization that matches Node.js output
+(``Date.prototype.toISOString()``: ``YYYY-MM-DDTHH:MM:SS.mmmZ``).
 
-TIMEZONE ISSUE EXPLAINED:
--------------------------
-The database stores timestamps as LOCAL TIME (CET/CEST) in TIMESTAMP WITHOUT TIME ZONE columns.
-For example, an event at 10:01:16 CET is stored as "10:01:16" (no timezone info).
-
-Node.js behavior:
-- Reads "10:01:16" from DB
-- Treats it as if it were UTC
-- Outputs "09:01:16Z" (JavaScript Date interprets DB time and subtracts local offset)
-
-Python/asyncpg behavior:
-- Reads "10:01:16" from DB as naive datetime
-- Outputs "10:01:16" as-is
-
-LONG-TERM FIX (recommended for future):
-1. Use TIMESTAMPTZ columns instead of TIMESTAMP
-2. Store all times explicitly in UTC: NOW() AT TIME ZONE 'UTC'
-3. Migrate existing data to UTC
-4. Node.js: Use explicit UTC storage in INSERT/UPDATE
-
-FOR NOW:
-We subtract 1 hour from datetime output to match Node.js behavior.
-This maintains API compatibility with the existing frontend.
-
-NOTE: This assumes CET (UTC+1). During CEST (summer), this would be incorrect.
-A proper fix should use the actual server timezone offset.
+Every ``TIMESTAMP`` column is naive and holds UTC: the app writes
+``app.utils.utcnow_naive()`` and both the default and the per-tenant engines
+pin the connection ``timezone`` to UTC, so ``DEFAULT CURRENT_TIMESTAMP`` is UTC
+too. A naive value is therefore serialised as-is with a ``Z`` suffix - no
+local-offset shift. Pure dates are calendar days and serialise as midnight UTC.
 """
 
-import calendar
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime
 from typing import Annotated, Generic, TypeVar
 
 from fastapi import Query
@@ -41,65 +20,23 @@ from pydantic import BaseModel, ConfigDict, PlainSerializer, model_validator
 T = TypeVar("T")
 
 
-def is_dst_europe(dt: datetime | date) -> bool:
-    """
-    Check if a date is in European Summer Time (CEST).
-
-    DST in Europe: Last Sunday of March to last Sunday of October.
-    """
-    if isinstance(dt, datetime):
-        year = dt.year
-        month = dt.month
-        day = dt.day
-    else:
-        year = dt.year
-        month = dt.month
-        day = dt.day
-
-    if month < 3 or month > 10:
-        return False
-    if month > 3 and month < 10:
-        return True
-
-    # March: DST starts last Sunday
-    if month == 3:
-        # Find last Sunday of March
-        last_day = calendar.monthrange(year, 3)[1]
-        last_sunday = last_day - (calendar.weekday(year, 3, last_day) + 1) % 7
-        return day >= last_sunday
-
-    # October: DST ends last Sunday
-    if month == 10:
-        last_day = calendar.monthrange(year, 10)[1]
-        last_sunday = last_day - (calendar.weekday(year, 10, last_day) + 1) % 7
-        return day < last_sunday
-
-    return False
-
-
-def get_utc_offset_hours(dt: datetime | date) -> int:
-    """Get UTC offset in hours for Europe/Zurich timezone."""
-    return 2 if is_dst_europe(dt) else 1
-
-
 def serialize_datetime_js(dt: datetime | None) -> str | None:
     """
-    Serialize datetime to match JavaScript's toISOString().
+    Serialize a datetime like JavaScript's ``toISOString()``.
 
-    Node.js outputs: "2025-12-08T09:01:16.715Z" for DB value "10:01:16"
-
-    We subtract the appropriate offset (1h for CET, 2h for CEST).
+    Naive values are UTC (see the module docstring) and are output unchanged,
+    e.g. ``2025-12-08 09:01:16.715`` -> ``"2025-12-08T09:01:16.715Z"``. An
+    aware value is converted to UTC first.
     """
     if dt is None:
         return None
 
-    # Get the UTC offset for this specific date
-    offset_hours = get_utc_offset_hours(dt)
-    adjusted = dt - timedelta(hours=offset_hours)
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(UTC)
 
     # Format with milliseconds and Z suffix
-    formatted = adjusted.strftime("%Y-%m-%dT%H:%M:%S")
-    ms = adjusted.microsecond // 1000
+    formatted = dt.strftime("%Y-%m-%dT%H:%M:%S")
+    ms = dt.microsecond // 1000
     return f"{formatted}.{ms:03d}Z"
 
 

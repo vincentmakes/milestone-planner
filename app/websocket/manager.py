@@ -297,21 +297,16 @@ class ConnectionManager:
             connections = list(self._connections.get(tenant_id, {}).values())
 
         sent = 0
+        failed: list[int] = []
         for conn in connections:
             if exclude_user is not None and conn.user_id == exclude_user:
                 continue
             if exclude_connection is not None and conn.connection_id == exclude_connection:
                 continue
-            try:
-                await self._send_json(conn.websocket, message)
+            if await self._try_send(conn, message):
                 sent += 1
-            except Exception as e:
-                logger.warning(
-                    "Failed to send to conn=%s user=%s: %s",
-                    conn.connection_id,
-                    conn.user_id,
-                    e,
-                )
+            else:
+                failed.append(conn.connection_id)
 
         logger.info(
             "Broadcast %s to tenant '%s': %d/%d recipients (exclude_user=%s)",
@@ -321,6 +316,7 @@ class ConnectionManager:
             len(connections),
             exclude_user,
         )
+        await self._prune(tenant_id, failed)
         return sent
 
     async def send_to_user(self, tenant_id: str, user_id: int, message: dict) -> int:
@@ -345,17 +341,12 @@ class ConnectionManager:
             ]
 
         sent = 0
+        failed: list[int] = []
         for conn in connections:
-            try:
-                await self._send_json(conn.websocket, message)
+            if await self._try_send(conn, message):
                 sent += 1
-            except Exception as e:
-                logger.warning(
-                    "Failed to send to conn=%s user=%s: %s",
-                    conn.connection_id,
-                    conn.user_id,
-                    e,
-                )
+            else:
+                failed.append(conn.connection_id)
 
         logger.info(
             "Sent %s to user %s in tenant '%s': %d connection(s)",
@@ -364,7 +355,31 @@ class ConnectionManager:
             tenant_id,
             sent,
         )
+        await self._prune(tenant_id, failed)
         return sent
+
+    async def _try_send(self, conn: ConnectedUser, message: dict) -> bool:
+        """``_send_json`` for a fan-out: any failure counts as not sent."""
+        try:
+            return await self._send_json(conn.websocket, message)
+        except Exception as e:
+            logger.warning(
+                "Failed to send to conn=%s user=%s: %s", conn.connection_id, conn.user_id, e
+            )
+            return False
+
+    async def _prune(self, tenant_id: str, connection_ids: list[int]) -> None:
+        """
+        Unregister connections a send just failed on (closed or broken sockets).
+
+        Runs after the fan-out, never while iterating the registry. Ids already
+        gone are skipped; ``disconnect`` may broadcast ``presence:leave``, which
+        can prune further dead sockets - bounded, as each step removes one.
+        """
+        for connection_id in connection_ids:
+            if connection_id in self._connections.get(tenant_id, {}):
+                logger.info("Pruning dead WebSocket conn=%s tenant=%s", connection_id, tenant_id)
+                await self.disconnect(tenant_id, connection_id)
 
     async def broadcast_change(
         self,
@@ -399,21 +414,23 @@ class ConnectionManager:
             exclude_user=user_id,
         )
 
-    async def _send_json(self, websocket: WebSocket, data: dict) -> None:
-        """Send JSON data through WebSocket, with safety check."""
+    async def _send_json(self, websocket: WebSocket, data: dict) -> bool:
+        """Send JSON data through WebSocket; never raises, returns whether it was sent."""
         try:
             if websocket.client_state.name != "CONNECTED":
                 logger.debug(
                     "Cannot send - WebSocket not connected (state: %s)",
                     websocket.client_state.name,
                 )
-                return
+                return False
             await websocket.send_text(json.dumps(data))
+            return True
         except RuntimeError as e:
             # Handle "Cannot call send once close message has been sent"
             logger.debug("WebSocket already closed: %s", e)
         except Exception as e:
             logger.warning("Error sending to WebSocket: %s", e)
+        return False
 
     def get_online_count(self, tenant_id: str) -> int:
         """Get number of distinct online users in a tenant."""

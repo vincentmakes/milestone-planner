@@ -321,13 +321,12 @@ async def apply_tenant_schema(settings):
     )
     try:
         # Import and run the same schema used by tenant_provisioner
-        from app.services.encryption import hash_password
+        from app.services.encryption import PasswordTooLongError, hash_user_password
         from app.services.tenant_provisioner import get_tenant_schema_sql, run_seed_data
 
-        schema_sql = get_tenant_schema_sql()
-        await conn.execute(schema_sql)
-
-        # Seed data
+        # Seed data. The tenant admin is a tenant user: bcrypt, like every
+        # tenant password (hashed before the schema runs, so a bad
+        # INIT_ADMIN_PASSWORD fails before anything is written).
         admin_email = os.environ.get("INIT_ADMIN_EMAIL", "admin@milestone.local")
         admin_password = os.environ.get("INIT_ADMIN_PASSWORD")
         if not admin_password:
@@ -335,7 +334,17 @@ async def apply_tenant_schema(settings):
             print("\n  *** Admin password was auto-generated. ***")
             print("  *** Set INIT_ADMIN_PASSWORD env var to control it. ***\n")
 
-        admin_password_hash = hash_password(admin_password)
+        try:
+            admin_password_hash = hash_user_password(admin_password)
+        except PasswordTooLongError:
+            raise SystemExit(
+                "ERROR: INIT_ADMIN_PASSWORD is longer than 72 bytes, which tenant "
+                "passwords cannot exceed. Choose a shorter password."
+            ) from None
+
+        schema_sql = get_tenant_schema_sql()
+        await conn.execute(schema_sql)
+
         await run_seed_data(conn, admin_email, admin_password_hash)
 
         # Insert default settings

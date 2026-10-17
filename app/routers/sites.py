@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import delete, exists, func, select, update
+from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,7 +39,7 @@ from app.schemas.site import (
     SiteResponse,
     SiteUpdate,
 )
-from app.services.date_range import parse_day
+from app.services.date_range import MAX_DAY_RANGE, parse_day
 from app.services.holidays import (
     custom_holiday_dates,
     custom_holiday_names,
@@ -58,8 +58,15 @@ HOLIDAY_DUPLICATE_DETAIL = "A holiday with this name already exists on this date
 
 
 def _validate_range(start: date, end: date | None, label: str = "End date") -> None:
-    if end is not None and end < start:
+    if end is None:
+        return
+    if end < start:
         raise HTTPException(status_code=400, detail=f"{label} cannot be before the start date")
+    if (end - start).days + 1 > MAX_DAY_RANGE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{label} makes the range longer than {MAX_DAY_RANGE} days",
+        )
 
 
 def _holiday_response(h: BankHoliday) -> BankHolidayResponse:
@@ -621,8 +628,10 @@ async def get_holidays_in_range(
         # Parse date strings to date objects for proper comparison (400 on junk)
         start = parse_day(startDate, "startDate")
         end = parse_day(endDate, "endDate")
-        query = query.where(BankHoliday.date >= start)
+        # Overlap, not start-in-range: a multi-day holiday that began before
+        # the window still shows in it.
         query = query.where(BankHoliday.date <= end)
+        query = query.where(func.coalesce(BankHoliday.end_date, BankHoliday.date) >= start)
 
     query = query.order_by(BankHoliday.date)
 
@@ -649,14 +658,15 @@ async def fetch_and_store_bank_holidays(
     stored; failures are logged rather than raised, so creating or editing a
     site still succeeds when the API is unreachable.
 
-    Imported (non-custom) holidays for the fetched years are replaced, so
+    Imported (non-custom) holidays of each fetched year are replaced, so
     changing a site's country does not leave stale entries behind. With
-    ``replace_existing`` the site's imported holidays are cleared for *all*
-    years instead. Either way the deletion only happens once the API has
-    actually returned data, so an unreachable API leaves the stored holidays in
-    place. Custom holidays are never touched, and a Nager holiday falling on a
-    day already covered by a custom holiday, or sharing its name (trimmed,
-    case-insensitive) with a custom holiday of the same year, is not stored.
+    ``replace_existing`` the site's imported holidays of years outside the
+    fetched ones are cleared too. A year is only replaced when the API
+    actually returned data for it, so an unreachable API (or one failed year)
+    leaves the stored holidays of that year in place. Custom holidays are never
+    touched, and a Nager holiday falling on a day already covered by a custom
+    holiday, or sharing its name (trimmed, case-insensitive) with a custom
+    holiday of the same year, is not stored.
     """
     # Extract values FIRST to avoid lazy loading issues after async operations
     site_id = site.id
@@ -676,19 +686,26 @@ async def fetch_and_store_bank_holidays(
 
     total_added = 0
 
-    if not any(holidays for _, holidays in fetched):
+    # A failed request looks like an empty year (fetch_holidays returns []), so
+    # only the years that returned data are replaced; the others keep what
+    # they have.
+    ok_years = [year for year, holidays in fetched if holidays]
+    if not ok_years:
         logger.warning(
             "Holiday API returned nothing for site %s - keeping existing holidays", site_id
         )
     else:
         # Replace the imported holidays. Custom holidays are always preserved.
+        replaced = BankHoliday.year.in_(ok_years)
+        if replace_existing:
+            # Also drop imported holidays of years no longer fetched (stale).
+            replaced = or_(replaced, BankHoliday.year.notin_(years))
         stmt = (
             delete(BankHoliday)
             .where(BankHoliday.site_id == site_id)
             .where(BankHoliday.is_custom == 0)
+            .where(replaced)
         )
-        if not replace_existing:
-            stmt = stmt.where(BankHoliday.year.in_(years))
         await db.execute(stmt)
         await db.flush()
 
@@ -874,8 +891,11 @@ async def get_events_in_range(
     """
     query = _site_events_query(siteId)
 
+    # Overlap, not start-in-range: a multi-day event that began before the
+    # window still shows in it.
     if startDate:
-        query = query.where(CompanyEvent.date >= parse_day(startDate, "startDate"))
+        start = parse_day(startDate, "startDate")
+        query = query.where(func.coalesce(CompanyEvent.end_date, CompanyEvent.date) >= start)
 
     if endDate:
         query = query.where(CompanyEvent.date <= parse_day(endDate, "endDate"))

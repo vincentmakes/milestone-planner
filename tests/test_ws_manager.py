@@ -301,11 +301,13 @@ async def test_dead_socket_is_skipped_without_breaking_the_fan_out(mgr):
     await mgr.broadcast_to_tenant("acme", {"type": "change:note"})
 
     dead.send_text.assert_not_awaited()
-    assert types_sent(alive)[-1] == "change:note"
+    # The dead socket is pruned afterwards, so its user leaves.
+    assert types_sent(alive)[-2:] == ["change:note", "presence:leave"]
+    assert mgr.get_online_count("acme") == 1
 
 
 @pytest.mark.asyncio
-async def test_send_errors_are_swallowed_per_socket(mgr):
+async def test_sockets_that_fail_to_send_are_not_counted_and_are_pruned(mgr):
     closing, _ = await join(mgr, user_id=1)
     broken, _ = await join(mgr, user_id=2)
     alive, _ = await join(mgr, user_id=3)
@@ -314,10 +316,28 @@ async def test_send_errors_are_swallowed_per_socket(mgr):
 
     sent = await mgr.broadcast_to_tenant("acme", {"type": "change:skill"})
 
-    # _send_json swallows both errors, so the broadcast still counts them as
-    # attempted, and the healthy socket still gets the message.
-    assert sent == 3
-    assert types_sent(alive)[-1] == "change:skill"
+    # Only the healthy socket counts; the two dead ones are unregistered, and
+    # the survivors hear that their users left.
+    assert sent == 1
+    assert types_sent(alive)[-3:] == ["change:skill", "presence:leave", "presence:leave"]
+    assert mgr.get_online_count("acme") == 1
+    assert len(mgr._connections["acme"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_dead_socket_is_pruned_after_a_send_to_user(mgr):
+    dead, _ = await join(mgr, user_id=7)
+    alive, _ = await join(mgr, user_id=7)
+    other, _ = await join(mgr, user_id=8)
+    dead.client_state = WebSocketState.DISCONNECTED
+
+    assert await mgr.send_to_user("acme", 7, {"type": "notification:new"}) == 1
+
+    assert types_sent(alive)[-1] == "notification:new"
+    # User 7 is still online through the other tab, so no presence:leave.
+    assert len(mgr._connections["acme"]) == 2
+    assert mgr.get_online_count("acme") == 2
+    assert "presence:leave" not in types_sent(other)
 
 
 @pytest.mark.asyncio
@@ -330,13 +350,14 @@ async def test_send_json_failure_is_counted_as_not_sent(mgr, monkeypatch):
     async def flaky(websocket, data):
         if websocket is a:
             raise RuntimeError("boom")
-        await original(websocket, data)
+        return await original(websocket, data)
 
     monkeypatch.setattr(mgr, "_send_json", flaky)
 
     assert await mgr.broadcast_to_tenant("acme", {"type": "x"}) == 1
+    # a was pruned by the failed broadcast, so user 1 is no longer reachable.
     assert await mgr.send_to_user("acme", 1, {"type": "y"}) == 0
-    assert types_sent(b)[-1] == "x"
+    assert types_sent(b)[-2:] == ["x", "presence:leave"]
 
 
 @pytest.mark.asyncio
