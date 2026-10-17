@@ -43,7 +43,7 @@
 }
 
 .item.danger {
-  color: var(--status-danger);
+  color: var(--accent-red);
 }
 
 .item.danger:hover:not(.disabled) {
@@ -65,7 +65,7 @@
 }
 
 .item.danger .icon {
-  color: var(--status-danger);
+  color: var(--accent-red);
 }
 
 .label {

@@ -1,7 +1,7 @@
 /*
  * Shared Settings-panel toolbar: filters / counts on the left, action
  * buttons on the right, a divider underneath. See
- * docs/developer-guide/frontend-ui.md ("Panel toolbar").
+ * UI_GUIDELINES.md ("Panel toolbar, back links and row actions").
  */
 .toolbar {
   display: flex;

@@ -235,15 +235,16 @@ describe('WebSocket context helpers', () => {
       <div>
         <span data-testid="connected">{String(ctx.isConnected)}</span>
         <span data-testid="online">{online.map((u) => `${u.first_name} ${u.last_name}`).join(',')}</span>
-        <span data-testid="phase-changes">{ctx.getChangesForEntity('phase', 10).length}</span>
-        <span data-testid="phase-recent">{String(ctx.isRecentlyChanged('phase', 10))}</span>
-        <span data-testid="tag-recent">{String(ctx.isRecentlyChanged('tag', 10))}</span>
+        <span data-testid="changes">{ctx.recentChanges.length}</span>
+        <span data-testid="phase-changes">
+          {ctx.recentChanges.filter((c) => c.entity_type === 'phase' && c.entity_id === 10).length}
+        </span>
         <button onClick={ctx.reconnect}>reconnect</button>
       </div>
     );
   }
 
-  it('exposes presence, change lookups and reconnect', () => {
+  it('exposes presence, recent changes and reconnect', () => {
     hookState.recentChanges = [
       { user_id: 2, user_name: 'Bob', entity_type: 'phase', entity_id: 10, project_id: 1, action: 'update' },
       { user_id: 3, user_name: 'Eve', entity_type: 'phase', entity_id: 10, project_id: 1, action: 'move' },
@@ -252,9 +253,8 @@ describe('WebSocket context helpers', () => {
     render(<WebSocketProvider><Probe /></WebSocketProvider>);
     expect(screen.getByTestId('connected')).toHaveTextContent('true');
     expect(screen.getByTestId('online')).toHaveTextContent('Bob Brown');
+    expect(screen.getByTestId('changes')).toHaveTextContent('3');
     expect(screen.getByTestId('phase-changes')).toHaveTextContent('2');
-    expect(screen.getByTestId('phase-recent')).toHaveTextContent('true');
-    expect(screen.getByTestId('tag-recent')).toHaveTextContent('false');
 
     act(() => {
       screen.getByRole('button', { name: 'reconnect' }).click();

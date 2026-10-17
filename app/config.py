@@ -98,13 +98,6 @@ class Settings(BaseSettings):
     # If not set, allows localhost origins in debug mode only
     cors_origins: str | None = None
 
-    # Microsoft Entra SSO
-    sso_enabled: bool = False
-    sso_client_id: str | None = None
-    sso_client_secret: str | None = None
-    sso_tenant_id: str | None = None
-    sso_redirect_uri: str | None = None
-
     @property
     def allowed_origins(self) -> list[str]:
         """

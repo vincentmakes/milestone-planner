@@ -253,7 +253,7 @@
   display: none;
 }
 
-/* --- minimal: the 768px tier ---------------------------------------------- */
+/* --- minimal: below 1024px (see useHeaderDensity) ---------------------------------------------- */
 
 .header[data-density='minimal'] {
   padding: 0 0.5rem;

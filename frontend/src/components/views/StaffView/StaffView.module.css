@@ -205,7 +205,7 @@
 
 /* Part-time indicator - ring around the status dot */
 .status.partTime {
-  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 3px var(--primary);
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 3px var(--accent-blue);
 }
 
 .staffInfo {
@@ -230,7 +230,7 @@
 .partTimeBadge {
   font-size: 0.625rem;
   font-weight: 500;
-  color: var(--primary);
+  color: var(--accent-blue);
   background: rgba(0, 122, 254, 0.15);
   padding: 1px 4px;
   border-radius: 3px;
@@ -300,7 +300,7 @@
   padding: 0 1rem 0 2.5rem;
   gap: 8px;
   font-size: var(--font-size-xs);
-  border-bottom: 1px solid var(--border-color-subtle, rgba(255,255,255,0.05));
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .detailRow:last-child {

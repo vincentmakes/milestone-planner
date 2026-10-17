@@ -95,10 +95,6 @@ interface UseWebSocketReturn {
   connect: () => void;
   /** Manually disconnect */
   disconnect: () => void;
-  /** Check if an entity was recently changed */
-  isChangeRecent: (entityType: string, entityId: number) => boolean;
-  /** Get change info for an entity */
-  getChangeInfo: (entityType: string, entityId: number) => ChangePayload | undefined;
 }
 
 // Constants
@@ -506,16 +502,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     };
   }, [autoConnect]);
 
-  // Helper: check if an entity was recently changed
-  const isChangeRecent = useCallback((entityType: string, entityId: number): boolean => {
-    return recentChanges.some(c => c.entity_type === entityType && c.entity_id === entityId);
-  }, [recentChanges]);
-
-  // Helper: get change info for an entity
-  const getChangeInfo = useCallback((entityType: string, entityId: number): ChangePayload | undefined => {
-    return recentChanges.find(c => c.entity_type === entityType && c.entity_id === entityId);
-  }, [recentChanges]);
-
   const offline =
     browserOffline ||
     (hasSettled && connectionState !== 'connected' && connectionState !== 'connecting');
@@ -528,7 +514,5 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     recentChanges,
     connect,
     disconnect,
-    isChangeRecent,
-    getChangeInfo,
   };
 }

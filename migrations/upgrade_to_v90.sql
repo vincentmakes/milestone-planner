@@ -1,5 +1,9 @@
 -- Migration: Upgrade to v90 (Full Schema Update)
--- 
+--
+-- LEGACY: a pre-1.0 catch-up script, superseded by the tenant auto-migrations
+-- (app/services/tenant_manager.py) and the per-feature migrations in this folder.
+-- It stays runnable for very old databases but adds nothing the models do not have.
+--
 -- This migration brings existing tenant databases up to date with all
 -- schema changes through version 90. It's idempotent and safe to run multiple times.
 --
@@ -187,27 +191,6 @@ END $$;
 -- ============================================================================
 -- PREDEFINED PHASES UPDATES
 -- ============================================================================
-
--- Add is_system column if missing
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                   WHERE table_name = 'predefined_phases' AND column_name = 'is_system') THEN
-        ALTER TABLE predefined_phases ADD COLUMN is_system INTEGER DEFAULT 0;
-        -- Mark existing phases as system phases
-        UPDATE predefined_phases SET is_system = 1 
-        WHERE name IN ('Preparation', 'Analytics', 'Trial', 'Cleaning', 'Report');
-    END IF;
-END $$;
-
--- Add color column if missing
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                   WHERE table_name = 'predefined_phases' AND column_name = 'color') THEN
-        ALTER TABLE predefined_phases ADD COLUMN color VARCHAR(20);
-    END IF;
-END $$;
 
 -- ============================================================================
 -- PROJECT PRESENCE TABLE (for realtime collaboration)

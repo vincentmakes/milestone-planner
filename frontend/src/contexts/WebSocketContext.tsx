@@ -51,10 +51,6 @@ interface WebSocketContextValue {
   onlineUsers: PresenceUser[];
   /** Recent changes from other users */
   recentChanges: ChangePayload[];
-  /** Get changes for a specific entity */
-  getChangesForEntity: (entityType: string, entityId: number) => ChangePayload[];
-  /** Check if an entity was recently changed by another user */
-  isRecentlyChanged: (entityType: string, entityId: number) => boolean;
   /** Manually reconnect */
   reconnect: () => void;
 }
@@ -312,24 +308,6 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
 
   const isConnected = connectionState === 'connected';
 
-  const getChangesForEntity = useCallback(
-    (entityType: string, entityId: number): ChangePayload[] => {
-      return recentChanges.filter(
-        c => c.entity_type === entityType && c.entity_id === entityId
-      );
-    },
-    [recentChanges]
-  );
-
-  const isRecentlyChanged = useCallback(
-    (entityType: string, entityId: number): boolean => {
-      return recentChanges.some(
-        c => c.entity_type === entityType && c.entity_id === entityId
-      );
-    },
-    [recentChanges]
-  );
-
   const reconnect = useCallback(() => {
     disconnect();
     setTimeout(connect, 100);
@@ -342,8 +320,6 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       offline,
       onlineUsers,
       recentChanges,
-      getChangesForEntity,
-      isRecentlyChanged,
       reconnect,
     }),
     [
@@ -352,8 +328,6 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       offline,
       onlineUsers,
       recentChanges,
-      getChangesForEntity,
-      isRecentlyChanged,
       reconnect,
     ]
   );

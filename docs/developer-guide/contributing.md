@@ -30,6 +30,7 @@ including 1.6.0 remain under the MIT license.
 - **Linter**: ESLint (`npm run lint`)
 - **Tests**: Vitest (`npm test`)
 - **Build check**: `npm run build` (includes TypeScript compilation)
+- **UI guidelines**: [`UI_GUIDELINES.md`](https://github.com/vincentmakes/milestone-planner/blob/main/UI_GUIDELINES.md) in the repository root — design tokens, shared components and the layout patterns every new screen follows
 
 ## Pull Request Checklist
 
