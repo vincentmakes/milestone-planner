@@ -404,3 +404,23 @@ async def test_broadcast_change_payload_and_sender_exclusion(mgr):
         "action": "update",
         "summary": "moved to Jan 15",
     }
+
+
+@pytest.mark.asyncio
+async def test_unserializable_message_is_dropped_without_pruning_anyone(mgr):
+    from datetime import date
+
+    a, _ = await join(mgr, user_id=1)
+    b, _ = await join(mgr, user_id=2)
+    before_a, before_b = len(types_sent(a)), len(types_sent(b))
+    bad = {"type": "change:note", "payload": {"when": date(2026, 1, 1)}}
+
+    assert await mgr.broadcast_to_tenant("acme", bad) == 0
+    assert await mgr.send_to_user("acme", 1, bad) == 0
+
+    # A payload the router built wrongly is a logged bug, not a dead socket:
+    # nothing was sent, nobody was pruned, nobody "left".
+    assert len(types_sent(a)) == before_a
+    assert len(types_sent(b)) == before_b
+    assert len(mgr._connections["acme"]) == 2
+    assert mgr.get_online_count("acme") == 2

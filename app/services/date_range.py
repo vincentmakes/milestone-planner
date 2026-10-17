@@ -39,6 +39,11 @@ def ensure_date_order(start: date | None, end: date | None) -> None:
         raise HTTPException(status_code=422, detail=DATE_ORDER_MESSAGE)
 
 
+def exceeds_max_span(start: date, end: date, *, max_days: int = MAX_DAY_RANGE) -> bool:
+    """True when the inclusive ``start..end`` span holds more than ``max_days`` days."""
+    return (end - start).days + 1 > max_days
+
+
 def parse_day_range(
     start_value: str, end_value: str, *, max_days: int = MAX_DAY_RANGE
 ) -> tuple[date, date]:
@@ -58,7 +63,7 @@ def parse_day_range(
             detail="startDate must be on or before endDate",
         )
 
-    if (end - start).days + 1 > max_days:
+    if exceeds_max_span(start, end, max_days=max_days):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Date range must not exceed {max_days} days",

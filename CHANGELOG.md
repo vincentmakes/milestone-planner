@@ -37,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - A description typed for a new absence is kept when switching to the Import .ics tab and back.
 - Large .ics imports are sent in batches, so a calendar export with more than 1 000 entries no longer fails.
 - The project tree's expand button is disabled once every level is open, instead of staying active.
-- Tapping or dragging a Gantt bar on a touch screen works again instead of failing silently.
+- Tapping a Gantt bar on a touch screen works again instead of failing silently.
 - The end-date check on the holiday and company-event forms shows the in-app message instead of the browser's own tooltip.
 - A WebSocket connection whose browser went away no longer counts as online.
 

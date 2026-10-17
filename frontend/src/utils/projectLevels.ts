@@ -80,9 +80,19 @@ export function getCurrentExpansionLevel(
   expandedSubphases: Set<number>
 ): number {
   if (!expandedProjects.has(project.id)) return 0;
+  return expansionLevelOf(getProjectLevelItems(project), expandedPhases, expandedSubphases);
+}
 
-  const { levels, maxLevel } = getProjectLevelItems(project);
-
+/**
+ * `getCurrentExpansionLevel` for an already expanded project whose level map
+ * is at hand (a row memoises it and derives both `maxLevel` and the current
+ * level from the one walk).
+ */
+export function expansionLevelOf(
+  { levels, maxLevel }: { levels: LevelMap; maxLevel: number },
+  expandedPhases: Set<number>,
+  expandedSubphases: Set<number>
+): number {
   // If no phases, we're at level 1
   if (!levels[1] || levels[1].length === 0) return 1;
 

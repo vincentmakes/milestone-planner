@@ -293,6 +293,8 @@ class ConnectionManager:
 
         Returns the number of connections the message was sent to.
         """
+        if not self._encodable(tenant_id, message):
+            return 0
         async with self._lock:
             connections = list(self._connections.get(tenant_id, {}).values())
 
@@ -333,6 +335,8 @@ class ConnectionManager:
         Callers must therefore persist the payload first and treat this push as
         a live hint, not as delivery.
         """
+        if not self._encodable(tenant_id, message):
+            return 0
         async with self._lock:
             connections = [
                 conn
@@ -357,6 +361,25 @@ class ConnectionManager:
         )
         await self._prune(tenant_id, failed)
         return sent
+
+    def _encodable(self, tenant_id: str, message: dict) -> bool:
+        """
+        Check once per fan-out that ``message`` is JSON-serializable.
+
+        A payload the router built wrongly (a ``date``, a ``Decimal``, an ORM
+        object) would otherwise fail in ``_send_json`` for every recipient and
+        get every connection of the tenant pruned as "dead".
+        """
+        try:
+            json.dumps(message)
+            return True
+        except (TypeError, ValueError):
+            logger.exception(
+                "Dropping unserializable %s message for tenant '%s'",
+                message.get("type"),
+                tenant_id,
+            )
+            return False
 
     async def _try_send(self, conn: ConnectedUser, message: dict) -> bool:
         """``_send_json`` for a fan-out: any failure counts as not sent."""

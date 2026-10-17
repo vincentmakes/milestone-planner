@@ -16,7 +16,7 @@ import { canEditProject } from '@/utils/permissions';
 import type { Project, Phase, Subphase, CustomColumn } from '@/types';
 import styles from './ProjectRow.module.css';
 import { daysBetweenDateStrings } from '@/utils/date';
-import { getProjectLevelItems, getCurrentExpansionLevel } from '@/utils/projectLevels';
+import { getProjectLevelItems, expansionLevelOf } from '@/utils/projectLevels';
 
 interface ProjectRowProps {
   project: Project;
@@ -129,10 +129,11 @@ export const ProjectRow = memo(function ProjectRow({
   // Current and deepest expansion level — the same definition the store's
   // expandProjectLevel/collapseProjectLevel step through, so "+" disables
   // exactly when there is nothing left to expand.
-  const maxLevel = useMemo(() => getProjectLevelItems(project).maxLevel, [project]);
+  const levelItems = useMemo(() => getProjectLevelItems(project), [project]);
+  const maxLevel = levelItems.maxLevel;
   const currentLevel = useMemo(
-    () => getCurrentExpansionLevel(project, expandedProjects, expandedPhases, expandedSubphases),
-    [project, expandedProjects, expandedPhases, expandedSubphases]
+    () => (isExpanded ? expansionLevelOf(levelItems, expandedPhases, expandedSubphases) : 0),
+    [isExpanded, levelItems, expandedPhases, expandedSubphases]
   );
 
   const handleToggle = (e: React.MouseEvent) => {

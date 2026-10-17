@@ -79,6 +79,21 @@ describe('postInChunks', () => {
     expect(send).toHaveBeenCalledTimes(2);
   });
 
+  it('renumbers a rejected item to its position in the whole list', async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({ created: 500, skipped: 0 })
+      .mockResolvedValueOnce({ created: 500, skipped: 0 })
+      .mockRejectedValueOnce(
+        new Error('Item 37: end date makes the range longer than 366 days')
+      );
+    // The backend numbered row 37 of the third slice; the user sees row 1 037.
+    await expect(postInChunks(range(1201), send)).rejects.toThrow(
+      'Import stopped after 1000 of 1201 items (1000 created, 0 skipped): ' +
+        'Item 1037: end date makes the range longer than 366 days.'
+    );
+  });
+
   it('rethrows the original error when the first slice fails', async () => {
     const boom = new Error('Validation failed');
     const send = vi.fn().mockRejectedValue(boom);

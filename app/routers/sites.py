@@ -39,7 +39,7 @@ from app.schemas.site import (
     SiteResponse,
     SiteUpdate,
 )
-from app.services.date_range import MAX_DAY_RANGE, parse_day
+from app.services.date_range import MAX_DAY_RANGE, exceeds_max_span, parse_day
 from app.services.holidays import (
     custom_holiday_dates,
     custom_holiday_names,
@@ -62,7 +62,7 @@ def _validate_range(start: date, end: date | None, label: str = "End date") -> N
         return
     if end < start:
         raise HTTPException(status_code=400, detail=f"{label} cannot be before the start date")
-    if (end - start).days + 1 > MAX_DAY_RANGE:
+    if exceeds_max_span(start, end):
         raise HTTPException(
             status_code=400,
             detail=f"{label} makes the range longer than {MAX_DAY_RANGE} days",

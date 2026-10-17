@@ -24,7 +24,9 @@ export interface ChunkedImportResult {
  *
  * If a slice fails after earlier ones succeeded, the error says how many items
  * were already imported; the server skips duplicates, so retrying the whole
- * import is safe.
+ * import is safe. The backend numbers a rejected row relative to the request
+ * it received ("Item 37: …"), so the number is shifted by the slice offset to
+ * match the row the user sees in the preview.
  */
 export async function postInChunks<TItem, TResult extends ChunkedImportResult>(
   items: TItem[],
@@ -43,7 +45,10 @@ export async function postInChunks<TItem, TResult extends ChunkedImportResult>(
       result = await send(chunk);
     } catch (err) {
       if (processed === 0) throw err;
-      const reason = err instanceof Error ? err.message : String(err);
+      const reason = (err instanceof Error ? err.message : String(err)).replace(
+        /\bItem (\d+)\b/g,
+        (_match, n: string) => `Item ${Number(n) + start}`
+      );
       throw new Error(
         `Import stopped after ${processed} of ${items.length} items ` +
           `(${total.created} created, ${total.skipped} skipped): ${reason}. ` +
