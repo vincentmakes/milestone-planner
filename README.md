@@ -7,7 +7,6 @@
 [![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue)](LICENSE)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-3776AB.svg)](https://www.python.org/)
 [![React 18](https://img.shields.io/badge/react-18-61DAFB.svg)](https://react.dev/)
-[![GitHub Sponsors Badge](https://img.shields.io/badge/GitHub%20Sponsors-FF009D?logo=githubsponsors&logoColor=fff&style=flat-square)](https://github.com/sponsors/vincentmakes)
 
 [Documentation](https://docs-milestone.verdet.me) | [User Guide](https://docs-milestone.verdet.me/user-guide/getting-started/) | [Admin Guide](https://docs-milestone.verdet.me/admin-guide/overview/) | [Changelog](CHANGELOG.md)
 
