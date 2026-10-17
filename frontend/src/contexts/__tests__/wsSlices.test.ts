@@ -28,7 +28,7 @@ describe('slicesForEntity', () => {
     ['equipment', ['equipment', 'projects']],
     ['equipment_block', ['equipmentBlocks']],
     ['vacation', ['vacations']],
-    ['site', ['sites', 'siteCalendar']],
+    ['site', ['sites', 'siteCalendar', 'projects']],
     ['skill', ['skills', 'staff']],
     ['tag', ['tags', 'projects']],
     ['tag_group', ['tags']],

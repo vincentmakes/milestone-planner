@@ -8,6 +8,7 @@
 
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
+import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { deleteCompanyEvent, getCompanyEvents, buildEventDateSet } from '@/api';
 import { buildICS, downloadICS } from '@/utils/ics';
 import styles from './StaffView.module.css';
@@ -26,6 +27,13 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
   const openSettings = useUIStore((s) => s.openSettings);
   
   const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  // Events are managed in the Settings hub, which cannot open during
+  // What-If (this row also shows in the Gantt's embedded staff overview).
+  // Deleting an event stays allowed: it is queued plan data.
+  const whatIf = useWhatIfBlocked();
+  const addBlockedReason = whatIf.blocked ? whatIf.reason('Adding company events') : null;
+  const editBlockedReason = whatIf.blocked ? whatIf.reason('Editing company events in Settings') : null;
+  const canOpenEditor = canEdit && !editBlockedReason;
   
   // Group events by year
   const eventsByYear = companyEvents.reduce((acc, e) => {
@@ -136,7 +144,9 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
             <button 
               className={styles.iconBtn}
               onClick={handleAddEvent}
-              title="Add company event"
+              disabled={addBlockedReason !== null}
+              title={addBlockedReason ?? 'Add company event'}
+              aria-label="Add company event"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="12" y1="5" x2="12" y2="19" />
@@ -159,9 +169,9 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
               return (
                 <div 
                   key={event.id}
-                  className={`${styles.detailRow} ${canEdit ? styles.clickable : ''}`}
-                  onClick={canEdit ? () => handleEditEvent(event.id) : undefined}
-                  title={canEdit ? 'Edit in Settings' : undefined}
+                  className={`${styles.detailRow} ${canOpenEditor ? styles.clickable : ''}`}
+                  onClick={canOpenEditor ? () => handleEditEvent(event.id) : undefined}
+                  title={canEdit ? (editBlockedReason ?? 'Edit in Settings') : undefined}
                 >
                   <span
                     className={`${styles.detailType} ${styles.companyEvent}`}
@@ -200,8 +210,10 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
           {/* Add event row at bottom */}
           {canEdit && (
             <div 
-              className={`${styles.detailRow} ${styles.addRow}`}
-              onClick={handleAddEvent}
+              className={`${styles.detailRow} ${styles.addRow} ${addBlockedReason ? styles.addRowDisabled : ''}`}
+              onClick={addBlockedReason ? undefined : handleAddEvent}
+              aria-disabled={addBlockedReason ? true : undefined}
+              title={addBlockedReason ?? undefined}
             >
               <span className={styles.addIcon}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

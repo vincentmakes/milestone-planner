@@ -7,10 +7,13 @@
  * over untouched, and `site_ids` is only sent once the picker was used.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { UsersPanel } from '../panels/UsersPanel';
 import { useAppStore } from '@/stores/appStore';
+import { useWhatIfStore } from '@/stores/whatIfStore';
+import { deleteUser } from '@/api/endpoints/users';
+import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import type { Site, User } from '@/types';
 
 const getUsers = vi.fn();
@@ -303,5 +306,53 @@ describe('UsersPanel form guards', () => {
 
     expect(await screen.findByText('Password must be at least 8 characters')).toBeInTheDocument();
     expect(updateUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('UsersPanel during What-If', () => {
+  beforeEach(() => {
+    seed(ada, [siteA, siteB]);
+    vi.mocked(deleteUser).mockReset();
+    useWhatIfStore.getState().enterWhatIfMode([]);
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    if (useWhatIfStore.getState().whatIfMode) await useWhatIfStore.getState().exitWhatIfMode(false);
+  });
+
+  it("disables Delete on other people's rows with the What-If hint", async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<UsersPanel />);
+    await openEditor('Bob Brown');
+
+    const del = screen.getByRole('button', { name: 'Delete User' });
+    expect(del).toBeDisabled();
+    expect(del).toHaveAttribute('title', whatIfUnavailableMessage('Deleting users'));
+    fireEvent.click(del);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(deleteUser).not.toHaveBeenCalled();
+  });
+
+  it('deletes other people again once What-If ends', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(deleteUser).mockResolvedValue(undefined as never);
+    await useWhatIfStore.getState().exitWhatIfMode(false);
+    render(<UsersPanel />);
+    await openEditor('Bob Brown');
+
+    const del = screen.getByRole('button', { name: 'Delete User' });
+    expect(del).toBeEnabled();
+    expect(del).not.toHaveAttribute('title');
+    fireEvent.click(del);
+    await waitFor(() => expect(deleteUser).toHaveBeenCalledWith(4));
+  });
+
+  it('keeps the own-account message on the signed-in admin', async () => {
+    render(<UsersPanel />);
+    await openEditor('Ada Admin');
+    const del = screen.getByRole('button', { name: 'Delete User' });
+    expect(del).toBeDisabled();
+    expect(del).toHaveAttribute('title', "You can't delete your own account");
   });
 });

@@ -2,18 +2,24 @@
  * Sidebar: view navigation (viewStore.currentView), collapse toggle, the
  * Settings entry for admins/superusers only, and the site-scoped quick stats.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { Sidebar } from '../Sidebar';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useViewStore } from '@/stores/viewStore';
+import { useWhatIfStore } from '@/stores/whatIfStore';
 import { resetAllStores } from '@/stores';
+import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { makeEquipment, makeProject, makeSite, makeStaff, makeUser } from '@/test/factories';
 
 beforeEach(() => {
   resetAllStores();
   useViewStore.getState().resetView();
+});
+
+afterEach(async () => {
+  if (useWhatIfStore.getState().whatIfMode) await useWhatIfStore.getState().exitWhatIfMode(false);
 });
 
 /** The value next to a label in the Quick Stats section ("Equipment" is also a nav item). */
@@ -61,6 +67,53 @@ describe('Sidebar', () => {
     expect(screen.getByRole('button', { name: 'Settings' })).toHaveAttribute('title', 'Settings');
     fireEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }));
     expect(useViewStore.getState().sidebarCollapsed).toBe(false);
+  });
+
+  it('blocks switching views and opening Settings while What-If is active', async () => {
+    useAppStore.setState({ currentUser: makeUser({ role: 'admin' }) });
+    useViewStore.setState({ currentView: 'gantt' });
+    useWhatIfStore.getState().enterWhatIfMode([]);
+    const { rerender } = render(<Sidebar />);
+
+    const switchHint = whatIfUnavailableMessage('Switching views');
+    for (const label of ['Kanban Board', 'Staff Overview', 'Equipment', 'Cross-Site', 'Archived']) {
+      const button = screen.getByRole('button', { name: label });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute('title', switchHint);
+    }
+    const gantt = screen.getByRole('button', { name: 'Gantt Chart' });
+    expect(gantt).toBeEnabled();
+    expect(gantt).not.toHaveAttribute('title');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Kanban Board' }));
+    expect(useViewStore.getState().currentView).toBe('gantt');
+
+    const settings = screen.getByRole('button', { name: 'Settings' });
+    expect(settings).toBeDisabled();
+    expect(settings).toHaveAttribute('title', whatIfUnavailableMessage('Opening Settings'));
+    fireEvent.click(settings);
+    expect(useUIStore.getState().activeModal).toBeNull();
+
+    await useWhatIfStore.getState().exitWhatIfMode(false);
+    rerender(<Sidebar />);
+    expect(screen.getByRole('button', { name: 'Kanban Board' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Kanban Board' }));
+    expect(useViewStore.getState().currentView).toBe('kanban');
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    expect(useUIStore.getState().activeModal).toBe('settingsHub');
+  });
+
+  it('keeps the What-If hint over the collapsed tooltip', () => {
+    useAppStore.setState({ currentUser: makeUser({ role: 'admin' }) });
+    useViewStore.setState({ currentView: 'gantt', sidebarCollapsed: true });
+    useWhatIfStore.getState().enterWhatIfMode([]);
+    render(<Sidebar />);
+    expect(screen.getByRole('button', { name: 'Archived' })).toHaveAttribute(
+      'title',
+      whatIfUnavailableMessage('Switching views')
+    );
+    expect(screen.getByRole('button', { name: 'Gantt Chart' })).toHaveAttribute('title', 'Gantt Chart');
   });
 
   it('counts active projects, staff and equipment of the current site', () => {

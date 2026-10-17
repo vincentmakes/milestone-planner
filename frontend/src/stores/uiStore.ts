@@ -2,9 +2,15 @@
  * UI Store
  * Manages transient UI state like modals, tooltips, and editing states
  * This state is NOT persisted - it resets on page refresh
+ *
+ * The Settings hub is unreachable while What-If mode is active: openSettings()
+ * and every legacy alias key refuse to open it. Configuration deletes (sites,
+ * equipment, users, ...) bypass the What-If queue and cascade on the server,
+ * while the sandbox keeps showing the orphaned plan data.
  */
 
 import { create } from 'zustand';
+import { useWhatIfStore } from './whatIfStore';
 import type {
   Project,
   Phase,
@@ -519,22 +525,40 @@ function settingsAliasState(
   return { activeModal: 'settingsHub', settingsSection: section, settingsIntent: intent };
 }
 
+/** True while What-If mode is active — the Settings hub must not open then. */
+function settingsHubBlocked(): boolean {
+  return useWhatIfStore.getState().whatIfMode;
+}
+
+/** Does this modal key open the Settings hub (directly or as a legacy alias)? */
+function opensSettingsHub(modal: string): boolean {
+  return modal === 'settingsHub' || SETTINGS_MODAL_ALIASES.has(modal);
+}
+
 export const useUIStore = create<UIState>()((set) => ({
   ...initialState,
   
   // -----------------------------------------
   // MODAL ACTIONS
   // -----------------------------------------
-  openModal: (type, context = {}) => set({
-    ...(settingsAliasState(type) ?? { activeModal: type }),
-    modalContext: context,
-  }),
+  openModal: (type, context = {}) => set((state) =>
+    opensSettingsHub(type) && settingsHubBlocked()
+      ? state
+      : {
+          ...(settingsAliasState(type) ?? { activeModal: type }),
+          modalContext: context,
+        }
+  ),
 
-  openSettings: (section, intent) => set((state) => ({
-    activeModal: 'settingsHub',
-    settingsSection: section ?? state.settingsSection,
-    settingsIntent: intent ?? null,
-  })),
+  openSettings: (section, intent) => set((state) =>
+    settingsHubBlocked()
+      ? state
+      : {
+          activeModal: 'settingsHub',
+          settingsSection: section ?? state.settingsSection,
+          settingsIntent: intent ?? null,
+        }
+  ),
 
   setSettingsSection: (section) => set({
     settingsSection: section,
@@ -612,10 +636,12 @@ export const useUIStore = create<UIState>()((set) => ({
     modalContext: equipmentId ? { equipmentId } : {},
   }),
   
-  setActiveModal: (modal) => set(
-    (modal && settingsAliasState(modal)) || {
-      activeModal: modal as ModalType | null,
-    }
+  setActiveModal: (modal) => set((state) =>
+    modal && opensSettingsHub(modal) && settingsHubBlocked()
+      ? state
+      : (modal && settingsAliasState(modal)) || {
+          activeModal: modal as ModalType | null,
+        }
   ),
   
   // -----------------------------------------

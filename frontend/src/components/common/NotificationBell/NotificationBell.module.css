@@ -118,6 +118,28 @@
   background: var(--accent-blue-alpha);
 }
 
+/* Card links are out of reach during What-If (the board is another view). */
+.item:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.item:disabled:hover {
+  background: none;
+}
+
+.item.unread:disabled:hover {
+  background: var(--accent-blue-alpha);
+}
+
+.whatIfNote {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: var(--font-size-xs, 12px);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
 .icon {
   flex-shrink: 0;
   display: inline-flex;

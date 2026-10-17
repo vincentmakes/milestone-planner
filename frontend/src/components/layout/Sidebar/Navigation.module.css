@@ -31,6 +31,16 @@
   background: var(--bg-hover);
 }
 
+.navItem:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.navItem:disabled:hover {
+  color: var(--text-secondary);
+  background: transparent;
+}
+
 .navItem.active {
   color: var(--accent-blue);
   background: var(--accent-blue-alpha);

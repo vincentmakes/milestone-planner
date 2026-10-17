@@ -12,6 +12,7 @@ import { SettingsHub } from '../SettingsHub';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useWhatIfStore } from '@/stores/whatIfStore';
 import type { SettingsPanelProps } from '../types';
 import type { User, UserRole } from '@/types';
 
@@ -169,6 +170,21 @@ describe('SettingsHub', () => {
       settingsSection: 'bank-holidays',
       settingsIntent: { type: 'add' },
     });
+  });
+
+  it('is not rendered through a legacy key or openSettings during What-If', async () => {
+    setRole('admin');
+    useWhatIfStore.getState().enterWhatIfMode([]);
+    try {
+      act(() => useUIStore.getState().setActiveModal('userManagement'));
+      act(() => useUIStore.getState().openModal('manageEquipment'));
+      act(() => useUIStore.getState().openSettings('sites'));
+      render(<SettingsHub />);
+      expect(useUIStore.getState().activeModal).toBeNull();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    } finally {
+      await useWhatIfStore.getState().exitWhatIfMode(false);
+    }
   });
 
   it('opens the Sites section for the legacy "site" key', () => {

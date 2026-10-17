@@ -1,5 +1,6 @@
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import styles from './AdminSection.module.css';
 
 interface AdminSectionProps {
@@ -14,6 +15,10 @@ interface AdminSectionProps {
 export function AdminSection({ collapsed = false }: AdminSectionProps) {
   const openSettings = useUIStore((s) => s.openSettings);
   const currentUser = useAppStore((s) => s.currentUser);
+  // The hub is unreachable during What-If (uiStore.openSettings refuses too):
+  // configuration deletes cascade on the server while the sandbox keeps
+  // showing the orphaned plan data.
+  const { blocked, reason } = useWhatIfBlocked();
 
   const canOpenSettings = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
   if (!canOpenSettings) return null;
@@ -24,8 +29,9 @@ export function AdminSection({ collapsed = false }: AdminSectionProps) {
         type="button"
         className={styles.item}
         onClick={() => openSettings()}
-        title={collapsed ? 'Settings' : undefined}
-        aria-label={collapsed ? 'Settings' : undefined}
+        disabled={blocked}
+        title={blocked ? reason('Opening Settings') : collapsed ? 'Settings' : undefined}
+        aria-label="Settings"
       >
         <span className={styles.icon}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">

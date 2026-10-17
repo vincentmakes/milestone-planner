@@ -15,6 +15,8 @@ import { Modal } from '@/components/common/Modal';
 import { TagPicker, TAG_PICKER_PLACEHOLDER } from '../TagPicker';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
+import { useWhatIfStore } from '@/stores/whatIfStore';
+import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import type { Tag, TagGroup } from '@/types';
 
 function tag(id: number, name: string, extra: Partial<Tag> = {}): Tag {
@@ -57,8 +59,9 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
+afterEach(async () => {
   vi.restoreAllMocks();
+  if (useWhatIfStore.getState().whatIfMode) await useWhatIfStore.getState().exitWhatIfMode(false);
   useUIStore.getState().closeModal();
 });
 
@@ -205,5 +208,21 @@ describe('TagPicker "Manage tags…"', () => {
     expect(ui.activeModal).toBe('settingsHub');
     expect(ui.settingsSection).toBe('tags');
     expect(ui.editingProject).toBeNull();
+  });
+
+  it('is disabled with the What-If hint while What-If is active, keeping the dialog', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    useUIStore.setState({ activeModal: 'project', editingProject: { id: 9 } as never });
+    useWhatIfStore.getState().enterWhatIfMode([]);
+    render(<Harness />);
+    const link = screen.getByRole('button', { name: 'Manage tags…' });
+    expect(link).toBeDisabled();
+    expect(link).toHaveAttribute('title', whatIfUnavailableMessage('Managing tags'));
+    // Picking tags is a plan edit and stays available.
+    expect(screen.getByRole('combobox', { name: 'Find a tag' })).toBeEnabled();
+
+    fireEvent.click(link);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(useUIStore.getState()).toMatchObject({ activeModal: 'project', editingProject: { id: 9 } });
   });
 });

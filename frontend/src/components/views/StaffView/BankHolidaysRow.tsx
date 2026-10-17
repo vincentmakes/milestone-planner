@@ -8,6 +8,7 @@
 
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
+import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { deleteCustomHoliday, getBankHolidays, buildHolidayDateSet } from '@/api';
 import { buildICS, downloadICS } from '@/utils/ics';
 import styles from './StaffView.module.css';
@@ -26,6 +27,13 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
   const openSettings = useUIStore((s) => s.openSettings);
   
   const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  // Holidays are managed in the Settings hub, which cannot open during
+  // What-If (this row also shows in the Gantt's embedded staff overview).
+  // Deleting a holiday stays allowed: it is queued plan data.
+  const whatIf = useWhatIfBlocked();
+  const addBlockedReason = whatIf.blocked ? whatIf.reason('Adding holidays') : null;
+  const editBlockedReason = whatIf.blocked ? whatIf.reason('Editing holidays in Settings') : null;
+  const canOpenEditor = canEdit && !editBlockedReason;
   
   // Group holidays by year
   const holidaysByYear = bankHolidays.reduce((acc, h) => {
@@ -133,7 +141,9 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
             <button 
               className={styles.iconBtn}
               onClick={handleAddCustom}
-              title="Add custom holiday"
+              disabled={addBlockedReason !== null}
+              title={addBlockedReason ?? 'Add custom holiday'}
+              aria-label="Add custom holiday"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="12" y1="5" x2="12" y2="19" />
@@ -156,9 +166,9 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
               return (
                 <div 
                   key={holiday.id}
-                  className={`${styles.detailRow} ${holiday.is_custom ? styles.customHoliday : ''} ${canEdit ? styles.clickable : ''}`}
-                  onClick={canEdit ? () => handleEditHoliday(holiday.id) : undefined}
-                  title={canEdit ? 'Edit in Settings' : undefined}
+                  className={`${styles.detailRow} ${holiday.is_custom ? styles.customHoliday : ''} ${canOpenEditor ? styles.clickable : ''}`}
+                  onClick={canOpenEditor ? () => handleEditHoliday(holiday.id) : undefined}
+                  title={canEdit ? (editBlockedReason ?? 'Edit in Settings') : undefined}
                 >
                   <span className={`${styles.detailType} ${styles.bankHoliday}`}>
                     {holiday.is_custom ? 'Custom' : 'Holiday'}
@@ -194,8 +204,10 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
           {/* Add custom holiday row at bottom */}
           {canEdit && (
             <div 
-              className={`${styles.detailRow} ${styles.addRow}`}
-              onClick={handleAddCustom}
+              className={`${styles.detailRow} ${styles.addRow} ${addBlockedReason ? styles.addRowDisabled : ''}`}
+              onClick={addBlockedReason ? undefined : handleAddCustom}
+              aria-disabled={addBlockedReason ? true : undefined}
+              title={addBlockedReason ?? undefined}
             >
               <span className={styles.addIcon}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
