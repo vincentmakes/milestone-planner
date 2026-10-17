@@ -26,7 +26,7 @@
 
 ### What is unavailable in What-If mode
 
-Anything that **creates** something new is disabled while What-If mode is active, with a short explanation on the control: new projects, phases and subphases, new staff and equipment assignments (including drag-and-drop from the resource panel, **Assign me** and joining or assigning people on Kanban cards), new **absences** and new **equipment blocks**. A queued create has no real id on the server, so the new item could not be shown or edited until Apply. Editing and deleting existing items stays available.
+Anything that **creates** something new is disabled while What-If mode is active, with a short explanation on the control: new projects, phases and subphases, new staff and equipment assignments (including drag-and-drop from the resource panel, **Assign me** and joining or assigning people on Kanban cards), new **absences** and new **equipment blocks**. A queued create has no real id on the server, so the new item could not be shown or edited until Apply. Editing and deleting existing items stays available, except bank holidays and company events, which are not part of the plan and cannot be deleted while it is open.
 
 Deleting **users** or **equipment** in Settings is blocked as well (Settings itself is unavailable, see above): their bookings are part of the plan, and a plan must never show bookings of something that no longer exists.
 

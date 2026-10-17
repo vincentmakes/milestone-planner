@@ -160,7 +160,7 @@ The timeline supports direct manipulation (on projects you can edit; your own as
 
 ### Touch screens
 
-On a tablet or phone, the same gestures work with a finger: press a bar and move it to change its dates, or press one of its edges to resize it (the edge handles are wider on touch screens). A tap opens the item's dialog. A swipe that starts **on a bar you can edit** moves the bar, so swipe on empty row space, the project panel or the header to scroll the chart (bars you cannot edit scroll as usual). If the system interrupts a drag (an incoming call, a gesture the browser takes over), the bar returns to where it was and nothing is saved.
+On a tablet or phone, the same gestures work with a finger: press a bar and move it to change its dates, or press one of its edges to resize it (the edge handles are wider on touch screens). A tap opens the item's dialog; a small wobble of the finger during a tap never moves or resizes a bar. A swipe that starts **on a bar you can edit** moves the bar, so swipe on empty row space, the project panel or the header to scroll the chart (bars you cannot edit scroll as usual). If the system interrupts a drag (an incoming call, a gesture the browser takes over), the bar returns to where it was and nothing is saved.
 
 ## Completion Tracking
 
