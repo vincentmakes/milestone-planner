@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import date, timedelta
 from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright
@@ -74,6 +75,41 @@ def quarter_today_expand(page: Page) -> None:
         page.wait_for_timeout(400)
     page.click('button:has-text("Today")')
     page.wait_for_timeout(600)
+
+
+def _shift_phase(ctx, project_name: str, phase_index: int, days: int) -> tuple[int, dict]:
+    """Move one phase of `project_name` by `days` through the API as this context's user.
+
+    Returns the phase id and its previous dates so the caller can put them back:
+    the capture must leave the demo data as it found it (the pipeline is
+    idempotent and other shots reference these dates).
+    """
+    projects = ctx.request.get(f"{URL}api/projects").json()
+    project = next(p for p in projects if p["name"] == project_name)
+    detail = ctx.request.get(f"{URL}api/projects/{project['id']}").json()
+    phases = sorted(detail["phases"], key=lambda ph: ph["sort_order"])
+    phase = phases[phase_index]
+    before = {"start_date": phase["start_date"][:10], "end_date": phase["end_date"][:10]}
+    shifted = {
+        key: (date.fromisoformat(value) + timedelta(days=days)).isoformat()
+        for key, value in before.items()
+    }
+    upd = ctx.request.put(
+        f"{URL}api/phases/{phase['id']}",
+        data=json.dumps(shifted),
+        headers={"Content-Type": "application/json"},
+    )
+    log(f"  PUT /api/phases/{phase['id']} status={upd.status}")
+    return phase["id"], before
+
+
+def _restore_phase(ctx, phase_id: int, dates: dict) -> None:
+    res = ctx.request.put(
+        f"{URL}api/phases/{phase_id}",
+        data=json.dumps(dates),
+        headers={"Content-Type": "application/json"},
+    )
+    log(f"  restored /api/phases/{phase_id} status={res.status}")
 
 
 def _hover_online_users(page: Page, enter: bool) -> None:
@@ -133,16 +169,15 @@ def main() -> None:
         _hover_online_users(page_a, enter=False)
         page_a.wait_for_timeout(500)
 
-        # Shot 3 — User B edits a phase via API; activity feed toast appears.
-        upd = ctx_b.request.put(
-            f"{URL}api/phases/8",
-            data=json.dumps({"start_date": "2026-07-22", "end_date": "2026-09-02"}),
-            headers={"Content-Type": "application/json"},
-        )
-        log(f"  PUT /api/phases/8 status={upd.status}")
-        page_a.wait_for_timeout(900)
-        page_a.screenshot(path=str(OUT / "collab-activity-feed.png"))
-        log("[done] collab-activity-feed.png")
+        # Shot 3 — User B moves a Catalyst phase a week through the API; the
+        # activity feed toast appears for A. The phase is put back afterwards.
+        phase_id, before = _shift_phase(ctx_b, "Catalyst Optimization", 1, days=7)
+        try:
+            page_a.wait_for_timeout(900)
+            page_a.screenshot(path=str(OUT / "collab-activity-feed.png"))
+            log("[done] collab-activity-feed.png")
+        finally:
+            _restore_phase(ctx_b, phase_id, before)
 
         ctx_a.close()
         ctx_b.close()

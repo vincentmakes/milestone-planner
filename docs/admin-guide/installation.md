@@ -147,11 +147,12 @@ cd frontend && npm run dev -- --host 0.0.0.0 --port 3333
 
 The demo tenant includes:
 
-- **2 sites**: Winterthur (CH), Frankfurt (DE)
-- **4 projects** with phases, staff assignments, and timeline data
-- **8 staff members** with skills and site assignments
-- **8 equipment items** across both sites
+- **2 sites**: Winterthur (CH), Frankfurt (DE), each with its public holidays and a shared year-end closure
+- **5 projects** (one archived) with phases, nested subphases, dependencies, tags from two tag groups, custom columns and Kanban comments
+- **9 people** with skills and site assignments — including a part-time member, a plain user who manages one project, someone on both sites and an inactive account
+- **8 equipment items** (one shared by both sites) with bookings and maintenance blocks
 - **6 skills** (Project Management, HPLC, Data Analysis, Cell Culture, Technical Writing, Quality Control)
+- **Absences of every type**, including a recurring Home Office pattern
 
 All staff accounts use password `demo1234`.
 

@@ -145,10 +145,8 @@ When asked to **add, update, or refresh screenshots in the MkDocs docs** (`docs/
    cp .env.example .env  # if missing — generate SESSION_SECRET and TENANT_ENCRYPTION_KEY (64-char hex each)
    docker compose -f docker-compose.fresh.yml up -d --build
    docker exec milestone-fresh python -m app.scripts.seed_demo
-   docker exec -i milestone-fresh-db psql -U milestone_demo -d milestone_demo \
-     < scripts/screenshots/seed_extras.sql
    ```
-   This produces tenant `demo` (Demo Company) with the canonical projects (Bioprocess Scale-Up, Catalyst Optimization, Analytical Method Transfer, Quality System Upgrade), Swiss bank holidays, demo vacations, tags, equipment blocks, and 3 populated custom columns. Login: `admin@demo.local` / `demo1234` (and `bob.brown@demo.local` for multi-user collab shots). **`.env` must set `MULTI_TENANT=true`, a `TENANT_ENCRYPTION_KEY`, and `INIT_ADMIN_PASSWORD`** (deterministic admin-portal login for `capture_admin.py`) — see `scripts/screenshots/README.md`.
+   This produces tenant `demo` (Demo Company) with the canonical projects (Bioprocess Scale-Up, Catalyst Optimization, Analytical Method Transfer, Quality System Upgrade) and everything the screenshots show: tag groups, subphases, dependencies, staff and equipment bookings, blocks, Swiss and German bank holidays, a site closure, every absence type, custom columns, Kanban comments and notifications. The data is one Python module, `app/scripts/demo_data.py` (dates relative to the day you seed); the same seed runs in Codespaces, so there is no second SQL step. Login: `admin@demo.local` / `demo1234` (and `bob.brown@demo.local` for multi-user collab shots). **`.env` must set `MULTI_TENANT=true`, a `TENANT_ENCRYPTION_KEY`, and `INIT_ADMIN_PASSWORD`** (deterministic admin-portal login for `capture_admin.py`) — see `scripts/screenshots/README.md`.
 2. **Install Playwright** once:
    ```bash
    python3 -m venv /tmp/pw-venv
@@ -314,7 +312,9 @@ app/
   config.py            # Pydantic settings (env vars); get_settings() lru_cached
   database.py          # Tenant DB engine/session (get_db / get_db_readonly) + declarative Base
   utils.py             # utcnow_naive() — all DB datetime columns are naive TIMESTAMP holding UTC
-  scripts/             # init_db.py (AUTO_INIT_DB target), seed_demo.py (screenshot demo data)
+  scripts/             # init_db.py (AUTO_INIT_DB target), seed_demo.py (demo tenant loader:
+                       #   provision + register + insert), demo_data.py (the demo data set as
+                       #   plain Python, keyed by names, dates relative to today — tested without a DB)
   models/              # SQLAlchemy ORM models
     tenant.py          # MasterBase + Tenant, TenantCredentials, TenantAuditLog,
                        #   AdminUser, AdminSession (master DB)
@@ -486,7 +486,7 @@ scripts/
   sql/                 # milestone_master_fresh_install.sql, tenant_schema_template.sql,
                        #   migrations/001_add_max_capacity.sql
   screenshots/         # Playwright screenshot pipeline (capture.py, capture_collab.py,
-                       #   capture_admin.py, seed_extras.sql, README.md)
+                       #   capture_admin.py, README.md) — data comes from app.scripts.seed_demo
 tests/                 # Backend pytest suite (mock-based, no live DB): conftest.py (fixtures),
                        #   support.py (mock Result builders), shard_plugin.py (--shard=K/N)
 public/                # Built frontend served by FastAPI (deploy-react.sh copies dist/ here)
