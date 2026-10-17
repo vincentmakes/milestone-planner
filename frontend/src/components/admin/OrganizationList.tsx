@@ -8,6 +8,7 @@ import { useAdminStore } from '@/stores/adminStore';
 import { deleteOrganization } from '@/api';
 import type { Organization } from '@/api/endpoints/admin';
 import { Button } from '@/components/common/Button';
+import { Notice } from '@/components/common/Notice';
 import { PlusIcon } from '@/components/settings/panels/PanelIcons';
 import styles from './TenantList.module.css';
 
@@ -19,11 +20,12 @@ interface OrganizationListProps {
 
 export function OrganizationList({ onCreateNew, onViewDetails, onRefresh }: OrganizationListProps) {
   const organizations = useAdminStore((s) => s.organizations);
+  const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const handleDelete = async (org: Organization) => {
     if (org.tenant_count > 0) {
-      alert(`Cannot delete organization "${org.name}" - it has ${org.tenant_count} tenant(s) assigned.\n\nRemove all tenants from this organization first.`);
+      setError(`Cannot delete organization "${org.name}" - it has ${org.tenant_count} tenant(s) assigned.\n\nRemove all tenants from this organization first.`);
       return;
     }
     
@@ -31,12 +33,13 @@ export function OrganizationList({ onCreateNew, onViewDetails, onRefresh }: Orga
       return;
     }
     
+    setError(null);
     setActionLoading(org.id);
     try {
       await deleteOrganization(org.id);
       onRefresh();
     } catch (err) {
-      alert('Error: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setActionLoading(null);
     }
@@ -80,6 +83,12 @@ export function OrganizationList({ onCreateNew, onViewDetails, onRefresh }: Orga
             Create Organization
           </Button>
         </div>
+
+        {error && (
+          <Notice tone="error" onDismiss={() => setError(null)} className={styles.listNotice}>
+            {error}
+          </Notice>
+        )}
 
         <div className={styles.tableWrapper}>
           <table className={styles.table}>

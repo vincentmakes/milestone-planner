@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { PanelToolbar } from '../PanelToolbar';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -419,7 +420,7 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
           apply What-If.
         </div>
       )}
-      {error && <div className={styles.error} role="alert">{error}</div>}
+      {error && <Notice tone="error">{error}</Notice>}
 
       {form && (
         <EventForm
@@ -642,7 +643,7 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
   return (
     <form className={styles.form} onSubmit={handleSubmit} noValidate>
       <h4 className={styles.formTitle}>{event ? 'Edit event' : 'Add a company event'}</h4>
-      {error && <div className={styles.error} role="alert">{error}</div>}
+      {error && <Notice tone="error">{error}</Notice>}
       <div className={styles.formRow}>
         <div className={styles.field}>
           <label className={styles.label} htmlFor="event-name">Name</label>

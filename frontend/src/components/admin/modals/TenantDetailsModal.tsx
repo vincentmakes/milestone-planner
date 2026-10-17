@@ -4,6 +4,7 @@
  */
 
 import { useId, useState, useEffect, useCallback } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { getTenant, getTenantAuditLog } from '@/api';
 import type { Tenant, AuditLogEntry } from '@/api/endpoints/admin';
 import { useEscapeKey } from '@/hooks';
@@ -92,7 +93,7 @@ export function TenantDetailsModal({ tenantId, onClose }: TenantDetailsModalProp
               Loading...
             </div>
           ) : error ? (
-            <div className={styles.error}>{error}</div>
+            <Notice tone="error">{error}</Notice>
           ) : tenant ? (
             <>
               {/* Header Info */}

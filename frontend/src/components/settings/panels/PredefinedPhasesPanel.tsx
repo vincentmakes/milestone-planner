@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { useAppStore } from '@/stores/appStore';
 import { apiGet, apiPost, apiPut, apiDelete } from '@/api/client';
@@ -22,6 +23,7 @@ export function PredefinedPhasesPanel() {
   const [phases, setPhases] = useState<PredefinedPhase[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [newPhaseName, setNewPhaseName] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingName, setEditingName] = useState('');
@@ -52,6 +54,7 @@ export function PredefinedPhasesPanel() {
   const handleAdd = async () => {
     if (!newPhaseName.trim()) return;
     
+    setError(null);
     setIsAdding(true);
     try {
       await apiPost('/api/predefined-phases', { name: newPhaseName.trim() });
@@ -59,7 +62,7 @@ export function PredefinedPhasesPanel() {
       await loadPhases();
     } catch (err) {
       console.error('Failed to add phase:', err);
-      alert(err instanceof Error ? err.message : 'Failed to add phase');
+      setError(err instanceof Error ? err.message : 'Failed to add phase');
     } finally {
       setIsAdding(false);
     }
@@ -72,18 +75,20 @@ export function PredefinedPhasesPanel() {
       return;
     }
     
+    setError(null);
     try {
       await apiPut(`/api/predefined-phases/${id}`, { name: editingName.trim() });
       setEditingId(null);
       await loadPhases();
     } catch (err) {
       console.error('Failed to update phase:', err);
-      alert(err instanceof Error ? err.message : 'Failed to update phase');
+      setError(err instanceof Error ? err.message : 'Failed to update phase');
     }
   };
   
   // Toggle active status
   const handleToggleActive = async (phase: PredefinedPhase) => {
+    setError(null);
     try {
       await apiPut(`/api/predefined-phases/${phase.id}`, { 
         is_active: !phase.is_active 
@@ -91,7 +96,7 @@ export function PredefinedPhasesPanel() {
       await loadPhases();
     } catch (err) {
       console.error('Failed to toggle phase:', err);
-      alert(err instanceof Error ? err.message : 'Failed to update phase');
+      setError(err instanceof Error ? err.message : 'Failed to update phase');
     }
   };
   
@@ -101,13 +106,14 @@ export function PredefinedPhasesPanel() {
       `Are you sure you want to delete "${phase.name}"?`
     );
     if (!confirmed) return;
+    setError(null);
     
     try {
       await apiDelete(`/api/predefined-phases/${phase.id}`);
       await loadPhases();
     } catch (err) {
       console.error('Failed to delete phase:', err);
-      alert(err instanceof Error ? err.message : 'Failed to delete phase');
+      setError(err instanceof Error ? err.message : 'Failed to delete phase');
     }
   };
   
@@ -194,6 +200,12 @@ export function PredefinedPhasesPanel() {
         Predefined phases appear as quick-add options when creating new projects.
         Drag to reorder. Inactive phases won't appear in the list.
       </p>
+
+      {error && (
+        <Notice tone="error" onDismiss={() => setError(null)}>
+          {error}
+        </Notice>
+      )}
       
       {/* Phase List */}
       <div className={styles.phaseList}>

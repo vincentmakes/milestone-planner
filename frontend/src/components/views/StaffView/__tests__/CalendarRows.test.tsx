@@ -139,10 +139,9 @@ describe('BankHolidaysRow', () => {
     confirm.mockRestore();
   });
 
-  it('does nothing when the deletion is not confirmed, and alerts on failure', async () => {
+  it('does nothing when the deletion is not confirmed, and shows the failure in the row', async () => {
     seed('admin');
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     render(<BankHolidaysRow isExpanded />);
 
@@ -153,10 +152,9 @@ describe('BankHolidaysRow', () => {
     confirm.mockReturnValue(true);
     vi.mocked(deleteCustomHoliday).mockRejectedValue(new Error('nope'));
     fireEvent.click(screen.getByTitle('Delete custom holiday'));
-    await waitFor(() => expect(alert).toHaveBeenCalledWith('Failed to delete holiday'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to delete holiday');
     expect(useAppStore.getState().bankHolidays).toHaveLength(2);
     confirm.mockRestore();
-    alert.mockRestore();
     err.mockRestore();
   });
 });
@@ -228,10 +226,9 @@ describe('CompanyEventsRow', () => {
     confirm.mockRestore();
   });
 
-  it('asks a simple question for a single-site event and alerts on failure', async () => {
+  it('asks a simple question for a single-site event and shows the failure in the row', async () => {
     seed('superuser');
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     render(<CompanyEventsRow isExpanded />);
 
@@ -242,9 +239,10 @@ describe('CompanyEventsRow', () => {
     confirm.mockReturnValue(true);
     vi.mocked(deleteCompanyEvent).mockRejectedValue(new Error('nope'));
     fireEvent.click(screen.getByTitle('Delete company event'));
-    await waitFor(() => expect(alert).toHaveBeenCalledWith('Failed to delete company event'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to delete company event');
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     confirm.mockRestore();
-    alert.mockRestore();
     err.mockRestore();
   });
 });

@@ -19,7 +19,6 @@ vi.mock('@/api', () => ({
 }));
 
 let confirmSpy: ReturnType<typeof vi.spyOn>;
-let alertSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   useAdminStore.setState(useAdminStore.getInitialState());
@@ -27,7 +26,6 @@ beforeEach(() => {
   vi.mocked(deleteAdminUser).mockReset().mockResolvedValue(undefined);
   vi.mocked(updateAdminUser).mockReset().mockResolvedValue({} as never);
   confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-  alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -77,7 +75,7 @@ describe('OrganizationList', () => {
     useAdminStore.setState({ organizations: [makeOrganization({ tenant_count: 2 })] });
     render(<OrganizationList {...props} />);
     await click(rowOf('acme').getByTitle('Delete Organization'));
-    expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('it has 2 tenant(s) assigned'));
+    expect(screen.getByRole('alert')).toHaveTextContent('it has 2 tenant(s) assigned');
     expect(deleteOrganization).not.toHaveBeenCalled();
   });
 
@@ -94,7 +92,7 @@ describe('OrganizationList', () => {
 
     vi.mocked(deleteOrganization).mockRejectedValue(new Error('in use'));
     await click(rowOf('acme').getByTitle('Delete Organization'));
-    expect(alertSpy).toHaveBeenCalledWith('Error: in use');
+    expect(screen.getByRole('alert')).toHaveTextContent('in use');
   });
 });
 
@@ -144,12 +142,12 @@ describe('AdminUserList', () => {
     expect(props.onRefresh).toHaveBeenCalledTimes(2);
   });
 
-  it('alerts on API errors and skips unconfirmed deletes', async () => {
+  it('shows API errors in place and skips unconfirmed deletes', async () => {
     useAdminStore.setState({ adminUsers: [makeAdminListUser()] });
     render(<AdminUserList {...props} />);
     vi.mocked(updateAdminUser).mockRejectedValue(new Error('forbidden'));
     await click(rowOf('ops@milestone.local').getByTitle('Disable'));
-    expect(alertSpy).toHaveBeenCalledWith('Error: forbidden');
+    expect(screen.getByRole('alert')).toHaveTextContent('forbidden');
 
     confirmSpy.mockReturnValueOnce(false);
     await click(rowOf('ops@milestone.local').getByTitle('Delete'));
@@ -157,7 +155,7 @@ describe('AdminUserList', () => {
 
     vi.mocked(deleteAdminUser).mockRejectedValue('boom');
     await click(rowOf('ops@milestone.local').getByTitle('Delete'));
-    expect(alertSpy).toHaveBeenLastCalledWith('Error: Unknown error');
+    expect(screen.getByRole('alert')).toHaveTextContent('Unknown error');
   });
 });
 

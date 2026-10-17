@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { useAppStore, selectCanManageResources } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { createSite, exportSiteToExcel } from '@/api';
@@ -117,7 +118,7 @@ export function SitesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
     <div className={styles.container}>
       {/* Error display */}
       {error && (
-        <div className={styles.error}>{error}</div>
+        <Notice tone="error" className={styles.listNotice}>{error}</Notice>
       )}
       
       {/* Site list */}

@@ -305,14 +305,6 @@
 }
 
 /* Error Message */
-.error {
-  padding: 0.875rem 1rem;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: var(--radius-md);
-  color: #ef4444;
-  font-size: 0.875rem;
-}
 
 /* Form Grid */
 .formGrid {

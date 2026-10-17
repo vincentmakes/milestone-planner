@@ -34,7 +34,9 @@ async function runDelete(what: string, action: () => Promise<void>): Promise<voi
     await action();
   } catch (err) {
     await recoverFromPersistFailure(`Delete ${what}`, err);
-    alert(`Failed to delete ${what}: ${err instanceof Error ? err.message : 'unknown error'}`);
+    useUIStore
+      .getState()
+      .showFlash(`Failed to delete ${what}: ${err instanceof Error ? err.message : 'unknown error'}`);
   }
 }
 

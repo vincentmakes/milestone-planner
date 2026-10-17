@@ -6,7 +6,9 @@
  * - Export to ICS
  */
 
+import { useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { Notice } from '@/components/common/Notice';
 import { useUIStore } from '@/stores/uiStore';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { deleteCompanyEvent, getCompanyEvents, buildEventDateSet } from '@/api';
@@ -20,6 +22,7 @@ interface CompanyEventsRowProps {
 }
 
 export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps) {
+  const [error, setError] = useState<string | null>(null);
   const currentSite = useAppStore((s) => s.currentSite);
   const currentUser = useAppStore((s) => s.currentUser);
   const companyEvents = useAppStore((s) => s.companyEvents);
@@ -94,6 +97,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
       ? `This event is shared by ${siteCount} sites. Remove it from ${currentSite.name} only? The other sites keep it (delete it everywhere from Settings → Company events).`
       : 'Delete this company event?';
     if (!confirm(message)) return;
+    setError(null);
     
     try {
       await deleteCompanyEvent(currentSite.id, eventId);
@@ -104,12 +108,17 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
       setCompanyEvents(events, eventDates);
     } catch (err) {
       console.error('Failed to delete company event:', err);
-      alert('Failed to delete company event');
+      setError('Failed to delete company event');
     }
   };
   
   return (
     <div className={styles.companyEventsWrapper}>
+      {error && (
+        <Notice tone="error" onDismiss={() => setError(null)} className={styles.rowNotice}>
+          {error}
+        </Notice>
+      )}
       {/* Main company events row */}
       <div 
         className={`${styles.staffRow} ${styles.companyEventsRow} ${!onToggle ? styles.noExpand : ''}`}

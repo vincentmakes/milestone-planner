@@ -25,7 +25,6 @@ const props = {
 };
 
 let confirmSpy: ReturnType<typeof vi.spyOn>;
-let alertSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   useAdminStore.setState(useAdminStore.getInitialState());
@@ -35,7 +34,6 @@ beforeEach(() => {
   vi.mocked(resetTenantAdminPassword).mockReset();
   vi.mocked(deleteTenant).mockReset().mockResolvedValue(undefined);
   confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-  alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -126,12 +124,12 @@ describe('TenantList', () => {
     expect(provisionTenant).not.toHaveBeenCalled();
   });
 
-  it('alerts on a failed provision', async () => {
+  it('shows a failed provision in place', async () => {
     vi.mocked(provisionTenant).mockRejectedValue(new Error('PG down'));
     useAdminStore.setState({ tenants: [makeTenant({ database_status: undefined })] });
     render(<TenantList {...props} />);
     await click(row('Demo Company').getByTitle('Provision Database'));
-    expect(alertSpy).toHaveBeenCalledWith('Error: PG down');
+    expect(screen.getByRole('alert')).toHaveTextContent('PG down');
     expect(props.onRefresh).not.toHaveBeenCalled();
   });
 
@@ -145,7 +143,7 @@ describe('TenantList', () => {
 
     vi.mocked(resetTenantAdminPassword).mockRejectedValue('x');
     await click(row('Demo Company').getByTitle('Reset Admin Password'));
-    expect(alertSpy).toHaveBeenCalledWith('Error: Unknown error');
+    expect(screen.getByRole('alert')).toHaveTextContent('Unknown error');
   });
 
   it('suspends an active tenant and activates a suspended one', async () => {
@@ -160,14 +158,14 @@ describe('TenantList', () => {
 
     vi.mocked(updateTenantStatus).mockRejectedValue(new Error('nope'));
     await click(row('Paused').getByTitle('Activate'));
-    expect(alertSpy).toHaveBeenCalledWith('Error: nope');
+    expect(screen.getByRole('alert')).toHaveTextContent('nope');
   });
 
   it('refuses to delete an active tenant', async () => {
     useAdminStore.setState({ tenants: [makeTenant()] });
     render(<TenantList {...props} />);
     await click(row('Demo Company').getByTitle('Delete Tenant'));
-    expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('You must suspend the tenant before deleting it'));
+    expect(screen.getByRole('alert')).toHaveTextContent('You must suspend the tenant before deleting it');
     expect(confirmSpy).not.toHaveBeenCalled();
     expect(deleteTenant).not.toHaveBeenCalled();
   });
@@ -190,7 +188,7 @@ describe('TenantList', () => {
 
     vi.mocked(deleteTenant).mockRejectedValue(new Error('locked'));
     await click(row('No DB').getByTitle('Delete Tenant'));
-    expect(alertSpy).toHaveBeenCalledWith('Error: locked');
+    expect(screen.getByRole('alert')).toHaveTextContent('locked');
   });
 
   it('shows a loading marker on the row while an action runs', async () => {

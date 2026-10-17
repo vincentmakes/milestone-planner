@@ -157,7 +157,6 @@ describe('ContextMenuContainer deletes', () => {
     vi.mocked(deleteFn).mockRejectedValueOnce(error);
     vi.mocked(recoverFromPersistFailure).mockClear();
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
     useAppStore.setState({ currentUser: admin });
     useUIStore.getState().showContextMenu(kind, id, 10, 10, project.id, phase.id);
 
@@ -165,12 +164,12 @@ describe('ContextMenuContainer deletes', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: label }));
 
     await waitFor(() => expect(recoverFromPersistFailure).toHaveBeenCalledWith(`Delete ${kind}`, error));
-    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('Server unavailable')));
+    await waitFor(() => expect(useUIStore.getState().flashNotice?.message).toContain('Server unavailable'));
+    expect(useUIStore.getState().flashNotice?.tone).toBe('error');
     // Nothing was removed locally
     expect(useAppStore.getState().projects[0].phases[0].children[0].id).toBe(20);
 
     confirmSpy.mockRestore();
-    alertSpy.mockRestore();
   });
 });
 

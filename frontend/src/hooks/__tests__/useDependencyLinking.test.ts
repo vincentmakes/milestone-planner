@@ -8,7 +8,7 @@
  * - Every new link records the predecessor's kind as `entity`, because phase
  *   and subphase ids are separate sequences.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import type React from 'react';
 import { useDependencyLinking } from '../useDependencyLinking';
@@ -76,18 +76,11 @@ function link(
   act(() => result.current.handleLinkZoneClick(event(), 1, to.id, to.type, 'start'));
 }
 
-let alertSpy: ReturnType<typeof vi.spyOn>;
-
 beforeEach(() => {
   updatePhase.mockClear();
   updateSubphase.mockClear();
-  alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
-  useUIStore.setState({ isLinkingDependency: false, linkingFrom: null });
+  useUIStore.setState({ isLinkingDependency: false, linkingFrom: null, flashNotice: null });
   useAppStore.setState({ currentUser: { id: 1, role: 'admin' } as unknown as User });
-});
-
-afterEach(() => {
-  alertSpy.mockRestore();
 });
 
 describe('useDependencyLinking cycle check', () => {
@@ -104,7 +97,7 @@ describe('useDependencyLinking cycle check', () => {
 
     link({ id: 1, type: 'phase' }, { id: 10, type: 'subphase' });
 
-    expect(alertSpy).toHaveBeenCalledWith('Cannot create circular dependency');
+    expect(useUIStore.getState().flashNotice).toMatchObject({ message: 'Cannot create circular dependency', tone: 'warning' });
     expect(updateSubphase).not.toHaveBeenCalled();
   });
 
@@ -120,7 +113,7 @@ describe('useDependencyLinking cycle check', () => {
 
     link({ id: 2, type: 'phase' }, { id: 1, type: 'phase' });
 
-    expect(alertSpy).toHaveBeenCalledWith('Cannot create circular dependency');
+    expect(useUIStore.getState().flashNotice).toMatchObject({ message: 'Cannot create circular dependency', tone: 'warning' });
     expect(updatePhase).not.toHaveBeenCalled();
   });
 
@@ -138,7 +131,7 @@ describe('useDependencyLinking cycle check', () => {
     link({ id: 1, type: 'phase' }, { id: 3, type: 'phase' });
     await vi.waitFor(() => expect(updatePhase).toHaveBeenCalled());
 
-    expect(alertSpy).not.toHaveBeenCalled();
+    expect(useUIStore.getState().flashNotice).toBeNull();
     expect(updatePhase.mock.calls[0][0]).toBe(3);
   });
 });

@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { PanelToolbar } from '../PanelToolbar';
 import { BackIcon, EditIcon, PlusIcon, TrashIcon } from './PanelIcons';
@@ -127,7 +128,7 @@ export function SkillsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
           />
           
           {error && (
-            <div className={styles.error}>{error}</div>
+            <Notice tone="error">{error}</Notice>
           )}
           
           {/* Skills list */}
@@ -262,7 +263,7 @@ function SkillForm({ skill, onSave, onCancel, onDirtyChange }: SkillFormProps) {
       </div>
       
       {error && (
-        <div className={styles.error}>{error}</div>
+        <Notice tone="error">{error}</Notice>
       )}
       
       {/* Skill Name */}

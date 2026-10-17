@@ -120,7 +120,7 @@ export function useDependencyLinking() {
     if (isLinkingDependency && linkingFrom) {
       // Must be same project
       if (linkingFrom.projectId !== projectId) {
-        alert('Dependencies can only be created between items in the same project');
+        useUIStore.getState().showFlash('Dependencies can only be created between items in the same project', 'warning');
         cancelLinking();
         return;
       }
@@ -137,7 +137,7 @@ export function useDependencyLinking() {
         { id: linkingFrom.itemId, type: linkingFrom.itemType as ItemType },
         { id: itemId, type: itemType }
       )) {
-        alert('Cannot create circular dependency');
+        useUIStore.getState().showFlash('Cannot create circular dependency', 'warning');
         cancelLinking();
         return;
       }

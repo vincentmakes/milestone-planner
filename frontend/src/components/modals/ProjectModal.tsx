@@ -272,7 +272,7 @@ export function ProjectModal() {
       exportProjectToXML(fullProject);
     } catch (err) {
       console.error('Export failed:', err);
-      alert('Failed to export to MS Project format');
+      setError('Failed to export to MS Project format');
     } finally {
       setIsExporting(false);
     }

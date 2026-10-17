@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { updateSite, getBankHolidays, refreshBankHolidays, buildHolidayDateSet } from '@/api';
@@ -220,7 +221,7 @@ export function SiteForm({ site, onBack, onDirtyChange }: SiteFormProps) {
       <h4 className={styles.formTitle}>Edit site: {site.name}</h4>
       
       {error && (
-        <div className={styles.error}>{error}</div>
+        <Notice tone="error" className={styles.formNotice}>{error}</Notice>
       )}
       
       {/* Site Details Section */}

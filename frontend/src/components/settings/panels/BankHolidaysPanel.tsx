@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { PanelToolbar } from '../PanelToolbar';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -420,7 +421,7 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
           apply What-If.
         </div>
       )}
-      {error && <div className={styles.error} role="alert">{error}</div>}
+      {error && <Notice tone="error">{error}</Notice>}
       {notice && <div className={styles.notice}>{notice}</div>}
 
       {form && siteId !== null && (
@@ -586,7 +587,7 @@ function HolidayForm({ siteId, siteName, holiday, onCancel, onSaved, onDirtyChan
       <h4 className={styles.formTitle}>
         {holiday ? `Edit holiday` : `Add a holiday to ${siteName}`}
       </h4>
-      {error && <div className={styles.error} role="alert">{error}</div>}
+      {error && <Notice tone="error">{error}</Notice>}
       <div className={styles.formRow}>
         <div className={styles.field}>
           <label className={styles.label} htmlFor="holiday-name">Name</label>

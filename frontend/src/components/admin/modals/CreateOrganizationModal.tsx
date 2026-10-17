@@ -4,6 +4,7 @@
  */
 
 import { useId, useState } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { createOrganization } from '@/api';
 import { useEscapeKey } from '@/hooks';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -85,7 +86,7 @@ export function CreateOrganizationModal({ onClose, onCreated }: CreateOrganizati
         </div>
 
         <form className={styles.body} onSubmit={handleSubmit}>
-          {error && <div className={styles.error}>{error}</div>}
+          {error && <Notice tone="error">{error}</Notice>}
 
           <div className={styles.form}>
             <div className={styles.formGroup}>

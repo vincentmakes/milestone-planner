@@ -24,7 +24,6 @@ const phases: PredefinedPhase[] = [
   { id: 3, name: 'Transfer', sort_order: 2, is_active: true },
 ];
 
-let alertSpy: ReturnType<typeof vi.spyOn>;
 let errorSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
@@ -34,10 +33,8 @@ beforeEach(() => {
   vi.mocked(apiPost).mockReset().mockResolvedValue({});
   vi.mocked(apiPut).mockReset().mockResolvedValue({});
   vi.mocked(apiDelete).mockReset().mockResolvedValue({});
-  alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
   errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   return () => {
-    alertSpy.mockRestore();
     errorSpy.mockRestore();
   };
 });
@@ -84,13 +81,13 @@ describe('PredefinedPhasesPanel', () => {
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/api/predefined-phases', { name: 'Report' }));
   });
 
-  it('alerts when adding fails and keeps the typed name', async () => {
+  it('shows the error in place when adding fails and keeps the typed name', async () => {
     vi.mocked(apiPost).mockRejectedValue(new Error('Name already exists'));
     await renderPanel();
     const input = screen.getByPlaceholderText('New phase name...');
     fireEvent.change(input, { target: { value: 'Feasibility' } });
     fireEvent.keyDown(input, { key: 'Enter' });
-    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('Name already exists'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Name already exists');
     expect(input).toHaveValue('Feasibility');
   });
 
@@ -118,14 +115,14 @@ describe('PredefinedPhasesPanel', () => {
     expect(apiPut).toHaveBeenCalledTimes(1);
   });
 
-  it('alerts when a rename fails', async () => {
+  it('shows the error in place when a rename fails', async () => {
     vi.mocked(apiPut).mockRejectedValue(new Error('Rename refused'));
     await renderPanel();
     fireEvent.click(screen.getByText('Feasibility'));
     const editor = screen.getByDisplayValue('Feasibility');
     fireEvent.change(editor, { target: { value: 'X' } });
     fireEvent.blur(editor);
-    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('Rename refused'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Rename refused');
   });
 
   it('toggles a phase active state', async () => {
@@ -141,7 +138,7 @@ describe('PredefinedPhasesPanel', () => {
 
     vi.mocked(apiPut).mockRejectedValueOnce(new Error('nope'));
     fireEvent.click(screen.getByTitle('Activate'));
-    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('nope'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('nope');
   });
 
   it('exposes the active toggle as a pressed button named after the phase', async () => {
@@ -168,7 +165,7 @@ describe('PredefinedPhasesPanel', () => {
 
     vi.mocked(apiDelete).mockRejectedValueOnce(new Error('In use'));
     fireEvent.click(screen.getAllByTitle('Delete')[0]);
-    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('In use'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('In use');
     confirm.mockRestore();
   });
 

@@ -238,3 +238,8 @@
     flex-wrap: wrap;
   }
 }
+
+/* Inline error above the table (admin lists share this sheet) */
+.listNotice {
+  margin: 0 1.25rem 1rem;
+}

@@ -4,6 +4,7 @@
  */
 
 import { useId, useState, FormEvent } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { createAdminUser } from '@/api';
 import { useEscapeKey } from '@/hooks';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -122,7 +123,7 @@ export function CreateAdminModal({ onClose, onCreated }: CreateAdminModalProps) 
                 </select>
               </div>
 
-              {error && <div className={styles.error}>{error}</div>}
+              {error && <Notice tone="error">{error}</Notice>}
             </div>
         </form>
 

@@ -9,6 +9,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { PanelToolbar } from '../PanelToolbar';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -428,7 +429,7 @@ function EquipmentForm({
         </Button>
       </div>
       
-      {error && <div className={styles.error}>{error}</div>}
+      {error && <Notice tone="error">{error}</Notice>}
       
       <div className={styles.formFields}>
         {/* Name */}

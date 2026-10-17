@@ -111,6 +111,12 @@ const SETTINGS_ADD_ALIASES = new Set(['customHoliday', 'companyEvent']);
 // STATE INTERFACE
 // =============================================================================
 
+export interface FlashNotice {
+  id: number;
+  message: string;
+  tone: 'error' | 'warning' | 'info';
+}
+
 interface UIState {
   // ---------------------------------------------
   // MODAL STATE
@@ -226,6 +232,11 @@ interface UIState {
     parentType?: 'phase' | 'subphase';
   } | null;
   
+  // ---------------------------------------------
+  // FLASH NOTICE (detached errors — see layout/FlashNotice.tsx)
+  // ---------------------------------------------
+  flashNotice: FlashNotice | null;
+
   // ---------------------------------------------
   // LOADING STATES
   // ---------------------------------------------
@@ -352,6 +363,11 @@ interface UIState {
   // ACTIONS - Loading
   // ---------------------------------------------
   setLoading: (loading: boolean, message?: string) => void;
+
+  /** Show a detached message bottom-right (errors from actions with no form of their own). */
+  showFlash: (message: string, tone?: FlashNotice['tone']) => void;
+  /** Clear the flash; with an id, only if that flash is still the one showing. */
+  dismissFlash: (id?: number) => void;
   
   // ---------------------------------------------
   // ACTIONS - Context Menu
@@ -486,6 +502,7 @@ const initialState = {
   // Loading
   isLoading: false,
   loadingMessage: '',
+  flashNotice: null,
   
   // Timeline scroll
   scrollToTodayTrigger: 0,
@@ -763,6 +780,13 @@ export const useUIStore = create<UIState>()((set) => ({
     isLoading: loading,
     loadingMessage: message,
   }),
+
+  showFlash: (message, tone = 'error') => set({
+    flashNotice: { id: Date.now() + Math.random(), message, tone },
+  }),
+  dismissFlash: (id) => set((state) =>
+    id === undefined || state.flashNotice?.id === id ? { flashNotice: null } : {}
+  ),
   
   // -----------------------------------------
   // CONTEXT MENU ACTIONS

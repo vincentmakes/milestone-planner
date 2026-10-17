@@ -6,7 +6,9 @@
  * - Export to ICS
  */
 
+import { useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { Notice } from '@/components/common/Notice';
 import { useUIStore } from '@/stores/uiStore';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { deleteCustomHoliday, getBankHolidays, buildHolidayDateSet } from '@/api';
@@ -20,6 +22,7 @@ interface BankHolidaysRowProps {
 }
 
 export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) {
+  const [error, setError] = useState<string | null>(null);
   const currentSite = useAppStore((s) => s.currentSite);
   const currentUser = useAppStore((s) => s.currentUser);
   const bankHolidays = useAppStore((s) => s.bankHolidays);
@@ -91,6 +94,7 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
       ? 'Delete this custom holiday?'
       : 'Delete this public holiday? It will come back the next time holidays are refreshed from Nager.';
     if (!confirm(message)) return;
+    setError(null);
     
     try {
       await deleteCustomHoliday(currentSite.id, holidayId);
@@ -101,12 +105,17 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
       setBankHolidays(holidays, holidayDates);
     } catch (err) {
       console.error('Failed to delete holiday:', err);
-      alert('Failed to delete holiday');
+      setError('Failed to delete holiday');
     }
   };
   
   return (
     <div className={styles.bankHolidaysWrapper}>
+      {error && (
+        <Notice tone="error" onDismiss={() => setError(null)} className={styles.rowNotice}>
+          {error}
+        </Notice>
+      )}
       {/* Main bank holidays row */}
       <div 
         className={`${styles.staffRow} ${styles.bankHolidaysRow} ${!onToggle ? styles.noExpand : ''}`}

@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Notice } from '@/components/common/Notice';
 import type { DragEvent, KeyboardEvent } from 'react';
 import { Button } from '@/components/common/Button';
 import { Select } from '@/components/common/Select';
@@ -514,9 +515,7 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
       </p>
 
       {error && (
-        <div className={styles.error} role="alert">
-          {error}
-        </div>
+        <Notice tone="error">{error}</Notice>
       )}
 
       {/* Groups */}

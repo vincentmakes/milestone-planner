@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { useAdminStore } from '@/stores/adminStore';
 import { deleteAdminUser, updateAdminUser } from '@/api';
 import { Button } from '@/components/common/Button';
+import { Notice } from '@/components/common/Notice';
 import { PlusIcon } from '@/components/settings/panels/PanelIcons';
 import styles from './TenantList.module.css'; // Reuse styles
 
@@ -18,15 +19,17 @@ interface AdminUserListProps {
 export function AdminUserList({ onCreateNew, onRefresh }: AdminUserListProps) {
   const adminUsers = useAdminStore((s) => s.adminUsers);
   const currentUser = useAdminStore((s) => s.adminUser);
+  const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
 
   const handleToggleActive = async (id: number, currentActive: boolean) => {
+    setError(null);
     setActionLoading(id);
     try {
       await updateAdminUser(id, { active: !currentActive });
       onRefresh();
     } catch (err) {
-      alert('Error: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setActionLoading(null);
     }
@@ -34,18 +37,19 @@ export function AdminUserList({ onCreateNew, onRefresh }: AdminUserListProps) {
 
   const handleDelete = async (id: number, email: string) => {
     if (id === currentUser?.id) {
-      alert('You cannot delete yourself.');
+      setError('You cannot delete yourself.');
       return;
     }
     
     if (!confirm(`Delete admin user "${email}"?`)) return;
     
+    setError(null);
     setActionLoading(id);
     try {
       await deleteAdminUser(id);
       onRefresh();
     } catch (err) {
-      alert('Error: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setActionLoading(null);
     }
@@ -69,6 +73,12 @@ export function AdminUserList({ onCreateNew, onRefresh }: AdminUserListProps) {
             Add Admin
           </Button>
         </div>
+
+        {error && (
+          <Notice tone="error" onDismiss={() => setError(null)} className={styles.listNotice}>
+            {error}
+          </Notice>
+        )}
 
         <div className={styles.tableWrapper}>
           <table className={styles.table}>

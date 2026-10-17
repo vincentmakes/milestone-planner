@@ -4,6 +4,7 @@
  */
 
 import { useId, useState, useEffect, useCallback } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { useAdminStore } from '@/stores/adminStore';
 import { 
   getOrganization, 
@@ -351,10 +352,10 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
               Loading...
             </div>
           ) : error && !organization ? (
-            <div className={styles.error}>{error}</div>
+            <Notice tone="error">{error}</Notice>
           ) : organization ? (
             <>
-              {error && <div className={styles.error} style={{ marginBottom: '1rem' }}>{error}</div>}
+              {error && <Notice tone="error" style={{ marginBottom: '1rem' }}>{error}</Notice>}
               
               {/* Details Tab */}
               {activeTab === 'details' && (

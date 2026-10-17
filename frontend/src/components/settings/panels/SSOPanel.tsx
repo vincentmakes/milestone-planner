@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { useAppStore } from '@/stores/appStore';
@@ -137,7 +138,7 @@ export function SSOPanel() {
         <div className={styles.loading}>Loading configuration...</div>
       ) : (
         <>
-          {error && <div className={styles.error}>{error}</div>}
+          {error && <Notice tone="error">{error}</Notice>}
           {success && <div className={styles.success}>{success}</div>}
 
           {orgSSOActive && (

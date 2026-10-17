@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { PanelToolbar } from '../PanelToolbar';
 import { BackIcon, EditIcon, TrashIcon } from './PanelIcons';
@@ -146,7 +147,7 @@ export function EquipmentTypesPanel({ onDirtyChange }: Partial<SettingsPanelProp
           />
           
           {error && (
-            <div className={styles.error}>{error}</div>
+            <Notice tone="error">{error}</Notice>
           )}
           
           {/* Types list */}
@@ -285,7 +286,7 @@ function TypeForm({ typeName, existingTypes, allEquipment, onSave, onCancel, onD
       </div>
       
       {error && (
-        <div className={styles.error}>{error}</div>
+        <Notice tone="error">{error}</Notice>
       )}
       
       {/* Type Name */}

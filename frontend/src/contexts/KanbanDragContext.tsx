@@ -19,6 +19,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { useUIStore } from '@/stores/uiStore';
 import { recoverFromPersistFailure } from '@/utils/persistFailure';
 import { moveCard } from '@/api/endpoints/kanban';
 import { applyStatusToCard, type KanbanCard } from '@/utils/kanbanCards';
@@ -226,6 +227,6 @@ async function commitMove(payload: DragPayload, status: CardStatus): Promise<voi
     // Optimistic-write failure protocol (reload from the server, drop the undo
     // stack) — the shared helper, never open-coded.
     await recoverFromPersistFailure('Kanban', err);
-    window.alert('Could not move the card. The board has been refreshed.');
+    useUIStore.getState().showFlash('Could not move the card. The board has been refreshed.');
   }
 }

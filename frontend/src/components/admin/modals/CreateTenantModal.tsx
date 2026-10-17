@@ -4,6 +4,7 @@
  */
 
 import { useId, useState, FormEvent } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { createTenant } from '@/api';
 import type { Tenant, TenantCreateRequest } from '@/api/endpoints/admin';
 import { useEscapeKey } from '@/hooks';
@@ -186,7 +187,7 @@ export function CreateTenantModal({ onClose, onCreated }: CreateTenantModalProps
                 />
               </div>
 
-              {error && <div className={styles.error}>{error}</div>}
+              {error && <Notice tone="error">{error}</Notice>}
             </div>
         </form>
 

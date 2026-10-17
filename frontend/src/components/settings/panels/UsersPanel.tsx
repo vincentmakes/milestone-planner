@@ -19,6 +19,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
+import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { PanelToolbar } from '../PanelToolbar';
 import { BackIcon, CheckIcon, CloseIcon, EditIcon, GearIcon, PlusIcon } from './PanelIcons';
@@ -712,7 +713,7 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
         </Button>
       </div>
       
-      {error && <div className={styles.error}>{error}</div>}
+      {error && <Notice tone="error">{error}</Notice>}
       
       <div className={styles.formGrid}>
         <div className={styles.field}>
