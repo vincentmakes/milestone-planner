@@ -84,7 +84,9 @@ def _shift_phase(ctx, project_name: str, phase_index: int, days: int) -> tuple[i
     the capture must leave the demo data as it found it (the pipeline is
     idempotent and other shots reference these dates).
     """
-    projects = ctx.request.get(f"{URL}api/projects").json()
+    listing = ctx.request.get(f"{URL}api/projects").json()
+    # GET /api/projects answers {"items": [...]} (a bare list on older servers)
+    projects = listing["items"] if isinstance(listing, dict) else listing
     project = next(p for p in projects if p["name"] == project_name)
     detail = ctx.request.get(f"{URL}api/projects/{project['id']}").json()
     phases = sorted(detail["phases"], key=lambda ph: ph["sort_order"])
