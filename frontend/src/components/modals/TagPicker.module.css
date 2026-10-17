@@ -46,15 +46,32 @@
   line-height: 1;
   cursor: pointer;
   padding: 0;
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 1rem;
+  height: 1rem;
   border-radius: 999px;
 }
 
 .pillRemove:hover {
   opacity: 1;
   background: rgba(0, 0, 0, 0.2);
+}
+
+/* Touch: global.css's touch min-height would stretch the pill; keep the × inline
+   and enlarge only its invisible hit area. */
+@media (hover: none) and (pointer: coarse) {
+  .pillRemove {
+    min-height: 0 !important;
+  }
+
+  .pillRemove::after {
+    content: '';
+    position: absolute;
+    inset: -10px;
+  }
 }
 
 .searchWrapper {

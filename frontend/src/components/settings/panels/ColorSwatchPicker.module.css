@@ -51,3 +51,13 @@
   opacity: 0;
   cursor: pointer;
 }
+
+/* Touch: global.css lifts touch buttons to min-height 40px; grow the width too
+   so swatches stay round (and get a proper touch target). */
+@media (hover: none) and (pointer: coarse) {
+  .swatch,
+  .custom {
+    width: 40px;
+    height: 40px;
+  }
+}

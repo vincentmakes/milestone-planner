@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Equipment and users cannot be deleted while a What-If plan is open, so the plan can never show bookings of something that no longer exists.
 
 ### Fixed
+- On iPad and other touch devices, tag pills and colour swatches are no longer stretched vertically.
 - Reordering custom columns in the manager dialog is saved again (the reorder request was answered with a validation error).
 - A phase or phase template added after one at the first position no longer shares its sort position with it.
 - A tag created or recoloured while What-If mode is on no longer disappears until the plan is applied.
