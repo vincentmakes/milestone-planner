@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Large .ics imports are sent in batches, so a calendar export with more than 1 000 entries no longer fails.
 - The project tree's expand button is disabled once every level is open, instead of staying active.
 - Tapping a Gantt bar on a touch screen works again instead of failing silently.
-- Dragging and resizing bars on the Gantt chart now works with a finger on touch screens: phases, subphases, projects and staff/equipment bookings. A swipe that starts on a bar moves the bar; swipe on empty space to scroll.
+- Dragging and resizing bars on the Gantt chart now works with a finger on touch screens: phases, subphases, projects and staff/equipment bookings. A swipe that starts on a bar you can edit moves the bar; swipe on empty space to scroll.
 - A touch that is cancelled mid-drag (an incoming call, for example) no longer opens the dialog or saves a half-moved bar.
 - Colleagues' screens now drop the projects of a deleted site at once, instead of showing them until the next reload.
 - The end-date check on the holiday and company-event forms shows the in-app message instead of the browser's own tooltip.
