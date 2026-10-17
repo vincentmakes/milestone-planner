@@ -1,12 +1,13 @@
 /**
  * AbsenceTypeSelect - pick an absence type (Holidays, Home Office, ...)
  *
- * Lists the active types in sort order with a colour chip for the selected
- * one. A value pointing at an inactive type stays selectable (labelled
+ * Lists the active types in sort order (a shared Select) with a colour chip
+ * for the selected one in the Select's icon slot. A value pointing at an inactive type stays selectable (labelled
  * "(inactive)") so editing an old absence never silently changes its type.
  */
 
 import { useMemo } from 'react';
+import { Select } from '@/components/common/Select';
 import { activeAbsenceTypes, absenceColorStyle } from '@/utils/recurringVacation';
 import type { AbsenceType } from '@/types';
 import styles from './AbsenceTypeSelect.module.css';
@@ -42,30 +43,34 @@ export function AbsenceTypeSelect({
   // "No type" is offered only when it is the current value or nothing else exists
   const showNone = value == null || options.length === 0;
 
+  const selectOptions = useMemo(
+    () => [
+      ...(showNone ? [{ value: '', label: 'No type' }] : []),
+      ...options.map((t) => ({
+        value: t.id,
+        label: `${t.name}${t.is_active ? '' : ' (inactive)'}${t.counts_as_unavailable ? '' : ' (available)'}`,
+      })),
+    ],
+    [options, showNone]
+  );
+
   return (
-    <span className={`${styles.wrapper} ${compact ? styles.compact : ''}`}>
-      <span
-        className={`${styles.chip} ${selectedType ? '' : styles.chipNone}`}
-        style={absenceColorStyle(selectedType)}
-        aria-hidden="true"
-      />
-      <select
-        id={id}
-        className={styles.select}
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
-        aria-label={ariaLabel}
-        disabled={disabled}
-      >
-        {showNone && <option value="">No type</option>}
-        {options.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.name}
-            {t.is_active ? '' : ' (inactive)'}
-            {t.counts_as_unavailable ? '' : ' (available)'}
-          </option>
-        ))}
-      </select>
-    </span>
+    <Select
+      id={id}
+      className={compact ? styles.compact : undefined}
+      fullWidth
+      icon={
+        <span
+          className={`${styles.chip} ${selectedType ? '' : styles.chipNone}`}
+          style={absenceColorStyle(selectedType)}
+          aria-hidden="true"
+        />
+      }
+      value={value ?? ''}
+      onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+      aria-label={ariaLabel}
+      disabled={disabled}
+      options={selectOptions}
+    />
   );
 }

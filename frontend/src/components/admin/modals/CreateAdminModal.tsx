@@ -5,10 +5,17 @@
 
 import { useId, useState, FormEvent } from 'react';
 import { Notice } from '@/components/common/Notice';
+import { Input } from '@/components/common/Input';
+import { Select } from '@/components/common/Select';
 import { createAdminUser } from '@/api';
 import { useEscapeKey } from '@/hooks';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import styles from './AdminModal.module.css';
+
+const ROLE_OPTIONS = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'superadmin', label: 'Superadmin' },
+];
 
 interface CreateAdminModalProps {
   onClose: () => void;
@@ -66,62 +73,52 @@ export function CreateAdminModal({ onClose, onCreated }: CreateAdminModalProps) 
 
         <form id="create-admin-form" onSubmit={handleSubmit} className={styles.body}>
             <div className={styles.form}>
-              <div className={styles.formGroup}>
-                <label className={styles.label}>Email *</label>
-                <input
-                  type="email"
-                  name="email"
-                  className={styles.input}
-                  value={formData.email}
-                  onChange={handleChange}
-                  placeholder="admin@example.com"
-                  required
-                  disabled={isSubmitting}
-                />
-              </div>
+              <Input
+                label="Email *"
+                type="email"
+                name="email"
+                fullWidth
+                value={formData.email}
+                onChange={handleChange}
+                placeholder="admin@example.com"
+                required
+                disabled={isSubmitting}
+              />
 
-              <div className={styles.formGroup}>
-                <label className={styles.label}>Password *</label>
-                <input
-                  type="password"
-                  name="password"
-                  className={styles.input}
-                  value={formData.password}
-                  onChange={handleChange}
-                  placeholder="••••••••"
-                  minLength={8}
-                  required
-                  disabled={isSubmitting}
-                />
-              </div>
+              <Input
+                label="Password *"
+                type="password"
+                name="password"
+                fullWidth
+                value={formData.password}
+                onChange={handleChange}
+                placeholder="••••••••"
+                minLength={8}
+                required
+                disabled={isSubmitting}
+              />
 
-              <div className={styles.formGroup}>
-                <label className={styles.label}>Name *</label>
-                <input
-                  type="text"
-                  name="name"
-                  className={styles.input}
-                  value={formData.name}
-                  onChange={handleChange}
-                  placeholder="John Doe"
-                  required
-                  disabled={isSubmitting}
-                />
-              </div>
+              <Input
+                label="Name *"
+                type="text"
+                name="name"
+                fullWidth
+                value={formData.name}
+                onChange={handleChange}
+                placeholder="John Doe"
+                required
+                disabled={isSubmitting}
+              />
 
-              <div className={styles.formGroup}>
-                <label className={styles.label}>Role</label>
-                <select
-                  name="role"
-                  className={styles.select}
-                  value={formData.role}
-                  onChange={handleChange}
-                  disabled={isSubmitting}
-                >
-                  <option value="admin">Admin</option>
-                  <option value="superadmin">Superadmin</option>
-                </select>
-              </div>
+              <Select
+                label="Role"
+                name="role"
+                fullWidth
+                value={formData.role}
+                onChange={handleChange}
+                disabled={isSubmitting}
+                options={ROLE_OPTIONS}
+              />
 
               {error && <Notice tone="error">{error}</Notice>}
             </div>

@@ -20,45 +20,15 @@
   gap: 1rem;
 }
 
+/* A grid cell wrapping a shared Input: lets a date field shrink below its intrinsic width */
+.field {
+  min-width: 0;
+}
+
 .label {
   font-size: 0.875rem;
   font-weight: var(--font-weight-medium);
   color: var(--text-secondary);
-}
-
-.input {
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  transition: border-color var(--transition-fast);
-}
-
-.input:focus {
-  outline: none;
-  border-color: var(--accent-blue);
-}
-
-.input::placeholder {
-  color: var(--text-muted);
-}
-
-/* Select styling */
-.input option {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-}
-
-/* Date input specific styling */
-.input[type="date"] {
-  color-scheme: dark;
-}
-
-.input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(0.8);
-  cursor: pointer;
 }
 
 /* Checkbox styling */

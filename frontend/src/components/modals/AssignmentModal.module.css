@@ -20,31 +20,9 @@
   gap: 1rem;
 }
 
-.label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.input {
-  padding: 0.625rem 0.75rem;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  font-size: 0.875rem;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.input:focus {
-  outline: none;
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
-}
-
-.input:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+/* A grid cell wrapping a shared Input: lets a date field shrink below its intrinsic width */
+.field {
+  min-width: 0;
 }
 
 .contextInfo {

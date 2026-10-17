@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useAppStore } from '@/stores/appStore';
 import { apiGet, apiPost, apiPut, apiDelete } from '@/api/client';
@@ -301,7 +302,9 @@ export function PredefinedPhasesPanel() {
       {/* Add New Phase */}
       {canManage && (
         <div className={styles.addSection}>
-          <input
+          <Input
+            className={styles.addInput}
+            aria-label="New phase name"
             type="text"
             value={newPhaseName}
             onChange={(e) => setNewPhaseName(e.target.value)}

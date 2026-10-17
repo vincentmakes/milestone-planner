@@ -8,6 +8,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
@@ -635,17 +636,15 @@ export function SubphaseModal() {
           </div>
         )}
         
-        <div className={styles.formGroup}>
-          <label className={styles.label}>Subphase Name *</label>
-          <input
-            type="text"
-            className={styles.input}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g., Task 1, Setup, Review, etc."
-            autoFocus
-          />
-        </div>
+        <Input
+          label="Subphase Name *"
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g., Task 1, Setup, Review, etc."
+          autoFocus
+          fullWidth
+        />
         
         <div className={styles.formGroup}>
           <label className={styles.checkbox}>
@@ -659,25 +658,21 @@ export function SubphaseModal() {
         </div>
         
         <div className={styles.formRow}>
-          <div className={styles.formGroup}>
-            <label className={styles.label}>{isMilestone ? 'Date *' : 'Start Date *'}</label>
-            <input
-              type="date"
-              className={styles.input}
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </div>
+          <Input
+            label={isMilestone ? 'Date *' : 'Start Date *'}
+            type="date"
+            className={styles.field}
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+          />
           {!isMilestone && (
-            <div className={styles.formGroup}>
-              <label className={styles.label}>End Date *</label>
-              <input
-                type="date"
-                className={styles.input}
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-            </div>
+            <Input
+              label="End Date *"
+              type="date"
+              className={styles.field}
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
           )}
         </div>
       </form>

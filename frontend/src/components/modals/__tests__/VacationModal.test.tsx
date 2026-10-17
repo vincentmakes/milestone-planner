@@ -70,6 +70,8 @@ describe('VacationModal', () => {
 
     // Falls back to the signed-in user when they are not in the site's staff list
     expect(screen.getByText('Una User')).toBeInTheDocument();
+    expect(screen.getByLabelText('From')).toHaveAttribute('type', 'date');
+    expect(screen.getByLabelText('To')).toHaveAttribute('type', 'date');
     const select = screen.getByLabelText('Absence type') as HTMLSelectElement;
     expect(select.value).toBe('1'); // Holidays, not the first-sorted Home Office
 
@@ -163,5 +165,33 @@ describe('VacationModal', () => {
     const options = screen.getAllByRole('option').map((o) => o.textContent);
     expect(options.filter((name) => name === 'Bob Brown')).toHaveLength(1);
     expect(options).toContain('Cleo Chen');
+  });
+
+  it('books the picked staff member for the typed dates', async () => {
+    useAppStore.setState({
+      currentUser: { ...useAppStore.getState().currentUser!, role: 'admin' },
+      staff: [
+        { id: 4, name: 'Bob Brown', site_id: 1 },
+        { id: 5, name: 'Cleo Chen', site_id: 1 },
+      ] as never,
+    });
+    useUIStore.getState().openVacationModal(undefined, undefined);
+    render(<VacationModal />);
+
+    const picker = screen.getByLabelText('Staff Member');
+    fireEvent.change(picker, { target: { value: '5' } });
+    expect(picker).toHaveValue('5');
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-11-02' } });
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-11-06' } });
+    expect(screen.getByLabelText('From')).toHaveValue('2026-11-02');
+    expect(screen.getByLabelText('To')).toHaveValue('2026-11-06');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(createVacation).toHaveBeenCalled());
+    expect(vi.mocked(createVacation).mock.calls[0][0]).toMatchObject({
+      staff_id: 5,
+      start_date: '2026-11-02',
+      end_date: '2026-11-06',
+    });
   });
 });

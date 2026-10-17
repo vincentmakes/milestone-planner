@@ -104,6 +104,10 @@ describe('SSOPanel', () => {
     render(<SSOPanel />);
     await screen.findByDisplayValue('tenant-guid');
     fireEvent.change(field(/Tenant ID/), { target: { value: '  new-tenant  ' } });
+    fireEvent.change(field(/Client ID/), { target: { value: 'new-client' } });
+    fireEvent.change(field(/Redirect URI/), { target: { value: 'https://new.example/cb' } });
+    expect(field(/Client ID/)).toHaveValue('new-client');
+    expect(field(/Redirect URI/)).toHaveValue('https://new.example/cb');
     fireEvent.click(screen.getByRole('switch', { name: /Auto-create users/ }));
     fireEvent.change(field(/Default role/), { target: { value: 'superuser' } });
     fireEvent.click(save());
@@ -112,8 +116,8 @@ describe('SSOPanel', () => {
     expect(apiPut).toHaveBeenCalledWith('/api/sso/config', {
       enabled: true,
       tenant_id: 'new-tenant',
-      client_id: 'client-guid',
-      redirect_uri: fullConfig.redirect_uri,
+      client_id: 'new-client',
+      redirect_uri: 'https://new.example/cb',
       auto_create_users: true,
       default_role: 'superuser',
     });

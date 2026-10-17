@@ -8,6 +8,8 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
+import { Select } from '@/components/common/Select';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import {
@@ -314,6 +316,27 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
 
   const resourceLabel = isStaff ? 'Staff' : 'Equipment';
 
+  // The empty first entry stays a real, selectable option (as before).
+  const resourceOptions = useMemo(
+    () => [
+      { value: '', label: isStaff ? 'Select staff member' : 'Select equipment' },
+      ...(isStaff
+        ? siteResources.map((s) => {
+            const maxCap = (s as typeof staff[0]).max_capacity ?? 100;
+            const capacityLabel = maxCap < 100 ? ` - ${maxCap}% capacity` : '';
+            return {
+              value: s.id,
+              label: `${s.name} (${(s as typeof staff[0]).role || 'No role'})${capacityLabel}`,
+            };
+          })
+        : siteResources.map((e) => ({
+            value: e.id,
+            label: `${e.name} (${(e as typeof equipment[0]).type || 'No type'})`,
+          }))),
+    ],
+    [isStaff, siteResources]
+  );
+
   const footer = (
     <div className={styles.footer}>
       {canRemove && (
@@ -366,50 +389,29 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
         </div>
 
         {/* Resource selector */}
-        <div className={styles.formGroup}>
-          <label className={styles.label}>
-            {isStaff ? 'Staff Member *' : 'Equipment *'}
-          </label>
-          {selfOnly ? (
-            // Fixed to the current user: non-editors only book their own time.
-            <input
-              type="text"
-              className={styles.input}
-              value="You"
-              readOnly
-              aria-label="Staff Member"
-              title={currentUser?.name}
-            />
-          ) : (
-          <select
-            className={styles.input}
+        {selfOnly ? (
+          // Fixed to the current user: non-editors only book their own time
+          // (selfOnly implies a staff assignment).
+          <Input
+            label="Staff Member *"
+            type="text"
+            value="You"
+            readOnly
+            aria-label="Staff Member"
+            title={currentUser?.name}
+            fullWidth
+          />
+        ) : (
+          <Select
+            label={isStaff ? 'Staff Member *' : 'Equipment *'}
             value={resourceId}
             onChange={(e) => handleResourceChange(e.target.value)}
             disabled={isEditing}
             aria-label={isStaff ? 'Staff Member' : 'Equipment'}
-          >
-            <option value="">
-              {isStaff ? 'Select staff member' : 'Select equipment'}
-            </option>
-            {isStaff
-              ? siteResources.map(s => {
-                  const maxCap = (s as typeof staff[0]).max_capacity ?? 100;
-                  const capacityLabel = maxCap < 100 ? ` - ${maxCap}% capacity` : '';
-                  return (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({(s as typeof staff[0]).role || 'No role'}){capacityLabel}
-                    </option>
-                  );
-                })
-              : siteResources.map(e => (
-                  <option key={e.id} value={e.id}>
-                    {e.name} ({(e as typeof equipment[0]).type || 'No type'})
-                  </option>
-                ))
-            }
-          </select>
-          )}
-        </div>
+            options={resourceOptions}
+            fullWidth
+          />
+        )}
 
         {/* Allocation slider - staff mode only */}
         {isStaff && (
@@ -428,24 +430,20 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
         {/* Equipment: always show */}
         {(!isStaff || !isPhaseOrSubphase) && (
           <div className={styles.formRow}>
-            <div className={styles.formGroup}>
-              <label className={styles.label}>Start Date *</label>
-              <input
-                type="date"
-                className={styles.input}
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-            <div className={styles.formGroup}>
-              <label className={styles.label}>End Date *</label>
-              <input
-                type="date"
-                className={styles.input}
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-            </div>
+            <Input
+              label="Start Date *"
+              type="date"
+              className={styles.field}
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+            <Input
+              label="End Date *"
+              type="date"
+              className={styles.field}
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
           </div>
         )}
 

@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Notice } from '@/components/common/Notice';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { useAppStore } from '@/stores/appStore';
@@ -235,27 +236,21 @@ function InstanceSettingsForm({ onDirtyChange, appearance }: InstanceSettingsFor
           <section className={styles.section}>
             <h3 className={styles.sectionTitle}>Instance</h3>
             
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="instance-title">
-                Application Title
-              </label>
-              <input
-                id="instance-title"
-                type="text"
-                className={styles.input}
-                value={settings.instance_title}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setSettings(prev => ({ ...prev, instance_title: value }));
-                  setSuccess(null);
-                }}
-                placeholder="Milestone"
-                autoComplete="off"
-              />
-              <span className={styles.hint}>
-                Displayed in the header and browser tab
-              </span>
-            </div>
+            <Input
+              label="Application Title"
+              hint="Displayed in the header and browser tab"
+              fullWidth
+              id="instance-title"
+              type="text"
+              value={settings.instance_title}
+              onChange={(e) => {
+                const value = e.target.value;
+                setSettings(prev => ({ ...prev, instance_title: value }));
+                setSuccess(null);
+              }}
+              placeholder="Milestone"
+              autoComplete="off"
+            />
           </section>
           
           {/* Appearance Section (per browser) */}

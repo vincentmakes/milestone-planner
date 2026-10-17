@@ -7,6 +7,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
@@ -367,17 +368,15 @@ export function PhaseModal() {
         )}
         {error && error !== createBlockedReason && <div className={styles.error}>{error}</div>}
         
-        <div className={styles.formGroup}>
-          <label className={styles.label}>Phase Name *</label>
-          <input
-            type="text"
-            className={styles.input}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g., Preparation, Analytics, Trial, etc."
-            autoFocus
-          />
-        </div>
+        <Input
+          label="Phase Name *"
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g., Preparation, Analytics, Trial, etc."
+          autoFocus
+          fullWidth
+        />
         
         <div className={styles.formGroup}>
           <label className={styles.checkbox}>
@@ -391,25 +390,21 @@ export function PhaseModal() {
         </div>
         
         <div className={styles.formRow}>
-          <div className={styles.formGroup}>
-            <label className={styles.label}>{isMilestone ? 'Date *' : 'Start Date *'}</label>
-            <input
-              type="date"
-              className={styles.input}
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </div>
+          <Input
+            label={isMilestone ? 'Date *' : 'Start Date *'}
+            type="date"
+            className={styles.field}
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+          />
           {!isMilestone && (
-            <div className={styles.formGroup}>
-              <label className={styles.label}>End Date *</label>
-              <input
-                type="date"
-                className={styles.input}
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-            </div>
+            <Input
+              label="End Date *"
+              type="date"
+              className={styles.field}
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
           )}
         </div>
         

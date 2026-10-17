@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
 import { PanelToolbar } from '../PanelToolbar';
 import { BackIcon, EditIcon, PlusIcon, TrashIcon } from './PanelIcons';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -255,30 +256,26 @@ function SkillForm({ skill, onSave, onCancel, onDirtyChange }: SkillFormProps) {
       )}
       
       {/* Skill Name */}
-      <div className={styles.field}>
-        <label htmlFor="skillName">Name *</label>
-        <input
-          type="text"
-          id="skillName"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g., Project Management"
-          required
-          maxLength={100}
-        />
-      </div>
+      <Input
+        label="Name *"
+        type="text"
+        id="skillName"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="e.g., Project Management"
+        required
+        maxLength={100}
+      />
       
       {/* Description */}
-      <div className={styles.field}>
-        <label htmlFor="skillDesc">Description</label>
-        <input
-          type="text"
-          id="skillDesc"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Optional description"
-        />
-      </div>
+      <Input
+        label="Description"
+        type="text"
+        id="skillDesc"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Optional description"
+      />
       
       {/* Color Picker */}
       <div className={styles.field}>

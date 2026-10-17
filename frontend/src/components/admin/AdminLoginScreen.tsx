@@ -8,6 +8,7 @@ import { useState, FormEvent, useEffect } from 'react';
 import { adminLogin, adminLogout, changeAdminPassword } from '@/api';
 import { useAdminStore } from '@/stores/adminStore';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { BackIcon } from '@/components/settings/panels/PanelIcons';
 import { getTheme, isDarkTheme, type Theme } from '@/utils/storage';
@@ -165,51 +166,45 @@ export function AdminLoginScreen() {
           ) : (
             <form onSubmit={handleChangePassword} className={styles.form}>
               {askCurrentPassword && (
-                <div className={styles.formGroup}>
-                  <label htmlFor="currentPassword" className={styles.label}>Current Password</label>
-                  <input
-                    type="password"
-                    id="currentPassword"
-                    className={styles.input}
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    required
-                    autoFocus
-                    disabled={isSubmitting}
-                  />
-                </div>
+                <Input
+                  label="Current Password"
+                  type="password"
+                  id="currentPassword"
+                  fullWidth
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  required
+                  autoFocus
+                  disabled={isSubmitting}
+                />
               )}
 
-              <div className={styles.formGroup}>
-                <label htmlFor="newPassword" className={styles.label}>New Password</label>
-                <input
-                  type="password"
-                  id="newPassword"
-                  className={styles.input}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Minimum 8 characters"
-                  required
-                  minLength={8}
-                  autoFocus={!askCurrentPassword}
-                  disabled={isSubmitting}
-                />
-              </div>
+              <Input
+                label="New Password"
+                type="password"
+                id="newPassword"
+                fullWidth
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Minimum 8 characters"
+                required
+                minLength={8}
+                autoFocus={!askCurrentPassword}
+                disabled={isSubmitting}
+              />
 
-              <div className={styles.formGroup}>
-                <label htmlFor="confirmPassword" className={styles.label}>Confirm Password</label>
-                <input
-                  type="password"
-                  id="confirmPassword"
-                  className={styles.input}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Re-enter new password"
-                  required
-                  minLength={8}
-                  disabled={isSubmitting}
-                />
-              </div>
+              <Input
+                label="Confirm Password"
+                type="password"
+                id="confirmPassword"
+                fullWidth
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Re-enter new password"
+                required
+                minLength={8}
+                disabled={isSubmitting}
+              />
 
               {error && <div className={styles.error}>{error}</div>}
 
@@ -241,34 +236,30 @@ export function AdminLoginScreen() {
         </div>
 
         <form onSubmit={handleSubmit} className={styles.form}>
-          <div className={styles.formGroup}>
-            <label htmlFor="email" className={styles.label}>Email</label>
-            <input
-              type="email"
-              id="email"
-              className={styles.input}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@example.com"
-              required
-              autoFocus
-              disabled={isSubmitting}
-            />
-          </div>
+          <Input
+            label="Email"
+            type="email"
+            id="email"
+            fullWidth
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="admin@example.com"
+            required
+            autoFocus
+            disabled={isSubmitting}
+          />
 
-          <div className={styles.formGroup}>
-            <label htmlFor="password" className={styles.label}>Password</label>
-            <input
-              type="password"
-              id="password"
-              className={styles.input}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              disabled={isSubmitting}
-            />
-          </div>
+          <Input
+            label="Password"
+            type="password"
+            id="password"
+            fullWidth
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+            required
+            disabled={isSubmitting}
+          />
 
           {error && <div className={styles.error}>{error}</div>}
 

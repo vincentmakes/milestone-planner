@@ -454,8 +454,10 @@ decision, not an oversight.
   overlapped on iPad; `global.css` also lets `input[type="date"]` shrink. The token test rejects
   a bare `1fr` track in a module stylesheet.
 - **`Select`** (`components/common/Select`): `options: {value, label, disabled?}[]`,
-  `placeholder` (rendered as a disabled empty option), `icon`, `label`, `error`, `hint`,
-  `fullWidth`. 36 px.
+  `groups: {label, options}[]` (labelled `<optgroup>`s after the flat options — the site
+  form's countries by region), `placeholder` (rendered as a *disabled* empty option, so only
+  for a choice the user must replace; a selectable "none" is a normal `options` entry),
+  `icon`, `label`, `error`, `hint`, `fullWidth`. 36 px.
 - **`ToggleSwitch`** (`components/common/ToggleSwitch`): every on/off *setting* or preference. A
   visually hidden checkbox with `role="switch"`, so keyboard, screen-reader and label behaviour
   come for free; pass `label` for visible text or `aria-label` when there is none. Every setting
@@ -490,9 +492,22 @@ decision, not an oversight.
   two-column grid with a 1 rem gap; labels are `--text-secondary`, weight 500. Settings panels
   report unsaved input with `useReportDirty(onDirtyChange, dirty)` so the hub asks before
   switching section or closing.
-- Adoption of `Input` / `Select` is still low (about 126 raw `<input>` and 30 raw `<select>`,
-  styled through local `.input` classes). New forms use the shared components; migrate old ones
-  when you touch them.
+- **Every text-like field and every dropdown is `Input` / `Select`** — dialogs, Settings panels,
+  the admin-portal modals and both login screens included; no component styles its own `.input`
+  any more. Both generate a stable id with `useId` when none is passed, so the label link never
+  churns. The documented exceptions, and the only raw controls left, are: the inline row-rename
+  editors inside list rows (Tags, Absence types, Predefined phases — 32 px, no label), the two
+  ARIA comboboxes with their own listbox (the Users panel job-title autocomplete, the `TagPicker`
+  search), the Gantt `CustomColumnCell` editor (a table cell), the header `SiteSelector` (styled
+  by density tier), the `SettingsHub` phone-only section picker and the read-only copy fields of
+  `CredentialsModal`. `src/components/__tests__/rawFormControls.test.ts` pins them: it counts
+  text-like `<input>`s and `<select>`s per component against `rawFormControlsAllowlist.json`, a
+  count may only go down, and the allowlist must not name a file that no longer needs it.
+  Checkboxes, radios, ranges, file and colour inputs are native and not Input's job.
+- **Native pickers follow the theme.** `color-scheme` is set once per theme block in
+  `styles/variables.css` / `themes.css` (`dark` or `light`), so a date input's calendar popup
+  and the scrollbars match the theme everywhere. Never set `color-scheme` or invert a
+  `::-webkit-calendar-picker-indicator` in a component stylesheet.
 
 ### 3.5 Modals and dialogs
 
@@ -778,6 +793,7 @@ has no fixed height).
 | `--border-color`, `--accent-blue`, `--radius-md`, `--font-size-sm` (the tokens in use) | The alias tokens `--border-default`, `--accent-primary`, or a new spacing token for one file |
 | A `var(--x)` only when `--x` is defined in `styles/` or set by the component itself | A fallback inside `var()` — on an undefined token it hides the typo, on a defined one it is dead weight; the guard test rejects both |
 | `<Button>` for actions, `md` in toolbars and footers, `loading` while a write runs | A raw `<button>` with local styles for an action; `sm` in a toolbar; a `'Saving...'` label swap |
+| `<Input label>` / `<Select label options>` for every text-like field and dropdown | A raw `<input>` / `<select>` with a local `.input` class — the raw-control ratchet (`rawFormControls.test.ts`) fails when a file's count rises |
 | `Modal` with explicit Close / Cancel and Escape | Backdrop-click close, in any dialog |
 | `ToggleSwitch` for a setting | A bare checkbox for a setting |
 | `data-density` selectors in header CSS | Pixel breakpoints in header CSS above 640 px |

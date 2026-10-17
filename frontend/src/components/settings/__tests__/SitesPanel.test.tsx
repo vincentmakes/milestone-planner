@@ -71,6 +71,17 @@ describe('SiteForm', () => {
     });
   });
 
+  it('sends the renamed site name', async () => {
+    const onBack = vi.fn();
+    render(<SiteForm site={basel} onBack={onBack} />);
+    const name = screen.getByLabelText('Site Name');
+    fireEvent.change(name, { target: { value: 'Basel Lab' } });
+    expect(name).toHaveValue('Basel Lab');
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() => expect(onBack).toHaveBeenCalled());
+    expect(api.updateSite).toHaveBeenCalledWith(1, expect.objectContaining({ name: 'Basel Lab' }));
+  });
+
   it('offers Active as a switch and sends its new value', async () => {
     const onBack = vi.fn();
     render(<SiteForm site={basel} onBack={onBack} />);
@@ -89,6 +100,8 @@ describe('SiteForm', () => {
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
 
     const city = screen.getByPlaceholderText('e.g., Winterthur');
+    expect(screen.getByLabelText('City')).toBe(city);
+    expect(screen.getByLabelText('Country')).toHaveValue('CH');
     fireEvent.change(city, { target: { value: 'Riehen' } });
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
     fireEvent.change(city, { target: { value: 'Basel' } });
@@ -130,6 +143,7 @@ describe('SitesPanel', () => {
     render(<SitesPanel />);
 
     const input = screen.getByPlaceholderText('New site name');
+    expect(screen.getByLabelText('New site name')).toBe(input);
     fireEvent.change(input, { target: { value: 'Zurich' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     fireEvent.keyDown(input, { key: 'Enter' });

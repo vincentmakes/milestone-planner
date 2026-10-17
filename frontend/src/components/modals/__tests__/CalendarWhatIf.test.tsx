@@ -147,7 +147,65 @@ describe('EquipmentBlockModal in What-If mode', () => {
     render(<EquipmentBlockModal />);
 
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // Shared Input / Select fields, reachable through their visible labels
+    const equipment = screen.getByLabelText('Equipment') as HTMLSelectElement;
+    expect(equipment).toBeDisabled();
+    expect(equipment.value).toBe('11');
+    expect(Array.from(equipment.options).map((o) => o.text)).toEqual(['Select equipment…', 'HPLC 1 (Analytical Device)']);
+    expect(screen.getByLabelText('Reason')).toHaveValue('maintenance');
+    expect(screen.getByLabelText('Start Date')).toHaveValue('2026-08-10');
+    expect(screen.getByLabelText('End Date')).toHaveValue('2026-08-12');
+    expect(screen.getByLabelText('Description')).toHaveValue('Maintenance');
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
     await waitFor(() => expect(blocksApi.updateEquipmentBlock).toHaveBeenCalledWith(4, expect.any(Object)));
+  });
+});
+
+describe('EquipmentBlockModal fields', () => {
+  it('creates a block from what was picked and typed', async () => {
+    useWhatIfStore.setState({ whatIfMode: false });
+    blocksApi.createEquipmentBlock.mockResolvedValue({});
+    useAppStore.setState({
+      equipment: [
+        { id: 11, name: 'HPLC 1', type: 'Analytical Device', site_id: 1, active: true },
+        { id: 12, name: 'Balance', type: '', site_id: 1, active: true },
+      ] as never,
+    });
+    act(() => useUIStore.getState().openEquipmentBlockModal(undefined));
+    render(<EquipmentBlockModal />);
+
+    const equipment = screen.getByLabelText('Equipment') as HTMLSelectElement;
+    expect(Array.from(equipment.options).map((o) => o.text)).toEqual([
+      'Select equipment…',
+      'HPLC 1 (Analytical Device)',
+      'Balance',
+    ]);
+    fireEvent.change(equipment, { target: { value: '12' } });
+    expect(equipment).toHaveValue('12');
+
+    // A default description follows the reason.
+    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'calibration' } });
+    expect(screen.getByLabelText('Reason')).toHaveValue('calibration');
+    expect(screen.getByLabelText('Description')).toHaveValue('Calibration');
+
+    fireEvent.change(screen.getByLabelText('Start Date'), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText('End Date'), { target: { value: '2026-09-03' } });
+    expect(screen.getByLabelText('Start Date')).toHaveValue('2026-09-01');
+    expect(screen.getByLabelText('End Date')).toHaveValue('2026-09-03');
+    expect(screen.getByText('Equipment will be blocked for 3 days.')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Yearly check' } });
+    expect(screen.getByLabelText('Description')).toHaveValue('Yearly check');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Block Equipment' }));
+    await waitFor(() =>
+      expect(blocksApi.createEquipmentBlock).toHaveBeenCalledWith({
+        equipment_id: 12,
+        start_date: '2026-09-01',
+        end_date: '2026-09-03',
+        reason: 'calibration',
+        description: 'Yearly check',
+      })
+    );
   });
 });

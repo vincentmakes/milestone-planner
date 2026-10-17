@@ -8,6 +8,8 @@ import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
+import { Select } from '@/components/common/Select';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore, selectCanManageResources } from '@/stores/appStore';
 import { 
@@ -115,6 +117,14 @@ export function VacationModal() {
   const createBlockedReason = !isEditing && whatIf.blocked ? whatIf.reason('Adding absences') : null;
   // GET /staff returns one row per user-site pair: list each person once
   const staffOptions = useMemo(() => uniqueById(staff), [staff]);
+  // The empty first entry stays a real, selectable option (as before).
+  const staffSelectOptions = useMemo(
+    () => [
+      { value: '', label: 'Select staff member...' },
+      ...staffOptions.map((s) => ({ value: s.id, label: s.name })),
+    ],
+    [staffOptions]
+  );
   
   // Form state
   const [staffId, setStaffId] = useState<number | null>(null);
@@ -357,19 +367,13 @@ export function VacationModal() {
         
         {/* Staff Member Display or Selector */}
         {canManageResources && !isEditing ? (
-          <div className={styles.section}>
-            <label className={styles.sectionLabel}>Staff Member</label>
-            <select
-              className={styles.select}
-              value={staffId || ''}
-              onChange={(e) => setStaffId(e.target.value ? Number(e.target.value) : null)}
-            >
-              <option value="">Select staff member...</option>
-              {staffOptions.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </div>
+          <Select
+            label="Staff Member"
+            value={staffId || ''}
+            onChange={(e) => setStaffId(e.target.value ? Number(e.target.value) : null)}
+            options={staffSelectOptions}
+            fullWidth
+          />
         ) : staffMember ? (
           <div className={styles.staffDisplay}>
             <div className={styles.staffAvatar}>
@@ -441,15 +445,13 @@ export function VacationModal() {
             <div className={styles.section}>
               <label className={styles.sectionLabel}>Duration</label>
               <div className={styles.dateRow}>
-                <div className={styles.dateField}>
-                  <label className={styles.label}>From</label>
-                  <input
-                    type="date"
-                    className={styles.input}
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                  />
-                </div>
+                <Input
+                  label="From"
+                  type="date"
+                  className={styles.dateField}
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
                 
                 <div className={styles.dateSeparator}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -458,15 +460,13 @@ export function VacationModal() {
                   </svg>
                 </div>
                 
-                <div className={styles.dateField}>
-                  <label className={styles.label}>To</label>
-                  <input
-                    type="date"
-                    className={styles.input}
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                  />
-                </div>
+                <Input
+                  label="To"
+                  type="date"
+                  className={styles.dateField}
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
               </div>
               
               {duration > 0 && (
@@ -544,11 +544,11 @@ export function VacationModal() {
               <label className={styles.sectionLabel} htmlFor="vacation-description">
                 Description <span className={styles.optional}>(optional)</span>
               </label>
-              <input
+              <Input
                 ref={descriptionRef}
                 id="vacation-description"
                 type="text"
-                className={styles.input}
+                fullWidth
                 defaultValue={editingVacation ? editingVacation.description || '' : descriptionDraftRef.current}
                 placeholder={isRecurring ? "e.g., Part-time, Childcare..." : "e.g., Annual Leave, Personal Day..."}
                 autoComplete="off"

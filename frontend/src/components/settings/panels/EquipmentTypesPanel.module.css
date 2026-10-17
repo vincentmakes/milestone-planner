@@ -141,39 +141,6 @@
   color: var(--text-primary);
 }
 
-/* Field */
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.field label {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.field input {
-  padding: 0.625rem 0.875rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-size: 0.875rem;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.field input:focus {
-  outline: none;
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
-}
-
-.field input::placeholder {
-  color: var(--text-muted);
-}
-
 /* Rename Warning */
 .renameWarning {
   display: flex;

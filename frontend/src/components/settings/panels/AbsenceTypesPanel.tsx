@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Notice } from '@/components/common/Notice';
 import type { KeyboardEvent } from 'react';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useAppStore } from '@/stores/appStore';
@@ -337,8 +338,8 @@ export function AbsenceTypesPanel({ onDirtyChange }: Partial<SettingsPanelProps>
         }}
       >
         <div className={styles.addRow}>
-          <input
-            className={styles.input}
+          <Input
+            className={styles.addInput}
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="New absence type, e.g. Parental leave"

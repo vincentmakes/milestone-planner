@@ -14,6 +14,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
+import { Select } from '@/components/common/Select';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { PanelToolbar } from '../PanelToolbar';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -163,6 +165,17 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
   }, [pendingEditId, events, hasLoaded, isLoading, foreignSiteIds]);
 
   const years = useMemo(() => collectYears(events), [events]);
+  const siteOptions = useMemo(
+    () => [
+      { value: 'all', label: 'All my sites' },
+      ...manageableSites.map((s) => ({ value: s.id, label: s.name })),
+    ],
+    [manageableSites]
+  );
+  const yearOptions = useMemo(
+    () => [{ value: 'all', label: 'All years' }, ...years.map((y) => ({ value: y, label: String(y) }))],
+    [years]
+  );
 
   const visibleEvents = useMemo(
     () =>
@@ -360,37 +373,25 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
         align="end"
         left={
           <div className={styles.filters}>
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="event-site">Site</label>
-              <select
-                id="event-site"
-                className={styles.select}
-                value={siteFilter}
-                onChange={(e) => {
-                  setSiteFilter(e.target.value === 'all' ? 'all' : Number(e.target.value));
-                  setForm(null);
-                }}
-              >
-                <option value="all">All my sites</option>
-                {manageableSites.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="event-year">Year</label>
-              <select
-                id="event-year"
-                className={styles.select}
-                value={year}
-                onChange={(e) => setYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-              >
-                <option value="all">All years</option>
-                {years.map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-            </div>
+            <Select
+              label="Site"
+              className={styles.field}
+              id="event-site"
+              options={siteOptions}
+              value={siteFilter}
+              onChange={(e) => {
+                setSiteFilter(e.target.value === 'all' ? 'all' : Number(e.target.value));
+                setForm(null);
+              }}
+            />
+            <Select
+              label="Year"
+              className={styles.field}
+              id="event-year"
+              options={yearOptions}
+              value={year}
+              onChange={(e) => setYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+            />
           </div>
         }
         right={
@@ -644,38 +645,32 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
       <h4 className={styles.formTitle}>{event ? 'Edit event' : 'Add a company event'}</h4>
       {error && <Notice tone="error">{error}</Notice>}
       <div className={styles.formRow}>
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="event-name">Name</label>
-          <input
-            id="event-name"
-            className={styles.input}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g., ISO Audit, All-Hands Meeting"
-            autoFocus
-          />
-        </div>
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="event-date">Start date</label>
-          <input
-            id="event-date"
-            type="date"
-            className={styles.input}
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
-        </div>
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="event-end-date">End date (optional)</label>
-          <input
-            id="event-end-date"
-            type="date"
-            className={styles.input}
-            value={endDate}
-            min={date || undefined}
-            onChange={(e) => setEndDate(e.target.value)}
-          />
-        </div>
+        <Input
+          label="Name"
+          className={styles.field}
+          id="event-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g., ISO Audit, All-Hands Meeting"
+          autoFocus
+        />
+        <Input
+          label="Start date"
+          className={styles.field}
+          id="event-date"
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+        />
+        <Input
+          label="End date (optional)"
+          className={styles.field}
+          id="event-end-date"
+          type="date"
+          value={endDate}
+          min={date || undefined}
+          onChange={(e) => setEndDate(e.target.value)}
+        />
       </div>
       <div className={styles.field}>
         <span className={styles.label}>Sites</span>

@@ -196,6 +196,21 @@ async def test_notifications_set_read_at_from_the_flag(loaded):
     assert all("CASE WHEN $9::boolean THEN CURRENT_TIMESTAMP" in s for s, _ in rows)
 
 
+async def test_no_statement_uses_a_placeholder_twice(loaded):
+    """asyncpg prepares every statement, and PostgreSQL deduces one type per
+    parameter: a `$n` that appears both in an INSERT ... SELECT list and in a
+    `WHERE col = $n` comparison comes out as text in one place and character
+    varying in the other, and the statement is refused. That stopped the
+    seed right before the notifications on a real database. The recording
+    fake cannot see types, so it pins the shape: each placeholder once,
+    and as many placeholders as arguments."""
+    conn, _, _ = loaded
+    for sql, args in conn.executed:
+        used = re.findall(r"\$(\d+)", sql)
+        assert len(used) == len(set(used)), sql
+        assert len(used) == len(args), sql
+
+
 def test_render_mentions():
     body = "{mention:a@x} and {mention:b@x}: hello"
     out = seed_demo.render_mentions(body, {"a@x": 1, "b@x": 22}, {"a@x": "Ann A", "b@x": "Bo B"})

@@ -1,4 +1,4 @@
-import { forwardRef, SelectHTMLAttributes, ReactNode } from 'react';
+import { forwardRef, SelectHTMLAttributes, ReactNode, useId } from 'react';
 import styles from './Select.module.css';
 
 export interface SelectOption {
@@ -7,11 +7,18 @@ export interface SelectOption {
   disabled?: boolean;
 }
 
+/** A labelled <optgroup> of options, rendered after the flat `options` */
+export interface SelectOptionGroup {
+  label: string;
+  options: SelectOption[];
+}
+
 export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'children'> {
   label?: string;
   error?: string;
   hint?: string;
   options: SelectOption[];
+  groups?: SelectOptionGroup[];
   placeholder?: string;
   fullWidth?: boolean;
   icon?: ReactNode;
@@ -24,6 +31,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
       error,
       hint,
       options,
+      groups,
       placeholder,
       fullWidth = false,
       icon,
@@ -33,7 +41,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     },
     ref
   ) => {
-    const selectId = id || `select-${Math.random().toString(36).substr(2, 9)}`;
+    const generatedId = useId();
+    const selectId = id || `select-${generatedId}`;
 
     const wrapperClasses = [
       styles.wrapper,
@@ -81,6 +90,15 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
               >
                 {option.label}
               </option>
+            ))}
+            {groups?.map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.options.map((option) => (
+                  <option key={option.value} value={option.value} disabled={option.disabled}>
+                    {option.label}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
           <span className={styles.chevron} aria-hidden="true">
