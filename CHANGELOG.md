@@ -23,8 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The Gantt project panel's header separates the view controls (staff & equipment, tag filter, column visibility) from the actions (manage columns, import, new project) with a divider and more spacing.
 - The Gantt project panel's header buttons now sit at the right edge of the whole panel, after the custom columns, instead of at the end of the name column; its dropdowns open towards the chart and never spill off its left edge.
 - Settings panels share one button style: every panel's toolbar has the same layout and divider, the Add buttons have the same size and plus icon everywhere, back links look alike, and the admin portal and My absences use the same buttons. Disabled buttons are dimmed the same way throughout the app.
+- Test coverage is now measured and enforced in CI (backend and frontend floors plus an 80 % gate on the lines a pull request changes), and the README shows live coverage badges.
 
 ### Fixed
+- Reordering custom columns in the manager dialog is saved again (the reorder request was answered with a validation error).
+- A phase or phase template added after one at the first position no longer shares its sort position with it.
 - A tag created or recoloured while What-If mode is on no longer disappears until the plan is applied.
 
 ## [1.5.0] - 2026-10-15

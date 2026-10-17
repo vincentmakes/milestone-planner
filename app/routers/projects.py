@@ -915,7 +915,9 @@ async def create_phase(
         max_result = await db.execute(
             select(func.max(ProjectPhase.sort_order)).where(ProjectPhase.project_id == project_id)
         )
-        max_order = max_result.scalar() or -1
+        # A maximum of 0 is a real row, not "no rows": compare with None.
+        current_max = max_result.scalar()
+        max_order = -1 if current_max is None else current_max
         sort_order = max_order + 1
 
     # Create phase

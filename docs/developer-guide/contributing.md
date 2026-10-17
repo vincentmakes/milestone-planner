@@ -27,6 +27,8 @@
 
 - [ ] Backend tests pass (`pytest`)
 - [ ] Frontend tests pass (`npm test`)
+- [ ] New features and bug fixes come with automated tests (a bug fix with a regression test that fails without it)
+- [ ] The lines you add or change are ≥ 80 % covered (CI runs diff-cover); raise the coverage floors if your PR lifts them
 - [ ] Linting passes (Ruff, ESLint)
 - [ ] Type checking passes (mypy, TypeScript)
 - [ ] Docker build succeeds
