@@ -5,6 +5,11 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.1] - 2026-10-17
+
+### Changed
+- The demo tenant (GitHub Codespaces and the screenshot pipeline) now comes from one seed and shows tag groups, nested subphases, dependencies, staff and equipment bookings, maintenance blocks, bank holidays for both sites, a site closure, absences of every type, custom columns, Kanban comments with mentions and notifications; the separate screenshot SQL file is gone.
+
 ## [1.8.0] - 2026-10-17
 
 ### Changed

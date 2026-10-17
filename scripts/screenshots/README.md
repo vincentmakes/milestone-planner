@@ -21,15 +21,14 @@ docker compose -f docker-compose.fresh.yml up -d --build
 
 # 3. Seed the canonical demo tenant (Demo Company / slug "demo" with
 #    Bioprocess Scale-Up, Catalyst Optimization, Analytical Method Transfer,
-#    Quality System Upgrade — admin@demo.local / demo1234).
+#    Quality System Upgrade — admin@demo.local / demo1234). The one seed holds
+#    everything the screenshots need: tag groups, subphases, dependencies,
+#    bookings, blocks, holidays for both sites, a site closure, every absence
+#    type, custom columns, Kanban comments and notifications
+#    (app/scripts/demo_data.py; dates are relative to the day you run it).
 docker exec milestone-fresh python -m app.scripts.seed_demo
 
-# 4. Add screenshot extras — vacations, bank holidays, populated custom
-#    columns, tags, equipment blocks, a staff note.
-docker exec -i milestone-fresh-db psql -U milestone_demo -d milestone_demo \
-  < scripts/screenshots/seed_extras.sql
-
-# 5. Install Playwright in a venv (avoid polluting system Python).
+# 4. Install Playwright in a venv (avoid polluting system Python).
 python3 -m venv /tmp/pw-venv
 /tmp/pw-venv/bin/pip install playwright
 /tmp/pw-venv/bin/playwright install chromium

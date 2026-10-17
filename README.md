@@ -66,7 +66,7 @@ The Codespace automatically creates a demo tenant with sample data:
 | **Admin Portal** | `/admin/` | `admin@demo.local` | `demo1234` |
 | **Demo Tenant** | `/t/demo/` | `admin@demo.local` | `demo1234` |
 
-The demo tenant includes 2 sites (Winterthur, Frankfurt), 4 projects with phases and assignments, 8 staff members with skills, and 8 equipment items. All staff accounts use password `demo1234`.
+The demo tenant includes 2 sites (Winterthur, Frankfurt), 5 projects (one archived) with phases, nested subphases, dependencies, staff and equipment bookings, 9 people (incl. a part-time member, a project manager and an inactive account) with skills, 8 equipment items, tag groups, custom columns, bank holidays, a site closure, absences of every type, Kanban comments and notifications. All staff accounts use password `demo1234`.
 
 ### Option 2: Docker Fresh Install
 

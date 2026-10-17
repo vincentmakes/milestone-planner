@@ -1,23 +1,32 @@
 """
-Seed demo data for GitHub Codespaces.
+Seed the demo tenant (GitHub Codespaces, the screenshot pipeline).
 
-Creates a demo tenant with sample projects, staff, equipment, and
-assignments so the app is ready to explore immediately after setup.
+Provisions the `demo` tenant database, registers it in the master DB and
+inserts the demo data from `app/scripts/demo_data.py`: two sites, nine
+people, projects with phases, nested subphases and dependencies, staff and
+equipment bookings, blocks, bank holidays, company events incl. a site
+closure, every absence type, tag groups, custom columns, Kanban comments with
+mentions and notifications.
 
-Designed to be idempotent — safe to run multiple times.
+Idempotent — safe to run again; a partially seeded database is completed.
 
 Usage:
     python -m app.scripts.seed_demo
 """
 
 import asyncio
+import json
+import re
 import sys
-from datetime import date, timedelta
+from datetime import date
+from typing import Any
 
 import asyncpg
 
 from app.config import get_settings
+from app.scripts.demo_data import DEMO_PASSWORD, DemoData, build_demo
 from app.services.encryption import encrypt, hash_user_password
+from app.services.mentions import parse_mention_ids
 
 DEMO_TENANT_SLUG = "demo"
 DEMO_TENANT_NAME = "Demo Company"
@@ -25,28 +34,7 @@ DEMO_TENANT_DB = "milestone_demo"
 DEMO_TENANT_USER = "milestone_demo"
 DEMO_TENANT_PASSWORD = "demo_db_pass_2026"
 DEMO_ADMIN_EMAIL = "admin@demo.local"
-DEMO_ADMIN_PASSWORD = "demo1234"
-
-
-def _phase_progress(start: date, end: date, today: date) -> tuple[int, str]:
-    """Plausible completion/status for a demo phase, from its dates.
-
-    Finished phases are done, the phase spanning today is part-way through, and
-    future work is untouched. (The caller additionally marks one not-yet-started
-    phase per project as blocked.)
-
-    Keep the pair consistent with app/services/card_status.py: `todo` is 0%,
-    `done` is 100%, and `blocked` keeps whatever progress it had.
-    """
-    if end < today:
-        return 100, "done"
-    if start > today:
-        return 0, "todo"
-    # In flight: progress proportional to elapsed duration.
-    span = max((end - start).days, 1)
-    elapsed = max((today - start).days, 0)
-    pct = min(max(round(elapsed / span * 100), 5), 95)
-    return pct, "in_progress"
+DEMO_ADMIN_PASSWORD = DEMO_PASSWORD
 
 
 async def get_admin_conn(settings) -> asyncpg.Connection:
@@ -138,7 +126,7 @@ async def provision_demo_db(settings) -> bool:
 
 
 async def apply_schema_and_seed(settings):
-    """Apply tenant schema and seed demo data."""
+    """Apply the tenant schema and insert the demo data (see demo_data.py)."""
     from app.services.tenant_provisioner import get_tenant_schema_sql
 
     conn = await asyncpg.connect(
@@ -159,325 +147,519 @@ async def apply_schema_and_seed(settings):
                 print("  Demo data already seeded — skipping")
                 return
 
-        # Apply schema
-        schema_sql = get_tenant_schema_sql()
-        await conn.execute(schema_sql)
+        await conn.execute(get_tenant_schema_sql())
         print("  Applied tenant schema")
 
-        # Seed base data
-        await conn.execute("""
-            INSERT INTO sso_config (id, enabled) VALUES (1, 0) ON CONFLICT (id) DO NOTHING
-        """)
-        await conn.execute("""
-            INSERT INTO settings (key, value) VALUES
-                ('instance_title', 'Demo Instance'),
-                ('fiscal_year_start', '1')
-            ON CONFLICT (key) DO NOTHING
-        """)
-        await conn.execute("""
-            INSERT INTO predefined_phases (name, sort_order, is_active) VALUES
-                ('Preparation', 0, 1), ('Analytics', 1, 1), ('Trial', 2, 1),
-                ('Cleaning', 3, 1), ('Report', 4, 1)
-            ON CONFLICT (name) DO NOTHING
-        """)
-
-        # Sites
-        await conn.execute("""
-            INSERT INTO sites (name, location, city, country_code, region_code, timezone) VALUES
-                ('Winterthur', 'Winterthur', 'Winterthur', 'CH', 'ZH', 'Europe/Zurich'),
-                ('Frankfurt', 'Frankfurt', 'Frankfurt', 'DE', 'HE', 'Europe/Berlin')
-            ON CONFLICT (name) DO NOTHING
-        """)
-        wt_id = await conn.fetchval("SELECT id FROM sites WHERE name = 'Winterthur'")
-        ff_id = await conn.fetchval("SELECT id FROM sites WHERE name = 'Frankfurt'")
-
-        # Skills
-        await conn.execute("""
-            INSERT INTO skills (name, description, color) VALUES
-                ('Project Management', 'Planning and execution', '#3b82f6'),
-                ('HPLC', 'High-Performance Liquid Chromatography', '#e74c3c'),
-                ('Data Analysis', 'Statistical analysis', '#8b5cf6'),
-                ('Cell Culture', 'Mammalian cell culture', '#10b981'),
-                ('Technical Writing', 'Documentation and reports', '#f59e0b'),
-                ('Quality Control', 'QC procedures', '#ef4444')
-            ON CONFLICT (name) DO NOTHING
-        """)
-
-        # Admin user (known password: demo1234)
-        admin_hash = hash_user_password(DEMO_ADMIN_PASSWORD)
-        await conn.execute(
-            """INSERT INTO users (email, password, first_name, last_name, job_title, role, is_system)
-               VALUES ($1, $2, 'Admin', 'User', 'System Administrator', 'admin', 1)
-               ON CONFLICT (email) DO NOTHING""",
-            DEMO_ADMIN_EMAIL,
-            admin_hash,
-        )
-        admin_id = await conn.fetchval("SELECT id FROM users WHERE email = $1", DEMO_ADMIN_EMAIL)
-        await conn.execute(
-            "INSERT INTO user_sites (user_id, site_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-            admin_id,
-            wt_id,
-        )
-
-        # Staff members
-        staff_data = [
-            (
-                "alice.anderson@demo.local",
-                "Alice",
-                "Anderson",
-                "Research Scientist",
-                "superuser",
-                wt_id,
-            ),
-            ("bob.brown@demo.local", "Bob", "Brown", "Project Manager", "superuser", wt_id),
-            ("charlie.clark@demo.local", "Charlie", "Clark", "Lab Technician", "user", wt_id),
-            ("diana.davis@demo.local", "Diana", "Davis", "Data Analyst", "user", wt_id),
-            ("edward.evans@demo.local", "Edward", "Evans", "Process Engineer", "user", wt_id),
-            ("fiona.fischer@demo.local", "Fiona", "Fischer", "Analytical Chemist", "user", ff_id),
-            ("george.garcia@demo.local", "George", "Garcia", "R&D Engineer", "user", ff_id),
-            ("hannah.harris@demo.local", "Hannah", "Harris", "Quality Specialist", "user", ff_id),
-        ]
-        staff_hash = hash_user_password("demo1234")
-        staff_ids = {}
-        for email, first, last, title, role, site_id in staff_data:
-            await conn.execute(
-                """INSERT INTO users (email, password, first_name, last_name, job_title, role)
-                   VALUES ($1, $2, $3, $4, $5, $6)
-                   ON CONFLICT (email) DO NOTHING""",
-                email,
-                staff_hash,
-                first,
-                last,
-                title,
-                role,
-            )
-            uid = await conn.fetchval("SELECT id FROM users WHERE email = $1", email)
-            staff_ids[email] = uid
-            await conn.execute(
-                "INSERT INTO user_sites (user_id, site_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                uid,
-                site_id,
-            )
-        print(f"  Created {len(staff_data)} staff members")
-
-        # Assign some skills
-        skill_ids = await conn.fetch("SELECT id, name FROM skills")
-        skill_map = {r["name"]: r["id"] for r in skill_ids}
-        skill_assignments = [
-            ("alice.anderson@demo.local", ["HPLC", "Data Analysis", "Technical Writing"]),
-            ("bob.brown@demo.local", ["Project Management", "Technical Writing"]),
-            ("charlie.clark@demo.local", ["HPLC", "Cell Culture", "Quality Control"]),
-            ("diana.davis@demo.local", ["Data Analysis", "Technical Writing"]),
-            ("fiona.fischer@demo.local", ["HPLC", "Quality Control"]),
-            ("george.garcia@demo.local", ["Cell Culture", "Data Analysis"]),
-        ]
-        for email, skills in skill_assignments:
-            uid = staff_ids.get(email)
-            if not uid:
-                continue
-            for skill_name in skills:
-                sid = skill_map.get(skill_name)
-                if sid:
-                    await conn.execute(
-                        "INSERT INTO user_skills (user_id, skill_id, proficiency) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-                        uid,
-                        sid,
-                        4,
-                    )
-
-        # Equipment
-        equip_data = [
-            ("HPLC System 1", "Analytical", wt_id),
-            ("Mass Spectrometer", "Analytical", wt_id),
-            ("PCR Thermocycler", "Molecular Biology", wt_id),
-            ("Biosafety Cabinet", "Cell Culture", wt_id),
-            ("Centrifuge", "General Lab", wt_id),
-            ("HPLC System 2", "Analytical", ff_id),
-            ("Plate Reader", "Analytical", ff_id),
-            ("Freeze Dryer", "Processing", ff_id),
-        ]
-        for name, etype, site_id in equip_data:
-            await conn.execute(
-                """INSERT INTO equipment (name, type, site_id, active)
-                   VALUES ($1, $2, $3, 1)
-                   ON CONFLICT DO NOTHING""",
-                name,
-                etype,
-                site_id,
-            )
-        # Site links (equipment can be shared by several sites; the demo
-        # equipment belongs to one each).
-        await conn.execute(
-            """INSERT INTO equipment_sites (equipment_id, site_id)
-               SELECT id, site_id FROM equipment WHERE site_id IS NOT NULL
-               ON CONFLICT DO NOTHING"""
-        )
-        print(f"  Created {len(equip_data)} equipment items")
-
-        # Projects
-        today = date.today()
-        projects = [
-            (
-                "Catalyst Optimization",
-                wt_id,
-                "Novachem AG",
-                True,
-                today - timedelta(days=30),
-                today + timedelta(days=150),
-            ),
-            (
-                "Bioprocess Scale-Up",
-                wt_id,
-                "BioGen Ltd",
-                True,
-                today - timedelta(days=15),
-                today + timedelta(days=200),
-            ),
-            (
-                "Analytical Method Transfer",
-                wt_id,
-                "PharmaCore",
-                False,
-                today + timedelta(days=14),
-                today + timedelta(days=120),
-            ),
-            (
-                "Quality System Upgrade",
-                ff_id,
-                "Internal",
-                True,
-                today - timedelta(days=60),
-                today + timedelta(days=90),
-            ),
-        ]
-        for pname, site_id, customer, confirmed, start, end in projects:
-            await conn.execute(
-                """INSERT INTO projects (name, site_id, customer, confirmed, start_date, end_date)
-                   VALUES ($1, $2, $3, $4, $5, $6)""",
-                pname,
-                site_id,
-                customer,
-                1 if confirmed else 0,
-                start,
-                end,
-            )
-        print(f"  Created {len(projects)} projects")
-
-        # Phases for each project
-        project_rows = await conn.fetch(
-            "SELECT id, name, start_date, end_date FROM projects ORDER BY id"
-        )
-        phase_types = ["Preparation", "Analytics", "Trial", "Cleaning", "Report"]
-        for proj in project_rows:
-            proj_start = proj["start_date"]
-            proj_end = proj["end_date"]
-            duration = (proj_end - proj_start).days
-            phase_len = max(duration // len(phase_types), 7)
-            # The first phase that has not started yet is marked blocked: the
-            # work in flight is holding it up. Without this the Kanban board's
-            # Blocked column is empty in every demo screenshot.
-            blocked_index = next(
-                (
-                    i
-                    for i in range(len(phase_types))
-                    if proj_start + timedelta(days=i * phase_len) > today
-                ),
-                None,
-            )
-            for i, ptype in enumerate(phase_types):
-                ps = proj_start + timedelta(days=i * phase_len)
-                pe = min(ps + timedelta(days=phase_len - 1), proj_end)
-                if ps > proj_end:
-                    break
-                # Give each phase realistic progress based on where it sits
-                # relative to today, so both the Gantt completion bars and the
-                # Kanban board show a plausible spread instead of everything
-                # sitting untouched in To Do.
-                completion, status = _phase_progress(ps, pe, today)
-                if i == blocked_index:
-                    # Blocked keeps its completion, which is 0 for work that
-                    # never started -- consistent with card_status.py.
-                    status = "blocked"
-                await conn.execute(
-                    """INSERT INTO project_phases
-                       (project_id, type, start_date, end_date, sort_order, completion, status)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7)""",
-                    proj["id"],
-                    ptype,
-                    ps,
-                    pe,
-                    i,
-                    completion,
-                    status,
-                )
-
-        # Staff assignments to phases
-        phases = await conn.fetch(
-            "SELECT pp.id, pp.project_id, pp.type, p.site_id "
-            "FROM project_phases pp JOIN projects p ON pp.project_id = p.id ORDER BY pp.id"
-        )
-        wt_staff = [
-            v
-            for k, v in staff_ids.items()
-            if k.split("@")[0]
-            in ("alice.anderson", "bob.brown", "charlie.clark", "diana.davis", "edward.evans")
-        ]
-        ff_staff = [
-            v
-            for k, v in staff_ids.items()
-            if k.split("@")[0] in ("fiona.fischer", "george.garcia", "hannah.harris")
-        ]
-        import random
-
-        random.seed(42)  # reproducible
-        assignment_count = 0
-        for phase in phases:
-            pool = wt_staff if phase["site_id"] == wt_id else ff_staff
-            n = min(random.randint(1, 3), len(pool))
-            chosen = random.sample(pool, n)
-            for sid in chosen:
-                alloc = random.choice([25, 50, 50, 75, 100])
-                await conn.execute(
-                    """INSERT INTO phase_staff_assignments (phase_id, project_id, staff_id, allocation)
-                       VALUES ($1, $2, $3, $4)""",
-                    phase["id"],
-                    phase["project_id"],
-                    sid,
-                    alloc,
-                )
-                assignment_count += 1
-        print(f"  Created {assignment_count} staff assignments")
-
-        # A couple of vacations
-        alice_id = staff_ids.get("alice.anderson@demo.local")
-        bob_id = staff_ids.get("bob.brown@demo.local")
-        # Absence types are seeded by the tenant schema; look them up by name.
-        vacation_sql = (
-            "INSERT INTO vacations (staff_id, start_date, end_date, description, absence_type_id) "
-            "VALUES ($1, $2, $3, $4, (SELECT id FROM absence_types WHERE name = $5))"
-        )
-        if alice_id:
-            await conn.execute(
-                vacation_sql,
-                alice_id,
-                today + timedelta(days=30),
-                today + timedelta(days=37),
-                "Summer vacation",
-                "Holidays",
-            )
-        if bob_id:
-            await conn.execute(
-                vacation_sql,
-                bob_id,
-                today + timedelta(days=60),
-                today + timedelta(days=64),
-                "Conference",
-                "Business Trip",
-            )
-
+        await insert_demo_data(conn, build_demo(date.today()))
         print("  Demo data seeded successfully")
     finally:
         await conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Loader: names → ids, every insert guarded so a partially seeded database
+# (an earlier run that stopped half-way) is completed, never duplicated.
+# ---------------------------------------------------------------------------
+
+
+def _placeholders(values: dict[str, Any], offset: int = 0) -> str:
+    return ", ".join(f"${i + 1 + offset}" for i in range(len(values)))
+
+
+def _where(key: dict[str, Any], offset: int) -> str:
+    # `IS NOT DISTINCT FROM` so a NULL key column (a global custom column's
+    # site_id) still matches.
+    return " AND ".join(
+        f"{col} IS NOT DISTINCT FROM ${i + 1 + offset}" for i, col in enumerate(key)
+    )
+
+
+async def _insert_once(conn: Any, table: str, values: dict[str, Any], key: dict[str, Any]) -> None:
+    """INSERT unless a row with the same natural key exists (no id needed)."""
+    sql = (
+        f"INSERT INTO {table} ({', '.join(values)}) "
+        f"SELECT {_placeholders(values)} "
+        f"WHERE NOT EXISTS (SELECT 1 FROM {table} WHERE {_where(key, len(values))})"
+    )
+    await conn.execute(sql, *values.values(), *key.values())
+
+
+async def _insert_id(conn: Any, table: str, values: dict[str, Any], key: dict[str, Any]) -> int:
+    """`_insert_once`, then the id of the row with that natural key."""
+    await _insert_once(conn, table, values, key)
+    row_id = await conn.fetchval(
+        f"SELECT id FROM {table} WHERE {_where(key, 0)} ORDER BY id LIMIT 1", *key.values()
+    )
+    if row_id is None:
+        raise RuntimeError(f"{table}: row {key} missing after insert")
+    return int(row_id)
+
+
+async def insert_demo_data(conn: Any, demo: DemoData) -> dict[str, int]:
+    """Insert `demo` through `conn` (asyncpg API: execute / fetchval).
+
+    Returns the number of rows the data set holds per table, for the summary.
+    """
+    password_hash = hash_user_password(DEMO_PASSWORD)
+    counts: dict[str, int] = {}
+
+    await conn.execute(
+        "INSERT INTO sso_config (id, enabled) VALUES (1, 0) ON CONFLICT (id) DO NOTHING"
+    )
+    for key, value in demo.settings:
+        await conn.execute(
+            "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING",
+            key,
+            value,
+        )
+    for order, name in enumerate(demo.predefined_phases):
+        await conn.execute(
+            "INSERT INTO predefined_phases (name, sort_order, is_active) VALUES ($1, $2, 1) "
+            "ON CONFLICT (name) DO NOTHING",
+            name,
+            order,
+        )
+
+    site_id: dict[str, int] = {}
+    for s in demo.sites:
+        site_id[s["name"]] = await _insert_id(conn, "sites", dict(s), {"name": s["name"]})
+    counts["sites"] = len(site_id)
+
+    skill_id: dict[str, int] = {}
+    for sk in demo.skills:
+        skill_id[sk["name"]] = await _insert_id(conn, "skills", dict(sk), {"name": sk["name"]})
+
+    user_id: dict[str, int] = {}
+    full_name: dict[str, str] = {}
+    for u in demo.users:
+        user_id[u["email"]] = await _insert_id(
+            conn,
+            "users",
+            {
+                "email": u["email"],
+                "password": password_hash,
+                "first_name": u["first_name"],
+                "last_name": u["last_name"],
+                "job_title": u["job_title"],
+                "role": u["role"],
+                "max_capacity": u["max_capacity"],
+                "active": 1 if u["active"] else 0,
+                "is_system": 1 if u["is_system"] else 0,
+            },
+            {"email": u["email"]},
+        )
+        full_name[u["email"]] = f"{u['first_name']} {u['last_name']}"
+        for site in u["sites"]:
+            await conn.execute(
+                "INSERT INTO user_sites (user_id, site_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                user_id[u["email"]],
+                site_id[site],
+            )
+        for skill in u["skills"]:
+            await conn.execute(
+                "INSERT INTO user_skills (user_id, skill_id, proficiency) VALUES ($1, $2, 4) "
+                "ON CONFLICT DO NOTHING",
+                user_id[u["email"]],
+                skill_id[skill],
+            )
+    counts["users"] = len(user_id)
+
+    equipment_id: dict[str, int] = {}
+    for e in demo.equipment:
+        # Legacy `site_id` = the lowest linked site; links live in equipment_sites.
+        primary = min(site_id[s] for s in e["sites"])
+        equipment_id[e["name"]] = await _insert_id(
+            conn,
+            "equipment",
+            {"name": e["name"], "type": e["type"], "site_id": primary, "active": 1},
+            {"name": e["name"]},
+        )
+        for site in e["sites"]:
+            await conn.execute(
+                "INSERT INTO equipment_sites (equipment_id, site_id) VALUES ($1, $2) "
+                "ON CONFLICT DO NOTHING",
+                equipment_id[e["name"]],
+                site_id[site],
+            )
+    counts["equipment"] = len(equipment_id)
+
+    group_id: dict[str, int] = {}
+    for g in demo.tag_groups:
+        group_id[g["name"]] = await _insert_id(conn, "tag_groups", dict(g), {"name": g["name"]})
+    tag_id: dict[str, int] = {}
+    for t in demo.tags:
+        tag_id[t["name"]] = await _insert_id(
+            conn,
+            "tags",
+            {
+                "name": t["name"],
+                "color": t["color"],
+                "group_id": group_id[t["group"]] if t["group"] else None,
+                "all_sites": t["sites"] is None,
+                "sort_order": t["sort_order"],
+            },
+            {"name": t["name"]},
+        )
+        for site in t["sites"] or []:
+            await conn.execute(
+                "INSERT INTO tag_sites (tag_id, site_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                tag_id[t["name"]],
+                site_id[site],
+            )
+    counts["tags"] = len(tag_id)
+
+    project_id: dict[str, int] = {}
+    for p in demo.projects:
+        project_id[p["name"]] = await _insert_id(
+            conn,
+            "projects",
+            {
+                "name": p["name"],
+                "site_id": site_id[p["site"]],
+                "customer": p["customer"],
+                "pm_id": user_id[p["pm"]] if p["pm"] else None,
+                "sales_pm": p["sales_pm"],
+                "confirmed": 1 if p["confirmed"] else 0,
+                "start_date": p["start_date"],
+                "end_date": p["end_date"],
+                "notes": p["notes"],
+                "archived": 1 if p["archived"] else 0,
+            },
+            {"name": p["name"], "site_id": site_id[p["site"]]},
+        )
+        for tag in p["tags"]:
+            await conn.execute(
+                "INSERT INTO project_tags (project_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                project_id[p["name"]],
+                tag_id[tag],
+            )
+    counts["projects"] = len(project_id)
+
+    phase_id: dict[tuple[str, str], int] = {}
+    for ph in demo.phases:
+        pid = project_id[ph["project"]]
+        phase_id[(ph["project"], ph["type"])] = await _insert_id(
+            conn,
+            "project_phases",
+            {
+                "project_id": pid,
+                "type": ph["type"],
+                "start_date": ph["start_date"],
+                "end_date": ph["end_date"],
+                "is_milestone": 1 if ph["is_milestone"] else 0,
+                "sort_order": ph["sort_order"],
+                "completion": ph["completion"],
+                "status": ph["status"],
+            },
+            {"project_id": pid, "type": ph["type"]},
+        )
+    counts["phases"] = len(phase_id)
+
+    subphase_id: dict[tuple[str, str], int] = {}
+    # Parents first: a nested subphase names a depth-1 sibling as its parent.
+    for sp in sorted(demo.subphases, key=lambda x: x["depth"]):
+        pid = project_id[sp["project"]]
+        if sp["parent"]:
+            parent_type, parent_id = "subphase", subphase_id[(sp["project"], sp["parent"])]
+        else:
+            parent_type, parent_id = "phase", phase_id[(sp["project"], sp["phase"])]
+        subphase_id[(sp["project"], sp["name"])] = await _insert_id(
+            conn,
+            "project_subphases",
+            {
+                "parent_id": parent_id,
+                "parent_type": parent_type,
+                "project_id": pid,
+                "name": sp["name"],
+                "start_date": sp["start_date"],
+                "end_date": sp["end_date"],
+                "is_milestone": 1 if sp["is_milestone"] else 0,
+                "sort_order": sp["sort_order"],
+                "depth": sp["depth"],
+                "completion": sp["completion"],
+                "status": sp["status"],
+            },
+            {"project_id": pid, "name": sp["name"]},
+        )
+    counts["subphases"] = len(subphase_id)
+
+    def entity_id(ent: tuple[str, str, str]) -> int:
+        kind, proj, name = ent
+        return phase_id[(proj, name)] if kind == "phase" else subphase_id[(proj, name)]
+
+    # Dependencies: one JSON list per successor, written only where nothing is
+    # set yet (an edit made in the app is never overwritten).
+    by_successor: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for dep in demo.dependencies:
+        by_successor.setdefault(dep["successor"], []).append(
+            {
+                "id": entity_id(dep["predecessor"]),
+                "type": dep["type"],
+                "lag": dep["lag"],
+                "entity": dep["predecessor"][0],
+            }
+        )
+    for successor, links in by_successor.items():
+        table = "project_phases" if successor[0] == "phase" else "project_subphases"
+        await conn.execute(
+            f"UPDATE {table} SET dependencies = $1 "
+            "WHERE id = $2 AND (dependencies IS NULL OR dependencies IN ('', '[]'))",
+            json.dumps(links),
+            entity_id(successor),
+        )
+    counts["dependencies"] = len(demo.dependencies)
+
+    for a in demo.phase_assignments:
+        await _insert_once(
+            conn,
+            "phase_staff_assignments",
+            {
+                "project_id": project_id[a["project"]],
+                "phase_id": phase_id[(a["project"], a["phase"])],
+                "staff_id": user_id[a["staff"]],
+                "allocation": a["allocation"],
+            },
+            {"phase_id": phase_id[(a["project"], a["phase"])], "staff_id": user_id[a["staff"]]},
+        )
+    for a in demo.project_assignments:
+        await _insert_once(
+            conn,
+            "project_assignments",
+            {
+                "project_id": project_id[a["project"]],
+                "staff_id": user_id[a["staff"]],
+                "allocation": a["allocation"],
+                "start_date": a["start_date"],
+                "end_date": a["end_date"],
+            },
+            {
+                "project_id": project_id[a["project"]],
+                "staff_id": user_id[a["staff"]],
+                "start_date": a["start_date"],
+            },
+        )
+    for a in demo.subphase_assignments:
+        sid = subphase_id[(a["project"], a["subphase"])]
+        await _insert_once(
+            conn,
+            "subphase_staff_assignments",
+            {
+                "project_id": project_id[a["project"]],
+                "subphase_id": sid,
+                "staff_id": user_id[a["staff"]],
+                "allocation": a["allocation"],
+            },
+            {"subphase_id": sid, "staff_id": user_id[a["staff"]]},
+        )
+    counts["staff_assignments"] = (
+        len(demo.phase_assignments) + len(demo.project_assignments) + len(demo.subphase_assignments)
+    )
+
+    for b in demo.equipment_bookings:
+        await _insert_once(
+            conn,
+            "equipment_assignments",
+            {
+                "project_id": project_id[b["project"]],
+                "equipment_id": equipment_id[b["equipment"]],
+                "start_date": b["start_date"],
+                "end_date": b["end_date"],
+            },
+            {
+                "project_id": project_id[b["project"]],
+                "equipment_id": equipment_id[b["equipment"]],
+                "start_date": b["start_date"],
+            },
+        )
+    for b in demo.equipment_blocks:
+        await _insert_once(
+            conn,
+            "equipment_blocks",
+            {
+                "equipment_id": equipment_id[b["equipment"]],
+                "start_date": b["start_date"],
+                "end_date": b["end_date"],
+                "reason": b["reason"],
+                "description": b["description"],
+            },
+            {
+                "equipment_id": equipment_id[b["equipment"]],
+                "reason": b["reason"],
+                "start_date": b["start_date"],
+            },
+        )
+    counts["equipment_bookings"] = len(demo.equipment_bookings)
+    counts["equipment_blocks"] = len(demo.equipment_blocks)
+
+    for h in demo.bank_holidays:
+        await _insert_once(
+            conn,
+            "bank_holidays",
+            {
+                "site_id": site_id[h["site"]],
+                "date": h["date"],
+                "name": h["name"],
+                "year": h["year"],
+                "is_custom": 0,
+            },
+            {"site_id": site_id[h["site"]], "date": h["date"], "name": h["name"]},
+        )
+    counts["bank_holidays"] = len(demo.bank_holidays)
+
+    for ev in demo.company_events:
+        # Legacy `site_id` = the first linked site; links live in company_event_sites.
+        event_id = await _insert_id(
+            conn,
+            "company_events",
+            {
+                "site_id": site_id[ev["sites"][0]],
+                "date": ev["date"],
+                "end_date": ev["end_date"],
+                "name": ev["name"],
+                "color": ev["color"],
+                "counts_as_unavailable": ev["counts_as_unavailable"],
+            },
+            {"name": ev["name"], "date": ev["date"]},
+        )
+        for site in ev["sites"]:
+            await conn.execute(
+                "INSERT INTO company_event_sites (event_id, site_id) VALUES ($1, $2) "
+                "ON CONFLICT DO NOTHING",
+                event_id,
+                site_id[site],
+            )
+    counts["company_events"] = len(demo.company_events)
+
+    for v in demo.vacations:
+        # Absence types are seeded by the tenant schema; look them up by name.
+        type_id = await conn.fetchval("SELECT id FROM absence_types WHERE name = $1", v["type"])
+        await _insert_once(
+            conn,
+            "vacations",
+            {
+                "staff_id": user_id[v["staff"]],
+                "start_date": v["start_date"],
+                "end_date": v["end_date"],
+                "description": v["description"],
+                "absence_type_id": type_id,
+            },
+            {
+                "staff_id": user_id[v["staff"]],
+                "start_date": v["start_date"],
+                "description": v["description"],
+            },
+        )
+    counts["vacations"] = len(demo.vacations)
+
+    column_id: dict[str, int] = {}
+    for c in demo.custom_columns:
+        c_site = site_id[c["site"]] if c["site"] else None
+        column_id[c["name"]] = await _insert_id(
+            conn,
+            "custom_columns",
+            {
+                "name": c["name"],
+                "column_type": c["column_type"],
+                "list_options": c["list_options"],
+                "site_id": c_site,
+                "display_order": c["display_order"],
+                "width": c["width"],
+            },
+            {"name": c["name"], "site_id": c_site},
+        )
+    for val in demo.custom_column_values:
+        kind = val["entity"][0]
+        await _insert_once(
+            conn,
+            "custom_column_values",
+            {
+                "custom_column_id": column_id[val["column"]],
+                "entity_type": kind,
+                "entity_id": entity_id(val["entity"]),
+                "value": val["value"],
+            },
+            {
+                "custom_column_id": column_id[val["column"]],
+                "entity_type": kind,
+                "entity_id": entity_id(val["entity"]),
+            },
+        )
+    counts["custom_columns"] = len(column_id)
+
+    for cm in demo.comments:
+        body = render_mentions(cm["body"], user_id, full_name)
+        kind = cm["entity"][0]
+        await _insert_once(
+            conn,
+            "card_comments",
+            {
+                "entity_type": kind,
+                "entity_id": entity_id(cm["entity"]),
+                "project_id": project_id[cm["project"]],
+                "author_id": user_id[cm["author"]],
+                "body": body,
+                "mentioned_user_ids": json.dumps(parse_mention_ids(body)),
+            },
+            {
+                "entity_type": kind,
+                "entity_id": entity_id(cm["entity"]),
+                "project_id": project_id[cm["project"]],
+                "body": body,
+            },
+        )
+    counts["comments"] = len(demo.comments)
+
+    for n in demo.notifications:
+        await conn.execute(
+            "INSERT INTO notifications "
+            "(user_id, type, actor_id, entity_type, entity_id, project_id, title, body, read_at) "
+            "SELECT $1, $2, $3, $4, $5, $6, $7, $8, "
+            "CASE WHEN $9::boolean THEN CURRENT_TIMESTAMP ELSE NULL END "
+            "WHERE NOT EXISTS (SELECT 1 FROM notifications "
+            "WHERE user_id = $1 AND type = $2 AND title = $7)",
+            user_id[n["user"]],
+            n["type"],
+            user_id[n["actor"]],
+            n["entity"][0],
+            entity_id(n["entity"]),
+            project_id[n["project"]],
+            n["title"],
+            n["body"],
+            bool(n["read"]),
+        )
+    counts["notifications"] = len(demo.notifications)
+
+    for note in demo.staff_notes:
+        await _insert_once(
+            conn,
+            "staff_notes",
+            {
+                "site_id": site_id[note["site"]],
+                "staff_id": user_id[note["staff"]],
+                "date": note["date"],
+                "text": note["text"],
+                "type": note["type"],
+            },
+            {"site_id": site_id[note["site"]], "text": note["text"]},
+        )
+    counts["staff_notes"] = len(demo.staff_notes)
+
+    for table, n_rows in counts.items():
+        print(f"  {table}: {n_rows}")
+    return counts
+
+
+MENTION_PLACEHOLDER_RE = re.compile(r"\{mention:([^}]+)\}")
+
+
+def render_mentions(body: str, user_id: dict[str, int], full_name: dict[str, str]) -> str:
+    """`{mention:<email>}` → `@[Full Name](id)` (app/services/mentions.py format)."""
+
+    def repl(match: re.Match[str]) -> str:
+        email = match.group(1)
+        return f"@[{full_name[email]}]({user_id[email]})"
+
+    return MENTION_PLACEHOLDER_RE.sub(repl, body)
 
 
 async def main():
