@@ -105,7 +105,7 @@
  */
 .assignee {
   display: grid;
-  grid-template-columns: 150px 1fr auto;
+  grid-template-columns: 150px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 6px 10px;
@@ -128,7 +128,7 @@
    the slider's own floor, so the row would overflow the dialog. */
 @media (max-width: 640px) {
   .assignee {
-    grid-template-columns: 100px 1fr auto;
+    grid-template-columns: 100px minmax(0, 1fr) auto;
   }
 }
 

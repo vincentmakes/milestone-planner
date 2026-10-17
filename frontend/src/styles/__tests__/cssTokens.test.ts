@@ -130,6 +130,30 @@ describe('CSS design tokens', () => {
     expect(over).toEqual([]);
   });
 
+  it('lets grid tracks and date inputs shrink (no bare 1fr track, min-width 0 on date inputs)', () => {
+    // A `1fr` track has an implicit `min-width: auto`: it cannot shrink below
+    // its content, and iOS Safari gives a date input a wide intrinsic width —
+    // so two date fields in a `1fr 1fr` row overflowed and overlapped on iPad.
+    // `minmax(0, 1fr)` is the track that shrinks.
+    const bare: string[] = [];
+    for (const file of stylesheets.filter((f) => f.endsWith('.module.css'))) {
+      readFileSync(file, 'utf8')
+        .split('\n')
+        .forEach((line, index) => {
+          const m = line.match(/grid-template-columns:\s*([^;]+)/);
+          if (!m) return;
+          const tracks = m[1].replace(/minmax\([^)]*\)/g, '');
+          if (/(?<![\w(,])1fr\b/.test(tracks) || /repeat\(\d+,\s*1fr\)/.test(tracks)) {
+            bare.push(`${relative(SRC, file)}:${index + 1}: ${m[0].trim()}`);
+          }
+        });
+    }
+    expect(bare).toEqual([]);
+
+    const global = readFileSync(join(STYLES, 'global.css'), 'utf8');
+    expect(global).toMatch(/input\[type="date"\]\s*\{[^}]*min-width:\s*0;/);
+  });
+
   it('keeps the tokens the fixed stylesheets rely on', () => {
     for (const token of ['--accent-teal', '--accent-green-alpha', '--accent-red', '--accent-blue', '--border-subtle', '--radius-sm']) {
       expect(globalTokens.has(token), token).toBe(true);

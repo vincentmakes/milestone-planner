@@ -442,6 +442,11 @@ decision, not an oversight.
 - **`Input`** (`components/common/Input`): `label`, `error`, `hint`, `leftIcon`, `rightIcon`,
   `fullWidth`, plus every native input prop. 36 px tall; the label is linked through `htmlFor`
   (an id is generated when none is given); an `error` replaces the `hint`.
+- **Two fields side by side** (a start/end date pair): a grid of `minmax(0, 1fr) minmax(0, 1fr)`
+  (or a flex row whose items have `min-width: 0`), never `1fr 1fr`. A `1fr` track cannot shrink
+  below its content and iOS Safari gives a date input a wide intrinsic width, so the two fields
+  overlapped on iPad; `global.css` also lets `input[type="date"]` shrink. The token test rejects
+  a bare `1fr` track in a module stylesheet.
 - **`Select`** (`components/common/Select`): `options: {value, label, disabled?}[]`,
   `placeholder` (rendered as a disabled empty option), `icon`, `label`, `error`, `hint`,
   `fullWidth`. 36 px.

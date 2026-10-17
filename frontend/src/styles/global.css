@@ -104,6 +104,13 @@ textarea::placeholder {
   color: var(--text-muted);
 }
 
+/* iOS Safari gives a date input a wide intrinsic width; two of them in a row
+   then overflow their grid tracks and overlap. Let them shrink to the track. */
+input[type="date"] {
+  min-width: 0;
+  max-width: 100%;
+}
+
 input:disabled,
 textarea:disabled,
 select:disabled {
