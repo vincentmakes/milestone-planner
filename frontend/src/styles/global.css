@@ -417,13 +417,22 @@ body.phantom-sibling-mode * {
     font-size: 13px;
   }
   
-  /* Larger touch targets - but NOT for inline badges/controls */
+  /* Larger touch targets - but NOT for inline badges/controls, and not for
+     checkboxes, radios and ranges: those keep the one size they have on every
+     device (16 px for a checkbox) and get their touch area from the label row
+     below, so a form looks the same on a phone as on a desktop. */
   button:not([class*="Badge"]):not([class*="badge"]):not([class*="Level"]):not([class*="level"]):not([class*="expandBtn"]):not([class*="collapseBtn"]):not([class*="dragHandle"]):not([class*="levelBtn"]):not([class*="wbsLevel"]), 
   [role="button"]:not([class*="Badge"]):not([class*="badge"]):not([class*="Level"]):not([class*="level"]),
-  input:not([class*="Cell"]):not([class*="cell"]),
+  input:not([class*="Cell"]):not([class*="cell"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]),
   select {
     min-height: 44px;
     min-width: 44px;
+  }
+
+  /* The row around a checkbox or radio is the touch target, not the box */
+  label:has(> input[type="checkbox"]),
+  label:has(> input[type="radio"]) {
+    min-height: 44px;
   }
   
   /* Better scrolling on mobile */

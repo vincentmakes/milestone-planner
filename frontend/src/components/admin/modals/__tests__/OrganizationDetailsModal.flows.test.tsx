@@ -194,10 +194,10 @@ describe('SSO tab', () => {
     expect(screen.getByText('Encryption key missing')).toBeInTheDocument();
     expect(vi.mocked(updateOrganizationSSOConfig).mock.calls[0][1]).toMatchObject({ enabled: false, entraTenantId: '' });
 
-    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    fireEvent.click(screen.getByRole('switch', { name: 'Enable SSO for this organization' }));
     fireEvent.change(screen.getAllByPlaceholderText('xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx')[0], { target: { value: 't' } });
     fireEvent.change(screen.getAllByPlaceholderText('xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx')[1], { target: { value: 'c' } });
-    fireEvent.click(screen.getAllByRole('checkbox')[1]);
+    fireEvent.click(screen.getByRole('switch', { name: 'Auto-create users on first SSO login' }));
     await click('Save SSO Configuration');
     expect(vi.mocked(updateOrganizationSSOConfig).mock.calls[1][1]).toMatchObject({
       enabled: true,

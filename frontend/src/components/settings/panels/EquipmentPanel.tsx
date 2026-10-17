@@ -185,14 +185,7 @@ export function EquipmentPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                 onChange={(e) => setSelectedSiteId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
               />
             
-              <label className={styles.checkbox}>
-                <input
-                  type="checkbox"
-                  checked={showInactive}
-                  onChange={(e) => setShowInactive(e.target.checked)}
-                />
-                <span>Show inactive</span>
-              </label>
+              <ToggleSwitch checked={showInactive} onChange={setShowInactive} label="Show inactive" />
             </div>
           }
           right={

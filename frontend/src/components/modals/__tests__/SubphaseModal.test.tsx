@@ -266,7 +266,7 @@ describe('SubphaseModal edit and delete', () => {
   it('turns into a single-date milestone', async () => {
     openEdit();
     render(<SubphaseModal />);
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('switch', { name: /Milestone/ }));
     expect(screen.getByLabelText('Date *')).toHaveValue('2026-02-16');
     expect(dateInputs()).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));

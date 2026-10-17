@@ -26,6 +26,7 @@ import { patchPhaseLocally, removePhaseLocally, updateProjectLocally } from '@/u
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import type { Dependency, Project } from '@/types';
 import styles from './PhaseModal.module.css';
+import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { confirmAction } from '@/utils/confirmDialog';
 
 // Calculate the date range that encompasses all phases of a project
@@ -386,14 +387,11 @@ export function PhaseModal() {
         />
         
         <div className={styles.formGroup}>
-          <label className={styles.checkbox}>
-            <input
-              type="checkbox"
-              checked={isMilestone}
-              onChange={(e) => setIsMilestone(e.target.checked)}
-            />
-            <span>Milestone (single date, shown as diamond)</span>
-          </label>
+          <ToggleSwitch
+            checked={isMilestone}
+            onChange={setIsMilestone}
+            label="Milestone (single date, shown as diamond)"
+          />
         </div>
         
         <div className={styles.formRow}>

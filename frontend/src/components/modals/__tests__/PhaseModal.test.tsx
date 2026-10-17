@@ -223,7 +223,7 @@ describe('PhaseModal edit and delete', () => {
     act(() => useUIStore.getState().openPhaseModal(build, 1));
     render(<PhaseModal />);
     expect(screen.queryByText('Assigned Staff')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('switch', { name: /Milestone/ }));
     expect(screen.getByLabelText('Date *')).toHaveValue('2026-03-02');
     expect(dateInputs()).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));

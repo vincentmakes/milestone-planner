@@ -62,7 +62,7 @@ describe('CustomColumnModal create', () => {
     open();
     fireEvent.change(nameInput(), { target: { value: 'Approved' } });
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'boolean' } });
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('switch', { name: /Global column/ }));
     expect(screen.getByText('This column will be visible across all sites')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
     await waitFor(() =>

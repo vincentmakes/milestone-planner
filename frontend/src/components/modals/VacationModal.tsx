@@ -31,6 +31,7 @@ import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { AbsenceTypeSelect } from './AbsenceTypeSelect';
 import { VacationICSImport } from './VacationICSImport';
 import styles from './VacationModal.module.css';
+import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 
 // Memoized footer to prevent re-renders
 const ModalFooter = memo(function ModalFooter({
@@ -484,28 +485,26 @@ export function VacationModal() {
             
             {/* Recurring Toggle */}
             <div className={styles.section}>
-              <label className={styles.recurringToggle}>
-                <input
-                  type="checkbox"
-                  checked={isRecurring}
-                  onChange={(e) => {
-                    setIsRecurring(e.target.checked);
-                    if (!e.target.checked) {
-                      setSelectedDays([]);
-                    }
-                  }}
-                  className={styles.checkbox}
-                />
-                <span className={styles.recurringLabel}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M17 1l4 4-4 4" />
-                    <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-                    <path d="M7 23l-4-4 4-4" />
-                    <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-                  </svg>
-                  Recurring Absence
-                </span>
-              </label>
+              <ToggleSwitch
+                checked={isRecurring}
+                onChange={(checked) => {
+                  setIsRecurring(checked);
+                  if (!checked) {
+                    setSelectedDays([]);
+                  }
+                }}
+                label={
+                  <span className={styles.recurringLabel}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                      <path d="M17 1l4 4-4 4" />
+                      <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                      <path d="M7 23l-4-4 4-4" />
+                      <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+                    </svg>
+                    Recurring Absence
+                  </span>
+                }
+              />
               
               {isRecurring && (
                 <div className={styles.recurringOptions}>

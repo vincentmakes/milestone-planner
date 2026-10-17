@@ -18,6 +18,7 @@ import {
   type CustomColumnCreate,
 } from '@/api';
 import styles from './CustomColumnModal.module.css';
+import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { confirmAction } from '@/utils/confirmDialog';
 
 interface CustomColumnModalProps {
@@ -197,16 +198,11 @@ export function CustomColumnModal({
             </div>
 
             <div className={styles.checkboxField}>
-              <label className={styles.checkboxLabel}>
-                <input
-                  type="checkbox"
-                  checked={isGlobal}
-                  onChange={(e) => setIsGlobal(e.target.checked)}
-                />
-                <span className={styles.checkboxText}>
-                  Global column (available to all sites)
-                </span>
-              </label>
+              <ToggleSwitch
+                checked={isGlobal}
+                onChange={setIsGlobal}
+                label="Global column (available to all sites)"
+              />
               <span className={styles.hint}>
                 {isGlobal 
                   ? 'This column will be visible across all sites' 

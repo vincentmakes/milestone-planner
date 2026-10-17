@@ -10,9 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 - Confirmations (deleting or removing items, discarding unsaved settings, discarding or applying What-If changes, refreshing holidays, admin-portal actions) open in an in-app dialog with a clear Delete or Confirm and Cancel choice instead of the browser's pop-up.
 - With one dialog open on top of another, Escape now closes only the dialog on top.
+- On/off options in dialogs (project confirmed and archived, milestone, global column, recurring absence, organization SSO settings, show inactive equipment) are switches like the ones in Settings, instead of checkboxes.
 
 ### Fixed
 - A failed absence deletion in the Staff view now shows the error instead of staying silent.
+- On phones, checkboxes in dialogs and filters no longer grow to 44 px squares; they keep their desktop size and the row around them takes the tap.
 
 ## [1.9.0] - 2026-10-17
 

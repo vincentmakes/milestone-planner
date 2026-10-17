@@ -86,6 +86,25 @@ describe('VacationModal', () => {
     });
   });
 
+  it('opens the day picker from the Recurring switch and forgets the days when switched off', async () => {
+    render(<VacationModal />);
+    const recurring = screen.getByRole('switch', { name: /Recurring Absence/ });
+    expect(recurring).not.toBeChecked();
+    expect(screen.queryByRole('button', { name: 'Mon' })).not.toBeInTheDocument();
+
+    fireEvent.click(recurring);
+    fireEvent.click(screen.getByRole('button', { name: 'Mon' }));
+    expect(screen.getByText(/Mon/, { selector: 'div' })).toBeInTheDocument();
+
+    // Off and on again: the picked days are gone, so saving asks for one
+    fireEvent.click(recurring);
+    expect(screen.queryByRole('button', { name: 'Mon' })).not.toBeInTheDocument();
+    fireEvent.click(recurring);
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('Please select at least one day for the recurring pattern')).toBeInTheDocument();
+    expect(createVacation).not.toHaveBeenCalled();
+  });
+
   it('imports .ics rows with a per-row type pre-filled from BUSYSTATUS', async () => {
     render(<VacationModal />);
     fireEvent.click(screen.getByRole('tab', { name: 'Import .ics' }));

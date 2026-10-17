@@ -228,21 +228,6 @@
 }
 
 /* Recurring Vacation Styles */
-.recurringToggle {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  cursor: pointer;
-  user-select: none;
-}
-
-.checkbox {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--accent-purple);
-  cursor: pointer;
-}
-
 .recurringLabel {
   display: flex;
   align-items: center;

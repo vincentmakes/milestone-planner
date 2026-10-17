@@ -110,6 +110,23 @@ describe('EquipmentPanel', () => {
     expect(screen.queryByText('HPLC 1')).not.toBeInTheDocument();
   });
 
+  it('hides inactive equipment until the Show inactive switch is on', async () => {
+    apiGet.mockResolvedValue([
+      ...allEquipment,
+      { id: 3, name: 'Old Balance', type: 'Analytical Device', site_id: 1, site_ids: [1], site_names: ['Site A'], active: false },
+    ]);
+    render(<EquipmentPanel />);
+    await screen.findByText('Reactor');
+    expect(screen.queryByText('Old Balance')).not.toBeInTheDocument();
+
+    const showInactive = screen.getByRole('switch', { name: 'Show inactive' });
+    expect(showInactive).not.toBeChecked();
+    fireEvent.click(showInactive);
+    expect(screen.getByText('Old Balance')).toBeInTheDocument();
+    fireEvent.click(showInactive);
+    expect(screen.queryByText('Old Balance')).not.toBeInTheDocument();
+  });
+
   it('creates equipment on several sites and refreshes the store with per-site rows', async () => {
     render(<EquipmentPanel />);
     await screen.findByText('HPLC 1');

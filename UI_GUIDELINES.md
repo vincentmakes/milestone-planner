@@ -458,12 +458,17 @@ decision, not an oversight.
   form's countries by region), `placeholder` (rendered as a *disabled* empty option, so only
   for a choice the user must replace; a selectable "none" is a normal `options` entry),
   `icon`, `label`, `error`, `hint`, `fullWidth`. 36 px.
-- **`ToggleSwitch`** (`components/common/ToggleSwitch`): every on/off *setting* or preference. A
-  visually hidden checkbox with `role="switch"`, so keyboard, screen-reader and label behaviour
-  come for free; pass `label` for visible text or `aria-label` when there is none. Every setting
-  flag uses it (General, Tags, SSO incl. auto-create, Absence types, the Active flags of sites,
-  users and equipment, the company-event site-closure flag). Entity flags inside dialogs
-  (Confirmed, Archived, Milestone) stay checkboxes — the rule is scoped to settings.
+- **`ToggleSwitch`** (`components/common/ToggleSwitch`): every on/off flag, in Settings and in
+  dialogs alike. A visually hidden checkbox with `role="switch"`, so keyboard, screen-reader and
+  label behaviour come for free; pass `label` for visible text (a `ReactNode`, so an icon may sit
+  in it, as the absence dialog's *Recurring Absence* does) or `aria-label` when there is none.
+  Every boolean uses it: the settings flags (General, Tags, SSO incl. auto-create, Absence types,
+  the Active flags of sites, users and equipment, the site-closure flag, *Show inactive*), the
+  entity flags in dialogs (Project *Confirmed* / *Archived*, phase and subphase *Milestone*,
+  *Global column*, *Recurring Absence*) and the organization SSO flags in the admin portal. A
+  raw checkbox is right only for **picking several items from a list**: the tag, type, role and
+  skill filters, column visibility, the `.ics` import rows, `SiteChecklist` and the equipment
+  site picker. Tests reach a switch with `getByRole('switch', { name })`.
 - **`Notice`** (`components/common/Notice`): the one inline message box. `tone` = `error` |
   `warning` | `info` | `success` (accent token text and border on its alpha tint, `0.75rem 1rem`,
   `--radius-md`); `role` defaults to `alert` for errors and `status` otherwise; `onDismiss` adds a
@@ -790,6 +795,12 @@ has no fixed height).
   for inputs. Name a deliberately compact inline control accordingly, or expect it to grow.
   A round control must grow in **both** dimensions or it becomes an oval: raise its width with
   its height (as `ColorSwatchPicker` does), or exclude it by class name.
+- **Checkboxes, radios and ranges never grow.** A control keeps the one size it has on every
+  device (a checkbox is 16 px, `global.css`), so a form looks the same on a phone as on a desktop;
+  the 44 px touch area comes from the `<label>` row around it (`label:has(> input[type=…])`
+  gets the `min-height`), which toggles the box anyway. Put a checkbox inside its label, not
+  next to it, or the phone gets no touch target for it.
+  `src/styles/__tests__/mobileTouchTargets.test.ts` pins the exclusion.
 - `@media (hover: none) and (pointer: coarse)` (touch devices at any width) raises buttons to a
   40 px `min-height`, keeps the completion/type badges and `wbsLevel` chips at their own size,
   shows drag handles at 60 % opacity, disables hover transitions and enables touch scrolling on
@@ -809,7 +820,7 @@ has no fixed height).
 | `<Input label>` / `<Select label options>` for every text-like field and dropdown | A raw `<input>` / `<select>` with a local `.input` class — the raw-control ratchet (`rawFormControls.test.ts`) fails when a file's count rises |
 | `Modal` with explicit Close / Cancel and Escape | Backdrop-click close, in any dialog |
 | `await confirmAction({ message, destructive: true })` before a delete | `window.confirm(...)` — none left, and a native dialog blocks the tab and ignores the theme |
-| `ToggleSwitch` for a setting | A bare checkbox for a setting |
+| `ToggleSwitch` for any on/off flag, in a dialog too | A bare checkbox for a flag — checkboxes only pick items from a list |
 | `data-density` selectors in header CSS | Pixel breakpoints in header CSS above 640 px |
 | Select a raw store slice and `useMemo`, or `useShallow` | A store selector that returns a new array or object (Zustand 5 re-renders forever) |
 | `parseLocalDate` / `formatLocalDate` | `new Date('2026-01-05')` |
