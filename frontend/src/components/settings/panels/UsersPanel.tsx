@@ -21,6 +21,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
+import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { PanelToolbar } from '../PanelToolbar';
 import { BackIcon, CheckIcon, CloseIcon, EditIcon, GearIcon, PlusIcon } from './PanelIcons';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -783,10 +784,13 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
         {isEditing && (
           <div className={styles.field}>
             <label>Status</label>
-            <label className={styles.toggleLabel}>
-              <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} disabled={!canToggleActive} />
-              <span>Active</span>
-            </label>
+            <ToggleSwitch
+              className={styles.toggleLabel}
+              checked={active}
+              onChange={setActive}
+              disabled={!canToggleActive}
+              label="Active"
+            />
             {!canToggleActive && <span className={styles.hint}>{!isAdmin ? 'Only admins can enable or disable users' : user?.id === currentUser?.id ? "Can't disable yourself" : 'Insufficient permissions'}</span>}
           </div>
         )}

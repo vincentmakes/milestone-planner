@@ -11,6 +11,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
+import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { PanelToolbar } from '../PanelToolbar';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
@@ -547,14 +548,12 @@ function EquipmentForm({
         {isEditing && (
           <div className={styles.field}>
             <label>Status</label>
-            <label className={styles.toggleLabel}>
-              <input
-                type="checkbox"
-                checked={active}
-                onChange={(e) => setActive(e.target.checked)}
-              />
-              <span>Active</span>
-            </label>
+            <ToggleSwitch
+              className={styles.toggleLabel}
+              checked={active}
+              onChange={setActive}
+              label="Active"
+            />
             <span className={styles.hint}>
               Inactive equipment won't appear in booking lists
             </span>

@@ -199,6 +199,18 @@ describe('UsersPanel accessible names', () => {
     expect(within(await rowOf('Sam Super')).getByRole('button', { name: 'Edit Sam Super' })).toBeInTheDocument();
   });
 
+  it('offers Active as a switch an admin can flip for someone else', async () => {
+    render(<UsersPanel />);
+    await openEditor('Bob Brown');
+    const active = screen.getByRole('switch', { name: 'Active' });
+    expect(active).toBeChecked();
+    expect(active).toBeEnabled();
+    fireEvent.click(active);
+    expect(active).not.toBeChecked();
+    save();
+    await waitFor(() => expect(updateUser).toHaveBeenCalledWith(4, expect.objectContaining({ active: false })));
+  });
+
   it('labels the inline new-skill confirm and cancel buttons', async () => {
     render(<UsersPanel />);
     await openEditor('Bob Brown');

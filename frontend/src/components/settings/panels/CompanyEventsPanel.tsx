@@ -14,6 +14,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
+import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { PanelToolbar } from '../PanelToolbar';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { ICSImportPanel, ICS_IMPORT_WHAT_IF_MESSAGE } from '@/components/common/ICSImportPanel';
@@ -324,14 +325,12 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
           />
           <span className={styles.label}>Color</span>
           <ColorSwatchPicker value={importColor} onChange={setImportColor} label="Color of imported events" />
-          <label className={styles.siteCheck}>
-            <input
-              type="checkbox"
-              checked={importAsClosure}
-              onChange={(e) => setImportAsClosure(e.target.checked)}
-            />
-            <span>Site closure — staff on these sites are unavailable</span>
-          </label>
+          <ToggleSwitch
+            className={styles.siteCheck}
+            checked={importAsClosure}
+            onChange={setImportAsClosure}
+            label="Site closure — staff on these sites are unavailable"
+          />
           <p className={styles.help}>
             An event that already exists with the same dates and name is not duplicated; it is
             linked to the selected sites it is missing (and keeps its own closure setting). Rows
@@ -692,14 +691,12 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
         <ColorSwatchPicker value={color} onChange={setColor} label="Event color" />
       </div>
       <div className={styles.field}>
-        <label className={styles.siteCheck}>
-          <input
-            type="checkbox"
-            checked={countsAsUnavailable}
-            onChange={(e) => setCountsAsUnavailable(e.target.checked)}
-          />
-          <span>Site closure — staff on these sites are unavailable</span>
-        </label>
+        <ToggleSwitch
+          className={styles.siteCheck}
+          checked={countsAsUnavailable}
+          onChange={setCountsAsUnavailable}
+          label="Site closure — staff on these sites are unavailable"
+        />
         <p className={styles.help}>
           Their capacity is 0% for the event's dates and their assignments are flagged as
           conflicts, like an absence.

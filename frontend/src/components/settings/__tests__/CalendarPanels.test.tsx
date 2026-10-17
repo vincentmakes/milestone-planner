@@ -215,6 +215,13 @@ describe('Calendar forms report unsaved input', () => {
     fireEvent.change(name, { target: { value: 'ISO Audit' } });
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
 
+    // The closure flag is a real switch
+    const closure = screen.getByRole('switch', { name: /Site closure/ });
+    const wasClosure = (closure as HTMLInputElement).checked;
+    fireEvent.click(closure);
+    expect((closure as HTMLInputElement).checked).toBe(!wasClosure);
+    fireEvent.click(closure);
+
     // Adding a site is a change too
     fireEvent.click(within(screen.getByRole('group', { name: 'Event sites' })).getByLabelText('Zurich'));
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);

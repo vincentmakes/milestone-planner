@@ -154,6 +154,17 @@ describe('EquipmentPanel', () => {
     expect(screen.queryByRole('button', { name: 'Add type' })).not.toBeInTheDocument();
   });
 
+  it('offers Active as a switch when editing and sends its new value', async () => {
+    render(<EquipmentPanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Reactor' }));
+    const active = screen.getByRole('switch', { name: 'Active' });
+    expect(active).toBeChecked();
+    fireEvent.click(active);
+    expect(active).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith('/api/equipment/2', expect.objectContaining({ active: false })));
+  });
+
   it('requires at least one site', async () => {
     render(<EquipmentPanel />);
     await screen.findByText('Reactor');

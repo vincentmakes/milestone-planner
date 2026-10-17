@@ -71,6 +71,18 @@ describe('SiteForm', () => {
     });
   });
 
+  it('offers Active as a switch and sends its new value', async () => {
+    const onBack = vi.fn();
+    render(<SiteForm site={basel} onBack={onBack} />);
+    const active = screen.getByRole('switch', { name: 'Active' });
+    expect(active).toBeChecked();
+    fireEvent.click(active);
+    expect(active).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() => expect(onBack).toHaveBeenCalled());
+    expect(api.updateSite).toHaveBeenCalledWith(1, expect.objectContaining({ active: false }));
+  });
+
   it('reports unsaved input, and a value typed back is clean again', () => {
     const onDirtyChange = vi.fn();
     render(<SiteForm site={basel} onBack={vi.fn()} onDirtyChange={onDirtyChange} />);
