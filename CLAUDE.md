@@ -116,7 +116,10 @@ The repo ships [Trail](https://github.com/trailhq/Trail-Code) for Claude Code se
   - new or changed endpoint → a route test through `authed_client` covering success, the 403/404 paths and at least one rejected input;
   - service / business logic → a unit test;
   - new or changed component, hook or util → a Vitest test beside it (`__tests__/`);
-  - pure refactor → the existing tests pass unchanged; say so in the PR;
+  - pure refactor → the existing tests pass unchanged; say so in the PR. A refactor that rewrites lines
+    (a component swap, a moved handler) still has to *exercise* every rewritten line — the diff-coverage
+    gate below counts them, and a field whose `onChange` no test fires is an uncovered line; render-only
+    assertions do not pass it;
   - docs- or CI-only change → no test needed; say so in the PR.
 - **Enforcement (CI):**
   - **Diff coverage**: on every PR, `diff-cover` requires **≥ 80 %** of the lines the PR adds or changes to be covered (backend `coverage.xml`, frontend `coverage/lcov.info`).
