@@ -48,13 +48,13 @@ export default defineConfig({
       ],
       // Floors just under the measured totals, raised in any PR that lifts
       // the number and never lowered. `vitest run --coverage` fails below
-      // them. Placeholders until the coverage-lift tests land; then they are
-      // set from the CI totals (Node 24), not from a local run.
+      // them. Set from the CI totals (Node 24, 2026-10-16: lines 88.4,
+      // statements 87.16, functions 87.8, branches 76.59), not a local run.
       thresholds: {
-        lines: 0,
-        statements: 0,
-        functions: 0,
-        branches: 0,
+        lines: 87.9,
+        statements: 86.6,
+        functions: 87.3,
+        branches: 76.0,
       },
     },
   },
