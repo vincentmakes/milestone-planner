@@ -11,7 +11,7 @@
 .phantomRow {
   position: absolute;
   height: 32px;
-  background: rgba(var(--bg-tertiary-rgb, 60, 60, 60), 0.5);
+  background: color-mix(in srgb, var(--bg-tertiary) 50%, transparent);
   border-top: 1px dashed var(--border-color);
   border-bottom: 1px dashed var(--border-color);
   pointer-events: auto;
@@ -81,7 +81,7 @@
 
 .depType {
   padding: 1px 4px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.1);
   font-size: 9px;
   color: var(--text-secondary);

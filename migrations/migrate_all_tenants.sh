@@ -12,7 +12,7 @@
 PG_HOST="${PG_HOST:-localhost}"
 PG_PORT="${PG_PORT:-5432}"
 PG_USER="${PG_USER:-postgres}"
-ADMIN_DB="${ADMIN_DB:-milestone_admin}"
+ADMIN_DB="${ADMIN_DB:-${MASTER_DB_NAME:-milestone_master}}"
 
 MIGRATION_FILE="$1"
 

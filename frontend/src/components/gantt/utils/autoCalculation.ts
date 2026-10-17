@@ -1,10 +1,17 @@
 /**
  * Auto-Calculation Engine
- * 
- * Handles automatic date adjustments for:
- * 1. Dependency cascading - when a predecessor moves, successors adjust
- * 2. Parent expansion - when a child extends beyond parent bounds, parent expands
- * 3. Project date adjustment - project dates encompass all phases
+ *
+ * Handles the automatic date adjustments that follow a move or resize:
+ * 1. Parent expansion - when a child extends beyond parent bounds, the parent expands
+ *    (and contracts to the union of its children)
+ * 2. Project date adjustment - project dates encompass all phases
+ *
+ * Dependencies are NOT cascaded on move: a dependency aligns the successor only
+ * when it is created, and moving a predecessor afterwards leaves its successors
+ * where they are so users keep manual lead/lag control (see CLAUDE.md,
+ * "Auto-calculation semantics"). `cascadeDependentPhases` /
+ * `cascadeDependentSubphases` below are opt-in helpers that `processPhaseMove` /
+ * `processSubphaseMove` deliberately never call.
  */
 
 import type { Project, Phase, Subphase, Dependency, DependencyType, StaffAssignment, EquipmentAssignment } from '@/types';

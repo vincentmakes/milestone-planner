@@ -105,7 +105,7 @@ async def run_migration(migration_name: str):
     multi_tenant = os.getenv('MULTI_TENANT', 'false').lower() == 'true'
     
     # Master database settings (for multi-tenant mode)
-    master_db_name = os.getenv('MASTER_DB_NAME', 'milestone_admin')
+    master_db_name = os.getenv('MASTER_DB_NAME', 'milestone_master')
     master_db_host = os.getenv('MASTER_DB_HOST', db_host)
     master_db_port = int(os.getenv('MASTER_DB_PORT', db_port))
     master_db_user = os.getenv('MASTER_DB_USER', db_user)

@@ -251,9 +251,9 @@
 }
 
 .toggleBtn.hasHidden {
-  color: var(--text-warning, #f59e0b);
+  color: var(--accent-yellow);
   background: rgba(245, 158, 11, 0.1);
-  border-color: var(--text-warning, #f59e0b);
+  border-color: var(--accent-yellow);
 }
 
 .toggleBtn.hasHidden:hover {

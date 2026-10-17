@@ -283,7 +283,7 @@
 /* Detail bars (shown when an equipment row is expanded) */
 .detailBar {
   position: absolute;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   z-index: 2;
   cursor: pointer;
 }

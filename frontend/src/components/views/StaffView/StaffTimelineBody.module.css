@@ -203,7 +203,7 @@
 /* Row - base for main row and detail rows */
 .row {
   position: relative;
-  border-bottom: 1px solid var(--border-color-subtle, rgba(255,255,255,0.05));
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 /* Last row in expanded section doesn't need bottom border - wrapper provides it */
@@ -269,7 +269,7 @@
 /* Detail bars (for expanded view) */
 .detailBar {
   position: absolute;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   z-index: 2;
 }
 

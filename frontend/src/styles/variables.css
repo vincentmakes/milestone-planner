@@ -50,7 +50,9 @@
   --accent-red: #ef4444;
   --accent-red-hover: #dc2626;
   --accent-red-alpha: rgba(239, 68, 68, 0.15);
+  --accent-green-alpha: rgba(16, 185, 129, 0.15);
   --accent-purple: #8b5cf6;
+  --accent-teal: #14b8a6;
 
   /* Kanban status colors (board columns + card accents) */
   --status-todo: #94a3b8;
@@ -268,7 +270,9 @@
   --accent-red: #dc2626;
   --accent-red-hover: #b91c1c;
   --accent-red-alpha: rgba(220, 38, 38, 0.1);
+  --accent-green-alpha: rgba(5, 150, 105, 0.1);
   --accent-purple: #7c3aed;
+  --accent-teal: #0d9488;
 
   /* Kanban status colors (board columns + card accents) */
   --status-todo: #64748b;

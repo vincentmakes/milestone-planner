@@ -86,3 +86,15 @@ def test_master_database_url_multi_tenant():
     )
     url = settings.master_async_database_url
     assert url == "postgresql+asyncpg://admin:adminpass@masterhost:5432/milestone_admin"
+
+
+def test_sso_env_settings_are_gone_and_ignored(monkeypatch):
+    """SSO is configured in-app; the SSO_* env vars were dead settings and are
+    removed. An old .env that still sets them must keep loading (extra="ignore")."""
+    from app.config import Settings
+
+    monkeypatch.setenv("SSO_ENABLED", "true")
+    monkeypatch.setenv("SSO_CLIENT_ID", "abc")
+    settings = Settings(db_host="h", db_port=5432, db_name="d", db_user="u", db_password="p")
+    for field in ("sso_enabled", "sso_client_id", "sso_client_secret", "sso_tenant_id", "sso_redirect_uri"):
+        assert not hasattr(settings, field), field

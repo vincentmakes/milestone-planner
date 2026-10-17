@@ -1,7 +1,8 @@
 /**
  * Kanban drag-and-drop: drag start/over/leave/drop state, the optimistic card
  * move, reconciliation against the server echo, the What-If skip, and the
- * failure protocol (reload from the server, clear undo, tell the user).
+ * failure protocol (the shared recoverFromPersistFailure: reload from the
+ * server, clear undo; then tell the user).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -230,7 +231,10 @@ describe('KanbanDragProvider', () => {
     );
     expect(useAppStore.getState().projects).toBe(fresh);
     expect(useUndoStore.getState().canUndo).toBe(false);
-    expect(error).toHaveBeenCalledWith('[Kanban] Failed to move card:', expect.any(Error));
+    expect(error).toHaveBeenCalledWith(
+      '[Kanban] persist failed, reloading from the server:',
+      expect.any(Error)
+    );
   });
 
   it('still clears undo when the reload after a failure also fails', async () => {
@@ -244,7 +248,7 @@ describe('KanbanDragProvider', () => {
     dragTo('done');
     await waitFor(() =>
       expect(error).toHaveBeenCalledWith(
-        '[Kanban] Reload after failed move also failed:',
+        '[Kanban] reload after failed persist also failed:',
         expect.any(Error)
       )
     );

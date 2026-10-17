@@ -15,7 +15,7 @@ Example:
 Environment Variables:
     MASTER_DB_HOST      - Master database host (defaults to DB_HOST)
     MASTER_DB_PORT      - Master database port (defaults to 5432)
-    MASTER_DB_NAME      - Master database name (required, defaults to milestone_admin)
+    MASTER_DB_NAME      - Master database name (defaults to milestone_master, like the app)
     MASTER_DB_USER      - Master database user (defaults to DB_USER)
     MASTER_DB_PASSWORD  - Master database password (defaults to DB_PASSWORD)
 
@@ -137,7 +137,7 @@ async def run_migration(migration_name: str):
     # Master database settings
     master_db_host = os.getenv("MASTER_DB_HOST", db_host)
     master_db_port = int(os.getenv("MASTER_DB_PORT", str(db_port)))
-    master_db_name = os.getenv("MASTER_DB_NAME", "milestone_admin")
+    master_db_name = os.getenv("MASTER_DB_NAME", "milestone_master")
     master_db_user = os.getenv("MASTER_DB_USER", db_user)
     master_db_password = os.getenv("MASTER_DB_PASSWORD", db_password)
 

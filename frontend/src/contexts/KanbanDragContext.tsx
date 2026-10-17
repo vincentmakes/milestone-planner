@@ -19,8 +19,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useAppStore } from '@/stores/appStore';
-import { useUndoStore } from '@/stores/undoStore';
-import { loadAllProjects } from '@/api/endpoints/projects';
+import { recoverFromPersistFailure } from '@/utils/persistFailure';
 import { moveCard } from '@/api/endpoints/kanban';
 import { applyStatusToCard, type KanbanCard } from '@/utils/kanbanCards';
 import type { CardStatus, Phase, Project, Subphase } from '@/types';
@@ -224,15 +223,9 @@ async function commitMove(payload: DragPayload, status: CardStatus): Promise<voi
       }
     }
   } catch (err) {
-    console.error('[Kanban] Failed to move card:', err);
-    // Optimistic-write failure protocol: reload from the server and drop the
-    // undo stack, which is now stale against fresh server state.
-    try {
-      useAppStore.getState().setProjects(await loadAllProjects());
-    } catch (reloadErr) {
-      console.error('[Kanban] Reload after failed move also failed:', reloadErr);
-    }
-    useUndoStore.getState().clear();
+    // Optimistic-write failure protocol (reload from the server, drop the undo
+    // stack) — the shared helper, never open-coded.
+    await recoverFromPersistFailure('Kanban', err);
     window.alert('Could not move the card. The board has been refreshed.');
   }
 }

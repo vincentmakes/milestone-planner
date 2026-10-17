@@ -193,13 +193,13 @@
 .form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 1rem;
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 0.5rem;
 }
 
 .select {
@@ -229,20 +229,20 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: var(--space-3);
-  padding-top: var(--space-4);
+  gap: 0.75rem;
+  padding-top: 1rem;
   border-top: 1px solid var(--border-color);
-  margin-top: var(--space-2);
+  margin-top: 0.5rem;
 }
 
 .leftActions {
   display: flex;
-  gap: var(--space-2);
+  gap: 0.5rem;
 }
 
 .rightActions {
   display: flex;
-  gap: var(--space-2);
+  gap: 0.5rem;
 }
 
 /* Manual entry / .ics import switch */

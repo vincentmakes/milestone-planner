@@ -445,7 +445,7 @@
 
 .capacityHint {
   font-size: 0.8125rem;
-  color: var(--primary);
+  color: var(--accent-blue);
   font-weight: 500;
 }
 

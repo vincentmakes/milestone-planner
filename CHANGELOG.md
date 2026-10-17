@@ -5,6 +5,19 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.2] - 2026-10-17
+
+### Changed
+- The migration runners now default to the same master database name as the application (`milestone_master`); deployments that set `MASTER_DB_NAME` are unaffected.
+- The unused `SSO_*` environment variables were removed. SSO is configured in the app (Settings → SSO, or organization SSO in the admin portal); an old `.env` that still sets them is ignored.
+- The legacy `upgrade_to_v90.sql` script no longer adds two columns that nothing uses.
+- The frontend UI guidelines moved from the documentation site to `UI_GUIDELINES.md` in the repository, refreshed against the current components with every colour token named.
+
+### Fixed
+- Delete items in the right-click menu are red again, the absence dialog has its spacing back and the equipment view's badges are coloured: several styles referred to design tokens that were never defined. A test now guards against that.
+- A failed Kanban card move recovers through the same reload-and-clear-undo path as every other failed edit.
+- The release version check in CI reads the pull request through git, so a very large pull request can no longer slip past it.
+
 ## [1.6.1] - 2026-10-17
 
 ### Changed

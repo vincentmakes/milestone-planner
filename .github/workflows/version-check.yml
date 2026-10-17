@@ -16,6 +16,12 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v3
         with:
+          # Git mode, like the other workflows: the REST API mode caps a PR at
+          # 3000 files and silently reports the rest as unchanged, so a huge PR
+          # could slip past the version gate. An empty token switches the
+          # action to `git merge-base` against the PR's base branch.
+          token: ""
+          base: ${{ github.event.pull_request.base.ref }}
           filters: |
             app:
               - 'app/**'

@@ -113,7 +113,7 @@
   padding: 0 1rem 0 2.5rem;
   gap: 8px;
   font-size: var(--font-size-xs);
-  border-bottom: 1px solid var(--border-color-subtle, rgba(255, 255, 255, 0.05));
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .detailRow:last-child {
@@ -145,7 +145,7 @@
 
 .detailType.allocation {
   background: rgba(20, 184, 166, 0.2);
-  color: var(--accent-teal, #14b8a6);
+  color: var(--accent-teal);
 }
 
 .detailName {
