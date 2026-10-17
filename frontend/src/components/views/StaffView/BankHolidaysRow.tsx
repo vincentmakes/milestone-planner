@@ -13,6 +13,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { deleteCustomHoliday, getBankHolidays, buildHolidayDateSet } from '@/api';
 import { buildICS, downloadICS } from '@/utils/ics';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './StaffView.module.css';
 import { parseLocalDate } from '@/utils/date';
 
@@ -93,7 +94,7 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
     const message = isCustom
       ? 'Delete this custom holiday?'
       : 'Delete this public holiday? It will come back the next time holidays are refreshed from Nager.';
-    if (!confirm(message)) return;
+    if (!(await confirmAction({ title: 'Delete holiday', message, destructive: true }))) return;
     setError(null);
     
     try {

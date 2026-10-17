@@ -6,9 +6,10 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { TagsPanel } from '../panels/TagsPanel';
 import { useAppStore } from '@/stores/appStore';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { Site, Tag, TagGroup } from '@/types';
 
 const api = vi.hoisted(() => ({
@@ -157,7 +158,7 @@ describe('TagsPanel', () => {
 
   it('shows the error and reloads both lists after a failed tag delete', async () => {
     tagsApi.delete.mockRejectedValue(new Error('Tag not found'));
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stubConfirm(true);
     render(<TagsPanel />);
     await screen.findByText('Pharma');
 
@@ -182,22 +183,37 @@ describe('TagsPanel', () => {
   it('asks before deleting a tag or a group, and deletes only when confirmed', async () => {
     tagsApi.delete.mockResolvedValue(undefined);
     tagGroupsApi.delete.mockResolvedValue(undefined);
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const confirm = stubConfirm(false);
     render(<TagsPanel />);
     await screen.findByText('Pharma');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Pharma' }));
-    expect(confirm).toHaveBeenLastCalledWith(expect.stringContaining('The tag is removed from every project'));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Pharma' }));
+    });
+    expect(confirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        message: 'Delete the tag "Pharma"? The tag is removed from every project.',
+        destructive: true,
+      })
+    );
     expect(tagsApi.delete).not.toHaveBeenCalled();
 
-    confirm.mockReturnValue(true);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete group Customer' }));
+    });
+    expect(confirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        message: 'Delete the group "Customer"? Tags in this group are kept and become ungrouped.',
+        destructive: true,
+      })
+    );
+    expect(tagGroupsApi.delete).not.toHaveBeenCalled();
+
+    confirm.mockResolvedValue(true);
     fireEvent.click(screen.getByRole('button', { name: 'Delete Pharma' }));
     await waitFor(() => expect(tagsApi.delete).toHaveBeenCalledWith(3));
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete group Customer' }));
-    expect(confirm).toHaveBeenLastCalledWith(
-      expect.stringContaining('Tags in this group are kept and become ungrouped')
-    );
     await waitFor(() => expect(tagGroupsApi.delete).toHaveBeenCalledWith(20));
   });
 

@@ -1,15 +1,16 @@
 /**
  * Staff overview: the left panel lists the site's active staff with today's
  * availability, a role/skill filter, expandable rows (absences + assignments
- * collected from every level of the project tree) and a delete confirmation
+ * collected from every level of the project tree) and a confirmed delete
  * for absences.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { StaffView } from '../StaffView';
 import { resetAllStores, useAppStore, useUIStore } from '@/stores';
 import { deleteVacation, getVacations } from '@/api/endpoints/vacations';
 import { formatDateISO } from '@/utils/date';
+import { stubConfirm } from '@/test/confirmDialog';
 import {
   makePhase,
   makeProject,
@@ -286,42 +287,71 @@ describe('StaffView expanded rows', () => {
 
   it('deletes an absence after confirmation and reloads the list', async () => {
     seed();
+    const confirm = stubConfirm(true);
     vi.mocked(deleteVacation).mockResolvedValue(undefined as never);
     vi.mocked(getVacations).mockResolvedValue([]);
     render(<StaffView />);
     fireEvent.click(rowFor('Bob Brown'));
 
     fireEvent.click(screen.getAllByTitle('Delete vacation')[0]);
-    const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByText('Ski trip')).toBeInTheDocument();
-    expect(within(dialog).getByText('Bob Brown')).toBeInTheDocument();
-
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(confirm).toHaveBeenCalledWith({
+      title: 'Delete absence',
+      message: 'Are you sure you want to delete Ski trip for Bob Brown?\n\nThis action cannot be undone.',
+      destructive: true,
+    });
+    await waitFor(() => expect(useAppStore.getState().vacations).toEqual([]));
     expect(deleteVacation).toHaveBeenCalledWith(61);
-    expect(useAppStore.getState().vacations).toEqual([]);
+    // The shared dialog replaced the hand-rolled one
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('keeps the confirmation open when the delete fails, and cancels via the button or Escape', async () => {
+  it('deletes nothing when the confirmation is cancelled', async () => {
     seed();
+    const confirm = stubConfirm(false);
+    render(<StaffView />);
+    fireEvent.click(rowFor('Bob Brown'));
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByTitle('Delete vacation')[0]);
+    });
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(deleteVacation).not.toHaveBeenCalled();
+    expect(useAppStore.getState().vacations).toHaveLength(2);
+  });
+
+  it('reports a failed delete in the flash notice and keeps the absences', async () => {
+    seed();
+    stubConfirm(true);
     vi.mocked(deleteVacation).mockRejectedValue(new Error('boom'));
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     render(<StaffView />);
     fireEvent.click(rowFor('Bob Brown'));
 
     fireEvent.click(screen.getAllByTitle('Delete vacation')[0]);
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    await waitFor(() => expect(err).toHaveBeenCalled());
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(useUIStore.getState().flashNotice).toEqual(
+        expect.objectContaining({ message: 'Failed to delete the absence: boom', tone: 'error' })
+      )
+    );
+    expect(getVacations).not.toHaveBeenCalled();
     expect(useAppStore.getState().vacations).toHaveLength(2);
+    err.mockRestore();
+  });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  it('falls back to a plain flash message when the failure has no text', async () => {
+    seed();
+    stubConfirm(true);
+    vi.mocked(deleteVacation).mockRejectedValue('offline');
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<StaffView />);
+    fireEvent.click(rowFor('Bob Brown'));
 
-    fireEvent.click(screen.getAllByTitle('Delete vacation')[1]);
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(screen.getAllByTitle('Delete vacation')[0]);
+    await waitFor(() =>
+      expect(useUIStore.getState().flashNotice).toEqual(
+        expect.objectContaining({ message: 'Failed to delete the absence', tone: 'error' })
+      )
+    );
     err.mockRestore();
   });
 });

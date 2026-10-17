@@ -14,7 +14,7 @@ import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
-import { useScrollSync, useCtrlScrollZoom, useResourceDragDrop, useEscapeKey } from '@/hooks';
+import { useScrollSync, useCtrlScrollZoom, useResourceDragDrop } from '@/hooks';
 import { generateTimelineCells, generateTimelineHeaders, calculateTodayScrollLeft, calculateTodayCenterScrollLeft } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { StaffTimelineBody } from './StaffTimelineBody';
@@ -35,6 +35,7 @@ import { getClosureOn } from '@/utils/siteClosure';
 import { selectStaffSiteIds, selectAbsenceTypesById } from '@/stores/appStore';
 import { canManageAnyProject, isSelf } from '@/utils/permissions';
 import type { Project, Phase, Subphase, StaffAssignment } from '@/types';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './StaffView.module.css';
 
 // Height constants matching Gantt rows
@@ -149,14 +150,6 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
       window.removeEventListener('scroll', update, true);
     };
   }, [isFilterOpen]);
-  
-  // Delete confirmation state
-  const [deleteConfirm, setDeleteConfirm] = useState<{
-    vacationId: number;
-    staffName: string;
-    description: string;
-  } | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
   
   // Sync vertical scroll between panel and timeline body
   useScrollSync(panelRef, timelineBodyRef);
@@ -538,41 +531,27 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
     return `${formatDate(s)} - ${formatDate(e)}`;
   };
   
-  // Handle vacation delete request (show confirmation)
-  const handleDeleteVacationRequest = useCallback((
+  // Ask, then delete the absence; a failure is reported in the flash notice
+  const handleDeleteVacationRequest = useCallback(async (
     vacationId: number,
     staffName: string,
     description: string
   ) => {
-    setDeleteConfirm({ vacationId, staffName, description });
-  }, []);
-  
-  // Confirm and execute vacation delete
-  const handleConfirmDelete = useCallback(async () => {
-    if (!deleteConfirm) return;
-    
-    setIsDeleting(true);
+    const confirmed = await confirmAction({
+      title: 'Delete absence',
+      message: `Are you sure you want to delete ${description} for ${staffName}?\n\nThis action cannot be undone.`,
+      destructive: true,
+    });
+    if (!confirmed) return;
     try {
-      await deleteVacation(deleteConfirm.vacationId);
-      const updatedVacations = await getVacations();
-      setVacations(updatedVacations);
-      setDeleteConfirm(null);
+      await deleteVacation(vacationId);
+      setVacations(await getVacations());
     } catch (err) {
       console.error('Failed to delete vacation:', err);
-      // Could add error toast here
-    } finally {
-      setIsDeleting(false);
+      const detail = err instanceof Error && err.message ? `: ${err.message}` : '';
+      useUIStore.getState().showFlash(`Failed to delete the absence${detail}`, 'error');
     }
-  }, [deleteConfirm, setVacations]);
-  
-  // Cancel delete
-  const handleCancelDelete = useCallback(() => {
-    setDeleteConfirm(null);
-  }, []);
-
-  // The confirmation closes via its buttons or Escape -- never on a backdrop
-  // click (CLAUDE.md modal rule). Escape is ignored while the delete runs.
-  useEscapeKey(handleCancelDelete, !!deleteConfirm && !isDeleting);
+  }, [setVacations]);
   
   // Handle panel resize (horizontal - width)
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -867,7 +846,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                                 className={styles.deleteBtn}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleDeleteVacationRequest(
+                                  void handleDeleteVacationRequest(
                                     vacation.id,
                                     staffMember.name,
                                     displayDescription
@@ -989,44 +968,6 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
           </div>
         </div>
       </div>
-      
-      {/* Delete Confirmation Modal */}
-      {deleteConfirm && (
-        <div className={styles.confirmOverlay} role="dialog" aria-modal="true" aria-labelledby="staff-delete-vacation-title">
-          <div className={styles.confirmModal}>
-            <div className={styles.confirmIcon}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M3 6h18" />
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                <line x1="10" y1="11" x2="10" y2="17" />
-                <line x1="14" y1="11" x2="14" y2="17" />
-              </svg>
-            </div>
-            <h3 id="staff-delete-vacation-title" className={styles.confirmTitle}>Delete Vacation</h3>
-            <p className={styles.confirmText}>
-              Are you sure you want to delete <strong>{deleteConfirm.description}</strong> for <strong>{deleteConfirm.staffName}</strong>?
-            </p>
-            <p className={styles.confirmWarning}>This action cannot be undone.</p>
-            <div className={styles.confirmActions}>
-              <button 
-                className={styles.confirmCancel}
-                onClick={handleCancelDelete}
-                disabled={isDeleting}
-              >
-                Cancel
-              </button>
-              <button 
-                className={styles.confirmDelete}
-                onClick={handleConfirmDelete}
-                disabled={isDeleting}
-              >
-                {isDeleting ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

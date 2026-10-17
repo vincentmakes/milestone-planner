@@ -155,4 +155,33 @@ describe('Modal focus', () => {
     const innerClose = screen.getAllByRole('button', { name: 'Close modal' })[1];
     expect(innerClose).toHaveFocus();
   });
+
+  it('closes only the innermost dialog on Escape', () => {
+    const outerClose = vi.fn();
+    function Nested() {
+      // The inner dialog opens after the outer one, as a confirmation would.
+      const [innerOpen, setInnerOpen] = useState(false);
+      return (
+        <Modal isOpen onClose={outerClose} title="Outer">
+          <button type="button" onClick={() => setInnerOpen(true)}>
+            Open inner
+          </button>
+          <Modal isOpen={innerOpen} onClose={() => setInnerOpen(false)} title="Inner">
+            <p>inner</p>
+          </Modal>
+        </Modal>
+      );
+    }
+    render(<Nested />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open inner' }));
+    expect(screen.getAllByRole('dialog')).toHaveLength(2);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.getByRole('dialog')).toHaveAccessibleName('Outer');
+    expect(outerClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(outerClose).toHaveBeenCalledTimes(1);
+  });
 });

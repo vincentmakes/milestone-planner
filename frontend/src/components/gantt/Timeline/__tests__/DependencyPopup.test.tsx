@@ -5,8 +5,9 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { DependencyPopup } from '../DependencyPopup';
+import { stubConfirm } from '@/test/confirmDialog';
 
 function renderPopup(overrides: Partial<React.ComponentProps<typeof DependencyPopup>> = {}) {
   const onClose = vi.fn();
@@ -57,15 +58,23 @@ describe('DependencyPopup', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('deletes only after confirmation, and only for editors', () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+  it('deletes only after confirmation, and only for editors', async () => {
+    let answer = false;
+    const confirm = stubConfirm(() => answer);
     const { onDelete } = renderPopup();
     const remove = screen.getByRole('button', { name: /Remove|Delete/ });
     fireEvent.click(remove);
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
     expect(onDelete).not.toHaveBeenCalled();
+
+    answer = true;
     fireEvent.click(remove);
-    expect(confirm).toHaveBeenLastCalledWith('Remove this FS dependency?');
-    expect(onDelete).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onDelete).toHaveBeenCalledTimes(1));
+    expect(confirm).toHaveBeenLastCalledWith({
+      title: 'Delete dependency',
+      message: 'Remove this FS dependency?',
+      destructive: true,
+    });
 
     cleanup();
     renderPopup({ canDelete: false });

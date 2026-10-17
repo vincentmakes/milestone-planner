@@ -12,7 +12,8 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { AssignmentModal } from '../AssignmentModal';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
-import { createStaffAssignment } from '@/api/endpoints/projects';
+import { createStaffAssignment, deleteStaffAssignment } from '@/api/endpoints/projects';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { Project } from '@/types';
 
 vi.mock('@/api/endpoints/projects', () => ({
@@ -160,6 +161,34 @@ describe('AssignmentModal remove button', () => {
     openEditing(4);
     render(<AssignmentModal mode="staff" />);
     expect(screen.getByRole('button', { name: 'Remove Assignment' })).toBeInTheDocument();
+  });
+
+  it('removes the booking once the confirmation is accepted', async () => {
+    const confirm = stubConfirm(true);
+    seed({ id: 42, role: 'user' });
+    openEditing(4);
+    render(<AssignmentModal mode="staff" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Assignment' }));
+
+    await waitFor(() => expect(useUIStore.getState().activeModal).toBeNull());
+    expect(confirm).toHaveBeenCalledWith({
+      title: 'Remove assignment',
+      message: 'Are you sure you want to remove this staff assignment?',
+      destructive: true,
+    });
+    expect(deleteStaffAssignment).toHaveBeenCalledWith(11, 'project');
+  });
+
+  it('keeps the booking and the dialog when the confirmation is declined', async () => {
+    const confirm = stubConfirm(false);
+    seed({ id: 42, role: 'user' });
+    openEditing(4);
+    render(<AssignmentModal mode="staff" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Assignment' }));
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    expect(deleteStaffAssignment).not.toHaveBeenCalled();
+    expect(useUIStore.getState().activeModal).toBe('staffAssignment');
   });
 });
 

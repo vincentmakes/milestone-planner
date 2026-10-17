@@ -15,6 +15,7 @@ import type { Tenant } from '@/api/endpoints/admin';
 import { Button } from '@/components/common/Button';
 import { Notice } from '@/components/common/Notice';
 import { PlusIcon } from '@/components/settings/panels/PanelIcons';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './TenantList.module.css';
 
 interface TenantListProps {
@@ -24,6 +25,14 @@ interface TenantListProps {
   onRefresh: () => void;
 }
 
+/** Title and confirm-button wording for each target status. */
+const STATUS_CONFIRM: Record<Tenant['status'], { title: string; confirmLabel: string }> = {
+  active: { title: 'Activate tenant', confirmLabel: 'Activate' },
+  suspended: { title: 'Suspend tenant', confirmLabel: 'Suspend' },
+  archived: { title: 'Archive tenant', confirmLabel: 'Archive' },
+  pending: { title: 'Change tenant status', confirmLabel: 'Change status' },
+};
+
 export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRefresh }: TenantListProps) {
   const tenants = useAdminStore((s) => s.tenants);
   const systemStats = useAdminStore((s) => s.systemStats);
@@ -31,7 +40,11 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const handleProvision = async (tenant: Tenant) => {
-    if (!confirm('This will create the database for this tenant. Continue?')) return;
+    if (!(await confirmAction({
+      message: 'This will create the database for this tenant. Continue?',
+      title: 'Provision database',
+      confirmLabel: 'Provision',
+    }))) return;
     
     setError(null);
     setActionLoading(tenant.id);
@@ -47,7 +60,11 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
   };
 
   const handleResetPassword = async (tenant: Tenant) => {
-    if (!confirm('This will generate a new password for the tenant admin. Continue?')) return;
+    if (!(await confirmAction({
+      message: 'This will generate a new password for the tenant admin. Continue?',
+      title: 'Reset admin password',
+      confirmLabel: 'Reset',
+    }))) return;
     
     setError(null);
     setActionLoading(tenant.id);
@@ -62,7 +79,7 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
   };
 
   const handleStatusChange = async (tenant: Tenant, status: Tenant['status']) => {
-    if (!confirm(`Change tenant status to ${status}?`)) return;
+    if (!(await confirmAction({ message: `Change tenant status to ${status}?`, ...STATUS_CONFIRM[status] }))) return;
     
     setError(null);
     setActionLoading(tenant.id);
@@ -87,7 +104,7 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
       ? `Delete tenant "${tenant.name}"?\n\n⚠️ This will permanently delete:\n• The tenant record\n• The tenant database and all its data\n\nThis action cannot be undone.`
       : `Delete tenant "${tenant.name}"?\n\nThis will remove the tenant record.\nThis action cannot be undone.`;
     
-    if (!confirm(confirmMsg)) return;
+    if (!(await confirmAction({ message: confirmMsg, title: 'Delete tenant', confirmLabel: 'Delete', destructive: true }))) return;
     
     setError(null);
     setActionLoading(tenant.id);

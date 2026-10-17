@@ -5,6 +5,15 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.10.0] - 2026-10-17
+
+### Changed
+- Confirmations (deleting or removing items, discarding unsaved settings, discarding or applying What-If changes, refreshing holidays, admin-portal actions) open in an in-app dialog with a clear Delete or Confirm and Cancel choice instead of the browser's pop-up.
+- With one dialog open on top of another, Escape now closes only the dialog on top.
+
+### Fixed
+- A failed absence deletion in the Staff view now shows the error instead of staying silent.
+
 ## [1.9.0] - 2026-10-17
 
 ### Changed

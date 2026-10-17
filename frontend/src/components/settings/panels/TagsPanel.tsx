@@ -26,6 +26,7 @@ import { SiteChecklist } from './SiteChecklist';
 import { DragHandleIcon, EditIcon, TrashIcon, PlusIcon } from './PanelIcons';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './TagsPanel.module.css';
 
 const DEFAULT_TAG_COLOR = EVENT_COLOR_SWATCHES[5].value;
@@ -289,14 +290,13 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const handleSingleSelect = (group: TagGroup, single: boolean) =>
     run(() => tagGroupsApi.update(group.id, { single_select: single }), 'Failed to update group');
 
-  const handleDeleteGroup = (group: TagGroup) => {
-    if (
-      !window.confirm(
-        `Delete the group "${group.name}"? Tags in this group are kept and become ungrouped.`
-      )
-    ) {
-      return;
-    }
+  const handleDeleteGroup = async (group: TagGroup) => {
+    const confirmed = await confirmAction({
+      title: 'Delete tag group',
+      message: `Delete the group "${group.name}"? Tags in this group are kept and become ungrouped.`,
+      destructive: true,
+    });
+    if (!confirmed) return;
     return run(() => tagGroupsApi.delete(group.id), 'Failed to delete group');
   };
 
@@ -378,10 +378,13 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
       'Failed to move tag'
     );
 
-  const handleDeleteTag = (tag: Tag) => {
-    if (!window.confirm(`Delete the tag "${tag.name}"? The tag is removed from every project.`)) {
-      return;
-    }
+  const handleDeleteTag = async (tag: Tag) => {
+    const confirmed = await confirmAction({
+      title: 'Delete tag',
+      message: `Delete the tag "${tag.name}"? The tag is removed from every project.`,
+      destructive: true,
+    });
+    if (!confirmed) return;
     return run(() => tagsApi.delete(tag.id), 'Failed to delete tag');
   };
 
@@ -456,7 +459,7 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
             <button
               type="button"
               className={`${styles.iconBtn} ${styles.danger}`}
-              onClick={() => handleDeleteTag(tag)}
+              onClick={() => void handleDeleteTag(tag)}
               title="Delete"
               aria-label={`Delete ${tag.name}`}
             >
@@ -589,7 +592,7 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                       <button
                         type="button"
                         className={`${styles.iconBtn} ${styles.danger}`}
-                        onClick={() => handleDeleteGroup(group)}
+                        onClick={() => void handleDeleteGroup(group)}
                         title="Delete"
                         aria-label={`Delete group ${group.name}`}
                       >

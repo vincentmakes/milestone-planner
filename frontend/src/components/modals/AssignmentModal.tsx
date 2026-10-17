@@ -34,6 +34,7 @@ import { findSubphaseById } from '@/utils/subphaseUtils';
 import { canEditProject, isSelf } from '@/utils/permissions';
 import { AllocationSlider, snapToStep } from '@/components/common/AllocationSlider';
 import styles from './AssignmentModal.module.css';
+import { confirmAction } from '@/utils/confirmDialog';
 
 interface AssignmentModalProps {
   mode: 'staff' | 'equipment';
@@ -284,7 +285,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       ? 'Are you sure you want to remove this staff assignment?'
       : 'Are you sure you want to remove this equipment assignment?';
 
-    if (!confirm(confirmMsg)) {
+    if (!(await confirmAction({ title: 'Remove assignment', message: confirmMsg, destructive: true }))) {
       return;
     }
 

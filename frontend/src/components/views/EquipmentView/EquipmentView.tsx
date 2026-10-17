@@ -26,6 +26,7 @@ import { generateTimelineCells, generateTimelineHeaders, calculateTodayScrollLef
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
 import { EquipmentTimelineBody } from './EquipmentTimelineBody';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './EquipmentView.module.css';
 
 // Shared row-height constants (used by EquipmentTimelineBody to keep rows in sync)
@@ -115,7 +116,12 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   };
 
   const handleDeleteBlock = async (blockId: number) => {
-    if (!window.confirm('Delete this equipment block?')) return;
+    const confirmed = await confirmAction({
+      title: 'Delete equipment block',
+      message: 'Delete this equipment block?',
+      destructive: true,
+    });
+    if (!confirmed) return;
     try {
       await deleteEquipmentBlock(blockId);
       await refreshEquipmentBlocks();

@@ -19,6 +19,7 @@ import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useReportDirty } from '../useReportDirty';
 import { BackIcon, RefreshIcon } from './PanelIcons';
 import type { Site } from '@/types';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './SiteForm.module.css';
 
 // Country list organized by region
@@ -195,9 +196,12 @@ export function SiteForm({ site, onBack, onDirtyChange }: SiteFormProps) {
   
   // Handle refresh holidays from the Nager holiday API
   const handleRefreshHolidays = async () => {
-    if (!confirm('This will refresh bank holidays from the Nager holiday API. Continue?')) {
-      return;
-    }
+    const confirmed = await confirmAction({
+      title: 'Refresh holidays',
+      message: 'This will refresh bank holidays from the Nager holiday API. Continue?',
+      confirmLabel: 'Refresh',
+    });
+    if (!confirmed) return;
     
     setIsRefreshing(true);
     setError(null);

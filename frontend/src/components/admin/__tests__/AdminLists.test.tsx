@@ -11,6 +11,7 @@ import { SystemStatsPanel } from '../SystemStatsPanel';
 import { useAdminStore } from '@/stores/adminStore';
 import { deleteAdminUser, deleteOrganization, updateAdminUser } from '@/api';
 import { makeAdminListUser, makeOrganization, makeStats } from './adminFixtures';
+import { stubConfirm } from '@/test/confirmDialog';
 
 vi.mock('@/api', () => ({
   deleteOrganization: vi.fn(),
@@ -18,14 +19,14 @@ vi.mock('@/api', () => ({
   updateAdminUser: vi.fn(),
 }));
 
-let confirmSpy: ReturnType<typeof vi.spyOn>;
+let confirmSpy: ReturnType<typeof stubConfirm>;
 
 beforeEach(() => {
   useAdminStore.setState(useAdminStore.getInitialState());
   vi.mocked(deleteOrganization).mockReset().mockResolvedValue(undefined);
   vi.mocked(deleteAdminUser).mockReset().mockResolvedValue(undefined);
   vi.mocked(updateAdminUser).mockReset().mockResolvedValue({} as never);
-  confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  confirmSpy = stubConfirm(true);
 });
 
 afterEach(() => {
@@ -76,15 +77,24 @@ describe('OrganizationList', () => {
     render(<OrganizationList {...props} />);
     await click(rowOf('acme').getByTitle('Delete Organization'));
     expect(screen.getByRole('alert')).toHaveTextContent('it has 2 tenant(s) assigned');
+    expect(confirmSpy).not.toHaveBeenCalled();
     expect(deleteOrganization).not.toHaveBeenCalled();
   });
 
   it('deletes an empty organization after confirmation', async () => {
     useAdminStore.setState({ organizations: [makeOrganization()] });
     render(<OrganizationList {...props} />);
-    confirmSpy.mockReturnValueOnce(false);
+    confirmSpy.mockResolvedValueOnce(false);
     await click(rowOf('acme').getByTitle('Delete Organization'));
+    expect(confirmSpy).toHaveBeenCalledWith({
+      message:
+        'Delete organization "Acme Group"?\n\nThis will also delete its SSO configuration.\nThis action cannot be undone.',
+      title: 'Delete organization',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
     expect(deleteOrganization).not.toHaveBeenCalled();
+    expect(props.onRefresh).not.toHaveBeenCalled();
 
     await click(rowOf('acme').getByTitle('Delete Organization'));
     expect(deleteOrganization).toHaveBeenCalledWith('o-acme');
@@ -137,7 +147,12 @@ describe('AdminUserList', () => {
     expect(updateAdminUser).toHaveBeenCalledWith(2, { active: false });
 
     await click(rowOf('ops@milestone.local').getByTitle('Delete'));
-    expect(confirmSpy).toHaveBeenCalledWith('Delete admin user "ops@milestone.local"?');
+    expect(confirmSpy).toHaveBeenCalledWith({
+      message: 'Delete admin user "ops@milestone.local"?',
+      title: 'Delete admin',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
     expect(deleteAdminUser).toHaveBeenCalledWith(2);
     expect(props.onRefresh).toHaveBeenCalledTimes(2);
   });
@@ -149,8 +164,9 @@ describe('AdminUserList', () => {
     await click(rowOf('ops@milestone.local').getByTitle('Disable'));
     expect(screen.getByRole('alert')).toHaveTextContent('forbidden');
 
-    confirmSpy.mockReturnValueOnce(false);
+    confirmSpy.mockResolvedValueOnce(false);
     await click(rowOf('ops@milestone.local').getByTitle('Delete'));
+    expect(confirmSpy).toHaveBeenCalledWith(expect.objectContaining({ message: 'Delete admin user "ops@milestone.local"?' }));
     expect(deleteAdminUser).not.toHaveBeenCalled();
 
     vi.mocked(deleteAdminUser).mockRejectedValue('boom');

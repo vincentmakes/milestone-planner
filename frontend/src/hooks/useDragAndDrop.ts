@@ -26,6 +26,7 @@ import {
 } from '@/components/gantt/utils';
 import { canEditProjectById, canEditAssignment } from '@/utils/permissions';
 import type { ViewMode, Subphase, Project } from '@/types';
+import { confirmAction } from '@/utils/confirmDialog';
 
 interface DragData {
   id: number;
@@ -412,9 +413,14 @@ export function useDragAndDrop() {
       if (data.type === 'project') {
         const project = projects[projectIndex];
         const phaseCount = project.phases?.length ?? 0;
-        const confirmed = window.confirm(
-          `Move project by ${dayOffset > 0 ? '+' : ''}${dayOffset} days?\n\nThis will move all ${phaseCount} phase(s), their subphases, and all staff/equipment assignments.`
-        );
+        // The document listeners were detached in handleMouseUp before this
+        // commit, so nothing reacts to the pointer while the dialog is open;
+        // the bar stays at the dropped position until the answer.
+        const confirmed = await confirmAction({
+          title: 'Move project',
+          message: `Move project by ${dayOffset > 0 ? '+' : ''}${dayOffset} days?\n\nThis will move all ${phaseCount} phase(s), their subphases, and all staff/equipment assignments.`,
+          confirmLabel: 'Move',
+        });
         
         if (!confirmed) {
           // Reset element position

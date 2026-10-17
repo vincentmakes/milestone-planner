@@ -22,6 +22,7 @@ import { ColorSwatchPicker } from './ColorSwatchPicker';
 import { DragHandleIcon, EditIcon, TrashIcon, PlusIcon } from './PanelIcons';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './AbsenceTypesPanel.module.css';
 
 const DEFAULT_TYPE_COLOR = EVENT_COLOR_SWATCHES[6].value;
@@ -151,7 +152,12 @@ export function AbsenceTypesPanel({ onDirtyChange }: Partial<SettingsPanelProps>
     );
 
   const handleDelete = async (type: AbsenceType) => {
-    if (!window.confirm(`Delete the absence type "${type.name}"?`)) return;
+    const confirmed = await confirmAction({
+      title: 'Delete absence type',
+      message: `Delete the absence type "${type.name}"?`,
+      destructive: true,
+    });
+    if (!confirmed) return;
     setError(null);
     try {
       await absenceTypesApi.remove(type.id);

@@ -19,6 +19,7 @@ import {
 } from '@/api';
 import type { OrganizationDetail } from '@/api/endpoints/admin';
 import { makeTenant } from '../../__tests__/adminFixtures';
+import { stubConfirm } from '@/test/confirmDialog';
 
 vi.mock('@/api', () => ({
   getOrganization: vi.fn(),
@@ -269,18 +270,48 @@ describe('tenants tab', () => {
   });
 
   it('removes a tenant only after confirmation', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true);
-    await open();
+    const confirm = stubConfirm(true);
+    confirm.mockResolvedValueOnce(false);
+    const onRefresh = await open();
     await openTenantsTab();
     await click('Remove');
+    expect(confirm).toHaveBeenCalledWith({
+      message:
+        "Remove this tenant from the organization?\n\nThe tenant will no longer use the organization's SSO configuration.",
+      title: 'Detach tenant',
+      confirmLabel: 'Remove',
+      destructive: true,
+    });
     expect(removeTenantFromOrganization).not.toHaveBeenCalled();
+    expect(onRefresh).not.toHaveBeenCalled();
+    // A cancelled confirm leaves the write guard free.
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeEnabled();
+
     await click('Remove');
     expect(confirm).toHaveBeenCalledTimes(2);
     expect(removeTenantFromOrganization).toHaveBeenCalledWith('org-1', 't-1');
+    expect(onRefresh).toHaveBeenCalled();
 
     vi.mocked(removeTenantFromOrganization).mockRejectedValue(new Error('Locked'));
     await click('Remove');
     expect(screen.getByText('Locked')).toBeInTheDocument();
+  });
+
+  it('asks before taking the write guard, so a pending confirm blocks nothing', async () => {
+    let answer: (ok: boolean) => void = () => {};
+    const confirm = stubConfirm(true);
+    confirm.mockImplementationOnce(() => new Promise<boolean>((resolve) => (answer = resolve)));
+    await open();
+    await openTenantsTab();
+    await click('Remove');
+    expect(confirm).toHaveBeenCalledTimes(1);
+    // Waiting on the user: no write has started and the buttons stay enabled.
+    expect(removeTenantFromOrganization).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeEnabled();
+
+    await act(async () => answer(true));
+    expect(removeTenantFromOrganization).toHaveBeenCalledTimes(1);
+    expect(removeTenantFromOrganization).toHaveBeenCalledWith('org-1', 't-1');
   });
 
   it('edits the group requirement, splitting and trimming ids', async () => {

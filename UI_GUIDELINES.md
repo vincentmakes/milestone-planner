@@ -360,7 +360,7 @@ import { PlusIcon } from '@/components/settings/panels/PanelIcons';
 | `primary` (default) | Solid blue | The main action of a panel or dialog: **Add X**, **Create X**, **Save Changes**. At most one per toolbar or footer. |
 | `secondary` | Bordered, neutral | Every other action next to the primary one: **Manage Skills**, **Import .ics**, **Export .ics**, **Refresh**, **Cancel**, **Close**. |
 | `ghost` | Text only, background on hover | Back links (**Back to list**, **All sites**), low-emphasis actions inside rows, the admin-portal **Logout**. |
-| `danger` | Solid red | The **Delete** action in an edit dialog's footer, placed far left (PhaseModal, SubphaseModal, AssignmentModal, EquipmentBlockModal, CustomColumnModal, UsersPanel). The confirmation itself is `window.confirm` (§3.12). |
+| `danger` | Solid red | The **Delete** action in an edit dialog's footer, placed far left (PhaseModal, SubphaseModal, AssignmentModal, EquipmentBlockModal, CustomColumnModal, UsersPanel). The confirmation itself is the shared confirm dialog (§3.12), whose `destructive` button is this variant. |
 | `icon` | Square, transparent | An icon-only button with an `aria-label`. Available but **unused today**: the existing icon-only buttons are raw (§3.3). |
 
 **Sizes**
@@ -530,13 +530,14 @@ guard the rule.
   is what makes `useKeyboardShortcuts` stand down while a dialog is open. Known gap: the
   custom-column dialogs are opened from local state in `ProjectPanel`, so shortcuts stay live
   behind them.
-- A parent that opens a child dialog passes `closeOnEscape={!childOpen}` so Escape closes only
-  the innermost layer. A picker *inside* a modal (`TagPicker`, the `MentionTextarea` suggestion
-  list) handles Escape in its React `onKeyDown` and calls `stopPropagation()` for the same
-  reason.
+- Escape reaches the innermost `Modal` only: the document listener acts for the top of the
+  open-modal stack, so a confirm over the Settings hub closes alone. A parent that opens a child
+  that is *not* a `Modal` passes `closeOnEscape={!childOpen}` for the same effect. A picker
+  *inside* a modal (`TagPicker`, the `MentionTextarea` suggestion list) handles Escape in its
+  React `onKeyDown` and calls `stopPropagation()` for the same reason.
 - `modalContext.returnTo` reopens the previous dialog when a chained one closes (My absences →
-  absence dialog). Unsaved changes are guarded with `onDirtyChange` + `window.confirm`
-  (`SettingsHub`).
+  absence dialog). Unsaved changes are guarded with `onDirtyChange` + `confirmAction()`
+  (`SettingsHub`, whose `onClose` is async).
 - The container receives focus on open (`tabIndex={-1}`); Tab and Shift+Tab cycle inside the
   **innermost** open dialog (a module-level stack of open containers — a nested dialog is
   portaled to `<body>`, outside its parent, so only the top one traps); the element that had
@@ -546,7 +547,8 @@ guard the rule.
   are opened through local state rather than `activeModal` (the custom-column dialogs).
 - Standalone dialogs that can't use `Modal` — the admin-portal modals in
   `components/admin/modals/` — must not attach a close handler to their overlay and use the
-  `useEscapeKey` hook (`src/hooks/useEscapeKey.ts`) for Escape, and carry `role="dialog"`,
+  `useEscapeKey` hook (`src/hooks/useEscapeKey.ts`) for Escape (it stands down while a
+  confirmation is open, so Escape there closes only the confirm), and carry `role="dialog"`,
   `aria-modal="true"`, `aria-labelledby` pointing at their `<h2>` (a `useId`) and a close button
   named **Close dialog**.
 
@@ -560,7 +562,9 @@ A new non-modal overlay (dropdown, filter panel, popover, context menu) closes:
   this panel and never reaches the app-wide shortcuts — after which focus returns to the trigger.
 
 All three come from one hook, `useDismissableOverlay({ open, onClose, wrapperRef, triggerRef? })`
-(`src/hooks/useDismissableOverlay.ts`), which returns the `onBlur` to put on the wrapper. Never
+(`src/hooks/useDismissableOverlay.ts`), which returns the `onBlur` to put on the wrapper. While a
+confirmation (§3.12) is pending the hook is inert: the confirm owns Escape and the overlay that
+asked (e.g. the dependency popover) stays open until the answer. Never
 hand-roll a click-outside effect. `TagFilterDropdown` and `TagGroupChoiceDropdown` are the
 reference users; the header overflow menu, `UserMenu`, the Panels dropdown, `NotificationBell`
 (which also `aria-controls` its panel), the `ProjectPanel` column-visibility dropdown,
@@ -660,10 +664,18 @@ allowed in `Header.module.css` / `WhatIfToggle.module.css` are the ≤ 640 px mo
   the app — don't add one. What-If "blocked" notices use the dialogs' `.error` box with
   `role="status"` (debt: those dialog boxes still predate `Notice`; move them when you touch a
   dialog). A failed initial load shows `LoadErrorScreen` with **Retry**.
-- **Confirmation**: destructive actions confirm with `window.confirm` before the call (44 call
-  sites), worded `Delete X "Name"? … This cannot be undone.` There is no shared confirm dialog
-  yet (the custom one in `StaffView` for deleting an absence is the lone exception); adding one is
-  the obvious next step, until then keep the native dialog and the wording.
+- **Confirmation**: destructive and irreversible actions confirm through
+  `await confirmAction({ message, title?, destructive?, confirmLabel?, cancelLabel? })`
+  (`utils/confirmDialog.ts`, 44 call sites), worded `Delete X "Name"? … This cannot be undone.`
+  Paragraphs split on a blank line. The one host, `ConfirmDialog` (`components/common`), is
+  mounted in `App.tsx` and renders the head of `confirmStore`'s queue on a `size="sm"` `Modal`
+  titled *Please confirm* unless a `title` is given, with a `secondary` **Cancel** (focused on
+  open) and a `primary` **Confirm**, or a `danger` **Delete** when `destructive`. Cancel, the
+  header close and Escape resolve `false`; `resetAllStores()` (logout, 401) resolves every
+  pending request `false`. A handler that confirms is `async`, awaits the answer and confirms
+  *before* taking its submit guard. `window.confirm` is gone — don't add one; tests stub the
+  service with `stubConfirm(result)` (`src/test/confirmDialog.ts`) and assert
+  `expect.objectContaining({ message })`.
 - **Disabled with a reason**: creation actions are disabled while What-If is active. The wording
   comes from `whatIfUnavailableMessage(action)` through `useWhatIfBlocked()`; the reason goes in
   the control's `title` and, where there is room, in a `role="status"` box. Wrap a disabled button
@@ -755,10 +767,11 @@ has no fixed height).
 - Dropdown triggers carry `aria-expanded` and `aria-haspopup="dialog"`; a checkbox/radio panel
   is a non-modal `role="dialog"` with an `aria-label`.
 - Focus is always visible: the global `:focus-visible` ring, 2 px `--accent-blue`, offset 2 px.
-- Escape closes the innermost layer only (§3.5, §3.6); global shortcuts (`Esc`, `Home`, `+`/`-`,
-  Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z) are ignored while any dialog is open (`activeModal` set or a
-  `Modal` mounted, `openModalCount`) or focus is in an input, textarea or contentEditable. The
-  user-facing list is
+- Escape closes the innermost layer only (§3.5, §3.6) — `Modal`'s document listener acts only
+  for the top of the open-modal stack, so a confirm over the Settings hub closes alone. Global
+  shortcuts (`Esc`, `Home`, `+`/`-`, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z) are ignored while any
+  dialog is open (`activeModal` set or a `Modal` mounted, `openModalCount`) or focus is in an
+  input, textarea or contentEditable. The user-facing list is
   `docs/user-guide/keyboard-shortcuts.md`.
 - Kanban cards are `role="button"`, focusable, Enter/Space activate; the activity feed is a
   polite live region; error boxes are `role="alert"`.
@@ -795,6 +808,7 @@ has no fixed height).
 | `<Button>` for actions, `md` in toolbars and footers, `loading` while a write runs | A raw `<button>` with local styles for an action; `sm` in a toolbar; a `'Saving...'` label swap |
 | `<Input label>` / `<Select label options>` for every text-like field and dropdown | A raw `<input>` / `<select>` with a local `.input` class — the raw-control ratchet (`rawFormControls.test.ts`) fails when a file's count rises |
 | `Modal` with explicit Close / Cancel and Escape | Backdrop-click close, in any dialog |
+| `await confirmAction({ message, destructive: true })` before a delete | `window.confirm(...)` — none left, and a native dialog blocks the tab and ignores the theme |
 | `ToggleSwitch` for a setting | A bare checkbox for a setting |
 | `data-density` selectors in header CSS | Pixel breakpoints in header CSS above 640 px |
 | Select a raw store slice and `useMemo`, or `useShallow` | A store selector that returns a new array or object (Zustand 5 re-renders forever) |

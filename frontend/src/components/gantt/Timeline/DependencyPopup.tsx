@@ -8,6 +8,7 @@ import { memo, useCallback, useRef } from 'react';
 import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import styles from './DependencyPopup.module.css';
 import type { DependencyType } from '@/types';
+import { confirmAction } from '@/utils/confirmDialog';
 
 interface DependencyPopupProps {
   visible: boolean;
@@ -47,10 +48,13 @@ export const DependencyPopup = memo(function DependencyPopup({
   // is needed to keep it from closing itself.
   const { onBlur } = useDismissableOverlay({ open: visible, onClose, wrapperRef: popupRef });
 
-  const handleDelete = useCallback(() => {
-    if (confirm(`Remove this ${dependencyType} dependency?`)) {
-      onDelete();
-    }
+  const handleDelete = useCallback(async () => {
+    const confirmed = await confirmAction({
+      title: 'Delete dependency',
+      message: `Remove this ${dependencyType} dependency?`,
+      destructive: true,
+    });
+    if (confirmed) onDelete();
   }, [dependencyType, onDelete]);
 
   if (!visible) return null;

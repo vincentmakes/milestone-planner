@@ -9,6 +9,7 @@ import { CustomColumnModal } from '../CustomColumnModal';
 import { resetAllStores, useAppStore } from '@/stores';
 import { createCustomColumn, updateCustomColumn, deleteCustomColumn } from '@/api';
 import { makeCustomColumn, makeSite } from '@/test/factories';
+import { stubConfirm } from '@/test/confirmDialog';
 
 vi.mock('@/api', () => ({
   createCustomColumn: vi.fn(),
@@ -134,10 +135,21 @@ describe('CustomColumnModal edit', () => {
   });
 
   it('deletes only after confirmation and reports failures', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true);
+    let answer = false;
+    const confirm = stubConfirm(() => answer);
     open(priority);
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() =>
+      expect(confirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Are you sure you want to delete this column? All values will be lost.',
+          destructive: true,
+        })
+      )
+    );
     expect(deleteCustomColumn).not.toHaveBeenCalled();
+
+    answer = true;
 
     vi.mocked(deleteCustomColumn).mockRejectedValueOnce(new Error('In use'));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
@@ -147,7 +159,6 @@ describe('CustomColumnModal edit', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(deleteCustomColumn).toHaveBeenLastCalledWith(7);
     expect(onSave).toHaveBeenCalled();
-    confirm.mockRestore();
   });
 
   it('closes with Cancel', () => {

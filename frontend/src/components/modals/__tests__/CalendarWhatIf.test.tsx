@@ -16,6 +16,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import type { AbsenceType, EquipmentBlock, Vacation } from '@/types';
+import { stubConfirm } from '@/test/confirmDialog';
 
 const vacationsApi = vi.hoisted(() => ({
   createVacation: vi.fn(),
@@ -207,5 +208,35 @@ describe('EquipmentBlockModal fields', () => {
         description: 'Yearly check',
       })
     );
+  });
+});
+
+describe('EquipmentBlockModal delete', () => {
+  it('deletes the block after confirmation and refreshes the blocks', async () => {
+    const confirm = stubConfirm(true);
+    blocksApi.deleteEquipmentBlock.mockResolvedValue({});
+    act(() => useUIStore.getState().openEquipmentBlockModal(block, 11));
+    render(<EquipmentBlockModal />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(useUIStore.getState().activeModal).toBeNull());
+    expect(confirm).toHaveBeenCalledWith({
+      title: 'Delete equipment block',
+      message: 'Delete this equipment block?',
+      destructive: true,
+    });
+    expect(blocksApi.deleteEquipmentBlock).toHaveBeenCalledWith(4);
+    expect(blocksApi.getEquipmentBlocks).toHaveBeenCalled();
+  });
+
+  it('keeps the block and the dialog when the confirmation is declined', async () => {
+    const confirm = stubConfirm(false);
+    act(() => useUIStore.getState().openEquipmentBlockModal(block, 11));
+    render(<EquipmentBlockModal />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    expect(blocksApi.deleteEquipmentBlock).not.toHaveBeenCalled();
+    expect(useUIStore.getState().activeModal).toBe('equipmentBlock');
   });
 });

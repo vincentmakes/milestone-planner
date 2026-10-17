@@ -18,6 +18,7 @@ import {
   type CustomColumnCreate,
 } from '@/api';
 import styles from './CustomColumnModal.module.css';
+import { confirmAction } from '@/utils/confirmDialog';
 
 interface CustomColumnModalProps {
   isOpen: boolean;
@@ -132,7 +133,14 @@ export function CustomColumnModal({
   };
 
   const handleDelete = async () => {
-    if (!column || !confirm('Are you sure you want to delete this column? All values will be lost.')) {
+    if (!column) return;
+    if (
+      !(await confirmAction({
+        title: 'Delete column',
+        message: 'Are you sure you want to delete this column? All values will be lost.',
+        destructive: true,
+      }))
+    ) {
       return;
     }
 

@@ -19,6 +19,7 @@ import {
   provisionTenant,
 } from '@/api';
 import { makeAdminListUser, makeOrganization, makeStats, makeTenant } from './adminFixtures';
+import { stubConfirm } from '@/test/confirmDialog';
 
 vi.mock('@/api', () => ({
   adminLogout: vi.fn(),
@@ -162,7 +163,7 @@ describe('AdminDashboard', () => {
   });
 
   it('opens tenant details and shows provisioned credentials', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = stubConfirm(true);
     vi.mocked(getTenants).mockResolvedValue([makeTenant({ database_status: { exists: false, accessible: false } })]);
     vi.mocked(provisionTenant).mockResolvedValue({ success: true, adminEmail: 'admin@demo.local', adminPassword: 'S3cret!' });
     render(<AdminDashboard />);
@@ -177,6 +178,9 @@ describe('AdminDashboard', () => {
     await act(async () => {
       fireEvent.click(screen.getByTitle('Provision Database'));
     });
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'This will create the database for this tenant. Continue?' })
+    );
     expect(screen.getByRole('heading', { name: 'Database Provisioned!' })).toBeInTheDocument();
     expect(screen.getByDisplayValue('S3cret!')).toBeInTheDocument();
     expect(screen.getByDisplayValue('admin@demo.local')).toBeInTheDocument();

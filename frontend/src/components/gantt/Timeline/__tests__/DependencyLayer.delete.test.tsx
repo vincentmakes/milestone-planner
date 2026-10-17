@@ -15,6 +15,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { updatePhase, updateSubphase } from '@/api/endpoints/projects';
 import type { Dependency, Phase, Project, Subphase } from '@/types';
+import { stubConfirm } from '@/test/confirmDialog';
 
 vi.mock('@/api/endpoints/projects', () => ({
   updatePhase: vi.fn().mockResolvedValue({}),
@@ -60,7 +61,7 @@ async function deleteArrow(container: HTMLElement, from: string, to: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.spyOn(window, 'confirm').mockReturnValue(true);
+  stubConfirm(true);
   useViewStore.setState({ viewMode: 'month', showAssignments: false });
 });
 

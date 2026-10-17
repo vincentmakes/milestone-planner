@@ -12,6 +12,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { SitesPanel } from '../panels/SitesPanel';
 import { SiteForm } from '../panels/SiteForm';
 import { useAppStore } from '@/stores/appStore';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { Site, User } from '@/types';
 
 const api = vi.hoisted(() => ({
@@ -52,6 +53,31 @@ beforeEach(() => {
 });
 
 describe('SiteForm', () => {
+  it('refreshes the bank holidays from Nager only after confirmation', async () => {
+    const confirm = stubConfirm(false);
+    api.refreshBankHolidays.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+    render(<SiteForm site={basel} onBack={vi.fn()} />);
+    const refresh = await screen.findByRole('button', { name: 'Refresh' });
+
+    await act(async () => {
+      fireEvent.click(refresh);
+    });
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'This will refresh bank holidays from the Nager holiday API. Continue?',
+        confirmLabel: 'Refresh',
+      })
+    );
+    expect(api.refreshBankHolidays).not.toHaveBeenCalled();
+
+    confirm.mockResolvedValue(true);
+    await act(async () => {
+      fireEvent.click(refresh);
+    });
+    await waitFor(() => expect(api.refreshBankHolidays).toHaveBeenCalledWith(1));
+    expect(await screen.findByText('2 bank holidays')).toBeInTheDocument();
+  });
+
   it('sends null for a cleared city, country and region', async () => {
     const onBack = vi.fn();
     render(<SiteForm site={basel} onBack={onBack} />);

@@ -35,6 +35,7 @@ import { getUsers, createUser, updateUser, deleteUser } from '@/api/endpoints/us
 import type { User, UserRole, CreateUserRequest, UpdateUserRequest, Skill } from '@/types';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './UsersPanel.module.css';
 
 // Role display configuration
@@ -710,7 +711,11 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
   
   const handleDelete = async () => {
     if (!user || deleteBlockedReason) return;
-    const confirmed = window.confirm(`Are you sure you want to delete "${user.first_name} ${user.last_name}"?\n\nThis action cannot be undone.`);
+    const confirmed = await confirmAction({
+      title: 'Delete user',
+      message: `Are you sure you want to delete "${user.first_name} ${user.last_name}"?\n\nThis action cannot be undone.`,
+      destructive: true,
+    });
     if (!confirmed) return;
     
     if (!beginSubmit()) return;

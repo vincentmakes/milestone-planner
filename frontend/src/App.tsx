@@ -12,6 +12,7 @@ import { ContextMenuContainer } from './components/gantt/ContextMenuContainer';
 import { AdminApp } from './components/admin';
 import { WebSocketProvider } from './contexts/WebSocketContext';
 import { ActivityFeed } from './components/common/ActivityFeed/ActivityFeed';
+import { ConfirmDialog } from './components/common/ConfirmDialog';
 import './App.css';
 
 /** The admin portal lives under /admin; everything else is the tenant app. */
@@ -94,7 +95,13 @@ function AdminPortal() {
 
 function App() {
   // There is no client-side router: the path is fixed for the page's lifetime.
-  return isAdminPath(window.location.pathname) ? <AdminPortal /> : <TenantApp />;
+  // The confirm dialog (confirmAction) serves both the tenant app and the portal.
+  return (
+    <>
+      {isAdminPath(window.location.pathname) ? <AdminPortal /> : <TenantApp />}
+      <ConfirmDialog />
+    </>
+  );
 }
 
 export default App;

@@ -20,6 +20,7 @@ import {
 import type { OrganizationDetail, OrganizationSSOTestResult, TenantSummary } from '@/api/endpoints/admin';
 import { useEscapeKey } from '@/hooks';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './AdminModal.module.css';
 
 /** Roles a tenant `users.role` CHECK accepts -- the only valid SSO default roles */
@@ -238,12 +239,18 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
 
   const handleRemoveTenant = async (tenantId: string) => {
     if (!organization) return;
-    
+    // Ask first, then take the guard: an open confirm must not hold the
+    // in-flight flag and disable every other write while the user decides.
+    if (!(await confirmAction({
+      message: 'Remove this tenant from the organization?\n\nThe tenant will no longer use the organization\'s SSO configuration.',
+      title: 'Detach tenant',
+      confirmLabel: 'Remove',
+      destructive: true,
+    }))) {
+      return;
+    }
     if (!beginWrite()) return;
     try {
-      if (!confirm('Remove this tenant from the organization?\n\nThe tenant will no longer use the organization\'s SSO configuration.')) {
-        return;
-      }
       await removeTenantFromOrganization(organization.id, tenantId);
       await loadOrganization();
       onRefresh?.();

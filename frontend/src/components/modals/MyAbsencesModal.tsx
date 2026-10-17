@@ -28,6 +28,7 @@ import type { Vacation } from '@/types';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { VacationICSImport } from './VacationICSImport';
 import styles from './MyAbsencesModal.module.css';
+import { confirmAction } from '@/utils/confirmDialog';
 
 /** How far back "recent" absences go */
 const RECENT_DAYS = 90;
@@ -101,7 +102,10 @@ export function MyAbsencesModal() {
 
   const handleDelete = useCallback(
     async (vacation: Vacation) => {
-      if (!confirm('Delete this absence?')) return;
+      if (
+        !(await confirmAction({ title: 'Delete absence', message: 'Delete this absence?', destructive: true }))
+      )
+        return;
       if (!begin()) return; // a delete is already running
       setDeletingId(vacation.id);
       setError(null);

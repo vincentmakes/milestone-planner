@@ -30,3 +30,5 @@ export type { SubmitGuard } from './useSubmitGuard';
 
 export { TagFilterDropdown } from './TagFilterDropdown';
 export type { TagFilterDropdownProps } from './TagFilterDropdown';
+
+export { ConfirmDialog } from './ConfirmDialog';

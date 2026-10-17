@@ -21,6 +21,7 @@ import { Select } from '@/components/common/Select';
 import { toInputDateFormat, formatDateISO, daysBetweenDateStrings } from '@/utils/date';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import styles from './EquipmentBlockModal.module.css';
+import { confirmAction } from '@/utils/confirmDialog';
 
 const REASON_OPTIONS: { value: string; label: string; defaultDescription: string }[] = [
   { value: 'maintenance', label: 'Maintenance', defaultDescription: 'Maintenance' },
@@ -160,7 +161,14 @@ export function EquipmentBlockModal() {
 
   const handleDelete = async () => {
     if (!editingEquipmentBlock) return;
-    if (!window.confirm('Delete this equipment block?')) return;
+    if (
+      !(await confirmAction({
+        title: 'Delete equipment block',
+        message: 'Delete this equipment block?',
+        destructive: true,
+      }))
+    )
+      return;
 
     if (!beginSubmit()) return;
     setIsDeleting(true);

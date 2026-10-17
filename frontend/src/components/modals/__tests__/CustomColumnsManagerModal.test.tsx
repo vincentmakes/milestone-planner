@@ -10,6 +10,8 @@ import { CustomColumnsManagerModal } from '../CustomColumnsManagerModal';
 import { useAppStore } from '@/stores/appStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import type { CustomColumn } from '@/api';
+import { stubConfirm } from '@/test/confirmDialog';
+import { setConfirmHandler } from '@/utils/confirmDialog';
 
 const api = vi.hoisted(() => ({
   reorderCustomColumns: vi.fn(),
@@ -46,8 +48,46 @@ afterEach(() => {
 });
 
 describe('CustomColumnsManagerModal', () => {
+  it('deletes a column after confirmation and refreshes the list', async () => {
+    const confirm = stubConfirm(true);
+    api.deleteCustomColumn.mockResolvedValue(undefined);
+    render(<CustomColumnsManagerModal isOpen onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getAllByTitle('Delete column')[0]);
+    await waitFor(() => expect(api.deleteCustomColumn).toHaveBeenCalledWith(1));
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Delete column "Owner"? All values will be lost.', destructive: true })
+    );
+    await waitFor(() => expect(api.getCustomColumnsWithValues).toHaveBeenCalledWith(1));
+  });
+
+  it('deletes nothing when the confirmation is declined', async () => {
+    const confirm = stubConfirm(false);
+    render(<CustomColumnsManagerModal isOpen onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getAllByTitle('Delete column')[0]);
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    expect(api.deleteCustomColumn).not.toHaveBeenCalled();
+  });
+
+  it('asks before taking the delete guard, so an unanswered dialog blocks no other delete', async () => {
+    // The first confirmation never settles (dialog left open); the second is accepted.
+    const pending = new Promise<boolean>(() => {});
+    let calls = 0;
+    const confirm = vi.fn(() => (++calls === 1 ? pending : Promise.resolve(true)));
+    setConfirmHandler(confirm);
+    api.deleteCustomColumn.mockResolvedValue(undefined);
+    render(<CustomColumnsManagerModal isOpen onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getAllByTitle('Delete column')[0]);
+    fireEvent.click(screen.getAllByTitle('Delete column')[1]);
+    await waitFor(() => expect(api.deleteCustomColumn).toHaveBeenCalledWith(2));
+    expect(api.deleteCustomColumn).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledTimes(2);
+  });
+
   it('shows why a delete failed', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stubConfirm(true);
     api.deleteCustomColumn.mockRejectedValue(new Error('Admin access required'));
     render(<CustomColumnsManagerModal isOpen onClose={vi.fn()} />);
 

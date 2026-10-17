@@ -15,6 +15,7 @@ import type { ChangeEvent } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { confirmAction } from '@/utils/confirmDialog';
 import { getVisibleSections, groupSections } from './sections';
 import type { SettingsSectionId } from './types';
 import styles from './SettingsHub.module.css';
@@ -41,15 +42,35 @@ export function SettingsHub() {
     dirtyRef.current = dirty;
   }, []);
 
-  const selectSection = (id: SettingsSectionId) => {
+  const selectSection = async (id: SettingsSectionId) => {
     if (id === active?.id) return;
-    if (dirtyRef.current && !window.confirm(DISCARD_ON_SWITCH)) return;
+    if (
+      dirtyRef.current &&
+      !(await confirmAction({
+        title: 'Unsaved changes',
+        message: DISCARD_ON_SWITCH,
+        confirmLabel: 'Discard',
+        destructive: true,
+      }))
+    ) {
+      return;
+    }
     dirtyRef.current = false;
     setSettingsSection(id);
   };
 
-  const handleClose = useCallback(() => {
-    if (dirtyRef.current && !window.confirm(DISCARD_ON_CLOSE)) return;
+  const handleClose = useCallback(async () => {
+    if (
+      dirtyRef.current &&
+      !(await confirmAction({
+        title: 'Unsaved changes',
+        message: DISCARD_ON_CLOSE,
+        confirmLabel: 'Discard',
+        destructive: true,
+      }))
+    ) {
+      return;
+    }
     dirtyRef.current = false;
     closeModal();
   }, [closeModal]);
@@ -72,7 +93,7 @@ export function SettingsHub() {
                   type="button"
                   className={`${styles.navItem} ${section.id === active.id ? styles.active : ''}`}
                   aria-current={section.id === active.id ? 'page' : undefined}
-                  onClick={() => selectSection(section.id)}
+                  onClick={() => void selectSection(section.id)}
                 >
                   <span className={styles.navIcon}>{section.icon}</span>
                   <span className={styles.navLabel}>{section.label}</span>
@@ -92,7 +113,7 @@ export function SettingsHub() {
             className={styles.compactSelect}
             value={active.id}
             onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-              selectSection(e.target.value as SettingsSectionId)
+              void selectSection(e.target.value as SettingsSectionId)
             }
           >
             {groups.map(({ group, sections }) => (

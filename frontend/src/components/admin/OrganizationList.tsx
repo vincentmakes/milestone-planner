@@ -10,6 +10,7 @@ import type { Organization } from '@/api/endpoints/admin';
 import { Button } from '@/components/common/Button';
 import { Notice } from '@/components/common/Notice';
 import { PlusIcon } from '@/components/settings/panels/PanelIcons';
+import { confirmAction } from '@/utils/confirmDialog';
 import styles from './TenantList.module.css';
 
 interface OrganizationListProps {
@@ -29,7 +30,12 @@ export function OrganizationList({ onCreateNew, onViewDetails, onRefresh }: Orga
       return;
     }
     
-    if (!confirm(`Delete organization "${org.name}"?\n\nThis will also delete its SSO configuration.\nThis action cannot be undone.`)) {
+    if (!(await confirmAction({
+      message: `Delete organization "${org.name}"?\n\nThis will also delete its SSO configuration.\nThis action cannot be undone.`,
+      title: 'Delete organization',
+      confirmLabel: 'Delete',
+      destructive: true,
+    }))) {
       return;
     }
     

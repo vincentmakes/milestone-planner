@@ -43,6 +43,62 @@ python3 -m venv /tmp/pw-venv
     docker exec milestone-fresh python scripts/setup_admin_password.py
     ```
 
+## Capturing without the Docker image (cloud sessions)
+
+A Claude Code cloud session (and any machine where `docker build` cannot trust
+the outbound proxy's CA) cannot build the image, so `docker-compose.fresh.yml`
+is out. The capture scripts don't care where the app runs: run PostgreSQL in a
+container and the backend from a Python venv instead. The steps, in order:
+
+```bash
+# 1. PostgreSQL alone (host port 5433 so a local Postgres on 5432 is untouched).
+docker run -d --name ms-pg -e POSTGRES_PASSWORD=postgres -p 127.0.0.1:5433:5432 postgres:15-alpine
+
+# 2. .env for a multi-tenant backend against that container (same three required
+#    keys as above, plus the connection values; INIT_ADMIN_PASSWORD is used by init_db).
+cat > .env <<EOF
+MULTI_TENANT=true
+DB_HOST=127.0.0.1
+DB_PORT=5433
+DB_NAME=milestone_dev
+DB_USER=postgres
+DB_PASSWORD=postgres
+PG_ADMIN_USER=postgres
+PG_ADMIN_PASSWORD=postgres
+MASTER_DB_NAME=milestone_master
+SESSION_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+TENANT_ENCRYPTION_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+INIT_ADMIN_PASSWORD=<your choice>
+EOF
+
+# 3. Backend deps + schema + demo tenant. init_db creates the master DB only; create
+#    DB_NAME too so /health stops reporting database: "error".
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python -m app.scripts.init_db
+docker exec ms-pg psql -U postgres -c 'CREATE DATABASE milestone_dev'
+.venv/bin/python -m app.scripts.seed_demo
+
+# 4. Build the frontend and deploy it to public/ BEFORE starting the backend:
+#    the /assets static mount is registered only if public/assets exists at startup.
+(cd frontend && npm ci && npm run build) && bash deploy-react.sh
+
+# 5. Backend on 8485.
+.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8485 --proxy-headers &
+
+# 6. Capture against it (default target is the compose port 8486).
+export SCREENSHOT_BASE_URL=http://localhost:8485
+/tmp/pw-venv/bin/python scripts/screenshots/capture.py
+/tmp/pw-venv/bin/python scripts/screenshots/capture_collab.py
+INIT_ADMIN_PASSWORD=<your choice> /tmp/pw-venv/bin/python scripts/screenshots/capture_admin.py
+```
+
+Playwright must match the browser that is already installed. Where Chromium is
+preinstalled (`PLAYWRIGHT_BROWSERS_PATH` is set and `playwright install` is
+unavailable or forbidden), pin the `playwright` package to the release whose
+`browsers.json` names that Chromium build — e.g. build `1194` is
+`playwright==1.56.0` — instead of installing a browser. If the frontend is
+rebuilt while uvicorn is running, restart uvicorn (step 4's note).
+
 ## Capture
 
 Run all three scripts, in this order:

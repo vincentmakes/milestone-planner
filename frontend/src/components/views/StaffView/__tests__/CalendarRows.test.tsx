@@ -4,7 +4,7 @@
  * confirm-then-delete flow that reloads the site's calendar.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { BankHolidaysRow } from '../BankHolidaysRow';
 import { CompanyEventsRow } from '../CompanyEventsRow';
 import { resetAllStores, useAppStore, useUIStore } from '@/stores';
@@ -16,6 +16,7 @@ import {
 } from '@/api';
 import { downloadICS } from '@/utils/ics';
 import { makeSite, makeUser } from '@/test/factories';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { BankHoliday, CompanyEvent } from '@/types';
 
 vi.mock('@/api', async (importOriginal) => ({
@@ -124,37 +125,42 @@ describe('BankHolidaysRow', () => {
 
   it('deletes a holiday after confirmation and reloads the calendar', async () => {
     seed('admin');
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = stubConfirm(true);
     vi.mocked(deleteCustomHoliday).mockResolvedValue(undefined as never);
     vi.mocked(getBankHolidays).mockResolvedValue([holidays[0]]);
     render(<BankHolidaysRow isExpanded />);
 
     fireEvent.click(screen.getByTitle('Delete holiday (returns on the next Nager refresh)'));
-    expect(confirm.mock.calls[0][0]).toMatch(/public holiday/);
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Delete this public holiday? It will come back the next time holidays are refreshed from Nager.',
+        destructive: true,
+      })
+    );
     await waitFor(() => expect(useAppStore.getState().bankHolidays).toEqual([holidays[0]]));
     expect(deleteCustomHoliday).toHaveBeenCalledWith(1, 1);
     expect(useAppStore.getState().bankHolidayDates.has('2026-08-01')).toBe(true);
     // the click on the delete button does not open the editor
     expect(useUIStore.getState().settingsSection).toBeNull();
-    confirm.mockRestore();
   });
 
   it('does nothing when the deletion is not confirmed, and shows the failure in the row', async () => {
     seed('admin');
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const confirm = stubConfirm(false);
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     render(<BankHolidaysRow isExpanded />);
 
-    fireEvent.click(screen.getByTitle('Delete custom holiday'));
-    expect(confirm.mock.calls[0][0]).toBe('Delete this custom holiday?');
+    await act(async () => {
+      fireEvent.click(screen.getByTitle('Delete custom holiday'));
+    });
+    expect(confirm.mock.calls[0][0].message).toBe('Delete this custom holiday?');
     expect(deleteCustomHoliday).not.toHaveBeenCalled();
 
-    confirm.mockReturnValue(true);
+    confirm.mockResolvedValue(true);
     vi.mocked(deleteCustomHoliday).mockRejectedValue(new Error('nope'));
     fireEvent.click(screen.getByTitle('Delete custom holiday'));
     expect(await screen.findByRole('alert')).toHaveTextContent('Failed to delete holiday');
     expect(useAppStore.getState().bankHolidays).toHaveLength(2);
-    confirm.mockRestore();
     err.mockRestore();
   });
 });
@@ -214,35 +220,45 @@ describe('CompanyEventsRow', () => {
 
   it('removes a shared event from this site only after confirmation', async () => {
     seed('admin');
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = stubConfirm(true);
     vi.mocked(deleteCompanyEvent).mockResolvedValue(undefined as never);
     vi.mocked(getCompanyEvents).mockResolvedValue([events[0]]);
     render(<CompanyEventsRow isExpanded />);
 
     fireEvent.click(screen.getByTitle('Remove from this site'));
-    expect(confirm.mock.calls[0][0]).toMatch(/shared by 2 sites\. Remove it from Basel only\?/);
+    expect(confirm.mock.calls[0][0].message).toMatch(/shared by 2 sites\. Remove it from Basel only\?/);
+    expect(confirm.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ title: 'Remove event', confirmLabel: 'Remove', destructive: true })
+    );
     await waitFor(() => expect(useAppStore.getState().companyEvents).toEqual([events[0]]));
     expect(deleteCompanyEvent).toHaveBeenCalledWith(1, 12);
-    confirm.mockRestore();
   });
 
   it('asks a simple question for a single-site event and shows the failure in the row', async () => {
     seed('superuser');
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const confirm = stubConfirm(false);
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     render(<CompanyEventsRow isExpanded />);
 
-    fireEvent.click(screen.getByTitle('Delete company event'));
-    expect(confirm).toHaveBeenCalledWith('Delete this company event?');
+    await act(async () => {
+      fireEvent.click(screen.getByTitle('Delete company event'));
+    });
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Delete event',
+        message: 'Delete this company event?',
+        confirmLabel: 'Delete',
+        destructive: true,
+      })
+    );
     expect(deleteCompanyEvent).not.toHaveBeenCalled();
 
-    confirm.mockReturnValue(true);
+    confirm.mockResolvedValue(true);
     vi.mocked(deleteCompanyEvent).mockRejectedValue(new Error('nope'));
     fireEvent.click(screen.getByTitle('Delete company event'));
     expect(await screen.findByRole('alert')).toHaveTextContent('Failed to delete company event');
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    confirm.mockRestore();
     err.mockRestore();
   });
 });

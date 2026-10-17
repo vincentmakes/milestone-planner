@@ -15,6 +15,7 @@ import { BankHolidaysPanel } from '../panels/BankHolidaysPanel';
 import { CompanyEventsPanel } from '../panels/CompanyEventsPanel';
 import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { BankHoliday, CompanyEvent, Site, User } from '@/types';
 
 const api = vi.hoisted(() => ({
@@ -125,7 +126,7 @@ describe('CompanyEventsPanel import preview', () => {
 
 describe('Calendar deletes', () => {
   it('sends one DELETE for an event when Delete is clicked again while it runs', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stubConfirm(true);
     const pending = deferred();
     api.deleteCompanyEventById.mockReturnValue(pending.promise);
     render(<CompanyEventsPanel />);
@@ -133,7 +134,7 @@ describe('Calendar deletes', () => {
 
     fireEvent.click(del);
     fireEvent.click(del);
-    expect(api.deleteCompanyEventById).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(api.deleteCompanyEventById).toHaveBeenCalledTimes(1));
 
     await act(async () => pending.resolve());
     await waitFor(() => expect(del).toBeEnabled());
@@ -142,7 +143,7 @@ describe('Calendar deletes', () => {
   });
 
   it('sends one DELETE for a holiday when Delete is clicked again while it runs', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stubConfirm(true);
     const pending = deferred();
     api.deleteBankHoliday.mockReturnValue(pending.promise);
     render(<BankHolidaysPanel />);
@@ -150,12 +151,91 @@ describe('Calendar deletes', () => {
 
     fireEvent.click(del);
     fireEvent.click(del);
-    expect(api.deleteBankHoliday).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(api.deleteBankHoliday).toHaveBeenCalledTimes(1));
     expect(api.deleteBankHoliday).toHaveBeenCalledWith(1, 9);
 
     await act(async () => pending.resolve());
     await waitFor(() => expect(del).toBeEnabled());
     expect(api.deleteBankHoliday).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Calendar delete confirmations', () => {
+  it('asks before deleting an event and deletes only once the confirmation resolves true', async () => {
+    let answer!: (ok: boolean) => void;
+    const confirm = stubConfirm(false);
+    api.deleteCompanyEventById.mockResolvedValue(undefined);
+    render(<CompanyEventsPanel />);
+    const del = await screen.findByRole('button', { name: 'Delete ISO Audit' });
+
+    await act(async () => {
+      fireEvent.click(del);
+    });
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Delete the event "ISO Audit"?', destructive: true })
+    );
+    expect(api.deleteCompanyEventById).not.toHaveBeenCalled();
+
+    // Confirm first, then the guarded write: nothing runs while the dialog is open
+    confirm.mockImplementation(() => new Promise<boolean>((r) => (answer = r)));
+    fireEvent.click(del);
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2));
+    expect(api.deleteCompanyEventById).not.toHaveBeenCalled();
+    expect(del).toBeEnabled();
+    await act(async () => answer(true));
+    await waitFor(() => expect(api.deleteCompanyEventById).toHaveBeenCalledWith(5));
+  });
+
+  it('removes a shared event from the superuser\'s own sites only after confirmation', async () => {
+    const shared = { ...audit, site_ids: [1, 2] } as CompanyEvent;
+    api.getCompanyEvents.mockImplementation(async (siteId: number) => (siteId === 1 ? [shared] : []));
+    api.deleteCompanyEvent.mockResolvedValue(undefined);
+    useAppStore.setState({ currentUser: { ...admin, role: 'superuser', site_ids: [1] } });
+    const confirm = stubConfirm(false);
+    render(<CompanyEventsPanel />);
+    const remove = await screen.findByRole('button', { name: 'Remove ISO Audit from my sites' });
+
+    await act(async () => {
+      fireEvent.click(remove);
+    });
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Remove the event "ISO Audit" from Basel?\n\nIt stays on the other sites it is linked to.',
+        confirmLabel: 'Remove',
+        destructive: true,
+      })
+    );
+    expect(api.deleteCompanyEvent).not.toHaveBeenCalled();
+
+    confirm.mockResolvedValue(true);
+    await act(async () => {
+      fireEvent.click(remove);
+    });
+    await waitFor(() => expect(api.deleteCompanyEvent).toHaveBeenCalledWith(1, 5));
+    expect(api.deleteCompanyEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('deletes a holiday only after the confirmation resolves true', async () => {
+    let answer!: (ok: boolean) => void;
+    const confirm = stubConfirm(false);
+    api.deleteBankHoliday.mockResolvedValue(undefined);
+    render(<BankHolidaysPanel />);
+    const del = await screen.findByRole('button', { name: 'Delete Company Day' });
+
+    await act(async () => {
+      fireEvent.click(del);
+    });
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Delete the holiday "Company Day"?', destructive: true })
+    );
+    expect(api.deleteBankHoliday).not.toHaveBeenCalled();
+
+    confirm.mockImplementation(() => new Promise<boolean>((r) => (answer = r)));
+    fireEvent.click(del);
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2));
+    expect(api.deleteBankHoliday).not.toHaveBeenCalled();
+    await act(async () => answer(true));
+    await waitFor(() => expect(api.deleteBankHoliday).toHaveBeenCalledWith(1, 9));
   });
 });
 

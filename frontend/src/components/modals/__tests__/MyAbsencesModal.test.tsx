@@ -12,6 +12,7 @@ import { useAppStore } from '@/stores/appStore';
 import { deleteVacation, getVacations } from '@/api/endpoints/vacations';
 import { formatDateISO } from '@/utils/date';
 import type { AbsenceType, Vacation } from '@/types';
+import { stubConfirm } from '@/test/confirmDialog';
 
 vi.mock('@/api/endpoints/vacations', () => ({
   deleteVacation: vi.fn().mockResolvedValue(undefined),
@@ -71,21 +72,25 @@ describe('MyAbsencesModal', () => {
   });
 
   it('deletes through the API after confirmation and refetches', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = stubConfirm(true);
     vi.mocked(getVacations).mockResolvedValue(VACATIONS.filter((v) => v.id !== 1));
     render(<MyAbsencesModal />);
 
     fireEvent.click(screen.getByRole('button', { name: new RegExp(`^Delete Holidays ${inDays(10)}`) }));
 
     await waitFor(() => expect(deleteVacation).toHaveBeenCalledWith(1));
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Delete this absence?', destructive: true })
+    );
     await waitFor(() => expect(screen.queryByText('Beach week')).not.toBeInTheDocument());
     expect(getVacations).toHaveBeenCalled();
   });
 
-  it('does nothing when the deletion is not confirmed', () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('does nothing when the deletion is not confirmed', async () => {
+    const confirm = stubConfirm(false);
     render(<MyAbsencesModal />);
     fireEvent.click(screen.getByRole('button', { name: new RegExp(`^Delete Holidays ${inDays(10)}`) }));
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
     expect(deleteVacation).not.toHaveBeenCalled();
   });
 
@@ -112,13 +117,13 @@ describe('MyAbsencesModal', () => {
 
 
   it('deletes once when Delete is clicked twice before the first delete settles', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stubConfirm(true);
     let finish: () => void = () => {};
     vi.mocked(deleteVacation).mockImplementationOnce(() => new Promise<void>((r) => { finish = r; }));
     render(<MyAbsencesModal />);
 
     const remove = screen.getByRole('button', { name: new RegExp(`^Delete Holidays ${inDays(10)}`) });
-    act(() => {
+    await act(async () => {
       fireEvent.click(remove);
       fireEvent.click(remove);
     });

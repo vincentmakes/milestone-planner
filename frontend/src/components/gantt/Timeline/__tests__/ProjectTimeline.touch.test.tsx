@@ -14,6 +14,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import type { Project, User } from '@/types';
+import { stubConfirm } from '@/test/confirmDialog';
 
 vi.mock('@/contexts/WebSocketContext', () => ({
   useWebSocketContext: () => ({ recentChanges: [] }),
@@ -178,7 +179,7 @@ describe('ProjectTimeline touch', () => {
   });
 
   it('a jittery tap does not drag the project bar (no move confirm)', () => {
-    const confirmSpy = vi.spyOn(window, 'confirm');
+    const confirmSpy = stubConfirm(true);
     const { container } = renderTimeline(makeProject());
     const bar = container.querySelector('.gantt-bar[data-project-id="1"]') as HTMLElement;
 
@@ -186,7 +187,6 @@ describe('ProjectTimeline touch', () => {
     expect(useUIStore.getState().isDragging).toBe(false);
     expect(useUIStore.getState().dragType).toBeNull();
     expect(confirmSpy).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
   });
 
   it('still drags and resizes an assignment bar with the mouse at once', () => {

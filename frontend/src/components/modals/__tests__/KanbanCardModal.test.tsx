@@ -12,6 +12,7 @@ import { useAppStore } from '@/stores/appStore';
 import { assignCard, createComment, deleteComment, getComments, getMentionableUsers, unassignCard } from '@/api/endpoints/kanban';
 import { updateStaffAssignment } from '@/api/endpoints/projects';
 import type { Phase, Project, Subphase } from '@/types';
+import { stubConfirm } from '@/test/confirmDialog';
 
 vi.mock('@/api/endpoints/kanban', () => ({
   getComments: vi.fn().mockResolvedValue([]),
@@ -532,25 +533,30 @@ describe('KanbanCardModal confirmations', () => {
   });
 
   it('does not remove an assignee when the confirmation is declined', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const confirm = stubConfirm(false);
     render(<KanbanCardModal />);
 
     fireEvent.click(screen.getByLabelText('Remove Bob Brown'));
 
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Bob Brown'));
+    await waitFor(() =>
+      expect(confirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Remove "Bob Brown" from this card? Their booking on it will be deleted.',
+          destructive: true,
+        })
+      )
+    );
     expect(unassignCard).not.toHaveBeenCalled();
-    confirm.mockRestore();
   });
 
   it('removes the assignee once confirmed', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stubConfirm(true);
     vi.mocked(unassignCard).mockResolvedValue(undefined as never);
     render(<KanbanCardModal />);
 
     fireEvent.click(screen.getByLabelText('Remove Bob Brown'));
 
     await waitFor(() => expect(unassignCard).toHaveBeenCalledWith('subphase', 10, 4));
-    confirm.mockRestore();
   });
 
   it('asks before deleting a comment', async () => {
@@ -570,18 +576,22 @@ describe('KanbanCardModal confirmations', () => {
       },
     ]);
     vi.mocked(deleteComment).mockResolvedValue(undefined as never);
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    let answer = false;
+    const confirm = stubConfirm(() => answer);
     render(<KanbanCardModal />);
 
     const deleteBtn = await screen.findByLabelText('Delete comment');
     fireEvent.click(deleteBtn);
-    expect(confirm).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(confirm).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Delete this comment? This cannot be undone.', destructive: true })
+      )
+    );
     expect(deleteComment).not.toHaveBeenCalled();
 
-    confirm.mockReturnValue(true);
+    answer = true;
     fireEvent.click(deleteBtn);
     await waitFor(() => expect(deleteComment).toHaveBeenCalledWith(33));
-    confirm.mockRestore();
     vi.mocked(getComments).mockResolvedValue([]);
   });
 });

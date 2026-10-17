@@ -11,6 +11,7 @@ import { BankHolidaysPanel } from '../panels/BankHolidaysPanel';
 import { resetAllStores, useAppStore, useUIStore, useWhatIfStore } from '@/stores';
 import { downloadICS } from '@/utils/ics';
 import { makeSite, makeUser } from '@/test/factories';
+import { stubConfirm } from '@/test/confirmDialog';
 import type { BankHoliday } from '@/types';
 
 const api = vi.hoisted(() => ({
@@ -214,20 +215,25 @@ describe('BankHolidaysPanel add and edit', () => {
 
 describe('BankHolidaysPanel delete, refresh, export', () => {
   it('words the delete by source and does nothing when cancelled', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const confirm = stubConfirm(false);
     await renderPanel();
     fireEvent.click(screen.getByRole('button', { name: 'Delete National Day' }));
     await waitFor(() => expect(confirm).toHaveBeenCalled());
-    expect(confirm.mock.calls[0][0]).toMatch(/comes from Nager, so it will return/);
+    expect(confirm.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        message:
+          'Delete the holiday "National Day"?\n\nIt comes from Nager, so it will return on the next refresh from Nager.',
+        destructive: true,
+      })
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Delete Lab shutdown' }));
     await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2));
-    expect(confirm.mock.calls[1][0]).toBe('Delete the holiday "Lab shutdown"?');
+    expect(confirm.mock.calls[1][0].message).toBe('Delete the holiday "Lab shutdown"?');
     expect(api.deleteBankHoliday).not.toHaveBeenCalled();
-    confirm.mockRestore();
   });
 
   it('deletes, closing the form of that holiday, and reports failures', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stubConfirm(true);
     api.deleteBankHoliday.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('Gone'));
     await renderPanel();
     fireEvent.click(screen.getByRole('button', { name: 'Edit Lab shutdown' }));
@@ -237,25 +243,33 @@ describe('BankHolidaysPanel delete, refresh, export', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete National Day' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Gone');
-    confirm.mockRestore();
   });
 
   it('refreshes from Nager after confirmation', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true);
+    let answer = false;
+    const confirm = stubConfirm(() => answer);
     api.refreshBankHolidays.mockResolvedValueOnce([nationalDay]).mockRejectedValueOnce(new Error('Nager down'));
     await renderPanel();
     const refresh = screen.getByRole('button', { name: /Refresh from Nager/ });
 
-    fireEvent.click(refresh);
+    await act(async () => {
+      fireEvent.click(refresh);
+    });
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Refresh the bank holidays of Basel from the Nager holiday API?',
+        confirmLabel: 'Refresh',
+      })
+    );
     expect(api.refreshBankHolidays).not.toHaveBeenCalled();
 
+    answer = true;
     fireEvent.click(refresh);
     expect(await screen.findByText('Holidays refreshed from Nager (1 in total).')).toBeInTheDocument();
     expect(screen.queryByText('Lab shutdown')).not.toBeInTheDocument();
 
     fireEvent.click(refresh);
     expect(await screen.findByRole('alert')).toHaveTextContent('Nager down');
-    confirm.mockRestore();
   });
 
   it('exports the visible year as .ics', async () => {
