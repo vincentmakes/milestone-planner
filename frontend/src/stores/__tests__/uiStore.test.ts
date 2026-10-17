@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useUIStore } from '../uiStore';
-import { makeEquipment, makeProject, makeSite, makeStaff, makeUser, makeVacation } from '@/test/factories';
+import { makeEquipment, makeProject, makeStaff, makeUser, makeVacation } from '@/test/factories';
 
 const ui = () => useUIStore.getState();
 
@@ -23,9 +23,8 @@ describe('modals', () => {
       modalContext: { siteId: 1 },
     });
 
-    ui().setEditingSite(makeSite({ id: 4 }));
-    ui().openSiteModal();
-    expect(ui()).toMatchObject({ settingsSection: 'sites', settingsIntent: { type: 'edit', id: 4 } });
+    ui().openModal('site' as never);
+    expect(ui()).toMatchObject({ activeModal: 'settingsHub', settingsSection: 'sites', settingsIntent: null });
 
     ui().setActiveModal('ssoConfig' as never);
     expect(ui()).toMatchObject({ activeModal: 'settingsHub', settingsSection: 'sso', settingsIntent: null });
@@ -46,8 +45,6 @@ describe('modals', () => {
     expect(ui().settingsIntent).toBeNull();
     ui().setSettingsSection('equipment');
     expect(ui().settingsSection).toBe('equipment');
-    ui().openBankHolidayModal();
-    expect(ui()).toMatchObject({ activeModal: 'settingsHub', settingsSection: 'bank-holidays' });
   });
 
   it('stores editing context and clears all of it on close', () => {

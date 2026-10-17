@@ -133,6 +133,9 @@ export function VacationModal() {
   
   // Use ref for description to avoid re-renders on typing
   const descriptionRef = useRef<HTMLInputElement>(null);
+  // The description input unmounts while the Import .ics tab is shown; keep
+  // what was typed so "Enter manually" brings it back.
+  const descriptionDraftRef = useRef('');
   const initializedRef = useRef(false);
   
   // Get staff member for display - memoized. The signed-in user may not be in
@@ -152,6 +155,7 @@ export function VacationModal() {
     if (isOpen && !initializedRef.current) {
       initializedRef.current = true;
       setImportMode(false);
+      descriptionDraftRef.current = '';
       
       if (editingVacation) {
         setStaffId(editingVacation.staff_id);
@@ -213,6 +217,7 @@ export function VacationModal() {
     if (returnTo) openModal(returnTo);
     setError(null);
     setImportMode(false);
+    descriptionDraftRef.current = '';
   }, [closeModal, openModal, returnTo]);
   
   const saveVacation = useCallback(async (): Promise<boolean> => {
@@ -403,7 +408,10 @@ export function VacationModal() {
               role="tab"
               aria-selected={importMode}
               className={`${styles.modeTab} ${importMode ? styles.modeTabActive : ''}`}
-              onClick={() => setImportMode(true)}
+              onClick={() => {
+                if (descriptionRef.current) descriptionDraftRef.current = descriptionRef.current.value;
+                setImportMode(true);
+              }}
             >
               Import .ics
             </button>
@@ -540,7 +548,7 @@ export function VacationModal() {
                 id="vacation-description"
                 type="text"
                 className={styles.input}
-                defaultValue={editingVacation?.description || ''}
+                defaultValue={editingVacation ? editingVacation.description || '' : descriptionDraftRef.current}
                 placeholder={isRecurring ? "e.g., Part-time, Childcare..." : "e.g., Annual Leave, Personal Day..."}
                 autoComplete="off"
               />

@@ -582,7 +582,7 @@ function HolidayForm({ siteId, siteName, holiday, onCancel, onSaved, onDirtyChan
   };
 
   return (
-    <form className={styles.form} onSubmit={handleSubmit}>
+    <form className={styles.form} onSubmit={handleSubmit} noValidate>
       <h4 className={styles.formTitle}>
         {holiday ? `Edit holiday` : `Add a holiday to ${siteName}`}
       </h4>

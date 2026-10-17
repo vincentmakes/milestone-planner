@@ -12,12 +12,11 @@ import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { BackIcon, PlusIcon, UploadIcon } from '@/components/settings/panels/PanelIcons';
 import { useUIStore } from '@/stores/uiStore';
-import { useAppStore } from '@/stores/appStore';
+import { useAppStore, selectAbsenceTypesById } from '@/stores/appStore';
 import { deleteVacation, getVacations } from '@/api/endpoints/vacations';
 import { formatDateISO, parseDateISO } from '@/utils/date';
 import {
   parseRecurringPattern,
-  indexAbsenceTypes,
   absenceTypeFor,
   absenceTypeName,
   absenceColorStyle,
@@ -50,7 +49,6 @@ export function MyAbsencesModal() {
   const currentUser = useAppStore((s) => s.currentUser);
   const vacations = useAppStore((s) => s.vacations);
   const setVacations = useAppStore((s) => s.setVacations);
-  const absenceTypes = useAppStore((s) => s.absenceTypes);
 
   const [showImport, setShowImport] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -63,7 +61,7 @@ export function MyAbsencesModal() {
   const addBlockedReason = whatIf.blocked ? whatIf.reason('Adding absences') : null;
   const userId = currentUser?.id ?? null;
 
-  const typesById = useMemo(() => indexAbsenceTypes(absenceTypes), [absenceTypes]);
+  const typesById = useAppStore(selectAbsenceTypesById);
 
   const { upcoming, recent } = useMemo(() => {
     const today = formatDateISO(new Date());

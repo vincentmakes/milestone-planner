@@ -7,14 +7,13 @@
  */
 
 import { forwardRef, useMemo } from 'react';
-import { useAppStore, selectStaffSiteIds } from '@/stores/appStore';
+import { useAppStore, selectStaffSiteIds, selectAbsenceTypesById } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { calculateBarPosition, calculateTodayPosition } from '@/components/gantt/utils';
 import { TodayLine } from '@/components/gantt/Timeline/TodayLine';
 import { useWorkloadCalculation, getWorkloadTooltip, getWorkloadBackground } from '@/hooks';
 import {
   parseRecurringPattern,
-  indexAbsenceTypes,
   absenceTypeFor,
   absenceTypeName,
   absenceColorStyle,
@@ -62,8 +61,7 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
     const bankHolidays = useAppStore((s) => s.bankHolidays);
     const companyEvents = useAppStore((s) => s.companyEvents);
     const currentUser = useAppStore((s) => s.currentUser);
-    const absenceTypes = useAppStore((s) => s.absenceTypes);
-    const absenceTypesById = useMemo(() => indexAbsenceTypes(absenceTypes), [absenceTypes]);
+    const absenceTypesById = useAppStore(selectAbsenceTypesById);
     const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
     // Site closures: staff whose sites intersect a closing event's sites are off
     const closureIndex = useAppStore((s) => s.closureIndex);

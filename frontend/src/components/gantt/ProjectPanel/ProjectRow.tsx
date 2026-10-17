@@ -16,6 +16,7 @@ import { canEditProject } from '@/utils/permissions';
 import type { Project, Phase, Subphase, CustomColumn } from '@/types';
 import styles from './ProjectRow.module.css';
 import { daysBetweenDateStrings } from '@/utils/date';
+import { getProjectLevelItems, getCurrentExpansionLevel } from '@/utils/projectLevels';
 
 interface ProjectRowProps {
   project: Project;
@@ -125,52 +126,14 @@ export const ProjectRow = memo(function ProjectRow({
   // Get critical path items for this project
   const projectCriticalPathItems = criticalPathItems.get(project.id) || new Set<string>();
 
-  // Calculate current expansion level for this project
-  const currentLevel = useMemo(() => {
-    if (!expandedProjects.has(project.id)) return 0;
-    const phases = project.phases ?? [];
-    const anyPhaseExpanded = phases.some(p => expandedPhases.has(p.id));
-    if (!anyPhaseExpanded) return 1;
-    
-    // Check if any subphases are expanded
-    let anySubphaseExpanded = false;
-    phases.forEach(phase => {
-      const checkSubphases = (children: typeof phase.children) => {
-        children?.forEach(child => {
-          if (expandedSubphases.has(child.id)) anySubphaseExpanded = true;
-          checkSubphases(child.children);
-        });
-      };
-      checkSubphases(phase.children);
-    });
-    
-    return anySubphaseExpanded ? 3 : 2;
-  }, [project, expandedProjects, expandedPhases, expandedSubphases]);
-
-  // Calculate max possible level
-  // Always allow at least level 1 so users can expand to add phases
-  const maxLevel = useMemo(() => {
-    const phases = project.phases ?? [];
-    
-    // Always allow expanding to level 1 (to add phases)
-    let maxDepth = 1;
-    
-    phases.forEach(phase => {
-      if (phase.children?.length > 0) {
-        maxDepth = Math.max(maxDepth, 2);
-        const checkDepth = (children: typeof phase.children, depth: number) => {
-          children?.forEach(child => {
-            maxDepth = Math.max(maxDepth, depth);
-            if (child.children?.length > 0) {
-              checkDepth(child.children, depth + 1);
-            }
-          });
-        };
-        checkDepth(phase.children, 3);
-      }
-    });
-    return maxDepth;
-  }, [project]);
+  // Current and deepest expansion level — the same definition the store's
+  // expandProjectLevel/collapseProjectLevel step through, so "+" disables
+  // exactly when there is nothing left to expand.
+  const maxLevel = useMemo(() => getProjectLevelItems(project).maxLevel, [project]);
+  const currentLevel = useMemo(
+    () => getCurrentExpansionLevel(project, expandedProjects, expandedPhases, expandedSubphases),
+    [project, expandedProjects, expandedPhases, expandedSubphases]
+  );
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();

@@ -3,7 +3,7 @@
  * exempt), session-expiry detection on 401, and Content-Disposition decoding.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { apiRequest, configureApiClient, clientConfig, decodeFilename } from '../client';
+import { apiRequest, configureApiClient, clientConfig, decodeFilename, isWhatIfExempt } from '../client';
 import type { WriteMethod } from '../client';
 
 type QueuedOp = { method: WriteMethod; url: string; body?: unknown };
@@ -101,6 +101,93 @@ describe('apiRequest', () => {
       await apiRequest('/api/projects/7', { method: 'PUT', body: { tag_ids: [3] } });
       expect(fetchMock).toHaveBeenCalledTimes(6);
       expect(queued).toEqual([{ method: 'PUT', url: '/api/projects/7', body: { tag_ids: [3] } }]);
+    });
+
+    const CONFIGURATION_URLS = [
+      '/api/absence-types',
+      '/api/absence-types/4',
+      '/api/absence-types/reorder',
+      '/api/skills',
+      '/api/skills/2',
+      '/api/skills/user/5',
+      '/api/skills/user/5/2',
+      '/api/equipment-types/Microscope',
+      '/api/equipment-types/Microscope?new_type=Scope',
+      '/api/predefined-phases',
+      '/api/predefined-phases/3',
+      '/api/predefined-phases/reorder',
+      '/api/users',
+      '/api/users/8',
+      '/api/users/8/toggle-active',
+      '/api/tags',
+      '/api/tags/3',
+      '/api/tag-groups/2',
+      '/api/sites',
+      '/api/sites/1',
+      '/api/equipment',
+      '/api/equipment/6',
+    ];
+    const WRITE_CASES = ['POST', 'PUT', 'DELETE'] as const;
+
+    it.each(CONFIGURATION_URLS.flatMap((url) => WRITE_CASES.map((method) => [method, url] as const)))(
+      'lets configuration write %s %s through',
+      async (method, url) => {
+        whatIf = true;
+        await apiRequest(url, { method, body: {} });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(queued).toEqual([]);
+      },
+    );
+
+    const QUEUED_SIBLINGS = [
+      '/api/sites/1/holidays',
+      '/api/sites/1/holidays/9',
+      '/api/sites/1/holidays/import',
+      '/api/sites/1/holidays/refresh',
+      '/api/sites/1/events',
+      '/api/sites/1/events/4',
+      '/api/events',
+      '/api/events/4',
+      '/api/events/import',
+      '/api/equipment-blocks',
+      '/api/equipment-blocks/3',
+      '/api/equipment-assignments/5',
+      '/api/equipment/6/blocks',
+      '/api/projects/7/equipment',
+      '/api/vacations',
+      '/api/custom-columns/values',
+    ];
+
+    it.each(QUEUED_SIBLINGS.flatMap((url) => WRITE_CASES.map((method) => [method, url] as const)))(
+      'still queues plan/calendar write %s %s',
+      async (method, url) => {
+        whatIf = true;
+        await apiRequest(url, { method, body: {} });
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(queued).toEqual([{ method, url, body: {} }]);
+      },
+    );
+
+    it('matches the exemption on the API path, not the tenant prefix', async () => {
+      whatIf = true;
+      window.history.pushState({}, '', '/t/acme/');
+      try {
+        await apiRequest('/api/absence-types/4', { method: 'PUT', body: {} });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(fetchMock.mock.calls[0][0]).toContain('/t/acme/api/absence-types/4');
+
+        await apiRequest('/api/sites/1/holidays', { method: 'POST', body: {} });
+        expect(queued).toEqual([{ method: 'POST', url: '/t/acme/api/sites/1/holidays', body: {} }]);
+      } finally {
+        window.history.pushState({}, '', '/');
+      }
+    });
+
+    it('isWhatIfExempt ignores a tenant prefix and a missing leading slash', () => {
+      expect(isWhatIfExempt('/t/acme/api/skills/2')).toBe(true);
+      expect(isWhatIfExempt('api/sites/3')).toBe(true);
+      expect(isWhatIfExempt('/t/acme/api/sites/3/events')).toBe(false);
+      expect(isWhatIfExempt('/api/equipmentx')).toBe(false);
     });
 
     it('sends every write for real outside What-If (PATCH included)', async () => {

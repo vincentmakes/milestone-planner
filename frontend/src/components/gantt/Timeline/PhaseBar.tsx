@@ -48,21 +48,46 @@ function getEventCoordinates(e: MouseEvent | TouchEvent | React.MouseEvent | Rea
   return { clientX: (e as MouseEvent).clientX, clientY: (e as MouseEvent).clientY };
 }
 
-// Create a synthetic mouse event from touch event for compatibility
+/**
+ * Create a mouse-like event from a touch event, so the drag/resize/click
+ * handlers (typed for React.MouseEvent) work on touch screens. Built
+ * explicitly rather than by spreading `e`: React keeps `preventDefault`,
+ * `stopPropagation` & co. on the SyntheticEvent prototype, which a spread
+ * drops — the handlers would then throw on `e.stopPropagation()`.
+ */
 function createSyntheticMouseEvent(e: React.TouchEvent, type: string = 'mousedown'): React.MouseEvent {
   const touch = e.touches[0] || e.changedTouches[0];
-  return {
-    ...e,
+  const synthetic = {
     type,
+    target: e.target,
+    currentTarget: e.currentTarget,
+    nativeEvent: e.nativeEvent,
+    bubbles: e.bubbles,
+    cancelable: e.cancelable,
+    timeStamp: e.timeStamp,
     clientX: touch.clientX,
     clientY: touch.clientY,
     screenX: touch.screenX,
     screenY: touch.screenY,
     pageX: touch.pageX,
     pageY: touch.pageY,
+    movementX: 0,
+    movementY: 0,
+    altKey: e.altKey,
+    ctrlKey: e.ctrlKey,
+    metaKey: e.metaKey,
+    shiftKey: e.shiftKey,
     button: 0,
     buttons: 1,
-  } as unknown as React.MouseEvent;
+    relatedTarget: null,
+    getModifierState: (key: React.ModifierKey) => e.getModifierState(key),
+    preventDefault: () => e.preventDefault(),
+    stopPropagation: () => e.stopPropagation(),
+    isDefaultPrevented: () => e.isDefaultPrevented(),
+    isPropagationStopped: () => e.isPropagationStopped(),
+    persist: () => {},
+  };
+  return synthetic as unknown as React.MouseEvent;
 }
 
 export const PhaseBar = memo(function PhaseBar({

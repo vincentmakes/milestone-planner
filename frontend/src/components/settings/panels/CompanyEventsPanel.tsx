@@ -640,7 +640,7 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
   };
 
   return (
-    <form className={styles.form} onSubmit={handleSubmit}>
+    <form className={styles.form} onSubmit={handleSubmit} noValidate>
       <h4 className={styles.formTitle}>{event ? 'Edit event' : 'Add a company event'}</h4>
       {error && <div className={styles.error} role="alert">{error}</div>}
       <div className={styles.formRow}>

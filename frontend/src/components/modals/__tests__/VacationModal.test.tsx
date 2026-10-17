@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { VacationModal } from '../VacationModal';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
@@ -109,6 +109,35 @@ describe('VacationModal', () => {
       { start_date: '2026-08-10', end_date: '2026-08-14', description: 'Trip to Spain', absence_type_id: 3 },
     ]);
     await waitFor(() => expect(getVacations).toHaveBeenCalled());
+  });
+
+  it('keeps the typed description when switching to Import .ics and back', async () => {
+    render(<VacationModal />);
+    const description = screen.getByLabelText(/^Description/) as HTMLInputElement;
+    fireEvent.change(description, { target: { value: 'Ski week' } });
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Import .ics' }));
+    expect(screen.queryByLabelText(/^Description/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Enter manually' }));
+
+    expect((screen.getByLabelText(/^Description/) as HTMLInputElement).value).toBe('Ski week');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(createVacation).toHaveBeenCalled());
+    expect(vi.mocked(createVacation).mock.calls[0][0]).toMatchObject({ description: 'Ski week' });
+  });
+
+  it('forgets the description draft once the dialog is closed', () => {
+    render(<VacationModal />);
+    fireEvent.change(screen.getByLabelText(/^Description/), { target: { value: 'Ski week' } });
+    fireEvent.click(screen.getByRole('tab', { name: 'Import .ics' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(useUIStore.getState().activeModal).toBeNull();
+
+    act(() => useUIStore.getState().openVacationModal(undefined, 7));
+    expect((screen.getByLabelText(/^Description/) as HTMLInputElement).value).toBe('');
+    fireEvent.click(screen.getByRole('tab', { name: 'Import .ics' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Enter manually' }));
+    expect((screen.getByLabelText(/^Description/) as HTMLInputElement).value).toBe('');
   });
 
   it('blocks the import while What-If mode is active', () => {

@@ -159,6 +159,19 @@ describe('Calendar deletes', () => {
   });
 });
 
+describe('CompanyEventsPanel date validation', () => {
+  it('shows its own message for an end date before the start (no browser min-date block)', async () => {
+    render(<CompanyEventsPanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit ISO Audit' }));
+    fireEvent.change(screen.getByLabelText('End date (optional)'), { target: { value: '2026-05-01' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('End date must be on or after the start date');
+    expect(api.updateCompanyEvent).not.toHaveBeenCalled();
+  });
+});
+
 describe('Calendar forms report unsaved input', () => {
   it('holiday form', async () => {
     const onDirtyChange = vi.fn();

@@ -140,8 +140,8 @@ describe('BankHolidaysPanel add and edit', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Please select a date');
     fireEvent.change(screen.getByLabelText('Date'), { target: { value: `${YEAR}-06-10` } });
     fireEvent.change(screen.getByLabelText('End date (optional)'), { target: { value: `${YEAR}-06-01` } });
-    // the browser's own min-date check would block the button; submit the form directly
-    fireEvent.submit(screen.getByText('Add a holiday to Basel').closest('form')!);
+    // noValidate: the button reaches the panel's own check despite the end input's min
+    submit();
     expect(screen.getByRole('alert')).toHaveTextContent('End date must be on or after the start date');
 
     fireEvent.change(screen.getByLabelText('End date (optional)'), { target: { value: `${YEAR}-06-11` } });
