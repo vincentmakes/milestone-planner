@@ -24,11 +24,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The Gantt project panel's header buttons now sit at the right edge of the whole panel, after the custom columns, instead of at the end of the name column; its dropdowns open towards the chart and never spill off its left edge.
 - Settings panels share one button style: every panel's toolbar has the same layout and divider, the Add buttons have the same size and plus icon everywhere, back links look alike, and the admin portal and My absences use the same buttons. Disabled buttons are dimmed the same way throughout the app.
 - Test coverage is now measured and enforced in CI (backend and frontend floors plus an 80 % gate on the lines a pull request changes), and the README shows live coverage badges.
+- Configuration edits made in Settings (absence types, skills, equipment types, phase templates, users, sites and equipment definitions) now take effect immediately even while What-If mode is on, like tags already did; What-If only sandboxes plan data.
 
 ### Fixed
 - Reordering custom columns in the manager dialog is saved again (the reorder request was answered with a validation error).
 - A phase or phase template added after one at the first position no longer shares its sort position with it.
 - A tag created or recoloured while What-If mode is on no longer disappears until the plan is applied.
+- Refreshing public holidays no longer deletes a year's holidays when the holiday service could not be reached for that year.
+- A multi-day holiday or company event that starts before a requested date range but overlaps it is now returned by the date-range endpoints.
+- A custom holiday or company event longer than a year is rejected with a clear message instead of being silently cut at 366 days.
+- Timestamps such as comment times and audit entries are no longer shown 1–2 hours early; stored UTC values are sent as UTC.
+- A description typed for a new absence is kept when switching to the Import .ics tab and back.
+- Large .ics imports are sent in batches, so a calendar export with more than 1 000 entries no longer fails.
+- The project tree's expand button is disabled once every level is open, instead of staying active.
+- Tapping or dragging a Gantt bar on a touch screen works again instead of failing silently.
+- The end-date check on the holiday and company-event forms shows the in-app message instead of the browser's own tooltip.
+- A WebSocket connection whose browser went away no longer counts as online.
+
+### Security
+- A user can no longer read another site's absence by requesting it by id; only their own absences and those of colleagues at their sites are visible.
 
 ## [1.5.0] - 2026-10-15
 
