@@ -6,7 +6,7 @@
 
 ## How It Works
 
-1. Click the **What If** toggle in the header
+1. Open the **Gantt chart** and click the **What If** toggle in the header (the toggle only appears there)
 2. The interface changes visually to remind you that you're in planning mode; a badge next to *What If* counts the changes you have queued
 3. Make changes: move and resize phases, edit dates and details, change or remove assignments, delete items
 4. Changes are **not saved to the database** — they are queued in your browser
@@ -17,7 +17,8 @@
 ## Key Behaviors
 
 - What-If is a **private sandbox**: your experimental changes stay in your browser and are *not* sent to the server or visible to other users until you apply them
-- Only administrators and superusers can enter What-If mode
+- Only administrators and superusers can enter What-If mode, and only from the Gantt chart: What-If is a planning simulation of the timeline
+- **The Gantt chart keeps the focus.** While a What-If plan is open, the other views in the sidebar, the **Settings** window and the notification links that open a Kanban card are disabled, with a short explanation on the control. Apply or discard first; nothing is lost
 - The visual appearance changes (header indicator) to remind you that you're in planning mode
 - **Colleagues' changes wait.** While you are in What-If mode, project and custom-column changes made by other people are not pulled into your view (they would overwrite the plan you are editing); they are loaded as soon as you apply or discard
 - **Undo history is cleared** when you enter What-If mode, and again when you apply or discard, so an undo can never write a discarded plan to the server. Undo and redo *inside* What-If work as usual
@@ -26,6 +27,8 @@
 ### What is unavailable in What-If mode
 
 Anything that **creates** something new is disabled while What-If mode is active, with a short explanation on the control: new projects, phases and subphases, new staff and equipment assignments (including drag-and-drop from the resource panel, **Assign me** and joining or assigning people on Kanban cards), new **absences** and new **equipment blocks**. A queued create has no real id on the server, so the new item could not be shown or edited until Apply. Editing and deleting existing items stays available.
+
+Deleting **users** or **equipment** in Settings is blocked as well (Settings itself is unavailable, see above): their bookings are part of the plan, and a plan must never show bookings of something that no longer exists.
 
 Imports are blocked as well:
 

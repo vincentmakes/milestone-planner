@@ -34,7 +34,7 @@ Admins and superusers can create absences for any staff member by selecting them
 An absence whose **To** date is before its **From** date is rejected.
 
 !!! note "What-If mode"
-    Adding absences is unavailable while [What-If mode](what-if-planning.md) is active, like other creates — the **Add** buttons are disabled with an explanation. Editing and deleting existing absences still works.
+    Adding absences is unavailable while [What-If mode](what-if-planning.md) is active, like other creates — the **Add** buttons are disabled with an explanation. Editing and deleting existing absences still works. (What-If is entered from the Gantt chart; **My absences** stays reachable from the user menu.)
 
 ## Who Sees Whose Absences
 

@@ -84,7 +84,7 @@ A single booking is always between **1 and 100 %** — the server rejects 0 or a
 
 Adding, removing and changing other people's bookings requires superuser rights or being the project's manager. Your **own** booking is yours to manage: you can change your allocation with your slider and remove yourself with the **×** on your row. Removing an assignee asks for confirmation first, because their booking is deleted with them.
 
-Adding assignees and joining a card are unavailable in [What-If mode](what-if-planning.md), like other creates.
+Adding assignees and joining a card are unavailable in [What-If mode](what-if-planning.md), like other creates. What-If itself is entered from the Gantt chart; while a plan is open the board waits until it is applied or discarded.
 
 ### Joining a card yourself
 

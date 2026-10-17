@@ -138,7 +138,7 @@ The duration is shown live as you change dates so you can confirm the window bef
 
 Only **Admins** and **Superusers** can create, edit, or delete equipment blocks. Regular users see them on the timeline but cannot modify them. Superusers are limited to equipment whose sites are all sites they belong to.
 
-A block (or booking) whose end date is before its start date is rejected. New blocks can't be added while [What-If mode](what-if-planning.md) is active; existing blocks can still be edited and deleted there.
+A block (or booking) whose end date is before its start date is rejected. New blocks can't be added while [What-If mode](what-if-planning.md) is active; existing blocks can still be edited and deleted there. Equipment itself cannot be deleted while a What-If plan is open, and What-If is entered from the Gantt chart only.
 
 ## Permissions
 

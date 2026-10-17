@@ -158,6 +158,10 @@ The timeline supports direct manipulation (on projects you can edit; your own as
 - **Resize a bar** — Drag left/right edge to extend or shorten duration
 - **Reorder phases** — Drag within the project panel to reorder
 
+### Touch screens
+
+On a tablet or phone, the same gestures work with a finger: press a bar and move it to change its dates, or press one of its edges to resize it (the edge handles are wider on touch screens). A tap opens the item's dialog. A swipe that starts **on a bar** moves the bar, so swipe on empty row space, the project panel or the header to scroll the chart. If the system interrupts a drag (an incoming call, a gesture the browser takes over), the bar returns to where it was and nothing is saved.
+
 ## Completion Tracking
 
 Each project and phase has a completion slider (0–100%):
@@ -350,8 +354,9 @@ text you are typing in the phase, subphase and assignment dialogs is kept.
 
 ## What-If Mode on the Gantt
 
-In [What-If mode](what-if-planning.md) you can move, resize, edit and delete freely; nothing is
-saved until you **Apply**. Creating new projects, phases, subphases, assignments, absences and
+[What-If mode](what-if-planning.md) is entered from the Gantt chart and stays there: while a plan is
+open, the other views and Settings wait until you apply or discard. In it you can move, resize, edit
+and delete freely; nothing is saved until you **Apply**. Creating new projects, phases, subphases, assignments, absences and
 equipment blocks is unavailable in What-If mode (the controls are disabled with an explanation).
 If Apply fails part-way, a banner in the header shows how many changes were applied and offers
 **Retry**, **Discard** and **Dismiss** — see

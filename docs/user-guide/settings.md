@@ -2,6 +2,9 @@
 
 All administration happens in one **Settings** window. Open it from the **Settings** entry in the **Admin** section of the sidebar — the only admin entry there. The window lists its sections on the left, grouped by topic, and shows the selected section on the right.
 
+!!! note "What-If mode"
+    Settings is unavailable while a [What-If](what-if-planning.md) plan is open — the entry is disabled with an explanation. Apply or discard the plan first.
+
 ![Settings window — instance title, theme picker, branding logos, and display defaults](../assets/screenshots/settings-modal.png){ loading=lazy }
 
 ## Settings Sections
@@ -286,7 +289,7 @@ Deactivating, deleting or demoting a user, or resetting their password, signs th
 | Edit a project, its phases, subphases and Kanban cards | Yes | Yes | Project manager of that project |
 | Manage staff assignments | Yes | Yes | Project manager of that project; anyone for their own time ("Assign me") |
 | Manage equipment assignments | Yes | Yes | Project manager of that project |
-| Enter What-If mode | Yes | Yes | No |
+| Enter What-If mode (from the Gantt chart) | Yes | Yes | No |
 | Manage bank holidays & company events (own sites) | Yes | Yes | No |
 | Edit users, skills, equipment, equipment types, predefined phases | Yes | Yes | No |
 | Create, delete, enable/disable users; change roles | Yes | No | No |
