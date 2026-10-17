@@ -5,7 +5,7 @@
  * optimistic-write failure protocol (reload + undo history cleared).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act, waitFor, cleanup } from '@testing-library/react';
+import { renderHook, act, waitFor, cleanup, fireEvent, createEvent } from '@testing-library/react';
 import type React from 'react';
 
 vi.mock('@/api/endpoints/projects', () => ({
@@ -85,6 +85,25 @@ const move = (clientX: number) =>
     document.dispatchEvent(new MouseEvent('mousemove', { clientX }));
   });
 const up = () => document.dispatchEvent(new MouseEvent('mouseup'));
+/** Touch gestures on the document, as the browser delivers them mid-resize. */
+const touchMove = (clientX: number) => {
+  const ev = createEvent.touchMove(document, { touches: [{ clientX, clientY: 5 }] });
+  act(() => {
+    fireEvent(document, ev);
+  });
+  return ev;
+};
+const touchEnd = () => {
+  const ev = createEvent.touchEnd(document, { changedTouches: [{ clientX: 0, clientY: 5 }] });
+  act(() => {
+    fireEvent(document, ev);
+  });
+  return ev;
+};
+const touchCancel = () =>
+  act(() => {
+    fireEvent.touchCancel(document);
+  });
 
 beforeEach(() => {
   resetAllStores();
@@ -363,5 +382,53 @@ describe('useResize: guards and failures', () => {
     move(260);
     up();
     expect(updatePhase).not.toHaveBeenCalled();
+  });
+});
+
+describe('useResize: touch', () => {
+  it('resizes the right edge with the finger and persists the end date', async () => {
+    marchCells();
+    const bar = makeBar({ phaseId: '10' }, 30, 150); // Mar 2 .. Mar 6
+    const { result } = renderHook(() => useResize());
+
+    act(() => result.current.startPhaseResize(mouseDown(bar, 180), 10, 1, 'right', '2026-03-02', '2026-03-06', bar));
+    const moveEvent = touchMove(240); // +60px = +2 days
+    expect(moveEvent.defaultPrevented).toBe(true);
+    expect(bar.style.width).toBe('210px');
+
+    const endEvent = touchEnd();
+    expect(endEvent.defaultPrevented).toBe(true);
+    await waitFor(() => expect(updatePhase).toHaveBeenCalledWith(10, { start_date: '2026-03-02', end_date: '2026-03-08' }));
+    await waitFor(() => expect(useUIStore.getState().isResizing).toBe(false));
+    expect(document.body.style.cursor).toBe('');
+  });
+
+  it('restores the bar without saving on touchcancel', async () => {
+    marchCells();
+    const bar = makeBar({ assignmentId: '50' }, 30, 150);
+    const { result } = renderHook(() => useResize());
+
+    act(() =>
+      result.current.startStaffAssignmentResize(mouseDown(bar, 30), 50, 1, 'left', '2026-03-02', '2026-03-06', bar, 4)
+    );
+    touchMove(-30); // -2 days on the left edge
+    expect(bar.style.left).toBe('-30px');
+    expect(bar.style.width).toBe('210px');
+    expect(useUIStore.getState().dragIndicator.visible).toBe(true);
+
+    touchCancel();
+    expect(bar.style.left).toBe('30px');
+    expect(bar.style.width).toBe('150px');
+    expect(bar.classList.contains('resizing')).toBe(false);
+    expect(document.body.style.cursor).toBe('');
+    expect(useUIStore.getState().isResizing).toBe(false);
+    expect(useUIStore.getState().dragIndicator.visible).toBe(false);
+
+    // The gesture is over: later touches change nothing and save nothing
+    touchMove(-60);
+    touchEnd();
+    expect(bar.style.width).toBe('150px');
+    await Promise.resolve();
+    expect(updateStaffAssignment).not.toHaveBeenCalled();
   });
 });

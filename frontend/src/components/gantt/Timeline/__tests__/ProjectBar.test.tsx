@@ -3,8 +3,9 @@
  * label; unconfirmed projects keep their stripe class (the stripes are a
  * ::before layer, so they combine with the inline colour).
  */
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, fireEvent } from '@testing-library/react';
+import type React from 'react';
 import { ProjectBar } from '../ProjectBar';
 
 const base = {
@@ -45,5 +46,33 @@ describe('ProjectBar colour', () => {
     expect(el.className).toMatch(/unconfirmed/);
     expect(el.className).toMatch(/darkText/);
     expect(el).toHaveAttribute('data-tag-color', '#fde047');
+  });
+});
+
+describe('ProjectBar touch', () => {
+  it('starts a project drag from a touch with a mouse-like event', () => {
+    let seen: { clientX: number; target: EventTarget; currentTarget: EventTarget; stopped: boolean } | null = null;
+    const onDragStart = vi.fn((e: React.MouseEvent) => {
+      // The drag hook calls these; the converted event must carry them
+      e.stopPropagation();
+      e.preventDefault();
+      seen = { clientX: e.clientX, target: e.target, currentTarget: e.currentTarget, stopped: e.isPropagationStopped() };
+    });
+    const { container } = render(<ProjectBar {...base} confirmed onDragStart={onDragStart} />);
+    const el = bar(container);
+
+    fireEvent.touchStart(el, { touches: [{ clientX: 42, clientY: 7 }] });
+
+    expect(onDragStart).toHaveBeenCalledTimes(1);
+    expect(onDragStart.mock.calls[0][0]).toMatchObject({ type: 'mousedown', button: 0, buttons: 1 });
+    expect(seen).toEqual({ clientX: 42, target: el, currentTarget: el, stopped: true });
+    expect(el.className).toMatch(/interactive/);
+  });
+
+  it('ignores touches on a read-only bar', () => {
+    const { container } = render(<ProjectBar {...base} confirmed />);
+    const el = bar(container);
+    expect(() => fireEvent.touchStart(el, { touches: [{ clientX: 1, clientY: 1 }] })).not.toThrow();
+    expect(el.className).not.toMatch(/interactive/);
   });
 });

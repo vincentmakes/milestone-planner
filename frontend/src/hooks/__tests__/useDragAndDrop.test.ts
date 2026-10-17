@@ -6,7 +6,7 @@
  * protocol (reload + undo history cleared).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act, waitFor, cleanup } from '@testing-library/react';
+import { renderHook, act, waitFor, cleanup, fireEvent, createEvent } from '@testing-library/react';
 import type React from 'react';
 
 vi.mock('@/api/endpoints/projects', () => ({
@@ -112,6 +112,25 @@ const move = (clientX: number) =>
     document.dispatchEvent(new MouseEvent('mousemove', { clientX }));
   });
 const up = () => document.dispatchEvent(new MouseEvent('mouseup'));
+/** Touch gestures on the document, as the browser delivers them mid-drag. */
+const touchMove = (clientX: number) => {
+  const ev = createEvent.touchMove(document, { touches: [{ clientX, clientY: 5 }] });
+  act(() => {
+    fireEvent(document, ev);
+  });
+  return ev;
+};
+const touchEnd = () => {
+  const ev = createEvent.touchEnd(document, { changedTouches: [{ clientX: 0, clientY: 5 }] });
+  act(() => {
+    fireEvent(document, ev);
+  });
+  return ev;
+};
+const touchCancel = () =>
+  act(() => {
+    fireEvent.touchCancel(document);
+  });
 const phaseOf = (id: number) =>
   useAppStore.getState().projects[0].phases.find((p) => p.id === id)!;
 
@@ -414,5 +433,72 @@ describe('useDragAndDrop: persist failure', () => {
     expect(useAppStore.getState().projects).toEqual([serverCopy]);
     expect(useUndoStore.getState().undoStack).toEqual([]);
     expect(useUndoStore.getState().canUndo).toBe(false);
+  });
+});
+
+describe('useDragAndDrop: touch', () => {
+  it('moves the bar with the finger and persists on touchend', async () => {
+    marchCells();
+    const bar = makeBar({ phaseId: '10' }, 30);
+    const { result } = renderHook(() => useDragAndDrop());
+
+    act(() => result.current.startPhaseDrag(mouseDown(bar, 0), 10, 1, '2026-03-02', '2026-03-06', false, bar));
+    const moveEvent = touchMove(60); // +2 days
+    expect(moveEvent.defaultPrevented).toBe(true);
+    expect(bar.style.left).toBe('90px');
+
+    const endEvent = touchEnd();
+    // No synthesized mousedown/click after a handled touch
+    expect(endEvent.defaultPrevented).toBe(true);
+    await waitFor(() => expect(updatePhase).toHaveBeenCalledWith(10, { start_date: '2026-03-04', end_date: '2026-03-08' }));
+    await waitFor(() => expect(useUIStore.getState().isDragging).toBe(false));
+  });
+
+  it('detaches the touch listeners after touchend', async () => {
+    marchCells();
+    const remove = vi.spyOn(document, 'removeEventListener');
+    const bar = makeBar({ assignmentId: '50' }, 30);
+    const { result } = renderHook(() => useDragAndDrop());
+
+    act(() => result.current.startStaffAssignmentDrag(mouseDown(bar, 0), 50, 1, '2026-03-02', '2026-03-06', bar, 4));
+    touchMove(30);
+    touchEnd();
+    await waitFor(() => expect(updateStaffAssignment).toHaveBeenCalled());
+
+    const removed = remove.mock.calls.map((c) => c[0]);
+    expect(removed).toEqual(expect.arrayContaining(['mousemove', 'mouseup', 'touchmove', 'touchend', 'touchcancel']));
+    // A later finger movement no longer reaches the bar
+    const leftAfter = bar.style.left;
+    const stray = touchMove(300);
+    expect(bar.style.left).toBe(leftAfter);
+    expect(stray.defaultPrevented).toBe(false);
+  });
+
+  it('puts the bar back without saving on touchcancel', async () => {
+    marchCells();
+    const bar = makeBar({ projectId: '1' }, 30);
+    const confirm = vi.spyOn(window, 'confirm');
+    const { result } = renderHook(() => useDragAndDrop());
+
+    act(() => result.current.startProjectDrag(mouseDown(bar, 100), 1, '2026-03-02', '2026-03-20', bar));
+    touchMove(190);
+    expect(bar.style.left).toBe('120px');
+    expect(bar.style.opacity).toBe('0.8');
+
+    touchCancel();
+    expect(bar.style.left).toBe('30px');
+    expect(bar.style.opacity).toBe('');
+    expect(bar.style.zIndex).toBe('');
+    expect(bar.classList.contains('dragging')).toBe(false);
+    expect(useUIStore.getState().isDragging).toBe(false);
+    expect(useUIStore.getState().dragIndicator.visible).toBe(false);
+
+    touchMove(250);
+    touchEnd();
+    expect(bar.style.left).toBe('30px');
+    await Promise.resolve();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(updateProject).not.toHaveBeenCalled();
+    expect(updatePhase).not.toHaveBeenCalled();
   });
 });
