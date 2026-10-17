@@ -67,6 +67,7 @@ describe('PredefinedPhasesPanel', () => {
   it('adds a trimmed phase by button or Enter and reloads', async () => {
     await renderPanel();
     const input = screen.getByPlaceholderText('New phase name...');
+    expect(screen.getByLabelText('New phase name')).toBe(input);
     const add = screen.getByRole('button', { name: 'Add Phase' });
     expect(add).toBeDisabled();
 

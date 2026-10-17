@@ -95,6 +95,28 @@ describe('Select', () => {
   });
 });
 
+describe('Select option groups', () => {
+  it('renders groups as labelled optgroups after the flat options', () => {
+    render(
+      <Select
+        aria-label="Country"
+        options={[{ value: '', label: 'Any' }]}
+        groups={[
+          { label: 'Europe', options: [{ value: 'CH', label: 'Switzerland' }] },
+          { label: 'Americas', options: [{ value: 'US', label: 'United States', disabled: true }] },
+        ]}
+        defaultValue="CH"
+      />
+    );
+    const select = screen.getByRole('combobox', { name: 'Country' }) as HTMLSelectElement;
+    expect(select).toHaveValue('CH');
+    const groups = Array.from(select.querySelectorAll('optgroup')).map((g) => g.label);
+    expect(groups).toEqual(['Europe', 'Americas']);
+    expect(screen.getByRole('option', { name: 'United States' })).toBeDisabled();
+    expect(select.options[0]).toHaveTextContent('Any');
+  });
+});
+
 describe('Select accessibility', () => {
   it('flags an invalid value, describes it, and hides the chevron from assistive tech', () => {
     const { container } = render(

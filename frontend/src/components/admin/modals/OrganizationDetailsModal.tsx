@@ -5,6 +5,8 @@
 
 import { useId, useState, useEffect, useCallback } from 'react';
 import { Notice } from '@/components/common/Notice';
+import { Input } from '@/components/common/Input';
+import { Select } from '@/components/common/Select';
 import { useAdminStore } from '@/stores/adminStore';
 import { 
   getOrganization, 
@@ -23,6 +25,17 @@ import styles from './AdminModal.module.css';
 /** Roles a tenant `users.role` CHECK accepts -- the only valid SSO default roles */
 const SSO_DEFAULT_ROLES = ['user', 'superuser', 'admin'] as const;
 type SsoDefaultRole = (typeof SSO_DEFAULT_ROLES)[number];
+
+const DEFAULT_ROLE_OPTIONS = [
+  { value: 'user', label: 'User' },
+  { value: 'superuser', label: 'SuperUser' },
+  { value: 'admin', label: 'Admin' },
+];
+
+const MEMBERSHIP_MODE_OPTIONS = [
+  { value: 'any', label: 'Any (user must be in at least ONE group)' },
+  { value: 'all', label: 'All (user must be in ALL groups)' },
+];
 
 interface OrganizationDetailsModalProps {
   organizationId: string;
@@ -362,24 +375,20 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                 <div>
                   {isEditing ? (
                     <div className={styles.form}>
-                      <div className={styles.formGroup}>
-                        <label className={styles.label}>Name</label>
-                        <input
-                          type="text"
-                          className={styles.input}
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                        />
-                      </div>
-                      <div className={styles.formGroup}>
-                        <label className={styles.label}>Description</label>
-                        <input
-                          type="text"
-                          className={styles.input}
-                          value={editDescription}
-                          onChange={(e) => setEditDescription(e.target.value)}
-                        />
-                      </div>
+                      <Input
+                        label="Name"
+                        type="text"
+                        fullWidth
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                      />
+                      <Input
+                        label="Description"
+                        type="text"
+                        fullWidth
+                        value={editDescription}
+                        onChange={(e) => setEditDescription(e.target.value)}
+                      />
                       <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
                         <button 
                           className={`${styles.btn} ${styles.btnPrimary}`}
@@ -480,56 +489,46 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
 
                   <h4 className={styles.sectionTitle} style={{ marginTop: '1rem' }}>Microsoft Entra Settings</h4>
                   
-                  <div className={styles.formGroup}>
-                    <label className={styles.label}>Entra Tenant ID *</label>
-                    <input
-                      type="text"
-                      className={styles.input}
-                      value={entraTenantId}
-                      onChange={(e) => setEntraTenantId(e.target.value)}
-                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                      disabled={!ssoEnabled}
-                    />
-                  </div>
+                  <Input
+                    label="Entra Tenant ID *"
+                    type="text"
+                    fullWidth
+                    value={entraTenantId}
+                    onChange={(e) => setEntraTenantId(e.target.value)}
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    disabled={!ssoEnabled}
+                  />
 
-                  <div className={styles.formGroup}>
-                    <label className={styles.label}>Client ID (Application ID) *</label>
-                    <input
-                      type="text"
-                      className={styles.input}
-                      value={clientId}
-                      onChange={(e) => setClientId(e.target.value)}
-                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                      disabled={!ssoEnabled}
-                    />
-                  </div>
+                  <Input
+                    label="Client ID (Application ID) *"
+                    type="text"
+                    fullWidth
+                    value={clientId}
+                    onChange={(e) => setClientId(e.target.value)}
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    disabled={!ssoEnabled}
+                  />
 
-                  <div className={styles.formGroup}>
-                    <label className={styles.label}>Client Secret</label>
-                    <input
-                      type="password"
-                      className={styles.input}
-                      value={clientSecret}
-                      onChange={(e) => setClientSecret(e.target.value)}
-                      placeholder={organization.sso_config?.configured ? '••••••••••••••••' : 'Enter client secret'}
-                      disabled={!ssoEnabled}
-                    />
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      Leave blank to keep existing secret.
-                    </span>
-                  </div>
+                  <Input
+                    label="Client Secret"
+                    type="password"
+                    fullWidth
+                    value={clientSecret}
+                    onChange={(e) => setClientSecret(e.target.value)}
+                    placeholder={organization.sso_config?.configured ? '••••••••••••••••' : 'Enter client secret'}
+                    disabled={!ssoEnabled}
+                    hint="Leave blank to keep existing secret."
+                  />
 
-                  <div className={styles.formGroup}>
-                    <label className={styles.label}>Redirect URI *</label>
-                    <input
-                      type="text"
-                      className={styles.input}
-                      value={redirectUri}
-                      onChange={(e) => setRedirectUri(e.target.value)}
-                      placeholder={redirectHint}
-                      disabled={!ssoEnabled}
-                    />
-                  </div>
+                  <Input
+                    label="Redirect URI *"
+                    type="text"
+                    fullWidth
+                    value={redirectUri}
+                    onChange={(e) => setRedirectUri(e.target.value)}
+                    placeholder={redirectHint}
+                    disabled={!ssoEnabled}
+                  />
 
                   <h4 className={styles.sectionTitle}>User Management</h4>
                   
@@ -546,19 +545,14 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                     </label>
                   </div>
 
-                  <div className={styles.formGroup}>
-                    <label className={styles.label}>Default role for new users</label>
-                    <select
-                      className={styles.select}
-                      value={defaultUserRole}
-                      onChange={(e) => setDefaultUserRole(e.target.value)}
-                      disabled={!ssoEnabled || !autoCreateUsers}
-                    >
-                      <option value="user">User</option>
-                      <option value="superuser">SuperUser</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                  </div>
+                  <Select
+                    label="Default role for new users"
+                    fullWidth
+                    value={defaultUserRole}
+                    onChange={(e) => setDefaultUserRole(e.target.value)}
+                    disabled={!ssoEnabled || !autoCreateUsers}
+                    options={DEFAULT_ROLE_OPTIONS}
+                  />
 
                   <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginTop: '1rem' }}>
                     <button
@@ -648,23 +642,21 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                   {/* Add Tenant */}
                   <div style={{
                     display: 'flex', 
+                    alignItems: 'center',
                     gap: '0.75rem', 
                     marginBottom: '1.5rem',
                     padding: '1rem',
                     background: 'var(--bg-tertiary)',
                     borderRadius: 'var(--radius-md)',
                   }}>
-                    <select
-                      className={styles.select}
+                    <Select
+                      className={styles.addTenantSelect}
+                      aria-label="Tenant to add"
                       value={selectedTenantToAdd}
                       onChange={(e) => setSelectedTenantToAdd(e.target.value)}
-                      style={{ flex: 1 }}
-                    >
-                      <option value="">Select a tenant to add...</option>
-                      {availableTenants.map(t => (
-                        <option key={t.id} value={t.id}>{t.name} ({t.slug})</option>
-                      ))}
-                    </select>
+                      placeholder="Select a tenant to add..."
+                      options={availableTenants.map((t) => ({ value: t.id, label: `${t.name} (${t.slug})` }))}
+                    />
                     <button
                       className={`${styles.btn} ${styles.btnPrimary}`}
                       onClick={handleAddTenant}
@@ -722,30 +714,22 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                           {/* Group requirements display/edit */}
                           {editingTenant === tenant.id ? (
                             <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
-                              <div className={styles.formGroup}>
-                                <label className={styles.label}>Required Group IDs</label>
-                                <input
-                                  type="text"
-                                  className={styles.input}
-                                  value={tenantGroupIds}
-                                  onChange={(e) => setTenantGroupIds(e.target.value)}
-                                  placeholder="group-id-1, group-id-2"
-                                />
-                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                  Comma-separated Entra group IDs. Leave empty for no group restrictions.
-                                </span>
-                              </div>
-                              <div className={styles.formGroup}>
-                                <label className={styles.label}>Membership Mode</label>
-                                <select
-                                  className={styles.select}
-                                  value={tenantGroupMode}
-                                  onChange={(e) => setTenantGroupMode(e.target.value as 'any' | 'all')}
-                                >
-                                  <option value="any">Any (user must be in at least ONE group)</option>
-                                  <option value="all">All (user must be in ALL groups)</option>
-                                </select>
-                              </div>
+                              <Input
+                                label="Required Group IDs"
+                                type="text"
+                                fullWidth
+                                value={tenantGroupIds}
+                                onChange={(e) => setTenantGroupIds(e.target.value)}
+                                placeholder="group-id-1, group-id-2"
+                                hint="Comma-separated Entra group IDs. Leave empty for no group restrictions."
+                              />
+                              <Select
+                                label="Membership Mode"
+                                fullWidth
+                                value={tenantGroupMode}
+                                onChange={(e) => setTenantGroupMode(e.target.value as 'any' | 'all')}
+                                options={MEMBERSHIP_MODE_OPTIONS}
+                              />
                               <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
                                 <button
                                   className={`${styles.btn} ${styles.btnPrimary}`}

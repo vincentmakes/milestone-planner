@@ -73,6 +73,8 @@ describe('CreateTenantModal', () => {
     change(screen.getByPlaceholderText('Acme Corporation Inc.'), 'Acme Inc.');
     change(screen.getByPlaceholderText('admin@acme.com'), 'it@acme.com');
     change(screen.getByRole('combobox'), 'enterprise');
+    expect(screen.getByLabelText('Plan')).toHaveValue('enterprise');
+    expect(screen.getByLabelText('URL Slug *')).toHaveAccessibleDescription('Access URL: /t/acme/');
     const [maxUsers, maxProjects] = screen.getAllByRole('spinbutton');
     change(maxUsers, '25');
     change(maxProjects, '200');
@@ -176,6 +178,8 @@ describe('CreateAdminModal', () => {
     change(screen.getByPlaceholderText('••••••••'), 'longpassword');
     change(screen.getByPlaceholderText('John Doe'), 'New Admin');
     change(screen.getByRole('combobox'), 'superadmin');
+    expect(screen.getByLabelText('Role')).toHaveValue('superadmin');
+    expect(screen.getByLabelText('Password *')).toHaveValue('longpassword');
     await submit('Create Admin');
     expect(createAdminUser).toHaveBeenCalledWith({
       email: 'new@milestone.local',

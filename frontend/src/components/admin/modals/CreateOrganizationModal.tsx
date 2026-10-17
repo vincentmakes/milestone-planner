@@ -5,6 +5,7 @@
 
 import { useId, useState } from 'react';
 import { Notice } from '@/components/common/Notice';
+import { Input } from '@/components/common/Input';
 import { createOrganization } from '@/api';
 import { useEscapeKey } from '@/hooks';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -89,46 +90,38 @@ export function CreateOrganizationModal({ onClose, onCreated }: CreateOrganizati
           {error && <Notice tone="error">{error}</Notice>}
 
           <div className={styles.form}>
-            <div className={styles.formGroup}>
-              <label className={styles.label} htmlFor="orgName">Name *</label>
-              <input
-                type="text"
-                id="orgName"
-                className={styles.input}
-                value={name}
-                onChange={(e) => handleNameChange(e.target.value)}
-                placeholder="Acme Corporation"
-                required
-              />
-            </div>
+            <Input
+              label="Name *"
+              type="text"
+              id="orgName"
+              fullWidth
+              value={name}
+              onChange={(e) => handleNameChange(e.target.value)}
+              placeholder="Acme Corporation"
+              required
+            />
 
-            <div className={styles.formGroup}>
-              <label className={styles.label} htmlFor="orgSlug">Slug *</label>
-              <input
-                type="text"
-                id="orgSlug"
-                className={styles.input}
-                value={slug}
-                onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-                placeholder="acme-corp"
-                required
-              />
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Used in URLs. Only lowercase letters, numbers, and hyphens.
-              </span>
-            </div>
+            <Input
+              label="Slug *"
+              type="text"
+              id="orgSlug"
+              fullWidth
+              value={slug}
+              onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+              placeholder="acme-corp"
+              required
+              hint="Used in URLs. Only lowercase letters, numbers, and hyphens."
+            />
 
-            <div className={styles.formGroup}>
-              <label className={styles.label} htmlFor="orgDesc">Description</label>
-              <input
-                type="text"
-                id="orgDesc"
-                className={styles.input}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Optional description of the organization"
-              />
-            </div>
+            <Input
+              label="Description"
+              type="text"
+              id="orgDesc"
+              fullWidth
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Optional description of the organization"
+            />
           </div>
         </form>
 

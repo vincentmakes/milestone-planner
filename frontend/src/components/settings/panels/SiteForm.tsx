@@ -11,6 +11,9 @@ import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { updateSite, getBankHolidays, refreshBankHolidays, buildHolidayDateSet } from '@/api';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
+import { Select } from '@/components/common/Select';
+import type { SelectOption } from '@/components/common/Select';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useReportDirty } from '../useReportDirty';
@@ -68,6 +71,20 @@ const COUNTRIES = {
     { code: 'ZA', name: 'South Africa' },
   ],
 };
+
+const toOptions = (countries: { code: string; name: string }[]): SelectOption[] =>
+  countries.map((c) => ({ value: c.code, label: `${c.name} (${c.code})` }));
+
+/** '' (no country) stays a selectable choice: picking it clears the site's country */
+const NO_COUNTRY_OPTION: SelectOption[] = [{ value: '', label: 'Select country...' }];
+
+/** The regions as option groups, in the order the list has always had */
+const COUNTRY_GROUPS = [
+  { label: 'Europe', options: toOptions(COUNTRIES.europe) },
+  { label: 'Americas', options: toOptions(COUNTRIES.americas) },
+  { label: 'Asia & Pacific', options: toOptions(COUNTRIES.asiaPacific) },
+  { label: 'Africa & Middle East', options: toOptions(COUNTRIES.africaMiddleEast) },
+];
 
 interface SiteFormProps {
   site: Site;
@@ -229,70 +246,46 @@ export function SiteForm({ site, onBack, onDirtyChange }: SiteFormProps) {
       <div className={styles.section}>
         <h3 className={styles.sectionTitle}>Site Details</h3>
         
-        <div className={styles.formGroup}>
-          <label className={styles.label}>Site Name</label>
-          <input
-            type="text"
-            className={styles.input}
-            value={name}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
-            placeholder="e.g., Winterthur HQ"
-          />
-        </div>
+        <Input
+          label="Site Name"
+          type="text"
+          className={styles.formGroup}
+          fullWidth
+          value={name}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
+          placeholder="e.g., Winterthur HQ"
+        />
         
-        <div className={styles.formGroup}>
-          <label className={styles.label}>City</label>
-          <input
-            type="text"
-            className={styles.input}
-            value={city}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCity(e.target.value)}
-            placeholder="e.g., Winterthur"
-          />
-        </div>
+        <Input
+          label="City"
+          type="text"
+          className={styles.formGroup}
+          fullWidth
+          value={city}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCity(e.target.value)}
+          placeholder="e.g., Winterthur"
+        />
         
         <div className={styles.formRow}>
-          <div className={styles.formGroup}>
-            <label className={styles.label}>Country</label>
-            <select 
-              className={styles.select}
-              value={countryCode}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setCountryCode(e.target.value)}
-            >
-              <option value="">Select country...</option>
-              <optgroup label="Europe">
-                {COUNTRIES.europe.map((c) => (
-                  <option key={c.code} value={c.code}>{c.name} ({c.code})</option>
-                ))}
-              </optgroup>
-              <optgroup label="Americas">
-                {COUNTRIES.americas.map((c) => (
-                  <option key={c.code} value={c.code}>{c.name} ({c.code})</option>
-                ))}
-              </optgroup>
-              <optgroup label="Asia & Pacific">
-                {COUNTRIES.asiaPacific.map((c) => (
-                  <option key={c.code} value={c.code}>{c.name} ({c.code})</option>
-                ))}
-              </optgroup>
-              <optgroup label="Africa & Middle East">
-                {COUNTRIES.africaMiddleEast.map((c) => (
-                  <option key={c.code} value={c.code}>{c.name} ({c.code})</option>
-                ))}
-              </optgroup>
-            </select>
-          </div>
+          <Select
+            label="Country"
+            className={styles.formGroup}
+            fullWidth
+            options={NO_COUNTRY_OPTION}
+            groups={COUNTRY_GROUPS}
+            value={countryCode}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setCountryCode(e.target.value)}
+          />
           
-          <div className={styles.formGroup}>
-            <label className={styles.label}>Region/State Code</label>
-            <input
-              type="text"
-              className={styles.input}
-              value={regionCode}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRegionCode(e.target.value)}
-              placeholder="e.g., ZH, HE, ARA"
-            />
-          </div>
+          <Input
+            label="Region/State Code"
+            type="text"
+            className={styles.formGroup}
+            fullWidth
+            value={regionCode}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRegionCode(e.target.value)}
+            placeholder="e.g., ZH, HE, ARA"
+          />
         </div>
         
         <p className={styles.help}>

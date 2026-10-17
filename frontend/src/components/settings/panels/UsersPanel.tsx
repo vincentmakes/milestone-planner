@@ -21,6 +21,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
+import { Select } from '@/components/common/Select';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { PanelToolbar } from '../PanelToolbar';
 import { BackIcon, CheckIcon, CloseIcon, EditIcon, GearIcon, PlusIcon } from './PanelIcons';
@@ -105,6 +107,18 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
     users.forEach((u) => { if (u.job_title) titles.add(u.job_title); });
     return Array.from(titles).sort();
   }, [users]);
+  const jobTitleFilterOptions = useMemo(
+    () => [{ value: 'all', label: 'All Job Titles' }, ...jobTitles.map((t) => ({ value: t, label: t }))],
+    [jobTitles]
+  );
+  const siteFilterOptions = useMemo(
+    () => [{ value: 'all', label: 'All Sites' }, ...sites.map((s) => ({ value: s.id, label: s.name }))],
+    [sites]
+  );
+  const skillFilterOptions = useMemo(
+    () => [{ value: 'all', label: 'All Skills' }, ...skills.map((s) => ({ value: s.id, label: s.name }))],
+    [skills]
+  );
   
   // Filter users
   const filteredUsers = useMemo(() => {
@@ -197,44 +211,50 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                         </div>
                       )}
                       <div className={styles.filterGrid}>
-                        <div className={styles.filterField}>
-                          <label>Status</label>
-                          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-                            <option value="all">All</option>
-                            <option value="active">Active</option>
-                            <option value="disabled">Disabled</option>
-                          </select>
-                        </div>
-                        <div className={styles.filterField}>
-                          <label>Role</label>
-                          <select value={filterRole} onChange={(e) => setFilterRole(e.target.value)}>
-                            <option value="all">All Roles</option>
-                            <option value="admin">Admin</option>
-                            <option value="superuser">SuperUser</option>
-                            <option value="user">User</option>
-                          </select>
-                        </div>
-                        <div className={styles.filterField}>
-                          <label>Job Title</label>
-                          <select value={filterJobTitle} onChange={(e) => setFilterJobTitle(e.target.value)}>
-                            <option value="all">All Job Titles</option>
-                            {jobTitles.map((t) => <option key={t} value={t}>{t}</option>)}
-                          </select>
-                        </div>
-                        <div className={styles.filterField}>
-                          <label>Site</label>
-                          <select value={filterSite} onChange={(e) => setFilterSite(e.target.value)}>
-                            <option value="all">All Sites</option>
-                            {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                          </select>
-                        </div>
-                        <div className={styles.filterField}>
-                          <label>Skill</label>
-                          <select value={filterSkill} onChange={(e) => setFilterSkill(e.target.value)}>
-                            <option value="all">All Skills</option>
-                            {skills.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                          </select>
-                        </div>
+                        <Select
+                          label="Status"
+                          className={styles.filterField}
+                          options={[
+                            { value: 'all', label: 'All' },
+                            { value: 'active', label: 'Active' },
+                            { value: 'disabled', label: 'Disabled' },
+                          ]}
+                          value={filterStatus}
+                          onChange={(e) => setFilterStatus(e.target.value)}
+                        />
+                        <Select
+                          label="Role"
+                          className={styles.filterField}
+                          options={[
+                            { value: 'all', label: 'All Roles' },
+                            { value: 'admin', label: 'Admin' },
+                            { value: 'superuser', label: 'SuperUser' },
+                            { value: 'user', label: 'User' },
+                          ]}
+                          value={filterRole}
+                          onChange={(e) => setFilterRole(e.target.value)}
+                        />
+                        <Select
+                          label="Job Title"
+                          className={styles.filterField}
+                          options={jobTitleFilterOptions}
+                          value={filterJobTitle}
+                          onChange={(e) => setFilterJobTitle(e.target.value)}
+                        />
+                        <Select
+                          label="Site"
+                          className={styles.filterField}
+                          options={siteFilterOptions}
+                          value={filterSite}
+                          onChange={(e) => setFilterSite(e.target.value)}
+                        />
+                        <Select
+                          label="Skill"
+                          className={styles.filterField}
+                          options={skillFilterOptions}
+                          value={filterSkill}
+                          onChange={(e) => setFilterSkill(e.target.value)}
+                        />
                       </div>
                     </div>
                   )}
@@ -717,24 +737,22 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
       {error && <Notice tone="error">{error}</Notice>}
       
       <div className={styles.formGrid}>
-        <div className={styles.field}>
-          <label htmlFor="firstName">First Name *</label>
-          <input type="text" id="firstName" value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Enter first name" required />
-        </div>
-        <div className={styles.field}>
-          <label htmlFor="lastName">Last Name *</label>
-          <input type="text" id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Enter last name" required />
-        </div>
+        <Input label="First Name *" fullWidth type="text" id="firstName" value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Enter first name" required />
+        <Input label="Last Name *" fullWidth type="text" id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Enter last name" required />
         {canEditCredentials && (
           <>
-            <div className={styles.field}>
-              <label htmlFor="email">Email *</label>
-              <input type="email" id="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Enter email address" required />
-            </div>
-            <div className={styles.field}>
-              <label htmlFor="password">Password {isEditing ? '(leave blank to keep)' : '*'}</label>
-              <input type="password" id="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={isEditing ? '••••••••' : `Min ${MIN_PASSWORD_LENGTH} characters`} required={!isEditing} minLength={MIN_PASSWORD_LENGTH} />
-            </div>
+            <Input label="Email *" fullWidth type="email" id="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Enter email address" required />
+            <Input
+              label={`Password ${isEditing ? '(leave blank to keep)' : '*'}`}
+              fullWidth
+              type="password"
+              id="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={isEditing ? '••••••••' : `Min ${MIN_PASSWORD_LENGTH} characters`}
+              required={!isEditing}
+              minLength={MIN_PASSWORD_LENGTH}
+            />
           </>
         )}
         <div className={styles.field}>
@@ -768,19 +786,26 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
             {maxCapacity < 100 ? `Part-time worker (${maxCapacity}% capacity)` : 'Full-time worker'}
           </span>
         </div>
-        <div className={styles.field}>
-          <label htmlFor="role">Role *</label>
-          <select id="role" value={role} onChange={(e) => setRole(e.target.value as UserRole)} disabled={!canChangeRole}>
-            <option value="user">User</option>
-            <option value="superuser" disabled={!canAssignSuperUser}>SuperUser</option>
-            <option value="admin" disabled={!canAssignAdmin}>Admin {!canAssignAdmin ? '(admin only)' : ''}</option>
-          </select>
-          {!canChangeRole && (
-            <span className={styles.hint}>
-              {isAdmin ? "You can't change your own role" : 'Only admins can change roles'}
-            </span>
-          )}
-        </div>
+        <Select
+          label="Role *"
+          fullWidth
+          id="role"
+          options={[
+            { value: 'user', label: 'User' },
+            { value: 'superuser', label: 'SuperUser', disabled: !canAssignSuperUser },
+            { value: 'admin', label: canAssignAdmin ? 'Admin' : 'Admin (admin only)', disabled: !canAssignAdmin },
+          ]}
+          value={role}
+          onChange={(e) => setRole(e.target.value as UserRole)}
+          disabled={!canChangeRole}
+          hint={
+            canChangeRole
+              ? undefined
+              : isAdmin
+                ? "You can't change your own role"
+                : 'Only admins can change roles'
+          }
+        />
         {isEditing && (
           <div className={styles.field}>
             <label>Status</label>
@@ -835,7 +860,9 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
           ))}
           {isAddingNewSkill ? (
             <div className={styles.newItemInput}>
-              <input
+              <Input
+                className={styles.newSkillField}
+                aria-label="New skill name"
                 type="text"
                 value={newSkillName}
                 onChange={(e) => setNewSkillName(e.target.value)}

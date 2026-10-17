@@ -11,6 +11,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
+import { Select } from '@/components/common/Select';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { PanelToolbar } from '../PanelToolbar';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -54,6 +56,13 @@ export function EquipmentPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   // State
   const [equipment, setLocalEquipment] = useState<Equipment[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState<number | 'all'>(currentSite?.id || 'all');
+  const siteFilterOptions = useMemo(
+    () => [
+      { value: 'all', label: 'All Sites' },
+      ...sites.map((site) => ({ value: site.id, label: site.name })),
+    ],
+    [sites]
+  );
   const [showInactive, setShowInactive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null);
@@ -167,18 +176,13 @@ export function EquipmentPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
           align="end"
           left={
             <div className={styles.filters}>
-              <div className={styles.filterGroup}>
-                <label>Site</label>
-                <select
-                  value={selectedSiteId}
-                  onChange={(e) => setSelectedSiteId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-                >
-                  <option value="all">All Sites</option>
-                  {sites.map(site => (
-                    <option key={site.id} value={site.id}>{site.name}</option>
-                  ))}
-                </select>
-              </div>
+              <Select
+                label="Site"
+                className={styles.filterGroup}
+                options={siteFilterOptions}
+                value={selectedSiteId}
+                onChange={(e) => setSelectedSiteId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
+              />
             
               <label className={styles.checkbox}>
                 <input
@@ -434,24 +438,24 @@ function EquipmentForm({
       
       <div className={styles.formFields}>
         {/* Name */}
-        <div className={styles.field}>
-          <label htmlFor="equipName">Name *</label>
-          <input
-            type="text"
-            id="equipName"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g., Pilot Plant A, Mass Spec 1"
-            required
-          />
-        </div>
+        <Input
+          label="Name *"
+          type="text"
+          id="equipName"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g., Pilot Plant A, Mass Spec 1"
+          required
+        />
         
         {/* Type */}
         <div className={styles.field}>
           <label>Type *</label>
           {isAddingNewType ? (
             <div className={styles.newTypeInput}>
-              <input
+              <Input
+                className={styles.newTypeField}
+                aria-label="New equipment type"
                 type="text"
                 value={newTypeName}
                 onChange={(e) => setNewTypeName(e.target.value)}

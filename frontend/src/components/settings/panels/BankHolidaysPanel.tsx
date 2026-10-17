@@ -10,6 +10,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
+import { Select } from '@/components/common/Select';
 import { PanelToolbar } from '../PanelToolbar';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { ICSImportPanel, ICS_IMPORT_WHAT_IF_MESSAGE } from '@/components/common/ICSImportPanel';
@@ -154,6 +156,14 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
   }, [pendingEditId, holidays, loadedSiteId, siteId, isLoading]);
 
   const years = useMemo(() => collectYears(holidays), [holidays]);
+  const siteOptions = useMemo(
+    () => manageableSites.map((s) => ({ value: s.id, label: s.name })),
+    [manageableSites]
+  );
+  const yearOptions = useMemo(
+    () => [{ value: 'all', label: 'All years' }, ...years.map((y) => ({ value: y, label: String(y) }))],
+    [years]
+  );
 
   const visibleHolidays = useMemo(
     () =>
@@ -357,33 +367,22 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
         align="end"
         left={
           <div className={styles.filters}>
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="holiday-site">Site</label>
-              <select
-                id="holiday-site"
-                className={styles.select}
-                value={siteId ?? ''}
-                onChange={(e) => changeSite(Number(e.target.value))}
-              >
-                {manageableSites.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="holiday-year">Year</label>
-              <select
-                id="holiday-year"
-                className={styles.select}
-                value={year}
-                onChange={(e) => setYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-              >
-                <option value="all">All years</option>
-                {years.map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-            </div>
+            <Select
+              label="Site"
+              className={styles.field}
+              id="holiday-site"
+              options={siteOptions}
+              value={siteId ?? ''}
+              onChange={(e) => changeSite(Number(e.target.value))}
+            />
+            <Select
+              label="Year"
+              className={styles.field}
+              id="holiday-year"
+              options={yearOptions}
+              value={year}
+              onChange={(e) => setYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+            />
           </div>
         }
         right={
@@ -589,38 +588,32 @@ function HolidayForm({ siteId, siteName, holiday, onCancel, onSaved, onDirtyChan
       </h4>
       {error && <Notice tone="error">{error}</Notice>}
       <div className={styles.formRow}>
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="holiday-name">Name</label>
-          <input
-            id="holiday-name"
-            className={styles.input}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g., Company Day"
-            autoFocus
-          />
-        </div>
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="holiday-date">Date</label>
-          <input
-            id="holiday-date"
-            type="date"
-            className={styles.input}
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
-        </div>
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="holiday-end-date">End date (optional)</label>
-          <input
-            id="holiday-end-date"
-            type="date"
-            className={styles.input}
-            value={endDate}
-            min={date || undefined}
-            onChange={(e) => setEndDate(e.target.value)}
-          />
-        </div>
+        <Input
+          label="Name"
+          className={styles.field}
+          id="holiday-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g., Company Day"
+          autoFocus
+        />
+        <Input
+          label="Date"
+          className={styles.field}
+          id="holiday-date"
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+        />
+        <Input
+          label="End date (optional)"
+          className={styles.field}
+          id="holiday-end-date"
+          type="date"
+          value={endDate}
+          min={date || undefined}
+          onChange={(e) => setEndDate(e.target.value)}
+        />
       </div>
       {holiday && !holiday.is_custom && (
         <p className={styles.help}>

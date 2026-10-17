@@ -70,6 +70,8 @@ describe('VacationModal', () => {
 
     // Falls back to the signed-in user when they are not in the site's staff list
     expect(screen.getByText('Una User')).toBeInTheDocument();
+    expect(screen.getByLabelText('From')).toHaveAttribute('type', 'date');
+    expect(screen.getByLabelText('To')).toHaveAttribute('type', 'date');
     const select = screen.getByLabelText('Absence type') as HTMLSelectElement;
     expect(select.value).toBe('1'); // Holidays, not the first-sorted Home Office
 

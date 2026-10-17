@@ -10,6 +10,8 @@
  */
 
 :root {
+  /* Native controls (date pickers, scrollbars) render for the theme */
+  color-scheme: dark;
   /* =========================================
      COLORS - DARK THEME (DEFAULT)
      ========================================= */
@@ -231,6 +233,7 @@
    ============================================= */
 
 [data-theme="light"] {
+  color-scheme: light;
   /* Backgrounds - cleaner whites for printing */
   --bg-primary: #ffffff;
   --bg-secondary: #f8fafc;

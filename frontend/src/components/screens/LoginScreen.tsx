@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { checkSSOEnabled, getSSOLoginUrl } from '@/api';
 import { getTheme, isDarkTheme, type Theme } from '@/utils/storage';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import styles from './LoginScreen.module.css';
 
@@ -139,38 +140,30 @@ export function LoginScreen() {
         )}
 
         <form onSubmit={handleSubmit} className={styles.form}>
-          <div className={styles.formGroup}>
-            <label htmlFor="email" className={styles.label}>
-              Email
-            </label>
-            <input
-              type="email"
-              id="email"
-              className={styles.input}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="your@email.com"
-              required
-              autoFocus
-              disabled={isSubmitting}
-            />
-          </div>
+          <Input
+            label="Email"
+            type="email"
+            id="email"
+            fullWidth
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="your@email.com"
+            required
+            autoFocus
+            disabled={isSubmitting}
+          />
 
-          <div className={styles.formGroup}>
-            <label htmlFor="password" className={styles.label}>
-              Password
-            </label>
-            <input
-              type="password"
-              id="password"
-              className={styles.input}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              disabled={isSubmitting}
-            />
-          </div>
+          <Input
+            label="Password"
+            type="password"
+            id="password"
+            fullWidth
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+            required
+            disabled={isSubmitting}
+          />
 
           {error && <div className={styles.error}>{error}</div>}
 

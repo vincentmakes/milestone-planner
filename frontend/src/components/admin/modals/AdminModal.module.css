@@ -107,33 +107,11 @@
   color: var(--text-secondary);
 }
 
-.input,
-.select {
-  padding: 0.625rem 0.75rem;
-  font-size: 0.875rem;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  transition: border-color 0.15s, box-shadow 0.15s;
+/* The organization dialog's "add tenant" Select fills its row beside the button */
+.addTenantSelect {
+  flex: 1;
+  min-width: 0;
 }
-
-.input:focus,
-.select:focus {
-  outline: none;
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
-}
-
-.input::placeholder {
-  color: var(--text-muted);
-}
-
-.input:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 
 /* Buttons */
 .btn {

@@ -108,6 +108,10 @@ describe('SubphaseModal validation', () => {
     render(<SubphaseModal />);
     expect(screen.getByText('Feasibility')).toBeInTheDocument();
     expect(dateInputs().map((i) => i.value)).toEqual(['2026-02-02', '2026-02-27']);
+    // The shared Input links each visible label to its control
+    expect(screen.getByLabelText('Subphase Name *')).toHaveValue('');
+    expect(screen.getByLabelText('Start Date *')).toHaveValue('2026-02-02');
+    expect(screen.getByLabelText('End Date *')).toHaveValue('2026-02-27');
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Subphase' }));
     expect(screen.getByText('Please enter a subphase name')).toBeInTheDocument();
@@ -262,7 +266,7 @@ describe('SubphaseModal edit and delete', () => {
     openEdit();
     render(<SubphaseModal />);
     fireEvent.click(screen.getByRole('checkbox'));
-    expect(screen.getByText('Date *')).toBeInTheDocument();
+    expect(screen.getByLabelText('Date *')).toHaveValue('2026-02-16');
     expect(dateInputs()).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
     await waitFor(() => expect(updateSubphase).toHaveBeenCalled());

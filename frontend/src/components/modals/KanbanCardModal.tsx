@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal } from '@/components/common/Modal';
-import { Button } from '@/components/common';
+import { Button, Select } from '@/components/common';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { AllocationSlider } from '@/components/common/AllocationSlider';
 import { useUIStore } from '@/stores/uiStore';
@@ -305,6 +305,14 @@ export function KanbanCardModal() {
   };
 
   const unassignedStaff = siteStaff.filter((s) => !card?.assigneeIds.includes(s.id));
+  // After the early return, so no useMemo; the empty entry stays selectable (as before).
+  const assigneeOptions = [
+    { value: '', label: 'Add someone…' },
+    ...unassignedStaff.map((s) => ({
+      value: s.id,
+      label: `${s.name} (books ${s.max_capacity ?? 100}%)`,
+    })),
+  ];
 
   return (
     <Modal
@@ -412,21 +420,15 @@ export function KanbanCardModal() {
 
             {isEditor && unassignedStaff.length > 0 && (
               <div className={styles.assignRow}>
-                <select
-                  className={styles.select}
+                <Select
+                  className={styles.assigneeSelect}
                   value={assigneeToAdd}
                   onChange={(e) => setAssigneeToAdd(e.target.value)}
                   aria-label="Add assignee"
                   disabled={!!assignBlockedReason}
                   title={assignBlockedReason ?? undefined}
-                >
-                  <option value="">Add someone&hellip;</option>
-                  {unassignedStaff.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} (books {s.max_capacity ?? 100}%)
-                    </option>
-                  ))}
-                </select>
+                  options={assigneeOptions}
+                />
                 <Button onClick={handleAssign} disabled={busy || !assigneeToAdd || !!assignBlockedReason}>
                   Assign
                 </Button>

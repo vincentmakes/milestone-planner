@@ -16,6 +16,8 @@ import {
 import { Modal } from '@/components/common/Modal';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
+import { Select } from '@/components/common/Select';
 import { toInputDateFormat, formatDateISO, daysBetweenDateStrings } from '@/utils/date';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import styles from './EquipmentBlockModal.module.css';
@@ -54,6 +56,18 @@ export function EquipmentBlockModal() {
     if (!currentSite) return equipment;
     return equipment.filter((e) => e.site_id === currentSite.id);
   }, [equipment, currentSite]);
+
+  // The empty first entry stays a real, selectable option (as before).
+  const equipmentOptions = useMemo(
+    () => [
+      { value: '', label: 'Select equipment…' },
+      ...siteEquipment.map((eq) => ({
+        value: eq.id,
+        label: `${eq.name}${eq.type ? ` (${eq.type})` : ''}`,
+      })),
+    ],
+    [siteEquipment]
+  );
 
   // Initialize form whenever the modal opens
   useEffect(() => {
@@ -200,58 +214,40 @@ export function EquipmentBlockModal() {
       )}
       {error && error !== createBlockedReason && <div className={styles.error}>{error}</div>}
 
-      <div className={styles.formGroup}>
-        <label className={styles.label}>Equipment</label>
-        <select
-          className={styles.input}
-          value={equipmentId ?? ''}
-          onChange={(e) => setEquipmentId(e.target.value ? Number(e.target.value) : null)}
-          disabled={isEditing}
-        >
-          <option value="">Select equipment…</option>
-          {siteEquipment.map((eq) => (
-            <option key={eq.id} value={eq.id}>
-              {eq.name}
-              {eq.type ? ` (${eq.type})` : ''}
-            </option>
-          ))}
-        </select>
-      </div>
+      <Select
+        label="Equipment"
+        className={styles.formGroup}
+        value={equipmentId ?? ''}
+        onChange={(e) => setEquipmentId(e.target.value ? Number(e.target.value) : null)}
+        disabled={isEditing}
+        options={equipmentOptions}
+        fullWidth
+      />
 
-      <div className={styles.formGroup}>
-        <label className={styles.label}>Reason</label>
-        <select
-          className={styles.input}
-          value={reason}
-          onChange={(e) => handleReasonChange(e.target.value)}
-        >
-          {REASON_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      <Select
+        label="Reason"
+        className={styles.formGroup}
+        value={reason}
+        onChange={(e) => handleReasonChange(e.target.value)}
+        options={REASON_OPTIONS}
+        fullWidth
+      />
 
       <div className={styles.formRow}>
-        <div className={styles.formGroup}>
-          <label className={styles.label}>Start Date</label>
-          <input
-            type="date"
-            className={styles.input}
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-          />
-        </div>
-        <div className={styles.formGroup}>
-          <label className={styles.label}>End Date</label>
-          <input
-            type="date"
-            className={styles.input}
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-          />
-        </div>
+        <Input
+          label="Start Date"
+          type="date"
+          className={styles.formGroup}
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+        />
+        <Input
+          label="End Date"
+          type="date"
+          className={styles.formGroup}
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+        />
       </div>
 
       {duration > 0 && (
@@ -260,17 +256,16 @@ export function EquipmentBlockModal() {
         </p>
       )}
 
-      <div className={styles.formGroup}>
-        <label className={styles.label}>Description</label>
-        <input
-          type="text"
-          className={styles.input}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="e.g., Annual calibration, Pump replacement"
-          maxLength={200}
-        />
-      </div>
+      <Input
+        label="Description"
+        type="text"
+        className={styles.formGroup}
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="e.g., Annual calibration, Pump replacement"
+        maxLength={200}
+        fullWidth
+      />
 
       <p className={styles.help}>
         Blocked equipment is unavailable during this period — same as staff vacations.

@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Notice } from '@/components/common/Notice';
 import type { DragEvent, KeyboardEvent } from 'react';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
 import { Select } from '@/components/common/Select';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -609,8 +610,8 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
           }}
         >
           <div className={styles.addRow}>
-            <input
-              className={styles.input}
+            <Input
+              className={styles.addInput}
               value={newGroupName}
               onChange={(e) => setNewGroupName(e.target.value)}
               placeholder="New group, e.g. Status"
@@ -657,8 +658,8 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
           }}
         >
           <div className={styles.addRow}>
-            <input
-              className={styles.input}
+            <Input
+              className={styles.addInput}
               value={newTagName}
               onChange={(e) => setNewTagName(e.target.value)}
               placeholder="New tag, e.g. Priority"

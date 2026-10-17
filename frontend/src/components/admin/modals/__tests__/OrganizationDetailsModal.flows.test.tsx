@@ -105,6 +105,8 @@ describe('details tab', () => {
     const onRefresh = await open();
     await click('Edit Details');
     const [name, description] = screen.getAllByRole('textbox');
+    expect(screen.getByLabelText('Name')).toBe(name);
+    expect(screen.getByLabelText('Description')).toBe(description);
     fireEvent.change(name, { target: { value: '  Acme Holding ' } });
     fireEvent.change(description, { target: { value: '   ' } });
     await click('Save');
@@ -140,6 +142,9 @@ describe('SSO tab', () => {
     expect(screen.getByDisplayValue('tenant-guid')).toBeInTheDocument();
     expect(screen.getByDisplayValue('client-guid')).toBeInTheDocument();
     expect(screen.getByRole('combobox')).toHaveValue('user');
+    expect(screen.getByLabelText('Default role for new users')).toHaveValue('user');
+    expect(screen.getByLabelText('Entra Tenant ID *')).toHaveValue('tenant-guid');
+    expect(screen.getByLabelText('Client Secret')).toHaveAccessibleDescription('Leave blank to keep existing secret.');
     expect(screen.getByPlaceholderText('••••••••••••••••')).toBeInTheDocument();
   });
 
@@ -241,7 +246,7 @@ describe('tenants tab', () => {
     vi.mocked(addTenantToOrganization).mockResolvedValue({ success: true, tenant_had_own_sso: true });
     const onRefresh = await open();
     await openTenantsTab();
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 't-2' } });
+    fireEvent.change(screen.getByLabelText('Tenant to add'), { target: { value: 't-2' } });
     await click('Add Tenant');
     expect(addTenantToOrganization).toHaveBeenCalledWith('org-1', 't-2');
     expect(screen.getByText(/already had its own SSO configured/)).toBeInTheDocument();
@@ -280,6 +285,8 @@ describe('tenants tab', () => {
     expect(input).toHaveValue('g1, g2');
     fireEvent.change(input, { target: { value: ' a , ,b ' } });
     fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: 'any' } });
+    expect(screen.getByLabelText('Membership Mode')).toHaveValue('any');
+    expect(screen.getByLabelText('Required Group IDs')).toBe(input);
     await click('Save');
     expect(updateTenantGroupAccess).toHaveBeenCalledWith('t-1', { requiredGroupIds: ['a', 'b'], groupMembershipMode: 'any' });
     expect(screen.queryByPlaceholderText('group-id-1, group-id-2')).not.toBeInTheDocument();

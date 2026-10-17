@@ -7,6 +7,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
+import { Select } from '@/components/common/Select';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { createProject, updateProject, loadAllProjects } from '@/api/endpoints/projects';
@@ -67,6 +69,15 @@ export function ProjectModal() {
     if (!currentSite) return [];
     return staff.filter(s => s.site_id === currentSite.id);
   }, [staff, currentSite]);
+
+  // "Select PM" stays a real, selectable choice: picking it clears the manager.
+  const pmOptions = useMemo(
+    () => [
+      { value: '', label: 'Select PM' },
+      ...siteStaff.map((s) => ({ value: s.id, label: s.name })),
+    ],
+    [siteStaff]
+  );
   
   // Load predefined phases
   useEffect(() => {
@@ -341,86 +352,68 @@ export function ProjectModal() {
         )}
         {error && error !== createBlockedReason && <div className={styles.error}>{error}</div>}
         
-        <div className={styles.formGroup}>
-          <label className={styles.label}>Project Name *</label>
-          <input
-            type="text"
-            className={styles.input}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Enter project name"
-            autoFocus
+        <Input
+          label="Project Name *"
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Enter project name"
+          autoFocus
+          fullWidth
+        />
+        
+        <div className={styles.formRow}>
+          <Input
+            label="Start Date *"
+            type="date"
+            className={styles.field}
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+          />
+          <Input
+            label="End Date *"
+            type="date"
+            className={styles.field}
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
           />
         </div>
         
         <div className={styles.formRow}>
-          <div className={styles.formGroup}>
-            <label className={styles.label}>Start Date *</label>
-            <input
-              type="date"
-              className={styles.input}
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </div>
-          <div className={styles.formGroup}>
-            <label className={styles.label}>End Date *</label>
-            <input
-              type="date"
-              className={styles.input}
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
-          </div>
+          <Select
+            label="Project Manager"
+            className={styles.field}
+            value={pmId}
+            onChange={(e) => setPmId(e.target.value)}
+            options={pmOptions}
+          />
+          <Input
+            label="Customer"
+            type="text"
+            className={styles.field}
+            value={customer}
+            onChange={(e) => setCustomer(e.target.value)}
+            placeholder="Customer name"
+          />
         </div>
         
         <div className={styles.formRow}>
-          <div className={styles.formGroup}>
-            <label className={styles.label}>Project Manager</label>
-            <select
-              className={styles.input}
-              value={pmId}
-              onChange={(e) => setPmId(e.target.value)}
-            >
-              <option value="">Select PM</option>
-              {siteStaff.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className={styles.formGroup}>
-            <label className={styles.label}>Customer</label>
-            <input
-              type="text"
-              className={styles.input}
-              value={customer}
-              onChange={(e) => setCustomer(e.target.value)}
-              placeholder="Customer name"
-            />
-          </div>
-        </div>
-        
-        <div className={styles.formRow}>
-          <div className={styles.formGroup}>
-            <label className={styles.label}>Sales PM</label>
-            <input
-              type="text"
-              className={styles.input}
-              value={salesPm}
-              onChange={(e) => setSalesPm(e.target.value)}
-              placeholder="Sales contact"
-            />
-          </div>
-          <div className={styles.formGroup}>
-            <label className={styles.label}>Project Volume (CHF)</label>
-            <input
-              type="number"
-              className={styles.input}
-              value={volume}
-              onChange={(e) => setVolume(e.target.value)}
-              placeholder="0"
-            />
-          </div>
+          <Input
+            label="Sales PM"
+            type="text"
+            className={styles.field}
+            value={salesPm}
+            onChange={(e) => setSalesPm(e.target.value)}
+            placeholder="Sales contact"
+          />
+          <Input
+            label="Project Volume (CHF)"
+            type="number"
+            className={styles.field}
+            value={volume}
+            onChange={(e) => setVolume(e.target.value)}
+            placeholder="0"
+          />
         </div>
         
         <div className={styles.formGroup}>

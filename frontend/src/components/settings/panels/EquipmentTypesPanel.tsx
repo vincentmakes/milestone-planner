@@ -12,6 +12,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
 import { PanelToolbar } from '../PanelToolbar';
 import { BackIcon, EditIcon, TrashIcon } from './PanelIcons';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -290,18 +291,16 @@ function TypeForm({ typeName, existingTypes, allEquipment, onSave, onCancel, onD
       )}
       
       {/* Type Name */}
-      <div className={styles.field}>
-        <label htmlFor="typeName">Name *</label>
-        <input
-          type="text"
-          id="typeName"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g., Pilot Plant, Analytical Device"
-          required
-          autoFocus
-        />
-      </div>
+      <Input
+        label="Name *"
+        type="text"
+        id="typeName"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="e.g., Pilot Plant, Analytical Device"
+        required
+        autoFocus
+      />
       
       {equipmentCount > 0 && (
         <div className={styles.renameWarning}>

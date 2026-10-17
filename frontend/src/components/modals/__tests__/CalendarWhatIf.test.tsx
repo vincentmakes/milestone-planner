@@ -147,6 +147,15 @@ describe('EquipmentBlockModal in What-If mode', () => {
     render(<EquipmentBlockModal />);
 
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // Shared Input / Select fields, reachable through their visible labels
+    const equipment = screen.getByLabelText('Equipment') as HTMLSelectElement;
+    expect(equipment).toBeDisabled();
+    expect(equipment.value).toBe('11');
+    expect(Array.from(equipment.options).map((o) => o.text)).toEqual(['Select equipment…', 'HPLC 1 (Analytical Device)']);
+    expect(screen.getByLabelText('Reason')).toHaveValue('maintenance');
+    expect(screen.getByLabelText('Start Date')).toHaveValue('2026-08-10');
+    expect(screen.getByLabelText('End Date')).toHaveValue('2026-08-12');
+    expect(screen.getByLabelText('Description')).toHaveValue('Maintenance');
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
     await waitFor(() => expect(blocksApi.updateEquipmentBlock).toHaveBeenCalledWith(4, expect.any(Object)));
   });

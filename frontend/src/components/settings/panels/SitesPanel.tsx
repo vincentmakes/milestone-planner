@@ -10,6 +10,7 @@ import { useAppStore, selectCanManageResources } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { createSite, exportSiteToExcel } from '@/api';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import type { Site } from '@/types';
 import type { SettingsPanelProps } from '../types';
@@ -169,9 +170,9 @@ export function SitesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
       {/* Add new site section */}
       <div className={styles.addSection}>
         <div className={styles.addForm}>
-          <input
+          <Input
             type="text"
-            className={styles.input}
+            className={styles.addInput}
             placeholder="New site name"
             aria-label="New site name"
             value={newSiteName}

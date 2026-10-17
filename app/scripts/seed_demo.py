@@ -610,13 +610,17 @@ async def insert_demo_data(conn: Any, demo: DemoData) -> dict[str, int]:
     counts["comments"] = len(demo.comments)
 
     for n in demo.notifications:
+        # The natural key is passed again as its own placeholders ($10-$12):
+        # a parameter used both in the SELECT list and in a comparison makes
+        # PostgreSQL deduce two types for it (text vs character varying) and
+        # refuse the statement, as `_insert_once` avoids with `_where`.
         await conn.execute(
             "INSERT INTO notifications "
             "(user_id, type, actor_id, entity_type, entity_id, project_id, title, body, read_at) "
             "SELECT $1, $2, $3, $4, $5, $6, $7, $8, "
             "CASE WHEN $9::boolean THEN CURRENT_TIMESTAMP ELSE NULL END "
             "WHERE NOT EXISTS (SELECT 1 FROM notifications "
-            "WHERE user_id = $1 AND type = $2 AND title = $7)",
+            "WHERE user_id = $10 AND type = $11 AND title = $12)",
             user_id[n["user"]],
             n["type"],
             user_id[n["actor"]],
@@ -626,6 +630,9 @@ async def insert_demo_data(conn: Any, demo: DemoData) -> dict[str, int]:
             n["title"],
             n["body"],
             bool(n["read"]),
+            user_id[n["user"]],
+            n["type"],
+            n["title"],
         )
     counts["notifications"] = len(demo.notifications)
 

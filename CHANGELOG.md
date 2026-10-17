@@ -5,6 +5,17 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] - 2026-10-17
+
+### Changed
+- Every text field and dropdown in dialogs, settings, the admin portal and the login pages now uses the same control, with one height, one focus ring and a validation message that screen readers announce.
+- Native date pickers follow the light or dark theme instead of always opening dark.
+- The documentation screenshots were retaken against the current demo data and interface.
+
+### Fixed
+- Seeding the demo tenant on PostgreSQL stopped before the notifications and staff notes; it now completes.
+- The multi-user screenshot capture reads the project list in the shape the API returns.
+
 ## [1.8.1] - 2026-10-17
 
 ### Changed

@@ -17,6 +17,7 @@
    ============================================= */
 
 [data-theme="s-theme-dark"] {
+  color-scheme: dark;
   /* Typography - Inter font family */
   --font-family: 'Inter', 'Arial MT', Arial, -apple-system, BlinkMacSystemFont, sans-serif;
   
@@ -175,6 +176,7 @@
    ============================================= */
 
 [data-theme="s-theme-light"] {
+  color-scheme: light;
   /* Typography - Inter font family */
   --font-family: 'Inter', 'Arial MT', Arial, -apple-system, BlinkMacSystemFont, sans-serif;
   

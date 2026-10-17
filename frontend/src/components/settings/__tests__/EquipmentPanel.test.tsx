@@ -104,7 +104,7 @@ describe('EquipmentPanel', () => {
     render(<EquipmentPanel />);
     await screen.findByText('Reactor');
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Site'), { target: { value: '2' } });
     expect(screen.getByText('Reactor')).toBeInTheDocument();
     expect(screen.queryByText('HPLC 1')).not.toBeInTheDocument();
   });
@@ -146,6 +146,7 @@ describe('EquipmentPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Equipment' }));
     fireEvent.click(screen.getByRole('button', { name: '+ New type' }));
+    expect(screen.getByLabelText('New equipment type')).toHaveFocus();
     expect(screen.getByRole('button', { name: 'Add type' }).querySelector('svg')).toHaveAttribute(
       'aria-hidden',
       'true'

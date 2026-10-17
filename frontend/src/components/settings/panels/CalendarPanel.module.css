@@ -27,35 +27,6 @@
   color: var(--text-primary);
 }
 
-.select,
-.input {
-  height: 36px;
-  min-width: 0;
-  padding: 0 0.75rem;
-  font-family: var(--font-family);
-  font-size: var(--font-size-base);
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  transition: border-color var(--transition-fast);
-}
-
-.select:hover,
-.input:hover {
-  border-color: var(--border-color-hover);
-}
-
-.select:focus,
-.input:focus {
-  outline: none;
-  border-color: var(--accent-blue);
-}
-
-.select {
-  cursor: pointer;
-}
-
 /* Messages */
 
 .notice {

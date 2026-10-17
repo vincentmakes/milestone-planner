@@ -9,6 +9,7 @@ import { ProjectModal } from '../ProjectModal';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { updateProject } from '@/api/endpoints/projects';
+import { makeStaff } from '@/test/factories';
 import type { Project, Site } from '@/types';
 
 vi.mock('@/api/endpoints/projects', () => ({
@@ -74,5 +75,36 @@ describe('ProjectModal tag picker during save', () => {
       resolve({});
     });
     expect(useUIStore.getState().activeModal).toBeNull();
+  });
+});
+
+describe('ProjectModal fields', () => {
+  it('labels every shared Input / Select and keeps "Select PM" selectable', async () => {
+    vi.mocked(updateProject).mockResolvedValueOnce({} as never);
+    useAppStore.setState({ staff: [makeStaff({ id: 4, name: 'Bob Brown', site_id: 1 })] });
+    render(<ProjectModal />);
+
+    expect(screen.getByLabelText('Project Name *')).toHaveValue('Bioprocess Scale-Up');
+    expect(screen.getByLabelText('Start Date *')).toHaveValue('2026-09-01');
+    expect(screen.getByLabelText('End Date *')).toHaveValue('2026-10-01');
+    expect(screen.getByLabelText('Customer')).toHaveValue('');
+    expect(screen.getByLabelText('Sales PM')).toHaveValue('');
+    expect(screen.getByLabelText('Project Volume (CHF)')).toHaveValue(null);
+
+    const pm = screen.getByLabelText('Project Manager') as HTMLSelectElement;
+    expect(pm.value).toBe('');
+    expect(Array.from(pm.options).map((o) => [o.value, o.text, o.disabled])).toEqual([
+      ['', 'Select PM', false],
+      ['4', 'Bob Brown', false],
+    ]);
+    fireEvent.change(pm, { target: { value: '4' } });
+    expect(pm.value).toBe('4');
+    fireEvent.change(pm, { target: { value: '' } });
+    expect(pm.value).toBe('');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    });
+    expect(updateProject).toHaveBeenCalledWith(9, expect.objectContaining({ name: 'Bioprocess Scale-Up' }));
   });
 });

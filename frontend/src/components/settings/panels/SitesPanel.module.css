@@ -98,24 +98,9 @@
   gap: 8px;
 }
 
-.input {
+.addForm .addInput {
   flex: 1;
-  height: 36px;
-  padding: 0 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  color: var(--text-primary);
-  font-size: 14px;
-}
-
-.input:focus {
-  outline: none;
-  border-color: var(--accent-blue);
-}
-
-.input::placeholder {
-  color: var(--text-muted);
+  min-width: 0;
 }
 
 .help {

@@ -260,9 +260,9 @@
   gap: 0.75rem;
 }
 
-.addRow .input {
+.addRow .addInput {
   flex: 1 1 14rem;
-  height: 36px;
+  min-width: 0;
 }
 
 @media (max-width: 1024px) {

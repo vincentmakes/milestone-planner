@@ -89,6 +89,8 @@ describe('SiteForm', () => {
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
 
     const city = screen.getByPlaceholderText('e.g., Winterthur');
+    expect(screen.getByLabelText('City')).toBe(city);
+    expect(screen.getByLabelText('Country')).toHaveValue('CH');
     fireEvent.change(city, { target: { value: 'Riehen' } });
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
     fireEvent.change(city, { target: { value: 'Basel' } });
@@ -130,6 +132,7 @@ describe('SitesPanel', () => {
     render(<SitesPanel />);
 
     const input = screen.getByPlaceholderText('New site name');
+    expect(screen.getByLabelText('New site name')).toBe(input);
     fireEvent.change(input, { target: { value: 'Zurich' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     fireEvent.keyDown(input, { key: 'Enter' });

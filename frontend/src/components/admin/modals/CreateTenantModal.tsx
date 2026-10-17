@@ -5,11 +5,20 @@
 
 import { useId, useState, FormEvent } from 'react';
 import { Notice } from '@/components/common/Notice';
+import { Input } from '@/components/common/Input';
+import { Select } from '@/components/common/Select';
 import { createTenant } from '@/api';
 import type { Tenant, TenantCreateRequest } from '@/api/endpoints/admin';
 import { useEscapeKey } from '@/hooks';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import styles from './AdminModal.module.css';
+
+const PLAN_OPTIONS = [
+  { value: 'trial', label: 'Trial' },
+  { value: 'standard', label: 'Standard' },
+  { value: 'professional', label: 'Professional' },
+  { value: 'enterprise', label: 'Enterprise' },
+];
 
 interface CreateTenantModalProps {
   onClose: () => void;
@@ -84,108 +93,88 @@ export function CreateTenantModal({ onClose, onCreated }: CreateTenantModalProps
 
         <form id="create-tenant-form" onSubmit={handleSubmit} className={styles.body}>
             <div className={styles.form}>
-              <div className={styles.formGroup}>
-                <label className={styles.label}>Tenant Name *</label>
-                <input
-                  type="text"
-                  name="name"
-                  className={styles.input}
-                  value={formData.name}
-                  onChange={handleNameChange}
-                  placeholder="Acme Corporation"
-                  required
-                  disabled={isSubmitting}
-                />
-              </div>
+              <Input
+                label="Tenant Name *"
+                type="text"
+                name="name"
+                fullWidth
+                value={formData.name}
+                onChange={handleNameChange}
+                placeholder="Acme Corporation"
+                required
+                disabled={isSubmitting}
+              />
 
-              <div className={styles.formGroup}>
-                <label className={styles.label}>URL Slug *</label>
-                <input
-                  type="text"
-                  name="slug"
-                  className={styles.input}
-                  value={formData.slug}
-                  onChange={handleChange}
-                  placeholder="acme-corp"
-                  pattern="[a-z0-9-]+"
-                  required
-                  disabled={isSubmitting}
-                />
-                <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                  Access URL: /t/{formData.slug || 'slug'}/
-                </small>
-              </div>
+              <Input
+                label="URL Slug *"
+                type="text"
+                name="slug"
+                fullWidth
+                value={formData.slug}
+                onChange={handleChange}
+                placeholder="acme-corp"
+                pattern="[a-z0-9-]+"
+                required
+                disabled={isSubmitting}
+                hint={`Access URL: /t/${formData.slug || 'slug'}/`}
+              />
 
-              <div className={styles.formGroup}>
-                <label className={styles.label}>Company Name</label>
-                <input
-                  type="text"
-                  name="company_name"
-                  className={styles.input}
-                  value={formData.company_name}
-                  onChange={handleChange}
-                  placeholder="Acme Corporation Inc."
-                  disabled={isSubmitting}
-                />
-              </div>
+              <Input
+                label="Company Name"
+                type="text"
+                name="company_name"
+                fullWidth
+                value={formData.company_name}
+                onChange={handleChange}
+                placeholder="Acme Corporation Inc."
+                disabled={isSubmitting}
+              />
 
-              <div className={styles.formGroup}>
-                <label className={styles.label}>Admin Email *</label>
-                <input
-                  type="email"
-                  name="admin_email"
-                  className={styles.input}
-                  value={formData.admin_email}
-                  onChange={handleChange}
-                  placeholder="admin@acme.com"
-                  required
-                  disabled={isSubmitting}
-                />
-              </div>
+              <Input
+                label="Admin Email *"
+                type="email"
+                name="admin_email"
+                fullWidth
+                value={formData.admin_email}
+                onChange={handleChange}
+                placeholder="admin@acme.com"
+                required
+                disabled={isSubmitting}
+              />
 
               <div className={styles.formRow}>
-                <div className={styles.formGroup}>
-                  <label className={styles.label}>Plan</label>
-                  <select
-                    name="plan"
-                    className={styles.select}
-                    value={formData.plan}
-                    onChange={handleChange}
-                    disabled={isSubmitting}
-                  >
-                    <option value="trial">Trial</option>
-                    <option value="standard">Standard</option>
-                    <option value="professional">Professional</option>
-                    <option value="enterprise">Enterprise</option>
-                  </select>
-                </div>
+                <Select
+                  label="Plan"
+                  name="plan"
+                  fullWidth
+                  value={formData.plan}
+                  onChange={handleChange}
+                  disabled={isSubmitting}
+                  options={PLAN_OPTIONS}
+                />
 
-                <div className={styles.formGroup}>
-                  <label className={styles.label}>Max Users</label>
-                  <input
-                    type="number"
-                    name="max_users"
-                    className={styles.input}
-                    value={formData.max_users}
-                    onChange={handleChange}
-                    min="1"
-                    disabled={isSubmitting}
-                  />
-                </div>
-              </div>
-
-              <div className={styles.formGroup}>
-                <label className={styles.label}>Max Projects</label>
-                <input
+                <Input
+                  label="Max Users"
                   type="number"
-                  name="max_projects"
-                  className={styles.input}
-                  value={formData.max_projects}
+                  name="max_users"
+                  fullWidth
+                  value={formData.max_users}
                   onChange={handleChange}
                   min="1"
                   disabled={isSubmitting}
                 />
               </div>
+
+              <Input
+                label="Max Projects"
+                type="number"
+                name="max_projects"
+                fullWidth
+                value={formData.max_projects}
+                onChange={handleChange}
+                min="1"
+                disabled={isSubmitting}
+              />
 
               {error && <Notice tone="error">{error}</Notice>}
             </div>

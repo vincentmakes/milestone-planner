@@ -7,6 +7,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
+import { Select } from '@/components/common/Select';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { useAppStore } from '@/stores/appStore';
@@ -169,65 +171,53 @@ export function SSOPanel() {
           <div className={styles.section}>
             <h4>Microsoft Entra Settings</h4>
             
-            <div className={styles.field}>
-              <label htmlFor="tenantId">Tenant ID *</label>
-              <input
-                type="text"
-                id="tenantId"
-                value={tenantId}
-                onChange={(e) => setTenantId(e.target.value)}
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                disabled={!enabled || orgSSOActive}
-              />
-              <span className={styles.hint}>
-                Found in Azure Portal → Microsoft Entra ID → Overview
-              </span>
-            </div>
+            <Input
+              label="Tenant ID *"
+              hint="Found in Azure Portal → Microsoft Entra ID → Overview"
+              fullWidth
+              type="text"
+              id="tenantId"
+              value={tenantId}
+              onChange={(e) => setTenantId(e.target.value)}
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+              disabled={!enabled || orgSSOActive}
+            />
             
-            <div className={styles.field}>
-              <label htmlFor="clientId">Client ID (Application ID) *</label>
-              <input
-                type="text"
-                id="clientId"
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                disabled={!enabled || orgSSOActive}
-              />
-              <span className={styles.hint}>
-                Found in App Registration → Overview → Application (client) ID
-              </span>
-            </div>
+            <Input
+              label="Client ID (Application ID) *"
+              hint="Found in App Registration → Overview → Application (client) ID"
+              fullWidth
+              type="text"
+              id="clientId"
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+              disabled={!enabled || orgSSOActive}
+            />
             
-            <div className={styles.field}>
-              <label htmlFor="clientSecret">Client Secret</label>
-              <input
-                type="password"
-                id="clientSecret"
-                value={clientSecret}
-                onChange={(e) => setClientSecret(e.target.value)}
-                placeholder={clientSecretPlaceholder || 'Enter client secret'}
-                disabled={!enabled || orgSSOActive}
-              />
-              <span className={styles.hint}>
-                Leave blank to keep existing secret. Create in App Registration → Certificates & secrets
-              </span>
-            </div>
+            <Input
+              label="Client Secret"
+              hint="Leave blank to keep existing secret. Create in App Registration → Certificates & secrets"
+              fullWidth
+              type="password"
+              id="clientSecret"
+              value={clientSecret}
+              onChange={(e) => setClientSecret(e.target.value)}
+              placeholder={clientSecretPlaceholder || 'Enter client secret'}
+              disabled={!enabled || orgSSOActive}
+            />
             
-            <div className={styles.field}>
-              <label htmlFor="redirectUri">Redirect URI *</label>
-              <input
-                type="text"
-                id="redirectUri"
-                value={redirectUri}
-                onChange={(e) => setRedirectUri(e.target.value)}
-                placeholder={redirectHint}
-                disabled={!enabled || orgSSOActive}
-              />
-              <span className={styles.hint}>
-                Must be registered in App Registration → Authentication → Redirect URIs
-              </span>
-            </div>
+            <Input
+              label="Redirect URI *"
+              hint="Must be registered in App Registration → Authentication → Redirect URIs"
+              fullWidth
+              type="text"
+              id="redirectUri"
+              value={redirectUri}
+              onChange={(e) => setRedirectUri(e.target.value)}
+              placeholder={redirectHint}
+              disabled={!enabled || orgSSOActive}
+            />
           </div>
           
           {/* User Management Settings */}
@@ -242,18 +232,18 @@ export function SSOPanel() {
               label="Auto-create users on first SSO login"
             />
             
-            <div className={styles.field}>
-              <label htmlFor="defaultRole">Default role for new users</label>
-              <select
-                id="defaultRole"
-                value={defaultRole}
-                onChange={(e) => setDefaultRole(e.target.value as 'user' | 'superuser')}
-                disabled={!enabled || !autoCreateUsers || orgSSOActive}
-              >
-                <option value="user">User</option>
-                <option value="superuser">SuperUser</option>
-              </select>
-            </div>
+            <Select
+              label="Default role for new users"
+              fullWidth
+              id="defaultRole"
+              options={[
+                { value: 'user', label: 'User' },
+                { value: 'superuser', label: 'SuperUser' },
+              ]}
+              value={defaultRole}
+              onChange={(e) => setDefaultRole(e.target.value as 'user' | 'superuser')}
+              disabled={!enabled || !autoCreateUsers || orgSSOActive}
+            />
           </div>
           
           {/* Actions */}

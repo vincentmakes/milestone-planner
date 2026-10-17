@@ -170,15 +170,10 @@
   align-items: center;
 }
 
-.select {
+/* Wrapper of the shared Select: takes the row's free width and may shrink */
+.assigneeSelect {
   flex: 1;
-  padding: 7px 10px;
-  border: 1px solid var(--input-border);
-  border-radius: 5px;
-  background: var(--input-bg);
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: var(--font-size-sm);
+  min-width: 0;
 }
 
 .comment {
