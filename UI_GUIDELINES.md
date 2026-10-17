@@ -619,6 +619,12 @@ from the inline `project.tags[].color`, which is stale during What-If.
   by those.
 - Bars take the item's saved colour (§2.6); milestones are diamonds; the critical path
   highlights bars with `totalFloat <= 0`.
+- The tree panel and the timeline body are two vertical scroll containers kept together by
+  `useScrollSync` (also the Staff, Equipment, Cross-site and Archived views): wheel and
+  trackpad move both panes in the same frame, `scroll` events (scrollbar drag, keyboard) mirror
+  without echo, and the hook pads the pane with the shorter scroll range so both reach the same
+  end. Never give one pane a fixed bottom padding to "match the scrollbar" — the scrollbar's
+  height is 0 with overlay scrollbars, and the padding then misaligns the last rows.
 - A bar is draggable or resizable only when it has handlers; those bars get the `interactive`
   class, which sets `touch-action: none` and disables text selection. Read-only bars keep
   scrolling.

@@ -5,6 +5,12 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.10.1] - 2026-10-17
+
+### Fixed
+- The Gantt tree panel and the timeline now scroll together without the panel trailing by a frame or stuttering during fast scrolls, in the Gantt and in the Staff, Equipment, Cross-site and Archived views.
+- Rows stay aligned at the very bottom of the list: the two panes always reach the same scroll end, whatever the horizontal scrollbar's height.
+
 ## [1.10.0] - 2026-10-17
 
 ### Changed

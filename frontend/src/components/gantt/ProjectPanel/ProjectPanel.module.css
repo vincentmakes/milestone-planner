@@ -201,8 +201,6 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  /* Add 8px padding at bottom to match horizontal scrollbar in timeline */
-  padding-bottom: 8px;
 }
 
 .body::-webkit-scrollbar {
