@@ -11,11 +11,12 @@ import {
   resetTenantAdminPassword,
   deleteTenant,
 } from '@/api';
-import type { Tenant } from '@/api/endpoints/admin';
+import type { Tenant, TenantProvisionOptions } from '@/api/endpoints/admin';
 import { Button } from '@/components/common/Button';
 import { Notice } from '@/components/common/Notice';
 import { PlusIcon } from '@/components/settings/panels/PanelIcons';
 import { confirmAction } from '@/utils/confirmDialog';
+import { ProvisionTenantModal } from './modals/ProvisionTenantModal';
 import styles from './TenantList.module.css';
 
 interface TenantListProps {
@@ -38,18 +39,15 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
   const systemStats = useAdminStore((s) => s.systemStats);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  // The tenant whose Provision dialog (defaults or demo data) is open.
+  const [provisionTarget, setProvisionTarget] = useState<Tenant | null>(null);
 
-  const handleProvision = async (tenant: Tenant) => {
-    if (!(await confirmAction({
-      message: 'This will create the database for this tenant. Continue?',
-      title: 'Provision database',
-      confirmLabel: 'Provision',
-    }))) return;
-    
+  const handleProvision = async (tenant: Tenant, options: TenantProvisionOptions) => {
+    setProvisionTarget(null);
     setError(null);
     setActionLoading(tenant.id);
     try {
-      const result = await provisionTenant(tenant.id);
+      const result = await provisionTenant(tenant.id, options);
       onShowCredentials('Database Provisioned!', result.adminEmail, result.adminPassword);
       onRefresh();
     } catch (err) {
@@ -286,7 +284,7 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
                             {!tenant.database_status?.accessible && (
                               <button
                                 className={`${styles.btnSmall} ${styles.btnSuccess}`}
-                                onClick={() => handleProvision(tenant)}
+                                onClick={() => setProvisionTarget(tenant)}
                                 title="Provision Database"
                               >
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -356,6 +354,14 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
           </table>
         </div>
       </div>
+
+      {provisionTarget && (
+        <ProvisionTenantModal
+          tenantName={provisionTarget.name}
+          onClose={() => setProvisionTarget(null)}
+          onConfirm={(options) => handleProvision(provisionTarget, options)}
+        />
+      )}
     </div>
   );
 }

@@ -107,6 +107,19 @@
   color: var(--text-secondary);
 }
 
+/* Explanation under a switch or field */
+.hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Lead paragraph of a dialog that is mostly a question */
+.intro {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
 /* The organization dialog's "add tenant" Select fills its row beside the button */
 .addTenantSelect {
   flex: 1;

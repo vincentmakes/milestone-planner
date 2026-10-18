@@ -243,6 +243,7 @@ export function AdminDashboard() {
             loadTenants();
             setShowCreateTenant(false);
           }}
+          onShowCredentials={handleShowCredentials}
         />
       )}
 

@@ -55,6 +55,7 @@ class DemoData:
     """Everything the demo seed inserts, in insertion order."""
 
     today: date
+    admin_email: str = DEMO_ADMIN_EMAIL  # the is_system admin, mentioned and notified
     settings: list[tuple[str, str]] = field(default_factory=list)
     predefined_phases: list[str] = field(default_factory=list)
     sites: list[Row] = field(default_factory=list)
@@ -163,11 +164,22 @@ def german_holidays(year: int) -> list[tuple[date, str]]:
 # ---------------------------------------------------------------------------
 
 
-def build_demo(today: date) -> DemoData:  # noqa: PLR0915 — one table after another, by design
-    d = DemoData(today=today)
+def build_demo(  # noqa: PLR0915 — one table after another, by design
+    today: date,
+    *,
+    admin_email: str = DEMO_ADMIN_EMAIL,
+    instance_title: str = "Demo Instance",
+) -> DemoData:
+    """The demo data set for `today`.
+
+    `admin_email` is the tenant's system admin (the demo tenant's
+    admin@demo.local, or the e-mail a portal admin gave a new tenant) and
+    `instance_title` the workspace name shown in the header.
+    """
+    d = DemoData(today=today, admin_email=admin_email)
     day = timedelta
 
-    d.settings = [("instance_title", "Demo Instance"), ("fiscal_year_start", "1")]
+    d.settings = [("instance_title", instance_title), ("fiscal_year_start", "1")]
     d.predefined_phases = list(PHASE_TYPES)
 
     d.sites = [
@@ -226,7 +238,7 @@ def build_demo(today: date) -> DemoData:  # noqa: PLR0915 — one table after an
 
     d.users = [
         person(
-            DEMO_ADMIN_EMAIL,
+            admin_email,
             "Admin",
             "User",
             "System Administrator",
@@ -780,13 +792,13 @@ def build_demo(today: date) -> DemoData:  # noqa: PLR0915 — one table after an
             project=CATALYST,
             entity=("phase", CATALYST, "Trial"),
             author=ALICE,
-            body=f"Kinetics data is in. {{mention:{DEMO_ADMIN_EMAIL}}} — ready for the review on Friday.",
+            body=f"Kinetics data is in. {{mention:{admin_email}}} — ready for the review on Friday.",
         ),
     ]
 
     d.notifications = [
         dict(
-            user=DEMO_ADMIN_EMAIL,
+            user=admin_email,
             type="mention",
             actor=ALICE,
             entity=("phase", CATALYST, "Trial"),
@@ -796,7 +808,7 @@ def build_demo(today: date) -> DemoData:  # noqa: PLR0915 — one table after an
             read=False,
         ),
         dict(
-            user=DEMO_ADMIN_EMAIL,
+            user=admin_email,
             type="assigned",
             actor=BOB,
             entity=("subphase", BIOPROCESS, "Pilot batch 1"),
@@ -806,7 +818,7 @@ def build_demo(today: date) -> DemoData:  # noqa: PLR0915 — one table after an
             read=False,
         ),
         dict(
-            user=DEMO_ADMIN_EMAIL,
+            user=admin_email,
             type="status_change",
             actor=BOB,
             entity=("phase", BIOPROCESS, "Preparation"),

@@ -41,23 +41,44 @@ Each tenant represents a separate organization with its own isolated database.
 
 | Action | Description |
 |--------|-------------|
-| **Create Tenant** | Provision a new tenant database, create initial admin user, generate credentials |
-| **View Details** | See tenant metadata, database info, connection status |
-| **Show Credentials** | Display generated email/password with copy-to-clipboard |
-| **Edit** | Update tenant name, slug, or status |
-| **Delete** | Remove a tenant and its database (with confirmation) |
-| **Test Connection** | Verify the tenant's database is accessible |
+| **Create Tenant** | Register a tenant (name, slug, admin e-mail, plan, limits); optionally provision it right away with demo data |
+| **Provision Database** | Create the tenant's database, apply the schema and create the admin account — with or without demo data |
+| **View Details** | See tenant metadata, database info, connection status, audit log |
+| **Show Credentials** | Display the generated admin e-mail/password with copy-to-clipboard |
+| **Reset Admin Password** | Generate a new password for the tenant's admin |
+| **Suspend / Activate / Archive** | Change the tenant's status |
+| **Delete** | Remove a suspended tenant and its database (with confirmation) |
 
-When you create a tenant, the system:
+Creating a tenant stores its record in the master database with a generated,
+AES-256-GCM-encrypted database password and the status `pending`. Provisioning then:
 
-1. Creates a new PostgreSQL database (`milestone_<slug>`)
-2. Creates a dedicated database user with restricted permissions
+1. Creates a dedicated PostgreSQL user with restricted permissions
+2. Creates the tenant database (`milestone_<slug>`) owned by that user
 3. Applies the full tenant schema
-4. Seeds the database with default settings and an initial admin user
-5. Encrypts database credentials using AES-256-GCM
-6. Stores the tenant record in the master database
+4. Seeds the database — either the bare defaults (an initial admin user, a *Main Site*, the
+   default phase templates and skills) or, with **Seed demo data** switched on, the sample
+   company described below
+5. Sets the tenant to `active` and shows the admin password once
 
 Tenants are accessed via URL pattern: `/t/{slug}/`
+
+#### Demo data
+
+The **Seed demo data** switch (in the Create Tenant dialog and in the Provision dialog) fills a
+new tenant with the same data set as the Codespaces demo tenant and the documentation
+screenshots: two sites (Winterthur and Frankfurt), nine people with skills and part-time
+capacity, four projects with phases, nested subphases and dependencies, staff and equipment
+bookings, equipment blocks, Swiss and German bank holidays, a site closure, absences of every
+type, tag groups, custom columns, Kanban comments with mentions and notifications. Dates are
+relative to the day you provision.
+
+- The tenant's admin e-mail becomes the demo's system administrator and keeps the generated
+  password shown after provisioning.
+- The sample people (e.g. `bob.brown@demo.local`) sign in with the password `demo1234`, so you
+  can show multi-user features. Use the switch for evaluation and training tenants only, and
+  deactivate or delete those accounts before real work starts.
+- Creating a tenant with the switch on provisions the database right away. If provisioning
+  fails, the tenant stays `pending` and the Provision Database action offers the switch again.
 
 ### Organizations
 
@@ -161,9 +182,12 @@ Overview of the platform deployment — tenant counts by status, database connec
 
 1. Log in to the admin portal at `/admin/`
 2. Click **Create Tenant**
-3. Fill in the tenant name and slug (URL-safe identifier)
-4. The system auto-provisions the database
-5. Copy the generated credentials from the "Show Credentials" button
+3. Fill in the tenant name, slug (URL-safe identifier) and admin e-mail; switch on
+   **Seed demo data** for an evaluation tenant (see [Demo data](#demo-data))
+4. Click **Provision Database** on the new row (skipped when the demo-data switch was on —
+   the tenant is provisioned on creation), choose whether to seed the demo data, and confirm
+5. Copy the admin credentials from the dialog that opens — the password is shown only once
+   (**Reset Admin Password** generates a new one later)
 
 ![Create Tenant modal in the admin portal](../assets/screenshots/admin-create-tenant-modal.png){ loading=lazy }
 

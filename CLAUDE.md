@@ -318,9 +318,10 @@ app/
   config.py            # Pydantic settings (env vars); get_settings() lru_cached
   database.py          # Tenant DB engine/session (get_db / get_db_readonly) + declarative Base
   utils.py             # utcnow_naive() — all DB datetime columns are naive TIMESTAMP holding UTC
-  scripts/             # init_db.py (AUTO_INIT_DB target), seed_demo.py (demo tenant loader:
-                       #   provision + register + insert), demo_data.py (the demo data set as
-                       #   plain Python, keyed by names, dates relative to today — tested without a DB)
+  scripts/             # init_db.py (AUTO_INIT_DB target), seed_demo.py (CLI for the `demo`
+                       #   tenant: provision + register, then services/demo_seed), demo_data.py
+                       #   (the demo data set as plain Python, keyed by names, dates relative to
+                       #   today, admin e-mail / instance title as parameters — tested without a DB)
   models/              # SQLAlchemy ORM models
     tenant.py          # MasterBase + Tenant, TenantCredentials, TenantAuditLog,
                        #   AdminUser, AdminSession (master DB)
@@ -378,6 +379,9 @@ app/
     card_access.py     # require_card_status_write: project editor or assignee of that card
     card_status.py     # apply_status / apply_completion — the only writers of status/completion
                        #   (mirrored in frontend/src/utils/kanbanCards.ts)
+    demo_seed.py       # insert_demo_data(conn, demo, admin_password_hash=…): the guarded
+                       #   names→ids loader of the demo set, shared by seed_demo and the admin
+                       #   portal's "Seed demo data" provisioning option
     date_range.py      # parse_day / parse_day_range (400 on bad/inverted/>366-day ranges),
                        #   ensure_date_order (422) for partial updates
     encryption.py      # AES-256-GCM credentials + bcrypt/PBKDF2 password hashing
@@ -406,7 +410,7 @@ app/
                        #   called at the end of tenant_manager._run_auto_migrations
     tenant_manager.py  # Lazy per-tenant connection pools (per-slug creation lock) + idle
                        #   cleanup + auto-migrations
-    tenant_provisioner.py # Tenant DB/user creation, schema, seed; managed-PG support
+    tenant_provisioner.py # Tenant DB/user creation, schema, seed (defaults or demo data); managed-PG support
   middleware/
     auth.py            # Session auth dependencies (get_current_user, require_*)
     tenant.py          # Pure-ASGI tenant resolution (/t/{slug}/* rewrite, 60s cache)
@@ -901,7 +905,7 @@ All `/import/*` uploads are read with `read_upload_capped()` — **20 MB** cap (
 | GET | `/admin/tenants`, `/admin/tenants/{id}` | portal | Tenant list / detail |
 | POST / PUT / DELETE | `/admin/tenants`, `…/{id}` | portal | Tenant CRUD |
 | PUT | `/admin/tenants/{id}/status` | portal | active / suspended / archived |
-| POST | `/admin/tenants/{id}/provision` | portal | Provision the tenant database (the seeded tenant admin gets a bcrypt hash; an admin password > 72 bytes → 400) |
+| POST | `/admin/tenants/{id}/provision` | portal | Provision the tenant database (the seeded tenant admin gets a bcrypt hash; an admin password > 72 bytes → 400). Body `{adminEmail?, adminPassword?, seedDemoData?}`: with `seedDemoData` the demo set (`app/scripts/demo_data.py`, loaded by `app/services/demo_seed.py`) replaces the bare defaults — the tenant admin is its system admin with the returned password, the tenant name its instance title, sample people sign in with `demo1234`, no "Main Site" |
 | POST | `/admin/tenants/{id}/reset-admin-password` | portal | Reset the tenant's admin password |
 | GET | `/admin/tenants/{id}/audit` | portal | Tenant audit log |
 | GET | `/admin/stats` | portal | System statistics |
