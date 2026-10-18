@@ -3,16 +3,18 @@ title: "Seed demo data when provisioning a tenant: loader moved to a service, de
 author: Claude
 date: 2026-10-18
 branch: feat/seed-demo-on-provision
-cost: { minutes: 45, tokens: 330000 }
+cost: { minutes: 33, tokens: 430264 }
 touches:
+  - CHANGELOG.md
+  - CLAUDE.md
   - app/services/demo_seed.py
-  - app/services/tenant_provisioner.py
-  - app/scripts/demo_data.py
-  - app/scripts/seed_demo.py
-  - app/schemas/tenant.py
-  - frontend/src/components/admin/modals/ProvisionTenantModal.tsx
-  - frontend/src/components/admin/modals/CreateTenantModal.tsx
   - docs/admin-guide/multi-tenant.md
+  - frontend/src/api/endpoints/__tests__/endpoints.contract.test.ts
+  - frontend/src/components/admin/modals/ProvisionTenantModal.tsx
+  - frontend/src/components/admin/modals/__tests__/AdminCreateModals.test.tsx
+  - tests/test_seed_demo.py
+  - VERSION
+  - app/routers/admin/tenants.py
 ---
 
 ## Decided
