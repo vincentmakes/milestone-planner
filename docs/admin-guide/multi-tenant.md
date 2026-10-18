@@ -72,11 +72,11 @@ bookings, equipment blocks, Swiss and German bank holidays, a site closure, abse
 type, tag groups, custom columns, Kanban comments with mentions and notifications. Dates are
 relative to the day you provision.
 
-- The tenant's admin e-mail becomes the demo's system administrator and keeps the generated
-  password shown after provisioning.
-- The sample people (e.g. `bob.brown@demo.local`) sign in with the password `demo1234`, so you
-  can show multi-user features. Use the switch for evaluation and training tenants only, and
-  deactivate or delete those accounts before real work starts.
+- The tenant's admin e-mail becomes the demo's system administrator and signs in with the
+  generated credentials shown after provisioning.
+- The sample people (e.g. `bob.brown@demo.local`) are staff to plan with, not accounts: they
+  get a random, discarded password and cannot sign in. To show multi-user features, give one
+  of them a password in Settings → Users. (Only the Codespaces demo tenant uses `demo1234`.)
 - Creating a tenant with the switch on provisions the database right away. If provisioning
   fails, the tenant stays `pending` and the Provision Database action offers the switch again.
 

@@ -131,7 +131,7 @@ describe('CreateTenantModal', () => {
     change(screen.getByPlaceholderText('Acme Corporation'), 'Acme');
     change(screen.getByPlaceholderText('admin@acme.com'), 'it@acme.com');
     fireEvent.click(screen.getByRole('switch', { name: SEED_DEMO_LABEL }));
-    expect(screen.getByText(/Sample people sign in with the password demo1234/)).toBeInTheDocument();
+    expect(screen.getByText(/Only the admin can sign in/)).toBeInTheDocument();
 
     await submit('Create Tenant');
     expect(createTenant).toHaveBeenCalledTimes(1);

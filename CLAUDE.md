@@ -905,7 +905,7 @@ All `/import/*` uploads are read with `read_upload_capped()` — **20 MB** cap (
 | GET | `/admin/tenants`, `/admin/tenants/{id}` | portal | Tenant list / detail |
 | POST / PUT / DELETE | `/admin/tenants`, `…/{id}` | portal | Tenant CRUD |
 | PUT | `/admin/tenants/{id}/status` | portal | active / suspended / archived |
-| POST | `/admin/tenants/{id}/provision` | portal | Provision the tenant database (the seeded tenant admin gets a bcrypt hash; an admin password > 72 bytes → 400). Body `{adminEmail?, adminPassword?, seedDemoData?}`: with `seedDemoData` the demo set (`app/scripts/demo_data.py`, loaded by `app/services/demo_seed.py`) replaces the bare defaults — the tenant admin is its system admin with the returned password, the tenant name its instance title, sample people sign in with `demo1234`, no "Main Site" |
+| POST | `/admin/tenants/{id}/provision` | portal | Provision the tenant database (the seeded tenant admin gets a bcrypt hash; an admin password > 72 bytes → 400). Body `{adminEmail?, adminPassword?, seedDemoData?}`: with `seedDemoData` the demo set (`app/scripts/demo_data.py`, loaded by `app/services/demo_seed.py`) replaces the bare defaults — the tenant admin is its system admin with the returned password, the tenant name its instance title, sample people get a random discarded password (`demo1234` is the Codespaces tenant only), no "Main Site" |
 | POST | `/admin/tenants/{id}/reset-admin-password` | portal | Reset the tenant's admin password |
 | GET | `/admin/tenants/{id}/audit` | portal | Tenant audit log |
 | GET | `/admin/stats` | portal | System statistics |

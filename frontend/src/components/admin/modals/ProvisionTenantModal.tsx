@@ -14,8 +14,8 @@ export const SEED_DEMO_LABEL = 'Seed demo data';
 export const SEED_DEMO_HINT =
   'Fills the new database with the sample company: two sites, nine people, four projects ' +
   'with bookings, absences, holidays, tags, Kanban comments and notifications. ' +
-  'Sample people sign in with the password demo1234; the admin keeps the password shown ' +
-  'after provisioning.';
+  'Only the admin can sign in, with the credentials shown after provisioning; the sample ' +
+  'people have no password until an admin sets one in Settings → Users.';
 
 interface ProvisionTenantModalProps {
   tenantName: string;

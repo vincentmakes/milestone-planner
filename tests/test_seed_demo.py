@@ -217,7 +217,8 @@ async def test_no_statement_uses_a_placeholder_twice(loaded):
 
 async def test_admin_password_hash_lands_on_the_admin_only():
     """Provisioning passes the hash of the password it shows the portal admin;
-    the sample people keep demo1234 so one can sign in as Bob for a demo."""
+    the sample people then get a random, discarded password — nobody can sign
+    in as them with demo1234 (or anything else) on a portal-created tenant."""
     conn = RecordingConn()
     demo = build_demo(date(2026, 10, 17), admin_email="owner@acme.example")
     await demo_seed.insert_demo_data(conn, demo, admin_password_hash="$2b$04$owner-hash")
@@ -227,7 +228,9 @@ async def test_admin_password_hash_lands_on_the_admin_only():
     assert "admin@demo.local" not in users
     others = [args[1] for email, args in users.items() if email != "owner@acme.example"]
     assert others and len(set(others)) == 1
-    assert verify_user_password(DEMO_PASSWORD, others[0])
+    assert others[0].startswith("$2b$")  # a real bcrypt hash, never plaintext
+    assert not verify_user_password(DEMO_PASSWORD, others[0])
+    assert not verify_user_password("", others[0])
 
 
 async def test_without_a_hash_everyone_gets_the_demo_password(loaded):

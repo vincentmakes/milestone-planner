@@ -15,7 +15,7 @@ import re
 from typing import Any
 
 from app.scripts.demo_data import DEMO_PASSWORD, DemoData
-from app.services.encryption import hash_user_password
+from app.services.encryption import generate_password, hash_user_password
 from app.services.mentions import parse_mention_ids
 
 # ---------------------------------------------------------------------------
@@ -62,13 +62,18 @@ async def insert_demo_data(
 ) -> dict[str, int]:
     """Insert `demo` through `conn` (asyncpg API: execute / fetchval).
 
-    Every person signs in with DEMO_PASSWORD, except the admin
-    (`demo.admin_email`) when `admin_password_hash` is given — the admin
-    portal passes the hash of the password it shows the portal admin once.
+    Without `admin_password_hash` (the Codespaces / screenshot demo tenant)
+    every person signs in with DEMO_PASSWORD. With it (the admin portal's
+    "Seed demo data" option) the admin (`demo.admin_email`) gets that hash —
+    the password the portal shows once — and the sample people get a random,
+    discarded password: they are staff to plan with, not accounts to sign in
+    as, until a tenant admin sets a password in Settings → Users.
 
     Returns the number of rows the data set holds per table, for the summary.
     """
-    password_hash = hash_user_password(DEMO_PASSWORD)
+    password_hash = hash_user_password(
+        DEMO_PASSWORD if admin_password_hash is None else generate_password(32)
+    )
     counts: dict[str, int] = {}
 
     await conn.execute(

@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [1.11.0] - 2026-10-18
 
 ### Added
-- Admin portal: a **Seed demo data** switch when creating or provisioning a tenant fills the new database with the sample company (two sites, nine people, four projects with bookings, absences, holidays, tags, Kanban comments and notifications) instead of an empty workspace. The tenant's admin keeps the generated password shown after provisioning; the sample people sign in with `demo1234`.
+- Admin portal: a **Seed demo data** switch when creating or provisioning a tenant fills the new database with the sample company (two sites, nine people, four projects with bookings, absences, holidays, tags, Kanban comments and notifications) instead of an empty workspace. Only the tenant's admin can sign in, with the generated credentials shown after provisioning; the sample people are staff without a password until an admin sets one.
 
 ### Changed
 - Provisioning a tenant database from the admin portal opens a small dialog (with the demo-data switch) instead of a plain confirmation; creating a tenant with the switch on provisions it right away and shows the admin credentials.
