@@ -14,6 +14,7 @@ from datetime import date, timedelta
 import pytest
 
 from app.scripts.demo_data import (
+    DEMO_ADMIN_EMAIL,
     PHASE_TYPES,
     DemoData,
     build_demo,
@@ -324,3 +325,22 @@ def test_custom_columns_include_a_site_scoped_one_with_values(demo: DemoData):
     assert any(v["entity"][0] == "subphase" for v in demo.custom_column_values)
     keys = [(v["column"], v["entity"]) for v in demo.custom_column_values]
     assert len(keys) == len(set(keys))
+
+
+def test_admin_email_and_instance_title_are_parameters(demo: DemoData):
+    """A tenant provisioned from the admin portal gets its own admin as the
+    demo's system admin (mentioned, notified) and its name as the title."""
+    custom = build_demo(TODAY, admin_email="owner@acme.example", instance_title="Acme Labs")
+    assert custom.admin_email == "owner@acme.example"
+    admins = [u for u in custom.users if u["is_system"]]
+    assert [u["email"] for u in admins] == ["owner@acme.example"]
+    assert admins[0]["role"] == "admin"
+    assert ("instance_title", "Acme Labs") in custom.settings
+    assert any("{mention:owner@acme.example}" in cm["body"] for cm in custom.comments)
+    assert any(n["user"] == "owner@acme.example" for n in custom.notifications)
+    everything = repr(custom)
+    assert DEMO_ADMIN_EMAIL not in everything and "Demo Instance" not in everything
+    # The defaults are the Codespaces / screenshot demo tenant.
+    assert demo.admin_email == DEMO_ADMIN_EMAIL
+    assert ("instance_title", "Demo Instance") in demo.settings
+    assert len(custom.users) == len(demo.users)

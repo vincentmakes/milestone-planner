@@ -18,3 +18,4 @@ export { CreateOrganizationModal } from './modals/CreateOrganizationModal';
 export { TenantDetailsModal } from './modals/TenantDetailsModal';
 export { OrganizationDetailsModal } from './modals/OrganizationDetailsModal';
 export { CredentialsModal } from './modals/CredentialsModal';
+export { ProvisionTenantModal } from './modals/ProvisionTenantModal';

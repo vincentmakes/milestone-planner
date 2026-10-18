@@ -120,6 +120,23 @@ export interface TenantCreateRequest {
   max_projects?: number;
 }
 
+/** `POST /api/admin/tenants` answers with the record plus its one-time DB credentials. */
+export interface TenantCreateResponse {
+  success: boolean;
+  tenant: Tenant;
+  credentials: {
+    database_name: string;
+    database_user: string;
+    database_password: string;
+  };
+  message: string;
+}
+
+export interface TenantProvisionOptions {
+  /** Fill the new database with the sample company instead of the bare defaults. */
+  seedDemoData?: boolean;
+}
+
 export interface TenantProvisionResponse {
   success: boolean;
   adminEmail: string;
@@ -192,8 +209,8 @@ export async function getTenant(id: string): Promise<Tenant> {
   return apiGet<Tenant>(`/api/admin/tenants/${id}`);
 }
 
-export async function createTenant(data: TenantCreateRequest): Promise<Tenant> {
-  return apiPost<Tenant>('/api/admin/tenants', data);
+export async function createTenant(data: TenantCreateRequest): Promise<TenantCreateResponse> {
+  return apiPost<TenantCreateResponse>('/api/admin/tenants', data);
 }
 
 export async function updateTenant(id: string, data: Partial<TenantCreateRequest>): Promise<Tenant> {
@@ -208,8 +225,13 @@ export async function deleteTenant(id: string, deleteDatabase: boolean = false):
   await apiDelete(`/api/admin/tenants/${id}?delete_database=${deleteDatabase}`);
 }
 
-export async function provisionTenant(id: string): Promise<TenantProvisionResponse> {
-  return apiPost<TenantProvisionResponse>(`/api/admin/tenants/${id}/provision`, {});
+export async function provisionTenant(
+  id: string,
+  options: TenantProvisionOptions = {}
+): Promise<TenantProvisionResponse> {
+  return apiPost<TenantProvisionResponse>(`/api/admin/tenants/${id}/provision`, {
+    seedDemoData: options.seedDemoData ?? false,
+  });
 }
 
 export async function deprovisionTenant(id: string): Promise<void> {

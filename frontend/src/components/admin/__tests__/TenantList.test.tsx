@@ -1,7 +1,8 @@
 /**
  * Tenant table: rows and stats from adminStore, the per-status action set,
- * and each action calling the admin API behind a confirm (provision and
- * password reset surface the generated credentials).
+ * and each action calling the admin API behind a confirm — provisioning
+ * behind its own dialog (defaults or demo data) — with provision and
+ * password reset surfacing the generated credentials.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
@@ -110,15 +111,41 @@ describe('TenantList', () => {
     vi.mocked(provisionTenant).mockResolvedValue({ success: true, adminEmail: 'a@p', adminPassword: 'Secr3t!' });
     useAdminStore.setState({ tenants: [makeTenant({ id: 'p', name: 'Pending Co', status: 'pending', database_status: { exists: false, accessible: false } })] });
     render(<TenantList {...props} />);
-    await click(row('Pending Co').getByTitle('Provision Database'));
-    expect(confirmSpy).toHaveBeenCalledWith({
-      message: 'This will create the database for this tenant. Continue?',
-      title: 'Provision database',
-      confirmLabel: 'Provision',
-    });
-    expect(provisionTenant).toHaveBeenCalledWith('p');
+    fireEvent.click(row('Pending Co').getByTitle('Provision Database'));
+    const dialog = screen.getByRole('dialog', { name: 'Provision database' });
+    expect(dialog).toHaveTextContent('Pending Co');
+    expect(provisionTenant).not.toHaveBeenCalled();
+    await click(within(dialog).getByRole('button', { name: 'Provision' }));
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: 'Provision database' })).not.toBeInTheDocument();
+    expect(provisionTenant).toHaveBeenCalledWith('p', { seedDemoData: false });
     expect(props.onShowCredentials).toHaveBeenCalledWith('Database Provisioned!', 'a@p', 'Secr3t!');
     expect(props.onRefresh).toHaveBeenCalled();
+  });
+
+  it('provisions with the demo data when the switch in the dialog is on', async () => {
+    vi.mocked(provisionTenant).mockResolvedValue({ success: true, adminEmail: 'a@p', adminPassword: 'Secr3t!' });
+    useAdminStore.setState({ tenants: [makeTenant({ id: 'p', name: 'Pending Co', status: 'pending', database_status: { exists: false, accessible: false } })] });
+    render(<TenantList {...props} />);
+    fireEvent.click(row('Pending Co').getByTitle('Provision Database'));
+    const dialog = screen.getByRole('dialog', { name: 'Provision database' });
+    fireEvent.click(within(dialog).getByRole('switch', { name: 'Seed demo data' }));
+    await click(within(dialog).getByRole('button', { name: 'Provision' }));
+    expect(provisionTenant).toHaveBeenCalledWith('p', { seedDemoData: true });
+    expect(props.onShowCredentials).toHaveBeenCalledWith('Database Provisioned!', 'a@p', 'Secr3t!');
+  });
+
+  it('cancelling the provision dialog provisions nothing', async () => {
+    useAdminStore.setState({ tenants: [makeTenant({ status: 'pending', database_status: undefined })] });
+    render(<TenantList {...props} />);
+    fireEvent.click(row('Demo Company').getByTitle('Provision Database'));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Provision database' })).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog', { name: 'Provision database' })).not.toBeInTheDocument();
+    fireEvent.click(row('Demo Company').getByTitle('Provision Database'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Provision database' })).not.toBeInTheDocument();
+    expect(provisionTenant).not.toHaveBeenCalled();
+    expect(props.onRefresh).not.toHaveBeenCalled();
   });
 
   it('does nothing when an action is not confirmed', async () => {
@@ -131,12 +158,11 @@ describe('TenantList', () => {
       ],
     });
     render(<TenantList {...props} />);
-    await click(row('Demo Company').getByTitle('Provision Database'));
     await click(row('Live Co').getByTitle('Reset Admin Password'));
     await click(row('Live Co').getByTitle('Suspend'));
     await click(row('Paused').getByTitle('Activate'));
     await click(row('Paused').getByTitle('Delete Tenant'));
-    expect(confirmSpy).toHaveBeenCalledTimes(5);
+    expect(confirmSpy).toHaveBeenCalledTimes(4);
     expect(provisionTenant).not.toHaveBeenCalled();
     expect(resetTenantAdminPassword).not.toHaveBeenCalled();
     expect(updateTenantStatus).not.toHaveBeenCalled();
@@ -150,7 +176,8 @@ describe('TenantList', () => {
     vi.mocked(provisionTenant).mockRejectedValue(new Error('PG down'));
     useAdminStore.setState({ tenants: [makeTenant({ database_status: undefined })] });
     render(<TenantList {...props} />);
-    await click(row('Demo Company').getByTitle('Provision Database'));
+    fireEvent.click(row('Demo Company').getByTitle('Provision Database'));
+    await click(screen.getByRole('button', { name: 'Provision' }));
     expect(screen.getByRole('alert')).toHaveTextContent('PG down');
     expect(props.onRefresh).not.toHaveBeenCalled();
   });

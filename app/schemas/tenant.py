@@ -170,6 +170,8 @@ class TenantProvisionRequest(BaseModel):
 
     admin_email: EmailStr | None = Field(None, alias="adminEmail")
     admin_password: str | None = Field(None, alias="adminPassword", min_length=MIN_PASSWORD_LENGTH)
+    # Fill the new database with the demo data set instead of the bare defaults.
+    seed_demo_data: bool = Field(False, alias="seedDemoData")
 
     class Config:
         populate_by_name = True

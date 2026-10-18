@@ -5,16 +5,26 @@
  * rule), so no test clicks it expecting a close.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { CreateTenantModal } from '../CreateTenantModal';
 import { CreateOrganizationModal } from '../CreateOrganizationModal';
 import { CreateAdminModal } from '../CreateAdminModal';
 import { TenantDetailsModal } from '../TenantDetailsModal';
-import { createAdminUser, createOrganization, createTenant, getTenant, getTenantAuditLog } from '@/api';
+import { ProvisionTenantModal, SEED_DEMO_LABEL } from '../ProvisionTenantModal';
+import {
+  createAdminUser,
+  createOrganization,
+  createTenant,
+  getTenant,
+  getTenantAuditLog,
+  provisionTenant,
+} from '@/api';
+import type { Tenant } from '@/api/endpoints/admin';
 import { makeAuditEntry, makeTenant } from '../../__tests__/adminFixtures';
 
 vi.mock('@/api', () => ({
   createTenant: vi.fn(),
+  provisionTenant: vi.fn(),
   createOrganization: vi.fn(),
   createAdminUser: vi.fn(),
   getTenant: vi.fn(),
@@ -27,8 +37,17 @@ const submit = (name: string | RegExp) =>
     fireEvent.click(screen.getByRole('button', { name }));
   });
 
+/** What `POST /api/admin/tenants` answers: the record plus one-time DB credentials. */
+const created = (tenant: Tenant) => ({
+  success: true,
+  tenant,
+  credentials: { database_name: 'db', database_user: 'u', database_password: 'p' },
+  message: 'Tenant created.',
+});
+
 beforeEach(() => {
   vi.mocked(createTenant).mockReset();
+  vi.mocked(provisionTenant).mockReset();
   vi.mocked(createOrganization).mockReset();
   vi.mocked(createAdminUser).mockReset();
   vi.mocked(getTenant).mockReset();
@@ -50,6 +69,13 @@ describe('admin modal dialog semantics', () => {
     }
   });
 
+  it('exposes the provision dialog as a labelled modal dialog', () => {
+    render(<ProvisionTenantModal tenantName="Acme" onClose={vi.fn()} onConfirm={vi.fn()} />);
+    const dialog = screen.getByRole('dialog', { name: 'Provision database' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(within(dialog).getByRole('button', { name: 'Close dialog' })).toBeInTheDocument();
+  });
+
   it('labels the tenant details dialog by its heading', async () => {
     vi.mocked(getTenant).mockResolvedValue(makeTenant());
     vi.mocked(getTenantAuditLog).mockResolvedValue([]);
@@ -62,7 +88,7 @@ describe('admin modal dialog semantics', () => {
 describe('CreateTenantModal', () => {
   it('derives the slug from the name and submits the full request', async () => {
     const tenant = makeTenant({ id: 'new' });
-    vi.mocked(createTenant).mockResolvedValue(tenant);
+    vi.mocked(createTenant).mockResolvedValue(created(tenant));
     const onCreated = vi.fn();
     render(<CreateTenantModal onClose={vi.fn()} onCreated={onCreated} />);
 
@@ -90,6 +116,69 @@ describe('CreateTenantModal', () => {
       max_projects: 200,
     });
     expect(onCreated).toHaveBeenCalledWith(tenant);
+    // Without the switch the tenant stays pending: nothing is provisioned.
+    expect(provisionTenant).not.toHaveBeenCalled();
+  });
+
+  it('provisions right away with the demo data when the switch is on', async () => {
+    const tenant = makeTenant({ id: 'new', name: 'Acme' });
+    vi.mocked(createTenant).mockResolvedValue(created(tenant));
+    vi.mocked(provisionTenant).mockResolvedValue({ success: true, adminEmail: 'it@acme.com', adminPassword: 'Gen3rated!' });
+    const onCreated = vi.fn();
+    const onShowCredentials = vi.fn();
+    render(<CreateTenantModal onClose={vi.fn()} onCreated={onCreated} onShowCredentials={onShowCredentials} />);
+
+    change(screen.getByPlaceholderText('Acme Corporation'), 'Acme');
+    change(screen.getByPlaceholderText('admin@acme.com'), 'it@acme.com');
+    fireEvent.click(screen.getByRole('switch', { name: SEED_DEMO_LABEL }));
+    expect(screen.getByText(/Only the admin can sign in/)).toBeInTheDocument();
+
+    await submit('Create Tenant');
+    expect(createTenant).toHaveBeenCalledTimes(1);
+    expect(provisionTenant).toHaveBeenCalledWith('new', { seedDemoData: true });
+    expect(onShowCredentials).toHaveBeenCalledWith('Database Provisioned!', 'it@acme.com', 'Gen3rated!');
+    expect(onCreated).toHaveBeenCalledWith(tenant);
+  });
+
+  it('keeps a created tenant when provisioning fails and reports it', async () => {
+    const tenant = makeTenant({ id: 'new', name: 'Acme' });
+    vi.mocked(createTenant).mockResolvedValue(created(tenant));
+    vi.mocked(provisionTenant).mockRejectedValueOnce(new Error('PG down'));
+    const onCreated = vi.fn();
+    const onClose = vi.fn();
+    render(<CreateTenantModal onClose={onClose} onCreated={onCreated} />);
+
+    change(screen.getByPlaceholderText('Acme Corporation'), 'Acme');
+    change(screen.getByPlaceholderText('admin@acme.com'), 'it@acme.com');
+    fireEvent.click(screen.getByRole('switch', { name: SEED_DEMO_LABEL }));
+    await submit('Create Tenant');
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'The tenant was created, but provisioning failed: PG down. Use Provision database in the tenant list to retry.'
+    );
+    // The form is done: no second create, the fields are locked, only Close is left.
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Create Tenant' })).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Acme Corporation')).toBeDisabled();
+    expect(screen.getByRole('switch', { name: SEED_DEMO_LABEL })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onCreated).toHaveBeenCalledWith(tenant);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('reports a non-Error provisioning failure generically and closes on Escape', async () => {
+    const tenant = makeTenant({ id: 'new' });
+    vi.mocked(createTenant).mockResolvedValue(created(tenant));
+    vi.mocked(provisionTenant).mockRejectedValueOnce('x');
+    const onCreated = vi.fn();
+    render(<CreateTenantModal onClose={vi.fn()} onCreated={onCreated} />);
+    change(screen.getByPlaceholderText('Acme Corporation'), 'Acme');
+    change(screen.getByPlaceholderText('admin@acme.com'), 'it@acme.com');
+    fireEvent.click(screen.getByRole('switch', { name: SEED_DEMO_LABEL }));
+    await submit('Create Tenant');
+    expect(screen.getByRole('alert')).toHaveTextContent('provisioning failed: Unknown error');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onCreated).toHaveBeenCalledWith(tenant);
   });
 
   it('shows the API error and stays open', async () => {
@@ -114,6 +203,30 @@ describe('CreateTenantModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('ProvisionTenantModal', () => {
+  it('hands the chosen options to the caller and names the tenant', () => {
+    const onConfirm = vi.fn();
+    render(<ProvisionTenantModal tenantName="Acme Labs" onClose={vi.fn()} onConfirm={onConfirm} />);
+    expect(screen.getByText('Acme Labs')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Provision' }));
+    expect(onConfirm).toHaveBeenLastCalledWith({ seedDemoData: false });
+    fireEvent.click(screen.getByRole('switch', { name: SEED_DEMO_LABEL }));
+    fireEvent.click(screen.getByRole('button', { name: 'Provision' }));
+    expect(onConfirm).toHaveBeenLastCalledWith({ seedDemoData: true });
+  });
+
+  it('closes with Cancel, the close button and Escape without confirming', () => {
+    const onClose = vi.fn();
+    const onConfirm = vi.fn();
+    render(<ProvisionTenantModal tenantName="Acme" onClose={onClose} onConfirm={onConfirm} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(3);
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 });
 

@@ -1,9 +1,11 @@
 """
-The demo seed loader (app/scripts/seed_demo.py) against a recording fake of an
-asyncpg connection: every insert is guarded (NOT EXISTS or ON CONFLICT), rows
-come in foreign-key order, names resolve to the ids the fake hands out,
-dependency JSON and mention tokens are built from those ids, and the
-already-seeded check skips the whole thing.
+The demo seed loader (app/services/demo_seed.py, shared by the seed_demo CLI
+and the admin portal's provisioning) against a recording fake of an asyncpg
+connection: every insert is guarded (NOT EXISTS or ON CONFLICT), rows come in
+foreign-key order, names resolve to the ids the fake hands out, dependency
+JSON and mention tokens are built from those ids, the admin alone can get a
+caller-supplied password hash, and the CLI's already-seeded check skips the
+whole thing.
 """
 
 import json
@@ -16,7 +18,9 @@ import bcrypt
 import pytest
 
 from app.scripts import seed_demo
-from app.scripts.demo_data import build_demo
+from app.scripts.demo_data import DEMO_PASSWORD, build_demo
+from app.services import demo_seed
+from app.services.encryption import verify_user_password
 from app.services.mentions import parse_mention_ids
 
 _real_gensalt = bcrypt.gensalt
@@ -65,7 +69,7 @@ class RecordingConn:
 async def loaded():
     conn = RecordingConn()
     demo = build_demo(date(2026, 10, 17))
-    counts = await seed_demo.insert_demo_data(conn, demo)
+    counts = await demo_seed.insert_demo_data(conn, demo)
     return conn, demo, counts
 
 
@@ -211,9 +215,34 @@ async def test_no_statement_uses_a_placeholder_twice(loaded):
         assert len(used) == len(args), sql
 
 
+async def test_admin_password_hash_lands_on_the_admin_only():
+    """Provisioning passes the hash of the password it shows the portal admin;
+    the sample people then get a random, discarded password — nobody can sign
+    in as them with demo1234 (or anything else) on a portal-created tenant."""
+    conn = RecordingConn()
+    demo = build_demo(date(2026, 10, 17), admin_email="owner@acme.example")
+    await demo_seed.insert_demo_data(conn, demo, admin_password_hash="$2b$04$owner-hash")
+    users = {args[0]: args for _, args in conn.inserts("users")}
+    assert users["owner@acme.example"][1] == "$2b$04$owner-hash"
+    assert users["owner@acme.example"][8] == 1  # still the system admin
+    assert "admin@demo.local" not in users
+    others = [args[1] for email, args in users.items() if email != "owner@acme.example"]
+    assert others and len(set(others)) == 1
+    assert others[0].startswith("$2b$")  # a real bcrypt hash, never plaintext
+    assert not verify_user_password(DEMO_PASSWORD, others[0])
+    assert not verify_user_password("", others[0])
+
+
+async def test_without_a_hash_everyone_gets_the_demo_password(loaded):
+    conn, _, _ = loaded
+    hashes = {args[1] for _, args in conn.inserts("users")}
+    assert len(hashes) == 1
+    assert verify_user_password(DEMO_PASSWORD, hashes.pop())
+
+
 def test_render_mentions():
     body = "{mention:a@x} and {mention:b@x}: hello"
-    out = seed_demo.render_mentions(body, {"a@x": 1, "b@x": 22}, {"a@x": "Ann A", "b@x": "Bo B"})
+    out = demo_seed.render_mentions(body, {"a@x": 1, "b@x": 22}, {"a@x": "Ann A", "b@x": "Bo B"})
     assert out == "@[Ann A](1) and @[Bo B](22): hello"
     assert parse_mention_ids(out) == [1, 22]
 
@@ -240,14 +269,14 @@ async def test_apply_schema_skips_an_already_seeded_database(capsys):
     conn = _SchemaConn(has_users=True, user_count=9)
     with (
         patch.object(seed_demo.asyncpg, "connect", return_value=conn),
-        patch.object(seed_demo, "insert_demo_data") as insert,
+        patch.object(seed_demo, "insert_demo_data", return_value={}) as insert,
     ):
         await seed_demo.apply_schema_and_seed(_settings())
     assert "already seeded" in capsys.readouterr().out
     assert conn.executed == [] and not insert.called and conn.closed
 
 
-async def test_apply_schema_seeds_an_empty_database():
+async def test_apply_schema_seeds_an_empty_database(capsys):
     conn = _SchemaConn(has_users=True, user_count=0)
     with (
         patch.object(seed_demo.asyncpg, "connect", return_value=conn),
@@ -255,10 +284,12 @@ async def test_apply_schema_seeds_an_empty_database():
             "app.services.tenant_provisioner.get_tenant_schema_sql",
             return_value="CREATE TABLE t();",
         ),
-        patch.object(seed_demo, "insert_demo_data") as insert,
+        patch.object(seed_demo, "insert_demo_data", return_value={"sites": 2}) as insert,
     ):
         await seed_demo.apply_schema_and_seed(_settings())
     assert conn.executed[0][0] == "CREATE TABLE t();"
     insert.assert_awaited_once()
     assert insert.await_args.args[0] is conn
+    assert insert.await_args.args[1].admin_email == "admin@demo.local"
+    assert "sites: 2" in capsys.readouterr().out
     assert conn.closed

@@ -504,12 +504,14 @@ async def provision_tenant(
 
     admin_email = data.admin_email if data and data.admin_email else tenant.admin_email
     admin_password = data.admin_password if data and data.admin_password else None
+    seed_demo_data = bool(data and data.seed_demo_data)
 
     logger.info(
-        "Provisioning tenant %s: admin_email=%s, password=%s",
+        "Provisioning tenant %s: admin_email=%s, password=%s, demo data=%s",
         tenant.slug,
         admin_email,
         "provided" if admin_password else "will be generated",
+        seed_demo_data,
     )
 
     try:
@@ -520,6 +522,8 @@ async def provision_tenant(
             database_password=db_password,
             admin_email=admin_email,
             admin_password=admin_password,
+            seed_demo_data=seed_demo_data,
+            instance_title=tenant.name,
         )
         logger.info("Tenant database provisioned successfully: %s", tenant.slug)
     except PasswordTooLongError as e:
@@ -534,7 +538,7 @@ async def provision_tenant(
         db,
         tenant.id,
         "provisioned",
-        details={"admin_email": admin_email},
+        details={"admin_email": admin_email, "seed_demo_data": seed_demo_data},
         actor=admin.email,
     )
 

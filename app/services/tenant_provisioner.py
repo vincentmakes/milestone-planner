@@ -7,11 +7,14 @@ Schema matches Node.js application exactly.
 
 import logging
 import re
+from datetime import date
 from typing import Any
 
 import asyncpg
 
 from app.config import get_settings
+from app.scripts.demo_data import build_demo
+from app.services.demo_seed import insert_demo_data
 from app.services.encryption import generate_password, hash_user_password
 
 logger = logging.getLogger(__name__)
@@ -1259,6 +1262,8 @@ async def provision_tenant_database(
     database_password: str,
     admin_email: str,
     admin_password: str | None = None,
+    seed_demo_data: bool = False,
+    instance_title: str | None = None,
 ) -> dict[str, Any]:
     """
     Provision a new tenant database.
@@ -1267,7 +1272,10 @@ async def provision_tenant_database(
     1. PostgreSQL user
     2. PostgreSQL database
     3. Schema tables
-    4. Seed data (predefined phases, default site, admin user)
+    4. Seed data (predefined phases, default site, admin user) — or, with
+       ``seed_demo_data``, the demo data set (app/scripts/demo_data.py) with
+       ``admin_email`` as its system admin and ``instance_title`` as the
+       workspace name; the default "Main Site" is not created then.
 
     Returns dict with admin credentials.
     """
@@ -1386,9 +1394,19 @@ async def provision_tenant_database(
         logger.info("  Created schema tables")
 
         # Seed data
-        logger.info("  Seeding initial data...")
-        await run_seed_data(tenant_conn, admin_email, admin_password_hash)
-        logger.info("  Seeded initial data")
+        if seed_demo_data:
+            logger.info("  Seeding demo data...")
+            demo = build_demo(
+                date.today(),
+                admin_email=admin_email,
+                instance_title=instance_title or "Demo Instance",
+            )
+            await insert_demo_data(tenant_conn, demo, admin_password_hash=admin_password_hash)
+            logger.info("  Seeded demo data")
+        else:
+            logger.info("  Seeding initial data...")
+            await run_seed_data(tenant_conn, admin_email, admin_password_hash)
+            logger.info("  Seeded initial data")
 
         await tenant_conn.close()
         tenant_conn = None
@@ -1400,6 +1418,7 @@ async def provision_tenant_database(
             "database_user": database_user,
             "admin_email": admin_email,
             "admin_password": admin_password,
+            "seed_demo_data": seed_demo_data,
         }
 
     except Exception as e:

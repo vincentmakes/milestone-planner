@@ -120,7 +120,12 @@ describe('AdminDashboard', () => {
 
   it('creates a tenant and reloads the list', async () => {
     const created = makeTenant({ id: 'n', name: 'New Co', slug: 'new-co' });
-    vi.mocked(createTenant).mockResolvedValue(created);
+    vi.mocked(createTenant).mockResolvedValue({
+      success: true,
+      tenant: created,
+      credentials: { database_name: 'db', database_user: 'u', database_password: 'p' },
+      message: 'Tenant created.',
+    });
     render(<AdminDashboard />);
     await screen.findByRole('button', { name: 'Demo Company' });
 
@@ -137,6 +142,34 @@ describe('AdminDashboard', () => {
     expect(createTenant).toHaveBeenCalledWith(expect.objectContaining({ name: 'New Co', slug: 'new-co' }));
     expect(screen.queryByRole('heading', { name: 'Create Tenant' })).not.toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'New Co' })).toBeInTheDocument();
+    expect(getTenants).toHaveBeenCalledTimes(2);
+  });
+
+  it('creating a tenant with demo data provisions it and shows the credentials', async () => {
+    const created = makeTenant({ id: 'n', name: 'New Co', slug: 'new-co' });
+    vi.mocked(createTenant).mockResolvedValue({
+      success: true,
+      tenant: created,
+      credentials: { database_name: 'db', database_user: 'u', database_password: 'p' },
+      message: 'Tenant created.',
+    });
+    vi.mocked(provisionTenant).mockResolvedValue({ success: true, adminEmail: 'a@new.co', adminPassword: 'Gen3rated!' });
+    render(<AdminDashboard />);
+    await screen.findByRole('button', { name: 'Demo Company' });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Create Tenant/ }));
+    });
+    fireEvent.change(screen.getByPlaceholderText('Acme Corporation'), { target: { value: 'New Co' } });
+    fireEvent.change(screen.getByPlaceholderText('admin@acme.com'), { target: { value: 'a@new.co' } });
+    fireEvent.click(screen.getByRole('switch', { name: 'Seed demo data' }));
+    await act(async () => {
+      fireEvent.submit(document.getElementById('create-tenant-form') as HTMLFormElement);
+    });
+    expect(provisionTenant).toHaveBeenCalledWith('n', { seedDemoData: true });
+    expect(screen.queryByRole('heading', { name: 'Create Tenant' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Database Provisioned!' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Gen3rated!')).toBeInTheDocument();
     expect(getTenants).toHaveBeenCalledTimes(2);
   });
 
@@ -175,12 +208,13 @@ describe('AdminDashboard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('heading', { name: 'Tenant Details' })).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByTitle('Provision Database'));
+    expect(screen.getByRole('heading', { name: 'Provision database' })).toBeInTheDocument();
     await act(async () => {
-      fireEvent.click(screen.getByTitle('Provision Database'));
+      fireEvent.click(screen.getByRole('button', { name: 'Provision' }));
     });
-    expect(confirm).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'This will create the database for this tenant. Continue?' })
-    );
+    expect(confirm).not.toHaveBeenCalled();
+    expect(provisionTenant).toHaveBeenCalledWith('t-demo', { seedDemoData: false });
     expect(screen.getByRole('heading', { name: 'Database Provisioned!' })).toBeInTheDocument();
     expect(screen.getByDisplayValue('S3cret!')).toBeInTheDocument();
     expect(screen.getByDisplayValue('admin@demo.local')).toBeInTheDocument();
