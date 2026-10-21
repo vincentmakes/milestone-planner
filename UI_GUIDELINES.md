@@ -571,7 +571,7 @@ All three come from one hook, `useDismissableOverlay({ open, onClose, wrapperRef
 confirmation (§3.12) is pending the hook is inert: the confirm owns Escape and the overlay that
 asked (e.g. the dependency popover) stays open until the answer. Never
 hand-roll a click-outside effect. `TagFilterDropdown` and `TagGroupChoiceDropdown` are the
-reference users; the header overflow menu, `UserMenu`, the Panels dropdown, `NotificationBell`
+reference users; the header overflow menu, `UserMenu`, the Panels dropdown, the header `TeamSelector`, `NotificationBell`
 (which also `aria-controls` its panel), the `ProjectPanel` column-visibility dropdown,
 `CustomColumnHeader` filters, the Staff and Equipment view filters, `DependencyPopup` and
 `ContextMenu` all use it. A panel with checkboxes or radios is a non-modal `role="dialog"` (not

@@ -1,5 +1,6 @@
 export { Header } from './Header';
 export { SiteSelector } from './SiteSelector';
+export { TeamSelector } from './TeamSelector';
 export { ViewModeControls } from './ViewModeControls';
 export { ZoomControls } from './ZoomControls';
 export { DateNavigation } from './DateNavigation';

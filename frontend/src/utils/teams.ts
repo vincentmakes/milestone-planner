@@ -115,7 +115,8 @@ export function teamFilterLabel(filter: TeamFilter | null, siteTeams: readonly T
   if (teamIds.length === 0) return 'No team';
   const teams =
     teamIds.length === 1
-      ? siteTeams.find((t) => t.id === teamIds[0])?.name ?? '1 team'
+      ? // normalizeTeamFilter kept only ids of siteTeams, so the find always hits.
+        siteTeams.find((t) => t.id === teamIds[0])!.name
       : `${teamIds.length} teams`;
   return noTeam ? `${teams} + no team` : teams;
 }

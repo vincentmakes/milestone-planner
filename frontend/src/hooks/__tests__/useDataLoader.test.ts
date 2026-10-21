@@ -133,6 +133,8 @@ describe('useDataLoader.loadAllData', () => {
     vi.mocked(m.teamsApi.getAll).mockRejectedValue(new Error('x'));
     vi.mocked(m.absenceTypesApi.getAll).mockRejectedValue(new Error('x'));
     m.getCustomColumnsWithValues.mockRejectedValue(new Error('no columns'));
+    // Seeded so `teams` ending up empty proves the failed load was caught and cleared.
+    useAppStore.setState({ teams: [makeTeam()] });
 
     const { result } = renderHook(() => useDataLoader());
     await act(() => result.current.loadAllData());

@@ -4,6 +4,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { SiteSelector } from './SiteSelector';
+import { TeamSelector } from './TeamSelector';
 import { DateNavigation } from './DateNavigation';
 import { UserMenu } from './UserMenu';
 import { ThemeToggle } from './ThemeToggle';
@@ -183,6 +184,7 @@ export function Header() {
         {(density === 'full' || density === 'compact') && <InstanceTitle />}
         <div className={styles.divider} />
         <SiteSelector />
+        <TeamSelector />
       </div>
 
       {/* CENTER: Timeline Controls */}
