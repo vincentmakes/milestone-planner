@@ -30,6 +30,8 @@ from app.services.tenant_provisioner import (
     EQUIPMENT_SITE_FK_NEEDS_FIX_SQL,
     EQUIPMENT_SITE_FK_SQL,
     EQUIPMENT_SITES_BACKFILL_SQL,
+    RBAC_NEEDS_MIGRATION_SQL,
+    RBAC_SCHEMA_STATEMENTS,
     TAG_GROUPS_DROP_COLORS_STATEMENTS,
     TAG_GROUPS_TABLE_SQL,
     TAG_SITES_SITE_INDEX_SQL,
@@ -522,7 +524,9 @@ class TenantConnectionManager:
                         read_at TIMESTAMP,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
                         CONSTRAINT notifications_type_check
-                            CHECK (type IN ('assigned', 'comment', 'mention', 'status_change'))
+                            CHECK (type IN ('assigned', 'comment', 'mention', 'status_change',
+                                            'approval_requested', 'approval_decided',
+                                            'todo_assigned'))
                     )
                 """)
                 )
@@ -764,6 +768,23 @@ class TenantConnectionManager:
                 logger.info("Auto-migration: Created teams tables on tenant %s", slug)
         except Exception as e:
             logger.warning("Auto-migration (teams) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+
+        # RBAC (1.13.0): roles, role_permissions, approval policies / requests,
+        # todos, the assignment approval columns, the widened notification
+        # types (add_rbac.sql). The seed (system roles + defaults, policies)
+        # and the users.role CHECK -> FK swap follow in the data migrations
+        # (tenant_data_migrations.RBAC_SEED_STEP). One statement per execute.
+        try:
+            needed = (await conn.execute(text(RBAC_NEEDS_MIGRATION_SQL))).scalar()
+            if needed:
+                logger.info("Auto-migration: Creating RBAC tables on tenant %s...", slug)
+                for statement in RBAC_SCHEMA_STATEMENTS:
+                    await conn.execute(text(statement))
+                await conn.commit()
+                logger.info("Auto-migration: Created RBAC tables on tenant %s", slug)
+        except Exception as e:
+            logger.warning("Auto-migration (rbac) warning for %s: %s", slug, e)
             await _rollback_quietly(conn)
 
         # Tenant-level SSO client secret encrypted at rest. The key is only

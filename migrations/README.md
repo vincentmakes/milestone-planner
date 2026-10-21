@@ -106,6 +106,7 @@ The authoritative list is the set of `.sql` files in this folder — run either 
 | `add_kanban_tables` | tenant | Adds Kanban card status (back-filled from completion), card_comments and notifications |
 | `add_organizations` | **master** | Adds organizations + organization_sso_config tables and tenant columns |
 | `add_project_presence` | tenant | Adds project_presence table (active viewers) |
+| `add_rbac` | tenant | Adds roles (admin / superuser / user system roles seeded with their default permissions) and role_permissions, approval_policies / approval_policy_roles, approval_requests and todos; adds approval_status / approval_request_id to the three staff assignment tables, widens the notification types, drops the sso_config default-role CHECK and replaces the users.role CHECK with a foreign key to roles.key (1.13.0) |
 | `add_skills_tables` | tenant | Adds skills and user_skills tables for capability tracking |
 | `add_staff_notes` | tenant | Creates staff_notes (migrates rows from and drops the legacy `notes` table) |
 | `add_tags_tables` | tenant | Adds tags and project_tags tables |
@@ -116,7 +117,7 @@ The authoritative list is the set of `.sql` files in this folder — run either 
 | `projects_site_fk_cascade` | tenant | Makes the projects.site_id FK ON DELETE CASCADE (deleting a site deletes its projects, as the app does) |
 | `upgrade_to_v90` | tenant | Legacy comprehensive upgrade from the Node.js era (superseded by the files above and the tenant auto-migration) |
 
-Some tenant migrations also run automatically when a tenant's connection pool is created (and at single-tenant startup): `add_tag_groups_and_sites` and `add_teams` via `tenant_manager._run_auto_migrations` (`app/services/tenant_manager.py`), and `card_comments_author_set_null`, `cleanup_orphaned_values`, `projects_site_fk_cascade` via `app/services/tenant_data_migrations.py`. In both cases the SQL is shared with `app/services/tenant_provisioner.py`.
+Some tenant migrations also run automatically when a tenant's connection pool is created (and at single-tenant startup): `add_tag_groups_and_sites`, `add_teams` and the tables of `add_rbac` via `tenant_manager._run_auto_migrations` (`app/services/tenant_manager.py`), and `card_comments_author_set_null`, `cleanup_orphaned_values`, `projects_site_fk_cascade` and the seed / `users.role` foreign key of `add_rbac` via `app/services/tenant_data_migrations.py`. In both cases the SQL is shared with `app/services/tenant_provisioner.py`.
 
 ### Additional Migrations (in scripts/sql/migrations/)
 

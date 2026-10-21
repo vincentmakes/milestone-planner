@@ -53,6 +53,12 @@ def test_schema_adds_card_status_to_existing_tables(schema_sql, table):
         ("tags", "group_id"),
         ("tags", "sort_order"),
         ("tags", "all_sites"),
+        ("project_assignments", "approval_status"),
+        ("project_assignments", "approval_request_id"),
+        ("phase_staff_assignments", "approval_status"),
+        ("phase_staff_assignments", "approval_request_id"),
+        ("subphase_staff_assignments", "approval_status"),
+        ("subphase_staff_assignments", "approval_request_id"),
     ],
 )
 def test_schema_upgrades_every_column_added_after_first_release(schema_sql, table, column):
@@ -89,6 +95,12 @@ def test_schema_creates_tables_added_by_auto_migrations(schema_sql):
         "tag_teams",
         "company_event_teams",
         "equipment_teams",
+        "roles",
+        "role_permissions",
+        "approval_policies",
+        "approval_policy_roles",
+        "approval_requests",
+        "todos",
     ):
         assert f"CREATE TABLE IF NOT EXISTS {table} (" in schema_sql, table
 

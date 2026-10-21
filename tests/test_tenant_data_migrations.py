@@ -13,12 +13,14 @@ import pytest
 
 from app.services import tenant_data_migrations as tdm
 from app.services.tenant_provisioner import (
+    APPROVAL_REQUESTS_ORPHAN_CLEANUP_SQL,
     CARD_COMMENTS_AUTHOR_FK_NEEDS_FIX_SQL,
     CARD_COMMENTS_AUTHOR_FK_SQL,
     CARD_COMMENTS_ORPHAN_CLEANUP_SQL,
     CUSTOM_COLUMN_VALUES_ORPHAN_CLEANUP_SQL,
     PROJECTS_SITE_FK_NEEDS_FIX_SQL,
     PROJECTS_SITE_FK_SQL,
+    RBAC_SEED_NEEDED_SQL,
 )
 
 
@@ -66,8 +68,10 @@ async def test_clean_database_only_checks_and_cleans():
     assert conn.executed == [
         PROJECTS_SITE_FK_NEEDS_FIX_SQL,
         CARD_COMMENTS_AUTHOR_FK_NEEDS_FIX_SQL,
+        RBAC_SEED_NEEDED_SQL,
         CUSTOM_COLUMN_VALUES_ORPHAN_CLEANUP_SQL,
         CARD_COMMENTS_ORPHAN_CLEANUP_SQL,
+        APPROVAL_REQUESTS_ORPHAN_CLEANUP_SQL,
     ]
     conn.rollback.assert_not_awaited()
 
@@ -84,8 +88,8 @@ async def test_every_fix_is_committed():
     await tdm.run_data_migrations(conn)
 
     assert CARD_COMMENTS_AUTHOR_FK_SQL in conn.executed
-    # Two FK fixes + two cleanups, each in its own transaction.
-    assert conn.commit.await_count == 4
+    # Two FK fixes + three cleanups, each in its own transaction.
+    assert conn.commit.await_count == 5
 
 
 @pytest.mark.asyncio

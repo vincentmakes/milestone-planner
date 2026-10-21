@@ -31,6 +31,7 @@ from app.services.tenant_provisioner import (
     COMPANY_EVENT_TEAMS_TABLE_SQL,
     EQUIPMENT_TEAMS_TABLE_SQL,
     PROJECT_TEAMS_TABLE_SQL,
+    RBAC_NEEDS_MIGRATION_SQL,
     TAG_TEAMS_TABLE_SQL,
     TEAM_MEMBERS_TABLE_SQL,
     TEAM_TABLES,
@@ -263,6 +264,10 @@ def _teams_conn(tables=(), fail_on: str | None = None):
             log.append(TEAMS_CHECK)
             result = MagicMock()
             result.fetchall.return_value = [(t,) for t in tables]
+            return result
+        if sql == RBAC_NEEDS_MIGRATION_SQL:  # the later RBAC step: nothing to do
+            result = MagicMock()
+            result.scalar.return_value = False
             return result
         if sql in TEAMS_SCHEMA_STATEMENTS:
             log.append(sql)

@@ -13,6 +13,13 @@ from app.models.notification import Notification
 from app.models.organization import Organization, OrganizationSSOConfig
 from app.models.presence import ProjectPresence
 from app.models.project import Project, ProjectPhase, ProjectSubphase
+from app.models.rbac import (
+    ApprovalPolicy,
+    ApprovalPolicyRole,
+    ApprovalRequest,
+    Role,
+    RolePermission,
+)
 from app.models.session import Session
 from app.models.settings import PredefinedPhase, Settings, SSOConfig
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
@@ -34,6 +41,7 @@ from app.models.tenant import (
     TenantAuditLog,
     TenantCredentials,
 )
+from app.models.todo import Todo
 from app.models.user import User, UserSite
 from app.models.vacation import Vacation
 
@@ -79,6 +87,12 @@ __all__ = [
     "ProjectPresence",
     "CardComment",
     "Notification",
+    "Role",
+    "RolePermission",
+    "ApprovalPolicy",
+    "ApprovalPolicyRole",
+    "ApprovalRequest",
+    "Todo",
     # Multi-tenant admin models (use separate MasterBase)
     "MasterBase",
     "Tenant",

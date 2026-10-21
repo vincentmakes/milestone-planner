@@ -57,12 +57,7 @@ class SSOConfig(Base):
     """SSO configuration (Microsoft Entra / Azure AD)."""
 
     __tablename__ = "sso_config"
-    __table_args__ = (
-        CheckConstraint("id = 1", name="sso_config_singleton"),
-        CheckConstraint(
-            "default_role IN ('superuser', 'user')", name="sso_config_default_role_check"
-        ),
-    )
+    __table_args__ = (CheckConstraint("id = 1", name="sso_config_singleton"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     enabled: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -71,6 +66,8 @@ class SSOConfig(Base):
     client_secret: Mapped[str | None] = mapped_column(String(500), nullable=True)
     redirect_uri: Mapped[str | None] = mapped_column(String(500), nullable=True)
     auto_create_users: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # A role key for SSO auto-created users. No CHECK (roles are editable):
+    # validated in code, never the admin role.
     default_role: Mapped[str] = mapped_column(String(20), default="user", nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False

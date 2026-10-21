@@ -16,6 +16,12 @@ from app.config import get_settings
 from app.scripts.demo_data import build_demo
 from app.services.demo_seed import insert_demo_data
 from app.services.encryption import generate_password, hash_user_password
+from app.services.permissions import (
+    APPROVABLE_KEYS,
+    PERMISSIONS,
+    SYSTEM_ROLES,
+    build_default_role_permissions_sql,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -680,6 +686,315 @@ TAG_GROUPS_DROP_COLORS_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE tag_groups DROP COLUMN IF EXISTS colors_projects",
 )
 
+# --- RBAC: roles, permissions, approvals, todos (add_rbac.sql, 1.13.0) -----
+# users.role holds a role key and references roles.key, so `roles` (with its
+# seeded system roles) is created BEFORE `users` in every DDL source. One
+# statement per constant: the tenant auto-migration and the data-migration
+# step execute them one at a time (asyncpg runs a single statement per call);
+# get_tenant_schema_sql(), setup_databases.sql, the template and
+# migrations/add_rbac.sql carry the same text
+# (tests/test_rbac_schema_sources.py). DO blocks carry no trailing ';'.
+ROLES_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS roles (
+      id SERIAL PRIMARY KEY,
+      key VARCHAR(20) NOT NULL UNIQUE,
+      name VARCHAR(100) NOT NULL UNIQUE,
+      description TEXT,
+      is_system BOOLEAN NOT NULL DEFAULT FALSE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT roles_key_format CHECK (key ~ '^[a-z][a-z0-9_]{1,19}$')
+    )"""
+
+ROLE_PERMISSIONS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS role_permissions (
+      role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+      permission VARCHAR(60) NOT NULL,
+      mode VARCHAR(10) NOT NULL DEFAULT 'allow',
+      PRIMARY KEY (role_id, permission),
+      CONSTRAINT role_permissions_mode_check CHECK (mode IN ('allow', 'approval'))
+    )"""
+
+APPROVAL_POLICIES_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS approval_policies (
+      action VARCHAR(60) PRIMARY KEY,
+      pm_approves BOOLEAN NOT NULL DEFAULT TRUE,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )"""
+
+APPROVAL_POLICY_ROLES_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS approval_policy_roles (
+      action VARCHAR(60) NOT NULL REFERENCES approval_policies(action) ON DELETE CASCADE,
+      role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+      PRIMARY KEY (action, role_id)
+    )"""
+
+# assignment_id: a row of project_assignments / phase_staff_assignments /
+# subphase_staff_assignments (by level), hence no FK.
+APPROVAL_REQUESTS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS approval_requests (
+      id SERIAL PRIMARY KEY,
+      requester_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      action VARCHAR(60) NOT NULL,
+      project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      level VARCHAR(10) NOT NULL,
+      target_id INTEGER NOT NULL,
+      assignment_id INTEGER,
+      requested TEXT,
+      previous TEXT,
+      note TEXT,
+      status VARCHAR(12) NOT NULL DEFAULT 'pending',
+      close_reason VARCHAR(20),
+      decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decided_at TIMESTAMP,
+      decision_note TEXT,
+      superseded_by_id INTEGER REFERENCES approval_requests(id) ON DELETE SET NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT approval_requests_level_check CHECK (level IN ('project', 'phase', 'subphase')),
+      CONSTRAINT approval_requests_status_check CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled', 'superseded', 'expired')),
+      CONSTRAINT approval_requests_close_reason_check CHECK (close_reason IN ('target_deleted', 'requester_inactive', 'permission_lost', 'overtaken', 'duplicate'))
+    )"""
+
+TODOS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS todos (
+      id SERIAL PRIMARY KEY,
+      title VARCHAR(200) NOT NULL,
+      notes TEXT,
+      due_date DATE,
+      assignee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      status VARCHAR(10) NOT NULL DEFAULT 'open',
+      project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+      entity_type VARCHAR(20),
+      entity_id INTEGER,
+      completed_at TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT todos_status_check CHECK (status IN ('open', 'done', 'cancelled')),
+      CONSTRAINT todos_entity_type_check CHECK (entity_type IN ('phase', 'subphase'))
+    )"""
+
+RBAC_INDEX_STATEMENTS: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_approval_policy_roles_role ON approval_policy_roles(role_id)",
+    "CREATE INDEX IF NOT EXISTS idx_approval_requests_project_status "
+    "ON approval_requests(project_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_approval_requests_requester_status "
+    "ON approval_requests(requester_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_approval_requests_pending "
+    "ON approval_requests(status) WHERE status = 'pending'",
+    "CREATE INDEX IF NOT EXISTS idx_todos_assignee_status ON todos(assignee_id, status)",
+)
+
+# Pending self-bookings are real assignment rows: approval_status = 'pending'
+# until approved; approval_request_id points at the open request (a pending
+# create, change or removal). Guarded ADD COLUMNs (two per table), after
+# approval_requests exists.
+ASSIGNMENT_APPROVAL_TABLES: tuple[str, ...] = (
+    "project_assignments",
+    "phase_staff_assignments",
+    "subphase_staff_assignments",
+)
+
+
+def _statement(sql: str) -> str:
+    """A DO block as a single statement: no surrounding blanks, no trailing ';'."""
+    return sql.strip().removesuffix(";")
+
+
+ASSIGNMENT_APPROVAL_COLUMN_STATEMENTS: tuple[str, ...] = tuple(
+    _statement(sql)
+    for table in ASSIGNMENT_APPROVAL_TABLES
+    for sql in (
+        _add_column_if_missing(
+            table,
+            "approval_status",
+            "VARCHAR(10) NOT NULL DEFAULT 'approved' "
+            f"CONSTRAINT {table}_approval_status_check "
+            "CHECK (approval_status IN ('approved', 'pending'))",
+        ),
+        _add_column_if_missing(
+            table,
+            "approval_request_id",
+            f"INTEGER CONSTRAINT {table}_approval_request_id_fkey "
+            "REFERENCES approval_requests(id) ON DELETE SET NULL",
+        ),
+    )
+)
+
+# The notification types; this exact text appears in seven places (the ORM,
+# the four CREATE TABLE notifications sources, the tenant auto-migration and
+# the widening below).
+NOTIFICATIONS_TYPE_CHECK = (
+    "type IN ('assigned', 'comment', 'mention', 'status_change', "
+    "'approval_requested', 'approval_decided', 'todo_assigned')"
+)
+
+# Widen notifications_type_check on an existing table. Skipped when the
+# constraint already allows the newest type, so a migrated table is not
+# re-validated on every run.
+NOTIFICATIONS_TYPE_CHECK_SQL = f"""
+    DO $$
+    BEGIN
+        IF to_regclass('public.notifications') IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.notifications')
+              AND conname = 'notifications_type_check'
+              AND strpos(pg_get_constraintdef(oid), 'todo_assigned') > 0
+        ) THEN
+            ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+            ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
+                CHECK ({NOTIFICATIONS_TYPE_CHECK});
+        END IF;
+    END $$"""
+
+# sso_config.default_role becomes a role key (validated in code): drop the
+# superuser|user CHECK.
+SSO_DEFAULT_ROLE_CHECK_DROP_SQL = """
+    DO $$
+    BEGIN
+        IF EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.sso_config')
+              AND conname = 'sso_config_default_role_check'
+        ) THEN
+            ALTER TABLE sso_config DROP CONSTRAINT sso_config_default_role_check;
+        END IF;
+    END $$"""
+
+RBAC_SCHEMA_STATEMENTS: tuple[str, ...] = (
+    ROLES_TABLE_SQL,
+    ROLE_PERMISSIONS_TABLE_SQL,
+    APPROVAL_POLICIES_TABLE_SQL,
+    APPROVAL_POLICY_ROLES_TABLE_SQL,
+    APPROVAL_REQUESTS_TABLE_SQL,
+    TODOS_TABLE_SQL,
+    *RBAC_INDEX_STATEMENTS,
+    *ASSIGNMENT_APPROVAL_COLUMN_STATEMENTS,
+    NOTIFICATIONS_TYPE_CHECK_SQL,
+    SSO_DEFAULT_ROLE_CHECK_DROP_SQL,
+)
+
+RBAC_TABLES: tuple[str, ...] = (
+    "roles",
+    "role_permissions",
+    "approval_policies",
+    "approval_policy_roles",
+    "approval_requests",
+    "todos",
+)
+
+# --- RBAC seed (run after the tables; order matters) ------------------------
+# 1. The system roles with their default permissions -- defaults only for a
+#    role row created by the same statement, so an admin's edits are never
+#    re-seeded (see permissions.build_default_role_permissions_sql).
+RBAC_SEED_ROLES_SQL = build_default_role_permissions_sql()
+
+# 2. One policy per approvable action: the project manager approves, no roles.
+RBAC_SEED_POLICIES_SQL = (
+    """
+    INSERT INTO approval_policies (action, pm_approves) VALUES
+"""
+    + ",\n".join(f"      ('{p.key}', TRUE)" for p in PERMISSIONS if p.approvable)
+    + """
+    ON CONFLICT (action) DO NOTHING"""
+)
+
+# 3. Any role value without a roles row falls back to 'user' (cannot happen
+#    under the old CHECK; defensive before the FK is added).
+USERS_ROLE_RESET_SQL = """
+    UPDATE users SET role = 'user' WHERE role NOT IN (SELECT key FROM roles)"""
+
+# 4. users.role: CHECK (admin|superuser|user) -> FK to roles.key.
+USERS_ROLE_FK_CLAUSE = (
+    "CONSTRAINT users_role_fkey FOREIGN KEY (role) REFERENCES roles(key) "
+    "ON UPDATE CASCADE ON DELETE RESTRICT"
+)
+
+USERS_ROLE_FK_SQL = f"""
+    DO $$
+    BEGIN
+        IF EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.users') AND conname = 'users_role_check'
+        ) THEN
+            ALTER TABLE users DROP CONSTRAINT users_role_check;
+        END IF;
+        IF to_regclass('public.users') IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.users') AND conname = 'users_role_fkey'
+        ) THEN
+            ALTER TABLE users ADD {USERS_ROLE_FK_CLAUSE};
+        END IF;
+    END $$"""
+
+RBAC_SEED_STATEMENTS: tuple[str, ...] = (
+    RBAC_SEED_ROLES_SQL,
+    RBAC_SEED_POLICIES_SQL,
+    USERS_ROLE_RESET_SQL,
+    USERS_ROLE_FK_SQL,
+)
+
+_SYSTEM_ROLE_LIST = ", ".join(f"'{r.key}'" for r in SYSTEM_ROLES)
+_APPROVABLE_LIST = ", ".join(f"'{p.key}'" for p in PERMISSIONS if p.approvable)
+_RBAC_TABLE_LIST = ", ".join(f"'{t}'" for t in RBAC_TABLES)
+
+# Tenant auto-migration trigger: an RBAC table is missing, the old role CHECK
+# is still there, or the assignment approval columns are missing.
+RBAC_NEEDS_MIGRATION_SQL = f"""
+    SELECT
+        (SELECT count(*) FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name IN ({_RBAC_TABLE_LIST})) < {len(RBAC_TABLES)}
+        OR EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.users') AND conname = 'users_role_check'
+        )
+        OR NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'project_assignments' AND column_name = 'approval_status'
+        )"""
+
+# Data-migration trigger for the seed: a system role or an approval policy is
+# missing, or users.role is not yet the FK.
+RBAC_SEED_NEEDED_SQL = f"""
+    SELECT
+        (SELECT count(*) FROM roles WHERE key IN ({_SYSTEM_ROLE_LIST})) < {len(SYSTEM_ROLES)}
+        OR (SELECT count(*) FROM approval_policies
+            WHERE action IN ({_APPROVABLE_LIST})) < {len(APPROVABLE_KEYS)}
+        OR EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.users') AND conname = 'users_role_check'
+        )
+        OR NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.users') AND conname = 'users_role_fkey'
+        )"""
+
+# Pending approval requests whose card or assignment row no longer exists are
+# closed as expired (target_deleted). Run by the tenant data migrations.
+APPROVAL_REQUESTS_ORPHAN_CLEANUP_SQL = """
+    UPDATE approval_requests r
+    SET status = 'expired', close_reason = 'target_deleted', updated_at = CURRENT_TIMESTAMP
+    WHERE r.status = 'pending'
+      AND ((r.level = 'phase'
+            AND NOT EXISTS (SELECT 1 FROM project_phases ph WHERE ph.id = r.target_id))
+        OR (r.level = 'subphase'
+            AND NOT EXISTS (SELECT 1 FROM project_subphases sp WHERE sp.id = r.target_id))
+        OR (r.level = 'project' AND r.assignment_id IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM project_assignments a WHERE a.id = r.assignment_id))
+        OR (r.level = 'phase' AND r.assignment_id IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM phase_staff_assignments a WHERE a.id = r.assignment_id))
+        OR (r.level = 'subphase' AND r.assignment_id IS NOT NULL
+            AND NOT EXISTS (
+                SELECT 1 FROM subphase_staff_assignments a WHERE a.id = r.assignment_id)))"""
+
+
+def _sql_block(*statements: str) -> str:
+    """Statements joined for a multi-statement script (each terminated by ';')."""
+    return "".join(f"{statement};\n" for statement in statements)
+
 
 def _validate_identifier(name: str) -> str:
     """Validate a SQL identifier (database name, username) to prevent injection."""
@@ -867,6 +1182,11 @@ def get_tenant_schema_sql() -> str:
         + COMPANY_EVENT_SITES_BACKFILL_SQL
         + """;
 
+    -- Roles (users.role references roles.key, so before users), their
+    -- permission rows, and the system roles with their default permissions.
+    """
+        + _sql_block(ROLES_TABLE_SQL, ROLE_PERMISSIONS_TABLE_SQL, RBAC_SEED_ROLES_SQL)
+        + """
     -- Users table
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -875,20 +1195,26 @@ def get_tenant_schema_sql() -> str:
       first_name TEXT NOT NULL,
       last_name TEXT NOT NULL,
       job_title TEXT,
-      role TEXT DEFAULT 'user' NOT NULL CHECK(role IN ('admin', 'superuser', 'user')),
+      role TEXT DEFAULT 'user' NOT NULL,
       max_capacity INTEGER DEFAULT 100 NOT NULL,
       sso_provider TEXT,
       sso_id TEXT,
       active INTEGER DEFAULT 1 NOT NULL,
       is_system INTEGER DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT users_role_fkey FOREIGN KEY (role) REFERENCES roles(key) ON UPDATE CASCADE ON DELETE RESTRICT
     );
 
     -- Upgrade of a users table that predates part-time capacity / the
     -- protected system admin.
     """
         + USERS_UPGRADE_SQL
+        + """
+    -- Upgrade of a users table from before roles: unknown role values fall
+    -- back to 'user', then the role CHECK becomes the FK to roles.key.
+    """
+        + _sql_block(USERS_ROLE_RESET_SQL, USERS_ROLE_FK_SQL)
         + """
 
     -- User-Site junction table
@@ -1106,7 +1432,7 @@ def get_tenant_schema_sql() -> str:
       client_secret TEXT,
       redirect_uri TEXT,
       auto_create_users INTEGER DEFAULT 0,
-      default_role TEXT DEFAULT 'user' CHECK(default_role IN ('superuser', 'user')),
+      default_role TEXT DEFAULT 'user',
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -1167,7 +1493,7 @@ def get_tenant_schema_sql() -> str:
     CREATE TABLE IF NOT EXISTS notifications (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      type VARCHAR(30) NOT NULL CHECK(type IN ('assigned', 'comment', 'mention', 'status_change')),
+      type VARCHAR(30) NOT NULL CHECK(type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'todo_assigned')),
       actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
       entity_type VARCHAR(20),
       entity_id INTEGER,
@@ -1237,6 +1563,23 @@ def get_tenant_schema_sql() -> str:
     -- events and equipment, with their indexes
     """
         + TEAMS_SCHEMA_SQL
+        + """
+
+    -- Approval policies (seeded: the project manager approves), approval
+    -- requests, todos, the assignment approval columns, the widened
+    -- notification types, the SSO default-role CHECK dropped, and indexes.
+    """
+        + _sql_block(
+            APPROVAL_POLICIES_TABLE_SQL,
+            APPROVAL_POLICY_ROLES_TABLE_SQL,
+            RBAC_SEED_POLICIES_SQL,
+            APPROVAL_REQUESTS_TABLE_SQL,
+            TODOS_TABLE_SQL,
+            *ASSIGNMENT_APPROVAL_COLUMN_STATEMENTS,
+            NOTIFICATIONS_TYPE_CHECK_SQL,
+            SSO_DEFAULT_ROLE_CHECK_DROP_SQL,
+            *RBAC_INDEX_STATEMENTS,
+        )
         + """
 
     -- Project presence (tracking active viewers for realtime collaboration)
@@ -1328,6 +1671,11 @@ async def run_seed_data(conn: asyncpg.Connection, admin_email: str, admin_passwo
     VALUES ('Main Site', 'Default', 'Default', 'US', 'US')
     ON CONFLICT (name) DO NOTHING;
     """)
+    # Roles before users (users.role references roles.key). Normally already
+    # done by get_tenant_schema_sql(); idempotent, and a role created earlier
+    # keeps its (possibly edited) permissions.
+    for statement in (RBAC_SEED_ROLES_SQL, RBAC_SEED_POLICIES_SQL):
+        await conn.execute(statement)
     # User input - use parameterized queries
     await conn.execute(
         "INSERT INTO users (email, password, first_name, last_name, job_title, role, is_system) "

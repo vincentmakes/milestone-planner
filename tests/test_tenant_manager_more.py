@@ -299,7 +299,7 @@ class ScriptedConn:
             result.fetchall.return_value = [("notes",)]
         elif "table_name = 'notes' AND column_name = 'type'" in sql:
             result.fetchone.return_value = (1,) if self.notes_has_type else None
-        elif sql == tp.EQUIPMENT_SITE_FK_NEEDS_FIX_SQL:
+        elif sql in (tp.EQUIPMENT_SITE_FK_NEEDS_FIX_SQL, tp.RBAC_NEEDS_MIGRATION_SQL):
             result.scalar.return_value = legacy
         elif sql == tp.COMPANY_EVENT_SITES_BACKFILL_SQL:
             result.rowcount = 3 if legacy else 0
@@ -350,6 +350,7 @@ LEGACY_CHANGES = [
     "CREATE TABLE IF NOT EXISTS equipment_sites",
     tp.COMPANY_EVENTS_CLOSURE_COLUMN_SQL,
     *tp.TEAMS_SCHEMA_STATEMENTS,
+    *tp.RBAC_SCHEMA_STATEMENTS,
 ]
 
 
@@ -365,8 +366,8 @@ async def test_legacy_tenant_gets_every_step():
     assert "COALESCE(type, 'general')" in conn.log[copy]
     assert copy < conn.log.index("DROP TABLE notes")
     assert "ROLLBACK" not in conn.log
-    # One commit per step (card status: one per table), 18 in all.
-    assert conn.log.count("COMMIT") == 18
+    # One commit per step (card status: one per table), 19 in all.
+    assert conn.log.count("COMMIT") == 19
 
 
 @pytest.mark.asyncio

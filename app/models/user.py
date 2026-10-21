@@ -7,7 +7,6 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
-    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -35,9 +34,6 @@ class User(Base):
     """User model - represents application users who can also be staff resources."""
 
     __tablename__ = "users"
-    __table_args__ = (
-        CheckConstraint("role IN ('admin', 'superuser', 'user')", name="users_role_check"),
-    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
@@ -45,7 +41,14 @@ class User(Base):
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     job_title: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    role: Mapped[str] = mapped_column(String(20), default="user", nullable=False)
+    # A role key (roles.key). The admin role is the one key "admin"; every
+    # other role's rights come from its role_permissions rows.
+    role: Mapped[str] = mapped_column(
+        String(20),
+        ForeignKey("roles.key", name="users_role_fkey", onupdate="CASCADE", ondelete="RESTRICT"),
+        default="user",
+        nullable=False,
+    )
     max_capacity: Mapped[int] = mapped_column(
         Integer, default=100, nullable=False
     )  # Max work capacity % (e.g., 80 for part-time)
@@ -138,7 +141,13 @@ class User(Base):
 
     @property
     def is_superuser(self) -> bool:
-        """Check if user has superuser role."""
+        """
+        Whether the user holds the ``superuser`` system role.
+
+        Compatibility shim for the routers that still gate on the role name
+        (vacations, kanban, export); removed in RBAC Task 3, when those gates
+        become permission checks.
+        """
         return self.role == "superuser"
 
     @property
@@ -150,14 +159,6 @@ class User(Base):
     def team_ids(self) -> list[int]:
         """Ids of the teams the user is a member of, ascending."""
         return sorted(team.id for team in self.teams)
-
-    def can_modify_site(self, site_id: int) -> bool:
-        """Check if user can modify data for a specific site."""
-        if self.is_admin:
-            return True
-        if self.is_superuser:
-            return site_id in self.site_ids
-        return False
 
     def __repr__(self) -> str:
         return f"<User {self.email} ({self.role})>"

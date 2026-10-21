@@ -163,6 +163,107 @@ CREATE TABLE IF NOT EXISTS sites (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
+-- Roles: the admin / superuser / user system roles and custom roles.
+-- users.role references roles.key, so roles come first. role_permissions holds
+-- one row per granted permission key (mode allow or approval; no row = deny;
+-- the admin role has none: it holds every permission in code). The system
+-- roles are seeded with their default permissions -- only for a role row
+-- created by the same statement, so an admin's edits are never re-seeded.
+-- Same DDL as tenant_provisioner.RBAC_SCHEMA_STATEMENTS / RBAC_SEED_ROLES_SQL
+-- and migrations/add_rbac.sql.
+CREATE TABLE IF NOT EXISTS roles (
+    id SERIAL PRIMARY KEY,
+    key VARCHAR(20) NOT NULL UNIQUE,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    is_system BOOLEAN NOT NULL DEFAULT FALSE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT roles_key_format CHECK (key ~ '^[a-z][a-z0-9_]{1,19}$')
+);
+
+CREATE TABLE IF NOT EXISTS role_permissions (
+    role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    permission VARCHAR(60) NOT NULL,
+    mode VARCHAR(10) NOT NULL DEFAULT 'allow',
+    PRIMARY KEY (role_id, permission),
+    CONSTRAINT role_permissions_mode_check CHECK (mode IN ('allow', 'approval'))
+);
+
+WITH new_roles AS (
+  INSERT INTO roles (key, name, description, is_system, sort_order)
+  VALUES
+    ('admin', 'Administrator', 'Holds every permission. Cannot be edited or deleted.', TRUE, 0),
+    ('superuser', 'Superuser', 'Plans projects, staff and equipment at their sites.', TRUE, 1),
+    ('user', 'User', 'Sees the plan, books themself and manages their own absences.', TRUE, 2)
+  ON CONFLICT (key) DO NOTHING
+  RETURNING id, key
+)
+INSERT INTO role_permissions (role_id, permission, mode)
+SELECT r.id, d.permission, d.mode
+FROM new_roles r JOIN (VALUES
+  ('superuser', 'projects.view', 'allow'),
+  ('superuser', 'projects.create', 'allow'),
+  ('superuser', 'projects.edit_any', 'allow'),
+  ('superuser', 'projects.manage_as_pm', 'allow'),
+  ('superuser', 'projects.archive', 'allow'),
+  ('superuser', 'projects.delete', 'allow'),
+  ('superuser', 'projects.import', 'allow'),
+  ('superuser', 'projects.export', 'allow'),
+  ('superuser', 'assignments.manage_others', 'allow'),
+  ('superuser', 'assignments.self_create', 'allow'),
+  ('superuser', 'assignments.self_update', 'allow'),
+  ('superuser', 'assignments.self_remove', 'allow'),
+  ('superuser', 'equipment_bookings.manage', 'allow'),
+  ('superuser', 'kanban.move_any', 'allow'),
+  ('superuser', 'kanban.move_assigned', 'allow'),
+  ('superuser', 'kanban.comment', 'allow'),
+  ('superuser', 'kanban.moderate_comments', 'allow'),
+  ('superuser', 'custom_columns.set_values', 'allow'),
+  ('superuser', 'absences.view_others', 'allow'),
+  ('superuser', 'absences.manage_own', 'allow'),
+  ('superuser', 'absences.manage_others', 'allow'),
+  ('superuser', 'staff_notes.manage', 'allow'),
+  ('superuser', 'equipment.manage', 'allow'),
+  ('superuser', 'equipment_types.manage', 'allow'),
+  ('superuser', 'equipment_blocks.manage', 'allow'),
+  ('superuser', 'bank_holidays.manage', 'allow'),
+  ('superuser', 'company_events.manage', 'allow'),
+  ('superuser', 'sites.export', 'allow'),
+  ('superuser', 'teams.manage', 'allow'),
+  ('superuser', 'users.view', 'allow'),
+  ('superuser', 'users.edit', 'allow'),
+  ('superuser', 'skills.manage', 'allow'),
+  ('superuser', 'skills.assign', 'allow'),
+  ('superuser', 'predefined_phases.manage', 'allow'),
+  ('superuser', 'todos.manage_own', 'allow'),
+  ('superuser', 'todos.assign_others', 'allow'),
+  ('superuser', 'views.kanban', 'allow'),
+  ('superuser', 'views.staff', 'allow'),
+  ('superuser', 'views.equipment', 'allow'),
+  ('superuser', 'views.crosssite', 'allow'),
+  ('superuser', 'views.archived', 'allow'),
+  ('superuser', 'whatif.use', 'allow'),
+  ('user', 'projects.view', 'allow'),
+  ('user', 'projects.manage_as_pm', 'allow'),
+  ('user', 'assignments.self_create', 'allow'),
+  ('user', 'assignments.self_update', 'allow'),
+  ('user', 'assignments.self_remove', 'allow'),
+  ('user', 'kanban.move_assigned', 'allow'),
+  ('user', 'kanban.comment', 'allow'),
+  ('user', 'custom_columns.set_values', 'allow'),
+  ('user', 'absences.view_others', 'allow'),
+  ('user', 'absences.manage_own', 'allow'),
+  ('user', 'todos.manage_own', 'allow'),
+  ('user', 'views.kanban', 'allow'),
+  ('user', 'views.staff', 'allow'),
+  ('user', 'views.equipment', 'allow'),
+  ('user', 'views.crosssite', 'allow'),
+  ('user', 'views.archived', 'allow')
+) AS d(role_key, permission, mode) ON d.role_key = r.key
+ON CONFLICT (role_id, permission) DO NOTHING;
+
 -- Users (staff members)
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
@@ -179,7 +280,7 @@ CREATE TABLE IF NOT EXISTS users (
     is_system INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT users_role_check CHECK (role IN ('admin', 'superuser', 'user'))
+    CONSTRAINT users_role_fkey FOREIGN KEY (role) REFERENCES roles(key) ON UPDATE CASCADE ON DELETE RESTRICT
 );
 
 -- User-Site association (many-to-many)
@@ -391,8 +492,7 @@ CREATE TABLE IF NOT EXISTS sso_config (
     auto_create_users INTEGER DEFAULT 0 NOT NULL,
     default_role VARCHAR(20) DEFAULT 'user' NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT sso_config_singleton CHECK (id = 1),
-    CONSTRAINT sso_config_default_role_check CHECK (default_role IN ('superuser', 'user'))
+    CONSTRAINT sso_config_singleton CHECK (id = 1)
 );
 
 -- Sessions (for express-session compatibility)
@@ -550,6 +650,65 @@ CREATE TABLE IF NOT EXISTS equipment_teams (
     PRIMARY KEY (equipment_id, team_id)
 );
 
+-- Approval policies (per approvable action: does the project manager approve,
+-- and which roles), approval requests (an own booking awaiting a decision;
+-- assignment_id points into the assignment table chosen by level, hence no
+-- FK) and todos (My Todos). Same DDL as tenant_provisioner.RBAC_SCHEMA_STATEMENTS
+-- and migrations/add_rbac.sql.
+CREATE TABLE IF NOT EXISTS approval_policies (
+    action VARCHAR(60) PRIMARY KEY,
+    pm_approves BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS approval_policy_roles (
+    action VARCHAR(60) NOT NULL REFERENCES approval_policies(action) ON DELETE CASCADE,
+    role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    PRIMARY KEY (action, role_id)
+);
+
+CREATE TABLE IF NOT EXISTS approval_requests (
+    id SERIAL PRIMARY KEY,
+    requester_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    action VARCHAR(60) NOT NULL,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    level VARCHAR(10) NOT NULL,
+    target_id INTEGER NOT NULL,
+    assignment_id INTEGER,
+    requested TEXT,
+    previous TEXT,
+    note TEXT,
+    status VARCHAR(12) NOT NULL DEFAULT 'pending',
+    close_reason VARCHAR(20),
+    decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    decided_at TIMESTAMP,
+    decision_note TEXT,
+    superseded_by_id INTEGER REFERENCES approval_requests(id) ON DELETE SET NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT approval_requests_level_check CHECK (level IN ('project', 'phase', 'subphase')),
+    CONSTRAINT approval_requests_status_check CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled', 'superseded', 'expired')),
+    CONSTRAINT approval_requests_close_reason_check CHECK (close_reason IN ('target_deleted', 'requester_inactive', 'permission_lost', 'overtaken', 'duplicate'))
+);
+
+CREATE TABLE IF NOT EXISTS todos (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(200) NOT NULL,
+    notes TEXT,
+    due_date DATE,
+    assignee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    status VARCHAR(10) NOT NULL DEFAULT 'open',
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    entity_type VARCHAR(20),
+    entity_id INTEGER,
+    completed_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT todos_status_check CHECK (status IN ('open', 'done', 'cancelled')),
+    CONSTRAINT todos_entity_type_check CHECK (entity_type IN ('phase', 'subphase'))
+);
+
 -- Staff notes pinned to a site/date
 CREATE TABLE IF NOT EXISTS staff_notes (
     id SERIAL PRIMARY KEY,
@@ -613,7 +772,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     body TEXT,
     read_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT notifications_type_check CHECK (type IN ('assigned', 'comment', 'mention', 'status_change'))
+    CONSTRAINT notifications_type_check CHECK (type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'todo_assigned'))
 );
 
 -- Skills (global, shared across all sites)
@@ -874,6 +1033,121 @@ WHERE (cc.entity_type = 'phase'
    OR (cc.entity_type = 'subphase'
        AND NOT EXISTS (SELECT 1 FROM project_subphases sp WHERE sp.id = cc.entity_id));
 
+-- RBAC on pre-existing databases (upgrades; no-ops on a fresh install): the
+-- staff assignment approval columns, the widened notification types, the
+-- sso_config default-role CHECK dropped, unknown role values reset to 'user'
+-- and the users.role CHECK replaced by the FK to roles.key. Same SQL as
+-- tenant_provisioner.RBAC_SCHEMA_STATEMENTS / RBAC_SEED_STATEMENTS and
+-- migrations/add_rbac.sql.
+DO $$
+BEGIN
+    IF to_regclass('public.project_assignments') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'project_assignments'
+          AND column_name = 'approval_status'
+    ) THEN
+        ALTER TABLE project_assignments ADD COLUMN approval_status VARCHAR(10) NOT NULL DEFAULT 'approved' CONSTRAINT project_assignments_approval_status_check CHECK (approval_status IN ('approved', 'pending'));
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF to_regclass('public.project_assignments') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'project_assignments'
+          AND column_name = 'approval_request_id'
+    ) THEN
+        ALTER TABLE project_assignments ADD COLUMN approval_request_id INTEGER CONSTRAINT project_assignments_approval_request_id_fkey REFERENCES approval_requests(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF to_regclass('public.phase_staff_assignments') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'phase_staff_assignments'
+          AND column_name = 'approval_status'
+    ) THEN
+        ALTER TABLE phase_staff_assignments ADD COLUMN approval_status VARCHAR(10) NOT NULL DEFAULT 'approved' CONSTRAINT phase_staff_assignments_approval_status_check CHECK (approval_status IN ('approved', 'pending'));
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF to_regclass('public.phase_staff_assignments') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'phase_staff_assignments'
+          AND column_name = 'approval_request_id'
+    ) THEN
+        ALTER TABLE phase_staff_assignments ADD COLUMN approval_request_id INTEGER CONSTRAINT phase_staff_assignments_approval_request_id_fkey REFERENCES approval_requests(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF to_regclass('public.subphase_staff_assignments') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'subphase_staff_assignments'
+          AND column_name = 'approval_status'
+    ) THEN
+        ALTER TABLE subphase_staff_assignments ADD COLUMN approval_status VARCHAR(10) NOT NULL DEFAULT 'approved' CONSTRAINT subphase_staff_assignments_approval_status_check CHECK (approval_status IN ('approved', 'pending'));
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF to_regclass('public.subphase_staff_assignments') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'subphase_staff_assignments'
+          AND column_name = 'approval_request_id'
+    ) THEN
+        ALTER TABLE subphase_staff_assignments ADD COLUMN approval_request_id INTEGER CONSTRAINT subphase_staff_assignments_approval_request_id_fkey REFERENCES approval_requests(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF to_regclass('public.notifications') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = to_regclass('public.notifications')
+          AND conname = 'notifications_type_check'
+          AND strpos(pg_get_constraintdef(oid), 'todo_assigned') > 0
+    ) THEN
+        ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+        ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
+            CHECK (type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'todo_assigned'));
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = to_regclass('public.sso_config')
+          AND conname = 'sso_config_default_role_check'
+    ) THEN
+        ALTER TABLE sso_config DROP CONSTRAINT sso_config_default_role_check;
+    END IF;
+END $$;
+
+UPDATE users SET role = 'user' WHERE role NOT IN (SELECT key FROM roles);
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = to_regclass('public.users') AND conname = 'users_role_check'
+    ) THEN
+        ALTER TABLE users DROP CONSTRAINT users_role_check;
+    END IF;
+    IF to_regclass('public.users') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = to_regclass('public.users') AND conname = 'users_role_fkey'
+    ) THEN
+        ALTER TABLE users ADD CONSTRAINT users_role_fkey FOREIGN KEY (role) REFERENCES roles(key) ON UPDATE CASCADE ON DELETE RESTRICT;
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_bank_holidays_site_id ON bank_holidays(site_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired);
 CREATE INDEX IF NOT EXISTS idx_project_tags_project ON project_tags(project_id);
@@ -888,6 +1162,11 @@ CREATE INDEX IF NOT EXISTS idx_project_teams_team ON project_teams(team_id);
 CREATE INDEX IF NOT EXISTS idx_tag_teams_team ON tag_teams(team_id);
 CREATE INDEX IF NOT EXISTS idx_company_event_teams_team ON company_event_teams(team_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_teams_team ON equipment_teams(team_id);
+CREATE INDEX IF NOT EXISTS idx_approval_policy_roles_role ON approval_policy_roles(role_id);
+CREATE INDEX IF NOT EXISTS idx_approval_requests_project_status ON approval_requests(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_approval_requests_requester_status ON approval_requests(requester_id, status);
+CREATE INDEX IF NOT EXISTS idx_approval_requests_pending ON approval_requests(status) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_todos_assignee_status ON todos(assignee_id, status);
 CREATE INDEX IF NOT EXISTS idx_staff_notes_site_date ON staff_notes(site_id, date);
 CREATE INDEX IF NOT EXISTS idx_custom_columns_site_id ON custom_columns(site_id);
 CREATE INDEX IF NOT EXISTS idx_custom_column_values_column_id ON custom_column_values(custom_column_id);
@@ -928,6 +1207,13 @@ ON CONFLICT (key) DO NOTHING;
 -- Initialize SSO config row
 INSERT INTO sso_config (id, enabled) VALUES (1, 0)
 ON CONFLICT (id) DO NOTHING;
+
+-- One approval policy per approvable action: the project manager approves
+INSERT INTO approval_policies (action, pm_approves) VALUES
+  ('assignments.self_create', TRUE),
+  ('assignments.self_update', TRUE),
+  ('assignments.self_remove', TRUE)
+ON CONFLICT (action) DO NOTHING;
 
 -- ============================================================================
 -- PART 3: CREATE A DEFAULT TENANT (Optional - for single-tenant setup)

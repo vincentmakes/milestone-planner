@@ -18,7 +18,7 @@ Routes call these *after* loading the entity, with the server-derived
 
 Like `card_access`, the helpers only read `user.id` and `user.role`:
 `get_current_user` is annotated `-> User` but usually returns the lightweight
-SessionUser, which carries no relationships and no `can_modify_site()`.
+SessionUser, which carries no relationships.
 """
 
 from fastapi import HTTPException, status

@@ -36,7 +36,7 @@ class OrgSSOLookupError(RuntimeError):
     """
 
 
-# Roles a tenant ``users`` row may carry (``users_role_check``).
+# The system role keys (``users.role`` references ``roles.key``).
 VALID_USER_ROLES = ("user", "superuser", "admin")
 
 
@@ -47,7 +47,7 @@ def normalize_sso_default_role(role: Any) -> str:
     Falls back to ``user`` for anything that is not a valid tenant role, so a
     bad stored default (e.g. an organization config saved before the role was
     validated, with ``viewer``) cannot make every first SSO sign-in fail on
-    the ``users`` role CHECK constraint.
+    the ``users.role`` foreign key to ``roles.key``.
     """
     if isinstance(role, str) and role.strip().lower() in VALID_USER_ROLES:
         return role.strip().lower()

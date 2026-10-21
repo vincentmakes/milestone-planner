@@ -80,7 +80,7 @@ class OrganizationSSOConfigCreate(BaseModel):
     redirect_uri: str | None = Field(None, alias="redirectUri")
     auto_create_users: bool | None = Field(None, alias="autoCreateUsers")
     # Validated: the value becomes users.role for auto-created SSO users, and
-    # anything outside the users_role_check set made every first sign-in 500.
+    # anything outside the system roles made every first sign-in 500.
     default_user_role: Literal["user", "superuser", "admin"] | None = Field(
         None, alias="defaultUserRole"
     )

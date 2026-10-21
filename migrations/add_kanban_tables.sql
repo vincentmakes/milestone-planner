@@ -93,7 +93,8 @@ CREATE TABLE IF NOT EXISTS notifications (
     read_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT notifications_type_check
-        CHECK (type IN ('assigned', 'comment', 'mention', 'status_change'))
+        CHECK (type IN ('assigned', 'comment', 'mention', 'status_change',
+                        'approval_requested', 'approval_decided', 'todo_assigned'))
 );
 
 -- Partial index: serves both the unread badge count and the unread list, and
