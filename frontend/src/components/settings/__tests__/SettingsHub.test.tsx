@@ -44,9 +44,11 @@ vi.mock('../panels/EquipmentPanel', () => ({ EquipmentPanel: () => <div>Equipmen
 vi.mock('../panels/EquipmentTypesPanel', () => ({ EquipmentTypesPanel: () => <div>Equipment types panel</div> }));
 vi.mock('../panels/PredefinedPhasesPanel', () => ({ PredefinedPhasesPanel: () => <div>Predefined phases panel</div> }));
 vi.mock('../panels/SSOPanel', () => ({ SSOPanel: () => <div>SSO panel</div> }));
+vi.mock('../panels/RolesPanel', () => ({ RolesPanel: () => <div>Roles panel</div> }));
 
 const ALL_SECTIONS = [
   'General',
+  'Roles',
   'Sites',
   'Teams',
   'Bank holidays',
@@ -62,7 +64,7 @@ const ALL_SECTIONS = [
 // Keys only admins hold by default. General is listed for everyone who opens
 // the hub (per-browser appearance; the panel keeps the instance-wide settings
 // for settings.general), and superusers see Sites for its export control.
-const ADMIN_ONLY = ['Absence types', 'SSO'];
+const ADMIN_ONLY = ['Absence types', 'SSO', 'Roles'];
 
 /** The hub as mounted in the app, next to the global keyboard shortcuts */
 function HubWithShortcuts() {
@@ -334,5 +336,19 @@ describe('canOpenSettings / getVisibleSections', () => {
     expect(ids(['sites.manage'])).toEqual(['general', 'sites']);
     expect(ids(['sites.export'])).toEqual(['general', 'sites']);
     expect(ids(['settings.sso', 'tags.manage'])).toEqual(['general', 'tags', 'sso']);
+  });
+
+  it('lists Roles with roles.manage, in the General group', async () => {
+    const ids = (permissions: string[]) =>
+      getVisibleSections(makeUser({ role: 'x', permissions })).map((s) => s.id);
+    expect(ids(['roles.manage'])).toEqual(['general', 'roles']);
+    expect(ids(['users.view'])).not.toContain('roles');
+    const roles = getVisibleSections(makeUser({ role: 'admin' })).find((s) => s.id === 'roles');
+    expect(roles).toMatchObject({ group: 'General', label: 'Roles', permission: 'roles.manage' });
+
+    setRole('admin');
+    act(() => useUIStore.getState().openSettings('roles'));
+    render(<SettingsHub />);
+    expect(await screen.findByText('Roles panel')).toBeInTheDocument();
   });
 });

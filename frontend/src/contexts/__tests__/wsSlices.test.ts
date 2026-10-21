@@ -24,7 +24,7 @@ describe('slicesForEntity', () => {
     ['company_event', ['siteCalendar']],
     ['absence_type', ['absenceTypes', 'vacations']],
     ['staff', ['staff', 'projects']],
-    ['user', ['staff', 'currentUser', 'projects', 'teams']],
+    ['user', ['staff', 'currentUser', 'projects', 'teams', 'roles']],
     ['equipment', ['equipment', 'projects']],
     ['equipment_block', ['equipmentBlocks']],
     ['vacation', ['vacations']],
@@ -34,7 +34,8 @@ describe('slicesForEntity', () => {
     ['tag_group', ['tags']],
     ['team', ['teams', 'staff', 'projects', 'tags', 'equipment', 'siteCalendar']],
     // RBAC: a role edit changes the signed-in user's permissions (/auth/me)
-    ['role', ['currentUser']],
+    // and the role list of Settings → Roles and the role pickers
+    ['role', ['currentUser', 'roles']],
     ['approval_policy', ['currentUser', 'approvals']],
     ['approval_request', ['projects', 'approvals']],
     ['todo', ['todos']],
@@ -44,8 +45,8 @@ describe('slicesForEntity', () => {
 
   it('refreshes every slice for an unknown entity', () => {
     expect(slicesForEntity('brand_new_thing')).toBe(ALL_SLICES);
-    expect(new Set(ALL_SLICES).size).toBe(16);
-    expect(ALL_SLICES).toEqual(expect.arrayContaining(['approvals', 'todos']));
+    expect(new Set(ALL_SLICES).size).toBe(17);
+    expect(ALL_SLICES).toEqual(expect.arrayContaining(['approvals', 'todos', 'roles']));
   });
 
   it('sandboxes only the What-If plan slices', () => {

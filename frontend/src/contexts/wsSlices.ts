@@ -17,6 +17,8 @@ export type Slice =
   | 'tags'
   /** Teams of every site — appStore.teams */
   | 'teams'
+  /** Roles with their matrices and user counts — appStore.roles */
+  | 'roles'
   | 'absenceTypes'
   /** Bank holidays + company events of the site currently being viewed */
   | 'siteCalendar'
@@ -37,7 +39,7 @@ export type Slice =
 
 export const ALL_SLICES: Slice[] = [
   'projects', 'staff', 'equipment', 'equipmentBlocks', 'vacations',
-  'sites', 'skills', 'tags', 'teams', 'absenceTypes', 'siteCalendar', 'customColumns',
+  'sites', 'skills', 'tags', 'teams', 'roles', 'absenceTypes', 'siteCalendar', 'customColumns',
   'settings', 'currentUser', 'approvals', 'todos',
 ];
 
@@ -89,8 +91,9 @@ export function slicesForEntity(entityType: string): Slice[] {
     case 'user':
       // Staff are users; assignments carry their names. The user may also be
       // the one signed in here (role/site changes, deactivation). A deleted
-      // user also leaves their teams' member_ids.
-      return ['staff', 'currentUser', 'projects', 'teams'];
+      // user also leaves their teams' member_ids, and a role change moves the
+      // roles' user counts (Settings → Roles).
+      return ['staff', 'currentUser', 'projects', 'teams', 'roles'];
     case 'equipment':
       return ['equipment', 'projects'];
     case 'equipment_block':
@@ -119,9 +122,9 @@ export function slicesForEntity(entityType: string): Slice[] {
       // like 'site', a rare admin action, so those slices reload too.
       return ['teams', 'staff', 'projects', 'tags', 'equipment', 'siteCalendar'];
     case 'role':
-      // Roles are tenant configuration; what matters live is the signed-in
-      // user's resolved permissions (/auth/me).
-      return ['currentUser'];
+      // The signed-in user's resolved permissions (/auth/me) and the role
+      // list (Settings → Roles, the role pickers).
+      return ['currentUser', 'roles'];
     case 'approval_policy':
       // Who may approve changes the approval_required labels and the requests
       // the user may decide.

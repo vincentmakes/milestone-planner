@@ -47,6 +47,7 @@ vi.mock('@/api/endpoints/sites', async () => {
 vi.mock('@/api/endpoints/skills', () => ({ skillsApi: { getAll: vi.fn() } }));
 vi.mock('@/api/endpoints/tags', () => ({ tagsApi: { getAll: vi.fn() }, tagGroupsApi: { getAll: vi.fn() } }));
 vi.mock('@/api/endpoints/teams', () => ({ teamsApi: { getAll: vi.fn() } }));
+vi.mock('@/api/endpoints/roles', () => ({ rolesApi: { getAll: vi.fn() } }));
 vi.mock('@/api/endpoints/absenceTypes', () => ({ absenceTypesApi: { getAll: vi.fn() } }));
 vi.mock('@/api/endpoints/settings', () => ({ getInstanceSettings: vi.fn() }));
 vi.mock('@/api/endpoints/auth', () => ({ fetchCurrentUser: vi.fn() }));
@@ -61,6 +62,7 @@ import { getBankHolidays, getCompanyEvents, getSites } from '@/api/endpoints/sit
 import { skillsApi } from '@/api/endpoints/skills';
 import { tagGroupsApi, tagsApi } from '@/api/endpoints/tags';
 import { teamsApi } from '@/api/endpoints/teams';
+import { rolesApi } from '@/api/endpoints/roles';
 import { absenceTypesApi } from '@/api/endpoints/absenceTypes';
 import { getInstanceSettings } from '@/api/endpoints/settings';
 import { fetchCurrentUser } from '@/api/endpoints/auth';
@@ -71,7 +73,9 @@ import {
   makeCustomColumn,
   makeEquipment,
   makeProject,
+  makeRole,
   makeSite,
+  makeSystemRoles,
   makeStaff,
   makeTag,
   makeTeam,
@@ -99,6 +103,7 @@ function seedApi() {
   vi.mocked(tagsApi.getAll).mockResolvedValue([makeTag()]);
   vi.mocked(tagGroupsApi.getAll).mockResolvedValue([{ id: 1, name: 'Type' } as never]);
   vi.mocked(teamsApi.getAll).mockResolvedValue([makeTeam()]);
+  vi.mocked(rolesApi.getAll).mockResolvedValue(makeSystemRoles(makeRole()));
   vi.mocked(absenceTypesApi.getAll).mockResolvedValue([{ id: 1, name: 'Sick' } as never]);
   vi.mocked(getCustomColumnsWithValues).mockResolvedValue({ columns: [makeCustomColumn()], values: { '1-project-1': 'High' } });
   vi.mocked(getInstanceSettings).mockResolvedValue({ instance_title: 'Lab Planner' });
@@ -146,6 +151,7 @@ describe('WebSocketProvider slice refresh', () => {
     expect(app.tags).toHaveLength(1);
     expect(app.tagGroups).toHaveLength(1);
     expect(app.teams).toEqual([makeTeam()]);
+    expect(app.roles.map((r) => r.key)).toEqual(['admin', 'superuser', 'user', 'team_lead']);
     expect(app.absenceTypes).toHaveLength(1);
     expect(app.bankHolidayDates).toEqual(new Set(['2026-08-01']));
     expect(app.companyEventDates).toEqual(new Set(['2026-09-10']));
@@ -166,6 +172,7 @@ describe('WebSocketProvider slice refresh', () => {
     vi.mocked(skillsApi.getAll).mockImplementation(fail);
     vi.mocked(tagsApi.getAll).mockImplementation(fail);
     vi.mocked(teamsApi.getAll).mockImplementation(fail);
+    vi.mocked(rolesApi.getAll).mockImplementation(fail);
     vi.mocked(absenceTypesApi.getAll).mockImplementation(fail);
 
     render(<WebSocketProvider><div /></WebSocketProvider>);
@@ -183,6 +190,7 @@ describe('WebSocketProvider slice refresh', () => {
         '[WS] skills refresh failed',
         '[WS] tags refresh failed',
         '[WS] teams refresh failed',
+        '[WS] roles refresh failed',
         '[WS] absence types refresh failed',
         '[WS] bank holidays refresh failed',
         '[WS] company events refresh failed',
@@ -220,11 +228,14 @@ describe('WebSocketProvider slice refresh', () => {
     expect(fetchCurrentUser).not.toHaveBeenCalled();
   });
 
-  it('re-reads the signed-in user on change:role', async () => {
+  it('re-reads the signed-in user and the roles on change:role', async () => {
     render(<WebSocketProvider><div /></WebSocketProvider>);
     await receive('role');
     expect(fetchCurrentUser).toHaveBeenCalledTimes(1);
     expect(useAppStore.getState().currentUser?.first_name).toBe('Renamed');
+    expect(rolesApi.getAll).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().roles.map((r) => r.name)).toContain('Team lead');
+    expect(loadAllProjects).not.toHaveBeenCalled();
   });
 
   it('reloads teams and the slices that carry team links on change:team', async () => {

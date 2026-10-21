@@ -13,6 +13,7 @@ import type {
   Equipment,
   Phase,
   Project,
+  Role,
   Site,
   Staff,
   Subphase,
@@ -22,6 +23,7 @@ import type {
   Vacation,
 } from '@/types';
 import { permissionsForRole, roleNameFor } from './permissionFixtures';
+import type { PermissionMatrix } from '@/types';
 
 export function makeSite(overrides: Partial<Site> = {}): Site {
   return {
@@ -211,4 +213,37 @@ export function makeCustomColumn(overrides: Partial<CustomColumn> = {}): CustomC
     updated_at: '2026-01-01T00:00:00.000Z',
     ...overrides,
   };
+}
+
+/** A custom role (Team lead) holding only the locked `projects.view`. */
+export function makeRole(overrides: Partial<Role> = {}): Role {
+  return {
+    id: 4,
+    key: 'team_lead',
+    name: 'Team lead',
+    description: null,
+    is_system: false,
+    sort_order: 3,
+    permissions: { 'projects.view': 'allow' },
+    user_count: 0,
+    ...overrides,
+  };
+}
+
+/** The allow matrix of a system role's shipped defaults. */
+function allowMatrix(role: string): PermissionMatrix {
+  return Object.fromEntries(permissionsForRole(role).map((key) => [key, 'allow' as const]));
+}
+
+/**
+ * The three system roles of a fresh tenant (ids 1-3) with their shipped
+ * matrices, as GET /api/roles returns them; `extra` roles follow.
+ */
+export function makeSystemRoles(...extra: Role[]): Role[] {
+  return [
+    makeRole({ id: 1, key: 'admin', name: 'Admin', is_system: true, sort_order: 0, permissions: allowMatrix('admin'), user_count: 1 }),
+    makeRole({ id: 2, key: 'superuser', name: 'Superuser', is_system: true, sort_order: 1, permissions: allowMatrix('superuser'), user_count: 1 }),
+    makeRole({ id: 3, key: 'user', name: 'User', is_system: true, sort_order: 2, permissions: allowMatrix('user'), user_count: 2 }),
+    ...extra,
+  ];
 }

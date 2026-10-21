@@ -281,6 +281,81 @@ export type UserRole = string;
 /** The system roles, never deletable; `admin` always holds every permission. */
 export const SYSTEM_ROLE_KEYS = ['admin', 'superuser', 'user'] as const;
 
+/** How a role holds a permission; a key missing from a matrix is denied. */
+export type PermissionMode = 'allow' | 'approval';
+
+/** A role's matrix: permission key → mode (keys left out are denied). */
+export type PermissionMatrix = Record<string, PermissionMode>;
+
+/** A role (GET /api/roles): system (admin/superuser/user) or custom. */
+export interface Role {
+  id: number;
+  /** Immutable key, stored on users.role */
+  key: UserRole;
+  name: string;
+  description?: string | null;
+  /** System roles cannot be deleted; the admin role cannot be edited at all */
+  is_system: boolean;
+  sort_order: number;
+  /** Effective modes: the admin role lists every key as allow */
+  permissions: PermissionMatrix;
+  /** Users (active or not) holding the role */
+  user_count: number;
+}
+
+export interface CreateRoleRequest {
+  key: string;
+  name: string;
+  description?: string | null;
+  permissions: PermissionMatrix;
+}
+
+export interface UpdateRoleRequest {
+  name?: string;
+  /** An explicit null clears the description */
+  description?: string | null;
+  /** Replaces the whole matrix */
+  permissions?: PermissionMatrix;
+}
+
+/** One catalogue entry (GET /api/permissions), as the role matrix shows it. */
+export interface PermissionInfo {
+  key: string;
+  label: string;
+  description: string;
+  /** May be held in approval mode (the own-booking keys) */
+  approvable: boolean;
+  /** Fixed for every role (projects.view always allow, roles.manage admin only) */
+  locked: boolean;
+  /** Shipped mode per editable system role (null = deny) */
+  defaults: Record<string, PermissionMode | null>;
+}
+
+export interface PermissionGroup {
+  name: string;
+  permissions: PermissionInfo[];
+}
+
+export interface PermissionCatalogue {
+  groups: PermissionGroup[];
+  pm_bundle: string[];
+}
+
+/** Who approves one approvable action (admins always may). */
+export interface ApprovalPolicy {
+  action: string;
+  label: string;
+  /** The project's manager may approve */
+  pm_approves: boolean;
+  /** Holders of these roles may approve */
+  role_ids: number[];
+}
+
+export interface UpdateApprovalPolicyRequest {
+  pm_approves: boolean;
+  role_ids: number[];
+}
+
 export interface AuthResponse {
   user: User;
   message?: string;

@@ -32,16 +32,18 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useDataLoader } from '@/hooks/useDataLoader';
 import { getUsers, createUser, updateUser, deleteUser } from '@/api/endpoints/users';
-import type { User, UserRole, CreateUserRequest, UpdateUserRequest, Skill } from '@/types';
+import type { User, UserRole, CreateUserRequest, UpdateUserRequest, Skill, Role } from '@/types';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './UsersPanel.module.css';
 import { can } from '@/utils/permissions';
+import { roleWithin } from '@/utils/roles';
+import { useRoles } from '@/hooks/useRoles';
 import { ADMIN_ROLE_KEY } from '@/types/permissions';
 
-// Badge colours of the system roles; a custom role gets a neutral badge
-// with its name (role_name).
+// Badge colours of the system roles; a custom role gets a neutral badge.
+// The label is the role's current name (Settings → Roles can rename it).
 const ROLE_CONFIG: Record<string, { label: string; color: string }> = {
   admin: { label: 'Admin', color: '#ef4444' },
   superuser: { label: 'SuperUser', color: '#f97316' },
@@ -54,6 +56,8 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const skills = useAppStore((s) => s.skills);
   const teams = useAppStore((s) => s.teams);
   const currentUser = useAppStore((s) => s.currentUser);
+  const roles = useRoles();
+  const roleNames = useMemo(() => new Map(roles.map((r) => [r.key, r.name])), [roles]);
   const { refreshStaff } = useDataLoader();
   
   // State
@@ -189,6 +193,7 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
           sites={sites}
           skills={skills}
           currentUser={currentUser}
+          roles={roles}
           jobTitleSuggestions={jobTitles}
           onSave={handleSave}
           onDelete={handleDelete}
@@ -239,9 +244,7 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                           className={styles.filterField}
                           options={[
                             { value: 'all', label: 'All Roles' },
-                            { value: 'admin', label: 'Admin' },
-                            { value: 'superuser', label: 'SuperUser' },
-                            { value: 'user', label: 'User' },
+                            ...roles.map((r) => ({ value: r.key, label: r.name })),
                           ]}
                           value={filterRole}
                           onChange={(e) => setFilterRole(e.target.value)}
@@ -340,7 +343,7 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                               : undefined
                           }
                         >
-                          {ROLE_CONFIG[user.role]?.label ?? user.role_name ?? user.role}
+                          {roleNames.get(user.role) ?? user.role_name ?? ROLE_CONFIG[user.role]?.label ?? user.role}
                         </span>
                       </td>
                       <td>
@@ -533,6 +536,8 @@ interface UserFormProps {
   sites: { id: number; name: string }[];
   skills: Skill[];
   currentUser: User | null;
+  /** Every role (useRoles); empty while loading */
+  roles: Role[];
   jobTitleSuggestions: string[];
   onSave: () => void;
   onDelete: () => void;
@@ -548,7 +553,7 @@ function sameIds(a: number[], b: number[]): boolean {
   return a.length === b.length && a.every((id) => b.includes(id));
 }
 
-function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSave, onDelete, onCancel, onDirtyChange }: UserFormProps) {
+function UserForm({ user, sites, skills, currentUser, roles, jobTitleSuggestions, onSave, onDelete, onCancel, onDirtyChange }: UserFormProps) {
 
   const isEditing = !!user;
   
@@ -597,15 +602,43 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
   
   // Role, active status and deletion each need their key on the backend
   // (users.change_role, users.toggle_active, users.delete; a request without
-  // it gets a 403). The administrator role can only be given by an
-  // administrator (roles.manage is locked to that role); the server also
-  // refuses roles holding keys the editor lacks.
+  // it gets a 403). The escalation guard (app/services/user_access.py,
+  // mirrored by roleWithin) lets an editor give only roles whose permissions
+  // they hold, and change the role only of someone whose current role they
+  // could have given; the administrator role is the administrators' alone
+  // (roles.manage is locked to that role).
   const canAssignAdmin = can(currentUser, 'roles.manage');
   const mayChangeRoles = can(currentUser, 'users.change_role');
   // Nobody changes their own role or deletes/deactivates their own account
   // (the backend answers 400), so those controls are disabled on their own row.
   const isOwnAccount = isEditing && !!user && !!currentUser && user.id === currentUser.id;
-  const canChangeRole = mayChangeRoles && !isOwnAccount;
+  const initialRole = user?.role || 'user';
+  const initialRoleDef = roles.find((r) => r.key === initialRole);
+  const targetWithinMine =
+    !isEditing ||
+    (initialRoleDef ? roleWithin(initialRoleDef, currentUser) : initialRole !== ADMIN_ROLE_KEY || canAssignAdmin);
+  const canChangeRole = mayChangeRoles && !isOwnAccount && targetWithinMine;
+  const roleOptions = useMemo(() => {
+    const options = roles.map((r) => {
+      const assignable = roleWithin(r, currentUser);
+      const suffix = assignable ? '' : r.key === ADMIN_ROLE_KEY ? ' (admin only)' : ' (more than your role)';
+      return { value: r.key, label: `${r.name}${suffix}`, disabled: !assignable };
+    });
+    // Roles not loaded (yet): still show the account's own role.
+    if (!options.some((o) => o.value === initialRole)) {
+      options.unshift({ value: initialRole, label: user?.role_name ?? initialRole, disabled: false });
+    }
+    return options;
+  }, [roles, currentUser, initialRole, user?.role_name]);
+  const roleHint = canChangeRole
+    ? roleOptions.some((o) => o.disabled)
+      ? "Roles granting permissions you don't hold can't be assigned"
+      : undefined
+    : !mayChangeRoles
+      ? 'Your role cannot change roles'
+      : isOwnAccount
+        ? "You can't change your own role"
+        : 'You can only change the role of users whose role grants no more than yours';
   const canDelete = can(currentUser, 'users.delete');
   const canToggleActive = isEditing && can(currentUser, 'users.toggle_active') && !isOwnAccount;
   // Other people's email and password need users.edit_credentials; everyone
@@ -819,21 +852,11 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
           label="Role *"
           fullWidth
           id="role"
-          options={[
-            { value: 'user', label: 'User' },
-            { value: 'superuser', label: 'SuperUser' },
-            { value: 'admin', label: canAssignAdmin ? 'Admin' : 'Admin (admin only)', disabled: !canAssignAdmin },
-          ]}
+          options={roleOptions}
           value={role}
           onChange={(e) => setRole(e.target.value as UserRole)}
           disabled={!canChangeRole}
-          hint={
-            canChangeRole
-              ? undefined
-              : mayChangeRoles
-                ? "You can't change your own role"
-                : 'Your role cannot change roles'
-          }
+          hint={roleHint}
         />
         {isEditing && (
           <div className={styles.field}>

@@ -27,6 +27,7 @@ import type {
   Tag,
   TagGroup,
   Team,
+  Role,
   AbsenceType,
 } from '@/types';
 import { buildClosureIndex } from '@/utils/siteClosure';
@@ -68,6 +69,12 @@ interface AppState {
   tagGroups: TagGroup[];
   /** Teams of every site, including inactive ones */
   teams: Team[];
+  /**
+   * Roles with their matrices and user counts (tenant configuration). Loaded
+   * on first use by hooks/useRoles, refreshed by the `roles` WS slice; empty
+   * until then.
+   */
+  roles: Role[];
   /** Tenant-wide absence categories, including inactive ones */
   absenceTypes: AbsenceType[];
 
@@ -107,6 +114,7 @@ interface AppState {
   setTags: (tags: Tag[]) => void;
   setTagGroups: (tagGroups: TagGroup[]) => void;
   setTeams: (teams: Team[]) => void;
+  setRoles: (roles: Role[]) => void;
   setAbsenceTypes: (absenceTypes: AbsenceType[]) => void;
 
   // ---------------------------------------------
@@ -162,6 +170,7 @@ const initialState = {
   tags: [] as Tag[],
   tagGroups: [] as TagGroup[],
   teams: [] as Team[],
+  roles: [] as Role[],
   absenceTypes: [] as AbsenceType[],
 
   // Selections
@@ -220,6 +229,8 @@ export const useAppStore = create<AppState>()(
       setTagGroups: (tagGroups) => set({ tagGroups }),
 
       setTeams: (teams) => set({ teams }),
+
+      setRoles: (roles) => set({ roles }),
 
       setAbsenceTypes: (absenceTypes) => set({ absenceTypes }),
 

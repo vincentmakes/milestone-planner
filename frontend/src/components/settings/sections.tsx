@@ -16,6 +16,9 @@ import type { SettingsSection, SettingsSectionId } from './types';
 const GeneralPanel = lazy(() =>
   import('./panels/GeneralPanel').then((m) => ({ default: m.GeneralPanel }))
 );
+const RolesPanel = lazy(() =>
+  import('./panels/RolesPanel').then((m) => ({ default: m.RolesPanel }))
+);
 const SitesPanel = lazy(() =>
   import('./panels/SitesPanel').then((m) => ({ default: m.SitesPanel }))
 );
@@ -77,6 +80,20 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       <svg {...svgProps}>
         <circle cx="12" cy="12" r="3" />
         <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+      </svg>
+    ),
+  },
+  {
+    group: 'General',
+    id: 'roles',
+    label: 'Roles',
+    // The admin role alone: role and approval-policy writes are admin-only.
+    permission: 'roles.manage',
+    description: 'What each role may do, custom roles, and who approves own-booking changes.',
+    Panel: RolesPanel,
+    icon: (
+      <svg {...svgProps}>
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
       </svg>
     ),
   },

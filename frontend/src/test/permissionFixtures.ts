@@ -8,6 +8,7 @@
  */
 import { PERMISSION_KEYS } from '@/types/permissions';
 import type { PermissionKey } from '@/types/permissions';
+import type { PermissionCatalogue } from '@/types';
 
 export const ALL_PERMISSIONS: readonly PermissionKey[] = PERMISSION_KEYS;
 
@@ -90,5 +91,49 @@ export function asSignedIn<T extends { role: string; permissions?: string[] }>(
     permissions,
     approval_required: [],
     can_see_all_sites: permissions.includes('sites.view_all'),
+  };
+}
+
+/**
+ * A small GET /api/permissions catalogue: a locked key in Projects, the
+ * approvable own-booking keys in Assignments, and the locked admin-only
+ * roles.manage in Administration.
+ */
+export function makeCatalogue(): PermissionCatalogue {
+  const entry = (
+    key: string,
+    label: string,
+    extra: Partial<PermissionCatalogue['groups'][number]['permissions'][number]> = {}
+  ) => ({
+    key,
+    label,
+    description: `${label}.`,
+    approvable: false,
+    locked: false,
+    defaults: { superuser: 'allow' as const, user: null },
+    ...extra,
+  });
+  return {
+    groups: [
+      {
+        name: 'Projects',
+        permissions: [
+          entry('projects.view', 'View projects', { locked: true, defaults: { superuser: 'allow', user: 'allow' } }),
+          entry('projects.create', 'Create projects'),
+        ],
+      },
+      {
+        name: 'Assignments',
+        permissions: [
+          entry('assignments.manage_others', "Manage others' bookings"),
+          entry('assignments.self_create', 'Book own time', { approvable: true, defaults: { superuser: 'allow', user: 'allow' } }),
+        ],
+      },
+      {
+        name: 'Administration',
+        permissions: [entry('roles.manage', 'Manage roles', { locked: true, defaults: { superuser: null, user: null } })],
+      },
+    ],
+    pm_bundle: ['assignments.manage_others'],
   };
 }

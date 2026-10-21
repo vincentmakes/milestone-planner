@@ -17,6 +17,7 @@ import * as users from '../users';
 import * as vacations from '../vacations';
 import { tagsApi, tagGroupsApi } from '../tags';
 import { teamsApi } from '../teams';
+import { rolesApi } from '../roles';
 import { skillsApi } from '../skills';
 import { absenceTypesApi } from '../absenceTypes';
 import { getAppVersion } from '../health';
@@ -330,6 +331,30 @@ describe('team endpoints', () => {
     ],
     ['teams update', () => teamsApi.update(3, { name: 'QC' }), 'PUT', '/api/teams/3', { name: 'QC' }],
     ['teams delete', () => teamsApi.delete(3), 'DELETE', '/api/teams/3'],
+  ]);
+});
+
+describe('role and approval policy endpoints', () => {
+  runCases([
+    ['permissions catalogue', () => rolesApi.getPermissions(), 'GET', '/api/permissions'],
+    ['roles getAll', () => rolesApi.getAll(), 'GET', '/api/roles'],
+    [
+      'roles create',
+      () => rolesApi.create({ key: 'team_lead', name: 'Team lead', permissions: { 'teams.manage': 'allow' } }),
+      'POST',
+      '/api/roles',
+      { key: 'team_lead', name: 'Team lead', permissions: { 'teams.manage': 'allow' } },
+    ],
+    ['roles update', () => rolesApi.update(4, { name: 'Lead' }), 'PUT', '/api/roles/4', { name: 'Lead' }],
+    ['roles delete', () => rolesApi.delete(4), 'DELETE', '/api/roles/4'],
+    ['approval policies', () => rolesApi.getApprovalPolicies(), 'GET', '/api/approval-policies'],
+    [
+      'approval policy update',
+      () => rolesApi.updateApprovalPolicy('assignments.self_create', { pm_approves: false, role_ids: [2] }),
+      'PUT',
+      '/api/approval-policies/assignments.self_create',
+      { pm_approves: false, role_ids: [2] },
+    ],
   ]);
 });
 

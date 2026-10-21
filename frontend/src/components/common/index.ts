@@ -34,4 +34,7 @@ export type { TagFilterDropdownProps } from './TagFilterDropdown';
 export { TeamChecklist } from './TeamChecklist';
 export type { TeamChecklistProps } from './TeamChecklist';
 
+export { RoleChecklist } from './RoleChecklist';
+export type { RoleChecklistProps } from './RoleChecklist';
+
 export { ConfirmDialog } from './ConfirmDialog';

@@ -15,7 +15,7 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { createUser, deleteUser } from '@/api/endpoints/users';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { stubConfirm } from '@/test/confirmDialog';
-import { makeTeam } from '@/test/factories';
+import { makeRole, makeSystemRoles, makeTeam } from '@/test/factories';
 import type { Site, User } from '@/types';
 import { asSignedIn } from '@/test/permissionFixtures';
 
@@ -27,6 +27,9 @@ vi.mock('@/api/endpoints/users', () => ({
   createUser: vi.fn(),
   deleteUser: vi.fn(),
 }));
+
+const rolesApi = vi.hoisted(() => ({ getAll: vi.fn() }));
+vi.mock('@/api/endpoints/roles', () => ({ rolesApi }));
 
 vi.mock('@/hooks/useDataLoader', () => ({
   useDataLoader: () => ({ refreshStaff: vi.fn() }),
@@ -70,8 +73,18 @@ const bob: User = {
   job_title: 'Analyst',
 };
 
+/** A custom role within a team lead's keys, and the team lead's own role */
+const viewerRole = makeRole({ id: 5, key: 'viewer', name: 'Viewer', sort_order: 4 });
+const leadRole = makeRole({
+  id: 4,
+  key: 'team_lead',
+  name: 'Team Lead',
+  permissions: { 'projects.view': 'allow', 'users.view': 'allow', 'users.edit': 'allow', 'users.change_role': 'allow' },
+});
+const ROLES = makeSystemRoles(leadRole, viewerRole);
+
 function seed(currentUser: User, sites: Site[]) {
-  useAppStore.setState({ currentUser: asSignedIn(currentUser), sites, skills: [] });
+  useAppStore.setState({ currentUser: asSignedIn(currentUser), sites, skills: [], roles: ROLES });
 }
 
 const rowOf = async (name: string) => (await screen.findByText(name)).closest('tr') as HTMLElement;
@@ -84,6 +97,7 @@ async function openEditor(name: string) {
 const save = () => fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
 
 beforeEach(() => {
+  rolesApi.getAll.mockReset().mockResolvedValue(ROLES);
   getUsers.mockReset().mockResolvedValue([ada, sam, bob]);
   updateUser.mockReset().mockResolvedValue({});
 });
@@ -214,9 +228,14 @@ describe('UsersPanel filters and new user form (admin)', () => {
     pick('Status', 'active');
     count('3 users');
 
+    expect(
+      Array.from((screen.getByLabelText('Role') as HTMLSelectElement).options).map((o) => o.text)
+    ).toEqual(['All Roles', 'Admin', 'Superuser', 'User', 'Team Lead', 'Viewer']);
     pick('Role', 'superuser');
     count('1 user (filtered from 3)');
     expect(screen.getByText('Sam Super')).toBeInTheDocument();
+    pick('Role', 'viewer');
+    count('0 users (filtered from 3)');
     pick('Role', 'all');
 
     pick('Job Title', 'Analyst');
@@ -553,18 +572,67 @@ describe('UsersPanel by permission key', () => {
     expect(payload).not.toHaveProperty('role');
   });
 
-  it('sends the role with users.change_role, but offers the admin role only to administrators', async () => {
-    seed(lead(['users.view', 'users.edit', 'users.change_role']), [siteA]);
+  it('sends the role with users.change_role, offering only roles within the editor\'s own keys', async () => {
+    getUsers.mockResolvedValue([ada, sam, { ...bob, role: 'viewer', role_name: 'Viewer' }]);
+    seed(lead(['projects.view', 'users.view', 'users.edit', 'users.change_role']), [siteA]);
     render(<UsersPanel />);
     await openEditor('Bob Brown');
     expect(screen.getByRole('switch', { name: 'Active' })).toBeDisabled();
     expect(screen.getByText('Your role cannot enable or disable users')).toBeInTheDocument();
+
+    const role = screen.getByLabelText('Role *');
+    expect(role).toHaveValue('viewer');
     expect(screen.getByRole('option', { name: 'Admin (admin only)' })).toBeDisabled();
-    fireEvent.change(screen.getByLabelText('Role *'), { target: { value: 'superuser' } });
+    expect(screen.getByRole('option', { name: 'Superuser (more than your role)' })).toBeDisabled();
+    expect(screen.getByRole('option', { name: 'User (more than your role)' })).toBeDisabled();
+    expect(screen.getByRole('option', { name: 'Team Lead' })).toBeEnabled();
+    expect(screen.getByRole('option', { name: 'Viewer' })).toBeEnabled();
+    expect(screen.getByText("Roles granting permissions you don't hold can't be assigned")).toBeInTheDocument();
+
+    fireEvent.change(role, { target: { value: 'team_lead' } });
     save();
     await waitFor(() => expect(updateUser).toHaveBeenCalled());
     const payload = updateUser.mock.calls[0][1];
-    expect(payload).toMatchObject({ role: 'superuser' });
+    expect(payload).toMatchObject({ role: 'team_lead' });
     expect(payload).not.toHaveProperty('active');
+  });
+
+  it("keeps the role of someone whose role grants more than the editor's", async () => {
+    seed(lead(['projects.view', 'users.view', 'users.edit', 'users.change_role']), [siteA]);
+    render(<UsersPanel />);
+    await openEditor('Bob Brown');
+    expect(screen.getByLabelText('Role *')).toBeDisabled();
+    expect(
+      screen.getByText('You can only change the role of users whose role grants no more than yours')
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Last Name *'), { target: { value: 'Browne' } });
+    save();
+    await waitFor(() => expect(updateUser).toHaveBeenCalled());
+    expect(updateUser.mock.calls[0][1]).not.toHaveProperty('role');
+  });
+
+  it('offers every role to an administrator, and loads the roles when the store has none', async () => {
+    seed(ada, [siteA, siteB]);
+    useAppStore.setState({ roles: [] });
+    render(<UsersPanel />);
+    await waitFor(() => expect(useAppStore.getState().roles).toHaveLength(5));
+    expect(rolesApi.getAll).toHaveBeenCalledTimes(1);
+    await openEditor('Bob Brown');
+    const options = Array.from((screen.getByLabelText('Role *') as HTMLSelectElement).options);
+    expect(options.map((o) => o.text)).toEqual(['Admin', 'Superuser', 'User', 'Team Lead', 'Viewer']);
+    expect(options.every((o) => !o.disabled)).toBe(true);
+    expect(screen.queryByText("Roles granting permissions you don't hold can't be assigned")).not.toBeInTheDocument();
+  });
+
+  it("still shows the user's role while the roles are unavailable", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    rolesApi.getAll.mockRejectedValue(new Error('500'));
+    seed(ada, [siteA, siteB]);
+    useAppStore.setState({ roles: [] });
+    getUsers.mockResolvedValue([ada, { ...bob, role: 'viewer', role_name: 'Viewer' }]);
+    render(<UsersPanel />);
+    await openEditor('Bob Brown');
+    expect(screen.getByLabelText('Role *')).toHaveValue('viewer');
+    expect(screen.getByRole('option', { name: 'Viewer' })).toBeInTheDocument();
   });
 });

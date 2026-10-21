@@ -4,7 +4,7 @@
  * Configure Microsoft Entra SSO settings. Admin only.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
@@ -15,6 +15,8 @@ import { useAppStore } from '@/stores/appStore';
 import { apiGet, apiPut } from '@/api/client';
 import styles from './SSOPanel.module.css';
 import { can } from '@/utils/permissions';
+import { useRoles } from '@/hooks/useRoles';
+import { ADMIN_ROLE_KEY } from '@/types/permissions';
 
 interface SSOFullConfig {
   // enabled / auto_create_users arrive as the integer columns (0 | 1)
@@ -24,9 +26,43 @@ interface SSOFullConfig {
   client_secret_masked?: string;
   redirect_uri: string;
   auto_create_users: boolean | number;
-  default_role: 'user' | 'superuser' | 'admin';
+  /** A role key (system or custom; never admin) */
+  default_role: string;
   org_sso_active?: boolean;
   organization?: { name?: string };
+}
+
+/**
+ * The role SSO-created users get: every role but admin (the server refuses
+ * it). Its own component so the roles load only when the form shows; while
+ * they load, the saved key is the one option.
+ */
+function DefaultRoleSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (role: string) => void;
+  disabled: boolean;
+}) {
+  const roles = useRoles();
+  const options = useMemo(() => {
+    const list = roles.filter((r) => r.key !== ADMIN_ROLE_KEY).map((r) => ({ value: r.key, label: r.name }));
+    if (!list.some((o) => o.value === value)) list.unshift({ value, label: value });
+    return list;
+  }, [roles, value]);
+  return (
+    <Select
+      label="Default role for new users"
+      fullWidth
+      id="defaultRole"
+      options={options}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+    />
+  );
 }
 
 export function SSOPanel() {
@@ -40,7 +76,7 @@ export function SSOPanel() {
   const [clientSecretPlaceholder, setClientSecretPlaceholder] = useState('');
   const [redirectUri, setRedirectUri] = useState('');
   const [autoCreateUsers, setAutoCreateUsers] = useState(false);
-  const [defaultRole, setDefaultRole] = useState<'user' | 'superuser' | 'admin'>('user');
+  const [defaultRole, setDefaultRole] = useState('user');
 
   // When the tenant's organization manages SSO, the tenant-level config below
   // is overridden and never takes effect, so the form is shown read-only.
@@ -231,16 +267,9 @@ export function SSOPanel() {
               label="Auto-create users on first SSO login"
             />
             
-            <Select
-              label="Default role for new users"
-              fullWidth
-              id="defaultRole"
-              options={[
-                { value: 'user', label: 'User' },
-                { value: 'superuser', label: 'SuperUser' },
-              ]}
+            <DefaultRoleSelect
               value={defaultRole}
-              onChange={(e) => setDefaultRole(e.target.value as 'user' | 'superuser')}
+              onChange={setDefaultRole}
               disabled={!enabled || !autoCreateUsers || orgSSOActive}
             />
           </div>
