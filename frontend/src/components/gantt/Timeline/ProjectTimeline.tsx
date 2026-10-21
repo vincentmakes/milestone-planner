@@ -26,10 +26,15 @@ import {
   absenceColor,
   cleanVacationDescription,
 } from '@/utils/recurringVacation';
-import { getClosureOn } from '@/utils/siteClosure';
+import { EMPTY_TEAM_SET, getClosureOn } from '@/utils/siteClosure';
 import { indexTags, projectBarColor } from '@/utils/tags';
 import { useGanttColorBy } from '@/hooks/useGanttColorBy';
-import { selectStaffSiteIds, selectAbsenceTypesById } from '@/stores/appStore';
+import {
+  selectStaffSiteIds,
+  selectStaffTeamIds,
+  selectTeamSiteById,
+  selectAbsenceTypesById,
+} from '@/stores/appStore';
 import { DEFAULT_EVENT_COLOR } from '@/utils/colorSwatches';
 import styles from './ProjectTimeline.module.css';
 import { daysBetweenDateStrings } from '@/utils/date';
@@ -1005,6 +1010,8 @@ const AssignmentBar = memo(function AssignmentBar({
   // Site closures (company events flagged as such) also mark the bar
   const closureIndex = useAppStore((s) => s.closureIndex);
   const staffSiteIds = useAppStore(selectStaffSiteIds);
+  const staffTeamIds = useAppStore(selectStaffTeamIds);
+  const teamSiteById = useAppStore(selectTeamSiteById);
 
   // Live attribution: show "✨ Vincent D." on this bar if another user just
   // changed THIS specific assignment. Staff and equipment assignments live
@@ -1042,6 +1049,7 @@ const AssignmentBar = memo(function AssignmentBar({
       (v) => v.staff_id === staffId && (dayCells || !parseRecurringPattern(v.description))
     );
     const sites = staffSiteIds.get(staffId);
+    const teams = staffTeamIds.get(staffId) ?? EMPTY_TEAM_SET;
     const hasClosures = closureIndex.size > 0 && !!sites;
     if (staffVacations.length === 0 && !hasClosures) return [];
 
@@ -1062,7 +1070,9 @@ const AssignmentBar = memo(function AssignmentBar({
           : description || typeName;
         color = absenceColor(absence.type);
       } else {
-        const closure = hasClosures && sites ? getClosureOn(sites, cell.dateStr, closureIndex) : null;
+        const closure = hasClosures && sites
+          ? getClosureOn(sites, cell.dateStr, closureIndex, teams, teamSiteById)
+          : null;
         if (!closure) return;
         title = `Site closed: ${closure.name}`;
         color = closure.color || DEFAULT_EVENT_COLOR;
@@ -1080,7 +1090,7 @@ const AssignmentBar = memo(function AssignmentBar({
     });
 
     return markers;
-  }, [staffId, assignmentType, vacations, typesById, closureIndex, staffSiteIds, cells, cellWidth, viewMode]);
+  }, [staffId, assignmentType, vacations, typesById, closureIndex, staffSiteIds, staffTeamIds, teamSiteById, cells, cellWidth, viewMode]);
 
   if (!barPosition) return null;
 

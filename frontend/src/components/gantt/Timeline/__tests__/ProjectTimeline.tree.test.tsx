@@ -17,7 +17,7 @@ import {
   useViewStore,
   useCustomColumnStore,
 } from '@/stores';
-import { makePhase, makeProject, makeStaff, makeSubphase, makeUser, makeVacation } from '@/test/factories';
+import { makePhase, makeProject, makeStaff, makeSubphase, makeTeam, makeUser, makeVacation } from '@/test/factories';
 import type { Project } from '@/types';
 
 const ws = vi.hoisted(() => ({ recentChanges: [] as Array<Record<string, unknown>> }));
@@ -164,6 +164,44 @@ describe('ProjectTimeline rows', () => {
     expect(absences.length).toBeGreaterThan(0);
     absences.forEach((a) => expect(a.style.width).toBe('60px'));
     expect(screen.getAllByTitle('Site closed: Shutdown').length).toBeGreaterThan(0);
+  });
+
+  it('marks a team-restricted closure on team members\' bookings only', () => {
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
+      staff: [
+        makeStaff({ id: 4, name: 'Bob Brown', site_id: 1, team_ids: [1] }),
+        makeStaff({ id: 5, name: 'Carol White', site_id: 1, team_ids: [2] }),
+      ],
+    });
+    act(() =>
+      useAppStore.getState().setCompanyEvents(
+        [
+          { id: 3, site_id: 1, site_ids: [1], team_ids: [1], date: '2026-09-15', name: 'Team offsite', counts_as_unavailable: true },
+          { id: 4, site_id: 1, site_ids: [1], team_ids: [], date: '2026-09-16', name: 'Shutdown', counts_as_unavailable: true },
+        ],
+        new Set(['2026-09-15', '2026-09-16'])
+      )
+    );
+    const booking = (staffId: number, name: string) =>
+      buildProject({
+        phases: [],
+        equipmentAssignments: [],
+        staffAssignments: [
+          { id: 50, staff_id: staffId, staff_name: name, allocation: 40, start_date: '2026-09-07', end_date: '2026-09-18' },
+        ],
+      });
+
+    // A member: both closures
+    const { unmount } = renderTimeline(booking(4, 'Bob Brown'));
+    expect(screen.getAllByTitle('Site closed: Team offsite')).toHaveLength(1);
+    expect(screen.getAllByTitle('Site closed: Shutdown')).toHaveLength(1);
+    unmount();
+
+    // A non-member on the same site: only the whole-site closure
+    renderTimeline(booking(5, 'Carol White'));
+    expect(screen.queryByTitle('Site closed: Team offsite')).not.toBeInTheDocument();
+    expect(screen.getAllByTitle('Site closed: Shutdown')).toHaveLength(1);
   });
 
   it('shows who just edited a phase, subphase or booking', () => {

@@ -4,7 +4,7 @@
  * a card onto the Gantt (managers anything, everyone else only themselves).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { ResourcePanel } from '../ResourcePanel';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -198,5 +198,28 @@ describe('ResourcePanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Equipment' }));
     expect(screen.getByText('Bioreactor 50L')).toBeInTheDocument();
     expect(screen.queryByText('HPLC')).not.toBeInTheDocument();
+  });
+
+  it('applies a team-restricted closure to team members only, a whole-site closure to everyone', () => {
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
+      staff: [
+        makeStaff({ id: 4, name: 'Bob Brown', team_ids: [1] }),
+        makeStaff({ id: 5, name: 'Carol White', team_ids: [2] }),
+        makeStaff({ id: 6, name: 'Dave Doe', team_ids: [] }),
+      ],
+    });
+    const event = { id: 3, site_id: 1, site_ids: [1], date: today, name: 'Team offsite', counts_as_unavailable: true };
+    act(() => useAppStore.getState().setCompanyEvents([{ ...event, team_ids: [1] }], new Set([today])));
+    render(<ResourcePanel />);
+    expect(within(card('Bob Brown')).getByText('0%')).toBeInTheDocument();
+    // Same site, not in the team
+    expect(within(card('Carol White')).getByText('100%')).toBeInTheDocument();
+    expect(within(card('Dave Doe')).getByText('100%')).toBeInTheDocument();
+
+    act(() => useAppStore.getState().setCompanyEvents([{ ...event, team_ids: [] }], new Set([today])));
+    for (const name of ['Bob Brown', 'Carol White', 'Dave Doe']) {
+      expect(within(card(name)).getByText('0%')).toBeInTheDocument();
+    }
   });
 });

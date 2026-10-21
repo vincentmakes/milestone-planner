@@ -5,9 +5,14 @@ import { useEquipmentOverlaps, useEquipmentTodayStatus } from '@/hooks/useEquipm
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
 import { isUnavailableOn } from '@/utils/recurringVacation';
 import type { AbsenceTypesById } from '@/utils/recurringVacation';
-import { getClosureOn } from '@/utils/siteClosure';
+import { EMPTY_TEAM_SET, getClosureOn } from '@/utils/siteClosure';
 import type { ClosureIndex } from '@/utils/siteClosure';
-import { selectStaffSiteIds, selectAbsenceTypesById } from '@/stores/appStore';
+import {
+  selectStaffSiteIds,
+  selectStaffTeamIds,
+  selectTeamSiteById,
+  selectAbsenceTypesById,
+} from '@/stores/appStore';
 import { formatDateISO, parseLocalDate } from '@/utils/date';
 import { canManageAnyProject, isSelf } from '@/utils/permissions';
 import styles from './ResourceCard.module.css';
@@ -35,7 +40,9 @@ function calculateStaffAllocationToday(
   vacations: Vacation[],
   absenceTypesById: AbsenceTypesById,
   staffSiteIds: ReadonlySet<number>,
-  closureIndex: ClosureIndex
+  closureIndex: ClosureIndex,
+  staffTeamIds: ReadonlySet<number>,
+  teamSiteById: ReadonlyMap<number, number>
 ): number {
   const today = new Date();
   today.setHours(12, 0, 0, 0); // Noon to avoid timezone issues
@@ -46,8 +53,9 @@ function calculateStaffAllocationToday(
   if (isUnavailableOn(staffId, todayStr, vacations, absenceTypesById)) {
     return 100; // Fully allocated (no availability) during the absence
   }
-  // A company event closing one of their sites today also takes them off
-  if (getClosureOn(staffSiteIds, todayStr, closureIndex)) {
+  // A company event closing one of their sites today (for everyone there, or
+  // for one of their teams) also takes them off
+  if (getClosureOn(staffSiteIds, todayStr, closureIndex, staffTeamIds, teamSiteById)) {
     return 100;
   }
   
@@ -98,6 +106,8 @@ export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
   const absenceTypesById = useAppStore(selectAbsenceTypesById);
   const closureIndex = useAppStore((s) => s.closureIndex);
   const staffSiteIds = useAppStore(selectStaffSiteIds);
+  const staffTeamIds = useAppStore(selectStaffTeamIds);
+  const teamSiteById = useAppStore(selectTeamSiteById);
   const currentUser = useAppStore((s) => s.currentUser);
   const { handleDragStart, handleDragEnd } = useResourceDragDrop();
   const overlapMap = useEquipmentOverlaps();
@@ -115,7 +125,9 @@ export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
         vacations,
         absenceTypesById,
         staffSiteIds.get(resource.id) ?? new Set([resource.site_id]),
-        closureIndex
+        closureIndex,
+        staffTeamIds.get(resource.id) ?? EMPTY_TEAM_SET,
+        teamSiteById
       )
     : todayStatusMap.get(resource.id) ? 100 : 0;
   

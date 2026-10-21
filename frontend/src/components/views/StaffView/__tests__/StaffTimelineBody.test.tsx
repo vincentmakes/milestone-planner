@@ -5,12 +5,13 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, fireEvent, screen } from '@testing-library/react';
+import { render, fireEvent, screen, act, within } from '@testing-library/react';
 import { StaffTimelineBody } from '../StaffTimelineBody';
 import { generateTimelineCells } from '@/components/gantt/utils';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import type { Staff, Vacation } from '@/types';
+import { makeTeam } from '@/test/factories';
 
 const bob: Staff = { id: 4, name: 'Bob Brown', site_id: 1, active: true };
 
@@ -77,5 +78,56 @@ describe('StaffTimelineBody vacation bars', () => {
 
     expect(useUIStore.getState().activeModal).toBeNull();
     expect(useUIStore.getState().editingVacation).toBeNull();
+  });
+});
+
+describe('StaffTimelineBody site closures', () => {
+  it('marks a team-restricted closure for members only and a whole-site closure for everyone', () => {
+    const member: Staff = { ...bob, team_ids: [1] };
+    const colleague: Staff = { id: 5, name: 'Carol White', site_id: 1, active: true, team_ids: [2] };
+    const noTeam: Staff = { id: 6, name: 'Dave Doe', site_id: 1, active: true, team_ids: [] };
+    const people = [member, colleague, noTeam];
+    seedUser({ id: 1, role: 'admin' });
+    useAppStore.setState({
+      staff: people,
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
+    });
+    act(() =>
+      useAppStore.getState().setCompanyEvents(
+        [
+          { id: 3, site_id: 1, site_ids: [1], team_ids: [1], date: '2026-09-15', name: 'Team offsite', counts_as_unavailable: true },
+          { id: 4, site_id: 1, site_ids: [1], team_ids: [], date: '2026-09-16', name: 'Shutdown', counts_as_unavailable: true },
+        ],
+        new Set(['2026-09-15', '2026-09-16'])
+      )
+    );
+    const cells = generateTimelineCells(new Date(2026, 8, 15), 'month', new Set(), []);
+    const { container } = render(
+      <StaffTimelineBody
+        staff={people}
+        assignmentsMap={new Map()}
+        vacationsMap={new Map()}
+        rowHeights={new Map(people.map((p) => [p.id, 44]))}
+        expandedStaff={new Set()}
+        expandedBankHolidays={false}
+        expandedCompanyEvents={false}
+        cells={cells}
+        cellWidth={30}
+        totalWidth={cells.length * 30}
+        viewMode="month"
+      />
+    );
+
+    const rows = Array.from(container.querySelectorAll<HTMLElement>('[class*="staffWrapper"]'));
+    expect(rows).toHaveLength(3);
+    const closed = (row: HTMLElement, name: string) => within(row).queryAllByTitle(`Site closed: ${name}`).length;
+    // The member
+    expect(closed(rows[0], 'Team offsite')).toBe(1);
+    expect(closed(rows[0], 'Shutdown')).toBe(1);
+    // A member of another team and someone in no team, on the same site
+    for (const row of rows.slice(1)) {
+      expect(closed(row, 'Team offsite')).toBe(0);
+      expect(closed(row, 'Shutdown')).toBe(1);
+    }
   });
 });

@@ -34,7 +34,8 @@ export function closureTeamIds(event: CompanyEvent): number[] {
   return event.team_ids ?? [];
 }
 
-const EMPTY_TEAM_SET: ReadonlySet<number> = new Set();
+/** A person in no team (callers pass it when the person's teams are unknown). */
+export const EMPTY_TEAM_SET: ReadonlySet<number> = new Set();
 const EMPTY_TEAM_SITE_MAP: ReadonlyMap<number, number> = new Map();
 
 /**

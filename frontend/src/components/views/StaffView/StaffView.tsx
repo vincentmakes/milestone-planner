@@ -32,8 +32,13 @@ import {
   isUnavailableOn,
 } from '@/utils/recurringVacation';
 import { formatDateISO, parseLocalDate } from '@/utils/date';
-import { getClosureOn } from '@/utils/siteClosure';
-import { selectStaffSiteIds, selectAbsenceTypesById } from '@/stores/appStore';
+import { EMPTY_TEAM_SET, getClosureOn } from '@/utils/siteClosure';
+import {
+  selectStaffSiteIds,
+  selectStaffTeamIds,
+  selectTeamSiteById,
+  selectAbsenceTypesById,
+} from '@/stores/appStore';
 import { canManageAnyProject, isSelf } from '@/utils/permissions';
 import type { Project, Phase, Subphase, StaffAssignment } from '@/types';
 import { confirmAction } from '@/utils/confirmDialog';
@@ -93,6 +98,8 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const companyEvents = useAppStore((s) => s.companyEvents);
   const closureIndex = useAppStore((s) => s.closureIndex);
   const staffSiteIds = useAppStore(selectStaffSiteIds);
+  const staffTeamIds = useAppStore(selectStaffTeamIds);
+  const teamSiteById = useAppStore(selectTeamSiteById);
   const { staffMatches } = useTeamFilter();
   const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
   const viewMode = useViewStore((s) => s.viewMode);
@@ -484,7 +491,8 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
       return { available: 0, maxCapacity }; // No availability during the absence
     }
     const sites = staffSiteIds.get(staffId) ?? new Set(currentSite ? [currentSite.id] : []);
-    if (getClosureOn(sites, todayStr, closureIndex)) {
+    const teams = staffTeamIds.get(staffId) ?? EMPTY_TEAM_SET;
+    if (getClosureOn(sites, todayStr, closureIndex, teams, teamSiteById)) {
       return { available: 0, maxCapacity }; // Site closed today
     }
     
