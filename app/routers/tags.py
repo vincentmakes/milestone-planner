@@ -259,6 +259,7 @@ async def update_tag(
     new_all_sites = requested_all_sites if requested_all_sites is not None else tag.all_sites
     sites_change = tag_data.all_sites is not None or tag_data.site_ids is not None
     new_sites: list[Site] = []
+    new_site_ids: list[int] = []
     if sites_change and not new_all_sites:
         if tag_data.site_ids is not None:
             if not tag_data.site_ids:
@@ -283,7 +284,7 @@ async def update_tag(
     teams_change = tag_data.team_ids is not None
     new_teams = await load_teams(db, tag_data.team_ids or []) if teams_change else list(tag.teams)
     if not new_all_sites:
-        allowed = [s.id for s in new_sites] if sites_change else tag.site_ids
+        allowed = new_site_ids if sites_change else tag.site_ids
         if teams_change:
             ensure_teams_within_sites(new_teams, allowed, team_outside_sites_detail)
         else:

@@ -931,9 +931,9 @@ async def create_multi_site_event(
     """
     site_ids = await _ensure_sites_exist(db, data.site_ids)
     ensure_site_access(user, site_ids, EVENT_SITE_ACCESS_DETAIL)
+    _validate_range(data.date, data.end_date)
     teams = await load_teams(db, data.team_ids or [])
     ensure_teams_within_sites(teams, site_ids, team_outside_sites_detail)
-    _validate_range(data.date, data.end_date)
 
     event = await _create_event(
         db,

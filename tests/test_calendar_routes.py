@@ -507,6 +507,28 @@ async def test_create_event_rejects_a_span_over_366_days(authed_client, mock_db_
 
 
 @pytest.mark.asyncio
+async def test_create_event_checks_the_range_before_loading_teams(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.side_effect = [_scalars_result([1])]  # the sites only
+
+    response = await client.post(
+        "/api/events",
+        json={
+            "date": "2026-03-10",
+            "end_date": "2026-03-09",
+            "name": "X",
+            "site_ids": [1],
+            "team_ids": [3],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "End date cannot be before the start date"
+    assert mock_db_session.execute.await_count == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("params", "present", "absent"),
     [

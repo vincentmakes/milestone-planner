@@ -735,7 +735,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             teams=[],
         ),
         dict(
-            name="Town hall",
+            name="Formulation stability review",
             sites=[FRANKFURT],
             date=today + day(30),
             end_date=None,
