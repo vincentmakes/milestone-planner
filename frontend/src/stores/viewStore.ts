@@ -10,6 +10,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import type { KanbanGrouping } from '@/utils/kanbanCards';
 import { TAG_FILTER_KEY_PATTERN, tagFilterKey } from '@/utils/tags';
 import type { TagFilter } from '@/utils/tags';
+import type { TeamFilter } from '@/utils/teams';
 import { navigateDate } from '@/utils/date';
 import { useWhatIfStore } from './whatIfStore';
 import type {
@@ -121,6 +122,22 @@ function sanitizeTagFilters(value: unknown): Record<string, TagFilter> | null {
   return out;
 }
 
+/**
+ * Rebuild persisted team filters like {@link sanitizeTagFilters}: same key
+ * rule, malformed and empty entries dropped; null if absent/invalid.
+ */
+function sanitizeTeamFilters(value: unknown): Record<string, TeamFilter> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out: Record<string, TeamFilter> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!TAG_FILTER_KEY_PATTERN.test(key) || !raw || typeof raw !== 'object') continue;
+    const entry = raw as Record<string, unknown>;
+    const filter = { teamIds: numberArray(entry.teamIds), noTeam: entry.noTeam === true };
+    if (filter.teamIds.length > 0 || filter.noTeam) out[key] = filter;
+  }
+  return out;
+}
+
 /** Shape of a Gantt section key (see components/gantt/utils/projectSections.ts). */
 const GANTT_SECTION_KEY_PATTERN = /^(tag-\d+|none)$/;
 
@@ -188,6 +205,11 @@ interface ViewState {
    * preference: deliberately not cleared by resetAllStores().
    */
   tagFilters: Record<string, TagFilter>;
+  /**
+   * Header team filter per tenant + site, keyed by `tagFilterKey(siteId)`.
+   * Absent = "Whole site". Per-browser, like `tagFilters`.
+   */
+  teamFilters: Record<string, TeamFilter>;
 
   // ---------------------------------------------
   // GANTT GROUPING
@@ -242,6 +264,9 @@ interface ViewState {
   /** Set a site's tag filter (current tenant); an empty filter removes the entry. */
   setTagFilter: (siteId: number, filter: TagFilter) => void;
   clearTagFilter: (siteId: number) => void;
+  /** Set a site's team filter (current tenant); an empty filter removes the entry (Whole site). */
+  setTeamFilter: (siteId: number, filter: TeamFilter) => void;
+  clearTeamFilter: (siteId: number) => void;
   /**
    * Group a site's Gantt by a tag group; null removes the grouping and that
    * site's collapsed sections. Switching to another group also clears them
@@ -317,6 +342,7 @@ const initialViewState = {
 
   // Tag filter
   tagFilters: {} as Record<string, TagFilter>,
+  teamFilters: {} as Record<string, TeamFilter>,
 
   // Gantt grouping
   ganttGrouping: {} as Record<string, number>,
@@ -415,6 +441,30 @@ export const useViewStore = create<ViewState>()(
         const next = { ...state.tagFilters };
         delete next[key];
         return { tagFilters: next };
+      }),
+
+      // ---------------------------------------------
+      // Team filter
+      // ---------------------------------------------
+      setTeamFilter: (siteId, filter) => set((state) => {
+        const key = tagFilterKey(siteId);
+        const next = { ...state.teamFilters };
+        const teamIds = [...new Set(filter.teamIds)];
+        const noTeam = filter.noTeam === true;
+        if (teamIds.length === 0 && !noTeam) {
+          delete next[key];
+        } else {
+          next[key] = { teamIds, noTeam };
+        }
+        return { teamFilters: next };
+      }),
+
+      clearTeamFilter: (siteId) => set((state) => {
+        const key = tagFilterKey(siteId);
+        if (!(key in state.teamFilters)) return state;
+        const next = { ...state.teamFilters };
+        delete next[key];
+        return { teamFilters: next };
       }),
 
       // ---------------------------------------------
@@ -689,6 +739,7 @@ export const useViewStore = create<ViewState>()(
         kanbanGroupingColumnId: state.kanbanGroupingColumnId,
         kanbanMyTodoOnly: state.kanbanMyTodoOnly,
         tagFilters: state.tagFilters,
+        teamFilters: state.teamFilters,
         ganttGrouping: state.ganttGrouping,
         collapsedGanttSections: state.collapsedGanttSections,
         ganttColorBy: state.ganttColorBy,
@@ -728,6 +779,7 @@ export const useViewStore = create<ViewState>()(
           kanbanMyTodoOnly: (persisted?.kanbanMyTodoOnly as boolean) ?? currentState.kanbanMyTodoOnly,
           // Same rule for the tag filter (validated: it is user-editable storage).
           tagFilters: sanitizeTagFilters(persisted?.tagFilters) ?? currentState.tagFilters,
+          teamFilters: sanitizeTeamFilters(persisted?.teamFilters) ?? currentState.teamFilters,
           ganttGrouping: sanitizeSiteGroupIds(persisted?.ganttGrouping) ?? currentState.ganttGrouping,
           collapsedGanttSections:
             sanitizeCollapsedGanttSections(persisted?.collapsedGanttSections) ?? currentState.collapsedGanttSections,

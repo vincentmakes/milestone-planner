@@ -16,6 +16,7 @@ import {
   makeSite,
   makeStaff,
   makeTag,
+  makeTeam,
   makeVacation,
 } from '@/test/factories';
 
@@ -34,6 +35,7 @@ vi.mock('@/api', async (importOriginal) => ({
   skillsApi: { getAll: vi.fn() },
   tagsApi: { getAll: vi.fn() },
   tagGroupsApi: { getAll: vi.fn() },
+  teamsApi: { getAll: vi.fn() },
   absenceTypesApi: { getAll: vi.fn() },
 }));
 
@@ -67,6 +69,7 @@ function happyPath() {
   vi.mocked(m.skillsApi.getAll).mockResolvedValue([{ id: 1, name: 'HPLC', color: '#000' }]);
   vi.mocked(m.tagsApi.getAll).mockResolvedValue([makeTag()]);
   vi.mocked(m.tagGroupsApi.getAll).mockResolvedValue([]);
+  vi.mocked(m.teamsApi.getAll).mockResolvedValue([makeTeam()]);
   vi.mocked(m.absenceTypesApi.getAll).mockResolvedValue([absenceType]);
 }
 
@@ -91,6 +94,8 @@ describe('useDataLoader.loadAllData', () => {
     expect(s.vacations).toHaveLength(1);
     expect(s.skills).toHaveLength(1);
     expect(s.tags).toHaveLength(1);
+    expect(m.teamsApi.getAll).toHaveBeenCalledWith();
+    expect(s.teams).toEqual([makeTeam()]);
     expect(s.absenceTypes).toEqual([absenceType]);
     expect(s.instanceSettings).toEqual({ instance_title: 'Lab' });
     expect(s.currentSite?.id).toBe(1);
@@ -125,6 +130,7 @@ describe('useDataLoader.loadAllData', () => {
     vi.mocked(m.skillsApi.getAll).mockRejectedValue(new Error('x'));
     vi.mocked(m.tagsApi.getAll).mockRejectedValue(new Error('x'));
     vi.mocked(m.tagGroupsApi.getAll).mockRejectedValue(new Error('x'));
+    vi.mocked(m.teamsApi.getAll).mockRejectedValue(new Error('x'));
     vi.mocked(m.absenceTypesApi.getAll).mockRejectedValue(new Error('x'));
     m.getCustomColumnsWithValues.mockRejectedValue(new Error('no columns'));
 
@@ -135,6 +141,7 @@ describe('useDataLoader.loadAllData', () => {
     const s = useAppStore.getState();
     expect(s.equipmentBlocks).toEqual([]);
     expect(s.skills).toEqual([]);
+    expect(s.teams).toEqual([]);
     expect(s.instanceSettings).toBeNull();
     expect(s.projects).toHaveLength(1);
     expect(warn).toHaveBeenCalledWith('[DataLoader] Failed to load custom columns:', expect.any(Error));
@@ -175,6 +182,7 @@ describe('useDataLoader refreshers', () => {
       await result.current.refreshStaff();
       await result.current.refreshEquipmentBlocks();
       await result.current.refreshAbsenceTypes();
+      await result.current.refreshTeams();
     });
     const s = useAppStore.getState();
     expect(s.projects).toHaveLength(1);
@@ -186,17 +194,23 @@ describe('useDataLoader refreshers', () => {
     expect(s.staff).toHaveLength(1);
     expect(m.getEquipmentBlocks).toHaveBeenCalled();
     expect(s.absenceTypes).toEqual([absenceType]);
+    expect(s.teams).toEqual([makeTeam()]);
   });
 
   it('log and keep the current data when a refresh fails', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    useAppStore.setState({ projects: [makeProject({ id: 9 })], staff: [makeStaff({ id: 9 })] });
+    useAppStore.setState({
+      projects: [makeProject({ id: 9 })],
+      staff: [makeStaff({ id: 9 })],
+      teams: [makeTeam({ id: 9 })],
+    });
     m.loadAllProjects.mockRejectedValue(new Error('x'));
     m.getBankHolidays.mockRejectedValue(new Error('x'));
     m.getCustomColumnsWithValues.mockRejectedValue(new Error('x'));
     m.getStaff.mockRejectedValue(new Error('x'));
     m.getEquipmentBlocks.mockRejectedValue(new Error('x'));
     vi.mocked(m.absenceTypesApi.getAll).mockRejectedValue(new Error('x'));
+    vi.mocked(m.teamsApi.getAll).mockRejectedValue(new Error('x'));
 
     const { result } = renderHook(() => useDataLoader());
     await act(async () => {
@@ -206,10 +220,12 @@ describe('useDataLoader refreshers', () => {
       await result.current.refreshStaff();
       await result.current.refreshEquipmentBlocks();
       await result.current.refreshAbsenceTypes();
+      await result.current.refreshTeams();
     });
     expect(useAppStore.getState().projects.map((p) => p.id)).toEqual([9]);
     expect(useAppStore.getState().staff.map((p) => p.id)).toEqual([9]);
-    expect(err).toHaveBeenCalledTimes(6);
+    expect(useAppStore.getState().teams.map((t) => t.id)).toEqual([9]);
+    expect(err).toHaveBeenCalledTimes(7);
     err.mockRestore();
   });
 });

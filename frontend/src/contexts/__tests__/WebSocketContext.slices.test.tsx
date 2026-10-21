@@ -46,6 +46,7 @@ vi.mock('@/api/endpoints/sites', async () => {
 });
 vi.mock('@/api/endpoints/skills', () => ({ skillsApi: { getAll: vi.fn() } }));
 vi.mock('@/api/endpoints/tags', () => ({ tagsApi: { getAll: vi.fn() }, tagGroupsApi: { getAll: vi.fn() } }));
+vi.mock('@/api/endpoints/teams', () => ({ teamsApi: { getAll: vi.fn() } }));
 vi.mock('@/api/endpoints/absenceTypes', () => ({ absenceTypesApi: { getAll: vi.fn() } }));
 vi.mock('@/api/endpoints/settings', () => ({ getInstanceSettings: vi.fn() }));
 vi.mock('@/api/endpoints/auth', () => ({ fetchCurrentUser: vi.fn() }));
@@ -59,6 +60,7 @@ import { getVacations } from '@/api/endpoints/vacations';
 import { getBankHolidays, getCompanyEvents, getSites } from '@/api/endpoints/sites';
 import { skillsApi } from '@/api/endpoints/skills';
 import { tagGroupsApi, tagsApi } from '@/api/endpoints/tags';
+import { teamsApi } from '@/api/endpoints/teams';
 import { absenceTypesApi } from '@/api/endpoints/absenceTypes';
 import { getInstanceSettings } from '@/api/endpoints/settings';
 import { fetchCurrentUser } from '@/api/endpoints/auth';
@@ -72,6 +74,7 @@ import {
   makeSite,
   makeStaff,
   makeTag,
+  makeTeam,
   makeUser,
   makeVacation,
 } from '@/test/factories';
@@ -94,6 +97,7 @@ function seedApi() {
   vi.mocked(skillsApi.getAll).mockResolvedValue([{ id: 1, name: 'HPLC' } as never]);
   vi.mocked(tagsApi.getAll).mockResolvedValue([makeTag()]);
   vi.mocked(tagGroupsApi.getAll).mockResolvedValue([{ id: 1, name: 'Type' } as never]);
+  vi.mocked(teamsApi.getAll).mockResolvedValue([makeTeam()]);
   vi.mocked(absenceTypesApi.getAll).mockResolvedValue([{ id: 1, name: 'Sick' } as never]);
   vi.mocked(getCustomColumnsWithValues).mockResolvedValue({ columns: [makeCustomColumn()], values: { '1-project-1': 'High' } });
   vi.mocked(getInstanceSettings).mockResolvedValue({ instance_title: 'Lab Planner' });
@@ -140,6 +144,7 @@ describe('WebSocketProvider slice refresh', () => {
     expect(app.skills).toHaveLength(1);
     expect(app.tags).toHaveLength(1);
     expect(app.tagGroups).toHaveLength(1);
+    expect(app.teams).toEqual([makeTeam()]);
     expect(app.absenceTypes).toHaveLength(1);
     expect(app.bankHolidayDates).toEqual(new Set(['2026-08-01']));
     expect(app.companyEventDates).toEqual(new Set(['2026-09-10']));
@@ -159,6 +164,7 @@ describe('WebSocketProvider slice refresh', () => {
     }
     vi.mocked(skillsApi.getAll).mockImplementation(fail);
     vi.mocked(tagsApi.getAll).mockImplementation(fail);
+    vi.mocked(teamsApi.getAll).mockImplementation(fail);
     vi.mocked(absenceTypesApi.getAll).mockImplementation(fail);
 
     render(<WebSocketProvider><div /></WebSocketProvider>);
@@ -175,6 +181,7 @@ describe('WebSocketProvider slice refresh', () => {
         '[WS] sites refresh failed',
         '[WS] skills refresh failed',
         '[WS] tags refresh failed',
+        '[WS] teams refresh failed',
         '[WS] absence types refresh failed',
         '[WS] bank holidays refresh failed',
         '[WS] company events refresh failed',
@@ -184,6 +191,22 @@ describe('WebSocketProvider slice refresh', () => {
       ])
     );
     expect(useAppStore.getState().isAuthenticated).toBe(true);
+  });
+
+  it('reloads teams and the slices that carry team links on change:team', async () => {
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    await receive('team');
+
+    const app = useAppStore.getState();
+    expect(teamsApi.getAll).toHaveBeenCalledWith();
+    expect(app.teams).toEqual([makeTeam()]);
+    expect(app.staff).toHaveLength(1);
+    expect(app.projects.map((p) => p.name)).toEqual(['Fresh']);
+    expect(app.tags).toHaveLength(1);
+    expect(app.equipment).toHaveLength(1);
+    expect(getCompanyEvents).toHaveBeenCalledWith(1);
+    expect(getVacations).not.toHaveBeenCalled();
+    expect(skillsApi.getAll).not.toHaveBeenCalled();
   });
 
   it('drops calendar and custom-column results for a site the user has left', async () => {

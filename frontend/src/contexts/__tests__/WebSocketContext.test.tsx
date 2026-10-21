@@ -46,6 +46,7 @@ vi.mock('@/api/endpoints/sites', () => ({
 }));
 vi.mock('@/api/endpoints/skills', () => ({ skillsApi: { getAll: vi.fn(async () => []) } }));
 vi.mock('@/api/endpoints/tags', () => ({ tagsApi: { getAll: vi.fn(async () => []) }, tagGroupsApi: { getAll: vi.fn(async () => []) } }));
+vi.mock('@/api/endpoints/teams', () => ({ teamsApi: { getAll: vi.fn(async () => []) } }));
 vi.mock('@/api/endpoints/absenceTypes', () => ({ absenceTypesApi: { getAll: vi.fn(async () => []) } }));
 vi.mock('@/api/endpoints/settings', () => ({ getInstanceSettings: vi.fn() }));
 vi.mock('@/api/endpoints/auth', () => ({ fetchCurrentUser: vi.fn() }));
@@ -88,7 +89,7 @@ describe('slicesForEntity', () => {
   it('maps settings, notes and users explicitly instead of refreshing everything', () => {
     expect(slicesForEntity('settings')).toEqual(['settings']);
     expect(slicesForEntity('note')).toEqual([]);
-    expect(slicesForEntity('user')).toEqual(['staff', 'currentUser', 'projects']);
+    expect(slicesForEntity('user')).toEqual(['staff', 'currentUser', 'projects', 'teams']);
     expect(slicesForEntity('staff')).toEqual(['staff', 'projects']);
   });
 });

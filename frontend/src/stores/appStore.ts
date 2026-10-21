@@ -26,6 +26,7 @@ import type {
   Skill,
   Tag,
   TagGroup,
+  Team,
   AbsenceType,
 } from '@/types';
 import { buildClosureIndex } from '@/utils/siteClosure';
@@ -64,6 +65,8 @@ interface AppState {
   skills: Skill[];
   tags: Tag[];
   tagGroups: TagGroup[];
+  /** Teams of every site, including inactive ones */
+  teams: Team[];
   /** Tenant-wide absence categories, including inactive ones */
   absenceTypes: AbsenceType[];
 
@@ -102,6 +105,7 @@ interface AppState {
   setSkills: (skills: Skill[]) => void;
   setTags: (tags: Tag[]) => void;
   setTagGroups: (tagGroups: TagGroup[]) => void;
+  setTeams: (teams: Team[]) => void;
   setAbsenceTypes: (absenceTypes: AbsenceType[]) => void;
 
   // ---------------------------------------------
@@ -156,6 +160,7 @@ const initialState = {
   skills: [] as Skill[],
   tags: [] as Tag[],
   tagGroups: [] as TagGroup[],
+  teams: [] as Team[],
   absenceTypes: [] as AbsenceType[],
 
   // Selections
@@ -212,6 +217,8 @@ export const useAppStore = create<AppState>()(
       setTags: (tags) => set({ tags }),
 
       setTagGroups: (tagGroups) => set({ tagGroups }),
+
+      setTeams: (teams) => set({ teams }),
 
       setAbsenceTypes: (absenceTypes) => set({ absenceTypes }),
 
@@ -358,6 +365,40 @@ export const selectStaffSiteIds = (state: AppState): Map<number, Set<number>> =>
     }
   }
   staffSiteIdsCache = { staff: state.staff, map };
+  return map;
+};
+
+/**
+ * Teams of every staff member across all their sites, keyed by staff id: the
+ * union of `team_ids` over the user's per-site rows. Memoised on the `staff`
+ * array like {@link selectStaffSiteIds}.
+ */
+let staffTeamIdsCache: { staff: Staff[]; map: Map<number, Set<number>> } | null = null;
+export const selectStaffTeamIds = (state: AppState): Map<number, Set<number>> => {
+  if (staffTeamIdsCache && staffTeamIdsCache.staff === state.staff) {
+    return staffTeamIdsCache.map;
+  }
+  const map = new Map<number, Set<number>>();
+  for (const row of state.staff) {
+    let teams = map.get(row.id);
+    if (!teams) {
+      teams = new Set();
+      map.set(row.id, teams);
+    }
+    for (const teamId of row.team_ids ?? []) teams.add(teamId);
+  }
+  staffTeamIdsCache = { staff: state.staff, map };
+  return map;
+};
+
+/** Team id → site id. Memoised on the `teams` array. */
+let teamSiteByIdCache: { teams: Team[]; map: Map<number, number> } | null = null;
+export const selectTeamSiteById = (state: AppState): Map<number, number> => {
+  if (teamSiteByIdCache && teamSiteByIdCache.teams === state.teams) {
+    return teamSiteByIdCache.map;
+  }
+  const map = new Map(state.teams.map((t) => [t.id, t.site_id]));
+  teamSiteByIdCache = { teams: state.teams, map };
   return map;
 };
 

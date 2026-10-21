@@ -23,6 +23,7 @@ import {
 } from '@/api/endpoints/sites';
 import { skillsApi } from '@/api/endpoints/skills';
 import { tagsApi, tagGroupsApi } from '@/api/endpoints/tags';
+import { teamsApi } from '@/api/endpoints/teams';
 import { absenceTypesApi } from '@/api/endpoints/absenceTypes';
 import { getCustomColumnsWithValues } from '@/api/endpoints/customColumns';
 import { getInstanceSettings } from '@/api/endpoints/settings';
@@ -71,6 +72,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   const setSkills = useAppStore((s) => s.setSkills);
   const setTags = useAppStore((s) => s.setTags);
   const setTagGroups = useAppStore((s) => s.setTagGroups);
+  const setTeams = useAppStore((s) => s.setTeams);
   const setAbsenceTypes = useAppStore((s) => s.setAbsenceTypes);
   const setBankHolidays = useAppStore((s) => s.setBankHolidays);
   const setCompanyEvents = useAppStore((s) => s.setCompanyEvents);
@@ -153,6 +155,9 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
               .catch((e) => console.error('[WS] tags refresh failed', e))
           );
           break;
+        case 'teams':
+          tasks.push(teamsApi.getAll().then(setTeams).catch((e) => console.error('[WS] teams refresh failed', e)));
+          break;
         case 'absenceTypes':
           tasks.push(absenceTypesApi.getAll().then(setAbsenceTypes).catch((e) => console.error('[WS] absence types refresh failed', e)));
           break;
@@ -221,7 +226,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     }
   }, [
     setProjects, setStaff, setEquipment, setEquipmentBlocks, setVacations, setSites,
-    setSkills, setTags, setTagGroups, setAbsenceTypes, setBankHolidays, setCompanyEvents,
+    setSkills, setTags, setTagGroups, setTeams, setAbsenceTypes, setBankHolidays, setCompanyEvents,
     setInstanceSettings, setCurrentUser,
   ]);
 

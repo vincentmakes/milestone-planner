@@ -23,6 +23,7 @@ import {
   skillsApi,
   tagsApi,
   tagGroupsApi,
+  teamsApi,
   absenceTypesApi,
 } from '@/api';
 
@@ -36,6 +37,7 @@ interface UseDataLoaderReturn {
   refreshStaff: () => Promise<void>;
   refreshEquipmentBlocks: () => Promise<void>;
   refreshAbsenceTypes: () => Promise<void>;
+  refreshTeams: () => Promise<void>;
 }
 
 export function useDataLoader(): UseDataLoaderReturn {
@@ -58,6 +60,7 @@ export function useDataLoader(): UseDataLoaderReturn {
     setSkills,
     setTags,
     setTagGroups,
+    setTeams,
     setAbsenceTypes,
   } = useAppStore(
     useShallow((s) => ({
@@ -74,6 +77,7 @@ export function useDataLoader(): UseDataLoaderReturn {
       setSkills: s.setSkills,
       setTags: s.setTags,
       setTagGroups: s.setTagGroups,
+      setTeams: s.setTeams,
       setAbsenceTypes: s.setAbsenceTypes,
     }))
   );
@@ -90,7 +94,7 @@ export function useDataLoader(): UseDataLoaderReturn {
 
     try {
       // Load core data in parallel
-      const [sites, staff, equipment, equipmentBlocks, vacations, instanceSettings, skills, tags, tagGroups, absenceTypes] = await Promise.all([
+      const [sites, staff, equipment, equipmentBlocks, vacations, instanceSettings, skills, tags, tagGroups, teams, absenceTypes] = await Promise.all([
         getSites(),
         getStaff(true), // Include all sites
         getEquipment(true), // Include all sites
@@ -100,6 +104,7 @@ export function useDataLoader(): UseDataLoaderReturn {
         skillsApi.getAll().catch(() => []), // Don't fail if skills not available
         tagsApi.getAll().catch(() => []), // Don't fail if tags not available
         tagGroupsApi.getAll().catch(() => []),
+        teamsApi.getAll().catch(() => []), // Don't fail on servers without teams
         absenceTypesApi.getAll().catch(() => []), // Don't fail on servers without absence types
       ]);
 
@@ -112,6 +117,7 @@ export function useDataLoader(): UseDataLoaderReturn {
       setSkills(skills);
       setTags(tags);
       setTagGroups(tagGroups);
+      setTeams(teams);
       setAbsenceTypes(absenceTypes);
       if (instanceSettings) {
         setInstanceSettings(instanceSettings);
@@ -185,6 +191,7 @@ export function useDataLoader(): UseDataLoaderReturn {
     setSkills,
     setTags,
     setTagGroups,
+    setTeams,
     setAbsenceTypes,
     setCustomColumns,
     setCustomColumnValues,
@@ -268,6 +275,18 @@ export function useDataLoader(): UseDataLoaderReturn {
     }
   }, [setAbsenceTypes]);
 
+  /**
+   * Refresh teams (every site)
+   */
+  const refreshTeams = useCallback(async () => {
+    try {
+      const teams = await teamsApi.getAll();
+      setTeams(teams);
+    } catch (err) {
+      console.error('[DataLoader] Failed to refresh teams:', err);
+    }
+  }, [setTeams]);
+
   return {
     isLoading,
     error,
@@ -278,5 +297,6 @@ export function useDataLoader(): UseDataLoaderReturn {
     refreshStaff,
     refreshEquipmentBlocks,
     refreshAbsenceTypes,
+    refreshTeams,
   };
 }

@@ -24,21 +24,22 @@ describe('slicesForEntity', () => {
     ['company_event', ['siteCalendar']],
     ['absence_type', ['absenceTypes', 'vacations']],
     ['staff', ['staff', 'projects']],
-    ['user', ['staff', 'currentUser', 'projects']],
+    ['user', ['staff', 'currentUser', 'projects', 'teams']],
     ['equipment', ['equipment', 'projects']],
     ['equipment_block', ['equipmentBlocks']],
     ['vacation', ['vacations']],
-    ['site', ['sites', 'siteCalendar', 'projects', 'tags', 'equipment']],
+    ['site', ['sites', 'siteCalendar', 'projects', 'tags', 'equipment', 'teams']],
     ['skill', ['skills', 'staff']],
     ['tag', ['tags', 'projects']],
     ['tag_group', ['tags']],
+    ['team', ['teams', 'staff', 'projects', 'tags', 'equipment', 'siteCalendar']],
   ])('%s → %j', (entity, slices) => {
     expect(slicesForEntity(entity)).toEqual(slices);
   });
 
   it('refreshes every slice for an unknown entity', () => {
     expect(slicesForEntity('brand_new_thing')).toBe(ALL_SLICES);
-    expect(new Set(ALL_SLICES).size).toBe(13);
+    expect(new Set(ALL_SLICES).size).toBe(14);
   });
 
   it('sandboxes only the What-If plan slices', () => {

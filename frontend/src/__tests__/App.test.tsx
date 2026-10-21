@@ -42,6 +42,7 @@ vi.mock('@/api', () => ({
   skillsApi: { getAll: vi.fn(async () => []) },
   tagsApi: { getAll: vi.fn(async () => []) },
   tagGroupsApi: { getAll: vi.fn(async () => []) },
+  teamsApi: { getAll: vi.fn(async () => []) },
   absenceTypesApi: { getAll: vi.fn(async () => []) },
 }));
 

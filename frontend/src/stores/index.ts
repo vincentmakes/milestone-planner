@@ -8,7 +8,14 @@ import { useCustomColumnStore } from './customColumnStore';
 import { useNotificationStore } from './notificationStore';
 import { useConfirmStore } from './confirmStore';
 
-export { useAppStore, selectStaffSiteIds, selectAbsenceTypesById, selectCanManageResources } from './appStore';
+export {
+  useAppStore,
+  selectStaffSiteIds,
+  selectStaffTeamIds,
+  selectTeamSiteById,
+  selectAbsenceTypesById,
+  selectCanManageResources,
+} from './appStore';
 export { useUIStore } from './uiStore';
 export { useUndoStore } from './undoStore';
 export { useViewStore } from './viewStore';

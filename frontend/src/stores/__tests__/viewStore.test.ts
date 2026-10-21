@@ -133,6 +133,91 @@ describe('viewStore tag filters', () => {
   });
 });
 
+describe('viewStore team filters', () => {
+  const KEY = 'milestone-view-storage-v1';
+
+  beforeEach(() => {
+    localStorage.clear();
+    useViewStore.setState({ teamFilters: {} });
+  });
+
+  it('keeps one filter per site, deduped; an empty filter or clear removes it', () => {
+    const { setTeamFilter, clearTeamFilter } = useViewStore.getState();
+    setTeamFilter(1, { teamIds: [3, 3, 4], noTeam: true });
+    setTeamFilter(2, { teamIds: [9], noTeam: false });
+    setTeamFilter(3, { teamIds: [], noTeam: true });
+    // Single-tenant URL → empty tenant part.
+    expect(useViewStore.getState().teamFilters).toEqual({
+      ':1': { teamIds: [3, 4], noTeam: true },
+      ':2': { teamIds: [9], noTeam: false },
+      ':3': { teamIds: [], noTeam: true },
+    });
+
+    setTeamFilter(2, { teamIds: [], noTeam: false });
+    clearTeamFilter(1);
+    clearTeamFilter(3);
+    clearTeamFilter(42);
+    expect(useViewStore.getState().teamFilters).toEqual({});
+  });
+
+  it('survives a reload (partialize + merge round-trip)', async () => {
+    useViewStore.getState().setTeamFilter(5, { teamIds: [7], noTeam: true });
+    const raw = JSON.parse(localStorage.getItem(KEY) as string);
+    expect(raw.state.teamFilters).toEqual({ ':5': { teamIds: [7], noTeam: true } });
+
+    useViewStore.setState({ teamFilters: {} });
+    localStorage.setItem(KEY, JSON.stringify(raw));
+    await useViewStore.persist.rehydrate();
+    expect(useViewStore.getState().teamFilters).toEqual({ ':5': { teamIds: [7], noTeam: true } });
+  });
+
+  it('drops malformed persisted entries', async () => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        state: {
+          teamFilters: {
+            ':1': { teamIds: ['x', 5] },
+            ':2': null,
+            ':3': { teamIds: [], noTeam: false },
+            ':4': { teamIds: 'nope', noTeam: 'yes' },
+            ':5': { noTeam: true },
+            'acme:6': { teamIds: [6], noTeam: false },
+            // Legacy site-id-only key: tenant unknown, dropped.
+            '7': { teamIds: [7], noTeam: false },
+            'Bad Key:8': { teamIds: [8], noTeam: false },
+          },
+        },
+        version: 0,
+      })
+    );
+    await useViewStore.persist.rehydrate();
+    expect(useViewStore.getState().teamFilters).toEqual({
+      ':1': { teamIds: [5], noTeam: false },
+      ':5': { teamIds: [], noTeam: true },
+      'acme:6': { teamIds: [6], noTeam: false },
+    });
+  });
+
+  it('keys filters by tenant slug + site id, so tenants sharing the origin never mix', () => {
+    const { setTeamFilter, clearTeamFilter } = useViewStore.getState();
+    window.history.pushState({}, '', '/t/acme/');
+    try {
+      setTeamFilter(1, { teamIds: [3], noTeam: false });
+      window.history.pushState({}, '', '/t/globex/');
+      setTeamFilter(1, { teamIds: [9], noTeam: false });
+      expect(useViewStore.getState().teamFilters).toEqual({
+        'acme:1': { teamIds: [3], noTeam: false },
+        'globex:1': { teamIds: [9], noTeam: false },
+      });
+      clearTeamFilter(1);
+      expect(useViewStore.getState().teamFilters).toEqual({ 'acme:1': { teamIds: [3], noTeam: false } });
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+});
+
 describe('viewStore Gantt grouping', () => {
   const KEY = 'milestone-view-storage-v1';
 

@@ -15,6 +15,8 @@ export type Slice =
   | 'sites'
   | 'skills'
   | 'tags'
+  /** Teams of every site — appStore.teams */
+  | 'teams'
   | 'absenceTypes'
   /** Bank holidays + company events of the site currently being viewed */
   | 'siteCalendar'
@@ -30,7 +32,7 @@ export type Slice =
 
 export const ALL_SLICES: Slice[] = [
   'projects', 'staff', 'equipment', 'equipmentBlocks', 'vacations',
-  'sites', 'skills', 'tags', 'absenceTypes', 'siteCalendar', 'customColumns',
+  'sites', 'skills', 'tags', 'teams', 'absenceTypes', 'siteCalendar', 'customColumns',
   'settings', 'currentUser',
 ];
 
@@ -81,8 +83,9 @@ export function slicesForEntity(entityType: string): Slice[] {
       return ['staff', 'projects'];
     case 'user':
       // Staff are users; assignments carry their names. The user may also be
-      // the one signed in here (role/site changes, deactivation).
-      return ['staff', 'currentUser', 'projects'];
+      // the one signed in here (role/site changes, deactivation). A deleted
+      // user also leaves their teams' member_ids.
+      return ['staff', 'currentUser', 'projects', 'teams'];
     case 'equipment':
       return ['equipment', 'projects'];
     case 'equipment_block':
@@ -95,8 +98,8 @@ export function slicesForEntity(entityType: string): Slice[] {
       // Site writes are rare admin actions, and a delete cascades on the
       // server to the site's projects (FK CASCADE), site-only tags and
       // site-only equipment, which other clients would otherwise keep
-      // showing — so those slices reload too.
-      return ['sites', 'siteCalendar', 'projects', 'tags', 'equipment'];
+      // showing — so those slices reload too, and so do the site's teams.
+      return ['sites', 'siteCalendar', 'projects', 'tags', 'equipment', 'teams'];
     case 'skill':
       return ['skills', 'staff'];
     case 'tag':
@@ -105,6 +108,11 @@ export function slicesForEntity(entityType: string): Slice[] {
       // Groups live in the same slice as tags (both reloaded together); the
       // project tree does not change when a group is edited.
       return ['tags'];
+    case 'team':
+      // Membership changes staff rows' team_ids. A team delete cascades on
+      // the server to its project, tag, equipment and company-event links;
+      // like 'site', a rare admin action, so those slices reload too.
+      return ['teams', 'staff', 'projects', 'tags', 'equipment', 'siteCalendar'];
     case 'card_comment':
       // Comment threads and counts have their own fetches. Without this case
       // every comment anyone posts would refetch every slice -- including
