@@ -44,9 +44,15 @@ class UserSessionInfo(BaseModel):
     lastName: str
     name: str  # computed: firstName + ' ' + lastName
     jobTitle: str | None = None
-    role: str
+    role: str  # the role key
+    roleName: str | None = None  # the role's display name
     siteIds: list[int] = []  # camelCase
     sites: list[UserSiteInfo] = []  # Full site objects
+    # The live role's matrix: the keys allowed outright (the admin: every
+    # key), the keys in approval mode, and whether every site is visible.
+    permissions: list[str] = []
+    approvalRequired: list[str] = []
+    canSeeAllSites: bool = False
 
     class Config:
         from_attributes = True

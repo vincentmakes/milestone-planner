@@ -48,6 +48,7 @@ from app.services.login_throttle import (
     record_login_failure,
     record_login_success,
 )
+from app.services.permissions import PermissionSet, load_permission_set, role_display_name
 from app.services.session import SessionService
 from app.services.sso import (
     apply_secret_update,
@@ -63,8 +64,13 @@ router = APIRouter()
 settings = get_settings()
 
 
-def build_user_session_info(user: User) -> UserSessionInfo:
-    """Build user session info from User model matching Node.js format."""
+def build_user_session_info(user: User, permissions: PermissionSet) -> UserSessionInfo:
+    """
+    Build user session info from User model matching Node.js format.
+
+    ``permissions`` is the user's live set (``load_permission_set``): its
+    allow keys, approval keys and ``sites.view_all`` go out with the user.
+    """
     sites = user.sites if user.sites else []
 
     return UserSessionInfo(
@@ -75,6 +81,10 @@ def build_user_session_info(user: User) -> UserSessionInfo:
         name=f"{user.first_name} {user.last_name}".strip(),
         jobTitle=user.job_title,
         role=user.role,
+        roleName=role_display_name(user.role, user.role_name),
+        permissions=permissions.allow_keys(),
+        approvalRequired=permissions.approval_keys(),
+        canSeeAllSites=permissions.has("sites.view_all"),
         siteIds=[s.id for s in sites],
         sites=[
             UserSiteInfo(
@@ -175,7 +185,7 @@ async def login(
 
     return LoginResponse(
         success=True,
-        user=build_user_session_info(user),
+        user=build_user_session_info(user, await load_permission_set(db, user.role)),
     )
 
 
@@ -258,7 +268,9 @@ async def get_current_session(
     if not user or not user.is_active:
         return AuthMeResponse(user=None)
 
-    return AuthMeResponse(user=build_user_session_info(user))
+    return AuthMeResponse(
+        user=build_user_session_info(user, await load_permission_set(db, user.role))
+    )
 
 
 @router.post("/auth/change-password")
@@ -1030,7 +1042,7 @@ async def _sso_callback(
 
     Matches: GET /api/auth/sso/callback
     """
-    from app.services.sso import OrgSSOLookupError, SSOService, normalize_sso_default_role
+    from app.services.sso import OrgSSOLookupError, SSOService, resolve_sso_default_role
 
     # Verify the HMAC-signed state and recover the tenant slug it carries. The
     # slug is only ever used to pick a redirect target, so recovering it up front
@@ -1231,7 +1243,7 @@ async def _sso_callback(
                 first_name=user_info.get("givenName", ""),
                 last_name=user_info.get("surname", ""),
                 job_title=user_info.get("jobTitle"),
-                role=normalize_sso_default_role(config.get("default_role")),
+                role=await resolve_sso_default_role(active_db, config.get("default_role")),
                 sso_provider="microsoft",
                 sso_id=user_info.get("id"),
                 active=1,

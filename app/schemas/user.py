@@ -6,6 +6,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from app.schemas.base import DateTimeJS
 from app.schemas.team import TeamIds
+from app.services.permissions import ROLE_KEY_PATTERN
 
 # Minimum length of a new or changed tenant password (B1-22). Login never
 # checks it, so accounts with an older, shorter password keep working.
@@ -85,7 +86,8 @@ class StaffCreate(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
     job_title: str | None = Field(None, max_length=100)
-    role: str = Field(default="user", pattern="^(admin|superuser|user)$")
+    # A role key; the router checks it exists in ``roles`` (404 otherwise).
+    role: str = Field(default="user", pattern=ROLE_KEY_PATTERN)
     max_capacity: int = Field(default=100, ge=1, le=100)  # Max work capacity %
     site_ids: list[int] = []
     skill_ids: list[int] = []
@@ -100,7 +102,8 @@ class StaffUpdate(BaseModel):
     first_name: str | None = Field(None, min_length=1, max_length=100)
     last_name: str | None = Field(None, min_length=1, max_length=100)
     job_title: str | None = Field(None, max_length=100)
-    role: str | None = Field(None, pattern="^(admin|superuser|user)$")
+    # A role key; the router checks it exists in ``roles`` (404 otherwise).
+    role: str | None = Field(None, pattern=ROLE_KEY_PATTERN)
     max_capacity: int | None = Field(None, ge=1, le=100)  # Max work capacity %
     active: int | None = None
     site_ids: list[int] | None = None
@@ -120,6 +123,7 @@ class UserResponse(BaseModel):
     last_name: str
     job_title: str | None = None
     role: str
+    role_name: str | None = None  # the role's display name
     max_capacity: int = 100  # Max work capacity %
     active: int
     created_at: DateTimeJS
@@ -145,6 +149,7 @@ class UserDetailResponse(BaseModel):
     last_name: str
     job_title: str | None = None
     role: str
+    role_name: str | None = None  # the role's display name
     max_capacity: int = 100  # Max work capacity %
     active: int
     created_at: DateTimeJS

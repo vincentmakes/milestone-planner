@@ -11,10 +11,13 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    select,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
 
 from app.database import Base
+from app.models.rbac import Role
+from app.services.permissions import PermissionSet
 from app.utils import utcnow_naive
 
 if TYPE_CHECKING:
@@ -48,6 +51,12 @@ class User(Base):
         ForeignKey("roles.key", name="users_role_fkey", onupdate="CASCADE", ondelete="RESTRICT"),
         default="user",
         nullable=False,
+    )
+    # The role's display name, read in the same SELECT as the user (a
+    # correlated scalar subquery on the unique roles.key, no extra round trip).
+    # None on a user not loaded from the database.
+    role_name: Mapped[str | None] = column_property(
+        select(Role.name).where(Role.key == role).correlate_except(Role).scalar_subquery()
     )
     max_capacity: Mapped[int] = mapped_column(
         Integer, default=100, nullable=False
@@ -149,6 +158,24 @@ class User(Base):
         become permission checks.
         """
         return self.role == "superuser"
+
+    @property
+    def permissions(self) -> PermissionSet:
+        """
+        The user's permission set (not mapped).
+
+        ``get_current_user`` sets the live one; until then it is the set of
+        ``role`` without rows (the admin holds everything, anyone else only
+        the locked view), so an unresolved user is denied rather than trusted.
+        """
+        resolved: PermissionSet | None = getattr(self, "_permission_set", None)
+        if resolved is None or resolved.role_key != self.role:
+            return PermissionSet(self.role or "", {})
+        return resolved
+
+    @permissions.setter
+    def permissions(self, value: PermissionSet) -> None:
+        self._permission_set = value
 
     @property
     def site_ids(self) -> list[int]:

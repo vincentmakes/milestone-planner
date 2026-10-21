@@ -8,7 +8,7 @@ for the same write and every client refetches twice.
 
 import pytest
 
-from app.middleware.broadcast import _resolve_entity_type
+from app.middleware.broadcast import SKIP_PATTERNS, _resolve_entity_type
 
 
 @pytest.mark.parametrize(
@@ -72,3 +72,37 @@ def test_calendar_paths_broadcast_their_entity(path, entity):
 def test_events_pattern_does_not_shadow_sites():
     assert _resolve_entity_type("/api/sites/2") == "site"
     assert _resolve_entity_type("/api/eventsfoo") is None
+
+
+@pytest.mark.parametrize(
+    ("path", "entity"),
+    [
+        ("/api/roles", "role"),
+        ("/api/roles/4", "role"),
+        ("/api/approval-policies/assignments.self_create", "approval_policy"),
+    ],
+)
+def test_rbac_configuration_paths_broadcast_their_entity(path, entity):
+    """Role and policy edits change every holder's rights: clients refetch."""
+    assert _resolve_entity_type(path) == entity
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/approval-requests",
+        "/api/approval-requests/3/approve",
+        "/api/todos",
+        "/api/todos/9",
+    ],
+)
+def test_approval_and_todo_paths_are_skipped(path):
+    """Approval decisions broadcast richly and todos are pushed per user."""
+    assert _resolve_entity_type(path) is None
+    # Skipped on purpose, not merely unmatched: a later catch-all must not reach them.
+    assert any(pattern.match(path) for pattern in SKIP_PATTERNS)
+
+
+def test_rbac_patterns_do_not_shadow_neighbours():
+    assert _resolve_entity_type("/api/rolesx") is None
+    assert _resolve_entity_type("/api/todosx") is None

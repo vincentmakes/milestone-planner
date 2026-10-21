@@ -118,7 +118,8 @@ async def test_list_users_can_include_disabled(authed_client, mock_db_session):
 
     assert response.status_code == 200
     assert response.json()["total"] == 0  # NULL count -> 0
-    assert "WHERE" not in sql(mock_db_session.execute.await_args_list[0].args[0])
+    # No active filter (the only WHERE left is the role_name subquery's).
+    assert "users.active = 1" not in sql(mock_db_session.execute.await_args_list[0].args[0])
 
 
 @pytest.mark.asyncio
@@ -282,7 +283,8 @@ async def test_create_user_unknown_skill_400(authed_client, mock_db_session):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "overrides",
-    [{"email": "nope"}, {"password": "short"}, {"role": "owner"}, {"max_capacity": 0}],
+    # A malformed role key is 422; a well-formed unknown one is 404 (test_users_roles.py).
+    [{"email": "nope"}, {"password": "short"}, {"role": "Owner!"}, {"max_capacity": 0}],
 )
 async def test_create_user_validates_body(authed_client, mock_db_session, overrides):
     client, set_user = authed_client

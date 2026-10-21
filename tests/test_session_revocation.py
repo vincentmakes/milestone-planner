@@ -92,9 +92,16 @@ SESSION_SNAPSHOT = {
 COOKIE = {"connect.sid": "s%3Asid-123."}
 
 
-def live_row(mock_db_session, row):
+def live_rows(*rows):
+    """The ``load_live_user`` result: (active, role, permission, mode) rows."""
     result = MagicMock()
-    result.one_or_none.return_value = row
+    result.all.return_value = list(rows)
+    return result
+
+
+def live_row(mock_db_session, row):
+    """One user row without permission rows (``None`` = the user is gone)."""
+    result = live_rows(*([] if row is None else [(*row, None, None)]))
     mock_db_session.execute = AsyncMock(return_value=result)
 
 
@@ -156,9 +163,12 @@ async def test_active_user_passes_with_live_role():
         role = "user"
 
     db = MagicMock()
-    result = MagicMock()
-    result.one_or_none.return_value = (1, "superuser")
-    db.execute = AsyncMock(return_value=result)
+    db.execute = AsyncMock(
+        return_value=live_rows(
+            (1, "superuser", "projects.create", "allow"),
+            (1, "superuser", "assignments.self_create", "approval"),
+        )
+    )
     request = MagicMock()
     request.scope = {"state": {}}
 
@@ -166,3 +176,48 @@ async def test_active_user_passes_with_live_role():
 
     assert user.role == "superuser"
     assert request.scope["state"]["current_user"]["id"] == 7
+    # The live role's matrix rides along on the user (one query).
+    assert user.permissions.role_key == "superuser"
+    assert user.permissions.has("projects.create")
+    assert user.permissions.mode("assignments.self_create") == "approval"
+    assert not user.permissions.has("projects.delete")
+    db.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_live_permission_query_joins_the_role_matrix():
+    from app.middleware.auth import load_live_user
+
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=live_rows((1, "admin", None, None)))
+
+    active, role, permissions = await load_live_user(db, 7)  # type: ignore[misc]
+
+    assert (active, role) == (True, "admin")
+    assert permissions.is_admin and permissions.has("roles.manage")
+    sql = " ".join(str(db.execute.await_args.args[0]).split())
+    assert "LEFT OUTER JOIN roles ON roles.key = users.role" in sql
+    assert "LEFT OUTER JOIN role_permissions ON role_permissions.role_id = roles.id" in sql
+
+
+@pytest.mark.asyncio
+async def test_matrix_edit_applies_on_the_next_request():
+    """Same session, same role: the permissions come from the rows of this request."""
+    from app.middleware.auth import get_current_user
+
+    class Snapshot:
+        id = 7
+        first_name = "A"
+        last_name = "B"
+        role = "user"
+
+    request = MagicMock()
+    request.scope = {"state": {}}
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=live_rows((1, "user", None, None)))
+    before = await get_current_user(request, Snapshot(), "sid", db)  # type: ignore[arg-type]
+    db.execute = AsyncMock(return_value=live_rows((1, "user", "projects.create", "allow")))
+    after = await get_current_user(request, Snapshot(), "sid", db)  # type: ignore[arg-type]
+
+    assert not before.permissions.has("projects.create")
+    assert after.permissions.has("projects.create")

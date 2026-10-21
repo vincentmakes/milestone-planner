@@ -190,6 +190,7 @@ def create_app() -> FastAPI:
         absence_types,
         admin,
         admin_organizations,
+        approval_policies,
         assignments,
         auth,
         custom_columns,
@@ -202,6 +203,7 @@ def create_app() -> FastAPI:
         notifications,
         predefined_phases,
         projects,
+        roles,
         sites,
         skills,
         staff,
@@ -238,6 +240,8 @@ def create_app() -> FastAPI:
     app.include_router(teams.router, prefix="/api", tags=["Teams"])
     app.include_router(kanban.router, prefix="/api", tags=["Kanban"])
     app.include_router(notifications.router, prefix="/api", tags=["Notifications"])
+    app.include_router(roles.router, prefix="/api", tags=["Roles"])
+    app.include_router(approval_policies.router, prefix="/api", tags=["Approval Policies"])
 
     # WebSocket for real-time collaboration
     app.include_router(websocket_router, tags=["WebSocket"])

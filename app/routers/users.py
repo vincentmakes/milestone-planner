@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.middleware.auth import get_session_id, require_admin, require_superuser
+from app.models.rbac import Role
 from app.models.site import Site
 from app.models.skill import Skill, UserSkill
 from app.models.team import TeamMember
@@ -24,6 +25,7 @@ from app.schemas.user import (
     UserResponse,
 )
 from app.services.encryption import PasswordTooLongError, hash_user_password
+from app.services.permissions import SYSTEM_ROLE_KEYS, role_display_name
 from app.services.response_builders import (
     build_skills_list,
     build_user_base,
@@ -49,6 +51,18 @@ def _hash_password_or_400(password: str) -> str:
         return hash_user_password(password)
     except PasswordTooLongError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
+
+
+ROLE_NOT_FOUND_DETAIL = "Role not found"
+
+
+async def _ensure_role_exists(db: AsyncSession, role_key: str) -> None:
+    """404 unless ``role_key`` is a role (the system roles always exist: no query)."""
+    if role_key in SYSTEM_ROLE_KEYS:
+        return
+    found = await db.execute(select(Role.key).where(Role.key == role_key))
+    if found.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail=ROLE_NOT_FOUND_DETAIL)
 
 
 def _unique(ids: list[int]) -> list[int]:
@@ -92,6 +106,7 @@ def build_user_list_response(user: User) -> dict:
     sorted_teams = get_sorted_teams(user)
     return {
         **build_user_base(user),
+        "role_name": role_display_name(user.role, user.role_name),
         "is_system": user.is_system if user.is_system is not None else 0,
         "created_at": user.created_at,
         "site_ids": [s.id for s in sorted_sites],
@@ -108,6 +123,7 @@ def build_user_detail_response(user: User) -> dict:
     sorted_teams = get_sorted_teams(user)
     return {
         **build_user_base(user),
+        "role_name": role_display_name(user.role, user.role_name),
         "is_system": user.is_system if user.is_system is not None else 0,
         "created_at": user.created_at,
         "site_ids": [s.id for s in sorted_sites],
@@ -202,6 +218,7 @@ async def create_user(
     existing = await db.execute(select(User).where(User.email == data.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="A user with this email already exists")
+    await _ensure_role_exists(db, data.role)
 
     # Create user
     user = User(
@@ -323,6 +340,8 @@ async def update_user(
     # Changes that must end the target's existing logins (see B1-1): the
     # session snapshot would otherwise keep the old role/credentials alive.
     role_changed = data.role is not None and data.role != user.role
+    if data.role is not None and role_changed:
+        await _ensure_role_exists(db, data.role)
     deactivated = data.active is not None and data.active == 0 and user.active != 0
     password_changed = data.password is not None
     new_password_hash = _hash_password_or_400(data.password) if data.password is not None else None

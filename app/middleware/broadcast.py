@@ -44,6 +44,10 @@ SKIP_PATTERNS = [
     # Marking a notification read is private to one user; a tenant-wide
     # broadcast would wake every client for nothing.
     re.compile(r"^/api/notifications(?:/|$)"),
+    # Approval decisions broadcast richly from their router; todos are
+    # private and pushed to the people concerned only.
+    re.compile(r"^/api/approval-requests(?:/|$)"),
+    re.compile(r"^/api/todos(?:/|$)"),
     re.compile(r"^/api/import(?:/|$)"),
     re.compile(r"^/api/auth(?:/|$)"),
     re.compile(r"^/api/admin(?:/|$)"),
@@ -73,6 +77,10 @@ ENTITY_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"^/api/notes(?:/|$)"), "note"),
     (re.compile(r"^/api/predefined-phases(?:/|$)"), "predefined_phase"),
     (re.compile(r"^/api/settings(?:/|$)"), "settings"),
+    # A role or policy edit changes what every holder may do: clients refetch
+    # the signed-in user (permissions) and the roles.
+    (re.compile(r"^/api/roles(?:/|$)"), "role"),
+    (re.compile(r"^/api/approval-policies(?:/|$)"), "approval_policy"),
 ]
 
 
