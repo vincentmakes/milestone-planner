@@ -17,6 +17,12 @@ Like staff, a piece of equipment can belong to **several sites** — a shared in
 
 Which sites an item belongs to is set in [Settings → Equipment](#managing-equipment). Deleting a site only removes its link: equipment still linked to another site is kept, and only equipment left with no site at all is deleted.
 
+## Equipment Limited to Teams
+
+At a site that has [teams](settings.md#teams), an item can be limited to some of them: in the equipment form, switch off **Whole site** under that site and tick the teams. The limit is per site — the shared **Mass Spectrometer** in the demo is limited to the *Analytical Lab* at Winterthur and open to everyone at Frankfurt.
+
+The limit is used by the header [team filter](settings.md#team-filter): with teams ticked there, the Equipment view, the Equipment panel and the booking and maintenance-block pickers show the site's open equipment plus the items limited to one of the ticked teams. With **Whole site**, everything is shown. Equipment limited only to an inactive team is hidden under any team filter. The limit does not stop anyone from booking the item.
+
 ## Equipment List Panel
 
 The left panel lists all equipment items for the selected site with:
@@ -83,12 +89,13 @@ The list can be filtered by **Site** (or **All Sites**); an item linked to sever
    - **Name** (required, e.g., "Pilot Plant A", "Mass Spec 1")
    - **Type** — select an existing type or click **+ New type** to create one inline
    - **Sites** (required) — click every site where the equipment can be booked; at least one. The site you are filtering on (or viewing) is preselected
+   - **Teams** (optional) — under each selected site that has teams, leave **Whole site** on or limit the item to some teams (see [Equipment Limited to Teams](#equipment-limited-to-teams))
 3. Click **Create Equipment**
 
 ### Editing Equipment
 
 1. Click the **edit icon** on an equipment row
-2. Modify the name, type, description, sites, or active status — adding or removing a site links or unlinks the item there
+2. Modify the name, type, description, sites, teams, or active status — adding or removing a site links or unlinks the item there (removing a site also drops its teams)
 3. Click **Save Changes**
 
 !!! note "Superusers and shared equipment"

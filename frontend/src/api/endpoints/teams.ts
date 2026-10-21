@@ -2,7 +2,8 @@
  * Teams API endpoints.
  *
  * A team belongs to one site; its members are users of that site. Reads are
- * open to every user; writes are admin-only on the server. Exempt from What-If
+ * open to every user; writes need an admin, or a superuser at the team's site
+ * (the server answers 403 otherwise). Exempt from What-If
  * queuing (configuration, not plan operations — see WHAT_IF_EXEMPT_PATTERNS in
  * ../client.ts). Assigning teams to a project goes through
  * PUT /api/projects/{id} and stays queued.

@@ -142,7 +142,7 @@ to list them), e.g.:
 /tmp/pw-venv/bin/python scripts/screenshots/capture.py main tags block-modal
 ```
 
-Administration shots (`settings-tags`, `sites`, `users`, `equipment-mgmt`,
+Administration shots (`settings-tags`, `settings-teams`, `sites`, `users`, `equipment-mgmt`,
 `phases`, `skills`, `site-modal`) open the sidebar's single **Settings** entry
 and switch to a hub section by its label (`open_settings_section(page,
 "<label>")`, labels from `SETTINGS_SECTIONS` in
@@ -152,6 +152,8 @@ the default General section.
 | Key | Output | Shows |
 |-----|--------|-------|
 | `tag-filter` | `tag-filter-dropdown.png` | The project panel's Tags filter dropdown, open, on the Gantt chart |
+| `team-filter` | `team-filter.png` | The header team filter, open, on the Gantt chart (Winterthur's teams) |
+| `settings-teams` | `settings-teams.png` | Settings → Teams for the current site |
 | `kanban` | `kanban-board.png` | The Kanban board view |
 | `grouped` | `gantt-grouped.png` | The Gantt chart grouped by the *Project type* tag group (collapsible pill sections) |
 | `color-by` | `gantt-color-by.png` | The Gantt chart's *Colour by* dropdown, open, with *Project type* selected |

@@ -10,6 +10,7 @@ The **Cross-Site View** provides a high-level overview of projects across all si
 - **Other sites' projects** appear as "Confidential Project" with masked customer info for data privacy
 - All sites share the same timeline for side-by-side comparison
 - Your current site is highlighted with a special indicator
+- The header [team filter](settings.md#team-filter) narrows only your current site's lane; the other sites always show all their projects
 
 ## Use Cases
 

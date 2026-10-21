@@ -38,6 +38,10 @@ A [company event marked as a site closure](settings.md#site-closures) takes ever
 
 Someone who belongs to several sites is unavailable as soon as **one** of their sites is closed. Bank holidays and plain company events are shown on the timeline but do not reduce capacity.
 
+A closure can be limited to [teams](settings.md#teams): then only the members of those teams are unavailable at that site, and everyone else keeps their normal availability. The event still appears in the Company Events row, but the calendar columns are not shaded as closed.
+
+With the header [team filter](settings.md#team-filter) set, the Staff Overview lists only the people of the ticked teams (or those without a team, with **(No team)**).
+
 ## Assigning Staff
 
 Admins and superusers can assign anyone to any project — at every site; sites decide what the Gantt shows, not which projects a superuser may change. The **project manager** of a project can do the same on that project. Everyone else can [add themselves](#adding-yourself-to-a-project).

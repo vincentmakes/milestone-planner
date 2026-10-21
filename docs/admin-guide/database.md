@@ -148,6 +148,20 @@ python migrations/run_migration.py add_equipment_sites_and_site_closures
 
 After the upgrade, deleting a site only deletes equipment that is left without any site; equipment shared with another site is kept.
 
+### Teams (1.12.0)
+
+`add_teams` is idempotent and, like the migrations above, also runs **automatically** (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)); `setup_databases.sql` and the tenant provisioner create the same schema for fresh installs. It creates:
+
+- `teams` — a named group of people at **one** site (`site_id`, name unique per site, description, colour, `active`)
+- `team_members` — which users belong to a team; a member must also belong to the team's site
+- `project_teams`, `tag_teams`, `company_event_teams` and `equipment_teams` — the links that scope projects, tags, company events and equipment to teams. For tags, events and equipment the rule is per site: a site with none of the item's teams keeps the whole site
+
+Every foreign key is `ON DELETE CASCADE`: deleting a site removes its teams, and deleting a team removes its memberships and links. Existing data is not touched — every project, tag, event and piece of equipment stays whole-site until someone assigns teams in [Settings → Teams](../user-guide/settings.md#teams).
+
+```bash
+python migrations/run_migration.py add_teams
+```
+
 ### Writing New Migrations
 
 1. Create a SQL file in `migrations/` (e.g., `add_feature_x.sql`)

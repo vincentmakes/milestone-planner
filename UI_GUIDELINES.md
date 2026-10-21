@@ -467,8 +467,11 @@ decision, not an oversight.
   entity flags in dialogs (Project *Confirmed* / *Archived*, phase and subphase *Milestone*,
   *Global column*, *Recurring Absence*) and the organization SSO flags in the admin portal. A
   raw checkbox is right only for **picking several items from a list**: the tag, type, role and
-  skill filters, column visibility, the `.ics` import rows, `SiteChecklist` and the equipment
-  site picker. Tests reach a switch with `getByRole('switch', { name })`.
+  skill filters, column visibility, the `.ics` import rows, `SiteChecklist`, the equipment
+  site picker, the header team filter (`TeamSelector`), `TeamChecklist` (project teams and the
+  teams a tag, piece of equipment or company event is limited to) and the team member list in
+  Settings → Teams. A "limit to teams" choice per site is a *Whole site* switch over a
+  `TeamChecklist` (`TeamScope`). Tests reach a switch with `getByRole('switch', { name })`.
 - **`Notice`** (`components/common/Notice`): the one inline message box. `tone` = `error` |
   `warning` | `info` | `success` (accent token text and border on its alpha tint, `0.75rem 1rem`,
   `--radius-md`); `role` defaults to `alert` for errors and `status` otherwise; `onDismiss` adds a
@@ -482,7 +485,8 @@ decision, not an oversight.
   their colour (`EVENT_COLOR_SWATCHES` by default, `swatches` for another palette such as
   `SKILL_COLOR_SWATCHES`), with `allowCustom` for a native colour input behind a dashed "+".
   On touch devices it grows to 40 × 40 so the swatches stay round under the global 40 px
-  touch rule. Used by Tags, Absence types, Company events and Skills. Never hand-roll a row of
+  touch rule. Used by Tags, Absence types, Company events, Skills and Teams
+  (`TEAM_COLOR_SWATCHES`). Never hand-roll a row of
   coloured buttons: the Skills panel had its own copy, which the touch rule stretched into
   ovals on iPad because only the height was raised.
 - **`AllocationSlider`** (`components/common/AllocationSlider`): the one control for a staff

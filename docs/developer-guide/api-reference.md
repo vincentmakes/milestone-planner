@@ -63,7 +63,7 @@ The **Auth** column used below:
 
 The two per-project levels are checked inside the handler (`app/services/project_access.py`) after the entity is loaded, against a `project_id` derived server-side from the path or the loaded phase/subphase/assignment row — a `project_id` in the request body is never used for the check. Failures return `403`; a missing project/phase/subphase returns `404`.
 
-**Sites scope the UI, not access.** *superuser* means tenant-wide for projects, phases, subphases, assignments, vacations and notes — there is no site check on those routes, by design. Site membership is enforced only on bank holidays, company events, equipment, equipment blocks and equipment types (`app/services/site_access.py`).
+**Sites scope the UI, not access.** *superuser* means tenant-wide for projects, phases, subphases, assignments, vacations and notes — there is no site check on those routes, by design. Site membership is enforced only on bank holidays, company events, equipment, equipment blocks, equipment types and teams (`app/services/site_access.py`).
 
 ### Validation
 
@@ -79,8 +79,10 @@ The two per-project levels are checked inside the handler (`app/services/project
 | `GET` | `/t/{slug}/api/projects` | user | List all projects (with phases, subphases, assignments) |
 | `POST` | `/t/{slug}/api/projects` | superuser | Create a project |
 | `GET` | `/t/{slug}/api/projects/{id}` | user | Get project details with full hierarchy |
-| `PUT` | `/t/{slug}/api/projects/{id}` | user (PM) | Update a project — every field, including `pm_id` (so a manager can hand the project over), `archived` and `tag_ids` |
+| `PUT` | `/t/{slug}/api/projects/{id}` | user (PM) | Update a project — every field, including `pm_id` (so a manager can hand the project over), `archived`, `tag_ids` and `team_ids` |
 | `DELETE` | `/t/{slug}/api/projects/{id}` | superuser | Delete a project (a project manager cannot) |
+
+Project list and detail responses carry `team_ids`; create and update accept `team_ids` (omitted = unchanged, `[]` = no team). Every team must be at the project's site (`400`; a project without a site cannot have teams). Unknown team ids are dropped silently, like unknown tag ids, so a What-If replay survives a team deleted in the meantime. Changing the teams re-checks the project's tags: a tag limited to teams the project no longer shares is refused (`400`).
 
 ### Phases & Subphases
 
@@ -110,6 +112,8 @@ The two per-project levels are checked inside the handler (`app/services/project
 
 Staff endpoints are read-only — staff members *are* users and are created and managed via the `/users` endpoints.
 
+`GET /staff` returns one row per user–site pair; each row's `team_ids` are the user's teams **at that row's site**. `GET /staff/{id}` returns all of them.
+
 ### Equipment
 
 Equipment can belong to several sites (`equipment_sites`), like staff. Every response carries `site_ids` / `site_names` (all linked sites) next to the legacy `site_id` / `site_name`.
@@ -123,6 +127,8 @@ Equipment can belong to several sites (`equipment_sites`), like staff. Every res
 | `PUT` | `/t/{slug}/api/equipment/{id}` | superuser | Update an item; `site_ids`, when given, replaces its site links |
 | `DELETE` | `/t/{slug}/api/equipment/{id}` | superuser | Delete an item |
 | `GET` | `/t/{slug}/api/equipment/{id}/availability?startDate=&endDate=` | user | Per-day availability for a date range (validated, at most 366 days) |
+
+Equipment can also be limited to teams: `team_ids` on create and update (omitted = unchanged on update), `team_ids` / `team_names` in every response. The rule is **per site** — a site with none of the equipment's teams keeps it open to the whole site; at a site with listed teams only those teams see it under the team filter. Every team must be at one of the equipment's sites (`400`); a `site_ids` change without `team_ids` drops the teams of the sites removed.
 
 `site_ids` must not be empty (`422`). Clients that predate multi-site equipment may still send `site_id`, which is taken as `[site_id]`. The legacy `equipment.site_id` column is kept as the "primary site" — the lowest linked site id. Superusers may only create, edit or delete equipment (and its blocks) whose sites are **all** among their own sites (`403` otherwise); admins any.
 
@@ -224,8 +230,8 @@ An event can be linked to several sites. Responses include `site_ids` (all linke
 |--------|----------|-------------|
 | `GET` | `/t/{slug}/api/sites/{id}/events?year=` | Events linked to a site |
 | `GET` | `/t/{slug}/api/events?siteId=&startDate=&endDate=` | Events linked to a site within a date range |
-| `POST` | `/t/{slug}/api/events` | Create an event on one or more sites — `{date, end_date?, name, color?, site_ids, counts_as_unavailable?}` |
-| `PUT` | `/t/{slug}/api/events/{id}` | Partial update (incl. `counts_as_unavailable`); `site_ids`, when given, replaces the event's site links |
+| `POST` | `/t/{slug}/api/events` | Create an event on one or more sites — `{date, end_date?, name, color?, site_ids, counts_as_unavailable?, team_ids?}` |
+| `PUT` | `/t/{slug}/api/events/{id}` | Partial update (incl. `counts_as_unavailable`); `site_ids`, when given, replaces the event's site links; `team_ids`, when given, replaces its teams |
 | `DELETE` | `/t/{slug}/api/events/{id}` | Delete the event from every site |
 | `POST` | `/t/{slug}/api/events/import` | Bulk import — `{site_ids, color?, counts_as_unavailable?, items: [{date, end_date?, name}]}` → `{created, linked, skipped}` |
 | `POST` | `/t/{slug}/api/sites/{id}/events` | Legacy: create an event on a single site (also accepts `counts_as_unavailable`) |
@@ -233,7 +239,9 @@ An event can be linked to several sites. Responses include `site_ids` (all linke
 
 On import, an existing event with the same `(date, end_date, name)` is reused: it gains any missing target-site links (counted in `linked`) instead of being duplicated. Events already linked to every target site, and repeats within the batch, count as `skipped`. The request-level `counts_as_unavailable` applies to newly created events only; reused events keep their own setting.
 
-Closures are evaluated client-side (`frontend/src/utils/siteClosure.ts`): there is no availability endpoint change, and bank holidays still do not reduce availability.
+Responses also carry `team_ids`. An event can be limited to teams of its sites, per site: a site with none of the event's teams gets the whole event. Each team must be at one of the event's sites (`400`); a `site_ids` change without `team_ids` drops the teams of the sites removed. The import and the legacy single-site create always make whole-site events.
+
+Closures are evaluated client-side (`frontend/src/utils/siteClosure.ts`): there is no availability endpoint change, and bank holidays still do not reduce availability. A closure limited to teams makes only those teams' members unavailable at that site; it never shades the calendar header. A plain event limited to teams is still shown to the whole site.
 
 ### Equipment Types
 
@@ -251,10 +259,43 @@ Project tags are colored labels shared across all projects in the instance. See 
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/t/{slug}/api/tags` | List all tags (with project usage counts) |
-| `POST` | `/t/{slug}/api/tags` | Create a tag (admin/superuser) |
-| `PUT` | `/t/{slug}/api/tags/{id}` | Update a tag's name or color (admin/superuser) |
-| `DELETE` | `/t/{slug}/api/tags/{id}` | Delete a tag from every project (admin/superuser) |
+| `GET` | `/t/{slug}/api/tags` | List all tags (`group_id`, `all_sites`, `site_ids`, `team_ids`, `sort_order`) |
+| `POST` | `/t/{slug}/api/tags` | Create a tag (admin) |
+| `PUT` | `/t/{slug}/api/tags/{id}` | Update a tag — name, color, group, sites, teams (admin) |
+| `DELETE` | `/t/{slug}/api/tags/{id}` | Delete a tag from every project (admin) |
+
+A tag can be limited to teams with `team_ids`. Per site: no team of the tag at a site means every project there may carry it; otherwise only projects sharing one of those teams (`400` on the project write). Each team must be at one of the tag's sites unless the tag applies to all sites (`400`). Narrowing `team_ids` while projects at those teams' sites outside them use the tag is refused with `409`; narrowing the sites without `team_ids` drops the teams of the sites removed.
+
+### Teams
+
+A team is a named group of people at **one** site. Every authenticated user can read teams; admins manage them at every site, superusers only at the sites they belong to (`403` otherwise). Team writes are configuration: they bypass What-If queuing and broadcast a `change:team` event. See [Settings — Teams](../user-guide/settings.md#teams) for the user-facing behaviour.
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/t/{slug}/api/teams?siteId=` | user | Every team, inactive ones included, ordered by site then name; `siteId` limits the list to one site |
+| `GET` | `/t/{slug}/api/teams/{id}` | user | One team (`404` if missing) |
+| `POST` | `/t/{slug}/api/teams` | superuser | Create a team — `{site_id, name, description?, color?, active?, member_ids?}` |
+| `PUT` | `/t/{slug}/api/teams/{id}` | superuser | Partial update — `{name?, description?, color?, active?, member_ids?}`; the site cannot change |
+| `DELETE` | `/t/{slug}/api/teams/{id}` | superuser | Delete the team; its memberships and its project, tag, equipment and event links go with it |
+
+Response: `{id, site_id, name, description, color, active, member_ids, created_at, updated_at}`.
+
+- **Name**: 1–100 characters (`422` otherwise), trimmed, unique per site — a name of only spaces or a duplicate at the site is `400`. An unknown `site_id` is `404`.
+- **Members**: `member_ids` replaces the member list; every member must belong to the team's site (`400` otherwise).
+- **Clearing**: an explicit `null` clears `description` or `color`; other omitted or `null` fields are left unchanged. `color` is `#RRGGBB`.
+- **Inactive teams** keep scoping everything they are linked to; only the header team filter leaves them out.
+- **Deleting a site** deletes its teams with all their links.
+
+`team_ids` on other resources:
+
+| Resource | Field | Rule |
+|----------|-------|------|
+| Projects | `team_ids` (read, create, update) | Teams at the project's site |
+| Staff | `team_ids` (read) | Per `/staff` row: the teams at that row's site |
+| Users | `team_ids`, `team_names` (read); `team_ids` on `POST` / `PUT /users` | Each team at one of the user's sites; a superuser may only assign teams at their sites; removing a site from a user drops that site's teams |
+| Equipment | `team_ids`, `team_names` (read); `team_ids` on create / update | Per site; no team at a site = the whole site |
+| Tags | `team_ids` (read, create, update) | Per site, as above; `409` when narrowing would strand projects |
+| Company events | `team_ids` on `POST /events` and `PUT /events/{id}` | Per site, as above |
 
 ### Import & Export
 
@@ -352,8 +393,8 @@ The handshake is refused when the `Origin` header names another site (it must ma
 | `GET` | `/t/{slug}/api/settings` | Get instance settings |
 | `PUT` | `/t/{slug}/api/settings/{key}` | Update one setting |
 | `GET` | `/t/{slug}/api/users` | List users |
-| `POST` | `/t/{slug}/api/users` | Create a user |
-| `PUT` | `/t/{slug}/api/users/{id}` | Update a user |
+| `POST` | `/t/{slug}/api/users` | Create a user (optional `team_ids`) |
+| `PUT` | `/t/{slug}/api/users/{id}` | Update a user (`team_ids`, when given, replaces the memberships) |
 | `DELETE` | `/t/{slug}/api/users/{id}` | Delete a user |
 | `GET` | `/t/{slug}/api/predefined-phases` | List predefined phases |
 | `POST` | `/t/{slug}/api/predefined-phases` | Create a predefined phase |

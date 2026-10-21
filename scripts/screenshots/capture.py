@@ -347,6 +347,31 @@ def shot_settings_tags(context: BrowserContext) -> None:
     page.close()
 
 
+def shot_teams_settings(context: BrowserContext) -> None:
+    """Settings -> Teams: the current site's teams with colour, description and
+    member count (admins, and superusers for their sites)."""
+    _settings_section_shot(context, "Teams", "settings-teams.png")
+
+
+def shot_team_filter(context: BrowserContext) -> None:
+    """Header team filter, open, on the Gantt chart (Winterthur's teams).
+
+    The trigger's aria-label is "Team filter: <current choice>"; it only renders
+    when the current site has active teams. Nothing is ticked, so the stored
+    filter (per browser) is left as it was.
+    """
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    page.locator('button[aria-label^="Team filter"]').first.click()
+    page.wait_for_timeout(400)
+    page.screenshot(path=str(OUT / "team-filter.png"))
+    log("[done] team-filter.png")
+    page.close()
+
+
 def shot_assign_staff_modal(context: BrowserContext) -> None:
     """Assign Staff modal (project level) with a member selected so the
     allocation slider is populated."""
@@ -769,6 +794,7 @@ TARGETS = {
     "project-modal": shot_project_modal,
     "tags": shot_project_tags,
     "settings-tags": shot_settings_tags,
+    "settings-teams": shot_teams_settings,
     "assign-staff": shot_assign_staff_modal,
     "settings": shot_settings_modal,
     "sites": shot_manage_sites,
@@ -793,6 +819,7 @@ TARGETS = {
     "site-modal": shot_site_modal,
     "equipment-assign": shot_equipment_assign_modal,
     "tag-filter": shot_tag_filter,
+    "team-filter": shot_team_filter,
     "grouped": shot_gantt_grouped,
     "color-by": shot_gantt_color_by,
     "kanban": shot_kanban,

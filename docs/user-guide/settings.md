@@ -13,6 +13,7 @@ All administration happens in one **Settings** window. Open it from the **Settin
 |-------|---------|-----------------|-------------|
 | General | [General](#general) | Instance title, theme, logos, display defaults | Admin (Superuser: theme only) |
 | Sites & calendar | [Sites](#sites) | Locations, country/region, site Excel export | Admin |
+| | [Teams](#teams) | Teams per site, their members; the header team filter | Admin, Superuser |
 | | [Bank holidays](#bank-holidays) | Public and custom holidays per site | Admin, Superuser |
 | | [Company events](#company-events) | Audits, meetings and site closures on one or more sites | Admin, Superuser |
 | People | [Users](#user-management) | Accounts, roles, sites, skills | Admin, Superuser |
@@ -24,10 +25,10 @@ All administration happens in one **Settings** window. Open it from the **Settin
 | | [Tags](#tags) | Project tags, tag groups and the sites they apply to | Admin |
 | Integrations | SSO | Microsoft Entra single sign-on for this workspace — see [Organization & SSO](../admin-guide/organizations-sso.md#configuring-sso-in-milestone) | Admin |
 
-Each person only sees the sections their role can change: **superusers** see General (theme only), Bank holidays, Company events, Users, Skills, Equipment, Equipment types and Predefined phases. Regular users have no Settings entry; they manage their own time off from [My absences](vacations.md#my-absences) in the user menu.
+Each person only sees the sections their role can change: **superusers** see General (theme only), Teams, Bank holidays, Company events, Users, Skills, Equipment, Equipment types and Predefined phases. Regular users have no Settings entry; they manage their own time off from [My absences](vacations.md#my-absences) in the user menu.
 
 !!! note "Unsaved changes"
-    If you switch section or close the window while a form holds unsaved input — in **General**, **Users**, **Equipment**, **Sites**, **Skills**, **Bank holidays**, **Company events**, **Absence types**, **Equipment types** or **Tags** — Milestone asks before discarding it. Clicking outside the window never closes it.
+    If you switch section or close the window while a form holds unsaved input — in **General**, **Users**, **Equipment**, **Sites**, **Teams**, **Skills**, **Bank holidays**, **Company events**, **Absence types**, **Equipment types** or **Tags** — Milestone asks before discarding it. Clicking outside the window never closes it.
 
 Saving is protected against double submission: pressing Enter twice or double-clicking a Save, Add or Delete button runs the action only once.
 
@@ -107,8 +108,10 @@ The **site selector** dropdown in the header filters everything to the selected 
 
 Admins see all sites. Regular users only see sites they are assigned to.
 
+- When the site has teams, the [team filter](#team-filter) next to the site selector narrows the views further to one or more teams.
+
 !!! note "Sites scope what you see, not what a superuser may edit"
-    The site selector decides which projects, staff and equipment are shown. It is not an access boundary for project work: **superusers can edit projects, phases, assignments and absences at every site**. Only bank holidays, company events, equipment, equipment blocks and equipment types are limited to the sites a superuser belongs to.
+    The site selector decides which projects, staff and equipment are shown. It is not an access boundary for project work: **superusers can edit projects, phases, assignments and absences at every site**. Only bank holidays, company events, equipment, equipment blocks, equipment types and teams are limited to the sites a superuser belongs to.
 
 ### Deactivating and Deleting a Site
 
@@ -116,6 +119,70 @@ The Sites section has no delete button: untick **Active** to hide a site from th
 
 !!! danger
     Deleting a site is irreversible and removes all data associated with it. To keep its projects, move them to another site first, or deactivate the site instead.
+
+---
+
+## Teams
+
+A team is a group of people within **one** site — a lab, a department, a shift. Teams let everyone narrow the views to the work and people they care about, and let you limit tags, equipment and company events to some teams of a site. Open **Settings → Teams** (Admins, and Superusers for the sites they belong to).
+
+Pick the **Site** at the top; the list shows that site's teams with their colour, description, number of members and an **Inactive** badge where it applies.
+
+### Creating a Team
+
+1. Choose the **Site**
+2. Type a name in **New team name** (names are unique within a site)
+3. Click **Add team** (or press Enter) — the team is created, active and without members
+4. Click the **edit icon** (pencil) to fill in the rest
+
+### Editing a Team
+
+| Field | Description |
+|-------|-------------|
+| **Name** | Required, unique within the site |
+| **Description** | Optional free text |
+| **Color** | Shown as a dot next to the team in lists and the team filter |
+| **Active** | An inactive team is no longer offered in the header team filter or in new selections |
+| **Members** | Tick the people of the site who belong to the team. A member must belong to the team's site; someone can be in several teams |
+
+Click **Save Changes** to save, or **Cancel** to go back without saving. The teams a person belongs to are shown, read-only, in the **Teams** column of [Users](#user-management). Removing a site from a person also removes them from that site's teams.
+
+!!! note "Inactive teams still count"
+    Deactivating a team does not lift what it scopes. Projects, tags, equipment and company events keep their link to it, and a closure limited to it still takes out its members. Only the header team filter leaves inactive teams out — so equipment limited to an inactive team alone is hidden under any team filter and shown under **Whole site**. An inactive team stays listed in a dialog while it is ticked there, so you can untick it.
+
+### Deleting a Team
+
+Click the **delete icon** and confirm. The team's members, projects, tags, equipment and company events keep working without it; anything that was limited to that team alone becomes whole-site again. Deleting a site deletes its teams.
+
+### Team Filter
+
+The **team filter** sits in the header next to the [site selector](#site-selector). It only appears when the current site has active teams. Open it and tick:
+
+- **Whole site** — no filter (the default)
+- one or more **teams** — what belongs to any of them
+- **(No team)** — projects and people without a team; combines with the teams you ticked
+
+**Clear** goes back to the whole site. The button shows the current choice, for example *Analytical Lab* or *2 teams + no team*. The choice is remembered **per site in this browser**, like the tag filter, and does not change what other users see.
+
+The filter narrows:
+
+- the Gantt chart, the Kanban board and the archived projects (projects of the ticked teams)
+- the sidebar statistics and the Staff and Equipment resource panels
+- the Staff and Equipment views
+- the project-manager list in the project dialog, and the staff, equipment and equipment-block pickers — a person or item already selected in the dialog stays listed
+- in the [Cross-Site view](cross-site-view.md), the current site's lane only
+
+Equipment that is not limited to any team of the site is always shown; equipment limited to teams is shown when one of them is ticked.
+
+A project created while the filter is active starts with the filter's teams ticked, so it appears in the view you are looking at.
+
+### Who Can Manage Teams
+
+| Action | Admin | Superuser | User |
+|--------|-------|-----------|------|
+| Create, edit and delete teams | Every site | Their own sites | No |
+| Assign a project to teams | Yes | Yes | Project manager of that project |
+| Use the team filter | Yes | Yes | Yes |
 
 ---
 
@@ -221,9 +288,10 @@ Open **Settings → Company events** (Admins and Superusers). Filter by **Site**
 2. Enter the **Name** (e.g., "ISO Audit")
 3. Set the **Start date** (required) and optionally an **End date** for multi-day events
 4. Under **Sites**, tick every site the event applies to. Superusers can only choose sites they belong to
-5. Pick a **Color**
-6. Tick **Site closure — staff on these sites are unavailable** if the sites are closed on those dates (see [Site Closures](#site-closures))
-7. Save
+5. **Teams (optional)** — for each selected site that has teams, leave **Whole site** on, or switch it off and tick the [teams](#teams) the event is for. A site where no team is ticked keeps the whole site
+6. Pick a **Color**
+7. Tick **Site closure — staff on these sites are unavailable** if the sites are closed on those dates (see [Site Closures](#site-closures))
+8. Save
 
 Editing an event changes it on every site it is linked to.
 
@@ -255,6 +323,8 @@ Tick **Site closure — staff on these sites are unavailable** on an event for a
 
 A person on several sites is unavailable when **any** of their sites is closed. Plain events and bank holidays do not reduce anyone's availability — only events marked as closures do.
 
+**A closure limited to teams takes out only their members.** At a site where the event names teams, only the members of those teams are unavailable; everyone else on that site keeps working. Such a closure never shades the calendar header as closed: its timeline columns get a plain event's tint instead of the hatched closure tint, since the rest of the site is open. In the Staff Overview's Company Events row, the hover text of its **Closure** label names the teams. A plain event limited to teams is still shown to the whole site.
+
 The site export's **Company events** sheet has a **Staff unavailable** column showing which events are closures.
 
 ---
@@ -278,6 +348,7 @@ Deactivating, deleting or demoting a user, or resetting their password, signs th
 | **Role** | Admin, Superuser, or User (see below) |
 | **Sites** | One or more sites the user can access |
 | **Skills** | Tags for resource planning (see Skills Management below) |
+| **Teams** | Shown read-only in the user list; membership is edited in [Settings → Teams](#teams) |
 | **Active** | Deactivate to prevent login without deleting |
 
 ### User Roles
@@ -291,6 +362,7 @@ Deactivating, deleting or demoting a user, or resetting their password, signs th
 | Manage equipment assignments | Yes | Yes | Project manager of that project |
 | Enter What-If mode (from the Gantt chart) | Yes | Yes | No |
 | Manage bank holidays & company events (own sites) | Yes | Yes | No |
+| Manage teams (own sites) | Yes | Yes | No |
 | Edit users, skills, equipment, equipment types, predefined phases | Yes | Yes | No |
 | Create, delete, enable/disable users; change roles | Yes | No | No |
 | General settings, sites, absence types, SSO | Yes | No | No |
@@ -485,6 +557,7 @@ Tags are listed under their group, with ungrouped tags under **Other**.
 - **Name and colour** — Edit the name inline; pick a colour from the swatches or enter a custom one.
 - **Group** — Move a tag into a group or out of it. Moving it into a single-select group is refused if a project already holds another tag of that group together with it.
 - **Sites** — By default a tag applies to **all sites**. Switch that off to pick the sites where the tag is offered. Restricting a tag is refused while projects at a site you are removing still use it. Deleting a site also deletes tags that were limited to that site only.
+- **Teams** — For each site where the tag applies and that has [teams](#teams), leave **Whole site** on, or switch it off and tick teams: at that site the tag is then offered only on projects of those teams. Limiting a tag is refused while a project outside the ticked teams still uses it. The tag list shows *limited to N teams* next to the sites.
 - **Order** — Drag tags to reorder them within their group.
 - **Delete** — Removes the tag from every project; you are asked to confirm.
 

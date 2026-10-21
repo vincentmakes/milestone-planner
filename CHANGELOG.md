@@ -5,6 +5,21 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.12.0] - 2026-10-21
+
+### Added
+- Teams: group the people of a site into teams with a name, description, colour and members, in **Settings → Teams** (admins at every site, superusers at their own sites).
+- A **Teams** filter next to the site selector narrows the Gantt chart, Kanban board, archived projects, sidebar stats, resource panels, Staff and Equipment views and the people and equipment pickers to the whole site, one or more teams, or projects and people with no team; it is remembered per site in your browser.
+- Projects can belong to one or more teams of their site; a new project starts with the teams of the active filter.
+- Tags, equipment and company events can be limited to teams, site by site; a team-limited tag is offered only on projects of those teams.
+- A site closure limited to teams takes out only their members and leaves the rest of the site, and the calendar header, untouched.
+- The Users list shows each person's teams.
+- The site Excel export has **Teams**, **Team members** and **Project teams** sheets and a **Teams** column on Equipment, Tags and Company events.
+- The demo tenant ships with two teams per site, team projects, a team-limited tag, team-limited equipment and a team-limited event.
+
+### Changed
+- Upgrading creates the team tables automatically on startup; the `add_teams` migration is also available through `run_migration.py`.
+
 ## [1.11.0] - 2026-10-18
 
 ### Added

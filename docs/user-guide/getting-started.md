@@ -41,6 +41,7 @@ The sidebar can be collapsed to icon-only mode for more screen space. Admins and
 
 - Logo and instance title (customizable by admin)
 - Site selector dropdown to switch between locations
+- **Teams** filter — appears when the site has teams; narrows the views to one or more teams of the site, or to what has no team. Remembered per site in your browser (see [Team Filter](settings.md#team-filter))
 
 **Center — Timeline Navigation:**
 

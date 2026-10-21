@@ -65,9 +65,10 @@ Creating a project needs the Admin or Superuser role.
 1. Click **+ New Project** in the panel header
 2. Fill in required fields: **Project Name**, **Start Date**, **End Date**
 3. Optionally set: Project Manager, Customer, Sales PM, Project Volume
-4. Select which **predefined phases** to include (all active phases are pre-selected)
-5. Check **Project Confirmed** if the project is approved
-6. Click **Create Project**
+4. If the site has [teams](settings.md#teams), tick the **Teams** the project belongs to — the teams of the active [team filter](settings.md#team-filter) are ticked already, so the new project shows in the view you are on
+5. Select which **predefined phases** to include (all active phases are pre-selected)
+6. Check **Project Confirmed** if the project is approved
+7. Click **Create Project**
 
 ## Editing Projects, Phases & Subphases
 
@@ -84,7 +85,7 @@ When editing a project, export buttons (CSV and XML) are available in the modal 
 
 Tags are coloured labels attached to projects to classify and filter them (e.g. *Critical*, *Internal*, *Customer*). The tag library is shared by the whole workspace: admins define the tags in **Settings → Tags** (see [Tags in Settings](settings.md#tags)), and anyone who can edit a project attaches them.
 
-Tags can be organised into **groups** such as *Project type* → Internal / Customer. A **single-select** group allows one of its tags per project. Each tag applies to **all sites** or only to the sites an admin picked, so the picker and the filter only offer the tags that apply to the project's site.
+Tags can be organised into **groups** such as *Project type* → Internal / Customer. A **single-select** group allows one of its tags per project. Each tag applies to **all sites** or only to the sites an admin picked, so the picker and the filter only offer the tags that apply to the project's site. A tag can also be limited to some [teams](settings.md#teams) of a site: there, the picker offers it only on projects of one of those teams, and unticking a project's last matching team removes the tag from the project when you save.
 
 ![Tag picker in the project modal](../assets/screenshots/project-tags.png){ loading=lazy }
 
