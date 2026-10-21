@@ -35,6 +35,7 @@ import {
 import { buildICS, downloadICS, clampText } from '@/utils/ics';
 import type { ParsedICSEvent } from '@/utils/ics';
 import { DEFAULT_EVENT_COLOR } from '@/utils/colorSwatches';
+import { teamIdsWithinSites } from '@/utils/teams';
 import type { CalendarImportResult, CompanyEvent, Site } from '@/types';
 import {
   useManageableSites,
@@ -46,6 +47,7 @@ import {
   nameKey,
 } from './calendarUtils';
 import { SiteChecklist } from './SiteChecklist';
+import { TeamScope } from './TeamScope';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
 import {
   EditIcon,
@@ -579,6 +581,7 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
     color: event?.color || DEFAULT_EVENT_COLOR,
     countsAsUnavailable: event?.counts_as_unavailable ?? false,
     siteIds: event ? originalSiteIds.filter((id) => manageable.has(id)) : defaultSiteIds,
+    teamIds: event?.team_ids ?? [],
   }));
   const [name, setName] = useState(initial.name);
   const [date, setDate] = useState(initial.date);
@@ -586,6 +589,12 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
   const [color, setColor] = useState(initial.color);
   const [countsAsUnavailable, setCountsAsUnavailable] = useState(initial.countsAsUnavailable);
   const [siteIds, setSiteIds] = useState<number[]>(initial.siteIds);
+  // Teams it is limited to, flat across sites (none = everyone on each site)
+  const teams = useAppStore((s) => s.teams);
+  const [teamIds, setTeamIds] = useState<number[]>(initial.teamIds);
+  const selectedSites = manageableSites.filter((s) => siteIds.includes(s.id));
+  // What is saved: teams of sites no longer selected are dropped
+  const effectiveTeamIds = teamIdsWithinSites(teamIds, teams, siteIds);
   const { isSubmitting: isSaving, begin: beginSave, end: endSave } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
 
@@ -596,7 +605,8 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
       endDate !== initial.endDate ||
       color !== initial.color ||
       countsAsUnavailable !== initial.countsAsUnavailable ||
-      !sameIds(siteIds, initial.siteIds)
+      !sameIds(siteIds, initial.siteIds) ||
+      !sameIds(teamIds, initial.teamIds)
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -628,6 +638,7 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
         color,
         site_ids: allSiteIds,
         counts_as_unavailable: countsAsUnavailable,
+        team_ids: effectiveTeamIds,
       };
       if (event) {
         await updateCompanyEvent(event.id, payload);
@@ -682,6 +693,16 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
           onChange={setSiteIds}
           label="Event sites"
         />
+        {selectedSites.map((site) => (
+          <TeamScope
+            key={site.id}
+            site={site}
+            teams={teams}
+            selected={teamIds}
+            onChange={setTeamIds}
+            multiSite={selectedSites.length > 1}
+          />
+        ))}
       </div>
       <div className={styles.field}>
         <span className={styles.label}>Color</span>
@@ -698,6 +719,9 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
           Their capacity is 0% for the event's dates and their assignments are flagged as
           conflicts, like an absence.
         </p>
+        {countsAsUnavailable && effectiveTeamIds.length > 0 && (
+          <p className={styles.help}>Only members of the ticked teams are unavailable.</p>
+        )}
       </div>
       <div className={styles.formActions}>
         <Button type="button" variant="secondary" onClick={onCancel}>

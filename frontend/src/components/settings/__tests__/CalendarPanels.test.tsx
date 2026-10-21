@@ -17,6 +17,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { stubConfirm } from '@/test/confirmDialog';
 import type { BankHoliday, CompanyEvent, Site, User } from '@/types';
+import { makeTeam } from '@/test/factories';
 
 const api = vi.hoisted(() => ({
   getBankHolidays: vi.fn(),
@@ -94,7 +95,7 @@ beforeEach(() => {
   api.buildEventDateSet.mockReturnValue(new Set());
   api.getBankHolidays.mockResolvedValue([holiday]);
   api.getCompanyEvents.mockImplementation(async (siteId: number) => (siteId === 1 ? [audit] : []));
-  useAppStore.setState({ currentUser: admin, sites: [siteA, siteB], currentSite: null });
+  useAppStore.setState({ currentUser: admin, sites: [siteA, siteB], currentSite: null, teams: [] });
   useWhatIfStore.setState({ whatIfMode: false });
 });
 
@@ -334,5 +335,31 @@ describe('CompanyEventsPanel filters and form fields', () => {
     fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-07-01' } });
     expect(screen.getByLabelText('Start date')).toHaveValue('2026-07-01');
     expect(end).toHaveAttribute('min', '2026-07-01');
+  });
+
+  it('sends the teams a closure is limited to and explains who is unavailable', async () => {
+    api.createCompanyEventMultiSite.mockResolvedValue({});
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1, name: 'Analytics' }), makeTeam({ id: 3, site_id: 2, name: 'Line B' })],
+    });
+    render(<CompanyEventsPanel />);
+    await screen.findByText('ISO Audit');
+    fireEvent.click(screen.getByRole('button', { name: /Add event/ }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Team offsite' } });
+    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-07-01' } });
+    fireEvent.click(screen.getByRole('switch', { name: /Site closure/ }));
+
+    const hint = 'Only members of the ticked teams are unavailable.';
+    fireEvent.click(screen.getByRole('switch', { name: 'Whole site' }));
+    expect(screen.queryByText(hint)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Analytics' }));
+    expect(screen.getByText(hint)).toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByLabelText('Name').closest('form')!).getByRole('button', { name: 'Add event' }));
+    await waitFor(() =>
+      expect(api.createCompanyEventMultiSite).toHaveBeenCalledWith(
+        expect.objectContaining({ site_ids: [1], counts_as_unavailable: true, team_ids: [1] })
+      )
+    );
   });
 });

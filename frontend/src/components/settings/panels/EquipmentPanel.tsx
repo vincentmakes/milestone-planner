@@ -22,7 +22,9 @@ import { useAppStore } from '@/stores/appStore';
 import { apiGet, apiPost, apiPut, apiDelete } from '@/api/client';
 import { getEquipment } from '@/api/endpoints/equipment';
 import type { Equipment, Site } from '@/types';
+import { teamIdsWithinSites } from '@/utils/teams';
 import { useManageableSites } from './calendarUtils';
+import { TeamScope } from './TeamScope';
 import { BackIcon, CheckIcon, CloseIcon, EditIcon, GearIcon, PlusIcon } from './PanelIcons';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
@@ -309,6 +311,10 @@ function EquipmentForm({
     equipment ? equipmentSiteIds(equipment) : defaultSiteId !== null ? [defaultSiteId] : []
   );
   const [active, setActive] = useState(equipment?.active ?? true);
+  // Teams it is limited to, flat across sites (none = the whole of each site)
+  const teams = useAppStore((s) => s.teams);
+  const [selectedTeamIds, setSelectedTeamIds] = useState<number[]>(equipment?.team_ids ?? []);
+  const selectedSites = sites.filter((s) => selectedSiteIds.includes(s.id));
 
   const toggleSite = (siteId: number) => {
     setSelectedSiteIds((prev) =>
@@ -324,8 +330,9 @@ function EquipmentForm({
   const deleteBlockedReason = whatIf.blocked ? whatIf.reason('Deleting equipment') : null;
   const [error, setError] = useState<string | null>(null);
 
-  // The site links the form opened with (the default site is fixed at open)
+  // The site links and teams the form opened with (the default site is fixed at open)
   const [initialSiteIds] = useState(selectedSiteIds);
+  const [initialTeamIds] = useState(selectedTeamIds);
   useReportDirty(
     onDirtyChange,
     name !== (equipment?.name || '') ||
@@ -333,7 +340,9 @@ function EquipmentForm({
       active !== (equipment?.active ?? true) ||
       (isAddingNewType && newTypeName.trim() !== '') ||
       selectedSiteIds.length !== initialSiteIds.length ||
-      selectedSiteIds.some((id) => !initialSiteIds.includes(id))
+      selectedSiteIds.some((id) => !initialSiteIds.includes(id)) ||
+      selectedTeamIds.length !== initialTeamIds.length ||
+      selectedTeamIds.some((id) => !initialTeamIds.includes(id))
   );
   
   // Handle new type confirmation
@@ -380,6 +389,8 @@ function EquipmentForm({
         site_id: selectedSiteIds[0],
         site_ids: selectedSiteIds,
         active,
+        // Teams of sites no longer selected are dropped
+        team_ids: teamIdsWithinSites(selectedTeamIds, teams, selectedSiteIds),
       };
       
       if (isEditing && equipment) {
@@ -542,6 +553,16 @@ function EquipmentForm({
           <span className={styles.hint}>
             Select every site where this equipment can be booked
           </span>
+          {selectedSites.map((site) => (
+            <TeamScope
+              key={site.id}
+              site={site}
+              teams={teams}
+              selected={selectedTeamIds}
+              onChange={setSelectedTeamIds}
+              multiSite={selectedSites.length > 1}
+            />
+          ))}
         </div>
         
         {/* Active Status (only for editing) */}

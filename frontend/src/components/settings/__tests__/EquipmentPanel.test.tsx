@@ -13,6 +13,7 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { stubConfirm } from '@/test/confirmDialog';
 import type { Equipment, Site, User } from '@/types';
+import { makeTeam } from '@/test/factories';
 
 const apiGet = vi.fn();
 const apiPost = vi.fn();
@@ -67,7 +68,7 @@ describe('EquipmentPanel', () => {
     apiPut.mockReset().mockResolvedValue({});
     apiDelete.mockReset().mockResolvedValue(undefined);
     getEquipment.mockReset().mockResolvedValue(perSiteRows);
-    useAppStore.setState({ sites, currentUser: admin, currentSite: sites[0], equipment: [] });
+    useAppStore.setState({ sites, currentUser: admin, currentSite: sites[0], equipment: [], teams: [] });
   });
 
   it('lists every site of an item in the Sites column', async () => {
@@ -152,6 +153,7 @@ describe('EquipmentPanel', () => {
       site_id: 1,
       site_ids: [1, 2],
       active: true,
+      team_ids: [],
     });
     await waitFor(() => expect(getEquipment).toHaveBeenCalledWith(true));
     await waitFor(() => expect(useAppStore.getState().equipment).toEqual(perSiteRows));
@@ -216,7 +218,51 @@ describe('EquipmentPanel', () => {
       site_id: 2,
       site_ids: [2],
       active: true,
+      team_ids: [],
     });
+  });
+
+  it('creates equipment limited to some teams of its site', async () => {
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1, name: 'Analytics' }), makeTeam({ id: 3, site_id: 2, name: 'Line B' })],
+    });
+    render(<EquipmentPanel />);
+    await screen.findByText('HPLC 1');
+    fireEvent.click(screen.getByRole('button', { name: 'Add Equipment' }));
+    fireEvent.change(screen.getByLabelText('Name *'), { target: { value: 'Mass Spec 1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analytical Device' }));
+
+    // Only Site A is selected, so its switch does not name the site
+    fireEvent.click(screen.getByRole('switch', { name: 'Whole site' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Analytics' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create Equipment' }));
+    await waitFor(() =>
+      expect(apiPost).toHaveBeenCalledWith('/api/equipment', expect.objectContaining({ site_ids: [1], team_ids: [1] }))
+    );
+  });
+
+  it("drops the teams of a site that is unticked from the payload", async () => {
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1, name: 'Analytics' }), makeTeam({ id: 3, site_id: 2, name: 'Line B' })],
+    });
+    apiGet.mockResolvedValue(allEquipment.map((e) => (e.id === 2 ? { ...e, team_ids: [1, 3] } : e)));
+    const onDirtyChange = vi.fn();
+    render(<EquipmentPanel onDirtyChange={onDirtyChange} />);
+    await screen.findByText('Reactor');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Reactor' }));
+    expect(screen.getByRole('switch', { name: 'Whole site — Site A' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Line B' })).toBeChecked();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Analytics' }));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Analytics' }));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+
+    fireEvent.click(screen.getByLabelText('Site A'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() =>
+      expect(apiPut).toHaveBeenCalledWith('/api/equipment/2', expect.objectContaining({ site_ids: [2], team_ids: [3] }))
+    );
   });
 
   it('lets a superuser edit only equipment on their own sites', async () => {

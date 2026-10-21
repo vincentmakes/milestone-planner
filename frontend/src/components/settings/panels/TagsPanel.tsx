@@ -20,9 +20,11 @@ import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useAppStore } from '@/stores/appStore';
 import { tagsApi, tagGroupsApi } from '@/api';
 import { EVENT_COLOR_SWATCHES } from '@/utils/colorSwatches';
+import { teamIdsWithinSites } from '@/utils/teams';
 import type { Site, Tag, TagGroup } from '@/types';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
 import { SiteChecklist } from './SiteChecklist';
+import { TeamScope } from './TeamScope';
 import { DragHandleIcon, EditIcon, TrashIcon, PlusIcon } from './PanelIcons';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
@@ -72,11 +74,13 @@ function buildSections(tags: Tag[], groups: TagGroup[]): TagSection[] {
 }
 
 function siteSummary(tag: Tag, sites: Site[]): string {
-  if (tag.all_sites) return 'All sites';
+  const teamCount = tag.team_ids?.length ?? 0;
+  const limit = teamCount ? ` · limited to ${teamCount} team${teamCount === 1 ? '' : 's'}` : '';
+  if (tag.all_sites) return `All sites${limit}`;
   const names = tag.site_ids
     .map((id) => sites.find((s) => s.id === id)?.name)
     .filter((n): n is string => !!n);
-  return names.length ? names.join(', ') : 'No site';
+  return (names.length ? names.join(', ') : 'No site') + limit;
 }
 
 /**
@@ -150,6 +154,7 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const setStoreTags = useAppStore((s) => s.setTags);
   const setStoreGroups = useAppStore((s) => s.setTagGroups);
   const sites = useAppStore((s) => s.sites);
+  const teams = useAppStore((s) => s.teams);
 
   const [tags, setTags] = useState<Tag[]>([]);
   const [groups, setGroups] = useState<TagGroup[]>([]);
@@ -166,6 +171,7 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const [editTagColor, setEditTagColor] = useState(DEFAULT_TAG_COLOR);
   const [editAllSites, setEditAllSites] = useState(true);
   const [editSiteIds, setEditSiteIds] = useState<number[]>([]);
+  const [editTeamIds, setEditTeamIds] = useState<number[]>([]);
 
   // Add forms
   const [newGroupName, setNewGroupName] = useState('');
@@ -226,7 +232,8 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
     (editTagName !== editedTag.name ||
       editTagColor !== editedTag.color ||
       editAllSites !== editedTag.all_sites ||
-      (!editAllSites && !sameIds(editSiteIds, editedTag.site_ids)));
+      (!editAllSites && !sameIds(editSiteIds, editedTag.site_ids)) ||
+      !sameIds(editTeamIds, editedTag.team_ids ?? []));
   useReportDirty(
     onDirtyChange,
     groupEditDirty || tagEditDirty || newGroupName.trim() !== '' || newTagName.trim() !== ''
@@ -340,7 +347,11 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
     setEditTagColor(tag.color);
     setEditAllSites(tag.all_sites);
     setEditSiteIds(tag.site_ids);
+    setEditTeamIds(tag.team_ids ?? []);
   };
+
+  // Sites the edited tag applies to; each may be limited to some of its teams.
+  const sitesInScope = editAllSites ? sites : sites.filter((s) => editSiteIds.includes(s.id));
 
   const canSaveTag = editTagName.trim() !== '' && (editAllSites || editSiteIds.length > 0);
 
@@ -354,6 +365,7 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
           color: editTagColor,
           all_sites: editAllSites,
           site_ids: editAllSites ? [] : editSiteIds,
+          team_ids: teamIdsWithinSites(editTeamIds, teams, sitesInScope.map((s) => s.id)),
         });
         setEditingTagId(null);
       }, 'Failed to update tag');
@@ -488,6 +500,16 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
               {!editAllSites && editSiteIds.length === 0 && (
                 <span className={styles.hint}>Pick at least one site.</span>
               )}
+              {sitesInScope.map((s) => (
+                <TeamScope
+                  key={s.id}
+                  site={s}
+                  teams={teams}
+                  selected={editTeamIds}
+                  onChange={setEditTeamIds}
+                  multiSite={sitesInScope.length > 1}
+                />
+              ))}
             </div>
             <div className={styles.editActions}>
               <Button variant="secondary" onClick={() => setEditingTagId(null)}>

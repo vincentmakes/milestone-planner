@@ -11,6 +11,7 @@ import { TagsPanel } from '../panels/TagsPanel';
 import { useAppStore } from '@/stores/appStore';
 import { stubConfirm } from '@/test/confirmDialog';
 import type { Site, Tag, TagGroup } from '@/types';
+import { makeTeam } from '@/test/factories';
 
 const api = vi.hoisted(() => ({
   tagsApi: {
@@ -53,7 +54,7 @@ beforeEach(() => {
   for (const fn of [...Object.values(tagsApi), ...Object.values(tagGroupsApi)]) fn.mockReset();
   tagsApi.getAll.mockResolvedValue(TAGS);
   tagGroupsApi.getAll.mockResolvedValue(GROUPS);
-  useAppStore.setState({ sites: SITES, tags: [], tagGroups: [] });
+  useAppStore.setState({ sites: SITES, tags: [], tagGroups: [], teams: [] });
 });
 
 afterEach(() => {
@@ -240,9 +241,63 @@ describe('TagsPanel', () => {
         color: '#8b5cf6',
         all_sites: false,
         site_ids: [1],
+        team_ids: [],
       })
     );
     await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+  });
+
+  describe('team scope', () => {
+    const TEAMS = [
+      makeTeam({ id: 1, site_id: 1, name: 'Analytics' }),
+      makeTeam({ id: 2, site_id: 1, name: 'Process' }),
+      makeTeam({ id: 3, site_id: 2, name: 'Zurich lab' }),
+    ];
+    beforeEach(() => useAppStore.setState({ teams: TEAMS }));
+
+    it('sends team_ids when the tag is limited to teams', async () => {
+      tagsApi.update.mockResolvedValue({});
+      const onDirtyChange = vi.fn();
+      render(<TagsPanel onDirtyChange={onDirtyChange} />);
+      await screen.findByText('Internal');
+      fireEvent.click(screen.getByRole('button', { name: 'Edit Internal' }));
+
+      const row = screen.getByTestId('tag-4');
+      // All sites in scope: one switch per site with teams
+      expect(within(row).getByRole('switch', { name: 'Whole site — Zurich' })).toBeChecked();
+      fireEvent.click(within(row).getByRole('switch', { name: 'Whole site — Basel' }));
+      fireEvent.click(within(row).getByRole('checkbox', { name: 'Analytics' }));
+      expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+      fireEvent.click(within(row).getByRole('button', { name: 'Save' }));
+      await waitFor(() =>
+        expect(tagsApi.update).toHaveBeenCalledWith(4, expect.objectContaining({ all_sites: true, team_ids: [1] }))
+      );
+    });
+
+    it('whole site sends []', async () => {
+      tagsApi.update.mockResolvedValue({});
+      tagsApi.getAll.mockResolvedValue(TAGS.map((t) => (t.id === 4 ? { ...t, team_ids: [1, 3] } : t)));
+      render(<TagsPanel />);
+      await screen.findByText('Internal');
+      fireEvent.click(screen.getByRole('button', { name: 'Edit Internal' }));
+
+      const row = screen.getByTestId('tag-4');
+      expect(within(row).getByRole('checkbox', { name: 'Analytics' })).toBeChecked();
+      fireEvent.click(within(row).getByRole('switch', { name: 'Whole site — Basel' }));
+      fireEvent.click(within(row).getByRole('switch', { name: 'Whole site — Zurich' }));
+      fireEvent.click(within(row).getByRole('button', { name: 'Save' }));
+      await waitFor(() =>
+        expect(tagsApi.update).toHaveBeenCalledWith(4, expect.objectContaining({ team_ids: [] }))
+      );
+    });
+
+    it('shows the team limit in the row', async () => {
+      tagsApi.getAll.mockResolvedValue(TAGS.map((t) => (t.id === 4 ? { ...t, team_ids: [1, 3] } : t)));
+      render(<TagsPanel />);
+      const row = await screen.findByTestId('tag-4');
+      expect(within(row).getByText('All sites · limited to 2 teams')).toBeInTheDocument();
+      expect(within(screen.getByTestId('tag-1')).getByText('All sites')).toBeInTheDocument();
+    });
   });
 
   it('cancels an inline group rename with Escape without bubbling to the hub', async () => {
