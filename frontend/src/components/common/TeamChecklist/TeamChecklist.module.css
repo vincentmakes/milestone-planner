@@ -1,0 +1,46 @@
+/* Layout follows SiteChecklist (CalendarPanel.module.css .siteChecklist / .siteCheck). */
+.checklist {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-blue);
+}
+
+.check.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* A team without a colour shows a muted dot. */
+.dot {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.inactive {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.empty {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}

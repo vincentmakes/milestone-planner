@@ -19,6 +19,7 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { stubConfirm } from '@/test/confirmDialog';
 import type { Tag, TagGroup } from '@/types';
+import { makeTeam } from '@/test/factories';
 
 function tag(id: number, name: string, extra: Partial<Tag> = {}): Tag {
   return { id, name, color: '#3b82f6', group_id: null, all_sites: true, site_ids: [], sort_order: 0, ...extra };
@@ -36,11 +37,11 @@ const tags: Tag[] = [
   tag(6, 'Basel only', { all_sites: false, site_ids: [2] }),
 ];
 
-function Harness({ initial = [] as number[], siteId = 1 as number | null }) {
+function Harness({ initial = [] as number[], siteId = 1 as number | null, teamIds = undefined as number[] | undefined }) {
   const [selected, setSelected] = useState(new Set(initial));
   return (
     <>
-      <TagPicker selectedIds={selected} onChange={setSelected} siteId={siteId} />
+      <TagPicker selectedIds={selected} onChange={setSelected} siteId={siteId} teamIds={teamIds} />
       <output data-testid="selected">{[...selected].sort().join(',')}</output>
     </>
   );
@@ -106,6 +107,26 @@ describe('TagPicker options', () => {
     render(<Harness siteId={2} />);
     openDropdown();
     expect(screen.getByText('Basel only')).toBeInTheDocument();
+  });
+
+  it("offers a team-restricted tag only when the project's teams include one of them", () => {
+    useAppStore.setState({
+      tags: [...tags, tag(7, 'Analytics only', { team_ids: [1] })],
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
+    });
+    const { unmount } = render(<Harness siteId={1} />);
+    openDropdown();
+    expect(screen.queryByText('Analytics only')).not.toBeInTheDocument();
+    unmount();
+
+    const other = render(<Harness siteId={1} teamIds={[2]} />);
+    openDropdown();
+    expect(screen.queryByText('Analytics only')).not.toBeInTheDocument();
+    other.unmount();
+
+    render(<Harness siteId={1} teamIds={[2, 1]} />);
+    openDropdown();
+    expect(screen.getByText('Analytics only')).toBeInTheDocument();
   });
 
   it('hides selected pills for tags not applying to the site', () => {

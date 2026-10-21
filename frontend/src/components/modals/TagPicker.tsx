@@ -5,7 +5,8 @@
  * Settings → Tags (admins get a "Manage tags…" shortcut here).
  *
  * - Only tags that apply to the project's site are offered (`all_sites`, or
- *   the site is in `site_ids`).
+ *   the site is in `site_ids`), and of those limited to teams there, only the
+ *   ones sharing a team with the project (`teamIds`).
  * - Options are listed per tag group; in a single-select group picking a tag
  *   replaces the group's current choice (radio behaviour).
  * - Type to filter; Enter picks the tag whose name matches exactly, or the
@@ -22,7 +23,8 @@ import { useState, useMemo, useRef, useEffect, useId } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
-import { applyTagSelection, barTextColor, groupedTags, tagsForSite } from '@/utils/tags';
+import { applyTagSelection, barTextColor, groupedTags, tagsForProjectScope } from '@/utils/tags';
+import { teamsForSite } from '@/utils/teams';
 import type { Tag } from '@/types';
 import styles from './TagPicker.module.css';
 import { confirmAction } from '@/utils/confirmDialog';
@@ -39,12 +41,17 @@ interface TagPickerProps {
   onChange: (next: Set<number>) => void;
   /** Site of the project being edited; decides which tags are offered. */
   siteId: number | null;
+  /** The project's teams; a tag limited to teams is offered only if one is among them. */
+  teamIds?: number[];
   /** Lock the picker (e.g. while the enclosing dialog's save is in flight). */
   disabled?: boolean;
 }
 
-export function TagPicker({ selectedIds, onChange, siteId, disabled = false }: TagPickerProps) {
+const NO_TEAMS: number[] = [];
+
+export function TagPicker({ selectedIds, onChange, siteId, teamIds = NO_TEAMS, disabled = false }: TagPickerProps) {
   const tags = useAppStore((s) => s.tags);
+  const teams = useAppStore((s) => s.teams);
   const tagGroups = useAppStore((s) => s.tagGroups);
   const isAdmin = useAppStore((s) => s.currentUser?.role === 'admin');
   const whatIf = useWhatIfBlocked();
@@ -68,7 +75,10 @@ export function TagPicker({ selectedIds, onChange, siteId, disabled = false }: T
     return () => document.removeEventListener('mousedown', handle);
   }, [open]);
 
-  const siteTags = useMemo(() => tagsForSite(tags, siteId), [tags, siteId]);
+  const siteTags = useMemo(
+    () => tagsForProjectScope(tags, siteId, teamIds, teamsForSite(teams, siteId)),
+    [tags, siteId, teamIds, teams]
+  );
   const groupById = useMemo(() => new Map(tagGroups.map((g) => [g.id, g])), [tagGroups]);
 
   // Pills: selected tags that exist and apply to this site, in section order.

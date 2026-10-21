@@ -3,7 +3,7 @@
  * Matches vanilla JS functionality for creating new projects with phases
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
@@ -20,10 +20,12 @@ import { updateProjectLocally } from '@/utils/localProjectTree';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { exportAndDownload } from '@/utils/csvExport';
 import { exportProjectToXML } from '@/utils/xmlExport';
-import { tagsForSite, violatesSingleSelect } from '@/utils/tags';
+import { tagsForProjectScope, violatesSingleSelect } from '@/utils/tags';
+import { teamsForSite } from '@/utils/teams';
 import { TagPicker } from './TagPicker';
 import styles from './ProjectModal.module.css';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
+import { TeamChecklist } from '@/components/common/TeamChecklist';
 
 // Local interface for predefined phases from API
 interface PredefinedPhaseFromAPI {
@@ -41,8 +43,13 @@ export function ProjectModal() {
   const setProjects = useAppStore((s) => s.setProjects);
   const allTags = useAppStore((s) => s.tags);
   const tagGroups = useAppStore((s) => s.tagGroups);
+  const teams = useAppStore((s) => s.teams);
   const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
-  const { staffMatches } = useTeamFilter();
+  const { staffMatches, filter: teamFilter } = useTeamFilter();
+  // Read when the dialog opens only: a teams refetch while it is open must
+  // not reset the form.
+  const teamFilterRef = useRef(teamFilter);
+  teamFilterRef.current = teamFilter;
   
   const isOpen = activeModal === 'project';
   const isEditing = !!editingProject;
@@ -64,6 +71,7 @@ export function ProjectModal() {
   const [selectedPhases, setSelectedPhases] = useState<Set<string>>(new Set());
   const [predefinedPhases, setPredefinedPhases] = useState<PredefinedPhaseFromAPI[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<Set<number>>(new Set());
+  const [selectedTeamIds, setSelectedTeamIds] = useState<number[]>([]);
   const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
   
@@ -76,6 +84,14 @@ export function ProjectModal() {
       (s) => s.site_id === currentSite.id && (staffMatches(s) || s.id === editingPmId)
     );
   }, [staff, currentSite, staffMatches, editingPmId]);
+
+  // Teams of the project's site: the active ones, plus an inactive one while
+  // it is still ticked (so it can be unticked).
+  const siteTeams = useMemo(() => teamsForSite(teams, tagSiteId), [teams, tagSiteId]);
+  const projectTeams = useMemo(
+    () => siteTeams.filter((t) => t.active || selectedTeamIds.includes(t.id)),
+    [siteTeams, selectedTeamIds]
+  );
 
   // "Select PM" stays a real, selectable choice: picking it clears the manager.
   const pmOptions = useMemo(
@@ -119,6 +135,7 @@ export function ProjectModal() {
         setEndDate(toInputDateFormat(editingProject.end_date));
         setSelectedPhases(new Set()); // Don't select phases when editing
         setSelectedTagIds(new Set((editingProject.tags ?? []).map((t) => t.id)));
+        setSelectedTeamIds(editingProject.team_ids ?? []);
       } else {
         // New project mode
         const today = new Date();
@@ -135,6 +152,8 @@ export function ProjectModal() {
         setStartDate(formatDateISO(today));
         setEndDate(formatDateISO(nextMonth));
         setSelectedTagIds(new Set());
+        // A project created while a team filter is active shows in that view.
+        setSelectedTeamIds(teamFilterRef.current?.teamIds ?? []);
       }
       setError(null);
     }
@@ -175,9 +194,12 @@ export function ProjectModal() {
       return;
     }
     
-    // Drop selected tags that do not apply to the project's site (stale data,
-    // or a tag re-scoped since the dialog opened) -- the server rejects them.
-    const applicableTagIds = new Set(tagsForSite(allTags, tagSiteId).map((t) => t.id));
+    // Drop selected tags that do not apply to the project's site and teams
+    // (stale data, a tag re-scoped since the dialog opened, or a team unticked
+    // after picking its tag) -- the server rejects them.
+    const applicableTagIds = new Set(
+      tagsForProjectScope(allTags, tagSiteId, selectedTeamIds, siteTeams).map((t) => t.id)
+    );
     const tagIds = Array.from(selectedTagIds).filter((id) => applicableTagIds.has(id));
     if (violatesSingleSelect(tagIds, allTags, tagGroups)) {
       setError('Pick at most one tag per single-choice tag group');
@@ -228,6 +250,7 @@ export function ProjectModal() {
         end_date: endDate,
         phases: isEditing ? undefined : phases,
         tag_ids: tagIds,
+        team_ids: selectedTeamIds,
       };
       
       if (isEditing && editingProject) {
@@ -250,6 +273,7 @@ export function ProjectModal() {
           p.tags = allTags
             .filter((t) => projectData.tag_ids.includes(t.id))
             .map(({ id, name, color, group_id }) => ({ id, name, color, group_id }));
+          p.team_ids = projectData.team_ids;
         });
       } else {
         await createProject(projectData);
@@ -423,12 +447,26 @@ export function ProjectModal() {
           />
         </div>
         
+        {projectTeams.length > 0 && (
+          <div className={styles.formGroup}>
+            <label className={styles.label}>Teams</label>
+            <TeamChecklist
+              teams={projectTeams}
+              selected={selectedTeamIds}
+              onChange={setSelectedTeamIds}
+              label="Project teams"
+              disabled={isSubmitting}
+            />
+          </div>
+        )}
+
         <div className={styles.formGroup}>
           <label className={styles.label}>Tags</label>
           <TagPicker
             selectedIds={selectedTagIds}
             onChange={setSelectedTagIds}
             siteId={tagSiteId}
+            teamIds={selectedTeamIds}
             disabled={isSubmitting}
           />
         </div>
