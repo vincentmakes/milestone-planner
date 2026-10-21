@@ -152,7 +152,7 @@ Click **Save Changes** to save, or **Cancel** to go back without saving. The tea
 
 ### Deleting a Team
 
-Click the **delete icon** and confirm. The team's members, projects, tags, equipment and company events keep working without it; anything that was limited to that team alone becomes whole-site again. Deleting a site deletes its teams.
+Click the **delete icon** and confirm. The team's members, projects, tags, equipment and company events keep working without it; anything that was limited to that team alone becomes whole-site again. Deleting is refused while a project of the team carries a [tag](#tags) that is also limited to other teams of the site and the project is in none of them — it would be left with a tag it no longer qualifies for. Add the project to one of the tag's other teams, or widen the tag, then delete the team. Deleting a site deletes its teams.
 
 ### Team Filter
 

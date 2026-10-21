@@ -19,6 +19,7 @@ from app.services.team_rules import (
     MEMBER_NOT_AT_SITE_DETAIL,
     TEAM_NOT_FOUND_DETAIL,
     TEAM_SITE_ACCESS_DETAIL,
+    team_delete_strands_projects_detail,
 )
 from tests.conftest import FakeUser
 from tests.support import scalar_result, scalars_result
@@ -57,6 +58,27 @@ def added(db, model):
 def compiled(db, index: int = 0) -> str:
     statement = db.execute.await_args_list[index].args[0]
     return " ".join(str(statement.compile(compile_kwargs={"literal_binds": True})).split())
+
+
+def loader_strategies(db, index: int = 0) -> dict[str, str]:
+    """A statement's loader options as {"Team.members -> User.sites": "noload", ...}."""
+    statement = db.execute.await_args_list[index].args[0]
+    return {
+        " -> ".join(str(attr) for attr in element.path.natural_path[1::2]): dict(
+            element.strategy or ()
+        )["lazy"]
+        for option in statement._with_options
+        for element in option.context
+    }
+
+
+# Reads load members for member_ids only, not each member's own collections.
+READ_LOADERS = {
+    "Team.members": "selectin",
+    "Team.members -> User.sites": "noload",
+    "Team.members -> User.skills": "noload",
+    "Team.members -> User.teams": "noload",
+}
 
 
 @pytest.fixture
@@ -98,6 +120,7 @@ async def test_list_teams_in_one_query_ordered_by_site_then_name(authed_client, 
     sql = compiled(mock_db_session)
     assert "ORDER BY teams.site_id, teams.name" in sql
     assert "WHERE" not in sql
+    assert loader_strategies(mock_db_session) == READ_LOADERS
 
 
 @pytest.mark.asyncio
@@ -130,6 +153,7 @@ async def test_get_team(authed_client, mock_db_session):
     assert body["color"] == "#112233"
     assert body["member_ids"] == [5]
     assert body["created_at"].startswith("2026-01-01T12:00:00")
+    assert loader_strategies(mock_db_session) == READ_LOADERS
 
 
 @pytest.mark.asyncio
@@ -378,16 +402,41 @@ async def test_update_unknown_team_is_a_404(authed_client, mock_db_session):
 async def test_delete_team(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(FakeUser(1, "superuser"))
-    mock_db_session.execute.side_effect = [scalar_result(make_team(3, 1)), MagicMock()]
+    mock_db_session.execute.side_effect = [
+        scalar_result(make_team(3, 1)),
+        scalar_result(0),  # no project stranded
+        MagicMock(),
+    ]
 
     response = await client.delete("/api/teams/3")
 
     assert response.status_code == 204
-    statement = mock_db_session.execute.await_args_list[1].args[0]
+    assert "tag_teams.team_id = 3" in compiled(mock_db_session, 1)
+    statement = mock_db_session.execute.await_args_list[2].args[0]
     assert isinstance(statement, Delete)
-    assert "teams.id = 3" in compiled(mock_db_session, 1)
+    assert "teams.id = 3" in compiled(mock_db_session, 2)
     assert statement.get_execution_options()["synchronize_session"] is False
     mock_db_session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("count", [1, 3])
+async def test_delete_team_stranding_tagged_projects_is_a_409(
+    authed_client, mock_db_session, count
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.side_effect = [scalar_result(make_team(3, 1)), scalar_result(count)]
+
+    response = await client.delete("/api/teams/3")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == team_delete_strands_projects_detail(count)
+    assert mock_db_session.execute.await_count == 2
+    assert not any(
+        isinstance(call.args[0], Delete) for call in mock_db_session.execute.await_args_list
+    )
+    mock_db_session.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

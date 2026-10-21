@@ -10,6 +10,8 @@ Team rules shared by the routers that link teams to other data.
 
 ``load_teams`` resolves the ids a request carries; the ``*_detail`` helpers
 give the 400 messages each router raises through ``ensure_teams_within_sites``.
+``count_projects_stranded_by_team_delete`` backs the 409 that refuses to
+delete a team while a project would keep a tag limited to other teams.
 
 Error details are plain strings (the frontend renders ``detail`` as text).
 """
@@ -17,10 +19,13 @@ Error details are plain strings (the frontend renders ``detail`` as text).
 from collections.abc import Callable, Iterable
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import and_, func, literal, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
-from app.models.team import Team
+from app.models.project import Project
+from app.models.tag import ProjectTag
+from app.models.team import ProjectTeam, TagTeam, Team
 from app.models.user import User, UserSite
 
 TEAM_NOT_FOUND_DETAIL = "Team not found"
@@ -39,6 +44,18 @@ def team_outside_project_site_detail(team_name: str) -> str:
 
 def team_outside_user_sites_detail(team_name: str) -> str:
     return f'The team "{team_name}" is not at one of the user\'s sites'
+
+
+def team_delete_strands_projects_detail(count: int) -> str:
+    if count == 1:
+        return (
+            "1 project would keep a tag limited to other teams; "
+            "move it to another of the tag's teams or widen the tag first"
+        )
+    return (
+        f"{count} projects would keep tags limited to other teams; "
+        "move them to another of the tags' teams or widen the tags first"
+    )
 
 
 async def load_teams(
@@ -101,3 +118,54 @@ async def load_site_members(db: AsyncSession, site_id: int, user_ids: Iterable[i
     if len(users) != len(ids):
         raise HTTPException(status_code=400, detail=MEMBER_NOT_AT_SITE_DETAIL)
     return users
+
+
+async def count_projects_stranded_by_team_delete(db: AsyncSession, team: Team) -> int:
+    """
+    Projects that deleting ``team`` would leave holding a tag limited to other teams.
+
+    A project at the team's site, in ``team``, holding a tag whose team rows at
+    that site name ``team`` and at least one other team, while the project is
+    in none of those other teams: once ``team``'s rows go (ON DELETE CASCADE),
+    the tag is limited to teams the project is not part of. (A tag linked to
+    ``team`` alone at the site becomes open to the whole site instead.) One query.
+    """
+    other_link = aliased(TagTeam)
+    other_team = aliased(Team)
+    other_membership = aliased(ProjectTeam)
+    # Aliases throughout: the outer query already uses tag_teams and
+    # project_teams, which would otherwise be correlated out of the subqueries.
+    other_teams_of_tag = (
+        select(literal(1))
+        .select_from(other_link)
+        .join(other_team, other_team.id == other_link.team_id)
+        .where(
+            other_link.tag_id == ProjectTag.tag_id,
+            other_link.team_id != team.id,
+            other_team.site_id == team.site_id,
+        )
+    )
+    in_another_tag_team = other_teams_of_tag.join(
+        other_membership,
+        and_(
+            other_membership.team_id == other_link.team_id,
+            other_membership.project_id == Project.id,
+        ),
+    )
+    query = (
+        select(func.count(func.distinct(Project.id)))
+        .select_from(Project)
+        .join(
+            ProjectTeam,
+            and_(ProjectTeam.project_id == Project.id, ProjectTeam.team_id == team.id),
+        )
+        .join(ProjectTag, ProjectTag.project_id == Project.id)
+        .join(TagTeam, and_(TagTeam.tag_id == ProjectTag.tag_id, TagTeam.team_id == team.id))
+        .where(
+            Project.site_id == team.site_id,
+            other_teams_of_tag.exists(),
+            not_(in_another_tag_team.exists()),
+        )
+    )
+    result = await db.execute(query)
+    return int(result.scalar() or 0)

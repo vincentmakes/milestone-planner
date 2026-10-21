@@ -8,6 +8,8 @@ Team rules (app/services/team_rules.py) and the team-aware tag rules
 - A tag restricted to teams at a site applies to a project at that site only
   when the project shares one of those teams; team rows at other sites do not
   restrict it here.
+- Deleting a team is refused while it would strand projects: projects of the
+  team holding a tag also limited to other teams they are not part of.
 """
 
 from unittest.mock import AsyncMock, MagicMock
@@ -29,10 +31,12 @@ from app.services.tag_rules import (
 from app.services.team_rules import (
     MEMBER_NOT_AT_SITE_DETAIL,
     TEAM_NOT_FOUND_DETAIL,
+    count_projects_stranded_by_team_delete,
     ensure_teams_within_sites,
     load_site_members,
     load_teams,
     prune_teams_to_sites,
+    team_delete_strands_projects_detail,
     team_ids_of,
     team_outside_project_site_detail,
     team_outside_sites_detail,
@@ -93,6 +97,14 @@ def test_detail_strings():
     )
     assert other_teams_conflict_detail(1) == "1 project outside these teams uses this tag"
     assert other_teams_conflict_detail(3) == "3 projects outside these teams use this tag"
+    assert team_delete_strands_projects_detail(1) == (
+        "1 project would keep a tag limited to other teams; "
+        "move it to another of the tag's teams or widen the tag first"
+    )
+    assert team_delete_strands_projects_detail(4) == (
+        "4 projects would keep tags limited to other teams; "
+        "move them to another of the tags' teams or widen the tags first"
+    )
 
 
 # ---------------------------------------------------------
@@ -293,3 +305,30 @@ async def test_count_projects_outside_teams_query():
     assert "projects.site_id IN (1, 2)" in sql
     assert "NOT (EXISTS" in sql
     assert "project_teams.team_id IN (10, 11)" in sql
+
+
+# ---------------------------------------------------------
+# count_projects_stranded_by_team_delete
+# ---------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_count_projects_stranded_by_team_delete_query():
+    db = _db(scalar_result(2))
+
+    assert await count_projects_stranded_by_team_delete(db, _team(3, 1)) == 2
+
+    (sql,) = _sql(db)
+    assert sql.startswith("SELECT count(distinct(projects.id))")
+    # Projects of the team at its site, holding a tag linked to the team...
+    assert "project_teams.project_id = projects.id AND project_teams.team_id = 3" in sql
+    assert "JOIN project_tags ON project_tags.project_id = projects.id" in sql
+    assert "tag_teams.tag_id = project_tags.tag_id AND tag_teams.team_id = 3" in sql
+    assert "projects.site_id = 1" in sql
+    # ...that the tag also limits to another team at the site...
+    assert "AND (EXISTS (SELECT" in sql
+    assert "tag_teams_1.team_id != 3" in sql
+    assert "teams_1.site_id = 1" in sql
+    # ...none of which the project is part of.
+    assert "NOT (EXISTS (SELECT" in sql
+    assert "project_teams_1.project_id = projects.id" in sql

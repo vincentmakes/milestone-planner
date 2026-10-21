@@ -276,7 +276,7 @@ A team is a named group of people at **one** site. Every authenticated user can 
 | `GET` | `/t/{slug}/api/teams/{id}` | user | One team (`404` if missing) |
 | `POST` | `/t/{slug}/api/teams` | superuser | Create a team — `{site_id, name, description?, color?, active?, member_ids?}` |
 | `PUT` | `/t/{slug}/api/teams/{id}` | superuser | Partial update — `{name?, description?, color?, active?, member_ids?}`; the site cannot change |
-| `DELETE` | `/t/{slug}/api/teams/{id}` | superuser | Delete the team; its memberships and its project, tag, equipment and event links go with it |
+| `DELETE` | `/t/{slug}/api/teams/{id}` | superuser | Delete the team; its memberships and its project, tag, equipment and event links go with it. `409` when it would strand projects (see below) |
 
 Response: `{id, site_id, name, description, color, active, member_ids, created_at, updated_at}`.
 
@@ -284,6 +284,7 @@ Response: `{id, site_id, name, description, color, active, member_ids, created_a
 - **Members**: `member_ids` replaces the member list; every member must belong to the team's site (`400` otherwise).
 - **Clearing**: an explicit `null` clears `description` or `color`; other omitted or `null` fields are left unchanged. `color` is `#RRGGBB`.
 - **Inactive teams** keep scoping everything they are linked to; only the header team filter leaves them out.
+- **Deleting a team** is `409` while a project of the team holds a tag also limited to other teams at the site, none of which the project is in (the tag would no longer apply to it); `detail` counts those projects.
 - **Deleting a site** deletes its teams with all their links.
 
 `team_ids` on other resources:

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import noload, selectinload
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_superuser
@@ -22,7 +22,9 @@ from app.services.site_access import ensure_site_access
 from app.services.team_rules import (
     TEAM_NOT_FOUND_DETAIL,
     TEAM_SITE_ACCESS_DETAIL,
+    count_projects_stranded_by_team_delete,
     load_site_members,
+    team_delete_strands_projects_detail,
 )
 
 router = APIRouter(prefix="/teams", tags=["teams"])
@@ -52,11 +54,30 @@ async def _name_taken(
     return result.scalar_one_or_none() is not None
 
 
-async def _load_team(db: AsyncSession, team_id: int, *, with_members: bool = True) -> Team:
-    """The team (members loaded unless told otherwise); 404 if it does not exist."""
+def _members_for_ids():
+    """
+    Load ``Team.members`` for a read-only response, which only reads ``member_ids``.
+
+    Skips each member's own eager collections (sites, skills, teams), which
+    would otherwise cost three more selectin queries.
+    """
+    return selectinload(Team.members).options(
+        noload(User.sites), noload(User.skills), noload(User.teams)
+    )
+
+
+async def _load_team(
+    db: AsyncSession, team_id: int, *, with_members: bool = True, read_only: bool = False
+) -> Team:
+    """
+    The team (members loaded unless told otherwise); 404 if it does not exist.
+
+    ``read_only``: members are loaded for ``member_ids`` only (``_members_for_ids``);
+    never for a team whose member list is then rewritten.
+    """
     query = select(Team).where(Team.id == team_id)
     if with_members:
-        query = query.options(selectinload(Team.members))
+        query = query.options(_members_for_ids() if read_only else selectinload(Team.members))
     team = (await db.execute(query)).scalar_one_or_none()
     if team is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=TEAM_NOT_FOUND_DETAIL)
@@ -98,7 +119,7 @@ async def get_teams(
     Ordered by site, then name; ``siteId`` limits the list to one site.
     One query (members come with the selectin load).
     """
-    query = select(Team).options(selectinload(Team.members)).order_by(Team.site_id, Team.name)
+    query = select(Team).options(_members_for_ids()).order_by(Team.site_id, Team.name)
     if siteId is not None:
         query = query.where(Team.site_id == siteId)
     result = await db.execute(query)
@@ -112,7 +133,7 @@ async def get_team(
     current_user: User = Depends(get_current_user),
 ):
     """Get one team with its members (every authenticated user)."""
-    return TeamResponse.model_validate(await _load_team(db, team_id))
+    return TeamResponse.model_validate(await _load_team(db, team_id, read_only=True))
 
 
 @router.post("", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)
@@ -213,11 +234,20 @@ async def delete_team(
     """
     Delete a team (superuser at their own sites, admin anywhere).
 
-    Queries, in order: the team (404), then the DELETE. Its member, project,
-    tag, event and equipment links go with it (ON DELETE CASCADE).
+    Queries, in order: the team (404), the projects deleting it would strand
+    (409: a project of the team holding a tag also limited to other teams at
+    the site, none of which it is part of), then the DELETE. Its member,
+    project, tag, event and equipment links go with it (ON DELETE CASCADE).
     """
     team = await _load_team(db, team_id, with_members=False)
     ensure_site_access(current_user, [team.site_id], TEAM_SITE_ACCESS_DETAIL)
+
+    stranded = await count_projects_stranded_by_team_delete(db, team)
+    if stranded:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=team_delete_strands_projects_detail(stranded),
+        )
 
     await db.execute(
         delete(Team).where(Team.id == team_id).execution_options(synchronize_session=False)

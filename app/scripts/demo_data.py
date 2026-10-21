@@ -741,7 +741,9 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             end_date=None,
             color="#3b82f6",
             counts_as_unavailable=False,
-            teams=[(FRANKFURT, "Formulation")],  # only the Formulation team sees it
+            # Limited to the Formulation team: a plain event like this one still
+            # shows to the whole site; only a closure would spare non-members.
+            teams=[(FRANKFURT, "Formulation")],
         ),
     ]
 
