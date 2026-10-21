@@ -31,17 +31,19 @@ from app.models.user import User, UserSite
 from app.services import approvals
 from app.services.approvals import ACTION_CREATE, ACTION_UPDATE, Policy
 from tests.conftest import FakeUser
-from tests.test_approvals_service import (
-    ADMIN,
-    PM,
-    REQ,
-    FakeDB,
-    _approvable_db,
-    _context,
-    _phase_row,
-    _request,
-    admin,
+from tests.support import (
+    ADMIN_ID,
+    PM_ID,
+    REQUESTER_ID,
+    ApprovalFakeDB,
+    approvable_db,
+    approval_admin,
+    approval_context,
+    approval_request,
+    pending_phase_row,
 )
+
+ADMIN, REQ, PM = ADMIN_ID, REQUESTER_ID, PM_ID
 
 # ---------------------------------------------------------
 # Re-validation follows the resolver
@@ -53,16 +55,16 @@ from tests.test_approvals_service import (
     ("perms", "context"),
     [
         # The role lost the self key but manages others' bookings outright.
-        ([("assignments.manage_others", "allow")], _context()),
+        ([("assignments.manage_others", "allow")], approval_context()),
         # The role lost the self key, but the requester now manages the project.
-        ([("projects.manage_as_pm", "allow")], _context(pm_id=REQ)),
+        ([("projects.manage_as_pm", "allow")], approval_context(pm_id=REQ)),
     ],
 )
 async def test_an_editor_or_pm_requester_stays_valid_without_the_self_key(perms, context):
-    request, row = _request(), _phase_row()
-    db = _approvable_db(request, row, perms=perms, context=[context])
+    request, row = approval_request(), pending_phase_row()
+    db = approvable_db(request, row, perms=perms, context=[context])
 
-    result = await approvals.approve(db, admin(), 50, visible=None)
+    result = await approvals.approve(db, approval_admin(), 50, visible=None)
 
     assert result.conflict is None
     assert request.status == "approved" and row.approval_status == "approved"
@@ -70,10 +72,10 @@ async def test_an_editor_or_pm_requester_stays_valid_without_the_self_key(perms,
 
 @pytest.mark.asyncio
 async def test_pm_bundle_does_not_help_on_another_project():
-    request, row = _request(), _phase_row()
-    db = _approvable_db(request, row, perms=[("projects.manage_as_pm", "allow")])
+    request, row = approval_request(), pending_phase_row()
+    db = approvable_db(request, row, perms=[("projects.manage_as_pm", "allow")])
 
-    result = await approvals.approve(db, admin(), 50, visible=None)
+    result = await approvals.approve(db, approval_admin(), 50, visible=None)
 
     assert result.conflict["close_reason"] == "permission_lost"
 
@@ -85,18 +87,20 @@ async def test_pm_bundle_does_not_help_on_another_project():
 
 @pytest.mark.asyncio
 async def test_deactivating_a_requester_expires_their_requests():
-    create = _request(id=50)
-    update = _request(id=51, action=ACTION_UPDATE, assignment_id=72, previous='{"allocation": 60}')
-    pending_row = _phase_row()
-    db = FakeDB(
+    create = approval_request(id=50)
+    update = approval_request(
+        id=51, action=ACTION_UPDATE, assignment_id=72, previous='{"allocation": 60}'
+    )
+    pending_row = pending_phase_row()
+    db = ApprovalFakeDB(
         request=[create, update],
-        context=[_context()],
+        context=[approval_context()],
         policy=[],
         approvers=[ADMIN, PM],
         row=[pending_row],
     )
 
-    effects = await approvals.expire_for_requester(db, admin(), REQ)
+    effects = await approvals.expire_for_requester(db, approval_admin(), REQ)
 
     assert {create.status, update.status} == {"expired"}
     assert {create.close_reason, update.close_reason} == {"requester_inactive"}
@@ -117,10 +121,12 @@ async def test_deactivating_a_requester_expires_their_requests():
 
 @pytest.mark.asyncio
 async def test_deleting_a_requester_notifies_nobody():
-    request = _request()
-    db = FakeDB(request=[request], context=[_context()], approvers=[PM], row=[_phase_row()])
+    request = approval_request()
+    db = ApprovalFakeDB(
+        request=[request], context=[approval_context()], approvers=[PM], row=[pending_phase_row()]
+    )
 
-    effects = await approvals.expire_for_requester(db, admin(), REQ, deleted=True)
+    effects = await approvals.expire_for_requester(db, approval_admin(), REQ, deleted=True)
 
     assert request.status == "expired" and request.close_reason == "requester_inactive"
     assert not effects.notifications
@@ -129,18 +135,18 @@ async def test_deleting_a_requester_notifies_nobody():
 
 @pytest.mark.asyncio
 async def test_a_requester_without_pending_requests_costs_one_query():
-    db = FakeDB()
-    effects = await approvals.expire_for_requester(db, admin(), REQ)
+    db = ApprovalFakeDB()
+    effects = await approvals.expire_for_requester(db, approval_admin(), REQ)
     assert not effects.events and not effects.notifications
     assert len(db.statements) == 1
 
 
 @pytest.mark.asyncio
 async def test_request_on_a_deleted_project_expires_without_project_link():
-    request = _request()
-    db = FakeDB(request=[request], context=[], approvers=[ADMIN])
+    request = approval_request()
+    db = ApprovalFakeDB(request=[request], context=[], approvers=[ADMIN])
 
-    effects = await approvals.expire_for_requester(db, admin(), REQ)
+    effects = await approvals.expire_for_requester(db, approval_admin(), REQ)
 
     (note,) = effects.notifications
     assert note.project_id is None and note.title == "Your booking on a project expired"
@@ -295,7 +301,7 @@ async def test_todo_items_are_the_decidable_requests(sqlite_db):
 
 def test_decider_clause_mirrors_can_decide():
     policies = {ACTION_CREATE: Policy(), ACTION_UPDATE: Policy(False, frozenset({"lead"}))}
-    assert approvals.decider_clause(admin(), policies) is None
+    assert approvals.decider_clause(approval_admin(), policies) is None
 
     def sql(user):
         clause = approvals.decider_clause(user, policies)

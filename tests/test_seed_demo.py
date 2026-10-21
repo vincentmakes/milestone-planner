@@ -39,9 +39,19 @@ class RecordingConn:
         self.ids: dict[tuple, int] = {}
         self.closed = False
 
+    # The command status asyncpg returns: every guarded INSERT inserts here
+    # (a fresh database); ``existing`` names tables whose rows are already there.
+    existing: frozenset[str] = frozenset()
+
     async def execute(self, sql, *args):
         self.executed.append((sql, args))
-        return "OK"
+        m = re.match(r"\s*INSERT INTO (\w+)", sql)
+        if m:
+            return "INSERT 0 0" if m.group(1) in self.existing else "INSERT 0 1"
+        return "UPDATE 1" if sql.lstrip().startswith("UPDATE") else "OK"
+
+    def updates(self, table: str) -> list[tuple[str, tuple]]:
+        return [(s, a) for s, a in self.executed if re.match(rf"\s*UPDATE {table}\b", s)]
 
     async def fetchval(self, sql, *args):
         if sql.startswith("SELECT id FROM absence_types"):
@@ -90,12 +100,18 @@ async def test_every_insert_is_idempotent(loaded):
         if s.lstrip().startswith("INSERT") and "NOT EXISTS" not in s and "ON CONFLICT" not in s
     ]
     assert unguarded == []
+    # A guarded insert never overwrites what is there.
+    assert not [s for s, _ in conn.executed if "DO UPDATE" in s]
     updates = [s for s, _ in conn.executed if s.lstrip().startswith("UPDATE")]
     assert updates
     for sql in updates:
-        # Only empty columns are filled: dependencies, and a request's row link.
+        # Only empty columns are filled (dependencies, a request's row link),
+        # plus the demo's role / policy settings, which a re-run never repeats
+        # (test_a_rerun_leaves_role_and_policy_settings_alone).
         assert (
-            "dependencies IS NULL OR dependencies IN" in sql or "AND assignment_id IS NULL" in sql
+            "dependencies IS NULL OR dependencies IN" in sql
+            or "AND assignment_id IS NULL" in sql
+            or re.match(r"\s*UPDATE (role_permissions|approval_policies) SET", sql)
         ), sql
 
 
@@ -389,16 +405,21 @@ async def test_team_lead_role_and_its_permissions(loaded):
 async def test_user_role_switches_to_approval_mode(loaded):
     conn, demo, _ = loaded
     user_role = conn.ids[("roles", ("user",))]
-    rows = [(s, a) for s, a in conn.inserts("role_permissions") if a[0] == user_role]
-    assert {(a[1], a[2]) for _, a in rows} == set(demo.role_modes["user"].items())
-    # Applied over the seeded allow rows, not skipped by them.
-    assert all("DO UPDATE SET mode = EXCLUDED.mode" in s for s, _ in rows)
+    # The schema seeded the role's allow rows; the first seed switches them.
+    rows = [a for _, a in conn.updates("role_permissions")]
+    assert {(permission, mode) for mode, role, permission in rows} == set(
+        demo.role_modes["user"].items()
+    )
+    assert {role for _, role, _ in rows} == {user_role}
+    assert not [a for _, a in conn.inserts("role_permissions") if a[0] == user_role]
 
 
 async def test_policy_names_the_team_lead(loaded):
     conn, _, _ = loaded
-    (policy,) = (args for _, args in conn.inserts("approval_policies"))
-    assert policy == ("assignments.self_create", True)
+    ((sql, policy),) = conn.inserts("approval_policies")
+    assert policy == ("assignments.self_create", True) and "DO NOTHING" in sql
+    ((_, update),) = conn.updates("approval_policies")
+    assert update == (True, "assignments.self_create")
     (link,) = (args for _, args in conn.inserts("approval_policy_roles"))
     assert link == ("assignments.self_create", conn.ids[("roles", ("team_lead",))])
 
@@ -474,3 +495,23 @@ async def test_a_missing_system_role_stops_the_seed():
 
     with pytest.raises(RuntimeError, match="system role 'user' missing"):
         await demo_seed.insert_demo_data(NoUserRole(), build_demo(date(2026, 10, 17)))
+
+
+async def test_a_rerun_leaves_role_and_policy_settings_alone():
+    """Re-provisioning with demo data (the portal route has no already-
+    provisioned guard) finds the team_lead role already there: an admin's
+    edits since -- the user role back to allow, pm_approves off, a role
+    removed from a policy, team_lead's matrix -- are never reverted."""
+
+    class Seeded(RecordingConn):
+        existing = frozenset({"roles"})
+
+    conn = Seeded()
+    await demo_seed.insert_demo_data(conn, build_demo(date(2026, 10, 17)))
+
+    assert conn.inserts("roles")  # still guarded, inserts nothing
+    assert not conn.inserts("role_permissions")
+    assert not conn.updates("role_permissions")
+    assert not conn.updates("approval_policies")
+    assert not conn.inserts("approval_policy_roles")
+    assert conn.inserts("users")  # the rest of the seed still completes

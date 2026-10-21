@@ -36,19 +36,28 @@ def _where(key: dict[str, Any], offset: int) -> str:
     )
 
 
-async def _insert_once(conn: Any, table: str, values: dict[str, Any], key: dict[str, Any]) -> None:
-    """INSERT unless a row with the same natural key exists (no id needed)."""
+async def _insert_once(conn: Any, table: str, values: dict[str, Any], key: dict[str, Any]) -> bool:
+    """INSERT unless a row with the same natural key exists (no id needed).
+
+    True when this call inserted the row (asyncpg's ``INSERT 0 1`` status).
+    """
     sql = (
         f"INSERT INTO {table} ({', '.join(values)}) "
         f"SELECT {_placeholders(values)} "
         f"WHERE NOT EXISTS (SELECT 1 FROM {table} WHERE {_where(key, len(values))})"
     )
-    await conn.execute(sql, *values.values(), *key.values())
+    status = await conn.execute(sql, *values.values(), *key.values())
+    return isinstance(status, str) and status.startswith("INSERT") and status.split()[-1] != "0"
 
 
 async def _insert_id(conn: Any, table: str, values: dict[str, Any], key: dict[str, Any]) -> int:
     """`_insert_once`, then the id of the row with that natural key."""
     await _insert_once(conn, table, values, key)
+    return await _row_id(conn, table, key)
+
+
+async def _row_id(conn: Any, table: str, key: dict[str, Any]) -> int:
+    """The id of the row with that natural key (it must exist)."""
     row_id = await conn.fetchval(
         f"SELECT id FROM {table} WHERE {_where(key, 0)} ORDER BY id LIMIT 1", *key.values()
     )
@@ -106,9 +115,17 @@ async def insert_demo_data(
     # roles, their default permissions and one policy per approvable action
     # come with the tenant schema; the demo adds a custom role, switches modes
     # on a system role and names the approving roles of a policy.
+    #
+    # Those settings belong to the tenant admin once seeded: they are written
+    # only on the first seed -- the run that creates the demo's custom roles
+    # -- so re-provisioning with demo data (the portal route has no
+    # already-provisioned guard) never reverts an admin's edits, deleted rows
+    # included. Same rule as the system roles' defaults in the schema seed.
     role_id: dict[str, int] = {}
+    created_roles: set[str] = set()
     for r in demo.roles:
-        role_id[r["key"]] = await _insert_id(
+        key = {"key": r["key"]}
+        if await _insert_once(
             conn,
             "roles",
             {
@@ -118,8 +135,12 @@ async def insert_demo_data(
                 "is_system": False,
                 "sort_order": r["sort_order"],
             },
-            {"key": r["key"]},
-        )
+            key,
+        ):
+            created_roles.add(r["key"])
+        role_id[r["key"]] = await _row_id(conn, "roles", key)
+        if r["key"] not in created_roles:
+            continue
         for permission, mode in r["permissions"].items():
             await conn.execute(
                 "INSERT INTO role_permissions (role_id, permission, mode) VALUES ($1, $2, $3) "
@@ -128,6 +149,7 @@ async def insert_demo_data(
                 permission,
                 mode,
             )
+    first_seed = bool(demo.roles) and created_roles == {r["key"] for r in demo.roles}
 
     async def system_role_id(key: str) -> int:
         if key not in role_id:
@@ -137,30 +159,38 @@ async def insert_demo_data(
             role_id[key] = int(found)
         return role_id[key]
 
-    for role_key, modes in demo.role_modes.items():
-        for permission, mode in modes.items():
-            # Over the schema's seeded row (allow), so DO UPDATE, not DO NOTHING.
-            await conn.execute(
-                "INSERT INTO role_permissions (role_id, permission, mode) VALUES ($1, $2, $3) "
-                "ON CONFLICT (role_id, permission) DO UPDATE SET mode = EXCLUDED.mode",
-                await system_role_id(role_key),
-                permission,
-                mode,
-            )
     for policy in demo.approval_policies:
+        # The schema seeds one per approvable action; this only fills a gap.
         await conn.execute(
             "INSERT INTO approval_policies (action, pm_approves) VALUES ($1, $2) "
-            "ON CONFLICT (action) DO UPDATE SET pm_approves = EXCLUDED.pm_approves",
+            "ON CONFLICT (action) DO NOTHING",
             policy["action"],
             policy["pm_approves"],
         )
-        for key in policy["roles"]:
+    if first_seed:
+        for role_key, modes in demo.role_modes.items():
+            rid = await system_role_id(role_key)
+            for permission, mode in modes.items():
+                # The schema seeded this row (allow); the demo switches it.
+                await conn.execute(
+                    "UPDATE role_permissions SET mode = $1 WHERE role_id = $2 AND permission = $3",
+                    mode,
+                    rid,
+                    permission,
+                )
+        for policy in demo.approval_policies:
             await conn.execute(
-                "INSERT INTO approval_policy_roles (action, role_id) VALUES ($1, $2) "
-                "ON CONFLICT DO NOTHING",
+                "UPDATE approval_policies SET pm_approves = $1 WHERE action = $2",
+                policy["pm_approves"],
                 policy["action"],
-                await system_role_id(key),
             )
+            for key in policy["roles"]:
+                await conn.execute(
+                    "INSERT INTO approval_policy_roles (action, role_id) VALUES ($1, $2) "
+                    "ON CONFLICT DO NOTHING",
+                    policy["action"],
+                    await system_role_id(key),
+                )
     counts["roles"] = len(demo.roles)
 
     user_id: dict[str, int] = {}
