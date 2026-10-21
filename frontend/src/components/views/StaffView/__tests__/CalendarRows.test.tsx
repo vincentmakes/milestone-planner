@@ -7,7 +7,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { BankHolidaysRow } from '../BankHolidaysRow';
 import { CompanyEventsRow } from '../CompanyEventsRow';
-import { resetAllStores, useAppStore, useUIStore } from '@/stores';
+import { resetAllStores, useAppStore, useUIStore, useViewStore } from '@/stores';
+import { tagFilterKey } from '@/utils/tags';
 import {
   deleteCustomHoliday,
   getBankHolidays,
@@ -204,6 +205,24 @@ describe('CompanyEventsRow', () => {
       'title',
       'Closure for 2 teams: only their members are unavailable'
     );
+  });
+
+  it('lists only the events the header team filter shows', () => {
+    const teamReview: CompanyEvent = { ...events[0], id: 14, name: 'Team B review', team_ids: [2] };
+    seed('user');
+    useAppStore.setState({
+      companyEvents: [events[0], teamReview],
+      teams: [makeTeam({ id: 1, name: 'A' }), makeTeam({ id: 2, name: 'B' })],
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    render(<CompanyEventsRow isExpanded />);
+    expect(screen.getByText('1 event')).toBeInTheDocument();
+    expect(screen.getByText('Audit')).toBeInTheDocument();
+    expect(screen.queryByText('Team B review')).not.toBeInTheDocument();
+
+    act(() => useViewStore.setState({ teamFilters: {} }));
+    expect(screen.getByText('2 events')).toBeInTheDocument();
+    expect(screen.getByText('Team B review')).toBeInTheDocument();
   });
 
   it('uses the singular for one event and shows the empty state', () => {

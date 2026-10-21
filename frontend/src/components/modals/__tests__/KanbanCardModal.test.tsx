@@ -4,11 +4,14 @@
  * backdrop, which is exactly what a text-selection drag ending outside does.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, within, waitFor, act } from '@testing-library/react';
 import { KanbanCardModal } from '../KanbanCardModal';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
+import { tagFilterKey } from '@/utils/tags';
+import { makeTeam } from '@/test/factories';
 import { assignCard, createComment, deleteComment, getComments, getMentionableUsers, unassignCard } from '@/api/endpoints/kanban';
 import { updateStaffAssignment } from '@/api/endpoints/projects';
 import type { Phase, Project, Subphase } from '@/types';
@@ -519,6 +522,54 @@ describe('KanbanCardModal assignee permissions', () => {
     expect(screen.getByLabelText('Remove Bob Brown')).toBeInTheDocument();
     expect(screen.getByLabelText('Add assignee')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Join this card' })).not.toBeInTheDocument();
+  });
+});
+
+describe('KanbanCardModal assignee candidates under the header team filter', () => {
+  // Teams A (1) and B (2) at the current site 1, team Z (4) at site 2; the
+  // filter shows team A only.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    seedStore();
+    useAppStore.setState({
+      currentSite: { id: 1, name: 'Basel' } as never,
+      teams: [
+        makeTeam({ id: 1, site_id: 1, name: 'A' }),
+        makeTeam({ id: 2, site_id: 1, name: 'B' }),
+        makeTeam({ id: 4, site_id: 2, name: 'Z' }),
+      ],
+      staff: [
+        { id: 7, name: 'Alice Anderson', site_id: 1, active: true, team_ids: [1] },
+        { id: 8, name: 'Carol Chen', site_id: 1, active: true, team_ids: [2] },
+        { id: 4, name: 'Bob Brown', site_id: 1, active: true, team_ids: [] },
+        { id: 7, name: 'Alice Anderson', site_id: 2, active: true, team_ids: [] },
+        { id: 11, name: 'Dan Diaz', site_id: 2, active: true, team_ids: [4] },
+      ] as never,
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+  });
+
+  afterEach(() => {
+    useViewStore.setState({ teamFilters: {} });
+    useAppStore.setState({ teams: [], currentSite: null });
+  });
+
+  const candidates = () =>
+    within(screen.getByLabelText('Add assignee'))
+      .getAllByRole('option')
+      .map((o) => o.textContent)
+      .filter((t) => t !== 'Add someone…');
+
+  it('offers only people the filter shows on a card of the current site', () => {
+    render(<KanbanCardModal />);
+    expect(candidates()).toEqual(['Alice Anderson (books 100%)']);
+  });
+
+  it('offers everyone of the site on a card of another site', () => {
+    const project = { ...seedProject(), site_id: 2 };
+    useAppStore.setState({ projects: [project] });
+    render(<KanbanCardModal />);
+    expect(candidates()).toEqual(['Alice Anderson (books 100%)', 'Dan Diaz (books 100%)']);
   });
 });
 

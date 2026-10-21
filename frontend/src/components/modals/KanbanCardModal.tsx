@@ -13,6 +13,7 @@ import { AllocationSlider } from '@/components/common/AllocationSlider';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
+import { useTeamFilter } from '@/hooks/useTeamFilter';
 import { loadAllProjects, updateStaffAssignment } from '@/api/endpoints/projects';
 import {
   assignCard,
@@ -61,6 +62,8 @@ export function KanbanCardModal() {
   const staff = useAppStore((s) => s.staff);
   const currentUser = useAppStore((s) => s.currentUser);
   const setProjects = useAppStore((s) => s.setProjects);
+  // The header team filter belongs to the current site (`filterSiteId`).
+  const { siteId: filterSiteId, staffMatches } = useTeamFilter();
   // Adding an assignee creates a booking, which cannot show until Apply in
   // What-If mode; moving, re-allocating and removing stay available.
   const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
@@ -319,7 +322,13 @@ export function KanbanCardModal() {
     }
   };
 
-  const unassignedStaff = siteStaff.filter((s) => !card?.assigneeIds.includes(s.id));
+  // On a card of the current site, candidates also follow the header team
+  // filter; a card of another site (opened from the cross-site view) lists
+  // everyone there.
+  const filterByTeam = project?.site_id === filterSiteId;
+  const unassignedStaff = siteStaff.filter(
+    (s) => !card?.assigneeIds.includes(s.id) && (!filterByTeam || staffMatches(s))
+  );
   // After the early return, so no useMemo; the empty entry stays selectable (as before).
   const assigneeOptions = [
     { value: '', label: 'Add someone…' },

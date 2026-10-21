@@ -10,6 +10,8 @@ import { StaffTimelineBody } from '../StaffTimelineBody';
 import { generateTimelineCells } from '@/components/gantt/utils';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
+import { tagFilterKey } from '@/utils/tags';
 import type { Staff, Vacation } from '@/types';
 import { makeTeam } from '@/test/factories';
 
@@ -129,5 +131,41 @@ describe('StaffTimelineBody site closures', () => {
       expect(closed(row, 'Team offsite')).toBe(0);
       expect(closed(row, 'Shutdown')).toBe(1);
     }
+  });
+});
+
+describe('StaffTimelineBody company events row', () => {
+  it('draws only the events the header team filter shows', () => {
+    seedUser({ id: 1, role: 'admin' });
+    useAppStore.setState({
+      currentSite: { id: 1, name: 'Basel' } as never,
+      teams: [makeTeam({ id: 1, site_id: 1, name: 'A' }), makeTeam({ id: 2, site_id: 1, name: 'B' })],
+      companyEvents: [
+        { id: 7, site_id: 1, site_ids: [1], team_ids: [2], date: '2026-09-15', name: 'Team B review' },
+        { id: 8, site_id: 1, site_ids: [1], team_ids: [], date: '2026-09-16', name: 'Site audit' },
+      ],
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    const cells = generateTimelineCells(new Date(2026, 8, 15), 'month', new Set(), []);
+    render(
+      <StaffTimelineBody
+        staff={[]}
+        assignmentsMap={new Map()}
+        vacationsMap={new Map()}
+        rowHeights={new Map()}
+        expandedStaff={new Set()}
+        expandedBankHolidays={false}
+        expandedCompanyEvents
+        cells={cells}
+        cellWidth={30}
+        totalWidth={cells.length * 30}
+        viewMode="month"
+      />
+    );
+    expect(screen.getByTitle('Site audit')).toBeInTheDocument();
+    expect(screen.queryByTitle('Team B review')).not.toBeInTheDocument();
+
+    act(() => useViewStore.setState({ teamFilters: {} }));
+    expect(screen.getByTitle('Team B review')).toBeInTheDocument();
   });
 });

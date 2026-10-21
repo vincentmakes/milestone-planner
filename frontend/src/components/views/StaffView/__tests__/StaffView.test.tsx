@@ -11,6 +11,8 @@ import { resetAllStores, useAppStore, useUIStore, useViewStore } from '@/stores'
 import { tagFilterKey } from '@/utils/tags';
 import { deleteVacation, getVacations } from '@/api/endpoints/vacations';
 import { formatDateISO } from '@/utils/date';
+import { buildEventDateSet } from '@/api';
+import type { CompanyEvent } from '@/types';
 import { stubConfirm } from '@/test/confirmDialog';
 import {
   makePhase,
@@ -229,6 +231,30 @@ describe('StaffView panel', () => {
     render(<StaffView />);
     expect(screen.getByText('Alice Ames')).toBeInTheDocument();
     expect(screen.queryByText('Bob Brown')).not.toBeInTheDocument();
+  });
+
+  it('with an active team filter, drops company events of other teams from the timeline', () => {
+    seed();
+    const teamEvents: CompanyEvent[] = [
+      { id: 81, site_id: 1, site_ids: [1], date: isoOffset(2), end_date: null, name: 'Team B review', team_ids: [2] },
+      { id: 82, site_id: 1, site_ids: [1], date: isoOffset(3), end_date: null, name: 'Site audit', team_ids: [] },
+    ];
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1, name: 'A' }), makeTeam({ id: 2, site_id: 1, name: 'B' })],
+      companyEvents: teamEvents,
+      companyEventDates: buildEventDateSet(teamEvents),
+    });
+    useViewStore.setState({
+      viewMode: 'month',
+      currentDate: new Date(),
+      teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } },
+    });
+    render(<StaffView />);
+    expect(screen.getAllByTitle('Site audit').length).toBeGreaterThan(0);
+    expect(screen.queryAllByTitle('Team B review')).toHaveLength(0);
+
+    act(() => useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [2], noTeam: false } } }));
+    expect(screen.getAllByTitle('Team B review').length).toBeGreaterThan(0);
   });
 });
 

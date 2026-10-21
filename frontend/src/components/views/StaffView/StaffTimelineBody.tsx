@@ -15,6 +15,7 @@ import {
   selectAbsenceTypesById,
 } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
+import { useTeamFilteredCompanyEvents } from '@/hooks/useTeamFilter';
 import { calculateBarPosition, calculateTodayPosition } from '@/components/gantt/utils';
 import { TodayLine } from '@/components/gantt/Timeline/TodayLine';
 import { useWorkloadCalculation, getWorkloadTooltip, getWorkloadBackground } from '@/hooks';
@@ -65,7 +66,8 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
   }, ref) {
     
     const bankHolidays = useAppStore((s) => s.bankHolidays);
-    const companyEvents = useAppStore((s) => s.companyEvents);
+    // Company events narrowed by the header team filter
+    const { events: companyEvents } = useTeamFilteredCompanyEvents();
     const currentUser = useAppStore((s) => s.currentUser);
     const absenceTypesById = useAppStore(selectAbsenceTypesById);
     const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');

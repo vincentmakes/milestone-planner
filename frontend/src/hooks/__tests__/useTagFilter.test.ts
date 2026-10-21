@@ -9,6 +9,7 @@ import { renderHook, act } from '@testing-library/react';
 import { useSiteTagFilter, useTagFilteredProjects } from '../useTagFilter';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
+import { makeTeam } from '@/test/factories';
 import type { Project, Site, Tag, TagGroup } from '@/types';
 
 function tag(id: number, name: string, extra: Partial<Tag> = {}): Tag {
@@ -31,8 +32,8 @@ function project(id: number, tagIds: number[]): Project {
 
 beforeEach(() => {
   localStorage.clear();
-  useViewStore.setState({ tagFilters: {} });
-  useAppStore.setState({ tags, tagGroups: [TYPE, AREA], currentSite: { id: 1, name: 'Basel' } as Site });
+  useViewStore.setState({ tagFilters: {}, teamFilters: {} });
+  useAppStore.setState({ tags, tagGroups: [TYPE, AREA], teams: [], currentSite: { id: 1, name: 'Basel' } as Site });
 });
 
 afterEach(() => {
@@ -86,6 +87,37 @@ describe('useSiteTagFilter', () => {
       useViewStore.setState({ tagFilters: { ':2': { tagIds: [], noneGroupIds: [2] } } });
     });
     expect(result.current.filter).toEqual({ tagIds: [], noneGroupIds: [2] });
+  });
+});
+
+describe('useSiteTagFilter under the header team filter', () => {
+  // Team A (1) and team B (2) at site 1; "Team B only" is restricted to team B.
+  const teamTags = [...tags, tag(5, 'Team B only', { team_ids: [2] })];
+
+  beforeEach(() => {
+    useAppStore.setState({
+      tags: teamTags,
+      teams: [makeTeam({ id: 1, site_id: 1, name: 'A' }), makeTeam({ id: 2, site_id: 1, name: 'B' })],
+    });
+    useViewStore.setState({ tagFilters: { ':1': { tagIds: [5], noneGroupIds: [] } } });
+  });
+
+  it('offers a tag restricted to team B under Whole site', () => {
+    const { result } = renderHook(() => useSiteTagFilter());
+    expect(result.current.siteTags.map((t) => t.id)).toContain(5);
+    expect(result.current.filter.tagIds).toEqual([5]);
+  });
+
+  it('omits it under team A and ignores a stored selection of it', () => {
+    useViewStore.setState({ teamFilters: { ':1': { teamIds: [1], noTeam: false } } });
+    const { result } = renderHook(() => useSiteTagFilter());
+    expect(result.current.siteTags.map((t) => t.id)).toEqual([1, 2, 4]);
+    expect(result.current.filter.tagIds).toEqual([]);
+    expect(result.current.activeCount).toBe(0);
+
+    act(() => useViewStore.setState({ teamFilters: { ':1': { teamIds: [2], noTeam: false } } }));
+    expect(result.current.siteTags.map((t) => t.id)).toContain(5);
+    expect(result.current.filter.tagIds).toEqual([5]);
   });
 });
 

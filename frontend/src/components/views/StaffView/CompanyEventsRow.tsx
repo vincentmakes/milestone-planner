@@ -11,6 +11,7 @@ import { useAppStore } from '@/stores/appStore';
 import { Notice } from '@/components/common/Notice';
 import { useUIStore } from '@/stores/uiStore';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
+import { useTeamFilteredCompanyEvents } from '@/hooks/useTeamFilter';
 import { deleteCompanyEvent, getCompanyEvents, buildEventDateSet } from '@/api';
 import { buildICS, downloadICS } from '@/utils/ics';
 import { confirmAction } from '@/utils/confirmDialog';
@@ -26,7 +27,8 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
   const [error, setError] = useState<string | null>(null);
   const currentSite = useAppStore((s) => s.currentSite);
   const currentUser = useAppStore((s) => s.currentUser);
-  const companyEvents = useAppStore((s) => s.companyEvents);
+  // Narrowed by the header team filter; a refetch still writes the store
+  const { events: companyEvents } = useTeamFilteredCompanyEvents();
   const teams = useAppStore((s) => s.teams);
   const setCompanyEvents = useAppStore((s) => s.setCompanyEvents);
   const openSettings = useUIStore((s) => s.openSettings);

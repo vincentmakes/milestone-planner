@@ -12,7 +12,7 @@ import { ProjectPanel } from './ProjectPanel';
 import { Timeline } from './Timeline';
 import { useScrollSync, useTagFilteredProjects } from '@/hooks';
 import { useGanttGrouping } from '@/hooks/useGanttGrouping';
-import { useTeamFilteredProjects } from '@/hooks/useTeamFilter';
+import { useTeamFilteredCompanyEvents, useTeamFilteredProjects } from '@/hooks/useTeamFilter';
 import { generateTimelineCells, generateTimelineHeaders } from './utils';
 import { buildGanttRows, buildProjectSections, flatGanttRows } from './utils/projectSections';
 import { TimelineScrollProvider } from '@/contexts/TimelineScrollContext';
@@ -32,8 +32,8 @@ export function GanttContainer() {
   const currentSite = useAppStore((s) => s.currentSite);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
   const bankHolidays = useAppStore((s) => s.bankHolidays);
-  const companyEventDates = useAppStore((s) => s.companyEventDates);
-  const companyEvents = useAppStore((s) => s.companyEvents);
+  // Company events narrowed by the header team filter
+  const { events: companyEvents, eventDates: companyEventDates } = useTeamFilteredCompanyEvents();
   const currentUser = useAppStore((s) => s.currentUser);
   const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
   const viewMode = useViewStore((s) => s.viewMode);

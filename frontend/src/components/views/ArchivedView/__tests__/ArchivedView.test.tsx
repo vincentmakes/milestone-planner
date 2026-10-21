@@ -5,14 +5,16 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { ArchivedView } from '../ArchivedView';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useViewStore } from '@/stores/viewStore';
 import { tagFilterKey } from '@/utils/tags';
 import { makeTeam } from '@/test/factories';
-import type { Project } from '@/types';
+import { buildEventDateSet } from '@/api';
+import { formatDateISO } from '@/utils/date';
+import type { CompanyEvent, Project } from '@/types';
 
 vi.mock('@/hooks', () => ({
   useScrollSync: vi.fn(),
@@ -75,7 +77,7 @@ describe('ArchivedView edit button', () => {
 describe('ArchivedView team filter', () => {
   afterEach(() => {
     useViewStore.setState({ teamFilters: {} });
-    useAppStore.setState({ teams: [] });
+    useAppStore.setState({ teams: [], companyEvents: [], companyEventDates: new Set() });
   });
 
   it('with an active team filter, hides non-matching projects and keeps matching ones', () => {
@@ -92,5 +94,34 @@ describe('ArchivedView team filter', () => {
     render(<ArchivedView />);
     expect(screen.getByText('Legacy Assay')).toBeInTheDocument();
     expect(screen.queryByText('Old Pilot')).not.toBeInTheDocument();
+  });
+
+  it('with an active team filter, drops company events of other teams from the timeline', () => {
+    const isoOffset = (days: number) => {
+      const d = new Date();
+      d.setDate(d.getDate() + days);
+      return formatDateISO(d);
+    };
+    const teamEvents: CompanyEvent[] = [
+      { id: 81, site_id: 1, site_ids: [1], date: isoOffset(2), end_date: null, name: 'Team B review', team_ids: [2] },
+      { id: 82, site_id: 1, site_ids: [1], date: isoOffset(3), end_date: null, name: 'Site audit', team_ids: [] },
+    ];
+    seed({ id: 1, role: 'admin' });
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1, name: 'A' }), makeTeam({ id: 2, site_id: 1, name: 'B' })],
+      companyEvents: teamEvents,
+      companyEventDates: buildEventDateSet(teamEvents),
+    });
+    useViewStore.setState({
+      viewMode: 'month',
+      currentDate: new Date(),
+      teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } },
+    });
+    render(<ArchivedView />);
+    expect(screen.getAllByTitle('Site audit').length).toBeGreaterThan(0);
+    expect(screen.queryAllByTitle('Team B review')).toHaveLength(0);
+
+    act(() => useViewStore.setState({ teamFilters: {} }));
+    expect(screen.getAllByTitle('Team B review').length).toBeGreaterThan(0);
   });
 });

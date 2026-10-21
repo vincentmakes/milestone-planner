@@ -8,6 +8,9 @@
  * "(No tag)" selection of a group the dropdown no longer shows (none of its
  * tags applies to the site).
  *
+ * Tags limited to teams the header team filter hides are left out too (a
+ * stored selection of one is ignored and pruned the same way).
+ *
  * Filters are stored per tenant + site (`tagFilterKey`), since the persisted
  * view storage is shared by every tenant on the origin.
  */
@@ -15,13 +18,14 @@
 import { useMemo } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
+import { useTeamFilter } from '@/hooks/useTeamFilter';
 import { normalizeSiteTagFilter, projectPassesTagFilter, tagFilterKey, tagsForSite } from '@/utils/tags';
 import type { TagFilter } from '@/utils/tags';
 import type { Project, Tag, TagGroup } from '@/types';
 
 export interface SiteTagFilter {
   siteId: number | null;
-  /** Tags applying to the current site. */
+  /** Tags applying to the current site and passing its header team filter. */
   siteTags: Tag[];
   tagGroups: TagGroup[];
   /** Stored filter with stale ids pruned. */
@@ -38,7 +42,12 @@ export function useSiteTagFilter(): SiteTagFilter {
     siteId === null ? undefined : s.tagFilters[tagFilterKey(siteId)]
   );
 
-  const siteTags = useMemo(() => tagsForSite(tags, siteId), [tags, siteId]);
+  const { tagMatches } = useTeamFilter();
+
+  const siteTags = useMemo(
+    () => tagsForSite(tags, siteId).filter(tagMatches),
+    [tags, siteId, tagMatches]
+  );
   const filter = useMemo(
     () => normalizeSiteTagFilter(stored, siteTags, tagGroups),
     [stored, siteTags, tagGroups]

@@ -19,7 +19,7 @@ import {
   useEquipmentTodayStatus,
 } from '@/hooks';
 import { useDataLoader } from '@/hooks/useDataLoader';
-import { useTeamFilter } from '@/hooks/useTeamFilter';
+import { useTeamFilter, useTeamFilteredCompanyEvents } from '@/hooks/useTeamFilter';
 import { useTimelineScrollSync } from '@/contexts/TimelineScrollContext';
 import { deleteEquipmentBlock } from '@/api';
 import { canManageAnyProject, isPrivileged } from '@/utils/permissions';
@@ -68,8 +68,8 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   const currentSite = useAppStore((s) => s.currentSite);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
   const bankHolidays = useAppStore((s) => s.bankHolidays);
-  const companyEventDates = useAppStore((s) => s.companyEventDates);
-  const companyEvents = useAppStore((s) => s.companyEvents);
+  // Company events narrowed by the header team filter
+  const { events: companyEvents, eventDates: companyEventDates } = useTeamFilteredCompanyEvents();
   const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);

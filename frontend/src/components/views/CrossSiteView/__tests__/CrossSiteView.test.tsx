@@ -13,6 +13,8 @@ import { resetAllStores, useAppStore, useUIStore, useViewStore } from '@/stores'
 import { formatDateISO } from '@/utils/date';
 import { makeProject, makeSite, makeTeam } from '@/test/factories';
 import { tagFilterKey } from '@/utils/tags';
+import { buildEventDateSet } from '@/api';
+import type { CompanyEvent } from '@/types';
 
 const basel = makeSite({ id: 1, name: 'Basel' });
 const zurich = makeSite({ id: 2, name: 'Zurich' });
@@ -92,6 +94,25 @@ describe('CrossSiteView', () => {
     // The other site's lane is unchanged
     expect(screen.getByText('2 projects')).toBeInTheDocument();
     expect(screen.getAllByText('Confidential Project')).toHaveLength(2);
+  });
+
+  it('with an active team filter, drops company events of other teams from the timeline', () => {
+    const teamEvents: CompanyEvent[] = [
+      { id: 81, site_id: 1, site_ids: [1], date: iso(2), end_date: null, name: 'Team B review', team_ids: [2] },
+      { id: 82, site_id: 1, site_ids: [1], date: iso(3), end_date: null, name: 'Site audit', team_ids: [] },
+    ];
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1, name: 'A' }), makeTeam({ id: 2, site_id: 1, name: 'B' })],
+      companyEvents: teamEvents,
+      companyEventDates: buildEventDateSet(teamEvents),
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    render(<CrossSiteView />);
+    expect(screen.getAllByTitle('Site audit').length).toBeGreaterThan(0);
+    expect(screen.queryAllByTitle('Team B review')).toHaveLength(0);
+
+    act(() => useViewStore.setState({ teamFilters: {} }));
+    expect(screen.getAllByTitle('Team B review').length).toBeGreaterThan(0);
   });
 });
 

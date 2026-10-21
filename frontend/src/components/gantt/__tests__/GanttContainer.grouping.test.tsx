@@ -9,12 +9,14 @@ import { GanttContainer } from '../GanttContainer';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import type { GanttRow } from '../utils/projectSections';
+import type { TimelineCell } from '../utils/timeline';
+import { buildEventDateSet } from '@/api';
 import { tagFilterKey } from '@/utils/tags';
 import { makeTeam } from '@/test/factories';
-import type { Project, Site, Tag, TagGroup } from '@/types';
+import type { CompanyEvent, Project, Site, Tag, TagGroup } from '@/types';
 
 interface PanelProps { rows?: GanttRow[]; onProjectReorder?: unknown; onToggleSection?: (k: string) => void }
-interface TimelineProps { rows?: GanttRow[]; projects: Project[] }
+interface TimelineProps { rows?: GanttRow[]; projects: Project[]; cells: TimelineCell[] }
 
 const mocks = vi.hoisted(() => ({
   ProjectPanel: vi.fn((_props: unknown) => null),
@@ -97,5 +99,30 @@ describe('GanttContainer grouping', () => {
     render(<GanttContainer />);
     expect(describeRows(panelProps()?.rows)).toEqual([1]);
     expect(timelineProps()?.rows).toBe(panelProps()?.rows);
+  });
+
+  it('drops a company event of a filtered-out team from the timeline cells', () => {
+    const events: CompanyEvent[] = [
+      { id: 1, site_id: 1, site_ids: [1], date: '2026-10-22', end_date: null, name: 'Team B review', team_ids: [2] },
+      { id: 2, site_id: 1, site_ids: [1], date: '2026-10-23', end_date: null, name: 'Site audit', team_ids: [] },
+    ];
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1, name: 'A' }), makeTeam({ id: 2, site_id: 1, name: 'B' })],
+      companyEvents: events,
+      companyEventDates: buildEventDateSet(events),
+    });
+    useViewStore.setState({
+      viewMode: 'week',
+      currentDate: new Date(2026, 9, 21),
+      teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } },
+    });
+    const eventNames = () =>
+      timelineProps()?.cells.filter((c) => c.isCompanyEvent).map((c) => c.companyEventName);
+
+    render(<GanttContainer />);
+    expect(eventNames()).toEqual(['Site audit']);
+
+    act(() => useViewStore.setState({ teamFilters: {} }));
+    expect(eventNames()).toEqual(['Team B review', 'Site audit']);
   });
 });
