@@ -68,6 +68,7 @@ ENTITY_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"^/api/skills(?:/|$)"), "skill"),
     (re.compile(r"^/api/tags(?:/|$)"), "tag"),
     (re.compile(r"^/api/tag-groups(?:/|$)"), "tag_group"),
+    (re.compile(r"^/api/teams(?:/|$)"), "team"),
     (re.compile(r"^/api/custom-columns(?:/|$)"), "custom_column"),
     (re.compile(r"^/api/notes(?:/|$)"), "note"),
     (re.compile(r"^/api/predefined-phases(?:/|$)"), "predefined_phase"),

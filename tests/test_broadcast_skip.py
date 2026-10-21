@@ -60,6 +60,8 @@ def test_existing_entity_paths_still_resolve():
         ("/api/tag-groups/reorder", "tag_group"),
         ("/api/tag-groups/4", "tag_group"),
         ("/api/tags/reorder", "tag"),
+        ("/api/teams", "team"),
+        ("/api/teams/3", "team"),
     ],
 )
 def test_calendar_paths_broadcast_their_entity(path, entity):
