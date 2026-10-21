@@ -128,6 +128,8 @@ A team is a group of people within **one** site — a lab, a department, a shift
 
 Pick the **Site** at the top; the list shows that site's teams with their colour, description, number of members and an **Inactive** badge where it applies.
 
+![Settings → Teams for the Winterthur site, listing Analytical Lab and Process Development with member counts and an inline add field](../assets/screenshots/settings-teams.png){ loading=lazy }
+
 ### Creating a Team
 
 1. Choose the **Site**
@@ -157,6 +159,8 @@ Click the **delete icon** and confirm. The team's members, projects, tags, equip
 ### Team Filter
 
 The **team filter** sits in the header next to the [site selector](#site-selector). It only appears when the current site has active teams. Open it and tick:
+
+![The header team filter open on the Gantt chart, offering Whole site, Analytical Lab, Process Development and (No team)](../assets/screenshots/team-filter.png){ loading=lazy }
 
 - **Whole site** — no filter (the default)
 - one or more **teams** — what belongs to any of them
