@@ -55,6 +55,18 @@ describe('useTeamFilter', () => {
     expect(result.current.active).toBe(false);
   });
 
+  it('treats any stored filter as Whole site when the site has no active team', () => {
+    useAppStore.setState({ teams: [makeTeam({ id: 3, site_id: 1, name: 'Retired', active: false })] });
+    useViewStore.setState({ teamFilters: { ':1': { teamIds: [], noTeam: true } } });
+    const { result } = renderHook(() => useTeamFilter());
+    expect(result.current.siteTeams).toEqual([]);
+    expect(result.current.filter).toBeNull();
+    expect(result.current.active).toBe(false);
+    expect(result.current.projectMatches(project(1, [3]))).toBe(true);
+    expect(result.current.staffMatches({ team_ids: [3] } as Staff)).toBe(true);
+    expect(result.current.equipmentMatches({ team_ids: [3] } as unknown as Equipment)).toBe(true);
+  });
+
   it('reads the entry of the site that becomes current', () => {
     useViewStore.setState({
       teamFilters: {

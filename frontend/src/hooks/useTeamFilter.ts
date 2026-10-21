@@ -5,7 +5,9 @@
  * The filter's options are the site's active teams only: a stored id of a
  * team that was deleted, deactivated or belongs to another site is ignored
  * (never "exclude everything"), and pruned on the next write. A filter left
- * with no team and no "(No team)" is `null`, i.e. the whole site.
+ * with no team and no "(No team)" is `null`, i.e. the whole site; so is any
+ * stored filter on a site with no active team (the selector is hidden there,
+ * so a leftover "(No team)" could never be cleared).
  *
  * Scoping, though, considers ALL teams of the site, active or not: equipment
  * restricted solely to an inactive team is not open to the whole site, so it
@@ -49,7 +51,10 @@ export function useTeamFilter(): SiteTeamFilter {
 
   const siteTeams = useMemo(() => teamsForSite(teams, siteId, { activeOnly: true }), [teams, siteId]);
   const allSiteTeams = useMemo(() => teamsForSite(teams, siteId), [teams, siteId]);
-  const filter = useMemo(() => normalizeTeamFilter(stored, siteTeams), [stored, siteTeams]);
+  const filter = useMemo(
+    () => (siteTeams.length === 0 ? null : normalizeTeamFilter(stored, siteTeams)),
+    [stored, siteTeams]
+  );
 
   const projectMatches = useCallback((p: Project) => projectMatchesTeamFilter(p, filter), [filter]);
   const staffMatches = useCallback((row: Staff) => staffMatchesTeamFilter(row, filter), [filter]);
