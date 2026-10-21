@@ -38,9 +38,9 @@ A [company event marked as a site closure](settings.md#site-closures) takes ever
 
 Someone who belongs to several sites is unavailable as soon as **one** of their sites is closed. Bank holidays and plain company events are shown on the timeline but do not reduce capacity.
 
-A closure can be limited to [teams](settings.md#teams): then only the members of those teams are unavailable at that site, and everyone else keeps their normal availability. The event still appears in the Company Events row, but the calendar columns are not shaded as closed.
+A closure can be limited to [teams](settings.md#teams): then only the members of those teams are unavailable at that site, and everyone else keeps their normal availability. The event still appears in the Company Events row (unless the header team filter leaves its teams out), but the calendar columns are not shaded as closed.
 
-With the header [team filter](settings.md#team-filter) set, the Staff Overview lists only the people of the ticked teams (or those without a team, with **(No team)**).
+With the header [team filter](settings.md#team-filter) set, the Staff Overview lists only the people of the ticked teams (or those without a team, with **(No team)**) and only the company events open to them.
 
 ## Assigning Staff
 

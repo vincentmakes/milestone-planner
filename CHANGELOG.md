@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 - Teams: group the people of a site into teams with a name, description, colour and members, in **Settings → Teams** (admins at every site, superusers at their own sites).
-- A **Teams** filter next to the site selector narrows the projects, people, equipment and team-limited company events of the Gantt chart, Kanban board, archived projects, sidebar stats, resource panels, Staff and Equipment views and pickers, and the tag filter options, to the whole site, one or more teams, or projects and people with no team; it is remembered per site in your browser.
+- A **Teams** filter next to the site selector narrows the Gantt chart, Kanban board, archived projects, sidebar stats, resource panels, Staff and Equipment views and pickers to the whole site, one or more teams, or projects and people with no team; it is remembered per site in your browser. Team-limited company events and the tag filter's options follow it too.
 - Projects can belong to one or more teams of their site; a new project starts with the teams of the active filter.
 - Tags, equipment and company events can be limited to teams, site by site; a team-limited tag is offered only on projects of those teams.
 - A site closure limited to teams takes out only their members and leaves the rest of the site, and the calendar header, untouched.
