@@ -65,6 +65,7 @@ export type ModalType =
 export type SettingsSectionId =
   | 'general'
   | 'sites'
+  | 'teams'
   | 'bank-holidays'
   | 'company-events'
   | 'users'

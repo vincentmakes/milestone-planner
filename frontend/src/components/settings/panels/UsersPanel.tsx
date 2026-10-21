@@ -49,6 +49,7 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const openSettings = useUIStore((s) => s.openSettings);
   const sites = useAppStore((s) => s.sites);
   const skills = useAppStore((s) => s.skills);
+  const teams = useAppStore((s) => s.teams);
   const currentUser = useAppStore((s) => s.currentUser);
   const { refreshStaff } = useDataLoader();
   
@@ -159,6 +160,12 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const getSiteNames = (siteIds: number[]) => {
     if (!siteIds || siteIds.length === 0) return '—';
     return siteIds.map(id => sites.find(s => s.id === id)?.name).filter(Boolean).join(', ');
+  };
+  
+  // Read-only here: membership is edited in Settings → Teams
+  const getTeamNames = (teamIds: number[] | undefined) => {
+    const names = (teamIds ?? []).map((id) => teams.find((t) => t.id === id)?.name).filter(Boolean);
+    return names.length > 0 ? names.join(', ') : '—';
   };
   
   // Superusers cannot edit admin accounts (backend 403)
@@ -299,6 +306,7 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                     <th>Role</th>
                     <th>Skills</th>
                     <th>Sites</th>
+                    <th>Teams</th>
                     <th style={{ width: 60 }}></th>
                   </tr>
                 </thead>
@@ -339,6 +347,7 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                         </div>
                       </td>
                       <td className={styles.sitesCell} title={getSiteNames(user.site_ids)}>{getSiteNames(user.site_ids)}</td>
+                      <td className={styles.sitesCell} title={getTeamNames(user.team_ids)}>{getTeamNames(user.team_ids)}</td>
                       <td>
                         {canEditUser(user) && (
                           <button

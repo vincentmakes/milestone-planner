@@ -15,6 +15,7 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { createUser, deleteUser } from '@/api/endpoints/users';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { stubConfirm } from '@/test/confirmDialog';
+import { makeTeam } from '@/test/factories';
 import type { Site, User } from '@/types';
 
 const getUsers = vi.fn();
@@ -477,5 +478,22 @@ describe('UsersPanel during What-If', () => {
     const del = screen.getByRole('button', { name: 'Delete User' });
     expect(del).toBeDisabled();
     expect(del).toHaveAttribute('title', "You can't delete your own account");
+  });
+});
+
+describe('UsersPanel teams column', () => {
+  it("lists each person's teams by name, read-only", async () => {
+    seed(ada, [siteA, siteB]);
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, name: 'Analytics' }), makeTeam({ id: 2, site_id: 2, name: 'Zurich lab' })],
+    });
+    getUsers.mockResolvedValue([ada, { ...bob, team_ids: [1, 2, 99] }]);
+    render(<UsersPanel />);
+
+    const bobRow = await rowOf('Bob Brown');
+    expect(screen.getByRole('columnheader', { name: 'Teams' })).toBeInTheDocument();
+    // An id no longer in the store (a deleted team) is skipped.
+    expect(within(bobRow).getByText('Analytics, Zurich lab')).toBeInTheDocument();
+    expect(within(await rowOf('Ada Admin')).getAllByText('—').length).toBeGreaterThan(0);
   });
 });

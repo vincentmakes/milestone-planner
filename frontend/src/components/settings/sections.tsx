@@ -16,6 +16,9 @@ const GeneralPanel = lazy(() =>
 const SitesPanel = lazy(() =>
   import('./panels/SitesPanel').then((m) => ({ default: m.SitesPanel }))
 );
+const TeamsPanel = lazy(() =>
+  import('./panels/TeamsPanel').then((m) => ({ default: m.TeamsPanel }))
+);
 const BankHolidaysPanel = lazy(() =>
   import('./panels/BankHolidaysPanel').then((m) => ({ default: m.BankHolidaysPanel }))
 );
@@ -85,6 +88,23 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       <svg {...svgProps}>
         <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
         <circle cx="12" cy="10" r="3" />
+      </svg>
+    ),
+  },
+  {
+    group: 'Sites & calendar',
+    id: 'teams',
+    label: 'Teams',
+    // Superusers manage the teams of their own sites (the panel's site list).
+    minRole: 'superuser',
+    description: 'Groups of people within a site: filter the views and scope tags, events and equipment to them.',
+    Panel: TeamsPanel,
+    icon: (
+      <svg {...svgProps}>
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
       </svg>
     ),
   },

@@ -32,6 +32,7 @@ vi.mock('@/hooks/useUndoRedo', () => ({
   useUndoRedo: () => ({ undo: vi.fn(), redo: vi.fn() }),
 }));
 vi.mock('../panels/SitesPanel', () => ({ SitesPanel: () => <div>Sites panel</div> }));
+vi.mock('../panels/TeamsPanel', () => ({ TeamsPanel: () => <div>Teams panel</div> }));
 vi.mock('../panels/BankHolidaysPanel', () => ({ BankHolidaysPanel: () => <div>Bank holidays panel</div> }));
 vi.mock('../panels/CompanyEventsPanel', () => ({ CompanyEventsPanel: () => <div>Company events panel</div> }));
 vi.mock('../panels/UsersPanel', () => ({ UsersPanel: () => <div>Users panel</div> }));
@@ -45,6 +46,7 @@ vi.mock('../panels/SSOPanel', () => ({ SSOPanel: () => <div>SSO panel</div> }));
 const ALL_SECTIONS = [
   'General',
   'Sites',
+  'Teams',
   'Bank holidays',
   'Company events',
   'Users',
