@@ -6,7 +6,7 @@
  * - Export to ICS
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { Notice } from '@/components/common/Notice';
 import { useUIStore } from '@/stores/uiStore';
@@ -17,6 +17,7 @@ import { buildICS, downloadICS } from '@/utils/ics';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './StaffView.module.css';
 import { parseLocalDate } from '@/utils/date';
+import { teamsForSite, teamIdsOnSite } from '@/utils/teams';
 
 interface CompanyEventsRowProps {
   isExpanded: boolean;
@@ -46,19 +47,18 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
   const deleteBlockedReason = whatIf.blocked ? whatIf.reason('Deleting company events') : null;
   const canOpenEditor = canEdit && !editBlockedReason;
   
-  // The teams an event is limited to, by name (or counted when one is not loaded)
-  const teamLabel = (teamIds: number[]): string => {
-    const names = teamIds.map((id) => teams.find((t) => t.id === id)?.name);
-    return names.every((n) => n !== undefined)
-      ? names.join(', ')
-      : `${teamIds.length} ${teamIds.length === 1 ? 'team' : 'teams'}`;
-  };
+  // This site's teams, inactive included. `team_ids` is a flat cross-site
+  // list; an event with no team here concerns the whole site, like the filter.
+  const siteTeams = useMemo(() => teamsForSite(teams, currentSite?.id), [teams, currentSite?.id]);
+  const teamNamesHere = (teamIds: number[] | undefined): string[] =>
+    teamIdsOnSite(teamIds, siteTeams).flatMap((id) => siteTeams.find((t) => t.id === id)?.name ?? []);
 
   // Tooltip of the Closure badge: a team-limited closure names its teams,
   // since only their members are out
   const closureTitle = (teamIds: number[] | undefined): string => {
-    if (!teamIds?.length) return 'Site closure: staff on this site are unavailable';
-    return `Closure for ${teamLabel(teamIds)}: only their members are unavailable`;
+    const names = teamNamesHere(teamIds);
+    if (names.length === 0) return 'Site closure: staff on this site are unavailable';
+    return `Closure for ${names.join(', ')}: only their members are unavailable`;
   };
 
   // Group events by year
@@ -203,6 +203,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
               const dateDisplay = event.end_date && event.end_date !== event.date
                 ? `${formatEventDate(event.date)} - ${formatEventDate(event.end_date)}`
                 : formatEventDate(event.date);
+              const teamNames = teamNamesHere(event.team_ids);
               
               return (
                 <div 
@@ -219,8 +220,8 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
                   </span>
                   <span className={styles.detailName}>
                     {event.name}
-                    {event.team_ids && event.team_ids.length > 0 && (
-                      <span className={styles.detailTeams}>{`· ${teamLabel(event.team_ids)}`}</span>
+                    {teamNames.length > 0 && (
+                      <span className={styles.detailTeams}>{`· ${teamNames.join(', ')}`}</span>
                     )}
                   </span>
                   <span className={styles.dateBadge}>{dateDisplay}</span>

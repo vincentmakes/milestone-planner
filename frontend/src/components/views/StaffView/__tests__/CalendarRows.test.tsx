@@ -184,7 +184,7 @@ describe('CompanyEventsRow', () => {
     expect(screen.queryByText('Add company event')).not.toBeInTheDocument();
   });
 
-  it('names the teams of a team-limited closure, or counts them when a name is unknown', () => {
+  it('names the teams of a team-limited closure, leaving out the ones not loaded', () => {
     const teamClosure: CompanyEvent = { ...events[1], id: 13, team_ids: [5, 6] };
     useAppStore.setState({
       currentSite: makeSite({ id: 1, name: 'Basel' }),
@@ -203,27 +203,49 @@ describe('CompanyEventsRow', () => {
     render(<CompanyEventsRow isExpanded />);
     expect(screen.getByText('Closure')).toHaveAttribute(
       'title',
-      'Closure for 2 teams: only their members are unavailable'
+      'Closure for Formulation: only their members are unavailable'
     );
   });
 
   it('names the teams of a team-limited event after its name, closures and plain events alike', () => {
     const teamReview: CompanyEvent = { ...events[0], id: 15, name: 'Team review', team_ids: [5, 6] };
+    // Team 9 is at the other site: it does not limit the closure here
     const teamClosure: CompanyEvent = { ...events[1], id: 16, team_ids: [5, 9] };
     useAppStore.setState({
       currentSite: makeSite({ id: 1, name: 'Basel' }),
       currentUser: makeUser({ role: 'user' }),
       companyEvents: [events[0], teamReview, teamClosure],
-      teams: [makeTeam({ id: 5, name: 'Formulation' }), makeTeam({ id: 6, name: 'Analytics' })],
+      teams: [
+        makeTeam({ id: 5, name: 'Formulation' }),
+        makeTeam({ id: 6, name: 'Analytics' }),
+        makeTeam({ id: 9, site_id: 2, name: 'Line B' }),
+      ],
     });
     render(<CompanyEventsRow isExpanded />);
     expect(screen.getByText('· Formulation, Analytics')).toBeInTheDocument();
-    // A name that is not loaded turns the label into a count
-    expect(screen.getByText('· 2 teams')).toBeInTheDocument();
+    expect(screen.getByText('· Formulation')).toBeInTheDocument();
+    expect(screen.queryByText(/Line B/)).not.toBeInTheDocument();
     // A whole-site event names no team
     const audit = screen.getByText('Audit');
     expect(audit.textContent).toBe('Audit');
     expect(audit.closest('[class*="detailRow"]')!.textContent).not.toMatch(/·/);
+  });
+
+  it('treats an event limited only to teams of another site as whole-site here', () => {
+    const sharedClosure: CompanyEvent = { ...events[1], id: 17, team_ids: [9] };
+    useAppStore.setState({
+      currentSite: makeSite({ id: 1, name: 'Basel' }),
+      currentUser: makeUser({ role: 'user' }),
+      companyEvents: [sharedClosure],
+      teams: [makeTeam({ id: 9, site_id: 2, name: 'Line B' })],
+    });
+    render(<CompanyEventsRow isExpanded />);
+    const name = screen.getByText('Year-end closure');
+    expect(name.closest('[class*="detailRow"]')!.textContent).not.toMatch(/·/);
+    expect(screen.getByText('Closure')).toHaveAttribute(
+      'title',
+      'Site closure: staff on this site are unavailable'
+    );
   });
 
   it('lists only the events the header team filter shows', () => {

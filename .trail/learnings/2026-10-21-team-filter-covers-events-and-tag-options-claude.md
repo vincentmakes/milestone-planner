@@ -31,7 +31,8 @@ touches:
 - The Kanban card dialog narrows its unassigned candidates on cards of the current site only.
 - Group-by sections (`useGanttGrouping`) and Colour-by (`useGanttColorBy`) are deliberately **not** narrowed: a section exists only when a visible project carries the tag, and hiding the section would misfile that project.
 - `VacationModal`'s staff picker is deliberately tenant-wide (admins and superusers book absences for anyone at any site).
-- An event's teams are visible: Settings → Company events has a Teams column (chips with the team colour, `title="<Team> · <Site>"`, *Whole site* when none, "N teams" when no id resolves), and the Staff view's Company events row names them after the event name for closures and plain events (`teamLabel`, shared with the Closure badge tooltip).
+- An event's teams are visible: Settings → Company events has a Teams column (chips with the team colour, `title="<Team> · <Site>"`, *Whole site* when none, "N teams" when no id resolves), and the Staff view's Company events row names them after the event name for closures and plain events.
+- The Staff row's team label and the Closure badge tooltip name only the **current site's** teams (`teamIdsOnSite(event.team_ids, teamsForSite(teams, siteId))`, inactive included): an event shared with another site and limited only to teams there is whole-site here, as the filter treats it, so it shows no label and the whole-site closure tooltip. The Settings table stays cross-site (each chip's title carries its site).
 
 ## Tried and ruled out
 - Narrowing `siteTags` and using it for both the dropdown and project evaluation (first cut of task 2): leaks projects into "(No tag)" selections, see above.
