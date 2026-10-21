@@ -32,6 +32,7 @@ from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.skill import Skill, UserSkill
 from app.models.tag import Tag, TagGroup, TagSite
+from app.models.team import Team
 from app.models.user import User, UserSite
 from app.models.vacation import Vacation
 from app.utils import utcnow_naive
@@ -496,6 +497,24 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
     )
     user_ids = {u.id for u in user_rows}
 
+    # Teams at this site, with their members
+    team_rows = (
+        (
+            await db.execute(
+                select(Team)
+                .where(Team.site_id == site_id)
+                .options(selectinload(Team.members))
+                .order_by(Team.name)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    def teams_here(teams: list[Team]) -> str:
+        """Names of an entity's teams at this site; "" = the whole site."""
+        return ", ".join(t.name for t in teams if t.site_id == site_id)
+
     # Projects on this site, with phases / subphases / assignments preloaded
     project_rows = (
         (
@@ -508,6 +527,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                     selectinload(Project.staff_assignments),
                     selectinload(Project.equipment_assignments),
                     selectinload(Project.tags),
+                    selectinload(Project.teams),
                 )
                 .order_by(Project.name)
             )
@@ -658,6 +678,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                 select(CompanyEvent)
                 .join(CompanyEventSite, CompanyEventSite.event_id == CompanyEvent.id)
                 .where(CompanyEventSite.site_id == site_id)
+                .options(selectinload(CompanyEvent.teams))
                 .order_by(CompanyEvent.date, CompanyEvent.id)
             )
         )
@@ -918,10 +939,33 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         ],
     )
 
+    # Teams at the site and their members
+    add_sheet(
+        "Teams",
+        ["ID", "Name", "Description", "Color", "Active", "Members", "Created at"],
+        [
+            [
+                t.id,
+                t.name,
+                t.description,
+                t.color,
+                _yes_no(t.active),
+                len(t.members),
+                _iso(t.created_at),
+            ]
+            for t in team_rows
+        ],
+    )
+    add_sheet(
+        "Team members",
+        ["Team ID", "Team name", "User ID", "User name"],
+        [[t.id, t.name, u.id, u.full_name] for t in team_rows for u in t.members],
+    )
+
     # Equipment
     add_sheet(
         "Equipment",
-        ["ID", "Name", "Type", "Description", "Active", "Sites", "Created at"],
+        ["ID", "Name", "Type", "Description", "Active", "Sites", "Teams", "Created at"],
         [
             [
                 e.id,
@@ -930,6 +974,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                 e.description,
                 _yes_no(e.active),
                 ", ".join(s.name for s in e.sites),
+                teams_here(e.teams),
                 _iso(e.created_at),
             ]
             for e in equipment_rows
@@ -961,7 +1006,17 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
     # Tags applicable to the site, tag groups, and per-project tag assignments
     add_sheet(
         "Tags",
-        ["ID", "Name", "Color", "Group", "All sites", "Sites", "Sort order", "Created at"],
+        [
+            "ID",
+            "Name",
+            "Color",
+            "Group",
+            "All sites",
+            "Sites",
+            "Sort order",
+            "Teams",
+            "Created at",
+        ],
         [
             [
                 t.id,
@@ -971,6 +1026,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                 bool(t.all_sites),
                 "" if t.all_sites else ", ".join(s.name for s in t.sites),
                 t.sort_order,
+                teams_here(t.teams),
                 _iso(t.created_at),
             ]
             for t in tag_rows
@@ -997,6 +1053,11 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         "Project tags",
         ["Project ID", "Project name", "Tag ID", "Tag name", "Tag color", "Group"],
         project_tag_rows,
+    )
+    add_sheet(
+        "Project teams",
+        ["Project ID", "Project name", "Team ID", "Team name", "Team color"],
+        [[p.id, p.name, t.id, t.name, t.color] for p in project_rows for t in p.teams],
     )
 
     # Absence types (global)
@@ -1267,7 +1328,17 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
     # Company events
     add_sheet(
         "Company events",
-        ["ID", "Date", "End date", "Name", "Color", "Sites", "Staff unavailable", "Created at"],
+        [
+            "ID",
+            "Date",
+            "End date",
+            "Name",
+            "Color",
+            "Sites",
+            "Staff unavailable",
+            "Teams",
+            "Created at",
+        ],
         [
             [
                 e.id,
@@ -1277,6 +1348,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                 e.color or "",
                 ", ".join(event_site_names.get(e.id, [])),
                 _yes_no(e.counts_as_unavailable),
+                teams_here(e.teams),
                 _iso(e.created_at),
             ]
             for e in event_rows

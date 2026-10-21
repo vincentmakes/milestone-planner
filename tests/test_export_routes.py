@@ -25,6 +25,7 @@ from app.models.project import Project
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.skill import Skill, UserSkill
 from app.models.tag import Tag, TagGroup
+from app.models.team import Team
 from app.models.user import User
 from app.models.vacation import Vacation
 from app.routers.export import (
@@ -453,6 +454,27 @@ def _site_rows() -> dict:
         status="done",
         staff_assignments=[],
     )
+    lab = ns(
+        id=5,
+        site_id=1,
+        name="Analytical Lab",
+        description="Method development",
+        color="#0ea5e9",
+        active=True,
+        members=[ns(id=7, full_name="Alice Martin"), ns(id=8, full_name="Bob Brown")],
+        created_at=STAMP,
+    )
+    pilot = ns(
+        id=6,
+        site_id=1,
+        name="Pilot Plant",
+        description=None,
+        color=None,
+        active=False,
+        members=[],
+        created_at=STAMP,
+    )
+    basel_qc = ns(id=9, site_id=2, name="Basel QC")  # a team at another site
     group = ns(id=4, name="Program", single_select=1, sort_order=0)
     tag = ns(
         id=3,
@@ -461,6 +483,7 @@ def _site_rows() -> dict:
         group_id=4,
         all_sites=False,
         sites=[ns(name="Winterthur Lab"), ns(name="Basel")],
+        teams=[basel_qc, lab],
         sort_order=0,
         created_at=STAMP,
     )
@@ -506,6 +529,7 @@ def _site_rows() -> dict:
             ),
         ],
         tags=[tag],
+        teams=[lab, pilot],
     )
     equipment = ns(
         id=30,
@@ -514,6 +538,7 @@ def _site_rows() -> dict:
         description="Agilent",
         active=1,
         sites=[ns(name="Winterthur Lab"), ns(name="Basel")],
+        teams=[lab, pilot],
         created_at=STAMP,
     )
     column = ns(
@@ -540,6 +565,7 @@ def _site_rows() -> dict:
     return {
         Site: [site],
         User: [alice],
+        Team: [lab, pilot],
         Project: [proj],
         Equipment: [equipment],
         EquipmentBlock: [
@@ -604,6 +630,7 @@ def _site_rows() -> dict:
                 name="Audit",
                 color=None,
                 counts_as_unavailable=1,
+                teams=[basel_qc],  # restricted at Basel only: the whole site here
                 created_at=STAMP,
             )
         ],
@@ -669,12 +696,15 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
         "Site",
         "Projects",
         "Users",
+        "Teams",
+        "Team members",
         "Equipment",
         "Skills",
         "User skills",
         "Tags",
         "Tag groups",
         "Project tags",
+        "Project teams",
         "Absence types",
         "Vacations",
         "Project assignments",
@@ -705,11 +735,53 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
     assert projects[3][18] == '[{"id": 11}]'
     assert [r[22] for r in projects] == [None, "done", "in_progress", "in_progress", "todo"]
 
-    assert _sheet(wb, "Equipment")[0][5] == "Winterthur Lab, Basel"
+    assert [c.value for c in wb["Teams"][1]] == [
+        "ID",
+        "Name",
+        "Description",
+        "Color",
+        "Active",
+        "Members",
+        "Created at",
+    ]
+    assert _sheet(wb, "Teams") == [
+        [5, "Analytical Lab", "Method development", "#0ea5e9", "Yes", 2, "2026-01-01 12:00:00"],
+        [6, "Pilot Plant", None, None, "No", 0, "2026-01-01 12:00:00"],
+    ]
+    assert [c.value for c in wb["Team members"][1]] == [
+        "Team ID",
+        "Team name",
+        "User ID",
+        "User name",
+    ]
+    assert _sheet(wb, "Team members") == [
+        [5, "Analytical Lab", 7, "Alice Martin"],
+        [5, "Analytical Lab", 8, "Bob Brown"],
+    ]
+
+    equipment = wb["Equipment"]
+    assert [c.value for c in equipment[1]][-2:] == ["Teams", "Created at"]
+    assert _sheet(wb, "Equipment")[0][5:7] == [
+        "Winterthur Lab, Basel",
+        "Analytical Lab, Pilot Plant",
+    ]
     assert _sheet(wb, "User skills") == [[7, "Alice Martin", 8, "HPLC", 4, "2026-01-01 12:00:00"]]
+    assert [c.value for c in wb["Tags"][1]][-2:] == ["Teams", "Created at"]
     tags = _sheet(wb, "Tags")
     assert tags[0][3:6] == ["Program", False, "Winterthur Lab, Basel"]
+    assert tags[0][7] == "Analytical Lab"  # only the teams at this site
     assert _sheet(wb, "Project tags") == [[1, "Alpha", 3, "Priority", "#ff0000", "Program"]]
+    assert [c.value for c in wb["Project teams"][1]] == [
+        "Project ID",
+        "Project name",
+        "Team ID",
+        "Team name",
+        "Team color",
+    ]
+    assert _sheet(wb, "Project teams") == [
+        [1, "Alpha", 5, "Analytical Lab", "#0ea5e9"],
+        [1, "Alpha", 6, "Pilot Plant", None],
+    ]
     assert _sheet(wb, "Absence types")[0][3] == "Yes"
     assert _sheet(wb, "Vacations")[0][2] == "Alice Martin"
     assert _sheet(wb, "Vacations")[0][7] == "Vacation"
@@ -730,12 +802,42 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
     ]
 
     assert _sheet(wb, "Bank holidays")[0][1:5] == ["2026-08-01", None, "National Day", 2026]
-    assert _sheet(wb, "Company events")[0][5:7] == ["Basel, Winterthur Lab", "Yes"]
+    assert [c.value for c in wb["Company events"][1]][-2:] == ["Teams", "Created at"]
+    # Restricted to a team at another site only: the whole site here.
+    assert _sheet(wb, "Company events")[0][5:8] == ["Basel, Winterthur Lab", "Yes", None]
     assert _sheet(wb, "Equipment blocks")[0][2] == "HPLC"
     assert _sheet(wb, "Staff notes")[0][5] == "Alice Martin"
     comment = _sheet(wb, "Card comments")[0]
     assert comment[2] == "Alpha"
     assert comment[6:9] == ["Alice Martin", "Looks good @Bob", "12, 13"]
+
+
+@pytest.mark.asyncio
+async def test_site_workbook_loads_the_site_teams_with_their_members():
+    pytest.importorskip("openpyxl")
+    db = _fake_site_db(_site_rows())
+
+    await build_site_export_workbook(db, 1)
+
+    def entity(stmt):
+        return stmt.column_descriptions[0].get("entity")
+
+    def loaders(stmt) -> set[str]:
+        return {
+            " -> ".join(str(attr) for attr in element.path.natural_path[1::2])
+            for option in stmt._with_options
+            for element in option.context
+        }
+
+    (team_stmt,) = (s for s in db.statements if entity(s) is Team)
+    team_sql = str(team_stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "teams.site_id = 1" in team_sql
+    assert "ORDER BY teams.name" in team_sql
+    assert "Team.members" in loaders(team_stmt)
+    (project_stmt,) = (s for s in db.statements if entity(s) is Project)
+    assert "Project.teams" in loaders(project_stmt)
+    (event_stmt,) = (s for s in db.statements if entity(s) is CompanyEvent)
+    assert "CompanyEvent.teams" in loaders(event_stmt)
 
 
 @pytest.mark.asyncio

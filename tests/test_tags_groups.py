@@ -869,9 +869,10 @@ async def test_site_export_tag_sheets():
         "All sites",
         "Sites",
         "Sort order",
+        "Teams",
         "Created at",
     ]
-    assert tags[1][:7] == [3, "Customer", "#6366f1", "Project type", False, "Basel, Bern", 0]
+    assert tags[1][:8] == [3, "Customer", "#6366f1", "Project type", False, "Basel, Bern", 0, ""]
     assert tags[2][3:6] == ["", True, ""]
 
     groups = sheets["Tag groups"].rows
