@@ -19,7 +19,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useTodoStore } from '@/stores/todoStore';
-import type { TodoTab } from '@/stores/todoStore';
+import type { TodoStatusFilter, TodoTab } from '@/stores/todoStore';
 import {
   getNotifications,
   getUnreadCount,
@@ -54,17 +54,27 @@ function opensCard(n: AppNotification): boolean {
   return Boolean(n.project_id && (n.entity_type === 'phase' || n.entity_type === 'subphase') && n.entity_id);
 }
 
-/** The My Todos tab a notification about a request or a task opens. */
-const TODO_TABS: Partial<Record<NotificationType, TodoTab>> = {
-  approval_requested: 'decide',
-  approval_decided: 'requests',
-  todo_assigned: 'tasks',
+interface TodosTarget {
+  tab: TodoTab;
+  /** The Open/Done filter that shows the item (none on To decide, which has no filter) */
+  filter?: TodoStatusFilter;
+}
+
+/**
+ * Where in My Todos a notification about a request or a task lands. A
+ * decision is about a request that is no longer pending, so My requests
+ * opens on Done; a new task is open.
+ */
+const TODO_TARGETS: Partial<Record<NotificationType, TodosTarget>> = {
+  approval_requested: { tab: 'decide' },
+  approval_decided: { tab: 'requests', filter: 'done' },
+  todo_assigned: { tab: 'tasks', filter: 'open' },
 };
 
-/** My Todos' tab for this notification, unless it opens a card instead. */
-function todosTabFor(n: AppNotification): TodoTab | null {
+/** My Todos' target for this notification, unless it opens a card instead. */
+function todosTargetFor(n: AppNotification): TodosTarget | null {
   if (opensCard(n)) return null;
-  return TODO_TABS[n.type] ?? null;
+  return TODO_TARGETS[n.type] ?? null;
 }
 
 const OPEN_CARD_ACTION = 'Opening a card from a notification';
@@ -90,6 +100,7 @@ export function NotificationBell() {
   const setKanbanProjectId = useViewStore((s) => s.setKanbanProjectId);
   const openKanbanCard = useUIStore((s) => s.openKanbanCardModal);
   const setTodoTab = useTodoStore((s) => s.setActiveTab);
+  const setTodoFilter = useTodoStore((s) => s.setStatusFilter);
 
   const derived = useDerivedDueNotifications();
   // What-If is Gantt-only and the card opens on the Kanban board, so card
@@ -134,9 +145,9 @@ export function NotificationBell() {
   const totalBadge = unreadCount + derived.length;
 
   const handleOpen = async (n: AppNotification) => {
-    const todosTab = todosTabFor(n);
+    const todosTarget = todosTargetFor(n);
     // Both targets leave the Gantt, which What-If cannot do.
-    if ((opensCard(n) || todosTab) && whatIf.blocked) return;
+    if ((opensCard(n) || todosTarget) && whatIf.blocked) return;
     if (
       canOpenCards &&
       n.project_id &&
@@ -146,9 +157,10 @@ export function NotificationBell() {
       setKanbanProjectId(n.project_id);
       setCurrentView('kanban');
       openKanbanCard(n.entity_type, n.entity_id, n.project_id);
-    } else if (todosTab) {
+    } else if (todosTarget) {
       // My Todos needs no key: every user has one.
-      setTodoTab(todosTab);
+      setTodoTab(todosTarget.tab);
+      if (todosTarget.filter) setTodoFilter(todosTarget.filter);
       setCurrentView('todos');
     }
     setPanelOpen(false);
@@ -227,7 +239,7 @@ export function NotificationBell() {
           <ul className={styles.list}>
             {merged.map((n) => {
               const cardBlocked = whatIf.blocked && opensCard(n);
-              const todosBlocked = whatIf.blocked && todosTabFor(n) !== null;
+              const todosBlocked = whatIf.blocked && todosTargetFor(n) !== null;
               const blockedReason = cardBlocked
                 ? whatIf.reason(OPEN_CARD_ACTION)
                 : todosBlocked

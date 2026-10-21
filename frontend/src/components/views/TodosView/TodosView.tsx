@@ -17,7 +17,7 @@ import type { KeyboardEvent } from 'react';
 import { Button } from '@/components/common/Button';
 import { Notice } from '@/components/common/Notice';
 import { PlusIcon } from '@/components/settings/panels/PanelIcons';
-import { useTodoStore } from '@/stores/todoStore';
+import { isMyOpenTask, useTodoStore } from '@/stores/todoStore';
 import type { TodoTab } from '@/stores/todoStore';
 import { useAppStore } from '@/stores/appStore';
 import { useDataLoader } from '@/hooks/useDataLoader';
@@ -48,6 +48,7 @@ export function TodosView() {
   const mine = useTodoStore((s) => s.mine);
   const toDecide = useTodoStore((s) => s.toDecide);
   const loaded = useTodoStore((s) => s.loaded);
+  const loadError = useTodoStore((s) => s.loadError);
   const activeTab = useTodoStore((s) => s.activeTab);
   const statusFilter = useTodoStore((s) => s.statusFilter);
   const setActiveTab = useTodoStore((s) => s.setActiveTab);
@@ -91,9 +92,15 @@ export function TodosView() {
   const pendingMine = useMemo(() => mine.filter((r) => r.status === 'pending'), [mine]);
   const closedMine = useMemo(() => mine.filter((r) => r.status !== 'pending'), [mine]);
 
+  // My tasks counts what is mine to do (isMyOpenTask), like the sidebar badge;
+  // the list also shows open tasks I gave someone else.
+  const myOpenTaskCount = useMemo(
+    () => tasks.filter((t) => isMyOpenTask(t, currentUserId)).length,
+    [tasks, currentUserId]
+  );
   const counts: Record<TodoTab, number> = {
     decide: toDecide.length,
-    tasks: openTasks.length,
+    tasks: myOpenTaskCount,
     requests: pendingMine.length,
   };
 
@@ -166,10 +173,14 @@ export function TodosView() {
   const panelId = `${baseId}-panel`;
   const tabId = (tab: TodoTab) => `${baseId}-tab-${tab}`;
 
+  // An empty list is "nothing to do" only when it loaded; after a failed
+  // load the error Notice speaks instead (lists that loaded still show).
+  const emptyState = (text: string) => (loadError ? null : <p className={styles.empty}>{text}</p>);
+
   const renderPanel = () => {
     if (!loaded) return <p className={styles.empty}>Loading…</p>;
     if (activeTab === 'decide') {
-      if (toDecide.length === 0) return <p className={styles.empty}>No requests to decide</p>;
+      if (toDecide.length === 0) return emptyState('No requests to decide');
       return (
         <ul className={styles.list}>
           {toDecide.map((request) => (
@@ -180,9 +191,7 @@ export function TodosView() {
     }
     if (activeTab === 'tasks') {
       const shown = showDone ? closedTasks : openTasks;
-      if (shown.length === 0) {
-        return <p className={styles.empty}>{showDone ? 'No done tasks' : 'No open tasks'}</p>;
-      }
+      if (shown.length === 0) return emptyState(showDone ? 'No done tasks' : 'No open tasks');
       return (
         <TodoList
           tasks={shown}
@@ -196,9 +205,7 @@ export function TodosView() {
       );
     }
     const shown = showDone ? closedMine : pendingMine;
-    if (shown.length === 0) {
-      return <p className={styles.empty}>{showDone ? 'No decided requests' : 'No pending requests'}</p>;
-    }
+    if (shown.length === 0) return emptyState(showDone ? 'No decided requests' : 'No pending requests');
     return (
       <ul className={styles.list}>
         {shown.map((request) => (
@@ -226,12 +233,15 @@ export function TodosView() {
                 aria-selected={selected}
                 aria-controls={panelId}
                 tabIndex={selected ? 0 : -1}
+                aria-label={`${tab.label}, ${counts[tab.id]} item${counts[tab.id] === 1 ? '' : 's'}`}
                 className={`${styles.tab} ${selected ? styles.activeTab : ''}`}
                 onClick={() => selectTab(tab.id)}
                 onKeyDown={handleTabKey}
               >
                 {tab.label}
-                <span className={styles.tabCount}>{counts[tab.id]}</span>
+                <span className={styles.tabCount} aria-hidden="true">
+                  {counts[tab.id]}
+                </span>
               </button>
             );
           })}
@@ -263,6 +273,7 @@ export function TodosView() {
 
       <div className={styles.body}>
         <div id={panelId} role="tabpanel" aria-labelledby={tabId(activeTab)} className={styles.panel}>
+          {loadError && <Notice tone="error">{loadError}</Notice>}
           {error && <Notice tone="error">{error}</Notice>}
           {renderPanel()}
         </div>

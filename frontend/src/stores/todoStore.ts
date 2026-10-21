@@ -39,6 +39,8 @@ interface TodoData {
   loading: boolean;
   /** At least one refresh has completed */
   loaded: boolean;
+  /** The last refresh could not load one or more lists (shown in place by the view) */
+  loadError: string | null;
 }
 
 interface TodoState extends TodoData {
@@ -66,13 +68,24 @@ const initialData = (): TodoData => ({
   statusFilter: 'open',
   loading: false,
   loaded: false,
+  loadError: null,
 });
+
+/**
+ * An open task that is mine to do (assigned to me; any open task while no
+ * user is known). The one rule behind the badge and the My tasks tab count.
+ */
+export function isMyOpenTask(task: TodoTask, me: number | null): boolean {
+  return task.status === 'open' && (me === null || task.assignee_id === me);
+}
 
 function countOpen(tasks: TodoTask[], toDecide: ApprovalRequest[]): number {
   const me = useAppStore.getState().currentUser?.id ?? null;
-  const openTasks = tasks.filter((t) => t.status === 'open' && (me === null || t.assignee_id === me));
-  return toDecide.length + openTasks.length;
+  return toDecide.length + tasks.filter((t) => isMyOpenTask(t, me)).length;
 }
+
+const PARTIAL_LOAD_ERROR = 'Some of your todos could not be loaded. They will reload on the next change.';
+const LOAD_ERROR = 'Your todos could not be loaded. They will reload on the next change.';
 
 function indexByAssignment(requests: ApprovalRequest[]): Map<string, ApprovalRequest> {
   const map = new Map<string, ApprovalRequest>();
@@ -104,13 +117,20 @@ export const useTodoStore = create<TodoState>((set, get) => {
       approvalsApi.getToDecide(),
     ]);
     if (started !== generation) return;
-    for (const result of [tasks, mine, toDecide]) {
+    const results = [tasks, mine, toDecide];
+    for (const result of results) {
       if (result.status === 'rejected') console.error('[Todos] Failed to load', result.reason);
     }
+    // A list that failed keeps its last value; the view says so in place.
     if (tasks.status === 'fulfilled') set(withTasks(tasks.value.filter(isTask)));
     if (mine.status === 'fulfilled') set({ mine: mine.value });
     if (toDecide.status === 'fulfilled') set(withToDecide(toDecide.value));
-    set({ loading: false, loaded: true });
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    set({
+      loading: false,
+      loaded: true,
+      loadError: failed === 0 ? null : failed === results.length ? LOAD_ERROR : PARTIAL_LOAD_ERROR,
+    });
   };
 
   return {

@@ -86,9 +86,14 @@ describe('tabs', () => {
   it('shows the three tabs with their open counts, My tasks first', async () => {
     await renderView();
     expect(screen.getByRole('tablist', { name: 'My Todos' })).toBeInTheDocument();
-    expect(tab(/^To decide/)).toHaveTextContent('1');
-    expect(tab(/^My tasks/)).toHaveTextContent('2');
-    expect(tab(/^My requests/)).toHaveTextContent('1');
+    // The count is in the name with a separator; the visual count is hidden.
+    expect(screen.getByRole('tab', { name: 'To decide, 1 item' })).toHaveTextContent('1');
+    // My tasks counts the open tasks that are mine to do, like the badge:
+    // the one I gave Alice is listed but not counted.
+    expect(screen.getByRole('tab', { name: 'My tasks, 1 item' })).toHaveTextContent('1');
+    expect(screen.getByRole('tab', { name: 'My requests, 1 item' })).toHaveTextContent('1');
+    expect(tab(/^To decide/).querySelector('[aria-hidden="true"]')).toHaveTextContent('1');
+    expect(useTodoStore.getState().openCount).toBe(2);
     expect(tab(/^My tasks/)).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tabpanel')).toHaveTextContent('Check the DoE plan');
   });
@@ -117,6 +122,32 @@ describe('tabs', () => {
       window.dispatchEvent(new Event('focus'));
     });
     await waitFor(() => expect(todosApi.getMine).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe('load errors', () => {
+  it('says in place that the lists could not be loaded instead of an empty state', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(todosApi.getMine).mockRejectedValue(new Error('500'));
+    vi.mocked(approvalsApi.getToDecide).mockRejectedValue(new Error('500'));
+    vi.mocked(approvalsApi.getMine).mockRejectedValue(new Error('500'));
+    await renderView();
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getByRole('alert')).toHaveTextContent('Your todos could not be loaded');
+    expect(panel).not.toHaveTextContent('No open tasks');
+    error.mockRestore();
+  });
+
+  it('keeps the lists that did load next to the error', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(approvalsApi.getToDecide).mockRejectedValue(new Error('500'));
+    await renderView();
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getByRole('alert')).toHaveTextContent('Some of your todos could not be loaded');
+    expect(panel).toHaveTextContent('Check the DoE plan');
+    fireEvent.click(tab(/^To decide/));
+    expect(screen.getByRole('tabpanel')).not.toHaveTextContent('No requests to decide');
+    error.mockRestore();
   });
 });
 

@@ -6,7 +6,7 @@
  * locally; toDecideByAssignment indexes the requests by their booking row.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { assignmentRequestKey, useTodoStore } from '../todoStore';
+import { assignmentRequestKey, isMyOpenTask, useTodoStore } from '../todoStore';
 import { useAppStore } from '../appStore';
 import { todosApi } from '@/api/endpoints/todos';
 import { approvalsApi } from '@/api/endpoints/approvals';
@@ -57,15 +57,32 @@ describe('refresh', () => {
     expect(todosApi.getMine).not.toHaveBeenCalled();
   });
 
-  it('keeps the last value of a list that failed and logs it', async () => {
+  it('keeps the last value of a list that failed, logs it and reports it in loadError', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     await useTodoStore.getState().refresh();
+    expect(useTodoStore.getState().loadError).toBeNull();
     vi.mocked(approvalsApi.getToDecide).mockRejectedValueOnce(new Error('500'));
     vi.mocked(todosApi.getMine).mockResolvedValueOnce([]);
     await useTodoStore.getState().refresh();
     expect(useTodoStore.getState().toDecide).toHaveLength(1);
     expect(useTodoStore.getState().tasks).toEqual([]);
+    expect(useTodoStore.getState().loadError).toBe('Some of your todos could not be loaded. They will reload on the next change.');
     expect(error).toHaveBeenCalledWith('[Todos] Failed to load', expect.any(Error));
+
+    // A good refresh clears it.
+    await useTodoStore.getState().refresh();
+    expect(useTodoStore.getState().loadError).toBeNull();
+    error.mockRestore();
+  });
+
+  it('says so when nothing could be loaded', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(todosApi.getMine).mockRejectedValueOnce(new Error('500'));
+    vi.mocked(approvalsApi.getMine).mockRejectedValueOnce(new Error('500'));
+    vi.mocked(approvalsApi.getToDecide).mockRejectedValueOnce(new Error('500'));
+    await useTodoStore.getState().refresh();
+    expect(useTodoStore.getState().loadError).toBe('Your todos could not be loaded. They will reload on the next change.');
+    expect(useTodoStore.getState().loaded).toBe(true);
     error.mockRestore();
   });
 
@@ -88,6 +105,13 @@ describe('openCount', () => {
     expect(useTodoStore.getState().openCount).toBe(1);
     useTodoStore.getState().setToDecide([makeApprovalRequest(), makeApprovalRequest({ id: 32 })]);
     expect(useTodoStore.getState().openCount).toBe(3);
+  });
+
+  it('isMyOpenTask is the one rule for the badge and the My tasks tab count', () => {
+    expect(isMyOpenTask(makeTodo(), 4)).toBe(true);
+    expect(isMyOpenTask(makeTodo({ status: 'done' }), 4)).toBe(false);
+    expect(isMyOpenTask(makeTodo({ assignee_id: 7 }), 4)).toBe(false);
+    expect(isMyOpenTask(makeTodo({ assignee_id: 7 }), null)).toBe(true);
   });
 
   it('counts every open task while no user is known', () => {
@@ -152,5 +176,6 @@ describe('view state and reset', () => {
     expect(s.statusFilter).toBe('open');
     expect(s.tasks).toEqual([]);
     expect(s.openCount).toBe(0);
+    expect(s.loadError).toBeNull();
   });
 });
