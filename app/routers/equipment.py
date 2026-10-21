@@ -28,6 +28,12 @@ from app.schemas.equipment import (
 from app.services.date_range import ensure_date_order, parse_day_range
 from app.services.project_access import require_project_editor
 from app.services.site_access import can_access_sites, ensure_site_access
+from app.services.team_rules import (
+    ensure_teams_within_sites,
+    load_teams,
+    prune_teams_to_sites,
+    team_outside_sites_detail,
+)
 from app.websocket.broadcast import broadcast_change
 
 router = APIRouter()
@@ -173,6 +179,8 @@ def build_equipment_response(equipment: Equipment, site: Site | None = None) -> 
         "site_name": site.name if site else None,
         "site_ids": equipment.site_ids,
         "site_names": [s.name for s in equipment.sites],
+        "team_ids": equipment.team_ids,
+        "team_names": [t.name for t in equipment.teams],
         "description": equipment.description,
         "active": equipment.active,
         "created_at": equipment.created_at,
@@ -288,6 +296,8 @@ async def create_equipment(
     """
     sites = await _load_sites(db, data.resolved_site_ids)
     _ensure_equipment_access(user, [s.id for s in sites])
+    teams = await load_teams(db, data.team_ids or [])
+    ensure_teams_within_sites(teams, [s.id for s in sites], team_outside_sites_detail)
 
     equipment = Equipment(
         name=data.name,
@@ -297,6 +307,7 @@ async def create_equipment(
         active=1,
     )
     equipment.sites = sites
+    equipment.teams = teams
 
     db.add(equipment)
     await db.commit()
@@ -313,7 +324,8 @@ async def update_equipment(
     user: User = Depends(require_superuser),
 ):
     """
-    Update equipment. ``site_ids``, when given, replaces its site links.
+    Update equipment. ``site_ids``, when given, replaces its site links;
+    ``team_ids``, when given, replaces its teams.
 
     Requires admin or superuser authentication.
     Superusers must belong to every site the equipment is linked to, before
@@ -333,6 +345,16 @@ async def update_equipment(
         _ensure_equipment_access(user, [s.id for s in sites])
         equipment.sites = sites
         equipment.site_id = sites[0].id
+
+    # Teams: replaced when given (each at one of the sites); a site change
+    # alone drops the teams of the removed sites.
+    site_ids_now = [s.id for s in equipment.sites]
+    if data.team_ids is not None:
+        teams = await load_teams(db, data.team_ids)
+        ensure_teams_within_sites(teams, site_ids_now, team_outside_sites_detail)
+        equipment.teams = teams
+    elif data.site_ids is not None:
+        equipment.teams = prune_teams_to_sites(equipment.teams, site_ids_now)
 
     # Update fields
     if data.name is not None:

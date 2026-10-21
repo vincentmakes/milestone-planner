@@ -26,6 +26,7 @@ from app.models.user import User, UserSite
 TEAM_NOT_FOUND_DETAIL = "Team not found"
 TEAM_SITE_ACCESS_DETAIL = "You can only manage teams at sites you have access to"
 MEMBER_NOT_AT_SITE_DETAIL = "Every team member must belong to the team's site"
+SITE_LESS_PROJECT_TEAMS_DETAIL = "A project without a site cannot have teams"
 
 
 def team_outside_sites_detail(team_name: str) -> str:

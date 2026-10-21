@@ -18,12 +18,14 @@ from app.models.project import Project
 from app.models.tag import Tag
 from app.models.team import Team
 from app.services.tag_rules import tag_not_applicable_to_teams_detail
-from app.services.team_rules import team_outside_project_site_detail
+from app.services.team_rules import (
+    SITE_LESS_PROJECT_TEAMS_DETAIL,
+    team_outside_project_site_detail,
+)
 from tests.conftest import FakeUser
 from tests.support import scalar_result, scalars_result
 
 STAMP = datetime(2026, 1, 1, 12, 0, 0)
-SITE_LESS_DETAIL = "A project without a site cannot have teams"
 
 
 def make_team(team_id: int = 3, site_id: int = 1, name: str = "Upstream") -> Team:
@@ -227,7 +229,7 @@ async def test_create_site_less_project_with_teams_is_a_400(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == SITE_LESS_DETAIL
+    assert response.json()["detail"] == SITE_LESS_PROJECT_TEAMS_DETAIL
     mock_db_session.add.assert_not_called()
 
 
@@ -334,7 +336,7 @@ async def test_update_site_less_project_with_teams_is_a_400(
     response = await client.put("/api/projects/1", json={"team_ids": [3]})
 
     assert response.status_code == 400
-    assert response.json()["detail"] == SITE_LESS_DETAIL
+    assert response.json()["detail"] == SITE_LESS_PROJECT_TEAMS_DETAIL
 
 
 @pytest.mark.asyncio
@@ -369,3 +371,38 @@ async def test_update_project_tags_are_checked_against_the_current_teams(
     assert response.status_code == 200, response.text
     assert project.tags == [tag]
     assert project.teams == [team]
+
+
+@pytest.mark.asyncio
+async def test_update_project_tags_and_teams_together_checks_the_tags_against_the_new_teams(
+    authed_client, mock_db_session, broadcast
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    old, new = make_team(3, 1, "Upstream"), make_team(5, 1, "Downstream")
+    downstream_tag = make_tag(4, "Downstream only", teams=[new])
+    upstream_tag = make_tag(6, "Upstream only", teams=[old])
+    project = make_project(1, teams=[old])
+
+    # A tag limited to the new team passes...
+    mock_db_session.execute.side_effect = [
+        scalar_result(project),
+        scalars_result([new]),
+        scalars_result([downstream_tag]),
+    ]
+    response = await client.put("/api/projects/1", json={"tag_ids": [4], "team_ids": [5]})
+    assert response.status_code == 200, response.text
+    assert (project.teams, project.tags) == ([new], [downstream_tag])
+
+    # ...one limited to the team being dropped does not.
+    project = make_project(1, teams=[old])
+    mock_db_session.execute.side_effect = [
+        scalar_result(project),
+        scalars_result([new]),
+        scalars_result([upstream_tag]),
+    ]
+    mock_db_session.commit.reset_mock()
+    response = await client.put("/api/projects/1", json={"tag_ids": [6], "team_ids": [5]})
+    assert response.status_code == 400
+    assert response.json()["detail"] == tag_not_applicable_to_teams_detail("Upstream only")
+    mock_db_session.commit.assert_not_awaited()

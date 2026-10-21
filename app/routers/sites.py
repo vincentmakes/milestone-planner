@@ -21,6 +21,7 @@ from app.models.equipment import Equipment, EquipmentSite
 from app.models.project import Project
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.tag import Tag, TagSite
+from app.models.team import Team
 from app.models.user import User
 from app.routers.projects import delete_project_polymorphic_rows
 from app.schemas.site import (
@@ -48,6 +49,12 @@ from app.services.holidays import (
     should_skip_nager_holiday,
 )
 from app.services.site_access import can_access_sites, ensure_site_access
+from app.services.team_rules import (
+    ensure_teams_within_sites,
+    load_teams,
+    prune_teams_to_sites,
+    team_outside_sites_detail,
+)
 from app.utils import utcnow_naive
 
 logger = logging.getLogger(__name__)
@@ -271,6 +278,9 @@ async def delete_site(
 
     # Events and equipment linked to this site; the junction rows go with the
     # site (ON DELETE CASCADE), so remember the ids to clean up orphans afterwards.
+    # The site's teams cascade with it too, and with them every team link
+    # (team_members, project/tag/equipment/company-event teams): a surviving
+    # event or piece of equipment keeps only its teams at its other sites.
     linked = await db.execute(
         select(CompanyEventSite.event_id).where(CompanyEventSite.site_id == site_id)
     )
@@ -286,7 +296,8 @@ async def delete_site(
     linked = await db.execute(select(Project.id).where(Project.site_id == site_id))
     await delete_project_polymorphic_rows(db, list(linked.scalars().all()))
 
-    # Tags restricted to this site (their tag_sites rows cascade too).
+    # Tags restricted to this site (their tag_sites rows, and the tag_teams
+    # rows of the site's teams, cascade too).
     linked = await db.execute(select(TagSite.tag_id).where(TagSite.site_id == site_id))
     tag_ids = list(linked.scalars().all())
 
@@ -799,6 +810,7 @@ def _event_response(event: CompanyEvent, site_ids: Iterable[int]) -> CompanyEven
         name=event.name,
         color=event.color,
         counts_as_unavailable=bool(event.counts_as_unavailable),
+        team_ids=sorted(t.id for t in event.teams),
         created_at=event.created_at,
     )
 
@@ -828,8 +840,9 @@ async def _create_event(
     name: str,
     color: str | None,
     counts_as_unavailable: bool = False,
+    teams: list[Team] | None = None,
 ) -> CompanyEvent:
-    """Create an event linked to the given (validated, sorted) sites and commit."""
+    """Create an event linked to the given (validated, sorted) sites and teams and commit."""
     event = CompanyEvent(
         site_id=site_ids[0],
         date=event_date,
@@ -837,6 +850,7 @@ async def _create_event(
         name=name,
         color=color,
         counts_as_unavailable=counts_as_unavailable,
+        teams=teams or [],
     )
     db.add(event)
     await db.flush()
@@ -910,12 +924,15 @@ async def create_multi_site_event(
     user: User = Depends(require_superuser),
 ):
     """
-    Create a company event on one or more sites.
+    Create a company event on one or more sites, optionally limited to teams
+    at those sites.
 
     Requires superuser or admin role; superusers only for their own sites.
     """
     site_ids = await _ensure_sites_exist(db, data.site_ids)
     ensure_site_access(user, site_ids, EVENT_SITE_ACCESS_DETAIL)
+    teams = await load_teams(db, data.team_ids or [])
+    ensure_teams_within_sites(teams, site_ids, team_outside_sites_detail)
     _validate_range(data.date, data.end_date)
 
     event = await _create_event(
@@ -926,6 +943,7 @@ async def create_multi_site_event(
         data.name,
         data.color,
         data.counts_as_unavailable,
+        teams=teams,
     )
     return _event_response(event, site_ids)
 
@@ -1039,7 +1057,9 @@ async def update_company_event(
     user: User = Depends(require_superuser),
 ):
     """
-    Edit a company event. ``site_ids``, when given, replaces its site links.
+    Edit a company event. ``site_ids``, when given, replaces its site links;
+    ``team_ids``, when given, replaces its teams (each at one of the new
+    sites). A site change alone drops the teams of the removed sites.
 
     Superusers must belong to every site the event is linked to, before and
     after the change.
@@ -1055,6 +1075,12 @@ async def update_company_event(
     if data.site_ids is not None:
         new_site_ids = await _ensure_sites_exist(db, data.site_ids)
         ensure_site_access(user, new_site_ids, EVENT_SITE_ACCESS_DETAIL)
+
+    # Validated before anything is written; applied after the site links.
+    new_teams: list[Team] | None = None
+    if data.team_ids is not None:
+        new_teams = await load_teams(db, data.team_ids)
+        ensure_teams_within_sites(new_teams, new_site_ids, team_outside_sites_detail)
 
     if data.date is not None:
         event.date = data.date
@@ -1080,6 +1106,11 @@ async def update_company_event(
         if added:
             db.add_all([CompanyEventSite(event_id=event_id, site_id=sid) for sid in sorted(added)])
         event.site_id = new_site_ids[0]
+
+    if new_teams is not None:
+        event.teams = new_teams
+    elif data.site_ids is not None:
+        event.teams = prune_teams_to_sites(event.teams, new_site_ids)
 
     await db.commit()
     await db.refresh(event)

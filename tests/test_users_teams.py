@@ -20,7 +20,11 @@ from app.models.site import Site
 from app.models.team import Team, TeamMember
 from app.models.user import User
 from app.services.session import SessionService
-from app.services.team_rules import TEAM_SITE_ACCESS_DETAIL, team_outside_user_sites_detail
+from app.services.team_rules import (
+    TEAM_NOT_FOUND_DETAIL,
+    TEAM_SITE_ACCESS_DETAIL,
+    team_outside_user_sites_detail,
+)
 from tests.conftest import FakeUser
 from tests.support import _ScalarList, scalar_result, scalars_result, unique_scalar_result
 
@@ -199,6 +203,7 @@ async def test_create_user_with_an_unknown_team_is_a_404(authed_client, mock_db_
     response = await client.post("/api/users", json=_create_body(team_ids=[404]))
 
     assert response.status_code == 404
+    assert response.json()["detail"] == TEAM_NOT_FOUND_DETAIL
     mock_db_session.add.assert_not_called()
 
 
@@ -336,6 +341,42 @@ async def test_site_change_keeping_every_team_needs_no_extra_query(
     assert response.status_code == 200, response.text
     assert response.json()["team_ids"] == [4]
     assert mock_db_session.execute.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_sites_and_teams_together_check_the_teams_against_the_new_sites(
+    authed_client, mock_db_session, destroy_sessions
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    qc = make_team(9, 2, "QC")
+
+    # Joining site 2 in the same request makes its team assignable...
+    target = make_user(7, sites=[SITE_1])
+    mock_db_session.execute.side_effect = [
+        unique_scalar_result(target),
+        scalars_result([SITE_1, SITE_2]),  # _load_sites
+        MagicMock(),  # DELETE user_sites
+        scalars_result([qc]),  # the teams
+        MagicMock(),  # DELETE team_members
+    ]
+    response = await client.put("/api/users/7", json={"site_ids": [1, 2], "team_ids": [9]})
+    assert response.status_code == 200, response.text
+    assert (response.json()["site_ids"], response.json()["team_ids"]) == ([1, 2], [9])
+
+    # ...and leaving site 2 in the same request makes it a 400.
+    target = make_user(7, sites=[SITE_1, SITE_2])
+    mock_db_session.execute.side_effect = [
+        unique_scalar_result(target),
+        scalars_result([SITE_1]),
+        MagicMock(),  # DELETE user_sites
+        scalars_result([qc]),
+    ]
+    mock_db_session.commit.reset_mock()
+    response = await client.put("/api/users/7", json={"site_ids": [1], "team_ids": [9]})
+    assert response.status_code == 400
+    assert response.json()["detail"] == team_outside_user_sites_detail("QC")
+    mock_db_session.commit.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

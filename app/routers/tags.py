@@ -2,8 +2,10 @@
 Tags API endpoints.
 
 Tags are tenant-wide labels assignable to projects. A tag may belong to a tag
-group and may be restricted to some sites (``all_sites = false`` + the
-``tag_sites`` links). Every user can read them; only admins manage them.
+group, may be restricted to some sites (``all_sites = false`` + the
+``tag_sites`` links) and may be limited to teams (``tag_teams``; a site with
+no linked team keeps the whole site). Every user can read them; only admins
+manage them.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -26,9 +28,18 @@ from app.schemas.tag import (
 )
 from app.services.tag_rules import (
     count_projects_outside_sites,
+    count_projects_outside_teams,
     count_projects_with_group_peer,
     group_peer_conflict_detail,
     other_sites_conflict_detail,
+    other_teams_conflict_detail,
+)
+from app.services.team_rules import (
+    ensure_teams_within_sites,
+    load_teams,
+    prune_teams_to_sites,
+    team_ids_of,
+    team_outside_sites_detail,
 )
 
 router = APIRouter(prefix="/tags", tags=["tags"])
@@ -153,6 +164,11 @@ async def create_tag(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=NO_SITE_DETAIL)
         sites = await _load_sites(db, tag_data.site_ids)
 
+    # A tag available at every site may carry teams of any site.
+    teams = await load_teams(db, tag_data.team_ids or [])
+    if not all_sites:
+        ensure_teams_within_sites(teams, [s.id for s in sites], team_outside_sites_detail)
+
     tag = Tag(
         name=name,
         color=tag_data.color,
@@ -160,6 +176,7 @@ async def create_tag(
         all_sites=all_sites,
         sort_order=await _next_sort_order(db, tag_data.group_id),
         sites=sites,
+        teams=teams,
     )
     db.add(tag)
     await _commit_tag(db)
@@ -199,8 +216,13 @@ async def update_tag(
 
     Refused with 409 when the change would break projects that already use the
     tag: moving it into a single-select group where a project also holds
-    another tag of that group, or restricting it away from a site (or from
-    site-less projects) where projects use it.
+    another tag of that group, restricting it away from a site (or from
+    site-less projects) where projects use it, or limiting it to teams that
+    projects using it at those teams' sites are not part of.
+
+    ``team_ids`` replaces the tag's teams (each must be at one of its sites
+    unless it is available at every site); narrowing only the sites drops the
+    teams of the removed sites.
     """
     tag = (await db.execute(select(Tag).where(Tag.id == tag_id))).scalar_one_or_none()
     if not tag:
@@ -256,6 +278,24 @@ async def update_tag(
                     detail=other_sites_conflict_detail(outside),
                 )
 
+    # Teams, on the merged sites. Without team_ids, a site change silently
+    # drops the teams of the removed sites (no query).
+    teams_change = tag_data.team_ids is not None
+    new_teams = await load_teams(db, tag_data.team_ids or []) if teams_change else list(tag.teams)
+    if not new_all_sites:
+        allowed = [s.id for s in new_sites] if sites_change else tag.site_ids
+        if teams_change:
+            ensure_teams_within_sites(new_teams, allowed, team_outside_sites_detail)
+        else:
+            new_teams = prune_teams_to_sites(new_teams, allowed)
+    if teams_change and set(team_ids_of(new_teams)) != set(tag.team_ids):
+        outside = await count_projects_outside_teams(db, tag_id, new_teams)
+        if outside:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=other_teams_conflict_detail(outside),
+            )
+
     # Every check passed: apply.
     if name is not None:
         tag.name = name
@@ -267,6 +307,8 @@ async def update_tag(
     if sites_change:
         tag.all_sites = new_all_sites
         tag.sites = new_sites
+    if teams_change or sites_change:
+        tag.teams = new_teams
 
     await _commit_tag(db)
     await db.refresh(tag)
@@ -280,7 +322,7 @@ async def delete_tag(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """Delete a tag (admin only). Cascades to project_tags and tag_sites."""
+    """Delete a tag (admin only). Cascades to project_tags, tag_sites and tag_teams."""
     result = await db.execute(select(Tag).where(Tag.id == tag_id))
     tag = result.scalar_one_or_none()
 

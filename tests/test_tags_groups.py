@@ -27,7 +27,10 @@ from app.middleware.broadcast import _resolve_entity_type
 from app.models.project import Project
 from app.models.site import Site
 from app.models.tag import Tag, TagGroup, TagSite
+from app.models.team import Team
 from app.routers.export import build_site_export_workbook
+from app.services.tag_rules import other_teams_conflict_detail
+from app.services.team_rules import TEAM_NOT_FOUND_DETAIL, team_outside_sites_detail
 from app.services.tenant_provisioner import get_tenant_schema_sql
 from tests.conftest import FakeUser
 from tests.test_export_formula_injection import _fake_openpyxl, _FakeWorkbook
@@ -62,9 +65,14 @@ def _tag(tag_id: int = 1, name: str = "Internal", **kwargs) -> Tag:
         all_sites=kwargs.get("all_sites", True),
         sort_order=kwargs.get("sort_order", 0),
         sites=kwargs.get("sites", []),
+        teams=kwargs.get("teams", []),
         created_at=STAMP,
         updated_at=STAMP,
     )
+
+
+def _team(team_id: int = 7, site_id: int = 1, name: str = "Analytical Lab") -> Team:
+    return Team(id=team_id, site_id=site_id, name=name)
 
 
 def _group(group_id: int = 5, name: str = "Project type", **kwargs) -> TagGroup:
@@ -138,7 +146,14 @@ async def test_any_user_lists_tags_grouped_then_ungrouped(authed_client, mock_db
     mock_db_session.execute.return_value = _scalars_result(
         [
             _tag(1, "Internal", group_id=5, sort_order=0),
-            _tag(2, "Basel only", all_sites=False, sites=[_site(1)], sort_order=1),
+            _tag(
+                2,
+                "Basel only",
+                all_sites=False,
+                sites=[_site(1)],
+                teams=[_team(8), _team(7)],
+                sort_order=1,
+            ),
         ]
     )
 
@@ -153,10 +168,12 @@ async def test_any_user_lists_tags_grouped_then_ungrouped(authed_client, mock_db
         "group_id": 5,
         "all_sites": True,
         "site_ids": [],
+        "team_ids": [],
         "sort_order": 0,
     }
     assert body[1]["all_sites"] is False
     assert body[1]["site_ids"] == [1]
+    assert body[1]["team_ids"] == [7, 8]
     sql = _sql(mock_db_session)[0]
     order_by = sql[sql.index("ORDER BY") :]
     # Group order first with ungrouped tags last, then tag order, then name.
@@ -565,6 +582,210 @@ async def test_duplicate_group_name_is_a_400(authed_client, mock_db_session):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "A tag group with this name already exists"
+
+
+# ---------------------------------------------------------
+# Team scoping (no team at a site = the whole site)
+# ---------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_links_the_tag_to_teams_at_its_sites(authed_client, stamp_on_refresh):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    db = stamp_on_refresh
+    db.execute.side_effect = [
+        _scalar_result(None),  # name not taken
+        _scalars_result([_site(1), _site(2)]),  # the sites
+        _scalars_result([_team(7, 1)]),  # the teams
+        _scalar_result(None),  # no ungrouped tag yet
+    ]
+
+    response = await client.post(
+        "/api/tags", json={"name": "GMP", "site_ids": [1, 2], "team_ids": [7]}
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["team_ids"] == [7]
+    (tag,) = (c.args[0] for c in db.add.call_args_list)
+    assert [t.id for t in tag.teams] == [7]
+    assert "teams.id IN (7)" in _sql(db)[2]
+
+
+@pytest.mark.asyncio
+async def test_create_with_a_team_outside_the_tag_sites_is_a_400(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.side_effect = [
+        _scalar_result(None),  # name not taken
+        _scalars_result([_site(1)]),  # the sites
+        _scalars_result([_team(9, 2, "Formulation")]),  # a team at site 2
+    ]
+
+    response = await client.post(
+        "/api/tags", json={"name": "GMP", "site_ids": [1], "team_ids": [9]}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == team_outside_sites_detail("Formulation")
+    mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_an_all_sites_tag_may_carry_teams_of_any_site(authed_client, stamp_on_refresh):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    db = stamp_on_refresh
+    db.execute.side_effect = [
+        _scalar_result(None),  # name not taken
+        _scalars_result([_team(7, 1), _team(9, 2, "Formulation")]),  # the teams
+        _scalar_result(None),  # no ungrouped tag yet
+    ]
+
+    response = await client.post("/api/tags", json={"name": "Lab", "team_ids": [7, 9]})
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert (body["all_sites"], body["team_ids"]) == (True, [7, 9])
+
+
+@pytest.mark.asyncio
+async def test_create_with_an_unknown_team_is_a_404(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.side_effect = [
+        _scalar_result(None),  # name not taken
+        _scalars_result([]),  # no such team
+    ]
+
+    response = await client.post("/api/tags", json={"name": "Lab", "team_ids": [99]})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == TEAM_NOT_FOUND_DETAIL
+
+
+@pytest.mark.asyncio
+async def test_restricting_a_tag_to_teams_used_by_other_projects_is_a_409(
+    authed_client, mock_db_session
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    tag = _tag(1, all_sites=False, sites=[_site(1)])
+    mock_db_session.execute.side_effect = [
+        _scalar_result(tag),
+        _scalars_result([_team(7, 1)]),  # the teams
+        _scalar_result(2),  # projects at site 1 outside team 7 use the tag
+    ]
+
+    response = await client.put("/api/tags/1", json={"team_ids": [7]})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == other_teams_conflict_detail(2)
+    assert tag.teams == []  # nothing applied
+    mock_db_session.commit.assert_not_awaited()
+    count_sql = _sql(mock_db_session)[2]
+    assert "project_tags.tag_id = 1" in count_sql
+    assert "projects.site_id IN (1)" in count_sql
+    assert "project_teams.team_id IN (7)" in count_sql
+
+
+@pytest.mark.asyncio
+async def test_update_replaces_the_teams_when_no_project_is_left_out(
+    authed_client, mock_db_session
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    tag = _tag(1, all_sites=False, sites=[_site(1)], teams=[_team(8)])
+    mock_db_session.execute.side_effect = [
+        _scalar_result(tag),
+        _scalars_result([_team(7, 1)]),
+        _scalar_result(0),
+    ]
+
+    response = await client.put("/api/tags/1", json={"team_ids": [7]})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["team_ids"] == [7]
+    assert tag.team_ids == [7]
+
+
+@pytest.mark.asyncio
+async def test_clearing_or_resending_the_teams_needs_no_usage_check(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+
+    tag = _tag(1, all_sites=False, sites=[_site(1)], teams=[_team(7)])
+    mock_db_session.execute.side_effect = [_scalar_result(tag)]
+    response = await client.put("/api/tags/1", json={"team_ids": []})
+    assert response.status_code == 200, response.text
+    assert response.json()["team_ids"] == []
+    assert mock_db_session.execute.await_count == 1
+
+    mock_db_session.execute.reset_mock()
+    tag = _tag(1, all_sites=False, sites=[_site(1)], teams=[_team(7)])
+    mock_db_session.execute.side_effect = [_scalar_result(tag), _scalars_result([_team(7)])]
+    response = await client.put("/api/tags/1", json={"team_ids": [7]})
+    assert response.status_code == 200, response.text
+    assert mock_db_session.execute.await_count == 2  # tag + teams, no 409 count
+
+
+@pytest.mark.asyncio
+async def test_update_with_a_team_outside_the_tag_sites_is_a_400(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    tag = _tag(1, all_sites=False, sites=[_site(1), _site(2)])
+    mock_db_session.execute.side_effect = [
+        _scalar_result(tag),
+        _scalars_result([_site(1)]),  # narrowed to site 1
+        _scalar_result(0),  # no project at site 2 uses the tag
+        _scalars_result([_team(9, 2, "Formulation")]),  # a team at site 2
+    ]
+
+    response = await client.put("/api/tags/1", json={"site_ids": [1], "team_ids": [9]})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == team_outside_sites_detail("Formulation")
+    assert tag.site_ids == [1, 2]  # nothing applied
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_narrowing_the_sites_prunes_their_teams_without_a_query(
+    authed_client, mock_db_session
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    tag = _tag(
+        1,
+        all_sites=False,
+        sites=[_site(1), _site(2)],
+        teams=[_team(7, 1), _team(9, 2, "Formulation")],
+    )
+    mock_db_session.execute.side_effect = [
+        _scalar_result(tag),
+        _scalars_result([_site(1)]),
+        _scalar_result(0),  # no project at site 2 uses the tag
+    ]
+
+    response = await client.put("/api/tags/1", json={"site_ids": [1]})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["team_ids"] == [7]
+    assert mock_db_session.execute.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_a_tag_made_global_keeps_its_teams(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    tag = _tag(1, all_sites=False, sites=[_site(1)], teams=[_team(7, 1)])
+    mock_db_session.execute.side_effect = [_scalar_result(tag)]
+
+    response = await client.put("/api/tags/1", json={"all_sites": True})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["all_sites"], body["site_ids"], body["team_ids"]) == (True, [], [7])
 
 
 # ---------------------------------------------------------

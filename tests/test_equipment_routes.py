@@ -13,6 +13,8 @@ import pytest
 
 from app.models.equipment import Equipment, EquipmentBlock
 from app.models.site import Site
+from app.models.team import Team
+from app.services.team_rules import team_outside_sites_detail
 from tests.conftest import FakeUser
 
 STAMP = datetime(2026, 1, 1, 12, 0, 0)
@@ -40,7 +42,11 @@ def _pairs_result(rows):
     return result
 
 
-def _equipment(equipment_id=7, name="HPLC", sites=(SITE_A,)):
+def _team(team_id=3, site_id=1, name="Analytical Lab"):
+    return Team(id=team_id, site_id=site_id, name=name)
+
+
+def _equipment(equipment_id=7, name="HPLC", sites=(SITE_A,), teams=()):
     sites = list(sites)
     return Equipment(
         id=equipment_id,
@@ -51,6 +57,7 @@ def _equipment(equipment_id=7, name="HPLC", sites=(SITE_A,)):
         active=1,
         created_at=STAMP,
         sites=sites,
+        teams=list(teams),
     )
 
 
@@ -138,6 +145,46 @@ async def test_equipment_detail_reports_every_site(authed_client, mock_db_sessio
 
 
 @pytest.mark.asyncio
+async def test_equipment_detail_carries_its_teams(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "user"))
+    mock_db_session.execute.return_value = _scalar_result(
+        _equipment(7, sites=[SITE_A, SITE_B], teams=[_team(3, 1, "Analytical Lab")])
+    )
+
+    response = await client.get("/api/equipment/7")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": 7,
+        "name": "HPLC",
+        "type": "Analytical",
+        "site_id": 1,
+        "site_name": "Winterthur",
+        "site_ids": [1, 2],
+        "site_names": ["Winterthur", "Frankfurt"],
+        "team_ids": [3],
+        "team_names": ["Analytical Lab"],
+        "description": None,
+        "active": 1,
+        "created_at": "2026-01-01T12:00:00.000Z",
+    }
+
+
+@pytest.mark.asyncio
+async def test_equipment_without_teams_reports_empty_team_lists(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "user"))
+    mock_db_session.execute.return_value = _pairs_result([(_equipment(7), SITE_A)])
+
+    response = await client.get("/api/equipment")
+
+    assert response.status_code == 200
+    (row,) = response.json()
+    assert (row["team_ids"], row["team_names"]) == ([], [])
+
+
+@pytest.mark.asyncio
 async def test_all_equipment_lists_each_item_once(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(FakeUser(1, "superuser"))
@@ -216,6 +263,47 @@ async def test_create_equipment_on_unknown_site_is_a_404(authed_client, mock_db_
 
 
 @pytest.mark.asyncio
+async def test_create_equipment_links_teams_at_its_sites(authed_client, db_assigns_ids):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    db = db_assigns_ids
+    db.execute.side_effect = [
+        _scalars_result([SITE_A, SITE_B]),  # the sites
+        _scalars_result([_team(3, 1)]),  # the teams
+    ]
+
+    response = await client.post(
+        "/api/equipment", json={"name": "HPLC", "site_ids": [1, 2], "team_ids": [3]}
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert (body["team_ids"], body["team_names"]) == ([3], ["Analytical Lab"])
+    (equipment,) = _added(db, Equipment)
+    assert [t.id for t in equipment.teams] == [3]
+
+
+@pytest.mark.asyncio
+async def test_create_equipment_with_a_team_outside_its_sites_is_a_400(
+    authed_client, mock_db_session
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.side_effect = [
+        _scalars_result([SITE_A]),
+        _scalars_result([_team(5, 2, "Formulation")]),
+    ]
+
+    response = await client.post(
+        "/api/equipment", json={"name": "HPLC", "site_ids": [1], "team_ids": [5]}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == team_outside_sites_detail("Formulation")
+    mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_superuser_cannot_create_equipment_on_a_foreign_site(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(FakeUser(1, "superuser"))  # member of site 1 only
@@ -274,6 +362,59 @@ async def test_update_equipment_without_sites_keeps_links(authed_client, mock_db
     assert response.json()["site_ids"] == [1]
     assert equipment.active == 0
     assert mock_db_session.execute.await_count == 1  # no site lookup
+
+
+@pytest.mark.asyncio
+async def test_update_equipment_replaces_its_teams(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    equipment = _equipment(7, sites=[SITE_A, SITE_B], teams=[_team(3, 1)])
+    mock_db_session.execute.side_effect = [
+        _scalar_result(equipment),
+        _scalars_result([_team(5, 2, "Formulation")]),
+    ]
+
+    response = await client.put("/api/equipment/7", json={"team_ids": [5]})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["team_ids"] == [5]
+    assert equipment.team_ids == [5]
+
+
+@pytest.mark.asyncio
+async def test_update_equipment_teams_are_checked_against_the_new_sites(
+    authed_client, mock_db_session
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    equipment = _equipment(7, sites=[SITE_A, SITE_B])
+    mock_db_session.execute.side_effect = [
+        _scalar_result(equipment),
+        _scalars_result([SITE_A]),  # narrowed to site 1
+        _scalars_result([_team(5, 2, "Formulation")]),
+    ]
+
+    response = await client.put("/api/equipment/7", json={"site_ids": [1], "team_ids": [5]})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == team_outside_sites_detail("Formulation")
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_narrowing_equipment_sites_prunes_their_teams(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    equipment = _equipment(
+        7, sites=[SITE_A, SITE_B], teams=[_team(3, 1), _team(5, 2, "Formulation")]
+    )
+    mock_db_session.execute.side_effect = [_scalar_result(equipment), _scalars_result([SITE_A])]
+
+    response = await client.put("/api/equipment/7", json={"site_ids": [1]})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["team_ids"] == [3]
+    assert mock_db_session.execute.await_count == 2  # no team lookup
 
 
 @pytest.mark.asyncio

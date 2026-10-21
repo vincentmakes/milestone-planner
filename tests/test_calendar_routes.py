@@ -15,7 +15,9 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite
+from app.models.team import Team
 from app.routers.sites import _validate_range
+from app.services.team_rules import team_outside_sites_detail
 from tests.conftest import FakeUser
 
 STAMP = datetime(2026, 1, 1, 12, 0, 0)
@@ -61,7 +63,19 @@ def _holiday(holiday_id=5, site_id=1, day=date(2026, 8, 1), name="Swiss National
     )
 
 
-def _event(event_id=5, site_id=1, day=date(2026, 3, 10), name="ISO audit", end=None, closure=False):
+def _team(team_id=3, site_id=1, name="Analytical Lab"):
+    return Team(id=team_id, site_id=site_id, name=name)
+
+
+def _event(
+    event_id=5,
+    site_id=1,
+    day=date(2026, 3, 10),
+    name="ISO audit",
+    end=None,
+    closure=False,
+    teams=(),
+):
     return CompanyEvent(
         id=event_id,
         site_id=site_id,
@@ -71,6 +85,7 @@ def _event(event_id=5, site_id=1, day=date(2026, 3, 10), name="ISO audit", end=N
         color="#f97316",
         counts_as_unavailable=closure,
         created_at=STAMP,
+        teams=list(teams),
     )
 
 
@@ -357,6 +372,46 @@ async def test_create_event_on_several_sites(authed_client, db_assigns_ids):
 
 
 @pytest.mark.asyncio
+async def test_create_event_links_teams_at_its_sites(authed_client, db_assigns_ids):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    db = db_assigns_ids
+    db.execute.side_effect = [
+        _scalars_result([1, 2]),  # both sites exist
+        _scalars_result([_team(3, 1), _team(4, 2, "Formulation")]),  # the teams
+    ]
+
+    response = await client.post(
+        "/api/events",
+        json={"date": "2026-03-10", "name": "Lab day", "site_ids": [1, 2], "team_ids": [3, 4]},
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["team_ids"] == [3, 4]
+    (event,) = _added(db, CompanyEvent)
+    assert event.team_ids == [3, 4]
+
+
+@pytest.mark.asyncio
+async def test_create_event_with_a_team_outside_its_sites_is_a_400(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.side_effect = [
+        _scalars_result([1]),
+        _scalars_result([_team(4, 2, "Formulation")]),  # a team at site 2
+    ]
+
+    response = await client.post(
+        "/api/events",
+        json={"date": "2026-03-10", "name": "Lab day", "site_ids": [1], "team_ids": [4]},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == team_outside_sites_detail("Formulation")
+    mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_create_event_as_a_site_closure(authed_client, db_assigns_ids):
     client, set_user = authed_client
     set_user(FakeUser(1, "admin"))
@@ -549,6 +604,61 @@ async def test_update_event_replaces_site_links(authed_client, db_assigns_ids):
 
 
 @pytest.mark.asyncio
+async def test_update_event_replaces_its_teams(authed_client, db_assigns_ids):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    db = db_assigns_ids
+    event = _event(5, site_id=1, teams=[_team(3, 1)])
+    db.get.return_value = event
+    db.execute.side_effect = [_links_result([(5, 1), (5, 2)]), _scalars_result([_team(4, 2)])]
+
+    response = await client.put("/api/events/5", json={"team_ids": [4]})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["team_ids"] == [4]
+    assert event.team_ids == [4]
+
+
+@pytest.mark.asyncio
+async def test_update_event_teams_are_checked_against_the_new_sites(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    event = _event(5, site_id=1)
+    mock_db_session.get.return_value = event
+    mock_db_session.execute.side_effect = [
+        _links_result([(5, 1), (5, 2)]),
+        _scalars_result([1]),  # narrowed to site 1
+        _scalars_result([_team(4, 2, "Formulation")]),
+    ]
+
+    response = await client.put("/api/events/5", json={"site_ids": [1], "team_ids": [4]})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == team_outside_sites_detail("Formulation")
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_narrowing_event_sites_prunes_their_teams(authed_client, db_assigns_ids):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    db = db_assigns_ids
+    event = _event(5, site_id=1, teams=[_team(3, 1), _team(4, 2, "Formulation")])
+    db.get.return_value = event
+    db.execute.side_effect = [
+        _links_result([(5, 1), (5, 2)]),
+        _scalars_result([1]),
+        MagicMock(),  # removes the site-2 link
+    ]
+
+    response = await client.put("/api/events/5", json={"site_ids": [1]})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["team_ids"] == [3]
+    assert db.execute.await_count == 3  # no team lookup
+
+
+@pytest.mark.asyncio
 async def test_update_event_toggles_the_closure_flag(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(FakeUser(1, "admin"))
@@ -678,7 +788,10 @@ async def test_site_events_list_reports_every_linked_site(authed_client, mock_db
     set_user(FakeUser(1, "user"))
     mock_db_session.execute.side_effect = [
         _scalars_result(
-            [_event(5, site_id=2), _event(6, site_id=1, name="Shutdown", closure=True)]
+            [
+                _event(5, site_id=2),
+                _event(6, site_id=1, name="Shutdown", closure=True, teams=[_team(3, 1)]),
+            ]
         ),
         _links_result([(5, 2), (5, 1), (6, 1)]),
     ]
@@ -692,6 +805,7 @@ async def test_site_events_list_reports_every_linked_site(authed_client, mock_db
         (5, 1, [1, 2], False),
         (6, 1, [1], True),
     ]
+    assert [e["team_ids"] for e in response.json()] == [[], [3]]
 
 
 # ---------------------------------------------------------

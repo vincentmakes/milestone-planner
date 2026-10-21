@@ -6,8 +6,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.base import DateTimeJS
-from app.schemas.tag import COLOR_PATTERN
+from app.schemas.base import COLOR_PATTERN, DateTimeJS
 
 # Bounded id lists (a request body cannot ask for an unbounded IN (...)).
 TeamIds = Annotated[list[int], Field(max_length=200)]

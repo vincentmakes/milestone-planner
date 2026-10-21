@@ -49,6 +49,7 @@ from app.services.project_access import (
 )
 from app.services.tag_rules import validate_project_tags
 from app.services.team_rules import (
+    SITE_LESS_PROJECT_TEAMS_DETAIL,
     ensure_teams_within_sites,
     load_teams,
     team_ids_of,
@@ -290,8 +291,6 @@ async def _require_user_exists(db: AsyncSession, user_id: int, detail: str) -> N
 _PROJECT_TAGS_FOR_RESPONSE = selectinload(Project.tags).options(
     noload(Tag.sites), noload(Tag.teams)
 )
-
-SITE_LESS_PROJECT_TEAMS_DETAIL = "A project without a site cannot have teams"
 
 
 def _tag_dict(tag: Tag) -> dict:

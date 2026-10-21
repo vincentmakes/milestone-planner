@@ -6,9 +6,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.base import DateTimeJS
-
-COLOR_PATTERN = "^#[0-9A-Fa-f]{6}$"
+from app.schemas.base import COLOR_PATTERN, DateTimeJS
+from app.schemas.team import TeamIds
 
 # Bounded id lists (a request body cannot ask for an unbounded IN (...)).
 SiteIds = Annotated[list[int], Field(max_length=200)]
@@ -47,6 +46,13 @@ class TagCreate(TagBase):
         default=None,
         description="Sites the tag is restricted to (ignored when all_sites is true).",
     )
+    team_ids: TeamIds | None = Field(
+        default=None,
+        description=(
+            "Teams the tag is limited to. A site with no listed team keeps the whole site; "
+            "every team must be at one of the tag's sites unless all_sites is true."
+        ),
+    )
 
 
 class TagUpdate(BaseModel):
@@ -73,6 +79,13 @@ class TagUpdate(BaseModel):
         default=None,
         description="Sites the tag is restricted to (ignored when all_sites is true).",
     )
+    team_ids: TeamIds | None = Field(
+        default=None,
+        description=(
+            "Teams the tag is limited to. A site with no listed team keeps the whole site; "
+            "every team must be at one of the tag's sites unless all_sites is true."
+        ),
+    )
 
 
 class TagResponse(BaseModel):
@@ -86,6 +99,7 @@ class TagResponse(BaseModel):
     group_id: int | None = None
     all_sites: bool = True
     site_ids: list[int] = []
+    team_ids: list[int] = []
     sort_order: int = 0
     created_at: DateTimeJS
     updated_at: DateTimeJS
@@ -102,6 +116,7 @@ class TagListResponse(BaseModel):
     group_id: int | None = None
     all_sites: bool = True
     site_ids: list[int] = []
+    team_ids: list[int] = []
     sort_order: int = 0
 
 

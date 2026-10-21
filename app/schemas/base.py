@@ -19,6 +19,9 @@ from pydantic import BaseModel, ConfigDict, PlainSerializer, model_validator
 
 T = TypeVar("T")
 
+# A "#rrggbb" hex colour (tags, tag groups, teams).
+COLOR_PATTERN = "^#[0-9A-Fa-f]{6}$"
+
 
 def serialize_datetime_js(dt: datetime | None) -> str | None:
     """
