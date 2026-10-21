@@ -71,6 +71,7 @@ jobs:
               - 'requirements*.txt'
               - 'pyproject.toml'
               - 'migrations/**'
+              - 'shared/**'
               - 'VERSION'
             ci:
               - '.github/workflows/backend.yml'

@@ -67,6 +67,7 @@ jobs:
           filters: |
             frontend:
               - 'frontend/**'
+              - 'shared/**'
             ci:
               - '.github/workflows/frontend.yml'
 
