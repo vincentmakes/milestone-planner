@@ -113,7 +113,7 @@ async def test_list_columns_without_site_returns_only_global(authed_client, mock
 @pytest.mark.asyncio
 async def test_with_values_keys_values_by_column_entity(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(1, "user"))
+    set_user(FakeUser(1, "user", site_ids=[3]))
     mock_db_session.execute.side_effect = [
         scalars_result([make_column(1), make_column(2, "boolean")]),
         scalars_result(
@@ -131,12 +131,14 @@ async def test_with_values_keys_values_by_column_entity(authed_client, mock_db_s
     assert [c["id"] for c in body["columns"]] == [1, 2]
     assert body["values"] == {"1-project-10": "hello", "2-phase-11": "true"}
     assert "custom_column_values.custom_column_id IN (1, 2)" in sql(mock_db_session)
+    # Only the values of projects (and their phases/subphases) at visible sites.
+    assert "projects.site_id IN (3)" in sql(mock_db_session)
 
 
 @pytest.mark.asyncio
 async def test_with_values_skips_value_query_when_no_columns(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(1, "user"))
+    set_user(FakeUser(1, "user", site_ids=[3]))
     mock_db_session.execute.side_effect = [scalars_result([])]
 
     response = await client.get("/api/custom-columns/with-values?site_id=3")
@@ -446,6 +448,7 @@ async def test_set_value_updates_existing_row(authed_client, db_assigns_ids):
     db = db_assigns_ids
     existing = make_value(1, "phase", 10, "Low", vid=60)
     db.execute.side_effect = [
+        rows_result([(10, 1)]),  # the phase's project (site visibility)
         scalar_result(make_column(1, "list", ["Low", "High"])),
         scalar_result(existing),
     ]

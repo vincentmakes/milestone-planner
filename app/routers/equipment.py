@@ -29,11 +29,13 @@ from app.services.date_range import ensure_date_order, parse_day_range
 from app.services.project_access import require_on_project
 from app.services.site_access import (
     EQUIPMENT_NOT_FOUND_DETAIL,
+    EXTERNAL_PROJECT_NAME,
     can_access_sites,
     ensure_equipment_visible,
     ensure_project_visible,
     ensure_site_access,
     ensure_site_visible,
+    site_is_visible,
     visible_site_ids,
     visible_sites_clause,
 )
@@ -217,6 +219,16 @@ async def _ensure_equipment_access(
     if not site_ids and not user.permissions.has("sites.view_all"):
         raise HTTPException(status_code=403, detail=EQUIPMENT_SITE_ACCESS_DETAIL)
     await ensure_site_access(request, db, user, site_ids, EQUIPMENT_SITE_ACCESS_DETAIL)
+
+
+def _booking_project_name(project, visible: frozenset[int] | None) -> str | None:
+    """The booking's project name, masked for a project outside the visible sites."""
+    if project is None:
+        return None
+    if not site_is_visible(visible, project.site_id):
+        return EXTERNAL_PROJECT_NAME
+    name: str | None = project.name
+    return name
 
 
 def _at_visible_sites(equipment_id_column, visible: frozenset[int] | None):
@@ -462,11 +474,14 @@ async def get_equipment_assignments(
 ):
     """
     Get assignments for a specific equipment (``views.equipment``; 404 unless
-    linked to a visible site).
+    linked to a visible site). Bookings of shared equipment by projects at
+    other sites stay listed (their dates block the equipment) but their
+    project name is masked like the cross-site project list.
 
     Matches: GET /api/equipment/:id/assignments
     """
     await ensure_equipment_visible(request, db, user, equipment_id)
+    visible = await visible_site_ids(request, db, user)
     result = await db.execute(
         select(EquipmentAssignment)
         .where(EquipmentAssignment.equipment_id == equipment_id)
@@ -482,7 +497,7 @@ async def get_equipment_assignments(
         EquipmentAssignmentResponse(
             id=a.id,
             project_id=a.project_id,
-            project_name=a.project.name if a.project else None,
+            project_name=_booking_project_name(a.project, visible),
             project_site_id=a.project.site_id if a.project else None,
             equipment_id=a.equipment_id,
             start_date=a.start_date,

@@ -118,6 +118,13 @@ def _column(column_id, column_type="text", options=None):
     return col
 
 
+def _phase_projects(*phase_ids):
+    """The phase -> project lookup behind the value writes' site check (all project 1)."""
+    result = MagicMock()
+    result.all.return_value = [(pid, 1) for pid in phase_ids]
+    return result
+
+
 def _update(column_id, entity_id, value, entity_type="phase"):
     return {
         "custom_column_id": column_id,
@@ -140,7 +147,7 @@ async def test_batch_rejects_invalid_values_before_writing(
 ):
     client, set_user = authed_client
     set_user(FakeUser(5, "user"))
-    mock_db_session.execute.side_effect = [_scalars_result([column])]
+    mock_db_session.execute.side_effect = [_phase_projects(10, 11), _scalars_result([column])]
 
     response = await client.put(
         "/api/custom-columns/values/batch",
@@ -186,6 +193,7 @@ async def test_batch_queries_once_per_column_and_dedupes_keys(authed_client, moc
         updated_at=STAMP,
     )
     mock_db_session.execute.side_effect = [
+        _phase_projects(10, 11),  # the phases' projects (site visibility)
         _scalars_result([_column(1), _column(2)]),  # the columns (one query)
         _scalars_result([existing]),  # column 1's existing values
         _scalars_result([]),  # column 2's existing values
@@ -211,7 +219,7 @@ async def test_batch_queries_once_per_column_and_dedupes_keys(authed_client, moc
     )
 
     assert response.status_code == 200, response.text
-    assert mock_db_session.execute.await_count == 3
+    assert mock_db_session.execute.await_count == 4  # + the phases' projects
     assert existing.value == "second"
     added = [c.args[0] for c in mock_db_session.add.call_args_list]
     assert sorted((v.custom_column_id, v.entity_id) for v in added) == [(1, 11), (2, 10)]
@@ -222,7 +230,7 @@ async def test_batch_queries_once_per_column_and_dedupes_keys(authed_client, moc
         (1, 11, "a"),
         (2, 10, "b"),
     }
-    lookup = _sql(mock_db_session.execute.await_args_list[1].args[0])
+    lookup = _sql(mock_db_session.execute.await_args_list[2].args[0])
     assert "custom_column_values.custom_column_id = 1" in lookup
     assert "('phase', 10)" in lookup and "('phase', 11)" in lookup
 

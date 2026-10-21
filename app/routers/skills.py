@@ -158,10 +158,14 @@ async def delete_skill(
 @router.get("/user/{user_id}", response_model=list[UserSkillResponse])
 async def get_user_skills(
     user_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get all skills assigned to a user."""
+    """Get all skills assigned to a user: oneself or a member of a visible site (404 otherwise)."""
+    await ensure_person_visible(
+        request, db, current_user, user_id, status_code=404, detail="User not found"
+    )
     # Verify user exists
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -234,7 +238,7 @@ async def update_user_skills(
     await db.commit()
 
     # Return updated skills
-    return await get_user_skills(user_id, db, current_user)
+    return await get_user_skills(user_id, request, db, current_user)
 
 
 @router.post("/user/{user_id}/{skill_id}", response_model=list[UserSkillResponse])
@@ -280,7 +284,7 @@ async def add_user_skill(
     db.add(user_skill)
     await db.commit()
 
-    return await get_user_skills(user_id, db, current_user)
+    return await get_user_skills(user_id, request, db, current_user)
 
 
 @router.delete("/user/{user_id}/{skill_id}", response_model=list[UserSkillResponse])
@@ -313,4 +317,4 @@ async def remove_user_skill(
 
     await db.commit()
 
-    return await get_user_skills(user_id, db, current_user)
+    return await get_user_skills(user_id, request, db, current_user)

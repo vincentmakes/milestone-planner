@@ -50,6 +50,7 @@ from app.services.project_access import (
     user_can,
 )
 from app.services.site_access import (
+    EXTERNAL_PROJECT_NAME,
     PROJECT_NOT_VISIBLE_DETAIL,
     SITE_NOT_VISIBLE_DETAIL,
     ensure_project_visible,
@@ -420,7 +421,7 @@ async def get_projects(
             projects.append(
                 {
                     "id": project.id,
-                    "name": "[External Project]",
+                    "name": EXTERNAL_PROJECT_NAME,
                     "site_id": project.site_id,
                     "site_name": site_name,
                     "customer": "[Hidden]",

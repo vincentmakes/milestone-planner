@@ -35,6 +35,9 @@ from app.models.user import User, UserSite
 SITE_NOT_VISIBLE_DETAIL = "You do not have access to this site"
 PROJECT_NOT_VISIBLE_DETAIL = "You do not have access to this project's site"
 EQUIPMENT_NOT_FOUND_DETAIL = "Equipment not found"
+# The name a project outside the visible sites (or the cross-site view's
+# current site) is shown under.
+EXTERNAL_PROJECT_NAME = "[External Project]"
 
 # request.state attribute holding (user id, visible set) for this request.
 _VISIBLE_SITES_STATE = "visible_site_ids"

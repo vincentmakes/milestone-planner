@@ -1206,3 +1206,183 @@ async def test_view_all_reads_kanban_anywhere(authed_client, mock_db_session, at
     mock_db_session.execute.return_value = empty_result()
 
     assert (await client.get(path)).status_code == 200
+
+
+# ---------------------------------------------------------
+# Review fixes: shared-equipment bookings, custom-column values, user skills
+# ---------------------------------------------------------
+
+
+def _booking(booking_id: int, site_id: int) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=booking_id,
+        project_id=booking_id,
+        project=SimpleNamespace(name=f"Project at site {site_id}", site_id=site_id),
+        equipment_id=7,
+        start_date=date(2026, 1, 5),
+        end_date=date(2026, 1, 9),
+        created_at=STAMP,
+    )
+
+
+async def test_bookings_of_shared_equipment_mask_projects_outside(
+    authed_client, mock_db_session, site_links
+):
+    client, set_user = authed_client
+    site_links.equipment[7] = [1, 2]
+    mock_db_session.execute.return_value = _scalars([_booking(1, 1), _booking(2, 2)])
+
+    set_user(superuser())
+    response = await client.get("/api/equipment/7/assignments")
+
+    assert response.status_code == 200
+    # Both bookings stay (their dates block the equipment); only the name is masked.
+    assert [(b["id"], b["project_name"], b["start_date"][:10]) for b in response.json()] == [
+        (1, "Project at site 1", "2026-01-05"),
+        (2, "[External Project]", "2026-01-05"),
+    ]
+
+    set_user(admin())
+    names = [b["project_name"] for b in (await client.get("/api/equipment/7/assignments")).json()]
+    assert names == ["Project at site 1", "Project at site 2"]
+
+
+def _scalars(values) -> MagicMock:
+    result = MagicMock()
+    result.scalars.return_value = _ScalarList(values)
+    return result
+
+
+def _column(column_id: int = 1) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=column_id,
+        name="Priority",
+        column_type="text",
+        list_options=None,
+        parsed_list_options=None,
+        site_id=None,
+        display_order=0,
+        width=120,
+        created_at=STAMP,
+        updated_at=STAMP,
+    )
+
+
+async def test_column_values_of_a_site_outside_are_403(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(superuser())
+
+    response = await client.get("/api/custom-columns/with-values?site_id=2")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == SITE_NOT_VISIBLE_DETAIL
+    mock_db_session.execute.assert_not_awaited()
+
+
+async def test_column_values_are_limited_to_projects_at_visible_sites(
+    authed_client, mock_db_session
+):
+    client, set_user = authed_client
+    set_user(superuser())
+    mock_db_session.execute.side_effect = [_scalars([_column()]), _scalars([])]
+
+    assert (await client.get("/api/custom-columns/with-values?site_id=1")).status_code == 200
+
+    values_sql = executed_sql(mock_db_session).splitlines()[-1]
+    assert "projects.site_id IN (1)" in values_sql
+    for entity_type in ("project", "phase", "subphase"):
+        assert f"custom_column_values.entity_type = '{entity_type}'" in values_sql
+
+
+async def test_view_all_reads_every_column_value(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(admin())
+    mock_db_session.execute.side_effect = [_scalars([_column()]), _scalars([])]
+
+    assert (await client.get("/api/custom-columns/with-values?site_id=2")).status_code == 200
+    assert "projects.site_id" not in executed_sql(mock_db_session)
+
+
+def _value(entity_type: str = "project", entity_id: int = 1) -> dict:
+    return {
+        "custom_column_id": 1,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "value": "x",
+    }
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("put", "/api/custom-columns/values", _value()),
+        ("put", "/api/custom-columns/values/batch", {"updates": [_value()]}),
+        ("delete", "/api/custom-columns/values/1/project/1", None),
+    ],
+)
+async def test_column_values_of_a_project_outside_cannot_be_written(
+    authed_client, mock_db_session, at_site_2, method, path, body
+):
+    client, set_user = authed_client
+    set_user(superuser())
+
+    kwargs = {"json": body} if body is not None else {}
+    response = await getattr(client, method)(path, **kwargs)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == PROJECT_NOT_VISIBLE_DETAIL
+    mock_db_session.execute.assert_not_awaited()  # project 1: no entity lookup needed
+    mock_db_session.commit.assert_not_awaited()
+
+
+async def test_a_phase_value_is_checked_against_its_projects_site(
+    authed_client, mock_db_session, at_site_2
+):
+    client, set_user = authed_client
+    set_user(superuser())
+    phase_project = MagicMock()
+    phase_project.all.return_value = [(10, 1)]  # phase 10 belongs to project 1 (site 2)
+    mock_db_session.execute.side_effect = [phase_project]
+
+    response = await client.put("/api/custom-columns/values", json=_value("phase", 10))
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == PROJECT_NOT_VISIBLE_DETAIL
+    mock_db_session.commit.assert_not_awaited()
+
+
+async def test_view_all_writes_column_values_anywhere(authed_client, mock_db_session, at_site_2):
+    client, set_user = authed_client
+    set_user(admin())
+    mock_db_session.execute.side_effect = [scalar_result(_column()), scalar_result(None)]
+    mock_db_session.refresh.side_effect = lambda obj: (
+        setattr(obj, "id", 9),
+        setattr(obj, "created_at", STAMP),
+        setattr(obj, "updated_at", STAMP),
+    )
+
+    response = await client.put("/api/custom-columns/values", json=_value())
+
+    assert response.status_code == 200
+    assert mock_db_session.execute.await_count == 2  # the column and the existing value only
+
+
+async def test_skills_of_a_user_outside_are_404(authed_client, mock_db_session, at_site_2):
+    client, set_user = authed_client
+    set_user(superuser())
+
+    response = await client.get(f"/api/skills/user/{OTHER}")
+
+    assert response.status_code == 404
+    mock_db_session.execute.assert_not_awaited()
+
+
+async def test_oneself_and_view_all_read_a_users_skills(authed_client, mock_db_session, at_site_2):
+    client, set_user = authed_client
+    for caller in (admin(), FakeUser(OTHER, "user", site_ids=[2])):
+        set_user(caller)
+        mock_db_session.execute.side_effect = [
+            scalar_result(SimpleNamespace(id=OTHER)),
+            empty_result(),
+        ]
+        assert (await client.get(f"/api/skills/user/{OTHER}")).status_code == 200

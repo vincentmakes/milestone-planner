@@ -26,4 +26,4 @@ touches:
 - Querying the project's/equipment's/person's sites inline in route tests: dozens of existing `side_effect` lists would shift. The lookups are module functions (`_load_project_site_id`, `_load_equipment_site_ids`, `_load_user_site_ids`) that `authed_client` patches; the `site_links` fixture places people/projects/equipment (default: at the caller's sites). Their real queries are pinned in `tests/test_visible_site_ids.py`.
 
 ## Open
-- Not scoped yet: custom-column values (writes and `with-values`), `GET /skills/user/{id}`, `GET /equipment-types`, booking rows of shared equipment (`/equipment/{id}/assignments` shows other sites' project names).
+- Not scoped: `GET /equipment-types` (configuration). Fix round 1 scoped custom-column values (read filter through the owning project, `ensure_project_visible` on writes), `GET /skills/user/{id}` (404) and masks other sites' project names in `/equipment/{id}/assignments` as `[External Project]`.
