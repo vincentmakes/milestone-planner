@@ -387,9 +387,12 @@ export function ContextMenuContainer() {
       const row = findStaffAssignment(menuProject, assignmentLevel, targetId);
       const request = row?.approval ?? null;
       const isRequester = Boolean(request && currentUser && request.requester_id === currentUser.id);
-      // A pending booking is its requester's to amend or withdraw; anyone
-      // else decides it (approve / reject) rather than editing it.
-      const lockedPending = Boolean(row && isPendingAssignment(row) && !isRequester);
+      // The rule KanbanCardModal applies too: a row with an open request from
+      // me offers me only Cancel request; a pending create is locked for
+      // everyone (deciders approve / reject, the requester cancels); editors
+      // keep their controls on an approved row carrying someone else's change
+      // request (their write expires it server-side).
+      const lockedPending = Boolean(row && (isPendingAssignment(row) || isRequester));
       // Whoever manages others' bookings changes anyone's; everyone else their
       // own, when their role holds the matching own-booking key.
       const canEditThis = canEditAssignment(currentUser, menuProject, staffId) && !lockedPending;

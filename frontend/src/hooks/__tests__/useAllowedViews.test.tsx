@@ -19,7 +19,7 @@ describe('useAllowedViews', () => {
   it('lists every view for a user holding the view keys at two sites', () => {
     useAppStore.setState({ currentUser: makeUser({ role: 'user', site_ids: [1, 2] }) });
     const { result } = renderHook(() => useAllowedViews());
-    expect(result.current.visible).toEqual(['gantt', 'kanban', 'staff', 'equipment', 'crosssite', 'archived']);
+    expect(result.current.visible).toEqual(['gantt', 'kanban', 'todos', 'staff', 'equipment', 'crosssite', 'archived']);
     expect(result.current.disabledReason).toEqual({});
     expect(result.current.isAllowed('crosssite')).toBe(true);
   });
@@ -27,8 +27,10 @@ describe('useAllowedViews', () => {
   it('hides views without their key and keeps the Gantt', () => {
     useAppStore.setState({ currentUser: makeUser({ role: 'viewer', permissions: ['projects.view', 'views.staff'] }) });
     const { result } = renderHook(() => useAllowedViews());
-    expect(result.current.visible).toEqual(['gantt', 'staff']);
+    // My Todos needs no key: everyone has tasks and requests of their own.
+    expect(result.current.visible).toEqual(['gantt', 'todos', 'staff']);
     expect(result.current.isAllowed('kanban')).toBe(false);
+    expect(result.current.isAllowed('todos')).toBe(true);
     expect(result.current.isAllowed('gantt')).toBe(true);
   });
 

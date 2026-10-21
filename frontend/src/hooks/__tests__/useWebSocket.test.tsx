@@ -241,6 +241,25 @@ describe('useWebSocket', () => {
     expect(FakeWebSocket.instances).toHaveLength(count);
   });
 
+  it('hands the per-user todo:changed / approval:changed pushes to their callbacks', async () => {
+    const onTodoChanged = vi.fn();
+    const onApprovalChanged = vi.fn();
+    const onChangeReceived = vi.fn();
+    renderHook(() => useWebSocket({ onTodoChanged, onApprovalChanged, onChangeReceived }));
+    await flush(150);
+    act(() => latest().open());
+
+    act(() => latest().message('todo:changed', { id: 3, kind: 'task', action: 'update' }));
+    act(() => latest().message('approval:changed', { id: 31, action: 'approve' }));
+    act(() => latest().message('todo:changed', null));
+
+    expect(onTodoChanged).toHaveBeenCalledTimes(2);
+    expect(onTodoChanged).toHaveBeenNthCalledWith(1, { id: 3, kind: 'task', action: 'update' });
+    expect(onTodoChanged).toHaveBeenNthCalledWith(2, {});
+    expect(onApprovalChanged).toHaveBeenCalledWith({ id: 31, action: 'approve' });
+    expect(onChangeReceived).not.toHaveBeenCalled();
+  });
+
   it('calls onPresenceChange once per presence message under StrictMode', async () => {
     const onPresenceChange = vi.fn();
     const wrapper = ({ children }: { children: ReactNode }) => <StrictMode>{children}</StrictMode>;

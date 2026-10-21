@@ -5,12 +5,14 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { Project, User, AppNotification, Site } from '@/types';
+import { makeTodo } from '@/test/factories';
 import { resetAllStores, expireSession } from '../index';
 import * as appStoreModule from '../appStore';
 import { useAppStore } from '../appStore';
 import { useWhatIfStore } from '../whatIfStore';
 import { useUndoStore } from '../undoStore';
 import { useNotificationStore } from '../notificationStore';
+import { useTodoStore } from '../todoStore';
 import { useCustomColumnStore } from '../customColumnStore';
 import { useUIStore } from '../uiStore';
 import { useViewStore } from '../viewStore';
@@ -31,6 +33,7 @@ function seedSignedInState() {
   useWhatIfStore.getState().queueWhatIfOperation({ method: 'PUT', url: '/api/phases/1', body: {} });
   useUndoStore.getState().saveState([PROJECT], 'drag');
   useNotificationStore.setState({ items: [{ id: 1 } as AppNotification], unreadCount: 1, panelOpen: true });
+  useTodoStore.setState({ tasks: [makeTodo()], openCount: 1, activeTab: 'requests', loaded: true });
   useCustomColumnStore.setState({
     customColumns: [{ id: 3 } as never],
     customColumnValues: { '3-phase-1': 'High' },
@@ -48,7 +51,7 @@ describe('resetAllStores', () => {
     seedSignedInState();
   });
 
-  it('clears user data, the What-If queue, undo, notifications, custom-column data and open modals', () => {
+  it('clears user data, the What-If queue, undo, notifications, todos, custom-column data and open modals', () => {
     resetAllStores();
 
     const app = useAppStore.getState();
@@ -60,6 +63,10 @@ describe('resetAllStores', () => {
     expect(useUndoStore.getState().canUndo).toBe(false);
     expect(useNotificationStore.getState().items).toEqual([]);
     expect(useNotificationStore.getState().unreadCount).toBe(0);
+    expect(useTodoStore.getState().tasks).toEqual([]);
+    expect(useTodoStore.getState().openCount).toBe(0);
+    expect(useTodoStore.getState().activeTab).toBe('tasks');
+    expect(useTodoStore.getState().loaded).toBe(false);
     expect(useCustomColumnStore.getState().customColumns).toEqual([]);
     expect(useCustomColumnStore.getState().customColumnValues).toEqual({});
     expect(useCustomColumnStore.getState().customColumnFilters).toEqual({});

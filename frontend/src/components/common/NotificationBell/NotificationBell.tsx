@@ -6,7 +6,10 @@
  * (outside click, Tab out, Escape) is the shared `useDismissableOverlay`.
  *
  * Server notifications and browser-derived due reminders are merged for
- * display; only the former are marked read against the API.
+ * display; only the former are marked read against the API. A click opens
+ * the card on the Kanban board, or — for approval requests, decisions and
+ * assigned tasks — My Todos on the matching tab; both are blocked during
+ * What-If (they leave the Gantt).
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef } from 'react';
@@ -15,6 +18,8 @@ import { useNotificationStore } from '@/stores/notificationStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
+import { useTodoStore } from '@/stores/todoStore';
+import type { TodoTab } from '@/stores/todoStore';
 import {
   getNotifications,
   getUnreadCount,
@@ -27,7 +32,8 @@ import {
 } from '@/hooks/useDerivedDueNotifications';
 import { cardKey } from '@/utils/kanbanCards';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
-import type { AppNotification } from '@/types';
+import { relativeTime } from '@/utils/relativeTime';
+import type { AppNotification, NotificationType } from '@/types';
 import styles from './NotificationBell.module.css';
 import { useHasPermission } from '@/hooks/useCan';
 
@@ -38,26 +44,31 @@ const TYPE_ICONS: Record<string, string> = {
   status_change: 'M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11',
   due_soon: 'M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
   overdue: 'M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z',
+  approval_requested: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
+  approval_decided: 'M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3',
+  todo_assigned: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
 };
 
 /** Does clicking this notification jump to its card on the Kanban board? */
 function opensCard(n: AppNotification): boolean {
-  return Boolean(n.project_id && n.entity_type && n.entity_id);
+  return Boolean(n.project_id && (n.entity_type === 'phase' || n.entity_type === 'subphase') && n.entity_id);
+}
+
+/** The My Todos tab a notification about a request or a task opens. */
+const TODO_TABS: Partial<Record<NotificationType, TodoTab>> = {
+  approval_requested: 'decide',
+  approval_decided: 'requests',
+  todo_assigned: 'tasks',
+};
+
+/** My Todos' tab for this notification, unless it opens a card instead. */
+function todosTabFor(n: AppNotification): TodoTab | null {
+  if (opensCard(n)) return null;
+  return TODO_TABS[n.type] ?? null;
 }
 
 const OPEN_CARD_ACTION = 'Opening a card from a notification';
-
-function relativeTime(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '';
-  const seconds = Math.round((Date.now() - then) / 1000);
-  if (seconds < 60) return 'just now';
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
+const OPEN_TODOS_ACTION = 'Opening My Todos from a notification';
 
 export function NotificationBell() {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -78,6 +89,7 @@ export function NotificationBell() {
   const setCurrentView = useViewStore((s) => s.setCurrentView);
   const setKanbanProjectId = useViewStore((s) => s.setKanbanProjectId);
   const openKanbanCard = useUIStore((s) => s.openKanbanCardModal);
+  const setTodoTab = useTodoStore((s) => s.setActiveTab);
 
   const derived = useDerivedDueNotifications();
   // What-If is Gantt-only and the card opens on the Kanban board, so card
@@ -122,17 +134,28 @@ export function NotificationBell() {
   const totalBadge = unreadCount + derived.length;
 
   const handleOpen = async (n: AppNotification) => {
-    if (opensCard(n) && whatIf.blocked) return;
-    if (canOpenCards && n.project_id && n.entity_type && n.entity_id) {
+    const todosTab = todosTabFor(n);
+    // Both targets leave the Gantt, which What-If cannot do.
+    if ((opensCard(n) || todosTab) && whatIf.blocked) return;
+    if (
+      canOpenCards &&
+      n.project_id &&
+      (n.entity_type === 'phase' || n.entity_type === 'subphase') &&
+      n.entity_id
+    ) {
       setKanbanProjectId(n.project_id);
       setCurrentView('kanban');
       openKanbanCard(n.entity_type, n.entity_id, n.project_id);
+    } else if (todosTab) {
+      // My Todos needs no key: every user has one.
+      setTodoTab(todosTab);
+      setCurrentView('todos');
     }
     setPanelOpen(false);
 
     if (n.source === 'derived') {
       // Derived reminders are dismissed locally; there is no server row.
-      if (n.entity_type && n.entity_id && n.body) {
+      if ((n.entity_type === 'phase' || n.entity_type === 'subphase') && n.entity_id && n.body) {
         const due = n.body.split('due ').pop() ?? '';
         dismissDerivedNotification(cardKey(n.entity_type, n.entity_id), due);
       }
@@ -204,14 +227,20 @@ export function NotificationBell() {
           <ul className={styles.list}>
             {merged.map((n) => {
               const cardBlocked = whatIf.blocked && opensCard(n);
+              const todosBlocked = whatIf.blocked && todosTabFor(n) !== null;
+              const blockedReason = cardBlocked
+                ? whatIf.reason(OPEN_CARD_ACTION)
+                : todosBlocked
+                  ? whatIf.reason(OPEN_TODOS_ACTION)
+                  : undefined;
               return (
                 <li key={`${n.source ?? 'server'}-${n.id}`}>
                   <button
                     type="button"
                     className={`${styles.item} ${!n.read_at ? styles.unread : ''}`}
                     onClick={() => handleOpen(n)}
-                    disabled={cardBlocked}
-                    title={cardBlocked ? whatIf.reason(OPEN_CARD_ACTION) : undefined}
+                    disabled={Boolean(blockedReason)}
+                    title={blockedReason}
                   >
                     <span className={`${styles.icon} ${styles[n.type] ?? ''}`}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

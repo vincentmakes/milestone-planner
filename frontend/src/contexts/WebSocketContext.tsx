@@ -7,6 +7,7 @@
 
 import React, { createContext, useContext, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useNotificationStore } from '@/stores/notificationStore';
+import { useTodoStore } from '@/stores/todoStore';
 import { useWebSocket, ConnectionState } from '@/hooks/useWebSocket';
 import type { PresenceUser, ChangePayload } from '@/hooks/useWebSocket';
 import type { AppNotification } from '@/types';
@@ -123,6 +124,16 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     }
 
     const tasks: Array<Promise<unknown>> = [];
+    // Both lists live in todoStore, which reloads them together: one refresh
+    // when either slice (or both) is due.
+    if (batch.includes('approvals') || batch.includes('todos')) {
+      tasks.push(
+        useTodoStore
+          .getState()
+          .refresh()
+          .catch((e) => console.error('[WS] todos refresh failed', e))
+      );
+    }
     for (const slice of batch) {
       switch (slice) {
         case 'projects':
@@ -216,17 +227,18 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
         case 'settings':
           tasks.push(getInstanceSettings().then(setInstanceSettings).catch((e) => console.error('[WS] settings refresh failed', e)));
           break;
-        case 'approvals':
+        case 'approvalPolicies':
           // The pending badge's approver names (only once something loaded
-          // them); the My Todos view (todoStore) plugs its refresh in here.
+          // them). A decision does not change them: only change:approval_policy.
           tasks.push(
             refreshApprovalPoliciesIfLoaded().catch((e) =>
               console.error('[WS] approval policies refresh failed', e)
             )
           );
           break;
+        case 'approvals':
         case 'todos':
-          // No client store holds todos yet; the My Todos view plugs in here.
+          // todoStore, refreshed once above.
           break;
         case 'currentUser':
           tasks.push(
@@ -265,9 +277,9 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     useNotificationStore.getState().receive(notification);
   }, []);
 
-  const handleChangeReceived = useCallback((change: ChangePayload) => {
+  const stageSlices = useCallback((slices: Slice[]) => {
     const target = inFlightRef.current ? restageRef.current : pendingSlicesRef.current;
-    for (const slice of slicesForEntity(change.entity_type)) {
+    for (const slice of slices) {
       target.add(slice);
     }
 
@@ -278,6 +290,15 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     // refresh, but the receiving user still feels the change near-instantly.
     refreshTimeoutRef.current = window.setTimeout(runRefresh, 200);
   }, [runRefresh]);
+
+  const handleChangeReceived = useCallback((change: ChangePayload) => {
+    stageSlices(slicesForEntity(change.entity_type));
+  }, [stageSlices]);
+
+  // Per-user pushes (todos are private, requests reach their people): a live
+  // hint like notification:new; todoStore reloads through the same debounce.
+  const handleTodoChanged = useCallback(() => stageSlices(['todos']), [stageSlices]);
+  const handleApprovalChanged = useCallback(() => stageSlices(['approvals']), [stageSlices]);
 
   // The server closed the socket for an invalid / revoked session (4001), a
   // disabled user or a disallowed Origin (both 4003). Confirm with
@@ -311,8 +332,25 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     autoConnect: true,
     onChangeReceived: handleChangeReceived,
     onNotificationReceived: handleNotificationReceived,
+    onTodoChanged: handleTodoChanged,
+    onApprovalChanged: handleApprovalChanged,
     onSessionInvalid: handleSessionInvalid,
   });
+
+  // todoStore feeds the sidebar's My Todos badge, so it loads with the
+  // signed-in app (this provider) and again on window focus: the pushes and
+  // slices above are hints that a user on another worker misses.
+  useEffect(() => {
+    const refreshTodos = () => {
+      useTodoStore
+        .getState()
+        .refresh()
+        .catch((e) => console.error('[WS] todos refresh failed', e));
+    };
+    refreshTodos();
+    window.addEventListener('focus', refreshTodos);
+    return () => window.removeEventListener('focus', refreshTodos);
+  }, []);
 
   // When What-If mode exits, run the refreshes that were deferred during it.
   useEffect(() => {

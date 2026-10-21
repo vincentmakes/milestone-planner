@@ -20,6 +20,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { resetAllStores } from '@/stores';
+import { useTodoStore } from '@/stores/todoStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { makeUser } from '@/test/factories';
 import type { AppNotification } from '@/types';
@@ -245,6 +246,72 @@ describe('NotificationBell', () => {
     expect(markNotificationRead).toHaveBeenCalledWith(7);
     expect(useNotificationStore.getState().panelOpen).toBe(false);
     expect(useViewStore.getState().currentView).toBe('gantt');
+  });
+
+  it.each([
+    ['approval_requested', 'approval_request', 'decide', 'Bob asks to join Feasibility'],
+    ['approval_decided', 'approval_request', 'requests', 'Your booking on Feasibility was approved by Alice'],
+    ['todo_assigned', 'todo', 'tasks', 'Alice assigned you a task: Order reagents'],
+  ] as const)('opens My Todos on the right tab for %s', async (type, entityType, tab, title) => {
+    vi.mocked(getNotifications).mockResolvedValue([note({ id: 9, type, entity_type: entityType, entity_id: 31, title })]);
+    vi.mocked(getUnreadCount).mockResolvedValue(1);
+    // Even a role without views.kanban: My Todos is always available.
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'viewer', permissions: ['projects.view'] }) });
+    await renderBell();
+    fireEvent.click(bell());
+    const item = screen.getByRole('button', { name: new RegExp(title) });
+    await act(async () => {
+      fireEvent.click(item);
+    });
+    expect(useViewStore.getState().currentView).toBe('todos');
+    expect(useTodoStore.getState().activeTab).toBe(tab);
+    expect(useUIStore.getState().activeModal).toBeNull();
+    expect(markNotificationRead).toHaveBeenCalledWith(9);
+  });
+
+  it('gives each new type its own icon', async () => {
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 1, title: 'A comment' }),
+      note({ id: 2, type: 'approval_requested', title: 'A request' }),
+      note({ id: 3, type: 'approval_decided', title: 'A decision' }),
+      note({ id: 4, type: 'todo_assigned', title: 'A task' }),
+    ]);
+    await renderBell();
+    fireEvent.click(bell());
+    const icons = ['A comment', 'A request', 'A decision', 'A task'].map((t) =>
+      screen.getByRole('button', { name: new RegExp(t) }).querySelector('svg path')?.getAttribute('d')
+    );
+    expect(new Set(icons).size).toBe(4);
+  });
+
+  it('opens the card of a decision that names one', async () => {
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 9, type: 'approval_decided', entity_type: 'subphase', entity_id: 20, title: 'Your booking was approved' }),
+    ]);
+    await renderBell();
+    fireEvent.click(bell());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Your booking was approved/ }));
+    });
+    expect(useViewStore.getState().currentView).toBe('kanban');
+    expect(useUIStore.getState().modalContext).toMatchObject({ cardEntityType: 'subphase', cardEntityId: 20 });
+  });
+
+  it('does not open My Todos while What-If is active', async () => {
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 9, type: 'todo_assigned', entity_type: 'todo', entity_id: 3, title: 'Alice assigned you a task' }),
+    ]);
+    useWhatIfStore.getState().enterWhatIfMode([]);
+    await renderBell();
+    fireEvent.click(bell());
+    const item = screen.getByRole('button', { name: /Alice assigned you a task/ });
+    expect(item).toBeDisabled();
+    expect(item).toHaveAttribute('title', whatIfUnavailableMessage('Opening My Todos from a notification'));
+    await act(async () => {
+      fireEvent.click(item);
+    });
+    expect(useViewStore.getState().currentView).toBe('gantt');
+    expect(markNotificationRead).not.toHaveBeenCalled();
   });
 
   it('shows no What-If note outside What-If', async () => {

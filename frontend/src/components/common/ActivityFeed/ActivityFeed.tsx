@@ -47,6 +47,7 @@ const ENTITY_LABELS: Record<string, string> = {
   predefined_phase: 'phase template',
   bank_holiday: 'bank holiday',
   company_event: 'company event',
+  approval_request: 'approval request',
 };
 
 const ACTION_VERBS: Record<string, string> = {

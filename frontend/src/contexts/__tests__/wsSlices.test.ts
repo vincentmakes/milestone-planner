@@ -36,7 +36,9 @@ describe('slicesForEntity', () => {
     // RBAC: a role edit changes the signed-in user's permissions (/auth/me)
     // and the role list of Settings → Roles and the role pickers
     ['role', ['currentUser', 'roles']],
-    ['approval_policy', ['currentUser', 'approvals']],
+    // A policy edit changes the approver names on pending badges and who may
+    // decide; a decision (approval_request) does not touch the policies.
+    ['approval_policy', ['currentUser', 'approvalPolicies', 'approvals']],
     ['approval_request', ['projects', 'approvals']],
     ['todo', ['todos']],
   ])('%s → %j', (entity, slices) => {
@@ -45,8 +47,8 @@ describe('slicesForEntity', () => {
 
   it('refreshes every slice for an unknown entity', () => {
     expect(slicesForEntity('brand_new_thing')).toBe(ALL_SLICES);
-    expect(new Set(ALL_SLICES).size).toBe(17);
-    expect(ALL_SLICES).toEqual(expect.arrayContaining(['approvals', 'todos', 'roles']));
+    expect(new Set(ALL_SLICES).size).toBe(18);
+    expect(ALL_SLICES).toEqual(expect.arrayContaining(['approvals', 'approvalPolicies', 'todos', 'roles']));
   });
 
   it('sandboxes only the What-If plan slices', () => {

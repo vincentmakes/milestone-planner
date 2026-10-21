@@ -93,6 +93,7 @@ describe('ActivityFeed', () => {
     [{ entity_type: 'tag', action: 'create', project_id: 0, summary: 'Urgent' }, 'added tag "Urgent"'],
     [{ entity_type: 'widget', action: 'move', project_id: 0, summary: undefined }, 'moved widget'],
     [{ entity_type: 'card_comment', action: 'archive' as never, project_id: 0, summary: ' ' }, 'changed comment'],
+    [{ entity_type: 'approval_request', action: 'create', project_id: 0, summary: 'Bob asks to join Design' }, 'added approval request "Bob asks to join Design"'],
   ])('words %o as "%s"', (overrides, text) => {
     const view = render(<ActivityFeed />);
     push(view, change(overrides));

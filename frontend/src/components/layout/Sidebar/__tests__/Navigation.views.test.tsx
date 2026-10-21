@@ -10,9 +10,10 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { resetAllStores } from '@/stores';
+import { useTodoStore } from '@/stores/todoStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { CROSS_SITE_DISABLED_REASON } from '@/hooks/useAllowedViews';
-import { makeSite, makeUser } from '@/test/factories';
+import { makeApprovalRequest, makeSite, makeTodo, makeUser } from '@/test/factories';
 
 const twoSites = [makeSite({ id: 1 }), makeSite({ id: 2, name: 'Zurich' })];
 
@@ -63,5 +64,40 @@ describe('Navigation views', () => {
     useWhatIfStore.getState().enterWhatIfMode([]);
     render(<Navigation />);
     expect(button('Cross-Site')).toHaveAttribute('title', whatIfUnavailableMessage('Switching views'));
+  });
+
+  it('lists My Todos right after the Kanban board, even without any view key', () => {
+    useAppStore.setState({ currentUser: makeUser({ role: 'viewer', permissions: ['projects.view'] }) });
+    render(<Navigation />);
+    const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'));
+    expect(labels).toEqual(['Gantt Chart', 'My Todos']);
+    fireEvent.click(button('My Todos')!);
+    expect(useViewStore.getState().currentView).toBe('todos');
+  });
+
+  it('places My Todos after Kanban', () => {
+    useAppStore.setState({ currentUser: makeUser({ role: 'user', site_ids: [1, 2] }) });
+    render(<Navigation />);
+    const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'));
+    expect(labels.slice(0, 3)).toEqual(['Gantt Chart', 'Kanban Board', 'My Todos']);
+  });
+
+  it('badges My Todos with the open count, in its accessible name', () => {
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'user' }) });
+    useTodoStore.getState().setTasks([makeTodo({ id: 1 }), makeTodo({ id: 2 })]);
+    useTodoStore.getState().setToDecide([makeApprovalRequest()]);
+    render(<Navigation />);
+    const todos = screen.getByRole('button', { name: 'My Todos, 3 open items' });
+    expect(todos).toHaveTextContent('3');
+  });
+
+  it('caps the badge and shows it collapsed, without one when nothing is open', () => {
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'user' }) });
+    useTodoStore.getState().setTasks(Array.from({ length: 120 }, (_, i) => makeTodo({ id: i + 1 })));
+    const { rerender } = render(<Navigation collapsed />);
+    expect(screen.getByRole('button', { name: 'My Todos, 120 open items' })).toHaveTextContent('99+');
+    useTodoStore.getState().setTasks([]);
+    rerender(<Navigation collapsed />);
+    expect(screen.getByRole('button', { name: 'My Todos' })).toHaveTextContent('');
   });
 });

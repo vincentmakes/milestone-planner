@@ -32,15 +32,17 @@ export type Slice =
    * and so does a role edit (permissions, approval modes, visible sites).
    */
   | 'currentUser'
-  /** Approval requests (own and to decide) — the My Todos view */
+  /** Approval requests (own and to decide) — the My Todos view (todoStore) */
   | 'approvals'
-  /** The signed-in user's todos — the My Todos view */
+  /** Who approves each own-booking action — appStore.approvalPolicies (pending badges) */
+  | 'approvalPolicies'
+  /** The signed-in user's todos — the My Todos view (todoStore) */
   | 'todos';
 
 export const ALL_SLICES: Slice[] = [
   'projects', 'staff', 'equipment', 'equipmentBlocks', 'vacations',
   'sites', 'skills', 'tags', 'teams', 'roles', 'absenceTypes', 'siteCalendar', 'customColumns',
-  'settings', 'currentUser', 'approvals', 'todos',
+  'settings', 'currentUser', 'approvals', 'approvalPolicies', 'todos',
 ];
 
 /**
@@ -126,9 +128,9 @@ export function slicesForEntity(entityType: string): Slice[] {
       // list (Settings → Roles, the role pickers).
       return ['currentUser', 'roles'];
     case 'approval_policy':
-      // Who may approve changes the approval_required labels and the requests
-      // the user may decide.
-      return ['currentUser', 'approvals'];
+      // Who may approve changes the approval_required labels, the approver
+      // names on pending badges and the requests the user may decide.
+      return ['currentUser', 'approvalPolicies', 'approvals'];
     case 'approval_request':
       // Approve/reject/cancel flip or remove pending assignment rows.
       return ['projects', 'approvals'];

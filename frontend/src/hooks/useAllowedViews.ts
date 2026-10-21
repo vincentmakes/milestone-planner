@@ -1,7 +1,8 @@
 /**
  * Which views the signed-in user may open.
  *
- * The Gantt is always available. Every other view needs its `views.*` key:
+ * The Gantt is always available, and My Todos to anyone signed in (everyone
+ * has tasks and requests of their own). Every other view needs its `views.*` key:
  * without it the view is hidden (a permission gate hides). Cross-site is
  * also disabled, with the reason, while only one site is visible (a
  * situational gate disables and says why). The server enforces the same keys
@@ -19,6 +20,7 @@ import type { PermissionKey } from '@/types/permissions';
 export const VIEW_PERMISSIONS: Readonly<Record<CurrentView, PermissionKey | null>> = {
   gantt: null,
   kanban: 'views.kanban',
+  todos: null,
   staff: 'views.staff',
   equipment: 'views.equipment',
   crosssite: 'views.crosssite',
@@ -43,7 +45,8 @@ export function useAllowedViews(): AllowedViews {
   return useMemo(() => {
     const visible = (Object.keys(VIEW_PERMISSIONS) as CurrentView[]).filter((view) => {
       const key = VIEW_PERMISSIONS[view];
-      return key === null || can(currentUser, key);
+      if (key === null) return view === 'gantt' || currentUser !== null;
+      return can(currentUser, key);
     });
     const disabledReason: Partial<Record<CurrentView, string>> = {};
     if (visible.includes('crosssite') && visibleSiteCount <= 1) {

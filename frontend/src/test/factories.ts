@@ -9,6 +9,7 @@
  * file; add a field here when the model gains a required one.
  */
 import type {
+  ApprovalRequest,
   CustomColumn,
   Equipment,
   Phase,
@@ -19,6 +20,7 @@ import type {
   Subphase,
   Tag,
   Team,
+  TodoTask,
   User,
   Vacation,
 } from '@/types';
@@ -246,4 +248,59 @@ export function makeSystemRoles(...extra: Role[]): Role[] {
     makeRole({ id: 3, key: 'user', name: 'User', is_system: true, sort_order: 2, permissions: allowMatrix('user'), user_count: 2 }),
     ...extra,
   ];
+}
+
+/** An open task Bob Brown (id 4) created for himself, unlinked. */
+export function makeTodo(overrides: Partial<TodoTask> = {}): TodoTask {
+  return {
+    id: 1,
+    kind: 'task',
+    title: 'Order reagents',
+    notes: null,
+    due_date: null,
+    status: 'open',
+    assignee_id: 4,
+    assignee_name: 'Bob Brown',
+    created_by: 4,
+    created_by_name: 'Bob Brown',
+    project_id: null,
+    project_name: null,
+    entity_type: null,
+    entity_id: null,
+    completed_at: null,
+    approval_request: null,
+    created_at: '2026-10-20T08:00:00.000Z',
+    updated_at: null,
+    ...overrides,
+  };
+}
+
+/** Bob Brown's (id 4) pending request to join phase 10 of project 1 at 40%. */
+export function makeApprovalRequest(overrides: Partial<ApprovalRequest> = {}): ApprovalRequest {
+  return {
+    id: 31,
+    action: 'assignments.self_create',
+    status: 'pending',
+    close_reason: null,
+    requester_id: 4,
+    requester_name: 'Bob Brown',
+    project_id: 1,
+    project_name: 'Bioprocess Scale-Up',
+    level: 'phase',
+    target_id: 10,
+    target_name: 'Feasibility',
+    assignment_id: 71,
+    requested: { allocation: 40 },
+    previous: null,
+    note: null,
+    decided_by: null,
+    decided_by_name: null,
+    decided_at: null,
+    decision_note: null,
+    superseded_by_id: null,
+    created_at: '2026-10-20T08:00:00.000Z',
+    updated_at: null,
+    can_decide: false,
+    ...overrides,
+  };
 }

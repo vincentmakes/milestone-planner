@@ -158,6 +158,61 @@ describe('requester actions on a pending row', () => {
   });
 });
 
+describe('an open change request on an approved row', () => {
+  const changeRequest = () => [
+    {
+      id: 71,
+      staff_id: 4,
+      allocation: 30,
+      start_date: '',
+      end_date: '',
+      approval_status: 'approved' as const,
+      approval: approval({ action: 'assignments.self_update', previous: { allocation: 30 }, requested: { allocation: 60 } }),
+    },
+  ];
+
+  it('offers its requester only Cancel request, like the Kanban card', () => {
+    seed(selfUser('approval', 'assignments.self_update'), changeRequest());
+    openRowMenu();
+    render(<ContextMenuContainer />);
+    expect(item('Cancel request')).toBeEnabled();
+    expect(item('Edit Assignment')).toBeDisabled();
+    expect(item('Delete Assignment')).toBeDisabled();
+  });
+
+  it('leaves an editor their controls (an editor write expires the request)', () => {
+    seed(makeUser({ id: 7, role: 'superuser' }), changeRequest());
+    openRowMenu();
+    render(<ContextMenuContainer />);
+    expect(item('Edit Assignment')).toBeEnabled();
+    expect(item('Delete Assignment')).toBeEnabled();
+    expect(screen.queryByRole('menuitem', { name: 'Cancel request' })).not.toBeInTheDocument();
+  });
+});
+
+describe('a pending create', () => {
+  it('is locked for its requester too: only Cancel request', () => {
+    seed(selfUser('approval', 'assignments.self_create'), [
+      { id: 71, staff_id: 4, allocation: 30, start_date: '', end_date: '', approval_status: PENDING, approval: approval() },
+    ]);
+    openRowMenu();
+    render(<ContextMenuContainer />);
+    expect(item('Cancel request')).toBeEnabled();
+    expect(item('Edit Assignment')).toBeDisabled();
+    expect(item('Delete Assignment')).toBeDisabled();
+  });
+
+  it('is locked for an editor who may not decide it', () => {
+    seed(makeUser({ id: 7, role: 'superuser' }), [
+      { id: 71, staff_id: 4, allocation: 30, start_date: '', end_date: '', approval_status: PENDING, approval: approval() },
+    ]);
+    openRowMenu();
+    render(<ContextMenuContainer />);
+    expect(item('Edit Assignment')).toBeDisabled();
+    expect(item('Delete Assignment')).toBeDisabled();
+  });
+});
+
 describe('decider actions', () => {
   const pendingRow = () => [
     {
