@@ -7,7 +7,7 @@ site-membership checks.
 """
 
 from datetime import date, datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -605,3 +605,50 @@ async def test_block_edit_and_delete_need_access_to_every_site(authed_client, mo
         await client.put("/api/equipment-blocks/3", json={"description": "X"})
     ).status_code == 200
     assert (await client.delete("/api/equipment-blocks/3")).status_code == 200
+
+
+# ---------------------------------------------------------
+# Visible sites: sites.view_all widens, the live memberships narrow
+# ---------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_role_seeing_every_site_manages_shared_equipment(authed_client, mock_db_session):
+    client, set_user = authed_client
+    shared = _equipment(7, sites=[SITE_A, SITE_B])
+    mock_db_session.execute.return_value = _scalar_result(shared)
+
+    # Not an admin: a custom role holding equipment.manage and sites.view_all.
+    set_user(FakeUser(1, "regional", {"equipment.manage", "sites.view_all"}, site_ids=[]))
+
+    assert (await client.delete("/api/equipment/7")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_site_less_equipment_needs_sites_view_all(authed_client, mock_db_session):
+    client, set_user = authed_client
+    orphan = _equipment(7, sites=[])
+    mock_db_session.execute.return_value = _scalar_result(orphan)
+
+    set_user(FakeUser(1, "superuser"))
+    assert (await client.delete("/api/equipment/7")).status_code == 403
+
+    set_user(FakeUser(1, "regional", {"equipment.manage", "sites.view_all"}))
+    assert (await client.delete("/api/equipment/7")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_equipment_access_reads_the_live_site_memberships(authed_client, mock_db_session):
+    client, set_user = authed_client
+    shared = _equipment(7, sites=[SITE_A, SITE_B])
+    mock_db_session.execute.return_value = _scalar_result(shared)
+    set_user(FakeUser(1, "superuser"))
+
+    # The session snapshot would say site A only; the live rows hold both.
+    with patch(
+        "app.services.site_access._load_user_site_ids",
+        AsyncMock(return_value=frozenset({SITE_A.id, SITE_B.id})),
+    ):
+        response = await client.delete("/api/equipment/7")
+
+    assert response.status_code == 200

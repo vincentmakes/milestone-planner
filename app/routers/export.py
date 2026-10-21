@@ -15,14 +15,14 @@ import re
 from datetime import date, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.middleware.auth import require_superuser
+from app.middleware.auth import require_permission
 from app.models.absence_type import AbsenceType
 from app.models.card_comment import CardComment
 from app.models.custom_column import CustomColumn, CustomColumnValue
@@ -35,6 +35,7 @@ from app.models.tag import Tag, TagGroup, TagSite
 from app.models.team import Team
 from app.models.user import User, UserSite
 from app.models.vacation import Vacation
+from app.services.site_access import ensure_site_access
 from app.utils import utcnow_naive
 
 router = APIRouter(tags=["export"])
@@ -364,7 +365,7 @@ def format_xml_date(d: date) -> str:
 async def export_project_to_mpp(
     project_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("projects.export")),
 ):
     """
     Export a project to MS Project XML format.
@@ -398,7 +399,7 @@ async def export_project_to_mpp(
 async def export_project_to_csv(
     project_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("projects.export")),
 ):
     """
     Export a project to CSV format.
@@ -432,7 +433,7 @@ async def export_project_to_csv(
 async def export_project_to_csv_get(
     project_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("projects.export")),
 ):
     """
     Export a project to CSV format (GET version for direct download).
@@ -1450,18 +1451,17 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
 @router.get("/export/site/{site_id}/excel")
 async def export_site_to_excel(
     site_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("sites.export")),
 ):
     """
     Export all data for a site (projects, phases, users, equipment, skills,
     vacations, assignments, custom columns, holidays, events) as an Excel file.
 
-    Restricted to admin / superuser. Superusers may only export sites they
-    have access to.
+    Requires ``sites.export``, for a visible site only.
     """
-    if user.is_superuser and not user.is_admin and site_id not in user.site_ids:
-        raise HTTPException(status_code=403, detail="Access denied to this site")
+    await ensure_site_access(request, db, user, [site_id], "Access denied to this site")
 
     content, filename = await build_site_export_workbook(db, site_id)
     return Response(

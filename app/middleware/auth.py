@@ -11,23 +11,23 @@ every request, and ``require_permission`` / ``require_any_permission`` /
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from fastapi import Cookie, Depends, HTTPException, Request, status
+from fastapi import Cookie, Depends, HTTPException, Path, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.rbac import Role, RolePermission
 from app.models.user import User
-from app.services.permissions import PERMISSION_KEYS, PM_BUNDLE, PermissionSet
+from app.services.permissions import (
+    PERMISSION_KEYS,
+    PM_BUNDLE,
+    PermissionSet,
+    permission_required_detail,
+)
 from app.services.project_access import project_pm_id
 from app.services.session import SessionService, parse_session_cookie
 
 UserDependency = Callable[..., Awaitable[User]]
-
-
-def permission_required_detail(*keys: str) -> str:
-    """The 403 detail of a permission gate: ``Permission required: <key>``."""
-    return "Permission required: " + " or ".join(keys)
 
 
 async def load_live_user(db: AsyncSession, user_id: Any) -> tuple[bool, str, PermissionSet] | None:
@@ -160,10 +160,6 @@ async def get_current_user_optional(
             return self.role == "admin"
 
         @property
-        def is_superuser(self) -> bool:
-            return self.role == "superuser"
-
-        @property
         def site_ids(self) -> list:
             return self._site_ids
 
@@ -243,7 +239,10 @@ async def require_admin(
     user: User = Depends(get_current_user),
 ) -> User:
     """
-    Require admin role.
+    Require the admin role (the lockout-proof surface only: the roles and
+    approval-policy writes). Every other gate names a permission key through
+    ``require_permission`` / ``require_any_permission`` /
+    ``require_project_permission``.
 
     Raises 403 if user is not an admin.
     """
@@ -251,22 +250,6 @@ async def require_admin(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
-        )
-    return user
-
-
-async def require_superuser(
-    user: User = Depends(get_current_user),
-) -> User:
-    """
-    Require superuser or admin role.
-
-    Raises 403 if user is not a superuser or admin.
-    """
-    if not (user.is_admin or user.is_superuser):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Superuser access required",
         )
     return user
 
@@ -326,11 +309,18 @@ def require_project_permission(key: str) -> UserDependency:
     The ``pm_id`` is read server-side (one query, only when the key is not
     held outright and the role may act as PM; 404 if the project is missing).
     403 ``Permission required: <key>`` otherwise.
+
+    Constraint: the route's path parameter must be named ``project_id``. It is
+    bound as an explicit ``Path()`` parameter, so on a route whose parameter
+    is named differently every request fails with 422 -- it can never be
+    supplied (and the PM check steered) through a ``?project_id=`` query
+    string. Such routes resolve the project id in the handler instead
+    (``project_access.require_on_project``).
     """
     _ensure_known((key,))
 
     async def dependency(
-        project_id: int,
+        project_id: int = Path(),
         user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
     ) -> User:

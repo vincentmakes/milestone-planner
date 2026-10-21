@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,6 +66,21 @@ async def resolve_sso_default_role(db: AsyncSession, role: Any) -> str:
 
     found = await db.execute(select(Role.key).where(Role.key == key))
     return found.scalar_one_or_none() or _SSO_FALLBACK_ROLE
+
+
+SSO_DEFAULT_ROLE_DETAIL = "Unknown role, or a role SSO cannot assign: {role}"
+
+
+async def ensure_sso_default_role(db: AsyncSession, role: str) -> str:
+    """
+    A tenant SSO default role being saved: the key itself when
+    ``resolve_sso_default_role`` keeps it (an existing, non-admin role),
+    else 400 -- never silently stored as something sign-in would replace.
+    """
+    resolved = await resolve_sso_default_role(db, role)
+    if resolved != role:
+        raise HTTPException(status_code=400, detail=SSO_DEFAULT_ROLE_DETAIL.format(role=role))
+    return resolved
 
 
 def _stored_role(role: Any) -> str | None:

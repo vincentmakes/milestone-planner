@@ -3,7 +3,7 @@ Tag groups API endpoints.
 
 A tag group bundles project tags (e.g. "Project type"). A single-select group
 allows at most one of its tags per project. Every user can read groups; only
-admins manage them.
+``tags.manage`` manages them.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_admin
+from app.middleware.auth import get_current_user, require_permission
 from app.models.tag import Tag, TagGroup
 from app.models.user import User
 from app.schemas.tag import (
@@ -66,9 +66,9 @@ async def get_tag_groups(
 async def create_tag_group(
     data: TagGroupCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("tags.manage")),
 ):
-    """Create a tag group, appended at the end (admin only)."""
+    """Create a tag group, appended at the end (``tags.manage``)."""
     name = data.name.strip()
     if not name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=EMPTY_NAME_DETAIL)
@@ -92,9 +92,9 @@ async def create_tag_group(
 async def reorder_tag_groups(
     data: TagGroupReorder,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("tags.manage")),
 ):
-    """Set each listed group's sort_order to its index (admin only)."""
+    """Set each listed group's sort_order to its index (``tags.manage``)."""
     if data.group_order:
         result = await db.execute(select(TagGroup).where(TagGroup.id.in_(data.group_order)))
         by_id = {g.id: g for g in result.scalars().all()}
@@ -111,10 +111,10 @@ async def update_tag_group(
     group_id: int,
     data: TagGroupUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("tags.manage")),
 ):
     """
-    Update a tag group (admin only, partial; rules checked on the merged state).
+    Update a tag group (``tags.manage``, partial; rules checked on the merged state).
 
     Making a group single-select is refused with 409 while any project holds
     more than one of its tags.
@@ -156,10 +156,10 @@ async def update_tag_group(
 async def delete_tag_group(
     group_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("tags.manage")),
 ):
     """
-    Delete a tag group (admin only). Its tags stay, ungrouped (the FK is
+    Delete a tag group (``tags.manage``). Its tags stay, ungrouped (the FK is
     ON DELETE SET NULL; cleared here too so loaded tags are consistent).
 
     The ungrouped pool is renumbered 0..n-1 so the sort orders do not collide:

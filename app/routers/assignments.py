@@ -23,11 +23,13 @@ Matches Node.js routes:
 PUT/DELETE /api/equipment-assignments/:id live in routers/equipment.py (that
 router is registered first; duplicates here used to be shadowed dead code).
 
-Auth: staff-assignment writes go through `require_assignment_write` -- a
-superuser/admin, the project's manager, or the staff member themself
-(self-assignment, `staff_id == user.id`). The `project_id` used for that check
-is always derived server-side from the path or the loaded row, never from the
-request body. Equipment bookings need a project editor (superuser or PM).
+Auth: staff-assignment writes go through `require_assignment_write`, editor
+first -- ``assignments.manage_others`` (outright, or the project's manager
+through the PM bundle) writes any row; anyone else only their own row
+(`staff_id == user.id`) under ``assignments.self_create`` / ``self_update`` /
+``self_remove``. The `project_id` used for that check is always derived
+server-side from the path or the loaded row, never from the request body.
+Equipment bookings need ``equipment_bookings.manage`` (also in the PM bundle).
 """
 
 from datetime import date
@@ -54,12 +56,11 @@ from app.schemas.base import (
     serialize_datetime_js,
 )
 from app.services.project_access import (
-    check_assignment_write,
     project_id_for_phase,
     project_id_for_subphase,
     project_pm_id,
     require_assignment_write,
-    require_project_editor,
+    require_on_project,
 )
 from app.websocket.broadcast import broadcast_change
 
@@ -206,10 +207,17 @@ async def create_project_staff_assignment(
     Matches: POST /api/projects/:projectId/staff
     """
     # Resolve the project before anything else (404): the own-row and
-    # privileged short-circuits of require_assignment_write never query it, so
+    # key-holder short-circuits of require_assignment_write never query it, so
     # a write to a missing project would otherwise end in an FK error (500).
     pm_id = await project_pm_id(db, project_id)
-    check_assignment_write(user, pm_id=pm_id, staff_id=data.staff_id)
+    await require_assignment_write(
+        db,
+        user,
+        project_id=project_id,
+        pm_id=pm_id,
+        staff_id=data.staff_id,
+        action="assignments.self_create",
+    )
     await _require_staff(db, data.staff_id)
 
     assignment = ProjectAssignment(
@@ -258,7 +266,13 @@ async def update_project_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
-    await require_assignment_write(db, user, project_id=project_id, staff_id=assignment.staff_id)
+    await require_assignment_write(
+        db,
+        user,
+        project_id=project_id,
+        staff_id=assignment.staff_id,
+        action="assignments.self_update",
+    )
 
     assignment.allocation = data.allocation
     assignment.start_date = data.start_date
@@ -300,7 +314,13 @@ async def delete_project_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
-    await require_assignment_write(db, user, project_id=project_id, staff_id=assignment.staff_id)
+    await require_assignment_write(
+        db,
+        user,
+        project_id=project_id,
+        staff_id=assignment.staff_id,
+        action="assignments.self_remove",
+    )
 
     await db.delete(assignment)
     await db.commit()
@@ -337,7 +357,13 @@ async def create_phase_staff_assignment(
     Matches: POST /api/phases/:phaseId/staff
     """
     project_id = await project_id_for_phase(db, phase_id)
-    await require_assignment_write(db, user, project_id=project_id, staff_id=data.staff_id)
+    await require_assignment_write(
+        db,
+        user,
+        project_id=project_id,
+        staff_id=data.staff_id,
+        action="assignments.self_create",
+    )
     await _require_staff(db, data.staff_id)
 
     assignment = PhaseStaffAssignment(
@@ -405,7 +431,13 @@ async def update_phase_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
-    await require_assignment_write(db, user, project_id=project_id, staff_id=assignment.staff_id)
+    await require_assignment_write(
+        db,
+        user,
+        project_id=project_id,
+        staff_id=assignment.staff_id,
+        action="assignments.self_update",
+    )
 
     assignment.allocation = data.allocation
 
@@ -445,7 +477,13 @@ async def delete_phase_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
-    await require_assignment_write(db, user, project_id=project_id, staff_id=assignment.staff_id)
+    await require_assignment_write(
+        db,
+        user,
+        project_id=project_id,
+        staff_id=assignment.staff_id,
+        action="assignments.self_remove",
+    )
 
     await db.delete(assignment)
     await db.commit()
@@ -482,7 +520,13 @@ async def create_subphase_staff_assignment(
     Matches: POST /api/subphases/:subphaseId/staff
     """
     project_id = await project_id_for_subphase(db, subphase_id)
-    await require_assignment_write(db, user, project_id=project_id, staff_id=data.staff_id)
+    await require_assignment_write(
+        db,
+        user,
+        project_id=project_id,
+        staff_id=data.staff_id,
+        action="assignments.self_create",
+    )
     await _require_staff(db, data.staff_id)
 
     assignment = SubphaseStaffAssignment(
@@ -550,7 +594,13 @@ async def update_subphase_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
-    await require_assignment_write(db, user, project_id=project_id, staff_id=assignment.staff_id)
+    await require_assignment_write(
+        db,
+        user,
+        project_id=project_id,
+        staff_id=assignment.staff_id,
+        action="assignments.self_update",
+    )
 
     assignment.allocation = data.allocation
 
@@ -590,7 +640,13 @@ async def delete_subphase_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
-    await require_assignment_write(db, user, project_id=project_id, staff_id=assignment.staff_id)
+    await require_assignment_write(
+        db,
+        user,
+        project_id=project_id,
+        staff_id=assignment.staff_id,
+        action="assignments.self_remove",
+    )
 
     await db.delete(assignment)
     await db.commit()
@@ -622,12 +678,12 @@ async def create_equipment_assignment(
     user: User = Depends(get_current_user),
 ):
     """
-    Assign equipment to a project. Project editors only (superuser or PM).
+    Assign equipment to a project: ``equipment_bookings.manage`` (or the PM).
     The equipment must be linked to the project's site (`equipment_sites`).
 
     Matches: POST /api/projects/:projectId/equipment
     """
-    await require_project_editor(db, user, project_id)
+    await require_on_project(db, user, "equipment_bookings.manage", project_id)
 
     project_row = (
         await db.execute(select(Project.site_id).where(Project.id == project_id))

@@ -250,19 +250,31 @@ def create_app() -> FastAPI:
     app.include_router(admin.router, prefix="/api", tags=["Admin"])
     app.include_router(admin_organizations.router, prefix="/api", tags=["Admin Organizations"])
 
-    # Protected API documentation endpoints (require admin authentication)
+    # Protected API documentation endpoints (require ``system.api_docs``)
     from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
     from fastapi.openapi.utils import get_openapi
 
     from app.middleware.auth import get_current_user_from_session
+    from app.services.permissions import PermissionSet
+
+    def _may_read_api_docs(user: dict | None) -> bool:
+        """Whether the session user's live role allows ``system.api_docs``."""
+        if not user:
+            return False
+        permissions = user.get("permissions")
+        if not isinstance(permissions, PermissionSet):
+            # No resolved set: the role's set without rows (only the admin passes).
+            permissions = PermissionSet(user.get("role") or "", {})
+        return permissions.has("system.api_docs")
 
     @app.get("/api/openapi.json", include_in_schema=False)
     async def get_openapi_schema(request: Request):
         """Get OpenAPI schema - requires authentication."""
         user = await get_current_user_from_session(request)
-        if not user or user.get("role") != "admin":
+        if not _may_read_api_docs(user):
             return JSONResponse(
-                status_code=401, content={"error": "Authentication required. Admin access only."}
+                status_code=401,
+                content={"error": "Authentication required. Permission required: system.api_docs"},
             )
         return JSONResponse(
             get_openapi(
@@ -277,7 +289,7 @@ def create_app() -> FastAPI:
     async def get_docs(request: Request):
         """Swagger UI - requires authentication."""
         user = await get_current_user_from_session(request)
-        if not user or user.get("role") != "admin":
+        if not _may_read_api_docs(user):
             return HTMLResponse(
                 content="""
                 <html>
@@ -285,7 +297,7 @@ def create_app() -> FastAPI:
                 <body style="font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #1a1a1a; color: #fff;">
                     <div style="text-align: center;">
                         <h1>🔒 Authentication Required</h1>
-                        <p>You must be logged in as an admin to access API documentation.</p>
+                        <p>You must be logged in with API documentation access (system.api_docs).</p>
                         <p><a href="/" style="color: #4a90e2;">← Go to Login</a></p>
                     </div>
                 </body>
@@ -301,7 +313,7 @@ def create_app() -> FastAPI:
     async def get_redoc(request: Request):
         """ReDoc - requires authentication."""
         user = await get_current_user_from_session(request)
-        if not user or user.get("role") != "admin":
+        if not _may_read_api_docs(user):
             return HTMLResponse(
                 content="""
                 <html>
@@ -309,7 +321,7 @@ def create_app() -> FastAPI:
                 <body style="font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #1a1a1a; color: #fff;">
                     <div style="text-align: center;">
                         <h1>🔒 Authentication Required</h1>
-                        <p>You must be logged in as an admin to access API documentation.</p>
+                        <p>You must be logged in with API documentation access (system.api_docs).</p>
                         <p><a href="/" style="color: #4a90e2;">← Go to Login</a></p>
                     </div>
                 </body>

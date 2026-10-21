@@ -589,7 +589,7 @@ async def test_user_cannot_book_equipment(authed_client, mock_db_session):
         json={"equipment_id": 3, "start_date": "2025-01-01", "end_date": "2025-01-05"},
     )
     assert response.status_code == 403
-    assert response.json()["detail"] == EDITOR_REQUIRED_DETAIL
+    assert response.json()["detail"] == "Permission required: equipment_bookings.manage"
 
 
 @pytest.mark.asyncio
@@ -867,3 +867,172 @@ async def test_pm_can_move_any_card_of_their_project(authed_client, mock_db_sess
     response = await client.put("/api/kanban/cards/phase/1/status", json={"status": "done"})
     assert response.status_code == 200
     assert response.json()["completion"] == 100
+
+
+# ---------------------------------------------------------
+# Permission keys: archive, the PM bundle, the self-booking modes
+# ---------------------------------------------------------
+
+PROJECT_STAFF = {
+    "allocation": 60,
+    "start_date": "2025-01-01",
+    "end_date": "2025-01-31",
+}
+
+
+def _archivable_project(pm_id, archived=0):
+    project = _project(pm_id)
+    project.archived = archived
+    return project
+
+
+@pytest.mark.asyncio
+async def test_archiving_needs_projects_archive(authed_client, mock_db_session):
+    client, set_user = authed_client
+    # Edits any project, but may not archive.
+    set_user(FakeUser(5, "editor", {"projects.edit_any"}))
+    project = _archivable_project(pm_id=PM)
+    mock_db_session.execute.side_effect = [_scalar_result(project)]
+
+    response = await client.put("/api/projects/1", json={"archived": True})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Permission required: projects.archive"
+    assert project.archived == 0
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_archive_alone_needs_no_edit_rights(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "archivist", {"projects.archive"}))
+    project = _archivable_project(pm_id=PM)
+    mock_db_session.execute.side_effect = [_scalar_result(project)]
+
+    response = await client.put("/api/projects/1", json={"archived": True})
+
+    assert response.status_code == 200
+    assert project.archived == 1
+
+
+@pytest.mark.asyncio
+async def test_archive_rights_do_not_edit_other_fields(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "archivist", {"projects.archive"}))
+    project = _archivable_project(pm_id=PM)
+    mock_db_session.execute.side_effect = [_scalar_result(project)]
+
+    response = await client.put("/api/projects/1", json={"name": "X", "archived": True})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == EDITOR_REQUIRED_DETAIL
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_resending_the_unchanged_archived_flag_needs_no_archive_key(
+    authed_client, mock_db_session
+):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "editor", {"projects.edit_any"}))
+    project = _archivable_project(pm_id=PM, archived=0)
+    mock_db_session.execute.side_effect = [_scalar_result(project)]
+
+    response = await client.put("/api/projects/1", json={"name": "X", "archived": False})
+
+    assert response.status_code == 200
+    assert project.name == "X"
+
+
+@pytest.mark.asyncio
+async def test_the_pm_archives_through_the_bundle(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(PM, "user"))
+    project = _archivable_project(pm_id=PM)
+    mock_db_session.execute.side_effect = [_scalar_result(project)]
+
+    response = await client.put("/api/projects/1", json={"archived": True})
+
+    assert response.status_code == 200
+    assert project.archived == 1
+
+
+@pytest.mark.asyncio
+async def test_a_pm_whose_role_cannot_act_as_pm_cannot_edit(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(PM, "viewer", set()))
+    mock_db_session.execute.side_effect = [_scalar_result(_project(pm_id=PM))]
+
+    response = await client.put("/api/projects/1", json={"name": "Renamed"})
+
+    assert response.status_code == 403
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_custom_role_with_create_creates_projects(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "planner", {"projects.create"}))
+
+    response = await client.post(
+        "/api/projects", json={"name": "New", "start_date": "2025-01-01", "end_date": "2025-02-01"}
+    )
+
+    assert response.status_code == 200
+    mock_db_session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_self_booking_denied_by_the_role_is_403(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "viewer", {"projects.manage_as_pm"}))
+    mock_db_session.execute.side_effect = [_pm_result(PM)]
+
+    response = await client.post("/api/projects/1/staff", json={"staff_id": 5, **PROJECT_STAFF})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "You are not allowed to book yourself on projects"
+    mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_self_booking_in_approval_mode_books_until_approvals_exist(
+    authed_client, mock_db_session
+):
+    # RBAC Task 5 turns this into a 202 approval request.
+    client, set_user = authed_client
+    set_user(FakeUser(5, "trainee", {"assignments.self_create": "approval"}))
+    _assign_id_on_refresh(mock_db_session)
+    mock_db_session.execute.side_effect = [_pm_result(PM), _scalar_result(5)]
+
+    response = await client.post("/api/projects/1/staff", json={"staff_id": 5, **PROJECT_STAFF})
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_manage_others_books_anyone_without_the_pm_lookup(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "dispatcher", {"assignments.manage_others"}))
+    _assign_id_on_refresh(mock_db_session)
+    # Project existence (always), then the staff check -- no editor lookup.
+    mock_db_session.execute.side_effect = [_pm_result(PM), _scalar_result(8)]
+
+    response = await client.post("/api/projects/1/staff", json={"staff_id": 8, **PROJECT_STAFF})
+
+    assert response.status_code == 200
+    assert mock_db_session.execute.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_removing_ones_own_phase_booking_follows_self_remove(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "sticky", {"assignments.self_create", "projects.manage_as_pm"}))
+    phase_row = _staff_row(5)
+    mock_db_session.execute.side_effect = [_scalar_result(phase_row), _pm_result(PM)]
+
+    response = await client.delete("/api/phase-staff/1")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "You are not allowed to book yourself on projects"
+    mock_db_session.commit.assert_not_awaited()

@@ -34,12 +34,12 @@ from tests.test_sso_callback import ORG_CONFIG, resolved_tenant
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("role", ["user", "superuser", "admin"])
+@pytest.mark.parametrize("role", ["user", "superuser"])
 def test_org_sso_accepts_valid_roles(role):
     assert OrganizationSSOConfigCreate(defaultUserRole=role).default_user_role == role
 
 
-@pytest.mark.parametrize("role", ["viewer", "Admin", "", "member"])
+@pytest.mark.parametrize("role", ["viewer", "Admin", "admin", "", "member"])
 def test_org_sso_rejects_invalid_roles(role):
     with pytest.raises(ValidationError):
         OrganizationSSOConfigCreate(defaultUserRole=role)
@@ -49,12 +49,17 @@ def test_org_sso_role_is_optional():
     assert OrganizationSSOConfigCreate().default_user_role is None
 
 
-@pytest.mark.parametrize("role", ["viewer", "admin"])
-def test_tenant_sso_rejects_roles_outside_its_check_constraint(role):
-    # Tenant-level SSO is stricter: sso_config_default_role_check allows only
-    # superuser|user, and the schema mirrors it.
+@pytest.mark.parametrize("role", ["admin", "Admin", "not a key", ""])
+def test_tenant_sso_rejects_the_admin_role_and_malformed_keys(role):
+    # Never the admin role (sign-in never creates an administrator); a custom
+    # role key passes the schema and is checked against ``roles`` by the route.
     with pytest.raises(ValidationError):
         SSOConfigUpdate(default_role=role)
+
+
+@pytest.mark.parametrize("role", ["user", "superuser", "team_lead"])
+def test_tenant_sso_schema_accepts_role_keys(role):
+    assert SSOConfigUpdate(default_role=role).default_role == role
 
 
 @pytest.mark.asyncio

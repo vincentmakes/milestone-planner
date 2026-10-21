@@ -13,13 +13,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import require_admin
+from app.middleware.auth import require_permission
 from app.models.settings import Settings, SSOConfig
 from app.models.user import User
 from app.routers.auth import _active_org_sso, _reject_if_org_sso_active
 from app.schemas.auth import SSOConfigResponse, SSOConfigUpdate
 from app.schemas.settings import SettingsResponse, SettingUpdate
-from app.services.sso import apply_secret_update
+from app.services.sso import apply_secret_update, ensure_sso_default_role
 
 logger = logging.getLogger(__name__)
 
@@ -89,12 +89,12 @@ async def update_sso_settings(
     data: SSOConfigUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("settings.sso")),
 ):
     """
     Update SSO configuration.
 
-    Requires admin authentication.
+    Requires ``settings.sso``.
     Matches: PUT /api/settings/sso
     """
     _reject_if_org_sso_active(data, await _active_org_sso(request, db, strict=True))
@@ -121,7 +121,7 @@ async def update_sso_settings(
     if data.auto_create_users is not None:
         config.auto_create_users = 1 if data.auto_create_users else 0
     if data.default_role is not None:
-        config.default_role = data.default_role
+        config.default_role = await ensure_sso_default_role(db, data.default_role)
 
     await db.commit()
     await db.refresh(config)
@@ -165,12 +165,12 @@ async def update_setting(
     key: str,
     data: SettingUpdate,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("settings.general")),
 ):
     """
     Update a setting (create if not exists).
 
-    Requires admin authentication.
+    Requires ``settings.general``.
     Matches: PUT /api/settings/:key
     """
     # Check if setting exists

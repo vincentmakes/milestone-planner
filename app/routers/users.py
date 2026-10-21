@@ -1,17 +1,23 @@
 """
 Users API router.
-Handles user management operations (admin functions).
+Handles user management operations, gated on the ``users.*`` keys; the
+account rules (edit target, escalation guard, last active admin) live in
+app/services/user_access.py.
 
 Matches the Node.js API at /api/users exactly.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.middleware.auth import get_session_id, require_admin, require_superuser
+from app.middleware.auth import (
+    get_session_id,
+    require_any_permission,
+    require_permission,
+)
 from app.models.rbac import Role
 from app.models.site import Site
 from app.models.skill import Skill, UserSkill
@@ -25,7 +31,12 @@ from app.schemas.user import (
     UserResponse,
 )
 from app.services.encryption import PasswordTooLongError, hash_user_password
-from app.services.permissions import SYSTEM_ROLE_KEYS, role_display_name
+from app.services.permissions import (
+    ADMIN_ROLE_KEY,
+    SYSTEM_ROLE_KEYS,
+    permission_required_detail,
+    role_display_name,
+)
 from app.services.response_builders import (
     build_skills_list,
     build_user_base,
@@ -33,13 +44,19 @@ from app.services.response_builders import (
     get_sorted_teams,
 )
 from app.services.session import SessionService
-from app.services.site_access import ensure_site_access
+from app.services.site_access import ensure_site_access, visible_site_ids
 from app.services.team_rules import (
     TEAM_SITE_ACCESS_DETAIL,
     ensure_teams_within_sites,
     load_teams,
     prune_teams_to_sites,
     team_outside_user_sites_detail,
+)
+from app.services.user_access import (
+    ensure_may_assign_role,
+    ensure_may_change_role_of,
+    ensure_may_edit_user,
+    ensure_not_last_active_admin,
 )
 
 router = APIRouter()
@@ -63,6 +80,35 @@ async def _ensure_role_exists(db: AsyncSession, role_key: str) -> None:
     found = await db.execute(select(Role.key).where(Role.key == role_key))
     if found.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail=ROLE_NOT_FOUND_DETAIL)
+
+
+def _forbidden(key: str) -> HTTPException:
+    return HTTPException(status_code=403, detail=permission_required_detail(key))
+
+
+async def _ensure_sites_visible(
+    request: Request, db: AsyncSession, current_user: User, site_ids: list[int]
+) -> None:
+    """403 naming the first site the caller may not assign (outside their visible sites)."""
+    visible = await visible_site_ids(request, db, current_user)
+    if visible is None:
+        return
+    for site_id in site_ids:
+        if site_id not in visible:
+            raise HTTPException(
+                status_code=403,
+                detail=f"You can only assign sites you have access to (site {site_id} not allowed)",
+            )
+
+
+# Any of these reaches PUT /users/{id}; the handler checks each change.
+_UPDATE_KEYS = (
+    "users.edit",
+    "users.edit_admins",
+    "users.edit_credentials",
+    "users.change_role",
+    "users.toggle_active",
+)
 
 
 def _unique(ids: list[int]) -> list[int]:
@@ -139,12 +185,12 @@ async def get_users(
     include_disabled: bool = Query(False, alias="includeDisabled"),
     pagination: PaginationParams = Depends(),
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("users.view")),
 ):
     """
     Get all users with pagination.
 
-    Requires admin or superuser authentication.
+    Requires ``users.view``.
     Matches: GET /api/users
     """
     base_query = select(User)
@@ -180,12 +226,12 @@ async def get_users(
 async def get_user(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("users.view")),
 ):
     """
     Get a specific user by ID.
 
-    Requires admin authentication.
+    Requires ``users.view``.
     Matches: GET /api/users/:id
     """
     result = await db.execute(
@@ -205,20 +251,28 @@ async def get_user(
 @router.post("/users", response_model=UserResponse, status_code=201)
 async def create_user(
     data: StaffCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("users.create")),
 ):
     """
     Create a new user.
 
-    Requires admin authentication.
+    Requires ``users.create``; a role other than ``user`` also needs
+    ``users.change_role``, and every role is subject to the escalation guard.
+    Sites and teams must be at the caller's visible sites.
     Matches: POST /api/users
     """
+    if data.role != "user" and not admin.permissions.has("users.change_role"):
+        raise _forbidden("users.change_role")
+
     # Check for existing email
     existing = await db.execute(select(User).where(User.email == data.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="A user with this email already exists")
     await _ensure_role_exists(db, data.role)
+    await ensure_may_assign_role(db, admin, data.role)
+    await _ensure_sites_visible(request, db, admin, _unique(data.site_ids or []))
 
     # Create user
     user = User(
@@ -238,6 +292,9 @@ async def create_user(
     skills = await _load_skills(db, data.skill_ids)
     # Unknown teams are a 404; a team must be at one of the user's sites (400).
     teams = await load_teams(db, data.team_ids)
+    await ensure_site_access(
+        request, db, admin, {t.site_id for t in teams}, TEAM_SITE_ACCESS_DETAIL
+    )
     ensure_teams_within_sites(teams, [s.id for s in sites], team_outside_user_sites_detail)
 
     db.add(user)
@@ -263,20 +320,25 @@ async def create_user(
 async def update_user(
     user_id: int,
     data: StaffUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_superuser),
+    current_user: User = Depends(require_any_permission(*_UPDATE_KEYS)),
     session_id: str | None = Depends(get_session_id),
 ):
     """
-    Update a user.
+    Update a user. Each kind of change needs its key:
 
-    Requires admin or superuser authentication.
-    Superusers can only:
-    - Assign sites they themselves have access to
-    - Assign skills to users
-    - Update basic info (name, job_title, capacity) but NOT role or active status
-    - Change email/password on their OWN account only
-    and cannot modify an admin account at all (no superuser -> admin takeover).
+    - name, job title, capacity, sites, teams, skills: ``users.edit`` (sites
+      and teams within the caller's visible sites);
+    - an account holding the admin role at all: ``users.edit_admins``;
+    - another user's email or password: ``users.edit_credentials`` (one's own:
+      always);
+    - the role: ``users.change_role`` plus the escalation guard;
+    - ``active``: ``users.toggle_active``.
+
+    Nobody changes their own role or deactivates themself (400), the system
+    administrator keeps the admin role and stays active (403), and the last
+    active administrator cannot be demoted or deactivated (400).
 
     A role change, deactivation or password change destroys the target's
     existing sessions (except the caller's own current session).
@@ -294,60 +356,79 @@ async def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    is_admin = current_user.role == "admin"
+    permissions = current_user.permissions
+    is_self = user.id == current_user.id
+    target_is_admin = user.role == ADMIN_ROLE_KEY
 
-    # Superusers cannot touch admin accounts, nor change role or active status
-    if not is_admin:
-        if user.role == "admin":
-            raise HTTPException(
-                status_code=403, detail="Only administrators can modify administrator accounts"
-            )
-        if user.id != current_user.id:
-            # The settings form re-sends the unchanged email, so only an actual
-            # change is refused.
-            email_changed = (
-                data.email is not None and data.email.lower() != (user.email or "").lower()
-            )
-            if email_changed or data.password is not None:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Only administrators can change another user's email or password",
-                )
-        if data.role is not None:
-            raise HTTPException(status_code=403, detail="Only administrators can change user roles")
-        if data.active is not None:
-            raise HTTPException(
-                status_code=403, detail="Only administrators can change user active status"
-            )
+    # An administrator account needs users.edit_admins for any change.
+    if target_is_admin:
+        ensure_may_edit_user(current_user, user.role)
+
+    edits_profile = any(
+        value is not None
+        for value in (
+            data.first_name,
+            data.last_name,
+            data.job_title,
+            data.max_capacity,
+            data.site_ids,
+            data.team_ids,
+            data.skill_ids,
+        )
+    )
+    if edits_profile and not target_is_admin:
+        ensure_may_edit_user(current_user, user.role)
+
+    # The settings form re-sends the unchanged email, so only an actual change
+    # counts; one's own email and password are always one's own to change.
+    may_set_credentials = is_self or permissions.has("users.edit_credentials")
+    email_changed = data.email is not None and data.email.lower() != (user.email or "").lower()
+    if not may_set_credentials and (email_changed or data.password is not None):
+        raise _forbidden("users.edit_credentials")
+
+    role_changed = data.role is not None and data.role != user.role
+    if role_changed and not permissions.has("users.change_role"):
+        raise _forbidden("users.change_role")
+    deactivated = data.active is not None and data.active == 0 and user.active != 0
+    active_changed = data.active is not None and data.active != user.active
+    if active_changed and not permissions.has("users.toggle_active"):
+        raise _forbidden("users.toggle_active")
 
     # Protect system users from role/active changes
     if user.is_system_user:
-        if data.role is not None and data.role != "admin":
+        if data.role is not None and data.role != ADMIN_ROLE_KEY:
             raise HTTPException(
                 status_code=403, detail="Cannot change role of system administrator"
             )
         if data.active is not None and data.active == 0:
             raise HTTPException(status_code=403, detail="Cannot deactivate system administrator")
 
-    # Prevent admin from demoting themselves
-    if is_admin and user.id == current_user.id and data.role and data.role != "admin":
-        raise HTTPException(status_code=400, detail="Cannot change your own admin role")
-
-    # Prevent admin from deactivating themselves
-    if is_admin and user.id == current_user.id and data.active is not None and data.active == 0:
+    # Nobody changes their own role or deactivates themself
+    if is_self and role_changed:
+        detail = (
+            "Cannot change your own admin role"
+            if target_is_admin
+            else "Cannot change your own role"
+        )
+        raise HTTPException(status_code=400, detail=detail)
+    if is_self and deactivated:
         raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
+
+    if role_changed:
+        assert data.role is not None
+        await _ensure_role_exists(db, data.role)
+        await ensure_may_change_role_of(db, current_user, user.role)
+        await ensure_may_assign_role(db, current_user, data.role)
+    if (role_changed and target_is_admin) or deactivated:
+        await ensure_not_last_active_admin(db, current_user, user)
 
     # Changes that must end the target's existing logins (see B1-1): the
     # session snapshot would otherwise keep the old role/credentials alive.
-    role_changed = data.role is not None and data.role != user.role
-    if data.role is not None and role_changed:
-        await _ensure_role_exists(db, data.role)
-    deactivated = data.active is not None and data.active == 0 and user.active != 0
     password_changed = data.password is not None
     new_password_hash = _hash_password_or_400(data.password) if data.password is not None else None
 
-    # A superuser's re-sent (unchanged) email for someone else is ignored
-    may_set_email = is_admin or user.id == current_user.id
+    # Someone else's re-sent (unchanged) email is ignored without the key
+    may_set_email = may_set_credentials
 
     # Update fields
     if data.email is not None and may_set_email:
@@ -377,15 +458,8 @@ async def update_user(
     # Update site associations if provided
     sites = list(user.sites) if user.sites else []
     if data.site_ids is not None:
-        # Superusers can only assign sites they have access to
-        if not is_admin:
-            current_user_site_ids = [s.id for s in current_user.sites] if current_user.sites else []
-            for site_id in data.site_ids:
-                if site_id not in current_user_site_ids:
-                    raise HTTPException(
-                        status_code=403,
-                        detail=f"You can only assign sites you have access to (site {site_id} not allowed)",
-                    )
+        # Only sites the caller can see (sites.view_all: any)
+        await _ensure_sites_visible(request, db, current_user, data.site_ids)
 
         sites = await _load_sites(db, data.site_ids)
 
@@ -394,15 +468,16 @@ async def update_user(
         for site in sites:
             db.add(UserSite(user_id=user_id, site_id=site.id))
 
-    # Replace team memberships if provided: unknown teams are a 404, a
-    # superuser may only assign teams at their own sites (403), and every team
-    # must be at one of the user's (resulting) sites (400). Otherwise a site
-    # change drops the user from the teams at the sites they left.
+    # Replace team memberships if provided: unknown teams are a 404, teams
+    # only at the caller's visible sites (403), and every team must be at one
+    # of the user's (resulting) sites (400). Otherwise a site change drops the
+    # user from the teams at the sites they left.
     teams = list(user.teams) if user.teams else []
     if data.team_ids is not None:
         teams = await load_teams(db, data.team_ids)
-        if not is_admin:
-            ensure_site_access(current_user, {t.site_id for t in teams}, TEAM_SITE_ACCESS_DETAIL)
+        await ensure_site_access(
+            request, db, current_user, {t.site_id for t in teams}, TEAM_SITE_ACCESS_DETAIL
+        )
         ensure_teams_within_sites(teams, [s.id for s in sites], team_outside_user_sites_detail)
 
         await db.execute(delete(TeamMember).where(TeamMember.user_id == user_id))
@@ -448,12 +523,14 @@ async def update_user(
 async def delete_user(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("users.delete")),
 ):
     """
     Delete a user.
 
-    Requires admin authentication.
+    Requires ``users.delete`` (an administrator account also
+    ``users.edit_admins``); never oneself, the system administrator or the
+    last active administrator.
     Matches: DELETE /api/users/:id
     """
     if user_id == admin.id:
@@ -471,6 +548,9 @@ async def delete_user(
             status_code=403,
             detail="Cannot delete system administrator. This account was created during tenant provisioning.",
         )
+    if user.role == ADMIN_ROLE_KEY:
+        ensure_may_edit_user(admin, user.role)
+        await ensure_not_last_active_admin(db, admin, user)
 
     # Delete site associations first
     await db.execute(delete(UserSite).where(UserSite.user_id == user_id))
@@ -489,12 +569,14 @@ async def delete_user(
 async def toggle_user_active(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("users.toggle_active")),
 ):
     """
     Toggle a user's active status.
 
-    Requires admin authentication.
+    Requires ``users.toggle_active`` (an administrator account also
+    ``users.edit_admins``); never oneself, the system administrator or the
+    last active administrator.
     Matches: PUT /api/users/:id/toggle-active
     """
     if user_id == admin.id:
@@ -511,6 +593,10 @@ async def toggle_user_active(
     # Same protection as PUT /users/{id}: the provisioned admin cannot be disabled
     if user.is_system_user and user.active == 1:
         raise HTTPException(status_code=403, detail="Cannot deactivate system administrator")
+    if user.role == ADMIN_ROLE_KEY:
+        ensure_may_edit_user(admin, user.role)
+        if user.active == 1:
+            await ensure_not_last_active_admin(db, admin, user)
 
     # Toggle active status
     user.active = 0 if user.active == 1 else 1

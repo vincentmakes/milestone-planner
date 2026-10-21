@@ -43,6 +43,11 @@ def build_app(db) -> tuple[FastAPI, dict]:
     async def delete(project_id: int, user=Depends(require_project_permission("projects.delete"))):
         return {"id": user.id}
 
+    # A misnamed path parameter: the dependency's ``project_id`` is not in the path.
+    @app.get("/misnamed/{pid}")
+    async def misnamed(pid: int, user=Depends(require_project_permission("projects.edit_any"))):
+        return {"id": user.id}
+
     app.dependency_overrides[get_current_user] = lambda: state["user"]
     app.dependency_overrides[get_db] = lambda: db
     return app, state
@@ -215,3 +220,17 @@ async def test_missing_project_is_404_for_a_pm_candidate(client, pm_db):
 
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Project not found"
+
+
+async def test_a_misnamed_path_parameter_never_reads_a_query_string(client, pm_db):
+    """
+    The project id is bound as ``Path()``: on a route whose parameter is named
+    differently, a ``?project_id=`` the PM controls cannot steer the PM check.
+    """
+    c, set_user = client
+    set_user(FakeUser(7, "user"))  # PM of the project pm_db answers (7)
+
+    resp = await c.get("/misnamed/5?project_id=1")
+
+    assert resp.status_code == 422
+    pm_db.execute.assert_not_awaited()

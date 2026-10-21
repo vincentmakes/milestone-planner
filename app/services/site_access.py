@@ -1,13 +1,13 @@
 """
-Site-level access for multi-site data (company events, equipment).
-
-Role gating itself is done by require_superuser on the route; these helpers
-decide which sites a superuser may write to. They only read ``is_admin`` and
-``site_ids``, so they work with both the ORM User and the session user.
+Site-level access for site-scoped data (calendar, equipment, teams, users).
 
 ``visible_site_ids`` is the live, permission-aware set of sites a user may
-see (``sites.view_all`` = every site); the synchronous helpers below move onto
-it when the routers are re-gated.
+see (``sites.view_all`` = every site, otherwise the user's ``user_sites``).
+Site-scoped writes are evaluated within it: the route gates the permission key
+(``require_permission``), and ``can_access_sites`` / ``ensure_site_access``
+decide whether the user may act on the given sites. They only read
+``permissions`` and ``id``, so they work with both the ORM User and the
+session user.
 """
 
 from collections.abc import Iterable
@@ -20,6 +20,12 @@ from app.models.user import User, UserSite
 
 # request.state attribute holding (user id, visible set) for this request.
 _VISIBLE_SITES_STATE = "visible_site_ids"
+
+
+async def _load_user_site_ids(db: AsyncSession, user_id: int) -> frozenset[int]:
+    """The user's live ``user_sites`` rows (one query)."""
+    rows = await db.execute(select(UserSite.site_id).where(UserSite.user_id == user_id))
+    return frozenset(rows.scalars().all())
 
 
 async def visible_site_ids(request: Request, db: AsyncSession, user: User) -> frozenset[int] | None:
@@ -40,26 +46,29 @@ async def visible_site_ids(request: Request, db: AsyncSession, user: User) -> fr
         visible: frozenset[int] = cached[1]
         return visible
 
-    rows = await db.execute(select(UserSite.site_id).where(UserSite.user_id == user.id))
-    visible = frozenset(rows.scalars().all())
+    visible = await _load_user_site_ids(db, user.id)
     setattr(state, _VISIBLE_SITES_STATE, (user.id, visible))
     return visible
 
 
-def can_access_sites(user: User, site_ids: Iterable[int]) -> bool:
+async def can_access_sites(
+    request: Request, db: AsyncSession, user: User, site_ids: Iterable[int]
+) -> bool:
     """
-    Whether the user may write data for every given site.
+    Whether every given site is visible to the user (no sites: True, no query).
 
-    Admins may write to any site; superusers only to sites they belong to.
-    (Role gating itself is done by require_superuser on the route.)
+    With ``sites.view_all`` every site is; otherwise only the user's live sites.
     """
-    if user.is_admin:
+    wanted = list(site_ids)
+    if not wanted:
         return True
-    allowed = set(user.site_ids or [])
-    return all(site_id in allowed for site_id in site_ids)
+    visible = await visible_site_ids(request, db, user)
+    return visible is None or all(site_id in visible for site_id in wanted)
 
 
-def ensure_site_access(user: User, site_ids: Iterable[int], detail: str) -> None:
-    """Raise 403 unless the user may write data for every given site."""
-    if not can_access_sites(user, site_ids):
+async def ensure_site_access(
+    request: Request, db: AsyncSession, user: User, site_ids: Iterable[int], detail: str
+) -> None:
+    """Raise 403 ``detail`` unless every given site is visible to the user."""
+    if not await can_access_sites(request, db, user, site_ids):
         raise HTTPException(status_code=403, detail=detail)

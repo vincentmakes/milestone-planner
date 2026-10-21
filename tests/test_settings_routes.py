@@ -277,3 +277,55 @@ async def test_update_sso_settings_is_admin_only(authed_client, mock_db_session,
     assert response.status_code == 403
     no_org_sso.assert_not_awaited()
     mock_db_session.commit.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# SSO default role: any existing non-admin role key
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_update_sso_settings_accepts_a_custom_default_role(
+    authed_client, mock_db_session, no_org_sso
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    row = sso_row()
+    # The SSO row, then the role lookup (team_lead exists).
+    mock_db_session.execute.side_effect = [scalar_result(row), scalar_result("team_lead")]
+
+    response = await client.put("/api/settings/sso", json={"default_role": "team_lead"})
+
+    assert response.status_code == 200
+    assert row.default_role == "team_lead"
+    assert response.json()["default_role"] == "team_lead"
+
+
+@pytest.mark.asyncio
+async def test_update_sso_settings_rejects_an_unknown_default_role(
+    authed_client, mock_db_session, no_org_sso
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    row = sso_row()
+    mock_db_session.execute.side_effect = [scalar_result(row), scalar_result(None)]
+
+    response = await client.put("/api/settings/sso", json={"default_role": "ghost"})
+
+    assert response.status_code == 400
+    assert "ghost" in response.json()["detail"]
+    assert row.default_role == "superuser"
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sso_settings_follow_the_settings_sso_permission(
+    authed_client, mock_db_session, no_org_sso
+):
+    client, set_user = authed_client
+    set_user(FakeUser(4, "it_ops", {"settings.sso"}))
+    mock_db_session.execute.side_effect = [scalar_result(sso_row())]
+
+    response = await client.put("/api/settings/sso", json={"enabled": False})
+
+    assert response.status_code == 200

@@ -6,12 +6,14 @@ whole phase/subphase tree, so the client derives cards from data it already
 holds. What lives here is everything that tree does not carry -- status moves,
 card assignees (which also book staff time), and comments.
 
-Auth note: moving a card is allowed for project editors (superusers/admins and
-the project's manager, see app/services/project_access.py) or for the assignees
-of that specific card (see app/services/card_access.py). Assigning and
-unassigning follow the staff-assignment rule: project editors may manage anyone,
-and any user may join or leave a card themself. Commenting is open to any
-authenticated user.
+Auth note: moving a card needs ``kanban.move_any`` (the project's manager holds
+it through the PM bundle, see app/services/project_access.py), or
+``kanban.move_assigned`` for a card the user is an approved assignee of (see
+app/services/card_access.py). Assigning and unassigning follow the
+staff-assignment rule: ``assignments.manage_others`` (or the PM) manages
+anyone, and ``assignments.self_create`` / ``self_remove`` let a user join or
+leave a card themself. Commenting needs ``kanban.comment``; deleting someone
+else's comment ``kanban.moderate_comments``.
 """
 
 import logging
@@ -22,10 +24,11 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, get_db_readonly
-from app.middleware.auth import get_current_user
+from app.middleware.auth import get_current_user, require_permission
 from app.models.assignment import PhaseStaffAssignment, SubphaseStaffAssignment
 from app.models.card_comment import CardComment
 from app.models.project import Project, ProjectPhase, ProjectSubphase
+from app.models.rbac import Role, RolePermission
 from app.models.user import User, UserSite
 from app.schemas.kanban import (
     CardAssigneeCreate,
@@ -47,7 +50,8 @@ from app.services.notifications import (
     dedupe_by_recipient,
     notification_payload,
 )
-from app.services.project_access import can_edit_project, require_assignment_write
+from app.services.permissions import ADMIN_ROLE_KEY, permission_required_detail
+from app.services.project_access import can_on_project, require_assignment_write
 from app.utils import utcnow_naive
 from app.websocket.broadcast import broadcast_change, send_notification
 
@@ -192,19 +196,29 @@ async def get_mentionable_users(
 
     Two groups qualify:
       - active members of the site, whatever their role;
-      - active administrators, who have access to every site. They are only
-        ever given one user_sites row, so joining on membership alone would
-        hide them on every other site.
+      - active users whose role sees every site (the administrators, and any
+        role allowing ``sites.view_all``). They are often given one user_sites
+        row only, so joining on membership alone would hide them on every
+        other site.
 
     Open to any authenticated user, because anyone may comment. Only the
     fields a mention picker needs are returned.
     """
     site_member_ids = select(UserSite.user_id).where(UserSite.site_id == site_id)
+    all_sites_roles = (
+        select(Role.key)
+        .join(RolePermission, RolePermission.role_id == Role.id)
+        .where(RolePermission.permission == "sites.view_all", RolePermission.mode == "allow")
+    )
     result = await db.execute(
         select(User)
         .where(
             User.active == 1,
-            or_(User.id.in_(site_member_ids), User.role == "admin"),
+            or_(
+                User.id.in_(site_member_ids),
+                User.role == ADMIN_ROLE_KEY,
+                User.role.in_(all_sites_roles),
+            ),
         )
         .order_by(User.first_name, User.last_name)
     )
@@ -232,14 +246,15 @@ async def update_card_status(
     """Move a card to a different status column, keeping completion in step."""
     card = await _load_card(db, entity_type, entity_id)
 
-    # Project editors (superuser/admin or the PM) move any card; everyone else
-    # must be assigned to it.
+    # kanban.move_any (or the PM through the bundle) moves any card; otherwise
+    # kanban.move_assigned moves the cards the user is an approved assignee of.
     await require_card_status_write(
         db,
         entity_type=entity_type,
         entity_id=entity_id,
         user_id=user.id,
-        is_privileged=await can_edit_project(db, user, card.project_id),
+        can_move_any=await can_on_project(db, user, "kanban.move_any", card.project_id),
+        can_move_assigned=user.permissions.has("kanban.move_assigned"),
     )
 
     previous_status = card.status
@@ -302,14 +317,21 @@ async def assign_card(
     """
     Assign a staff member to a card, booking their time over the card's dates.
 
-    Project editors may assign anyone; any user may join a card themself.
+    ``assignments.manage_others`` (or the PM) assigns anyone; a user joins a
+    card themself under ``assignments.self_create``.
 
     Phase- and subphase-level assignments carry no dates of their own -- they
     inherit the card's -- so the booking stays in step when the card moves in
     the Gantt chart, with no second write.
     """
     card = await _load_card(db, entity_type, entity_id)
-    await require_assignment_write(db, user, project_id=card.project_id, staff_id=data.staff_id)
+    await require_assignment_write(
+        db,
+        user,
+        project_id=card.project_id,
+        staff_id=data.staff_id,
+        action="assignments.self_create",
+    )
 
     assignee = (await db.execute(select(User).where(User.id == data.staff_id))).scalar_one_or_none()
     if not assignee:
@@ -403,10 +425,17 @@ async def unassign_card(
 ):
     """Remove a staff member from a card, releasing their booking.
 
-    Project editors may remove anyone; any user may leave a card themself.
+    ``assignments.manage_others`` (or the PM) removes anyone; a user leaves a
+    card themself under ``assignments.self_remove``.
     """
     card = await _load_card(db, entity_type, entity_id)
-    await require_assignment_write(db, user, project_id=card.project_id, staff_id=staff_id)
+    await require_assignment_write(
+        db,
+        user,
+        project_id=card.project_id,
+        staff_id=staff_id,
+        action="assignments.self_remove",
+    )
 
     if entity_type == "phase":
         query = select(PhaseStaffAssignment).where(
@@ -478,9 +507,9 @@ async def create_card_comment(
     data: CardCommentCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission("kanban.comment")),
 ):
-    """Post a comment. Open to any authenticated user."""
+    """Post a comment (``kanban.comment``)."""
     card = await _load_card(db, entity_type, entity_id)
 
     mentioned = await _validate_mention_ids(db, data.body)
@@ -551,9 +580,9 @@ async def update_card_comment(
     data: CardCommentUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission("kanban.comment")),
 ):
-    """Edit a comment. Authors only."""
+    """Edit a comment: its author only, with ``kanban.comment``."""
     comment = (
         await db.execute(select(CardComment).where(CardComment.id == comment_id))
     ).scalar_one_or_none()
@@ -611,14 +640,23 @@ async def delete_card_comment(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Delete a comment. Authors, plus admins and superusers for moderation."""
+    """Delete a comment: its author with ``kanban.comment``, anyone's with
+    ``kanban.moderate_comments``."""
     comment = (
         await db.execute(select(CardComment).where(CardComment.id == comment_id))
     ).scalar_one_or_none()
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
 
-    if comment.author_id != user.id and not (user.is_admin or user.is_superuser):
+    if comment.author_id == user.id:
+        if not (
+            user.permissions.has("kanban.comment")
+            or user.permissions.has("kanban.moderate_comments")
+        ):
+            raise HTTPException(
+                status_code=403, detail=permission_required_detail("kanban.comment")
+            )
+    elif not user.permissions.has("kanban.moderate_comments"):
         raise HTTPException(status_code=403, detail="You can only delete your own comments")
 
     project_id = comment.project_id

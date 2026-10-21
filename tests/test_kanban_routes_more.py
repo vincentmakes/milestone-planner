@@ -510,3 +510,61 @@ async def test_unassign_missing_assignment_404(authed_client, mock_db_session, w
     assert response.status_code == 404
     assert response.json()["detail"] == "Assignment not found"
     mock_db_session.delete.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Permission keys: kanban.comment / kanban.moderate_comments
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_moderator_role_deletes_someone_elses_comment(
+    authed_client, mock_db_session, wires
+):
+    client, set_user = authed_client
+    set_user(FakeUser(9, "moderator", {"kanban.moderate_comments"}))
+    mock_db_session.execute.side_effect = [scalar_result(make_comment(50, 5)), MagicMock()]
+
+    response = await client.delete("/api/kanban/comments/50")
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_a_superuser_without_moderation_cannot_delete_others_comments(
+    authed_client, mock_db_session, wires
+):
+    client, set_user = authed_client
+    set_user(FakeUser(9, "superuser", {"kanban.comment"}))
+    mock_db_session.execute.side_effect = [scalar_result(make_comment(50, 5))]
+
+    response = await client.delete("/api/kanban/comments/50")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "You can only delete your own comments"
+
+
+@pytest.mark.asyncio
+async def test_an_author_whose_role_cannot_comment_cannot_delete(
+    authed_client, mock_db_session, wires
+):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "mute", set()))
+    mock_db_session.execute.side_effect = [scalar_result(make_comment(50, 5))]
+
+    response = await client.delete("/api/kanban/comments/50")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Permission required: kanban.comment"
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_editing_a_comment_needs_kanban_comment(authed_client, mock_db_session, wires):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "mute", set()))
+
+    response = await client.put("/api/kanban/comments/50", json={"body": "x"})
+
+    assert response.status_code == 403
+    mock_db_session.execute.assert_not_awaited()

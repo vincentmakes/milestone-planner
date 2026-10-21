@@ -4,8 +4,8 @@ Tags API endpoints.
 Tags are tenant-wide labels assignable to projects. A tag may belong to a tag
 group, may be restricted to some sites (``all_sites = false`` + the
 ``tag_sites`` links) and may be limited to teams (``tag_teams``; a site with
-no linked team keeps the whole site). Every user can read them; only admins
-manage them.
+no linked team keeps the whole site). Every user can read them; only ``tags.manage``
+manages them.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_admin
+from app.middleware.auth import get_current_user, require_permission
 from app.models.site import Site
 from app.models.tag import Tag, TagGroup
 from app.models.user import User
@@ -141,9 +141,9 @@ async def get_tags(
 async def create_tag(
     tag_data: TagCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("tags.manage")),
 ):
-    """Create a tag (admin only), appended at the end of its group."""
+    """Create a tag (``tags.manage``), appended at the end of its group."""
     name = tag_data.name.strip()
     if not name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=EMPTY_NAME_DETAIL)
@@ -190,9 +190,9 @@ async def create_tag(
 async def reorder_tags(
     data: TagReorder,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("tags.manage")),
 ):
-    """Set each listed tag's sort_order to its index (admin only)."""
+    """Set each listed tag's sort_order to its index (``tags.manage``)."""
     if data.tag_order:
         result = await db.execute(select(Tag).where(Tag.id.in_(data.tag_order)))
         by_id = {t.id: t for t in result.scalars().all()}
@@ -209,10 +209,10 @@ async def update_tag(
     tag_id: int,
     tag_data: TagUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("tags.manage")),
 ):
     """
-    Update a tag (admin only, partial).
+    Update a tag (``tags.manage``, partial).
 
     Refused with 409 when the change would break projects that already use the
     tag: moving it into a single-select group where a project also holds
@@ -321,9 +321,9 @@ async def update_tag(
 async def delete_tag(
     tag_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("tags.manage")),
 ):
-    """Delete a tag (admin only). Cascades to project_tags, tag_sites and tag_teams."""
+    """Delete a tag (``tags.manage``). Cascades to project_tags, tag_sites and tag_teams."""
     result = await db.execute(select(Tag).where(Tag.id == tag_id))
     tag = result.scalar_one_or_none()
 

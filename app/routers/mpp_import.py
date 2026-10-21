@@ -29,7 +29,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import require_superuser
+from app.middleware.auth import require_permission
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.user import User
 from app.services.card_status import apply_completion
@@ -883,7 +883,7 @@ def parse_date_str(date_str) -> date | None:
 
 @router.get("/import/mpp/test")
 async def test_mpp_import(
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("projects.import")),
 ):
     """
     Test if MPP import functionality is available.
@@ -929,7 +929,7 @@ async def test_mpp_import(
 @router.post("/import/mpp")
 async def import_mpp_file(
     file: UploadFile = File(...),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("projects.import")),
 ):
     """
     Import a Microsoft Project (MPP) file.
@@ -991,7 +991,7 @@ async def import_mpp_file(
 
 
 @router.get("/import/test")
-async def test_import_endpoint(user: User = Depends(require_superuser)):
+async def test_import_endpoint(user: User = Depends(require_permission("projects.import"))):
     """Simple test endpoint to verify routing works."""
     return {"status": "ok", "message": "Import endpoint is reachable"}
 
@@ -999,9 +999,9 @@ async def test_import_endpoint(user: User = Depends(require_superuser)):
 @router.post("/import/test-upload")
 async def test_upload_endpoint(
     file: UploadFile = File(...),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("projects.import")),
 ):
-    """Test file upload (superuser-gated diagnostic)."""
+    """Test file upload (diagnostic gated on ``projects.import``)."""
     content = await read_upload_capped(file)
     return {
         "status": "ok",
@@ -1016,7 +1016,7 @@ async def import_project_full(
     file: UploadFile = File(...),
     site_id: str = Form(""),
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("projects.import")),
 ):
     """
     Full project import - parses file and creates project with all phases/subphases.

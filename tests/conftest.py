@@ -146,10 +146,6 @@ class FakeUser:
         return self.role == "admin"
 
     @property
-    def is_superuser(self) -> bool:
-        return self.role == "superuser"
-
-    @property
     def site_ids(self) -> list[int]:
         return self._site_ids
 
@@ -176,6 +172,10 @@ async def authed_client(test_settings, mock_db_session):
 
     Yields (client, set_user) where set_user(FakeUser(...)) swaps the identity
     for the next request, so one fixture covers user/superuser/admin cases.
+    Only ``get_current_user`` (and ``require_admin``) are overridden: the
+    ``require_permission*`` gates read the FakeUser's permissions as they read
+    a live-resolved set. The caller's live ``user_sites`` (the visible sites
+    without ``sites.view_all``) are the FakeUser's ``site_ids``.
     """
     with patch("app.config.get_settings", return_value=test_settings):
         from app.main import create_app
@@ -183,20 +183,17 @@ async def authed_client(test_settings, mock_db_session):
         app = create_app()
 
         from app.database import get_db, get_db_readonly
-        from app.middleware.auth import get_current_user, require_admin, require_superuser
+        from app.middleware.auth import get_current_user, require_admin
 
         state = {"user": FakeUser(1, "user")}
 
         def current_user():
             return state["user"]
 
-        def superuser():
-            user = state["user"]
-            if not (user.is_admin or user.is_superuser):
-                from fastapi import HTTPException
-
-                raise HTTPException(status_code=403, detail="Superuser access required")
-            return user
+        async def live_site_ids(_db, _user_id):
+            # The live user_sites rows of the caller are the FakeUser's site_ids,
+            # so visible_site_ids / ensure_site_access need no mocked query.
+            return frozenset(state["user"].site_ids)
 
         def admin():
             user = state["user"]
@@ -209,15 +206,15 @@ async def authed_client(test_settings, mock_db_session):
         app.dependency_overrides[get_db] = lambda: mock_db_session
         app.dependency_overrides[get_db_readonly] = lambda: mock_db_session
         app.dependency_overrides[get_current_user] = current_user
-        app.dependency_overrides[require_superuser] = superuser
         app.dependency_overrides[require_admin] = admin
 
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        with patch("app.services.site_access._load_user_site_ids", live_site_ids):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
 
-            def set_user(user: FakeUser) -> None:
-                state["user"] = user
+                def set_user(user: FakeUser) -> None:
+                    state["user"] = user
 
-            yield client, set_user
+                yield client, set_user
 
         app.dependency_overrides.clear()

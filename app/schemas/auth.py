@@ -2,7 +2,9 @@
 Pydantic schemas for Authentication.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.services.permissions import ADMIN_ROLE_KEY, ROLE_KEY_PATTERN
 
 # Minimum length for new or changed tenant passwords (login is unaffected, so
 # existing shorter passwords keep working until they are changed).
@@ -118,4 +120,13 @@ class SSOConfigUpdate(BaseModel):
     client_secret: str | None = Field(None, max_length=200)
     redirect_uri: str | None = None
     auto_create_users: bool | None = None
-    default_role: str | None = Field(None, pattern="^(superuser|user)$")
+    # A role key (custom roles included); the route checks it exists (400).
+    # Never the admin role: an SSO sign-in never creates an administrator.
+    default_role: str | None = Field(None, pattern=ROLE_KEY_PATTERN)
+
+    @field_validator("default_role")
+    @classmethod
+    def _not_admin(cls, value: str | None) -> str | None:
+        if value == ADMIN_ROLE_KEY:
+            raise ValueError("The administrator role cannot be the SSO default role")
+        return value

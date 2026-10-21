@@ -23,6 +23,7 @@ from app.schemas.vacation import (
     VacationUpdate,
 )
 from app.services.date_range import ensure_date_order
+from app.services.permissions import permission_required_detail
 
 router = APIRouter()
 
@@ -57,6 +58,33 @@ async def ensure_absence_types_exist(db: AsyncSession, type_ids: set[int]) -> No
         )
 
 
+def _may_manage_absences_of(current_user: User, staff_id: int) -> bool:
+    """``absences.manage_own`` for the user's own absences, else ``absences.manage_others``."""
+    key = "absences.manage_own" if staff_id == current_user.id else "absences.manage_others"
+    return current_user.permissions.has(key)
+
+
+def _ensure_may_manage_absences_of(current_user: User, staff_id: int, others_detail: str) -> None:
+    """403 unless the user may write absences of `staff_id` (see above)."""
+    if _may_manage_absences_of(current_user, staff_id):
+        return
+    if staff_id == current_user.id:
+        raise HTTPException(
+            status_code=403, detail=permission_required_detail("absences.manage_own")
+        )
+    raise HTTPException(status_code=403, detail=others_detail)
+
+
+def _sees_every_absence(current_user: User) -> bool:
+    """
+    Whether the no-``siteId`` list and the detail read are tenant-wide.
+
+    Holders of ``absences.manage_others`` (admins and superusers by default),
+    as before RBAC; RBAC Task 4 replaces this with the visible-sites rule.
+    """
+    return current_user.permissions.has("absences.manage_others")
+
+
 def _visible_staff_clause(current_user: User) -> ColumnElement[bool]:
     """Absences a plain user may read: their own and their site colleagues'.
 
@@ -80,7 +108,7 @@ async def get_vacations(
     Get vacations.
 
     If siteId provided, returns vacations for staff in that site. Without it,
-    superusers/admins get every absence; a plain user gets their own plus
+    holders of ``absences.manage_others`` get every absence; others get their own plus
     those of people sharing at least one site with them (absence
     descriptions are personal, so not tenant-wide for everyone).
 
@@ -96,7 +124,7 @@ async def get_vacations(
             .options(selectinload(Vacation.staff))
             .order_by(Vacation.start_date)
         )
-    elif current_user.is_admin or current_user.is_superuser:
+    elif _sees_every_absence(current_user):
         # Get all vacations
         result = await db.execute(
             select(Vacation).options(selectinload(Vacation.staff)).order_by(Vacation.start_date)
@@ -114,10 +142,8 @@ async def get_vacations(
     # Determine canEdit for each vacation based on current user
     response = []
     for v in vacations:
-        # User can edit their own vacations, or admin/superuser can edit any
-        can_edit = (
-            v.staff_id == current_user.id or current_user.is_admin or current_user.is_superuser
-        )
+        # absences.manage_own for their own, absences.manage_others for anyone's
+        can_edit = _may_manage_absences_of(current_user, v.staff_id)
         response.append(build_vacation_response(v, can_edit=can_edit))
 
     return response
@@ -137,7 +163,7 @@ async def get_vacation(
     id does not reveal that the absence exists.
     """
     query = select(Vacation).where(Vacation.id == vacation_id)
-    if not (current_user.is_admin or current_user.is_superuser):
+    if not _sees_every_absence(current_user):
         query = query.where(_visible_staff_clause(current_user))
     result = await db.execute(query.options(selectinload(Vacation.staff)))
     vacation = result.scalar_one_or_none()
@@ -145,9 +171,7 @@ async def get_vacation(
     if not vacation:
         raise HTTPException(status_code=404, detail="Vacation not found")
 
-    can_edit = (
-        vacation.staff_id == current_user.id or current_user.is_admin or current_user.is_superuser
-    )
+    can_edit = _may_manage_absences_of(current_user, vacation.staff_id)
     return build_vacation_response(vacation, can_edit=can_edit)
 
 
@@ -162,7 +186,7 @@ async def create_vacation(
 
     Requires authentication.
     Users can only create vacations for themselves.
-    Admins/superusers can create for anyone.
+    ``absences.manage_own`` for oneself, ``absences.manage_others`` for anyone else.
 
     Matches: POST /api/vacations
     """
@@ -173,11 +197,10 @@ async def create_vacation(
     if not staff:
         raise HTTPException(status_code=404, detail="Staff member not found")
 
-    # Check permission - users can only create for themselves
-    if data.staff_id != current_user.id and not (
-        current_user.is_admin or current_user.is_superuser
-    ):
-        raise HTTPException(status_code=403, detail="You can only create vacations for yourself")
+    # absences.manage_own for oneself, absences.manage_others for anyone else
+    _ensure_may_manage_absences_of(
+        current_user, data.staff_id, "You can only create vacations for yourself"
+    )
 
     if data.absence_type_id is not None:
         await ensure_absence_types_exist(db, {data.absence_type_id})
@@ -209,8 +232,8 @@ async def import_vacations(
     """
     Import absences for one staff member (e.g. parsed from an .ics file).
 
-    Same permission rule as create: users import for themselves only,
-    admins/superusers for anyone. Items whose (start_date, end_date) already
+    Same permission rule as create: ``absences.manage_own`` for oneself,
+    ``absences.manage_others`` for anyone else. Items whose (start_date, end_date) already
     exist for that person - or repeat within the batch - are skipped. All rows
     are written in one transaction.
     """
@@ -218,10 +241,9 @@ async def import_vacations(
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Staff member not found")
 
-    if data.staff_id != current_user.id and not (
-        current_user.is_admin or current_user.is_superuser
-    ):
-        raise HTTPException(status_code=403, detail="You can only create vacations for yourself")
+    _ensure_may_manage_absences_of(
+        current_user, data.staff_id, "You can only create vacations for yourself"
+    )
 
     for index, item in enumerate(data.items):
         if item.end_date < item.start_date:
@@ -275,7 +297,7 @@ async def update_vacation(
 
     Requires authentication.
     Users can only update their own vacations.
-    Admins/superusers can update any.
+    ``absences.manage_others`` updates anyone's.
 
     Matches: PUT /api/vacations/:id
     """
@@ -287,11 +309,9 @@ async def update_vacation(
     if not vacation:
         raise HTTPException(status_code=404, detail="Vacation not found")
 
-    # Check permission
-    if vacation.staff_id != current_user.id and not (
-        current_user.is_admin or current_user.is_superuser
-    ):
-        raise HTTPException(status_code=403, detail="You can only edit your own vacations")
+    _ensure_may_manage_absences_of(
+        current_user, vacation.staff_id, "You can only edit your own vacations"
+    )
 
     # Update fields
     if data.start_date is not None:
@@ -325,7 +345,7 @@ async def delete_vacation(
 
     Requires authentication.
     Users can only delete their own vacations.
-    Admins/superusers can delete any.
+    ``absences.manage_others`` deletes anyone's.
 
     Matches: DELETE /api/vacations/:id
     """
@@ -335,11 +355,9 @@ async def delete_vacation(
     if not vacation:
         raise HTTPException(status_code=404, detail="Vacation not found")
 
-    # Check permission
-    if vacation.staff_id != current_user.id and not (
-        current_user.is_admin or current_user.is_superuser
-    ):
-        raise HTTPException(status_code=403, detail="You can only delete your own vacations")
+    _ensure_may_manage_absences_of(
+        current_user, vacation.staff_id, "You can only delete your own vacations"
+    )
 
     await db.delete(vacation)
     await db.commit()

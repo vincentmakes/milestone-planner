@@ -318,3 +318,84 @@ async def test_omitted_completion_is_left_untouched(authed_client, mock_db_sessi
 
     assert response.status_code == 200
     assert (card.completion, card.status) == (40, "blocked")
+
+
+# ---------------------------------------------------------
+# Permission keys: move_any / move_assigned, mentionable sites.view_all
+# ---------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_custom_role_with_move_any_moves_any_card(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "mover", {"kanban.move_any"}))
+    assignees_result = MagicMock()
+    assignees_result.scalars.return_value.all.return_value = []
+    # No pm lookup, no assignee lookup.
+    mock_db_session.execute.side_effect = [_scalar_result(_card()), assignees_result]
+
+    response = await client.put("/api/kanban/cards/phase/1/status", json={"status": "done"})
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_an_assignee_without_move_assigned_cannot_move(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "watcher", {"projects.manage_as_pm"}))
+    # Card load, pm lookup (not the PM) -- the assignee lookup is never made.
+    mock_db_session.execute.side_effect = [_scalar_result(_card()), _pm_result(99)]
+
+    response = await client.put("/api/kanban/cards/phase/1/status", json={"status": "done"})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "Permission required: kanban.move_any or kanban.move_assigned"
+    )
+    assert mock_db_session.execute.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_the_pm_moves_any_card_of_their_project(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "user"))
+    assignees_result = MagicMock()
+    assignees_result.scalars.return_value.all.return_value = []
+    mock_db_session.execute.side_effect = [
+        _scalar_result(_card()),
+        _pm_result(5),
+        assignees_result,
+    ]
+
+    response = await client.put("/api/kanban/cards/phase/1/status", json={"status": "done"})
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_joining_a_card_with_self_create_denied_is_403(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "watcher", {"projects.manage_as_pm"}))
+    mock_db_session.execute.side_effect = [_scalar_result(_card()), _pm_result(99)]
+
+    response = await client.post("/api/kanban/cards/phase/1/assignees", json={"staff_id": 5})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "You are not allowed to book yourself on projects"
+    mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_mentionable_users_include_roles_seeing_every_site(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "user"))
+    result = MagicMock()
+    result.scalars.return_value.unique.return_value.all.return_value = []
+    mock_db_session.execute.return_value = result
+
+    await client.get("/api/kanban/sites/1/mentionable-users")
+
+    statement = mock_db_session.execute.call_args[0][0]
+    rendered = " ".join(str(statement).split())
+    assert "role_permissions.permission" in rendered
+    assert "sites.view_all" in str(statement.compile(compile_kwargs={"literal_binds": True}))

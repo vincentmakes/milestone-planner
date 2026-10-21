@@ -10,13 +10,13 @@ from collections import defaultdict
 from collections.abc import Iterable
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_admin, require_superuser
+from app.middleware.auth import get_current_user, require_permission
 from app.models.equipment import Equipment, EquipmentSite
 from app.models.project import Project
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
@@ -114,12 +114,12 @@ async def get_active_sites(
 @router.get("/sites/all", response_model=list[SiteResponse])
 async def get_all_sites(
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("sites.manage")),
 ):
     """
     Get all sites including inactive ones.
 
-    Requires admin authentication.
+    Requires ``sites.manage``.
     Matches: GET /api/sites/all
     """
     result = await db.execute(select(Site).order_by(Site.name))
@@ -151,12 +151,12 @@ async def get_site(
 async def create_site(
     data: SiteCreate,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("sites.manage")),
 ):
     """
     Create a new site.
 
-    Requires admin authentication.
+    Requires ``sites.manage``.
     Matches: POST /api/sites
     """
     site = Site(
@@ -194,12 +194,12 @@ async def update_site(
     site_id: int,
     data: SiteUpdate,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("sites.manage")),
 ):
     """
     Update a site.
 
-    Requires admin authentication.
+    Requires ``sites.manage``.
     Matches: PUT /api/sites/:id
     """
     result = await db.execute(select(Site).where(Site.id == site_id))
@@ -262,12 +262,12 @@ async def update_site(
 async def delete_site(
     site_id: int,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("sites.manage")),
 ):
     """
     Delete a site.
 
-    Requires admin authentication.
+    Requires ``sites.manage``.
     Matches: DELETE /api/sites/:id
     """
     result = await db.execute(select(Site).where(Site.id == site_id))
@@ -384,13 +384,14 @@ async def get_site_holidays(
 async def add_custom_holiday(
     site_id: int,
     data: BankHolidayCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    superuser: User = Depends(require_superuser),
+    superuser: User = Depends(require_permission("bank_holidays.manage")),
 ):
     """
     Add a custom bank holiday.
 
-    Requires superuser authentication; superusers only for their own sites.
+    Requires ``bank_holidays.manage``, at a visible site.
     Matches: POST /api/sites/:id/holidays
     """
     # Verify site exists
@@ -400,8 +401,12 @@ async def add_custom_holiday(
     if not site:
         raise HTTPException(status_code=404, detail="Site not found")
 
-    ensure_site_access(
-        superuser, [site_id], "You can only manage holidays for sites you're assigned to"
+    await ensure_site_access(
+        request,
+        db,
+        superuser,
+        [site_id],
+        "You can only manage holidays for sites you're assigned to",
     )
     _validate_range(data.date, data.end_date)
 
@@ -432,8 +437,9 @@ async def add_custom_holiday(
 async def import_holidays(
     site_id: int,
     data: BankHolidayImportRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("bank_holidays.manage")),
 ):
     """
     Import holidays into a site (e.g. parsed from an .ics file).
@@ -446,7 +452,9 @@ async def import_holidays(
     if not site:
         raise HTTPException(status_code=404, detail="Site not found")
 
-    ensure_site_access(user, [site_id], "You can only manage holidays for sites you're assigned to")
+    await ensure_site_access(
+        request, db, user, [site_id], "You can only manage holidays for sites you're assigned to"
+    )
 
     for index, item in enumerate(data.items):
         _validate_range(item.date, item.end_date, label=f"Item {index + 1}: end date")
@@ -491,8 +499,9 @@ async def update_holiday(
     site_id: int,
     holiday_id: int,
     data: BankHolidayUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("bank_holidays.manage")),
 ):
     """
     Edit a bank holiday.
@@ -514,7 +523,9 @@ async def update_holiday(
     if not holiday:
         raise HTTPException(status_code=404, detail="Holiday not found")
 
-    ensure_site_access(user, [site_id], "You can only manage holidays for sites you're assigned to")
+    await ensure_site_access(
+        request, db, user, [site_id], "You can only manage holidays for sites you're assigned to"
+    )
 
     if data.date is not None:
         # A single-day holiday moves as a whole when only its date changes.
@@ -546,15 +557,16 @@ async def update_holiday(
 async def delete_holiday(
     site_id: int,
     holiday_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    superuser: User = Depends(require_superuser),
+    superuser: User = Depends(require_permission("bank_holidays.manage")),
 ):
     """
     Delete a bank holiday.
 
     Works for custom and Nager holidays alike; a deleted Nager holiday comes
     back on the next refresh.
-    Requires superuser authentication; superusers only for their own sites.
+    Requires ``bank_holidays.manage``, at a visible site.
     Matches: DELETE /api/sites/:siteId/holidays/:id
     """
     result = await db.execute(
@@ -567,8 +579,12 @@ async def delete_holiday(
     if not holiday:
         raise HTTPException(status_code=404, detail="Holiday not found")
 
-    ensure_site_access(
-        superuser, [site_id], "You can only manage holidays for sites you're assigned to"
+    await ensure_site_access(
+        request,
+        db,
+        superuser,
+        [site_id],
+        "You can only manage holidays for sites you're assigned to",
     )
 
     await db.delete(holiday)
@@ -580,15 +596,16 @@ async def delete_holiday(
 @router.post("/sites/{site_id}/holidays/refresh", response_model=list[BankHolidayResponse])
 async def refresh_bank_holidays(
     site_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("bank_holidays.manage")),
 ):
     """
     Refresh bank holidays from external API.
 
     Re-fetches and replaces existing non-custom holidays. If the holiday API is
     unreachable, the currently stored holidays are kept.
-    Requires admin or superuser authentication.
+    Requires ``bank_holidays.manage``, at a visible site.
     Superusers can only refresh holidays for sites they're assigned to.
     Matches: POST /api/sites/:id/holidays/refresh
     """
@@ -599,8 +616,8 @@ async def refresh_bank_holidays(
         raise HTTPException(status_code=404, detail="Site not found")
 
     # Check site access for non-admin users
-    ensure_site_access(
-        user, [site_id], "You can only refresh holidays for sites you're assigned to"
+    await ensure_site_access(
+        request, db, user, [site_id], "You can only refresh holidays for sites you're assigned to"
     )
 
     if not site.country_code:
@@ -920,17 +937,18 @@ async def get_events_in_range(
 @router.post("/events", response_model=CompanyEventResponse, status_code=201)
 async def create_multi_site_event(
     data: CompanyEventMultiSiteCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("company_events.manage")),
 ):
     """
     Create a company event on one or more sites, optionally limited to teams
     at those sites.
 
-    Requires superuser or admin role; superusers only for their own sites.
+    Requires ``company_events.manage``, at visible sites.
     """
     site_ids = await _ensure_sites_exist(db, data.site_ids)
-    ensure_site_access(user, site_ids, EVENT_SITE_ACCESS_DETAIL)
+    await ensure_site_access(request, db, user, site_ids, EVENT_SITE_ACCESS_DETAIL)
     _validate_range(data.date, data.end_date)
     teams = await load_teams(db, data.team_ids or [])
     ensure_teams_within_sites(teams, site_ids, team_outside_sites_detail)
@@ -952,8 +970,9 @@ async def create_multi_site_event(
 @router.post("/events/import", response_model=CompanyEventImportResult)
 async def import_company_events(
     data: CompanyEventImportRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("company_events.manage")),
 ):
     """
     Import company events into one or more sites (e.g. parsed from an .ics file).
@@ -961,14 +980,14 @@ async def import_company_events(
     An existing event with the same (date, end_date, name) is reused: it gains
     any missing site links (counted in ``linked``) instead of being duplicated.
     Only events the user may manage on every site they are already linked to
-    are reused -- linking a superuser's site to an event that also lives on a
+    are reused -- linking a visible site to an event that also lives on a
     foreign site would let them hijack (edit/delete) it there. Otherwise a new
     event is created for the target sites no same-name event covers yet.
     Items whose target sites already all show such an event, and repeats
     within the batch, are skipped. All rows are written in one transaction.
     """
     site_ids = await _ensure_sites_exist(db, data.site_ids)
-    ensure_site_access(user, site_ids, EVENT_SITE_ACCESS_DETAIL)
+    await ensure_site_access(request, db, user, site_ids, EVENT_SITE_ACCESS_DETAIL)
 
     for index, item in enumerate(data.items):
         _validate_range(item.date, item.end_date, label=f"Item {index + 1}: end date")
@@ -1014,9 +1033,11 @@ async def import_company_events(
             skipped += 1
             continue
 
-        reusable = next(
-            (e for e in candidates if can_access_sites(user, links.get(e.id, []))), None
-        )
+        reusable = None
+        for candidate in candidates:
+            if await can_access_sites(request, db, user, links.get(candidate.id, [])):
+                reusable = candidate
+                break
         if reusable is not None:
             db.add_all([CompanyEventSite(event_id=reusable.id, site_id=sid) for sid in missing])
             linked += 1
@@ -1053,8 +1074,9 @@ async def import_company_events(
 async def update_company_event(
     event_id: int,
     data: CompanyEventUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("company_events.manage")),
 ):
     """
     Edit a company event. ``site_ids``, when given, replaces its site links;
@@ -1069,12 +1091,12 @@ async def update_company_event(
         raise HTTPException(status_code=404, detail="Event not found")
 
     current = (await _event_site_ids(db, [event_id])).get(event_id, [])
-    ensure_site_access(user, current, EVENT_SITE_ACCESS_DETAIL)
+    await ensure_site_access(request, db, user, current, EVENT_SITE_ACCESS_DETAIL)
 
     new_site_ids = current
     if data.site_ids is not None:
         new_site_ids = await _ensure_sites_exist(db, data.site_ids)
-        ensure_site_access(user, new_site_ids, EVENT_SITE_ACCESS_DETAIL)
+        await ensure_site_access(request, db, user, new_site_ids, EVENT_SITE_ACCESS_DETAIL)
 
     # Validated before anything is written; applied after the site links.
     new_teams: list[Team] | None = None
@@ -1121,8 +1143,9 @@ async def update_company_event(
 @router.delete("/events/{event_id}")
 async def delete_event(
     event_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("company_events.manage")),
 ):
     """
     Delete a company event from every site it is linked to.
@@ -1134,7 +1157,7 @@ async def delete_event(
         raise HTTPException(status_code=404, detail="Event not found")
 
     current = (await _event_site_ids(db, [event_id])).get(event_id, [])
-    ensure_site_access(user, current, EVENT_SITE_ACCESS_DETAIL)
+    await ensure_site_access(request, db, user, current, EVENT_SITE_ACCESS_DETAIL)
 
     await db.delete(event)
     await db.commit()
@@ -1146,20 +1169,21 @@ async def delete_event(
 async def create_company_event(
     site_id: int,
     event_data: CompanyEventCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("company_events.manage")),
 ):
     """
     Create a company event on a single site (legacy route; see POST /events).
 
-    Requires superuser or admin role; superusers only for their own sites.
+    Requires ``company_events.manage``, at visible sites.
     """
     # Verify site exists
     site = await db.get(Site, site_id)
     if not site:
         raise HTTPException(status_code=404, detail="Site not found")
 
-    ensure_site_access(user, [site_id], EVENT_SITE_ACCESS_DETAIL)
+    await ensure_site_access(request, db, user, [site_id], EVENT_SITE_ACCESS_DETAIL)
     _validate_range(event_data.date, event_data.end_date)
 
     event = await _create_event(
@@ -1178,14 +1202,15 @@ async def create_company_event(
 async def delete_company_event(
     site_id: int,
     event_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("company_events.manage")),
 ):
     """
     Remove a company event from one site (legacy route).
 
     The event itself is deleted only when no other site remains linked to it.
-    Requires superuser or admin role; superusers only for their own sites.
+    Requires ``company_events.manage``, at visible sites.
     """
     event = await db.get(CompanyEvent, event_id)
 
@@ -1196,7 +1221,7 @@ async def delete_company_event(
     if site_id not in current:
         raise HTTPException(status_code=404, detail="Event not found for this site")
 
-    ensure_site_access(user, [site_id], EVENT_SITE_ACCESS_DETAIL)
+    await ensure_site_access(request, db, user, [site_id], EVENT_SITE_ACCESS_DETAIL)
 
     remaining = [sid for sid in current if sid != site_id]
     if remaining:

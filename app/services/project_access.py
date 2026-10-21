@@ -1,25 +1,29 @@
 """
-Project-level access checks: project-manager edit rights and self-assignment.
+Project-level access checks on permission keys, with the project-manager bundle.
 
-This sits on top of the role dependencies in app/middleware/auth.py rather than
-duplicating them. Superusers and admins keep their blanket write access
-(unchanged, no site scoping); this adds the two narrower rules a plain `user`
-gets on top of read access:
+The keys come from the catalogue (``app/services/permissions.py``); this module
+turns them into per-project decisions that need the project's ``pm_id``:
 
-- the **project manager** (`projects.pm_id == user.id`) may edit that one
-  project as if they were a superuser -- fields, phases, subphases, staff and
-  equipment assignments, Kanban moves -- but may not delete it;
-- anyone may create, update and delete **their own** staff assignments
-  (`staff_id == user.id`) at project, phase and subphase level, and join or
-  leave Kanban cards.
+- ``projects.edit_any`` edits any project (fields, phases, subphases); the
+  **project manager** (``projects.pm_id == user.id``) whose role allows
+  ``projects.manage_as_pm`` holds every key of ``PM_BUNDLE`` on that one
+  project (edit, archive, assign others, book equipment, move cards, ...), but
+  never ``projects.delete``;
+- staff assignments are **editor first**: a holder of
+  ``assignments.manage_others`` (outright, or through the bundle) writes
+  anyone's row; anyone else writes only their own row, in the mode of the
+  matching ``assignments.self_*`` key (``resolve_self_booking``).
 
 Routes call these *after* loading the entity, with the server-derived
 `project_id` -- never one taken from the request body.
 
-Like `card_access`, the helpers only read `user.id` and `user.role`:
+Like `card_access`, the helpers only read `user.id` and `user.permissions`:
 `get_current_user` is annotated `-> User` but usually returns the lightweight
 SessionUser, which carries no relationships.
 """
+
+from types import EllipsisType
+from typing import Literal
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -27,21 +31,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.user import User
+from app.services.permissions import APPROVABLE_KEYS, permission_required_detail
 
-PRIVILEGED_ROLES = frozenset({"admin", "superuser"})
+EDIT_KEY = "projects.edit_any"
+MANAGE_OTHERS_KEY = "assignments.manage_others"
 
-EDITOR_REQUIRED_DETAIL = "Only the project manager or a superuser can modify this project"
+EDITOR_REQUIRED_DETAIL = (
+    "Only the project manager or a holder of projects.edit_any can modify this project"
+)
 OWN_ASSIGNMENT_DETAIL = "You can only manage your own assignments"
+SELF_BOOKING_DENIED_DETAIL = "You are not allowed to book yourself on projects"
+
+BookingOutcome = Literal["allow", "approval"]
+# ``pm_id=...`` (the default) means "not loaded yet": look it up when needed.
+PmId = int | None | EllipsisType
 
 
-def is_privileged(user: User) -> bool:
-    """Whether the user holds a role with blanket write access (admin or superuser)."""
-    return getattr(user, "role", None) in PRIVILEGED_ROLES
+def user_can(user: User, key: str, pm_id: int | None) -> bool:
+    """``key`` held outright, or through the PM bundle on a project managed by `pm_id`."""
+    return user.permissions.can(key, pm_id=pm_id, user_id=user.id)
 
 
 def user_can_edit(user: User, pm_id: int | None) -> bool:
     """Editor rule against an already-loaded project's `pm_id` (no query)."""
-    return is_privileged(user) or (pm_id is not None and pm_id == user.id)
+    return user_can(user, EDIT_KEY, pm_id)
 
 
 def check_project_editor(user: User, pm_id: int | None) -> None:
@@ -62,21 +75,80 @@ async def project_pm_id(db: AsyncSession, project_id: int) -> int | None:
     return row[0]
 
 
-async def can_edit_project(db: AsyncSession, user: User, project_id: int) -> bool:
-    """Privileged, or the project manager of `project_id`.
+async def can_on_project(db: AsyncSession, user: User, key: str, project_id: int) -> bool:
+    """``key`` on `project_id`: held outright, or through the PM bundle.
 
-    Privileged callers short-circuit without touching the database; everyone
+    Holders of the key short-circuit without touching the database; everyone
     else costs one `SELECT pm_id` (404 if the project is missing).
     """
-    if is_privileged(user):
+    if user.permissions.has(key):
         return True
-    return user_can_edit(user, await project_pm_id(db, project_id))
+    return user_can(user, key, await project_pm_id(db, project_id))
+
+
+async def require_on_project(db: AsyncSession, user: User, key: str, project_id: int) -> None:
+    """Raise 403 unless the user holds ``key`` on `project_id` (see `can_on_project`).
+
+    The detail is ``EDITOR_REQUIRED_DETAIL`` for ``projects.edit_any``, else
+    ``Permission required: <key>``.
+    """
+    if not await can_on_project(db, user, key, project_id):
+        detail = EDITOR_REQUIRED_DETAIL if key == EDIT_KEY else permission_required_detail(key)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+
+
+async def can_edit_project(db: AsyncSession, user: User, project_id: int) -> bool:
+    """``projects.edit_any``, or the project manager of `project_id`."""
+    return await can_on_project(db, user, EDIT_KEY, project_id)
 
 
 async def require_project_editor(db: AsyncSession, user: User, project_id: int) -> None:
     """Raise 403 unless the user may edit `project_id` (see `can_edit_project`)."""
-    if not await can_edit_project(db, user, project_id):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=EDITOR_REQUIRED_DETAIL)
+    await require_on_project(db, user, EDIT_KEY, project_id)
+
+
+async def resolve_self_booking(
+    db: AsyncSession,
+    user: User,
+    *,
+    project_id: int,
+    pm_id: PmId = ...,
+    staff_id: int,
+    action: str,
+) -> BookingOutcome:
+    """
+    Decide a staff-assignment write, editor first.
+
+    - A holder of ``assignments.manage_others`` on the project (outright or
+      through the PM bundle) writes any row, their own included: ``"allow"``.
+    - Someone else's row without it: 403 ``OWN_ASSIGNMENT_DETAIL``.
+    - The user's own row: the mode of ``action`` (an ``assignments.self_*``
+      key) -- ``"allow"``, ``"approval"``, or 403 ``SELF_BOOKING_DENIED_DETAIL``.
+
+    `pm_id` is the project's manager when the caller already loaded it;
+    otherwise it is read only when the outcome depends on it (an own row in
+    allow mode never queries, so this does not prove `project_id` exists).
+    """
+    if action not in APPROVABLE_KEYS:
+        raise ValueError(f"Not a self-booking permission: {action}")
+
+    permissions = user.permissions
+    if permissions.has(MANAGE_OTHERS_KEY):
+        return "allow"
+
+    mode = permissions.mode(action) if staff_id == user.id else None
+    if mode == "allow":
+        # Allowed either way: whether the user is an editor does not matter.
+        return "allow"
+
+    resolved = await project_pm_id(db, project_id) if isinstance(pm_id, EllipsisType) else pm_id
+    if user_can(user, MANAGE_OTHERS_KEY, resolved):
+        return "allow"
+    if staff_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=OWN_ASSIGNMENT_DETAIL)
+    if mode == "approval":
+        return "approval"
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=SELF_BOOKING_DENIED_DETAIL)
 
 
 async def require_assignment_write(
@@ -84,30 +156,22 @@ async def require_assignment_write(
     user: User,
     *,
     project_id: int,
+    pm_id: PmId = ...,
     staff_id: int,
+    action: str,
 ) -> None:
-    """Allow a staff-assignment write by a project editor, or by the staff member
-    themself (self-assignment). Raises 403 otherwise.
-
-    Own rows short-circuit without a query, like privileged callers -- so this
-    does not prove `project_id` exists. Callers taking `project_id` from the
-    URL resolve the project first and use `check_assignment_write` instead.
     """
-    if staff_id == user.id:
-        return
-    if await can_edit_project(db, user, project_id):
-        return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=OWN_ASSIGNMENT_DETAIL)
+    The one gate of the staff-assignment writes (project / phase / subphase
+    create, update, delete and the Kanban join / leave): 403 per
+    `resolve_self_booking`.
 
-
-def check_assignment_write(user: User, *, pm_id: int | None, staff_id: int) -> None:
-    """`require_assignment_write` against an already-resolved project's `pm_id`
-    (no query). Raises 403 unless the row is the user's own or the user may
-    edit the project.
+    TODO(RBAC Task 5): an ``"approval"`` outcome is let through like
+    ``"allow"`` until approval requests exist; Task 5 turns it into the 202
+    path here and at the call sites.
     """
-    if staff_id == user.id or user_can_edit(user, pm_id):
-        return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=OWN_ASSIGNMENT_DETAIL)
+    await resolve_self_booking(
+        db, user, project_id=project_id, pm_id=pm_id, staff_id=staff_id, action=action
+    )
 
 
 async def project_id_for_phase(db: AsyncSession, phase_id: int) -> int:

@@ -2,18 +2,17 @@
 Teams API endpoints.
 
 A team is a named group of users at one site. Every authenticated user can
-read teams; superusers and admins manage them, a superuser only at the sites
-they belong to. Members must belong to the team's site.
+read teams; ``teams.manage`` manages them, at the visible sites only. Members must belong to the team's site.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload, selectinload
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_superuser
+from app.middleware.auth import get_current_user, require_permission
 from app.models.site import Site
 from app.models.team import Team
 from app.models.user import User
@@ -139,11 +138,12 @@ async def get_team(
 @router.post("", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)
 async def create_team(
     data: TeamCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_superuser),
+    current_user: User = Depends(require_permission("teams.manage")),
 ):
     """
-    Create a team (superuser at their own sites, admin anywhere).
+    Create a team (``teams.manage``, at a visible site).
 
     Queries, in order: the site (404), the name at that site (400), then the
     members at that site when ``member_ids`` is not empty (400).
@@ -153,7 +153,7 @@ async def create_team(
     site = await db.execute(select(Site.id).where(Site.id == data.site_id))
     if site.scalar_one_or_none() is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site not found")
-    ensure_site_access(current_user, [data.site_id], TEAM_SITE_ACCESS_DETAIL)
+    await ensure_site_access(request, db, current_user, [data.site_id], TEAM_SITE_ACCESS_DETAIL)
 
     if await _name_taken(db, data.site_id, name):
         raise HTTPException(
@@ -181,18 +181,19 @@ async def create_team(
 async def update_team(
     team_id: int,
     data: TeamUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_superuser),
+    current_user: User = Depends(require_permission("teams.manage")),
 ):
     """
-    Update a team (partial; superuser at their own sites, admin anywhere).
+    Update a team (partial; ``teams.manage``, at a visible site).
 
     Queries, in order: the team with its members (404), the new name at its
     site when the name changes (400), then the members at its site when
     ``member_ids`` is given (400; replaces the member list).
     """
     team = await _load_team(db, team_id)
-    ensure_site_access(current_user, [team.site_id], TEAM_SITE_ACCESS_DETAIL)
+    await ensure_site_access(request, db, current_user, [team.site_id], TEAM_SITE_ACCESS_DETAIL)
 
     name: str | None = None
     if data.name is not None:
@@ -228,11 +229,12 @@ async def update_team(
 @router.delete("/{team_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_team(
     team_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_superuser),
+    current_user: User = Depends(require_permission("teams.manage")),
 ):
     """
-    Delete a team (superuser at their own sites, admin anywhere).
+    Delete a team (``teams.manage``, at a visible site).
 
     Queries, in order: the team (404), the projects deleting it would strand
     (409: a project of the team holding a tag also limited to other teams at
@@ -240,7 +242,7 @@ async def delete_team(
     project, tag, event and equipment links go with it (ON DELETE CASCADE).
     """
     team = await _load_team(db, team_id, with_members=False)
-    ensure_site_access(current_user, [team.site_id], TEAM_SITE_ACCESS_DETAIL)
+    await ensure_site_access(request, db, current_user, [team.site_id], TEAM_SITE_ACCESS_DETAIL)
 
     stranded = await count_projects_stranded_by_team_delete(db, team)
     if stranded:

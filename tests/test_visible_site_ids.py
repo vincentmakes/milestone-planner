@@ -9,7 +9,10 @@ per request and cached on ``request.state``.
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from app.services.site_access import visible_site_ids
+import pytest
+from fastapi import HTTPException
+
+from app.services.site_access import can_access_sites, ensure_site_access, visible_site_ids
 from tests.conftest import FakeUser
 from tests.support import scalars_result
 
@@ -66,3 +69,42 @@ async def test_no_membership_is_an_empty_set(mock_db_session):
     mock_db_session.execute = AsyncMock(return_value=scalars_result([]))
 
     assert await visible_site_ids(make_request(), mock_db_session, FakeUser(5)) == frozenset()
+
+
+# ---------------------------------------------------------
+# can_access_sites / ensure_site_access: the live visible set
+# ---------------------------------------------------------
+
+
+async def test_view_all_may_write_to_any_site_without_a_query(mock_db_session):
+    user = FakeUser(1, "custom", {"sites.view_all"})
+
+    assert await can_access_sites(make_request(), mock_db_session, user, [1, 2, 99]) is True
+    mock_db_session.execute.assert_not_awaited()
+
+
+async def test_others_may_write_only_to_their_live_sites(mock_db_session):
+    # The snapshot says site 1; the live rows say 2 -- the live rows win.
+    user = FakeUser(5, "superuser", site_ids=[1])
+    mock_db_session.execute = AsyncMock(return_value=scalars_result([2]))
+    request = make_request()
+
+    assert await can_access_sites(request, mock_db_session, user, [2]) is True
+    assert await can_access_sites(request, mock_db_session, user, [1]) is False
+    assert await can_access_sites(request, mock_db_session, user, iter([2, 1])) is False
+
+
+async def test_no_sites_needs_no_query(mock_db_session):
+    assert await can_access_sites(make_request(), mock_db_session, FakeUser(5), []) is True
+    mock_db_session.execute.assert_not_awaited()
+
+
+async def test_ensure_site_access_raises_403_with_the_given_detail(mock_db_session):
+    mock_db_session.execute = AsyncMock(return_value=scalars_result([2]))
+
+    with pytest.raises(HTTPException) as exc:
+        await ensure_site_access(make_request(), mock_db_session, FakeUser(5), [3], "nope")
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "nope"
+
+    await ensure_site_access(make_request(), mock_db_session, FakeUser(5), [2], "nope")

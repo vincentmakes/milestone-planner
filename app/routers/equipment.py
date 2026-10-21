@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_superuser
+from app.middleware.auth import get_current_user, require_permission
 from app.models.equipment import Equipment, EquipmentAssignment, EquipmentBlock, EquipmentSite
 from app.models.site import Site
 from app.models.user import User
@@ -26,7 +26,7 @@ from app.schemas.equipment import (
     EquipmentUpdate,
 )
 from app.services.date_range import ensure_date_order, parse_day_range
-from app.services.project_access import require_project_editor
+from app.services.project_access import require_on_project
 from app.services.site_access import can_access_sites, ensure_site_access
 from app.services.team_rules import (
     ensure_teams_within_sites,
@@ -51,17 +51,22 @@ EQUIPMENT_TYPE_ACCESS_DETAIL = (
 )
 
 
-def _ensure_type_access(user: User, equipment_list) -> None:
+async def _ensure_type_access(
+    request: Request, db: AsyncSession, user: User, equipment_list
+) -> None:
     """
     403 unless the user may manage every piece of equipment of a type.
 
-    Same rule as _ensure_equipment_access per item (admins anything,
-    superusers only equipment whose every site is theirs).
+    Same rule as _ensure_equipment_access per item: every site of every item
+    visible to the user (``sites.view_all``: any site; site-less equipment
+    only with ``sites.view_all``).
     """
-    if user.is_admin:
+    if user.permissions.has("sites.view_all"):
         return
     for equipment in equipment_list:
-        if not equipment.site_ids or not can_access_sites(user, equipment.site_ids):
+        if not equipment.site_ids or not await can_access_sites(
+            request, db, user, equipment.site_ids
+        ):
             raise HTTPException(status_code=403, detail=EQUIPMENT_TYPE_ACCESS_DETAIL)
 
 
@@ -91,17 +96,18 @@ async def get_equipment_types(
 @router.put("/equipment-types/{old_type}")
 async def rename_equipment_type(
     old_type: str,
+    request: Request,
     new_type: str = Query(..., description="New type name"),
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("equipment_types.manage")),
 ):
     """
     Rename an equipment type.
 
     Updates all equipment with the old type to use the new type. Types are
-    tenant-wide, so a superuser may only rename one whose every piece of
-    equipment is within their sites (otherwise they would silently rename
-    other sites' equipment); admins may rename any.
+    tenant-wide, so ``equipment_types.manage`` renames only a type whose every
+    piece of equipment is at a visible site (otherwise it would silently
+    rename other sites' equipment); ``sites.view_all`` renames any.
     """
     from sqlalchemy import update
 
@@ -115,7 +121,7 @@ async def rename_equipment_type(
     if not equipment_list:
         raise HTTPException(status_code=404, detail=f"No equipment found with type '{old_type}'")
 
-    _ensure_type_access(user, equipment_list)
+    await _ensure_type_access(request, db, user, equipment_list)
 
     # Update all equipment with this type
     await db.execute(
@@ -135,21 +141,22 @@ async def rename_equipment_type(
 @router.delete("/equipment-types/{type_name}")
 async def delete_equipment_type(
     type_name: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("equipment_types.manage")),
 ):
     """
     Delete an equipment type.
 
-    Only succeeds if no equipment uses this type (409 otherwise). A superuser
-    asking about a type used outside their sites gets 403, like a rename.
+    Only succeeds if no equipment uses this type (409 otherwise). Asking about
+    a type used outside the visible sites gets 403, like a rename.
     """
     # Check if any equipment uses this type
     result = await db.execute(select(Equipment).where(Equipment.type == type_name))
     equipment_list = result.scalars().all()
 
     if equipment_list:
-        _ensure_type_access(user, equipment_list)
+        await _ensure_type_access(request, db, user, equipment_list)
         raise HTTPException(
             status_code=409,
             detail=f"Cannot delete type '{type_name}': {len(equipment_list)} equipment item(s) still use this type",
@@ -187,15 +194,17 @@ def build_equipment_response(equipment: Equipment, site: Site | None = None) -> 
     }
 
 
-def _ensure_equipment_access(user: User, site_ids: list[int]) -> None:
+async def _ensure_equipment_access(
+    request: Request, db: AsyncSession, user: User, site_ids: list[int]
+) -> None:
     """
-    403 unless the user may manage equipment on every given site.
+    403 unless every given site is visible to the user.
 
-    Equipment without any site (legacy orphan) can only be managed by admins.
+    Equipment without any site (legacy orphan) needs ``sites.view_all``.
     """
-    if not site_ids and not user.is_admin:
+    if not site_ids and not user.permissions.has("sites.view_all"):
         raise HTTPException(status_code=403, detail=EQUIPMENT_SITE_ACCESS_DETAIL)
-    ensure_site_access(user, site_ids, EQUIPMENT_SITE_ACCESS_DETAIL)
+    await ensure_site_access(request, db, user, site_ids, EQUIPMENT_SITE_ACCESS_DETAIL)
 
 
 async def _load_sites(db: AsyncSession, site_ids: list[int]) -> list[Site]:
@@ -247,12 +256,12 @@ async def get_equipment(
 @router.get("/equipment/all", response_model=list[EquipmentResponse])
 async def get_all_equipment(
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("equipment.manage")),
 ):
     """
     Get all equipment including inactive, one row per equipment.
 
-    Requires admin or superuser authentication.
+    Requires ``equipment.manage``.
     Matches: GET /api/equipment/all
     """
     result = await db.execute(select(Equipment).order_by(Equipment.name))
@@ -284,18 +293,18 @@ async def get_equipment_by_id(
 @router.post("/equipment", response_model=EquipmentResponse, status_code=201)
 async def create_equipment(
     data: EquipmentCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("equipment.manage")),
 ):
     """
     Create new equipment on one or more sites.
 
-    Requires admin or superuser authentication.
-    Superusers can only create equipment in sites they're assigned to.
+    Requires ``equipment.manage``, at visible sites only.
     Matches: POST /api/equipment
     """
     sites = await _load_sites(db, data.resolved_site_ids)
-    _ensure_equipment_access(user, [s.id for s in sites])
+    await _ensure_equipment_access(request, db, user, [s.id for s in sites])
     teams = await load_teams(db, data.team_ids or [])
     ensure_teams_within_sites(teams, [s.id for s in sites], team_outside_sites_detail)
 
@@ -320,16 +329,16 @@ async def create_equipment(
 async def update_equipment(
     equipment_id: int,
     data: EquipmentUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("equipment.manage")),
 ):
     """
     Update equipment. ``site_ids``, when given, replaces its site links;
     ``team_ids``, when given, replaces its teams.
 
-    Requires admin or superuser authentication.
-    Superusers must belong to every site the equipment is linked to, before
-    and after the change.
+    Requires ``equipment.manage``; every site the equipment is linked to must
+    be visible, before and after the change.
     Matches: PUT /api/equipment/:id
     """
     result = await db.execute(select(Equipment).where(Equipment.id == equipment_id))
@@ -338,11 +347,11 @@ async def update_equipment(
     if not equipment:
         raise HTTPException(status_code=404, detail="Equipment not found")
 
-    _ensure_equipment_access(user, equipment.site_ids)
+    await _ensure_equipment_access(request, db, user, equipment.site_ids)
 
     if data.site_ids is not None:
         sites = await _load_sites(db, data.site_ids)
-        _ensure_equipment_access(user, [s.id for s in sites])
+        await _ensure_equipment_access(request, db, user, [s.id for s in sites])
         equipment.sites = sites
         equipment.site_id = sites[0].id
 
@@ -375,14 +384,14 @@ async def update_equipment(
 @router.delete("/equipment/{equipment_id}")
 async def delete_equipment(
     equipment_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("equipment.manage")),
 ):
     """
     Delete equipment from every site it is linked to.
 
-    Requires admin or superuser authentication.
-    Superusers must belong to all of those sites.
+    Requires ``equipment.manage``; all of those sites must be visible.
     Matches: DELETE /api/equipment/:id
     """
     result = await db.execute(select(Equipment).where(Equipment.id == equipment_id))
@@ -391,7 +400,7 @@ async def delete_equipment(
     if not equipment:
         raise HTTPException(status_code=404, detail="Equipment not found")
 
-    _ensure_equipment_access(user, equipment.site_ids)
+    await _ensure_equipment_access(request, db, user, equipment.site_ids)
 
     await db.delete(equipment)
     await db.commit()
@@ -454,7 +463,7 @@ async def update_equipment_assignment(
     """
     Update an equipment assignment.
 
-    Project editors only: admin, superuser, or the project's manager.
+    ``equipment_bookings.manage``, or the project's manager (PM bundle).
     Matches: PUT /api/equipment-assignments/:id
 
     This is the live handler for the path (the router is registered before
@@ -473,7 +482,7 @@ async def update_equipment_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Equipment assignment not found")
 
-    await require_project_editor(db, user, assignment.project_id)
+    await require_on_project(db, user, "equipment_bookings.manage", assignment.project_id)
 
     # Rebooking onto other equipment: same site rule as creating a booking
     # (POST /projects/{id}/equipment) -- the equipment must be linked to the
@@ -542,7 +551,7 @@ async def delete_equipment_assignment(
     """
     Delete an equipment assignment.
 
-    Project editors only: admin, superuser, or the project's manager.
+    ``equipment_bookings.manage``, or the project's manager (PM bundle).
     Matches: DELETE /api/equipment-assignments/:id
     """
     result = await db.execute(
@@ -554,7 +563,7 @@ async def delete_equipment_assignment(
         raise HTTPException(status_code=404, detail="Equipment assignment not found")
 
     project_id = assignment.project_id
-    await require_project_editor(db, user, project_id)
+    await require_on_project(db, user, "equipment_bookings.manage", project_id)
 
     await db.delete(assignment)
     await db.commit()
@@ -689,12 +698,13 @@ async def get_equipment_blocks(
 @router.post("/equipment-blocks", response_model=EquipmentBlockResponse, status_code=201)
 async def create_equipment_block(
     data: EquipmentBlockCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("equipment_blocks.manage")),
 ):
     """
     Create an equipment block (maintenance / defect / calibration period).
-    Requires superuser or admin.
+    Requires ``equipment_blocks.manage`` at the equipment's sites.
     """
     if data.end_date < data.start_date:
         raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
@@ -703,7 +713,7 @@ async def create_equipment_block(
     if not equipment:
         raise HTTPException(status_code=404, detail="Equipment not found")
 
-    _ensure_equipment_access(user, equipment.site_ids)
+    await _ensure_equipment_access(request, db, user, equipment.site_ids)
 
     block = EquipmentBlock(
         equipment_id=data.equipment_id,
@@ -724,10 +734,11 @@ async def create_equipment_block(
 async def update_equipment_block(
     block_id: int,
     data: EquipmentBlockUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("equipment_blocks.manage")),
 ):
-    """Update an equipment block. Requires superuser or admin."""
+    """Update an equipment block (``equipment_blocks.manage``)."""
     result = await db.execute(
         select(EquipmentBlock)
         .where(EquipmentBlock.id == block_id)
@@ -737,7 +748,9 @@ async def update_equipment_block(
     if not block:
         raise HTTPException(status_code=404, detail="Equipment block not found")
 
-    _ensure_equipment_access(user, block.equipment.site_ids if block.equipment else [])
+    await _ensure_equipment_access(
+        request, db, user, block.equipment.site_ids if block.equipment else []
+    )
 
     if data.start_date is not None:
         block.start_date = data.start_date
@@ -760,10 +773,11 @@ async def update_equipment_block(
 @router.delete("/equipment-blocks/{block_id}")
 async def delete_equipment_block(
     block_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("equipment_blocks.manage")),
 ):
-    """Delete an equipment block. Requires superuser or admin."""
+    """Delete an equipment block (``equipment_blocks.manage``)."""
     result = await db.execute(
         select(EquipmentBlock)
         .where(EquipmentBlock.id == block_id)
@@ -773,7 +787,9 @@ async def delete_equipment_block(
     if not block:
         raise HTTPException(status_code=404, detail="Equipment block not found")
 
-    _ensure_equipment_access(user, block.equipment.site_ids if block.equipment else [])
+    await _ensure_equipment_access(
+        request, db, user, block.equipment.site_ids if block.equipment else []
+    )
 
     await db.delete(block)
     await db.commit()

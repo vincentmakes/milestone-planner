@@ -22,7 +22,7 @@ from app.database import get_db
 from app.middleware.auth import (
     get_current_user,
     get_session_id,
-    require_admin,
+    require_permission,
 )
 from app.models.settings import SSOConfig
 from app.models.user import User
@@ -52,8 +52,10 @@ from app.services.permissions import PermissionSet, load_permission_set, role_di
 from app.services.session import SessionService
 from app.services.sso import (
     apply_secret_update,
+    ensure_sso_default_role,
     mask_secret,
     read_tenant_client_secret,
+    resolve_sso_default_role,
     tenant_sso_is_configured,
 )
 from app.services.sso_errors import parse_entra_token_error
@@ -433,12 +435,12 @@ async def get_sso_config_public(
 async def get_sso_config_full(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("settings.sso")),
 ):
     """
     Get full SSO configuration (client secret masked only).
 
-    Requires admin authentication.
+    Requires ``settings.sso``.
     Matches: GET /api/sso/config/full
 
     Also reports whether organization-level SSO is active for this tenant
@@ -493,7 +495,9 @@ async def get_sso_config_full(
                 "client_id": org_sso.get("client_id"),
                 "redirect_uri": org_sso.get("redirect_uri"),
                 "auto_create_users": 1 if org_sso.get("auto_create_users") else 0,
-                "default_role": org_sso.get("default_role") or "user",
+                # What an SSO sign-in creates (an unknown or admin default
+                # falls back to ``user``), not the raw stored value.
+                "default_role": await resolve_sso_default_role(db, org_sso.get("default_role")),
             }
         )
         response.pop("client_secret", None)
@@ -507,12 +511,12 @@ async def update_sso_config_new(
     data: SSOConfigUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("settings.sso")),
 ):
     """
     Update SSO configuration.
 
-    Requires admin authentication.
+    Requires ``settings.sso``.
     Matches: PUT /api/sso/config
     """
     # Never log the model itself: it carries the Entra client secret.
@@ -549,7 +553,7 @@ async def update_sso_config_new(
     if data.auto_create_users is not None:
         config.auto_create_users = 1 if data.auto_create_users else 0
     if data.default_role is not None:
-        config.default_role = data.default_role or "user"
+        config.default_role = await ensure_sso_default_role(db, data.default_role)
 
     await db.commit()
 
@@ -602,12 +606,12 @@ async def update_sso_config(
     data: SSOConfigUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("settings.sso")),
 ):
     """
     Update SSO configuration.
 
-    Requires admin authentication.
+    Requires ``settings.sso``.
     Matches: PUT /api/auth/sso/config
     """
     _reject_if_org_sso_active(data, await _active_org_sso(request, db, strict=True))
@@ -634,7 +638,7 @@ async def update_sso_config(
     if data.auto_create_users is not None:
         config.auto_create_users = 1 if data.auto_create_users else 0
     if data.default_role is not None:
-        config.default_role = data.default_role
+        config.default_role = await ensure_sso_default_role(db, data.default_role)
 
     await db.commit()
     await db.refresh(config)
@@ -1042,7 +1046,7 @@ async def _sso_callback(
 
     Matches: GET /api/auth/sso/callback
     """
-    from app.services.sso import OrgSSOLookupError, SSOService, resolve_sso_default_role
+    from app.services.sso import OrgSSOLookupError, SSOService
 
     # Verify the HMAC-signed state and recover the tenant slug it carries. The
     # slug is only ever used to pick a redirect target, so recovering it up front

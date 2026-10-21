@@ -575,6 +575,11 @@ PM_BUNDLE: frozenset[str] = frozenset(
 LOCKED_KEYS: frozenset[str] = frozenset({"projects.view", "roles.manage"})
 
 
+def permission_required_detail(*keys: str) -> str:
+    """The 403 detail of a permission gate: ``Permission required: <key>``."""
+    return "Permission required: " + " or ".join(keys)
+
+
 def default_modes(role_key: str) -> dict[str, Mode]:
     """The shipped ``{key: mode}`` rows of a system role (empty for admin / others)."""
     modes: dict[str, Mode] = {}

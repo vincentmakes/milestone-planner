@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_superuser
+from app.middleware.auth import get_current_user, require_permission
 from app.models.note import Note
 from app.models.site import Site
 from app.models.user import User
@@ -76,12 +76,12 @@ async def get_notes(
 async def create_note(
     data: NoteCreate,
     db: AsyncSession = Depends(get_db),
-    superuser: User = Depends(require_superuser),
+    user: User = Depends(require_permission("staff_notes.manage")),
 ):
     """
     Create a new note.
 
-    Requires superuser authentication.
+    Requires ``staff_notes.manage``.
 
     Matches: POST /api/notes
     """
@@ -118,12 +118,12 @@ async def create_note(
 async def delete_note(
     note_id: int,
     db: AsyncSession = Depends(get_db),
-    superuser: User = Depends(require_superuser),
+    user: User = Depends(require_permission("staff_notes.manage")),
 ):
     """
     Delete a note.
 
-    Requires superuser authentication.
+    Requires ``staff_notes.manage``.
 
     Matches: DELETE /api/notes/:id
     """

@@ -341,3 +341,27 @@ async def test_single_tenant_auto_migrations_reach_the_secret_step_and_data_hook
 
     secret_step.assert_awaited_once_with(conn, "single-tenant")
     hook.assert_awaited_once_with(conn)
+
+
+# ---------------------------------------------------------------------------
+# The SSO default role on every write route: an existing non-admin role key
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", WRITE_ROUTES)
+@pytest.mark.parametrize(("found", "status"), [("team_lead", 200), (None, 400)])
+async def test_write_route_checks_a_custom_default_role(
+    authed_client, mock_db_session, path, found, status
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    row = sso_row()
+    role_lookup = MagicMock()
+    role_lookup.scalar_one_or_none.return_value = found
+    mock_db_session.execute = AsyncMock(side_effect=[returning(row), role_lookup])
+
+    resp = await client.put(path, json={"default_role": "team_lead"})
+
+    assert resp.status_code == status, resp.text
+    assert row.default_role == ("team_lead" if found else "user")

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload, selectinload
 
 from app.database import get_db, get_db_readonly
-from app.middleware.auth import get_current_user, require_superuser
+from app.middleware.auth import get_current_user, require_permission
 from app.models.assignment import (
     PhaseStaffAssignment,
     ProjectAssignment,
@@ -41,11 +41,13 @@ from app.schemas.project import (
 )
 from app.services.card_status import apply_completion, apply_status
 from app.services.date_range import ensure_date_order
+from app.services.permissions import permission_required_detail
 from app.services.project_access import (
     check_project_editor,
     project_id_for_phase,
     project_id_for_subphase,
     require_project_editor,
+    user_can,
 )
 from app.services.tag_rules import validate_project_tags
 from app.services.team_rules import (
@@ -720,7 +722,7 @@ async def create_project(
     data: ProjectCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("projects.create")),
 ):
     """
     Create a new project.
@@ -797,8 +799,10 @@ async def update_project(
     """
     Update a project.
 
-    Superusers/admins, or the project's manager (who may change every field,
-    including handing the project over via `pm_id`).
+    ``projects.edit_any``, or the project's manager through the PM bundle (who
+    may change every field, including handing the project over via `pm_id`).
+    Changing ``archived`` needs ``projects.archive`` (also in the bundle); a
+    request that only archives or restores needs nothing else.
 
     Matches: PUT /api/projects/:id
     """
@@ -812,7 +816,12 @@ async def update_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    check_project_editor(user, project.pm_id)
+    sent = {field for field in data.model_fields_set if getattr(data, field) is not None}
+    archiving = "archived" in sent and bool(data.archived) != bool(project.archived)
+    if sent - {"archived"} or not archiving:
+        check_project_editor(user, project.pm_id)
+    if archiving and not user_can(user, "projects.archive", project.pm_id):
+        raise HTTPException(status_code=403, detail=permission_required_detail("projects.archive"))
 
     # Update fields if provided
     if data.name is not None:
@@ -873,10 +882,11 @@ async def delete_project(
     project_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("projects.delete")),
 ):
     """
-    Delete a project and all related data.
+    Delete a project and all related data (``projects.delete``; never through
+    the PM bundle).
 
     Matches: DELETE /api/projects/:id
     """
@@ -935,7 +945,7 @@ async def create_phase(
 
     Matches: POST /api/projects/:id/phases
     """
-    # 404 if the project does not exist, 403 unless editor (superuser or PM)
+    # 404 if the project does not exist, 403 unless editor (edit_any or the PM)
     await require_project_editor(db, user, project_id)
 
     # Determine sort_order

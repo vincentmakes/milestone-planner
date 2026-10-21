@@ -4,14 +4,17 @@ Endpoints for managing custom column definitions and values.
 """
 
 import json
+from collections.abc import Iterable
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import and_, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_admin
+from app.middleware.auth import get_current_user, require_permission
 from app.models.custom_column import CustomColumn, CustomColumnValue
+from app.models.project import Project, ProjectPhase, ProjectSubphase
+from app.models.user import User
 from app.schemas.custom_column import (
     CustomColumnCreate,
     CustomColumnReorderRequest,
@@ -22,11 +25,59 @@ from app.schemas.custom_column import (
     CustomColumnValueCreate,
     CustomColumnValueResponse,
 )
+from app.services.permissions import permission_required_detail
 
 router = APIRouter(prefix="/custom-columns", tags=["Custom Columns"])
 
 # Maximum number of custom columns allowed
 MAX_CUSTOM_COLUMNS = 10
+
+SET_VALUES_KEY = "custom_columns.set_values"
+
+
+async def _ensure_may_set_values(
+    db: AsyncSession, user: User, entities: Iterable[tuple[str, int]]
+) -> None:
+    """
+    403 unless the user may write values on every given (entity_type, id).
+
+    ``custom_columns.set_values`` outright writes anywhere (no query). Without
+    it, the PM bundle lends it on the projects the user manages: every entity
+    must resolve to such a project (bulk lookups: one query per entity type,
+    one for the projects).
+    """
+    permissions = user.permissions
+    if permissions.has(SET_VALUES_KEY):
+        return
+    denied = HTTPException(status_code=403, detail=permission_required_detail(SET_VALUES_KEY))
+    if not permissions.has("projects.manage_as_pm"):
+        raise denied
+
+    wanted: dict[str, set[int]] = {}
+    for entity_type, entity_id in entities:
+        wanted.setdefault(entity_type, set()).add(entity_id)
+    if not wanted:
+        return
+    if set(wanted) - {"project", "phase", "subphase"}:
+        raise denied
+
+    project_ids: set[int] = set(wanted.get("project", set()))
+    for entity_type, model in (("phase", ProjectPhase), ("subphase", ProjectSubphase)):
+        ids = wanted.get(entity_type)
+        if not ids:
+            continue
+        rows = (await db.execute(select(model.id, model.project_id).where(model.id.in_(ids)))).all()
+        if len(rows) != len(ids):
+            raise denied
+        project_ids.update(project_id for _, project_id in rows)
+
+    rows = (
+        await db.execute(select(Project.id, Project.pm_id).where(Project.id.in_(project_ids)))
+    ).all()
+    if len(rows) != len(project_ids) or not all(
+        permissions.can(SET_VALUES_KEY, pm_id=pm_id, user_id=user.id) for _, pm_id in rows
+    ):
+        raise denied
 
 
 # ---------------------------------------------------------
@@ -144,7 +195,7 @@ async def create_custom_column(
     request: Request,
     data: CustomColumnCreate,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_admin),
+    _user=Depends(require_permission("custom_columns.manage")),
 ):
     """
     Create a new custom column.
@@ -217,7 +268,7 @@ async def reorder_custom_columns(
     request: Request,
     data: CustomColumnReorderRequest,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_admin),
+    _user=Depends(require_permission("custom_columns.manage")),
 ):
     """
     Reorder custom columns by providing a list of column IDs in the new order.
@@ -270,7 +321,7 @@ async def update_custom_column(
     column_id: int,
     data: CustomColumnUpdate,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_admin),
+    _user=Depends(require_permission("custom_columns.manage")),
 ):
     """
     Update a custom column.
@@ -318,7 +369,7 @@ async def delete_custom_column(
     request: Request,
     column_id: int,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_admin),
+    _user=Depends(require_permission("custom_columns.manage")),
 ):
     """
     Delete a custom column and all its values.
@@ -356,12 +407,14 @@ async def set_custom_column_value(
     request: Request,
     data: CustomColumnValueCreate,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     """
     Set a custom column value for an entity.
-    Creates or updates the value (upsert).
+    Creates or updates the value (upsert). ``custom_columns.set_values``, or
+    the PM bundle on the entity's project.
     """
+    await _ensure_may_set_values(db, user, [(data.entity_type, data.entity_id)])
     # Verify the column exists
     col_stmt = select(CustomColumn).where(CustomColumn.id == data.custom_column_id)
     col_result = await db.execute(col_stmt)
@@ -416,7 +469,7 @@ async def set_custom_column_values_batch(
     request: Request,
     data: CustomColumnValueBulkUpdate,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     """
     Bulk update custom column values.
@@ -433,6 +486,8 @@ async def set_custom_column_values_batch(
     updates: dict[tuple[int, str, int], str | None] = {}
     for item in data.updates:
         updates[(item.custom_column_id, item.entity_type, item.entity_id)] = item.value
+
+    await _ensure_may_set_values(db, user, [(etype, eid) for (_cid, etype, eid) in updates])
 
     column_ids = sorted({key[0] for key in updates})
     columns: dict[int, CustomColumn] = {}
@@ -501,11 +556,12 @@ async def delete_custom_column_value(
     entity_type: str,
     entity_id: int,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     """
-    Delete a custom column value.
+    Delete a custom column value (same rule as setting one).
     """
+    await _ensure_may_set_values(db, user, [(entity_type, entity_id)])
     stmt = select(CustomColumnValue).where(
         and_(
             CustomColumnValue.custom_column_id == column_id,

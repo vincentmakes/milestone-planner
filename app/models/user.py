@@ -149,17 +149,6 @@ class User(Base):
         return self.role == "admin"
 
     @property
-    def is_superuser(self) -> bool:
-        """
-        Whether the user holds the ``superuser`` system role.
-
-        Compatibility shim for the routers that still gate on the role name
-        (vacations, kanban, export); removed in RBAC Task 3, when those gates
-        become permission checks.
-        """
-        return self.role == "superuser"
-
-    @property
     def permissions(self) -> PermissionSet:
         """
         The user's permission set (not mapped).
