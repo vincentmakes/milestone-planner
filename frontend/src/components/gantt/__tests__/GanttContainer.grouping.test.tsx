@@ -9,6 +9,8 @@ import { GanttContainer } from '../GanttContainer';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import type { GanttRow } from '../utils/projectSections';
+import { tagFilterKey } from '@/utils/tags';
+import { makeTeam } from '@/test/factories';
 import type { Project, Site, Tag, TagGroup } from '@/types';
 
 interface PanelProps { rows?: GanttRow[]; onProjectReorder?: unknown; onToggleSection?: (k: string) => void }
@@ -53,11 +55,12 @@ beforeEach(() => {
   localStorage.clear();
   mocks.ProjectPanel.mockClear();
   mocks.Timeline.mockClear();
-  useViewStore.setState({ ganttGrouping: {}, collapsedGanttSections: {} });
+  useViewStore.setState({ ganttGrouping: {}, collapsedGanttSections: {}, teamFilters: {} });
   useAppStore.setState({
     projects,
     tags,
     tagGroups: [TYPE],
+    teams: [],
     currentSite: { id: 1, name: 'Basel' } as Site,
     currentUser: { id: 9, name: 'Admin', role: 'admin' } as never,
   });
@@ -82,6 +85,17 @@ describe('GanttContainer grouping', () => {
 
     act(() => panelProps()?.onToggleSection?.('tag-1'));
     expect(describeRows(panelProps()?.rows)).toEqual(['tag-1 (collapsed)', 'none', 2]);
+    expect(timelineProps()?.rows).toBe(panelProps()?.rows);
+  });
+
+  it('with an active team filter, hides non-matching projects and keeps matching ones', () => {
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1 })],
+      projects: [{ ...projects[0], team_ids: [1] }, { ...projects[1], team_ids: [] }],
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    render(<GanttContainer />);
+    expect(describeRows(panelProps()?.rows)).toEqual([1]);
     expect(timelineProps()?.rows).toBe(panelProps()?.rows);
   });
 });

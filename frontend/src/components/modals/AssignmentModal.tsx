@@ -12,6 +12,7 @@ import { Input } from '@/components/common/Input';
 import { Select } from '@/components/common/Select';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useTeamFilter } from '@/hooks/useTeamFilter';
 import {
   createStaffAssignment,
   updateStaffAssignment,
@@ -56,6 +57,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   const currentSite = useAppStore((s) => s.currentSite);
   const currentUser = useAppStore((s) => s.currentUser);
   const setProjects = useAppStore((s) => s.setProjects);
+  const { staffMatches, equipmentMatches } = useTeamFilter();
 
   const isOpen = isStaff
     ? activeModal === 'staffAssignment'
@@ -98,14 +100,21 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       : isEditor
   );
 
-  // Filter resources by current site
+  // Resources of the current site, narrowed by the header team filter; the
+  // edited booking's resource stays listed so an edit never drops it.
+  const editingStaffId = editingStaffAssignment?.staff_id;
+  const editingEquipmentId = editingEquipmentAssignment?.equipment_id;
   const siteResources = useMemo(() => {
     if (!currentSite) return [];
     if (isStaff) {
-      return staff.filter(s => s.site_id === currentSite.id);
+      return staff.filter(
+        (s) => s.site_id === currentSite.id && (staffMatches(s) || s.id === editingStaffId)
+      );
     }
-    return equipment.filter(e => e.site_id === currentSite.id);
-  }, [isStaff, staff, equipment, currentSite]);
+    return equipment.filter(
+      (e) => e.site_id === currentSite.id && (equipmentMatches(e) || e.id === editingEquipmentId)
+    );
+  }, [isStaff, staff, equipment, currentSite, staffMatches, equipmentMatches, editingStaffId, editingEquipmentId]);
 
   // Get selected staff's max capacity (default to 100 if not set) - staff mode only
   const selectedStaffMaxCapacity = useMemo(() => {

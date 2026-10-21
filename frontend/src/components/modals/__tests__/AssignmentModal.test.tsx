@@ -7,7 +7,7 @@
  * can be removed.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { AssignmentModal } from '../AssignmentModal';
 import { useUIStore } from '@/stores/uiStore';
@@ -15,6 +15,9 @@ import { useAppStore } from '@/stores/appStore';
 import { createStaffAssignment, deleteStaffAssignment } from '@/api/endpoints/projects';
 import { stubConfirm } from '@/test/confirmDialog';
 import type { Project } from '@/types';
+import { useViewStore } from '@/stores/viewStore';
+import { tagFilterKey } from '@/utils/tags';
+import { makeTeam } from '@/test/factories';
 
 vi.mock('@/api/endpoints/projects', () => ({
   createStaffAssignment: vi.fn().mockResolvedValue({}),
@@ -232,5 +235,46 @@ describe('AssignmentModal initialisation', () => {
     act(() => openForProject());
 
     expect(dateInputs()[0]).toHaveValue('2026-09-01');
+  });
+});
+
+describe('AssignmentModal picker with a team filter', () => {
+  afterEach(() => {
+    useViewStore.setState({ teamFilters: {} });
+    useAppStore.setState({ teams: [] });
+  });
+
+  it('keeps the currently selected item even when it no longer matches', () => {
+    seed({ id: 1, role: 'admin' });
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
+      staff: [
+        { id: 7, name: 'Alice Anderson', role: 'Scientist', site_id: 1, active: true, team_ids: [1] },
+        { id: 4, name: 'Bob Brown', role: 'Scientist', site_id: 1, active: true, team_ids: [2] },
+        { id: 5, name: 'Carol White', role: 'Scientist', site_id: 1, active: true, team_ids: [2] },
+      ] as never,
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    useUIStore.getState().setEditingStaffAssignment({
+      id: 11,
+      project_id: 1,
+      phase_id: null,
+      subphase_id: null,
+      staff_id: 4,
+      staff_name: 'Bob Brown',
+      allocation: 50,
+      start_date: '2026-09-01',
+      end_date: '2026-09-14',
+    });
+    useUIStore.getState().openModal('staffAssignment', { projectId: 1 });
+    render(<AssignmentModal mode="staff" />);
+
+    const picker = screen.getByLabelText('Staff Member') as HTMLSelectElement;
+    expect(Array.from(picker.options).map((o) => o.text)).toEqual([
+      'Select staff member',
+      'Alice Anderson (Scientist)',
+      'Bob Brown (Scientist)',
+    ]);
+    expect(picker).toHaveValue('4');
   });
 });

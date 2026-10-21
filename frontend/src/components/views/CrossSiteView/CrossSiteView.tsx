@@ -10,6 +10,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useScrollSync, useCtrlScrollZoom } from '@/hooks';
+import { useTeamFilter } from '@/hooks/useTeamFilter';
 import { generateTimelineCells, generateTimelineHeaders, calculateTodayScrollLeft, calculateTodayCenterScrollLeft } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { CrossSiteTimelineBody } from './CrossSiteTimelineBody';
@@ -33,6 +34,8 @@ export function CrossSiteView() {
   const cellWidth = useViewStore((s) => s.cellWidth);
   
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
+  // The header team filter belongs to the current site: it narrows that lane only.
+  const { projectMatches } = useTeamFilter();
   
   // Enable Ctrl+Scroll zoom
   useCtrlScrollZoom({ containerRef: timelineScrollRef, cellWidth });
@@ -85,6 +88,7 @@ export function CrossSiteView() {
     
     projects.forEach((project) => {
       if (project.archived) return;
+      if (project.site_id === currentSite?.id && !projectMatches(project)) return;
       const siteProjects = grouped.get(project.site_id) || [];
       siteProjects.push(project);
       grouped.set(project.site_id, siteProjects);
@@ -96,7 +100,7 @@ export function CrossSiteView() {
     });
     
     return grouped;
-  }, [sites, projects]);
+  }, [sites, projects, currentSite?.id, projectMatches]);
   
   // Build flat list of rows for rendering
   const rows = useMemo(() => {

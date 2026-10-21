@@ -7,7 +7,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { StaffView } from '../StaffView';
-import { resetAllStores, useAppStore, useUIStore } from '@/stores';
+import { resetAllStores, useAppStore, useUIStore, useViewStore } from '@/stores';
+import { tagFilterKey } from '@/utils/tags';
 import { deleteVacation, getVacations } from '@/api/endpoints/vacations';
 import { formatDateISO } from '@/utils/date';
 import { stubConfirm } from '@/test/confirmDialog';
@@ -17,6 +18,7 @@ import {
   makeSite,
   makeStaff,
   makeSubphase,
+  makeTeam,
   makeUser,
   makeVacation,
 } from '@/test/factories';
@@ -215,6 +217,18 @@ describe('StaffView panel', () => {
     expect(screen.getByText('No roles defined')).toBeInTheDocument();
     expect(screen.getByText('No skills defined')).toBeInTheDocument();
     expect(screen.getByText('No title')).toBeInTheDocument();
+  });
+
+  it('with an active team filter, hides non-matching staff and keeps matching ones', () => {
+    seed();
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1 })],
+      staff: [{ ...alice, team_ids: [1] }, { ...bob, team_ids: [] }],
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    render(<StaffView />);
+    expect(screen.getByText('Alice Ames')).toBeInTheDocument();
+    expect(screen.queryByText('Bob Brown')).not.toBeInTheDocument();
   });
 });
 

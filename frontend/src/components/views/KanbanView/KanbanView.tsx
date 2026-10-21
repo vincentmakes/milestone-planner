@@ -23,6 +23,7 @@ import {
 import { orderSiteProjects } from '@/utils/storage';
 import { canEditProjectById } from '@/utils/permissions';
 import { useTagFilteredProjects } from '@/hooks/useTagFilter';
+import { useTeamFilteredProjects } from '@/hooks/useTeamFilter';
 import { KanbanDragProvider, useKanbanDrag } from '@/contexts/KanbanDragContext';
 import { useUIStore } from '@/stores/uiStore';
 import { useWebSocketContext } from '@/contexts/WebSocketContext';
@@ -57,9 +58,9 @@ export function KanbanView() {
     [projects, currentSite?.id]
   );
 
-  // The per-site tag filter (shared with the Gantt) narrows the picker and the
-  // "All projects" board.
-  const tagFilteredProjects = useTagFilteredProjects(siteProjects);
+  // The per-site tag and team filters (shared with the Gantt) narrow the
+  // picker and the "All projects" board.
+  const tagFilteredProjects = useTeamFilteredProjects(useTagFilteredProjects(siteProjects));
 
   // A null id means "All projects"; a stale id (e.g. after a site switch, or a
   // project the tag filter now hides) also falls back to showing everything

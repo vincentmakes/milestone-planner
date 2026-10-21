@@ -197,6 +197,31 @@ describe('TeamsPanel', () => {
     expect(api.teamsApi.update).not.toHaveBeenCalled();
   });
 
+  it('uses the same required-name message when adding a team without a name', () => {
+    render(<TeamsPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add team' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Team name is required');
+    expect(api.teamsApi.create).not.toHaveBeenCalled();
+  });
+
+  it('shows the error when adding a team fails', async () => {
+    api.teamsApi.create.mockRejectedValue(new Error('A team with this name already exists'));
+    render(<TeamsPanel />);
+    fireEvent.change(screen.getByLabelText('New team name'), { target: { value: 'Analytics' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add team' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('A team with this name already exists');
+    expect(loader.refreshTeams).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('New team name')).toHaveValue('Analytics');
+  });
+
+  it('says so when the user manages no site', () => {
+    useAppStore.setState({ currentUser: user('superuser', []) });
+    render(<TeamsPanel />);
+    expect(screen.getByText("You don't manage any site yet.")).toBeInTheDocument();
+    expect(screen.queryByText('No teams on this site yet. Add one below.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add team' })).toBeDisabled();
+  });
+
   it('deletes a team only after confirmation', async () => {
     const confirm = stubConfirm(false);
     render(<TeamsPanel />);

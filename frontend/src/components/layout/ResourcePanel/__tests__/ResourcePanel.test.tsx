@@ -18,10 +18,12 @@ import {
   makeSite,
   makeStaff,
   makeSubphase,
+  makeTeam,
   makeUser,
   makeVacation,
 } from '@/test/factories';
 import type { StaffAssignment } from '@/types';
+import { tagFilterKey } from '@/utils/tags';
 
 const today = formatDateISO(new Date());
 const assignment = (staffId: number, allocation: number): StaffAssignment => ({
@@ -174,5 +176,27 @@ describe('ResourcePanel', () => {
     render(<ResourcePanel />);
     expect(card('Bob Brown')).toHaveAttribute('draggable', 'true');
     expect(card('Carol Chen')).toHaveAttribute('draggable', 'false');
+  });
+
+  it('with an active team filter, hides non-matching staff and equipment and keeps matching ones', () => {
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
+      staff: [
+        makeStaff({ id: 4, name: 'Bob Brown', team_ids: [1] }),
+        makeStaff({ id: 5, name: 'Carol White', team_ids: [2] }),
+      ],
+      equipment: [
+        makeEquipment({ id: 1, name: 'Bioreactor 50L', team_ids: [1] }),
+        makeEquipment({ id: 2, name: 'HPLC', team_ids: [2] }),
+      ],
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    render(<ResourcePanel />);
+    expect(screen.getByText('Bob Brown')).toBeInTheDocument();
+    expect(screen.queryByText('Carol White')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Equipment' }));
+    expect(screen.getByText('Bioreactor 50L')).toBeInTheDocument();
+    expect(screen.queryByText('HPLC')).not.toBeInTheDocument();
   });
 });

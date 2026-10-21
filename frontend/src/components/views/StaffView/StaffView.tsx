@@ -15,6 +15,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useScrollSync, useCtrlScrollZoom, useResourceDragDrop } from '@/hooks';
+import { useTeamFilter } from '@/hooks/useTeamFilter';
 import { generateTimelineCells, generateTimelineHeaders, calculateTodayScrollLeft, calculateTodayCenterScrollLeft } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { StaffTimelineBody } from './StaffTimelineBody';
@@ -92,6 +93,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const companyEvents = useAppStore((s) => s.companyEvents);
   const closureIndex = useAppStore((s) => s.closureIndex);
   const staffSiteIds = useAppStore(selectStaffSiteIds);
+  const { staffMatches } = useTeamFilter();
   const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
@@ -154,11 +156,12 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   // Sync vertical scroll between panel and timeline body
   useScrollSync(panelRef, timelineBodyRef);
   
-  // Get all staff for current site (unfiltered for role extraction)
+  // Get all staff for current site (unfiltered by role, for role extraction),
+  // narrowed by the header team filter
   const allSiteStaff = useMemo(() => 
-    staff.filter((s) => s.site_id === currentSite?.id && s.active !== false)
+    staff.filter((s) => s.site_id === currentSite?.id && s.active !== false && staffMatches(s))
       .sort((a, b) => a.name.localeCompare(b.name)),
-    [staff, currentSite]
+    [staff, currentSite, staffMatches]
   );
   
   // Extract unique roles from staff

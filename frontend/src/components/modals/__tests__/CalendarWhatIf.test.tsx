@@ -7,7 +7,7 @@
  * the other create dialogs; editing stays allowed.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { VacationModal } from '../VacationModal';
 import { MyAbsencesModal } from '../MyAbsencesModal';
@@ -17,6 +17,9 @@ import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import type { AbsenceType, EquipmentBlock, Vacation } from '@/types';
 import { stubConfirm } from '@/test/confirmDialog';
+import { useViewStore } from '@/stores/viewStore';
+import { tagFilterKey } from '@/utils/tags';
+import { makeTeam } from '@/test/factories';
 
 const vacationsApi = vi.hoisted(() => ({
   createVacation: vi.fn(),
@@ -208,6 +211,33 @@ describe('EquipmentBlockModal fields', () => {
         description: 'Yearly check',
       })
     );
+  });
+});
+
+describe('EquipmentBlockModal picker with a team filter', () => {
+  afterEach(() => {
+    useViewStore.setState({ teamFilters: {} });
+    useAppStore.setState({ teams: [] });
+  });
+
+  it('keeps the currently selected item even when it no longer matches', () => {
+    useWhatIfStore.setState({ whatIfMode: false });
+    useAppStore.setState({
+      currentSite: { id: 1, name: 'Basel' } as never,
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
+      equipment: [
+        { id: 11, name: 'HPLC 1', type: '', site_id: 1, active: true, team_ids: [2] },
+        { id: 12, name: 'Balance', type: '', site_id: 1, active: true, team_ids: [1] },
+        { id: 13, name: 'Reactor', type: '', site_id: 1, active: true, team_ids: [2] },
+      ] as never,
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    act(() => useUIStore.getState().openEquipmentBlockModal(block, 11));
+    render(<EquipmentBlockModal />);
+
+    const equipment = screen.getByLabelText('Equipment') as HTMLSelectElement;
+    expect(Array.from(equipment.options).map((o) => o.text)).toEqual(['Select equipment…', 'HPLC 1', 'Balance']);
+    expect(equipment).toHaveValue('11');
   });
 });
 

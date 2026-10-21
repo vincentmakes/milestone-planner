@@ -11,7 +11,8 @@ import type { CrossSiteRow } from '../CrossSiteView';
 import { generateTimelineCells } from '@/components/gantt/utils';
 import { resetAllStores, useAppStore, useUIStore, useViewStore } from '@/stores';
 import { formatDateISO } from '@/utils/date';
-import { makeProject, makeSite } from '@/test/factories';
+import { makeProject, makeSite, makeTeam } from '@/test/factories';
+import { tagFilterKey } from '@/utils/tags';
 
 const basel = makeSite({ id: 1, name: 'Basel' });
 const zurich = makeSite({ id: 2, name: 'Zurich' });
@@ -76,6 +77,21 @@ describe('CrossSiteView', () => {
 
     act(() => useUIStore.getState().triggerScrollToToday());
     expect(scroller.scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' }));
+  });
+
+  it('with an active team filter, narrows only the current site\'s lane', () => {
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 2, name: 'Zurich lab' })],
+      projects: useAppStore.getState().projects.map((p) => ({ ...p, team_ids: p.id === 1 ? [1] : [] })),
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    render(<CrossSiteView />);
+    expect(screen.getByTitle('Zeta Upgrade')).toBeInTheDocument();
+    expect(screen.queryByText('Alpha Study')).not.toBeInTheDocument();
+    expect(screen.getByText('1 projects')).toBeInTheDocument();
+    // The other site's lane is unchanged
+    expect(screen.getByText('2 projects')).toBeInTheDocument();
+    expect(screen.getAllByText('Confidential Project')).toHaveLength(2);
   });
 });
 

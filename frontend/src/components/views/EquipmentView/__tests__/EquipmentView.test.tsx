@@ -6,10 +6,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { EquipmentView } from '../EquipmentView';
-import { resetAllStores, useAppStore, useUIStore } from '@/stores';
+import { resetAllStores, useAppStore, useUIStore, useViewStore } from '@/stores';
+import { tagFilterKey } from '@/utils/tags';
 import { deleteEquipmentBlock } from '@/api';
 import { formatDateISO } from '@/utils/date';
-import { makeEquipment, makePhase, makeProject, makeSite, makeUser } from '@/test/factories';
+import { makeEquipment, makePhase, makeProject, makeSite, makeTeam, makeUser } from '@/test/factories';
 import { stubConfirm } from '@/test/confirmDialog';
 import type { EquipmentBlock } from '@/types';
 
@@ -139,6 +140,20 @@ describe('EquipmentView panel', () => {
 
     fireEvent.mouseDown(document.body);
     expect(screen.queryByText('Select All')).not.toBeInTheDocument();
+  });
+
+  it('with an active team filter, hides non-matching equipment and keeps matching ones', () => {
+    seed();
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
+      equipment: [{ ...hplc, team_ids: [1] }, { ...reactor, team_ids: [2] }, { ...spare, team_ids: [] }],
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    render(<EquipmentView />);
+    expect(screen.getByText('HPLC Agilent')).toBeInTheDocument();
+    // Open to the whole site, so it stays
+    expect(screen.getByText('Spare centrifuge')).toBeInTheDocument();
+    expect(screen.queryByText('Bioreactor 50L')).not.toBeInTheDocument();
   });
 });
 

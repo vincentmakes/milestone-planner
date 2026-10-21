@@ -9,7 +9,9 @@ import { ProjectModal } from '../ProjectModal';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { updateProject } from '@/api/endpoints/projects';
-import { makeStaff } from '@/test/factories';
+import { makeStaff, makeTeam } from '@/test/factories';
+import { useViewStore } from '@/stores/viewStore';
+import { tagFilterKey } from '@/utils/tags';
 import type { Project, Site } from '@/types';
 
 vi.mock('@/api/endpoints/projects', () => ({
@@ -51,6 +53,8 @@ beforeEach(() => {
 
 afterEach(() => {
   useUIStore.getState().closeModal();
+  useViewStore.setState({ teamFilters: {} });
+  useAppStore.setState({ teams: [] });
   vi.restoreAllMocks();
 });
 
@@ -156,5 +160,25 @@ describe('ProjectModal fields', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
     });
     expect(updateProject).toHaveBeenCalledWith(9, expect.objectContaining({ confirmed: true, archived: true }));
+  });
+});
+
+describe('ProjectModal PM picker with a team filter', () => {
+  it('keeps the currently selected item even when it no longer matches', () => {
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
+      staff: [
+        makeStaff({ id: 42, name: 'Pat Manager', site_id: 1, team_ids: [2] }),
+        makeStaff({ id: 43, name: 'Ann Teamer', site_id: 1, team_ids: [1] }),
+        makeStaff({ id: 44, name: 'Out Sider', site_id: 1, team_ids: [2] }),
+      ],
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    act(() => useUIStore.getState().openProjectModal({ ...project, pm_id: 42 }));
+    render(<ProjectModal />);
+
+    const pm = screen.getByLabelText('Project Manager') as HTMLSelectElement;
+    expect(Array.from(pm.options).map((o) => o.text)).toEqual(['Select PM', 'Pat Manager', 'Ann Teamer']);
+    expect(pm).toHaveValue('42');
   });
 });

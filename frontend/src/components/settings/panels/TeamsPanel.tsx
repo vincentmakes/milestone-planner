@@ -62,7 +62,7 @@ export function TeamsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
     const name = newName.trim();
     if (siteId === null) return;
     if (!name) {
-      setError('Please enter a team name');
+      setError('Team name is required');
       return;
     }
     if (!beginSubmit()) return;
@@ -137,7 +137,9 @@ export function TeamsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
         </Notice>
       )}
 
-      {siteTeams.length === 0 ? (
+      {siteId === null ? (
+        <div className={styles.empty}>You don't manage any site yet.</div>
+      ) : siteTeams.length === 0 ? (
         <div className={styles.empty}>No teams on this site yet. Add one below.</div>
       ) : (
         <ul className={styles.list}>

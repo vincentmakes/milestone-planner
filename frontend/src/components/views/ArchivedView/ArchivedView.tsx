@@ -9,6 +9,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useScrollSync } from '@/hooks';
+import { useTeamFilter } from '@/hooks/useTeamFilter';
 import { canEditProject } from '@/utils/permissions';
 import { generateTimelineCells, generateTimelineHeaders } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
@@ -32,6 +33,7 @@ export function ArchivedView() {
   const cellWidth = useViewStore((s) => s.cellWidth);
   
   const openProjectModal = useUIStore((s) => s.openProjectModal);
+  const { projectMatches } = useTeamFilter();
   
   // Sync vertical scroll between panel and timeline body
   useScrollSync(panelRef, timelineBodyRef);
@@ -39,9 +41,9 @@ export function ArchivedView() {
   // Get archived projects for current site
   const archivedProjects = useMemo(() => {
     return projects
-      .filter((p) => p.archived && p.site_id === currentSite?.id)
+      .filter((p) => p.archived && p.site_id === currentSite?.id && projectMatches(p))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [projects, currentSite]);
+  }, [projects, currentSite, projectMatches]);
   
   // Generate timeline data
   const cells = useMemo(() =>

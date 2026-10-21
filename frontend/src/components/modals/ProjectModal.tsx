@@ -11,6 +11,7 @@ import { Input } from '@/components/common/Input';
 import { Select } from '@/components/common/Select';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useTeamFilter } from '@/hooks/useTeamFilter';
 import { createProject, updateProject, loadAllProjects } from '@/api/endpoints/projects';
 import { getPredefinedPhases } from '@/api/endpoints/settings';
 import { useWhatIfStore } from '@/stores/whatIfStore';
@@ -41,6 +42,7 @@ export function ProjectModal() {
   const allTags = useAppStore((s) => s.tags);
   const tagGroups = useAppStore((s) => s.tagGroups);
   const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
+  const { staffMatches } = useTeamFilter();
   
   const isOpen = activeModal === 'project';
   const isEditing = !!editingProject;
@@ -65,11 +67,15 @@ export function ProjectModal() {
   const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
   
-  // Filter staff by current site
+  // Staff of the current site, narrowed by the header team filter; the
+  // project's current manager stays listed so an edit never drops them.
+  const editingPmId = editingProject?.pm_id;
   const siteStaff = useMemo(() => {
     if (!currentSite) return [];
-    return staff.filter(s => s.site_id === currentSite.id);
-  }, [staff, currentSite]);
+    return staff.filter(
+      (s) => s.site_id === currentSite.id && (staffMatches(s) || s.id === editingPmId)
+    );
+  }, [staff, currentSite, staffMatches, editingPmId]);
 
   // "Select PM" stays a real, selectable choice: picking it clears the manager.
   const pmOptions = useMemo(

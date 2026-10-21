@@ -4,11 +4,14 @@
  * admins, superusers and the project's manager (utils/permissions.ts).
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ArchivedView } from '../ArchivedView';
 import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
+import { useViewStore } from '@/stores/viewStore';
+import { tagFilterKey } from '@/utils/tags';
+import { makeTeam } from '@/test/factories';
 import type { Project } from '@/types';
 
 vi.mock('@/hooks', () => ({
@@ -66,5 +69,28 @@ describe('ArchivedView edit button', () => {
     render(<ArchivedView />);
     expect(screen.getByText('Legacy Assay')).toBeInTheDocument();
     expect(editButton()).not.toBeInTheDocument();
+  });
+});
+
+describe('ArchivedView team filter', () => {
+  afterEach(() => {
+    useViewStore.setState({ teamFilters: {} });
+    useAppStore.setState({ teams: [] });
+  });
+
+  it('with an active team filter, hides non-matching projects and keeps matching ones', () => {
+    useAppStore.setState({
+      projects: [
+        { ...archived, team_ids: [1] },
+        { ...archived, id: 6, name: 'Old Pilot', team_ids: [2] },
+      ],
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
+      currentSite: { id: 1, name: 'Basel' } as never,
+      currentUser: { id: 1, name: 'Someone', role: 'admin' } as never,
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    render(<ArchivedView />);
+    expect(screen.getByText('Legacy Assay')).toBeInTheDocument();
+    expect(screen.queryByText('Old Pilot')).not.toBeInTheDocument();
   });
 });

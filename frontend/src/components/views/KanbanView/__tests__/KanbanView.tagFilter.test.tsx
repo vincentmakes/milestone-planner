@@ -10,6 +10,8 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import type { Project, Tag } from '@/types';
+import { tagFilterKey } from '@/utils/tags';
+import { makeTeam } from '@/test/factories';
 
 vi.mock('@/api/endpoints/kanban', () => ({
   getCommentCounts: vi.fn().mockResolvedValue(new Map()),
@@ -41,7 +43,7 @@ function makeProject(id: number, name: string, tagIds: number[]): Project {
 beforeEach(() => {
   localStorage.clear();
   useUIStore.setState({ activeModal: null });
-  useViewStore.setState({ kanbanProjectId: null, tagFilters: {} });
+  useViewStore.setState({ kanbanProjectId: null, tagFilters: {}, teamFilters: {} });
   useAppStore.setState({
     projects: [makeProject(1, 'Bioprocess Scale-Up', [7]), makeProject(2, 'Catalyst Optimization', [])],
     currentSite: { id: 1, name: 'Basel' } as never,
@@ -49,6 +51,7 @@ beforeEach(() => {
     staff: [],
     tags: [pilot],
     tagGroups: [],
+    teams: [],
   });
 });
 
@@ -82,5 +85,19 @@ describe('KanbanView tag filter', () => {
     await act(async () => {});
     expect(screen.getByText('No projects in Basel match the tag filter.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tags (1 selected)' })).toBeInTheDocument();
+  });
+
+  it('with an active team filter, hides non-matching projects and keeps matching ones', async () => {
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1 })],
+      projects: [
+        { ...makeProject(1, 'Bioprocess Scale-Up', []), team_ids: [1] },
+        { ...makeProject(2, 'Catalyst Optimization', []), team_ids: [] },
+      ],
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    render(<KanbanView />);
+    await act(async () => {});
+    expect(pickerOptions()).toEqual(['All projects', 'Bioprocess Scale-Up']);
   });
 });

@@ -19,6 +19,7 @@ import {
   useEquipmentTodayStatus,
 } from '@/hooks';
 import { useDataLoader } from '@/hooks/useDataLoader';
+import { useTeamFilter } from '@/hooks/useTeamFilter';
 import { useTimelineScrollSync } from '@/contexts/TimelineScrollContext';
 import { deleteEquipmentBlock } from '@/api';
 import { canManageAnyProject, isPrivileged } from '@/utils/permissions';
@@ -81,6 +82,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
   const openEquipmentBlockModal = useUIStore((s) => s.openEquipmentBlockModal);
   const currentUser = useAppStore((s) => s.currentUser);
+  const { equipmentMatches } = useTeamFilter();
 
   // Drag and drop for equipment assignment
   const { handleDragStart, handleDragEnd } = useResourceDragDrop();
@@ -173,11 +175,12 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   // Sync vertical scroll between panel and timeline body
   useScrollSync(panelRef, timelineBodyRef);
   
-  // Get all equipment for current site (unfiltered for type extraction)
+  // Get all equipment for current site (unfiltered by type, for type
+  // extraction), narrowed by the header team filter
   const allSiteEquipment = useMemo(() => 
-    equipment.filter((e) => e.site_id === currentSite?.id)
+    equipment.filter((e) => e.site_id === currentSite?.id && equipmentMatches(e))
       .sort((a, b) => a.name.localeCompare(b.name)),
-    [equipment, currentSite]
+    [equipment, currentSite, equipmentMatches]
   );
   
   // Extract unique equipment types

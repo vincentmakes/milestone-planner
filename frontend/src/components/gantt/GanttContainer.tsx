@@ -12,6 +12,7 @@ import { ProjectPanel } from './ProjectPanel';
 import { Timeline } from './Timeline';
 import { useScrollSync, useTagFilteredProjects } from '@/hooks';
 import { useGanttGrouping } from '@/hooks/useGanttGrouping';
+import { useTeamFilteredProjects } from '@/hooks/useTeamFilter';
 import { generateTimelineCells, generateTimelineHeaders } from './utils';
 import { buildGanttRows, buildProjectSections, flatGanttRows } from './utils/projectSections';
 import { TimelineScrollProvider } from '@/contexts/TimelineScrollContext';
@@ -64,9 +65,10 @@ export function GanttContainer() {
   );
 
   // Projects shown in the tree and on the timeline: the site's projects
-  // narrowed by the per-site tag filter (same filter as the Kanban board).
-  // Reordering still works on the full list so hidden projects keep their place.
-  const visibleProjects = useTagFilteredProjects(filteredProjects);
+  // narrowed by the per-site tag and team filters (same filters as the Kanban
+  // board). Reordering still works on the full list so hidden projects keep
+  // their place.
+  const visibleProjects = useTeamFilteredProjects(useTagFilteredProjects(filteredProjects));
 
   // "Group by tag group": the (tag-filtered) projects split into sections.
   // Both panes render the same flat row list, so they stack identically.

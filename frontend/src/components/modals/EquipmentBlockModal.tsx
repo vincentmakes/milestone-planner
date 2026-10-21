@@ -20,6 +20,7 @@ import { Input } from '@/components/common/Input';
 import { Select } from '@/components/common/Select';
 import { toInputDateFormat, formatDateISO, daysBetweenDateStrings } from '@/utils/date';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
+import { useTeamFilter } from '@/hooks/useTeamFilter';
 import styles from './EquipmentBlockModal.module.css';
 import { confirmAction } from '@/utils/confirmDialog';
 
@@ -35,6 +36,7 @@ export function EquipmentBlockModal() {
   const equipment = useAppStore((s) => s.equipment);
   const currentSite = useAppStore((s) => s.currentSite);
   const setEquipmentBlocks = useAppStore((s) => s.setEquipmentBlocks);
+  const { equipmentMatches } = useTeamFilter();
 
   const isOpen = activeModal === 'equipmentBlock';
   const isEditing = !!editingEquipmentBlock;
@@ -53,10 +55,15 @@ export function EquipmentBlockModal() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Equipment of the current site, narrowed by the header team filter; the
+  // edited block's equipment stays listed so an edit never drops it.
+  const editingEquipmentId = editingEquipmentBlock?.equipment_id;
   const siteEquipment = useMemo(() => {
     if (!currentSite) return equipment;
-    return equipment.filter((e) => e.site_id === currentSite.id);
-  }, [equipment, currentSite]);
+    return equipment.filter(
+      (e) => e.site_id === currentSite.id && (equipmentMatches(e) || e.id === editingEquipmentId)
+    );
+  }, [equipment, currentSite, equipmentMatches, editingEquipmentId]);
 
   // The empty first entry stays a real, selectable option (as before).
   const equipmentOptions = useMemo(

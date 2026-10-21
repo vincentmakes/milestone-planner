@@ -491,9 +491,12 @@ describe('UsersPanel teams column', () => {
     render(<UsersPanel />);
 
     const bobRow = await rowOf('Bob Brown');
-    expect(screen.getByRole('columnheader', { name: 'Teams' })).toBeInTheDocument();
+    const headers = screen.getAllByRole('columnheader').map((th) => th.textContent);
+    const teamsCol = headers.indexOf('Teams');
+    expect(teamsCol).toBeGreaterThan(-1);
+    const teamsCell = (row: HTMLElement) => within(row).getAllByRole('cell')[teamsCol];
     // An id no longer in the store (a deleted team) is skipped.
-    expect(within(bobRow).getByText('Analytics, Zurich lab')).toBeInTheDocument();
-    expect(within(await rowOf('Ada Admin')).getAllByText('—').length).toBeGreaterThan(0);
+    expect(teamsCell(bobRow)).toHaveTextContent('Analytics, Zurich lab');
+    expect(teamsCell(await rowOf('Ada Admin'))).toHaveTextContent(/^—$/);
   });
 });
