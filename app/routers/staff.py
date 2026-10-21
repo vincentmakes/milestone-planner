@@ -52,6 +52,8 @@ def build_staff_row(user: User, site: Site | None = None) -> dict:
         "site_id": site.id if site else None,
         "site_name": site.name if site else None,
         "skills": build_skills_list(user),
+        # Only the teams at this row's site (a team belongs to one site).
+        "team_ids": sorted(t.id for t in user.teams if site is not None and t.site_id == site.id),
     }
 
 
@@ -84,7 +86,7 @@ async def get_staff(
         .outerjoin(Site, UserSite.site_id == Site.id)
         .where(User.role != "admin")  # Exclude admins
         .where(User.active == 1)
-        .options(selectinload(User.skills))
+        .options(selectinload(User.skills), selectinload(User.teams))
         .order_by(User.first_name, User.last_name)
     )
 
@@ -127,6 +129,7 @@ async def get_staff_member(
         active=staff.active,
         created_at=staff.created_at,
         sites=[{"id": s.id, "name": s.name} for s in staff.sites],
+        team_ids=staff.team_ids,
     )
 
 

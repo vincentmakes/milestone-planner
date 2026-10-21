@@ -14,6 +14,7 @@ from app.database import get_db
 from app.middleware.auth import get_session_id, require_admin, require_superuser
 from app.models.site import Site
 from app.models.skill import Skill, UserSkill
+from app.models.team import TeamMember
 from app.models.user import User, UserSite
 from app.schemas.base import PaginationParams
 from app.schemas.user import (
@@ -23,8 +24,21 @@ from app.schemas.user import (
     UserResponse,
 )
 from app.services.encryption import PasswordTooLongError, hash_user_password
-from app.services.response_builders import build_skills_list, build_user_base, get_sorted_sites
+from app.services.response_builders import (
+    build_skills_list,
+    build_user_base,
+    get_sorted_sites,
+    get_sorted_teams,
+)
 from app.services.session import SessionService
+from app.services.site_access import ensure_site_access
+from app.services.team_rules import (
+    TEAM_SITE_ACCESS_DETAIL,
+    ensure_teams_within_sites,
+    load_teams,
+    prune_teams_to_sites,
+    team_outside_user_sites_detail,
+)
 
 router = APIRouter()
 
@@ -75,6 +89,7 @@ async def _load_skills(db: AsyncSession, skill_ids: list[int] | None) -> list[Sk
 def build_user_list_response(user: User) -> dict:
     """Build user response for list view (includes job_title, skills, and site_names)."""
     sorted_sites = get_sorted_sites(user)
+    sorted_teams = get_sorted_teams(user)
     return {
         **build_user_base(user),
         "is_system": user.is_system if user.is_system is not None else 0,
@@ -82,12 +97,15 @@ def build_user_list_response(user: User) -> dict:
         "site_ids": [s.id for s in sorted_sites],
         "site_names": [s.name for s in sorted_sites],
         "skills": build_skills_list(user),
+        "team_ids": [t.id for t in sorted_teams],
+        "team_names": [t.name for t in sorted_teams],
     }
 
 
 def build_user_detail_response(user: User) -> dict:
     """Build user response for detail view (has sites array, no site_names)."""
     sorted_sites = get_sorted_sites(user)
+    sorted_teams = get_sorted_teams(user)
     return {
         **build_user_base(user),
         "is_system": user.is_system if user.is_system is not None else 0,
@@ -95,6 +113,8 @@ def build_user_detail_response(user: User) -> dict:
         "site_ids": [s.id for s in sorted_sites],
         "sites": [{"id": s.id, "name": s.name} for s in sorted_sites],
         "skills": build_skills_list(user),
+        "team_ids": [t.id for t in sorted_teams],
+        "team_names": [t.name for t in sorted_teams],
     }
 
 
@@ -199,6 +219,9 @@ async def create_user(
     # end in an FK violation -> 500 at commit).
     sites = await _load_sites(db, data.site_ids)
     skills = await _load_skills(db, data.skill_ids)
+    # Unknown teams are a 404; a team must be at one of the user's sites (400).
+    teams = await load_teams(db, data.team_ids)
+    ensure_teams_within_sites(teams, [s.id for s in sites], team_outside_user_sites_detail)
 
     db.add(user)
     await db.flush()  # Get the user ID
@@ -207,11 +230,14 @@ async def create_user(
         db.add(UserSite(user_id=user.id, site_id=site.id))
     for skill in skills:
         db.add(UserSkill(user_id=user.id, skill_id=skill.id))
+    for team in teams:
+        db.add(TeamMember(team_id=team.id, user_id=user.id))
 
     await db.commit()
     await db.refresh(user)
     user.sites = sites
     user.skills = skills
+    user.teams = teams
 
     return build_user_list_response(user)
 
@@ -244,6 +270,7 @@ async def update_user(
         .where(User.id == user_id)
         .options(selectinload(User.sites))
         .options(selectinload(User.skills))
+        .options(selectinload(User.teams))
     )
     user = result.unique().scalar_one_or_none()
 
@@ -348,6 +375,32 @@ async def update_user(
         for site in sites:
             db.add(UserSite(user_id=user_id, site_id=site.id))
 
+    # Replace team memberships if provided: unknown teams are a 404, a
+    # superuser may only assign teams at their own sites (403), and every team
+    # must be at one of the user's (resulting) sites (400). Otherwise a site
+    # change drops the user from the teams at the sites they left.
+    teams = list(user.teams) if user.teams else []
+    if data.team_ids is not None:
+        teams = await load_teams(db, data.team_ids)
+        if not is_admin:
+            ensure_site_access(current_user, {t.site_id for t in teams}, TEAM_SITE_ACCESS_DETAIL)
+        ensure_teams_within_sites(teams, [s.id for s in sites], team_outside_user_sites_detail)
+
+        await db.execute(delete(TeamMember).where(TeamMember.user_id == user_id))
+        for team in teams:
+            db.add(TeamMember(team_id=team.id, user_id=user_id))
+    elif data.site_ids is not None:
+        kept = prune_teams_to_sites(teams, [s.id for s in sites])
+        kept_ids = {t.id for t in kept}
+        dropped = [t.id for t in teams if t.id not in kept_ids]
+        if dropped:
+            await db.execute(
+                delete(TeamMember).where(
+                    TeamMember.user_id == user_id, TeamMember.team_id.in_(dropped)
+                )
+            )
+        teams = kept
+
     # Update skill associations if provided
     skills = list(user.skills) if user.skills else []
     if data.skill_ids is not None:
@@ -367,6 +420,7 @@ async def update_user(
     await db.refresh(user)
     user.sites = sites
     user.skills = skills
+    user.teams = teams
 
     return build_user_list_response(user)
 

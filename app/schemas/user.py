@@ -5,6 +5,7 @@ Pydantic schemas for Users and Staff.
 from pydantic import BaseModel, EmailStr, Field
 
 from app.schemas.base import DateTimeJS
+from app.schemas.team import TeamIds
 
 # Minimum length of a new or changed tenant password (B1-22). Login never
 # checks it, so accounts with an older, shorter password keep working.
@@ -51,6 +52,7 @@ class StaffResponse(BaseModel):
     site_id: int | None = None  # Singular site ID
     site_name: str | None = None  # Singular site name
     skills: list[SkillInfo] = []  # User's skills
+    team_ids: list[int] = []  # The user's teams at this row's site
 
     class Config:
         from_attributes = True
@@ -68,6 +70,7 @@ class StaffDetailResponse(BaseModel):
     active: int = 1
     created_at: DateTimeJS
     sites: list[UserSiteResponse] = []
+    team_ids: list[int] = []  # All of the user's teams
 
     class Config:
         from_attributes = True
@@ -86,6 +89,7 @@ class StaffCreate(BaseModel):
     max_capacity: int = Field(default=100, ge=1, le=100)  # Max work capacity %
     site_ids: list[int] = []
     skill_ids: list[int] = []
+    team_ids: TeamIds = []
 
 
 class StaffUpdate(BaseModel):
@@ -101,6 +105,7 @@ class StaffUpdate(BaseModel):
     active: int | None = None
     site_ids: list[int] | None = None
     skill_ids: list[int] | None = None
+    team_ids: TeamIds | None = None
 
 
 class UserResponse(BaseModel):
@@ -121,6 +126,8 @@ class UserResponse(BaseModel):
     site_ids: list[int] = []
     site_names: list[str] = []
     skills: list[SkillInfo] = []
+    team_ids: list[int] = []
+    team_names: list[str] = []
 
     class Config:
         from_attributes = True
@@ -144,6 +151,8 @@ class UserDetailResponse(BaseModel):
     site_ids: list[int] = []
     sites: list[UserSiteResponse] = []
     skills: list[SkillInfo] = []
+    team_ids: list[int] = []
+    team_names: list[str] = []
 
     class Config:
         from_attributes = True

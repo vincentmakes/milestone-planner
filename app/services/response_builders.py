@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.models.site import Site
+    from app.models.team import Team
     from app.models.user import User
 
 
@@ -18,6 +19,12 @@ def get_sorted_sites(user: User) -> list[Site]:
     """Get a user's sites sorted by ID (matches Node.js behavior)."""
     sites = user.sites if hasattr(user, "sites") and user.sites else []
     return sorted(sites, key=lambda s: s.id)
+
+
+def get_sorted_teams(user: User) -> list[Team]:
+    """Get a user's teams sorted by ID."""
+    teams = user.teams if hasattr(user, "teams") and user.teams else []
+    return sorted(teams, key=lambda t: t.id)
 
 
 def build_skills_list(user: User) -> list[dict]:
