@@ -207,6 +207,25 @@ describe('CompanyEventsRow', () => {
     );
   });
 
+  it('names the teams of a team-limited event after its name, closures and plain events alike', () => {
+    const teamReview: CompanyEvent = { ...events[0], id: 15, name: 'Team review', team_ids: [5, 6] };
+    const teamClosure: CompanyEvent = { ...events[1], id: 16, team_ids: [5, 9] };
+    useAppStore.setState({
+      currentSite: makeSite({ id: 1, name: 'Basel' }),
+      currentUser: makeUser({ role: 'user' }),
+      companyEvents: [events[0], teamReview, teamClosure],
+      teams: [makeTeam({ id: 5, name: 'Formulation' }), makeTeam({ id: 6, name: 'Analytics' })],
+    });
+    render(<CompanyEventsRow isExpanded />);
+    expect(screen.getByText('· Formulation, Analytics')).toBeInTheDocument();
+    // A name that is not loaded turns the label into a count
+    expect(screen.getByText('· 2 teams')).toBeInTheDocument();
+    // A whole-site event names no team
+    const audit = screen.getByText('Audit');
+    expect(audit.textContent).toBe('Audit');
+    expect(audit.closest('[class*="detailRow"]')!.textContent).not.toMatch(/·/);
+  });
+
   it('lists only the events the header team filter shows', () => {
     const teamReview: CompanyEvent = { ...events[0], id: 14, name: 'Team B review', team_ids: [2] };
     seed('user');

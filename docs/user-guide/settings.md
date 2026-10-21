@@ -175,8 +175,9 @@ The filter narrows:
 - the Staff and Equipment views
 - the project-manager list in the project dialog, and the staff, equipment and equipment-block pickers — a person or item already selected in the dialog stays listed
 - in the [Cross-Site view](cross-site-view.md), the current site's lane only
+- the options of the [tag filter](gantt-charts.md#filtering-projects-by-tag): a tag limited to teams at this site is offered only while one of them is ticked
 
-Equipment that is not limited to any team of the site is always shown; equipment limited to teams is shown when one of them is ticked.
+Equipment that is not limited to any team of the site is always shown; equipment limited to teams is shown when one of them is ticked. A [company event](#company-events) limited to teams follows the same rule: it shows on the timelines and in the Staff Overview's Company Events row only while one of its teams is ticked (or under **Whole site**), while a whole-site event always shows.
 
 A project created while the filter is active starts with the filter's teams ticked, so it appears in the view you are looking at.
 
@@ -284,7 +285,7 @@ Expand the **Bank Holidays** row in the Staff Overview to see all holidays for t
 
 Company events are dated markers shown on the timeline (e.g., "ISO Audit", "All-Hands Meeting", "Annual Retreat"). One event can apply to **several sites**, so an audit or shutdown is entered once instead of once per site. An event can also be marked as a [site closure](#site-closures), which makes the staff of its sites unavailable for its dates.
 
-Open **Settings → Company events** (Admins and Superusers). Filter by **Site** (or **All my sites**) and **Year**. The table shows each event's dates, name, color and **Sites**; site closures carry a **Closure** badge.
+Open **Settings → Company events** (Admins and Superusers). Filter by **Site** (or **All my sites**) and **Year**. The table shows each event's dates, name, color, **Sites** and **Teams** — the teams it is limited to, or *Whole site*; site closures carry a **Closure** badge.
 
 ### Adding and Editing an Event
 
@@ -315,6 +316,7 @@ Editing an event changes it on every site it is linked to.
 - A plain event is informational only — it **does not affect working day calculations** or staff availability
 - Events are visible to all users on the sites they are linked to
 - In the Staff Overview, admins and superusers can click an event to edit it in Settings, or click **+** on the Company Events row to add one
+- An event limited to teams follows the header [team filter](#team-filter), and the Company Events row names its teams after the event's name
 
 ### Site Closures
 
@@ -327,7 +329,7 @@ Tick **Site closure — staff on these sites are unavailable** on an event for a
 
 A person on several sites is unavailable when **any** of their sites is closed. Plain events and bank holidays do not reduce anyone's availability — only events marked as closures do.
 
-**A closure limited to teams takes out only their members.** At a site where the event names teams, only the members of those teams are unavailable; everyone else on that site keeps working. Such a closure never shades the calendar header as closed: its timeline columns get a plain event's tint instead of the hatched closure tint, since the rest of the site is open. In the Staff Overview's Company Events row, the hover text of its **Closure** label names the teams. A plain event limited to teams is still shown to the whole site.
+**A closure limited to teams takes out only their members.** At a site where the event names teams, only the members of those teams are unavailable; everyone else on that site keeps working. Such a closure never shades the calendar header as closed: its timeline columns get a plain event's tint instead of the hatched closure tint, since the rest of the site is open. In the Staff Overview's Company Events row, the hover text of its **Closure** label names the teams. A plain event limited to teams is still shown to the whole site, unless the header [team filter](#team-filter) leaves its teams out.
 
 The site export's **Company events** sheet has a **Staff unavailable** column showing which events are closures.
 

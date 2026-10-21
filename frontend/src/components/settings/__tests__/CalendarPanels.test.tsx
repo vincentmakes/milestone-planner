@@ -363,3 +363,41 @@ describe('CompanyEventsPanel filters and form fields', () => {
     );
   });
 });
+
+describe('CompanyEventsPanel teams column', () => {
+  it('shows the teams an event is limited to, and "Whole site" for the others', async () => {
+    const offsite = {
+      ...audit,
+      id: 6,
+      name: 'Formulation offsite',
+      site_id: 2,
+      site_ids: [2],
+      team_ids: [7],
+    } as CompanyEvent;
+    api.getCompanyEvents.mockImplementation(async (siteId: number) => (siteId === 1 ? [audit] : [offsite]));
+    useAppStore.setState({
+      teams: [makeTeam({ id: 7, site_id: 2, name: 'Formulation', color: '#10b981' })],
+    });
+    render(<CompanyEventsPanel />);
+
+    expect(await screen.findByRole('columnheader', { name: 'Teams' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Site'), { target: { value: 'all' } });
+    const offsiteRow = (await screen.findByText('Formulation offsite')).closest('tr')!;
+    const chip = within(offsiteRow).getByText('Formulation');
+    expect(chip.closest('[title]')).toHaveAttribute('title', 'Formulation · Zurich');
+    expect(within(offsiteRow).queryByText('Whole site')).not.toBeInTheDocument();
+
+    const auditRow = screen.getByText('ISO Audit').closest('tr')!;
+    expect(within(auditRow).getByText('Whole site')).toBeInTheDocument();
+  });
+
+  it('counts the teams when none of them is loaded', async () => {
+    api.getCompanyEvents.mockImplementation(async (siteId: number) =>
+      siteId === 1 ? [{ ...audit, team_ids: [40, 41] } as CompanyEvent] : []
+    );
+    render(<CompanyEventsPanel />);
+    const row = (await screen.findByText('ISO Audit')).closest('tr')!;
+    expect(within(row).getByText('2 teams')).toBeInTheDocument();
+    expect(within(row).queryByText('Whole site')).not.toBeInTheDocument();
+  });
+});

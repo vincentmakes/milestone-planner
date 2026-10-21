@@ -19,7 +19,7 @@ Each type has a color and a **Counts as unavailable** setting, which decides how
 If an unavailable and an available absence overlap on the same day (for example Illness during a Home Office week), the unavailable one wins.
 
 !!! note "Site closures"
-    A shutdown or company holiday that applies to a whole site doesn't need an absence for every person: a [company event marked as a site closure](settings.md#site-closures) makes everyone on its sites unavailable for its dates, shown in the Staff workload view under the event's name and color.
+    A shutdown or company holiday that applies to a whole site doesn't need an absence for every person: a [company event marked as a site closure](settings.md#site-closures) makes everyone on its sites unavailable for its dates, shown in the Staff workload view under the event's name and color. A closure limited to [teams](settings.md#teams) disappears from the timeline when the header [team filter](settings.md#team-filter) leaves its teams out, while a whole-site closure always shows.
 
 ## Creating an Absence
 

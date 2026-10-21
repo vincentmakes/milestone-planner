@@ -46,15 +46,19 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
   const deleteBlockedReason = whatIf.blocked ? whatIf.reason('Deleting company events') : null;
   const canOpenEditor = canEdit && !editBlockedReason;
   
-  // Tooltip of the Closure badge: a team-limited closure names its teams
-  // (or counts them when one is not loaded), since only their members are out
-  const closureTitle = (teamIds: number[] | undefined): string => {
-    if (!teamIds?.length) return 'Site closure: staff on this site are unavailable';
+  // The teams an event is limited to, by name (or counted when one is not loaded)
+  const teamLabel = (teamIds: number[]): string => {
     const names = teamIds.map((id) => teams.find((t) => t.id === id)?.name);
-    const label = names.every((n) => n !== undefined)
+    return names.every((n) => n !== undefined)
       ? names.join(', ')
       : `${teamIds.length} ${teamIds.length === 1 ? 'team' : 'teams'}`;
-    return `Closure for ${label}: only their members are unavailable`;
+  };
+
+  // Tooltip of the Closure badge: a team-limited closure names its teams,
+  // since only their members are out
+  const closureTitle = (teamIds: number[] | undefined): string => {
+    if (!teamIds?.length) return 'Site closure: staff on this site are unavailable';
+    return `Closure for ${teamLabel(teamIds)}: only their members are unavailable`;
   };
 
   // Group events by year
@@ -213,7 +217,12 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
                   >
                     {event.counts_as_unavailable ? 'Closure' : 'Event'}
                   </span>
-                  <span className={styles.detailName}>{event.name}</span>
+                  <span className={styles.detailName}>
+                    {event.name}
+                    {event.team_ids && event.team_ids.length > 0 && (
+                      <span className={styles.detailTeams}>{`· ${teamLabel(event.team_ids)}`}</span>
+                    )}
+                  </span>
                   <span className={styles.dateBadge}>{dateDisplay}</span>
                   {canEdit && (
                     <button

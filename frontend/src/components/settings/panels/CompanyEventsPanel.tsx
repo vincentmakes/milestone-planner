@@ -105,6 +105,8 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
   const deleteGuard = useSubmitGuard();
 
   const siteNames = useMemo(() => new Map(sites.map((s) => [s.id, s.name])), [sites]);
+  const teams = useAppStore((s) => s.teams);
+  const teamById = useMemo(() => new Map(teams.map((t) => [t.id, t])), [teams]);
   const manageableIds = useMemo(() => manageableSites.map((s) => s.id), [manageableSites]);
   const isAdmin = useAppStore((s) => s.currentUser?.role === 'admin');
 
@@ -457,6 +459,7 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                 <th>Name</th>
                 <th>Color</th>
                 <th>Sites</th>
+                <th>Teams</th>
                 <th aria-label="Actions" />
               </tr>
             </thead>
@@ -465,6 +468,9 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                 const isEditing = form?.mode === 'edit' && form.event.id === event.id;
                 const isShared = foreignSiteIds(event).length > 0;
                 const hasEnd = event.end_date && !sameDay(event.end_date, event.date);
+                const teamIds = event.team_ids ?? [];
+                // Unknown ids are skipped; when none is loaded, count them
+                const eventTeams = teamIds.flatMap((id) => teamById.get(id) ?? []);
                 return (
                   <tr key={event.id} className={isEditing ? styles.highlight : undefined}>
                     <td className={styles.dateCell}>{formatCalendarDate(event.date)}</td>
@@ -493,6 +499,32 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                           <span key={id} className={styles.chip}>{siteNames.get(id) ?? `#${id}`}</span>
                         ))}
                       </div>
+                    </td>
+                    <td>
+                      {teamIds.length === 0 ? (
+                        <span className={styles.muted}>Whole site</span>
+                      ) : eventTeams.length === 0 ? (
+                        <span className={styles.muted}>
+                          {teamIds.length} {teamIds.length === 1 ? 'team' : 'teams'}
+                        </span>
+                      ) : (
+                        <div className={styles.chips}>
+                          {eventTeams.map((team) => (
+                            <span
+                              key={team.id}
+                              className={`${styles.chip} ${styles.teamChip}`}
+                              title={`${team.name} · ${siteNames.get(team.site_id) ?? `#${team.site_id}`}`}
+                            >
+                              <span
+                                className={styles.teamDot}
+                                style={team.color ? { backgroundColor: team.color } : undefined}
+                                aria-hidden="true"
+                              />
+                              {team.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className={styles.actionsCell}>
                       {/* Disabled buttons swallow hover, so the tooltip sits on a wrapper */}
