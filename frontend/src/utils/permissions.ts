@@ -110,6 +110,39 @@ export function canEditAssignment(
 }
 
 /**
+ * Whether the user may book equipment on the project and move, resize or
+ * remove its equipment bookings: `equipment_bookings.manage`, or managing the
+ * project (the key is in the manager bundle). Independent of
+ * `projects.edit_any`.
+ */
+export function canBookEquipment(
+  user: UserLike | null | undefined,
+  project: ProjectLike | null | undefined
+): boolean {
+  return can(user, 'equipment_bookings.manage', project);
+}
+
+/** Same as `canBookEquipment`, for callers that only hold a project id. */
+export function canBookEquipmentById(
+  user: UserLike | null | undefined,
+  projects: readonly (ProjectLike & { id: number })[],
+  projectId: number | null | undefined
+): boolean {
+  if (can(user, 'equipment_bookings.manage')) return true;
+  if (projectId === null || projectId === undefined) return false;
+  return canBookEquipment(user, projects.find((p) => p.id === projectId));
+}
+
+/** Whether the user may book equipment on at least one of the projects. */
+export function canBookEquipmentOnAny(
+  user: UserLike | null | undefined,
+  projects: readonly ProjectLike[] | null | undefined
+): boolean {
+  if (can(user, 'equipment_bookings.manage')) return true;
+  return (projects ?? []).some((p) => canBookEquipment(user, p));
+}
+
+/**
  * Whether the user may add, edit or delete `staffId`'s absences: anyone's with
  * `absences.manage_others` (at the visible sites), their own with
  * `absences.manage_own`.

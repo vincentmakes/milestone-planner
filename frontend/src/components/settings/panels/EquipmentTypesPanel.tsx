@@ -16,14 +16,15 @@ import { Input } from '@/components/common/Input';
 import { PanelToolbar } from '../PanelToolbar';
 import { BackIcon, EditIcon, TrashIcon } from './PanelIcons';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
-import { apiGet, apiPut, apiDelete } from '@/api/client';
-import { getEquipment } from '@/api/endpoints/equipment';
+import { apiPut, apiDelete } from '@/api/client';
+import { getAllEquipment, getEquipment } from '@/api/endpoints/equipment';
 import type { Equipment } from '@/types';
 import { useAppStore } from '@/stores/appStore';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './EquipmentTypesPanel.module.css';
+import { can } from '@/utils/permissions';
 
 interface TypeInfo {
   name: string;
@@ -37,6 +38,8 @@ function isInUseError(message: string): boolean {
 
 export function EquipmentTypesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const setEquipment = useAppStore((s) => s.setEquipment);
+  // The store's per-site rows come from GET /equipment (views.equipment)
+  const canViewEquipment = useAppStore((s) => can(s.currentUser, 'views.equipment'));
   
   // State
   const [types, setTypes] = useState<TypeInfo[]>([]);
@@ -52,7 +55,7 @@ export function EquipmentTypesPanel({ onDirtyChange }: Partial<SettingsPanelProp
     setError(null);
     try {
       // Load all equipment to get types and counts
-      const equipment = await apiGet<Equipment[]>('/api/equipment/all');
+      const equipment = await getAllEquipment();
       setAllEquipment(equipment);
 
       // Calculate type counts
@@ -98,7 +101,7 @@ export function EquipmentTypesPanel({ onDirtyChange }: Partial<SettingsPanelProp
     // A rename changes the type on every equipment item: refresh the store too
     // (per-site rows, like the initial load — /all has one row per item)
     const equipment = await loadData();
-    if (equipment) setEquipment(await getEquipment(true));
+    if (equipment && canViewEquipment) setEquipment(await getEquipment(true));
     handleCloseForm();
   };
   
@@ -129,7 +132,7 @@ export function EquipmentTypesPanel({ onDirtyChange }: Partial<SettingsPanelProp
         return;
       }
       const equipment = await loadData();
-      if (equipment) setEquipment(await getEquipment(true));
+      if (equipment && canViewEquipment) setEquipment(await getEquipment(true));
     } finally {
       deleteGuard.end();
     }

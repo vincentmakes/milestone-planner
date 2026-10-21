@@ -12,7 +12,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
-import { createStaffAssignment } from '@/api/endpoints/projects';
+import { createEquipmentAssignment, createStaffAssignment } from '@/api/endpoints/projects';
 import { generateTimelineCells, calculateBarPosition } from '../../utils';
 import type { Project, ViewMode } from '@/types';
 import { makeUser } from '@/test/factories';
@@ -124,5 +124,33 @@ describe('ResourceDropOverlay in quarter view', () => {
         Date.UTC(...(body.start_date.split('-').map(Number) as [number, number, number]))) /
       86400000;
     expect(days).toBe(4);
+  });
+});
+
+describe('ResourceDropOverlay equipment drops', () => {
+  function dropEquipment() {
+    act(() => useUIStore.getState().startResourceDrag('equipment', 3, 'Bioreactor'));
+    const { overlay, cells } = renderOverlay('quarter');
+    const x = cells.findIndex((c) => c.dateStr === '2026-03-09') * CELL_WIDTH + CELL_WIDTH / 2;
+    fireDrag('dragOver', overlay, x, 10);
+    fireDrag('drop', overlay, x, 10);
+  }
+
+  it('books with equipment_bookings.manage, without projects.edit_any', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 30, role: 'booker', permissions: ['projects.view', 'equipment_bookings.manage'] }),
+    });
+    dropEquipment();
+    await act(async () => {});
+    expect(createEquipmentAssignment).toHaveBeenCalled();
+  });
+
+  it('refuses the drop with projects.edit_any alone', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 31, role: 'editor', permissions: ['projects.view', 'projects.edit_any'] }),
+    });
+    dropEquipment();
+    await act(async () => {});
+    expect(createEquipmentAssignment).not.toHaveBeenCalled();
   });
 });

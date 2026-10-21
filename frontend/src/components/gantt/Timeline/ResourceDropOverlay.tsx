@@ -13,7 +13,7 @@ import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { createStaffAssignment, createEquipmentAssignment, loadAllProjects } from '@/api/endpoints/projects';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
-import { canEditProject, canEditAssignment } from '@/utils/permissions';
+import { canBookEquipment, canEditAssignment } from '@/utils/permissions';
 import type { TimelineCell } from '../utils';
 import { calculateBarPosition, centredDayRangeAtX } from '../utils/timeline';
 import type { Project } from '@/types';
@@ -95,14 +95,14 @@ export function ResourceDropOverlay({
     [cells, cellWidth, viewMode]
   );
 
-  // Whether the dragged resource may land on this project: equipment follows
-  // the project's editors, a person may also be dropped by themselves when
+  // Whether the dragged resource may land on this project: equipment needs
+  // equipment_bookings.manage there, a person may also be dropped by themselves when
   // their role may book itself (assignments.self_create, allow or approval).
   const canDropOn = useCallback((project: Project): boolean => {
     if (resourceDrag.type === 'staff') {
       return canEditAssignment(currentUser, project, resourceDrag.resourceId, 'assignments.self_create');
     }
-    return canEditProject(currentUser, project);
+    return canBookEquipment(currentUser, project);
   }, [currentUser, resourceDrag.type, resourceDrag.resourceId]);
 
   // Find target row from Y position. Projects the user may not drop on are

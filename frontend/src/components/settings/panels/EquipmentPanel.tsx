@@ -19,8 +19,8 @@ import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
-import { apiGet, apiPost, apiPut, apiDelete } from '@/api/client';
-import { getEquipment } from '@/api/endpoints/equipment';
+import { apiPost, apiPut, apiDelete } from '@/api/client';
+import { getAllEquipment, getEquipment } from '@/api/endpoints/equipment';
 import type { Equipment, Site } from '@/types';
 import { teamIdsWithinSites } from '@/utils/teams';
 import { useVisibleSites } from '@/hooks/useVisibleSites';
@@ -49,6 +49,7 @@ export function EquipmentPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
 
   const canSeeAllSites = currentUser?.can_see_all_sites ?? false;
   const canManage = can(currentUser, 'equipment.manage');
+  const canViewEquipment = can(currentUser, 'views.equipment');
   const manageableIds = useMemo(() => manageableSites.map((s) => s.id), [manageableSites]);
 
   /** Linked sites the user can't see (always none with sites.view_all) */
@@ -85,7 +86,7 @@ export function EquipmentPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const loadEquipment = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await apiGet<Equipment[]>('/api/equipment/all');
+      const data = await getAllEquipment();
       setLocalEquipment(data);
     } catch (err) {
       console.error('Failed to load equipment:', err);
@@ -135,10 +136,12 @@ export function EquipmentPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   };
   
   // After a save or delete: reload the list, and refresh the global store with
-  // the per-site rows every equipment filter expects (not /all)
+  // the per-site rows every equipment filter expects (not /all). That read
+  // needs views.equipment: without it the view slice stays empty, like the
+  // initial load.
   const refreshAfterChange = async () => {
     await loadEquipment();
-    setEquipment(await getEquipment(true));
+    if (canViewEquipment) setEquipment(await getEquipment(true));
     handleCloseForm();
   };
 

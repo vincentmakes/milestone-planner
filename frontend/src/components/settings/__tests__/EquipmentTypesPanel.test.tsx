@@ -14,6 +14,7 @@ import { EquipmentTypesPanel } from '../panels/EquipmentTypesPanel';
 import { useAppStore } from '@/stores/appStore';
 import { stubConfirm } from '@/test/confirmDialog';
 import type { Equipment } from '@/types';
+import { makeUser } from '@/test/factories';
 
 const apiGet = vi.fn();
 const apiPut = vi.fn();
@@ -35,7 +36,7 @@ describe('EquipmentTypesPanel', () => {
     apiGet.mockReset().mockResolvedValue(equipment);
     apiPut.mockReset().mockResolvedValue({});
     apiDelete.mockReset().mockResolvedValue({ success: true });
-    useAppStore.setState({ equipment: [] });
+    useAppStore.setState({ equipment: [], currentUser: makeUser() });
   });
 
   afterEach(() => {
@@ -153,5 +154,27 @@ describe('EquipmentTypesPanel', () => {
     expect(await screen.findByText('Pilot Line')).toBeInTheDocument();
     expect(apiPut).toHaveBeenCalledWith('/api/equipment-types/Pilot%20Plant?new_type=Pilot%20Line');
     expect(useAppStore.getState().equipment).toEqual(renamed);
+  });
+});
+
+describe('EquipmentTypesPanel without views.equipment', () => {
+  it('renames through /equipment/all and does not ask for the view slice', async () => {
+    apiGet.mockReset().mockResolvedValue(equipment);
+    apiPut.mockReset().mockResolvedValue({});
+    useAppStore.setState({
+      equipment: [],
+      currentUser: makeUser({ id: 41, role: 'types_admin', permissions: ['equipment_types.manage', 'sites.view_all'] }),
+    });
+    render(<EquipmentTypesPanel />);
+    await screen.findByText('Pilot Plant');
+
+    fireEvent.click(screen.getAllByTitle('Rename type')[1]);
+    fireEvent.change(screen.getByLabelText('Name *'), { target: { value: 'Pilot Line' } });
+    apiGet.mockResolvedValue(equipment.map((e) => (e.id === 3 ? { ...e, type: 'Pilot Line' } : e)));
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Type' }));
+
+    expect(await screen.findByText('Pilot Line')).toBeInTheDocument();
+    expect(apiGet.mock.calls.map((c) => c[0])).toEqual(['/api/equipment/all', '/api/equipment/all']);
+    expect(useAppStore.getState().equipment).toEqual([]);
   });
 });

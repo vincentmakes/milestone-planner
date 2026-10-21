@@ -22,7 +22,7 @@ import {
   cloneProject
 } from '@/components/gantt/utils';
 import type { PendingUpdate } from '@/components/gantt/utils';
-import { canEditProjectById, canEditAssignment } from '@/utils/permissions';
+import { canBookEquipmentById, canEditProjectById, canEditAssignment } from '@/utils/permissions';
 import type { ViewMode, Subphase } from '@/types';
 
 type ResizeEdge = 'left' | 'right';
@@ -71,6 +71,11 @@ export function useResize() {
   const canEditStaffAssignment = useCallback(
     (projectId: number, staffId?: number) =>
       canEditAssignment(currentUser, projects.find((p) => p.id === projectId), staffId),
+    [currentUser, projects]
+  );
+  // Equipment bookings: equipment_bookings.manage (or managing the project)
+  const canBookEquipmentId = useCallback(
+    (projectId: number) => canBookEquipmentById(currentUser, projects, projectId),
     [currentUser, projects]
   );
   const { cellWidth, currentView, viewMode } = useViewStore(
@@ -715,7 +720,7 @@ export function useResize() {
     endDate: string,
     targetElement?: HTMLElement
   ) => {
-    if (!canEditProjectId(projectId)) return;
+    if (!canBookEquipmentId(projectId)) return;
 
     // Don't allow resizing in equipment view (read-only)
     if (currentView === 'equipment') return;
@@ -755,7 +760,7 @@ export function useResize() {
     startResize('equipmentAssignment', assignmentId, edge);
     
     attachResizeListeners();
-  }, [canEditProjectId, currentView, attachResizeListeners, startResize]);
+  }, [canBookEquipmentId, currentView, attachResizeListeners, startResize]);
   
   // Cleanup on unmount only: an unmount mid-resize abandons it cleanly.
   useEffect(() => cancelResize, [cancelResize]);

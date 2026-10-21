@@ -253,3 +253,32 @@ describe('ProjectTimeline colour by', () => {
     expect(container.querySelector('[data-tag-color]')).toBeNull();
   });
 });
+
+describe('ProjectTimeline equipment bars', () => {
+  function renderWithBooking() {
+    useViewStore.setState({ showAssignments: true });
+    const project = {
+      ...makeProject(PM),
+      equipmentAssignments: [
+        { id: 60, equipment_id: 1, equipment_name: 'Bioreactor', start_date: '2026-09-02', end_date: '2026-09-04' },
+      ],
+    };
+    return renderTimeline(project);
+  }
+  const handles = (container: HTMLElement) =>
+    container.querySelectorAll('[data-assignment-id="60"] .resize-handle').length;
+
+  it('are interactive with equipment_bookings.manage, without projects.edit_any', () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 30, role: 'booker', permissions: ['projects.view', 'equipment_bookings.manage'] }),
+    });
+    expect(handles(renderWithBooking().container)).toBe(2);
+  });
+
+  it('are read-only with projects.edit_any alone', () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 31, role: 'editor', permissions: ['projects.view', 'projects.edit_any'] }),
+    });
+    expect(handles(renderWithBooking().container)).toBe(0);
+  });
+});

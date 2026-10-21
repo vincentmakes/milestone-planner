@@ -130,6 +130,7 @@ describe('equipment and staff endpoints', () => {
   runCases([
     ['getEquipment (site)', () => equipment.getEquipment(), 'GET', '/api/equipment'],
     ['getEquipment (all sites)', () => equipment.getEquipment(true), 'GET', '/api/equipment?includeAllSites=true'],
+    ['getAllEquipment', () => equipment.getAllEquipment(), 'GET', '/api/equipment/all'],
     ['getEquipmentItem', () => equipment.getEquipmentItem(2), 'GET', '/api/equipment/2'],
     ['createEquipment', () => equipment.createEquipment({ name: 'E', type: 'T', site_id: 1 } as never), 'POST', '/api/equipment', { name: 'E', type: 'T', site_id: 1 }],
     ['updateEquipment', () => equipment.updateEquipment(2, { name: 'F' }), 'PUT', '/api/equipment/2', { name: 'F' }],

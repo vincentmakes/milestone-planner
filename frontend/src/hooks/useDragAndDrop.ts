@@ -25,7 +25,7 @@ import {
   resolveDependencyPredecessor,
 } from '@/components/gantt/utils';
 import type { PendingUpdate } from '@/components/gantt/utils';
-import { canEditProjectById, canEditAssignment } from '@/utils/permissions';
+import { canBookEquipmentById, canEditProjectById, canEditAssignment } from '@/utils/permissions';
 import type { ViewMode, Subphase, Project } from '@/types';
 import { confirmAction } from '@/utils/confirmDialog';
 
@@ -72,6 +72,11 @@ export function useDragAndDrop() {
   const canEditStaffAssignment = useCallback(
     (projectId: number, staffId?: number) =>
       canEditAssignment(currentUser, projects.find((p) => p.id === projectId), staffId),
+    [currentUser, projects]
+  );
+  // Equipment bookings: equipment_bookings.manage (or managing the project)
+  const canBookEquipmentId = useCallback(
+    (projectId: number) => canBookEquipmentById(currentUser, projects, projectId),
     [currentUser, projects]
   );
   const { cellWidth, currentView, viewMode } = useViewStore(
@@ -930,7 +935,7 @@ export function useDragAndDrop() {
     endDate: string,
     targetElement?: HTMLElement
   ) => {
-    if (!canEditProjectId(projectId)) return;
+    if (!canBookEquipmentId(projectId)) return;
 
     // Don't drag if clicking resize handle
     if ((e.target as HTMLElement).classList.contains('resize-handle')) return;
@@ -978,7 +983,7 @@ export function useDragAndDrop() {
     startDrag('equipmentAssignment', assignmentId);
     
     attachDragListeners();
-  }, [canEditProjectId, currentView, attachDragListeners, startDrag]);
+  }, [canBookEquipmentId, currentView, attachDragListeners, startDrag]);
   
   // Cleanup on unmount only: an unmount mid-drag abandons the drag cleanly.
   useEffect(() => cancelDrag, [cancelDrag]);

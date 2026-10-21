@@ -312,6 +312,19 @@ describe('useResize: bookings', () => {
 });
 
 describe('useResize: guards and failures', () => {
+  it('resizes an equipment booking with equipment_bookings.manage, not with projects.edit_any', () => {
+    const bar = makeBar({ phaseId: '10' }, 30, 150);
+    useAppStore.setState({ currentUser: makeUser({ id: 31, role: 'editor', permissions: ['projects.view', 'projects.edit_any'] }) });
+    const { result, rerender } = renderHook(() => useResize());
+    act(() => result.current.startEquipmentAssignmentResize(mouseDown(bar, 0), 60, 1, 'left', '2026-03-02', '2026-03-04', bar));
+    expect(useUIStore.getState().isResizing).toBe(false);
+
+    act(() => useAppStore.setState({ currentUser: makeUser({ id: 30, role: 'booker', permissions: ['projects.view', 'equipment_bookings.manage'] }) }));
+    rerender();
+    act(() => result.current.startEquipmentAssignmentResize(mouseDown(bar, 0), 60, 1, 'left', '2026-03-02', '2026-03-04', bar));
+    expect(useUIStore.getState().isResizing).toBe(true);
+  });
+
   it('does not start without edit rights or in the read-only views', () => {
     const bar = makeBar({ phaseId: '10' }, 30, 150);
     const { result } = renderHook(() => useResize());

@@ -10,7 +10,7 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { useDataLoader } from '@/hooks/useDataLoader';
 import { ContextMenu, type ContextMenuItem } from '@/components/common';
 import { deleteProject, deletePhase, deleteSubphase, deleteStaffAssignment, deleteEquipmentAssignment, createStaffAssignment } from '@/api';
-import { can, canEditProject, canEditAssignment } from '@/utils/permissions';
+import { can, canBookEquipment, canEditProject, canEditAssignment } from '@/utils/permissions';
 import { findSubphaseById } from '@/utils/subphaseUtils';
 import { formatDateISO } from '@/utils/date';
 import {
@@ -71,6 +71,8 @@ export function ContextMenuContainer() {
 
   // Per-project rights: projects.edit_any, or the project's manager.
   const canEdit = canEditProject(currentUser, menuProject);
+  // Equipment bookings: equipment_bookings.manage, or managing the project.
+  const canBook = canBookEquipment(currentUser, menuProject);
   // Deleting a project needs projects.delete, never in the manager bundle.
   const canDeleteProject = can(currentUser, 'projects.delete');
 
@@ -187,7 +189,7 @@ export function ContextMenuContainer() {
           onClick: () => {
             openModal('equipmentAssignment', { projectId: targetId });
           },
-          disabled: !canEdit || whatIfMode,
+          disabled: !canBook || whatIfMode,
           title: createBlockedReason,
         },
         { label: '', divider: true, onClick: () => {} },
@@ -253,7 +255,7 @@ export function ContextMenuContainer() {
           onClick: () => {
             openModal('equipmentAssignment', { phaseId: targetId, projectId });
           },
-          disabled: !canEdit || whatIfMode,
+          disabled: !canBook || whatIfMode,
           title: createBlockedReason,
         },
         { label: '', divider: true, onClick: () => {} },
@@ -320,7 +322,7 @@ export function ContextMenuContainer() {
           onClick: () => {
             openModal('equipmentAssignment', { subphaseId: targetId, phaseId, projectId });
           },
-          disabled: !canEdit || whatIfMode,
+          disabled: !canBook || whatIfMode,
           title: createBlockedReason,
         },
         { label: '', divider: true, onClick: () => {} },
@@ -423,7 +425,7 @@ export function ContextMenuContainer() {
             });
             openModal('equipmentAssignment', { projectId, phaseId, subphaseId });
           },
-          disabled: !canEdit,
+          disabled: !canBook,
         },
         { label: '', divider: true, onClick: () => {} },
         {
@@ -446,13 +448,13 @@ export function ContextMenuContainer() {
               });
             }
           },
-          disabled: !canEdit,
+          disabled: !canBook,
         },
       ];
     }
 
     return [];
-  }, [contextMenu, findTarget, canEdit, whatIfMode, createBlockedReason, canDeleteProject, currentUser, menuProject, ownDefaultAllocation, openProjectModal, openPhaseModal, openSubphaseModal, openModal, setEditingStaffAssignment, setEditingEquipmentAssignment, refreshProjects]);
+  }, [contextMenu, findTarget, canEdit, canBook, whatIfMode, createBlockedReason, canDeleteProject, currentUser, menuProject, ownDefaultAllocation, openProjectModal, openPhaseModal, openSubphaseModal, openModal, setEditingStaffAssignment, setEditingEquipmentAssignment, refreshProjects]);
 
   if (!contextMenu.visible) return null;
 

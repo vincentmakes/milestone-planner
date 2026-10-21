@@ -15,6 +15,9 @@ import {
   canEditProjectById,
   canEditAssignment,
   canManageAnyProject,
+  canBookEquipment,
+  canBookEquipmentById,
+  canBookEquipmentOnAny,
 } from '../permissions';
 import { makeUser } from '@/test/factories';
 
@@ -163,5 +166,41 @@ describe('canManageAnyProject', () => {
     expect(canManageAnyProject(pm, [])).toBe(false);
     expect(canManageAnyProject(pm, undefined)).toBe(false);
     expect(canManageAnyProject(null, [managed])).toBe(false);
+  });
+});
+
+describe('equipment bookings (equipment_bookings.manage)', () => {
+  /** Books equipment anywhere but cannot edit projects */
+  const booker = makeUser({ id: 20, role: 'booker', permissions: ['projects.view', 'equipment_bookings.manage'] });
+  /** Edits projects but may not book equipment */
+  const editor = makeUser({ id: 21, role: 'editor', permissions: ['projects.view', 'projects.edit_any'] });
+
+  it('follows the booking key, not projects.edit_any', () => {
+    expect(canBookEquipment(booker, other)).toBe(true);
+    expect(canEditProject(booker, other)).toBe(false);
+    expect(canBookEquipment(editor, other)).toBe(false);
+    expect(canEditProject(editor, other)).toBe(true);
+  });
+
+  it('grants it to the project manager through the bundle', () => {
+    expect(canBookEquipment(pm, managed)).toBe(true);
+    expect(canBookEquipment(pm, other)).toBe(false);
+    expect(canBookEquipment(null, managed)).toBe(false);
+  });
+
+  it('resolves a project id', () => {
+    const projects = [managed, other];
+    expect(canBookEquipmentById(booker, [], 999)).toBe(true);
+    expect(canBookEquipmentById(editor, projects, 11)).toBe(false);
+    expect(canBookEquipmentById(pm, projects, 10)).toBe(true);
+    expect(canBookEquipmentById(pm, projects, 11)).toBe(false);
+    expect(canBookEquipmentById(pm, projects, null)).toBe(false);
+  });
+
+  it('is true on any project for the key holder or a manager of one', () => {
+    expect(canBookEquipmentOnAny(booker, [])).toBe(true);
+    expect(canBookEquipmentOnAny(editor, [managed, other])).toBe(false);
+    expect(canBookEquipmentOnAny(pm, [other, managed])).toBe(true);
+    expect(canBookEquipmentOnAny(user, undefined)).toBe(false);
   });
 });

@@ -9,7 +9,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useEquipmentOverlaps } from '@/hooks/useEquipmentOverlaps';
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
-import { canEditProject, canEditAssignment } from '@/utils/permissions';
+import { canBookEquipment, canEditAssignment } from '@/utils/permissions';
 import styles from './AssignmentRow.module.css';
 
 interface AssignmentRowProps {
@@ -57,10 +57,10 @@ export const AssignmentRow = memo(function AssignmentRow({
   const hasEquipmentConflict =
     type === 'equipment' && equipmentId !== undefined && overlapMap.get(equipmentId)?.hasOverlap === true;
 
-  // Equipment bookings follow the project's editors; a staff booking may also
-  // be changed by the person whose time it books.
+  // Equipment bookings need equipment_bookings.manage (or managing the
+  // project); a staff booking may also be changed by the person it books.
   const canEdit = type === 'equipment'
-    ? canEditProject(currentUser, { pm_id: pmId })
+    ? canBookEquipment(currentUser, { pm_id: pmId })
     : canEditAssignment(currentUser, { pm_id: pmId }, staffId);
   
   const paddingLeft = depth * 16 + 28; // Extra offset for no expand button

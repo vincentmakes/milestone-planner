@@ -22,7 +22,7 @@ import { useDataLoader } from '@/hooks/useDataLoader';
 import { useTeamFilter, useTeamFilteredCompanyEvents } from '@/hooks/useTeamFilter';
 import { useTimelineScrollSync } from '@/contexts/TimelineScrollContext';
 import { deleteEquipmentBlock } from '@/api';
-import { can, canManageAnyProject } from '@/utils/permissions';
+import { can, canBookEquipmentOnAny } from '@/utils/permissions';
 import { generateTimelineCells, generateTimelineHeaders, calculateTodayScrollLeft, calculateTodayCenterScrollLeft } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
@@ -96,11 +96,12 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   const todayStatusMap = useEquipmentTodayStatus();
 
   // Dragging an equipment row onto the Gantt books it on the drop target's
-  // project, so it is open to anyone who manages at least one project; the
-  // drop overlay (ResourceDropOverlay.canDropOn) then accepts only projects
-  // the user may edit. Equipment blocks (maintenance / defect windows) are
-  // not project data: they need equipment_blocks.manage.
-  const canBook = canManageAnyProject(currentUser, projects);
+  // project, so it is open to anyone who may book equipment on at least one
+  // project (equipment_bookings.manage, or managing one); the drop overlay
+  // (ResourceDropOverlay.canDropOn) then accepts only those projects.
+  // Equipment blocks (maintenance / defect windows) are not project data:
+  // they need equipment_blocks.manage.
+  const canBook = canBookEquipmentOnAny(currentUser, projects);
   const canManageBlocks = can(currentUser, 'equipment_blocks.manage');
 
   // Per-row expansion state (mirrors StaffView)

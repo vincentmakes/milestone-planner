@@ -18,7 +18,7 @@ import { useResize } from '@/hooks/useResize';
 import { useDependencyLinking } from '@/hooks/useDependencyLinking';
 import { usePhantomSibling } from '@/hooks/usePhantomSibling';
 import { useWebSocketContext } from '@/contexts/WebSocketContext';
-import { canEditProject, canEditAssignment } from '@/utils/permissions';
+import { canBookEquipment, canEditProject, canEditAssignment } from '@/utils/permissions';
 import {
   parseRecurringPattern,
   getAbsenceOn,
@@ -192,6 +192,8 @@ export const ProjectTimeline = memo(function ProjectTimeline({
   // and resize schedule items.
   const currentUser = useAppStore((s) => s.currentUser);
   const canEdit = canEditProject(currentUser, project);
+  // Equipment bookings: equipment_bookings.manage (or managing the project)
+  const canBook = canBookEquipment(currentUser, project);
 
   // Bar colour from the project's tag in the user's "Colour by" group,
   // resolved through the store (inline project.tags can be stale in What-If).
@@ -475,9 +477,9 @@ export const ProjectTimeline = memo(function ProjectTimeline({
                 type="equipment"
                 name={assignment.equipment_name}
                 equipmentId={assignment.equipment_id}
-                interactive={canEdit}
-                onDragStart={canEdit ? (e) => handleEquipmentAssignmentDragStart(e, assignment.id, assignment.start_date, assignment.end_date) : undefined}
-                onResizeStart={canEdit ? (e, edge) => handleEquipmentAssignmentResizeStart(e, assignment.id, edge, assignment.start_date, assignment.end_date) : undefined}
+                interactive={canBook}
+                onDragStart={canBook ? (e) => handleEquipmentAssignmentDragStart(e, assignment.id, assignment.start_date, assignment.end_date) : undefined}
+                onResizeStart={canBook ? (e, edge) => handleEquipmentAssignmentResizeStart(e, assignment.id, edge, assignment.start_date, assignment.end_date) : undefined}
               />
             </div>
           ))}

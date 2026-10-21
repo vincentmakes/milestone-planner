@@ -302,6 +302,30 @@ describe('assignment menus', () => {
     expect(useAppStore.getState().projects[0].equipmentAssignments).toEqual([]);
   });
 
+  it('gates the equipment entries on equipment_bookings.manage, independently of project editing', () => {
+    seed(makeUser({ id: 30, role: 'booker', permissions: ['projects.view', 'equipment_bookings.manage'] }));
+    useUIStore.getState().showContextMenu('project', 1, 30, 40);
+    const { rerender, unmount } = render(<ContextMenuContainer />);
+    expect(item('Assign Equipment')).not.toHaveAttribute('aria-disabled', 'true');
+    expect(item('Assign Equipment')).toBeEnabled();
+    expect(item('Edit Project')).toBeDisabled();
+    useUIStore.getState().showContextMenu('equipmentAssignment', 60, 0, 0, 1);
+    rerender(<ContextMenuContainer />);
+    expect(item('Edit Assignment')).toBeEnabled();
+    expect(item('Delete Assignment')).toBeEnabled();
+    unmount();
+
+    seed(makeUser({ id: 31, role: 'editor', permissions: ['projects.view', 'projects.edit_any'] }));
+    useUIStore.getState().showContextMenu('project', 1, 30, 40);
+    const second = render(<ContextMenuContainer />);
+    expect(item('Assign Equipment')).toBeDisabled();
+    expect(item('Edit Project')).toBeEnabled();
+    useUIStore.getState().showContextMenu('equipmentAssignment', 60, 0, 0, 1);
+    second.rerender(<ContextMenuContainer />);
+    expect(item('Edit Assignment')).toBeDisabled();
+    expect(item('Delete Assignment')).toBeDisabled();
+  });
+
   it('renders nothing while hidden', () => {
     const { container } = render(<ContextMenuContainer />);
     expect(container).toBeEmptyDOMElement();

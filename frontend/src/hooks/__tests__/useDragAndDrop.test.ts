@@ -418,6 +418,24 @@ describe('useDragAndDrop: guards', () => {
     expect(useUIStore.getState().isDragging).toBe(false);
   });
 
+  it('moves an equipment booking with equipment_bookings.manage, not with projects.edit_any', async () => {
+    marchCells();
+    useAppStore.setState({ currentUser: makeUser({ id: 31, role: 'editor', permissions: ['projects.view', 'projects.edit_any'] }) });
+    const bar = makeBar({ assignmentId: '60' }, 30);
+    const { result, rerender } = renderHook(() => useDragAndDrop());
+    act(() => result.current.startEquipmentAssignmentDrag(mouseDown(bar, 0), 60, 1, '2026-03-02', '2026-03-04', bar));
+    expect(useUIStore.getState().isDragging).toBe(false);
+
+    act(() => useAppStore.setState({ currentUser: makeUser({ id: 30, role: 'booker', permissions: ['projects.view', 'equipment_bookings.manage'] }) }));
+    rerender();
+    act(() => result.current.startEquipmentAssignmentDrag(mouseDown(bar, 0), 60, 1, '2026-03-02', '2026-03-04', bar));
+    move(-30);
+    up();
+    await waitFor(() =>
+      expect(updateEquipmentAssignment).toHaveBeenCalledWith(60, { start_date: '2026-03-01', end_date: '2026-03-03' })
+    );
+  });
+
   it('leaves a press on a resize handle to the resize hook', () => {
     const bar = makeBar({ phaseId: '10' }, 30);
     const handle = document.createElement('span');

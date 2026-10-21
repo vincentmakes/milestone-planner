@@ -15,6 +15,7 @@ import { stubConfirm } from '@/test/confirmDialog';
 import type { Equipment, Site, User } from '@/types';
 import { makeTeam } from '@/test/factories';
 import { asSignedIn } from '@/test/permissionFixtures';
+import { makeUser } from '@/test/factories';
 
 const apiGet = vi.fn();
 const apiPost = vi.fn();
@@ -30,6 +31,7 @@ vi.mock('@/api/client', () => ({
 const getEquipment = vi.fn();
 vi.mock('@/api/endpoints/equipment', () => ({
   getEquipment: (...args: unknown[]) => getEquipment(...args),
+  getAllEquipment: () => apiGet('/api/equipment/all'),
 }));
 
 const sites: Site[] = [
@@ -369,5 +371,33 @@ describe('EquipmentPanel during What-If', () => {
     confirm.mockResolvedValue(true);
     fireEvent.click(del);
     await waitFor(() => expect(apiDelete).toHaveBeenCalledWith('/api/equipment/2'));
+  });
+});
+
+describe('EquipmentPanel without views.equipment', () => {
+  it('manages equipment through /equipment/all and leaves the view slice alone', async () => {
+    apiGet.mockReset().mockResolvedValue(allEquipment);
+    apiPost.mockReset().mockResolvedValue({});
+    getEquipment.mockReset().mockResolvedValue(perSiteRows);
+    useAppStore.setState({
+      sites,
+      currentSite: sites[0],
+      equipment: [],
+      teams: [],
+      currentUser: makeUser({ id: 40, role: 'eq_admin', permissions: ['equipment.manage', 'sites.view_all'] }),
+    });
+    render(<EquipmentPanel />);
+    await screen.findByText('HPLC 1');
+    expect(apiGet).toHaveBeenCalledWith('/api/equipment/all');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Equipment' }));
+    fireEvent.change(screen.getByLabelText('Name *'), { target: { value: 'Mass Spec 1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analytical Device' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create Equipment' }));
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2));
+    expect(getEquipment).not.toHaveBeenCalled();
+    expect(useAppStore.getState().equipment).toEqual([]);
   });
 });
