@@ -10,6 +10,7 @@
  */
 import type { Project, Phase, Subphase, Dependency } from '@/types';
 import type { PendingUpdate } from './autoCalculation';
+import { isPendingAssignment } from '@/utils/kanbanCards';
 
 /** Order-sensitive comparison; a missing list equals an empty one. */
 function sameDependencies(a: Dependency[] | undefined, b: Dependency[] | undefined): boolean {
@@ -92,7 +93,7 @@ export function diffProjects(oldProjects: Project[], newProjects: Project[]): Pe
     // a pending row is a request awaiting approval, never re-PUT by undo.
     const oldStaff = new Map((prev.staffAssignments ?? []).map((a) => [a.id, a]));
     for (const a of next.staffAssignments ?? []) {
-      if (a.approval_status === 'pending') continue;
+      if (isPendingAssignment(a)) continue;
       const o = oldStaff.get(a.id);
       if (o && (o.start_date !== a.start_date || o.end_date !== a.end_date)) {
         updates.push({

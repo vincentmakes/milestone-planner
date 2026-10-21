@@ -47,7 +47,7 @@ vi.mock('@/api/endpoints/sites', async () => {
 vi.mock('@/api/endpoints/skills', () => ({ skillsApi: { getAll: vi.fn() } }));
 vi.mock('@/api/endpoints/tags', () => ({ tagsApi: { getAll: vi.fn() }, tagGroupsApi: { getAll: vi.fn() } }));
 vi.mock('@/api/endpoints/teams', () => ({ teamsApi: { getAll: vi.fn() } }));
-vi.mock('@/api/endpoints/roles', () => ({ rolesApi: { getAll: vi.fn() } }));
+vi.mock('@/api/endpoints/roles', () => ({ rolesApi: { getAll: vi.fn(), getApprovalPolicies: vi.fn() } }));
 vi.mock('@/api/endpoints/absenceTypes', () => ({ absenceTypesApi: { getAll: vi.fn() } }));
 vi.mock('@/api/endpoints/settings', () => ({ getInstanceSettings: vi.fn() }));
 vi.mock('@/api/endpoints/auth', () => ({ fetchCurrentUser: vi.fn() }));
@@ -226,6 +226,32 @@ describe('WebSocketProvider slice refresh', () => {
     await receive('todo');
     expect(loadAllProjects).not.toHaveBeenCalled();
     expect(fetchCurrentUser).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the approval policies on change:approval_policy once something loaded them', async () => {
+    const policy = { action: 'assignments.self_create', label: 'Book own time', pm_approves: false, role_ids: [] };
+    vi.mocked(rolesApi.getApprovalPolicies).mockResolvedValue([policy]);
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+
+    // Nothing holds them yet: no request.
+    await receive('approval_policy');
+    expect(rolesApi.getApprovalPolicies).not.toHaveBeenCalled();
+
+    useAppStore.setState({ approvalPolicies: [{ ...policy, pm_approves: true }] });
+    await receive('approval_policy');
+    expect(rolesApi.getApprovalPolicies).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().approvalPolicies).toEqual([policy]);
+  });
+
+  it('logs a failed approval-policy refresh', async () => {
+    useAppStore.setState({
+      approvalPolicies: [{ action: 'assignments.self_create', label: 'x', pm_approves: true, role_ids: [] }],
+    });
+    vi.mocked(rolesApi.getApprovalPolicies).mockRejectedValue(new Error('boom'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    await receive('approval_request');
+    expect(error).toHaveBeenCalledWith('[WS] approval policies refresh failed', expect.any(Error));
   });
 
   it('re-reads the signed-in user and the roles on change:role', async () => {

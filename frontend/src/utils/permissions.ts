@@ -62,6 +62,15 @@ export function canSelf(user: UserLike | null | undefined, key: ApprovableKey): 
   return can(user, key) || needsApproval(user, key);
 }
 
+/**
+ * Whether the user may book `staffId`'s time as their own booking (drag
+ * themselves from the resource panel or the Staff view): it is them, and
+ * their role holds `assignments.self_create` (allow or approval mode).
+ */
+export function canBookSelf(user: UserLike | null | undefined, staffId: number | null | undefined): boolean {
+  return isSelf(user, staffId) && canSelf(user, 'assignments.self_create');
+}
+
 /** Whether `staffId` is the user's own id. */
 export function isSelf(user: UserLike | null | undefined, staffId: number | null | undefined): boolean {
   return Boolean(user) && staffId !== null && staffId !== undefined && user!.id === staffId;

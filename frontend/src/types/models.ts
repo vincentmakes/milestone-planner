@@ -223,6 +223,87 @@ export interface StaffAssignment {
    * capacity until approved); absent on older servers = approved.
    */
   approval_status?: 'approved' | 'pending';
+  /**
+   * The open approval request on the row: its pending create, or a pending
+   * change / removal of an approved row (the row keeps its current values
+   * until the request is decided). null when nothing awaits a decision.
+   */
+  approval?: AssignmentApproval | null;
+}
+
+/** The booking values a request asks for, or the row held when it was filed. */
+export interface BookingValues {
+  allocation?: number;
+  /** Project-level rows only (`YYYY-MM-DD`) */
+  start_date?: string;
+  end_date?: string;
+}
+
+/** The open approval request on a staff assignment (its `approval` field). */
+export interface AssignmentApproval {
+  request_id: number;
+  /** The own-booking key: assignments.self_create | self_update | self_remove */
+  action: string;
+  requester_id: number;
+  requested: BookingValues | null;
+  previous: BookingValues | null;
+  created_at: string | null;
+  /** Whether the signed-in user may approve or reject it */
+  can_decide: boolean;
+}
+
+export type ApprovalRequestStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'cancelled'
+  | 'superseded'
+  | 'expired';
+
+/** One approval request (GET /api/approval-requests). */
+export interface ApprovalRequest {
+  id: number;
+  action: string;
+  status: ApprovalRequestStatus;
+  close_reason: string | null;
+  requester_id: number;
+  requester_name: string | null;
+  project_id: number;
+  project_name: string | null;
+  level: StaffAssignmentLevel;
+  target_id: number;
+  target_name: string | null;
+  assignment_id: number | null;
+  requested: BookingValues | null;
+  previous: BookingValues | null;
+  note: string | null;
+  decided_by: number | null;
+  decided_by_name: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  superseded_by_id: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+  can_decide: boolean;
+}
+
+/** The outcome of approve / reject / cancel. */
+export interface ApprovalDecisionResult {
+  success: boolean;
+  id: number;
+  status: ApprovalRequestStatus;
+}
+
+/**
+ * The 202 body of a self-booking write that needs approval: a request was
+ * filed instead (`id` = the pending row for a create, the existing row
+ * otherwise).
+ */
+export interface PendingBookingResponse {
+  success: boolean;
+  pending: true;
+  request_id: number;
+  id: number;
 }
 
 /** The route family of a staff assignment: ids are unique per level only. */

@@ -28,6 +28,7 @@ import type {
   TagGroup,
   Team,
   Role,
+  ApprovalPolicy,
   AbsenceType,
 } from '@/types';
 import { buildClosureIndex } from '@/utils/siteClosure';
@@ -75,6 +76,12 @@ interface AppState {
    * until then.
    */
   roles: Role[];
+  /**
+   * Who approves each own-booking action (tenant configuration). Loaded on
+   * first use by hooks/useApprovalPolicies (the pending badge's tooltip),
+   * refreshed by the `approvals` WS slice once loaded; empty until then.
+   */
+  approvalPolicies: ApprovalPolicy[];
   /** Tenant-wide absence categories, including inactive ones */
   absenceTypes: AbsenceType[];
 
@@ -115,6 +122,7 @@ interface AppState {
   setTagGroups: (tagGroups: TagGroup[]) => void;
   setTeams: (teams: Team[]) => void;
   setRoles: (roles: Role[]) => void;
+  setApprovalPolicies: (approvalPolicies: ApprovalPolicy[]) => void;
   setAbsenceTypes: (absenceTypes: AbsenceType[]) => void;
 
   // ---------------------------------------------
@@ -171,6 +179,7 @@ const initialState = {
   tagGroups: [] as TagGroup[],
   teams: [] as Team[],
   roles: [] as Role[],
+  approvalPolicies: [] as ApprovalPolicy[],
   absenceTypes: [] as AbsenceType[],
 
   // Selections
@@ -231,6 +240,8 @@ export const useAppStore = create<AppState>()(
       setTeams: (teams) => set({ teams }),
 
       setRoles: (roles) => set({ roles }),
+
+      setApprovalPolicies: (approvalPolicies) => set({ approvalPolicies }),
 
       setAbsenceTypes: (absenceTypes) => set({ absenceTypes }),
 

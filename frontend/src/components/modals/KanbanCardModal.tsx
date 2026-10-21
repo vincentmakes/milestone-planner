@@ -31,6 +31,8 @@ import {
   STATUS_LABELS,
   applyStatusToCard,
   collectProjectCards,
+  isPendingAssignment,
+  requestedAllocation,
   type KanbanCard,
 } from '@/utils/kanbanCards';
 import {
@@ -41,7 +43,11 @@ import {
 } from '@/utils/mentions';
 import { MentionText, MentionTextarea } from '@/components/common/MentionTextarea';
 import { formatDateShort, parseDateISO } from '@/utils/date';
-import { can, canEditAssignment } from '@/utils/permissions';
+import { can, canEditAssignment, canSelf, isSelf, needsApproval } from '@/utils/permissions';
+import { approvalsApi, isPendingResponse } from '@/api/endpoints/approvals';
+import { ApprovalActions } from '@/components/common/ApprovalActions';
+import { PendingBadge } from '@/components/common/PendingBadge';
+import { flashSentForApproval, markRequestPendingLocally } from '@/utils/pendingBookings';
 import { findSubphaseById } from '@/utils/subphaseUtils';
 import {
   patchStaffAssignmentLocally,
@@ -68,6 +74,8 @@ export function KanbanCardModal() {
   // What-If mode; moving, re-allocating and removing stay available.
   const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
   const assignBlockedReason = whatIfMode ? whatIfUnavailableMessage('Adding assignees') : null;
+  // Approval decisions are real writes outside the sandbox.
+  const decideBlockedReason = whatIfMode ? whatIfUnavailableMessage('Approval decisions') : null;
 
   const [comments, setComments] = useState<CardComment[]>([]);
   const [draft, setDraft] = useState('');
@@ -105,7 +113,13 @@ export function KanbanCardModal() {
   // Whoever manages others' bookings on the project (the key, or its manager)
   // adds and removes assignees; everyone else joins or leaves themself.
   const isEditor = can(currentUser, 'assignments.manage_others', project);
+  // Approved on the card (moves it, gets reminders); a pending join does not count.
   const isAssigned = Boolean(currentUser && card?.assigneeIds.includes(currentUser.id));
+  // On the card in any way, approved or awaiting approval (no second Join).
+  const isOnCard = Boolean(currentUser && (isAssigned || card?.pendingAssigneeIds.includes(currentUser.id)));
+  // Own bookings follow the role's assignments.self_* keys (allow, approval, or denied).
+  const canJoin = canSelf(currentUser, 'assignments.self_create');
+  const joinNeedsApproval = needsApproval(currentUser, 'assignments.self_create');
   // Mirrors app/services/card_access.py: any card, or the cards I am on.
   const canMove =
     can(currentUser, 'kanban.move_any', project) || (isAssigned && can(currentUser, 'kanban.move_assigned'));
@@ -231,8 +245,9 @@ export function KanbanCardModal() {
     if (!begin()) return; // another write on this card is still running
     setError(null);
     try {
-      await assignCard(card.entityType, card.entityId, currentUser.id);
+      const res = await assignCard(card.entityType, card.entityId, currentUser.id);
       setProjects(await loadAllProjects());
+      if (isPendingResponse(res)) flashSentForApproval();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not join the card');
     } finally {
@@ -247,8 +262,18 @@ export function KanbanCardModal() {
     try {
       // Cards are phases and subphases, so the level is the card's own type --
       // never the project-level route.
-      await updateStaffAssignment(assignmentId, { allocation }, card.entityType);
-      patchStaffAssignmentLocally(card.projectId, assignmentId, card.entityType, { allocation });
+      const res = await updateStaffAssignment(assignmentId, { allocation }, card.entityType);
+      if (isPendingResponse(res)) {
+        // Sent for approval: the slider stays at the current value, the
+        // request shows next to it until someone decides.
+        if (currentUser) {
+          markRequestPendingLocally(card.projectId, assignmentId, card.entityType, currentUser.id,
+            'assignments.self_update', res, { allocation });
+        }
+        flashSentForApproval();
+      } else {
+        patchStaffAssignmentLocally(card.projectId, assignmentId, card.entityType, { allocation });
+      }
       setProjects(await loadAllProjects());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not change the allocation');
@@ -262,10 +287,13 @@ export function KanbanCardModal() {
     // Removing an assignee deletes their booking (allocation and dates) and
     // cannot be undone -- confirm like the Gantt assignment dialog does.
     const who = staffName ? `"${staffName}"` : 'this assignee';
+    const asRequest = !isEditor && isSelf(currentUser, staffId) && needsApproval(currentUser, 'assignments.self_remove');
     if (
       !(await confirmAction({
         title: 'Remove assignee',
-        message: `Remove ${who} from this card? Their booking on it will be deleted.`,
+        message: asRequest
+          ? 'Ask to leave this card? Your removal will be sent for approval.'
+          : `Remove ${who} from this card? Their booking on it will be deleted.`,
         destructive: true,
       }))
     )
@@ -273,14 +301,46 @@ export function KanbanCardModal() {
     if (!begin()) return; // another write on this card is still running
     setError(null);
     try {
-      await unassignCard(card.entityType, card.entityId, staffId);
+      const res = await unassignCard(card.entityType, card.entityId, staffId);
       const removed = card.assignments.find((a) => a.staff_id === staffId);
-      if (removed) removeStaffAssignmentLocally(card.projectId, removed.id, card.entityType);
+      if (isPendingResponse(res)) {
+        // Sent for approval: the booking stays until someone decides.
+        if (removed && currentUser) {
+          markRequestPendingLocally(card.projectId, removed.id, card.entityType, currentUser.id,
+            'assignments.self_remove', res, null);
+        }
+        flashSentForApproval();
+      } else if (removed) {
+        removeStaffAssignmentLocally(card.projectId, removed.id, card.entityType);
+      }
       setProjects(await loadAllProjects());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not remove the assignment');
     } finally {
       end();
+    }
+  };
+
+  // The requester withdraws their open request (booking, change or removal).
+  const handleCancelRequest = async (requestId: number) => {
+    if (!begin()) return;
+    setError(null);
+    try {
+      await approvalsApi.cancel(requestId);
+      setProjects(await loadAllProjects());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not cancel the request');
+    } finally {
+      end();
+    }
+  };
+
+  // After a decision (or a 409: decided or expired meanwhile) show what happened.
+  const reloadAfterDecision = async () => {
+    try {
+      setProjects(await loadAllProjects());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not reload the projects');
     }
   };
 
@@ -330,7 +390,10 @@ export function KanbanCardModal() {
   // everyone there.
   const filterByTeam = project?.site_id === filterSiteId;
   const unassignedStaff = siteStaff.filter(
-    (s) => !card?.assigneeIds.includes(s.id) && (!filterByTeam || staffMatches(s))
+    (s) =>
+      !card?.assigneeIds.includes(s.id) &&
+      !card?.pendingAssigneeIds.includes(s.id) &&
+      (!filterByTeam || staffMatches(s))
   );
   // After the early return, so no useMemo; the empty entry stays selectable (as before).
   const assigneeOptions = [
@@ -393,54 +456,94 @@ export function KanbanCardModal() {
               {card.assignments.map((a) => {
                 const maxCapacity = capacityById.get(a.staff_id);
                 const over = maxCapacity !== undefined && a.allocation > maxCapacity;
-                // Editors manage every row; everyone manages their own booking.
-                const canEditRow = canEditAssignment(currentUser, project, a.staff_id);
+                const request = a.approval ?? null;
+                const pending = isPendingAssignment(a);
+                const isRequester = Boolean(request && currentUser && request.requester_id === currentUser.id);
+                const requested = requestedAllocation(a);
+                // A pending booking is its requester's to withdraw and a
+                // decider's to approve or reject -- nobody edits it directly.
+                // An open request on an approved row leaves editors in charge;
+                // the requester withdraws it first.
+                const locked = pending || isRequester;
+                const canSlide = !locked && canEditAssignment(currentUser, project, a.staff_id);
+                const canRemoveRow =
+                  !locked && canEditAssignment(currentUser, project, a.staff_id, 'assignments.self_remove');
+                const name = a.staff_name ?? `Staff ${a.staff_id}`;
                 return (
-                  <li key={a.id} className={styles.assignee}>
+                  <li key={a.id} className={`${styles.assignee} ${pending ? styles.assigneePending : ''}`}>
                     <span className={styles.assigneeName}>
-                      {a.staff_name ?? `Staff ${a.staff_id}`}
+                      {name}
+                      <PendingBadge assignment={a} projectId={card.projectId} className={styles.assigneeBadge} />
                     </span>
-                    {canEditRow ? (
-                      <AllocationSlider
-                        compact
-                        value={a.allocation}
-                        maxCapacity={maxCapacity}
-                        disabled={busy}
-                        aria-label={`Allocation for ${a.staff_name ?? `staff ${a.staff_id}`}`}
-                        // Commit on release only: a range input fires a change
-                        // per step, and each one here is a write plus a reload.
-                        onCommit={(pct) => handleAllocationChange(a.id, pct)}
-                      />
+                    {canSlide ? (
+                      <span className={styles.allocationCell}>
+                        <AllocationSlider
+                          compact
+                          value={a.allocation}
+                          maxCapacity={maxCapacity}
+                          disabled={busy}
+                          aria-label={`Allocation for ${a.staff_name ?? `staff ${a.staff_id}`}`}
+                          // Commit on release only: a range input fires a change
+                          // per step, and each one here is a write plus a reload.
+                          onCommit={(pct) => handleAllocationChange(a.id, pct)}
+                        />
+                        {requested !== null && <span className={styles.requested}>requested {requested}%</span>}
+                      </span>
                     ) : (
-                      <span className={`${styles.allocation} ${over ? styles.allocationOver : ''}`}>
-                        {a.allocation}%
+                      <span className={styles.allocationCell}>
+                        <span className={`${styles.allocation} ${over ? styles.allocationOver : ''}`}>
+                          {a.allocation}%
+                        </span>
+                        {requested !== null && <span className={styles.requested}>requested {requested}%</span>}
                       </span>
                     )}
-                    {canEditRow && (
-                      <button
-                        type="button"
-                        className={styles.removeBtn}
-                        onClick={() => handleUnassign(a.staff_id, a.staff_name)}
-                        disabled={busy}
-                        aria-label={`Remove ${a.staff_name ?? 'assignee'}`}
-                      >
-                        &times;
-                      </button>
-                    )}
+                    <span className={styles.rowActions}>
+                      {request?.can_decide && (
+                        <ApprovalActions
+                          requestId={request.request_id}
+                          subject={name}
+                          onDecided={reloadAfterDecision}
+                          onError={setError}
+                          disabledReason={decideBlockedReason}
+                        />
+                      )}
+                      {request && isRequester && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleCancelRequest(request.request_id)}
+                          disabled={busy || !!decideBlockedReason}
+                          title={decideBlockedReason ?? undefined}
+                        >
+                          Cancel request
+                        </Button>
+                      )}
+                      {canRemoveRow && (
+                        <button
+                          type="button"
+                          className={styles.removeBtn}
+                          onClick={() => handleUnassign(a.staff_id, a.staff_name)}
+                          disabled={busy}
+                          aria-label={`Remove ${a.staff_name ?? 'assignee'}`}
+                        >
+                          &times;
+                        </button>
+                      )}
+                    </span>
                   </li>
                 );
               })}
               {card.assignments.length === 0 && <li className={styles.none}>Nobody assigned</li>}
             </ul>
 
-            {!isEditor && currentUser && !isAssigned && (
+            {!isEditor && currentUser && !isOnCard && canJoin && (
               <div className={styles.assignRow}>
                 <Button
                   onClick={handleJoin}
                   disabled={busy || !!assignBlockedReason}
                   title={assignBlockedReason ?? undefined}
                 >
-                  Join this card
+                  {joinNeedsApproval ? 'Request to join' : 'Join this card'}
                 </Button>
               </div>
             )}

@@ -63,6 +63,34 @@
   z-index: 100;
 }
 
+/* A booking with an open approval request: dashed outline and a hatch over
+   the bar's own colour (a pseudo-element, so an inline phase colour stays),
+   not draggable. Tokens only. */
+.assignmentBar.pendingBar {
+  opacity: 0.75;
+  outline: 1px dashed var(--text-primary);
+  outline-offset: -1px;
+  cursor: default;
+}
+
+.assignmentBar.pendingBar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent 0 4px,
+    color-mix(in srgb, var(--bg-primary) 35%, transparent) 4px 8px
+  );
+}
+
+.assignmentBar.pendingBar .barLabel {
+  position: relative;
+  z-index: 1;
+  font-style: italic;
+}
+
 /* A draggable assignment bar and its handles belong to the finger (see
    PhaseBar.module.css) */
 .assignmentBar.interactive,

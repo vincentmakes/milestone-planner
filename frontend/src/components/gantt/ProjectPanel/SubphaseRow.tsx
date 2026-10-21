@@ -438,6 +438,8 @@ export const SubphaseRow = memo(function SubphaseRow({
                 phaseType={subphase.name}
                 phaseColor={subphase.color}
                 depth={depth + 1}
+                approvalStatus={assignment.approval_status}
+                approval={assignment.approval}
               />
             );
           })}

@@ -66,6 +66,27 @@ describe('useDerivedDueNotifications', () => {
     });
   });
 
+  it('sends no reminder for a card my booking on is still awaiting approval', () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 4, role: 'user' }),
+      projects: [
+        makeProject({
+          id: 1,
+          phases: [
+            makePhase({
+              id: 10,
+              name: 'Requested',
+              end_date: iso(-2),
+              staffAssignments: [{ ...mine[0], approval_status: 'pending' }],
+            }),
+          ],
+        }),
+      ],
+    });
+    const { result } = renderHook(() => useDerivedDueNotifications());
+    expect(result.current).toEqual([]);
+  });
+
   it('forgets a dismissed reminder until the due date changes', () => {
     seed();
     dismissDerivedNotification('phase-10', iso(-2));

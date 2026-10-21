@@ -14,6 +14,7 @@ import { formatDateISO } from '@/utils/date';
 import { buildEventDateSet } from '@/api';
 import type { CompanyEvent } from '@/types';
 import { stubConfirm } from '@/test/confirmDialog';
+import { USER_DEFAULTS } from '@/test/permissionFixtures';
 import {
   makePhase,
   makeProject,
@@ -145,6 +146,44 @@ describe('StaffView panel', () => {
       'title',
       '30% of 80% max capacity'
     );
+  });
+
+  it('leaves bookings awaiting approval out of the availability and marks their bars', () => {
+    seed();
+    const state = useAppStore.getState();
+    const [project, archived] = state.projects;
+    useAppStore.setState({
+      projects: [
+        {
+          ...project,
+          staffAssignments: [
+            ...project.staffAssignments,
+            { id: 102, staff_id: 5, allocation: 30, start_date: isoOffset(-1), end_date: isoOffset(1), approval_status: 'pending' },
+          ],
+        },
+        archived,
+      ],
+    });
+    render(<StaffView />);
+    // Bob: 50 % approved of 80 %; the pending 30 % does not count.
+    expect(within(rowFor('Bob Brown')).getByText('30% available')).toBeInTheDocument();
+    const pendingBar = screen.getByTestId('staff-bar-assignment-102');
+    expect(pendingBar.className).toMatch(/pendingBar/);
+    expect(pendingBar).toHaveAttribute('title', expect.stringContaining('pending approval'));
+    expect(screen.getByTestId('staff-bar-assignment-101').className).not.toMatch(/pendingBar/);
+  });
+
+  it('does not let a user without assignments.self_create drag their own row', () => {
+    seed('user', 4);
+    useAppStore.setState({
+      currentUser: makeUser({
+        id: 4,
+        role: 'user',
+        permissions: USER_DEFAULTS.filter((k) => k !== 'assignments.self_create'),
+      }),
+    });
+    render(<StaffView />);
+    expect(rowFor('Alice Ames')).toHaveAttribute('draggable', 'false');
   });
 
   it('reports zero availability for someone absent today', () => {

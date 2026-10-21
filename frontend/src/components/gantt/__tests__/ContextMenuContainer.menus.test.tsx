@@ -150,7 +150,7 @@ describe('project menu', () => {
     expect(body.start_date).toBe(body.end_date);
   });
 
-  it('logs a failed self-assignment', async () => {
+  it('logs a failed self-assignment and reports it in the flash notice', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.mocked(createStaffAssignment).mockRejectedValueOnce(new Error('409'));
     seed(makeUser({ id: 5, role: 'user' }));
@@ -158,6 +158,7 @@ describe('project menu', () => {
     render(<ContextMenuContainer />);
     fireEvent.click(item('Assign me'));
     await waitFor(() => expect(err).toHaveBeenCalledWith('Failed to self-assign:', expect.any(Error)));
+    expect(useUIStore.getState().flashNotice?.message).toBe('Could not assign you: 409');
     expect(refreshProjects).not.toHaveBeenCalled();
     err.mockRestore();
   });

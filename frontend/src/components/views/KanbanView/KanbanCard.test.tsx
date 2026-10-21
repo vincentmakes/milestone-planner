@@ -21,6 +21,7 @@ function makeCard(over: Partial<KanbanCardData> = {}): KanbanCardData {
     depth: 1,
     assignments: [],
     assigneeIds: [],
+    pendingAssigneeIds: [],
     swimlanePhaseId: 1,
     swimlanePhaseName: 'Design',
     path: 'Design / DoE setup',

@@ -28,6 +28,7 @@ import {
 } from '@/api/endpoints/projects';
 import { makePhase, makeProject, makeSubphase, makeUser } from '@/test/factories';
 import type { Project } from '@/types';
+import { USER_DEFAULTS } from '@/test/permissionFixtures';
 
 function buildProject(): Project {
   return makeProject({
@@ -274,6 +275,33 @@ describe('useResize: bookings', () => {
       })
     );
     expect(useAppStore.getState().projects[0].staffAssignments[0].end_date).toBe('2026-03-08');
+  });
+
+  it('brings the server state back when the own resize was sent for approval (202)', async () => {
+    marchCells();
+    useAppStore.setState({
+      currentUser: makeUser({
+        id: 4,
+        role: 'user',
+        permissions: USER_DEFAULTS.filter((k) => k !== 'assignments.self_update'),
+        approval_required: ['assignments.self_update'],
+      }),
+    });
+    const server = buildProject();
+    vi.mocked(updateStaffAssignment).mockResolvedValueOnce({ success: true, pending: true, request_id: 31, id: 50 });
+    vi.mocked(loadAllProjects).mockResolvedValueOnce([server]);
+    const bar = makeBar({ assignmentId: '50' }, 30, 150);
+    const { result } = renderHook(() => useResize());
+    act(() =>
+      result.current.startStaffAssignmentResize(mouseDown(bar, 180), 50, 1, 'right', '2026-03-02', '2026-03-06', bar, 4)
+    );
+    move(240);
+    up();
+    await waitFor(() => expect(useUIStore.getState().flashNotice?.message).toBe('Sent for approval'));
+    expect(useAppStore.getState().projects).toEqual([server]);
+    expect(useAppStore.getState().projects[0].staffAssignments[0].end_date).toBe('2026-03-06');
+    expect(useUndoStore.getState().undoStack).toEqual([]);
+    await waitFor(() => expect(useUIStore.getState().isResizing).toBe(false));
   });
 
   it('resizes an equipment booking from the left', async () => {

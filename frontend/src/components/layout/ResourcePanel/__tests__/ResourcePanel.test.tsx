@@ -24,6 +24,7 @@ import {
 } from '@/test/factories';
 import type { StaffAssignment } from '@/types';
 import { tagFilterKey } from '@/utils/tags';
+import { USER_DEFAULTS } from '@/test/permissionFixtures';
 
 const today = formatDateISO(new Date());
 const assignment = (staffId: number, allocation: number): StaffAssignment => ({
@@ -113,6 +114,59 @@ describe('ResourcePanel', () => {
     render(<ResourcePanel />);
     expect(card('Bob Brown')).toHaveTextContent('35%');
     expect(card('Full Time')).toHaveTextContent('40%');
+  });
+
+  it("leaves bookings awaiting approval out of today's availability", () => {
+    const sub = makeSubphase({
+      start_date: today,
+      end_date: today,
+      staffAssignments: [{ ...assignment(4, 10), approval_status: 'pending' }],
+    });
+    const phase = makePhase({
+      start_date: today,
+      end_date: today,
+      staffAssignments: [{ ...assignment(4, 20), approval_status: 'pending' }],
+      children: [sub],
+    });
+    useAppStore.setState({
+      staff: [makeStaff({ id: 4, name: 'Bob Brown' })],
+      projects: [
+        makeProject({
+          staffAssignments: [assignment(4, 30), { ...assignment(4, 50), approval_status: 'pending' }],
+          phases: [phase],
+        }),
+      ],
+    });
+    render(<ResourcePanel />);
+    // Only the approved 30 % counts.
+    expect(card('Bob Brown')).toHaveTextContent('70%');
+  });
+
+  it('does not let a user without assignments.self_create drag their own card', () => {
+    useAppStore.setState({
+      currentUser: makeUser({
+        id: 4,
+        role: 'user',
+        permissions: USER_DEFAULTS.filter((k) => k !== 'assignments.self_create'),
+      }),
+      staff: [makeStaff({ id: 4, name: 'Bob Brown' })],
+    });
+    render(<ResourcePanel />);
+    expect(card('Bob Brown')).toHaveAttribute('draggable', 'false');
+  });
+
+  it('lets a user whose own bookings need approval drag their own card', () => {
+    useAppStore.setState({
+      currentUser: makeUser({
+        id: 4,
+        role: 'user',
+        permissions: USER_DEFAULTS.filter((k) => k !== 'assignments.self_create'),
+        approval_required: ['assignments.self_create'],
+      }),
+      staff: [makeStaff({ id: 4, name: 'Bob Brown' })],
+    });
+    render(<ResourcePanel />);
+    expect(card('Bob Brown')).toHaveAttribute('draggable', 'true');
   });
 
   it('shows over-allocated staff as negative availability', () => {

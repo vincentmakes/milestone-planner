@@ -383,6 +383,8 @@ export const ProjectRow = memo(function ProjectRow({
                 startDate={assignment.start_date}
                 endDate={assignment.end_date}
                 depth={1}
+                approvalStatus={assignment.approval_status}
+                approval={assignment.approval}
               />
             );
           })}

@@ -17,6 +17,7 @@
 import type { Project, Phase, Subphase, Dependency, DependencyType, StaffAssignment, StaffAssignmentLevel, EquipmentAssignment } from '@/types';
 import { updatePhase, updateSubphase, updateProject, updateStaffAssignment, updateEquipmentAssignment } from '@/api/endpoints/projects';
 import { parseLocalDate, formatLocalDate, toDateOnly } from '@/utils/date';
+import { isPendingAssignment } from '@/utils/kanbanCards';
 
 // Accumulated updates to batch save to server
 export interface PendingUpdate {
@@ -68,7 +69,7 @@ function moveStaffAssignmentsByOffset(
 ): void {
   if (level !== 'project') return;
   for (const assignment of assignments) {
-    if (assignment.approval_status === 'pending') continue;
+    if (isPendingAssignment(assignment)) continue;
     // Skip assignments without valid dates
     if (!assignment.start_date || !assignment.end_date) {
       console.warn(`[autoCalculation] Skipping staff assignment ${assignment.id} - missing dates`);

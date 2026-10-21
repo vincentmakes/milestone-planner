@@ -8,7 +8,8 @@ import { ProjectBar } from './ProjectBar';
 import { PhaseBar } from './PhaseBar';
 import { calculateBarPosition } from '../utils';
 import type { TimelineCell } from '../utils';
-import type { Project, Phase, Subphase, ViewMode, StaffAssignment, EquipmentAssignment } from '@/types';
+import type { Project, Phase, Subphase, ViewMode, StaffAssignment, EquipmentAssignment, AssignmentApproval } from '@/types';
+import { isPendingAssignment, requestedAllocation } from '@/utils/kanbanCards';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
@@ -454,6 +455,8 @@ export const ProjectTimeline = memo(function ProjectTimeline({
                 name={assignment.staff_name}
                 allocation={assignment.allocation}
                 staffId={assignment.staff_id}
+                approvalStatus={assignment.approval_status}
+                approval={assignment.approval}
                 interactive={canEditThis}
                 onDragStart={canEditThis ? (e) => handleStaffAssignmentDragStart(e, assignment.id, assignment.start_date, assignment.end_date, assignment.staff_id) : undefined}
                 onResizeStart={canEditThis ? (e, edge) => handleStaffAssignmentResizeStart(e, assignment.id, edge, assignment.start_date, assignment.end_date, assignment.staff_id) : undefined}
@@ -699,6 +702,8 @@ const PhaseTimeline = memo(function PhaseTimeline({
                 allocation={assignment.allocation}
                 phaseColor={phase.color}
                 staffId={assignment.staff_id}
+                approvalStatus={assignment.approval_status}
+                approval={assignment.approval}
               />
             </div>
           ))}
@@ -932,6 +937,8 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
                 allocation={assignment.allocation}
                 phaseColor={subphase.color}
                 staffId={assignment.staff_id}
+                approvalStatus={assignment.approval_status}
+                approval={assignment.approval}
               />
             </div>
           ))}
@@ -983,7 +990,18 @@ interface AssignmentBarProps {
   onDragStart?: (e: React.MouseEvent) => void;
   onResizeStart?: (e: React.MouseEvent, edge: 'left' | 'right') => void;
   interactive?: boolean;
+  /** Staff bars: 'pending' = a booking awaiting approval */
+  approvalStatus?: StaffAssignment['approval_status'];
+  /** Staff bars: the open approval request (create, change or removal) */
+  approval?: AssignmentApproval | null;
 }
+
+/** Tooltip suffix of a bar with an open request. */
+const PENDING_SUFFIX: Record<string, string> = {
+  'assignments.self_create': 'pending approval',
+  'assignments.self_update': 'change pending approval',
+  'assignments.self_remove': 'removal pending approval',
+};
 
 const AssignmentBar = memo(function AssignmentBar({
   assignmentId,
@@ -1004,8 +1022,14 @@ const AssignmentBar = memo(function AssignmentBar({
   equipmentId: _equipmentId,
   onDragStart,
   onResizeStart,
-  interactive = false,
+  interactive: interactiveProp = false,
+  approvalStatus,
+  approval,
 }: AssignmentBarProps) {
+  // A bar with an open request (a pending booking, change or removal) is
+  // frozen: its dates are a request, not a booking, until someone decides.
+  const pending = isPendingAssignment({ approval_status: approvalStatus }) || Boolean(approval);
+  const interactive = interactiveProp && !pending;
   // Get vacations from store to show vacation indicators
   const vacations = useAppStore((s) => s.vacations);
   const typesById = useAppStore(selectAbsenceTypesById);
@@ -1124,10 +1148,17 @@ const AssignmentBar = memo(function AssignmentBar({
     }
   }
 
-  // Build label: "Name (allocation%)" for staff, just "Name" for equipment
+  // Build label: "Name (allocation%)" for staff, just "Name" for equipment;
+  // a pending change shows the requested value next to the current one.
+  const requested =
+    approval && allocation !== undefined ? requestedAllocation({ allocation, approval } as StaffAssignment) : null;
+  const allocationText = allocation ? (requested !== null ? `${allocation}% → ${requested}%` : `${allocation}%`) : '';
   const label = name 
-    ? (allocation ? `${name} (${allocation}%)` : name)
-    : (allocation ? `${allocation}%` : '');
+    ? (allocationText ? `${name} (${allocationText})` : name)
+    : allocationText;
+  const pendingSuffix = pending
+    ? ` — ${PENDING_SUFFIX[approval?.action ?? 'assignments.self_create'] ?? PENDING_SUFFIX['assignments.self_create']}`
+    : '';
 
   // Mouse and touch share these. A touch is armed with armTouchGesture and
   // handed on as a mouse-like event only once the finger has moved past the
@@ -1175,9 +1206,9 @@ const AssignmentBar = memo(function AssignmentBar({
       
       {/* Assignment bar */}
       <div
-        className={`${styles.assignmentBar} ${styles[barType]} ${isPhaseStaff ? styles.phaseStaff : ''} ${isSubphaseStaff ? styles.subphaseStaff : ''} ${interactive ? styles.interactive : ''} ${changedBy ? styles.recentlyChanged : ''}`}
+        className={`${styles.assignmentBar} ${styles[barType]} ${isPhaseStaff ? styles.phaseStaff : ''} ${isSubphaseStaff ? styles.subphaseStaff : ''} ${interactive ? styles.interactive : ''} ${pending ? styles.pendingBar : ''} ${changedBy ? styles.recentlyChanged : ''}`}
         style={barStyle}
-        title={changedBy ? `${label} — just edited by ${changedBy}` : label}
+        title={changedBy ? `${label}${pendingSuffix} — just edited by ${changedBy}` : `${label}${pendingSuffix}`}
         data-assignment-id={assignmentId}
         data-assignment-type={assignmentType}
         data-start={startDate}

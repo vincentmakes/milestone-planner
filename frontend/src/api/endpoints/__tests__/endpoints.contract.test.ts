@@ -18,6 +18,7 @@ import * as vacations from '../vacations';
 import { tagsApi, tagGroupsApi } from '../tags';
 import { teamsApi } from '../teams';
 import { rolesApi } from '../roles';
+import { approvalsApi } from '../approvals';
 import { skillsApi } from '../skills';
 import { absenceTypesApi } from '../absenceTypes';
 import { getAppVersion } from '../health';
@@ -355,6 +356,20 @@ describe('role and approval policy endpoints', () => {
       '/api/approval-policies/assignments.self_create',
       { pm_approves: false, role_ids: [2] },
     ],
+  ]);
+});
+
+describe('approval request endpoints', () => {
+  runCases([
+    ['approvals getMine', () => approvalsApi.getMine(), 'GET', '/api/approval-requests?scope=mine'],
+    ['approvals getMine pending only', () => approvalsApi.getMine('pending'), 'GET', '/api/approval-requests?scope=mine&status=pending'],
+    ['approvals getToDecide', () => approvalsApi.getToDecide(), 'GET', '/api/approval-requests?scope=to_decide'],
+    ['approvals get', () => approvalsApi.get(7), 'GET', '/api/approval-requests/7'],
+    ['approvals approve', () => approvalsApi.approve(7), 'POST', '/api/approval-requests/7/approve', {}],
+    ['approvals approve with a note', () => approvalsApi.approve(7, 'ok'), 'POST', '/api/approval-requests/7/approve', { note: 'ok' }],
+    ['approvals reject', () => approvalsApi.reject(7), 'POST', '/api/approval-requests/7/reject', {}],
+    ['approvals reject with a reason', () => approvalsApi.reject(7, 'Too busy'), 'POST', '/api/approval-requests/7/reject', { note: 'Too busy' }],
+    ['approvals cancel', () => approvalsApi.cancel(7), 'POST', '/api/approval-requests/7/cancel', {}],
   ]);
 });
 

@@ -9,7 +9,10 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useEquipmentOverlaps } from '@/hooks/useEquipmentOverlaps';
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
+import { PendingBadge } from '@/components/common/PendingBadge';
 import { canBookEquipment, canEditAssignment } from '@/utils/permissions';
+import { isPendingAssignment, requestedAllocation } from '@/utils/kanbanCards';
+import type { AssignmentApproval, StaffAssignment } from '@/types';
 import styles from './AssignmentRow.module.css';
 
 interface AssignmentRowProps {
@@ -29,6 +32,10 @@ interface AssignmentRowProps {
   phaseColor?: string;
   startDate?: string;
   endDate?: string;
+  /** Staff rows: 'pending' = a booking awaiting approval (shown dashed) */
+  approvalStatus?: StaffAssignment['approval_status'];
+  /** Staff rows: the open approval request (create, change or removal) */
+  approval?: AssignmentApproval | null;
 }
 
 export const AssignmentRow = memo(function AssignmentRow({
@@ -48,6 +55,8 @@ export const AssignmentRow = memo(function AssignmentRow({
   phaseColor,
   startDate,
   endDate,
+  approvalStatus,
+  approval,
 }: AssignmentRowProps) {
   const showContextMenu = useUIStore((s) => s.showContextMenu);
   const currentUser = useAppStore((s) => s.currentUser);
@@ -62,12 +71,31 @@ export const AssignmentRow = memo(function AssignmentRow({
   const canEdit = type === 'equipment'
     ? canBookEquipment(currentUser, { pm_id: pmId })
     : canEditAssignment(currentUser, { pm_id: pmId }, staffId);
+  // A decider of the open request opens the menu too (Approve / Reject).
+  const canOpenMenu = canEdit || (type !== 'equipment' && approval?.can_decide === true);
+
+  // Own bookings awaiting approval (staff rows only).
+  const isStaffRow = type !== 'equipment';
+  const pending = isStaffRow && isPendingAssignment({ approval_status: approvalStatus });
+  const requested =
+    isStaffRow && approval && allocation !== undefined
+      ? requestedAllocation({ allocation, approval } as StaffAssignment)
+      : null;
+  const allocationText =
+    allocation === undefined ? null : requested !== null ? `${allocation}% → ${requested}%` : `${allocation}%`;
+  const rowClass = [styles.row, canOpenMenu ? styles.editable : '', pending ? styles.pending : '']
+    .filter(Boolean)
+    .join(' ');
+  const badge =
+    isStaffRow && (pending || approval) ? (
+      <PendingBadge assignment={{ approval_status: approvalStatus, approval }} projectId={projectId} />
+    ) : null;
   
   const paddingLeft = depth * 16 + 28; // Extra offset for no expand button
 
   // Handle right-click context menu
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    if (!canEdit) return;
+    if (!canOpenMenu) return;
     
     e.preventDefault();
     e.stopPropagation();
@@ -92,13 +120,13 @@ export const AssignmentRow = memo(function AssignmentRow({
         endDate,
       }
     );
-  }, [canEdit, showContextMenu, type, assignmentId, projectId, phaseId, subphaseId, staffId, equipmentId, name, allocation, startDate, endDate]);
+  }, [canOpenMenu, showContextMenu, type, assignmentId, projectId, phaseId, subphaseId, staffId, equipmentId, name, allocation, startDate, endDate]);
 
   // Phase/subphase staff has special styling - shows 📌 and phase type badge
   if (type === 'phase-staff' || type === 'subphase-staff') {
     return (
       <div 
-        className={`${styles.row} ${canEdit ? styles.editable : ''}`} 
+        className={rowClass} 
         style={{ paddingLeft }}
         onContextMenu={handleContextMenu}
       >
@@ -118,9 +146,11 @@ export const AssignmentRow = memo(function AssignmentRow({
           {name}
         </span>
 
+        {badge}
+
         {/* Allocation */}
-        {allocation !== undefined && (
-          <span className={styles.allocation}>{allocation}%</span>
+        {allocationText !== null && (
+          <span className={styles.allocation}>{allocationText}</span>
         )}
       </div>
     );
@@ -128,7 +158,7 @@ export const AssignmentRow = memo(function AssignmentRow({
 
   return (
     <div 
-      className={`${styles.row} ${canEdit ? styles.editable : ''}`} 
+      className={rowClass} 
       style={{ paddingLeft }}
       onContextMenu={handleContextMenu}
     >
@@ -152,9 +182,11 @@ export const AssignmentRow = memo(function AssignmentRow({
         />
       )}
 
+      {badge}
+
       {/* Allocation */}
-      {type === 'staff' && allocation !== undefined && (
-        <span className={styles.allocation}>{allocation}%</span>
+      {type === 'staff' && allocationText !== null && (
+        <span className={styles.allocation}>{allocationText}</span>
       )}
     </div>
   );

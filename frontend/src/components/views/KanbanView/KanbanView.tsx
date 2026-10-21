@@ -134,9 +134,13 @@ export function KanbanView() {
 
   const allCards = useMemo(() => collectCardsForProjects(boardProjects), [boardProjects]);
 
+  // My Todo: the cards I am on, and the ones I asked to join (my booking
+  // awaits approval; the card shows a pending badge).
   const visibleCards = useMemo(() => {
     if (!myTodoOnly || !currentUser) return allCards;
-    return allCards.filter((c) => c.assigneeIds.includes(currentUser.id));
+    return allCards.filter(
+      (c) => c.assigneeIds.includes(currentUser.id) || c.pendingAssigneeIds.includes(currentUser.id)
+    );
   }, [allCards, myTodoOnly, currentUser]);
 
   const listColumns = useMemo(

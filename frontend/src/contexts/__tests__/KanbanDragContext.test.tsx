@@ -38,6 +38,7 @@ function card(overrides: Partial<KanbanCard> = {}): KanbanCard {
     depth: 1,
     assignments: [],
     assigneeIds: [],
+    pendingAssigneeIds: [],
     swimlanePhaseId: 10,
     swimlanePhaseName: 'Feasibility',
     path: 'Feasibility / Lab work',

@@ -7,6 +7,9 @@ import type { KanbanCard as KanbanCardData } from '@/utils/kanbanCards';
 import { dueStateOf } from '@/utils/kanbanCards';
 import { formatDateShort, parseDateISO } from '@/utils/date';
 import { avatarColorFor } from '@/utils/avatarColor';
+import { isPendingAssignment } from '@/utils/kanbanCards';
+import { PendingBadge } from '@/components/common/PendingBadge';
+import { useAppStore } from '@/stores/appStore';
 import styles from './KanbanCard.module.css';
 
 interface KanbanCardProps {
@@ -37,6 +40,12 @@ export function KanbanCard({
   isDragging = false,
 }: KanbanCardProps) {
   const due = useMemo(() => dueStateOf(card), [card]);
+  // My own booking on the card awaits approval (My Todo lists such cards).
+  const myId = useAppStore((s) => s.currentUser?.id);
+  const myPendingRow =
+    myId !== undefined && card.pendingAssigneeIds.includes(myId)
+      ? card.assignments.find((a) => a.staff_id === myId && isPendingAssignment(a))
+      : undefined;
 
   const classNames = [
     styles.card,
@@ -82,6 +91,7 @@ export function KanbanCard({
             {due === 'overdue' ? 'Overdue' : 'Due soon'}
           </span>
         )}
+        {myPendingRow && <PendingBadge assignment={myPendingRow} projectId={card.projectId} />}
       </div>
 
       {card.completion !== null && card.completion > 0 && (
@@ -95,16 +105,19 @@ export function KanbanCard({
 
       <div className={styles.footer}>
         <div className={styles.avatars}>
-          {card.assignments.map((a) => (
-            <span
-              key={a.id}
-              className={styles.avatar}
-              style={{ background: avatarColorFor(a.staff_id) }}
-              title={`${a.staff_name ?? 'Staff'} - ${a.allocation}%`}
-            >
-              {initials(a.staff_name ?? '?')}
-            </span>
-          ))}
+          {card.assignments.map((a) => {
+            const pending = isPendingAssignment(a);
+            return (
+              <span
+                key={a.id}
+                className={pending ? `${styles.avatar} ${styles.pendingAvatar}` : styles.avatar}
+                style={{ background: avatarColorFor(a.staff_id) }}
+                title={`${a.staff_name ?? 'Staff'} - ${a.allocation}%${pending ? ' (pending approval)' : ''}`}
+              >
+                {initials(a.staff_name ?? '?')}
+              </span>
+            );
+          })}
         </div>
         {commentCount > 0 && (
           <span className={styles.comments} title={`${commentCount} comment(s)`}>

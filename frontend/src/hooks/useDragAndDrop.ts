@@ -13,6 +13,8 @@ import { useViewStore } from '@/stores/viewStore';
 import { updatePhase, updateSubphase, updateProject, updateStaffAssignment, updateEquipmentAssignment } from '@/api/endpoints/projects';
 import { parseLocalDate, addDaysToDateString, daysBetweenDateStrings } from '@/utils/date';
 import { recoverFromPersistFailure } from '@/utils/persistFailure';
+import { reloadAfterPendingWrite } from '@/utils/pendingBookings';
+import { isPendingResponse } from '@/api/endpoints/approvals';
 import { getPointerClientX, NON_PASSIVE } from '@/utils/touchEvents';
 import { useUndoStore } from '@/stores/undoStore';
 import { 
@@ -395,6 +397,7 @@ export function useDragAndDrop() {
     newStartDate: string, 
     newEndDate: string
   ) => {
+    let sentForApproval = false;
     try {
       // Find the project
       const projectIndex = projects.findIndex(p => p.id === data.projectId);
@@ -559,11 +562,15 @@ export function useDragAndDrop() {
       } else if (data.type === 'staffAssignment') {
         // Staff assignment requires allocation field
         const assignment = projectCopy.staffAssignments?.find(a => a.id === data.id);
-        await updateStaffAssignment(data.id, {
+        const res = await updateStaffAssignment(data.id, {
           start_date: newStartDate,
           end_date: newEndDate,
           allocation: assignment?.allocation ?? 100,
         });
+        // An own booking whose change needs approval: the server filed a
+        // request (202) and kept the old dates, so the optimistic move cannot
+        // stand -- reload, clear the undo history, tell the user.
+        if (isPendingResponse(res)) sentForApproval = true;
       } else if (data.type === 'equipmentAssignment') {
         await updateEquipmentAssignment(data.id, {
           start_date: newStartDate,
@@ -575,7 +582,8 @@ export function useDragAndDrop() {
       if (pendingUpdates.length > 0) {
         await savePendingUpdates(pendingUpdates);
       }
-      
+
+      if (sentForApproval) await reloadAfterPendingWrite();
     } catch (err) {
       // Optimistic-write failure protocol: reload + clear the undo stack.
       await recoverFromPersistFailure('Drag', err);

@@ -26,6 +26,7 @@ import { skillsApi } from '@/api/endpoints/skills';
 import { tagsApi, tagGroupsApi } from '@/api/endpoints/tags';
 import { teamsApi } from '@/api/endpoints/teams';
 import { rolesApi } from '@/api/endpoints/roles';
+import { refreshApprovalPoliciesIfLoaded } from '@/hooks/useApprovalPolicies';
 import { absenceTypesApi } from '@/api/endpoints/absenceTypes';
 import { getCustomColumnsWithValues } from '@/api/endpoints/customColumns';
 import { getInstanceSettings } from '@/api/endpoints/settings';
@@ -216,9 +217,16 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
           tasks.push(getInstanceSettings().then(setInstanceSettings).catch((e) => console.error('[WS] settings refresh failed', e)));
           break;
         case 'approvals':
+          // The pending badge's approver names (only once something loaded
+          // them); the My Todos view (todoStore) plugs its refresh in here.
+          tasks.push(
+            refreshApprovalPoliciesIfLoaded().catch((e) =>
+              console.error('[WS] approval policies refresh failed', e)
+            )
+          );
+          break;
         case 'todos':
-          // No client store holds approval requests or todos yet; the My Todos
-          // view (todoStore) plugs its refresh in here.
+          // No client store holds todos yet; the My Todos view plugs in here.
           break;
         case 'currentUser':
           tasks.push(

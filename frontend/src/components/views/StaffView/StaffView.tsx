@@ -39,7 +39,8 @@ import {
   selectTeamSiteById,
   selectAbsenceTypesById,
 } from '@/stores/appStore';
-import { canManageAbsencesOf, canManageAnyProject, isSelf } from '@/utils/permissions';
+import { canBookSelf, canManageAbsencesOf, canManageAnyProject } from '@/utils/permissions';
+import { isPendingAssignment } from '@/utils/kanbanCards';
 import type { Project, Phase, Subphase, StaffAssignment } from '@/types';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './StaffView.module.css';
@@ -497,9 +498,10 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
     }
     
     const assignments = staffAssignmentsMap.get(staffId) || [];
-    // Only sum allocations for assignments active TODAY
+    // Only sum allocations for assignments active TODAY; a booking awaiting
+    // approval books nothing yet.
     const totalAllocation = assignments
-      .filter(a => a.start_date && a.end_date && isActiveToday(a.start_date, a.end_date))
+      .filter(a => !isPendingAssignment(a) && a.start_date && a.end_date && isActiveToday(a.start_date, a.end_date))
       .reduce((sum, a) => sum + (a.allocation || 0), 0);
     return { available: maxCapacity - totalAllocation, maxCapacity };
   };
@@ -527,7 +529,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   // drag anyone, everyone may drag their own row.
   const canDragAny = canManageAnyProject(currentUser, projects);
   const canDragStaff = useCallback(
-    (staffId: number) => canDragAny || isSelf(currentUser, staffId),
+    (staffId: number) => canDragAny || canBookSelf(currentUser, staffId),
     [canDragAny, currentUser]
   );
   
@@ -1041,6 +1043,8 @@ interface StaffAssignmentWithContext {
   subphaseName?: string;
   subphaseId?: number;
   level: 'project' | 'phase' | 'subphase';
+  /** 'pending' = a booking awaiting approval: listed, but books no capacity */
+  approval_status?: 'approved' | 'pending';
 }
 
 export type { StaffAssignmentWithContext };

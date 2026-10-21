@@ -31,6 +31,7 @@ import {
 import { makePhase, makeProject, makeSubphase, makeUser } from '@/test/factories';
 import type { Project } from '@/types';
 import { stubConfirm } from '@/test/confirmDialog';
+import { USER_DEFAULTS } from '@/test/permissionFixtures';
 import { setConfirmHandler } from '@/utils/confirmDialog';
 
 function buildProject(): Project {
@@ -497,6 +498,51 @@ describe('useDragAndDrop: persist failure', () => {
     expect(useAppStore.getState().projects).toEqual([serverCopy]);
     expect(useUndoStore.getState().undoStack).toEqual([]);
     expect(useUndoStore.getState().canUndo).toBe(false);
+  });
+});
+
+describe('useDragAndDrop: own booking sent for approval (202)', () => {
+  it('brings the server state back, clears the undo history and says so', async () => {
+    marchCells();
+    useAppStore.setState({
+      currentUser: makeUser({
+        id: 4,
+        role: 'user',
+        permissions: USER_DEFAULTS.filter((k) => k !== 'assignments.self_update'),
+        approval_required: ['assignments.self_update'],
+      }),
+    });
+    const serverCopy = buildProject();
+    vi.mocked(updateStaffAssignment).mockResolvedValueOnce({ success: true, pending: true, request_id: 31, id: 50 });
+    vi.mocked(loadAllProjects).mockResolvedValueOnce([serverCopy]);
+    const bar = makeBar({ assignmentId: '50' }, 30);
+    const { result } = renderHook(() => useDragAndDrop());
+
+    act(() => result.current.startStaffAssignmentDrag(mouseDown(bar, 0), 50, 1, '2026-03-02', '2026-03-06', bar, 4));
+    move(60);
+    up();
+
+    await waitFor(() => expect(useUIStore.getState().flashNotice?.message).toBe('Sent for approval'));
+    expect(updateStaffAssignment).toHaveBeenCalledWith(50, { start_date: '2026-03-04', end_date: '2026-03-08', allocation: 40 });
+    // The optimistic move cannot stand: the server copy is back.
+    expect(useAppStore.getState().projects).toEqual([serverCopy]);
+    expect(useAppStore.getState().projects[0].staffAssignments[0].start_date).toBe('2026-03-02');
+    expect(useUndoStore.getState().undoStack).toEqual([]);
+    expect(useUIStore.getState().flashNotice?.tone).toBe('info');
+    await waitFor(() => expect(useUIStore.getState().isDragging).toBe(false));
+  });
+
+  it('keeps the direct move when the server applied it', async () => {
+    marchCells();
+    const bar = makeBar({ assignmentId: '50' }, 30);
+    const { result } = renderHook(() => useDragAndDrop());
+    act(() => result.current.startStaffAssignmentDrag(mouseDown(bar, 0), 50, 1, '2026-03-02', '2026-03-06', bar, 4));
+    move(60);
+    up();
+    await waitFor(() => expect(updateStaffAssignment).toHaveBeenCalled());
+    await waitFor(() => expect(useUIStore.getState().isDragging).toBe(false));
+    expect(useUIStore.getState().flashNotice).toBeNull();
+    expect(useUndoStore.getState().undoStack).toHaveLength(1);
   });
 });
 

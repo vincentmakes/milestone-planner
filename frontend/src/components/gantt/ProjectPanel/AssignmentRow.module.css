@@ -70,3 +70,14 @@
   border-radius: 3px;
   flex-shrink: 0;
 }
+
+/* A booking awaiting approval: dashed left rule, muted text (not counted yet). */
+.row.pending {
+  border-left: 2px dashed var(--border-color);
+  color: var(--text-muted);
+}
+
+.row.pending .name {
+  color: var(--text-muted);
+  font-style: italic;
+}

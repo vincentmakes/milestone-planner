@@ -84,6 +84,20 @@ function staffListsAt(project: Project, level: AssignmentLevel): StaffAssignment
   return allSubphases(project).map((sp) => sp.staffAssignments ?? []);
 }
 
+/** The staff assignment `id` at `level` in the project (ids are unique per level only). */
+export function findStaffAssignment(
+  project: Project | null | undefined,
+  level: AssignmentLevel,
+  id: number
+): StaffAssignment | undefined {
+  if (!project) return undefined;
+  for (const list of staffListsAt(project, level)) {
+    const found = list.find((a) => a.id === id);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 export function patchStaffAssignmentLocally(
   projectId: number,
   assignmentId: number,

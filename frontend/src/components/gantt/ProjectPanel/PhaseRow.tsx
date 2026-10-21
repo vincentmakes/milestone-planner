@@ -391,6 +391,8 @@ export const PhaseRow = memo(function PhaseRow({
                 phaseType={phase.name}
                 phaseColor={phase.color}
                 depth={depth + 1}
+                approvalStatus={assignment.approval_status}
+                approval={assignment.approval}
               />
             );
           })}

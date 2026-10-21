@@ -8,7 +8,7 @@
 
 import { apiGet, apiPut, apiPost, apiDelete } from '../client';
 import { cardKey } from '@/utils/kanbanCards';
-import type { CardStatus } from '@/types';
+import type { CardStatus, PendingBookingResponse } from '@/types';
 
 export type CardEntityType = 'phase' | 'subphase';
 
@@ -91,7 +91,7 @@ export function assignCard(
   entityId: number,
   staffId: number,
   allocation?: number
-): Promise<{ success: boolean; id: number; allocation: number }> {
+): Promise<{ success: boolean; id: number; allocation: number } | PendingBookingResponse> {
   return apiPost(`/api/kanban/cards/${entityType}/${entityId}/assignees`, {
     staff_id: staffId,
     allocation: allocation ?? null,
@@ -103,7 +103,7 @@ export function unassignCard(
   entityType: CardEntityType,
   entityId: number,
   staffId: number
-): Promise<{ success: boolean }> {
+): Promise<{ success: boolean; cancelled?: boolean } | PendingBookingResponse> {
   return apiDelete(`/api/kanban/cards/${entityType}/${entityId}/assignees/${staffId}`);
 }
 

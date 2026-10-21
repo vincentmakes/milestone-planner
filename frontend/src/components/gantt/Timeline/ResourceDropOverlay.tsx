@@ -14,6 +14,8 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { createStaffAssignment, createEquipmentAssignment, loadAllProjects } from '@/api/endpoints/projects';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { canBookEquipment, canEditAssignment } from '@/utils/permissions';
+import { isPendingResponse } from '@/api/endpoints/approvals';
+import { flashSentForApproval } from '@/utils/pendingBookings';
 import type { TimelineCell } from '../utils';
 import { calculateBarPosition, centredDayRangeAtX } from '../utils/timeline';
 import type { Project } from '@/types';
@@ -223,11 +225,14 @@ export function ResourceDropOverlay({
     const isPhaseLevel = hoveredTarget.phaseId && !hoveredTarget.subphaseId;
     const isSubphaseLevel = !!hoveredTarget.subphaseId;
 
+    let sentForApproval = false;
     try {
       if (resourceDrag.type === 'staff') {
         // Use staff's max_capacity as default allocation
         const allocation = getStaffDefaultAllocation(resourceDrag.resourceId);
-        await createStaffAssignment({
+        // An own booking may need approval: the server then files a request
+        // (202) and the pending row arrives with the reload below.
+        const res = await createStaffAssignment({
           staff_id: resourceDrag.resourceId,
           allocation,
           start_date: startDate,
@@ -237,6 +242,7 @@ export function ResourceDropOverlay({
           phase_id: isPhaseLevel ? hoveredTarget.phaseId! : undefined,
           subphase_id: isSubphaseLevel ? hoveredTarget.subphaseId! : undefined,
         });
+        sentForApproval = isPendingResponse(res);
       } else if (resourceDrag.type === 'equipment') {
         await createEquipmentAssignment({
           equipment_id: resourceDrag.resourceId,
@@ -264,8 +270,12 @@ export function ResourceDropOverlay({
       // Reload projects
       const updatedProjects = await loadAllProjects();
       setProjects(updatedProjects);
+      if (sentForApproval) flashSentForApproval();
     } catch (error) {
       console.error('Failed to create assignment:', error);
+      useUIStore
+        .getState()
+        .showFlash(`Could not create the assignment: ${error instanceof Error ? error.message : 'unknown error'}`);
     } finally {
       endResourceDrag();
       document.body.classList.remove('resource-dragging');

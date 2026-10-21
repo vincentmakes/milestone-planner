@@ -32,7 +32,10 @@ import {
 } from '@/utils/localProjectTree';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { findSubphaseById } from '@/utils/subphaseUtils';
-import { canEditProject, isSelf } from '@/utils/permissions';
+import { can, canBookEquipment, canSelf, isSelf, needsApproval } from '@/utils/permissions';
+import { Notice } from '@/components/common/Notice';
+import { isPendingResponse } from '@/api/endpoints/approvals';
+import { flashSentForApproval, markRequestPendingLocally } from '@/utils/pendingBookings';
 import { AllocationSlider, snapToStep } from '@/components/common/AllocationSlider';
 import styles from './AssignmentModal.module.css';
 import { confirmAction } from '@/utils/confirmDialog';
@@ -84,11 +87,22 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   const phaseId = editingAssignment?.phase_id || modalContext.phaseId;
   const subphaseId = editingAssignment?.subphase_id || modalContext.subphaseId;
 
-  // Project editors (admin, superuser, the project's manager) assign anyone.
-  // Everyone else may only book their own time: the picker is fixed to them
-  // and only their own booking can be removed.
-  const isEditor = canEditProject(currentUser, projects.find((p) => p.id === projectId));
+  // Whoever manages others' bookings on the project (the key, or managing
+  // the project) assigns anyone. Everyone else may only book their own time:
+  // the picker is fixed to them and only their own booking can be removed.
+  // Equipment bookings: equipment_bookings.manage (or managing the project).
+  const dialogProject = projects.find((p) => p.id === projectId);
+  const isEditor = isStaff
+    ? can(currentUser, 'assignments.manage_others', dialogProject)
+    : canBookEquipment(currentUser, dialogProject);
   const selfOnly = isStaff && !isEditor && Boolean(currentUser);
+  // Own bookings follow the role's assignments.self_* keys: allowed, sent for
+  // approval (the server answers 202 and files a request), or denied (the
+  // control is hidden and a notice says why).
+  const ownKey = isEditing ? 'assignments.self_update' : 'assignments.self_create';
+  const selfDenied = selfOnly && !canSelf(currentUser, ownKey);
+  const selfNeedsApproval = selfOnly && needsApproval(currentUser, ownKey);
+  const removalNeedsApproval = selfOnly && needsApproval(currentUser, 'assignments.self_remove');
   const ownMaxCapacity = useMemo(() => {
     if (!currentUser) return 100;
     const row = staff.find((s) => s.id === currentUser.id);
@@ -96,7 +110,8 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   }, [staff, currentUser]);
   const canRemove = isEditing && (
     isStaff
-      ? isEditor || isSelf(currentUser, editingStaffAssignment?.staff_id)
+      ? isEditor ||
+        (isSelf(currentUser, editingStaffAssignment?.staff_id) && canSelf(currentUser, 'assignments.self_remove'))
       : isEditor
   );
 
@@ -226,9 +241,11 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       }
     }
 
+    if (selfDenied) return;
     if (!beginSubmit()) return;
     setError(null);
 
+    let sentForApproval = false;
     try {
       if (isStaff) {
         if (isEditing && editingStaffAssignment) {
@@ -236,9 +253,16 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
           const updateData = isPhaseOrSubphase
             ? { allocation }
             : { allocation, start_date: startDate, end_date: endDate };
-          await updateStaffAssignment(editingStaffAssignment.id, updateData, assignmentLevel);
-          // Show the edit right away (the reload below is a no-op in What-If).
-          if (projectId) {
+          const res = await updateStaffAssignment(editingStaffAssignment.id, updateData, assignmentLevel);
+          if (isPendingResponse(res)) {
+            // Sent for approval: the booking keeps its values until decided.
+            sentForApproval = true;
+            if (projectId && currentUser) {
+              markRequestPendingLocally(projectId, editingStaffAssignment.id, assignmentLevel, currentUser.id,
+                'assignments.self_update', res, updateData);
+            }
+          } else if (projectId) {
+            // Show the edit right away (the reload below is a no-op in What-If).
             patchStaffAssignmentLocally(projectId, editingStaffAssignment.id, assignmentLevel, updateData);
           }
         } else {
@@ -251,7 +275,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
             phase_id: phaseId || undefined,
             subphase_id: subphaseId || undefined,
           };
-          await createStaffAssignment(assignmentData);
+          sentForApproval = isPendingResponse(await createStaffAssignment(assignmentData));
         }
       } else {
         const assignmentData = {
@@ -280,6 +304,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       const updatedProjects = await loadAllProjects();
       setProjects(updatedProjects);
       closeModal();
+      if (sentForApproval) flashSentForApproval();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save assignment');
     } finally {
@@ -290,9 +315,11 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   const handleDelete = async () => {
     if (!isEditing || !editingAssignment) return;
 
-    const confirmMsg = isStaff
-      ? 'Are you sure you want to remove this staff assignment?'
-      : 'Are you sure you want to remove this equipment assignment?';
+    const confirmMsg = !isStaff
+      ? 'Are you sure you want to remove this equipment assignment?'
+      : removalNeedsApproval
+        ? 'Request the removal of your booking? It will be sent for approval.'
+        : 'Are you sure you want to remove this staff assignment?';
 
     if (!(await confirmAction({ title: 'Remove assignment', message: confirmMsg, destructive: true }))) {
       return;
@@ -301,10 +328,20 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
     if (!beginSubmit()) return;
     setError(null);
 
+    let sentForApproval = false;
     try {
       if (isStaff && editingStaffAssignment) {
-        await deleteStaffAssignment(editingStaffAssignment.id, assignmentLevel);
-        if (projectId) removeStaffAssignmentLocally(projectId, editingStaffAssignment.id, assignmentLevel);
+        const res = await deleteStaffAssignment(editingStaffAssignment.id, assignmentLevel);
+        if (isPendingResponse(res)) {
+          // Sent for approval: the booking stays until someone decides.
+          sentForApproval = true;
+          if (projectId && currentUser) {
+            markRequestPendingLocally(projectId, editingStaffAssignment.id, assignmentLevel, currentUser.id,
+              'assignments.self_remove', res, null);
+          }
+        } else if (projectId) {
+          removeStaffAssignmentLocally(projectId, editingStaffAssignment.id, assignmentLevel);
+        }
       } else if (!isStaff && editingEquipmentAssignment) {
         await deleteEquipmentAssignment(editingEquipmentAssignment.id);
         if (projectId) removeEquipmentAssignmentLocally(projectId, editingEquipmentAssignment.id);
@@ -313,6 +350,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       const updatedProjects = await loadAllProjects();
       setProjects(updatedProjects);
       closeModal();
+      if (sentForApproval) flashSentForApproval();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete assignment');
     } finally {
@@ -347,6 +385,16 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
     [isStaff, siteResources]
   );
 
+  const submitLabel = isEditing
+    ? selfNeedsApproval
+      ? 'Request change'
+      : 'Save Changes'
+    : selfOnly
+      ? selfNeedsApproval
+        ? 'Request to assign me'
+        : 'Assign me'
+      : `Assign ${resourceLabel}`;
+
   const footer = (
     <div className={styles.footer}>
       {canRemove && (
@@ -356,22 +404,24 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
           disabled={isSubmitting}
           className={styles.deleteBtn}
         >
-          Remove Assignment
+          {removalNeedsApproval ? 'Request removal' : 'Remove Assignment'}
         </Button>
       )}
       <div className={styles.footerRight}>
         <Button variant="secondary" onClick={closeModal} disabled={isSubmitting}>
           Cancel
         </Button>
-        <Button
-          variant="primary"
-          onClick={handleSubmit}
-          disabled={isSubmitting || !!createBlockedReason}
-          title={createBlockedReason ?? undefined}
-          loading={isSubmitting}
-        >
-          {isEditing ? 'Save Changes' : selfOnly ? 'Assign me' : `Assign ${resourceLabel}`}
-        </Button>
+        {!selfDenied && (
+          <Button
+            variant="primary"
+            onClick={handleSubmit}
+            disabled={isSubmitting || !!createBlockedReason}
+            title={createBlockedReason ?? undefined}
+            loading={isSubmitting}
+          >
+            {submitLabel}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -393,6 +443,20 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
           <div className={styles.error} role="status">{createBlockedReason}</div>
         )}
         {error && error !== createBlockedReason && <div className={styles.error}>{error}</div>}
+        {selfDenied && (
+          <Notice tone="info">
+            {isEditing
+              ? 'You cannot change your own booking on this project.'
+              : 'You cannot book your own time on this project.'}
+          </Notice>
+        )}
+        {selfNeedsApproval && !selfDenied && (
+          <Notice tone="info">
+            {isEditing
+              ? 'Changes to your booking are sent for approval.'
+              : 'Your booking is sent for approval before it counts.'}
+          </Notice>
+        )}
 
         <div className={styles.contextInfo}>
           {assignmentLevelLabel}: <strong>{targetName}</strong>

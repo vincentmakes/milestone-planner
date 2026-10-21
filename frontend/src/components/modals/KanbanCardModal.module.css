@@ -236,3 +236,36 @@
   color: var(--text-tertiary);
   font-size: var(--font-size-sm);
 }
+
+/* A booking awaiting approval: dashed outline, muted name. */
+.assignee.assigneePending {
+  border: 1px dashed var(--border-color);
+  color: var(--text-tertiary);
+}
+
+.assigneeName .assigneeBadge {
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.allocationCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The value a pending change asks for, next to the current one. */
+.requested {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-style: italic;
+}
+
+.rowActions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}

@@ -255,6 +255,17 @@
   background: color-mix(in srgb, var(--accent-cyan) 90%, transparent);
 }
 
+/* A booking awaiting approval: hatched and dashed, not counted in the heatmap. */
+.assignmentBar.pendingBar {
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--accent-cyan) 45%, transparent) 0 4px,
+    color-mix(in srgb, var(--accent-cyan) 20%, transparent) 4px 8px
+  );
+  outline: 1px dashed var(--accent-cyan);
+  outline-offset: -1px;
+}
+
 .barLabel {
   font-size: 9px;
   font-weight: var(--font-weight-medium);

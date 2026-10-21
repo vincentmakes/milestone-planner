@@ -36,6 +36,7 @@ import type { Staff, Vacation, ViewMode } from '@/types';
 import type { StaffAssignmentWithContext } from './StaffView';
 import styles from './StaffTimelineBody.module.css';
 import { can, canManageAbsencesOf } from '@/utils/permissions';
+import { isPendingAssignment } from '@/utils/kanbanCards';
 
 interface StaffTimelineBodyProps {
   staff: Staff[];
@@ -339,6 +340,8 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
       /** Vacations only: inline --absence-color and whether it blocks capacity */
       absenceStyle?: React.CSSProperties;
       available?: boolean;
+      /** Assignments only: a booking awaiting approval */
+      pending?: boolean;
       data: StaffAssignmentWithContext | Vacation;
     }> = [];
     
@@ -349,6 +352,9 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
         label += ` - ${assignment.phaseName}`;
       }
       label += ` (${assignment.allocation}%)`;
+      // Shown dashed, but not counted until approved.
+      const pending = isPendingAssignment(assignment);
+      if (pending) label += ' — pending approval';
       
       allItems.push({
         type: 'assignment',
@@ -357,6 +363,7 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
         endDate: assignment.end_date,
         label,
         allocation: assignment.allocation,
+        pending,
         data: assignment,
       });
     });
@@ -420,6 +427,7 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
       allocation?: number;
       absenceStyle?: React.CSSProperties;
       available?: boolean;
+      pending?: boolean;
       data: StaffAssignmentWithContext | Vacation;
     }> = [];
     
@@ -437,6 +445,7 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
             allocation: item.allocation,
             absenceStyle: item.absenceStyle,
             available: item.available,
+            pending: item.pending,
             data: item.data,
           });
         }
@@ -495,7 +504,7 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
       {stackedBars.map((bar, index) => (
         <div
           key={`${bar.type}-${bar.id}-${index}`}
-          className={`${styles.bar} ${bar.type === 'vacation' ? styles.vacationBar : styles.assignmentBar} ${bar.available ? styles.availableAbsenceBar : ''}`}
+          className={`${styles.bar} ${bar.type === 'vacation' ? styles.vacationBar : styles.assignmentBar} ${bar.available ? styles.availableAbsenceBar : ''} ${bar.pending ? styles.pendingBar : ''}`}
           style={{ 
             ...bar.absenceStyle,
             left: bar.left, 

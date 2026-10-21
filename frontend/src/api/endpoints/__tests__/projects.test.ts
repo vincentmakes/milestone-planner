@@ -248,7 +248,26 @@ describe('fetchAllProjects transform layer', () => {
         id: 1,
         name: 'P',
         site_id: 1,
-        staff_assignments: [{ id: 1, staff_id: 4, allocation_percent: 40, start_date: 'a', end_date: 'b' }],
+        staff_assignments: [
+          { id: 1, staff_id: 4, allocation_percent: 40, start_date: 'a', end_date: 'b' },
+          {
+            id: 2,
+            staff_id: 8,
+            allocation: 60,
+            start_date: 'a',
+            end_date: 'b',
+            approval_status: 'pending',
+            approval: {
+              request_id: 31,
+              action: 'assignments.self_create',
+              requester_id: 8,
+              requested: { allocation: 60, start_date: 'a', end_date: 'b' },
+              previous: null,
+              created_at: '2026-10-20T08:00:00.000Z',
+              can_decide: true,
+            },
+          },
+        ],
         equipment_assignments: [{ id: 2, equipment_id: 9, equipment_name: 'Reactor', start_date: 'a', end_date: 'b' }],
         phases: [
           {
@@ -300,7 +319,20 @@ describe('fetchAllProjects transform layer', () => {
     expect(get).toHaveBeenCalledWith('/api/projects/1');
 
     expect(project.staffAssignments).toEqual([
-      expect.objectContaining({ id: 1, staff_id: 4, allocation: 40 }),
+      expect.objectContaining({ id: 1, staff_id: 4, allocation: 40, approval_status: 'approved', approval: null }),
+      expect.objectContaining({
+        id: 2,
+        approval_status: 'pending',
+        approval: {
+          request_id: 31,
+          action: 'assignments.self_create',
+          requester_id: 8,
+          requested: { allocation: 60, start_date: 'a', end_date: 'b' },
+          previous: null,
+          created_at: '2026-10-20T08:00:00.000Z',
+          can_decide: true,
+        },
+      }),
     ]);
     expect(project.equipmentAssignments[0]).toMatchObject({ equipment_id: 9, equipment_name: 'Reactor' });
 

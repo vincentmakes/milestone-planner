@@ -14,7 +14,8 @@ import {
   selectAbsenceTypesById,
 } from '@/stores/appStore';
 import { formatDateISO, parseLocalDate } from '@/utils/date';
-import { canManageAnyProject, isSelf } from '@/utils/permissions';
+import { canBookSelf, canManageAnyProject } from '@/utils/permissions';
+import { isPendingAssignment } from '@/utils/kanbanCards';
 import styles from './ResourceCard.module.css';
 
 interface ResourceCardProps {
@@ -33,7 +34,8 @@ function isActiveToday(startDate: string, endDate: string, today: Date): boolean
   return start <= today && end >= today;
 }
 
-// Helper to calculate staff allocation for TODAY from projects
+// Helper to calculate staff allocation for TODAY from projects (bookings
+// awaiting approval book nothing yet)
 function calculateStaffAllocationToday(
   projects: Project[],
   staffId: number,
@@ -64,7 +66,7 @@ function calculateStaffAllocationToday(
   for (const project of projects) {
     // Project-level assignments - check if assignment dates contain today
     for (const assignment of project.staffAssignments || []) {
-      if (assignment.staff_id === staffId && 
+      if (assignment.staff_id === staffId && !isPendingAssignment(assignment) &&
           isActiveToday(assignment.start_date, assignment.end_date, today)) {
         total += assignment.allocation || 0;
       }
@@ -73,7 +75,7 @@ function calculateStaffAllocationToday(
     // Phase-level assignments - check if phase dates contain today
     for (const phase of project.phases || []) {
       for (const assignment of phase.staffAssignments || []) {
-        if (assignment.staff_id === staffId &&
+        if (assignment.staff_id === staffId && !isPendingAssignment(assignment) &&
             isActiveToday(phase.start_date, phase.end_date, today)) {
           total += assignment.allocation || 0;
         }
@@ -83,7 +85,7 @@ function calculateStaffAllocationToday(
       const processSubphases = (subphases: typeof phase.children) => {
         for (const subphase of subphases || []) {
           for (const assignment of subphase.staffAssignments || []) {
-            if (assignment.staff_id === staffId &&
+            if (assignment.staff_id === staffId && !isPendingAssignment(assignment) &&
                 isActiveToday(subphase.start_date, subphase.end_date, today)) {
               total += assignment.allocation || 0;
             }
@@ -143,7 +145,7 @@ export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
   // Anyone who manages a project here may drag resources onto it; everyone
   // may drag their own card to book themselves.
   const canDrag =
-    canManageAnyProject(currentUser, projects) || (isStaff && isSelf(currentUser, resource.id));
+    canManageAnyProject(currentUser, projects) || (isStaff && canBookSelf(currentUser, resource.id));
 
   // Color based on allocation vs max capacity:
   // - Below capacity: green
