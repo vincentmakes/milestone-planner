@@ -4,8 +4,9 @@
  *
  * Pure functions. They mirror the server rules (app/routers/tags.py and the
  * project tag validation): a tag applies to a project when it is `all_sites`
- * or lists the project's site; a project holds at most one tag per
- * single-select group.
+ * or lists the project's site; a team-restricted tag applies to a project that
+ * shares a team with it (its teams at the project's site — teams of other
+ * sites are ignored); a project holds at most one tag per single-select group.
  *
  * Inline `project.tags[]` entries can be stale (What-If, a teammate's edit to
  * a tag), so everything except the tag *ids* is resolved through the store's
@@ -16,7 +17,8 @@
  */
 
 import { getTenantPrefix } from '@/api/client';
-import type { Project, Tag, TagGroup } from '@/types';
+import type { Project, Tag, TagGroup, Team } from '@/types';
+import { teamIdsOnSite } from './teams';
 
 // =============================================================================
 // SITE SCOPING + GROUPING
@@ -27,6 +29,23 @@ export function tagsForSite(tags: Tag[], siteId: number | null | undefined): Tag
   return tags.filter(
     (t) => t.all_sites || (siteId != null && (t.site_ids ?? []).includes(siteId))
   );
+}
+
+/**
+ * Tags usable on a project at `siteId` with `projectTeamIds`: the site's tags
+ * ({@link tagsForSite}) minus those restricted to teams at this site
+ * (`siteTeams`) that the project does not belong to.
+ */
+export function tagsForProjectScope(
+  tags: Tag[],
+  siteId: number | null | undefined,
+  projectTeamIds: readonly number[],
+  siteTeams: readonly Team[]
+): Tag[] {
+  return tagsForSite(tags, siteId).filter((t) => {
+    const restricted = teamIdsOnSite(t.team_ids, siteTeams);
+    return restricted.length === 0 || restricted.some((id) => projectTeamIds.includes(id));
+  });
 }
 
 /** One section of tags: a group, or `group: null` for the ungrouped ("Other") tags. */

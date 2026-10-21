@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   tagsForSite,
+  tagsForProjectScope,
   groupedTags,
   violatesSingleSelect,
   applyTagSelection,
@@ -17,6 +18,7 @@ import {
   EMPTY_TAG_FILTER,
 } from '../tags';
 import type { Tag, TagGroup, Project } from '@/types';
+import { makeTeam } from '@/test/factories';
 
 function tag(id: number, name: string, extra: Partial<Tag> = {}): Tag {
   return {
@@ -63,6 +65,36 @@ describe('tagsForSite', () => {
   it('keeps only all-sites tags without a site', () => {
     expect(tagsForSite(tags, null).map((t) => t.id)).toEqual([10, 11, 20, 31]);
     expect(tagsForSite(tags, undefined).map((t) => t.id)).toEqual([10, 11, 20, 31]);
+  });
+});
+
+describe('tagsForProjectScope', () => {
+  // Site 1 teams: 1, 2. Site 2 team: 3.
+  const siteTeams = [makeTeam({ id: 1 }), makeTeam({ id: 2, name: 'Process' })];
+  const open = tag(40, 'Open');
+  const forTeam1 = tag(41, 'Team 1 only', { team_ids: [1] });
+  const forOtherSite = tag(42, 'Other site team', { team_ids: [3] });
+  const otherSiteOnly = tag(43, 'Site 2', { all_sites: false, site_ids: [2] });
+  const scoped = [open, forTeam1, forOtherSite, otherSiteOnly];
+  const ids = (list: Tag[]) => list.map((t) => t.id);
+
+  it('always keeps a whole-site tag', () => {
+    expect(ids(tagsForProjectScope(scoped, 1, [], siteTeams))).toContain(40);
+    expect(ids(tagsForProjectScope(scoped, 1, [2], siteTeams))).toContain(40);
+  });
+
+  it('keeps a team-restricted tag only for a project sharing a team', () => {
+    expect(ids(tagsForProjectScope(scoped, 1, [1, 2], siteTeams))).toContain(41);
+    expect(ids(tagsForProjectScope(scoped, 1, [2], siteTeams))).not.toContain(41);
+    expect(ids(tagsForProjectScope(scoped, 1, [], siteTeams))).not.toContain(41);
+  });
+
+  it('ignores a restriction to another site’s team', () => {
+    expect(ids(tagsForProjectScope(scoped, 1, [], siteTeams))).toContain(42);
+  });
+
+  it('still applies the site scoping', () => {
+    expect(ids(tagsForProjectScope(scoped, 1, [1], siteTeams))).toEqual([40, 41, 42]);
   });
 });
 
