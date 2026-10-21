@@ -102,7 +102,7 @@ The repo ships [Trail](https://github.com/trailhq/Trail-Code) for Claude Code se
 - Tenant-level SSO client secrets are encrypted at rest too: read/write `sso_config.client_secret` only through `read_tenant_client_secret` / `store_tenant_client_secret` / `apply_secret_update` (`app/services/sso.py`; the masked `****abcd` form keeps the stored value). Never return it unmasked.
 - Error bodies stay generic (`/health` reports `database: "error"`, the tenant 503 is a fixed message, 500s are opaque) — details go to the log only.
 - Organization-level SSO **takes precedence** over tenant-level SSO; enabling tenant SSO while org SSO is active is rejected with 409 (`_reject_if_org_sso_active`). Preserve this guardrail.
-- API docs (`/api/docs`, `/api/redoc`, `/api/openapi.json`) are gated to `role == "admin"` — keep them gated.
+- API docs (`/api/docs`, `/api/redoc`, `/api/openapi.json`) are gated to the `system.api_docs` permission (admins only by default) — keep them gated.
 
 ### Testing Conventions
 
@@ -276,7 +276,7 @@ Do **not** use an `[Unreleased]` section — every change belongs to a concrete 
 
 - **Single-tenant mode** (`MULTI_TENANT=false`): no `TenantMiddleware`; routes are `/api/*` and `/ws`; one tenant DB from `DB_*` env vars. The master DB is still initialized so the admin portal (`/admin`) works in both modes.
 - The SPA is served by FastAPI from `public/` (static mounts for `/css /js /images /img /fonts /assets` + catch-all returning `index.html`; `api/` paths get 404, `/ws` paths get 426 from the catch-all).
-- Docs endpoints (`/api/docs`, `/api/redoc`, `/api/openapi.json`) require an authenticated tenant `admin`.
+- Docs endpoints (`/api/docs`, `/api/redoc`, `/api/openapi.json`) require an authenticated tenant user holding `system.api_docs` (admins by default).
 - A global exception handler returns an opaque 500 (no stack traces to clients).
 
 ## Terminology
@@ -726,7 +726,7 @@ All routers are mounted under `/api` (multi-tenant deployments reach them at `/t
 | GET | `/health` and `/api/health` | public | Status, mode, version, backend id, `default_tenant`, DB reachability (`database: "error"` on failure — details only in the log) |
 | GET | `/api/ws-debug` | admin | WebSocket diagnostics (tenant, connection/online counts) |
 | POST | `/api/ws-debug/broadcast` | admin | Fire a synthetic `change:project` broadcast |
-| GET | `/api/docs`, `/api/redoc`, `/api/openapi.json` | admin | Swagger / ReDoc / schema, defined in `app/main.py` (not a router). Checked against the **session snapshot** role (`get_current_user_from_session`), 401 otherwise |
+| GET | `/api/docs`, `/api/redoc`, `/api/openapi.json` | admin (`system.api_docs`) | Swagger / ReDoc / schema, defined in `app/main.py` (not a router). Checked against the session user's **live** `PermissionSet` (`get_current_user_from_session` re-reads role and matrix), 401 otherwise |
 
 ### Authentication & SSO (`app/routers/auth.py`)
 
@@ -749,11 +749,11 @@ All routers are mounted under `/api` (multi-tenant deployments reach them at `/t
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/users`, `/users/{id}` | superuser | List / detail |
-| POST | `/users` | admin | Create user (password ≥ 8 chars; optional `team_ids`, each at one of its sites) |
-| PUT | `/users/{id}` | superuser | Update user (superusers: non-admin targets only, no email/password changes except their own; role/active admin-only; an admin cannot change their own role; password ≥ 8 chars, > 72 bytes → 400; unknown site/skill ids rejected). `team_ids` replaces the memberships (unknown → 404, a superuser only teams at their sites → 403, each team at one of the user's sites → 400); `site_ids` alone drops the teams of removed sites |
-| DELETE | `/users/{id}` | admin | Delete (rejects `is_system`) |
-| PUT | `/users/{id}/toggle-active` | admin | Enable/disable |
+| GET | `/users`, `/users/{id}` | superuser (`users.view`) | List / detail |
+| POST | `/users` | admin (`users.create`) | Create user (password ≥ 8 chars; optional `team_ids`, each at one of its sites; sites and teams within the caller's visible sites). A role other than `user` also needs `users.change_role` and the escalation guard |
+| PUT | `/users/{id}` | any of `users.edit` / `edit_admins` / `edit_credentials` / `change_role` / `toggle_active` | Update user, one key per kind of change: profile fields, sites, teams, skills `users.edit`; any change to an admin account `users.edit_admins`; another user's email/password `users.edit_credentials` (own: always); role `users.change_role` + escalation guard; `active` `users.toggle_active`. Nobody changes their own role or deactivates themself; the system admin and the last active admin stay active admins; password ≥ 8 chars, > 72 bytes → 400; unknown site/skill ids rejected; sites only within the caller's visible sites. `team_ids` replaces the memberships (unknown → 404, only teams at the caller's visible sites → 403, each team at one of the user's sites → 400); `site_ids` alone drops the teams of removed sites |
+| DELETE | `/users/{id}` | admin (`users.delete`) | Delete (rejects self, `is_system`, the last active admin; an admin target also needs `users.edit_admins`) |
+| PUT | `/users/{id}/toggle-active` | admin (`users.toggle_active`) | Enable/disable (same self / system / last-admin / `users.edit_admins` rules as delete) |
 | GET | `/staff`, `/staff/{id}` | user | Staff read views (staff *are* users — created via `/users`). `team_ids`: on `/staff` rows the user's teams at that row's site, on `/staff/{id}` all of them |
 | GET | `/staff/{id}/availability` | user | Availability calculation (`startDate`/`endDate` validated, ≤ 366 days, else 400) |
 | GET | `/staff/{id}/assignments` | user | All assignments for a staff member (in `assignments.py`) |
@@ -880,7 +880,7 @@ The board itself has **no read endpoint** — `GET /projects/{id}` already retur
 | PUT | `/kanban/cards/{entity_type}/{id}/status` | user **+ assignee-or-project-editor** | Move a card (superuser, the PM, or an assignee of that card); echoes the derived `{status, completion}` so the client reconciles without a refetch |
 | POST / DELETE | `/kanban/cards/{et}/{id}/assignees`, `…/{staff_id}` | user (PM/own-assignment) | Assign/unassign (editors manage anyone; any user may join/leave a card themself) — **creates the phase/subphase staff assignment** at `allocation` (1–100) or the assignee's `max_capacity` (409 on duplicate) |
 | GET / POST | `/kanban/cards/{et}/{id}/comments` | user | Comment thread; POST is open to **any authenticated user**. Mentions are parsed from the body (`@[Name](id)`, unknown ids dropped) into `mentioned_user_ids`; POST notifies the mentioned users and the card's assignees (someone both gets only the mention) |
-| PUT / DELETE | `/kanban/comments/{id}` | user (author; delete also admin/superuser) | Edit / delete a comment; an edit re-reads the mentions and notifies only people newly mentioned |
+| PUT / DELETE | `/kanban/comments/{id}` | user (author with `kanban.comment`; deleting others' comments `kanban.moderate_comments`) | Edit / delete a comment; an edit re-reads the mentions and notifies only people newly mentioned |
 
 ⚠ `require_card_status_write` (`app/services/card_access.py`): `kanban.move_any` (the route passes `can_move_any=await can_on_project(..., "kanban.move_any", ...)`, so the PM too), **or** an approved assignee of that card holding `kanban.move_assigned`. It takes `user_id`/boolean primitives, not a `User`, because `get_current_user` often returns the lightweight `SessionUser`.
 
@@ -982,7 +982,7 @@ There are no HTTP presence endpoints — presence works exclusively through the 
 
 ### Tenant role model
 
-- **Roles are permission sets.** Every gate is a catalogue key (`app/services/permissions.py`); `admin` holds every key in code, and the shipped `superuser` / `user` defaults reproduce the bullets below, so they describe the defaults of those two system roles. The PM rule is the PM bundle (`projects.manage_as_pm`); staff assignments are editor first (`assignments.manage_others`, else own rows under `assignments.self_*`); site-scoped writes use the live visible sites (`sites.view_all` = every site). Account rules: editing an admin needs `users.edit_admins`, a role is assignable only if its permissions are within the caller's (the admin role: admins only), nobody changes their own role, and the last active admin cannot be demoted, deactivated or deleted (`app/services/user_access.py`).
+- **Roles are permission sets.** Every gate is a catalogue key (`app/services/permissions.py`); `admin` holds every key in code, and the shipped `superuser` / `user` defaults reproduce the bullets below, so they describe the defaults of those two system roles. The PM rule is the PM bundle (`projects.manage_as_pm`); staff assignments are editor first (`assignments.manage_others`, else own rows under `assignments.self_*`); site-scoped writes use the live visible sites (`sites.view_all` = every site). Account rules: editing an admin needs `users.edit_admins`, a non-default role is assignable only with `users.change_role` and only if its permissions are within the caller's (the admin role: admins only; `users.create` alone creates accounts with the default `user` role), a non-admin may change the role only of users whose current role is within theirs, nobody changes their own role, and the last active admin cannot be demoted, deactivated or deleted (`app/services/user_access.py`).
 - **Sites scope the UI, not access.** Superusers (and admins) act **tenant-wide** on projects, phases, subphases, assignments, vacations and staff notes — `project_access.py` deliberately has no site check. Site membership is enforced (`site_access.py`: `can_access_sites` / `ensure_site_access`) only for bank holidays, company events, equipment, equipment blocks and equipment types (a type only when *all* its equipment is at a visible site). Don't add site checks to project routes without a product decision.
 - `user` — read access (absences: `GET /vacations` without `siteId` returns only their own and those of people sharing a site, and `GET /vacations/{id}` is a 404 for anyone else's) + self-service (own vacations, custom-column **values** (definitions are admin-only), **own staff assignments**: a user may add/update/remove assignments where `staff_id` is their own id at project/phase/subphase level, and join/leave Kanban cards).
 - **Project manager rule** — the user whose id is `projects.pm_id` gets superuser rights on *that one project*: all project fields (incl. handing over via `pm_id`, `archived`), phases/subphases, staff and equipment assignments, Kanban moves. Not: deleting the project, creating projects, import, tag/group definitions, exports. Enforced by `app/services/project_access.py`; superuser behaviour is unchanged.

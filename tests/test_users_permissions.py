@@ -121,7 +121,7 @@ async def test_a_role_within_mine_can_be_assigned(
     client, set_user = authed_client
     set_user(FakeUser(3, "hr", HR))
     target = make_user(7, "viewer")
-    mock_db_session.execute = AsyncMock(side_effect=[lookup(target), scalar_result("viewer")])
+    mock_db_session.execute = AsyncMock(side_effect=[lookup(target)])
 
     resp = await client.put("/api/users/7", json={"role": "user"})
 
@@ -318,23 +318,49 @@ async def test_creating_with_another_role_needs_change_role(authed_client, mock_
     mock_db_session.execute.assert_not_awaited()
 
 
-async def test_creating_a_user_is_subject_to_the_escalation_guard(
+NEW_ACCOUNT = {
+    "email": "n@example.com",
+    "password": "s3cret-pass",
+    "first_name": "N",
+    "last_name": "P",
+}
+
+
+async def test_users_create_alone_creates_an_account_with_the_default_role(
     authed_client, mock_db_session, role_sets
 ):
-    # A recruiter holding only users.create cannot hand out the user role's keys.
+    # An HR-style role without the user role's Kanban/view keys still creates
+    # plain users: the escalation guard comes with users.change_role only.
     client, set_user = authed_client
     set_user(FakeUser(3, "recruiter", {"users.create"}))
     mock_db_session.execute = AsyncMock(side_effect=[scalar_result(None)])  # email free
 
-    resp = await client.post(
-        "/api/users",
-        json={
-            "email": "n@example.com",
-            "password": "s3cret-pass",
-            "first_name": "N",
-            "last_name": "P",
-        },
-    )
+    async def flush():
+        for call in mock_db_session.add.call_args_list:
+            if isinstance(call.args[0], User):
+                call.args[0].id = 55
+
+    async def refresh(obj):
+        obj.created_at = STAMP
+
+    mock_db_session.flush.side_effect = flush
+    mock_db_session.refresh.side_effect = refresh
+
+    resp = await client.post("/api/users", json=NEW_ACCOUNT)
+
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["role"] == "user"
+    role_sets.assert_not_called()
+
+
+async def test_creating_with_another_role_is_subject_to_the_escalation_guard(
+    authed_client, mock_db_session, role_sets
+):
+    client, set_user = authed_client
+    set_user(FakeUser(3, "hr", HR))
+    mock_db_session.execute = AsyncMock(side_effect=[scalar_result(None)])  # email free
+
+    resp = await client.post("/api/users", json={**NEW_ACCOUNT, "role": "superuser"})
 
     assert resp.status_code == 403
     assert resp.json()["detail"] == ROLE_ESCALATION_DETAIL

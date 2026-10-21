@@ -2,7 +2,8 @@
 Route tests for /api/skills — skill CRUD and per-user skill assignment.
 
 Mock-based, house style (tests/conftest.py): reads are open to any
-authenticated user, writes need superuser/admin (require_superuser).
+authenticated user; definitions need ``skills.manage``, per-user assignment
+``skills.assign`` on a user the caller may edit.
 """
 
 from datetime import datetime

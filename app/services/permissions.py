@@ -39,6 +39,8 @@ if TYPE_CHECKING:
 Mode = Literal["allow", "approval"]
 
 ADMIN_ROLE_KEY = "admin"
+# The role a new account gets unless another is chosen (StaffCreate.role).
+DEFAULT_ROLE_KEY = "user"
 SYSTEM_ROLE_KEYS: tuple[str, ...] = (ADMIN_ROLE_KEY, "superuser", "user")
 # A role key (``users.role``, VARCHAR(20)); the ``roles_key_format`` CHECK.
 ROLE_KEY_PATTERN = r"^[a-z][a-z0-9_]{1,19}$"

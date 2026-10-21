@@ -33,6 +33,7 @@ from app.schemas.user import (
 from app.services.encryption import PasswordTooLongError, hash_user_password
 from app.services.permissions import (
     ADMIN_ROLE_KEY,
+    DEFAULT_ROLE_KEY,
     SYSTEM_ROLE_KEYS,
     permission_required_detail,
     role_display_name,
@@ -258,12 +259,13 @@ async def create_user(
     """
     Create a new user.
 
-    Requires ``users.create``; a role other than ``user`` also needs
-    ``users.change_role``, and every role is subject to the escalation guard.
-    Sites and teams must be at the caller's visible sites.
+    Requires ``users.create``, which alone creates an account with the default
+    ``user`` role; any other role also needs ``users.change_role`` and passes
+    the escalation guard. Sites and teams must be at the caller's visible sites.
     Matches: POST /api/users
     """
-    if data.role != "user" and not admin.permissions.has("users.change_role"):
+    assigns_role = data.role != DEFAULT_ROLE_KEY
+    if assigns_role and not admin.permissions.has("users.change_role"):
         raise _forbidden("users.change_role")
 
     # Check for existing email
@@ -271,7 +273,8 @@ async def create_user(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="A user with this email already exists")
     await _ensure_role_exists(db, data.role)
-    await ensure_may_assign_role(db, admin, data.role)
+    if assigns_role:
+        await ensure_may_assign_role(db, admin, data.role)
     await _ensure_sites_visible(request, db, admin, _unique(data.site_ids or []))
 
     # Create user
