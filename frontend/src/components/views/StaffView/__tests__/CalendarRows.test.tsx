@@ -15,7 +15,7 @@ import {
   getCompanyEvents,
 } from '@/api';
 import { downloadICS } from '@/utils/ics';
-import { makeSite, makeUser } from '@/test/factories';
+import { makeSite, makeTeam, makeUser } from '@/test/factories';
 import { stubConfirm } from '@/test/confirmDialog';
 import type { BankHoliday, CompanyEvent } from '@/types';
 
@@ -181,6 +181,29 @@ describe('CompanyEventsRow', () => {
       'Site closure: staff on this site are unavailable'
     );
     expect(screen.queryByText('Add company event')).not.toBeInTheDocument();
+  });
+
+  it('names the teams of a team-limited closure, or counts them when a name is unknown', () => {
+    const teamClosure: CompanyEvent = { ...events[1], id: 13, team_ids: [5, 6] };
+    useAppStore.setState({
+      currentSite: makeSite({ id: 1, name: 'Basel' }),
+      currentUser: makeUser({ role: 'user' }),
+      companyEvents: [teamClosure],
+      teams: [makeTeam({ id: 5, name: 'Formulation' }), makeTeam({ id: 6, name: 'Analytics' })],
+    });
+    const { unmount } = render(<CompanyEventsRow isExpanded />);
+    expect(screen.getByText('Closure')).toHaveAttribute(
+      'title',
+      'Closure for Formulation, Analytics: only their members are unavailable'
+    );
+    unmount();
+
+    useAppStore.setState({ teams: [makeTeam({ id: 5, name: 'Formulation' })] });
+    render(<CompanyEventsRow isExpanded />);
+    expect(screen.getByText('Closure')).toHaveAttribute(
+      'title',
+      'Closure for 2 teams: only their members are unavailable'
+    );
   });
 
   it('uses the singular for one event and shows the empty state', () => {

@@ -27,6 +27,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
   const currentSite = useAppStore((s) => s.currentSite);
   const currentUser = useAppStore((s) => s.currentUser);
   const companyEvents = useAppStore((s) => s.companyEvents);
+  const teams = useAppStore((s) => s.teams);
   const setCompanyEvents = useAppStore((s) => s.setCompanyEvents);
   const openSettings = useUIStore((s) => s.openSettings);
   
@@ -43,6 +44,17 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
   const deleteBlockedReason = whatIf.blocked ? whatIf.reason('Deleting company events') : null;
   const canOpenEditor = canEdit && !editBlockedReason;
   
+  // Tooltip of the Closure badge: a team-limited closure names its teams
+  // (or counts them when one is not loaded), since only their members are out
+  const closureTitle = (teamIds: number[] | undefined): string => {
+    if (!teamIds?.length) return 'Site closure: staff on this site are unavailable';
+    const names = teamIds.map((id) => teams.find((t) => t.id === id)?.name);
+    const label = names.every((n) => n !== undefined)
+      ? names.join(', ')
+      : `${teamIds.length} ${teamIds.length === 1 ? 'team' : 'teams'}`;
+    return `Closure for ${label}: only their members are unavailable`;
+  };
+
   // Group events by year
   const eventsByYear = companyEvents.reduce((acc, e) => {
     const year = parseLocalDate(e.date).getFullYear();
@@ -195,7 +207,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
                 >
                   <span
                     className={`${styles.detailType} ${styles.companyEvent}`}
-                    title={event.counts_as_unavailable ? 'Site closure: staff on this site are unavailable' : undefined}
+                    title={event.counts_as_unavailable ? closureTitle(event.team_ids) : undefined}
                   >
                     {event.counts_as_unavailable ? 'Closure' : 'Event'}
                   </span>

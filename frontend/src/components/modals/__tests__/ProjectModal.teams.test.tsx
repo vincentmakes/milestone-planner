@@ -122,6 +122,16 @@ describe('ProjectModal teams', () => {
     expect(useAppStore.getState().projects.find((p) => p.id === 9)?.team_ids).toEqual([1, 2]);
   });
 
+  it('does not send a ticked team deleted while the dialog is open (an inactive one is kept)', async () => {
+    useAppStore.setState({ teams: [analytics, { ...processTeam, active: false }, zurichLab] });
+    act(() => useUIStore.getState().openProjectModal({ ...project, team_ids: [1, 2] }));
+    render(<ProjectModal />);
+    act(() => useAppStore.setState({ teams: [{ ...processTeam, active: false }, zurichLab] }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() => expect(updateProject).toHaveBeenCalled());
+    expect(sentData(updateProject).team_ids).toEqual([2]);
+  });
+
   it('offers a team-restricted tag once its team is ticked and drops it on save when unticked', async () => {
     act(() => useUIStore.getState().openProjectModal(project));
     render(<ProjectModal />);

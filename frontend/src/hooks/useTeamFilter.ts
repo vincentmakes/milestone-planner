@@ -2,10 +2,14 @@
  * The current site's header team filter (viewStore.teamFilters), shared by
  * the TeamSelector and every view it narrows so they all agree.
  *
- * Only the site's active teams take part: a stored id of a team that was
- * deleted, deactivated or belongs to another site is ignored (never "exclude
- * everything"), and pruned on the next write. A filter left with no team and
- * no "(No team)" is `null`, i.e. the whole site.
+ * The filter's options are the site's active teams only: a stored id of a
+ * team that was deleted, deactivated or belongs to another site is ignored
+ * (never "exclude everything"), and pruned on the next write. A filter left
+ * with no team and no "(No team)" is `null`, i.e. the whole site.
+ *
+ * Scoping, though, considers ALL teams of the site, active or not: equipment
+ * restricted solely to an inactive team is not open to the whole site, so it
+ * is hidden under any team filter (and shown under Whole site).
  *
  * Filters are stored per tenant + site (`tagFilterKey`), like the tag filter.
  */
@@ -26,7 +30,7 @@ import type { Equipment, Project, Staff, Team } from '@/types';
 
 export interface SiteTeamFilter {
   siteId: number | null;
-  /** Active teams of the current site. */
+  /** Active teams of the current site (the filter's options). */
   siteTeams: Team[];
   /** Stored filter with stale ids pruned; `null` = whole site. */
   filter: TeamFilter | null;
@@ -44,13 +48,14 @@ export function useTeamFilter(): SiteTeamFilter {
   );
 
   const siteTeams = useMemo(() => teamsForSite(teams, siteId, { activeOnly: true }), [teams, siteId]);
+  const allSiteTeams = useMemo(() => teamsForSite(teams, siteId), [teams, siteId]);
   const filter = useMemo(() => normalizeTeamFilter(stored, siteTeams), [stored, siteTeams]);
 
   const projectMatches = useCallback((p: Project) => projectMatchesTeamFilter(p, filter), [filter]);
   const staffMatches = useCallback((row: Staff) => staffMatchesTeamFilter(row, filter), [filter]);
   const equipmentMatches = useCallback(
-    (e: Equipment) => equipmentMatchesTeamFilter(e, filter, siteTeams),
-    [filter, siteTeams]
+    (e: Equipment) => equipmentMatchesTeamFilter(e, filter, allSiteTeams),
+    [filter, allSiteTeams]
   );
 
   return {

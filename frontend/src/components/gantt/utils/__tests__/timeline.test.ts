@@ -83,6 +83,28 @@ describe('generateTimelineCells company events', () => {
       companyEventName: 'Site shutdown',
     });
   });
+
+  it('keeps a team-limited closure as a plain event (the header cell is whole-site)', () => {
+    const teamClosure = { ...closure, name: 'Lab A shutdown', team_ids: [7] };
+    const teamCells = generateTimelineCells(new Date(2026, 2, 10), 'month', new Set(), [], eventDates, [teamClosure]);
+    expect(teamCells.find((c) => c.dateStr === '2026-03-10')).toMatchObject({
+      isCompanyEvent: true,
+      isSiteClosure: false,
+      companyEventName: 'Lab A shutdown',
+    });
+  });
+
+  it('shades a whole-site closure even when a team-limited closure shares the day', () => {
+    const teamClosure = { ...closure, name: 'Lab A shutdown', team_ids: [7] };
+    const mixed = generateTimelineCells(
+      new Date(2026, 2, 10), 'month', new Set(), [], eventDates,
+      [teamClosure, { ...closure, team_ids: [] }]
+    );
+    expect(mixed.find((c) => c.dateStr === '2026-03-10')).toMatchObject({
+      isSiteClosure: true,
+      companyEventName: 'Site shutdown',
+    });
+  });
 });
 
 /**

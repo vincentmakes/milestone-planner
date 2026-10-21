@@ -1,8 +1,9 @@
 /**
  * useTeamFilter / useTeamFilteredProjects: the stored filter is read per
- * tenant + site (tagFilterKey), only the site's active teams take part (a
- * persisted id of a deleted or deactivated team is pruned), and an inactive
- * filter hands back the very same projects array (view memoisation relies on it).
+ * tenant + site (tagFilterKey), only the site's active teams are filter
+ * options (a persisted id of a deleted or deactivated team is pruned) while
+ * equipment scoping considers all the site's teams, and an inactive filter
+ * hands back the very same projects array (view memoisation relies on it).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
@@ -82,6 +83,18 @@ describe('useTeamFilter', () => {
     // Equipment with no team here is open to the whole site.
     expect(equipmentMatches({ team_ids: [4] } as unknown as Equipment)).toBe(true);
     expect(equipmentMatches({ team_ids: [2] } as unknown as Equipment)).toBe(false);
+  });
+
+  it('scopes equipment by every team of the site, inactive ones included', () => {
+    // Restricted solely to the inactive team: not open to the whole site.
+    const retiredOnly = { team_ids: [3] } as unknown as Equipment;
+    useViewStore.setState({ teamFilters: { ':1': { teamIds: [1], noTeam: false } } });
+    const { result } = renderHook(() => useTeamFilter());
+    expect(result.current.equipmentMatches(retiredOnly)).toBe(false);
+
+    act(() => useViewStore.setState({ teamFilters: {} }));
+    expect(result.current.filter).toBeNull();
+    expect(result.current.equipmentMatches(retiredOnly)).toBe(true);
   });
 
   it('keeps the predicates stable across renders while the filter is unchanged', () => {

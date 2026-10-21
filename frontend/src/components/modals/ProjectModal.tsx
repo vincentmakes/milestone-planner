@@ -3,7 +3,7 @@
  * Matches vanilla JS functionality for creating new projects with phases
  */
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
@@ -21,7 +21,7 @@ import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { exportAndDownload } from '@/utils/csvExport';
 import { exportProjectToXML } from '@/utils/xmlExport';
 import { tagsForProjectScope, violatesSingleSelect } from '@/utils/tags';
-import { teamsForSite } from '@/utils/teams';
+import { teamIdsOnSite, teamsForSite } from '@/utils/teams';
 import { TagPicker } from './TagPicker';
 import styles from './ProjectModal.module.css';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
@@ -49,7 +49,9 @@ export function ProjectModal() {
   // Read when the dialog opens only: a teams refetch while it is open must
   // not reset the form.
   const teamFilterRef = useRef(teamFilter);
-  teamFilterRef.current = teamFilter;
+  useLayoutEffect(() => {
+    teamFilterRef.current = teamFilter;
+  }, [teamFilter]);
   
   const isOpen = activeModal === 'project';
   const isEditing = !!editingProject;
@@ -250,7 +252,9 @@ export function ProjectModal() {
         end_date: endDate,
         phases: isEditing ? undefined : phases,
         tag_ids: tagIds,
-        team_ids: selectedTeamIds,
+        // Only teams still on the site (any, active or not): one deleted
+        // over WebSocket while the dialog is open is not sent.
+        team_ids: teamIdsOnSite(selectedTeamIds, siteTeams),
       };
       
       if (isEditing && editingProject) {
@@ -449,7 +453,7 @@ export function ProjectModal() {
         
         {projectTeams.length > 0 && (
           <div className={styles.formGroup}>
-            <label className={styles.label}>Teams</label>
+            <span className={styles.label}>Teams</span>
             <TeamChecklist
               teams={projectTeams}
               selected={selectedTeamIds}
