@@ -91,8 +91,9 @@ describe('useSiteTagFilter', () => {
 });
 
 describe('useSiteTagFilter under the header team filter', () => {
-  // Team A (1) and team B (2) at site 1; "Team B only" is restricted to team B.
-  const teamTags = [...tags, tag(5, 'Team B only', { team_ids: [2] })];
+  // Team A (1) and team B (2) at site 1; "Team B only", a Project type tag,
+  // is restricted to team B.
+  const teamTags = [...tags, tag(5, 'Team B only', { group_id: 1, team_ids: [2] })];
 
   beforeEach(() => {
     useAppStore.setState({
@@ -118,6 +119,19 @@ describe('useSiteTagFilter under the header team filter', () => {
     act(() => useViewStore.setState({ teamFilters: { ':1': { teamIds: [2], noTeam: false } } }));
     expect(result.current.siteTags.map((t) => t.id)).toContain(5);
     expect(result.current.filter.tagIds).toEqual([5]);
+  });
+
+  it('still resolves a hidden tag on a visible project, so it does not count as "(No tag)"', () => {
+    // A project in teams A and B is visible under filter A and carries the
+    // team-B tag of Project type, whose "(No tag)" option stays offered.
+    const tagged = { ...project(1, [5]), team_ids: [1, 2] } as Project;
+    const untagged = project(2, []);
+    useViewStore.setState({
+      teamFilters: { ':1': { teamIds: [1], noTeam: false } },
+      tagFilters: { ':1': { tagIds: [], noneGroupIds: [1] } },
+    });
+    const { result } = renderHook(() => useTagFilteredProjects([tagged, untagged]));
+    expect(result.current.map((p) => p.id)).toEqual([2]);
   });
 });
 
