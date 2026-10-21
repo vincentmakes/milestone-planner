@@ -83,6 +83,12 @@ def test_schema_creates_tables_added_by_auto_migrations(schema_sql):
         "equipment_sites",
         "tag_groups",
         "tag_sites",
+        "teams",
+        "team_members",
+        "project_teams",
+        "tag_teams",
+        "company_event_teams",
+        "equipment_teams",
     ):
         assert f"CREATE TABLE IF NOT EXISTS {table} (" in schema_sql, table
 

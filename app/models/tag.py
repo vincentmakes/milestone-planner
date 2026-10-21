@@ -26,6 +26,7 @@ from app.utils import utcnow_naive
 if TYPE_CHECKING:
     from app.models.project import Project
     from app.models.site import Site
+    from app.models.team import Team
 
 
 class TagGroup(Base):
@@ -84,6 +85,16 @@ class Tag(Base):
         order_by="Site.id",
     )
 
+    # Teams the tag is linked to, loaded with it (selectin) so responses
+    # never trigger a lazy load. Rows go with the team / tag (ON DELETE CASCADE).
+    teams: Mapped[list["Team"]] = relationship(
+        "Team",
+        secondary="tag_teams",
+        lazy="selectin",
+        order_by="Team.id",
+        passive_deletes=True,
+    )
+
     projects: Mapped[list["Project"]] = relationship(
         "Project",
         secondary="project_tags",
@@ -94,6 +105,11 @@ class Tag(Base):
     def site_ids(self) -> list[int]:
         """Ids of the sites the tag is restricted to, ascending."""
         return [site.id for site in self.sites]
+
+    @property
+    def team_ids(self) -> list[int]:
+        """Ids of the teams the tag is linked to, ascending."""
+        return sorted(team.id for team in self.teams)
 
     def __repr__(self) -> str:
         return f"<Tag {self.name}>"

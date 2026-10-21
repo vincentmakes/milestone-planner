@@ -431,6 +431,59 @@ CREATE TABLE project_tags (
 );
 
 -- ============================================================================
+-- TEAMS (per site; users, projects, tags, company events and equipment can be
+-- linked to teams -- every FK cascades, so a site's teams go with the site)
+-- ============================================================================
+
+-- Teams definitions (name unique per site)
+CREATE TABLE teams (
+    id SERIAL PRIMARY KEY,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    color VARCHAR(7),
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT teams_site_name_unique UNIQUE (site_id, name)
+);
+
+-- Team members (many-to-many)
+CREATE TABLE team_members (
+    team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (team_id, user_id)
+);
+
+-- Project <-> team links (many-to-many)
+CREATE TABLE project_teams (
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    PRIMARY KEY (project_id, team_id)
+);
+
+-- Tag <-> team links (many-to-many)
+CREATE TABLE tag_teams (
+    tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    PRIMARY KEY (tag_id, team_id)
+);
+
+-- Company event <-> team links (many-to-many)
+CREATE TABLE company_event_teams (
+    event_id INTEGER NOT NULL REFERENCES company_events(id) ON DELETE CASCADE,
+    team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    PRIMARY KEY (event_id, team_id)
+);
+
+-- Equipment <-> team links (many-to-many)
+CREATE TABLE equipment_teams (
+    equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+    team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    PRIMARY KEY (equipment_id, team_id)
+);
+
+-- ============================================================================
 -- REALTIME COLLABORATION
 -- ============================================================================
 
@@ -490,6 +543,12 @@ CREATE INDEX idx_project_tags_project ON project_tags(project_id);
 CREATE INDEX idx_project_tags_tag ON project_tags(tag_id);
 CREATE INDEX idx_tags_group ON tags(group_id);
 CREATE INDEX idx_tag_sites_site ON tag_sites(site_id);
+CREATE INDEX idx_teams_site ON teams(site_id);
+CREATE INDEX idx_team_members_user ON team_members(user_id);
+CREATE INDEX idx_project_teams_team ON project_teams(team_id);
+CREATE INDEX idx_tag_teams_team ON tag_teams(team_id);
+CREATE INDEX idx_company_event_teams_team ON company_event_teams(team_id);
+CREATE INDEX idx_equipment_teams_team ON equipment_teams(team_id);
 CREATE INDEX idx_custom_columns_site ON custom_columns(site_id);
 CREATE INDEX idx_custom_column_values_column ON custom_column_values(custom_column_id);
 CREATE INDEX idx_custom_column_values_entity ON custom_column_values(entity_type, entity_id);

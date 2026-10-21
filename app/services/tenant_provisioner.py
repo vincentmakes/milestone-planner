@@ -575,6 +575,90 @@ TAG_SITES_TABLE_SQL = """
       PRIMARY KEY (tag_id, site_id)
     )"""
 
+# Teams (add_teams.sql, 1.12.0): a team belongs to one site; users are members,
+# and projects / tags / company events / equipment can be linked to teams. Every
+# FK cascades, so deleting a site removes its teams and all their links. One
+# statement per constant: the auto-migration executes them one at a time
+# (asyncpg runs a single statement per call); setup_databases.sql, the template
+# and migrations/add_teams.sql carry the same text.
+TEAMS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS teams (
+      id SERIAL PRIMARY KEY,
+      site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      name VARCHAR(100) NOT NULL,
+      description TEXT,
+      color VARCHAR(7),
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT teams_site_name_unique UNIQUE (site_id, name)
+    )"""
+
+TEAM_MEMBERS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS team_members (
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      PRIMARY KEY (team_id, user_id)
+    )"""
+
+PROJECT_TEAMS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS project_teams (
+      project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      PRIMARY KEY (project_id, team_id)
+    )"""
+
+TAG_TEAMS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS tag_teams (
+      tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      PRIMARY KEY (tag_id, team_id)
+    )"""
+
+COMPANY_EVENT_TEAMS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS company_event_teams (
+      event_id INTEGER NOT NULL REFERENCES company_events(id) ON DELETE CASCADE,
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      PRIMARY KEY (event_id, team_id)
+    )"""
+
+EQUIPMENT_TEAMS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS equipment_teams (
+      equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      PRIMARY KEY (equipment_id, team_id)
+    )"""
+
+TEAMS_INDEX_STATEMENTS: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_teams_site ON teams(site_id)",
+    "CREATE INDEX IF NOT EXISTS idx_team_members_user ON team_members(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_project_teams_team ON project_teams(team_id)",
+    "CREATE INDEX IF NOT EXISTS idx_tag_teams_team ON tag_teams(team_id)",
+    "CREATE INDEX IF NOT EXISTS idx_company_event_teams_team ON company_event_teams(team_id)",
+    "CREATE INDEX IF NOT EXISTS idx_equipment_teams_team ON equipment_teams(team_id)",
+)
+
+TEAMS_SCHEMA_STATEMENTS: tuple[str, ...] = (
+    TEAMS_TABLE_SQL,
+    TEAM_MEMBERS_TABLE_SQL,
+    PROJECT_TEAMS_TABLE_SQL,
+    TAG_TEAMS_TABLE_SQL,
+    COMPANY_EVENT_TEAMS_TABLE_SQL,
+    EQUIPMENT_TEAMS_TABLE_SQL,
+    *TEAMS_INDEX_STATEMENTS,
+)
+
+TEAM_TABLES: tuple[str, ...] = (
+    "teams",
+    "team_members",
+    "project_teams",
+    "tag_teams",
+    "company_event_teams",
+    "equipment_teams",
+)
+
+TEAMS_SCHEMA_SQL = ";\n".join(TEAMS_SCHEMA_STATEMENTS) + ";"
+
 TAGS_GROUP_INDEX_SQL = "CREATE INDEX IF NOT EXISTS idx_tags_group ON tags(group_id)"
 TAG_SITES_SITE_INDEX_SQL = "CREATE INDEX IF NOT EXISTS idx_tag_sites_site ON tag_sites(site_id)"
 
@@ -1148,6 +1232,12 @@ def get_tenant_schema_sql() -> str:
       assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (project_id, tag_id)
     );
+
+    -- Teams (per site) and their links to users, projects, tags, company
+    -- events and equipment, with their indexes
+    """
+        + TEAMS_SCHEMA_SQL
+        + """
 
     -- Project presence (tracking active viewers for realtime collaboration)
     CREATE TABLE IF NOT EXISTS project_presence (

@@ -36,6 +36,8 @@ from app.services.tenant_provisioner import (
     TAG_SITES_TABLE_SQL,
     TAGS_GROUP_INDEX_SQL,
     TAGS_UPGRADE_STATEMENTS,
+    TEAM_TABLES,
+    TEAMS_SCHEMA_STATEMENTS,
 )
 from app.utils import utcnow_naive
 
@@ -740,6 +742,28 @@ class TenantConnectionManager:
             logger.warning(
                 "Auto-migration (company_events.counts_as_unavailable) warning for %s: %s", slug, e
             )
+            await _rollback_quietly(conn)
+
+        # Teams (1.12.0): teams + the five junction tables and their indexes
+        # (add_teams.sql). Idempotent; one statement per execute (asyncpg).
+        try:
+            tables_check = await conn.execute(
+                text("""
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name IN ('teams', 'team_members', 'project_teams', 'tag_teams',
+                                     'company_event_teams', 'equipment_teams')
+            """)
+            )
+            existing = {row[0] for row in tables_check.fetchall()}
+            if not existing.issuperset(TEAM_TABLES):
+                logger.info("Auto-migration: Creating teams tables on tenant %s...", slug)
+                for statement in TEAMS_SCHEMA_STATEMENTS:
+                    await conn.execute(text(statement))
+                await conn.commit()
+                logger.info("Auto-migration: Created teams tables on tenant %s", slug)
+        except Exception as e:
+            logger.warning("Auto-migration (teams) warning for %s: %s", slug, e)
             await _rollback_quietly(conn)
 
         # Tenant-level SSO client secret encrypted at rest. The key is only

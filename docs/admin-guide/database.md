@@ -116,6 +116,7 @@ same reason; use `run_migration.py` instead.
 | `projects_site_fk_cascade` | Tenant | `projects.site_id` FK → `ON DELETE CASCADE` (1.5.0, also automatic) |
 | `card_comments_author_set_null` | Tenant | `card_comments.author_id` nullable, FK `ON DELETE SET NULL` (1.5.0, also automatic) |
 | `cleanup_orphaned_values` | Tenant | Delete orphaned custom-column values and card comments (1.5.0, also automatic) |
+| `add_teams` | Tenant | Teams per site, team membership and team scoping of projects, tags, equipment and company events (1.12.0, also applied automatically on startup) |
 | `upgrade_to_v90` | Tenant | Major version upgrade |
 
 ### Absence Types and Multi-Site Events (1.5.0)

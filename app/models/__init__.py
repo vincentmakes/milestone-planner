@@ -18,6 +18,14 @@ from app.models.settings import PredefinedPhase, Settings, SSOConfig
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.skill import Skill, UserSkill
 from app.models.tag import ProjectTag, Tag, TagGroup, TagSite
+from app.models.team import (
+    CompanyEventTeam,
+    EquipmentTeam,
+    ProjectTeam,
+    TagTeam,
+    Team,
+    TeamMember,
+)
 from app.models.tenant import (
     AdminSession,
     AdminUser,
@@ -62,6 +70,12 @@ __all__ = [
     "TagGroup",
     "TagSite",
     "ProjectTag",
+    "Team",
+    "TeamMember",
+    "ProjectTeam",
+    "TagTeam",
+    "CompanyEventTeam",
+    "EquipmentTeam",
     "ProjectPresence",
     "CardComment",
     "Notification",

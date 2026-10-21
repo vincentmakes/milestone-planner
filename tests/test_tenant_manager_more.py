@@ -265,6 +265,7 @@ ALL_KNOWN_NAMES = [
     "staff_notes",
     "project_phases",
     "project_subphases",
+    *tp.TEAM_TABLES,
 ]
 
 
@@ -348,6 +349,7 @@ LEGACY_CHANGES = [
     tp.EQUIPMENT_SITE_FK_SQL,
     "CREATE TABLE IF NOT EXISTS equipment_sites",
     tp.COMPANY_EVENTS_CLOSURE_COLUMN_SQL,
+    *tp.TEAMS_SCHEMA_STATEMENTS,
 ]
 
 
@@ -363,8 +365,8 @@ async def test_legacy_tenant_gets_every_step():
     assert "COALESCE(type, 'general')" in conn.log[copy]
     assert copy < conn.log.index("DROP TABLE notes")
     assert "ROLLBACK" not in conn.log
-    # One commit per step (card status: one per table), 17 in all.
-    assert conn.log.count("COMMIT") == 17
+    # One commit per step (card status: one per table), 18 in all.
+    assert conn.log.count("COMMIT") == 18
 
 
 @pytest.mark.asyncio

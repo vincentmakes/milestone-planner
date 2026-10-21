@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from app.models.custom_column import CustomColumn
     from app.models.equipment import Equipment
     from app.models.project import Project
+    from app.models.team import Team
     from app.models.user import User
 
 
@@ -157,6 +158,21 @@ class CompanyEvent(Base):
     # Site closure: staff of the linked sites are unavailable on the event's dates.
     counts_as_unavailable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
+
+    # Teams the event is linked to, loaded with it (selectin) so responses
+    # never trigger a lazy load. Rows go with the team / event (ON DELETE CASCADE).
+    teams: Mapped[list["Team"]] = relationship(
+        "Team",
+        secondary="company_event_teams",
+        lazy="selectin",
+        order_by="Team.id",
+        passive_deletes=True,
+    )
+
+    @property
+    def team_ids(self) -> list[int]:
+        """Ids of the teams the event is linked to, ascending."""
+        return sorted(team.id for team in self.teams)
 
     @property
     def is_multi_day(self) -> bool:

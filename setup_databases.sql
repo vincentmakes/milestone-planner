@@ -499,6 +499,57 @@ CREATE TABLE IF NOT EXISTS company_event_sites (
     PRIMARY KEY (event_id, site_id)
 );
 
+-- Teams (per site): a team groups users (team_members); projects, tags,
+-- company events and equipment can be linked to teams. Every FK cascades, so
+-- deleting a site removes its teams and all their links. Same DDL as
+-- tenant_provisioner.TEAMS_SCHEMA_STATEMENTS and migrations/add_teams.sql.
+CREATE TABLE IF NOT EXISTS teams (
+    id SERIAL PRIMARY KEY,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    color VARCHAR(7),
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT teams_site_name_unique UNIQUE (site_id, name)
+);
+
+-- Team members (many-to-many)
+CREATE TABLE IF NOT EXISTS team_members (
+    team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (team_id, user_id)
+);
+
+-- Project <-> team links (many-to-many)
+CREATE TABLE IF NOT EXISTS project_teams (
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    PRIMARY KEY (project_id, team_id)
+);
+
+-- Tag <-> team links (many-to-many)
+CREATE TABLE IF NOT EXISTS tag_teams (
+    tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    PRIMARY KEY (tag_id, team_id)
+);
+
+-- Company event <-> team links (many-to-many)
+CREATE TABLE IF NOT EXISTS company_event_teams (
+    event_id INTEGER NOT NULL REFERENCES company_events(id) ON DELETE CASCADE,
+    team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    PRIMARY KEY (event_id, team_id)
+);
+
+-- Equipment <-> team links (many-to-many)
+CREATE TABLE IF NOT EXISTS equipment_teams (
+    equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+    team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    PRIMARY KEY (equipment_id, team_id)
+);
+
 -- Staff notes pinned to a site/date
 CREATE TABLE IF NOT EXISTS staff_notes (
     id SERIAL PRIMARY KEY,
@@ -831,6 +882,12 @@ CREATE INDEX IF NOT EXISTS idx_tags_group ON tags(group_id);
 CREATE INDEX IF NOT EXISTS idx_tag_sites_site ON tag_sites(site_id);
 CREATE INDEX IF NOT EXISTS idx_company_events_site_date ON company_events(site_id, date);
 CREATE INDEX IF NOT EXISTS idx_company_event_sites_site ON company_event_sites(site_id);
+CREATE INDEX IF NOT EXISTS idx_teams_site ON teams(site_id);
+CREATE INDEX IF NOT EXISTS idx_team_members_user ON team_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_project_teams_team ON project_teams(team_id);
+CREATE INDEX IF NOT EXISTS idx_tag_teams_team ON tag_teams(team_id);
+CREATE INDEX IF NOT EXISTS idx_company_event_teams_team ON company_event_teams(team_id);
+CREATE INDEX IF NOT EXISTS idx_equipment_teams_team ON equipment_teams(team_id);
 CREATE INDEX IF NOT EXISTS idx_staff_notes_site_date ON staff_notes(site_id, date);
 CREATE INDEX IF NOT EXISTS idx_custom_columns_site_id ON custom_columns(site_id);
 CREATE INDEX IF NOT EXISTS idx_custom_column_values_column_id ON custom_column_values(custom_column_id);

@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from app.models.project import Project
     from app.models.site import Site
     from app.models.skill import Skill
+    from app.models.team import Team
     from app.models.vacation import Vacation
 
 
@@ -104,6 +105,17 @@ class User(Base):
         lazy="selectin",
     )
 
+    # Teams the user is a member of, loaded with the user (selectin) so
+    # responses never trigger a lazy load. Rows go with the team / user (ON DELETE CASCADE).
+    teams: Mapped[list["Team"]] = relationship(
+        "Team",
+        secondary="team_members",
+        back_populates="members",
+        lazy="selectin",
+        order_by="Team.id",
+        passive_deletes=True,
+    )
+
     @property
     def full_name(self) -> str:
         """Return full name combining first and last name."""
@@ -133,6 +145,11 @@ class User(Base):
     def site_ids(self) -> list[int]:
         """Get list of site IDs user has access to."""
         return [site.id for site in self.sites]
+
+    @property
+    def team_ids(self) -> list[int]:
+        """Ids of the teams the user is a member of, ascending."""
+        return sorted(team.id for team in self.teams)
 
     def can_modify_site(self, site_id: int) -> bool:
         """Check if user can modify data for a specific site."""
