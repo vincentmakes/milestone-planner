@@ -372,6 +372,92 @@ def shot_team_filter(context: BrowserContext) -> None:
     page.close()
 
 
+def _login_as(context: BrowserContext, email: str) -> tuple[BrowserContext, Page]:
+    """Sign in as another demo user in a fresh context (own cookies), light theme.
+
+    The shared context stays signed in as the admin. Every demo person has the
+    password 'demo1234' (seed_demo); the caller closes the returned context.
+    """
+    fresh = context.browser.new_context(viewport={"width": 1440, "height": 900}, locale="en-US")
+    page = fresh.new_page()
+    page.goto(URL)
+    page.wait_for_load_state("networkidle")
+    if page.locator('input[type="email"]').count() > 0:
+        page.fill('input[type="email"]', email)
+        page.fill('input[type="password"]', PASSWORD)
+        page.get_by_role("button", name="Sign In", exact=True).click()
+        page.wait_for_load_state("networkidle")
+    try:
+        page.click('button[aria-label="Switch to light mode"]', timeout=2000)
+    except Exception:
+        pass
+    page.wait_for_timeout(1500)
+    return fresh, page
+
+
+def shot_roles_settings(context: BrowserContext) -> None:
+    """Settings -> Roles, the User role open on its permission matrix.
+
+    The demo seed puts the User role's three own-booking permissions in
+    'Needs approval'; the matrix shows them near the top (Staff assignments).
+    """
+    page = context.new_page()
+    login(page)
+    open_settings_section(page, "Roles")
+    # RolesPanel: each row's edit button is labelled "Edit <role name>".
+    page.get_by_role("button", name="Edit User", exact=True).click()
+    page.wait_for_timeout(800)
+    page.get_by_role("radiogroup", name="Book myself").scroll_into_view_if_needed()
+    page.wait_for_timeout(300)
+    page.screenshot(path=str(OUT / "roles-settings.png"))
+    log("[done] roles-settings.png")
+    page.close()
+
+
+def shot_approvals_settings(context: BrowserContext) -> None:
+    """Settings -> Roles -> Approvals: one card per own-booking action; the
+    demo's 'Book myself' policy names the project manager and Team Lead."""
+    page = context.new_page()
+    login(page)
+    open_settings_section(page, "Roles")
+    page.get_by_role("tab", name="Approvals", exact=True).click()
+    page.wait_for_timeout(1000)
+    page.screenshot(path=str(OUT / "approvals-settings.png"))
+    log("[done] approvals-settings.png")
+    page.close()
+
+
+def shot_my_todos(context: BrowserContext) -> None:
+    """My Todos as Bob (PM of Bioprocess Scale-Up), on the To decide tab with
+    Diana's request to join Analytics."""
+    fresh, page = _login_as(context, "bob.brown@demo.local")
+    open_sidebar_item(page, "My Todos")
+    page.wait_for_timeout(800)
+    # The tab's accessible name carries its count ("To decide, 1 item").
+    page.get_by_role("tab", name=re.compile(r"^To decide")).click()
+    page.wait_for_timeout(800)
+    page.screenshot(path=str(OUT / "my-todos.png"))
+    log("[done] my-todos.png")
+    fresh.close()
+
+
+def shot_pending_assignment(context: BrowserContext) -> None:
+    """Gantt on Bioprocess Scale-Up with Diana's dashed pending row under the
+    Analytics phase (admin view; the badge reads 'Pending approval')."""
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    expand_all_projects(page)
+    click_today(page)
+    page.get_by_text("Pending approval", exact=True).first.scroll_into_view_if_needed()
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(OUT / "pending-assignment.png"))
+    log("[done] pending-assignment.png")
+    page.close()
+
+
 def shot_assign_staff_modal(context: BrowserContext) -> None:
     """Assign Staff modal (project level) with a member selected so the
     allocation slider is populated."""
@@ -795,6 +881,10 @@ TARGETS = {
     "tags": shot_project_tags,
     "settings-tags": shot_settings_tags,
     "settings-teams": shot_teams_settings,
+    "roles": shot_roles_settings,
+    "approvals": shot_approvals_settings,
+    "my-todos": shot_my_todos,
+    "pending": shot_pending_assignment,
     "assign-staff": shot_assign_staff_modal,
     "settings": shot_settings_modal,
     "sites": shot_manage_sites,

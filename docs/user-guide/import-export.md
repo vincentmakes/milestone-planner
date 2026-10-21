@@ -98,7 +98,8 @@ Each kind of data lives on its own sheet, so the file opens cleanly in Excel, Li
 | **Vacations** | All absence entries for users on this site, including recurring patterns, with their **Type** and **Type ID** |
 | **Project assignments** | Staff assigned at the project level |
 | **Phase assignments** | Staff assigned at the phase level (with allocation %) |
-| **Subphase assignments** | Staff assigned at the subphase level |
+| **Subphase assignments** | Staff assigned at the subphase level. The three assignment sheets carry an **Approval status** (approved or pending) and a **Pending change** column |
+| **Approval requests** | Own-booking requests of the site's projects: requester, action, target, requested and previous values, status, decision and reason |
 | **Equipment assignments** | Equipment booked against projects/phases/subphases |
 | **Custom columns** | Custom column definitions for this site (name, type, scope, options) |
 | **Custom column values** | Custom column values for every project/phase/subphase |
@@ -109,7 +110,7 @@ Each kind of data lives on its own sheet, so the file opens cleanly in Excel, Li
 | **Card comments** | Kanban card comments on the site's phases and subphases |
 
 !!! note
-    The Site Excel Export is restricted to **Admins and Superusers**. Superusers can only export sites they belong to — Admins can export any site. The Sites section of Settings is admin-only, so superusers export through the API (`GET /api/export/site/{site_id}/excel`).
+    The Site Excel Export needs the *Export site data (Excel)* permission — **Admins and Superusers** by default — and works for the sites you can see: superusers export the sites they belong to, admins any site. Superusers find it in **Settings → Sites**, which shows them the export only (editing sites stays admin-only).
 
 !!! tip
     Use this export before doing destructive operations (e.g. deleting a site, large bulk edits). The file is small enough to keep alongside regular database backups and is human-readable without needing to restore.

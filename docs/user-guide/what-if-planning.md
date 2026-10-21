@@ -1,6 +1,6 @@
 # What-If Planning
 
-**What-If Mode** lets administrators and superusers experiment with scheduling changes without affecting the live data.
+**What-If Mode** lets planners — administrators and superusers by default, or any role with the *What-If mode* permission — experiment with scheduling changes without affecting the live data.
 
 ![What-If mode active — the header shows Discard and Exit actions for the scratch session](../assets/screenshots/what-if-active.png){ loading=lazy }
 
@@ -17,12 +17,16 @@
 ## Key Behaviors
 
 - What-If is a **private sandbox**: your experimental changes stay in your browser and are *not* sent to the server or visible to other users until you apply them
-- Only administrators and superusers can enter What-If mode, and only from the Gantt chart: What-If is a planning simulation of the timeline
+- Only roles with the *What-If mode* permission (administrators and superusers by default) can enter What-If mode, and only from the Gantt chart: What-If is a planning simulation of the timeline
 - **The Gantt chart keeps the focus.** While a What-If plan is open, the other views in the sidebar, the **Settings** window and the notification links that open a Kanban card are disabled, with a short explanation on the control. Apply or discard first; nothing is lost
 - The visual appearance changes (header indicator) to remind you that you're in planning mode
 - **Colleagues' changes wait.** While you are in What-If mode, project and custom-column changes made by other people are not pulled into your view (they would overwrite the plan you are editing); they are loaded as soon as you apply or discard
 - **Undo history is cleared** when you enter What-If mode, and again when you apply or discard, so an undo can never write a discarded plan to the server. Undo and redo *inside* What-If work as usual
 - **Signing out (or an expired session) discards the sandbox** — nothing carries over to the next person using the same browser tab
+
+### Own bookings that need approval
+
+If your role books your own time [with approval](settings.md#approvals), a change or removal of your own booking made in What-If mode looks applied in the sandbox like any other edit. On **Apply** it becomes an approval request: the booking keeps its values, shows *Change pending* or *Removal requested*, and waits for an approver. Approving or rejecting requests and creating tasks in [My Todos](my-todos.md) are unavailable while a plan is open.
 
 ### What is unavailable in What-If mode
 

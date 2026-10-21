@@ -142,8 +142,8 @@ to list them), e.g.:
 /tmp/pw-venv/bin/python scripts/screenshots/capture.py main tags block-modal
 ```
 
-Administration shots (`settings-tags`, `settings-teams`, `sites`, `users`, `equipment-mgmt`,
-`phases`, `skills`, `site-modal`) open the sidebar's single **Settings** entry
+Administration shots (`settings-tags`, `settings-teams`, `roles`, `approvals`, `sites`, `users`,
+`equipment-mgmt`, `phases`, `skills`, `site-modal`) open the sidebar's single **Settings** entry
 and switch to a hub section by its label (`open_settings_section(page,
 "<label>")`, labels from `SETTINGS_SECTIONS` in
 `frontend/src/components/settings/sections.tsx`); `settings` itself stays on
@@ -154,6 +154,10 @@ the default General section.
 | `tag-filter` | `tag-filter-dropdown.png` | The project panel's Tags filter dropdown, open, on the Gantt chart |
 | `team-filter` | `team-filter.png` | The header team filter, open, on the Gantt chart (Winterthur's teams) |
 | `settings-teams` | `settings-teams.png` | Settings → Teams for the current site |
+| `roles` | `roles-settings.png` | Settings → Roles with the *User* role open on its permission matrix (own bookings in *Needs approval*) |
+| `approvals` | `approvals-settings.png` | Settings → Roles → **Approvals**: who approves each own-booking action |
+| `my-todos` | `my-todos.png` | My Todos signed in as **Bob**, *To decide* tab with Diana's request to join Analytics |
+| `pending` | `pending-assignment.png` | The Gantt chart with Diana's dashed *Pending approval* row on Bioprocess Scale-Up |
 | `kanban` | `kanban-board.png` | The Kanban board view |
 | `grouped` | `gantt-grouped.png` | The Gantt chart grouped by the *Project type* tag group (collapsible pill sections) |
 | `color-by` | `gantt-color-by.png` | The Gantt chart's *Colour by* dropdown, open, with *Project type* selected |
@@ -163,6 +167,15 @@ seeded data. The `main` shot sets *Colour by* = *Project type*, and since all
 `capture.py` shots share one browser context (and so one `localStorage`), the
 later Gantt shots keep the coloured bars. `grouped` sets it too (so it works
 when captured on its own), and `dark-theme` sets it in its fresh context.
+
+`my-todos` signs in as `bob.brown@demo.local` (password `demo1234`, like every
+demo person) in a fresh browser context via `_login_as()`, so the shared
+context stays the admin's. The approval shots rely on the demo seed's RBAC
+data: the User role books itself with approval, the *Book myself* policy names
+the project manager and *Team Lead*, and Diana Davis has a pending request to
+join the Analytics phase of Bob's *Bioprocess Scale-Up*. Approving or
+rejecting that request during a capture run would remove it — re-seed first
+(`seed_demo` on a fresh database) if it is gone.
 
 ## Conventions
 

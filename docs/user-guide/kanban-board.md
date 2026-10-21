@@ -4,7 +4,7 @@ The Kanban board shows a project's work as cards moving through four columns. It
 
 ![Kanban board with the project picker, tag filter, grouping and My Todo toggle](../assets/screenshots/kanban-board.png){ loading=lazy }
 
-Open it from **Kanban Board** in the sidebar.
+Open it from **Kanban Board** in the sidebar (shown when your role has the **Kanban board** permission — every built-in role does).
 
 ## What becomes a card
 
@@ -39,7 +39,7 @@ It works the other way too. Editing the percentage in the Gantt chart moves the 
 
 Drag a card to another column, or open it and pick a status.
 
-You can move a card if you are an admin or superuser, the **project manager** of the card's project, or **assigned to that card**. Cards you cannot move are not draggable. Being assigned lets people report progress on their own work without being able to reschedule the plan.
+You can move a card if your role may **move any card** (admins and superusers by default), if you are the **project manager** of the card's project, or if you are **assigned to that card** and your role may move the cards you are assigned to (every built-in role). A booking still awaiting approval does not count as being assigned. Cards you cannot move are not draggable. Being assigned lets people report progress on their own work without being able to reschedule the plan.
 
 ## Choosing what to show
 
@@ -61,7 +61,7 @@ Click a lane heading to collapse it.
 
 ## My Todo
 
-The **My Todo** toggle hides every card you are not assigned to. Combine it with **All projects** to see everything on your plate across the site at once, or with grouping by phase to see where your own work sits in one plan.
+The **My Todo** toggle hides every card you are not assigned to. Cards you have asked to join, still awaiting approval, are included. (For tasks and approval requests, see [My Todos](my-todos.md).) Combine it with **All projects** to see everything on your plate across the site at once, or with grouping by phase to see where your own work sits in one plan.
 
 ## Assigning people — and booking their time
 
@@ -82,17 +82,27 @@ A slider shown in red is above that person's own maximum capacity: a part-timer 
 
 A single booking is always between **1 and 100 %** — the server rejects 0 or anything above 100, here and on every other assignment. Over-allocation is what several overlapping bookings add up to, never one booking on its own.
 
-Adding, removing and changing other people's bookings requires superuser rights or being the project's manager. Your **own** booking is yours to manage: you can change your allocation with your slider and remove yourself with the **×** on your row. Removing an assignee asks for confirmation first, because their booking is deleted with them.
+Adding, removing and changing other people's bookings requires **Assign and manage anyone** (superusers by default) or being the project's manager. Your **own** booking is yours to manage when your role allows it: you can change your allocation with your slider and remove yourself with the **×** on your row. Removing an assignee asks for confirmation first, because their booking is deleted with them.
 
 Adding assignees and joining a card are unavailable in [What-If mode](what-if-planning.md), like other creates. What-If itself is entered from the Gantt chart; while a plan is open the board waits until it is applied or discarded.
 
 ### Joining a card yourself
 
-If you can't manage the project, the card's detail shows a **Join this card** button as long as you are not on it yet. Joining books your time exactly like being assigned by a manager — the card's dates, at your maximum capacity — and lets you move the card from then on. Removing yourself releases the booking again.
+If you can't manage the project, the card's detail shows a **Join this card** button as long as you are not on it yet (and your role lets you book yourself). Joining books your time exactly like being assigned by a manager — the card's dates, at your maximum capacity — and lets you move the card from then on. Removing yourself releases the booking again.
+
+### Joining and leaving with approval
+
+When your role books your own time [with approval](settings.md#approvals), the button reads **Request to join**:
+
+- Your avatar appears on the card with a dashed ring and *(pending approval)*, and the card shows a **Pending approval** badge for you. The booking does not count in the workload yet, and you cannot move the card until you are approved
+- Moving your own slider sends a change request instead — the slider stays put and *requested 60%* appears beside it. Clicking **×** asks *Ask to leave this card?* and sends a removal request
+- While your request is open, your row shows **Cancel request** instead of the slider and **×**
+
+People who may decide the request see **Approve** and **Reject** on that row of the card. Every request also appears in their [My Todos](my-todos.md), and you are notified of the decision.
 
 ## Comments and mentions
 
-Every card has a comment thread. Anyone signed in can comment. You can delete your own comments (after a confirmation); admins and superusers can delete any.
+Every card has a comment thread. Anyone whose role may **comment on cards** can comment — every built-in role. You can delete your own comments (after a confirmation); roles that **moderate comments** (admins and superusers by default) can delete any.
 
 When a user account is deleted, their comments stay on the card and are shown as written by **Deleted user**.
 
@@ -110,7 +120,7 @@ Type `@` and the list opens: people already assigned to this card first, then ev
 Who you can reach:
 
 - **Everyone at the card's site**, whatever their role — administrators and project managers included, not just the people booked on the card.
-- **Administrators from any site.** They have access to every site, so they can always be mentioned.
+- **Administrators from any site** — and anyone whose role sees every site. They can see every project, so they can always be mentioned.
 - **Not people from other sites**, unless they are assigned to this card. Someone who cannot see the project would only be confused by the notification.
 - **Not yourself.** You would never be notified anyway, so it is left out rather than showing a mention that does nothing.
 - **Not deactivated accounts**, since they cannot sign in to read the notification.
@@ -122,11 +132,12 @@ The bell in the header shows unread notifications. You are notified when someone
 - assigns you to a card,
 - comments on a card you are assigned to,
 - mentions you in any comment,
-- moves a card you are assigned to into another column.
+- moves a card you are assigned to into another column,
+- asks for your approval to book themselves, decides your own request, or gives you a task — these lead to [My Todos](my-todos.md#notifications).
 
 You are never notified about your own actions. If you are both assigned to a card and mentioned in a comment on it, you get the mention only.
 
-Clicking a notification opens that card's board and detail.
+Clicking a card notification opens that card's board and detail (if your role has the Kanban board); an approval or task notification opens the matching tab of My Todos.
 
 !!! info "Due and overdue reminders work differently"
     Reminders for cards that are due within a week, or already past their end date, are worked out **in your browser** from the plan you already have loaded. They need no configuration and appear alongside the other notifications.

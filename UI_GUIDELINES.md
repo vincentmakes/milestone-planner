@@ -472,6 +472,10 @@ decision, not an oversight.
   teams a tag, piece of equipment or company event is limited to) and the team member list in
   Settings → Teams. A "limit to teams" choice per site is a *Whole site* switch over a
   `TeamChecklist` (`TeamScope`). Tests reach a switch with `getByRole('switch', { name })`.
+- **`RoleChecklist`** (`components/common/RoleChecklist`): the roles that may approve a request
+  (Settings → Roles → Approvals). Same shape as `TeamChecklist` without colours: a labelled
+  `role="group"` of label-wrapped checkboxes. The Administrator role is always ticked, disabled
+  and suffixed *(always)*, and never appears in `onChange`'s output.
 - **`Notice`** (`components/common/Notice`): the one inline message box. `tone` = `error` |
   `warning` | `info` | `success` (accent token text and border on its alpha tint, `0.75rem 1rem`,
   `--radius-md`); `role` defaults to `alert` for errors and `status` otherwise; `onDismiss` adds a
@@ -602,6 +606,27 @@ a pill stays readable on light colours. Don't hard-code `color: white` on a colo
 Resolve a tag's colour and group through `appStore.tags` / `tagGroups` by id (`indexTags`), never
 from the inline `project.tags[].color`, which is stale during What-If.
 
+### 3.7a Permission chips and tabs
+
+- **Permission mode chips** (`PermissionModeChips` in `settings/panels/PermissionMatrix.tsx`):
+  one row per permission — label, muted description, a *Locked* pill where it applies — and a
+  `role="radiogroup"` (named by the label, described by the description) of 28 px chip buttons
+  **Allow** / **Needs approval** (only the approvable own-booking keys) / **Deny**. One chip is
+  selected: Allow fills with `--accent-blue`, Needs approval with an `--accent-orange` tint, Deny
+  with a `--text-muted` tint (`color-mix`). Roving `tabindex` with the arrow keys (wrapping);
+  locked rows and a read-only matrix disable the chips. Deny removes the key from the matrix.
+  Use the chips for any three-way choice per row; a two-way flag is a `ToggleSwitch`.
+- **Tabs** (Settings → Roles: *Roles* / *Approvals*; My Todos: *To decide* / *My tasks* /
+  *My requests*): a `role="tablist"` with an `aria-label`, raw `<button role="tab">`s with
+  `aria-selected` and `aria-controls`, and one `role="tabpanel"` `aria-labelledby` the active tab.
+  My Todos' tabs are the reference: roving `tabindex` with Arrow keys, Home and End, the active
+  tab tinted `--accent-blue-alpha` with `--accent-blue` text, a count pill per tab that goes into
+  the tab's accessible name (`aria-label="To decide, 1 item"`) while the visible number is
+  `aria-hidden`. Known drift: the Settings → Roles tabs are a segmented control (active tab on
+  `--bg-primary` with `--shadow-sm`) without arrow-key movement. Leaving a tab with unsaved input
+  asks first (`confirmAction`). Tabs are for sibling lists of one panel or view — not for
+  navigation between views (sidebar) or Settings sections (hub list).
+
 ### 3.8 Status representation
 
 | Thing | How it reads |
@@ -612,6 +637,8 @@ from the inline `project.tags[].color`, which is stale during What-If.
 | Absence | The absence type's colour (`absence_types.color`, picked from the swatches) on the Staff heatmap and in *My absences*; an absence that doesn't reduce capacity (Home Office) is shown but the person stays plannable. |
 | Site closure / holiday / weekend | Timeline cell backgrounds: `--bg-weekend`, the event's colour via `--event-color` (set inline per cell), closures mark the person unavailable. |
 | Equipment today | `blocked` > `booked` > available (`useEquipmentTodayStatus`); double bookings show `OverlapWarningIcon` (a red `role="img"` triangle). |
+| Pending booking | `PendingBadge` (`components/common/PendingBadge`): a dashed pill — *Pending approval*, *Change pending* or *Removal requested* — on a `--status-warning` tint (`--status-error` for a removal), its `title` naming the approvers (`useApproverSummary`). A pending create's Gantt row is dashed with a muted italic name, its bar hatched (`::after` + `color-mix`, so the inline phase colour survives) and non-interactive; a requested change reads `40% → 60%`. Kanban avatars of pending assignees get a dashed ring and reduced opacity. Pending bookings never count in capacity. |
+| Approval decision | `ApprovalActions` (`components/common/ApprovalActions`): inline **Approve** (secondary) / **Reject** (ghost) `sm` buttons under one `useSubmitGuard`; Reject opens `RejectRequestDialog` (shared `Modal`, `Input` *Reason (optional)*, Enter submits, error `Notice`). A `409` (already decided or expired) still calls `onDecided` so the caller reloads. Disabled during What-If. Used by My Todos and the Kanban card; the Gantt context menu offers the same two actions as menu items. |
 | Live changes | `ActivityFeed` toasts (6 s, at most 4, merged within 2.5 s) and the `recentChanges` list; `SyncStatus` shows an **Offline** badge when the socket is down. |
 
 ### 3.9 Gantt timeline
@@ -702,8 +729,12 @@ allowed in `Header.module.css` / `WhatIfToggle.module.css` are the ≤ 640 px mo
 - `OnlineUsers`, `ActivityFeed` and the Kanban card assignees colour a person with
   `avatarColorFor(id)` (`utils/avatarColor.ts`, one eight-colour palette keyed by id); the header
   tier caps how many avatars render.
-- `NotificationBell` is a popover with an unread count, relative times (`5m ago`) and the derived
-  due reminders merged in; it dismisses through `useDismissableOverlay` (§3.6).
+- `NotificationBell` is a popover with an unread count, relative times (`5m ago`,
+  `utils/relativeTime.ts`, shared with My Todos) and the derived due reminders merged in; it
+  dismisses through `useDismissableOverlay` (§3.6). Approval and task notifications open My Todos
+  on the matching tab (and filter) instead of a card.
+- The sidebar's **My Todos** entry carries a count badge (`todoStore.openCount`, capped at
+  `99+`); the count is part of the button's accessible name and the badge is `aria-hidden`.
 - `ActivityFeed` is a polite live region (`role="status" aria-live="polite"`) of bottom-right
   toasts.
 
@@ -867,7 +898,7 @@ plus an entry in `THEMES` and, if it is a new family, `THEME_FAMILIES` in `utils
 | `frontend/src/styles/themes/themes.css` | S-Theme dark and light |
 | `frontend/src/styles/global.css` | Resets, native controls, focus ring, What-If frame, scrollbar, print, mobile and touch rules |
 | `frontend/src/styles/__tests__/cssTokens.test.ts` | Guard: every `var(--x)` read is defined |
-| `frontend/src/components/common/` | `Button`, `Input`, `Select`, `ToggleSwitch`, `Modal`, `ContextMenu`, `AllocationSlider`, `MentionTextarea`, `TagFilterDropdown`, `NotificationBell`, `OnlineUsers`, `ActivityFeed`, `ICSImportPanel`, `OverlapWarningIcon`, `useSubmitGuard` |
+| `frontend/src/components/common/` | `Button`, `Input`, `Select`, `ToggleSwitch`, `Modal`, `ContextMenu`, `AllocationSlider`, `MentionTextarea`, `TagFilterDropdown`, `NotificationBell`, `OnlineUsers`, `ActivityFeed`, `ICSImportPanel`, `OverlapWarningIcon`, `RoleChecklist`, `PendingBadge`, `ApprovalActions`, `useSubmitGuard` |
 | `frontend/src/components/settings/PanelToolbar.tsx`, `panels/PanelIcons.tsx` | Toolbar layout and the icon set |
 | `frontend/src/components/common/Modal/Modal.test.tsx`, `components/admin/modals/CredentialsModal.test.tsx`, `components/common/Button/Button.test.tsx` | Executable guards of the modal and button rules |
 | `frontend/src/utils/themeColors.ts`, `utils/colorSwatches.ts`, `utils/tags.ts` | Theme reads in JS, user-pickable colours, `barTextColor` |

@@ -39,7 +39,16 @@ Toasts appear for about 6 seconds before fading. The notification includes the u
 
 The activity feed above is transient and shows what *everyone* is doing. The **notification bell** in the header is the opposite: it is personal, it persists, and it keeps an unread count until you read it.
 
-You are notified when someone assigns you to a Kanban card, comments on a card you are assigned to, mentions you with `@`, or moves one of your cards to another column. You are never notified about your own actions. Clicking a notification opens the card it refers to.
+You are notified when someone:
+
+| Notification | Clicking it opens |
+|--------------|-------------------|
+| Assigns you to a Kanban card, comments on a card you are assigned to, mentions you with `@`, or moves one of your cards to another column | The card on the Kanban board |
+| Asks for your approval to book themselves, change or remove their booking | [My Todos](my-todos.md) → **To decide** |
+| Approves, rejects or (as an administrator) cancels your request, or your request expires | My Todos → **My requests**, showing decided requests |
+| Gives you a task, or reassigns one to you | My Todos → **My tasks** |
+
+You are never notified about your own actions. If one event concerns you twice, you get the most specific notification only — a mention before an approval request, then a decision, an assignment, a task, a card move and a comment.
 
 Notifications are stored per user, so they survive a reload or a restart — you will not miss one because a browser tab was closed. See the [Kanban Board guide](kanban-board.md#notifications) for the full list of triggers.
 
@@ -57,7 +66,7 @@ The real-time features use a WebSocket connection that:
 
 The connection status is visible in the Online Users indicator: a connected state shows the user count, while a disconnected state shows a fallback icon. While live updates are disconnected, an **Offline** badge also appears in the header; your own edits keep saving, but colleagues' changes only arrive once the badge is gone.
 
-Live updates now also cover custom-column values and definitions, instance settings (title, weekends) and changes to your own account: if an admin changes your role or sites, it applies without a reload. If your account is deactivated, deleted or demoted, or your password is reset, your session ends at once and you are returned to the login screen.
+Live updates now also cover custom-column values and definitions, instance settings (title, weekends) and changes to your own account: if an admin changes your role or sites, or the permissions of your role, it applies without a reload — buttons and views appear or disappear accordingly. Approval requests and decisions update the affected bookings and everyone's [My Todos](my-todos.md) live; your own tasks and requests reach only you. If your account is deactivated, deleted or demoted, or your password is reset, your session ends at once and you are returned to the login screen.
 
 For security, the server refuses live-update connections opened from other websites.
 

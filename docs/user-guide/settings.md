@@ -9,9 +9,10 @@ All administration happens in one **Settings** window. Open it from the **Settin
 
 ## Settings Sections
 
-| Group | Section | What it manages | Who sees it |
+| Group | Section | What it manages | Who sees it (default roles) |
 |-------|---------|-----------------|-------------|
 | General | [General](#general) | Instance title, theme, logos, display defaults | Admin (Superuser: theme only) |
+| | [Roles](#roles-permissions) | Roles and their permissions; who approves own bookings ([Approvals](#approvals)) | Admin |
 | Sites & calendar | [Sites](#sites) | Locations, country/region, site Excel export | Admin |
 | | [Teams](#teams) | Teams per site, their members; the header team filter | Admin, Superuser |
 | | [Bank holidays](#bank-holidays) | Public and custom holidays per site | Admin, Superuser |
@@ -25,10 +26,10 @@ All administration happens in one **Settings** window. Open it from the **Settin
 | | [Tags](#tags) | Project tags, tag groups and the sites they apply to | Admin |
 | Integrations | SSO | Microsoft Entra single sign-on for this workspace — see [Organization & SSO](../admin-guide/organizations-sso.md#configuring-sso-in-milestone) | Admin |
 
-Each person only sees the sections their role can change: **superusers** see General (theme only), Teams, Bank holidays, Company events, Users, Skills, Equipment, Equipment types and Predefined phases. Regular users have no Settings entry; they manage their own time off from [My absences](vacations.md#my-absences) in the user menu.
+Each person only sees the sections their role's [permissions](#roles-permissions) let them change — with the default roles, **superusers** see General (theme only), Teams, Bank holidays, Company events, Users, Skills, Equipment, Equipment types and Predefined phases. Someone whose role grants none of these sections has no Settings entry; they manage their own time off from [My absences](vacations.md#my-absences) in the user menu.
 
 !!! note "Unsaved changes"
-    If you switch section or close the window while a form holds unsaved input — in **General**, **Users**, **Equipment**, **Sites**, **Teams**, **Skills**, **Bank holidays**, **Company events**, **Absence types**, **Equipment types** or **Tags** — Milestone asks before discarding it. Clicking outside the window never closes it.
+    If you switch section or close the window while a form holds unsaved input — in **General**, **Roles**, **Users**, **Equipment**, **Sites**, **Teams**, **Skills**, **Bank holidays**, **Company events**, **Absence types**, **Equipment types** or **Tags** — Milestone asks before discarding it. Clicking outside the window never closes it.
 
 Saving is protected against double submission: pressing Enter twice or double-clicking a Save, Add or Delete button runs the action only once.
 
@@ -38,7 +39,7 @@ Some sections link to each other: **Manage Types** in Equipment opens Equipment 
 
 ## General
 
-The **General** section holds the theme picker and, for admins, the instance-wide settings. Superusers only see **Appearance** (the theme family of their own browser); the instance title, branding and display defaults are admin-only.
+The **General** section holds the theme picker and, for roles with **Edit instance settings** (admins by default), the instance-wide settings. Everyone else only sees **Appearance** (the theme family of their own browser).
 
 ### Instance Settings
 
@@ -61,6 +62,96 @@ The **General** section holds the theme picker and, for admins, the instance-wid
 | Week Starts On | Monday or Sunday |
 | Show Weekends | Toggle weekend columns on/off |
 | Auto-expand Projects | Automatically expand all projects on load |
+
+---
+
+## Roles & Permissions
+
+What each person may do in Milestone is decided by their **role**. A role is a named set of permissions — one entry per thing you can do, such as *Create projects*, *Book equipment on projects* or *See colleagues' absences*. Open **Settings → Roles** (administrators only). The section has two tabs: **Roles** and [Approvals](#approvals).
+
+The **Roles** tab lists every role with its description and how many users hold it. The three built-in roles carry a **System** badge.
+
+### The Built-in Roles
+
+| Role | What it can do by default |
+|------|---------------------------|
+| **Administrator** | Everything, at every site. Its permissions cannot be edited and it cannot be deleted, so there is always someone who can manage roles |
+| **Superuser** | Plans projects, people and equipment at the sites they belong to: creates, edits, archives, deletes, imports and exports projects, assigns anyone, books equipment, manages colleagues' absences, staff notes, equipment, bank holidays, company events, teams, skills and phase templates, views and edits non-admin users, exports the site, uses What-If |
+| **User** | Sees the plan at their sites, books their own time, manages their own absences and todos, comments on Kanban cards and moves the cards they are assigned to |
+
+Both the Superuser and the User role can **act as project manager**: on a project where they are the *Project Manager*, they edit the project, archive it, assign people, book equipment, move cards, set column values and give todos to others — but never delete, create, import or export projects.
+
+The defaults of Superuser and User match what these roles could do before roles became editable, so upgrading changes nothing for existing accounts — except that superusers now work only at the sites they belong to (see [Who sees which sites](#who-sees-which-sites)). An administrator can change the permissions of Superuser and User, but not delete them.
+
+### Adding a Role
+
+1. Click **Add role**
+2. Type a **Name** (for example *Team Lead*) and an optional **Description**. The role's **key** — the short identifier stored on each account — is derived from the name and shown under the field (*Team Lead* → `team_lead`). It cannot be changed later; renaming the role keeps the key
+3. Set the permissions in the matrix (a new role starts with nothing but *View projects and Gantt*)
+4. Click **Create role**
+
+Click the **edit icon** to change a role, then **Save Changes**. Custom roles can be deleted with the **delete icon** or **Delete role** in the form, after a confirmation — but only while nobody holds them: give those people another role first.
+
+### The Permission Matrix
+
+Permissions are grouped by topic: *Projects*, *Staff assignments*, *Equipment bookings*, *Kanban*, *Custom columns*, *Absences*, *Staff notes*, *Equipment*, *Calendar*, *Sites*, *Teams*, *Users*, *Skills*, *Project configuration*, *Instance settings*, *Roles, approvals, todos* and *Views and tools*. Each row shows what the permission allows and three choices:
+
+- **Allow** — the role may do it
+- **Needs approval** — only on the three own-booking permissions (*Book myself*, *Change my allocation / dates*, *Remove my booking*): people with the role can ask, and the booking waits for an approver (see [Approvals](#approvals))
+- **Deny** — the role may not; the matching buttons and menu entries are hidden or disabled
+
+Rows marked **Locked** cannot be changed: *View projects and Gantt* is always allowed, and *Manage roles and approval policies* belongs to the Administrator role alone.
+
+A change applies to everyone holding the role on their next action — nobody has to sign out, and open windows pick up the new permissions straight away.
+
+Some permissions worth knowing:
+
+| Permission | What it does |
+|-----------|--------------|
+| **See all sites** | Every active site is visible. Without it, a person sees and works only at the sites they belong to. Administrators only, by default |
+| **Act as project manager** | The project-manager rights described above, on the projects the person manages |
+| **Assign and manage anyone** | Book, change and remove anyone's assignments. People with it (and project managers on their projects) never need approval for their own bookings |
+| **See colleagues' absences** | See the absences of people at your sites; without it, only your own |
+| **Change user roles** | Give people a role — but only a role whose permissions you hold yourself |
+| **Kanban board**, **Staff overview**, **Equipment view**, **Cross-site view**, **Archived projects** | Show the matching view in the sidebar; without them it is hidden |
+| **What-If mode** | Show the What-If toggle on the Gantt chart |
+
+### Who Sees Which Sites
+
+A role without **See all sites** limits its holders to the sites in their account: the site selector lists only those, and every project, person, piece of equipment, holiday and event elsewhere stays out of reach — also for editing. The **Cross-Site** view needs at least two visible sites; with one it is shown disabled with the reason.
+
+### Giving People a Role
+
+Roles are given in [Users](#user-management). Nobody can raise someone above themselves:
+
+- The role list only offers roles whose permissions you hold yourself; the others are disabled with *(more than your role)*, and the Administrator role with *(admin only)*
+- You can only change the role of someone whose current role grants no more than yours
+- Nobody can change their own role, and the last active administrator cannot be demoted, deactivated or deleted
+- A role other than the default *User* needs **Change user roles**; with **Create users** alone, new accounts get the User role
+
+A custom role can also be the default role of accounts created by [single sign-on](../admin-guide/organizations-sso.md#configuring-sso-in-milestone).
+
+---
+
+## Approvals
+
+When a role has **Needs approval** on an own-booking permission, people with that role can still book themselves, but the booking waits for someone to approve it. The **Approvals** tab of **Settings → Roles** decides who that is.
+
+There is one card per action — **Book myself**, **Change my allocation / dates** and **Remove my booking**:
+
+- **The project's manager can approve** — the *Project Manager* of the project the booking is on
+- **Roles that can approve** — tick the roles whose holders may approve. The Administrator role is always ticked: administrators can approve every request
+
+If neither the project's manager nor any role is set, a warning says that only administrators can approve these requests. Click **Save Changes** on the card to apply it. An approver must be able to see the project's site, and nobody approves their own request.
+
+### What Happens to a Request
+
+1. The person books themself as usual — the button reads **Request to assign me**, **Request to join**, **Request change** or **Request removal** — and sees *Sent for approval*
+2. A new booking appears at once as a dashed row with a **Pending approval** badge (a change shows *Change pending* with the old and new values, a removal *Removal requested*). Hovering the badge shows who can approve it. A pending booking does **not** count towards anyone's workload until it is approved
+3. The approvers get a notification and find the request in [My Todos](my-todos.md) under **To decide**. They can also approve or reject it from the booking's right-click menu in the Gantt chart or from the Kanban card. Rejecting can include a reason
+4. The requester is notified of the decision and sees the outcome under **My requests**. Until then they can **Cancel request**
+
+A request also closes on its own when it can no longer apply — the card or project was deleted, the requester's account was deactivated or lost the right to book themself there, someone changed the booking in the meantime, or the person is already booked there. The requester sees why under **My requests**.
 
 ---
 
@@ -106,12 +197,12 @@ The **site selector** dropdown in the header filters everything to the selected 
 - Bank holidays and company events on the timeline
 - Custom columns
 
-Admins see all sites. Regular users only see sites they are assigned to.
+People whose role has **See all sites** (administrators by default) see every active site; everyone else only the sites they are assigned to.
 
 - When the site has teams, the [team filter](#team-filter) next to the site selector narrows the views further to one or more teams.
 
-!!! note "Sites scope what you see, not what a superuser may edit"
-    The site selector decides which projects, staff and equipment are shown. It is not an access boundary for project work: **superusers can edit projects, phases, assignments and absences at every site**. Only bank holidays, company events, equipment, equipment blocks, equipment types and teams are limited to the sites a superuser belongs to.
+!!! note "Sites are an access boundary"
+    Without **See all sites**, a person reads and changes only the data of the sites they belong to — projects, assignments, absences, equipment, holidays, events and teams alike. Switching the site selector never reaches beyond them. See [Who Sees Which Sites](#who-sees-which-sites).
 
 ### Deactivating and Deleting a Site
 
@@ -337,7 +428,7 @@ The site export's **Company events** sheet has a **Staff unavailable** column sh
 
 ## User Management
 
-Open **Settings → Users** to manage accounts. Administrators can create, edit, deactivate and delete users and change their roles; superusers can view users and edit their details, sites and skills, but cannot create, delete, enable/disable users or change roles — for them the role and active status are shown read-only. Superusers cannot change other users' email address or password, and cannot edit administrator accounts. An admin cannot change their own role, deactivate or delete their own account.
+Open **Settings → Users** to manage accounts. What you can do here follows your role's **Users** permissions: viewing accounts, creating them, editing names, job titles, capacity, sites, teams and skills, changing someone else's email or password, editing administrator accounts, changing roles, activating or deactivating, and deleting. With the default roles, administrators can do all of it; superusers can view users and edit their details, sites and skills — but not create, delete, enable or disable users, change roles, change someone else's email or password, or edit administrator accounts. Fields you cannot change are shown read-only. The list only holds people of the sites you can see. Nobody can change their own role or deactivate or delete their own account.
 
 Deactivating, deleting or demoting a user, or resetting their password, signs them out everywhere immediately, including live updates in open tabs.
 
@@ -351,35 +442,39 @@ Deactivating, deleting or demoting a user, or resetting their password, signs th
 | **Password** | Required for new users, optional when editing (leave empty to keep it). New and changed passwords need **at least 8 characters** and at most 72 bytes; existing shorter passwords keep working until they are changed |
 | **First Name** / **Last Name** | Display name |
 | **Job Title** | Role description shown in staff lists. Free-text with autocomplete suggestions — see [Job Title Suggestions](#job-title-suggestions) |
-| **Role** | Admin, Superuser, or User (see below) |
-| **Sites** | One or more sites the user can access |
+| **Role** | Administrator, Superuser, User or a custom role — see [Roles & Permissions](#roles-permissions). Roles granting permissions you don't hold are disabled in the list |
+| **Sites** | One or more sites the user belongs to — and, without **See all sites**, the only sites they can see. You can only pick among the sites you see yourself |
 | **Skills** | Tags for resource planning (see Skills Management below) |
 | **Teams** | Shown read-only in the user list; membership is edited in [Settings → Teams](#teams) |
 | **Active** | Deactivate to prevent login without deleting |
 
 ### User Roles
 
+What each role may do is set in [Settings → Roles](#roles-permissions). With the shipped defaults:
+
 | Permission | Admin | Superuser | User |
 |-----------|-------|-----------|------|
 | View projects & timeline | Yes | Yes | Yes |
-| Create and delete projects | Yes | Yes | No |
+| Create and delete projects (at their sites) | Yes | Yes | No |
 | Edit a project, its phases, subphases and Kanban cards | Yes | Yes | Project manager of that project |
-| Manage staff assignments | Yes | Yes | Project manager of that project; anyone for their own time ("Assign me") |
+| Manage staff assignments | Yes | Yes | Project manager of that project; anyone for their own time ("Assign me"), with [approval](#approvals) where the role needs it |
 | Manage equipment assignments | Yes | Yes | Project manager of that project |
 | Enter What-If mode (from the Gantt chart) | Yes | Yes | No |
 | Manage bank holidays & company events (own sites) | Yes | Yes | No |
 | Manage teams (own sites) | Yes | Yes | No |
 | Edit users, skills, equipment, equipment types, predefined phases | Yes | Yes | No |
 | Create, delete, enable/disable users; change roles | Yes | No | No |
-| General settings, sites, absence types, SSO | Yes | No | No |
+| General settings, sites, absence types, tags, custom columns, SSO, roles | Yes | No | No |
+| See every site | Yes | No (own sites) | No (own sites) |
 | Book own absences ([My absences](vacations.md#my-absences)) | Yes | Yes | Yes |
+| Personal tasks in [My Todos](my-todos.md); give tasks to others | Yes | Yes | Own tasks only |
 
 ### Filtering Users
 
 The user management table supports filtering by:
 
 - **Status**: Active / Disabled
-- **Role**: Admin / Superuser / User
+- **Role**: any role, built-in or custom
 - **Job Title**: Dynamic list from existing users
 - **Site**: Filter by site assignment
 - **Skills**: Filter by assigned skill

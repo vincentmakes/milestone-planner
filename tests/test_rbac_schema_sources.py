@@ -404,6 +404,8 @@ def test_migration_grants_every_table_and_sequence(migration_statements):
 
 def test_migration_is_documented():
     assert "add_rbac" in _root_file("migrations/README.md")
+    assert "add_rbac" in _root_file("docs/admin-guide/database.md")
+    assert "add_rbac" in _root_file("CLAUDE.md")
 
 
 # ---------------------------------------------------------------------------

@@ -62,7 +62,13 @@ DDL:
       Kanban comments, shown as *Deleted user*);
     - removal of orphaned `custom_column_values` and `card_comments` whose project, phase or
       subphase no longer exists (these rows have no foreign key; older releases left them
-      behind when projects or sites were deleted).
+      behind when projects or sites were deleted);
+    - the roles seed of `add_rbac` (1.13.0): the three system roles with their default
+      permissions and one approval policy per own-booking action, then `users.role` moves from
+      a CHECK constraint to a foreign key on `roles.key`;
+    - expiry of approval requests whose phase, subphase or booking is gone, removal of pending
+      bookings whose request is closed, and clearing of stale request pointers on approved
+      bookings.
 
     The foreign-key rewrites only run when the current constraint differs, and the cleanup
     logs how many rows it removed. The same SQL is available as the
@@ -117,6 +123,7 @@ same reason; use `run_migration.py` instead.
 | `card_comments_author_set_null` | Tenant | `card_comments.author_id` nullable, FK `ON DELETE SET NULL` (1.5.0, also automatic) |
 | `cleanup_orphaned_values` | Tenant | Delete orphaned custom-column values and card comments (1.5.0, also automatic) |
 | `add_teams` | Tenant | Teams per site, team membership and team scoping of projects, tags, equipment and company events (1.12.0, also applied automatically on startup) |
+| `add_rbac` | Tenant | Roles and permissions, approval policies and requests for own bookings, and My Todos (1.13.0, also applied automatically on startup) — see below |
 | `upgrade_to_v90` | Tenant | Major version upgrade |
 
 ### Absence Types and Multi-Site Events (1.5.0)
@@ -160,6 +167,23 @@ Every foreign key is `ON DELETE CASCADE`: deleting a site removes its teams, and
 
 ```bash
 python migrations/run_migration.py add_teams
+```
+
+### Roles, Approvals and Todos (1.13.0)
+
+`add_rbac` is idempotent and also runs **automatically** (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)); `setup_databases.sql` and the tenant provisioner create the same schema for fresh installs. It:
+
+- Creates `roles` (key, name, description, `is_system`, sort order) and `role_permissions` (one row per permission a role holds, mode `allow` or `approval`; no row means deny). The three system roles — Administrator, Superuser and User — are seeded with their default permissions, which reproduce what each role could do before 1.13.0. The defaults are written only when the role row is created, so permissions an admin has edited are never re-seeded
+- Creates `approval_policies` and `approval_policy_roles` (who approves each own-booking action; seeded with "the project's manager approves" for all three) and `approval_requests` (one row per request, with its status and outcome)
+- Creates `todos` (personal tasks for **My Todos**)
+- Adds `approval_status` and `approval_request_id` to the three staff assignment tables; every existing booking is `approved`
+- Widens the notification types with `approval_requested`, `approval_decided` and `todo_assigned`, and drops the default-role CHECK of the tenant SSO configuration (a custom role can be the SSO default)
+- Replaces the `users.role` CHECK constraint with a foreign key to `roles.key` (`ON UPDATE CASCADE`, `ON DELETE RESTRICT`). A user whose role is not a known role key is reset to `user` first
+
+Nobody's access changes on upgrade: existing admins, superusers and users keep the same rights through the seeded defaults, except that superusers now manage only the data of the sites they belong to (see [Roles & permissions](../user-guide/settings.md#roles-permissions)).
+
+```bash
+python migrations/run_migration.py add_rbac
 ```
 
 ### Writing New Migrations

@@ -16,7 +16,7 @@ When you navigate to the application URL, you are presented with the login scree
 
 The application is organized into several areas:
 
-- **Sidebar** (far left) — Switch between the five main views: Gantt Chart, Staff Overview, Equipment, Cross-Site, and Archived
+- **Sidebar** (far left) — Switch between the main views: Gantt Chart, Kanban Board, My Todos, Staff Overview, Equipment, Cross-Site, and Archived
 - **Header** (top) — Branding, site selector, date navigation, zoom controls, theme toggle, and user menu
 - **Project Panel** (left-center) — Hierarchical list of projects, phases, and subphases
 - **Timeline** (right) — Visual Gantt bars aligned to a calendar
@@ -28,19 +28,21 @@ The application is organized into several areas:
 | Icon | View | Description |
 |------|------|-------------|
 | Gantt | **Gantt Chart** | Project timeline with phases and resource assignments (default) |
+| Kanban | **Kanban Board** | The same work as cards moving through To Do, In Progress, Blocked and Done |
+| Todos | **My Todos** | Requests waiting for your decision, your tasks and your own requests, with a badge counting what is open — see [My Todos](my-todos.md) |
 | Staff | **Staff Overview** | Staff members with assignments and availability |
 | Equipment | **Equipment** | Equipment items with booking timelines |
-| Cross-Site | **Cross-Site** | Overview of projects across all sites |
+| Cross-Site | **Cross-Site** | Overview of projects across the sites you can see (needs at least two) |
 | Archive | **Archived** | Completed/archived projects |
 
-The sidebar can be collapsed to icon-only mode for more screen space. Admins and superusers also see a **Settings** entry in the **Admin** section, which opens the [Settings window](settings.md) — users, sites, calendars, equipment, phases and SSO, limited to what your role can change. Your own time off is under **My absences** in the user menu (see [Vacations & Time Off](vacations.md#my-absences)).
+Which views you see depends on your role: a view your role does not include is not listed, and **Cross-Site** is shown disabled while you can see only one site. The sidebar can be collapsed to icon-only mode for more screen space. Admins and superusers — anyone whose role manages one of the Settings sections — also see a **Settings** entry in the **Admin** section, which opens the [Settings window](settings.md) — users, sites, calendars, equipment, phases and SSO, limited to what your role can change. Your own time off is under **My absences** in the user menu (see [Vacations & Time Off](vacations.md#my-absences)).
 
 ### Header Controls
 
 **Left — Branding & Context:**
 
 - Logo and instance title (customizable by admin)
-- Site selector dropdown to switch between locations
+- Site selector dropdown to switch between locations — it lists only the sites you can see
 - **Teams** filter — appears when the site has teams; narrows the views to one or more teams of the site, or to what has no team. Remembered per site in your browser (see [Team Filter](settings.md#team-filter))
 
 **Center — Timeline Navigation:**
@@ -53,11 +55,11 @@ The sidebar can be collapsed to icon-only mode for more screen space. Admins and
 **Right — Actions & User Menu:**
 
 - **Panels** toggle — Show/hide Staff and Equipment panels below the Gantt chart
-- **What-If** toggle — Enter/exit scenario planning mode (Gantt chart only)
+- **What-If** toggle — Enter/exit scenario planning mode (Gantt chart only; shown when your role includes What-If mode)
 - Theme toggle (light/dark)
 - Online users indicator
 - **Offline** badge — appears only while live updates are disconnected. Your edits still save; you just don't see colleagues' changes until the connection is back. It reconnects by itself when the network returns or you switch back to the tab
-- User menu (profile, logout, and the version this instance is running)
+- User menu (your name and role, My absences, logout, and the version this instance is running)
 
 !!! note "The header adapts to the window width"
     On a narrower window the bar collapses in stages rather than crowding. Button labels shorten to icons first; below roughly 1280px the zoom and undo/redo controls move into a **⋯** menu beside the notification bell, and below about 1024px the view switcher and the theme and What-If toggles join them. Nothing is removed — everything stays reachable in that menu, and zoom and undo/redo also have [keyboard shortcuts](keyboard-shortcuts.md).
@@ -68,12 +70,16 @@ The bottom of the user menu shows the version this instance is running, for exam
 
 ## User Roles
 
-| Role | Permissions |
-|------|-------------|
-| **Admin** | Full access: manage users, sites, settings, projects, assignments |
-| **Superuser** | Manage projects and assignments, use What-If mode; cannot manage users or settings |
-| **User** | View projects and timelines; book their own absences; add themselves to projects and Kanban cards and manage their own assignments. The **project manager** of a project can also edit that project, its phases, assignments, equipment bookings and cards (but not delete it) |
+Your **role** decides what you can do. Milestone ships with three roles, and an administrator can adjust them or add others (for example a *Team Lead*) in [Settings → Roles](settings.md#roles-permissions):
 
-Sites decide what you **see** (the site selector), not what a superuser may **edit**: superusers can change projects, phases, assignments and absences at every site. Only bank holidays, company events, equipment, equipment blocks and equipment types are limited to the superuser's own sites.
+| Role | Default permissions |
+|------|---------------------|
+| **Administrator** | Everything, at every site: users, roles, sites, settings, projects, assignments |
+| **Superuser** | Manage projects, assignments, equipment, calendars and teams at their own sites, use What-If mode; cannot manage roles, user accounts or settings |
+| **User** | View projects and timelines at their sites; book their own absences; add themselves to projects and Kanban cards and manage their own assignments. The **project manager** of a project can also edit that project, its phases, assignments, equipment bookings and cards (but not delete it) |
+
+Your role's name is shown in the user menu. Depending on the role, booking your own time may need [approval](settings.md#approvals) — the buttons then read *Request to assign me* or *Request to join*, and your booking waits in a dashed row until someone approves it.
+
+**You see only your sites.** Unless your role has *See all sites* (administrators by default), the site selector lists only the sites you belong to, and you cannot see or change anything at the others.
 
 See [Who Can Edit a Project](gantt-charts.md#who-can-edit-a-project) for the details.

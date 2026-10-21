@@ -36,7 +36,7 @@ The right side shows horizontal bars representing duration of each project, phas
 
 ## Resource Panels
 
-Administrators, superusers and project managers (users who manage at least one project) can dock the **Staff Overview** or **Equipment** view directly below the Gantt chart from the **Panels** button in the header. The two panels are mutually exclusive — you can show one at a time. Drag the divider between the chart and the docked panel to resize each region.
+People who can edit any project (administrators and superusers by default) and project managers (users who manage at least one project) can dock the **Staff Overview** or **Equipment** view directly below the Gantt chart from the **Panels** button in the header. The two panels are mutually exclusive — you can show one at a time. Drag the divider between the chart and the docked panel to resize each region.
 
 This is the fastest way to see scheduling and capacity together: changes you make in the Gantt are reflected in the panel below in real time.
 
@@ -46,6 +46,8 @@ This is the fastest way to see scheduling and capacity together: changes you mak
 
 ## Who Can Edit a Project
 
+With the default roles (an administrator can change them in [Settings → Roles](settings.md#roles-permissions)), and only for projects at the sites you can see:
+
 | | Admin / Superuser | Project manager | Everyone else |
 |---|---|---|---|
 | View the project | Yes | Yes | Yes |
@@ -53,14 +55,14 @@ This is the fastest way to see scheduling and capacity together: changes you mak
 | Edit details, dates, tags, archive; hand the project to another manager | Yes | Yes | No |
 | Add, edit, move, resize, reorder and delete phases and subphases; dependencies; completion | Yes | Yes | No |
 | Assign and edit anyone's staff assignments; book equipment | Yes | Yes | No |
-| Add themselves, change or remove their own assignment | Yes | Yes | Yes |
+| Add themselves, change or remove their own assignment | Yes | Yes | Yes — or by [request](staff-management.md#booking-yourself-when-approval-is-required) when their role needs approval |
 | Delete the project | Yes | No | No |
 
-The **project manager** is the person selected in the project's **Project Manager** field. They get these rights on that project only, even with the plain User role — controls they can't use on other projects stay disabled. Changing the Project Manager field hands the rights over to someone else. Moving a Kanban card is also open to the card's assignees (see [Kanban Board](kanban-board.md#moving-cards)).
+The **project manager** is the person selected in the project's **Project Manager** field. They get these rights on that project only, even with the plain User role, as long as their role can *act as project manager* — controls they can't use on other projects stay disabled. Changing the Project Manager field hands the rights over to someone else. Moving a Kanban card is also open to the card's assignees (see [Kanban Board](kanban-board.md#moving-cards)).
 
 ## Creating a Project
 
-Creating a project needs the Admin or Superuser role.
+Creating a project needs the *Create projects* permission (admins and superusers by default), at one of the sites you can see.
 
 1. Click **+ New Project** in the panel header
 2. Fill in required fields: **Project Name**, **Start Date**, **End Date**
@@ -75,7 +77,7 @@ Creating a project needs the Admin or Superuser role.
 - **Edit a project**: Click the **Edit** button or right-click and select "Edit"
 - **Add a phase**: Right-click on a project and select "Add Phase"
 - **Add a subphase**: Right-click on a phase and select "Add Subphase" (supports unlimited nesting)
-- **Delete**: Right-click on any item and select "Delete" (with confirmation). A project manager can delete phases and subphases, but deleting the project itself needs a superuser
+- **Delete**: Right-click on any item and select "Delete" (with confirmation). A project manager can delete phases and subphases, but deleting the project itself needs the *Delete projects* permission (superusers and admins by default)
 
 When editing a project, export buttons (CSV and XML) are available in the modal footer.
 
@@ -96,7 +98,7 @@ Tags can be organised into **groups** such as *Project type* → Internal / Cust
 3. Start typing to filter, then click a tag (or press Enter on a unique match) to attach it. It appears as a coloured pill above the field. In a single-select group, choosing a tag replaces the one already selected from that group.
 4. Click the **×** on a pill to detach the tag.
 
-Admins see a **Manage tags…** link in the picker that opens Settings → Tags.
+People who can manage tags (admins by default) see a **Manage tags…** link in the picker that opens Settings → Tags.
 
 ### Project colours
 
@@ -204,7 +206,7 @@ Custom column values appear as editable cells in the project panel, next to each
 
 Values are saved automatically as you edit. Changes cascade — editing a phase's value also updates its child subphases. A cascade is saved as one request, so it either succeeds for the whole branch or, if saving fails, every cell it touched returns to its previous value.
 
-**Anyone signed in can edit custom-column values**, including users with the plain User role. Creating, editing, reordering and deleting the **columns themselves** stays admin-only. Values and column changes appear for other signed-in users straight away.
+**Every built-in role can edit custom-column values** (the *Set custom column values* permission), including the plain User role, on projects at the sites they can see. Creating, editing, reordering and deleting the **columns themselves** needs *Manage custom columns* (admins by default). Values and column changes appear for other signed-in users straight away.
 
 ### Managing Columns
 

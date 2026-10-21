@@ -5,6 +5,31 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.13.0] - 2026-10-22
+
+### Added
+- Roles and permissions: **Settings → Roles** lists the Administrator, Superuser and User roles and any roles you add, and lets an admin set, permission by permission, what each role may do — 59 permissions in 17 groups, each Allow or Deny, with project-manager rights granted on the projects a person manages.
+- Approvals for own bookings: a role can be set to **Needs approval** for booking yourself, changing your own booking or removing it; the request waits as a dashed *Pending approval* row (not counted in capacity) until an approver accepts or rejects it, with an optional reason.
+- The **Approvals** tab of Settings → Roles chooses, per action, whether the project's manager approves and which roles do; administrators can always approve.
+- Approvers can approve or reject straight from the booking's right-click menu in the Gantt chart or from the Kanban card, and requesters can cancel a request there.
+- **My Todos** in the sidebar, with an open-items badge: **To decide** (requests waiting for you), **My tasks** (personal tasks with notes, a due date and an optional project or card, which can be given to colleagues) and **My requests** (your requests and their outcome).
+- New notifications when someone asks for your approval, when your request is decided and when someone gives you a task; each opens the matching tab of My Todos.
+- Site visibility: people see and work only at the sites they belong to unless their role has **See all sites** (administrators by default); the site selector lists only those sites, and the Cross-site view needs more than one.
+- Custom roles can be the default role of new single sign-on accounts.
+- The demo tenant ships with a Team Lead role, own bookings that need approval, a pending request and a few tasks.
+- The site Excel export shows each booking's approval status and pending change, and has an **Approval requests** sheet.
+
+### Changed
+- Superusers now manage projects, bookings, absences and staff notes only at the sites they belong to, like holidays, events and equipment already were.
+- Seeing colleagues' absences is a permission (**See colleagues' absences**): with it you see those of the people at your sites, also when you pick a site; without it only your own.
+- A change to a role's permissions applies to everyone holding it on their next action, without signing out.
+- The API documentation is open to roles with the **API documentation** permission (administrators by default).
+- The Users list filters by any role, and the role picker offers only roles whose permissions you hold yourself.
+- Upgrading creates the role, approval and todo tables and the default roles automatically on startup; the `add_rbac` migration is also available through `run_migration.py`.
+
+### Fixed
+- Moving a project or phase in the Gantt chart no longer sends the phase- and subphase-level staff bookings it carries to the wrong address, which could change an unrelated project-level booking.
+
 ## [1.12.0] - 2026-10-21
 
 ### Added

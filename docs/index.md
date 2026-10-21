@@ -12,6 +12,7 @@
 - **Equipment Booking** — Reserve lab instruments and equipment across projects
 - **Multi-Site Support** — Manage resources across geographic locations with cross-site visibility
 - **What-If Planning** — Test scheduling scenarios without affecting live data
+- **Roles & Approvals** — Editable roles with per-action permissions, approval of own bookings, and a My Todos list of tasks and requests
 - **Real-Time Collaboration** — WebSocket-powered live updates across all connected clients
 - **Import/Export** — Exchange data with Microsoft Project (CSV, XML, MPP)
 - **Microsoft Entra SSO** — Enterprise single sign-on with group-based access control

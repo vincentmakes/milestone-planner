@@ -149,6 +149,8 @@ A block (or booking) whose end date is before its start date is rejected. New bl
 
 ## Permissions
 
+With the default roles (see [Settings → Roles](settings.md#roles-permissions)), for equipment at the sites you can see:
+
 | Action | Admin | Superuser | User |
 |--------|-------|-----------|------|
 | View equipment & bookings | Yes | Yes | Yes |
