@@ -31,7 +31,6 @@ import { buildICS, downloadICS, clampText } from '@/utils/ics';
 import type { ParsedICSEvent } from '@/utils/ics';
 import type { BankHoliday, CalendarImportResult } from '@/types';
 import {
-  useManageableSites,
   pickDefaultSiteId,
   refreshCurrentSiteHolidays,
   formatCalendarDate,
@@ -53,6 +52,7 @@ import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './CalendarPanel.module.css';
+import { useVisibleSites } from '@/hooks/useVisibleSites';
 
 /** Key of a holiday for duplicate checks: same first day and name */
 function holidayKey(date: string, name: string): string {
@@ -68,7 +68,7 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
   const clearSettingsIntent = useUIStore((s) => s.clearSettingsIntent);
   const currentSite = useAppStore((s) => s.currentSite);
   const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
-  const manageableSites = useManageableSites();
+  const manageableSites = useVisibleSites();
 
   const [siteId, setSiteId] = useState<number | null>(() =>
     pickDefaultSiteId(manageableSites, currentSite?.id, settingsIntent?.siteId)

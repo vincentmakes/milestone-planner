@@ -13,7 +13,7 @@ import { Header } from '../Header';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import type { HeaderDensity } from '@/hooks/useHeaderDensity';
-import { makeTeam } from '@/test/factories';
+import { makeTeam, makeUser } from '@/test/factories';
 import type { Site } from '@/types';
 
 // Network and presence are not what is under test here.
@@ -50,7 +50,7 @@ function renderAt(tier: HeaderDensity) {
 const overflowTrigger = () => screen.queryByRole('button', { name: 'More controls' });
 
 beforeEach(() => {
-  useAppStore.setState({ currentUser: { id: 1, role: 'admin' } as never });
+  useAppStore.setState({ currentUser: makeUser({ id: 1, role: 'admin' }) });
   useViewStore.setState({ currentView: 'gantt' });
 });
 

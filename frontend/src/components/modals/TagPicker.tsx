@@ -28,6 +28,7 @@ import { teamsForSite } from '@/utils/teams';
 import type { Tag } from '@/types';
 import styles from './TagPicker.module.css';
 import { confirmAction } from '@/utils/confirmDialog';
+import { can } from '@/utils/permissions';
 
 /** Search box placeholder (referenced by scripts/screenshots). */
 export const TAG_PICKER_PLACEHOLDER = 'Find a tag...';
@@ -53,7 +54,8 @@ export function TagPicker({ selectedIds, onChange, siteId, teamIds = NO_TEAMS, d
   const tags = useAppStore((s) => s.tags);
   const teams = useAppStore((s) => s.teams);
   const tagGroups = useAppStore((s) => s.tagGroups);
-  const isAdmin = useAppStore((s) => s.currentUser?.role === 'admin');
+  // "Manage tags…" opens Settings → Tags (tags.manage)
+  const canManageTags = useAppStore((s) => can(s.currentUser, 'tags.manage'));
   const whatIf = useWhatIfBlocked();
   const manageBlockedReason = whatIf.blocked ? whatIf.reason('Managing tags') : null;
 
@@ -197,7 +199,7 @@ export function TagPicker({ selectedIds, onChange, siteId, teamIds = NO_TEAMS, d
             aria-autocomplete="list"
             disabled={disabled}
           />
-          {isAdmin && (
+          {canManageTags && (
             <button
               type="button"
               className={styles.manageLink}

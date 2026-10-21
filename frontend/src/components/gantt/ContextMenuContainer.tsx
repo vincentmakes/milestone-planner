@@ -10,7 +10,7 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { useDataLoader } from '@/hooks/useDataLoader';
 import { ContextMenu, type ContextMenuItem } from '@/components/common';
 import { deleteProject, deletePhase, deleteSubphase, deleteStaffAssignment, deleteEquipmentAssignment, createStaffAssignment } from '@/api';
-import { isPrivileged, canEditProject, canEditAssignment } from '@/utils/permissions';
+import { can, canEditProject, canEditAssignment } from '@/utils/permissions';
 import { findSubphaseById } from '@/utils/subphaseUtils';
 import { formatDateISO } from '@/utils/date';
 import {
@@ -69,10 +69,10 @@ export function ContextMenuContainer() {
     return projects.find((p) => p.id === id);
   }, [projects, contextMenu.type, contextMenu.targetId, contextMenu.projectId]);
 
-  // Per-project rights: admins, superusers and the project's manager.
+  // Per-project rights: projects.edit_any, or the project's manager.
   const canEdit = canEditProject(currentUser, menuProject);
-  // Deleting a project stays with admins and superusers, even for its manager.
-  const canDeleteProject = isPrivileged(currentUser);
+  // Deleting a project needs projects.delete, never in the manager bundle.
+  const canDeleteProject = can(currentUser, 'projects.delete');
 
   // "Assign me" books the current user's own time at their max capacity, the
   // same default the assignment modal and resource drag use.

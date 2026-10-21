@@ -13,7 +13,8 @@ import { SitesPanel } from '../panels/SitesPanel';
 import { SiteForm } from '../panels/SiteForm';
 import { useAppStore } from '@/stores/appStore';
 import { stubConfirm } from '@/test/confirmDialog';
-import type { Site, User } from '@/types';
+import type { Site } from '@/types';
+import { makeSite, makeUser } from '@/test/factories';
 
 const api = vi.hoisted(() => ({
   createSite: vi.fn(),
@@ -34,16 +35,7 @@ const basel: Site = {
   active: true,
 };
 
-const admin: User = {
-  id: 1,
-  email: 'admin@demo.local',
-  first_name: 'Ada',
-  last_name: 'Admin',
-  name: 'Ada Admin',
-  role: 'admin',
-  active: true,
-  site_ids: [1],
-};
+const admin = makeUser({ id: 1, email: 'admin@demo.local', role: 'admin', site_ids: [1] });
 
 beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset();
@@ -177,5 +169,33 @@ describe('SitesPanel', () => {
 
     await act(async () => finish({ id: 2, name: 'Zurich' }));
     expect(useAppStore.getState().sites.map((s) => s.name)).toEqual(['Basel', 'Zurich']);
+  });
+});
+
+describe('SitesPanel permissions', () => {
+  const zurich = makeSite({ id: 2, name: 'Zurich' });
+
+  it('offers only the export of the visible sites with sites.export alone', () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 5, role: 'superuser', site_ids: [2] }),
+      sites: [basel, zurich],
+    });
+    render(<SitesPanel />);
+    expect(screen.getByRole('button', { name: 'Export Zurich as Excel' })).toBeInTheDocument();
+    expect(screen.queryByText('Basel')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit Zurich' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('New site name')).not.toBeInTheDocument();
+  });
+
+  it('manages every site without the export control for sites.manage alone', () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 6, role: 'site_admin', permissions: ['sites.manage'], site_ids: [] }),
+      sites: [basel, zurich],
+    });
+    render(<SitesPanel />);
+    expect(screen.getByRole('button', { name: 'Edit Basel' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit Zurich' })).toBeInTheDocument();
+    expect(screen.getByLabelText('New site name')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Export .* as Excel/ })).not.toBeInTheDocument();
   });
 });

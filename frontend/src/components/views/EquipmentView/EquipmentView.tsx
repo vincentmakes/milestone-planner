@@ -22,7 +22,7 @@ import { useDataLoader } from '@/hooks/useDataLoader';
 import { useTeamFilter, useTeamFilteredCompanyEvents } from '@/hooks/useTeamFilter';
 import { useTimelineScrollSync } from '@/contexts/TimelineScrollContext';
 import { deleteEquipmentBlock } from '@/api';
-import { canManageAnyProject, isPrivileged } from '@/utils/permissions';
+import { can, canManageAnyProject } from '@/utils/permissions';
 import { generateTimelineCells, generateTimelineHeaders, calculateTodayScrollLeft, calculateTodayCenterScrollLeft } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
@@ -99,9 +99,9 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   // project, so it is open to anyone who manages at least one project; the
   // drop overlay (ResourceDropOverlay.canDropOn) then accepts only projects
   // the user may edit. Equipment blocks (maintenance / defect windows) are
-  // not project data and stay with admins and superusers.
+  // not project data: they need equipment_blocks.manage.
   const canBook = canManageAnyProject(currentUser, projects);
-  const canManageBlocks = isPrivileged(currentUser);
+  const canManageBlocks = can(currentUser, 'equipment_blocks.manage');
 
   // Per-row expansion state (mirrors StaffView)
   const [expandedEquipment, setExpandedEquipment] = useState<Set<number>>(new Set());

@@ -12,6 +12,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { createVacation, importVacations, getVacations } from '@/api/endpoints/vacations';
 import type { AbsenceType } from '@/types';
+import { asSignedIn } from '@/test/permissionFixtures';
 
 vi.mock('@/api/endpoints/vacations', () => ({
   createVacation: vi.fn().mockResolvedValue({}),
@@ -47,7 +48,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   useWhatIfStore.setState({ whatIfMode: false });
   useAppStore.setState({
-    currentUser: {
+    currentUser: asSignedIn({
       id: 7,
       name: 'Una User',
       email: 'una@demo.local',
@@ -56,7 +57,7 @@ beforeEach(() => {
       role: 'user',
       active: true,
       site_ids: [1],
-    },
+    }),
     staff: [],
     vacations: [],
     absenceTypes: TYPES,
@@ -171,7 +172,7 @@ describe('VacationModal', () => {
   it('lists a person on several sites once in the staff picker', () => {
     // GET /staff returns one row per user-site pair
     useAppStore.setState({
-      currentUser: { ...useAppStore.getState().currentUser!, role: 'admin' },
+      currentUser: asSignedIn({ ...useAppStore.getState().currentUser!, role: 'admin', permissions: undefined }),
       staff: [
         { id: 4, name: 'Bob Brown', site_id: 1 },
         { id: 4, name: 'Bob Brown', site_id: 2 },
@@ -188,7 +189,7 @@ describe('VacationModal', () => {
 
   it('books the picked staff member for the typed dates', async () => {
     useAppStore.setState({
-      currentUser: { ...useAppStore.getState().currentUser!, role: 'admin' },
+      currentUser: asSignedIn({ ...useAppStore.getState().currentUser!, role: 'admin', permissions: undefined }),
       staff: [
         { id: 4, name: 'Bob Brown', site_id: 1 },
         { id: 5, name: 'Cleo Chen', site_id: 1 },

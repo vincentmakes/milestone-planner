@@ -79,6 +79,7 @@ import {
   makeVacation,
 } from '@/test/factories';
 import type { BankHoliday, CompanyEvent } from '@/types';
+import { ApiError } from '@/api/client';
 
 const holiday = { id: 1, site_id: 1, date: '2026-08-01', name: 'National Day' } as BankHoliday;
 const event = { id: 2, site_id: 1, date: '2026-09-10', name: 'Audit' } as CompanyEvent;
@@ -191,6 +192,39 @@ describe('WebSocketProvider slice refresh', () => {
       ])
     );
     expect(useAppStore.getState().isAuthenticated).toBe(true);
+  });
+
+  it('empties the equipment slices without views.equipment, and on a 403', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ role: 'viewer', permissions: ['projects.view'] }),
+      equipment: [makeEquipment()],
+    });
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    await receive('equipment');
+    expect(getEquipment).not.toHaveBeenCalled();
+    expect(useAppStore.getState().equipment).toEqual([]);
+
+    useAppStore.setState({ currentUser: makeUser(), equipment: [makeEquipment()], equipmentBlocks: [{ id: 9 } as never] });
+    vi.mocked(getEquipment).mockRejectedValue(new ApiError('Permission required: views.equipment', 403));
+    vi.mocked(getEquipmentBlocks).mockRejectedValue(new ApiError('Permission required: views.equipment', 403));
+    await receive('equipment');
+    await receive('equipment_block');
+    expect(useAppStore.getState().equipment).toEqual([]);
+    expect(useAppStore.getState().equipmentBlocks).toEqual([]);
+  });
+
+  it('refreshes nothing yet for the approval and todo slices', async () => {
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    await receive('todo');
+    expect(loadAllProjects).not.toHaveBeenCalled();
+    expect(fetchCurrentUser).not.toHaveBeenCalled();
+  });
+
+  it('re-reads the signed-in user on change:role', async () => {
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    await receive('role');
+    expect(fetchCurrentUser).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().currentUser?.first_name).toBe('Renamed');
   });
 
   it('reloads teams and the slices that carry team links on change:team', async () => {

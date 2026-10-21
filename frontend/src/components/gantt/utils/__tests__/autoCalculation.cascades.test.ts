@@ -227,7 +227,7 @@ describe('parent and project dates', () => {
 });
 
 describe('moving bookings with their parents', () => {
-  it('moves dated bookings at every level and skips undated or invalid ones', () => {
+  it('moves dated project bookings and equipment at every level, skips undated or invalid ones', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const project = makeProject({
       id: 1,
@@ -236,7 +236,8 @@ describe('moving bookings with their parents', () => {
           id: 10,
           start_date: '2026-03-02',
           end_date: '2026-03-06',
-          staffAssignments: [{ id: 1, staff_id: 4, allocation: 50, start_date: '2026-03-02', end_date: '2026-03-03' }],
+          // Phase/subphase staff rows follow their item: never cascaded
+          staffAssignments: [{ id: 11, staff_id: 4, allocation: 50, start_date: '2026-03-02', end_date: '2026-03-03' }],
           equipmentAssignments: [
             { id: 2, equipment_id: 1, start_date: '2026-03-04', end_date: '2026-03-05' },
             { id: 3, equipment_id: 1, start_date: '', end_date: '' },
@@ -247,17 +248,18 @@ describe('moving bookings with their parents', () => {
               id: 20,
               start_date: '2026-03-02',
               end_date: '2026-03-03',
-              staffAssignments: [
-                { id: 5, staff_id: 4, allocation: undefined as unknown as number, start_date: '2026-03-02', end_date: '2026-03-02' },
-                { id: 6, staff_id: 4, allocation: 10, start_date: 'bad', end_date: 'bad' },
-                { id: 9, staff_id: 4, allocation: 10, start_date: '', end_date: '' },
-              ],
+              staffAssignments: [{ id: 12, staff_id: 4, allocation: 10, start_date: '2026-03-02', end_date: '2026-03-02' }],
               equipmentAssignments: [{ id: 7, equipment_id: 1, start_date: '2026-03-03', end_date: '2026-03-03' }],
             }),
           ],
         }),
       ],
-      staffAssignments: [],
+      staffAssignments: [
+        { id: 1, staff_id: 4, allocation: 50, start_date: '2026-03-02', end_date: '2026-03-03' },
+        { id: 5, staff_id: 4, allocation: undefined as unknown as number, start_date: '2026-03-02', end_date: '2026-03-02' },
+        { id: 6, staff_id: 4, allocation: 10, start_date: 'bad', end_date: 'bad' },
+        { id: 9, staff_id: 4, allocation: 10, start_date: '', end_date: '' },
+      ],
       equipmentAssignments: [{ id: 8, equipment_id: 1, start_date: '2026-03-09', end_date: '2026-03-10' }],
     });
 
@@ -271,7 +273,10 @@ describe('moving bookings with their parents', () => {
     expect(byKey['staffAssignment-5']).toMatchObject({ start_date: '2026-03-09', allocation: 100 });
     expect(byKey['equipmentAssignment-7']).toMatchObject({ start_date: '2026-03-10' });
     expect(byKey['equipmentAssignment-8']).toMatchObject({ start_date: '2026-03-16' });
-    for (const skipped of ['equipmentAssignment-3', 'equipmentAssignment-4', 'staffAssignment-6', 'staffAssignment-9']) {
+    for (const skipped of [
+      'equipmentAssignment-3', 'equipmentAssignment-4', 'staffAssignment-6', 'staffAssignment-9',
+      'staffAssignment-11', 'staffAssignment-12',
+    ]) {
       expect(byKey[skipped]).toBeUndefined();
     }
     expect(warn).toHaveBeenCalledTimes(4);

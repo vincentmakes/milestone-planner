@@ -21,6 +21,7 @@ import { useHeaderDensity, type HeaderDensity } from '@/hooks/useHeaderDensity';
 import { getTheme, isDarkTheme, type Theme } from '@/utils/storage';
 import { getSetting } from '@/api/endpoints/settings';
 import { canManageAnyProject } from '@/utils/permissions';
+import { useHasPermission } from '@/hooks/useCan';
 import styles from './Header.module.css';
 
 /**
@@ -107,7 +108,7 @@ export function Header() {
     return () => observer.disconnect();
   }, [theme]);
 
-  const canUseWhatIf = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  const canUseWhatIf = useHasPermission('whatif.use');
   // Overview panels exist to drag resources onto projects, so anyone who
   // manages at least one project gets them (same rule as GanttContainer).
   const canShowPanels = canManageAnyProject(currentUser, projects);

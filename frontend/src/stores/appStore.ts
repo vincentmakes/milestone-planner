@@ -32,6 +32,7 @@ import type {
 import { buildClosureIndex } from '@/utils/siteClosure';
 import type { ClosureIndex } from '@/utils/siteClosure';
 import { indexAbsenceTypes } from '@/utils/recurringVacation';
+import { can } from '@/utils/permissions';
 import type { AbsenceTypesById } from '@/utils/recurringVacation';
 
 // =============================================================================
@@ -418,8 +419,8 @@ export const selectAbsenceTypesById = (state: AppState): AbsenceTypesById => {
 };
 
 /**
- * Check if user can manage resources (admin or superuser)
+ * Whether the signed-in user may add and edit other people's absences
+ * (`absences.manage_others`): the absence dialog's staff picker.
  */
-export const selectCanManageResources = (state: AppState): boolean => {
-  return state.currentUser?.role === 'admin' || state.currentUser?.role === 'superuser';
-};
+export const selectCanManageOthersAbsences = (state: AppState): boolean =>
+  can(state.currentUser, 'absences.manage_others');

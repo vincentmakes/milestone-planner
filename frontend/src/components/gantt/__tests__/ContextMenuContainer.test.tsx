@@ -14,8 +14,9 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { createStaffAssignment, deletePhase, deleteSubphase } from '@/api';
 import { recoverFromPersistFailure } from '@/utils/persistFailure';
-import type { Phase, Project, Subphase, User } from '@/types';
+import type { Phase, Project, Subphase } from '@/types';
 import { stubConfirm } from '@/test/confirmDialog';
+import { makeUser } from '@/test/factories';
 
 vi.mock('@/api', () => ({
   deleteProject: vi.fn(),
@@ -91,7 +92,7 @@ const project = {
   equipmentAssignments: [],
 } as unknown as Project;
 
-const plainUser = { id: 7, role: 'user', max_capacity: 80 } as unknown as User;
+const plainUser = makeUser({ id: 7, role: 'user', max_capacity: 80 });
 
 beforeEach(() => {
   vi.mocked(createStaffAssignment).mockClear();
@@ -148,7 +149,7 @@ describe('ContextMenuContainer subphase target', () => {
  * left as it was (F2-17).
  */
 describe('ContextMenuContainer deletes', () => {
-  const admin = { id: 1, role: 'admin', max_capacity: 100 } as unknown as User;
+  const admin = makeUser({ id: 1, role: 'admin', max_capacity: 100 });
 
   it.each([
     ['phase', 'Delete Phase', 10, deletePhase],

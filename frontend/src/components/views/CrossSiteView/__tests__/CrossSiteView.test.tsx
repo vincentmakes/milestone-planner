@@ -11,7 +11,7 @@ import type { CrossSiteRow } from '../CrossSiteView';
 import { generateTimelineCells } from '@/components/gantt/utils';
 import { resetAllStores, useAppStore, useUIStore, useViewStore } from '@/stores';
 import { formatDateISO } from '@/utils/date';
-import { makeProject, makeSite, makeTeam } from '@/test/factories';
+import { makeProject, makeSite, makeTeam, makeUser } from '@/test/factories';
 import { tagFilterKey } from '@/utils/tags';
 import { buildEventDateSet } from '@/api';
 import type { CompanyEvent } from '@/types';
@@ -29,6 +29,7 @@ beforeEach(() => {
   resetAllStores();
   useViewStore.setState({ viewMode: 'month', cellWidth: 30, currentDate: new Date() });
   useAppStore.setState({
+    currentUser: makeUser({ role: 'admin' }),
     sites: [basel, zurich],
     currentSite: basel,
     projects: [
@@ -57,6 +58,15 @@ describe('CrossSiteView', () => {
     expect(screen.queryByText('Rival')).not.toBeInTheDocument();
     expect(screen.getAllByText('Confidential Project')).toHaveLength(2);
     expect(screen.getAllByText('***')).toHaveLength(2);
+  });
+
+  it('lists only the sites the user can see', () => {
+    const bern = makeSite({ id: 3, name: 'Bern' });
+    useAppStore.setState({ sites: [basel, zurich, bern], currentUser: makeUser({ role: 'user', site_ids: [1, 3] }) });
+    render(<CrossSiteView />);
+    expect(screen.getByText('Basel')).toBeInTheDocument();
+    expect(screen.getByText('Bern')).toBeInTheDocument();
+    expect(screen.queryByText('Zurich')).not.toBeInTheDocument();
   });
 
   it('draws bars, labelled only for the current site', () => {

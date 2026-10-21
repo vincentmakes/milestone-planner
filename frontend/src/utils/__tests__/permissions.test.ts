@@ -1,36 +1,85 @@
 /**
- * The per-project permission rules, as the frontend applies them. They mirror
- * app/services/project_access.py: a project manager edits their own project
- * (but may not delete it), anyone edits assignments that book their own time,
- * and admins/superusers are unchanged.
+ * The client's permission rules: `can()` mirrors PermissionSet.can of
+ * app/services/permissions.py (allowed key, or the project-manager bundle on
+ * a project the user manages), and the per-project wrappers keep the shapes
+ * their call sites use.
  */
 
 import { describe, it, expect } from 'vitest';
 import {
-  isPrivileged,
+  can,
+  canSelf,
+  needsApproval,
   isSelf,
   canEditProject,
   canEditProjectById,
   canEditAssignment,
   canManageAnyProject,
 } from '../permissions';
+import { makeUser } from '@/test/factories';
 
-const admin = { id: 1, role: 'admin' as const };
-const superuser = { id: 2, role: 'superuser' as const };
-const pm = { id: 3, role: 'user' as const };
-const user = { id: 4, role: 'user' as const };
+const admin = makeUser({ id: 1, role: 'admin' });
+const superuser = makeUser({ id: 2, role: 'superuser' });
+const pm = makeUser({ id: 3, role: 'user' });
+const user = makeUser({ id: 4, role: 'user' });
+/** A custom role without the project-manager key and without self bookings */
+const viewer = makeUser({ id: 3, role: 'viewer', permissions: ['projects.view'] });
 
 const managed = { id: 10, pm_id: 3 };
 const other = { id: 11, pm_id: 9 };
 const unmanaged = { id: 12, pm_id: null };
 
-describe('isPrivileged', () => {
-  it('is true for admins and superusers only', () => {
-    expect(isPrivileged(admin)).toBe(true);
-    expect(isPrivileged(superuser)).toBe(true);
-    expect(isPrivileged(pm)).toBe(false);
-    expect(isPrivileged(null)).toBe(false);
-    expect(isPrivileged(undefined)).toBe(false);
+describe('can', () => {
+  it('reads the allowed keys, not the role name', () => {
+    expect(can(admin, 'roles.manage')).toBe(true);
+    expect(can(superuser, 'projects.delete')).toBe(true);
+    expect(can(superuser, 'sites.manage')).toBe(false);
+    expect(can(makeUser({ role: 'admin', permissions: [] }), 'projects.delete')).toBe(false);
+    expect(can(makeUser({ role: 'custom', permissions: ['sites.manage'] }), 'sites.manage')).toBe(true);
+  });
+
+  it('grants the project-manager bundle on managed projects only', () => {
+    expect(can(pm, 'projects.edit_any', managed)).toBe(true);
+    expect(can(pm, 'assignments.manage_others', managed)).toBe(true);
+    expect(can(pm, 'projects.edit_any', other)).toBe(false);
+    expect(can(pm, 'projects.edit_any', unmanaged)).toBe(false);
+    expect(can(pm, 'projects.edit_any')).toBe(false);
+    // Never delete, create, import or export through the bundle
+    expect(can(pm, 'projects.delete', managed)).toBe(false);
+    expect(can(pm, 'projects.export', managed)).toBe(false);
+  });
+
+  it('needs projects.manage_as_pm for the bundle', () => {
+    expect(can(viewer, 'projects.edit_any', managed)).toBe(false);
+  });
+
+  it('is false for a missing user or a user without a permission list', () => {
+    expect(can(null, 'projects.view')).toBe(false);
+    expect(can(undefined, 'projects.view')).toBe(false);
+    expect(can({ id: 1 }, 'projects.view')).toBe(false);
+  });
+});
+
+describe('needsApproval / canSelf', () => {
+  const requester = makeUser({
+    id: 5,
+    role: 'user',
+    permissions: ['projects.view', 'assignments.self_update'],
+    approval_required: ['assignments.self_create'],
+  });
+
+  it('tells approval mode apart from allow and deny', () => {
+    expect(needsApproval(requester, 'assignments.self_create')).toBe(true);
+    expect(needsApproval(requester, 'assignments.self_update')).toBe(false);
+    expect(needsApproval(null, 'assignments.self_create')).toBe(false);
+    expect(needsApproval({ id: 5 }, 'assignments.self_create')).toBe(false);
+  });
+
+  it('lets an own booking through in allow or approval mode', () => {
+    expect(canSelf(requester, 'assignments.self_create')).toBe(true);
+    expect(canSelf(requester, 'assignments.self_update')).toBe(true);
+    expect(canSelf(requester, 'assignments.self_remove')).toBe(false);
+    expect(canSelf(null, 'assignments.self_create')).toBe(false);
   });
 });
 
@@ -45,7 +94,7 @@ describe('isSelf', () => {
 });
 
 describe('canEditProject', () => {
-  it('lets privileged users edit any project, even one without a manager', () => {
+  it('lets holders of projects.edit_any edit any project, even one without a manager', () => {
     expect(canEditProject(admin, other)).toBe(true);
     expect(canEditProject(superuser, unmanaged)).toBe(true);
     expect(canEditProject(admin, null)).toBe(true);
@@ -63,55 +112,56 @@ describe('canEditProject', () => {
     expect(canEditProject(pm, null)).toBe(false);
     expect(canEditProject(pm, undefined)).toBe(false);
   });
-
-  it('never treats a null pm_id as a match', () => {
-    // A user object with no id would otherwise compare null === null.
-    expect(canEditProject({ id: null as unknown as number, role: 'user' }, unmanaged)).toBe(false);
-  });
 });
 
 describe('canEditProjectById', () => {
   const projects = [managed, other, unmanaged];
 
-  it('finds the project by id', () => {
+  it('resolves the project from the id', () => {
     expect(canEditProjectById(pm, projects, 10)).toBe(true);
     expect(canEditProjectById(pm, projects, 11)).toBe(false);
+    expect(canEditProjectById(pm, projects, 999)).toBe(false);
   });
 
-  it('refuses unknown or missing ids for plain users but not for privileged ones', () => {
-    expect(canEditProjectById(pm, projects, 99)).toBe(false);
+  it('lets project editors through without a lookup, refuses missing ids and users', () => {
+    expect(canEditProjectById(superuser, [], 999)).toBe(true);
+    expect(canEditProjectById(pm, projects, null)).toBe(false);
     expect(canEditProjectById(pm, projects, undefined)).toBe(false);
-    expect(canEditProjectById(admin, [], 99)).toBe(true);
     expect(canEditProjectById(null, projects, 10)).toBe(false);
   });
 });
 
 describe('canEditAssignment', () => {
-  it('lets project editors touch anyone and everyone touch themselves', () => {
-    expect(canEditAssignment(pm, managed, 4)).toBe(true);
-    expect(canEditAssignment(user, managed, 4)).toBe(true);
-    expect(canEditAssignment(user, managed, 3)).toBe(false);
-    expect(canEditAssignment(admin, other, 4)).toBe(true);
+  it('lets anyone who manages others\' bookings touch any assignment on the project', () => {
+    expect(canEditAssignment(superuser, other, 99)).toBe(true);
+    expect(canEditAssignment(pm, managed, 99)).toBe(true);
   });
 
-  it('still allows the own row when the project is unknown', () => {
-    expect(canEditAssignment(user, null, 4)).toBe(true);
-    expect(canEditAssignment(user, null, 5)).toBe(false);
-    expect(canEditAssignment(null, managed, 4)).toBe(false);
+  it('lets a user touch their own assignment, but not someone else\'s', () => {
+    expect(canEditAssignment(user, other, 4)).toBe(true);
+    expect(canEditAssignment(user, other, 5)).toBe(false);
+    expect(canEditAssignment(null, other, 4)).toBe(false);
+  });
+
+  it('follows the own-booking key: allow or approval mode, never deny', () => {
+    const pending = makeUser({ id: 4, role: 'user', permissions: ['projects.view'], approval_required: ['assignments.self_update'] });
+    expect(canEditAssignment(pending, other, 4)).toBe(true);
+    expect(canEditAssignment(pending, other, 4, 'assignments.self_create')).toBe(false);
+    expect(canEditAssignment(viewer, other, 3)).toBe(false);
   });
 });
 
 describe('canManageAnyProject', () => {
-  it('is true for privileged users regardless of the list', () => {
+  it('is true for project editors and for anyone managing at least one project', () => {
     expect(canManageAnyProject(admin, [])).toBe(true);
     expect(canManageAnyProject(superuser, null)).toBe(true);
+    expect(canManageAnyProject(pm, [other, managed])).toBe(true);
   });
 
-  it('is true for a user who manages at least one listed project', () => {
-    expect(canManageAnyProject(pm, [other, managed])).toBe(true);
-    expect(canManageAnyProject(pm, [other, unmanaged])).toBe(false);
-    expect(canManageAnyProject(user, [managed])).toBe(false);
+  it('is false for users who manage nothing', () => {
+    expect(canManageAnyProject(user, [managed, other, unmanaged])).toBe(false);
     expect(canManageAnyProject(pm, [])).toBe(false);
+    expect(canManageAnyProject(pm, undefined)).toBe(false);
     expect(canManageAnyProject(null, [managed])).toBe(false);
   });
 });

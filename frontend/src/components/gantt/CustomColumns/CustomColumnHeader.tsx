@@ -14,6 +14,7 @@ import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useAppStore } from '@/stores/appStore';
 import type { CustomColumn } from '@/types';
 import styles from './CustomColumnHeader.module.css';
+import { can } from '@/utils/permissions';
 
 interface CustomColumnHeaderProps {
   column: CustomColumn;
@@ -31,7 +32,8 @@ export function CustomColumnHeader({
   const [isResizing, setIsResizing] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
   // Global gate: custom-column definitions are admin-only
-  const isAdmin = useAppStore((s) => s.currentUser?.role === 'admin');
+  // Column definitions: custom_columns.manage
+  const canManageColumns = useAppStore((s) => can(s.currentUser, 'custom_columns.manage'));
   
   const customColumnValues = useCustomColumnStore((s) => s.customColumnValues);
   const customColumnFilters = useCustomColumnStore((s) => s.customColumnFilters);
@@ -97,7 +99,7 @@ export function CustomColumnHeader({
   }, [column.id, column.width, onWidthChange]);
   
   const handleDoubleClick = () => {
-    if (!isAdmin) return;
+    if (!canManageColumns) return;
     onEdit(column);
   };
   
@@ -162,7 +164,7 @@ export function CustomColumnHeader({
       style={{ width: column.width }}
       onDoubleClick={handleDoubleClick}
       onBlur={onFilterBlur}
-      title={isAdmin ? `${column.name} (double-click to edit)` : column.name}
+      title={canManageColumns ? `${column.name} (double-click to edit)` : column.name}
     >
       <div className={styles.content}>
         <span className={styles.icon}>{getTypeIcon()}</span>
@@ -236,7 +238,7 @@ export function CustomColumnHeader({
         </div>
       )}
       
-      {isAdmin && (
+      {canManageColumns && (
         <div 
           className={styles.resizeHandle}
           onMouseDown={handleMouseDown}

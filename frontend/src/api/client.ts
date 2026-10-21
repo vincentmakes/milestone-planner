@@ -140,6 +140,12 @@ const WHAT_IF_EXEMPT_PREFIXES: readonly string[] = [
 const WHAT_IF_EXEMPT_PATTERNS: readonly RegExp[] = [
   /^\/api\/kanban\/cards\/(phase|subphase)\/\d+\/comments/,
   /^\/api\/(absence-types|skills|equipment-types|predefined-phases|users|tags|tag-groups|teams)(\/|$)/,
+  // RBAC. Roles, permissions and approval policies are configuration; todos
+  // are private rows like notifications; an approval decision (approve,
+  // reject, cancel) is a message to a person: queued, Discard would silently
+  // un-decide it. Own bookings stay queued on the assignment routes (a 202 on
+  // Apply becomes a request).
+  /^\/api\/(roles|permissions|approval-policies|todos|approval-requests)(\/|$)/,
   /^\/api\/sites(\/\d+)?$/,
   /^\/api\/equipment(\/\d+)?$/,
 ];
@@ -156,6 +162,29 @@ export function isWhatIfExempt(endpoint: string): boolean {
     WHAT_IF_EXEMPT_PREFIXES.some(prefix => path.startsWith(prefix)) ||
     WHAT_IF_EXEMPT_PATTERNS.some(pattern => pattern.test(path))
   );
+}
+
+// =============================================================================
+// ERRORS
+// =============================================================================
+
+/** A non-2xx API response; `message` is the server's detail, `status` the HTTP code. */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+/**
+ * A 403: the role lacks the key the route needs. Loaders of view-gated
+ * slices treat it as an empty slice, not as a failure.
+ */
+export function isForbidden(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 403;
 }
 
 // =============================================================================
@@ -252,7 +281,7 @@ export async function apiRequest<T>(
       if (response.ok) {
         return {} as T;
       }
-      throw new Error(`HTTP ${response.status}: Empty response`);
+      throw new ApiError(`HTTP ${response.status}: Empty response`, response.status);
     }
     
     // Try to parse as JSON
@@ -262,7 +291,7 @@ export async function apiRequest<T>(
     } catch {
       // Not JSON - might be an HTML error page from proxy
       console.error(`[API Error] Non-JSON response from ${endpoint}:`, text.substring(0, 200));
-      throw new Error(`HTTP ${response.status}: Invalid response`);
+      throw new ApiError(`HTTP ${response.status}: Invalid response`, response.status);
     }
     
     if (!response.ok) {
@@ -273,11 +302,11 @@ export async function apiRequest<T>(
           const field = d.loc?.slice(-1)[0] || 'field';
           return `${field}: ${d.msg || 'invalid'}`;
         });
-        throw new Error(messages.join(', '));
+        throw new ApiError(messages.join(', '), response.status);
       }
       // Standard error format
       const message = (error.error as string) || (error.detail as string) || `HTTP ${response.status}`;
-      throw new Error(message);
+      throw new ApiError(message, response.status);
     }
     
     return data as T;

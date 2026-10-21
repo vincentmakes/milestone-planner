@@ -33,13 +33,19 @@ describe('slicesForEntity', () => {
     ['tag', ['tags', 'projects']],
     ['tag_group', ['tags']],
     ['team', ['teams', 'staff', 'projects', 'tags', 'equipment', 'siteCalendar']],
+    // RBAC: a role edit changes the signed-in user's permissions (/auth/me)
+    ['role', ['currentUser']],
+    ['approval_policy', ['currentUser', 'approvals']],
+    ['approval_request', ['projects', 'approvals']],
+    ['todo', ['todos']],
   ])('%s → %j', (entity, slices) => {
     expect(slicesForEntity(entity)).toEqual(slices);
   });
 
   it('refreshes every slice for an unknown entity', () => {
     expect(slicesForEntity('brand_new_thing')).toBe(ALL_SLICES);
-    expect(new Set(ALL_SLICES).size).toBe(14);
+    expect(new Set(ALL_SLICES).size).toBe(16);
+    expect(ALL_SLICES).toEqual(expect.arrayContaining(['approvals', 'todos']));
   });
 
   it('sandboxes only the What-If plan slices', () => {

@@ -11,7 +11,7 @@ import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import type { Project, Tag } from '@/types';
 import { tagFilterKey } from '@/utils/tags';
-import { makeTeam } from '@/test/factories';
+import { makeTeam, makeUser } from '@/test/factories';
 
 vi.mock('@/api/endpoints/kanban', () => ({
   getCommentCounts: vi.fn().mockResolvedValue(new Map()),
@@ -47,7 +47,7 @@ beforeEach(() => {
   useAppStore.setState({
     projects: [makeProject(1, 'Bioprocess Scale-Up', [7]), makeProject(2, 'Catalyst Optimization', [])],
     currentSite: { id: 1, name: 'Basel' } as never,
-    currentUser: { id: 1, role: 'admin' } as never,
+    currentUser: makeUser({ id: 1, role: 'admin' }),
     staff: [],
     tags: [pilot],
     tagGroups: [],

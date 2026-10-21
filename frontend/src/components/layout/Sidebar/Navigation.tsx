@@ -1,5 +1,6 @@
 import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
+import { useAllowedViews } from '@/hooks/useAllowedViews';
 import type { CurrentView } from '@/types';
 import styles from './Navigation.module.css';
 
@@ -90,19 +91,25 @@ export function Navigation({ collapsed = false }: NavigationProps) {
   // out of reach (nothing is discarded behind the user's back). The Gantt
   // itself stays enabled so the sandbox can always be returned to.
   const { blocked, reason } = useWhatIfBlocked();
+  // Views without their key are hidden; Cross-site is disabled with a reason
+  // while only one site is visible (VIEW_PERMISSIONS in useAllowedViews).
+  const { visible, disabledReason } = useAllowedViews();
 
   return (
     <nav className={`${styles.nav} ${collapsed ? styles.collapsed : ''}`}>
-      {NAV_ITEMS.map((item) => {
+      {NAV_ITEMS.filter((item) => visible.includes(item.view)).map((item) => {
         const isBlocked = blocked && item.view !== currentView && item.view !== 'gantt';
+        const unavailable = disabledReason[item.view];
         return (
           <button
             key={item.view}
             type="button"
             className={`${styles.navItem} ${currentView === item.view ? styles.active : ''}`}
             onClick={() => setCurrentView(item.view)}
-            disabled={isBlocked}
-            title={isBlocked ? reason('Switching views') : collapsed ? item.label : undefined}
+            disabled={isBlocked || Boolean(unavailable)}
+            title={
+              isBlocked ? reason('Switching views') : unavailable ?? (collapsed ? item.label : undefined)
+            }
             aria-label={item.label}
           >
             <span className={styles.icon}>{item.icon}</span>

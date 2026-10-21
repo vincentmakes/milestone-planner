@@ -14,6 +14,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import type { Project, Site, Tag, TagGroup } from '@/types';
+import { makeUser } from '@/test/factories';
 
 vi.mock('@/api', () => ({}));
 vi.mock('@/hooks', () => ({
@@ -70,7 +71,7 @@ beforeEach(() => {
   useAppStore.setState({
     tags,
     tagGroups: [TYPE],
-    currentUser: { id: 1, name: 'Someone', role: 'superuser' } as never,
+    currentUser: makeUser({ id: 1, name: 'Someone', role: 'superuser' }),
     currentSite: { id: 1, name: 'Basel' } as Site,
   });
 });

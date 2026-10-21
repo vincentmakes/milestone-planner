@@ -17,6 +17,7 @@ import { stubConfirm } from '@/test/confirmDialog';
 import { makeStaff, makeTeam } from '@/test/factories';
 import { DEFAULT_TEAM_COLOR } from '@/utils/colorSwatches';
 import type { Site, Team, User } from '@/types';
+import { asSignedIn } from '@/test/permissionFixtures';
 
 const api = vi.hoisted(() => ({
   teamsApi: {
@@ -51,7 +52,7 @@ const staff = [
 ];
 
 function user(role: User['role'], siteIds: number[]): User {
-  return {
+  return asSignedIn({
     id: 1,
     email: 'ada@demo.local',
     first_name: 'Ada',
@@ -60,7 +61,7 @@ function user(role: User['role'], siteIds: number[]): User {
     role,
     active: true,
     site_ids: siteIds,
-  };
+  });
 }
 
 function deferred<T>() {

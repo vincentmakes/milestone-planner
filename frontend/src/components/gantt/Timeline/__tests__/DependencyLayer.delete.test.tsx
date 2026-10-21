@@ -16,6 +16,7 @@ import { useViewStore } from '@/stores/viewStore';
 import { updatePhase, updateSubphase } from '@/api/endpoints/projects';
 import type { Dependency, Phase, Project, Subphase } from '@/types';
 import { stubConfirm } from '@/test/confirmDialog';
+import { makeUser } from '@/test/factories';
 
 vi.mock('@/api/endpoints/projects', () => ({
   updatePhase: vi.fn().mockResolvedValue({}),
@@ -43,7 +44,7 @@ const positions = new Map([
 ]);
 
 function renderLayer(projects: Project[]) {
-  useAppStore.setState({ projects, currentUser: { id: 1, role: 'admin' } as never });
+  useAppStore.setState({ projects, currentUser: makeUser({ id: 1, role: 'admin' }) });
   return render(<DependencyLayer projects={projects} cells={cells} cellWidth={20} rowPositions={positions} />);
 }
 

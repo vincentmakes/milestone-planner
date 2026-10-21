@@ -23,7 +23,8 @@ import { apiGet, apiPost, apiPut, apiDelete } from '@/api/client';
 import { getEquipment } from '@/api/endpoints/equipment';
 import type { Equipment, Site } from '@/types';
 import { teamIdsWithinSites } from '@/utils/teams';
-import { useManageableSites } from './calendarUtils';
+import { useVisibleSites } from '@/hooks/useVisibleSites';
+import { can } from '@/utils/permissions';
 import { TeamScope } from './TeamScope';
 import { BackIcon, CheckIcon, CloseIcon, EditIcon, GearIcon, PlusIcon } from './PanelIcons';
 import type { SettingsPanelProps } from '../types';
@@ -44,16 +45,16 @@ export function EquipmentPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const currentUser = useAppStore((s) => s.currentUser);
   const currentSite = useAppStore((s) => s.currentSite);
   const setEquipment = useAppStore((s) => s.setEquipment);
-  const manageableSites = useManageableSites();
+  const manageableSites = useVisibleSites();
 
-  const isAdmin = currentUser?.role === 'admin';
-  const canManage = isAdmin || currentUser?.role === 'superuser';
+  const canSeeAllSites = currentUser?.can_see_all_sites ?? false;
+  const canManage = can(currentUser, 'equipment.manage');
   const manageableIds = useMemo(() => manageableSites.map((s) => s.id), [manageableSites]);
 
-  /** Linked sites the user can't manage (always none for admins) */
+  /** Linked sites the user can't see (always none with sites.view_all) */
   const foreignSiteIds = useCallback(
-    (eq: Equipment) => (isAdmin ? [] : equipmentSiteIds(eq).filter((id) => !manageableIds.includes(id))),
-    [isAdmin, manageableIds]
+    (eq: Equipment) => (canSeeAllSites ? [] : equipmentSiteIds(eq).filter((id) => !manageableIds.includes(id))),
+    [canSeeAllSites, manageableIds]
   );
   
   // State

@@ -24,6 +24,7 @@ import {
   movePhasesWithProject,
   resolveDependencyPredecessor,
 } from '@/components/gantt/utils';
+import type { PendingUpdate } from '@/components/gantt/utils';
 import { canEditProjectById, canEditAssignment } from '@/utils/permissions';
 import type { ViewMode, Subphase, Project } from '@/types';
 import { confirmAction } from '@/utils/confirmDialog';
@@ -441,7 +442,7 @@ export function useDragAndDrop() {
       const projectCopy = cloneProject(projects[projectIndex]);
       
       // Collect all pending updates (for children that need to be saved)
-      const childUpdates: { type: 'phase' | 'subphase' | 'project' | 'staffAssignment' | 'equipmentAssignment'; id: number; start_date: string; end_date: string }[] = [];
+      const childUpdates: PendingUpdate[] = [];
       
       if (data.type === 'project') {
         // Dragging project - update project dates and move all phases with it

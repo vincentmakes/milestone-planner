@@ -26,14 +26,19 @@ export type Slice =
   | 'settings'
   /**
    * The signed-in user's own record (role, sites, name) — appStore.currentUser.
-   * An admin editing or disabling this user takes effect without a reload.
+   * An admin editing or disabling this user takes effect without a reload,
+   * and so does a role edit (permissions, approval modes, visible sites).
    */
-  | 'currentUser';
+  | 'currentUser'
+  /** Approval requests (own and to decide) — the My Todos view */
+  | 'approvals'
+  /** The signed-in user's todos — the My Todos view */
+  | 'todos';
 
 export const ALL_SLICES: Slice[] = [
   'projects', 'staff', 'equipment', 'equipmentBlocks', 'vacations',
   'sites', 'skills', 'tags', 'teams', 'absenceTypes', 'siteCalendar', 'customColumns',
-  'settings', 'currentUser',
+  'settings', 'currentUser', 'approvals', 'todos',
 ];
 
 /**
@@ -113,6 +118,19 @@ export function slicesForEntity(entityType: string): Slice[] {
       // the server to its project, tag, equipment and company-event links;
       // like 'site', a rare admin action, so those slices reload too.
       return ['teams', 'staff', 'projects', 'tags', 'equipment', 'siteCalendar'];
+    case 'role':
+      // Roles are tenant configuration; what matters live is the signed-in
+      // user's resolved permissions (/auth/me).
+      return ['currentUser'];
+    case 'approval_policy':
+      // Who may approve changes the approval_required labels and the requests
+      // the user may decide.
+      return ['currentUser', 'approvals'];
+    case 'approval_request':
+      // Approve/reject/cancel flip or remove pending assignment rows.
+      return ['projects', 'approvals'];
+    case 'todo':
+      return ['todos'];
     case 'card_comment':
       // Comment threads and counts have their own fetches. Without this case
       // every comment anyone posts would refetch every slice -- including

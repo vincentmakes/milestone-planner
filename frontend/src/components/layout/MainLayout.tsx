@@ -3,8 +3,13 @@
  * The primary application layout after authentication
  */
 
+import { useEffect } from 'react';
 import { useViewStore } from '@/stores/viewStore';
+import { useAppStore } from '@/stores/appStore';
 import { useKeyboardShortcuts } from '@/hooks';
+import { useAllowedViews } from '@/hooks/useAllowedViews';
+import { useVisibleSites } from '@/hooks/useVisibleSites';
+import { selectSite } from '@/hooks/useDataLoader';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { GanttContainer } from '@/components/gantt';
@@ -15,9 +20,34 @@ import styles from './MainLayout.module.css';
 
 export function MainLayout() {
   const currentView = useViewStore((s) => s.currentView);
+  const setCurrentView = useViewStore((s) => s.setCurrentView);
+  const hasUser = useAppStore((s) => s.currentUser !== null);
+  const sitesLoaded = useAppStore((s) => s.sites.length > 0);
+  const currentSiteId = useAppStore((s) => s.currentSite?.id ?? null);
+  const { visible, disabledReason } = useAllowedViews();
+  const visibleSites = useVisibleSites();
 
   // Enable global keyboard shortcuts
   useKeyboardShortcuts();
+
+  // The persisted view may not be allowed (anymore): a role edit took its
+  // key away, or Cross-site lost its second visible site. Fall back to the
+  // Gantt, which is always available. Cross-site waits for the sites to load,
+  // so the first render before the data load does not drop it.
+  useEffect(() => {
+    if (!hasUser || currentView === 'gantt') return;
+    const listed = visible.includes(currentView);
+    if (!listed || (sitesLoaded && disabledReason[currentView])) setCurrentView('gantt');
+  }, [hasUser, currentView, visible, disabledReason, sitesLoaded, setCurrentView]);
+
+  // A currentUser refresh (change:user / change:role) may take the current
+  // site away: switch to the first visible one, like the site selector would.
+  useEffect(() => {
+    if (currentSiteId === null || visibleSites.length === 0) return;
+    if (visibleSites.some((site) => site.id === currentSiteId)) return;
+    const [first] = [...visibleSites].sort((a, b) => a.id - b.id);
+    void selectSite(first);
+  }, [currentSiteId, visibleSites]);
 
   // Render the appropriate view based on currentView
   const renderView = () => {

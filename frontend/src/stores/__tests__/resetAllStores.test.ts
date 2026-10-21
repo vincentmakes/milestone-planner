@@ -128,10 +128,10 @@ describe('expireSession', () => {
 describe('appStore selectors', () => {
   it('no longer exports the array-allocating selectors (infinite re-render under Zustand 5)', () => {
     const exported = Object.keys(appStoreModule);
-    for (const name of ['selectSiteProjects', 'selectArchivedProjects', 'selectSiteStaff', 'selectSiteEquipment', 'selectIsAdmin']) {
+    for (const name of ['selectSiteProjects', 'selectArchivedProjects', 'selectSiteStaff', 'selectSiteEquipment', 'selectIsAdmin', 'selectCanManageResources']) {
       expect(exported).not.toContain(name);
     }
-    expect(exported).toContain('selectCanManageResources');
+    expect(exported).toContain('selectCanManageOthersAbsences');
     expect(exported).toContain('selectStaffSiteIds');
   });
 });

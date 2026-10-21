@@ -1,29 +1,65 @@
 /**
- * Per-project permission checks.
+ * Permission checks, the one place the frontend decides what a user may do.
  *
- * Mirrors app/services/project_access.py on the backend: a project's manager
- * (project.pm_id === user.id) can do everything a superuser can on that one
- * project except delete it, and anyone may create, change or remove staff
- * assignments that book their own time.
+ * Mirrors app/services/permissions.py (`PermissionSet.can`): a key is held
+ * when the signed-in user's role allows it (`user.permissions`, from
+ * /auth/me — the admin role holds every key), or when it belongs to the
+ * project-manager bundle and the user manages the project (`pm_id`) with
+ * `projects.manage_as_pm`. Own bookings may also run in approval mode
+ * (`user.approval_required`): the server then answers 202 and files a request,
+ * so the client only mirrors the mode for labels.
  *
- * Every per-project gate in the frontend goes through these helpers. Global
- * gates (new project, import, settings, custom-column definitions) stay
- * role-based and read the user's role directly.
+ * Never gate on the role key: roles are editable and custom roles exist.
+ * The per-project wrappers below keep the shapes their call sites use.
  *
  * All helpers are null-safe: a missing user or project means "no".
  */
 
 import type { Project, User } from '@/types';
+import { PM_BUNDLE } from '@/types/permissions';
+import type { ApprovableKey, PermissionKey } from '@/types/permissions';
 
 /** The parts of a project a permission check needs. */
 export type ProjectLike = Pick<Project, 'pm_id'>;
 
 /** The parts of a user a permission check needs. */
-export type UserLike = Pick<User, 'id' | 'role'>;
+export type UserLike = Pick<User, 'id'> & Partial<Pick<User, 'permissions' | 'approval_required'>>;
 
-/** Admins and superusers: every per-project rule starts with them. */
-export function isPrivileged(user: UserLike | null | undefined): boolean {
-  return user?.role === 'admin' || user?.role === 'superuser';
+function holds(user: UserLike | null | undefined, key: PermissionKey): boolean {
+  return Boolean(user?.permissions?.includes(key));
+}
+
+/**
+ * Whether the user may do `key` — on `project` when given, which adds the
+ * project-manager bundle on a project the user manages.
+ */
+export function can(
+  user: UserLike | null | undefined,
+  key: PermissionKey,
+  project?: ProjectLike | null
+): boolean {
+  if (!user) return false;
+  if (holds(user, key)) return true;
+  return (
+    PM_BUNDLE.has(key) &&
+    project?.pm_id !== null &&
+    project?.pm_id !== undefined &&
+    project.pm_id === user.id &&
+    holds(user, 'projects.manage_as_pm')
+  );
+}
+
+/** Whether the user's role holds an own-booking key in approval mode. */
+export function needsApproval(user: UserLike | null | undefined, key: ApprovableKey): boolean {
+  return Boolean(user?.approval_required?.includes(key));
+}
+
+/**
+ * Whether the user may book their own time this way at all: allowed outright,
+ * or in approval mode (the server then files a request).
+ */
+export function canSelf(user: UserLike | null | undefined, key: ApprovableKey): boolean {
+  return can(user, key) || needsApproval(user, key);
 }
 
 /** Whether `staffId` is the user's own id. */
@@ -33,17 +69,15 @@ export function isSelf(user: UserLike | null | undefined, staffId: number | null
 
 /**
  * Whether the user may edit the project itself and everything inside it
- * (phases, subphases, dates, dependencies, completion, assignments, kanban).
- * Deleting the project is NOT covered: that stays with `isPrivileged`.
+ * (phases, subphases, dates, dependencies, completion): `projects.edit_any`,
+ * or managing the project. Deleting the project is NOT covered
+ * (`projects.delete`, never in the manager bundle).
  */
 export function canEditProject(
   user: UserLike | null | undefined,
   project: ProjectLike | null | undefined
 ): boolean {
-  if (!user) return false;
-  if (isPrivileged(user)) return true;
-  if (!project) return false;
-  return project.pm_id !== null && project.pm_id !== undefined && project.pm_id === user.id;
+  return can(user, 'projects.edit_any', project);
 }
 
 /**
@@ -54,22 +88,38 @@ export function canEditProjectById(
   projects: readonly (ProjectLike & { id: number })[],
   projectId: number | null | undefined
 ): boolean {
-  if (!user) return false;
-  if (isPrivileged(user)) return true;
+  if (can(user, 'projects.edit_any')) return true;
   if (projectId === null || projectId === undefined) return false;
   return canEditProject(user, projects.find((p) => p.id === projectId));
 }
 
 /**
  * Whether the user may create, change or remove a staff assignment on the
- * project: project editors may touch anyone's, everyone may touch their own.
+ * project: whoever manages others' bookings there touches anyone's (and their
+ * own, without approval); everyone else only their own, when their role
+ * holds `selfKey` (allow or approval mode).
  */
 export function canEditAssignment(
   user: UserLike | null | undefined,
   project: ProjectLike | null | undefined,
+  staffId: number | null | undefined,
+  selfKey: ApprovableKey = 'assignments.self_update'
+): boolean {
+  if (can(user, 'assignments.manage_others', project)) return true;
+  return isSelf(user, staffId) && canSelf(user, selfKey);
+}
+
+/**
+ * Whether the user may add, edit or delete `staffId`'s absences: anyone's with
+ * `absences.manage_others` (at the visible sites), their own with
+ * `absences.manage_own`.
+ */
+export function canManageAbsencesOf(
+  user: UserLike | null | undefined,
   staffId: number | null | undefined
 ): boolean {
-  return canEditProject(user, project) || isSelf(user, staffId);
+  if (can(user, 'absences.manage_others')) return true;
+  return isSelf(user, staffId) && can(user, 'absences.manage_own');
 }
 
 /**
@@ -81,7 +131,6 @@ export function canManageAnyProject(
   user: UserLike | null | undefined,
   projects: readonly ProjectLike[] | null | undefined
 ): boolean {
-  if (!user) return false;
-  if (isPrivileged(user)) return true;
+  if (can(user, 'projects.edit_any')) return true;
   return (projects ?? []).some((p) => canEditProject(user, p));
 }

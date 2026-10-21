@@ -128,6 +128,16 @@ describe('apiRequest', () => {
       '/api/sites/1',
       '/api/equipment',
       '/api/equipment/6',
+      // RBAC: configuration, private rows, and decisions addressed to a person
+      '/api/roles',
+      '/api/roles/4',
+      '/api/permissions',
+      '/api/approval-policies/assignments.self_create',
+      '/api/todos',
+      '/api/todos/3',
+      '/api/approval-requests/5/approve',
+      '/api/approval-requests/5/reject',
+      '/api/approval-requests/5/cancel',
     ];
     const WRITE_CASES = ['POST', 'PUT', 'DELETE'] as const;
 
@@ -158,6 +168,10 @@ describe('apiRequest', () => {
       '/api/projects/7/equipment',
       '/api/vacations',
       '/api/custom-columns/values',
+      // Own bookings stay plan operations (a 202 on Apply becomes a request)
+      '/api/projects/7/staff',
+      '/api/phases/3/staff',
+      '/api/subphase-staff/9',
     ];
 
     it.each(QUEUED_SIBLINGS.flatMap((url) => WRITE_CASES.map((method) => [method, url] as const)))(
@@ -190,6 +204,8 @@ describe('apiRequest', () => {
       expect(isWhatIfExempt('api/sites/3')).toBe(true);
       expect(isWhatIfExempt('/t/acme/api/sites/3/events')).toBe(false);
       expect(isWhatIfExempt('/api/equipmentx')).toBe(false);
+      expect(isWhatIfExempt('/api/rolesx')).toBe(false);
+      expect(isWhatIfExempt('/api/todos-archive')).toBe(false);
     });
 
     it('sends every write for real outside What-If (PATCH included)', async () => {

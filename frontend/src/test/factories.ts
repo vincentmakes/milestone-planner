@@ -21,6 +21,7 @@ import type {
   User,
   Vacation,
 } from '@/types';
+import { permissionsForRole, roleNameFor } from './permissionFixtures';
 
 export function makeSite(overrides: Partial<Site> = {}): Site {
   return {
@@ -34,7 +35,15 @@ export function makeSite(overrides: Partial<Site> = {}): Site {
   };
 }
 
+/**
+ * A signed-in user. `permissions` (and `role_name`, `can_see_all_sites`) are
+ * derived from `role` unless given: a system role gets its shipped defaults
+ * (test/permissionFixtures.ts), so `makeUser({ role: 'user' })` is a plain
+ * user of a fresh tenant.
+ */
 export function makeUser(overrides: Partial<User> = {}): User {
+  const role = overrides.role ?? 'admin';
+  const permissions = overrides.permissions ?? permissionsForRole(role);
   return {
     id: 1,
     email: 'ada.admin@demo.local',
@@ -42,13 +51,17 @@ export function makeUser(overrides: Partial<User> = {}): User {
     last_name: 'Admin',
     name: 'Ada Admin',
     job_title: 'Lab Manager',
-    role: 'admin',
+    role,
+    role_name: roleNameFor(role),
     max_capacity: 100,
     active: true,
     site_ids: [1],
     skills: [],
     team_ids: [],
+    approval_required: [],
+    can_see_all_sites: permissions.includes('sites.view_all'),
     ...overrides,
+    permissions,
   };
 }
 

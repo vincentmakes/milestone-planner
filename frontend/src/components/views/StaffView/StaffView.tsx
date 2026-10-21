@@ -39,7 +39,7 @@ import {
   selectTeamSiteById,
   selectAbsenceTypesById,
 } from '@/stores/appStore';
-import { canManageAnyProject, isSelf } from '@/utils/permissions';
+import { canManageAbsencesOf, canManageAnyProject, isSelf } from '@/utils/permissions';
 import type { Project, Phase, Subphase, StaffAssignment } from '@/types';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './StaffView.module.css';
@@ -518,12 +518,10 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   }, []);
   
   // Check if user can manage vacation for a staff member
-  const canManageVacation = useCallback((staffId: number) => {
-    if (!currentUser) return false;
-    if (currentUser.role === 'admin' || currentUser.role === 'superuser') return true;
-    // Regular users can manage their own vacations
-    return currentUser.id === staffId;
-  }, [currentUser]);
+  const canManageVacation = useCallback(
+    (staffId: number) => canManageAbsencesOf(currentUser, staffId),
+    [currentUser]
+  );
   
   // Check if user can drag staff to assign: anyone who manages a project may
   // drag anyone, everyone may drag their own row.

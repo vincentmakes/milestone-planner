@@ -15,6 +15,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
+import { can } from '@/utils/permissions';
 import { useDataLoader } from '@/hooks';
 import { ReorderProvider } from '@/contexts/ReorderContext';
 import { CustomColumnModal, CustomColumnsManagerModal } from '@/components/modals';
@@ -72,9 +73,10 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
       triggerRef: visibilityTriggerRef,
     });
     
-    const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
-    // Custom-column definitions are admin-only on the backend (require_admin)
-    const canManageColumns = currentUser?.role === 'admin';
+    const canCreate = can(currentUser, 'projects.create');
+    const canImport = can(currentUser, 'projects.import');
+    // Custom-column definitions (custom_columns.manage on the backend)
+    const canManageColumns = can(currentUser, 'custom_columns.manage');
     
     // Filter columns based on visibility settings
     const visibleColumns = showAllCustomColumns
@@ -243,7 +245,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                   )}
                 </div>
                 
-                {canEdit && (
+                {(canCreate || canImport || canManageColumns) && (
                   <>
                     <span className={styles.headerDivider} aria-hidden="true" data-testid="header-divider" />
                     {/* Actions */}
@@ -263,6 +265,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                           </svg>
                         </button>
                       )}
+                      {canImport && (
                       <button 
                         className={styles.importBtn}
                         onClick={() => setActiveModal('importProject')}
@@ -275,6 +278,8 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                           <line x1="12" y1="3" x2="12" y2="15" />
                         </svg>
                       </button>
+                      )}
+                      {canCreate && (
                       <button 
                         className={styles.newProjectBtn}
                         onClick={() => openProjectModal()}
@@ -287,6 +292,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                         </svg>
                         <span>New</span>
                       </button>
+                      )}
                     </div>
                   </>
                 )}
@@ -317,7 +323,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                 <p className={styles.emptyHint}>
                   {isTagFiltered
                     ? 'Change or clear the tag filter to see more projects'
-                    : canEdit ? 'Click "New" to create a project' : 'No projects available for this site'}
+                    : canCreate ? 'Click "New" to create a project' : 'No projects available for this site'}
                 </p>
               </div>
             ) : (

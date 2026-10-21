@@ -11,7 +11,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { tagFilterKey } from '@/utils/tags';
-import { makeTeam } from '@/test/factories';
+import { makeTeam, makeUser } from '@/test/factories';
 import { assignCard, createComment, deleteComment, getComments, getMentionableUsers, unassignCard } from '@/api/endpoints/kanban';
 import { updateStaffAssignment } from '@/api/endpoints/projects';
 import type { Phase, Project, Subphase } from '@/types';
@@ -106,7 +106,7 @@ function seedStore() {
       { id: 7, name: 'Alice Anderson', site_id: 2, active: true, role: 'Engineer' },
       { id: 4, name: 'Bob Brown', site_id: 1, active: true, role: 'Analyst' },
     ] as never,
-    currentUser: { id: 1, role: 'admin' } as never,
+    currentUser: makeUser({ id: 1, role: 'admin' }),
   });
   useUIStore.getState().openKanbanCardModal('subphase', 10, 1);
 }
@@ -212,7 +212,7 @@ describe('KanbanCardModal @-mentions', () => {
   });
 
   it('excludes the current user, who cannot be notified anyway', () => {
-    useAppStore.setState({ currentUser: { id: 7, role: 'admin' } as never });
+    useAppStore.setState({ currentUser: makeUser({ id: 7, role: 'admin' }) });
     render(<KanbanCardModal />);
     type(composer(), '@');
     expect(mentionOptions().some((o) => o.textContent?.includes('Alice Anderson'))).toBe(false);
@@ -423,7 +423,7 @@ describe('KanbanCardModal @-mentions', () => {
   });
 
   it('shows the allocation as plain text to someone who cannot change it', () => {
-    useAppStore.setState({ currentUser: { id: 5, role: 'user' } as never });
+    useAppStore.setState({ currentUser: makeUser({ id: 5, role: 'user' }) });
     render(<KanbanCardModal />);
     expect(screen.queryByLabelText('Allocation for Bob Brown')).not.toBeInTheDocument();
     expect(screen.getByText('80%')).toBeInTheDocument();
@@ -475,7 +475,7 @@ describe('KanbanCardModal assignee permissions', () => {
   const bobSlider = () => screen.getByLabelText('Allocation for Bob Brown') as HTMLInputElement;
 
   it('offers "Join this card" to a plain user who is not assigned', async () => {
-    useAppStore.setState({ currentUser: { id: 5, role: 'user' } as never });
+    useAppStore.setState({ currentUser: makeUser({ id: 5, role: 'user' }) });
     render(<KanbanCardModal />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Join this card' }));
@@ -486,13 +486,13 @@ describe('KanbanCardModal assignee permissions', () => {
   });
 
   it('does not offer "Join this card" to someone already on the card', () => {
-    useAppStore.setState({ currentUser: { id: 4, role: 'user' } as never });
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'user' }) });
     render(<KanbanCardModal />);
     expect(screen.queryByRole('button', { name: 'Join this card' })).not.toBeInTheDocument();
   });
 
   it('lets a plain user change and remove their own booking only', async () => {
-    useAppStore.setState({ currentUser: { id: 4, role: 'user' } as never });
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'user' }) });
     render(<KanbanCardModal />);
 
     expect(screen.getByLabelText('Remove Bob Brown')).toBeInTheDocument();
@@ -504,8 +504,19 @@ describe('KanbanCardModal assignee permissions', () => {
     await waitFor(() => expect(updateStaffAssignment).toHaveBeenCalledWith(1, { allocation: 40 }, 'subphase'));
   });
 
+  it('moves the card only with kanban.move_assigned when the assignee cannot move any card', () => {
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'viewer', permissions: ['projects.view'] }) });
+    const { unmount } = render(<KanbanCardModal />);
+    expect(screen.getByRole('button', { name: 'Done' })).toBeDisabled();
+    unmount();
+
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'viewer', permissions: ['kanban.move_assigned'] }) });
+    render(<KanbanCardModal />);
+    expect(screen.getByRole('button', { name: 'Done' })).toBeEnabled();
+  });
+
   it('shows a plain user no controls on someone else\'s row', () => {
-    useAppStore.setState({ currentUser: { id: 5, role: 'user' } as never });
+    useAppStore.setState({ currentUser: makeUser({ id: 5, role: 'user' }) });
     render(<KanbanCardModal />);
 
     expect(screen.queryByLabelText('Allocation for Bob Brown')).not.toBeInTheDocument();
@@ -515,7 +526,7 @@ describe('KanbanCardModal assignee permissions', () => {
   it('treats the project manager as an editor', () => {
     const project = seedProject();
     (project as { pm_id?: number }).pm_id = 5;
-    useAppStore.setState({ projects: [project], currentUser: { id: 5, role: 'user' } as never });
+    useAppStore.setState({ projects: [project], currentUser: makeUser({ id: 5, role: 'user' }) });
     render(<KanbanCardModal />);
 
     expect(bobSlider()).toBeInTheDocument();
@@ -647,6 +658,41 @@ describe('KanbanCardModal confirmations', () => {
   });
 });
 
+describe('KanbanCardModal comment moderation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    seedStore();
+  });
+
+  it('offers deleting someone else\'s comment with kanban.moderate_comments only', async () => {
+    vi.mocked(getComments).mockResolvedValue([
+      {
+        id: 35,
+        entity_type: 'subphase',
+        entity_id: 10,
+        project_id: 1,
+        author_id: 1,
+        author_name: 'Ada Admin',
+        body: 'Ready for review',
+        mentioned_user_ids: [],
+        edited: false,
+        created_at: '2026-09-02T10:00:00.000Z',
+        updated_at: '2026-09-02T10:00:00.000Z',
+      },
+    ]);
+    useAppStore.setState({ currentUser: makeUser({ id: 6, role: 'moderator', permissions: ['kanban.moderate_comments'] }) });
+    const { unmount } = render(<KanbanCardModal />);
+    expect(await screen.findByLabelText('Delete comment')).toBeInTheDocument();
+    unmount();
+
+    useAppStore.setState({ currentUser: makeUser({ id: 6, role: 'user' }) });
+    render(<KanbanCardModal />);
+    expect(await screen.findByText('Ready for review')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Delete comment')).not.toBeInTheDocument();
+    vi.mocked(getComments).mockResolvedValue([]);
+  });
+});
+
 describe('KanbanCardModal comments of deleted users', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -671,7 +717,7 @@ describe('KanbanCardModal comments of deleted users', () => {
       },
     ]);
     // A plain user without an id match must not be offered the delete button
-    useAppStore.setState({ currentUser: { id: 4, role: 'user' } as never });
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'user' }) });
     render(<KanbanCardModal />);
 
     expect(await screen.findByText('Deleted user')).toBeInTheDocument();

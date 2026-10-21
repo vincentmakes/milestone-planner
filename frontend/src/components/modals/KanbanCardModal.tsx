@@ -41,7 +41,7 @@ import {
 } from '@/utils/mentions';
 import { MentionText, MentionTextarea } from '@/components/common/MentionTextarea';
 import { formatDateShort, parseDateISO } from '@/utils/date';
-import { isPrivileged as isPrivilegedUser, canEditProject, isSelf } from '@/utils/permissions';
+import { can, canEditAssignment } from '@/utils/permissions';
 import { findSubphaseById } from '@/utils/subphaseUtils';
 import {
   patchStaffAssignmentLocally,
@@ -100,12 +100,15 @@ export function KanbanCardModal() {
     );
   }, [isOpen, cardEntityType, cardEntityId, project]);
 
-  // Admins and superusers; comment moderation stays with them alone.
-  const isPrivileged = isPrivilegedUser(currentUser);
-  // The project's editors (privileged users and its manager) manage assignees.
-  const isEditor = canEditProject(currentUser, project);
+  // Deleting someone else's comment (editing stays with the author).
+  const canModerate = can(currentUser, 'kanban.moderate_comments');
+  // Whoever manages others' bookings on the project (the key, or its manager)
+  // adds and removes assignees; everyone else joins or leaves themself.
+  const isEditor = can(currentUser, 'assignments.manage_others', project);
   const isAssigned = Boolean(currentUser && card?.assigneeIds.includes(currentUser.id));
-  const canMove = isEditor || isAssigned;
+  // Mirrors app/services/card_access.py: any card, or the cards I am on.
+  const canMove =
+    can(currentUser, 'kanban.move_any', project) || (isAssigned && can(currentUser, 'kanban.move_assigned'));
 
   // staff holds one row per user-site pair, so scope to the CARD's site (not
   // currentSite -- the modal opens from the cross-site view too) and dedupe.
@@ -391,7 +394,7 @@ export function KanbanCardModal() {
                 const maxCapacity = capacityById.get(a.staff_id);
                 const over = maxCapacity !== undefined && a.allocation > maxCapacity;
                 // Editors manage every row; everyone manages their own booking.
-                const canEditRow = isEditor || isSelf(currentUser, a.staff_id);
+                const canEditRow = canEditAssignment(currentUser, project, a.staff_id);
                 return (
                   <li key={a.id} className={styles.assignee}>
                     <span className={styles.assigneeName}>
@@ -478,7 +481,7 @@ export function KanbanCardModal() {
                       {new Date(c.created_at).toLocaleString()}
                       {c.edited && ' (edited)'}
                     </span>
-                    {((c.author_id != null && c.author_id === currentUser?.id) || isPrivileged) && (
+                    {((c.author_id != null && c.author_id === currentUser?.id) || canModerate) && (
                       <button
                         type="button"
                         className={styles.removeBtn}

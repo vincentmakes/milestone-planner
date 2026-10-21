@@ -14,7 +14,7 @@
  * `processSubphaseMove` deliberately never call.
  */
 
-import type { Project, Phase, Subphase, Dependency, DependencyType, StaffAssignment, EquipmentAssignment } from '@/types';
+import type { Project, Phase, Subphase, Dependency, DependencyType, StaffAssignment, StaffAssignmentLevel, EquipmentAssignment } from '@/types';
 import { updatePhase, updateSubphase, updateProject, updateStaffAssignment, updateEquipmentAssignment } from '@/api/endpoints/projects';
 import { parseLocalDate, formatLocalDate, toDateOnly } from '@/utils/date';
 
@@ -34,6 +34,11 @@ export interface PendingUpdate {
   // Additional fields for staff assignment update
   allocation?: number;
   /**
+   * Staff assignment only: the route family to PUT (ids are unique per level).
+   * Absent = 'project', the only level whose rows carry dates of their own.
+   */
+  level?: StaffAssignmentLevel;
+  /**
    * Phase/subphase only: the full dependency list to write. Set by undo/redo
    * (diffProjects) when a snapshot's links differ from the current ones, so a
    * link created or removed after the snapshot is restored on the server too.
@@ -47,14 +52,23 @@ export interface PendingUpdate {
 const formatDateLocal = formatLocalDate;
 
 /**
- * Move staff assignments by offset
+ * Move staff assignments by offset.
+ *
+ * Only project-level rows have dates of their own: phase and subphase rows
+ * follow their item, so they are never cascaded (their ids are unique per
+ * level only, and a PUT on the project route would hit another row). Pending
+ * rows are own bookings awaiting approval: they keep their requested dates
+ * (an editor's write on one is refused by the server).
  */
 function moveStaffAssignmentsByOffset(
   assignments: StaffAssignment[],
+  level: StaffAssignmentLevel,
   dayOffset: number,
   pendingUpdates: PendingUpdate[]
 ): void {
+  if (level !== 'project') return;
   for (const assignment of assignments) {
+    if (assignment.approval_status === 'pending') continue;
     // Skip assignments without valid dates
     if (!assignment.start_date || !assignment.end_date) {
       console.warn(`[autoCalculation] Skipping staff assignment ${assignment.id} - missing dates`);
@@ -82,6 +96,7 @@ function moveStaffAssignmentsByOffset(
     pendingUpdates.push({
       type: 'staffAssignment',
       id: assignment.id,
+      level,
       start_date: assignment.start_date,
       end_date: assignment.end_date,
       allocation: assignment.allocation ?? 100, // Backend requires allocation
@@ -161,9 +176,9 @@ export function moveChildrenByOffset(
       end_date: child.end_date,
     });
     
-    // Move staff assignments on this subphase
+    // Staff assignments on this subphase follow it (no dates of their own)
     if (child.staffAssignments?.length) {
-      moveStaffAssignmentsByOffset(child.staffAssignments, dayOffset, pendingUpdates);
+      moveStaffAssignmentsByOffset(child.staffAssignments, 'subphase', dayOffset, pendingUpdates);
     }
     
     // Move equipment assignments on this subphase
@@ -208,9 +223,9 @@ export function movePhasesWithProject(
       end_date: phase.end_date,
     });
     
-    // Move staff assignments on this phase
+    // Staff assignments on this phase follow it (no dates of their own)
     if (phase.staffAssignments?.length) {
-      moveStaffAssignmentsByOffset(phase.staffAssignments, dayOffset, pendingUpdates);
+      moveStaffAssignmentsByOffset(phase.staffAssignments, 'phase', dayOffset, pendingUpdates);
     }
     
     // Move equipment assignments on this phase
@@ -226,7 +241,7 @@ export function movePhasesWithProject(
   
   // Move project-level staff assignments
   if (project.staffAssignments?.length) {
-    moveStaffAssignmentsByOffset(project.staffAssignments, dayOffset, pendingUpdates);
+    moveStaffAssignmentsByOffset(project.staffAssignments, 'project', dayOffset, pendingUpdates);
   }
   
   // Move project-level equipment assignments
@@ -728,11 +743,15 @@ function persistPendingUpdate(update: PendingUpdate): Promise<unknown> {
         confirmed: update.confirmed,
       });
     case 'staffAssignment':
-      return updateStaffAssignment(update.id, {
-        start_date: update.start_date,
-        end_date: update.end_date,
-        allocation: update.allocation ?? 100, // Backend requires allocation
-      });
+      return updateStaffAssignment(
+        update.id,
+        {
+          start_date: update.start_date,
+          end_date: update.end_date,
+          allocation: update.allocation ?? 100, // Backend requires allocation
+        },
+        update.level ?? 'project'
+      );
     case 'equipmentAssignment':
       return updateEquipmentAssignment(update.id, {
         start_date: update.start_date,

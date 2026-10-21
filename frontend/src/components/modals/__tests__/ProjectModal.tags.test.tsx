@@ -9,7 +9,7 @@ import { ProjectModal } from '../ProjectModal';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { updateProject } from '@/api/endpoints/projects';
-import { makeStaff, makeTeam } from '@/test/factories';
+import { makeStaff, makeTeam, makeUser } from '@/test/factories';
 import { useViewStore } from '@/stores/viewStore';
 import { tagFilterKey } from '@/utils/tags';
 import type { Project, Site } from '@/types';
@@ -42,7 +42,7 @@ const project = {
 beforeEach(() => {
   useAppStore.setState({
     currentSite: { id: 1, name: 'Basel' } as Site,
-    currentUser: { id: 1, name: 'Ada Admin', role: 'admin' } as never,
+    currentUser: makeUser({ id: 1, name: 'Ada Admin', role: 'admin' }),
     staff: [],
     projects: [project],
     tags: [],

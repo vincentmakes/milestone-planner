@@ -16,6 +16,7 @@ import { buildICS, downloadICS } from '@/utils/ics';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './StaffView.module.css';
 import { parseLocalDate } from '@/utils/date';
+import { can } from '@/utils/permissions';
 
 interface BankHolidaysRowProps {
   isExpanded: boolean;
@@ -30,7 +31,7 @@ export function BankHolidaysRow({ isExpanded, onToggle }: BankHolidaysRowProps) 
   const setBankHolidays = useAppStore((s) => s.setBankHolidays);
   const openSettings = useUIStore((s) => s.openSettings);
   
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  const canEdit = can(currentUser, 'bank_holidays.manage');
   // Holidays are managed in the Settings hub, which cannot open during
   // What-If (this row also shows in the Gantt's embedded staff overview).
   // Deleting is blocked too: holidays are not in the What-If snapshot, so a

@@ -88,13 +88,17 @@ export function diffProjects(oldProjects: Project[], newProjects: Project[]): Pe
 
     diffPhases(prev.phases ?? [], next.phases ?? [], updates);
 
+    // Project-level rows only (the only staff rows with dates of their own);
+    // a pending row is a request awaiting approval, never re-PUT by undo.
     const oldStaff = new Map((prev.staffAssignments ?? []).map((a) => [a.id, a]));
     for (const a of next.staffAssignments ?? []) {
+      if (a.approval_status === 'pending') continue;
       const o = oldStaff.get(a.id);
       if (o && (o.start_date !== a.start_date || o.end_date !== a.end_date)) {
         updates.push({
           type: 'staffAssignment',
           id: a.id,
+          level: 'project',
           start_date: a.start_date,
           end_date: a.end_date,
           allocation: a.allocation,

@@ -35,6 +35,7 @@ import type { TimelineCell } from '@/components/gantt/utils';
 import type { Staff, Vacation, ViewMode } from '@/types';
 import type { StaffAssignmentWithContext } from './StaffView';
 import styles from './StaffTimelineBody.module.css';
+import { can, canManageAbsencesOf } from '@/utils/permissions';
 
 interface StaffTimelineBodyProps {
   staff: Staff[];
@@ -89,11 +90,7 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
     );
     
     // Check if user can add vacations for a staff member
-    const canManageVacation = (staffId: number) => {
-      if (!currentUser) return false;
-      if (currentUser.role === 'admin' || currentUser.role === 'superuser') return true;
-      return currentUser.id === staffId;
-    };
+    const canManageVacation = (staffId: number) => canManageAbsencesOf(currentUser, staffId);
     
     return (
       <div ref={ref} className={styles.body}>
@@ -599,8 +596,7 @@ interface BankHolidaysTimelineRowProps {
 
 function BankHolidaysTimelineRow({ isExpanded, holidays, cells, cellWidth, viewMode }: BankHolidaysTimelineRowProps) {
   const BASE_HEIGHT = 44;
-  const currentUser = useAppStore((s) => s.currentUser);
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  const canEdit = useAppStore((s) => can(s.currentUser, 'bank_holidays.manage'));
   
   return (
     <div className={styles.bankHolidaysWrapper}>
@@ -657,8 +653,7 @@ interface CompanyEventsTimelineRowProps {
 
 function CompanyEventsTimelineRow({ isExpanded, events, cells, cellWidth, viewMode }: CompanyEventsTimelineRowProps) {
   const BASE_HEIGHT = 44;
-  const currentUser = useAppStore((s) => s.currentUser);
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  const canEdit = useAppStore((s) => can(s.currentUser, 'company_events.manage'));
 
   return (
     <div className={styles.companyEventsWrapper}>

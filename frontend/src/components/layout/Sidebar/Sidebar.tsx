@@ -1,4 +1,5 @@
 import { useAppStore } from '@/stores/appStore';
+import { canOpenSettings } from '@/components/settings/sections';
 import { useViewStore } from '@/stores/viewStore';
 import { Navigation } from './Navigation';
 import { AdminSection } from './AdminSection';
@@ -10,8 +11,8 @@ export function Sidebar() {
   const setSidebarCollapsed = useViewStore((s) => s.setSidebarCollapsed);
   const currentUser = useAppStore((s) => s.currentUser);
 
-  const isAdminOrSuperuser =
-    currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  // Anything to configure: at least one Settings section the user's keys list
+  const showAdmin = canOpenSettings(currentUser);
 
   const toggleCollapsed = () => {
     setSidebarCollapsed(!sidebarCollapsed);
@@ -45,7 +46,7 @@ export function Sidebar() {
           <Navigation collapsed={sidebarCollapsed} />
         </div>
 
-        {isAdminOrSuperuser && (
+        {showAdmin && (
           <div className={styles.section}>
             {!sidebarCollapsed && <div className={styles.sectionTitle}>Admin</div>}
             <AdminSection collapsed={sidebarCollapsed} />

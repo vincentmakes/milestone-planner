@@ -38,7 +38,6 @@ import { DEFAULT_EVENT_COLOR } from '@/utils/colorSwatches';
 import { teamIdsWithinSites } from '@/utils/teams';
 import type { CalendarImportResult, CompanyEvent, Site } from '@/types';
 import {
-  useManageableSites,
   pickDefaultSiteId,
   refreshCurrentSiteEvents,
   formatCalendarDate,
@@ -62,6 +61,7 @@ import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './CalendarPanel.module.css';
+import { useVisibleSites } from '@/hooks/useVisibleSites';
 
 /** Sites an event is linked to (older servers only send site_id) */
 function eventSiteIds(event: CompanyEvent): number[] {
@@ -84,7 +84,7 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
   const currentSite = useAppStore((s) => s.currentSite);
   const sites = useAppStore((s) => s.sites);
   const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
-  const manageableSites = useManageableSites();
+  const manageableSites = useVisibleSites();
 
   const [siteFilter, setSiteFilter] = useState<number | 'all'>(
     () => pickDefaultSiteId(manageableSites, currentSite?.id, settingsIntent?.siteId) ?? 'all'
@@ -108,13 +108,13 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
   const teams = useAppStore((s) => s.teams);
   const teamById = useMemo(() => new Map(teams.map((t) => [t.id, t])), [teams]);
   const manageableIds = useMemo(() => manageableSites.map((s) => s.id), [manageableSites]);
-  const isAdmin = useAppStore((s) => s.currentUser?.role === 'admin');
+  const canSeeAllSites = useAppStore((s) => s.currentUser?.can_see_all_sites ?? false);
 
-  /** Linked sites the user can't manage (always none for admins) */
+  /** Linked sites the user can't see (always none with sites.view_all) */
   const foreignSiteIds = useCallback(
     (event: CompanyEvent) =>
-      isAdmin ? [] : eventSiteIds(event).filter((id) => !manageableIds.includes(id)),
-    [isAdmin, manageableIds]
+      canSeeAllSites ? [] : eventSiteIds(event).filter((id) => !manageableIds.includes(id)),
+    [canSeeAllSites, manageableIds]
   );
 
   // Events of every site the user manages, merged (an event spans sites)

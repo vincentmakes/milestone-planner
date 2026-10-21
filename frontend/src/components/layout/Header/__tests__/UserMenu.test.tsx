@@ -61,6 +61,18 @@ describe('UserMenu dismissal', () => {
   });
 });
 
+describe('UserMenu role', () => {
+  it('shows the role\'s name, not its key', () => {
+    useAppStore.setState({
+      currentUser: { ...useAppStore.getState().currentUser!, role: 'team_lead', role_name: 'Team Lead' },
+    });
+    render(<UserMenu />);
+    fireEvent.click(trigger());
+    expect(screen.getByText('Team Lead')).toBeInTheDocument();
+    expect(screen.queryByText('team_lead')).not.toBeInTheDocument();
+  });
+});
+
 describe('UserMenu version', () => {
   it('does not ask the server until the menu is opened', () => {
     render(<UserMenu />);

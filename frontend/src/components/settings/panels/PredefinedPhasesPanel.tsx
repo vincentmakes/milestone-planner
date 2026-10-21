@@ -16,11 +16,10 @@ import type { PredefinedPhase } from '@/types';
 import { CheckCircleIcon, CircleIcon, PlusIcon, TrashIcon } from './PanelIcons';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './PredefinedPhasesPanel.module.css';
+import { can } from '@/utils/permissions';
 
 export function PredefinedPhasesPanel() {
-  const currentUser = useAppStore((s) => s.currentUser);
-  
-  const canManage = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  const canManage = useAppStore((s) => can(s.currentUser, 'predefined_phases.manage'));
   
   // State
   const [phases, setPhases] = useState<PredefinedPhase[]>([]);

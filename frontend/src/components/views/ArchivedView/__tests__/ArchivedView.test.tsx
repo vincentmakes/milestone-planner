@@ -11,7 +11,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useViewStore } from '@/stores/viewStore';
 import { tagFilterKey } from '@/utils/tags';
-import { makeTeam } from '@/test/factories';
+import { makeTeam, makeUser } from '@/test/factories';
 import { buildEventDateSet } from '@/api';
 import { formatDateISO } from '@/utils/date';
 import type { CompanyEvent, Project } from '@/types';
@@ -40,7 +40,7 @@ function seed(user: { id: number; role: 'admin' | 'superuser' | 'user' }) {
   useAppStore.setState({
     projects: [archived],
     currentSite: { id: 1, name: 'Basel' } as never,
-    currentUser: { name: 'Someone', ...user } as never,
+    currentUser: makeUser({ name: 'Someone', ...user }),
   });
 }
 
@@ -88,7 +88,7 @@ describe('ArchivedView team filter', () => {
       ],
       teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
       currentSite: { id: 1, name: 'Basel' } as never,
-      currentUser: { id: 1, name: 'Someone', role: 'admin' } as never,
+      currentUser: makeUser({ id: 1, name: 'Someone', role: 'admin' }),
     });
     useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
     render(<ArchivedView />);

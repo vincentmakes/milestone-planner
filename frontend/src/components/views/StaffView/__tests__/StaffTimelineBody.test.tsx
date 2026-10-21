@@ -13,7 +13,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { tagFilterKey } from '@/utils/tags';
 import type { Staff, Vacation } from '@/types';
-import { makeTeam } from '@/test/factories';
+import { makeTeam, makeUser } from '@/test/factories';
 
 const bob: Staff = { id: 4, name: 'Bob Brown', site_id: 1, active: true };
 
@@ -45,7 +45,7 @@ function renderBody() {
 }
 
 function seedUser(user: { id: number; role: 'admin' | 'superuser' | 'user' }) {
-  useAppStore.setState({ currentUser: { name: 'Someone', ...user } as never });
+  useAppStore.setState({ currentUser: makeUser({ name: 'Someone', ...user }) });
 }
 
 const vacationBar = () => screen.getByTestId('staff-bar-vacation-21');

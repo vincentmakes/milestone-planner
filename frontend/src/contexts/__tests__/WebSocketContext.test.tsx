@@ -63,6 +63,7 @@ import { fetchCurrentUser } from '@/api/endpoints/auth';
 import { getStaff } from '@/api/endpoints/staff';
 import { tagsApi, tagGroupsApi } from '@/api/endpoints/tags';
 import type { Tag, TagGroup, User } from '@/types';
+import { makeUser } from '@/test/factories';
 
 function change(entity_type: string): ChangePayload {
   return { user_id: 2, user_name: 'Bob', entity_type, entity_id: 1, project_id: 0 } as ChangePayload;
@@ -242,8 +243,8 @@ describe('WebSocketProvider refresh runner', () => {
   });
 
   it('refreshes the signed-in user on change:user', async () => {
-    vi.mocked(fetchCurrentUser).mockResolvedValue({ id: 5, role: 'superuser' } as User);
-    useAppStore.setState({ isAuthenticated: true, currentUser: { id: 5, role: 'admin' } as User });
+    vi.mocked(fetchCurrentUser).mockResolvedValue(makeUser({ id: 5, role: 'superuser' }));
+    useAppStore.setState({ isAuthenticated: true, currentUser: makeUser({ id: 5, role: 'admin' }) });
     await receive('user');
     expect(useAppStore.getState().currentUser?.role).toBe('superuser');
     expect(loadAllProjects).toHaveBeenCalledTimes(1);

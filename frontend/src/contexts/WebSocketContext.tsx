@@ -13,6 +13,7 @@ import type { AppNotification } from '@/types';
 import { loadAllProjects } from '@/api/endpoints/projects';
 import { getStaff } from '@/api/endpoints/staff';
 import { getEquipment, getEquipmentBlocks } from '@/api/endpoints/equipment';
+import { loadGated } from '@/hooks/useDataLoader';
 import { getVacations } from '@/api/endpoints/vacations';
 import {
   getSites,
@@ -127,11 +128,20 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
         case 'staff':
           tasks.push(getStaff(true).then(setStaff).catch((e) => console.error('[WS] staff refresh failed', e)));
           break;
+        // View-gated (views.equipment): empty without the key or on a 403
         case 'equipment':
-          tasks.push(getEquipment(true).then(setEquipment).catch((e) => console.error('[WS] equipment refresh failed', e)));
+          tasks.push(
+            loadGated('views.equipment', () => getEquipment(true))
+              .then(setEquipment)
+              .catch((e) => console.error('[WS] equipment refresh failed', e))
+          );
           break;
         case 'equipmentBlocks':
-          tasks.push(getEquipmentBlocks().then(setEquipmentBlocks).catch((e) => console.error('[WS] equipment blocks refresh failed', e)));
+          tasks.push(
+            loadGated('views.equipment', () => getEquipmentBlocks())
+              .then(setEquipmentBlocks)
+              .catch((e) => console.error('[WS] equipment blocks refresh failed', e))
+          );
           break;
         case 'vacations':
           tasks.push(getVacations().then(setVacations).catch((e) => console.error('[WS] vacations refresh failed', e)));
@@ -199,6 +209,11 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
         }
         case 'settings':
           tasks.push(getInstanceSettings().then(setInstanceSettings).catch((e) => console.error('[WS] settings refresh failed', e)));
+          break;
+        case 'approvals':
+        case 'todos':
+          // No client store holds approval requests or todos yet; the My Todos
+          // view (todoStore) plugs its refresh in here.
           break;
         case 'currentUser':
           tasks.push(

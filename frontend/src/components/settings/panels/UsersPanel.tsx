@@ -37,9 +37,12 @@ import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './UsersPanel.module.css';
+import { can } from '@/utils/permissions';
+import { ADMIN_ROLE_KEY } from '@/types/permissions';
 
-// Role display configuration
-const ROLE_CONFIG: Record<UserRole, { label: string; color: string }> = {
+// Badge colours of the system roles; a custom role gets a neutral badge
+// with its name (role_name).
+const ROLE_CONFIG: Record<string, { label: string; color: string }> = {
   admin: { label: 'Admin', color: '#ef4444' },
   superuser: { label: 'SuperUser', color: '#f97316' },
   user: { label: 'User', color: '#3b82f6' },
@@ -69,9 +72,8 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const filterRef = useRef<HTMLDivElement>(null);
   
   // Permission checks
-  const isAdmin = currentUser?.role === 'admin';
-  const isSuperUser = currentUser?.role === 'superuser';
-  const canManageUsers = isAdmin || isSuperUser;
+  const canManageSkills = can(currentUser, 'skills.manage');
+  const canCreateUsers = can(currentUser, 'users.create');
   
   // Load users when modal opens
   const loadUsers = useCallback(async () => {
@@ -168,8 +170,10 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
     return names.length > 0 ? names.join(', ') : '—';
   };
   
-  // Superusers cannot edit admin accounts (backend 403)
-  const canEditUser = (user: User) => isAdmin || (isSuperUser && user.role !== 'admin');
+  // users.edit, and users.edit_admins for an administrator account (else 403)
+  const canEditUser = (user: User) =>
+    can(currentUser, 'users.edit') &&
+    (user.role !== ADMIN_ROLE_KEY || can(currentUser, 'users.edit_admins'));
   const handleEdit = (user: User) => { setEditingUser(user); setIsCreating(false); };
   const handleCreate = () => { setEditingUser(null); setIsCreating(true); };
   const handleCloseForm = () => { setEditingUser(null); setIsCreating(false); };
@@ -274,12 +278,14 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
               </>
             }
             right={
-              canManageUsers && (
+              (canManageSkills || canCreateUsers) && (
                 <>
-                  <Button variant="secondary" icon={<GearIcon />} onClick={() => openSettings('skills')}>
-                    Manage Skills
-                  </Button>
-                  {isAdmin && (
+                  {canManageSkills && (
+                    <Button variant="secondary" icon={<GearIcon />} onClick={() => openSettings('skills')}>
+                      Manage Skills
+                    </Button>
+                  )}
+                  {canCreateUsers && (
                     <Button icon={<PlusIcon />} onClick={handleCreate}>
                       Add User
                     </Button>
@@ -326,8 +332,15 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                         {user.job_title || <span className={styles.noValue}>—</span>}
                       </td>
                       <td>
-                        <span className={styles.roleBadge} style={{ backgroundColor: `${ROLE_CONFIG[user.role].color}20`, color: ROLE_CONFIG[user.role].color }}>
-                          {ROLE_CONFIG[user.role].label}
+                        <span
+                          className={styles.roleBadge}
+                          style={
+                            ROLE_CONFIG[user.role]
+                              ? { backgroundColor: `${ROLE_CONFIG[user.role].color}20`, color: ROLE_CONFIG[user.role].color }
+                              : undefined
+                          }
+                        >
+                          {ROLE_CONFIG[user.role]?.label ?? user.role_name ?? user.role}
                         </span>
                       </td>
                       <td>
@@ -538,8 +551,6 @@ function sameIds(a: number[], b: number[]): boolean {
 function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSave, onDelete, onCancel, onDirtyChange }: UserFormProps) {
 
   const isEditing = !!user;
-  const isAdmin = currentUser?.role === 'admin';
-  const isSuperUser = currentUser?.role === 'superuser';
   
   const [firstName, setFirstName] = useState(user?.first_name || '');
   const [lastName, setLastName] = useState(user?.last_name || '');
@@ -584,20 +595,26 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
       !sameIds(selectedSkillIds, user?.skills?.map((s) => s.id) || [])
   );
   
-  // Role, active status and deletion are admin-only on the backend (a
-  // superuser sending role/active gets a 403), so superusers can't touch them.
-  const canAssignAdmin = isAdmin;
-  const canAssignSuperUser = isAdmin || isSuperUser;
-  // An admin cannot change their own role or delete their own account either
+  // Role, active status and deletion each need their key on the backend
+  // (users.change_role, users.toggle_active, users.delete; a request without
+  // it gets a 403). The administrator role can only be given by an
+  // administrator (roles.manage is locked to that role); the server also
+  // refuses roles holding keys the editor lacks.
+  const canAssignAdmin = can(currentUser, 'roles.manage');
+  const mayChangeRoles = can(currentUser, 'users.change_role');
+  // Nobody changes their own role or deletes/deactivates their own account
   // (the backend answers 400), so those controls are disabled on their own row.
   const isOwnAccount = isEditing && !!user && !!currentUser && user.id === currentUser.id;
-  const canChangeRole = isAdmin && !isOwnAccount;
-  const canDelete = isAdmin;
-  const canToggleActive = isEditing && isAdmin && !isOwnAccount;
-  // Email and password of other people are admin-only on the backend; a
-  // superuser keeps them for their own account only.
+  const canChangeRole = mayChangeRoles && !isOwnAccount;
+  const canDelete = can(currentUser, 'users.delete');
+  const canToggleActive = isEditing && can(currentUser, 'users.toggle_active') && !isOwnAccount;
+  // Other people's email and password need users.edit_credentials; everyone
+  // keeps them for their own account.
   const isSelfEdit = isOwnAccount;
-  const canEditCredentials = !isEditing || isAdmin || isSelfEdit;
+  const canEditCredentials = !isEditing || can(currentUser, 'users.edit_credentials') || isSelfEdit;
+  // With sites.view_all the picker shows every site, so sending its state
+  // never drops a link the editor cannot see.
+  const canSeeAllSites = currentUser?.can_see_all_sites ?? false;
   
   const toggleSite = (siteId: number) => {
     setSitesTouched(true);
@@ -685,15 +702,13 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
           data.email = email.trim();
           if (password) data.password = password;
         }
-        // Superusers send site_ids only when they used the picker, so an
-        // unrelated edit never touches site links they cannot see.
-        if (isAdmin || sitesTouched) {
+        // Without sites.view_all, site_ids go only when the picker was used,
+        // so an unrelated edit never touches site links the editor cannot see.
+        if (canSeeAllSites || sitesTouched) {
           data.site_ids = buildSiteIdsPayload();
         }
-        if (canChangeRole) {
-          data.role = role;
-          data.active = active;
-        }
+        if (canChangeRole) data.role = role;
+        if (canToggleActive) data.active = active;
         await updateUser(user.id, data);
       } else {
         const data: CreateUserRequest = {
@@ -806,7 +821,7 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
           id="role"
           options={[
             { value: 'user', label: 'User' },
-            { value: 'superuser', label: 'SuperUser', disabled: !canAssignSuperUser },
+            { value: 'superuser', label: 'SuperUser' },
             { value: 'admin', label: canAssignAdmin ? 'Admin' : 'Admin (admin only)', disabled: !canAssignAdmin },
           ]}
           value={role}
@@ -815,9 +830,9 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
           hint={
             canChangeRole
               ? undefined
-              : isAdmin
+              : mayChangeRoles
                 ? "You can't change your own role"
-                : 'Only admins can change roles'
+                : 'Your role cannot change roles'
           }
         />
         {isEditing && (
@@ -830,7 +845,7 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
               disabled={!canToggleActive}
               label="Active"
             />
-            {!canToggleActive && <span className={styles.hint}>{!isAdmin ? 'Only admins can enable or disable users' : user?.id === currentUser?.id ? "Can't disable yourself" : 'Insufficient permissions'}</span>}
+            {!canToggleActive && <span className={styles.hint}>{!can(currentUser, 'users.toggle_active') ? 'Your role cannot enable or disable users' : user?.id === currentUser?.id ? "Can't disable yourself" : 'Insufficient permissions'}</span>}
           </div>
         )}
       </div>

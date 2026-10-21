@@ -1,6 +1,7 @@
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
+import { canOpenSettings } from '@/components/settings/sections';
 import styles from './AdminSection.module.css';
 
 interface AdminSectionProps {
@@ -10,7 +11,7 @@ interface AdminSectionProps {
 /**
  * Sidebar admin entry: one "Settings" item opening the Settings hub, where
  * users, sites, calendars, equipment, phases and SSO are managed. The hub
- * lists only the sections the user's role may open.
+ * lists only the sections the user's permissions open.
  */
 export function AdminSection({ collapsed = false }: AdminSectionProps) {
   const openSettings = useUIStore((s) => s.openSettings);
@@ -20,8 +21,7 @@ export function AdminSection({ collapsed = false }: AdminSectionProps) {
   // showing the orphaned plan data.
   const { blocked, reason } = useWhatIfBlocked();
 
-  const canOpenSettings = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
-  if (!canOpenSettings) return null;
+  if (!canOpenSettings(currentUser)) return null;
 
   return (
     <div className={`${styles.section} ${collapsed ? styles.collapsed : ''}`}>

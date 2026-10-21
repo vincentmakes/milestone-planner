@@ -26,6 +26,7 @@ import { TagPicker } from './TagPicker';
 import styles from './ProjectModal.module.css';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { TeamChecklist } from '@/components/common/TeamChecklist';
+import { can } from '@/utils/permissions';
 
 // Local interface for predefined phases from API
 interface PredefinedPhaseFromAPI {
@@ -324,9 +325,12 @@ export function ProjectModal() {
     }
   };
   
+  // Exporting a project needs projects.export (never in the manager bundle)
+  const canExport = useAppStore((s) => can(s.currentUser, 'projects.export'));
+
   const footer = (
     <div className={styles.footer}>
-      {isEditing && (
+      {isEditing && canExport && (
         <div className={styles.exportButtons}>
           <Button 
             variant="secondary" 

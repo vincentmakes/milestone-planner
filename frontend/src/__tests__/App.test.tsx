@@ -6,7 +6,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import type { User } from '@/types';
 
 vi.mock('@/components/layout/MainLayout', () => ({ MainLayout: () => <div>main-layout</div> }));
 vi.mock('@/components/modals', () => ({ ModalContainer: () => null }));
@@ -49,6 +48,7 @@ vi.mock('@/api', () => ({
 import App from '../App';
 import { useAppStore } from '@/stores/appStore';
 import { confirmAction } from '@/utils/confirmDialog';
+import { makeUser } from '@/test/factories';
 
 function setPath(path: string) {
   window.history.replaceState({}, '', path);
@@ -57,7 +57,7 @@ function setPath(path: string) {
 describe('App', () => {
   beforeEach(() => {
     useAppStore.getState().reset();
-    api.checkAuth.mockReset().mockResolvedValue({ user: { id: 1, role: 'admin' } as User });
+    api.checkAuth.mockReset().mockResolvedValue({ user: makeUser({ id: 1, role: 'admin' }) });
     api.getSites.mockReset().mockResolvedValue([]);
     vi.spyOn(console, 'error').mockImplementation(() => {});
   });

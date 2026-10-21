@@ -173,7 +173,16 @@ describe('useDragAndDrop: whole project', () => {
 
     expect([phaseOf(10).start_date, phaseOf(10).end_date]).toEqual(['2026-03-04', '2026-03-08']);
     expect(phaseOf(10).children[0].children[0].start_date).toBe('2026-03-05');
-    expect(phaseOf(10).staffAssignments[0].start_date).toBe('2026-03-04');
+    // Project-level bookings move on their own route; a phase row follows its
+    // phase (no dates of its own) and is never PUT on the project route.
+    expect(useAppStore.getState().projects[0].staffAssignments[0].start_date).toBe('2026-03-04');
+    expect(updateStaffAssignment).toHaveBeenCalledWith(
+      50,
+      { start_date: '2026-03-04', end_date: '2026-03-08', allocation: 40 },
+      'project'
+    );
+    expect(updateStaffAssignment).not.toHaveBeenCalledWith(70, expect.anything(), expect.anything());
+    expect(phaseOf(10).staffAssignments[0].start_date).toBe('2026-03-02');
     expect(updatePhase).toHaveBeenCalledWith(11, expect.objectContaining({ start_date: '2026-03-11' }));
     expect(updateSubphase).toHaveBeenCalledWith(21, expect.objectContaining({ start_date: '2026-03-05' }));
     expect(useUndoStore.getState().canUndo).toBe(true);

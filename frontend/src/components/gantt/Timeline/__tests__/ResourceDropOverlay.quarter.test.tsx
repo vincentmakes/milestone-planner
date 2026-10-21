@@ -15,6 +15,7 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { createStaffAssignment } from '@/api/endpoints/projects';
 import { generateTimelineCells, calculateBarPosition } from '../../utils';
 import type { Project, ViewMode } from '@/types';
+import { makeUser } from '@/test/factories';
 
 vi.mock('@/api/endpoints/projects', () => ({
   createStaffAssignment: vi.fn().mockResolvedValue({}),
@@ -71,7 +72,7 @@ beforeEach(() => {
   useAppStore.setState({
     projects: [project],
     staff: [{ id: 7, name: 'Alice Anderson', site_id: 1, active: true, max_capacity: 80 }] as never,
-    currentUser: { id: 1, name: 'Ada Admin', role: 'admin' } as never,
+    currentUser: makeUser({ id: 1, name: 'Ada Admin', role: 'admin' }),
   });
   act(() => useUIStore.getState().startResourceDrag('staff', 7, 'Alice Anderson'));
 });

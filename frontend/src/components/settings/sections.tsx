@@ -1,13 +1,16 @@
 /**
  * Settings hub section registry
  *
- * One entry per section, grouped in the hub's left-hand list. `minRole` mirrors
- * what the backend allows, so a section is only listed for users whose writes
- * it would accept. Panels are lazy-loaded with the section.
+ * One entry per section, grouped in the hub's left-hand list. `permission`
+ * names the key(s) the backend checks on the section's writes, so a section
+ * is only listed for users whose writes it would accept. Panels are
+ * lazy-loaded with the section.
  */
 
 import { lazy } from 'react';
-import type { UserRole } from '@/types';
+import { can } from '@/utils/permissions';
+import type { UserLike } from '@/utils/permissions';
+import type { PermissionKey } from '@/types/permissions';
 import type { SettingsSection, SettingsSectionId } from './types';
 
 const GeneralPanel = lazy(() =>
@@ -65,9 +68,9 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: 'General',
     id: 'general',
     label: 'General',
-    // Superusers get the per-browser appearance only; the panel renders the
-    // instance-wide settings (PUT /settings is admin-only) for admins.
-    minRole: 'superuser',
+    // Listed for everyone who opens the hub: the per-browser appearance; the
+    // panel adds the instance-wide settings with settings.general.
+    permission: null,
     description: 'Appearance in this browser; admins also set the instance title, branding and display defaults.',
     Panel: GeneralPanel,
     icon: (
@@ -81,7 +84,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: 'Sites & calendar',
     id: 'sites',
     label: 'Sites',
-    minRole: 'admin',
+    // Export-only holders get the list with the export control alone.
+    permission: ['sites.manage', 'sites.export'],
     description: 'Locations, their country and region, and data export.',
     Panel: SitesPanel,
     icon: (
@@ -95,8 +99,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: 'Sites & calendar',
     id: 'teams',
     label: 'Teams',
-    // Superusers manage the teams of their own sites (the panel's site list).
-    minRole: 'superuser',
+    // Teams of the visible sites (the panel's site list).
+    permission: 'teams.manage',
     description: 'Groups of people within a site: filter the views and scope tags, events and equipment to them.',
     Panel: TeamsPanel,
     icon: (
@@ -112,7 +116,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: 'Sites & calendar',
     id: 'bank-holidays',
     label: 'Bank holidays',
-    minRole: 'superuser',
+    permission: 'bank_holidays.manage',
     description: 'Public holidays per site. They are non-working days in every plan.',
     Panel: BankHolidaysPanel,
     icon: (
@@ -128,7 +132,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: 'Sites & calendar',
     id: 'company-events',
     label: 'Company events',
-    minRole: 'superuser',
+    permission: 'company_events.manage',
     description: 'Audits, shutdowns and meetings shown on the timeline of one or more sites.',
     Panel: CompanyEventsPanel,
     icon: (
@@ -142,7 +146,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: 'People',
     id: 'users',
     label: 'Users',
-    minRole: 'superuser',
+    permission: 'users.view',
     description: 'Accounts, roles, sites and skills of everyone in this workspace.',
     Panel: UsersPanel,
     icon: (
@@ -158,7 +162,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: 'People',
     id: 'skills',
     label: 'Skills',
-    minRole: 'superuser',
+    permission: 'skills.manage',
     description: 'Skills that can be assigned to staff and used to filter them.',
     Panel: SkillsPanel,
     icon: (
@@ -171,7 +175,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: 'People',
     id: 'absence-types',
     label: 'Absence types',
-    minRole: 'admin',
+    permission: 'absence_types.manage',
     description: 'Categories of time off, shared by all sites.',
     Panel: AbsenceTypesPanel,
     icon: (
@@ -184,7 +188,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: 'Resources',
     id: 'equipment',
     label: 'Equipment',
-    minRole: 'superuser',
+    permission: 'equipment.manage',
     description: 'Lab equipment per site.',
     Panel: EquipmentPanel,
     icon: (
@@ -198,7 +202,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: 'Resources',
     id: 'equipment-types',
     label: 'Equipment types',
-    minRole: 'superuser',
+    permission: 'equipment_types.manage',
     description: 'Equipment types, shared across all sites.',
     Panel: EquipmentTypesPanel,
     icon: (
@@ -212,7 +216,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: 'Projects',
     id: 'predefined-phases',
     label: 'Predefined phases',
-    minRole: 'superuser',
+    permission: 'predefined_phases.manage',
     description: 'Phase names offered as quick-add options when creating projects.',
     Panel: PredefinedPhasesPanel,
     icon: (
@@ -230,7 +234,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: 'Projects',
     id: 'tags',
     label: 'Tags',
-    minRole: 'admin',
+    permission: 'tags.manage',
     description: 'Project tags and their groups, for all sites or only some.',
     Panel: TagsPanel,
     icon: (
@@ -246,7 +250,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: 'Integrations',
     id: 'sso',
     label: 'SSO',
-    minRole: 'admin',
+    permission: 'settings.sso',
     description: 'Microsoft Entra single sign-on for this workspace.',
     Panel: SSOPanel,
     icon: (
@@ -258,17 +262,26 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
 ];
 
-const ROLE_RANK: Record<UserRole, number> = { user: 0, superuser: 1, admin: 2 };
-
-/** Whether a user with `role` may open a section that requires `minRole`. */
-export function roleMeets(role: UserRole | undefined | null, minRole: UserRole): boolean {
-  if (!role) return false;
-  return ROLE_RANK[role] >= ROLE_RANK[minRole];
+/** Whether `user` holds one of the keys that list `section` (null = always). */
+function sectionListed(section: SettingsSection, user: UserLike | null | undefined): boolean {
+  if (section.permission === null) return true;
+  const keys: readonly PermissionKey[] =
+    typeof section.permission === 'string' ? [section.permission] : section.permission;
+  return keys.some((key) => can(user, key));
 }
 
-/** Sections the given role may open, in registry order. */
-export function getVisibleSections(role: UserRole | undefined | null): SettingsSection[] {
-  return SETTINGS_SECTIONS.filter((section) => roleMeets(role, section.minRole));
+/**
+ * Whether the user has anything to configure: at least one section gated by a
+ * key they hold. General alone (appearance) does not open the hub.
+ */
+export function canOpenSettings(user: UserLike | null | undefined): boolean {
+  return SETTINGS_SECTIONS.some((section) => section.permission !== null && sectionListed(section, user));
+}
+
+/** Sections the user may open, in registry order; none without a gated one. */
+export function getVisibleSections(user: UserLike | null | undefined): SettingsSection[] {
+  if (!canOpenSettings(user)) return [];
+  return SETTINGS_SECTIONS.filter((section) => sectionListed(section, user));
 }
 
 /** Visible sections grouped by `group`, keeping registry order. */

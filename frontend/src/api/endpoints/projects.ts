@@ -445,6 +445,7 @@ function transformStaffAssignment(assignment: Record<string, unknown>): StaffAss
     allocation: (assignment.allocation ?? assignment.allocation_percent ?? 100) as number,
     start_date: assignment.start_date as string,
     end_date: assignment.end_date as string,
+    approval_status: assignment.approval_status as StaffAssignment['approval_status'],
   };
 }
 

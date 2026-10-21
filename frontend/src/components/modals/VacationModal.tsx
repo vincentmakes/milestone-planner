@@ -11,7 +11,7 @@ import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { Select } from '@/components/common/Select';
 import { useUIStore } from '@/stores/uiStore';
-import { useAppStore, selectCanManageResources } from '@/stores/appStore';
+import { useAppStore, selectCanManageOthersAbsences } from '@/stores/appStore';
 import { 
   createVacation, 
   updateVacation, 
@@ -108,7 +108,7 @@ export function VacationModal() {
   const currentUser = useAppStore((s) => s.currentUser);
   const absenceTypes = useAppStore((s) => s.absenceTypes);
   const setVacations = useAppStore((s) => s.setVacations);
-  const canManageResources = useAppStore(selectCanManageResources);
+  const canManageResources = useAppStore(selectCanManageOthersAbsences);
   
   const isOpen = activeModal === 'vacation';
   const isEditing = !!editingVacation;

@@ -218,7 +218,15 @@ export interface StaffAssignment {
   allocation: number;
   start_date: string;
   end_date: string;
+  /**
+   * 'pending' = an own booking awaiting approval (a real row, excluded from
+   * capacity until approved); absent on older servers = approved.
+   */
+  approval_status?: 'approved' | 'pending';
 }
+
+/** The route family of a staff assignment: ids are unique per level only. */
+export type StaffAssignmentLevel = 'project' | 'phase' | 'subphase';
 
 export interface EquipmentAssignment {
   id: number;
@@ -242,7 +250,10 @@ export interface User {
   last_name: string;
   name: string; // Computed: first_name + last_name
   job_title?: string;  // Job role/title
-  role: UserRole;  // System role (admin/superuser/user)
+  /** The role's key (system roles admin/superuser/user, or a custom role) */
+  role: UserRole;
+  /** The role's display name */
+  role_name?: string;
   max_capacity?: number;  // Max work capacity % (e.g., 80 for part-time), defaults to 100
   active: boolean;
   site_ids: number[];
@@ -251,9 +262,24 @@ export interface User {
   team_ids?: number[];
   /** Names of team_ids, same order */
   team_names?: string[];
+  /**
+   * The signed-in user only (/auth/me), absent on user-list rows: the keys the
+   * role allows outright (the admin role: every key). Gate with
+   * `can()` / `useHasPermission()` from utils/permissions and hooks/useCan,
+   * never with the role key.
+   */
+  permissions?: string[];
+  /** The signed-in user only: own-booking keys the role holds in approval mode */
+  approval_required?: string[];
+  /** The signed-in user only: `sites.view_all` (every active site is visible) */
+  can_see_all_sites?: boolean;
 }
 
-export type UserRole = 'admin' | 'superuser' | 'user';
+/** A role key: one of SYSTEM_ROLE_KEYS or a custom role's key */
+export type UserRole = string;
+
+/** The system roles, never deletable; `admin` always holds every permission. */
+export const SYSTEM_ROLE_KEYS = ['admin', 'superuser', 'user'] as const;
 
 export interface AuthResponse {
   user: User;

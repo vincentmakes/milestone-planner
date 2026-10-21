@@ -17,7 +17,7 @@ import { stubConfirm } from '@/test/confirmDialog';
 import type { Project } from '@/types';
 import { useViewStore } from '@/stores/viewStore';
 import { tagFilterKey } from '@/utils/tags';
-import { makeTeam } from '@/test/factories';
+import { makeTeam, makeUser } from '@/test/factories';
 
 vi.mock('@/api/endpoints/projects', () => ({
   createStaffAssignment: vi.fn().mockResolvedValue({}),
@@ -51,7 +51,7 @@ function seed(user: { id: number; role: 'admin' | 'superuser' | 'user'; name?: s
       { id: 7, name: 'Alice Anderson', site_id: 1, active: true, max_capacity: 60 },
       { id: 4, name: 'Bob Brown', site_id: 1, active: true },
     ] as never,
-    currentUser: { name: 'Someone', ...user } as never,
+    currentUser: makeUser({ name: 'Someone', ...user }),
   });
 }
 

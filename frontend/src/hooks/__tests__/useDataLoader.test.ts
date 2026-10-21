@@ -6,7 +6,8 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useDataLoader } from '../useDataLoader';
+import { selectSite, useDataLoader } from '../useDataLoader';
+import { ApiError } from '@/api/client';
 import { resetAllStores, useAppStore, useCustomColumnStore } from '@/stores';
 import * as api from '@/api';
 import {
@@ -17,6 +18,7 @@ import {
   makeStaff,
   makeTag,
   makeTeam,
+  makeUser,
   makeVacation,
 } from '@/test/factories';
 
@@ -76,7 +78,7 @@ function happyPath() {
 beforeEach(() => {
   resetAllStores();
   vi.clearAllMocks();
-  useAppStore.setState({ _persistedSiteId: null });
+  useAppStore.setState({ _persistedSiteId: null, currentUser: makeUser() });
   happyPath();
 });
 
@@ -121,6 +123,42 @@ describe('useDataLoader.loadAllData', () => {
     useAppStore.setState({ _persistedSiteId: 42 });
     await act(() => result.current.loadAllData());
     expect(useAppStore.getState().currentSite?.id).toBe(1);
+  });
+
+  it('opens a site the user can see, never a persisted one outside', async () => {
+    useAppStore.setState({ _persistedSiteId: 1, currentUser: makeUser({ role: 'superuser', site_ids: [3] }) });
+    const { result } = renderHook(() => useDataLoader());
+    await act(() => result.current.loadAllData());
+    expect(useAppStore.getState().currentSite?.id).toBe(3);
+    expect(m.getBankHolidays).toHaveBeenCalledWith(3);
+  });
+
+  it('does not ask for equipment without views.equipment', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ role: 'viewer', permissions: ['projects.view'], can_see_all_sites: true }),
+      equipment: [makeEquipment()],
+    });
+    const { result } = renderHook(() => useDataLoader());
+    await act(() => result.current.loadAllData());
+    expect(result.current.error).toBeNull();
+    expect(m.getEquipment).not.toHaveBeenCalled();
+    expect(m.getEquipmentBlocks).not.toHaveBeenCalled();
+    expect(useAppStore.getState().equipment).toEqual([]);
+    expect(useAppStore.getState().equipmentBlocks).toEqual([]);
+  });
+
+  it('treats a 403 on equipment as an empty slice, other failures as a load error', async () => {
+    m.getEquipment.mockRejectedValue(new ApiError('Permission required: views.equipment', 403));
+    const { result } = renderHook(() => useDataLoader());
+    await act(() => result.current.loadAllData());
+    expect(result.current.error).toBeNull();
+    expect(useAppStore.getState().equipment).toEqual([]);
+
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    m.getEquipment.mockRejectedValue(new ApiError('Server error', 500));
+    await act(() => result.current.loadAllData());
+    expect(result.current.error).toBe('Server error');
+    err.mockRestore();
   });
 
   it('tolerates optional endpoints failing', async () => {
@@ -199,6 +237,17 @@ describe('useDataLoader refreshers', () => {
     expect(s.teams).toEqual([makeTeam()]);
   });
 
+  it('empties the equipment blocks without views.equipment, without a request', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ role: 'viewer', permissions: ['projects.view'] }),
+      equipmentBlocks: [{ id: 1 } as never],
+    });
+    const { result } = renderHook(() => useDataLoader());
+    await act(() => result.current.refreshEquipmentBlocks());
+    expect(m.getEquipmentBlocks).not.toHaveBeenCalled();
+    expect(useAppStore.getState().equipmentBlocks).toEqual([]);
+  });
+
   it('log and keep the current data when a refresh fails', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     useAppStore.setState({
@@ -228,6 +277,37 @@ describe('useDataLoader refreshers', () => {
     expect(useAppStore.getState().staff.map((p) => p.id)).toEqual([9]);
     expect(useAppStore.getState().teams.map((t) => t.id)).toEqual([9]);
     expect(err).toHaveBeenCalledTimes(7);
+    err.mockRestore();
+  });
+});
+
+describe('selectSite', () => {
+  it('switches site, clears the column filters and loads the site\'s calendar and columns', async () => {
+    useCustomColumnStore.setState({ customColumnFilters: { 1: ['High'] } });
+    const { result } = renderHook(() => useDataLoader());
+    expect(result.current.selectSite).toBe(selectSite);
+
+    await act(() => selectSite(sites[0]));
+
+    const s = useAppStore.getState();
+    expect(s.currentSite?.id).toBe(3);
+    expect(useCustomColumnStore.getState().customColumnFilters).toEqual({});
+    expect(m.getBankHolidays).toHaveBeenCalledWith(3);
+    expect(m.getCompanyEvents).toHaveBeenCalledWith(3);
+    expect(s.bankHolidayDates.has('2026-08-01')).toBe(true);
+    expect(m.getCustomColumnsWithValues).toHaveBeenCalledWith(3);
+    expect(useCustomColumnStore.getState().customColumnValues).toEqual({ '1-project-1': 'High' });
+  });
+
+  it('keeps going when one of the reloads fails', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    m.getBankHolidays.mockRejectedValue(new Error('h'));
+    m.getCompanyEvents.mockRejectedValue(new Error('e'));
+    m.getCustomColumnsWithValues.mockRejectedValue(new Error('c'));
+    await act(() => selectSite(sites[1]));
+    expect(useAppStore.getState().currentSite?.id).toBe(1);
+    expect(err).toHaveBeenCalledTimes(3);
+    expect(err).toHaveBeenCalledWith('[DataLoader] Failed to load custom columns:', expect.any(Error));
     err.mockRestore();
   });
 });

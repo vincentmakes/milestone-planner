@@ -26,6 +26,7 @@ import {
 } from '@/utils/storage';
 import type { SettingsPanelProps } from '../types';
 import styles from './GeneralPanel.module.css';
+import { can } from '@/utils/permissions';
 
 interface SettingsData {
   instance_title: string;
@@ -60,14 +61,14 @@ const WEEK_START_OPTIONS = [
 ];
 
 export function GeneralPanel({ onDirtyChange }: SettingsPanelProps) {
-  const isAdmin = useAppStore((s) => s.currentUser?.role === 'admin');
+  const canEditInstance = useAppStore((s) => can(s.currentUser, 'settings.general'));
 
-  if (!isAdmin) {
+  if (!canEditInstance) {
     return (
       <div className={styles.container}>
         <AppearanceSection />
         <p className={styles.hint}>
-          Instance-wide settings (title, branding, display defaults) are managed by admins.
+          Instance-wide settings (title, branding, display defaults) are managed by administrators.
         </p>
       </div>
     );

@@ -13,6 +13,7 @@ import type { CurrentView } from '@/types';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { resetAllStores } from '@/stores';
 import type { HeaderDensity } from '@/hooks/useHeaderDensity';
+import { makeUser } from '@/test/factories';
 
 vi.mock('@/api/endpoints/settings', () => ({
   getSetting: vi.fn().mockResolvedValue({ value: null }),
@@ -39,7 +40,7 @@ const overflowTrigger = () => screen.queryByRole('button', { name: 'More control
 
 beforeEach(() => {
   resetAllStores();
-  useAppStore.setState({ currentUser: { id: 1, role: 'admin' } as never });
+  useAppStore.setState({ currentUser: makeUser({ id: 1, role: 'admin' }) });
   useViewStore.setState({ currentView: 'gantt' });
 });
 
@@ -85,8 +86,14 @@ describe('Header What-If toggle', () => {
   });
 
   it('never offers the toggle to a plain user', () => {
-    useAppStore.setState({ currentUser: { id: 2, role: 'user' } as never });
+    useAppStore.setState({ currentUser: makeUser({ id: 2, role: 'user' }) });
     render(<Header />);
     expect(whatIfButton()).not.toBeInTheDocument();
+  });
+
+  it('offers the toggle to any role holding whatif.use', () => {
+    useAppStore.setState({ currentUser: makeUser({ id: 3, role: 'planner', permissions: ['projects.view', 'whatif.use'] }) });
+    render(<Header />);
+    expect(whatIfButton()).toBeInTheDocument();
   });
 });

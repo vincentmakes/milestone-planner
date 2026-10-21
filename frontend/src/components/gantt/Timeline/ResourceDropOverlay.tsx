@@ -96,10 +96,11 @@ export function ResourceDropOverlay({
   );
 
   // Whether the dragged resource may land on this project: equipment follows
-  // the project's editors, a person may also be dropped by themselves.
+  // the project's editors, a person may also be dropped by themselves when
+  // their role may book itself (assignments.self_create, allow or approval).
   const canDropOn = useCallback((project: Project): boolean => {
     if (resourceDrag.type === 'staff') {
-      return canEditAssignment(currentUser, project, resourceDrag.resourceId);
+      return canEditAssignment(currentUser, project, resourceDrag.resourceId, 'assignments.self_create');
     }
     return canEditProject(currentUser, project);
   }, [currentUser, resourceDrag.type, resourceDrag.resourceId]);

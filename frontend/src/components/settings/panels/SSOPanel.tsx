@@ -14,6 +14,7 @@ import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { useAppStore } from '@/stores/appStore';
 import { apiGet, apiPut } from '@/api/client';
 import styles from './SSOPanel.module.css';
+import { can } from '@/utils/permissions';
 
 interface SSOFullConfig {
   // enabled / auto_create_users arrive as the integer columns (0 | 1)
@@ -29,9 +30,7 @@ interface SSOFullConfig {
 }
 
 export function SSOPanel() {
-  const currentUser = useAppStore((s) => s.currentUser);
-  
-  const isAdmin = currentUser?.role === 'admin';
+  const canConfigure = useAppStore((s) => can(s.currentUser, 'settings.sso'));
   
   // Form state
   const [enabled, setEnabled] = useState(false);
@@ -82,10 +81,10 @@ export function SSOPanel() {
   
   // Load config when the panel opens
   useEffect(() => {
-    if (isAdmin) {
+    if (canConfigure) {
       loadConfig();
     }
-  }, [isAdmin, loadConfig]);
+  }, [canConfigure, loadConfig]);
   
   const handleSave = async () => {
     setError(null);
@@ -130,8 +129,8 @@ export function SSOPanel() {
     }
   };
   
-  // Non-admin users can't access this panel
-  if (!isAdmin) {
+  // Without settings.sso there is nothing to show (the section is not listed)
+  if (!canConfigure) {
     return null;
   }
   

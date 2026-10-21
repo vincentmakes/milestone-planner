@@ -3,8 +3,8 @@
  *
  * The teams of one site: pick the site in the toolbar, add a team inline, edit
  * it (name, description, colour, active, members) in TeamForm, or delete it.
- * Admins manage every site; superusers only the sites they belong to
- * (useManageableSites), matching the backend.
+ * Every visible site (useVisibleSites: all with sites.view_all, else the
+ * user's own), matching the backend.
  */
 
 import { useState } from 'react';
@@ -23,7 +23,8 @@ import type { Team } from '@/types';
 import { PanelToolbar } from '../PanelToolbar';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
-import { pickDefaultSiteId, useManageableSites } from './calendarUtils';
+import { pickDefaultSiteId } from './calendarUtils';
+import { useVisibleSites } from '@/hooks/useVisibleSites';
 import { EditIcon, PlusIcon, TrashIcon } from './PanelIcons';
 import { TeamForm } from './TeamForm';
 import styles from './TeamsPanel.module.css';
@@ -33,7 +34,7 @@ const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ?
 export function TeamsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const teams = useAppStore((s) => s.teams);
   const currentSite = useAppStore((s) => s.currentSite);
-  const manageable = useManageableSites();
+  const manageable = useVisibleSites();
   const { refreshTeams, refreshStaff } = useDataLoader();
 
   // The picked site while it stays manageable, else the default one.

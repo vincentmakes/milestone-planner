@@ -15,7 +15,9 @@ import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { stubConfirm } from '@/test/confirmDialog';
 import type { SettingsPanelProps } from '../types';
-import type { User, UserRole } from '@/types';
+import type { UserRole } from '@/types';
+import { makeUser } from '@/test/factories';
+import { canOpenSettings, getVisibleSections } from '../sections';
 
 // Panels talk to the API; the hub only needs something to render.
 vi.mock('../panels/GeneralPanel', () => ({
@@ -57,9 +59,10 @@ const ALL_SECTIONS = [
   'Predefined phases',
   'SSO',
 ];
-// General is open to superusers (per-browser appearance only; the panel keeps
-// the instance-wide settings for admins).
-const ADMIN_ONLY = ['Sites', 'Absence types', 'SSO'];
+// Keys only admins hold by default. General is listed for everyone who opens
+// the hub (per-browser appearance; the panel keeps the instance-wide settings
+// for settings.general), and superusers see Sites for its export control.
+const ADMIN_ONLY = ['Absence types', 'SSO'];
 
 /** The hub as mounted in the app, next to the global keyboard shortcuts */
 function HubWithShortcuts() {
@@ -67,18 +70,8 @@ function HubWithShortcuts() {
   return <SettingsHub />;
 }
 
-function setRole(role: UserRole) {
-  const user: User = {
-    id: 1,
-    email: 'someone@example.com',
-    first_name: 'Some',
-    last_name: 'One',
-    name: 'Some One',
-    role,
-    active: true,
-    site_ids: [1],
-  };
-  useAppStore.setState({ currentUser: user });
+function setRole(role: UserRole, permissions?: string[]) {
+  useAppStore.setState({ currentUser: makeUser({ role, ...(permissions ? { permissions } : {}) }) });
 }
 
 const navButton = (name: string) => screen.queryByRole('button', { name });
@@ -120,6 +113,20 @@ describe('SettingsHub', () => {
       expect(navButton(label)).toBeInTheDocument();
     }
     // First visible section (General: appearance) is shown
+    expect(await screen.findByText('General panel')).toBeInTheDocument();
+  });
+
+  it('lists the sections of a custom role\'s keys, General first', async () => {
+    setRole('team_lead', ['projects.view', 'teams.manage', 'sites.export']);
+    act(() => useUIStore.getState().openSettings());
+    render(<SettingsHub />);
+
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(
+      expect.arrayContaining(['General', 'Sites', 'Teams'])
+    );
+    for (const label of ['Users', 'Bank holidays', 'Skills', 'Equipment', 'SSO']) {
+      expect(navButton(label)).not.toBeInTheDocument();
+    }
     expect(await screen.findByText('General panel')).toBeInTheDocument();
   });
 
@@ -308,5 +315,24 @@ describe('SettingsHub', () => {
       fireEvent.keyDown(document, { key: 'Escape' });
     });
     expect(useUIStore.getState().activeModal).toBeNull();
+  });
+});
+
+describe('canOpenSettings / getVisibleSections', () => {
+  it('opens only with a key that lists a section other than General', () => {
+    expect(canOpenSettings(makeUser({ role: 'admin' }))).toBe(true);
+    expect(canOpenSettings(makeUser({ role: 'superuser' }))).toBe(true);
+    expect(canOpenSettings(makeUser({ role: 'user' }))).toBe(false);
+    expect(canOpenSettings(makeUser({ role: 'x', permissions: ['settings.sso'] }))).toBe(true);
+    expect(canOpenSettings(null)).toBe(false);
+    expect(getVisibleSections(makeUser({ role: 'user' }))).toEqual([]);
+  });
+
+  it('lists Sites with either sites.manage or sites.export', () => {
+    const ids = (permissions: string[]) =>
+      getVisibleSections(makeUser({ role: 'x', permissions })).map((s) => s.id);
+    expect(ids(['sites.manage'])).toEqual(['general', 'sites']);
+    expect(ids(['sites.export'])).toEqual(['general', 'sites']);
+    expect(ids(['settings.sso', 'tags.manage'])).toEqual(['general', 'tags', 'sso']);
   });
 });

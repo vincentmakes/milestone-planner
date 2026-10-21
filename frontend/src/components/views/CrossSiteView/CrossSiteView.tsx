@@ -21,7 +21,8 @@ export function CrossSiteView() {
   const timelineBodyRef = useRef<HTMLDivElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
 
-  const sites = useAppStore((s) => s.sites);
+  // The sites this user may see (the server scopes the projects the same way)
+  const sites = useVisibleSites();
   const projects = useAppStore((s) => s.projects);
   const currentSite = useAppStore((s) => s.currentSite);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
@@ -205,6 +206,7 @@ export function CrossSiteView() {
 
 // Types
 import type { Site, Project } from '@/types';
+import { useVisibleSites } from '@/hooks/useVisibleSites';
 
 interface CrossSiteSiteRow {
   type: 'site';

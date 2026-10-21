@@ -6,9 +6,14 @@ import { apiGet, apiPost } from '../client';
 import type { User, AuthResponse } from '@/types';
 
 /**
- * Transform user from API camelCase to frontend snake_case
+ * Transform user from API camelCase to frontend snake_case.
+ *
+ * The permission fields are the role's resolved matrix (see
+ * utils/permissions). A server that sends none grants nothing: the client
+ * never infers permissions from the role key.
  */
 function transformUser(apiUser: Record<string, unknown>): User {
+  const role = apiUser.role as User['role'];
   return {
     id: apiUser.id as number,
     email: apiUser.email as string,
@@ -16,11 +21,15 @@ function transformUser(apiUser: Record<string, unknown>): User {
     last_name: apiUser.lastName as string,
     name: apiUser.name as string,
     job_title: apiUser.jobTitle as string | undefined,
-    role: apiUser.role as User['role'],
+    role,
+    role_name: (apiUser.roleName ?? role) as string,
     max_capacity: (apiUser.maxCapacity ?? apiUser.max_capacity ?? 100) as number,
     active: true,
     site_ids: (apiUser.siteIds || []) as number[],
     skills: (apiUser.skills || []) as User['skills'],
+    permissions: (apiUser.permissions ?? []) as string[],
+    approval_required: (apiUser.approvalRequired ?? []) as string[],
+    can_see_all_sites: Boolean(apiUser.canSeeAllSites),
   };
 }
 

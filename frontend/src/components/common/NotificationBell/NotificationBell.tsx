@@ -29,6 +29,7 @@ import { cardKey } from '@/utils/kanbanCards';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import type { AppNotification } from '@/types';
 import styles from './NotificationBell.module.css';
+import { useHasPermission } from '@/hooks/useCan';
 
 const TYPE_ICONS: Record<string, string> = {
   assigned: 'M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M8.5 7a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
@@ -82,6 +83,9 @@ export function NotificationBell() {
   // What-If is Gantt-only and the card opens on the Kanban board, so card
   // links are blocked while the sandbox is active (other rows stay usable).
   const whatIf = useWhatIfBlocked();
+  // Card links open the Kanban board, which needs views.kanban (its reads
+  // answer 403 without it): the notification is still marked read.
+  const canOpenCards = useHasPermission('views.kanban');
 
   const refresh = useCallback(async () => {
     if (!currentUser) return;
@@ -119,7 +123,7 @@ export function NotificationBell() {
 
   const handleOpen = async (n: AppNotification) => {
     if (opensCard(n) && whatIf.blocked) return;
-    if (n.project_id && n.entity_type && n.entity_id) {
+    if (canOpenCards && n.project_id && n.entity_type && n.entity_id) {
       setKanbanProjectId(n.project_id);
       setCurrentView('kanban');
       openKanbanCard(n.entity_type, n.entity_id, n.project_id);

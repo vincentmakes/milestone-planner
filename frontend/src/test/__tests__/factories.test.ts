@@ -60,4 +60,25 @@ describe('test factories', () => {
     expect(makeEquipment({ type: 'HPLC' }).type).toBe('HPLC');
     expect(makeStaff({ max_capacity: 80 }).max_capacity).toBe(80);
   });
+
+  it('makeUser derives the role\'s default permissions unless given', () => {
+    const admin = makeUser();
+    expect(admin.permissions).toContain('roles.manage');
+    expect(admin).toMatchObject({ role_name: 'Admin', can_see_all_sites: true, approval_required: [] });
+
+    const superuser = makeUser({ role: 'superuser' });
+    expect(superuser.permissions).toEqual(expect.arrayContaining(['projects.delete', 'whatif.use']));
+    expect(superuser.permissions).not.toContain('sites.manage');
+    expect(superuser).toMatchObject({ role_name: 'Superuser', can_see_all_sites: false });
+
+    const user = makeUser({ role: 'user' });
+    expect(user.permissions).toEqual(expect.arrayContaining(['projects.manage_as_pm', 'views.kanban']));
+    expect(user.permissions).not.toContain('projects.edit_any');
+
+    expect(makeUser({ role: 'team_lead' })).toMatchObject({ role_name: 'team_lead', permissions: [] });
+    expect(makeUser({ role: 'user', permissions: ['sites.view_all'] })).toMatchObject({
+      permissions: ['sites.view_all'],
+      can_see_all_sites: true,
+    });
+  });
 });

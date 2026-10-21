@@ -14,7 +14,7 @@ export {
   selectStaffTeamIds,
   selectTeamSiteById,
   selectAbsenceTypesById,
-  selectCanManageResources,
+  selectCanManageOthersAbsences,
 } from './appStore';
 export { useUIStore } from './uiStore';
 export { useUndoStore } from './undoStore';

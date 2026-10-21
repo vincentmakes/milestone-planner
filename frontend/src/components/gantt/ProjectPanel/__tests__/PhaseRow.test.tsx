@@ -15,6 +15,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useAppStore } from '@/stores/appStore';
 import type { Phase, Project } from '@/types';
+import { makeUser } from '@/test/factories';
 
 // The completion slider imports these; nothing here exercises them.
 vi.mock('@/api', () => ({
@@ -119,7 +120,7 @@ describe('PhaseRow permissions', () => {
   } as unknown as Project;
 
   function seed(user: { id: number; role: 'admin' | 'superuser' | 'user' }) {
-    useAppStore.setState({ projects: [project], currentUser: user as never });
+    useAppStore.setState({ projects: [project], currentUser: makeUser(user) });
   }
 
   it('lets the project manager reorder and open the phase', () => {

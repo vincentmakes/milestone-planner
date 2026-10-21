@@ -79,7 +79,7 @@ export function UserMenu() {
           <div className={styles.userInfo}>
             <span className={styles.name}>{currentUser.name}</span>
             <span className={styles.email}>{currentUser.email}</span>
-            <span className={styles.role}>{currentUser.role}</span>
+            <span className={styles.role}>{currentUser.role_name ?? currentUser.role}</span>
           </div>
           <div className={styles.divider} />
           <button

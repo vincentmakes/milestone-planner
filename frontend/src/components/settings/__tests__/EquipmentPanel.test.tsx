@@ -14,6 +14,7 @@ import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { stubConfirm } from '@/test/confirmDialog';
 import type { Equipment, Site, User } from '@/types';
 import { makeTeam } from '@/test/factories';
+import { asSignedIn } from '@/test/permissionFixtures';
 
 const apiGet = vi.fn();
 const apiPost = vi.fn();
@@ -68,7 +69,7 @@ describe('EquipmentPanel', () => {
     apiPut.mockReset().mockResolvedValue({});
     apiDelete.mockReset().mockResolvedValue(undefined);
     getEquipment.mockReset().mockResolvedValue(perSiteRows);
-    useAppStore.setState({ sites, currentUser: admin, currentSite: sites[0], equipment: [], teams: [] });
+    useAppStore.setState({ sites, currentUser: asSignedIn(admin), currentSite: sites[0], equipment: [], teams: [] });
   });
 
   it('lists every site of an item in the Sites column', async () => {
@@ -82,7 +83,7 @@ describe('EquipmentPanel', () => {
     // A superuser's store only holds their own sites
     useAppStore.setState({
       sites: [sites[0]],
-      currentUser: { ...admin, role: 'superuser', site_ids: [1] },
+      currentUser: asSignedIn({ ...admin, role: 'superuser', site_ids: [1] }),
     });
     render(<EquipmentPanel />);
     await screen.findByText('Reactor');
@@ -266,7 +267,7 @@ describe('EquipmentPanel', () => {
   });
 
   it('lets a superuser edit only equipment on their own sites', async () => {
-    useAppStore.setState({ currentUser: { ...admin, role: 'superuser', site_ids: [1] } });
+    useAppStore.setState({ currentUser: asSignedIn({ ...admin, role: 'superuser', site_ids: [1] }) });
     render(<EquipmentPanel />);
     await screen.findByText('Reactor');
 
@@ -321,7 +322,7 @@ describe('EquipmentPanel during What-If', () => {
     apiGet.mockReset().mockResolvedValue(allEquipment);
     apiDelete.mockReset().mockResolvedValue(undefined);
     getEquipment.mockReset().mockResolvedValue(perSiteRows);
-    useAppStore.setState({ sites, currentUser: admin, currentSite: sites[0], equipment: [] });
+    useAppStore.setState({ sites, currentUser: asSignedIn(admin), currentSite: sites[0], equipment: [] });
   });
 
   afterEach(async () => {

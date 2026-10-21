@@ -25,6 +25,7 @@ import {
   updateStaffAssignment,
 } from '@/api/endpoints/projects';
 import type { Phase, Project, Subphase } from '@/types';
+import { makeUser } from '@/test/factories';
 
 vi.mock('@/api/endpoints/projects', () => ({
   createPhase: vi.fn().mockResolvedValue({}),
@@ -98,7 +99,7 @@ beforeEach(() => {
     projects: [structuredClone(project)],
     currentSite: { id: 1, name: 'Basel' } as never,
     staff: [{ id: 4, name: 'Bob Brown', site_id: 1, active: true, max_capacity: 100 }] as never,
-    currentUser: { id: 1, name: 'Ada Admin', role: 'admin' } as never,
+    currentUser: makeUser({ id: 1, name: 'Ada Admin', role: 'admin' }),
   });
   useWhatIfStore.setState({ whatIfMode: true });
 });

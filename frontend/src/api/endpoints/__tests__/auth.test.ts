@@ -23,6 +23,10 @@ const apiUser = {
   maxCapacity: 80,
   siteIds: [1, 2],
   skills: [{ id: 1, name: 'HPLC' }],
+  roleName: 'Superuser',
+  permissions: ['projects.view', 'whatif.use'],
+  approvalRequired: ['assignments.self_create'],
+  canSeeAllSites: false,
 };
 
 beforeEach(() => {
@@ -42,10 +46,14 @@ describe('auth endpoints', () => {
         name: 'Bob Brown',
         job_title: 'Scientist',
         role: 'superuser',
+        role_name: 'Superuser',
         max_capacity: 80,
         active: true,
         site_ids: [1, 2],
         skills: [{ id: 1, name: 'HPLC' }],
+        permissions: ['projects.view', 'whatif.use'],
+        approval_required: ['assignments.self_create'],
+        can_see_all_sites: false,
       },
     });
     expect(get).toHaveBeenCalledWith('/api/auth/me');
@@ -66,6 +74,19 @@ describe('auth endpoints', () => {
     expect((await fetchCurrentUser())?.max_capacity).toBe(100);
     get.mockResolvedValueOnce({ user: null });
     await expect(fetchCurrentUser()).resolves.toBeNull();
+  });
+
+  it('defaults the permission fields for a server that sends none', async () => {
+    get.mockResolvedValueOnce({ user: { id: 3, role: 'user', canSeeAllSites: true } });
+    expect(await fetchCurrentUser()).toMatchObject({
+      role: 'user',
+      role_name: 'user',
+      permissions: [],
+      approval_required: [],
+      can_see_all_sites: true,
+    });
+    get.mockResolvedValueOnce({ user: { id: 4, role: 'admin' } });
+    expect(await fetchCurrentUser()).toMatchObject({ permissions: [], can_see_all_sites: false });
   });
 
   it('fetchCurrentUser propagates errors (unlike checkAuth)', async () => {

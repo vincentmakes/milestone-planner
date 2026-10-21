@@ -171,6 +171,20 @@ describe('NotificationBell', () => {
     expect(useNotificationStore.getState().items[0].read_at).toBeTruthy();
   });
 
+  it('marks a card notification read without opening the board when views.kanban is missing', async () => {
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'viewer', permissions: ['projects.view'] }) });
+    vi.mocked(getNotifications).mockResolvedValue([note()]);
+    vi.mocked(getUnreadCount).mockResolvedValue(1);
+    await renderBell();
+    fireEvent.click(bell());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Bob commented/ }));
+    });
+    expect(useViewStore.getState().currentView).toBe('gantt');
+    expect(useUIStore.getState().activeModal).not.toBe('kanbanCard');
+    expect(markNotificationRead).toHaveBeenCalledWith(1);
+  });
+
   it('refreshes when marking read fails, and skips already-read items', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.mocked(getNotifications).mockResolvedValue([note(), note({ id: 2, title: 'Old', read_at: minutesAgo(1), project_id: null })]);

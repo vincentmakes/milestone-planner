@@ -12,6 +12,7 @@ import { CustomColumnHeader } from '../CustomColumns/CustomColumnHeader';
 import { useAppStore } from '@/stores/appStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import type { CustomColumn, UserRole } from '@/types';
+import { makeUser } from '@/test/factories';
 
 const updateCustomColumn = vi.fn();
 vi.mock('@/api', () => ({
@@ -39,7 +40,7 @@ const column: CustomColumn = {
 
 function seedUser(role: UserRole) {
   useAppStore.setState({
-    currentUser: { id: 1, name: 'Someone', role } as never,
+    currentUser: makeUser({ id: 1, name: 'Someone', role }),
     currentSite: { id: 1, name: 'Basel' } as never,
   });
 }
@@ -61,6 +62,37 @@ describe('ProjectPanel "Manage Custom Columns"', () => {
     render(<ProjectPanel projects={[]} width={320} />);
     expect(screen.queryByTitle('Manage Custom Columns')).not.toBeInTheDocument();
     expect(screen.getByTitle('New Project')).toBeInTheDocument();
+  });
+});
+
+describe('ProjectPanel header actions by key', () => {
+  function seedKeys(permissions: string[]) {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 1, role: 'planner', permissions }),
+      currentSite: { id: 1, name: 'Basel' } as never,
+    });
+  }
+
+  it('offers Import alone with projects.import, New alone with projects.create', () => {
+    seedKeys(['projects.view', 'projects.import']);
+    const { unmount } = render(<ProjectPanel projects={[]} width={320} />);
+    expect(screen.getByRole('button', { name: 'Import project' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New project' })).not.toBeInTheDocument();
+    expect(screen.getByText('No projects available for this site')).toBeInTheDocument();
+    unmount();
+
+    seedKeys(['projects.view', 'projects.create']);
+    render(<ProjectPanel projects={[]} width={320} />);
+    expect(screen.queryByRole('button', { name: 'Import project' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New project' })).toBeInTheDocument();
+    expect(screen.getByText('Click "New" to create a project')).toBeInTheDocument();
+  });
+
+  it('offers Manage Custom Columns to any role holding custom_columns.manage', () => {
+    seedKeys(['projects.view', 'custom_columns.manage']);
+    render(<ProjectPanel projects={[]} width={320} />);
+    expect(screen.getByTitle('Manage Custom Columns')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New project' })).not.toBeInTheDocument();
   });
 });
 

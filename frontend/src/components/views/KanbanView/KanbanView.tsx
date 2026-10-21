@@ -21,7 +21,7 @@ import {
   type KanbanCard as KanbanCardData,
 } from '@/utils/kanbanCards';
 import { orderSiteProjects } from '@/utils/storage';
-import { canEditProjectById } from '@/utils/permissions';
+import { can } from '@/utils/permissions';
 import { useTagFilteredProjects } from '@/hooks/useTagFilter';
 import { useTeamFilteredProjects } from '@/hooks/useTeamFilter';
 import { KanbanDragProvider, useKanbanDrag } from '@/contexts/KanbanDragContext';
@@ -175,13 +175,11 @@ export function KanbanView() {
   const openKanbanCard = useUIStore((s) => s.openKanbanCardModal);
 
   // Mirror the server gate (app/services/card_access.py) so a card the server
-  // would reject with 403 is not draggable in the first place: the project's
-  // editors (admin, superuser, its manager) and the card's assignees.
+  // would reject with 403 is not draggable in the first place: kanban.move_any
+  // (or managing the project), or kanban.move_assigned on the card's assignees.
   const canMoveCard = (card: KanbanCardData) =>
-    Boolean(
-      canEditProjectById(currentUser, projects, card.projectId) ||
-        (currentUser && card.assigneeIds.includes(currentUser.id))
-    );
+    can(currentUser, 'kanban.move_any', projects.find((p) => p.id === card.projectId)) ||
+    Boolean(currentUser && card.assigneeIds.includes(currentUser.id) && can(currentUser, 'kanban.move_assigned'));
 
   const handleOpenCard = (card: KanbanCardData) => {
     openKanbanCard(card.entityType, card.entityId, card.projectId);

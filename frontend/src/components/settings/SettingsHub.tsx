@@ -4,7 +4,7 @@
  * One "Settings" window for everything admins and superusers configure: a
  * grouped section list on the left, the active section's panel on the right.
  * Sections come from SETTINGS_SECTIONS and are filtered by the current user's
- * role. The active section lives in uiStore (openSettings / legacy modal keys).
+ * permissions. The active section lives in uiStore (openSettings / legacy modal keys).
  *
  * A panel with unsaved changes reports it through onDirtyChange; the hub then
  * asks before switching section or closing.
@@ -28,13 +28,13 @@ export function SettingsHub() {
   const settingsSection = useUIStore((s) => s.settingsSection);
   const setSettingsSection = useUIStore((s) => s.setSettingsSection);
   const closeModal = useUIStore((s) => s.closeModal);
-  const role = useAppStore((s) => s.currentUser?.role);
+  const currentUser = useAppStore((s) => s.currentUser);
 
   const isOpen = activeModal === 'settingsHub';
 
-  const visibleSections = useMemo(() => getVisibleSections(role), [role]);
+  const visibleSections = useMemo(() => getVisibleSections(currentUser), [currentUser]);
   const groups = useMemo(() => groupSections(visibleSections), [visibleSections]);
-  // A section the role may not open (or none yet) falls back to the first one
+  // A section the user may not open (or none yet) falls back to the first one
   const active = visibleSections.find((s) => s.id === settingsSection) ?? visibleSections[0];
 
   const dirtyRef = useRef(false);
@@ -75,7 +75,7 @@ export function SettingsHub() {
     closeModal();
   }, [closeModal]);
 
-  // Plain users have no section to open
+  // Nothing to configure (canOpenSettings): no hub
   if (!isOpen || !active) return null;
 
   const ActivePanel = active.Panel;

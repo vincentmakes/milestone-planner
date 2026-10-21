@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
 import {
   selectAbsenceTypesById,
-  selectCanManageResources,
+  selectCanManageOthersAbsences,
   selectStaffSiteIds,
   selectStaffTeamIds,
   selectTeamSiteById,
@@ -238,13 +238,15 @@ describe('selectors', () => {
     expect([...next.keys()]).toEqual([1]);
   });
 
-  it('selectCanManageResources is true for admins and superusers only', () => {
-    expect(selectCanManageResources(app())).toBe(false);
+  it('selectCanManageOthersAbsences follows absences.manage_others', () => {
+    expect(selectCanManageOthersAbsences(app())).toBe(false);
     app().setCurrentUser(makeUser({ role: 'admin' }));
-    expect(selectCanManageResources(app())).toBe(true);
+    expect(selectCanManageOthersAbsences(app())).toBe(true);
     app().setCurrentUser(makeUser({ role: 'superuser' }));
-    expect(selectCanManageResources(app())).toBe(true);
+    expect(selectCanManageOthersAbsences(app())).toBe(true);
     app().setCurrentUser(makeUser({ role: 'user' }));
-    expect(selectCanManageResources(app())).toBe(false);
+    expect(selectCanManageOthersAbsences(app())).toBe(false);
+    app().setCurrentUser(makeUser({ role: 'team_lead', permissions: ['absences.manage_others'] }));
+    expect(selectCanManageOthersAbsences(app())).toBe(true);
   });
 });

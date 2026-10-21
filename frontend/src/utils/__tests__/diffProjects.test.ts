@@ -94,6 +94,21 @@ describe('diffProjects', () => {
     ]);
   });
 
+  it('diffs project-level staff rows with their route level and skips pending ones', () => {
+    const rows = (start: string, end: string) => [
+      { id: 7, staff_id: 1, allocation: 50, start_date: start, end_date: end },
+      { id: 8, staff_id: 2, allocation: 30, start_date: start, end_date: end, approval_status: 'pending' as const },
+    ];
+    const before = project([]);
+    before.staffAssignments = rows('2026-03-02', '2026-03-06');
+    const after = project([]);
+    after.staffAssignments = rows('2026-03-03', '2026-03-07');
+
+    expect(diffProjects([before], [after])).toEqual([
+      { type: 'staffAssignment', id: 7, level: 'project', start_date: '2026-03-03', end_date: '2026-03-07', allocation: 50 },
+    ]);
+  });
+
   it('ignores items that only exist on one side', () => {
     const before = project([phase(10, '2026-03-02', '2026-03-06')]);
     const after = project([phase(10, '2026-03-02', '2026-03-06'), phase(12, '2026-04-01', '2026-04-02', [LINK])]);

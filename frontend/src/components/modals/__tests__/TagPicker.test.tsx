@@ -19,7 +19,7 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { stubConfirm } from '@/test/confirmDialog';
 import type { Tag, TagGroup } from '@/types';
-import { makeTeam } from '@/test/factories';
+import { makeTeam, makeUser } from '@/test/factories';
 
 function tag(id: number, name: string, extra: Partial<Tag> = {}): Tag {
   return { id, name, color: '#3b82f6', group_id: null, all_sites: true, site_ids: [], sort_order: 0, ...extra };
@@ -57,7 +57,7 @@ beforeEach(() => {
   useAppStore.setState({
     tags,
     tagGroups: [AREA, TYPE],
-    currentUser: { id: 1, name: 'Ada Admin', role: 'admin' } as never,
+    currentUser: makeUser({ id: 1, name: 'Ada Admin', role: 'admin' }),
   });
 });
 
@@ -196,7 +196,7 @@ describe('TagPicker options', () => {
 
 describe('TagPicker "Manage tags…"', () => {
   it('is admin-only', () => {
-    useAppStore.setState({ currentUser: { id: 2, name: 'Sue', role: 'superuser' } as never });
+    useAppStore.setState({ currentUser: makeUser({ id: 2, name: 'Sue', role: 'superuser' }) });
     render(<Harness />);
     expect(screen.queryByRole('button', { name: 'Manage tags…' })).not.toBeInTheDocument();
   });

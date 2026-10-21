@@ -17,6 +17,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import type { Phase, Project, Site, Subphase, Tag, TagGroup, User } from '@/types';
+import { makeUser } from '@/test/factories';
 
 vi.mock('@/contexts/WebSocketContext', () => ({
   useWebSocketContext: () => ({ recentChanges: [] }),
@@ -110,7 +111,7 @@ function clickBar(container: HTMLElement, selector: string) {
 }
 
 function asUser(id: number, role: User['role']) {
-  useAppStore.setState({ currentUser: { id, role } as unknown as User });
+  useAppStore.setState({ currentUser: makeUser({ id, role }) });
 }
 
 beforeEach(() => {

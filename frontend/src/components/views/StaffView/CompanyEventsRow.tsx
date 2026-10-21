@@ -18,6 +18,7 @@ import { confirmAction } from '@/utils/confirmDialog';
 import styles from './StaffView.module.css';
 import { parseLocalDate } from '@/utils/date';
 import { teamsForSite, teamIdsOnSite } from '@/utils/teams';
+import { can } from '@/utils/permissions';
 
 interface CompanyEventsRowProps {
   isExpanded: boolean;
@@ -34,7 +35,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
   const setCompanyEvents = useAppStore((s) => s.setCompanyEvents);
   const openSettings = useUIStore((s) => s.openSettings);
   
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  const canEdit = can(currentUser, 'company_events.manage');
   // Events are managed in the Settings hub, which cannot open during
   // What-If (this row also shows in the Gantt's embedded staff overview).
   // Deleting is blocked too: events are not in the What-If snapshot, so a

@@ -1,61 +1,17 @@
 import { useAppStore } from '@/stores/appStore';
-import { useCustomColumnStore } from '@/stores/customColumnStore';
-import { getBankHolidays, buildHolidayDateSet, getCustomColumnsWithValues, getCompanyEvents, buildEventDateSet } from '@/api';
+import { useVisibleSites } from '@/hooks/useVisibleSites';
+import { selectSite } from '@/hooks/useDataLoader';
 import styles from './SiteSelector.module.css';
 
 export function SiteSelector() {
-  const sites = useAppStore((s) => s.sites);
   const currentSite = useAppStore((s) => s.currentSite);
-  const setCurrentSite = useAppStore((s) => s.setCurrentSite);
-  const setBankHolidays = useAppStore((s) => s.setBankHolidays);
-  const setCompanyEvents = useAppStore((s) => s.setCompanyEvents);
-  const setCustomColumns = useCustomColumnStore((s) => s.setCustomColumns);
-  const setCustomColumnValues = useCustomColumnStore((s) => s.setCustomColumnValues);
-  const clearAllCustomColumnFilters = useCustomColumnStore((s) => s.clearAllCustomColumnFilters);
-  const currentUser = useAppStore((s) => s.currentUser);
+  // Every site with sites.view_all, otherwise the user's own
+  const availableSites = useVisibleSites();
 
-  // Filter sites based on user's assigned sites (if not admin)
-  const availableSites =
-    currentUser?.role === 'admin'
-      ? sites
-      : sites.filter((site) => currentUser?.site_ids?.includes(site.id));
-
-  const handleChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const siteId = parseInt(e.target.value, 10);
-    const site = sites.find((s) => s.id === siteId);
-    if (site) {
-      setCurrentSite(site);
-      
-      // Clear any active filters when switching sites
-      clearAllCustomColumnFilters();
-      
-      // Reload bank holidays for the new site
-      try {
-        const holidays = await getBankHolidays(site.id);
-        const holidayDates = buildHolidayDateSet(holidays);
-        setBankHolidays(holidays, holidayDates);
-      } catch (err) {
-        console.error('[SiteSelector] Failed to load bank holidays:', err);
-      }
-      
-      // Reload company events for the new site
-      try {
-        const events = await getCompanyEvents(site.id);
-        const eventDates = buildEventDateSet(events);
-        setCompanyEvents(events, eventDates);
-      } catch (err) {
-        console.error('[SiteSelector] Failed to load company events:', err);
-      }
-      
-      // Reload custom columns for the new site
-      try {
-        const customColumnsData = await getCustomColumnsWithValues(site.id);
-        setCustomColumns(customColumnsData.columns);
-        setCustomColumnValues(customColumnsData.values);
-      } catch (err) {
-        console.error('[SiteSelector] Failed to load custom columns:', err);
-      }
-    }
+    const site = availableSites.find((s) => s.id === siteId);
+    if (site) void selectSite(site);
   };
 
   if (availableSites.length <= 1) {
