@@ -40,6 +40,7 @@ def make_project(project_id=1, site_id=1, **overrides):
         "created_at": STAMP,
         "updated_at": STAMP,
         "tags": [SimpleNamespace(id=4, name="Priority", color="#ff0000", group_id=None)],
+        "team_ids": [],
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -344,7 +345,7 @@ async def test_create_project_with_phases(authed_client, mock_db_session, broadc
 
     assert response.status_code == 200
     assert response.json() == {"id": 77, "success": True}
-    validate.assert_awaited_once_with(mock_db_session, 1, [4])
+    validate.assert_awaited_once_with(mock_db_session, 1, [4], [])
     added = [c.args[0] for c in mock_db_session.add.call_args_list]
     project, design, gate = added
     assert isinstance(project, Project)
@@ -448,7 +449,7 @@ async def test_update_project_every_field(authed_client, mock_db_session, broadc
     assert (project.confirmed, project.volume, project.archived, project.notes) == (0, 5.5, 1, "n")
     assert (project.start_date, project.end_date) == (date(2026, 2, 1), date(2026, 4, 30))
     assert project.tags == ["T"]
-    validate.assert_awaited_once_with(mock_db_session, 1, [])
+    validate.assert_awaited_once_with(mock_db_session, 1, [], [])
     assert broadcast.await_args.kwargs["summary"] == "Renamed"
 
 

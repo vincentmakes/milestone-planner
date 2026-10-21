@@ -183,7 +183,7 @@ async def test_admin_creates_a_team_with_members(authed_client, db_assigns_ids):
     (team,) = added(db_assigns_ids, Team)
     assert team.members == members
     db_assigns_ids.commit.assert_awaited_once()
-    db_assigns_ids.refresh.assert_awaited()
+    db_assigns_ids.refresh.assert_awaited_with(team, attribute_names=["members"])
 
 
 @pytest.mark.asyncio
@@ -325,7 +325,7 @@ async def test_update_team_renames_and_replaces_members(authed_client, db_assign
     assert team.active is False
     assert response.json()["member_ids"] == [5, 6]
     db_assigns_ids.commit.assert_awaited_once()
-    db_assigns_ids.refresh.assert_awaited()
+    db_assigns_ids.refresh.assert_awaited_with(team, attribute_names=["members"])
 
 
 @pytest.mark.asyncio
@@ -386,6 +386,7 @@ async def test_delete_team(authed_client, mock_db_session):
     statement = mock_db_session.execute.await_args_list[1].args[0]
     assert isinstance(statement, Delete)
     assert "teams.id = 3" in compiled(mock_db_session, 1)
+    assert statement.get_execution_options()["synchronize_session"] is False
     mock_db_session.commit.assert_awaited_once()
 
 

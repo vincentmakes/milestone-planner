@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.schemas.base import DateAsDateTimeJS, DateRangeOrdered, DateTimeJS
 from app.schemas.tag import ProjectTagResponse
+from app.schemas.team import TeamIds
 from app.services.card_status import CardStatus
 
 # ---------------------------------------------------------
@@ -198,6 +199,7 @@ class ProjectListResponse(BaseModel):
     created_at: DateTimeJS
     updated_at: DateTimeJS | None = None
     tags: list[ProjectTagResponse] = []
+    team_ids: list[int] = []
 
     class Config:
         from_attributes = True
@@ -226,6 +228,7 @@ class ProjectDetailResponse(BaseModel):
     staffAssignments: list[ProjectStaffAssignmentResponse] = []
     equipmentAssignments: list[EquipmentAssignmentInProject] = []
     tags: list[ProjectTagResponse] = []
+    team_ids: list[int] = []
 
     class Config:
         from_attributes = True
@@ -246,6 +249,7 @@ class ProjectCreate(DateRangeOrdered):
     notes: str | None = None
     phases: list[PhaseCreate] | None = None
     tag_ids: list[int] | None = None
+    team_ids: TeamIds | None = None
 
 
 class ProjectUpdate(DateRangeOrdered):
@@ -262,6 +266,7 @@ class ProjectUpdate(DateRangeOrdered):
     notes: str | None = None
     archived: bool | None = None
     tag_ids: list[int] | None = None
+    team_ids: TeamIds | None = None
 
 
 class SubphaseReorderRequest(BaseModel):

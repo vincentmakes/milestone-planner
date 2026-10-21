@@ -25,6 +25,7 @@ from app.models.equipment import Equipment, EquipmentAssignment
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.site import Site
 from app.models.tag import Tag
+from app.models.team import Team
 from app.models.user import User
 from app.schemas.base import PaginationParams
 from app.schemas.project import (
@@ -47,6 +48,12 @@ from app.services.project_access import (
     require_project_editor,
 )
 from app.services.tag_rules import validate_project_tags
+from app.services.team_rules import (
+    ensure_teams_within_sites,
+    load_teams,
+    team_ids_of,
+    team_outside_project_site_detail,
+)
 from app.websocket.broadcast import broadcast_change
 
 logger = logging.getLogger(__name__)
@@ -272,19 +279,33 @@ async def _require_user_exists(db: AsyncSession, user_id: int, detail: str) -> N
         raise HTTPException(status_code=404, detail=detail)
 
 
-# Responses embed {id, name, color, group_id} only: skip the tags' site links
-# (Tag.sites is selectin-loaded by default -- one more query per request).
+# Responses embed {id, name, color, group_id} only: skip the tags' site and
+# team links (Tag.sites / Tag.teams are selectin-loaded by default -- one more
+# query each per request).
 # NEVER combine this loader with validate_project_tags() in the same session:
-# noload sets Tag.sites to an empty list on every tag it loads, and a later
-# query (even validate_project_tags' own selectinload) does not refresh an
-# object already in the identity map -- a site-restricted tag would then
-# wrongly fail the site check.
-_PROJECT_TAGS_FOR_RESPONSE = selectinload(Project.tags).options(noload(Tag.sites))
+# noload sets Tag.sites and Tag.teams to empty lists on every tag it loads, and
+# a later query (even validate_project_tags' own selectinload) does not refresh
+# an object already in the identity map -- a site- or team-restricted tag would
+# then wrongly pass or fail the site and team checks.
+_PROJECT_TAGS_FOR_RESPONSE = selectinload(Project.tags).options(
+    noload(Tag.sites), noload(Tag.teams)
+)
+
+SITE_LESS_PROJECT_TEAMS_DETAIL = "A project without a site cannot have teams"
 
 
 def _tag_dict(tag: Tag) -> dict:
     """A tag as embedded in a project response."""
     return {"id": tag.id, "name": tag.name, "color": tag.color, "group_id": tag.group_id}
+
+
+def _ensure_project_teams(teams: list[Team], site_id: int | None) -> None:
+    """400 when a site-less project gets teams or a team is not at the project's site."""
+    if not teams:
+        return
+    if site_id is None:
+        raise HTTPException(status_code=400, detail=SITE_LESS_PROJECT_TEAMS_DETAIL)
+    ensure_teams_within_sites(teams, [site_id], team_outside_project_site_detail)
 
 
 async def _require_site_exists(db: AsyncSession, site_id: int) -> None:
@@ -393,6 +414,7 @@ async def get_projects(
                     "created_at": project.created_at,
                     "updated_at": project.updated_at,
                     "tags": [],
+                    "team_ids": [],
                 }
             )
         else:
@@ -415,6 +437,7 @@ async def get_projects(
                     "created_at": project.created_at,
                     "updated_at": project.updated_at,
                     "tags": [_tag_dict(t) for t in project.tags],
+                    "team_ids": project.team_ids,
                 }
             )
 
@@ -689,6 +712,7 @@ async def get_project(
         "staffAssignments": staff_assignments,
         "equipmentAssignments": equipment_assignments,
         "tags": [_tag_dict(t) for t in project.tags],
+        "team_ids": project.team_ids,
     }
 
 
@@ -710,8 +734,12 @@ async def create_project(
     if data.pm_id is not None:
         await _require_user_exists(db, data.pm_id, "Project manager not found")
 
-    # Site applicability + single-select groups (400); unknown ids dropped.
-    tag_objs = await validate_project_tags(db, data.site_id, data.tag_ids or [])
+    # Teams at the project's site (400); unknown ids dropped (What-If replays).
+    teams = await load_teams(db, data.team_ids or [], strict=False)
+    _ensure_project_teams(teams, data.site_id)
+
+    # Site and team applicability + single-select groups (400); unknown ids dropped.
+    tag_objs = await validate_project_tags(db, data.site_id, data.tag_ids or [], team_ids_of(teams))
 
     project = Project(
         name=data.name,
@@ -725,6 +753,7 @@ async def create_project(
         end_date=data.end_date,
         notes=data.notes,
         tags=tag_objs,
+        teams=teams,
     )
 
     db.add(project)
@@ -775,7 +804,9 @@ async def update_project(
     Matches: PUT /api/projects/:id
     """
     result = await db.execute(
-        select(Project).options(selectinload(Project.tags)).where(Project.id == project_id)
+        select(Project)
+        .options(selectinload(Project.tags), selectinload(Project.teams))
+        .where(Project.id == project_id)
     )
     project = result.scalar_one_or_none()
 
@@ -810,10 +841,18 @@ async def update_project(
     if data.archived is not None:
         project.archived = 1 if data.archived else 0
 
-    # Replace tag assignments if provided (None = no change, [] = clear all)
-    # Checked against the project's own site (ProjectUpdate cannot move it).
-    if data.tag_ids is not None:
-        project.tags = await validate_project_tags(db, project.site_id, data.tag_ids)
+    # Replace team / tag assignments if provided (None = no change, [] = clear
+    # all), checked against the project's own site (ProjectUpdate cannot move
+    # it). Unknown team ids are dropped (What-If replays). A team change
+    # re-validates the current tags: a project never keeps a tag its new teams
+    # exclude.
+    if data.team_ids is not None:
+        teams = await load_teams(db, data.team_ids, strict=False)
+        _ensure_project_teams(teams, project.site_id)
+        project.teams = teams
+    if data.tag_ids is not None or data.team_ids is not None:
+        tag_ids = data.tag_ids if data.tag_ids is not None else [t.id for t in project.tags]
+        project.tags = await validate_project_tags(db, project.site_id, tag_ids, project.team_ids)
 
     await db.commit()
 
