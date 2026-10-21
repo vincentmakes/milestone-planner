@@ -122,6 +122,8 @@ describe('apiRequest', () => {
       '/api/tags',
       '/api/tags/3',
       '/api/tag-groups/2',
+      '/api/teams',
+      '/api/teams/3',
       '/api/sites',
       '/api/sites/1',
       '/api/equipment',

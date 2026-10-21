@@ -16,6 +16,7 @@ import * as staff from '../staff';
 import * as users from '../users';
 import * as vacations from '../vacations';
 import { tagsApi, tagGroupsApi } from '../tags';
+import { teamsApi } from '../teams';
 import { skillsApi } from '../skills';
 import { absenceTypesApi } from '../absenceTypes';
 import { getAppVersion } from '../health';
@@ -311,6 +312,23 @@ describe('tags, skills and absence-type endpoints', () => {
     ['absence types update', () => absenceTypesApi.update(1, { is_active: false }), 'PUT', '/api/absence-types/1', { is_active: false }],
     ['absence types remove', () => absenceTypesApi.remove(1), 'DELETE', '/api/absence-types/1'],
     ['absence types reorder', () => absenceTypesApi.reorder([1]), 'PUT', '/api/absence-types/reorder', { type_order: [1] }],
+  ]);
+});
+
+describe('team endpoints', () => {
+  runCases([
+    ['teams getAll', () => teamsApi.getAll(), 'GET', '/api/teams'],
+    ['teams getAll for a site', () => teamsApi.getAll(2), 'GET', '/api/teams?siteId=2'],
+    ['teams get', () => teamsApi.get(3), 'GET', '/api/teams/3'],
+    [
+      'teams create',
+      () => teamsApi.create({ site_id: 2, name: 'Analytics', member_ids: [4] }),
+      'POST',
+      '/api/teams',
+      { site_id: 2, name: 'Analytics', member_ids: [4] },
+    ],
+    ['teams update', () => teamsApi.update(3, { name: 'QC' }), 'PUT', '/api/teams/3', { name: 'QC' }],
+    ['teams delete', () => teamsApi.delete(3), 'DELETE', '/api/teams/3'],
   ]);
 });
 

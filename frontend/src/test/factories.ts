@@ -17,6 +17,7 @@ import type {
   Staff,
   Subphase,
   Tag,
+  Team,
   User,
   Vacation,
 } from '@/types';
@@ -46,6 +47,20 @@ export function makeUser(overrides: Partial<User> = {}): User {
     active: true,
     site_ids: [1],
     skills: [],
+    team_ids: [],
+    ...overrides,
+  };
+}
+
+export function makeTeam(overrides: Partial<Team> = {}): Team {
+  return {
+    id: 1,
+    site_id: 1,
+    name: 'Analytics',
+    description: null,
+    color: '#3b82f6',
+    active: true,
+    member_ids: [],
     ...overrides,
   };
 }
@@ -60,6 +75,7 @@ export function makeStaff(overrides: Partial<Staff> = {}): Staff {
     active: true,
     max_capacity: 100,
     skills: [],
+    team_ids: [],
     ...overrides,
   };
 }
@@ -72,6 +88,7 @@ export function makeEquipment(overrides: Partial<Equipment> = {}): Equipment {
     site_id: 1,
     site_ids: [1],
     active: true,
+    team_ids: [],
     ...overrides,
   };
 }
@@ -94,6 +111,7 @@ export function makeProject(overrides: Partial<Project> = {}): Project {
     staffAssignments: [],
     equipmentAssignments: [],
     tags: [],
+    team_ids: [],
     ...overrides,
   };
 }
@@ -162,6 +180,7 @@ export function makeTag(overrides: Partial<Tag> = {}): Tag {
     all_sites: true,
     site_ids: [],
     sort_order: 0,
+    team_ids: [],
     ...overrides,
   };
 }

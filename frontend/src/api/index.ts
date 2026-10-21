@@ -29,6 +29,7 @@ export * from './endpoints/settings';
 export * from './endpoints/customColumns';
 export * from './endpoints/skills';
 export * from './endpoints/tags';
+export * from './endpoints/teams';
 export * from './endpoints/absenceTypes';
 export * from './endpoints/health';
 

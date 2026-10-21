@@ -19,6 +19,19 @@ export interface Site {
   created_at?: string;
 }
 
+export interface Team {
+  id: number;
+  site_id: number;
+  name: string;
+  description?: string | null;
+  color: string | null;
+  active: boolean;
+  /** User ids; every member belongs to the team's site */
+  member_ids: number[];
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface Project {
   id: number;
   name: string;
@@ -43,6 +56,8 @@ export interface Project {
    * appStore.tags by id (utils/tags.ts), never from these fields.
    */
   tags?: ProjectTagRef[];
+  /** Teams of the project's site the project belongs to */
+  team_ids?: number[];
 }
 
 /** Shape of `project.tags[]` in project responses. */
@@ -61,6 +76,8 @@ export interface Tag {
   all_sites: boolean;
   site_ids: number[];
   sort_order: number;
+  /** Teams the tag is restricted to (flat across sites; empty = no restriction) */
+  team_ids?: number[];
 }
 
 /**
@@ -166,6 +183,8 @@ export interface Staff {
   active: boolean;
   max_capacity?: number;  // Max work capacity % (e.g., 80 for part-time), defaults to 100
   skills?: Skill[];  // Staff skills
+  /** Teams of this user on this row's site */
+  team_ids?: number[];
 }
 
 export interface Equipment {
@@ -179,6 +198,10 @@ export interface Equipment {
   /** Names of site_ids, same order (sent by /equipment/all) */
   site_names?: string[];
   active: boolean;
+  /** Teams the equipment is restricted to, flat across the equipment's sites */
+  team_ids?: number[];
+  /** Names of team_ids, same order */
+  team_names?: string[];
 }
 
 // =============================================================================
@@ -224,6 +247,10 @@ export interface User {
   active: boolean;
   site_ids: number[];
   skills?: Skill[];  // User's skills
+  /** Teams the user belongs to, across all their sites */
+  team_ids?: number[];
+  /** Names of team_ids, same order */
+  team_names?: string[];
 }
 
 export type UserRole = 'admin' | 'superuser' | 'user';
@@ -288,6 +315,8 @@ export interface CompanyEvent {
   color?: string | null;
   /** Site closure: staff on the event's sites are unavailable for its dates */
   counts_as_unavailable?: boolean;
+  /** Teams the event is restricted to (flat across sites; empty = whole sites) */
+  team_ids?: number[];
 }
 
 export interface EquipmentBlock {
@@ -416,11 +445,24 @@ export interface CreateProjectRequest {
   start_date?: string | null;
   end_date?: string | null;
   tag_ids?: number[];
+  team_ids?: number[];
 }
 
 export interface UpdateProjectRequest extends Partial<CreateProjectRequest> {
   archived?: boolean;
 }
+
+export interface CreateTeamRequest {
+  site_id: number;
+  name: string;
+  description?: string | null;
+  color?: string | null;
+  active?: boolean;
+  member_ids?: number[];
+}
+
+/** A team cannot move to another site. */
+export type UpdateTeamRequest = Partial<Omit<CreateTeamRequest, 'site_id'>>;
 
 export interface CreatePhaseRequest {
   name: string;

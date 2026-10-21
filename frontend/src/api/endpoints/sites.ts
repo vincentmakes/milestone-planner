@@ -170,6 +170,8 @@ export interface CompanyEventInput {
   site_ids: number[];
   /** Site closure: staff on the event's sites are unavailable for its dates */
   counts_as_unavailable?: boolean;
+  /** Teams the event is restricted to; empty = everyone on its sites. */
+  team_ids?: number[];
 }
 
 /**

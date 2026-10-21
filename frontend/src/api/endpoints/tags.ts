@@ -16,6 +16,8 @@ export interface TagCreate {
   /** Default true. When false, `site_ids` lists the sites the tag applies to. */
   all_sites?: boolean;
   site_ids?: number[];
+  /** Teams the tag is restricted to; empty = every project on its sites. */
+  team_ids?: number[];
 }
 
 export interface TagUpdate {
@@ -24,6 +26,7 @@ export interface TagUpdate {
   group_id?: number | null;
   all_sites?: boolean;
   site_ids?: number[];
+  team_ids?: number[];
 }
 
 export interface TagGroupCreate {
