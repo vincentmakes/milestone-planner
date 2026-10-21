@@ -9,26 +9,35 @@
  * stored filter on a site with no active team (the selector is hidden there,
  * so a leftover "(No team)" could never be cleared).
  *
- * Scoping, though, considers ALL teams of the site, active or not: equipment
- * restricted solely to an inactive team is not open to the whole site, so it
- * is hidden under any team filter (and shown under Whole site).
+ * Scoping, though, considers ALL teams of the site, active or not: equipment,
+ * a company event or a tag restricted solely to an inactive team is not open
+ * to the whole site, so it is hidden under any team filter (and shown under
+ * Whole site).
+ *
+ * The hook narrows projects, staff rows, equipment, company events and tags
+ * (`*Matches` predicates); `useTeamFilteredProjects` and
+ * `useTeamFilteredCompanyEvents` apply it to the project list and to the
+ * store's company events and their date set.
  *
  * Filters are stored per tenant + site (`tagFilterKey`), like the tag filter.
  */
 
 import { useCallback, useMemo } from 'react';
+import { buildEventDateSet } from '@/api';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { tagFilterKey } from '@/utils/tags';
 import {
   equipmentMatchesTeamFilter,
+  eventMatchesTeamFilter,
   normalizeTeamFilter,
   projectMatchesTeamFilter,
   staffMatchesTeamFilter,
+  tagMatchesTeamFilter,
   teamsForSite,
 } from '@/utils/teams';
 import type { TeamFilter } from '@/utils/teams';
-import type { Equipment, Project, Staff, Team } from '@/types';
+import type { CompanyEvent, Equipment, Project, Staff, Tag, Team } from '@/types';
 
 export interface SiteTeamFilter {
   siteId: number | null;
@@ -40,6 +49,8 @@ export interface SiteTeamFilter {
   projectMatches: (p: Project) => boolean;
   staffMatches: (row: Staff) => boolean;
   equipmentMatches: (e: Equipment) => boolean;
+  eventMatches: (e: CompanyEvent) => boolean;
+  tagMatches: (t: Tag) => boolean;
 }
 
 export function useTeamFilter(): SiteTeamFilter {
@@ -62,6 +73,14 @@ export function useTeamFilter(): SiteTeamFilter {
     (e: Equipment) => equipmentMatchesTeamFilter(e, filter, allSiteTeams),
     [filter, allSiteTeams]
   );
+  const eventMatches = useCallback(
+    (e: CompanyEvent) => eventMatchesTeamFilter(e, filter, allSiteTeams),
+    [filter, allSiteTeams]
+  );
+  const tagMatches = useCallback(
+    (t: Tag) => tagMatchesTeamFilter(t, filter, allSiteTeams),
+    [filter, allSiteTeams]
+  );
 
   return {
     siteId,
@@ -71,6 +90,8 @@ export function useTeamFilter(): SiteTeamFilter {
     projectMatches,
     staffMatches,
     equipmentMatches,
+    eventMatches,
+    tagMatches,
   };
 }
 
@@ -81,4 +102,21 @@ export function useTeamFilteredProjects(projects: Project[]): Project[] {
     () => (filter === null ? projects : projects.filter(projectMatches)),
     [projects, filter, projectMatches]
   );
+}
+
+/**
+ * The store's company events and their date set narrowed by the current
+ * site's team filter: the very same array and set while the filter is
+ * inactive, otherwise the matching events and a date set rebuilt from them
+ * (a team-limited event's days drop out of the timeline background).
+ */
+export function useTeamFilteredCompanyEvents(): { events: CompanyEvent[]; eventDates: Set<string> } {
+  const companyEvents = useAppStore((s) => s.companyEvents);
+  const companyEventDates = useAppStore((s) => s.companyEventDates);
+  const { filter, eventMatches } = useTeamFilter();
+  return useMemo(() => {
+    if (filter === null) return { events: companyEvents, eventDates: companyEventDates };
+    const events = companyEvents.filter(eventMatches);
+    return { events, eventDates: buildEventDateSet(events) };
+  }, [companyEvents, companyEventDates, filter, eventMatches]);
 }

@@ -12,8 +12,11 @@
  *   an empty result means the whole site.
  * - A project or staff row matches when its team ids intersect
  *   `filter.teamIds`, or when `filter.noTeam` is set and it has no team.
- * - Equipment matches when it is open to the whole site here or one of its
- *   teams here is in `filter.teamIds` (`noTeam` is irrelevant for equipment).
+ * - Equipment, a company event or a tag matches when it is open to the whole
+ *   site here or one of its teams here is in `filter.teamIds`
+ *   ({@link siteScopedTeamsMatchFilter}; `noTeam` is irrelevant for them).
+ *   `siteTeams` is every team of the site, inactive ones included: an entity
+ *   limited solely to an inactive team is not open to the whole site.
  * - A team-restricted tag applies to a project at site S iff the tag's team
  *   ids at S are empty or intersect the project's team ids
  *   (`tagsForProjectScope` in ./tags.ts).
@@ -25,7 +28,7 @@
  * Every helper reads `x.team_ids ?? []` (older servers omit the field).
  */
 
-import type { Equipment, Project, Staff, Team } from '@/types';
+import type { CompanyEvent, Equipment, Project, Staff, Tag, Team } from '@/types';
 
 /** Header team filter for one site; `null` (no entry) = "Whole site". */
 export interface TeamFilter {
@@ -147,6 +150,20 @@ export function staffMatchesTeamFilter(
 }
 
 /**
+ * Do flat (cross-site) `teamIds` pass the filter at the site of `siteTeams`?
+ * No team at this site means open to the whole site, which always passes.
+ */
+export function siteScopedTeamsMatchFilter(
+  teamIds: readonly number[] | undefined,
+  filter: TeamFilter | null,
+  siteTeams: readonly Team[]
+): boolean {
+  if (filter === null) return true;
+  const here = teamIdsOnSite(teamIds, siteTeams);
+  return here.length === 0 || here.some((id) => filter.teamIds.includes(id));
+}
+
+/**
  * Does the equipment pass the filter at the site of `siteTeams`? Equipment
  * with no team at this site is open to the whole site and always passes.
  */
@@ -155,7 +172,29 @@ export function equipmentMatchesTeamFilter(
   filter: TeamFilter | null,
   siteTeams: readonly Team[]
 ): boolean {
-  if (filter === null) return true;
-  const here = teamIdsOnSite(equipment.team_ids, siteTeams);
-  return here.length === 0 || here.some((id) => filter.teamIds.includes(id));
+  return siteScopedTeamsMatchFilter(equipment.team_ids, filter, siteTeams);
+}
+
+/**
+ * Does the company event pass the filter at the site of `siteTeams`? An event
+ * with no team at this site concerns the whole site and always passes.
+ */
+export function eventMatchesTeamFilter(
+  event: Pick<CompanyEvent, 'team_ids'>,
+  filter: TeamFilter | null,
+  siteTeams: readonly Team[]
+): boolean {
+  return siteScopedTeamsMatchFilter(event.team_ids, filter, siteTeams);
+}
+
+/**
+ * Is the tag offered under the filter at the site of `siteTeams`? A tag with
+ * no team at this site is open to the whole site and always passes.
+ */
+export function tagMatchesTeamFilter(
+  tag: Pick<Tag, 'team_ids'>,
+  filter: TeamFilter | null,
+  siteTeams: readonly Team[]
+): boolean {
+  return siteScopedTeamsMatchFilter(tag.team_ids, filter, siteTeams);
 }

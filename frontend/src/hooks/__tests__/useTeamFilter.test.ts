@@ -2,16 +2,22 @@
  * useTeamFilter / useTeamFilteredProjects: the stored filter is read per
  * tenant + site (tagFilterKey), only the site's active teams are filter
  * options (a persisted id of a deleted or deactivated team is pruned) while
- * equipment scoping considers all the site's teams, and an inactive filter
- * hands back the very same projects array (view memoisation relies on it).
+ * equipment, event and tag scoping considers all the site's teams, and an
+ * inactive filter hands back the very same projects array and company
+ * events / event dates (view memoisation relies on it).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useTeamFilter, useTeamFilteredProjects } from '../useTeamFilter';
+import {
+  useTeamFilter,
+  useTeamFilteredCompanyEvents,
+  useTeamFilteredProjects,
+} from '../useTeamFilter';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
-import { makeTeam } from '@/test/factories';
-import type { Equipment, Project, Site, Staff } from '@/types';
+import { buildEventDateSet } from '@/api';
+import { makeTag, makeTeam } from '@/test/factories';
+import type { CompanyEvent, Equipment, Project, Site, Staff } from '@/types';
 
 const teams = [
   makeTeam({ id: 1, site_id: 1, name: 'Analytics' }),
@@ -22,6 +28,15 @@ const teams = [
 
 function project(id: number, teamIds: number[]): Project {
   return { id, name: `P${id}`, site_id: 1, team_ids: teamIds } as unknown as Project;
+}
+
+function event(
+  id: number,
+  date: string,
+  endDate: string | null,
+  teamIds: number[]
+): CompanyEvent {
+  return { id, site_id: 1, site_ids: [1], date, end_date: endDate, name: `E${id}`, team_ids: teamIds };
 }
 
 beforeEach(() => {
@@ -117,6 +132,70 @@ describe('useTeamFilter', () => {
     expect(result.current.projectMatches).toBe(first.projectMatches);
     expect(result.current.staffMatches).toBe(first.staffMatches);
     expect(result.current.equipmentMatches).toBe(first.equipmentMatches);
+    expect(result.current.eventMatches).toBe(first.eventMatches);
+    expect(result.current.tagMatches).toBe(first.tagMatches);
+  });
+
+  it('matches company events and tags per site, inactive teams included', () => {
+    useViewStore.setState({ teamFilters: { ':1': { teamIds: [1], noTeam: true } } });
+    const { result } = renderHook(() => useTeamFilter());
+    const { eventMatches, tagMatches } = result.current;
+
+    expect(eventMatches(event(1, '2026-03-02', null, [1]))).toBe(true);
+    expect(eventMatches(event(2, '2026-03-02', null, [2]))).toBe(false);
+    expect(eventMatches(event(3, '2026-03-02', null, [3]))).toBe(false);
+    // Open to the whole site here (no team, or only another site's team).
+    expect(eventMatches(event(4, '2026-03-02', null, []))).toBe(true);
+    expect(eventMatches(event(5, '2026-03-02', null, [4]))).toBe(true);
+
+    expect(tagMatches(makeTag({ id: 1, team_ids: [1] }))).toBe(true);
+    expect(tagMatches(makeTag({ id: 2, team_ids: [2] }))).toBe(false);
+    expect(tagMatches(makeTag({ id: 3, team_ids: [3] }))).toBe(false);
+    expect(tagMatches(makeTag({ id: 4, team_ids: [] }))).toBe(true);
+    expect(tagMatches(makeTag({ id: 5, team_ids: [4] }))).toBe(true);
+
+    act(() => useViewStore.setState({ teamFilters: {} }));
+    expect(result.current.eventMatches(event(2, '2026-03-02', null, [2]))).toBe(true);
+    expect(result.current.tagMatches(makeTag({ id: 2, team_ids: [2] }))).toBe(true);
+  });
+});
+
+describe('useTeamFilteredCompanyEvents', () => {
+  // A whole-site day, a team-limited (Process) multi-day event and an
+  // Analytics-only day.
+  const wholeSite = event(1, '2026-03-02', null, []);
+  const processOffsite = event(2, '2026-03-04', '2026-03-06', [2]);
+  const analyticsAudit = event(3, '2026-03-09', null, [1]);
+  const events = [wholeSite, processOffsite, analyticsAudit];
+  const eventDates = buildEventDateSet(events);
+
+  beforeEach(() => {
+    useAppStore.getState().setCompanyEvents(events, eventDates);
+  });
+
+  it("returns the store's events and dates by identity while the filter is inactive", () => {
+    const { result, rerender } = renderHook(() => useTeamFilteredCompanyEvents());
+    expect(result.current.events).toBe(events);
+    expect(result.current.eventDates).toBe(eventDates);
+
+    // Only stale selections: still inactive, still the same references.
+    act(() => useViewStore.setState({ teamFilters: { ':1': { teamIds: [3, 999], noTeam: false } } }));
+    rerender();
+    expect(result.current.events).toBe(events);
+    expect(result.current.eventDates).toBe(eventDates);
+  });
+
+  it('keeps only matching events and rebuilds the dates from them', () => {
+    useViewStore.setState({ teamFilters: { ':1': { teamIds: [1], noTeam: false } } });
+    const { result, rerender } = renderHook(() => useTeamFilteredCompanyEvents());
+    expect(result.current.events.map((e) => e.id)).toEqual([1, 3]);
+    expect([...result.current.eventDates].sort()).toEqual(['2026-03-02', '2026-03-09']);
+    // The Process offsite's days are gone; the whole-site day stays.
+    expect(result.current.eventDates.has('2026-03-05')).toBe(false);
+
+    const first = result.current;
+    rerender();
+    expect(result.current).toBe(first);
   });
 });
 

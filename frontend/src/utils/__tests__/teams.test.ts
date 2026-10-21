@@ -9,6 +9,9 @@ import {
   projectMatchesTeamFilter,
   staffMatchesTeamFilter,
   equipmentMatchesTeamFilter,
+  eventMatchesTeamFilter,
+  tagMatchesTeamFilter,
+  siteScopedTeamsMatchFilter,
   type TeamFilter,
 } from '../teams';
 import { makeTeam } from '@/test/factories';
@@ -157,5 +160,48 @@ describe('equipmentMatchesTeamFilter', () => {
   it('ignores noTeam', () => {
     expect(equipmentMatchesTeamFilter({ team_ids: [] }, filter([], true), site1)).toBe(true);
     expect(equipmentMatchesTeamFilter({ team_ids: [1] }, filter([], true), site1)).toBe(false);
+  });
+});
+
+describe('siteScopedTeamsMatchFilter', () => {
+  it('applies the per-site "no team here = whole site" rule to bare ids', () => {
+    expect(siteScopedTeamsMatchFilter([1], null, site1)).toBe(true);
+    expect(siteScopedTeamsMatchFilter(undefined, filter([1]), site1)).toBe(true);
+    expect(siteScopedTeamsMatchFilter([4], filter([1]), site1)).toBe(true);
+    expect(siteScopedTeamsMatchFilter([4, 2], filter([1]), site1)).toBe(false);
+    expect(siteScopedTeamsMatchFilter([4, 2], filter([2]), site1)).toBe(true);
+  });
+});
+
+describe('eventMatchesTeamFilter / tagMatchesTeamFilter', () => {
+  // Archive (3) is inactive but still scopes: it is in site1.
+  const cases = [
+    ['null filter matches a team-limited entity', [1], null, true],
+    ['no team ids is whole site', [], filter([1]), true],
+    ['teams only of another site is whole site here', [4], filter([1]), true],
+    ['a selected team of this site matches', [1, 4], filter([1]), true],
+    ['an unselected team of this site fails', [2], filter([1]), false],
+    ['a selected inactive team of this site matches', [3], filter([3]), true],
+    ['an unselected inactive team of this site fails', [3], filter([1]), false],
+    ['noTeam alone fails a team-limited entity', [1], filter([], true), false],
+    ['noTeam alone passes a whole-site entity', [], filter([], true), true],
+  ] as const;
+
+  it.each(cases)('event: %s', (_name, teamIds, f, expected) => {
+    expect(eventMatchesTeamFilter({ team_ids: [...teamIds] }, f, site1)).toBe(expected);
+  });
+
+  it.each(cases)('tag: %s', (_name, teamIds, f, expected) => {
+    expect(tagMatchesTeamFilter({ team_ids: [...teamIds] }, f, site1)).toBe(expected);
+  });
+
+  it('treats a missing team_ids as whole site', () => {
+    expect(eventMatchesTeamFilter({}, filter([1]), site1)).toBe(true);
+    expect(tagMatchesTeamFilter({}, filter([1]), site1)).toBe(true);
+  });
+
+  it('leaves equipment behaving as before (regression)', () => {
+    expect(equipmentMatchesTeamFilter({ team_ids: [3] }, filter([1]), site1)).toBe(false);
+    expect(equipmentMatchesTeamFilter({ team_ids: [4] }, filter([1]), site1)).toBe(true);
   });
 });
