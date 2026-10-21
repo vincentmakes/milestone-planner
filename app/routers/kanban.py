@@ -12,7 +12,9 @@ it through the PM bundle, see app/services/project_access.py), or
 app/services/card_access.py). Assigning and unassigning follow the
 staff-assignment rule: ``assignments.manage_others`` (or the PM) manages
 anyone, and ``assignments.self_create`` / ``self_remove`` let a user join or
-leave a card themself. Commenting needs ``kanban.comment``; deleting someone
+leave a card themself -- in approval mode as an approval request (202, see
+app/services/approvals.py); a pending joiner is not an assignee yet (cannot
+move the card, is not notified as one). Commenting needs ``kanban.comment``; deleting someone
 else's comment ``kanban.moderate_comments``. The reads (comment counts,
 mentionable users, comment threads) need ``views.kanban``, and every route
 works only on projects and sites the user can see (``site_access``).
@@ -21,7 +23,7 @@ works only on projects and sites the user can see (``site_access``).
 import logging
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,6 +45,8 @@ from app.schemas.kanban import (
     CommentCountsResponse,
     MentionableUserResponse,
 )
+from app.services import approvals
+from app.services.approvals import ACTION_CREATE, ACTION_REMOVE, booking_dict
 from app.services.card_access import require_card_status_write
 from app.services.card_status import STATUS_LABELS, apply_status
 from app.services.mentions import parse_mention_ids, strip_mention_tokens
@@ -53,7 +57,7 @@ from app.services.notifications import (
     notification_payload,
 )
 from app.services.permissions import ADMIN_ROLE_KEY, permission_required_detail
-from app.services.project_access import can_on_project, require_assignment_write
+from app.services.project_access import can_on_project, resolve_self_booking
 from app.services.site_access import ensure_project_visible, ensure_site_visible, visible_site_ids
 from app.utils import utcnow_naive
 from app.websocket.broadcast import broadcast_change, send_notification
@@ -341,41 +345,40 @@ async def assign_card(
     """
     card = await _load_card(db, entity_type, entity_id)
     await ensure_project_visible(request, db, user, card.project_id)
-    await require_assignment_write(
+    outcome = await resolve_self_booking(
         db,
         user,
         project_id=card.project_id,
         staff_id=data.staff_id,
-        action="assignments.self_create",
+        action=ACTION_CREATE,
     )
 
     assignee = (await db.execute(select(User).where(User.id == data.staff_id))).scalar_one_or_none()
     if not assignee:
         raise HTTPException(status_code=404, detail="Staff member not found")
 
-    # Branch on the concrete model rather than computing one: a
-    # `A if ... else B` variable is a union of model types, and the per-level
-    # foreign key (phase_id vs subphase_id) is not resolvable on that union.
-    if entity_type == "phase":
-        existing_query = select(PhaseStaffAssignment).where(
-            PhaseStaffAssignment.phase_id == entity_id,
-            PhaseStaffAssignment.staff_id == data.staff_id,
-        )
-    else:
-        existing_query = select(SubphaseStaffAssignment).where(
-            SubphaseStaffAssignment.subphase_id == entity_id,
-            SubphaseStaffAssignment.staff_id == data.staff_id,
-        )
-
-    existing = (await db.execute(existing_query.limit(1))).scalar_one_or_none()
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="That staff member is already assigned to this card",
-        )
+    # One booking per person and card; a pending (awaiting approval) one counts.
+    await approvals.ensure_no_duplicate(
+        db,
+        entity_type,
+        entity_id,
+        data.staff_id,
+        detail="That staff member is already assigned to this card",
+    )
 
     # Resolve the booking size server-side; the client must not guess it.
     allocation = data.allocation if data.allocation is not None else assignee.max_capacity or 100
+    if outcome == "approval":
+        return await approvals.submit_request(
+            db,
+            request,
+            user,
+            action=ACTION_CREATE,
+            level=entity_type,
+            project_id=card.project_id,
+            target_id=entity_id,
+            values=booking_dict(allocation),
+        )
 
     assignment: PhaseStaffAssignment | SubphaseStaffAssignment
     if entity_type == "phase":
@@ -446,13 +449,16 @@ async def unassign_card(
     """
     card = await _load_card(db, entity_type, entity_id)
     await ensure_project_visible(request, db, user, card.project_id)
-    await require_assignment_write(
-        db,
-        user,
-        project_id=card.project_id,
-        staff_id=staff_id,
-        action="assignments.self_remove",
-    )
+    outcome = None
+    if staff_id != user.id:
+        # Someone else's booking: 403 without editor rights, before the lookup.
+        outcome = await resolve_self_booking(
+            db,
+            user,
+            project_id=card.project_id,
+            staff_id=staff_id,
+            action=ACTION_REMOVE,
+        )
 
     if entity_type == "phase":
         query = select(PhaseStaffAssignment).where(
@@ -469,6 +475,21 @@ async def unassign_card(
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
 
+    outcome = await approvals.resolve_row_write(
+        db, user, row=assignment, action=ACTION_REMOVE, outcome=outcome
+    )
+    if outcome == "approval":
+        return await approvals.submit_request(
+            db,
+            request,
+            user,
+            action=ACTION_REMOVE,
+            level=entity_type,
+            project_id=card.project_id,
+            row=assignment,
+        )
+    effects = await approvals.expire_overtaken(db, user, level=entity_type, row=assignment)
+
     assignment_id = assignment.id
     await db.delete(assignment)
     await db.commit()
@@ -482,6 +503,7 @@ async def unassign_card(
         action="delete",
         summary=f"unassigned from {_card_name(card)}",
     )
+    await approvals.publish(request, user, effects)
 
     return {"success": True}
 

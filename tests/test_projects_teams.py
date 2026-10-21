@@ -149,6 +149,7 @@ async def test_detail_carries_team_ids(authed_client, mock_db_session):
         rows_result([]),
         rows_result([]),
         rows_result([]),
+        scalars_result([]),  # pending approval requests
     ]
 
     response = await client.get("/api/projects/1")
@@ -275,9 +276,9 @@ async def test_update_project_teams_revalidates_existing_tags(
     assert project.tags == [tag]
     assert mock_db_session.execute.await_count == 3
     tags_sql = str(
-        mock_db_session.execute.await_args_list[2].args[0].compile(
-            compile_kwargs={"literal_binds": True}
-        )
+        mock_db_session.execute.await_args_list[2]
+        .args[0]
+        .compile(compile_kwargs={"literal_binds": True})
     )
     assert "tags.id IN (4)" in tags_sql
     assert "Project.teams" in loader_paths(mock_db_session.execute.await_args_list[0].args[0])

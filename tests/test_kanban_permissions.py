@@ -117,3 +117,57 @@ async def test_only_approved_assignments_count(entity_type):
     await user_is_card_assignee(db, entity_type, 1, 5)
     sql = " ".join(str(db.execute.await_args.args[0]).split())
     assert "approval_status" in sql
+
+
+# ---------------------------------------------------------
+# Pending assignees (a self-booking awaiting approval)
+# ---------------------------------------------------------
+
+
+@pytest.mark.parametrize("entity_type", ["phase", "subphase"])
+async def test_a_pending_assignee_cannot_move_the_card(entity_type):
+    """The lookup finds only approved rows; a pending joiner has none -> 403."""
+    db = _db_returning(None)  # the approved-only query finds nothing
+    with pytest.raises(HTTPException) as exc:
+        await require_card_status_write(
+            db,
+            entity_type=entity_type,
+            entity_id=7,
+            user_id=5,
+            can_move_any=False,
+            can_move_assigned=True,
+        )
+    assert exc.value.status_code == 403
+    sql = str(db.execute.await_args.args[0].compile(compile_kwargs={"literal_binds": True}))
+    assert "approval_status = 'approved'" in sql
+
+
+@pytest.mark.parametrize("entity_type", ["phase", "subphase"])
+async def test_a_pending_assignee_is_not_notified_as_an_assignee(entity_type):
+    from app.services.notifications import card_assignee_ids
+
+    db = AsyncMock()
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = [5, 5, 8]
+    db.execute.return_value = result
+
+    assert await card_assignee_ids(db, entity_type, 7) == [5, 8]
+    sql = str(db.execute.await_args.args[0].compile(compile_kwargs={"literal_binds": True}))
+    assert "approval_status = 'approved'" in sql
+
+
+async def test_approval_notifications_rank_between_mention_and_assigned():
+    from app.models.notification import Notification
+    from app.services.notifications import dedupe_by_recipient
+
+    def note(kind):
+        return Notification(user_id=5, type=kind, title=kind)
+
+    batches = [[note("comment")], [note("assigned")], [note("approval_decided")]]
+    assert dedupe_by_recipient(batches)[0].type == "approval_decided"
+    batches = [[note("approval_decided")], [note("approval_requested")]]
+    assert dedupe_by_recipient(batches)[0].type == "approval_requested"
+    batches = [[note("approval_requested")], [note("mention")]]
+    assert dedupe_by_recipient(batches)[0].type == "mention"
+    batches = [[note("status_change")], [note("todo_assigned")]]
+    assert dedupe_by_recipient(batches)[0].type == "todo_assigned"

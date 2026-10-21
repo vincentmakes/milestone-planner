@@ -22,6 +22,7 @@ from app.models.custom_column import CustomColumn, CustomColumnValue
 from app.models.equipment import Equipment, EquipmentBlock
 from app.models.note import Note
 from app.models.project import Project
+from app.models.rbac import ApprovalRequest
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.skill import Skill, UserSkill
 from app.models.tag import Tag, TagGroup
@@ -411,7 +412,16 @@ def _site_rows() -> dict:
         dependencies=None,
         created_at=STAMP,
         status="todo",
-        staff_assignments=[ns(id=303, staff_id=7, allocation=25)],
+        # A pending self-booking (awaiting approval, request 61).
+        staff_assignments=[
+            ns(
+                id=303,
+                staff_id=7,
+                allocation=25,
+                approval_status="pending",
+                approval_request_id=61,
+            )
+        ],
     )
     sp_parent = ns(
         id=20,
@@ -439,7 +449,16 @@ def _site_rows() -> dict:
         dependencies=None,
         created_at=STAMP,
         status="in_progress",
-        staff_assignments=[ns(id=202, staff_id=99, allocation=50)],
+        # An approved booking with a pending change (request 62).
+        staff_assignments=[
+            ns(
+                id=202,
+                staff_id=99,
+                allocation=50,
+                approval_status="approved",
+                approval_request_id=62,
+            )
+        ],
     )
     ph_early = ns(
         id=11,
@@ -510,6 +529,8 @@ def _site_rows() -> dict:
                 start_date=date(2026, 1, 5),
                 end_date=date(2026, 1, 30),
                 created_at=STAMP,
+                approval_status="approved",
+                approval_request_id=None,
             )
         ],
         equipment_assignments=[
@@ -645,6 +666,65 @@ def _site_rows() -> dict:
                 created_at=STAMP,
             )
         ],
+        ApprovalRequest: [
+            ns(
+                id=60,
+                action="assignments.self_create",
+                status="approved",
+                close_reason=None,
+                requester_id=7,
+                project_id=1,
+                level="project",
+                target_id=1,
+                assignment_id=101,
+                requested='{"allocation": 60}',
+                previous=None,
+                note=None,
+                decided_by=7,
+                decided_at=STAMP,
+                decision_note="ok",
+                superseded_by_id=None,
+                created_at=STAMP,
+            ),
+            ns(
+                id=61,
+                action="assignments.self_create",
+                status="pending",
+                close_reason=None,
+                requester_id=7,
+                project_id=1,
+                level="subphase",
+                target_id=21,
+                assignment_id=303,
+                requested='{"allocation": 25}',
+                previous=None,
+                note=None,
+                decided_by=None,
+                decided_at=None,
+                decision_note=None,
+                superseded_by_id=None,
+                created_at=STAMP,
+            ),
+            ns(
+                id=62,
+                action="assignments.self_update",
+                status="pending",
+                close_reason=None,
+                requester_id=99,
+                project_id=1,
+                level="phase",
+                target_id=10,
+                assignment_id=202,
+                requested='{"allocation": 70}',
+                previous='{"allocation": 50}',
+                note=None,
+                decided_by=None,
+                decided_at=None,
+                decision_note=None,
+                superseded_by_id=None,
+                created_at=STAMP,
+            ),
+        ],
         CardComment: [
             ns(
                 id=95,
@@ -710,6 +790,7 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
         "Project assignments",
         "Phase assignments",
         "Subphase assignments",
+        "Approval requests",
         "Equipment assignments",
         "Custom columns",
         "Custom column values",
@@ -787,9 +868,56 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
     assert _sheet(wb, "Vacations")[0][7] == "Vacation"
 
     assert _sheet(wb, "Project assignments")[0][:6] == [101, 1, "Alpha", 7, "Alice Martin", 60]
+    assert [c.value for c in wb["Project assignments"][1]][-2:] == [
+        "Approval status",
+        "Pending change",
+    ]
+    assert _sheet(wb, "Project assignments")[0][-2:] == ["approved", None]
     # Staff outside the site's user list exports with an empty name.
-    assert _sheet(wb, "Phase assignments") == [[202, 1, "Alpha", 10, "Execution", 99, None, 50]]
-    assert _sheet(wb, "Subphase assignments")[0][3:] == [21, "Child", 7, "Alice Martin", 25]
+    assert _sheet(wb, "Phase assignments") == [
+        [202, 1, "Alpha", 10, "Execution", 99, None, 50, "approved", "allocation 50% → 70%"]
+    ]
+    assert _sheet(wb, "Subphase assignments")[0][3:] == [
+        21,
+        "Child",
+        7,
+        "Alice Martin",
+        25,
+        "pending",
+        "awaiting approval",
+    ]
+    assert [c.value for c in wb["Approval requests"][1]] == [
+        "ID",
+        "Action",
+        "Status",
+        "Close reason",
+        "Requester ID",
+        "Requester name",
+        "Project ID",
+        "Project name",
+        "Level",
+        "Target ID",
+        "Target name",
+        "Assignment ID",
+        "Requested",
+        "Previous",
+        "Note",
+        "Decided by ID",
+        "Decided by",
+        "Decided at",
+        "Decision note",
+        "Superseded by",
+        "Created at",
+    ]
+    requests = _sheet(wb, "Approval requests")
+    assert [(r[0], r[2], r[8], r[10]) for r in requests] == [
+        (60, "approved", "project", "Alpha"),
+        (61, "pending", "subphase", "Child"),
+        (62, "pending", "phase", "Execution"),
+    ]
+    assert requests[0][15:19] == [7, "Alice Martin", "2026-01-01 12:00:00", "ok"]
+    assert requests[2][5] is None  # requester outside the site's users
+    assert requests[2][12:14] == ['{"allocation": 70}', '{"allocation": 50}']
     equipment_bookings = _sheet(wb, "Equipment assignments")
     assert [(r[0], r[4]) for r in equipment_bookings] == [(401, "HPLC"), (402, None)]
 

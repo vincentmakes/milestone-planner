@@ -185,6 +185,8 @@ async def get_staff_availability(
         ).where(
             and_(
                 ProjectAssignment.staff_id == staff_id,
+                # A booking awaiting approval does not take capacity yet.
+                ProjectAssignment.approval_status == "approved",
                 ProjectAssignment.start_date <= end,
                 ProjectAssignment.end_date >= start,
             )

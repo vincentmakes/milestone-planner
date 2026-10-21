@@ -191,6 +191,7 @@ def create_app() -> FastAPI:
         admin,
         admin_organizations,
         approval_policies,
+        approvals,
         assignments,
         auth,
         custom_columns,
@@ -242,6 +243,7 @@ def create_app() -> FastAPI:
     app.include_router(notifications.router, prefix="/api", tags=["Notifications"])
     app.include_router(roles.router, prefix="/api", tags=["Roles"])
     app.include_router(approval_policies.router, prefix="/api", tags=["Approval Policies"])
+    app.include_router(approvals.router, prefix="/api", tags=["Approval Requests"])
 
     # WebSocket for real-time collaboration
     app.include_router(websocket_router, tags=["WebSocket"])

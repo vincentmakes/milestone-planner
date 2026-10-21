@@ -12,7 +12,9 @@ turns them into per-project decisions that need the project's ``pm_id``:
 - staff assignments are **editor first**: a holder of
   ``assignments.manage_others`` (outright, or through the bundle) writes
   anyone's row; anyone else writes only their own row, in the mode of the
-  matching ``assignments.self_*`` key (``resolve_self_booking``).
+  matching ``assignments.self_*`` key (``resolve_self_booking``). The callers
+  (the eleven self-booking routes) turn an ``"approval"`` outcome into an
+  approval request (app/services/approvals.py, 202).
 
 Routes call these *after* loading the entity, with the server-derived
 `project_id` -- never one taken from the request body.
@@ -149,29 +151,6 @@ async def resolve_self_booking(
     if mode == "approval":
         return "approval"
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=SELF_BOOKING_DENIED_DETAIL)
-
-
-async def require_assignment_write(
-    db: AsyncSession,
-    user: User,
-    *,
-    project_id: int,
-    pm_id: PmId = ...,
-    staff_id: int,
-    action: str,
-) -> None:
-    """
-    The one gate of the staff-assignment writes (project / phase / subphase
-    create, update, delete and the Kanban join / leave): 403 per
-    `resolve_self_booking`.
-
-    TODO(RBAC Task 5): an ``"approval"`` outcome is let through like
-    ``"allow"`` until approval requests exist; Task 5 turns it into the 202
-    path here and at the call sites.
-    """
-    await resolve_self_booking(
-        db, user, project_id=project_id, pm_id=pm_id, staff_id=staff_id, action=action
-    )
 
 
 async def project_id_for_phase(db: AsyncSession, phase_id: int) -> int:

@@ -24,7 +24,6 @@ from app.services.project_access import (
     project_id_for_phase,
     project_id_for_subphase,
     project_pm_id,
-    require_assignment_write,
     require_on_project,
     require_project_editor,
     resolve_self_booking,
@@ -250,40 +249,6 @@ async def test_resolve_rejects_a_non_booking_action():
         await resolve_self_booking(
             _db_returning(None), _user(5), project_id=1, staff_id=5, action="projects.edit_any"
         )
-
-
-# ---------------------------------------------------------
-# require_assignment_write: the one call-site helper
-# ---------------------------------------------------------
-
-
-async def test_require_assignment_write_passes_own_rows_and_editors():
-    await require_assignment_write(
-        _db_returning(None), _user(5), project_id=1, staff_id=5, action=CREATE
-    )
-    await require_assignment_write(
-        _db_returning((5,)), _user(5), project_id=1, staff_id=9, action=REMOVE
-    )
-    await require_assignment_write(
-        _db_returning(None), _user(5, "admin"), project_id=1, pm_id=8, staff_id=9, action=UPDATE
-    )
-
-
-async def test_require_assignment_write_lets_approval_through_until_the_approval_path():
-    # Until approval requests exist, approval mode books directly.
-    user = _user(5, "custom", {CREATE: "approval"})
-    await require_assignment_write(
-        _db_returning((8,)), user, project_id=1, staff_id=5, action=CREATE
-    )
-
-
-async def test_require_assignment_write_rejects_outsiders():
-    with pytest.raises(HTTPException) as exc:
-        await require_assignment_write(
-            _db_returning((8,)), _user(5), project_id=1, staff_id=9, action=CREATE
-        )
-    assert exc.value.status_code == 403
-    assert exc.value.detail == OWN_ASSIGNMENT_DETAIL
 
 
 # ---------------------------------------------------------

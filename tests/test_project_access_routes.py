@@ -9,7 +9,7 @@ particular that privileged callers never pay for the `pm_id` lookup).
 
 from datetime import date, datetime
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -68,11 +68,17 @@ def _project(pm_id):
     return project
 
 
-def _staff_row(staff_id: int, project_id: int = 1):
+def _staff_row(staff_id: int, project_id: int = 1, **fields):
     row = MagicMock()
     row.id = 1
     row.project_id = project_id
     row.staff_id = staff_id
+    row.allocation = fields.pop("allocation", 50)
+    # An ordinary approved row without an open approval request.
+    row.approval_status = fields.pop("approval_status", "approved")
+    row.approval_request_id = fields.pop("approval_request_id", None)
+    for name, value in fields.items():
+        setattr(row, name, value)
     return row
 
 
@@ -145,11 +151,13 @@ async def test_pm_can_delete_a_phase(authed_client, mock_db_session):
     set_user(FakeUser(PM, "user"))
     no_children = MagicMock()
     no_children.all.return_value = []
-    # phase load, pm lookup, subphase descendants, comment + column-value cleanup
+    # phase load, pm lookup, subphase descendants, pending approval requests,
+    # comment + column-value cleanup
     mock_db_session.execute.side_effect = [
         _scalar_result(_phase()),
         _pm_result(PM),
         no_children,
+        MagicMock(),
         MagicMock(),
         MagicMock(),
     ]
@@ -271,12 +279,13 @@ async def test_pm_can_delete_a_subphase(authed_client, mock_db_session):
     set_user(FakeUser(PM, "user"))
     no_children = MagicMock()
     no_children.all.return_value = []
-    # target load, pm lookup, descendants, staff cleanup, comments,
-    # column values, row delete
+    # target load, pm lookup, descendants, pending approval requests, staff
+    # cleanup, comments, column values, row delete
     mock_db_session.execute.side_effect = [
         _scalar_result(_subphase()),
         _pm_result(PM),
         no_children,
+        MagicMock(),
         MagicMock(),
         MagicMock(),
         MagicMock(),
@@ -398,9 +407,9 @@ async def test_user_can_assign_themself_to_a_project(authed_client, mock_db_sess
     client, set_user = authed_client
     set_user(FakeUser(5, "user"))
     _assign_id_on_refresh(mock_db_session)
-    # The project-existence lookup (the user is not its PM), then the
-    # staff-existence check.
-    mock_db_session.execute.side_effect = [_pm_result(PM), _scalar_result(5)]
+    # The project-existence lookup (the user is not its PM), the
+    # staff-existence check, then the duplicate check.
+    mock_db_session.execute.side_effect = [_pm_result(PM), _scalar_result(5), _scalar_result(None)]
 
     response = await client.post(
         "/api/projects/1/staff",
@@ -413,7 +422,7 @@ async def test_user_can_assign_themself_to_a_project(authed_client, mock_db_sess
     )
     assert response.status_code == 200
     assert response.json()["id"] == 42
-    assert mock_db_session.execute.await_count == 2
+    assert mock_db_session.execute.await_count == 3
     added = mock_db_session.add.call_args[0][0]
     assert (added.staff_id, added.allocation) == (5, 60)
 
@@ -469,7 +478,7 @@ async def test_pm_can_assign_anyone_to_their_project(authed_client, mock_db_sess
     client, set_user = authed_client
     set_user(FakeUser(PM, "user"))
     _assign_id_on_refresh(mock_db_session)
-    mock_db_session.execute.side_effect = [_pm_result(PM), _scalar_result(8)]
+    mock_db_session.execute.side_effect = [_pm_result(PM), _scalar_result(8), _scalar_result(None)]
 
     response = await client.post(
         "/api/projects/1/staff",
@@ -550,7 +559,12 @@ async def test_level_assignment_uses_the_servers_project_id(authed_client, mock_
     resolved.first.return_value = (1,)
     detail_row = MagicMock()
     detail_row.first.return_value = (_staff_row(staff_id=5), "Test User5", "Engineer")
-    mock_db_session.execute.side_effect = [resolved, _scalar_result(5), detail_row]
+    mock_db_session.execute.side_effect = [
+        resolved,
+        _scalar_result(5),
+        _scalar_result(None),  # no duplicate
+        detail_row,
+    ]
 
     response = await client.post(path, json={"staff_id": 5, "project_id": 999, "allocation": 40})
     assert response.status_code == 200
@@ -998,32 +1012,17 @@ async def test_self_booking_denied_by_the_role_is_403(authed_client, mock_db_ses
 
 
 @pytest.mark.asyncio
-async def test_self_booking_in_approval_mode_books_until_approvals_exist(
-    authed_client, mock_db_session
-):
-    # RBAC Task 5 turns this into a 202 approval request.
-    client, set_user = authed_client
-    set_user(FakeUser(5, "trainee", {"assignments.self_create": "approval"}))
-    _assign_id_on_refresh(mock_db_session)
-    mock_db_session.execute.side_effect = [_pm_result(PM), _scalar_result(5)]
-
-    response = await client.post("/api/projects/1/staff", json={"staff_id": 5, **PROJECT_STAFF})
-
-    assert response.status_code == 200
-
-
-@pytest.mark.asyncio
 async def test_manage_others_books_anyone_without_the_pm_lookup(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(FakeUser(5, "dispatcher", {"assignments.manage_others"}))
     _assign_id_on_refresh(mock_db_session)
-    # Project existence (always), then the staff check -- no editor lookup.
-    mock_db_session.execute.side_effect = [_pm_result(PM), _scalar_result(8)]
+    # Project existence (always), the staff and duplicate checks -- no editor lookup.
+    mock_db_session.execute.side_effect = [_pm_result(PM), _scalar_result(8), _scalar_result(None)]
 
     response = await client.post("/api/projects/1/staff", json={"staff_id": 8, **PROJECT_STAFF})
 
     assert response.status_code == 200
-    assert mock_db_session.execute.await_count == 2
+    assert mock_db_session.execute.await_count == 3
 
 
 @pytest.mark.asyncio
@@ -1038,3 +1037,506 @@ async def test_removing_ones_own_phase_booking_follows_self_remove(authed_client
     assert response.status_code == 403
     assert response.json()["detail"] == "You are not allowed to book yourself on projects"
     mock_db_session.commit.assert_not_awaited()
+
+
+# ---------------------------------------------------------
+# The eleven self-booking routes: allow / approval (202) / deny (403)
+# ---------------------------------------------------------
+
+SELF_MODES = {
+    "allow": FakeUser(5, "user"),  # shipped default: own bookings allowed
+    "approval": FakeUser(
+        5,
+        "trainee",
+        {
+            "assignments.self_create": "approval",
+            "assignments.self_update": "approval",
+            "assignments.self_remove": "approval",
+            "projects.manage_as_pm": "allow",
+        },
+    ),
+    "deny": FakeUser(5, "viewer", {"projects.manage_as_pm": "allow"}),
+}
+
+
+def _resolved(project_id: int = 1):
+    """Result of `project_id_for_phase` / `project_id_for_subphase`."""
+    result = MagicMock()
+    result.first.return_value = (project_id,)
+    return result
+
+
+def _detail_row(staff_id: int = 5):
+    result = MagicMock()
+    result.first.return_value = (_staff_row(staff_id), "Test User5", "Engineer")
+    return result
+
+
+ME = SimpleNamespace(id=5, full_name="Test User5", max_capacity=80)
+
+# (id, method, path, body, action, level, results per mode). The results are
+# the queries before the decision (plus, for "allow", what the direct write
+# still reads); "pm" stands for the project-manager lookup the non-editor pays.
+SELF_ROUTES = [
+    (
+        "project-create",
+        "post",
+        "/api/projects/1/staff",
+        {"staff_id": 5, **PROJECT_STAFF},
+        "assignments.self_create",
+        "project",
+        {
+            "allow": lambda: [_pm_result(PM), _scalar_result(5), _scalar_result(None)],
+            "approval": lambda: [_pm_result(PM), _scalar_result(5), _scalar_result(None)],
+            "deny": lambda: [_pm_result(PM)],
+        },
+    ),
+    (
+        "project-update",
+        "put",
+        "/api/assignments/1",
+        PROJECT_STAFF,
+        "assignments.self_update",
+        "project",
+        {
+            "allow": lambda: [_scalar_result(_staff_row(5))],
+            "approval": lambda: [_scalar_result(_staff_row(5)), _pm_result(PM)],
+            "deny": lambda: [_scalar_result(_staff_row(5)), _pm_result(PM)],
+        },
+    ),
+    (
+        "project-delete",
+        "delete",
+        "/api/assignments/1",
+        None,
+        "assignments.self_remove",
+        "project",
+        {
+            "allow": lambda: [_scalar_result(_staff_row(5))],
+            "approval": lambda: [_scalar_result(_staff_row(5)), _pm_result(PM)],
+            "deny": lambda: [_scalar_result(_staff_row(5)), _pm_result(PM)],
+        },
+    ),
+    (
+        "phase-create",
+        "post",
+        "/api/phases/1/staff",
+        {"staff_id": 5, "project_id": 1, "allocation": 40},
+        "assignments.self_create",
+        "phase",
+        {
+            "allow": lambda: [_resolved(), _scalar_result(5), _scalar_result(None), _detail_row()],
+            "approval": lambda: [
+                _resolved(),
+                _pm_result(PM),
+                _scalar_result(5),
+                _scalar_result(None),
+            ],
+            "deny": lambda: [_resolved(), _pm_result(PM)],
+        },
+    ),
+    (
+        "phase-update",
+        "put",
+        "/api/phase-staff/1",
+        {"allocation": 40},
+        "assignments.self_update",
+        "phase",
+        {
+            "allow": lambda: [_scalar_result(_staff_row(5))],
+            "approval": lambda: [_scalar_result(_staff_row(5)), _pm_result(PM)],
+            "deny": lambda: [_scalar_result(_staff_row(5)), _pm_result(PM)],
+        },
+    ),
+    (
+        "phase-delete",
+        "delete",
+        "/api/phase-staff/1",
+        None,
+        "assignments.self_remove",
+        "phase",
+        {
+            "allow": lambda: [_scalar_result(_staff_row(5))],
+            "approval": lambda: [_scalar_result(_staff_row(5)), _pm_result(PM)],
+            "deny": lambda: [_scalar_result(_staff_row(5)), _pm_result(PM)],
+        },
+    ),
+    (
+        "subphase-create",
+        "post",
+        "/api/subphases/1/staff",
+        {"staff_id": 5, "project_id": 1, "allocation": 40},
+        "assignments.self_create",
+        "subphase",
+        {
+            "allow": lambda: [_resolved(), _scalar_result(5), _scalar_result(None), _detail_row()],
+            "approval": lambda: [
+                _resolved(),
+                _pm_result(PM),
+                _scalar_result(5),
+                _scalar_result(None),
+            ],
+            "deny": lambda: [_resolved(), _pm_result(PM)],
+        },
+    ),
+    (
+        "subphase-update",
+        "put",
+        "/api/subphase-staff/1",
+        {"allocation": 40},
+        "assignments.self_update",
+        "subphase",
+        {
+            "allow": lambda: [_scalar_result(_staff_row(5))],
+            "approval": lambda: [_scalar_result(_staff_row(5)), _pm_result(PM)],
+            "deny": lambda: [_scalar_result(_staff_row(5)), _pm_result(PM)],
+        },
+    ),
+    (
+        "subphase-delete",
+        "delete",
+        "/api/subphase-staff/1",
+        None,
+        "assignments.self_remove",
+        "subphase",
+        {
+            "allow": lambda: [_scalar_result(_staff_row(5))],
+            "approval": lambda: [_scalar_result(_staff_row(5)), _pm_result(PM)],
+            "deny": lambda: [_scalar_result(_staff_row(5)), _pm_result(PM)],
+        },
+    ),
+    (
+        "kanban-join",
+        "post",
+        "/api/kanban/cards/phase/1/assignees",
+        {"staff_id": 5},
+        "assignments.self_create",
+        "phase",
+        {
+            "allow": lambda: [_scalar_result(_card()), _scalar_result(ME), _scalar_result(None)],
+            "approval": lambda: [
+                _scalar_result(_card()),
+                _pm_result(PM),
+                _scalar_result(ME),
+                _scalar_result(None),
+            ],
+            "deny": lambda: [_scalar_result(_card()), _pm_result(PM)],
+        },
+    ),
+    (
+        "kanban-leave",
+        "delete",
+        "/api/kanban/cards/subphase/1/assignees/5",
+        None,
+        "assignments.self_remove",
+        "subphase",
+        {
+            "allow": lambda: [_scalar_result(_card()), _scalar_result(_staff_row(5))],
+            "approval": lambda: [
+                _scalar_result(_card()),
+                _scalar_result(_staff_row(5)),
+                _pm_result(PM),
+            ],
+            "deny": lambda: [
+                _scalar_result(_card()),
+                _scalar_result(_staff_row(5)),
+                _pm_result(PM),
+            ],
+        },
+    ),
+]
+
+_ROUTE_IDS = [route[0] for route in SELF_ROUTES]
+
+
+async def _call(client, method, path, body):
+    if body is None:
+        return await getattr(client, method)(path)
+    return await getattr(client, method)(path, json=body)
+
+
+@pytest.fixture
+def submit():
+    """The approval path's service call, answering like the real one."""
+    from fastapi.responses import JSONResponse
+
+    response = JSONResponse(
+        status_code=202, content={"success": True, "pending": True, "request_id": 50, "id": 70}
+    )
+    with patch("app.services.approvals.submit_request", AsyncMock(return_value=response)) as mocked:
+        yield mocked
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("name", "method", "path", "body", "action", "level", "results"), SELF_ROUTES, ids=_ROUTE_IDS
+)
+async def test_self_route_in_allow_mode_writes_directly(
+    authed_client, mock_db_session, submit, name, method, path, body, action, level, results
+):
+    client, set_user = authed_client
+    set_user(SELF_MODES["allow"])
+    _assign_id_on_refresh(mock_db_session)
+    mock_db_session.execute.side_effect = results["allow"]()
+
+    response = await _call(client, method, path, body)
+
+    assert response.status_code in (200, 201)
+    assert "pending" not in response.json()
+    submit.assert_not_awaited()
+    mock_db_session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("name", "method", "path", "body", "action", "level", "results"), SELF_ROUTES, ids=_ROUTE_IDS
+)
+async def test_self_route_in_approval_mode_files_a_request(
+    authed_client, mock_db_session, submit, name, method, path, body, action, level, results
+):
+    client, set_user = authed_client
+    set_user(SELF_MODES["approval"])
+    mock_db_session.execute.side_effect = results["approval"]()
+
+    response = await _call(client, method, path, body)
+
+    assert response.status_code == 202
+    assert response.json() == {"success": True, "pending": True, "request_id": 50, "id": 70}
+    kwargs = submit.await_args.kwargs
+    assert (kwargs["action"], kwargs["level"], kwargs["project_id"]) == (action, level, 1)
+    if method == "post":
+        assert kwargs["target_id"] == 1 and kwargs["values"]["allocation"] in (40, 60, 80)
+    else:
+        assert kwargs["row"].staff_id == 5
+    mock_db_session.add.assert_not_called()  # nothing written by the route itself
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("name", "method", "path", "body", "action", "level", "results"), SELF_ROUTES, ids=_ROUTE_IDS
+)
+async def test_self_route_without_the_key_is_403(
+    authed_client, mock_db_session, submit, name, method, path, body, action, level, results
+):
+    client, set_user = authed_client
+    set_user(SELF_MODES["deny"])
+    mock_db_session.execute.side_effect = results["deny"]()
+
+    response = await _call(client, method, path, body)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "You are not allowed to book yourself on projects"
+    submit.assert_not_awaited()
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_self_booking_in_approval_mode_answers_202_with_the_documented_body(
+    authed_client, mock_db_session
+):
+    """End to end through the real submit_request: a pending row plus its request."""
+    from app.models.assignment import PhaseStaffAssignment
+    from app.models.rbac import ApprovalRequest
+
+    client, set_user = authed_client
+    set_user(SELF_MODES["approval"])
+    added: list = []
+    mock_db_session.add.side_effect = added.append
+
+    async def flush():
+        for index, obj in enumerate(added):
+            if getattr(obj, "id", None) is None:
+                obj.id = 60 + index
+
+    mock_db_session.flush = AsyncMock(side_effect=flush)
+    mock_db_session.execute.side_effect = [
+        _resolved(),
+        _pm_result(PM),
+        _scalar_result(5),
+        _scalar_result(None),
+    ]
+    with (
+        patch(
+            "app.services.approvals.load_context",
+            AsyncMock(return_value=SimpleNamespace(pm_id=PM, site_id=1, target_name="Design")),
+        ),
+        patch("app.services.approvals.load_policy", AsyncMock(return_value=MagicMock())),
+        patch("app.services.approvals.approver_user_ids", AsyncMock(return_value=[PM])),
+        patch("app.services.approvals.publish", AsyncMock()) as publish,
+    ):
+        response = await client.post(
+            "/api/phases/1/staff", json={"staff_id": 5, "project_id": 1, "allocation": 40}
+        )
+
+    assert response.status_code == 202
+    request, row = added[0], added[1]
+    assert isinstance(request, ApprovalRequest) and isinstance(row, PhaseStaffAssignment)
+    assert response.json() == {
+        "success": True,
+        "pending": True,
+        "request_id": request.id,
+        "id": row.id,
+    }
+    assert row.approval_status == "pending" and row.approval_request_id == request.id
+    mock_db_session.commit.assert_awaited_once()
+    publish.assert_awaited_once()
+
+
+# ---------------------------------------------------------
+# Duplicates, pending rows and open requests on direct writes
+# ---------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("path", "body", "head"),
+    [
+        ("/api/projects/1/staff", {"staff_id": 8, **PROJECT_STAFF}, [_pm_result(PM)]),
+        ("/api/phases/1/staff", {"staff_id": 8, "project_id": 1}, [_resolved()]),
+        ("/api/subphases/1/staff", {"staff_id": 8, "project_id": 1}, [_resolved()]),
+    ],
+    ids=["project", "phase", "subphase"],
+)
+async def test_booking_someone_twice_is_409(authed_client, mock_db_session, path, body, head):
+    client, set_user = authed_client
+    set_user(FakeUser(9, "superuser"))
+    existing = _staff_row(8)
+    mock_db_session.execute.side_effect = [*head, _scalar_result(8), _scalar_result(existing)]
+
+    response = await client.post(path, json=body)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "That staff member is already booked here"
+    mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_project_level_duplicate_compares_the_dates(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(9, "superuser"))
+    _assign_id_on_refresh(mock_db_session)
+    mock_db_session.execute.side_effect = [_pm_result(PM), _scalar_result(8), _scalar_result(None)]
+
+    response = await client.post("/api/projects/1/staff", json={"staff_id": 8, **PROJECT_STAFF})
+
+    assert response.status_code == 200
+    sql = str(
+        mock_db_session.execute.await_args_list[2]
+        .args[0]
+        .compile(compile_kwargs={"literal_binds": True})
+    )
+    assert "project_assignments.start_date = '2025-01-01'" in sql
+    assert "project_assignments.end_date = '2025-01-31'" in sql
+
+
+@pytest.mark.asyncio
+async def test_pending_booking_counts_as_a_duplicate(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(SELF_MODES["approval"])
+    pending = _staff_row(5, approval_status="pending", approval_request_id=50)
+    mock_db_session.execute.side_effect = [
+        _resolved(),
+        _pm_result(PM),
+        _scalar_result(5),
+        _scalar_result(pending),
+    ]
+
+    response = await client.post(
+        "/api/phases/1/staff", json={"staff_id": 5, "project_id": 1, "allocation": 40}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "This booking already awaits approval"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("put", "/api/assignments/1", PROJECT_STAFF),
+        ("delete", "/api/assignments/1", None),
+        ("put", "/api/phase-staff/1", {"allocation": 30}),
+        ("delete", "/api/phase-staff/1", None),
+        ("put", "/api/subphase-staff/1", {"allocation": 30}),
+        ("delete", "/api/subphase-staff/1", None),
+    ],
+)
+async def test_editor_write_on_a_pending_booking_is_409(
+    authed_client, mock_db_session, method, path, body
+):
+    client, set_user = authed_client
+    set_user(FakeUser(9, "superuser"))
+    pending = _staff_row(5, approval_status="pending", approval_request_id=50)
+    mock_db_session.execute.side_effect = [_scalar_result(pending)]
+
+    response = await _call(client, method, path, body)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "This booking awaits approval — approve or reject it instead"
+    )
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_editor_removing_a_pending_kanban_assignee_is_409(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(9, "superuser"))
+    pending = _staff_row(5, approval_status="pending", approval_request_id=50)
+    mock_db_session.execute.side_effect = [_scalar_result(_card()), _scalar_result(pending)]
+
+    response = await client.delete("/api/kanban/cards/phase/1/assignees/5")
+
+    assert response.status_code == 409
+    mock_db_session.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("put", "/api/assignments/1", PROJECT_STAFF),
+        ("delete", "/api/phase-staff/1", None),
+        ("put", "/api/subphase-staff/1", {"allocation": 30}),
+    ],
+)
+async def test_editor_write_overtakes_an_open_request(
+    authed_client, mock_db_session, method, path, body
+):
+    from app.services.approvals import ApprovalEffects
+
+    client, set_user = authed_client
+    set_user(FakeUser(9, "superuser"))
+    row = _staff_row(5, approval_request_id=50)
+    mock_db_session.execute.side_effect = [_scalar_result(row)]
+    effects = ApprovalEffects()
+    with (
+        patch("app.services.approvals.expire_overtaken", AsyncMock(return_value=effects)) as expire,
+        patch("app.services.approvals.publish", AsyncMock()) as publish,
+    ):
+        response = await _call(client, method, path, body)
+
+    assert response.status_code == 200
+    assert expire.await_args.kwargs["row"] is row
+    mock_db_session.commit.assert_awaited_once()
+    publish.assert_awaited_once()
+    assert publish.await_args.args[2] is effects
+
+
+@pytest.mark.asyncio
+async def test_editor_removing_a_kanban_assignee_overtakes_the_open_request(
+    authed_client, mock_db_session
+):
+    client, set_user = authed_client
+    set_user(FakeUser(9, "superuser"))
+    row = _staff_row(5, approval_request_id=50)
+    mock_db_session.execute.side_effect = [_scalar_result(_card()), _scalar_result(row)]
+    with (
+        patch("app.services.approvals.expire_overtaken", AsyncMock()) as expire,
+        patch("app.services.approvals.publish", AsyncMock()),
+    ):
+        response = await client.delete("/api/kanban/cards/phase/1/assignees/5")
+
+    assert response.status_code == 200
+    expire.assert_awaited_once()

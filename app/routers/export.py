@@ -29,12 +29,14 @@ from app.models.custom_column import CustomColumn, CustomColumnValue
 from app.models.equipment import Equipment, EquipmentBlock, EquipmentSite
 from app.models.note import Note
 from app.models.project import Project, ProjectPhase, ProjectSubphase
+from app.models.rbac import ApprovalRequest
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.skill import Skill, UserSkill
 from app.models.tag import Tag, TagGroup, TagSite
 from app.models.team import Team
 from app.models.user import User, UserSite
 from app.models.vacation import Vacation
+from app.services.approvals import pending_change_text
 from app.services.site_access import ensure_project_visible, ensure_site_access
 from app.utils import utcnow_naive
 
@@ -724,6 +726,29 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         else []
     )
 
+    # Approval requests on this site's projects (own bookings awaiting or past
+    # a decision); the assignment sheets show the open one of each row.
+    approval_rows: list[ApprovalRequest] = (
+        list(
+            (
+                await db.execute(
+                    select(ApprovalRequest)
+                    .where(ApprovalRequest.project_id.in_(project_ids))
+                    .order_by(ApprovalRequest.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if project_ids
+        else []
+    )
+    approval_by_id = {r.id: r for r in approval_rows}
+
+    def pending_change(assignment: Any) -> str:
+        request_id = assignment.approval_request_id
+        return pending_change_text(approval_by_id.get(request_id) if request_id else None)
+
     # --- Build the workbook ----------------------------------------------------------
     wb = Workbook()
     # Drop the default sheet; we'll add named ones.
@@ -1136,6 +1161,8 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                     _iso(a.start_date),
                     _iso(a.end_date),
                     _iso(a.created_at),
+                    a.approval_status,
+                    pending_change(a),
                 ]
             )
         for ph in p.phases:
@@ -1150,6 +1177,8 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                         pa.staff_id,
                         user_by_id[pa.staff_id].full_name if pa.staff_id in user_by_id else "",
                         pa.allocation,
+                        pa.approval_status,
+                        pending_change(pa),
                     ]
                 )
         for sp in p.subphases:
@@ -1164,6 +1193,8 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                         sa.staff_id,
                         user_by_id[sa.staff_id].full_name if sa.staff_id in user_by_id else "",
                         sa.allocation,
+                        sa.approval_status,
+                        pending_change(sa),
                     ]
                 )
 
@@ -1179,6 +1210,8 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
             "Start date",
             "End date",
             "Created at",
+            "Approval status",
+            "Pending change",
         ],
         project_assignment_data,
     )
@@ -1193,6 +1226,8 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
             "Staff ID",
             "Staff name",
             "Allocation %",
+            "Approval status",
+            "Pending change",
         ],
         phase_assignment_data,
     )
@@ -1207,8 +1242,76 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
             "Staff ID",
             "Staff name",
             "Allocation %",
+            "Approval status",
+            "Pending change",
         ],
         subphase_assignment_data,
+    )
+
+    # Approval requests (own bookings awaiting or past a decision). Per-user
+    # todos are not exported (private inbox state, like notifications).
+    def target_name(request: ApprovalRequest) -> str:
+        if request.level == "phase" and request.target_id in phase_by_id:
+            return phase_by_id[request.target_id][1].type or ""
+        if request.level == "subphase" and request.target_id in subphase_by_id:
+            return subphase_by_id[request.target_id][1].name or ""
+        project = project_by_id.get(request.project_id)
+        return project.name if project is not None and request.level == "project" else ""
+
+    def user_name(user_id: int | None) -> str:
+        return user_by_id[user_id].full_name if user_id in user_by_id else ""
+
+    add_sheet(
+        "Approval requests",
+        [
+            "ID",
+            "Action",
+            "Status",
+            "Close reason",
+            "Requester ID",
+            "Requester name",
+            "Project ID",
+            "Project name",
+            "Level",
+            "Target ID",
+            "Target name",
+            "Assignment ID",
+            "Requested",
+            "Previous",
+            "Note",
+            "Decided by ID",
+            "Decided by",
+            "Decided at",
+            "Decision note",
+            "Superseded by",
+            "Created at",
+        ],
+        [
+            [
+                r.id,
+                r.action,
+                r.status,
+                r.close_reason or "",
+                r.requester_id,
+                user_name(r.requester_id),
+                r.project_id,
+                project_by_id[r.project_id].name if r.project_id in project_by_id else "",
+                r.level,
+                r.target_id,
+                target_name(r),
+                r.assignment_id,
+                r.requested or "",
+                r.previous or "",
+                r.note or "",
+                r.decided_by,
+                user_name(r.decided_by),
+                _iso(r.decided_at),
+                r.decision_note or "",
+                r.superseded_by_id,
+                _iso(r.created_at),
+            ]
+            for r in approval_rows
+        ],
     )
 
     # Equipment assignments

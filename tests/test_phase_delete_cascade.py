@@ -73,6 +73,7 @@ async def test_delete_phase_cleans_up_every_nested_subphase(authed_client, mock_
         _ids_result(12),  # children of 10/11
         _ids_result(13),  # children of 12
         _ids_result(),  # children of 13
+        MagicMock(),  # pending approval requests on the subtree: none
         MagicMock(),  # subphase staff assignments
         MagicMock(),  # subphase card comments
         MagicMock(),  # subphase custom-column values
@@ -106,7 +107,7 @@ async def test_delete_phase_starts_the_walk_from_the_phase(authed_client, mock_d
         _scalar_result(_phase()),
         _ids_result(10),
         _ids_result(),
-        *[MagicMock() for _ in range(6)],
+        *[MagicMock() for _ in range(7)],  # requests + cleanup
     ]
 
     response = await client.delete("/api/phases/1")
@@ -126,6 +127,7 @@ async def test_delete_phase_without_subphases_skips_subtree_cleanup(authed_clien
     mock_db_session.execute.side_effect = [
         _scalar_result(_phase()),
         _ids_result(),
+        MagicMock(),  # pending approval requests: none
         MagicMock(),  # phase card comments
         MagicMock(),  # phase custom-column values
     ]
@@ -158,7 +160,7 @@ async def test_delete_subphase_includes_itself_and_its_descendants(authed_client
         _scalar_result(_subphase()),
         _ids_result(20, 21),
         _ids_result(),
-        *[MagicMock() for _ in range(4)],
+        *[MagicMock() for _ in range(5)],  # requests + cleanup
     ]
 
     response = await client.delete("/api/subphases/10")
@@ -170,3 +172,106 @@ async def test_delete_subphase_includes_itself_and_its_descendants(authed_client
     _find(deletes, "card_comments", "'subphase'", ids)
     _find(deletes, "custom_column_values", "'subphase'", ids)
     _find(deletes, "project_subphases", ids)
+
+
+# ---------------------------------------------------------
+# Pending approval requests on the deleted target expire first
+# ---------------------------------------------------------
+
+
+def _hooks():
+    from unittest.mock import AsyncMock, patch
+
+    from app.services.approvals import ApprovalEffects
+
+    effects = ApprovalEffects()
+    return (
+        effects,
+        patch("app.services.approvals.cancel_for_entity", AsyncMock(return_value=effects)),
+        patch("app.services.approvals.publish", AsyncMock()),
+    )
+
+
+@pytest.mark.asyncio
+async def test_delete_phase_expires_the_requests_on_it_and_its_subtree(
+    authed_client, mock_db_session
+):
+    client, set_user = authed_client
+    set_user(FakeUser(9, "superuser"))
+    mock_db_session.execute.side_effect = [
+        _scalar_result(_phase()),
+        _ids_result(10),
+        _ids_result(),
+        *[MagicMock() for _ in range(6)],
+    ]
+    effects, cancel_patch, publish_patch = _hooks()
+    with cancel_patch as cancel, publish_patch as publish:
+        response = await client.delete("/api/phases/1")
+
+    assert response.status_code == 200
+    kwargs = cancel.await_args.kwargs
+    assert (kwargs["project_id"], kwargs["phase_ids"], kwargs["subphase_ids"]) == (1, [1], [10])
+    assert publish.await_args.args[2] is effects
+
+
+@pytest.mark.asyncio
+async def test_delete_subphase_expires_the_requests_on_its_subtree(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(9, "superuser"))
+    mock_db_session.execute.side_effect = [
+        _scalar_result(_subphase()),
+        _ids_result(20),
+        _ids_result(),
+        *[MagicMock() for _ in range(4)],
+    ]
+    effects, cancel_patch, publish_patch = _hooks()
+    with cancel_patch as cancel, publish_patch as publish:
+        response = await client.delete("/api/subphases/10")
+
+    assert response.status_code == 200
+    assert cancel.await_args.kwargs["subphase_ids"] == [10, 20]
+    publish.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_project_closes_its_requests(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(9, "superuser"))
+    project = MagicMock(id=1, site_id=1)
+    project.name = "Alpha"
+    no_subphases = MagicMock()
+    no_subphases.scalars.return_value.all.return_value = []
+    mock_db_session.execute.side_effect = [
+        _scalar_result(project),
+        no_subphases,
+        *[MagicMock() for _ in range(5)],
+    ]
+    effects, cancel_patch, publish_patch = _hooks()
+    with cancel_patch as cancel, publish_patch as publish:
+        response = await client.delete("/api/projects/1")
+
+    assert response.status_code == 200
+    assert cancel.await_args.kwargs == {"project_id": 1, "whole_project": True}
+    publish.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_phase_queries_its_pending_requests_before_the_delete(
+    authed_client, mock_db_session
+):
+    """Unpatched: the request lookup runs (and finds nothing) before the commit."""
+    client, set_user = authed_client
+    set_user(FakeUser(9, "superuser"))
+    mock_db_session.execute.side_effect = [
+        _scalar_result(_phase()),
+        _ids_result(),
+        MagicMock(),  # pending requests on the phase: none
+        MagicMock(),  # phase card comments
+        MagicMock(),  # phase custom-column values
+    ]
+
+    response = await client.delete("/api/phases/1")
+
+    assert response.status_code == 200
+    sql = _executed_sql(mock_db_session)
+    assert "FROM approval_requests" in sql[2] and "approval_requests.target_id IN (1)" in sql[2]

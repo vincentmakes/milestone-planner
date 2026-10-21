@@ -39,6 +39,7 @@ from app.schemas.project import (
     SubphaseReorderRequest,
     SubphaseUpdate,
 )
+from app.services import approvals
 from app.services.card_status import apply_completion, apply_status
 from app.services.date_range import ensure_date_order
 from app.services.permissions import permission_required_detail
@@ -128,6 +129,8 @@ def build_subphase_tree_optimized(
                 "allocation": ssa.allocation,
                 "staff_name": ssa.staff_name if hasattr(ssa, "staff_name") else None,
                 "staff_role": ssa.staff_role if hasattr(ssa, "staff_role") else None,
+                "approval_status": ssa.approval_status,
+                "approval": getattr(ssa, "approval", None),
             }
             for ssa in staff_list
         ]
@@ -624,9 +627,15 @@ async def get_project(
         int((t7 - t0) * 1000),
     )
 
+    # Open approval requests, keyed (level, assignment id): one more query
+    # (plus the policies when any is pending).
+    approval_index = await approvals.project_approval_index(
+        db, user, project_id=project_id, pm_id=project.pm_id
+    )
+
     # Convert to list with attributes
     class StaffAssignmentWithName:
-        def __init__(self, assignment, staff_name, staff_role):
+        def __init__(self, assignment, staff_name, staff_role, level):
             self.id = assignment.id
             self.phase_id = getattr(assignment, "phase_id", None)
             self.subphase_id = getattr(assignment, "subphase_id", None)
@@ -635,9 +644,15 @@ async def get_project(
             self.allocation = assignment.allocation
             self.staff_name = staff_name
             self.staff_role = staff_role
+            # 'pending' = a self-booking awaiting approval; `approval` = the
+            # open request on the row (pending create, change or removal).
+            self.approval_status = assignment.approval_status
+            self.approval = approval_index.get((level, assignment.id))
 
-    phase_staff = [StaffAssignmentWithName(r[0], r[1], r[2]) for r in phase_staff_rows]
-    subphase_staff = [StaffAssignmentWithName(r[0], r[1], r[2]) for r in subphase_staff_rows]
+    phase_staff = [StaffAssignmentWithName(r[0], r[1], r[2], "phase") for r in phase_staff_rows]
+    subphase_staff = [
+        StaffAssignmentWithName(r[0], r[1], r[2], "subphase") for r in subphase_staff_rows
+    ]
 
     # Build phases with nested data
     phases = []
@@ -652,6 +667,8 @@ async def get_project(
                 "allocation": psa.allocation,
                 "staff_name": psa.staff_name,
                 "staff_role": psa.staff_role,
+                "approval_status": psa.approval_status,
+                "approval": psa.approval,
             }
             for psa in phase_staff
             if psa.phase_id == p.id
@@ -694,6 +711,8 @@ async def get_project(
             "end_date": r[0].end_date,
             "staff_name": r[1],
             "staff_role": r[2],
+            "approval_status": r[0].approval_status,
+            "approval": approval_index.get(("project", r[0].id)),
         }
         for r in project_staff_rows
     ]
@@ -933,6 +952,10 @@ async def delete_project(
 
     project_name = project.name
 
+    # Its approval requests cascade with the project; close them first so the
+    # requesters and approvers are told their items are gone.
+    effects = await approvals.cancel_for_entity(db, user, project_id=project_id, whole_project=True)
+
     # Polymorphic rows first (comments, custom-column values, the subphase
     # subtree with its assignments) -- nothing cascades to them.
     await delete_project_polymorphic_rows(db, [project_id])
@@ -958,6 +981,7 @@ async def delete_project(
         action="delete",
         summary=project_name,
     )
+    await approvals.publish(request, user, effects)
 
     return {"success": True}
 
@@ -1117,6 +1141,11 @@ async def delete_phase(
     # FK, so the whole subtree (and its assignments, comments and column
     # values) must be removed explicitly or it is orphaned.
     subphase_ids = await collect_descendant_subphase_ids(db, phase_id, "phase")
+    # Pending approval requests on the phase or its subtree expire
+    # (target_deleted) before their rows go with it.
+    effects = await approvals.cancel_for_entity(
+        db, user, project_id=project_id, phase_ids=[phase_id], subphase_ids=subphase_ids
+    )
     await delete_subphases_and_dependents(db, subphase_ids)
 
     # card_comments / custom_column_values are polymorphic and carry no FK
@@ -1147,6 +1176,7 @@ async def delete_phase(
         action="delete",
         summary=phase_type,
     )
+    await approvals.publish(request, user, effects)
 
     return {"success": True}
 
@@ -1475,6 +1505,9 @@ async def delete_subphase(
     await require_project_editor(db, user, project_id)
 
     all_ids = [subphase_id] + await collect_descendant_subphase_ids(db, subphase_id, "subphase")
+    effects = await approvals.cancel_for_entity(
+        db, user, project_id=project_id, subphase_ids=all_ids
+    )
     await delete_subphases_and_dependents(db, all_ids)
 
     await db.commit()
@@ -1488,6 +1521,7 @@ async def delete_subphase(
         action="delete",
         summary=sp_name,
     )
+    await approvals.publish(request, user, effects)
 
     return {"success": True}
 

@@ -21,7 +21,15 @@ from app.models.notification import Notification
 
 # Ordered by specificity: the earlier type wins when one event would otherwise
 # produce two notifications for the same recipient.
-_TYPE_PRIORITY = ("mention", "assigned", "status_change", "comment")
+_TYPE_PRIORITY = (
+    "mention",
+    "approval_requested",
+    "approval_decided",
+    "assigned",
+    "todo_assigned",
+    "status_change",
+    "comment",
+)
 
 
 async def card_assignee_ids(
@@ -29,14 +37,20 @@ async def card_assignee_ids(
     entity_type: str,
     entity_id: int,
 ) -> list[int]:
-    """Staff ids currently assigned to a card."""
+    """Staff ids with an approved assignment on a card.
+
+    A pending self-booking (awaiting approval) is not an assignee yet: it is
+    not notified of moves or comments as one (mentions still reach anyone).
+    """
     if entity_type == "phase":
         query = select(PhaseStaffAssignment.staff_id).where(
-            PhaseStaffAssignment.phase_id == entity_id
+            PhaseStaffAssignment.phase_id == entity_id,
+            PhaseStaffAssignment.approval_status == "approved",
         )
     else:
         query = select(SubphaseStaffAssignment.staff_id).where(
-            SubphaseStaffAssignment.subphase_id == entity_id
+            SubphaseStaffAssignment.subphase_id == entity_id,
+            SubphaseStaffAssignment.approval_status == "approved",
         )
 
     result = await db.execute(query)

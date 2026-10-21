@@ -130,3 +130,24 @@ async def send_notification(request: Request, user_id: int, payload: dict) -> No
             "timestamp": utcnow_naive().isoformat() + "Z",
         },
     )
+
+
+async def send_user_event(request: Request, user_id: int, event_type: str, payload: dict) -> None:
+    """
+    Push one per-user event (``approval:changed``, ``todo:changed``) to a
+    single user's connections.
+
+    Like ``send_notification``, call it after the commit; it is a live hint
+    only (per-process manager), and the client refetches the state it names.
+    """
+    tenant_id = get_tenant_from_request(request)
+
+    await manager.send_to_user(
+        tenant_id,
+        user_id,
+        {
+            "type": event_type,
+            "payload": payload,
+            "timestamp": utcnow_naive().isoformat() + "Z",
+        },
+    )

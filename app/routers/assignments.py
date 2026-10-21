@@ -23,12 +23,22 @@ Matches Node.js routes:
 PUT/DELETE /api/equipment-assignments/:id live in routers/equipment.py (that
 router is registered first; duplicates here used to be shadowed dead code).
 
-Auth: staff-assignment writes go through `require_assignment_write`, editor
-first -- ``assignments.manage_others`` (outright, or the project's manager
-through the PM bundle) writes any row; anyone else only their own row
-(`staff_id == user.id`) under ``assignments.self_create`` / ``self_update`` /
-``self_remove``. The `project_id` used for that check is always derived
+Auth: staff-assignment writes are decided editor first
+(`project_access.resolve_self_booking`, `approvals.resolve_row_write`) --
+``assignments.manage_others`` (outright, or the project's manager through the
+PM bundle) writes any row; anyone else only their own row
+(`staff_id == user.id`) in the mode of ``assignments.self_create`` /
+``self_update`` / ``self_remove``: ``allow`` writes as before, ``approval``
+files an approval request instead and answers **202**
+``{success, pending: true, request_id, id}`` (app/services/approvals.py),
+no key is a 403. The `project_id` used for those checks is always derived
 server-side from the path or the loaded row, never from the request body.
+
+A booking awaiting approval is a real row (``approval_status = 'pending'``):
+a second booking of the same person on the target is a 409 (pending or not;
+at project level only with the same dates), and a direct write on a pending
+row is a 409 (decide the request instead). A direct write on a row with an
+open change / removal request closes that request (``expired(overtaken)``).
 Equipment bookings need ``equipment_bookings.manage`` (also in the PM bundle).
 """
 
@@ -55,12 +65,14 @@ from app.schemas.base import (
     serialize_date_as_datetime_js,
     serialize_datetime_js,
 )
+from app.services import approvals
+from app.services.approvals import ACTION_CREATE, ACTION_REMOVE, ACTION_UPDATE, booking_dict
 from app.services.project_access import (
     project_id_for_phase,
     project_id_for_subphase,
     project_pm_id,
-    require_assignment_write,
     require_on_project,
+    resolve_self_booking,
 )
 from app.services.site_access import (
     ensure_person_visible,
@@ -202,6 +214,7 @@ async def get_staff_assignments(
             "start_date": serialize_date_as_datetime_js(r[0].start_date),
             "end_date": serialize_date_as_datetime_js(r[0].end_date),
             "created_at": serialize_datetime_js(r[0].created_at),
+            "approval_status": r[0].approval_status,
             "project_name": r[1],
             "project_site_id": r[2],
         }
@@ -223,19 +236,38 @@ async def create_project_staff_assignment(
     Matches: POST /api/projects/:projectId/staff
     """
     # Resolve the project before anything else (404): the own-row and
-    # key-holder short-circuits of require_assignment_write never query it, so
-    # a write to a missing project would otherwise end in an FK error (500).
+    # key-holder short-circuits of resolve_self_booking never query it, so a
+    # write to a missing project would otherwise end in an FK error (500).
     pm_id = await project_pm_id(db, project_id)
     await ensure_project_visible(request, db, user, project_id)
-    await require_assignment_write(
+    outcome = await resolve_self_booking(
         db,
         user,
         project_id=project_id,
         pm_id=pm_id,
         staff_id=data.staff_id,
-        action="assignments.self_create",
+        action=ACTION_CREATE,
     )
     await _require_staff(db, data.staff_id)
+    await approvals.ensure_no_duplicate(
+        db,
+        "project",
+        project_id,
+        data.staff_id,
+        start_date=data.start_date,
+        end_date=data.end_date,
+    )
+    if outcome == "approval":
+        return await approvals.submit_request(
+            db,
+            request,
+            user,
+            action=ACTION_CREATE,
+            level="project",
+            project_id=project_id,
+            target_id=project_id,
+            values=booking_dict(data.allocation, data.start_date, data.end_date),
+        )
 
     assignment = ProjectAssignment(
         project_id=project_id,
@@ -284,13 +316,19 @@ async def update_project_staff_assignment(
 
     project_id = assignment.project_id
     await ensure_project_visible(request, db, user, project_id)
-    await require_assignment_write(
-        db,
-        user,
-        project_id=project_id,
-        staff_id=assignment.staff_id,
-        action="assignments.self_update",
-    )
+    outcome = await approvals.resolve_row_write(db, user, row=assignment, action=ACTION_UPDATE)
+    if outcome == "approval":
+        return await approvals.submit_request(
+            db,
+            request,
+            user,
+            action=ACTION_UPDATE,
+            level="project",
+            project_id=project_id,
+            row=assignment,
+            values=booking_dict(data.allocation, data.start_date, data.end_date),
+        )
+    effects = await approvals.expire_overtaken(db, user, level="project", row=assignment)
 
     assignment.allocation = data.allocation
     assignment.start_date = data.start_date
@@ -307,6 +345,7 @@ async def update_project_staff_assignment(
         project_id=project_id,
         action="update",
     )
+    await approvals.publish(request, user, effects)
 
     return {"success": True}
 
@@ -333,13 +372,18 @@ async def delete_project_staff_assignment(
 
     project_id = assignment.project_id
     await ensure_project_visible(request, db, user, project_id)
-    await require_assignment_write(
-        db,
-        user,
-        project_id=project_id,
-        staff_id=assignment.staff_id,
-        action="assignments.self_remove",
-    )
+    outcome = await approvals.resolve_row_write(db, user, row=assignment, action=ACTION_REMOVE)
+    if outcome == "approval":
+        return await approvals.submit_request(
+            db,
+            request,
+            user,
+            action=ACTION_REMOVE,
+            level="project",
+            project_id=project_id,
+            row=assignment,
+        )
+    effects = await approvals.expire_overtaken(db, user, level="project", row=assignment)
 
     await db.delete(assignment)
     await db.commit()
@@ -353,6 +397,7 @@ async def delete_project_staff_assignment(
         project_id=project_id,
         action="delete",
     )
+    await approvals.publish(request, user, effects)
 
     return {"success": True}
 
@@ -377,14 +422,26 @@ async def create_phase_staff_assignment(
     """
     project_id = await project_id_for_phase(db, phase_id)
     await ensure_project_visible(request, db, user, project_id)
-    await require_assignment_write(
+    outcome = await resolve_self_booking(
         db,
         user,
         project_id=project_id,
         staff_id=data.staff_id,
-        action="assignments.self_create",
+        action=ACTION_CREATE,
     )
     await _require_staff(db, data.staff_id)
+    await approvals.ensure_no_duplicate(db, "phase", phase_id, data.staff_id)
+    if outcome == "approval":
+        return await approvals.submit_request(
+            db,
+            request,
+            user,
+            action=ACTION_CREATE,
+            level="phase",
+            project_id=project_id,
+            target_id=phase_id,
+            values=booking_dict(data.allocation or 100),
+        )
 
     assignment = PhaseStaffAssignment(
         phase_id=phase_id,
@@ -452,13 +509,19 @@ async def update_phase_staff_assignment(
 
     project_id = assignment.project_id
     await ensure_project_visible(request, db, user, project_id)
-    await require_assignment_write(
-        db,
-        user,
-        project_id=project_id,
-        staff_id=assignment.staff_id,
-        action="assignments.self_update",
-    )
+    outcome = await approvals.resolve_row_write(db, user, row=assignment, action=ACTION_UPDATE)
+    if outcome == "approval":
+        return await approvals.submit_request(
+            db,
+            request,
+            user,
+            action=ACTION_UPDATE,
+            level="phase",
+            project_id=project_id,
+            row=assignment,
+            values=booking_dict(data.allocation),
+        )
+    effects = await approvals.expire_overtaken(db, user, level="phase", row=assignment)
 
     assignment.allocation = data.allocation
 
@@ -473,6 +536,7 @@ async def update_phase_staff_assignment(
         project_id=project_id,
         action="update",
     )
+    await approvals.publish(request, user, effects)
 
     return {"success": True}
 
@@ -499,13 +563,18 @@ async def delete_phase_staff_assignment(
 
     project_id = assignment.project_id
     await ensure_project_visible(request, db, user, project_id)
-    await require_assignment_write(
-        db,
-        user,
-        project_id=project_id,
-        staff_id=assignment.staff_id,
-        action="assignments.self_remove",
-    )
+    outcome = await approvals.resolve_row_write(db, user, row=assignment, action=ACTION_REMOVE)
+    if outcome == "approval":
+        return await approvals.submit_request(
+            db,
+            request,
+            user,
+            action=ACTION_REMOVE,
+            level="phase",
+            project_id=project_id,
+            row=assignment,
+        )
+    effects = await approvals.expire_overtaken(db, user, level="phase", row=assignment)
 
     await db.delete(assignment)
     await db.commit()
@@ -519,6 +588,7 @@ async def delete_phase_staff_assignment(
         project_id=project_id,
         action="delete",
     )
+    await approvals.publish(request, user, effects)
 
     return {"success": True}
 
@@ -543,14 +613,26 @@ async def create_subphase_staff_assignment(
     """
     project_id = await project_id_for_subphase(db, subphase_id)
     await ensure_project_visible(request, db, user, project_id)
-    await require_assignment_write(
+    outcome = await resolve_self_booking(
         db,
         user,
         project_id=project_id,
         staff_id=data.staff_id,
-        action="assignments.self_create",
+        action=ACTION_CREATE,
     )
     await _require_staff(db, data.staff_id)
+    await approvals.ensure_no_duplicate(db, "subphase", subphase_id, data.staff_id)
+    if outcome == "approval":
+        return await approvals.submit_request(
+            db,
+            request,
+            user,
+            action=ACTION_CREATE,
+            level="subphase",
+            project_id=project_id,
+            target_id=subphase_id,
+            values=booking_dict(data.allocation or 100),
+        )
 
     assignment = SubphaseStaffAssignment(
         subphase_id=subphase_id,
@@ -618,13 +700,19 @@ async def update_subphase_staff_assignment(
 
     project_id = assignment.project_id
     await ensure_project_visible(request, db, user, project_id)
-    await require_assignment_write(
-        db,
-        user,
-        project_id=project_id,
-        staff_id=assignment.staff_id,
-        action="assignments.self_update",
-    )
+    outcome = await approvals.resolve_row_write(db, user, row=assignment, action=ACTION_UPDATE)
+    if outcome == "approval":
+        return await approvals.submit_request(
+            db,
+            request,
+            user,
+            action=ACTION_UPDATE,
+            level="subphase",
+            project_id=project_id,
+            row=assignment,
+            values=booking_dict(data.allocation),
+        )
+    effects = await approvals.expire_overtaken(db, user, level="subphase", row=assignment)
 
     assignment.allocation = data.allocation
 
@@ -639,6 +727,7 @@ async def update_subphase_staff_assignment(
         project_id=project_id,
         action="update",
     )
+    await approvals.publish(request, user, effects)
 
     return {"success": True}
 
@@ -665,13 +754,18 @@ async def delete_subphase_staff_assignment(
 
     project_id = assignment.project_id
     await ensure_project_visible(request, db, user, project_id)
-    await require_assignment_write(
-        db,
-        user,
-        project_id=project_id,
-        staff_id=assignment.staff_id,
-        action="assignments.self_remove",
-    )
+    outcome = await approvals.resolve_row_write(db, user, row=assignment, action=ACTION_REMOVE)
+    if outcome == "approval":
+        return await approvals.submit_request(
+            db,
+            request,
+            user,
+            action=ACTION_REMOVE,
+            level="subphase",
+            project_id=project_id,
+            row=assignment,
+        )
+    effects = await approvals.expire_overtaken(db, user, level="subphase", row=assignment)
 
     await db.delete(assignment)
     await db.commit()
@@ -685,6 +779,7 @@ async def delete_subphase_staff_assignment(
         project_id=project_id,
         action="delete",
     )
+    await approvals.publish(request, user, effects)
 
     return {"success": True}
 

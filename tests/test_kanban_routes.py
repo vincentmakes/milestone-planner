@@ -42,6 +42,8 @@ def _staff_row(staff_id: int, project_id: int = 1):
     row.id = 1
     row.project_id = project_id
     row.staff_id = staff_id
+    row.approval_status = "approved"
+    row.approval_request_id = None
     return row
 
 

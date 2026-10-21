@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas.approval import AssignmentApproval
 from app.schemas.base import DateAsDateTimeJS, DateRangeOrdered, DateTimeJS
 from app.schemas.tag import ProjectTagResponse
 from app.schemas.team import TeamIds
@@ -28,6 +29,10 @@ class StaffAssignmentInPhase(BaseModel):
     allocation: int
     staff_name: str | None = None
     staff_role: str | None = None
+    # "pending" = a self-booking awaiting approval (not counted in capacity).
+    approval_status: str = "approved"
+    # The open approval request on the row (pending create, change or removal).
+    approval: AssignmentApproval | None = None
 
     class Config:
         from_attributes = True
@@ -44,6 +49,8 @@ class ProjectStaffAssignmentResponse(BaseModel):
     end_date: DateAsDateTimeJS
     staff_name: str | None = None
     staff_role: str | None = None
+    approval_status: str = "approved"
+    approval: AssignmentApproval | None = None
 
     class Config:
         from_attributes = True

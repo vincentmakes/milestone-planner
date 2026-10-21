@@ -285,7 +285,8 @@ async def test_view_all_reads_any_project(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(admin())
     mock_db_session.execute.side_effect = [first_result((_project(2), "Basel", None))] + [
-        empty_result() for _ in range(6)
+        empty_result()
+        for _ in range(7)  # the tree, assignments, bookings, requests
     ]
 
     response = await client.get("/api/projects/1")
@@ -460,6 +461,8 @@ def _staff_row(project_id: int = 1, staff_id: int = 5) -> MagicMock:
     row.id = 1
     row.project_id = project_id
     row.staff_id = staff_id
+    row.approval_status = "approved"
+    row.approval_request_id = None
     return row
 
 
@@ -1386,3 +1389,26 @@ async def test_oneself_and_view_all_read_a_users_skills(authed_client, mock_db_s
             empty_result(),
         ]
         assert (await client.get(f"/api/skills/user/{OTHER}")).status_code == 200
+
+
+async def test_staff_assignments_carry_their_approval_status(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(superuser())
+    row = SimpleNamespace(
+        id=4,
+        project_id=1,
+        staff_id=5,
+        allocation=40,
+        start_date=date(2026, 1, 5),
+        end_date=date(2026, 1, 9),
+        created_at=datetime(2026, 1, 1),
+        approval_status="pending",
+    )
+    result = empty_result()
+    result.all.return_value = [(row, "Alpha", 1)]
+    mock_db_session.execute.return_value = result
+
+    response = await client.get("/api/staff/5/assignments")
+
+    assert response.status_code == 200
+    assert response.json()[0]["approval_status"] == "pending"

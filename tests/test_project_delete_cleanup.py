@@ -55,6 +55,7 @@ async def test_delete_project_removes_values_and_comments(authed_client, mock_db
     set_user(FakeUser(9, "superuser"))
     mock_db_session.execute.side_effect = [
         _scalar_result(_project()),  # project load
+        _scalars_result([]),  # its pending approval requests: none
         _scalars_result([10, 11]),  # the project's subphases
         *[MagicMock() for _ in range(4)],  # subphase subtree cleanup
         MagicMock(),  # custom-column values of project + phases
@@ -84,6 +85,7 @@ async def test_delete_project_without_subphases_still_cleans_values(authed_clien
     set_user(FakeUser(9, "superuser"))
     mock_db_session.execute.side_effect = [
         _scalar_result(_project()),
+        _scalars_result([]),  # no pending approval requests
         _scalars_result([]),  # no subphases: no subtree statements
         MagicMock(),  # values
         MagicMock(),  # comments

@@ -487,7 +487,9 @@ async def test_user_leaves_a_card(authed_client, mock_db_session, wires, entity_
     client, set_user = authed_client
     set_user(FakeUser(7, "user"))  # removing themself needs no editor rights
     broadcast, _, _ = wires
-    row = SimpleNamespace(id=300)
+    row = SimpleNamespace(
+        id=300, project_id=1, staff_id=7, approval_status="approved", approval_request_id=None
+    )
     mock_db_session.execute.side_effect = [scalar_result(make_card()), scalar_result(row)]
 
     response = await client.delete(f"/api/kanban/cards/{entity_type}/10/assignees/7")

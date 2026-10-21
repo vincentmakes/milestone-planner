@@ -217,6 +217,8 @@ def _subphase(sp_id, parent_id, parent_type, depth, deps=None):
 
 
 def _assignment(aid, staff_id, **extra):
+    extra.setdefault("approval_status", "approved")
+    extra.setdefault("approval_request_id", None)
     return SimpleNamespace(id=aid, project_id=1, staff_id=staff_id, allocation=50, **extra)
 
 
@@ -262,6 +264,7 @@ async def test_project_detail_builds_the_tree(authed_client, mock_db_session):
                 )
             ]
         ),
+        scalars_result([]),  # no pending approval requests
     ]
 
     response = await client.get("/api/projects/1")
@@ -284,7 +287,106 @@ async def test_project_detail_builds_the_tree(authed_client, mock_db_session):
     (equipment,) = body["equipmentAssignments"]
     assert (equipment["equipment_name"], equipment["equipment_type"]) == ("HPLC", "Analytical")
     assert body["tags"][0]["name"] == "Priority"
-    assert mock_db_session.execute.await_count == 7
+    # The 8th query: the project's pending approval requests (none here, so
+    # no policy lookup).
+    assert mock_db_session.execute.await_count == 8
+    assert first["staffAssignments"][0]["approval_status"] == "approved"
+    assert first["staffAssignments"][0]["approval"] is None
+    assert body["staffAssignments"][0]["approval"] is None
+
+
+@pytest.mark.asyncio
+async def test_project_detail_serialises_pending_bookings_and_requests(
+    authed_client, mock_db_session
+):
+    from app.models.rbac import ApprovalRequest
+
+    client, set_user = authed_client
+    set_user(FakeUser(7, "user"))  # the PM of the project (make_project pm_id)
+    phase = _phase(10, 0)
+    pending_create = ApprovalRequest(
+        id=50,
+        requester_id=5,
+        action="assignments.self_create",
+        project_id=1,
+        level="phase",
+        target_id=10,
+        assignment_id=30,
+        requested='{"allocation": 40}',
+        status="pending",
+        created_at=STAMP,
+    )
+    pending_update = ApprovalRequest(
+        id=51,
+        requester_id=7,  # the PM's own request: never theirs to decide
+        action="assignments.self_update",
+        project_id=1,
+        level="project",
+        target_id=1,
+        assignment_id=32,
+        requested='{"allocation": 80, "end_date": "2026-01-30", "start_date": "2026-01-05"}',
+        previous='{"allocation": 50, "end_date": "2026-01-30", "start_date": "2026-01-05"}',
+        status="pending",
+        created_at=STAMP,
+    )
+    mock_db_session.execute.side_effect = [
+        first_result((make_project(1, pm_id=7), "Winterthur", "Alice Martin")),
+        scalars_result([phase]),
+        scalars_result([_subphase(20, 10, "phase", 1)]),
+        rows_result(
+            [
+                (
+                    _assignment(
+                        30, 5, phase_id=10, approval_status="pending", approval_request_id=50
+                    ),
+                    "Eve",
+                    None,
+                )
+            ]
+        ),
+        rows_result([(_assignment(31, 8, subphase_id=20), "Bob Brown", None)]),
+        rows_result(
+            [
+                (
+                    _assignment(
+                        32,
+                        7,
+                        start_date=date(2026, 1, 5),
+                        end_date=date(2026, 1, 30),
+                        approval_request_id=51,
+                    ),
+                    "Alice Martin",
+                    "Chemist",
+                )
+            ]
+        ),
+        rows_result([]),
+        scalars_result([pending_create, pending_update]),
+        scalars_result([]),  # policies: the defaults (the PM approves)
+    ]
+
+    response = await client.get("/api/projects/1")
+
+    assert response.status_code == 200
+    body = response.json()
+    (phase_row,) = body["phases"][0]["staffAssignments"]
+    assert phase_row["approval_status"] == "pending"
+    assert phase_row["approval"] == {
+        "request_id": 50,
+        "action": "assignments.self_create",
+        "requester_id": 5,
+        "requested": {"allocation": 40},
+        "previous": None,
+        "created_at": "2026-01-01T12:00:00.000Z",
+        "can_decide": True,
+    }
+    (sub_row,) = body["phases"][0]["children"][0]["staffAssignments"]
+    assert (sub_row["approval_status"], sub_row["approval"]) == ("approved", None)
+    (project_row,) = body["staffAssignments"]
+    assert project_row["approval_status"] == "approved"
+    assert project_row["approval"]["previous"]["allocation"] == 50
+    assert project_row["approval"]["requested"]["allocation"] == 80
+    assert project_row["approval"]["can_decide"] is False
 
 
 @pytest.mark.asyncio

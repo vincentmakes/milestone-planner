@@ -44,6 +44,8 @@ def _scalars_result(values):
 
 def _row(**fields):
     row = MagicMock()
+    # An approved row without an open approval request, unless told otherwise.
+    fields = {"approval_status": "approved", "approval_request_id": None, **fields}
     for key, value in fields.items():
         setattr(row, key, value)
     return row
@@ -112,7 +114,12 @@ async def test_phase_assignment_without_allocation_still_defaults_to_100(
         "A B",
         None,
     )
-    mock_db_session.execute.side_effect = [resolved, _scalar_result(5), detail]
+    mock_db_session.execute.side_effect = [
+        resolved,
+        _scalar_result(5),
+        _scalar_result(None),
+        detail,
+    ]
 
     response = await client.post(
         "/api/phases/1/staff", json={"staff_id": 5, "project_id": 1, "allocation": None}
