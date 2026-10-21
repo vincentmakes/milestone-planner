@@ -5,7 +5,10 @@ single-select tag group holds one tag per project, the site-restricted tag sits
 only on projects of its site, status/completion pairs follow card_status.py,
 dependencies carry `entity` and form no cycle, the PM belongs to the project's
 site, recurring absences use the `[R:…]` pattern, mention placeholders name
-real people, every range is ordered and holidays carry their year.
+real people, every range is ordered and holidays carry their year. Teams:
+members and linked projects sit at the team's site, tags / equipment / events
+only name teams at their own sites, and a project carrying a team-limited tag
+shares one of its teams.
 """
 
 import re
@@ -48,6 +51,8 @@ def test_every_reference_resolves_to_exactly_one_row(demo: DemoData):
     columns = _names(demo.custom_columns)
     for pool in (sites, users, skills, equipment, projects, groups, tags, columns):
         assert len(pool) == len(set(pool))
+    teams = [(t["site"], t["name"]) for t in demo.teams]
+    assert len(teams) == len(set(teams))
 
     phases = {(p["project"], p["type"]) for p in demo.phases}
     subphases = {(s["project"], s["name"]) for s in demo.subphases}
@@ -60,6 +65,12 @@ def test_every_reference_resolves_to_exactly_one_row(demo: DemoData):
 
     for u in demo.users:
         assert set(u["sites"]) <= set(sites) and set(u["skills"]) <= set(skills)
+    for t in demo.teams:
+        assert t["site"] in sites and set(t["members"]) <= set(users)
+    for row in [*demo.tags, *demo.equipment, *demo.company_events]:
+        assert set(row["teams"]) <= set(teams), row["name"]
+    for p in demo.projects:
+        assert {(p["site"], name) for name in p["teams"]} <= set(teams), p["name"]
     for e in demo.equipment:
         assert e["sites"] and set(e["sites"]) <= set(sites)
     for t in demo.tags:
@@ -344,3 +355,65 @@ def test_admin_email_and_instance_title_are_parameters(demo: DemoData):
     assert demo.admin_email == DEMO_ADMIN_EMAIL
     assert ("instance_title", "Demo Instance") in demo.settings
     assert len(custom.users) == len(demo.users)
+
+
+# ---------------------------------------------------------------------------
+# Teams
+# ---------------------------------------------------------------------------
+
+
+def test_teams_are_two_per_site_with_unique_names(demo: DemoData):
+    by_site: dict[str, list[str]] = {}
+    for t in demo.teams:
+        by_site.setdefault(t["site"], []).append(t["name"])
+    assert by_site == {
+        "Winterthur": ["Analytical Lab", "Process Development"],
+        "Frankfurt": ["QA & Compliance", "Formulation"],
+    }
+    for t in demo.teams:
+        assert re.fullmatch(r"#[0-9a-f]{6}", t["color"]) and t["description"]
+
+
+def test_team_members_belong_to_the_team_site(demo: DemoData):
+    users = {u["email"]: u for u in demo.users}
+    for t in demo.teams:
+        assert 2 <= len(t["members"]) <= 4, t["name"]
+        assert len(t["members"]) == len(set(t["members"]))
+        for email in t["members"]:
+            assert t["site"] in users[email]["sites"], (t["name"], email)
+            assert users[email]["active"], (t["name"], email)
+    members = {email for t in demo.teams for email in t["members"]}
+    assert demo.admin_email not in members
+
+
+def test_tag_equipment_and_event_teams_sit_at_their_sites(demo: DemoData):
+    all_sites = set(_names(demo.sites))
+    for t in demo.tags:
+        allowed = all_sites if t["sites"] is None else set(t["sites"])
+        assert {site for site, _ in t["teams"]} <= allowed, t["name"]
+    for row in [*demo.equipment, *demo.company_events]:
+        assert {site for site, _ in row["teams"]} <= set(row["sites"]), row["name"]
+    # Each kind exercises the per-site team scope at least once.
+    assert any(t["teams"] for t in demo.tags)
+    assert any(e["teams"] for e in demo.company_events)
+    shared = [e for e in demo.equipment if e["teams"] and len(e["sites"]) == 2]
+    assert shared and {site for site, _ in shared[0]["teams"]} < set(shared[0]["sites"])
+
+
+def test_projects_with_a_team_limited_tag_share_one_of_its_teams(demo: DemoData):
+    tags = {t["name"]: t for t in demo.tags}
+    limited = [t for t in demo.tags if t["teams"]]
+    assert limited
+    for p in demo.projects:
+        for name in p["tags"]:
+            scoped = {team for site, team in tags[name]["teams"] if site == p["site"]}
+            if scoped:
+                assert scoped & set(p["teams"]), (p["name"], name)
+
+
+def test_some_projects_have_teams_and_one_has_none(demo: DemoData):
+    teams = {p["name"]: p["teams"] for p in demo.projects}
+    assert teams["Catalyst Optimization"] == ["Analytical Lab"]
+    assert teams["Bioprocess Scale-Up"] == ["Process Development", "Analytical Lab"]
+    assert teams["Quality System Upgrade"] == ["QA & Compliance"]
+    assert any(not p["teams"] for p in demo.projects if not p["archived"])

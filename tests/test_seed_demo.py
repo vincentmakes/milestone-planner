@@ -75,6 +75,15 @@ async def loaded():
 
 async def test_every_insert_is_idempotent(loaded):
     conn, _, _ = loaded
+    for table in (
+        "teams",
+        "team_members",
+        "project_teams",
+        "tag_teams",
+        "equipment_teams",
+        "company_event_teams",
+    ):
+        assert conn.inserts(table), table  # the team rows are covered below
     unguarded = [
         s
         for s, _ in conn.executed
@@ -91,6 +100,7 @@ async def test_rows_come_in_foreign_key_order(loaded):
         "sites",
         "skills",
         "users",
+        "teams",
         "equipment",
         "tag_groups",
         "tags",
@@ -117,6 +127,14 @@ async def test_rows_come_in_foreign_key_order(loaded):
         "company_events"
     )
     assert conn.first_insert_index("tag_sites") > conn.first_insert_index("tags")
+    assert conn.first_insert_index("teams") > conn.first_insert_index("user_sites")
+    assert conn.first_insert_index("team_members") > conn.first_insert_index("teams")
+    assert conn.first_insert_index("equipment_teams") > conn.first_insert_index("equipment")
+    assert conn.first_insert_index("tag_teams") > conn.first_insert_index("tags")
+    assert conn.first_insert_index("project_teams") > conn.first_insert_index("projects")
+    assert conn.first_insert_index("company_event_teams") > conn.first_insert_index(
+        "company_events"
+    )
 
 
 async def test_counts_match_the_data_set(loaded):
@@ -125,6 +143,15 @@ async def test_counts_match_the_data_set(loaded):
     assert counts["phases"] == len(demo.phases)
     assert counts["subphases"] == len(demo.subphases)
     assert counts["bank_holidays"] == len(demo.bank_holidays)
+    assert counts["teams"] == len(demo.teams)
+    assert len(conn.inserts("teams")) == len(demo.teams)
+    assert len(conn.inserts("team_members")) == sum(len(t["members"]) for t in demo.teams)
+    assert len(conn.inserts("project_teams")) == sum(len(p["teams"]) for p in demo.projects)
+    assert len(conn.inserts("tag_teams")) == sum(len(t["teams"]) for t in demo.tags)
+    assert len(conn.inserts("equipment_teams")) == sum(len(e["teams"]) for e in demo.equipment)
+    assert len(conn.inserts("company_event_teams")) == sum(
+        len(ev["teams"]) for ev in demo.company_events
+    )
     assert len(conn.inserts("projects")) == len(demo.projects)
     assert len(conn.inserts("project_subphases")) == len(demo.subphases)
     assert len(conn.inserts("vacations")) == len(demo.vacations)
@@ -151,6 +178,35 @@ async def test_names_resolve_to_the_handed_out_ids(loaded):
     assert users["edward.evans@demo.local"][7] == 0
     assert users["charlie.clark@demo.local"][6] == 60
     assert users["admin@demo.local"][8] == 1
+
+
+async def test_team_links_resolve_to_the_handed_out_ids(loaded):
+    conn, _, _ = loaded
+
+    def site(name):
+        return conn.ids[("sites", (name,))]
+
+    def team(site_name, name):
+        return conn.ids[("teams", (site(site_name), name))]
+
+    def project(name, site_name):
+        return conn.ids[("projects", (name, site(site_name)))]
+
+    def links(table):
+        return {args for _, args in conn.inserts(table)}
+
+    lab, qa = team("Winterthur", "Analytical Lab"), team("Frankfurt", "QA & Compliance")
+    teams = {args[1]: args for _, args in conn.inserts("teams")}  # name → row
+    assert teams["Analytical Lab"][0] == site("Winterthur")
+    assert teams["Formulation"][0] == site("Frankfurt")
+    alice = conn.ids[("users", ("alice.anderson@demo.local",))]
+    assert (lab, alice) in links("team_members")
+    assert (project("Catalyst Optimization", "Winterthur"), lab) in links("project_teams")
+    assert (project("Quality System Upgrade", "Frankfurt"), qa) in links("project_teams")
+    assert (conn.ids[("tags", ("GMP",))], qa) in links("tag_teams")
+    spectrometer = conn.ids[("equipment", ("Mass Spectrometer",))]
+    assert links("equipment_teams") >= {(spectrometer, lab)}
+    assert all("ON CONFLICT DO NOTHING" in s for s, _ in conn.inserts("team_members"))
 
 
 async def test_dependency_json_uses_resolved_ids_and_names_the_kind(loaded):

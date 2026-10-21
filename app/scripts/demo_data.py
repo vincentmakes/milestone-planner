@@ -6,7 +6,8 @@ The demo tenant's data, as plain Python — no database.
 every date relative to `today`. `app/scripts/seed_demo.py` resolves the names
 to ids as it inserts; `tests/test_demo_data.py` checks the data against the
 app's rules (status/completion pairs, single-select tag groups, site-restricted
-tags, mention tokens, dependency shape, PM membership) without a database.
+tags, team scopes, mention tokens, dependency shape, PM membership) without a
+database.
 
 The four canonical projects (Bioprocess Scale-Up, Catalyst Optimization,
 Analytical Method Transfer, Quality System Upgrade) and the people's names are
@@ -61,6 +62,7 @@ class DemoData:
     sites: list[Row] = field(default_factory=list)
     skills: list[Row] = field(default_factory=list)
     users: list[Row] = field(default_factory=list)  # incl. the admin
+    teams: list[Row] = field(default_factory=list)  # per site, members by e-mail
     equipment: list[Row] = field(default_factory=list)
     tag_groups: list[Row] = field(default_factory=list)
     tags: list[Row] = field(default_factory=list)
@@ -324,16 +326,61 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         ),
     ]
 
+    # Two teams per site; members are people of that site (the admin is in
+    # none). Tags, equipment and events name teams as (site, team name): no
+    # team at a site means the whole site.
+    d.teams = [
+        dict(
+            site=WINTERTHUR,
+            name="Analytical Lab",
+            description="Method development and routine analytics",
+            color="#0ea5e9",
+            members=[ALICE, CHARLIE, DIANA],
+        ),
+        dict(
+            site=WINTERTHUR,
+            name="Process Development",
+            description="Scale-up and process transfer",
+            color="#f97316",
+            members=[BOB, CHARLIE],
+        ),
+        dict(
+            site=FRANKFURT,
+            name="QA & Compliance",
+            description="Quality assurance, GMP and audits",
+            color="#10b981",
+            members=[FIONA, HANNAH],
+        ),
+        dict(
+            site=FRANKFURT,
+            name="Formulation",
+            description="Formulation and stability studies",
+            color="#8b5cf6",
+            members=[GEORGE, DIANA],
+        ),
+    ]
+
     d.equipment = [
-        dict(name="HPLC System 1", type="Analytical", sites=[WINTERTHUR]),
-        # Shared by both sites: one row per site in the equipment lists.
-        dict(name="Mass Spectrometer", type="Analytical", sites=[WINTERTHUR, FRANKFURT]),
-        dict(name="PCR Thermocycler", type="Molecular Biology", sites=[WINTERTHUR]),
-        dict(name="Biosafety Cabinet", type="Cell Culture", sites=[WINTERTHUR]),
-        dict(name="Centrifuge", type="General Lab", sites=[WINTERTHUR]),
-        dict(name="HPLC System 2", type="Analytical", sites=[FRANKFURT]),
-        dict(name="Plate Reader", type="Analytical", sites=[FRANKFURT]),
-        dict(name="Freeze Dryer", type="Processing", sites=[FRANKFURT]),
+        dict(name="HPLC System 1", type="Analytical", sites=[WINTERTHUR], teams=[]),
+        # Shared by both sites: one row per site in the equipment lists. Limited
+        # to the Analytical Lab at Winterthur, open to the whole Frankfurt site.
+        dict(
+            name="Mass Spectrometer",
+            type="Analytical",
+            sites=[WINTERTHUR, FRANKFURT],
+            teams=[(WINTERTHUR, "Analytical Lab")],
+        ),
+        dict(name="PCR Thermocycler", type="Molecular Biology", sites=[WINTERTHUR], teams=[]),
+        dict(name="Biosafety Cabinet", type="Cell Culture", sites=[WINTERTHUR], teams=[]),
+        dict(name="Centrifuge", type="General Lab", sites=[WINTERTHUR], teams=[]),
+        dict(name="HPLC System 2", type="Analytical", sites=[FRANKFURT], teams=[]),
+        dict(
+            name="Plate Reader",
+            type="Analytical",
+            sites=[FRANKFURT],
+            teams=[(FRANKFURT, "QA & Compliance")],
+        ),
+        dict(name="Freeze Dryer", type="Processing", sites=[FRANKFURT], teams=[]),
     ]
 
     d.tag_groups = [
@@ -341,15 +388,44 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         dict(name="Area", single_select=False, sort_order=1),
     ]
     d.tags = [
-        dict(name="Internal", color="#6366f1", group="Project type", sort_order=0, sites=None),
-        dict(name="Customer", color="#0ea5e9", group="Project type", sort_order=1, sites=None),
-        dict(name="Process", color="#f97316", group="Area", sort_order=0, sites=None),
-        dict(name="Analytics", color="#8b5cf6", group="Area", sort_order=1, sites=None),
-        dict(name="QA", color="#10b981", group="Area", sort_order=2, sites=None),
-        dict(name="Critical", color="#ef4444", group=None, sort_order=0, sites=None),
-        dict(name="Tech Transfer", color="#14b8a6", group=None, sort_order=1, sites=None),
-        # Site-restricted: only Frankfurt projects may carry it.
-        dict(name="GMP", color="#a855f7", group=None, sort_order=2, sites=[FRANKFURT]),
+        dict(
+            name="Internal",
+            color="#6366f1",
+            group="Project type",
+            sort_order=0,
+            sites=None,
+            teams=[],
+        ),
+        dict(
+            name="Customer",
+            color="#0ea5e9",
+            group="Project type",
+            sort_order=1,
+            sites=None,
+            teams=[],
+        ),
+        dict(name="Process", color="#f97316", group="Area", sort_order=0, sites=None, teams=[]),
+        dict(name="Analytics", color="#8b5cf6", group="Area", sort_order=1, sites=None, teams=[]),
+        dict(name="QA", color="#10b981", group="Area", sort_order=2, sites=None, teams=[]),
+        dict(name="Critical", color="#ef4444", group=None, sort_order=0, sites=None, teams=[]),
+        dict(
+            name="Tech Transfer",
+            color="#14b8a6",
+            group=None,
+            sort_order=1,
+            sites=None,
+            teams=[],
+        ),
+        # Site-restricted: only Frankfurt projects may carry it, and there only
+        # projects of the QA & Compliance team.
+        dict(
+            name="GMP",
+            color="#a855f7",
+            group=None,
+            sort_order=2,
+            sites=[FRANKFURT],
+            teams=[(FRANKFURT, "QA & Compliance")],
+        ),
     ]
 
     def project(
@@ -363,6 +439,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         pm: str | None = None,
         sales_pm: str | None = None,
         tags: tuple[str, ...] = (),
+        teams: tuple[str, ...] = (),
         archived: bool = False,
         notes: str | None = None,
     ) -> Row:
@@ -376,6 +453,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             pm=pm,
             sales_pm=sales_pm,
             tags=list(tags),
+            teams=list(teams),  # team names at the project's site
             archived=archived,
             notes=notes,
         )
@@ -390,6 +468,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             today + day(150),
             sales_pm="M. Keller",
             tags=("Internal", "Critical", "Analytics"),
+            teams=("Analytical Lab",),
         ),
         project(
             BIOPROCESS,
@@ -400,6 +479,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             today + day(200),
             pm=BOB,
             tags=("Customer", "Critical", "Process", "Tech Transfer"),
+            teams=("Process Development", "Analytical Lab"),
         ),
         project(
             ANALYTICAL,
@@ -420,6 +500,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             today - day(60),
             today + day(90),
             tags=("Internal", "QA", "GMP"),
+            teams=("QA & Compliance",),
         ),
         project(
             LEGACY,
@@ -642,6 +723,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             end_date=today + day(13),
             color="#f59e0b",
             counts_as_unavailable=False,
+            teams=[],
         ),
         dict(
             name="Year-end shutdown",
@@ -650,6 +732,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             end_date=date(shutdown_start.year + 1, 1, 2),
             color="#ef4444",
             counts_as_unavailable=True,
+            teams=[],
         ),
         dict(
             name="Town hall",
@@ -658,6 +741,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             end_date=None,
             color="#3b82f6",
             counts_as_unavailable=False,
+            teams=[(FRANKFURT, "Formulation")],  # only the Formulation team sees it
         ),
     ]
 

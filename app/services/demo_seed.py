@@ -141,6 +141,31 @@ async def insert_demo_data(
             )
     counts["users"] = len(user_id)
 
+    # Teams belong to one site; tags, equipment and events name them as
+    # (site, team name), projects by name within their own site.
+    team_id: dict[tuple[str, str], int] = {}
+    for t in demo.teams:
+        key = (t["site"], t["name"])
+        team_id[key] = await _insert_id(
+            conn,
+            "teams",
+            {
+                "site_id": site_id[t["site"]],
+                "name": t["name"],
+                "description": t["description"],
+                "color": t["color"],
+                "active": True,
+            },
+            {"site_id": site_id[t["site"]], "name": t["name"]},
+        )
+        for email in t["members"]:
+            await conn.execute(
+                "INSERT INTO team_members (team_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                team_id[key],
+                user_id[email],
+            )
+    counts["teams"] = len(team_id)
+
     equipment_id: dict[str, int] = {}
     for e in demo.equipment:
         # Legacy `site_id` = the lowest linked site; links live in equipment_sites.
@@ -157,6 +182,13 @@ async def insert_demo_data(
                 "ON CONFLICT DO NOTHING",
                 equipment_id[e["name"]],
                 site_id[site],
+            )
+        for team in e["teams"]:
+            await conn.execute(
+                "INSERT INTO equipment_teams (equipment_id, team_id) VALUES ($1, $2) "
+                "ON CONFLICT DO NOTHING",
+                equipment_id[e["name"]],
+                team_id[team],
             )
     counts["equipment"] = len(equipment_id)
 
@@ -182,6 +214,12 @@ async def insert_demo_data(
                 "INSERT INTO tag_sites (tag_id, site_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
                 tag_id[t["name"]],
                 site_id[site],
+            )
+        for team in t["teams"]:
+            await conn.execute(
+                "INSERT INTO tag_teams (tag_id, team_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                tag_id[t["name"]],
+                team_id[team],
             )
     counts["tags"] = len(tag_id)
 
@@ -209,6 +247,13 @@ async def insert_demo_data(
                 "INSERT INTO project_tags (project_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
                 project_id[p["name"]],
                 tag_id[tag],
+            )
+        for name in p["teams"]:
+            await conn.execute(
+                "INSERT INTO project_teams (project_id, team_id) VALUES ($1, $2) "
+                "ON CONFLICT DO NOTHING",
+                project_id[p["name"]],
+                team_id[(p["site"], name)],
             )
     counts["projects"] = len(project_id)
 
@@ -404,6 +449,13 @@ async def insert_demo_data(
                 "ON CONFLICT DO NOTHING",
                 event_id,
                 site_id[site],
+            )
+        for team in ev["teams"]:
+            await conn.execute(
+                "INSERT INTO company_event_teams (event_id, team_id) VALUES ($1, $2) "
+                "ON CONFLICT DO NOTHING",
+                event_id,
+                team_id[team],
             )
     counts["company_events"] = len(demo.company_events)
 
