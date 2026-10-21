@@ -228,7 +228,8 @@ async def test_create_site_less_project_with_a_restricted_tag_is_a_400(
     authed_client, mock_db_session
 ):
     client, set_user = authed_client
-    set_user(FakeUser(1, "superuser"))
+    # Site-less projects are reachable with sites.view_all only (the admin).
+    set_user(FakeUser(1, "admin"))
     mock_db_session.execute.side_effect = [_scalars_result([_tag(1, "Bern only", site_ids=[2])])]
 
     response = await client.post(
@@ -254,7 +255,8 @@ def _project(site_id):
 @pytest.mark.asyncio
 async def test_update_project_checks_tags_against_the_stored_site(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(1, "superuser"))
+    # Site-less projects are reachable with sites.view_all only (the admin).
+    set_user(FakeUser(1, "admin"))
     project = _project(site_id=None)
     mock_db_session.execute.side_effect = [
         _scalar_result(project),

@@ -221,7 +221,8 @@ async def test_create_site_less_project_with_teams_is_a_400(
     authed_client, mock_db_session, broadcast
 ):
     client, set_user = authed_client
-    set_user(FakeUser(1, "superuser"))
+    # Site-less projects are reachable with sites.view_all only (the admin).
+    set_user(FakeUser(1, "admin"))
     mock_db_session.execute.side_effect = [scalars_result([make_team(3, 1)])]
 
     response = await client.post(
@@ -329,7 +330,8 @@ async def test_update_site_less_project_with_teams_is_a_400(
     authed_client, mock_db_session, broadcast
 ):
     client, set_user = authed_client
-    set_user(FakeUser(1, "superuser"))
+    # Site-less projects are reachable with sites.view_all only (the admin).
+    set_user(FakeUser(1, "admin"))
     project = make_project(1, site_id=None)
     mock_db_session.execute.side_effect = [scalar_result(project), scalars_result([make_team(3)])]
 

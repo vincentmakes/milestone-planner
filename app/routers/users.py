@@ -8,7 +8,7 @@ Matches the Node.js API at /api/users exactly.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -45,7 +45,13 @@ from app.services.response_builders import (
     get_sorted_teams,
 )
 from app.services.session import SessionService
-from app.services.site_access import ensure_site_access, visible_site_ids
+from app.services.site_access import (
+    ensure_person_visible,
+    ensure_site_access,
+    person_is_visible,
+    visible_site_ids,
+    visible_sites_clause,
+)
 from app.services.team_rules import (
     TEAM_SITE_ACCESS_DETAIL,
     ensure_teams_within_sites,
@@ -54,6 +60,7 @@ from app.services.team_rules import (
     team_outside_user_sites_detail,
 )
 from app.services.user_access import (
+    USER_OUTSIDE_SITES_DETAIL,
     ensure_may_assign_role,
     ensure_may_change_role_of,
     ensure_may_edit_user,
@@ -81,6 +88,18 @@ async def _ensure_role_exists(db: AsyncSession, role_key: str) -> None:
     found = await db.execute(select(Role.key).where(Role.key == role_key))
     if found.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail=ROLE_NOT_FOUND_DETAIL)
+
+
+USER_NOT_FOUND_DETAIL = "User not found"
+
+
+async def _ensure_target_visible(
+    request: Request, db: AsyncSession, current_user: User, user_id: int
+) -> None:
+    """403 unless the target is oneself or a member of one of the caller's visible sites."""
+    await ensure_person_visible(
+        request, db, current_user, user_id, status_code=403, detail=USER_OUTSIDE_SITES_DETAIL
+    )
 
 
 def _forbidden(key: str) -> HTTPException:
@@ -183,13 +202,15 @@ def build_user_detail_response(user: User) -> dict:
 
 @router.get("/users")
 async def get_users(
+    request: Request,
     include_disabled: bool = Query(False, alias="includeDisabled"),
     pagination: PaginationParams = Depends(),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("users.view")),
 ):
     """
-    Get all users with pagination.
+    Get users with pagination: oneself and the members of the caller's
+    visible sites (everyone with ``sites.view_all``).
 
     Requires ``users.view``.
     Matches: GET /api/users
@@ -198,6 +219,12 @@ async def get_users(
 
     if not include_disabled:
         base_query = base_query.where(User.active == 1)
+
+    in_visible = visible_sites_clause(UserSite.site_id, await visible_site_ids(request, db, user))
+    if in_visible is not None:
+        base_query = base_query.where(
+            or_(User.id == user.id, User.id.in_(select(UserSite.user_id).where(in_visible)))
+        )
 
     # Get total count
     count_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
@@ -226,15 +253,19 @@ async def get_users(
 @router.get("/users/{user_id}", response_model=UserDetailResponse)
 async def get_user(
     user_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("users.view")),
 ):
     """
-    Get a specific user by ID.
+    Get a specific user by ID: oneself or a member of a visible site (404
+    otherwise).
 
     Requires ``users.view``.
     Matches: GET /api/users/:id
     """
+    if not await person_is_visible(request, db, user, user_id):
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND_DETAIL)
     result = await db.execute(
         select(User)
         .where(User.id == user_id)
@@ -244,7 +275,7 @@ async def get_user(
     user = result.unique().scalar_one_or_none()
 
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND_DETAIL)
 
     return build_user_detail_response(user)
 
@@ -357,7 +388,8 @@ async def update_user(
     user = result.unique().scalar_one_or_none()
 
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND_DETAIL)
+    await _ensure_target_visible(request, db, current_user, user_id)
 
     permissions = current_user.permissions
     is_self = user.id == current_user.id
@@ -525,6 +557,7 @@ async def update_user(
 @router.delete("/users/{user_id}")
 async def delete_user(
     user_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_permission("users.delete")),
 ):
@@ -543,7 +576,8 @@ async def delete_user(
     user = result.scalar_one_or_none()
 
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND_DETAIL)
+    await _ensure_target_visible(request, db, admin, user_id)
 
     # Protect system users (created via master admin panel)
     if user.is_system_user:
@@ -571,6 +605,7 @@ async def delete_user(
 @router.put("/users/{user_id}/toggle-active")
 async def toggle_user_active(
     user_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_permission("users.toggle_active")),
 ):
@@ -591,7 +626,8 @@ async def toggle_user_active(
     user = result.scalar_one_or_none()
 
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND_DETAIL)
+    await _ensure_target_visible(request, db, admin, user_id)
 
     # Same protection as PUT /users/{id}: the provisioned admin cannot be disabled
     if user.is_system_user and user.active == 1:

@@ -35,7 +35,7 @@ from app.models.tag import Tag, TagGroup, TagSite
 from app.models.team import Team
 from app.models.user import User, UserSite
 from app.models.vacation import Vacation
-from app.services.site_access import ensure_site_access
+from app.services.site_access import ensure_project_visible, ensure_site_access
 from app.utils import utcnow_naive
 
 router = APIRouter(tags=["export"])
@@ -364,6 +364,7 @@ def format_xml_date(d: date) -> str:
 @router.post("/export/mpp/{project_id}")
 async def export_project_to_mpp(
     project_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("projects.export")),
 ):
@@ -374,6 +375,7 @@ async def export_project_to_mpp(
 
     Matches: POST /api/export/mpp/:projectId
     """
+    await ensure_project_visible(request, db, user, project_id)
     project = await get_project_with_hierarchy(db, project_id)
 
     if not project:
@@ -398,6 +400,7 @@ async def export_project_to_mpp(
 @router.post("/export/csv/{project_id}")
 async def export_project_to_csv(
     project_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("projects.export")),
 ):
@@ -408,6 +411,7 @@ async def export_project_to_csv(
 
     Matches: POST /api/export/csv/:projectId
     """
+    await ensure_project_visible(request, db, user, project_id)
     project = await get_project_with_hierarchy(db, project_id)
 
     if not project:
@@ -432,6 +436,7 @@ async def export_project_to_csv(
 @router.get("/export/csv/{project_id}")
 async def export_project_to_csv_get(
     project_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("projects.export")),
 ):
@@ -440,7 +445,7 @@ async def export_project_to_csv_get(
 
     Returns a CSV file compatible with MS Project import.
     """
-    return await export_project_to_csv(project_id, db, user)
+    return await export_project_to_csv(project_id, request, db, user)
 
 
 # =============================================================================

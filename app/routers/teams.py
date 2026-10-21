@@ -1,8 +1,9 @@
 """
 Teams API endpoints.
 
-A team is a named group of users at one site. Every authenticated user can
-read teams; ``teams.manage`` manages them, at the visible sites only. Members must belong to the team's site.
+A team is a named group of users at one site. Every authenticated user reads
+the teams of their visible sites; ``teams.manage`` manages them, at the
+visible sites only. Members must belong to the team's site.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -17,7 +18,13 @@ from app.models.site import Site
 from app.models.team import Team
 from app.models.user import User
 from app.schemas.team import TeamCreate, TeamResponse, TeamUpdate
-from app.services.site_access import ensure_site_access
+from app.services.site_access import (
+    ensure_site_access,
+    ensure_site_visible,
+    site_is_visible,
+    visible_site_ids,
+    visible_sites_clause,
+)
 from app.services.team_rules import (
     TEAM_NOT_FOUND_DETAIL,
     TEAM_SITE_ACCESS_DETAIL,
@@ -108,19 +115,28 @@ async def _refresh_team(db: AsyncSession, team: Team) -> None:
 
 @router.get("", response_model=list[TeamResponse])
 async def get_teams(
+    request: Request,
     siteId: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Get all teams, inactive ones included (every authenticated user).
+    Get the teams of the user's visible sites, inactive ones included.
 
-    Ordered by site, then name; ``siteId`` limits the list to one site.
-    One query (members come with the selectin load).
+    Ordered by site, then name; ``siteId`` limits the list to one site (403
+    outside the visible sites). One query (members come with the selectin
+    load).
     """
     query = select(Team).options(_members_for_ids()).order_by(Team.site_id, Team.name)
     if siteId is not None:
+        await ensure_site_visible(request, db, current_user, siteId)
         query = query.where(Team.site_id == siteId)
+    else:
+        in_visible = visible_sites_clause(
+            Team.site_id, await visible_site_ids(request, db, current_user)
+        )
+        if in_visible is not None:
+            query = query.where(in_visible)
     result = await db.execute(query)
     return [TeamResponse.model_validate(team) for team in result.scalars().all()]
 
@@ -128,11 +144,15 @@ async def get_teams(
 @router.get("/{team_id}", response_model=TeamResponse)
 async def get_team(
     team_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get one team with its members (every authenticated user)."""
-    return TeamResponse.model_validate(await _load_team(db, team_id, read_only=True))
+    """Get one team with its members (404 outside the user's visible sites)."""
+    team = await _load_team(db, team_id, read_only=True)
+    if not site_is_visible(await visible_site_ids(request, db, current_user), team.site_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=TEAM_NOT_FOUND_DETAIL)
+    return TeamResponse.model_validate(team)
 
 
 @router.post("", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)

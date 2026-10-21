@@ -13,7 +13,9 @@ app/services/card_access.py). Assigning and unassigning follow the
 staff-assignment rule: ``assignments.manage_others`` (or the PM) manages
 anyone, and ``assignments.self_create`` / ``self_remove`` let a user join or
 leave a card themself. Commenting needs ``kanban.comment``; deleting someone
-else's comment ``kanban.moderate_comments``.
+else's comment ``kanban.moderate_comments``. The reads (comment counts,
+mentionable users, comment threads) need ``views.kanban``, and every route
+works only on projects and sites the user can see (``site_access``).
 """
 
 import logging
@@ -52,6 +54,7 @@ from app.services.notifications import (
 )
 from app.services.permissions import ADMIN_ROLE_KEY, permission_required_detail
 from app.services.project_access import can_on_project, require_assignment_write
+from app.services.site_access import ensure_project_visible, ensure_site_visible, visible_site_ids
 from app.utils import utcnow_naive
 from app.websocket.broadcast import broadcast_change, send_notification
 
@@ -60,6 +63,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/kanban")
 
 CardEntityType = Literal["phase", "subphase"]
+
+# The board's reads: comment counts, mentionable users, comment threads.
+require_kanban_view = require_permission("views.kanban")
 
 
 # ---------------------------------------------------------
@@ -133,16 +139,19 @@ async def _push_notifications(request: Request, rows: list) -> None:
 @router.get("/projects/{project_id}/comment-counts", response_model=CommentCountsResponse)
 async def get_comment_counts(
     project_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db_readonly),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_kanban_view),
 ):
     """
-    Comment counts for every card in a project.
+    Comment counts for every card in a project (``views.kanban``; 403 outside
+    the visible sites).
 
     Deliberately its own endpoint: GET /projects/{id} is called once per project
     by loadAllProjects(), so folding counts in there would add a query per
     project on every refresh for data only the Kanban view uses.
     """
+    await ensure_project_visible(request, db, user, project_id)
     result = await db.execute(
         select(CardComment.entity_type, CardComment.entity_id, func.count(CardComment.id))
         .where(CardComment.project_id == project_id)
@@ -160,14 +169,17 @@ async def get_comment_counts(
 @router.get("/sites/{site_id}/comment-counts", response_model=CommentCountsResponse)
 async def get_site_comment_counts(
     site_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db_readonly),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_kanban_view),
 ):
-    """Comment counts for every card in a site, in one query.
+    """Comment counts for every card in a visible site (403 otherwise), in one
+    query (``views.kanban``).
 
     The board's "All projects" mode would otherwise fire one request per
     project.
     """
+    await ensure_site_visible(request, db, user, site_id)
     result = await db.execute(
         select(CardComment.entity_type, CardComment.entity_id, func.count(CardComment.id))
         .join(Project, CardComment.project_id == Project.id)
@@ -186,8 +198,9 @@ async def get_site_comment_counts(
 @router.get("/sites/{site_id}/mentionable-users", response_model=list[MentionableUserResponse])
 async def get_mentionable_users(
     site_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db_readonly),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_kanban_view),
 ):
     """Everyone who can be @-mentioned on a card at this site.
 
@@ -201,9 +214,10 @@ async def get_mentionable_users(
         row only, so joining on membership alone would hide them on every
         other site.
 
-    Open to any authenticated user, because anyone may comment. Only the
-    fields a mention picker needs are returned.
+    Needs ``views.kanban`` and a visible site (403). Only the fields a
+    mention picker needs are returned.
     """
+    await ensure_site_visible(request, db, user, site_id)
     site_member_ids = select(UserSite.user_id).where(UserSite.site_id == site_id)
     all_sites_roles = (
         select(Role.key)
@@ -245,6 +259,7 @@ async def update_card_status(
 ):
     """Move a card to a different status column, keeping completion in step."""
     card = await _load_card(db, entity_type, entity_id)
+    await ensure_project_visible(request, db, user, card.project_id)
 
     # kanban.move_any (or the PM through the bundle) moves any card; otherwise
     # kanban.move_assigned moves the cards the user is an approved assignee of.
@@ -325,6 +340,7 @@ async def assign_card(
     the Gantt chart, with no second write.
     """
     card = await _load_card(db, entity_type, entity_id)
+    await ensure_project_visible(request, db, user, card.project_id)
     await require_assignment_write(
         db,
         user,
@@ -429,6 +445,7 @@ async def unassign_card(
     card themself under ``assignments.self_remove``.
     """
     card = await _load_card(db, entity_type, entity_id)
+    await ensure_project_visible(request, db, user, card.project_id)
     await require_assignment_write(
         db,
         user,
@@ -478,10 +495,15 @@ async def unassign_card(
 async def get_card_comments(
     entity_type: CardEntityType,
     entity_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db_readonly),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_kanban_view),
 ):
-    """Comment thread for one card, oldest first."""
+    """Comment thread for one card, oldest first (``views.kanban``; 403 outside
+    the visible sites)."""
+    if await visible_site_ids(request, db, user) is not None:
+        card = await _load_card(db, entity_type, entity_id)
+        await ensure_project_visible(request, db, user, card.project_id)
     result = await db.execute(
         select(CardComment, User.first_name, User.last_name)
         .outerjoin(User, CardComment.author_id == User.id)
@@ -511,6 +533,7 @@ async def create_card_comment(
 ):
     """Post a comment (``kanban.comment``)."""
     card = await _load_card(db, entity_type, entity_id)
+    await ensure_project_visible(request, db, user, card.project_id)
 
     mentioned = await _validate_mention_ids(db, data.body)
     # Strip before truncating, or a preview can end mid-token as "@[Alice And".
@@ -588,6 +611,7 @@ async def update_card_comment(
     ).scalar_one_or_none()
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
+    await ensure_project_visible(request, db, user, comment.project_id)
 
     if comment.author_id != user.id:
         raise HTTPException(status_code=403, detail="You can only edit your own comments")
@@ -647,6 +671,7 @@ async def delete_card_comment(
     ).scalar_one_or_none()
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
+    await ensure_project_visible(request, db, user, comment.project_id)
 
     if comment.author_id == user.id:
         if not (

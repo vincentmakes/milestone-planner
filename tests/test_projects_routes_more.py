@@ -106,7 +106,7 @@ async def test_list_projects_for_site(authed_client, mock_db_session):
 @pytest.mark.asyncio
 async def test_list_projects_masks_other_sites_in_cross_site_view(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(5, "user"))
+    set_user(FakeUser(5, "user", site_ids=[1, 2]))
     mock_db_session.execute.side_effect = [
         scalar_result(2),
         rows_result(
@@ -130,7 +130,9 @@ async def test_list_projects_masks_other_sites_in_cross_site_view(authed_client,
     )
     assert (external["notes"], external["volume"], external["tags"]) == (None, None, [])
     assert external["site_name"] == "Basel"  # where it is stays visible
-    assert "projects.site_id" not in sql(mock_db_session, 0)  # no site filter
+    # Not limited to siteId, but to the visible sites (RBAC decision 6).
+    assert "projects.site_id = " not in sql(mock_db_session, 0)
+    assert "projects.site_id IN (1, 2)" in sql(mock_db_session, 0)
 
 
 @pytest.mark.asyncio

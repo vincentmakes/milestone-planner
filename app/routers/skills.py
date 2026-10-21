@@ -3,10 +3,11 @@ Skills API endpoints.
 Skills are global (shared across all sites) and can be assigned to staff members.
 Definitions need ``skills.manage``; setting a user's skills needs
 ``skills.assign`` and the right to edit that user (``users.edit``, or
-``users.edit_admins`` for an administrator).
+``users.edit_admins`` for an administrator), who must be oneself or a member
+of one of the caller's visible sites.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,9 +24,19 @@ from app.schemas.skill import (
     UserSkillAssignment,
     UserSkillResponse,
 )
-from app.services.user_access import ensure_may_edit_user
+from app.services.site_access import ensure_person_visible
+from app.services.user_access import USER_OUTSIDE_SITES_DETAIL, ensure_may_edit_user
 
 router = APIRouter(prefix="/skills", tags=["skills"])
+
+
+async def _ensure_target_visible(
+    request: Request, db: AsyncSession, current_user: User, user_id: int
+) -> None:
+    """403 unless the target is oneself or a member of one of the caller's visible sites."""
+    await ensure_person_visible(
+        request, db, current_user, user_id, status_code=403, detail=USER_OUTSIDE_SITES_DETAIL
+    )
 
 
 # =============================================================================
@@ -177,6 +188,7 @@ async def get_user_skills(
 async def update_user_skills(
     user_id: int,
     assignment: UserSkillAssignment,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("skills.assign")),
 ):
@@ -192,6 +204,7 @@ async def update_user_skills(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     ensure_may_edit_user(current_user, user.role)
+    await _ensure_target_visible(request, db, current_user, user_id)
 
     # Verify all skill IDs exist
     if assignment.skill_ids:
@@ -228,6 +241,7 @@ async def update_user_skills(
 async def add_user_skill(
     user_id: int,
     skill_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("skills.assign")),
 ):
@@ -239,6 +253,7 @@ async def add_user_skill(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     ensure_may_edit_user(current_user, user.role)
+    await _ensure_target_visible(request, db, current_user, user_id)
 
     # Verify skill exists
     result = await db.execute(select(Skill).where(Skill.id == skill_id))
@@ -272,6 +287,7 @@ async def add_user_skill(
 async def remove_user_skill(
     user_id: int,
     skill_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("skills.assign")),
 ):
@@ -283,6 +299,7 @@ async def remove_user_skill(
         if role is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
         ensure_may_edit_user(current_user, role)
+    await _ensure_target_visible(request, db, current_user, user_id)
 
     # Delete the assignment
     result = await db.execute(

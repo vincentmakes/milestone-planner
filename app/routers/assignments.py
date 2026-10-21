@@ -41,7 +41,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user
+from app.middleware.auth import get_current_user, require_permission
 from app.models.assignment import (
     PhaseStaffAssignment,
     ProjectAssignment,
@@ -61,6 +61,12 @@ from app.services.project_access import (
     project_pm_id,
     require_assignment_write,
     require_on_project,
+)
+from app.services.site_access import (
+    ensure_person_visible,
+    ensure_project_visible,
+    visible_site_ids,
+    visible_sites_clause,
 )
 from app.websocket.broadcast import broadcast_change
 
@@ -157,15 +163,22 @@ async def _require_staff(db: AsyncSession, staff_id: int) -> None:
 @router.get("/staff/{staff_id}/assignments")
 async def get_staff_assignments(
     staff_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission("views.staff")),
 ):
     """
-    Get all project assignments for a staff member.
+    Get the project assignments of a staff member (``views.staff``).
+
+    The person must be oneself or share a visible site (404 otherwise), and
+    only projects at the user's visible sites are listed.
 
     Matches: GET /api/staff/:id/assignments
     """
-    result = await db.execute(
+    await ensure_person_visible(
+        request, db, user, staff_id, status_code=404, detail="Staff member not found"
+    )
+    query = (
         select(
             ProjectAssignment,
             Project.name.label("project_name"),
@@ -173,8 +186,11 @@ async def get_staff_assignments(
         )
         .join(Project, ProjectAssignment.project_id == Project.id)
         .where(ProjectAssignment.staff_id == staff_id)
-        .order_by(ProjectAssignment.start_date)
     )
+    in_visible = visible_sites_clause(Project.site_id, await visible_site_ids(request, db, user))
+    if in_visible is not None:
+        query = query.where(in_visible)
+    result = await db.execute(query.order_by(ProjectAssignment.start_date))
     rows = result.all()
 
     return [
@@ -210,6 +226,7 @@ async def create_project_staff_assignment(
     # key-holder short-circuits of require_assignment_write never query it, so
     # a write to a missing project would otherwise end in an FK error (500).
     pm_id = await project_pm_id(db, project_id)
+    await ensure_project_visible(request, db, user, project_id)
     await require_assignment_write(
         db,
         user,
@@ -266,6 +283,7 @@ async def update_project_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
+    await ensure_project_visible(request, db, user, project_id)
     await require_assignment_write(
         db,
         user,
@@ -314,6 +332,7 @@ async def delete_project_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
+    await ensure_project_visible(request, db, user, project_id)
     await require_assignment_write(
         db,
         user,
@@ -357,6 +376,7 @@ async def create_phase_staff_assignment(
     Matches: POST /api/phases/:phaseId/staff
     """
     project_id = await project_id_for_phase(db, phase_id)
+    await ensure_project_visible(request, db, user, project_id)
     await require_assignment_write(
         db,
         user,
@@ -431,6 +451,7 @@ async def update_phase_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
+    await ensure_project_visible(request, db, user, project_id)
     await require_assignment_write(
         db,
         user,
@@ -477,6 +498,7 @@ async def delete_phase_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
+    await ensure_project_visible(request, db, user, project_id)
     await require_assignment_write(
         db,
         user,
@@ -520,6 +542,7 @@ async def create_subphase_staff_assignment(
     Matches: POST /api/subphases/:subphaseId/staff
     """
     project_id = await project_id_for_subphase(db, subphase_id)
+    await ensure_project_visible(request, db, user, project_id)
     await require_assignment_write(
         db,
         user,
@@ -594,6 +617,7 @@ async def update_subphase_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
+    await ensure_project_visible(request, db, user, project_id)
     await require_assignment_write(
         db,
         user,
@@ -640,6 +664,7 @@ async def delete_subphase_staff_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     project_id = assignment.project_id
+    await ensure_project_visible(request, db, user, project_id)
     await require_assignment_write(
         db,
         user,
@@ -683,6 +708,7 @@ async def create_equipment_assignment(
 
     Matches: POST /api/projects/:projectId/equipment
     """
+    await ensure_project_visible(request, db, user, project_id)
     await require_on_project(db, user, "equipment_bookings.manage", project_id)
 
     project_row = (

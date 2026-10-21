@@ -49,6 +49,15 @@ from app.services.project_access import (
     require_project_editor,
     user_can,
 )
+from app.services.site_access import (
+    PROJECT_NOT_VISIBLE_DETAIL,
+    SITE_NOT_VISIBLE_DETAIL,
+    ensure_project_visible,
+    ensure_site_visible,
+    site_is_visible,
+    visible_site_ids,
+    visible_sites_clause,
+)
 from app.services.tag_rules import validate_project_tags
 from app.services.team_rules import (
     SITE_LESS_PROJECT_TEAMS_DETAIL,
@@ -322,6 +331,7 @@ async def _require_site_exists(db: AsyncSession, site_id: int) -> None:
 
 @router.get("/projects")
 async def get_projects(
+    request: Request,
     siteId: int | None = Query(None),
     includeOtherSites: str | None = Query(None),
     archived: str | None = Query(None),
@@ -330,29 +340,46 @@ async def get_projects(
     user: User = Depends(get_current_user),
 ):
     """
-    Get list of projects with pagination.
+    Get list of projects with pagination, at the user's visible sites only.
 
     Query params:
-    - siteId: Filter by site
-    - includeOtherSites: If 'true', show all sites but mask external project details
-    - archived: 'true' for archived only, 'all' for all, default is non-archived
+    - siteId: Filter by site (a site outside the visible ones: 403)
+    - includeOtherSites: If 'true', show every visible site but mask the
+      projects of the other sites (needs ``views.crosssite``)
+    - archived: 'true' for archived only (needs ``views.archived``), 'all'
+      for all (archived ones only with ``views.archived``), default is
+      non-archived
     - offset: Number of items to skip (default 0)
     - limit: Max items to return (default 50, max 200)
 
     Matches: GET /api/projects
     """
-    # Build base filter query
-    base_filter = select(Project.id)
+    permissions = user.permissions
+    cross_site = includeOtherSites == "true"
+    if cross_site and not permissions.has("views.crosssite"):
+        raise HTTPException(status_code=403, detail=permission_required_detail("views.crosssite"))
+    if archived == "true" and not permissions.has("views.archived"):
+        raise HTTPException(status_code=403, detail=permission_required_detail("views.archived"))
+    # 'all' without views.archived quietly leaves the archived projects out.
+    with_archived = archived == "all" and permissions.has("views.archived")
 
-    # Filter by archived status
+    visible = await visible_site_ids(request, db, user)
+    if siteId and not site_is_visible(visible, siteId):
+        raise HTTPException(status_code=403, detail=SITE_NOT_VISIBLE_DETAIL)
+
+    filters = []
     if archived == "true":
-        base_filter = base_filter.where(Project.archived == 1)
-    elif archived != "all":
-        base_filter = base_filter.where(or_(Project.archived == 0, Project.archived.is_(None)))
+        filters.append(Project.archived == 1)
+    elif not with_archived:
+        filters.append(or_(Project.archived == 0, Project.archived.is_(None)))
+    if siteId and not cross_site:
+        filters.append(Project.site_id == int(siteId))
+    else:
+        in_visible = visible_sites_clause(Project.site_id, visible)
+        if in_visible is not None:
+            filters.append(in_visible)
 
-    # Filter by site
-    if siteId and includeOtherSites != "true":
-        base_filter = base_filter.where(Project.site_id == int(siteId))
+    base_filter = select(Project.id).where(*filters)
 
     # Get total count
     count_result = await db.execute(select(func.count()).select_from(base_filter.subquery()))
@@ -370,13 +397,7 @@ async def get_projects(
         .options(_PROJECT_TAGS_FOR_RESPONSE)
     )
 
-    if archived == "true":
-        query = query.where(Project.archived == 1)
-    elif archived != "all":
-        query = query.where(or_(Project.archived == 0, Project.archived.is_(None)))
-
-    if siteId and includeOtherSites != "true":
-        query = query.where(Project.site_id == int(siteId))
+    query = query.where(*filters)
 
     # id breaks start_date ties so the order (and page boundaries) is deterministic.
     query = (
@@ -395,7 +416,7 @@ async def get_projects(
         pm_name = row[2]
 
         # Mask external project details if viewing cross-site
-        if includeOtherSites == "true" and siteId and project.site_id != int(siteId):
+        if cross_site and siteId and project.site_id != int(siteId):
             projects.append(
                 {
                     "id": project.id,
@@ -453,11 +474,15 @@ async def get_projects(
 @router.get("/projects/{project_id}", response_model=ProjectDetailResponse)
 async def get_project(
     project_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db_readonly),
     user: User = Depends(get_current_user),
 ):
     """
     Get single project with all nested data (phases, subphases, assignments).
+
+    403 outside the user's visible sites, and for an archived project without
+    ``views.archived``.
 
     Matches: GET /api/projects/:id
     """
@@ -554,6 +579,11 @@ async def get_project(
     project = row[0]
     site_name = row[1]
     pm_name = row[2]
+
+    if not site_is_visible(await visible_site_ids(request, db, user), project.site_id):
+        raise HTTPException(status_code=403, detail=PROJECT_NOT_VISIBLE_DETAIL)
+    if project.archived and not user.permissions.has("views.archived"):
+        raise HTTPException(status_code=403, detail=permission_required_detail("views.archived"))
 
     phases_result = await query_phases()
     t2 = time.perf_counter()
@@ -729,7 +759,9 @@ async def create_project(
 
     Matches: POST /api/projects
     """
-    # Unknown references are a 404, not an FK violation (500).
+    # At a visible site (a site-less project needs sites.view_all), then
+    # unknown references are a 404, not an FK violation (500).
+    await ensure_site_visible(request, db, user, data.site_id)
     if data.site_id is not None:
         await _require_site_exists(db, data.site_id)
     if data.pm_id is not None:
@@ -815,6 +847,7 @@ async def update_project(
 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    await ensure_site_visible(request, db, user, project.site_id, PROJECT_NOT_VISIBLE_DETAIL)
 
     sent = {field for field in data.model_fields_set if getattr(data, field) is not None}
     archiving = "archived" in sent and bool(data.archived) != bool(project.archived)
@@ -895,6 +928,7 @@ async def delete_project(
 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    await ensure_site_visible(request, db, user, project.site_id, PROJECT_NOT_VISIBLE_DETAIL)
 
     project_name = project.name
 
@@ -946,6 +980,7 @@ async def create_phase(
     Matches: POST /api/projects/:id/phases
     """
     # 404 if the project does not exist, 403 unless editor (edit_any or the PM)
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
 
     # Determine sort_order
@@ -1015,6 +1050,7 @@ async def update_phase(
         raise HTTPException(status_code=404, detail="Phase not found")
 
     project_id = phase.project_id
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
 
     if data.type is not None:
@@ -1072,6 +1108,7 @@ async def delete_phase(
         raise HTTPException(status_code=404, detail="Phase not found")
 
     project_id = phase.project_id
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
     phase_type = phase.type
 
@@ -1126,6 +1163,7 @@ async def reorder_phases(
 
     Matches: PUT /api/projects/:id/phases/reorder
     """
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
 
     for index, phase_id in enumerate(data.phase_order):
@@ -1177,6 +1215,7 @@ async def create_subphase_under_phase(
     # The subphase belongs to the phase's project; `data.project_id` is ignored
     # (a client could otherwise file it under a project it cannot edit).
     project_id = phase.project_id
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
 
     # Determine sort_order
@@ -1271,6 +1310,7 @@ async def create_child_subphase(
 
     # The child belongs to the parent's project; `data.project_id` is ignored.
     project_id = parent.project_id
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
 
     # Check max depth
@@ -1371,6 +1411,7 @@ async def update_subphase(
         raise HTTPException(status_code=404, detail="Subphase not found")
 
     project_id = subphase.project_id
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
 
     if data.name is not None:
@@ -1429,6 +1470,7 @@ async def delete_subphase(
 
     project_id = target.project_id
     sp_name = target.name
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
 
     all_ids = [subphase_id] + await collect_descendant_subphase_ids(db, subphase_id, "subphase")
@@ -1468,6 +1510,7 @@ async def reorder_subphases(
         project_id = await project_id_for_phase(db, parent_id)
     else:
         project_id = await project_id_for_subphase(db, parent_id)
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
 
     for index, subphase_id in enumerate(data.subphase_order):

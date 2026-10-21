@@ -62,6 +62,7 @@ def _subphase(project_id: int = 1, depth: int = 1):
 def _project(pm_id):
     project = MagicMock()
     project.id = 1
+    project.site_id = 1  # the callers' site
     project.pm_id = pm_id
     project.name = "Project"
     return project
@@ -975,7 +976,8 @@ async def test_a_custom_role_with_create_creates_projects(authed_client, mock_db
     set_user(FakeUser(5, "planner", {"projects.create"}))
 
     response = await client.post(
-        "/api/projects", json={"name": "New", "start_date": "2025-01-01", "end_date": "2025-02-01"}
+        "/api/projects",
+        json={"name": "New", "site_id": 1, "start_date": "2025-01-01", "end_date": "2025-02-01"},
     )
 
     assert response.status_code == 200

@@ -12,7 +12,11 @@ need the target account or a role's permission set:
   current role they could assign; the admin role is assigned by admins only
   (``ensure_may_assign_role`` / ``ensure_may_change_role_of``);
 - **last active admin**: the last active administrator cannot be demoted,
-  deactivated or deleted (``ensure_not_last_active_admin``).
+  deactivated or deleted (``ensure_not_last_active_admin``);
+- **visible sites**: an account is managed (and read) only when it is the
+  caller's or a member of one of the caller's visible sites
+  (``site_access.ensure_person_visible``, 403 ``USER_OUTSIDE_SITES_DETAIL``
+  on writes).
 
 Like the other access services, the caller is read through ``id`` and
 ``permissions`` only (it is often the lightweight SessionUser).
@@ -36,6 +40,7 @@ ROLE_CHANGE_OF_STRONGER_DETAIL = (
     "You can only change the role of users whose role grants no more than yours"
 )
 LAST_ADMIN_DETAIL = "Cannot remove the last active administrator"
+USER_OUTSIDE_SITES_DETAIL = "You can only manage users at your sites"
 
 
 def edit_key_for(target_role: str | None) -> str:

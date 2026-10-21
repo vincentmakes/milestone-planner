@@ -165,8 +165,22 @@ def fake_user():
     return FakeUser
 
 
+@pytest.fixture
+def site_links() -> SimpleNamespace:
+    """
+    The live site links ``authed_client`` serves to the visibility checks.
+
+    ``people[user_id]``: that person's ``user_sites`` ids; ``projects[project_id]``:
+    that project's ``site_id``; ``equipment[equipment_id]``: its linked sites.
+    Anyone or any equipment not listed shares the caller's sites and any
+    project not listed sits at the caller's first site, so a test that does not
+    care about site visibility never needs to mock those lookups.
+    """
+    return SimpleNamespace(people={}, projects={}, equipment={})
+
+
 @pytest_asyncio.fixture
-async def authed_client(test_settings, mock_db_session):
+async def authed_client(test_settings, mock_db_session, site_links):
     """
     Test client with an authenticated session.
 
@@ -175,7 +189,8 @@ async def authed_client(test_settings, mock_db_session):
     Only ``get_current_user`` (and ``require_admin``) are overridden: the
     ``require_permission*`` gates read the FakeUser's permissions as they read
     a live-resolved set. The caller's live ``user_sites`` (the visible sites
-    without ``sites.view_all``) are the FakeUser's ``site_ids``.
+    without ``sites.view_all``) are the FakeUser's ``site_ids``; other people's,
+    projects' and equipment's sites come from ``site_links``.
     """
     with patch("app.config.get_settings", return_value=test_settings):
         from app.main import create_app
@@ -190,9 +205,25 @@ async def authed_client(test_settings, mock_db_session):
         def current_user():
             return state["user"]
 
-        async def live_site_ids(_db, _user_id):
+        async def live_site_ids(_db, user_id):
             # The live user_sites rows of the caller are the FakeUser's site_ids,
-            # so visible_site_ids / ensure_site_access need no mocked query.
+            # so visible_site_ids / ensure_site_access need no mocked query;
+            # anyone else's come from site_links (default: the caller's sites).
+            caller = state["user"]
+            if user_id != caller.id and user_id in site_links.people:
+                return frozenset(site_links.people[user_id])
+            return frozenset(caller.site_ids)
+
+        async def project_site_id(_db, project_id):
+            # A project's site comes from site_links (default: the caller's first site).
+            if project_id in site_links.projects:
+                return site_links.projects[project_id]
+            return min(state["user"].site_ids, default=None)
+
+        async def equipment_site_ids(_db, equipment_id):
+            # An equipment's sites come from site_links (default: the caller's sites).
+            if equipment_id in site_links.equipment:
+                return frozenset(site_links.equipment[equipment_id])
             return frozenset(state["user"].site_ids)
 
         def admin():
@@ -209,7 +240,11 @@ async def authed_client(test_settings, mock_db_session):
         app.dependency_overrides[require_admin] = admin
 
         transport = ASGITransport(app=app)
-        with patch("app.services.site_access._load_user_site_ids", live_site_ids):
+        with (
+            patch("app.services.site_access._load_user_site_ids", live_site_ids),
+            patch("app.services.site_access._load_project_site_id", project_site_id),
+            patch("app.services.site_access._load_equipment_site_ids", equipment_site_ids),
+        ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
 
                 def set_user(user: FakeUser) -> None:

@@ -1,8 +1,10 @@
 """
 Route behaviour of the smaller domain fixes:
 
-- B2-19  GET /vacations without siteId: plain users see their own absences and
-         those of people sharing a site with them; superusers/admins see all.
+- B2-19  GET /vacations without siteId: their own absences and, with
+         absences.view_others, those of the members of their visible sites
+         (admins: all). With siteId: absences.view_others and a visible site
+         (RBAC Task 4; the cross-site details are in test_site_visibility.py).
 - B2-7   PUT /custom-columns/values/batch validates like the single write,
          is bounded, and loads one query per column.
 - B2-21  import uploads are capped (413) and the parse runs in a thread.
@@ -55,9 +57,10 @@ def _sql(stmt) -> str:
 
 
 @pytest.mark.asyncio
-async def test_plain_user_vacation_list_is_limited_to_shared_sites(authed_client, mock_db_session):
+@pytest.mark.parametrize("role", ["user", "superuser"])
+async def test_vacation_list_is_limited_to_visible_colleagues(authed_client, mock_db_session, role):
     client, set_user = authed_client
-    set_user(FakeUser(5, "user"))
+    set_user(FakeUser(5, role, site_ids=[1, 3]))
     mock_db_session.execute.return_value = _scalars_result([])
 
     response = await client.get("/api/vacations")
@@ -65,15 +68,14 @@ async def test_plain_user_vacation_list_is_limited_to_shared_sites(authed_client
     assert response.status_code == 200
     sql = _sql(mock_db_session.execute.await_args.args[0])
     assert "vacations.staff_id = 5" in sql
-    assert "user_sites.user_id = 5" in sql
     assert "vacations.staff_id IN (SELECT user_sites.user_id" in sql
+    assert "user_sites.site_id IN (1, 3)" in sql
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", ["superuser", "admin"])
-async def test_privileged_vacation_list_is_unchanged(authed_client, mock_db_session, role):
+async def test_admin_vacation_list_is_unchanged(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(5, role))
+    set_user(FakeUser(5, "admin"))
     mock_db_session.execute.return_value = _scalars_result([])
 
     response = await client.get("/api/vacations")
@@ -84,19 +86,24 @@ async def test_privileged_vacation_list_is_unchanged(authed_client, mock_db_sess
 
 
 @pytest.mark.asyncio
-async def test_vacation_list_for_a_site_is_unchanged_for_plain_users(
-    authed_client, mock_db_session
-):
+async def test_vacation_list_for_a_site_needs_a_visible_site(authed_client, mock_db_session):
+    # Behaviour change (RBAC decision 6): any user used to read any site's
+    # absences through ?siteId=; now only a visible site's, with
+    # absences.view_others (allowed for plain users by default).
     client, set_user = authed_client
-    set_user(FakeUser(5, "user"))
+    set_user(FakeUser(5, "user", site_ids=[1]))
     mock_db_session.execute.return_value = _scalars_result([])
 
-    response = await client.get("/api/vacations?siteId=2")
+    response = await client.get("/api/vacations?siteId=1")
 
     assert response.status_code == 200
     sql = _sql(mock_db_session.execute.await_args.args[0])
-    assert "user_sites.site_id = 2" in sql
+    assert "user_sites.site_id = 1" in sql
     assert "vacations.staff_id = 5" not in sql
+
+    mock_db_session.execute.reset_mock()
+    assert (await client.get("/api/vacations?siteId=2")).status_code == 403
+    mock_db_session.execute.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +264,9 @@ async def test_oversized_import_upload_is_413(authed_client, mock_db_session, pa
 
     with patch("app.routers.mpp_import.MAX_IMPORT_UPLOAD_BYTES", 16):
         response = await client.post(
-            path, files={"file": ("plan.mpp", b"x" * 17, "application/octet-stream")}
+            path,
+            data={"site_id": "1"},
+            files={"file": ("plan.mpp", b"x" * 17, "application/octet-stream")},
         )
 
     assert response.status_code == 413, response.text

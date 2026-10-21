@@ -48,7 +48,14 @@ from app.services.holidays import (
     is_relevant_holiday,
     should_skip_nager_holiday,
 )
-from app.services.site_access import can_access_sites, ensure_site_access
+from app.services.site_access import (
+    can_access_sites,
+    ensure_site_access,
+    ensure_site_visible,
+    site_is_visible,
+    visible_site_ids,
+    visible_sites_clause,
+)
 from app.services.team_rules import (
     ensure_teams_within_sites,
     load_teams,
@@ -97,16 +104,20 @@ def _holiday_response(h: BankHoliday) -> BankHolidayResponse:
 
 @router.get("/sites", response_model=list[SiteResponse])
 async def get_active_sites(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """
-    Get all active sites.
+    Get the active sites visible to the user (every one with ``sites.view_all``).
 
-    Requires authentication.
     Matches: GET /api/sites
     """
-    result = await db.execute(select(Site).where(Site.active == 1).order_by(Site.name))
+    query = select(Site).where(Site.active == 1)
+    in_visible = visible_sites_clause(Site.id, await visible_site_ids(request, db, user))
+    if in_visible is not None:
+        query = query.where(in_visible)
+    result = await db.execute(query.order_by(Site.name))
     sites = result.scalars().all()
     return sites
 
@@ -130,14 +141,15 @@ async def get_all_sites(
 @router.get("/sites/{site_id}", response_model=SiteResponse)
 async def get_site(
     site_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """
-    Get a specific site by ID.
-
-    Requires authentication.
+    Get a specific site by ID (404 outside the user's visible sites).
     """
+    if not site_is_visible(await visible_site_ids(request, db, user), site_id):
+        raise HTTPException(status_code=404, detail="Site not found")
     result = await db.execute(select(Site).where(Site.id == site_id))
     site = result.scalar_one_or_none()
 
@@ -357,16 +369,18 @@ async def delete_site(
 @router.get("/sites/{site_id}/holidays", response_model=list[BankHolidayResponse])
 async def get_site_holidays(
     site_id: int,
+    request: Request,
     year: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """
-    Get bank holidays for a site.
+    Get bank holidays for a visible site (403 otherwise).
 
     Optionally filter by year.
     Matches: GET /api/sites/:id/holidays
     """
+    await ensure_site_visible(request, db, user, site_id)
     query = select(BankHoliday).where(BankHoliday.site_id == site_id)
 
     if year:
@@ -638,6 +652,7 @@ async def refresh_bank_holidays(
 
 @router.get("/holidays", response_model=list[BankHolidayResponse])
 async def get_holidays_in_range(
+    request: Request,
     siteId: int = Query(...),
     startDate: str | None = Query(None),
     endDate: str | None = Query(None),
@@ -645,11 +660,12 @@ async def get_holidays_in_range(
     user: User = Depends(get_current_user),
 ):
     """
-    Get holidays for a site within a date range.
+    Get holidays for a visible site (403 otherwise) within a date range.
 
     Used by Gantt visualization.
     Matches: GET /api/holidays
     """
+    await ensure_site_visible(request, db, user, siteId)
     query = select(BankHoliday).where(BankHoliday.site_id == siteId)
 
     if startDate and endDate:
@@ -888,15 +904,17 @@ def _site_events_query(site_id: int):
 @router.get("/sites/{site_id}/events", response_model=list[CompanyEventResponse])
 async def get_company_events(
     site_id: int,
+    request: Request,
     year: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """
-    Get company events linked to a site.
+    Get company events linked to a visible site (403 otherwise).
 
     Optionally filter by year.
     """
+    await ensure_site_visible(request, db, user, site_id)
     query = _site_events_query(site_id)
 
     if year:
@@ -909,6 +927,7 @@ async def get_company_events(
 
 @router.get("/events", response_model=list[CompanyEventResponse])
 async def get_events_in_range(
+    request: Request,
     siteId: int = Query(...),
     startDate: str | None = Query(None),
     endDate: str | None = Query(None),
@@ -916,10 +935,11 @@ async def get_events_in_range(
     user: User = Depends(get_current_user),
 ):
     """
-    Get company events linked to a site within a date range.
+    Get company events linked to a visible site (403 otherwise) within a date range.
 
     Used by Gantt visualization.
     """
+    await ensure_site_visible(request, db, user, siteId)
     query = _site_events_query(siteId)
 
     # Overlap, not start-in-range: a multi-day event that began before the

@@ -49,7 +49,7 @@ GATES = [
         "POST",
         "/api/projects",
         "projects.create",
-        {"name": "P", "start_date": "2025-01-01", "end_date": "2025-02-01"},
+        {"name": "P", "site_id": 1, "start_date": "2025-01-01", "end_date": "2025-02-01"},
     ),
     ("projects", "DELETE", "/api/projects/1", "projects.delete", None),
     (

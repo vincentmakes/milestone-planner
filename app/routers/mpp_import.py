@@ -33,6 +33,7 @@ from app.middleware.auth import require_permission
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.user import User
 from app.services.card_status import apply_completion
+from app.services.site_access import ensure_site_visible
 from app.websocket.broadcast import broadcast_change
 
 router = APIRouter(tags=["import"])
@@ -1035,6 +1036,9 @@ async def import_project_full(
             pass
 
     logger.info("Import request received: %s, site_id: %s", file.filename, parsed_site_id)
+
+    # Into a visible site only (a site-less project needs sites.view_all).
+    await ensure_site_visible(request, db, user, parsed_site_id)
 
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")

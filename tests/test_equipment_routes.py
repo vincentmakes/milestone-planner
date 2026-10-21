@@ -117,7 +117,7 @@ async def test_equipment_list_returns_one_row_per_site(authed_client, mock_db_se
 @pytest.mark.asyncio
 async def test_equipment_list_filters_through_the_junction(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(1, "user"))
+    set_user(FakeUser(1, "user", site_ids=[2]))  # site 2 must be visible
     mock_db_session.execute.return_value = _pairs_result([])
 
     response = await client.get("/api/equipment?siteId=2")
@@ -546,7 +546,7 @@ def _block(block_id=3, equipment=None):
 @pytest.mark.asyncio
 async def test_block_list_for_a_site_joins_through_equipment_sites(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(1, "user"))
+    set_user(FakeUser(1, "user", site_ids=[2]))  # site 2 must be visible
     mock_db_session.execute.return_value = _scalars_result(
         [_block(3, _equipment(7, sites=[SITE_A, SITE_B]))]
     )

@@ -37,6 +37,7 @@ def _sql(mock_db_session) -> list[str]:
 def _project():
     project = MagicMock()
     project.id = 1
+    project.site_id = 1  # the caller's site
     project.name = "Bioprocess"
     return project
 

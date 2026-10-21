@@ -101,7 +101,7 @@ def db_assigns_ids(mock_db_session):
 @pytest.mark.asyncio
 async def test_list_teams_in_one_query_ordered_by_site_then_name(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(1, "user"))
+    set_user(FakeUser(1, "user", site_ids=[1, 2]))
     mock_db_session.execute.return_value = scalars_result(
         [
             make_team(3, 1, "Analytics", [make_user(7), make_user(4)]),
@@ -119,14 +119,14 @@ async def test_list_teams_in_one_query_ordered_by_site_then_name(authed_client, 
     assert mock_db_session.execute.await_count == 1
     sql = compiled(mock_db_session)
     assert "ORDER BY teams.site_id, teams.name" in sql
-    assert "WHERE" not in sql
+    assert "WHERE teams.site_id IN (1, 2)" in sql  # the visible sites
     assert loader_strategies(mock_db_session) == READ_LOADERS
 
 
 @pytest.mark.asyncio
 async def test_list_teams_filters_by_site(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(1, "user"))
+    set_user(FakeUser(1, "user", site_ids=[2]))
     mock_db_session.execute.return_value = scalars_result([])
 
     response = await client.get("/api/teams?siteId=2")

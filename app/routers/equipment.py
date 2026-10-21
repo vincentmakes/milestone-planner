@@ -27,7 +27,16 @@ from app.schemas.equipment import (
 )
 from app.services.date_range import ensure_date_order, parse_day_range
 from app.services.project_access import require_on_project
-from app.services.site_access import can_access_sites, ensure_site_access
+from app.services.site_access import (
+    EQUIPMENT_NOT_FOUND_DETAIL,
+    can_access_sites,
+    ensure_equipment_visible,
+    ensure_project_visible,
+    ensure_site_access,
+    ensure_site_visible,
+    visible_site_ids,
+    visible_sites_clause,
+)
 from app.services.team_rules import (
     ensure_teams_within_sites,
     load_teams,
@@ -39,6 +48,9 @@ from app.websocket.broadcast import broadcast_change
 router = APIRouter()
 
 EQUIPMENT_SITE_ACCESS_DETAIL = "You can only manage equipment for sites you're assigned to"
+
+# The Equipment view's reads (equipment, bookings, availability, blocks).
+require_equipment_view = require_permission("views.equipment")
 
 
 # ---------------------------------------------------------
@@ -207,6 +219,14 @@ async def _ensure_equipment_access(
     await ensure_site_access(request, db, user, site_ids, EQUIPMENT_SITE_ACCESS_DETAIL)
 
 
+def _at_visible_sites(equipment_id_column, visible: frozenset[int] | None):
+    """``equipment_id IN (equipment linked to a visible site)``, or None for every site."""
+    in_visible = visible_sites_clause(EquipmentSite.site_id, visible)
+    if in_visible is None:
+        return None
+    return equipment_id_column.in_(select(EquipmentSite.equipment_id).where(in_visible))
+
+
 async def _load_sites(db: AsyncSession, site_ids: list[int]) -> list[Site]:
     """Return the de-duplicated sites ordered by id; 404 if any does not exist."""
     wanted = sorted(set(site_ids))
@@ -219,16 +239,18 @@ async def _load_sites(db: AsyncSession, site_ids: list[int]) -> list[Site]:
 
 @router.get("/equipment", response_model=list[EquipmentResponse])
 async def get_equipment(
+    request: Request,
     siteId: int | None = Query(None),
     includeAllSites: bool | None = Query(False),
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_equipment_view),
 ):
     """
-    Get active equipment.
+    Get active equipment (``views.equipment``).
 
-    If siteId provided, returns equipment linked to that site.
-    If includeAllSites=true, returns all equipment.
+    If siteId provided, returns equipment linked to that site (403 outside the
+    user's visible sites). Otherwise (or with includeAllSites=true) returns the
+    equipment of every visible site.
 
     Like GET /staff, returns one row per equipment-site pair: equipment shared
     by several sites appears once per site, with that site as ``site_id`` and
@@ -245,7 +267,14 @@ async def get_equipment(
     )
 
     if siteId and not includeAllSites:
+        await ensure_site_visible(request, db, user, siteId)
         query = query.where(EquipmentSite.site_id == siteId)
+    else:
+        in_visible = visible_sites_clause(
+            EquipmentSite.site_id, await visible_site_ids(request, db, user)
+        )
+        if in_visible is not None:
+            query = query.where(in_visible)
 
     result = await db.execute(query)
     rows = result.all()
@@ -255,16 +284,22 @@ async def get_equipment(
 
 @router.get("/equipment/all", response_model=list[EquipmentResponse])
 async def get_all_equipment(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("equipment.manage")),
 ):
     """
-    Get all equipment including inactive, one row per equipment.
+    Get all equipment including inactive, one row per equipment, linked to a
+    visible site (every one, site-less included, with ``sites.view_all``).
 
     Requires ``equipment.manage``.
     Matches: GET /api/equipment/all
     """
-    result = await db.execute(select(Equipment).order_by(Equipment.name))
+    query = select(Equipment)
+    at_visible = _at_visible_sites(Equipment.id, await visible_site_ids(request, db, user))
+    if at_visible is not None:
+        query = query.where(at_visible)
+    result = await db.execute(query.order_by(Equipment.name))
     equipment_list = result.scalars().all()
 
     return [build_equipment_response(e) for e in equipment_list]
@@ -273,19 +308,22 @@ async def get_all_equipment(
 @router.get("/equipment/{equipment_id}", response_model=EquipmentResponse)
 async def get_equipment_by_id(
     equipment_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_equipment_view),
 ):
     """
-    Get a specific equipment by ID.
+    Get a specific equipment by ID (``views.equipment``; 404 unless linked to
+    a visible site).
 
     Matches: GET /api/equipment/:id
     """
+    await ensure_equipment_visible(request, db, user, equipment_id)
     result = await db.execute(select(Equipment).where(Equipment.id == equipment_id))
     equipment = result.scalar_one_or_none()
 
     if not equipment:
-        raise HTTPException(status_code=404, detail="Equipment not found")
+        raise HTTPException(status_code=404, detail=EQUIPMENT_NOT_FOUND_DETAIL)
 
     return build_equipment_response(equipment)
 
@@ -345,7 +383,7 @@ async def update_equipment(
     equipment = result.scalar_one_or_none()
 
     if not equipment:
-        raise HTTPException(status_code=404, detail="Equipment not found")
+        raise HTTPException(status_code=404, detail=EQUIPMENT_NOT_FOUND_DETAIL)
 
     await _ensure_equipment_access(request, db, user, equipment.site_ids)
 
@@ -398,7 +436,7 @@ async def delete_equipment(
     equipment = result.scalar_one_or_none()
 
     if not equipment:
-        raise HTTPException(status_code=404, detail="Equipment not found")
+        raise HTTPException(status_code=404, detail=EQUIPMENT_NOT_FOUND_DETAIL)
 
     await _ensure_equipment_access(request, db, user, equipment.site_ids)
 
@@ -418,14 +456,17 @@ async def delete_equipment(
 )
 async def get_equipment_assignments(
     equipment_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_equipment_view),
 ):
     """
-    Get assignments for a specific equipment.
+    Get assignments for a specific equipment (``views.equipment``; 404 unless
+    linked to a visible site).
 
     Matches: GET /api/equipment/:id/assignments
     """
+    await ensure_equipment_visible(request, db, user, equipment_id)
     result = await db.execute(
         select(EquipmentAssignment)
         .where(EquipmentAssignment.equipment_id == equipment_id)
@@ -482,6 +523,7 @@ async def update_equipment_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Equipment assignment not found")
 
+    await ensure_project_visible(request, db, user, assignment.project_id)
     await require_on_project(db, user, "equipment_bookings.manage", assignment.project_id)
 
     # Rebooking onto other equipment: same site rule as creating a booking
@@ -492,7 +534,7 @@ async def update_equipment_assignment(
             await db.execute(select(Equipment).where(Equipment.id == data.equipment_id))
         ).scalar_one_or_none()
         if equipment is None:
-            raise HTTPException(status_code=404, detail="Equipment not found")
+            raise HTTPException(status_code=404, detail=EQUIPMENT_NOT_FOUND_DETAIL)
         project_site_id = assignment.project.site_id if assignment.project else None
         if project_site_id not in equipment.site_ids:
             raise HTTPException(
@@ -563,6 +605,7 @@ async def delete_equipment_assignment(
         raise HTTPException(status_code=404, detail="Equipment assignment not found")
 
     project_id = assignment.project_id
+    await ensure_project_visible(request, db, user, project_id)
     await require_on_project(db, user, "equipment_bookings.manage", project_id)
 
     await db.delete(assignment)
@@ -583,13 +626,15 @@ async def delete_equipment_assignment(
 @router.get("/equipment/{equipment_id}/availability")
 async def get_equipment_availability(
     equipment_id: int,
+    request: Request,
     startDate: str = Query(...),
     endDate: str = Query(...),
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_equipment_view),
 ):
     """
-    Get equipment availability for a date range.
+    Get equipment availability for a date range (``views.equipment``; 404
+    unless linked to a visible site).
 
     Matches: GET /api/equipment/:id/availability
     """
@@ -597,6 +642,7 @@ async def get_equipment_availability(
 
     # Parse dates (400 on malformed, inverted or oversized ranges)
     start, end = parse_day_range(startDate, endDate)
+    await ensure_equipment_visible(request, db, user, equipment_id)
 
     # Get assignments in range - use proper date types for comparison
     result = await db.execute(
@@ -652,13 +698,16 @@ def build_block_response(block: EquipmentBlock) -> dict:
 
 @router.get("/equipment-blocks", response_model=list[EquipmentBlockResponse])
 async def list_equipment_blocks(
+    request: Request,
     siteId: int | None = Query(None),
     equipmentId: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_equipment_view),
 ):
     """
-    List equipment blocks. Optionally filter by site or equipment.
+    List equipment blocks (``views.equipment``) of equipment at the user's
+    visible sites. Optionally filter by site (403 outside the visible sites)
+    or equipment.
     """
     query = select(EquipmentBlock).options(selectinload(EquipmentBlock.equipment))
 
@@ -666,10 +715,17 @@ async def list_equipment_blocks(
         query = query.where(EquipmentBlock.equipment_id == equipmentId)
 
     if siteId is not None:
+        await ensure_site_visible(request, db, user, siteId)
         # Through the junction: equipment shared with the site is included too.
         query = query.join(
             EquipmentSite, EquipmentSite.equipment_id == EquipmentBlock.equipment_id
         ).where(EquipmentSite.site_id == siteId)
+    else:
+        at_visible = _at_visible_sites(
+            EquipmentBlock.equipment_id, await visible_site_ids(request, db, user)
+        )
+        if at_visible is not None:
+            query = query.where(at_visible)
 
     query = query.order_by(EquipmentBlock.start_date)
     result = await db.execute(query)
@@ -681,10 +737,13 @@ async def list_equipment_blocks(
 @router.get("/equipment/{equipment_id}/blocks", response_model=list[EquipmentBlockResponse])
 async def get_equipment_blocks(
     equipment_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_equipment_view),
 ):
-    """List all blocks for a specific equipment."""
+    """List all blocks for a specific equipment (``views.equipment``; 404 unless
+    linked to a visible site)."""
+    await ensure_equipment_visible(request, db, user, equipment_id)
     result = await db.execute(
         select(EquipmentBlock)
         .where(EquipmentBlock.equipment_id == equipment_id)
@@ -711,7 +770,7 @@ async def create_equipment_block(
 
     equipment = await db.get(Equipment, data.equipment_id)
     if not equipment:
-        raise HTTPException(status_code=404, detail="Equipment not found")
+        raise HTTPException(status_code=404, detail=EQUIPMENT_NOT_FOUND_DETAIL)
 
     await _ensure_equipment_access(request, db, user, equipment.site_ids)
 

@@ -67,7 +67,7 @@ def db_assigns_ids(mock_db_session):
 @pytest.mark.asyncio
 async def test_list_by_site_marks_only_own_rows_editable(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(5, "user"))
+    set_user(FakeUser(5, "user", site_ids=[2]))
     mock_db_session.execute.return_value = scalars_result(
         [make_vacation(40, 5), make_vacation(41, 6, staff=False)]
     )
@@ -127,12 +127,12 @@ async def test_get_colleague_vacation_is_read_only(authed_client, mock_db_sessio
 
     assert response.status_code == 200
     assert response.json()["canEdit"] is False
-    # The read is scoped to own + shared-site absences, like the list.
+    # The read is scoped to own + visible-site absences, like the list.
     query = sql(mock_db_session)
     assert "vacations.id = 40" in query
     assert "vacations.staff_id = 9" in query
     assert "vacations.staff_id IN (SELECT user_sites.user_id" in query
-    assert "user_sites.user_id = 9" in query
+    assert "user_sites.site_id IN (1)" in query
 
 
 @pytest.mark.asyncio
@@ -154,10 +154,9 @@ async def test_get_non_colleague_vacation_is_404(authed_client, mock_db_session)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", ["superuser", "admin"])
-async def test_get_vacation_is_unscoped_for_privileged_users(authed_client, mock_db_session, role):
+async def test_get_vacation_is_unscoped_with_view_all(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(1, role))
+    set_user(FakeUser(1, "admin"))
     mock_db_session.execute.return_value = scalar_result(make_vacation(40, 5))
 
     response = await client.get("/api/vacations/40")
@@ -167,6 +166,22 @@ async def test_get_vacation_is_unscoped_for_privileged_users(authed_client, mock
     query = sql(mock_db_session)
     assert "vacations.id = 40" in query
     assert "user_sites" not in query
+
+
+@pytest.mark.asyncio
+async def test_get_vacation_is_scoped_to_visible_sites_for_superusers(
+    authed_client, mock_db_session
+):
+    # Since RBAC decision 6 a superuser reads absences at their visible sites only.
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    mock_db_session.execute.return_value = scalar_result(make_vacation(40, 5))
+
+    response = await client.get("/api/vacations/40")
+
+    assert response.status_code == 200
+    assert response.json()["canEdit"] is True
+    assert "user_sites.site_id IN (1)" in sql(mock_db_session)
 
 
 @pytest.mark.asyncio
@@ -544,7 +559,7 @@ async def test_a_superuser_without_manage_others_cannot_delete_someone_elses(
 async def test_can_edit_follows_the_absence_keys(authed_client, mock_db_session):
     client, set_user = authed_client
     # Manages others' absences but not their own.
-    set_user(FakeUser(5, "odd", {"absences.manage_others"}))
+    set_user(FakeUser(5, "odd", {"absences.manage_others", "absences.view_others"}, site_ids=[2]))
     mock_db_session.execute.return_value = scalars_result(
         [make_vacation(40, 5), make_vacation(41, 6)]
     )
