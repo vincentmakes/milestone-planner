@@ -991,6 +991,28 @@ APPROVAL_REQUESTS_ORPHAN_CLEANUP_SQL = """
                 SELECT 1 FROM subphase_staff_assignments a WHERE a.id = r.assignment_id)))"""
 
 
+# After that expiry: a pending-create row whose request is no longer pending
+# (closed, or gone) is removed, and an approved row stops pointing at a closed
+# request. One statement per assignment table; run by the tenant data
+# migrations (a data step: not part of the fresh-install DDL).
+PENDING_ASSIGNMENT_ORPHAN_CLEANUP_SQL: tuple[str, ...] = tuple(
+    f"""
+    DELETE FROM {table} a
+    WHERE a.approval_status = 'pending'
+      AND NOT EXISTS (SELECT 1 FROM approval_requests r
+                      WHERE r.id = a.approval_request_id AND r.status = 'pending')"""
+    for table in ASSIGNMENT_APPROVAL_TABLES
+)
+STALE_APPROVAL_POINTER_CLEANUP_SQL: tuple[str, ...] = tuple(
+    f"""
+    UPDATE {table} a SET approval_request_id = NULL
+    WHERE a.approval_status = 'approved' AND a.approval_request_id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM approval_requests r
+                      WHERE r.id = a.approval_request_id AND r.status = 'pending')"""
+    for table in ASSIGNMENT_APPROVAL_TABLES
+)
+
+
 def _sql_block(*statements: str) -> str:
     """Statements joined for a multi-statement script (each terminated by ';')."""
     return "".join(f"{statement};\n" for statement in statements)

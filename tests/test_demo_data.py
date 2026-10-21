@@ -27,6 +27,13 @@ from app.scripts.demo_data import (
     swiss_holidays,
 )
 from app.services.card_status import completion_for_status, status_for_completion
+from app.services.permissions import (
+    APPROVABLE_KEYS,
+    PERMISSION_KEYS,
+    ROLE_KEY_PATTERN,
+    SYSTEM_ROLES,
+    default_modes,
+)
 
 TODAY = date(2026, 10, 17)
 
@@ -59,8 +66,13 @@ def test_every_reference_resolves_to_exactly_one_row(demo: DemoData):
     assert len(phases) == len(demo.phases)
     assert len(subphases) == len(demo.subphases)
 
+    requests = {(r["project"], r["target"]) for r in demo.approval_requests}
+    assert len(requests) == len(demo.approval_requests)
+
     def entity_exists(ent):
         kind, proj, name = ent
+        if kind == "approval_request":
+            return (proj, name) in requests
         return (proj, name) in (phases if kind == "phase" else subphases)
 
     for u in demo.users:
@@ -113,7 +125,21 @@ def test_every_reference_resolves_to_exactly_one_row(demo: DemoData):
     for n in demo.notifications:
         assert n["user"] in users and n["actor"] in users and n["project"] in projects
         assert entity_exists(n["entity"])
-        assert n["type"] in ("assigned", "comment", "mention", "status_change")
+        assert n["type"] in (
+            "assigned",
+            "comment",
+            "mention",
+            "status_change",
+            "approval_requested",
+        )
+    for r in demo.approval_requests:
+        assert r["requester"] in users and r["project"] in projects
+        assert entity_exists((r["level"], r["project"], r["target"]))
+    for t in demo.todos:
+        assert t["assignee"] in users and t["creator"] in users
+        assert t["project"] is None or t["project"] in projects
+        if t["entity"] is not None:
+            assert entity_exists(t["entity"]) and t["entity"][1] == t["project"]
     for note in demo.staff_notes:
         assert note["site"] in sites and note["staff"] in users
 
@@ -417,3 +443,107 @@ def test_some_projects_have_teams_and_one_has_none(demo: DemoData):
     assert teams["Bioprocess Scale-Up"] == ["Process Development", "Analytical Lab"]
     assert teams["Quality System Upgrade"] == ["QA & Compliance"]
     assert any(not p["teams"] for p in demo.projects if not p["archived"])
+
+
+# ---------------------------------------------------------------------------
+# Roles, approvals, todos
+# ---------------------------------------------------------------------------
+
+
+def _role_modes(demo: DemoData) -> dict[str, dict[str, str]]:
+    """Each role's effective {key: mode}: the shipped defaults of a system role
+    with the demo's overrides, or a custom role's own matrix."""
+    modes = {role.key: default_modes(role.key) for role in SYSTEM_ROLES}
+    for role in demo.roles:
+        modes[role["key"]] = dict(role["permissions"])
+    for key, overrides in demo.role_modes.items():
+        modes[key] = {**modes[key], **overrides}
+    return modes
+
+
+def test_custom_roles_use_known_keys_and_modes(demo: DemoData):
+    system = {role.key for role in SYSTEM_ROLES}
+    for role in demo.roles:
+        assert re.match(ROLE_KEY_PATTERN, role["key"]) and role["key"] not in system
+        assert role["name"] and len(role["key"]) <= 20
+        for key, mode in role["permissions"].items():
+            assert key in PERMISSION_KEYS, key
+            assert mode == "allow" or (mode == "approval" and key in APPROVABLE_KEYS), key
+    for role_key, overrides in demo.role_modes.items():
+        assert role_key in system and role_key != "admin"
+        assert set(overrides) <= PERMISSION_KEYS
+        assert all(mode in ("allow", "approval") for mode in overrides.values())
+
+
+def test_team_lead_is_user_defaults_plus_three_keys_held_by_fiona(demo: DemoData):
+    (lead,) = (r for r in demo.roles if r["key"] == "team_lead")
+    assert lead["name"] == "Team Lead"
+    extra = {"projects.create", "absences.manage_others", "todos.assign_others"}
+    assert lead["permissions"] == {**default_modes("user"), **dict.fromkeys(extra, "allow")}
+    holders = [u["email"] for u in demo.users if u["role"] == "team_lead"]
+    assert holders == ["fiona.fischer@demo.local"]
+
+
+def test_every_user_role_exists(demo: DemoData):
+    roles = {role.key for role in SYSTEM_ROLES} | {r["key"] for r in demo.roles}
+    assert {u["role"] for u in demo.users} <= roles
+
+
+def test_demo_users_book_themselves_through_approval(demo: DemoData):
+    assert demo.role_modes["user"] == dict.fromkeys(sorted(APPROVABLE_KEYS), "approval")
+
+
+def test_create_policy_is_pm_plus_team_lead(demo: DemoData):
+    (policy,) = demo.approval_policies
+    assert policy == {
+        "action": "assignments.self_create",
+        "pm_approves": True,
+        "roles": ["team_lead"],
+    }
+    assert {p["action"] for p in demo.approval_policies} <= APPROVABLE_KEYS
+
+
+def test_pending_request_is_a_bookable_self_assignment(demo: DemoData):
+    (request,) = demo.approval_requests
+    users = {u["email"]: u for u in demo.users}
+    projects = {p["name"]: p for p in demo.projects}
+    requester, project = users[request["requester"]], projects[request["project"]]
+    assert request["requester"] == "diana.davis@demo.local"
+    assert (request["project"], project["pm"]) == ("Bioprocess Scale-Up", "bob.brown@demo.local")
+    assert request["action"] == "assignments.self_create" and request["level"] == "phase"
+    # The requester's role asks for approval, and they could book there.
+    modes = _role_modes(demo)[requester["role"]]
+    assert modes[request["action"]] == "approval"
+    assert requester["active"] and project["site"] in requester["sites"]
+    assert project["pm"] != request["requester"]
+    assert 1 <= request["allocation"] <= 100
+    # Not booked on that phase yet (the pending row would be a duplicate).
+    booked = {
+        (a["phase"], a["staff"]) for a in demo.phase_assignments if a["project"] == project["name"]
+    }
+    assert (request["target"], request["requester"]) not in booked
+    # The PM approves and is told; the request is the notification's entity.
+    (note,) = (n for n in demo.notifications if n["type"] == "approval_requested")
+    assert (note["user"], note["actor"]) == (project["pm"], request["requester"])
+    assert note["entity"] == ("approval_request", request["project"], request["target"])
+    assert note["project"] == request["project"] and not note["read"]
+    assert (
+        note["title"] == f"Diana Davis asks to join {request['target']} at {request['allocation']}%"
+    )
+    assert project["site"] in users[project["pm"]]["sites"]
+
+
+def test_todos_are_alices_for_charlie_and_the_admins_own(demo: DemoData):
+    by_title = {t["title"]: t for t in demo.todos}
+    qc = by_title["Prepare QC checklist"]
+    assert (qc["creator"], qc["assignee"]) == (
+        "alice.anderson@demo.local",
+        "charlie.clark@demo.local",
+    )
+    assert qc["due_date"] == TODAY + timedelta(days=5)
+    # Alice may assign it: her role holds todos.assign_others.
+    users = {u["email"]: u for u in demo.users}
+    assert _role_modes(demo)[users[qc["creator"]]["role"]]["todos.assign_others"] == "allow"
+    review = by_title["Review Q3 capacity"]
+    assert review["creator"] == review["assignee"] == demo.admin_email
+    assert len(demo.todos) == 2

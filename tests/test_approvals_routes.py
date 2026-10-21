@@ -103,15 +103,17 @@ async def test_to_decide_keeps_only_requests_the_caller_may_decide(authed_client
         _row(_request(id=51), pm_id=OTHER),  # someone else's project
         _row(_request(id=52, action=ACTION_UPDATE)),  # policy without the PM
     ]
-    mock_db_session.execute.side_effect = [_rows_result(rows), _policies_result([lead_policy])]
+    # The policies come first: the eligibility rule is part of the query.
+    mock_db_session.execute.side_effect = [_policies_result([lead_policy]), _rows_result(rows)]
 
     response = await client.get("/api/approval-requests?scope=to_decide")
 
     assert response.status_code == 200
     assert [(i["id"], i["can_decide"]) for i in response.json()] == [(50, True)]
-    sql = str(mock_db_session.execute.await_args_list[0].args[0])
+    sql = str(mock_db_session.execute.await_args_list[1].args[0])
     assert "approval_requests.status = " in sql
     assert "projects.site_id IN" in sql  # limited to the visible sites
+    assert "projects.pm_id = " in sql and "approval_requests.action NOT IN" in sql
 
 
 @pytest.mark.asyncio
@@ -149,6 +151,19 @@ async def test_all_with_status_filter_for_an_admin(authed_client, mock_db_sessio
     assert response.json()[0]["status"] == "approved"
     sql = str(mock_db_session.execute.await_args_list[0].args[0])
     assert "projects.site_id IN" not in sql  # the admin sees every site
+
+
+@pytest.mark.asyncio
+async def test_all_for_a_view_all_holder_stays_at_their_sites(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "auditor", {"approvals.view_all"}, site_ids=[2]))
+    mock_db_session.execute.side_effect = [_rows_result([]), _policies_result()]
+
+    response = await client.get("/api/approval-requests?scope=all")
+
+    assert response.status_code == 200 and response.json() == []
+    sql = str(mock_db_session.execute.await_args_list[0].args[0])
+    assert "projects.site_id IN" in sql
 
 
 @pytest.mark.asyncio

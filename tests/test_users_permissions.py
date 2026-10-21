@@ -27,7 +27,7 @@ from app.services.user_access import (
     role_within,
 )
 from tests.conftest import FakeUser
-from tests.support import scalar_result
+from tests.support import scalar_result, scalars_result
 
 STAMP = datetime(2026, 1, 1, 12, 0, 0)
 
@@ -246,7 +246,10 @@ async def test_an_admin_with_another_active_admin_can_be_deactivated(
     client, set_user = authed_client
     set_user(FakeUser(3, "hr", {**HR, "users.edit_admins": "allow"}))
     admin = make_user(1, "admin")
-    mock_db_session.execute = AsyncMock(side_effect=[lookup(admin), scalar_result(1)])
+    # The target, the active-admin count, then their pending approval requests.
+    mock_db_session.execute = AsyncMock(
+        side_effect=[lookup(admin), scalar_result(1), scalars_result([])]
+    )
 
     resp = await client.put("/api/users/1/toggle-active")
 
@@ -258,12 +261,13 @@ async def test_an_admin_caller_needs_no_count(authed_client, mock_db_session, de
     client, set_user = authed_client
     set_user(FakeUser(2, "admin"))
     admin = make_user(1, "admin")
-    mock_db_session.execute = AsyncMock(side_effect=[lookup(admin)])
+    # The target, then their pending approval requests: no active-admin count.
+    mock_db_session.execute = AsyncMock(side_effect=[lookup(admin), scalars_result([])])
 
     resp = await client.put("/api/users/1/toggle-active")
 
     assert resp.status_code == 200
-    assert mock_db_session.execute.await_count == 1
+    assert mock_db_session.execute.await_count == 2
 
 
 # ---------------------------------------------------------------------------

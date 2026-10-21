@@ -21,6 +21,7 @@ from datetime import date, timedelta
 from typing import Any, Literal
 
 from app.services.card_status import DEFAULT_IN_PROGRESS_COMPLETION
+from app.services.permissions import default_modes
 
 Row = dict[str, Any]
 EntityKind = Literal["phase", "subphase"]
@@ -50,6 +51,14 @@ FIONA = "fiona.fischer@demo.local"
 GEORGE = "george.garcia@demo.local"
 HANNAH = "hannah.harris@demo.local"
 
+# RBAC: a custom role, and the approval mode of the own-booking keys.
+TEAM_LEAD = "team_lead"
+SELF_BOOKING_KEYS = (
+    "assignments.self_create",
+    "assignments.self_update",
+    "assignments.self_remove",
+)
+
 
 @dataclass
 class DemoData:
@@ -61,6 +70,13 @@ class DemoData:
     predefined_phases: list[str] = field(default_factory=list)
     sites: list[Row] = field(default_factory=list)
     skills: list[Row] = field(default_factory=list)
+    # Custom roles (key, name, description, sort_order, {key: mode}); inserted
+    # before the users, whose role references roles.key.
+    roles: list[Row] = field(default_factory=list)
+    # {system role key: {permission: mode}}: modes changed on a seeded role.
+    role_modes: dict[str, dict[str, str]] = field(default_factory=dict)
+    # One row per approvable action: pm_approves + the approving role keys.
+    approval_policies: list[Row] = field(default_factory=list)
     users: list[Row] = field(default_factory=list)  # incl. the admin
     teams: list[Row] = field(default_factory=list)  # per site, members by e-mail
     equipment: list[Row] = field(default_factory=list)
@@ -73,6 +89,8 @@ class DemoData:
     project_assignments: list[Row] = field(default_factory=list)
     phase_assignments: list[Row] = field(default_factory=list)
     subphase_assignments: list[Row] = field(default_factory=list)
+    # Pending own bookings: the request and its pending assignment row.
+    approval_requests: list[Row] = field(default_factory=list)
     equipment_bookings: list[Row] = field(default_factory=list)
     equipment_blocks: list[Row] = field(default_factory=list)
     bank_holidays: list[Row] = field(default_factory=list)
@@ -82,6 +100,7 @@ class DemoData:
     custom_column_values: list[Row] = field(default_factory=list)
     comments: list[Row] = field(default_factory=list)
     notifications: list[Row] = field(default_factory=list)
+    todos: list[Row] = field(default_factory=list)
     staff_notes: list[Row] = field(default_factory=list)
 
 
@@ -212,6 +231,29 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         dict(name="Quality Control", description="QC procedures", color="#ef4444"),
     ]
 
+    # A team lead: what a user may do, plus creating projects, managing
+    # colleagues' absences and handing out todos.
+    d.roles = [
+        dict(
+            key=TEAM_LEAD,
+            name="Team Lead",
+            description="Leads a team: creates projects, manages absences, assigns todos.",
+            sort_order=3,
+            permissions={
+                **default_modes("user"),
+                "projects.create": "allow",
+                "absences.manage_others": "allow",
+                "todos.assign_others": "allow",
+            },
+        )
+    ]
+    # Plain users book themselves through an approval.
+    d.role_modes = {"user": dict.fromkeys(SELF_BOOKING_KEYS, "approval")}
+    # Joining a project: its manager or a team lead approves (admins always).
+    d.approval_policies = [
+        dict(action="assignments.self_create", pm_approves=True, roles=[TEAM_LEAD]),
+    ]
+
     def person(
         email: str,
         first: str,
@@ -302,7 +344,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             "Fiona",
             "Fischer",
             "Analytical Chemist",
-            "user",
+            TEAM_LEAD,
             [FRANKFURT],
             ("HPLC", "Quality Control"),
         ),
@@ -661,6 +703,20 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         dict(project=CATALYST, subphase="Screening", staff=DIANA, allocation=50),
     ]
 
+    # Diana asks to join the Analytics phase of Bob's project: a pending row
+    # (dashed in the plan) and the request Bob is told about below.
+    d.approval_requests = [
+        dict(
+            requester=DIANA,
+            action="assignments.self_create",
+            project=BIOPROCESS,
+            level="phase",
+            target="Analytics",
+            allocation=50,
+            note="I can take the statistics of the analytics runs.",
+        )
+    ]
+
     d.equipment_bookings = [
         dict(
             project=CATALYST,
@@ -922,6 +978,41 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             title="Bob Brown mentioned you on Pilot batch 1",
             body="Can you confirm the sampling plan before we book the HPLC?",
             read=False,
+        ),
+    ]
+
+    d.notifications.append(
+        dict(
+            user=BOB,
+            type="approval_requested",
+            actor=DIANA,
+            entity=("approval_request", BIOPROCESS, "Analytics"),
+            project=BIOPROCESS,
+            title="Diana Davis asks to join Analytics at 50%",
+            body=None,
+            read=False,
+        )
+    )
+
+    # My Todos: a task Alice hands Charlie on his card, and the admin's own.
+    d.todos = [
+        dict(
+            title="Prepare QC checklist",
+            notes="Needed before the second pilot batch is released.",
+            assignee=CHARLIE,
+            creator=ALICE,
+            due_date=today + day(5),
+            project=BIOPROCESS,
+            entity=("subphase", BIOPROCESS, "Pilot batch 2"),
+        ),
+        dict(
+            title="Review Q3 capacity",
+            notes=None,
+            assignee=admin_email,
+            creator=admin_email,
+            due_date=None,
+            project=None,
+            entity=None,
         ),
     ]
 

@@ -71,7 +71,11 @@ from app.services.permissions import (
     load_permission_set,
     permission_required_detail,
 )
-from app.services.project_access import BookingOutcome, resolve_self_booking
+from app.services.project_access import (
+    MANAGE_OTHERS_KEY,
+    BookingOutcome,
+    resolve_self_booking,
+)
 from app.services.site_access import site_is_visible, visible_site_ids, visible_sites_clause
 from app.utils import utcnow_naive
 from app.websocket.broadcast import broadcast_change, send_notification, send_user_event
@@ -1128,6 +1132,81 @@ async def cancel_for_entity(
     return effects
 
 
+async def expire_for_requester(
+    db: AsyncSession,
+    actor: Any,
+    user_id: int,
+    *,
+    reason: str = "requester_inactive",
+    deleted: bool = False,
+) -> ApprovalEffects:
+    """
+    A requester's account is deactivated (``deleted=False``) or deleted: close
+    their pending requests ``expired(<reason>)`` and release the rows they hold
+    (a pending create's row goes, an approved row loses its pointer). The
+    requester is told on deactivation only -- a deleted account's requests and
+    notifications cascade with it, so only the broadcasts and pushes remain.
+    Staged only; the caller commits, then ``publish``es the effects. One query
+    when the user has no pending request.
+    """
+    effects = ApprovalEffects()
+    requests = list(
+        (
+            await db.execute(
+                select(ApprovalRequest)
+                .where(
+                    ApprovalRequest.requester_id == user_id,
+                    ApprovalRequest.status == "pending",
+                )
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not requests:
+        return effects
+
+    policies = await load_policies(db)
+    for request in requests:
+        context = await load_context(
+            db, project_id=request.project_id, level=request.level, target_id=request.target_id
+        )
+        target = context.target_name if context else "a project"
+        approvers = await approver_user_ids(
+            db,
+            requester_id=user_id,
+            pm_id=context.pm_id if context else None,
+            site_id=context.site_id if context else None,
+            policy=policies.get(request.action, Policy()),
+        )
+        change = await _release(
+            db, request, await _load_row(db, request.level, request.assignment_id)
+        )
+        _close(request, "expired", reason=reason)
+        if not deleted:
+            effects.notifications.extend(
+                _decided_notifications(
+                    request,
+                    target=target,
+                    outcome="expired",
+                    actor=actor,
+                    reason=reason,
+                    project_exists=context is not None,
+                )
+            )
+        summary = f"{target}: booking request expired ({reason})"
+        if change is not None:
+            change.summary = summary
+            effects.assignment_changes.append(change)
+        effects.events.append(
+            _event(request, "delete" if deleted else "update", summary, approvers)
+        )
+    await _mark_requests_read(db, [request.id for request in requests])
+    db.add_all(effects.notifications)
+    return effects
+
+
 # ---------------------------------------------------------
 # Decisions
 # ---------------------------------------------------------
@@ -1185,7 +1264,12 @@ async def _requester_problem(
     if found is None or found[0] != 1:
         return "requester_inactive"
     permissions = await load_permission_set(db, found[1])
-    if permissions.mode(request.action) is None:
+    # Same rule as resolve_self_booking: a holder of assignments.manage_others
+    # (outright, or through the PM bundle on this project) books themself
+    # without the self key, so their request stays valid.
+    if permissions.mode(request.action) is None and not permissions.can(
+        MANAGE_OTHERS_KEY, pm_id=context.pm_id, user_id=request.requester_id
+    ):
         return "permission_lost"
     if permissions.has("sites.view_all"):
         return None
@@ -1567,6 +1651,26 @@ def serialize_request_row(row: Sequence[Any], *, can_decide_flag: bool) -> dict[
     }
 
 
+def decider_clause(user: Any, policies: dict[str, Policy]) -> Any:
+    """
+    The SQL half of ``can_decide`` for the to-decide lists (None for an admin:
+    every request): the caller manages the request's project and its action's
+    policy lets the PM approve (an action without a policy row does), or the
+    caller's role is one of the action's policy roles. The requester and site
+    filters are added by the caller.
+    """
+    if user.permissions.is_admin:
+        return None
+    role_actions = sorted(action for action, p in policies.items() if user.role in p.role_keys)
+    no_pm_actions = sorted(action for action, p in policies.items() if not p.pm_approves)
+    as_pm: Any = Project.pm_id == user.id
+    if no_pm_actions:
+        as_pm = and_(as_pm, ApprovalRequest.action.not_in(no_pm_actions))
+    if not role_actions:
+        return as_pm
+    return or_(as_pm, ApprovalRequest.action.in_(role_actions))
+
+
 def _row_can_decide(
     user: Any,
     row: Sequence[Any],
@@ -1603,32 +1707,100 @@ async def list_requests(
     if scope == "to_decide" and status_filter not in (None, "pending"):
         return []
 
-    visible = await visible_site_ids(http, db, user)
-    query = request_rows_query()
-    if scope == "mine":
-        query = query.where(ApprovalRequest.requester_id == user.id)
+    if scope == "to_decide":
+        rows, policies, visible = await _to_decide_rows(db, http, user, limit=limit)
     else:
-        in_visible = visible_sites_clause(Project.site_id, visible)
-        if in_visible is not None:
-            query = query.where(in_visible)
-        if scope == "to_decide":
-            query = query.where(
-                ApprovalRequest.status == "pending", ApprovalRequest.requester_id != user.id
-            )
-    if status_filter is not None and scope != "to_decide":
-        query = query.where(ApprovalRequest.status == status_filter)
-    query = query.order_by(ApprovalRequest.created_at.desc(), ApprovalRequest.id.desc())
-    rows = (await db.execute(query.limit(limit))).all()
-    if not rows:
-        return []
+        visible = await visible_site_ids(http, db, user)
+        query = request_rows_query()
+        if scope == "mine":
+            query = query.where(ApprovalRequest.requester_id == user.id)
+        else:
+            in_visible = visible_sites_clause(Project.site_id, visible)
+            if in_visible is not None:
+                query = query.where(in_visible)
+        if status_filter is not None:
+            query = query.where(ApprovalRequest.status == status_filter)
+        query = query.order_by(ApprovalRequest.created_at.desc(), ApprovalRequest.id.desc())
+        rows = list((await db.execute(query.limit(limit))).all())
+        if not rows:
+            return []
+        policies = await load_policies(db)
 
-    policies = await load_policies(db)
     items = []
     for row in rows:
         decide = _row_can_decide(user, row, policies, visible)
         if scope == "to_decide" and not decide:
-            continue
+            continue  # cannot happen: the query already holds the same rule
         items.append(serialize_request_row(row, can_decide_flag=decide))
+    return items
+
+
+async def _to_decide_rows(
+    db: AsyncSession, http: Request, user: Any, *, limit: int
+) -> tuple[list[Any], dict[str, Policy], frozenset[int] | None]:
+    """
+    Pending requests the caller may decide, newest first: the eligibility rule
+    (``decider_clause``), the visible sites and "never one's own" are all in
+    SQL, so ``limit`` counts decidable rows only -- a page is never cut short
+    by rows the caller may not decide.
+    """
+    policies = await load_policies(db)
+    visible = await visible_site_ids(http, db, user)
+    query = request_rows_query().where(
+        ApprovalRequest.status == "pending", ApprovalRequest.requester_id != user.id
+    )
+    in_visible = visible_sites_clause(Project.site_id, visible)
+    if in_visible is not None:
+        query = query.where(in_visible)
+    eligible = decider_clause(user, policies)
+    if eligible is not None:
+        query = query.where(eligible)
+    query = query.order_by(ApprovalRequest.created_at.desc(), ApprovalRequest.id.desc())
+    rows = list((await db.execute(query.limit(limit))).all())
+    return rows, policies, visible
+
+
+# My Todos shows at most this many approvals to decide (newest first).
+TODO_APPROVALS_LIMIT = 200
+
+
+async def decidable_todo_items(db: AsyncSession, http: Request, user: Any) -> list[dict[str, Any]]:
+    """
+    My Todos' ``approval`` items: the pending requests the caller may decide,
+    as ``TodoItem`` dicts (id ``approval:<n>``, status ``open``, the requester
+    as ``created_by``, the card or project as the entity, the full request in
+    ``approval_request``).
+    """
+    rows, policies, visible = await _to_decide_rows(db, http, user, limit=TODO_APPROVALS_LIMIT)
+    items = []
+    for row in rows:
+        if not _row_can_decide(user, row, policies, visible):
+            continue  # pragma: no cover - the query holds the same rule
+        request: ApprovalRequest = row[0]
+        requester_name = row[4] or "Someone"
+        target = row[6] or row[1] or "a project"
+        items.append(
+            {
+                "id": f"approval:{request.id}",
+                "kind": "approval",
+                "title": _request_title(requester_name, request, target),
+                "notes": request.note,
+                "due_date": None,
+                "status": "open",
+                "assignee_id": user.id,
+                "assignee_name": None,
+                "created_by": request.requester_id,
+                "created_by_name": row[4],
+                "project_id": request.project_id,
+                "project_name": row[1],
+                "entity_type": request.level,
+                "entity_id": request.target_id,
+                "completed_at": None,
+                "approval_request": serialize_request_row(row, can_decide_flag=True),
+                "created_at": request.created_at,
+                "updated_at": request.updated_at,
+            }
+        )
     return items
 
 

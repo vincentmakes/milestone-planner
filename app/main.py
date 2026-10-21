@@ -211,6 +211,7 @@ def create_app() -> FastAPI:
         tag_groups,
         tags,
         teams,
+        todos,
         users,
         vacations,
     )
@@ -244,6 +245,7 @@ def create_app() -> FastAPI:
     app.include_router(roles.router, prefix="/api", tags=["Roles"])
     app.include_router(approval_policies.router, prefix="/api", tags=["Approval Policies"])
     app.include_router(approvals.router, prefix="/api", tags=["Approval Requests"])
+    app.include_router(todos.router, prefix="/api", tags=["Todos"])
 
     # WebSocket for real-time collaboration
     app.include_router(websocket_router, tags=["WebSocket"])

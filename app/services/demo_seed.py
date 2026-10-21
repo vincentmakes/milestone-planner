@@ -102,6 +102,67 @@ async def insert_demo_data(
     for sk in demo.skills:
         skill_id[sk["name"]] = await _insert_id(conn, "skills", dict(sk), {"name": sk["name"]})
 
+    # Roles before the users (users.role references roles.key). The system
+    # roles, their default permissions and one policy per approvable action
+    # come with the tenant schema; the demo adds a custom role, switches modes
+    # on a system role and names the approving roles of a policy.
+    role_id: dict[str, int] = {}
+    for r in demo.roles:
+        role_id[r["key"]] = await _insert_id(
+            conn,
+            "roles",
+            {
+                "key": r["key"],
+                "name": r["name"],
+                "description": r["description"],
+                "is_system": False,
+                "sort_order": r["sort_order"],
+            },
+            {"key": r["key"]},
+        )
+        for permission, mode in r["permissions"].items():
+            await conn.execute(
+                "INSERT INTO role_permissions (role_id, permission, mode) VALUES ($1, $2, $3) "
+                "ON CONFLICT (role_id, permission) DO NOTHING",
+                role_id[r["key"]],
+                permission,
+                mode,
+            )
+
+    async def system_role_id(key: str) -> int:
+        if key not in role_id:
+            found = await conn.fetchval("SELECT id FROM roles WHERE key = $1", key)
+            if found is None:
+                raise RuntimeError(f"roles: system role {key!r} missing (schema not applied?)")
+            role_id[key] = int(found)
+        return role_id[key]
+
+    for role_key, modes in demo.role_modes.items():
+        for permission, mode in modes.items():
+            # Over the schema's seeded row (allow), so DO UPDATE, not DO NOTHING.
+            await conn.execute(
+                "INSERT INTO role_permissions (role_id, permission, mode) VALUES ($1, $2, $3) "
+                "ON CONFLICT (role_id, permission) DO UPDATE SET mode = EXCLUDED.mode",
+                await system_role_id(role_key),
+                permission,
+                mode,
+            )
+    for policy in demo.approval_policies:
+        await conn.execute(
+            "INSERT INTO approval_policies (action, pm_approves) VALUES ($1, $2) "
+            "ON CONFLICT (action) DO UPDATE SET pm_approves = EXCLUDED.pm_approves",
+            policy["action"],
+            policy["pm_approves"],
+        )
+        for key in policy["roles"]:
+            await conn.execute(
+                "INSERT INTO approval_policy_roles (action, role_id) VALUES ($1, $2) "
+                "ON CONFLICT DO NOTHING",
+                policy["action"],
+                await system_role_id(key),
+            )
+    counts["roles"] = len(demo.roles)
+
     user_id: dict[str, int] = {}
     full_name: dict[str, str] = {}
     for u in demo.users:
@@ -305,8 +366,12 @@ async def insert_demo_data(
         )
     counts["subphases"] = len(subphase_id)
 
+    request_id: dict[tuple[str, str], int] = {}  # filled after the assignments
+
     def entity_id(ent: tuple[str, str, str]) -> int:
         kind, proj, name = ent
+        if kind == "approval_request":
+            return request_id[(proj, name)]
         return phase_id[(proj, name)] if kind == "phase" else subphase_id[(proj, name)]
 
     # Dependencies: one JSON list per successor, written only where nothing is
@@ -376,6 +441,67 @@ async def insert_demo_data(
     counts["staff_assignments"] = (
         len(demo.phase_assignments) + len(demo.project_assignments) + len(demo.subphase_assignments)
     )
+
+    # Pending own bookings, after the approved ones: the request first, then
+    # its pending row pointing at it, then the request's link to the row --
+    # the order app/services/approvals.py writes them in.
+    for rq in demo.approval_requests:
+        pid = project_id[rq["project"]]
+        target = entity_id((rq["level"], rq["project"], rq["target"]))
+        requester = user_id[rq["requester"]]
+        rid = await _insert_id(
+            conn,
+            "approval_requests",
+            {
+                "requester_id": requester,
+                "action": rq["action"],
+                "project_id": pid,
+                "level": rq["level"],
+                "target_id": target,
+                "requested": json.dumps({"allocation": rq["allocation"]}, sort_keys=True),
+                "note": rq["note"],
+                "status": "pending",
+            },
+            {
+                "requester_id": requester,
+                "action": rq["action"],
+                "level": rq["level"],
+                "target_id": target,
+            },
+        )
+        request_id[(rq["project"], rq["target"])] = rid
+        table, column = (
+            ("phase_staff_assignments", "phase_id")
+            if rq["level"] == "phase"
+            else ("subphase_staff_assignments", "subphase_id")
+        )
+        # Only while the request is still pending (a request decided since
+        # must not get a pending row back) and never next to a booking.
+        await conn.execute(
+            f"INSERT INTO {table} "
+            f"(project_id, {column}, staff_id, allocation, approval_status, approval_request_id) "
+            "SELECT $1, $2, $3, $4, 'pending', $5 "
+            f"WHERE NOT EXISTS (SELECT 1 FROM {table} WHERE {column} = $6 AND staff_id = $7) "
+            "AND EXISTS (SELECT 1 FROM approval_requests WHERE id = $8 AND status = 'pending')",
+            pid,
+            target,
+            requester,
+            rq["allocation"],
+            rid,
+            target,
+            requester,
+            rid,
+        )
+        await conn.execute(
+            f"UPDATE approval_requests SET assignment_id = (SELECT id FROM {table} "
+            f"WHERE {column} = $1 AND staff_id = $2 AND approval_request_id = $3) "
+            "WHERE id = $4 AND assignment_id IS NULL",
+            target,
+            requester,
+            rid,
+            rid,
+        )
+    counts["approval_requests"] = len(demo.approval_requests)
 
     for b in demo.equipment_bookings:
         await _insert_once(
@@ -564,6 +690,26 @@ async def insert_demo_data(
             n["title"],
         )
     counts["notifications"] = len(demo.notifications)
+
+    for todo in demo.todos:
+        entity = todo["entity"]
+        await _insert_once(
+            conn,
+            "todos",
+            {
+                "title": todo["title"],
+                "notes": todo["notes"],
+                "due_date": todo["due_date"],
+                "assignee_id": user_id[todo["assignee"]],
+                "created_by": user_id[todo["creator"]],
+                "project_id": project_id[todo["project"]] if todo["project"] else None,
+                "entity_type": entity[0] if entity else None,
+                "entity_id": entity_id(entity) if entity else None,
+                "status": "open",
+            },
+            {"title": todo["title"], "assignee_id": user_id[todo["assignee"]]},
+        )
+    counts["todos"] = len(demo.todos)
 
     for note in demo.staff_notes:
         await _insert_once(

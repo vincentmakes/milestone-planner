@@ -30,6 +30,7 @@ from app.schemas.user import (
     UserDetailResponse,
     UserResponse,
 )
+from app.services import approvals
 from app.services.encryption import PasswordTooLongError, hash_user_password
 from app.services.permissions import (
     ADMIN_ROLE_KEY,
@@ -544,8 +545,14 @@ async def update_user(
         await SessionService(db).destroy_user_sessions(
             user_id, except_session_id=session_id, commit=False
         )
+    # A deactivated requester's pending approval requests expire.
+    expired = (
+        await approvals.expire_for_requester(db, current_user, user_id) if deactivated else None
+    )
 
     await db.commit()
+    if expired is not None:
+        await approvals.publish(request, current_user, expired)
     await db.refresh(user)
     user.sites = sites
     user.skills = skills
@@ -594,10 +601,13 @@ async def delete_user(
 
     # End any live logins of the deleted user
     await SessionService(db).destroy_user_sessions(user_id, commit=False)
+    # Their pending approval requests expire (and then cascade with the user).
+    expired = await approvals.expire_for_requester(db, admin, user_id, deleted=True)
 
     # Delete user
     await db.delete(user)
     await db.commit()
+    await approvals.publish(request, admin, expired)
 
     return {"success": True}
 
@@ -640,11 +650,16 @@ async def toggle_user_active(
     # Toggle active status
     user.active = 0 if user.active == 1 else 1
 
+    expired = None
     if user.active == 0:
         # A deactivated user's existing sessions must stop working now
         await SessionService(db).destroy_user_sessions(user_id, commit=False)
+        # ... and their pending approval requests expire.
+        expired = await approvals.expire_for_requester(db, admin, user_id)
 
     await db.commit()
+    if expired is not None:
+        await approvals.publish(request, admin, expired)
     await db.refresh(user)
 
     return build_user_list_response(user)

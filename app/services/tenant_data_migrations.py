@@ -21,10 +21,12 @@ from app.services.tenant_provisioner import (
     CARD_COMMENTS_AUTHOR_FK_SQL,
     CARD_COMMENTS_ORPHAN_CLEANUP_SQL,
     CUSTOM_COLUMN_VALUES_ORPHAN_CLEANUP_SQL,
+    PENDING_ASSIGNMENT_ORPHAN_CLEANUP_SQL,
     PROJECTS_SITE_FK_NEEDS_FIX_SQL,
     PROJECTS_SITE_FK_SQL,
     RBAC_SEED_NEEDED_SQL,
     RBAC_SEED_STATEMENTS,
+    STALE_APPROVAL_POINTER_CLEANUP_SQL,
 )
 
 logger = logging.getLogger(__name__)
@@ -60,6 +62,12 @@ CLEANUP_STEPS: tuple[tuple[str, str, str], ...] = (
     ("removed", "orphaned custom-column value(s)", CUSTOM_COLUMN_VALUES_ORPHAN_CLEANUP_SQL),
     ("removed", "orphaned card comment(s)", CARD_COMMENTS_ORPHAN_CLEANUP_SQL),
     ("expired", "orphaned approval request(s)", APPROVAL_REQUESTS_ORPHAN_CLEANUP_SQL),
+    # After the expiry above, so the rows of requests it just closed go too.
+    *(
+        ("removed", "orphaned pending booking(s)", sql)
+        for sql in PENDING_ASSIGNMENT_ORPHAN_CLEANUP_SQL
+    ),
+    *(("cleared", "stale approval pointer(s)", sql) for sql in STALE_APPROVAL_POINTER_CLEANUP_SQL),
 )
 
 

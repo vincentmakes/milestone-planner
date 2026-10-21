@@ -10,7 +10,7 @@ whole thing.
 
 import json
 import re
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -91,7 +91,12 @@ async def test_every_insert_is_idempotent(loaded):
     ]
     assert unguarded == []
     updates = [s for s, _ in conn.executed if s.lstrip().startswith("UPDATE")]
-    assert updates and all("dependencies IS NULL OR dependencies IN" in s for s in updates)
+    assert updates
+    for sql in updates:
+        # Only empty columns are filled: dependencies, and a request's row link.
+        assert (
+            "dependencies IS NULL OR dependencies IN" in sql or "AND assignment_id IS NULL" in sql
+        ), sql
 
 
 async def test_rows_come_in_foreign_key_order(loaded):
@@ -99,6 +104,9 @@ async def test_rows_come_in_foreign_key_order(loaded):
     order = [
         "sites",
         "skills",
+        "roles",
+        "role_permissions",
+        "approval_policy_roles",
         "users",
         "teams",
         "equipment",
@@ -108,6 +116,7 @@ async def test_rows_come_in_foreign_key_order(loaded):
         "project_phases",
         "project_subphases",
         "phase_staff_assignments",
+        "approval_requests",
         "equipment_assignments",
         "company_events",
         "vacations",
@@ -115,6 +124,7 @@ async def test_rows_come_in_foreign_key_order(loaded):
         "custom_column_values",
         "card_comments",
         "notifications",
+        "todos",
         "staff_notes",
     ]
     positions = [conn.first_insert_index(t) for t in order]
@@ -211,7 +221,11 @@ async def test_team_links_resolve_to_the_handed_out_ids(loaded):
 
 async def test_dependency_json_uses_resolved_ids_and_names_the_kind(loaded):
     conn, demo, _ = loaded
-    updates = [(s, a) for s, a in conn.executed if s.lstrip().startswith("UPDATE")]
+    updates = [
+        (s, a)
+        for s, a in conn.executed
+        if s.lstrip().startswith("UPDATE") and "SET dependencies" in s
+    ]
     assert len(updates) == len({d["successor"] for d in demo.dependencies})
     sampling_id = conn.ids[
         (
@@ -349,3 +363,114 @@ async def test_apply_schema_seeds_an_empty_database(capsys):
     assert insert.await_args.args[1].admin_email == "admin@demo.local"
     assert "sites: 2" in capsys.readouterr().out
     assert conn.closed
+
+
+# ---------------------------------------------------------------------------
+# Roles, approvals, todos
+# ---------------------------------------------------------------------------
+
+
+def _user(conn, email):
+    return conn.ids[("users", (email,))]
+
+
+async def test_team_lead_role_and_its_permissions(loaded):
+    conn, demo, _ = loaded
+    (lead,) = demo.roles
+    lead_id = conn.ids[("roles", ("team_lead",))]
+    (role_row,) = (args for _, args in conn.inserts("roles"))
+    assert role_row[:4] == ("team_lead", "Team Lead", lead["description"], False)
+    rows = [args for sql, args in conn.inserts("role_permissions") if args[0] == lead_id]
+    assert {(key, mode) for _, key, mode in rows} == set(lead["permissions"].items())
+    users = {args[0]: args for _, args in conn.inserts("users")}
+    assert users["fiona.fischer@demo.local"][5] == "team_lead"
+
+
+async def test_user_role_switches_to_approval_mode(loaded):
+    conn, demo, _ = loaded
+    user_role = conn.ids[("roles", ("user",))]
+    rows = [(s, a) for s, a in conn.inserts("role_permissions") if a[0] == user_role]
+    assert {(a[1], a[2]) for _, a in rows} == set(demo.role_modes["user"].items())
+    # Applied over the seeded allow rows, not skipped by them.
+    assert all("DO UPDATE SET mode = EXCLUDED.mode" in s for s, _ in rows)
+
+
+async def test_policy_names_the_team_lead(loaded):
+    conn, _, _ = loaded
+    (policy,) = (args for _, args in conn.inserts("approval_policies"))
+    assert policy == ("assignments.self_create", True)
+    (link,) = (args for _, args in conn.inserts("approval_policy_roles"))
+    assert link == ("assignments.self_create", conn.ids[("roles", ("team_lead",))])
+
+
+async def test_pending_row_and_request_point_at_each_other(loaded):
+    conn, demo, _ = loaded
+    diana = _user(conn, "diana.davis@demo.local")
+    (request_sql, request_args) = conn.inserts("approval_requests")[0]
+    phase_id = request_args[4]
+    request_id = conn.ids[
+        ("approval_requests", (diana, "assignments.self_create", "phase", phase_id))
+    ]
+    assert request_args[:4] == (diana, "assignments.self_create", request_args[2], "phase")
+    assert json.loads(request_args[5]) == {"allocation": 50}
+    assert request_args[7] == "pending"
+
+    pending = [(s, a) for s, a in conn.inserts("phase_staff_assignments") if "'pending'" in s]
+    ((row_sql, row_args),) = pending
+    assert row_args[1:5] == (phase_id, diana, 50, request_id)
+    # Inserted only while the request is pending, never as a duplicate booking.
+    assert "AND status = 'pending'" in row_sql and "NOT EXISTS" in row_sql
+    (link_sql, link_args) = next(
+        (s, a) for s, a in conn.executed if s.lstrip().startswith("UPDATE approval_requests")
+    )
+    assert link_args == (phase_id, diana, request_id, request_id)
+    # The request goes in after the regular bookings, its row right after it.
+    executed = [s for s, _ in conn.executed]
+    assert executed.index(request_sql) < executed.index(row_sql) < executed.index(link_sql)
+    assert conn.first_insert_index("approval_requests") > conn.first_insert_index(
+        "subphase_staff_assignments"
+    )
+
+
+async def test_approval_notification_names_the_request(loaded):
+    conn, _, _ = loaded
+    rows = [a for _, a in conn.inserts("notifications") if a[1] == "approval_requested"]
+    ((user_id, _, actor, entity_type, entity_id, *_rest),) = rows
+    assert user_id == _user(conn, "bob.brown@demo.local")
+    assert actor == _user(conn, "diana.davis@demo.local")
+    assert entity_type == "approval_request"
+    assert entity_id == next(v for k, v in conn.ids.items() if k[0] == "approval_requests")
+
+
+async def test_todos_resolve_people_projects_and_cards(loaded):
+    conn, demo, _ = loaded
+    rows = {args[0]: args for _, args in conn.inserts("todos")}
+    assert set(rows) == {"Prepare QC checklist", "Review Q3 capacity"}
+    qc = rows["Prepare QC checklist"]
+    alice, charlie = (
+        _user(conn, "alice.anderson@demo.local"),
+        _user(conn, "charlie.clark@demo.local"),
+    )
+    assert (qc[3], qc[4]) == (charlie, alice)
+    assert qc[2] == demo.today + timedelta(days=5)
+    assert qc[6] == "subphase" and isinstance(qc[7], int) and isinstance(qc[5], int)
+    admin = _user(conn, "admin@demo.local")
+    review = rows["Review Q3 capacity"]
+    assert (review[3], review[4], review[5], review[6], review[7]) == (
+        admin,
+        admin,
+        None,
+        None,
+        None,
+    )
+
+
+async def test_a_missing_system_role_stops_the_seed():
+    class NoUserRole(RecordingConn):
+        async def fetchval(self, sql, *args):
+            if sql.startswith("SELECT id FROM roles WHERE key = $1"):
+                return None
+            return await super().fetchval(sql, *args)
+
+    with pytest.raises(RuntimeError, match="system role 'user' missing"):
+        await demo_seed.insert_demo_data(NoUserRole(), build_demo(date(2026, 10, 17)))
