@@ -27,8 +27,7 @@ pending create edits it in place, and its removal cancels it.
 
 Statuses: ``pending`` -> ``approved`` | ``rejected`` | ``cancelled`` |
 ``superseded`` | ``expired`` (``close_reason``: ``target_deleted``,
-``requester_inactive``, ``requester_not_bookable``, ``permission_lost``,
-``overtaken``, ``duplicate``).
+``requester_inactive``, ``permission_lost``, ``overtaken``, ``duplicate``).
 Terminal states never change; a decision on one is a 409 with the status.
 
 Approvers (``approver_user_ids`` / ``can_decide``) are resolved live, never
@@ -106,7 +105,6 @@ INVALID_VALUES_DETAIL = "The requested values are not valid — reject the reque
 CLOSE_REASON_DETAILS: dict[str, str] = {
     "target_deleted": "the card or project it was about was deleted",
     "requester_inactive": "the requester's account is no longer active",
-    "requester_not_bookable": "the requester is no longer bookable as a resource",
     "permission_lost": "the requester may no longer book themself there",
     "overtaken": "the booking was changed since the request was made",
     "duplicate": "the requester is already booked there",
@@ -1276,9 +1274,11 @@ async def _requester_problem(
     ).first()
     if found is None or found[0] != 1:
         return "requester_inactive"
-    if not found[2]:
-        # Own bookings only: the requester is the booked person.
-        return "requester_not_bookable"
+    if request.action == ACTION_CREATE and not found[2]:
+        # A new booking of someone no longer bookable as a resource is never
+        # applied (the requester is the booked person). Update / remove
+        # requests stay approvable: existing bookings are kept.
+        return "permission_lost"
     permissions = await load_permission_set(db, found[1])
     # Same rule as resolve_self_booking: a holder of assignments.manage_others
     # (outright, or through the PM bundle on this project) books themself

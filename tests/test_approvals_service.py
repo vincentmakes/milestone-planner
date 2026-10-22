@@ -673,7 +673,7 @@ async def test_approve_remove_deletes_the_row():
         ({"context": []}, "target_deleted"),
         ({"requester": []}, "requester_inactive"),
         ({"requester": [(0, "user", True)]}, "requester_inactive"),
-        ({"requester": [(1, "user", False)]}, "requester_not_bookable"),
+        ({"requester": [(1, "user", False)]}, "permission_lost"),  # no longer bookable
         ({"perms": []}, "permission_lost"),  # role no longer holds the key
         ({"member": []}, "permission_lost"),  # requester lost the project's site
         ({"context": [approval_context(site_id=None)]}, "permission_lost"),
