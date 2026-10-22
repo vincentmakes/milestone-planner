@@ -41,8 +41,14 @@ Gantt saves one drag as several PUTs in parallel (children, parent expansion,
 project dates, bookings), whose notifications must merge into one line per
 recipient -- only a lock taken after each change commits serialises them
 without serialising the changes. The cost: a notification is lost if the
-process dies between the two commits. Any failure here is logged and rolled
-back; it never fails or undoes the change.
+process dies between the two commits.
+
+``deliver`` opens **its own session** on the request's tenant database (the
+factory ``get_db`` uses) and never touches the caller's: a rollback expires
+every object of its session, and the route reads its committed rows after
+``deliver`` to build the response, so a failure on the route's session would
+turn a committed change into a 500. Any failure is rolled back on the own
+session and logged with its traceback; it never fails or undoes the change.
 """
 
 import logging
@@ -54,8 +60,9 @@ from typing import Any, Literal
 
 from fastapi import Request
 from sqlalchemy import select, text, union
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.database import get_session_factory, resolve_tenant_session_factory
 from app.models.assignment import (
     PhaseStaffAssignment,
     ProjectAssignment,
@@ -762,6 +769,11 @@ async def _write(
     return written
 
 
+def _session_factory(request: Request) -> async_sessionmaker[AsyncSession]:
+    """The request's tenant database, as ``get_db`` resolves it."""
+    return resolve_tenant_session_factory(request) or get_session_factory()
+
+
 async def deliver(
     db: AsyncSession,
     request: Request,
@@ -771,26 +783,40 @@ async def deliver(
 ) -> None:
     """
     After the caller's commit: write the change notifications in one short
-    transaction (resolve, merge, lock, coalesce or insert, commit), then push
-    ``notification:new`` per row. Never raises: a failure is logged and
-    rolled back, and the change it reports stays committed.
+    transaction (resolve, merge, lock, coalesce or insert, commit) on a
+    session of its own, then push ``notification:new`` per row. Never
+    raises: a failure is logged and rolled back, and the change it reports
+    stays committed.
+
+    ``db`` (the route's session) is deliberately **not used**: a rollback
+    expires every object of the session it runs on, and the route still reads
+    its committed rows to build the response -- on an ``AsyncSession`` that
+    lazy load raises ``MissingGreenlet`` and would turn the committed change
+    into a 500. The parameter stays so every call site reads the same.
     """
+    del db  # never touched, see above
+    # The actor is never notified: intents addressed to them need no session.
+    intents = [i for i in intents if i.user_id is None or i.user_id != actor_id]
     if not intents:
         return
+    payloads: list[tuple[int, dict]] = []
     try:
-        written = await _write(db, actor_id, intents, set(already_notified))
-        await db.commit()
-    except Exception as e:
-        logger.warning("Change notifications failed (actor %s): %s", actor_id, e)
-        try:
-            await db.rollback()
-        except Exception:  # the connection may be gone already
-            logger.debug("Rollback after failed change notifications failed", exc_info=True)
+        async with _session_factory(request)() as session:
+            try:
+                written = await _write(session, actor_id, intents, set(already_notified))
+                await session.commit()
+                payloads = [(n.user_id, notification_payload(n)) for n in written]
+            except Exception:
+                try:
+                    await session.rollback()
+                except Exception:  # the connection may be gone already
+                    logger.debug("Rollback after failed change notifications failed", exc_info=True)
+                raise
+    except Exception:
+        logger.exception("Change notifications failed (actor %s)", actor_id)
         return
-    for notification in written:
+    for user_id, payload in payloads:
         try:
-            await send_notification(
-                request, notification.user_id, notification_payload(notification)
-            )
+            await send_notification(request, user_id, payload)
         except Exception as e:  # a push is a live hint only
-            logger.warning("Notification push failed for user %s: %s", notification.user_id, e)
+            logger.warning("Notification push failed for user %s: %s", user_id, e)

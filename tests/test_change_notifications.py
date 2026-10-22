@@ -2,7 +2,8 @@
 app/services/change_notifications.py: "someone else changed your booking or
 your project" notifications.
 
-``deliver`` runs after the route's commit, in its own short transaction: it
+``deliver`` runs after the route's commit, in its own short transaction on a
+session of its own (the route's session is never touched): it
 resolves the project manager and the names a route did not have at hand
 (``{project}`` / ``{target}`` / ``{person}``), drops the actor, inactive users
 and the already-notified, merges to one row per recipient, and coalesces with
@@ -229,8 +230,37 @@ def pushes():
         yield sent
 
 
-async def run(db, intents, *, actor_id=ACTOR, already=()):
-    await REAL_DELIVER(db, MagicMock(), actor_id, intents, already_notified=set(already))
+class FakeFactory:
+    """A session factory handing out ``session`` and counting the opens."""
+
+    def __init__(self, session):
+        self.session = session
+        self.opened = 0
+
+    def __call__(self):
+        factory = self
+
+        class _Open:
+            async def __aenter__(self):
+                factory.opened += 1
+                return factory.session
+
+            async def __aexit__(self, *exc):
+                return False
+
+        return _Open()
+
+
+async def run(db, intents, *, actor_id=ACTOR, already=(), caller=None):
+    """``deliver`` with ``db`` as its own session (the tenant factory's)."""
+    with patch.object(cn, "resolve_tenant_session_factory", return_value=FakeFactory(db)):
+        await REAL_DELIVER(
+            caller if caller is not None else AsyncMock(),
+            MagicMock(),
+            actor_id,
+            intents,
+            already_notified=set(already),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +287,13 @@ async def test_empty_list_is_a_no_op():
     await run(db, [])
     assert db.statements == []
     db.commit.assert_not_awaited()
+
+
+async def test_intents_only_for_the_actor_open_no_session():
+    with patch.object(cn, "resolve_tenant_session_factory") as resolve:
+        await REAL_DELIVER(AsyncMock(), MagicMock(), ACTOR, [intent(user_id=ACTOR)])
+
+    resolve.assert_not_called()
 
 
 async def test_person_and_pm_each_get_one_row_with_names_filled(now, pushes):
@@ -508,11 +545,58 @@ async def test_a_project_delete_is_never_coalesced(now, pushes):
 @pytest.mark.parametrize("fail", ["lock", "lookup"])
 async def test_a_failure_rolls_back_and_never_raises(now, pushes, fail, caplog):
     db = ChangeFakeDB(contexts={1: context()}, users=users(), fail=fail)
+    caller = AsyncMock()
 
-    await run(db, [intent()])  # never raises
+    await run(db, [intent()], caller=caller)  # never raises
 
     db.rollback.assert_awaited_once()
     db.commit.assert_not_awaited()
+    # The route's session is never rolled back: that would expire the rows
+    # the route still reads to build its response (MissingGreenlet -> 500).
+    assert caller.mock_calls == []
+    assert pushes == []
+    (record,) = (r for r in caplog.records if "Change notifications failed" in r.getMessage())
+    assert record.levelname == "ERROR"
+    assert record.exc_info is not None  # logged with its traceback
+
+
+async def test_deliver_writes_on_its_own_session_never_the_callers(now, pushes):
+    db = ChangeFakeDB(contexts={1: context()}, users=users())
+    caller = AsyncMock()
+    tenant = FakeFactory(db)
+
+    with patch.object(cn, "resolve_tenant_session_factory", return_value=tenant) as resolve:
+        request = MagicMock()
+        await REAL_DELIVER(caller, request, ACTOR, [intent(), pm_intent()])
+
+    resolve.assert_called_once_with(request)
+    assert tenant.opened == 1
+    db.commit.assert_awaited_once()
+    assert len(db.inserted) == 2
+    assert caller.mock_calls == []  # no query, commit or rollback on the route's session
+
+
+async def test_without_a_tenant_the_default_factory_is_used(now, pushes):
+    db = ChangeFakeDB(contexts={1: context()}, users=users())
+    default = FakeFactory(db)
+
+    with (
+        patch.object(cn, "resolve_tenant_session_factory", return_value=None),
+        patch.object(cn, "get_session_factory", return_value=default),
+    ):
+        await REAL_DELIVER(AsyncMock(), MagicMock(), ACTOR, [intent()])
+
+    assert default.opened == 1
+    db.commit.assert_awaited_once()
+
+
+async def test_an_unavailable_tenant_database_never_raises(now, pushes, caplog):
+    from fastapi import HTTPException
+
+    unavailable = HTTPException(status_code=503, detail="unavailable")
+    with patch.object(cn, "resolve_tenant_session_factory", side_effect=unavailable):
+        await REAL_DELIVER(AsyncMock(), MagicMock(), ACTOR, [intent()])  # never raises
+
     assert pushes == []
     assert "Change notifications failed" in caplog.text
 

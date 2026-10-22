@@ -797,7 +797,16 @@ class TenantConnectionManager:
             await conn.execute(text(NOTIFICATIONS_TYPE_CHECK_SQL))
             await conn.commit()
         except Exception as e:
-            logger.warning("Auto-migration (notification types) warning for %s: %s", slug, e)
+            # An error, not a warning: without the widened CHECK every change
+            # notification of this tenant fails (change_notifications.deliver
+            # logs and drops it; the change itself stays committed).
+            logger.error(
+                "Auto-migration (notification types) failed for %s: %s -- change "
+                "notifications cannot be stored until migrations/"
+                "add_change_notifications.sql is applied",
+                slug,
+                e,
+            )
             await _rollback_quietly(conn)
 
         # Tenant-level SSO client secret encrypted at rest. The key is only

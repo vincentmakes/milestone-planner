@@ -229,4 +229,9 @@ async def test_auto_migration_widening_failure_rolls_back_and_never_raises(caplo
     await _run(conn)  # never raises
 
     assert log[log.index("RBAC probe") :] == ["RBAC probe", "WIDEN", "ROLLBACK"]
-    assert "Auto-migration (notification types) warning for acme" in caplog.text
+    # An ERROR, not a warning: without the widening every change notification
+    # of the tenant fails (deliver logs and drops it).
+    (record,) = (r for r in caplog.records if "notification types" in r.getMessage())
+    assert record.levelname == "ERROR"
+    assert "Auto-migration (notification types) failed for acme" in record.getMessage()
+    assert "add_change_notifications.sql" in record.getMessage()

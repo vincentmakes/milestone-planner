@@ -19,7 +19,12 @@ import pytest
 from app.models.equipment import Equipment
 from app.models.project import Project, ProjectPhase
 from app.models.site import Site
+from app.services import change_notifications as cn
 from tests.conftest import FakeUser
+
+# The real function, captured at import (the autouse change_intents fixture
+# replaces it for every test).
+REAL_DELIVER = cn.deliver
 
 ADMIN = 1
 PM = 7
@@ -104,6 +109,87 @@ async def test_booking_someone_on_a_project(authed_client, mock_db_session, chan
     assert out["pm"].title == "Test User1 booked {person} on {target}"
     for i in intents:
         assert (i.project_id, i.entity_type, i.entity_id, i.coalesce) == (1, "project", 1, True)
+
+
+BOOKING = {"staff_id": ANN, "allocation": 60, "start_date": "2026-01-01", "end_date": "2026-01-31"}
+
+
+def give_id(assignment_id: int):
+    def refresh(obj):
+        obj.id = assignment_id
+
+    return refresh
+
+
+async def test_notifications_are_delivered_after_the_commit(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(admin())
+    mock_db_session.execute.side_effect = [first((PM,)), scalar(ANN), scalar(None)]
+    log: list[str] = []
+    mock_db_session.commit.side_effect = lambda: log.append("commit")
+
+    async def deliver(*_args, **_kwargs):
+        log.append("deliver")
+
+    with patch.object(cn, "deliver", side_effect=deliver):
+        response = await client.post("/api/projects/1/staff", json=BOOKING)
+
+    assert response.status_code == 200
+    assert log[:2] == ["commit", "deliver"]
+
+
+async def test_a_failed_delivery_keeps_the_committed_booking(
+    authed_client, mock_db_session, caplog
+):
+    """
+    Regression: deliver used to roll back the route's session on a failure,
+    which expires the new row; the route then read ``assignment.id``
+    (MissingGreenlet on an AsyncSession -> 500 for a committed change).
+    """
+    client, set_user = authed_client
+    set_user(admin())
+    mock_db_session.execute.side_effect = [first((PM,)), scalar(ANN), scalar(None)]
+    mock_db_session.refresh.side_effect = give_id(42)
+    own = AsyncMock()
+
+    class Factory:
+        def __call__(self):
+            class _Open:
+                async def __aenter__(self):
+                    return own
+
+                async def __aexit__(self, *exc):
+                    return False
+
+            return _Open()
+
+    row = cn._Row(
+        user_id=ANN,
+        type=cn.ASSIGNMENT_CHANGED,
+        project_id=1,
+        project_name="Alpha",
+        entity_type="project",
+        entity_id=1,
+        title="Test User1 booked you on Alpha",
+        body=None,
+        coalesce=True,
+    )
+    with (
+        patch.object(cn, "deliver", REAL_DELIVER),
+        patch.object(cn, "resolve_tenant_session_factory", return_value=Factory()),
+        patch.object(cn, "_resolve", AsyncMock(return_value=([row], "Test User1"))),
+        patch.object(cn, "_coalesce", AsyncMock(side_effect=RuntimeError("CHECK violation"))),
+    ):
+        response = await client.post("/api/projects/1/staff", json=BOOKING)
+
+    assert response.status_code == 200
+    assert response.json() == {"id": 42, "success": True}
+    own.rollback.assert_awaited_once()
+    own.commit.assert_not_awaited()
+    # The route's session saw its own commit only: never a rollback.
+    mock_db_session.commit.assert_awaited_once()
+    mock_db_session.rollback.assert_not_awaited()
+    assert "Change notifications failed" in caplog.text
 
 
 @pytest.mark.parametrize("level", ["phase", "subphase"])
@@ -481,7 +567,32 @@ async def test_creating_a_project_without_pm_tells_nobody(
     )
 
     assert response.status_code == 200
-    assert only_call(change_intents)[1] == []
+    assert change_intents == []  # no delivery at all
+
+
+async def test_creating_ones_own_project_runs_no_delivery(
+    authed_client, mock_db_session, change_intents
+):
+    client, set_user = authed_client
+    set_user(admin())
+    mock_db_session.add.side_effect = lambda obj: setattr(obj, "id", 42)
+    mock_db_session.execute.side_effect = [scalar(1), scalar(ADMIN)]  # site, PM exist
+
+    response = await client.post(
+        "/api/projects",
+        json={
+            "name": "Mine",
+            "site_id": 1,
+            "pm_id": ADMIN,
+            "start_date": "2026-01-01",
+            "end_date": "2026-02-01",
+        },
+    )
+
+    assert response.status_code == 200
+    # The only recipient would be the actor: no context load, user query or commit.
+    assert change_intents == []
+    mock_db_session.commit.assert_awaited_once()  # the project's own
 
 
 # ---------------------------------------------------------------------------

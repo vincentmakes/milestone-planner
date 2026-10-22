@@ -836,15 +836,18 @@ async def create_project(
         action="create",
         summary=project.name,
     )
-    # A project created for someone else: its manager is told.
-    await change_notifications.deliver(
-        db,
-        request,
-        user.id,
-        change_notifications.manager_intents(
-            user, project_id=project.id, project_name=project.name, pm_id=data.pm_id
-        ),
-    )
+    # A project created for someone else: its manager is told. Creating one's
+    # own project (the common case) or one without a manager tells nobody, so
+    # no delivery runs at all.
+    if data.pm_id is not None and data.pm_id != user.id:
+        await change_notifications.deliver(
+            db,
+            request,
+            user.id,
+            change_notifications.manager_intents(
+                user, project_id=project.id, project_name=project.name, pm_id=data.pm_id
+            ),
+        )
 
     return {"id": project.id, "success": True}
 

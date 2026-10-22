@@ -21,6 +21,7 @@ from app.services.instance_settings import (
     is_enabled,
     with_defaults,
 )
+from app.services.permissions import DISABLEABLE_KEYS, PERMISSION_KEYS, PermissionSet
 from tests.support import scalar_result
 
 DEFAULTS = {
@@ -217,6 +218,19 @@ def test_kanban_off_disables_the_board_view_key():
     assert disabled_permission_keys("false") == frozenset({"views.kanban"})
     assert disabled_permission_keys("true") == frozenset()
     assert disabled_permission_keys(None) == frozenset()
+
+
+@pytest.mark.parametrize("flag", sorted(FLAG_DISABLES))
+def test_every_key_a_flag_disables_is_disableable(flag):
+    """
+    A key a switch turns off but ``DISABLEABLE_KEYS`` does not list would make
+    ``PermissionSet.__post_init__`` raise on every request while the switch is
+    off: the drift fails here instead.
+    """
+    keys = FLAG_DISABLES[flag]
+    assert keys <= DISABLEABLE_KEYS
+    assert keys <= PERMISSION_KEYS
+    assert PermissionSet("admin", disabled_keys=keys).disabled_keys == keys
 
 
 async def test_get_value_reads_one_row():
