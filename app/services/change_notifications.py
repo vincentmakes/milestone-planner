@@ -203,7 +203,7 @@ def booking_intents(
         mine = f"{who} booked you on {target}"
         theirs = f"{who} booked {'themself' if own else person} on {target}"
     elif kind == "update":
-        body = describe_change(ACTION_UPDATE, values, previous)
+        body = describe_change(ACTION_UPDATE, values, previous, level)
         mine = f"{who} changed your booking on {target}"
         whose = "their own" if own else f"{person}'s"
         theirs = f"{who} changed {whose} booking on {target}"
@@ -507,7 +507,7 @@ def approval_intents(
             project_id=project_id,
             entity=_booking_entity(level, project_id, target_id),
             title=f"{_actor(actor)} approved {{person}}'s request on {literal(target_name)}",
-            body=describe_change(action, requested, previous),
+            body=describe_change(action, requested, previous, level),
             person_id=requester_id,
         )
     ]
@@ -561,19 +561,34 @@ async def approved_bookers(
 async def card_bookings(
     db: AsyncSession, entity_type: str, entity_id: int
 ) -> list[tuple[int, int]]:
-    """``(staff_id, allocation)`` of the approved bookings on one phase or subphase."""
+    """
+    ``(staff_id, allocation)`` of the approved bookers of one phase or
+    subphase, one per person: someone holding several segments there is
+    told once, with the allocation of their first booking (lowest id).
+    """
     query: Any
     if entity_type == "phase":
-        query = select(PhaseStaffAssignment.staff_id, PhaseStaffAssignment.allocation).where(
-            PhaseStaffAssignment.phase_id == entity_id,
-            PhaseStaffAssignment.approval_status == "approved",
+        query = (
+            select(PhaseStaffAssignment.staff_id, PhaseStaffAssignment.allocation)
+            .where(
+                PhaseStaffAssignment.phase_id == entity_id,
+                PhaseStaffAssignment.approval_status == "approved",
+            )
+            .order_by(PhaseStaffAssignment.id)
         )
     else:
-        query = select(SubphaseStaffAssignment.staff_id, SubphaseStaffAssignment.allocation).where(
-            SubphaseStaffAssignment.subphase_id == entity_id,
-            SubphaseStaffAssignment.approval_status == "approved",
+        query = (
+            select(SubphaseStaffAssignment.staff_id, SubphaseStaffAssignment.allocation)
+            .where(
+                SubphaseStaffAssignment.subphase_id == entity_id,
+                SubphaseStaffAssignment.approval_status == "approved",
+            )
+            .order_by(SubphaseStaffAssignment.id)
         )
-    return [(row[0], row[1]) for row in (await db.execute(query)).all()]
+    first: dict[int, int] = {}
+    for row in (await db.execute(query)).all():
+        first.setdefault(row[0], row[1])
+    return list(first.items())
 
 
 # ---------------------------------------------------------

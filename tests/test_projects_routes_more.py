@@ -818,7 +818,8 @@ async def test_update_phase_fields(authed_client, mock_db_session, broadcast, ch
     )
     bookings = MagicMock()
     bookings.all.return_value = [(4, 60)]
-    mock_db_session.execute.side_effect = [scalar_result(phase), bookings]
+    # The phase, its approved bookings, then its segments to fit (none).
+    mock_db_session.execute.side_effect = [scalar_result(phase), bookings, scalars_result([])]
 
     response = await client.put(
         "/api/phases/10",
@@ -859,7 +860,11 @@ async def test_update_subphase_fields(authed_client, mock_db_session, broadcast,
         completion=0,
         status="todo",
     )
-    mock_db_session.execute.side_effect = [scalar_result(subphase), MagicMock()]
+    mock_db_session.execute.side_effect = [
+        scalar_result(subphase),
+        MagicMock(),
+        scalars_result([]),
+    ]
 
     response = await client.put(
         "/api/subphases/20",

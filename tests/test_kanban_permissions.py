@@ -297,7 +297,7 @@ async def test_a_user_leaves_a_card_with_the_board_off(authed_client, mock_db_se
         approval_status="approved",
         approval_request_id=None,
     )
-    mock_db_session.execute.side_effect = [scalar_result(_card()), scalar_result(row)]
+    mock_db_session.execute.side_effect = [scalar_result(_card()), scalars_result([row])]
 
     response = await client.delete("/api/kanban/cards/phase/10/assignees/7")
 

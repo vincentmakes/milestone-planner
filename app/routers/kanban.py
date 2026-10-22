@@ -76,6 +76,10 @@ CardEntityType = Literal["phase", "subphase"]
 # The board's reads: comment counts, mentionable users, comment threads.
 require_kanban_view = require_permission("views.kanban")
 
+# The per-person DELETE removes one booking; a person holding several
+# segments on the card is removed segment by segment (the per-row routes).
+SEVERAL_BOOKINGS_DETAIL = "This person has several bookings on this card — remove them one by one"
+
 
 # ---------------------------------------------------------
 # Helpers
@@ -468,7 +472,9 @@ async def unassign_card(
     """Remove a staff member from a card, releasing their booking.
 
     ``assignments.manage_others`` (or the PM) removes anyone; a user leaves a
-    card themself under ``assignments.self_remove``.
+    card themself under ``assignments.self_remove``. A person holding several
+    segments on the card is a 409 (``SEVERAL_BOOKINGS_DETAIL``): remove them
+    one by one through ``/phase-staff/{id}`` / ``/subphase-staff/{id}``.
     """
     card = await _load_card(db, entity_type, entity_id)
     await ensure_project_visible(request, db, user, card.project_id)
@@ -494,9 +500,12 @@ async def unassign_card(
             SubphaseStaffAssignment.staff_id == staff_id,
         )
 
-    assignment = (await db.execute(query.limit(1))).scalar_one_or_none()
-    if not assignment:
+    found = (await db.execute(query.limit(2))).scalars().all()
+    if not found:
         raise HTTPException(status_code=404, detail="Assignment not found")
+    if len(found) > 1:
+        raise HTTPException(status_code=409, detail=SEVERAL_BOOKINGS_DETAIL)
+    assignment = found[0]
 
     outcome = await approvals.resolve_row_write(
         db, user, row=assignment, action=ACTION_REMOVE, outcome=outcome

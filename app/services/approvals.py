@@ -45,7 +45,7 @@ pushes ``approval:changed`` to the requester and the eligible approvers
 
 import json
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
@@ -65,6 +65,7 @@ from app.models.notification import Notification
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.rbac import ApprovalPolicy, ApprovalRequest, Role, RolePermission
 from app.models.user import User, UserSite
+from app.services.booking_segments import fit_segments_to_card
 from app.services.notifications import build_notifications, notification_payload
 from app.services.permissions import (
     ADMIN_ROLE_KEY,
@@ -194,28 +195,54 @@ def _dump(values: dict[str, Any] | None) -> str | None:
     return None if values is None else json.dumps(values, sort_keys=True)
 
 
-def _values_valid(level: str, values: dict[str, Any] | None) -> bool:
-    """Allocation 1..100 and, at project level, ordered ISO dates."""
+def _day(value: Any) -> date | None:
+    """A stored ``YYYY-MM-DD`` value as a date (None stays None)."""
+    return None if value is None else date.fromisoformat(value)
+
+
+def _values_valid(
+    level: str, values: dict[str, Any] | None, context: "RequestContext | None" = None
+) -> bool:
+    """
+    Allocation 1..100 and ordered ISO dates: required at project level; on a
+    phase / subphase optional -- absent (linked, or unchanged), both null (a
+    relink), or both given and within the card's current dates (``context``).
+    """
     if not values:
         return False
     allocation = values.get("allocation")
     if not isinstance(allocation, int) or not 1 <= allocation <= 100:
         return False
     if level != "project":
-        return True
+        if "start_date" not in values and "end_date" not in values:
+            return True
+        if values.get("start_date") is None and values.get("end_date") is None:
+            return True
     try:
         start = date.fromisoformat(values["start_date"])
         end = date.fromisoformat(values["end_date"])
     except (KeyError, TypeError, ValueError):
         return False
-    return start <= end
+    if start > end:
+        return False
+    if level == "project" or context is None:
+        return True
+    if context.target_start is None or context.target_end is None:
+        return False
+    return context.target_start <= start and end <= context.target_end
 
 
 def _write_values(row: AssignmentRow, level: str, values: dict[str, Any]) -> None:
+    """
+    Apply booking values: the dates at every level when present -- explicit
+    nulls clear a segment's own dates (relinked to its card), absent keys
+    leave them.
+    """
     row.allocation = values["allocation"]
-    if level == "project":
-        row.start_date = date.fromisoformat(values["start_date"])  # type: ignore[union-attr]
-        row.end_date = date.fromisoformat(values["end_date"])  # type: ignore[union-attr]
+    if "start_date" in values:
+        row.start_date = _day(values["start_date"])  # type: ignore[assignment]
+    if "end_date" in values:
+        row.end_date = _day(values["end_date"])  # type: ignore[assignment]
 
 
 def _new_row(
@@ -236,6 +263,8 @@ def _new_row(
             phase_id=target_id,
             staff_id=staff_id,
             allocation=values["allocation"],
+            start_date=_day(values.get("start_date")),
+            end_date=_day(values.get("end_date")),
         )
     else:
         row = SubphaseStaffAssignment(
@@ -243,6 +272,8 @@ def _new_row(
             subphase_id=target_id,
             staff_id=staff_id,
             allocation=values["allocation"],
+            start_date=_day(values.get("start_date")),
+            end_date=_day(values.get("end_date")),
         )
     row.approval_status = "pending"
     return row
@@ -449,23 +480,41 @@ class RequestContext:
     site_id: int | None
     target_exists: bool
     target_name: str
+    # The target's current dates (a phase / subphase segment must lie within).
+    target_start: date | None = None
+    target_end: date | None = None
 
 
 async def load_context(
     db: AsyncSession, *, project_id: int, level: str, target_id: int
 ) -> RequestContext | None:
-    """The request's project (None if gone) and whether its target still exists (one query)."""
+    """
+    The request's project (None if gone), whether its target still exists and
+    the target's dates (one query).
+    """
     query: Any
     if level == "phase":
         query = select(
-            Project.name, Project.pm_id, Project.site_id, ProjectPhase.id, ProjectPhase.type
+            Project.name,
+            Project.pm_id,
+            Project.site_id,
+            ProjectPhase.id,
+            ProjectPhase.type,
+            ProjectPhase.start_date,
+            ProjectPhase.end_date,
         ).outerjoin(
             ProjectPhase,
             and_(ProjectPhase.id == target_id, ProjectPhase.project_id == Project.id),
         )
     elif level == "subphase":
         query = select(
-            Project.name, Project.pm_id, Project.site_id, ProjectSubphase.id, ProjectSubphase.name
+            Project.name,
+            Project.pm_id,
+            Project.site_id,
+            ProjectSubphase.id,
+            ProjectSubphase.name,
+            ProjectSubphase.start_date,
+            ProjectSubphase.end_date,
         ).outerjoin(
             ProjectSubphase,
             and_(ProjectSubphase.id == target_id, ProjectSubphase.project_id == Project.id),
@@ -477,6 +526,8 @@ async def load_context(
             Project.site_id,
             Project.id,
             Project.name.label("target_name"),
+            Project.start_date,
+            Project.end_date,
         )
     row = (await db.execute(query.where(Project.id == project_id))).first()
     if row is None:
@@ -487,6 +538,8 @@ async def load_context(
         site_id=row[2],
         target_exists=row[3] is not None,
         target_name=row[4] or row[0] or "a project",
+        target_start=row[5],
+        target_end=row[6],
     )
 
 
@@ -497,9 +550,15 @@ def display_name(user: Any) -> str:
 
 
 def describe_change(
-    action: str, requested: dict[str, Any] | None, previous: dict[str, Any] | None
+    action: str,
+    requested: dict[str, Any] | None,
+    previous: dict[str, Any] | None,
+    level: str | None = None,
 ) -> str:
-    """What a request asks for, in words (titles and the site export)."""
+    """
+    What a request asks for, in words (titles and the site export). ``level``
+    names the card in a relink ("follows the phase dates again").
+    """
     requested = requested or {}
     previous = previous or {}
     if action == ACTION_CREATE:
@@ -516,7 +575,12 @@ def describe_change(
         requested.get("start_date"),
         requested.get("end_date"),
     ):
-        parts.append(f"dates {_describe_dates(previous)} → {_describe_dates(requested)}")
+        if previous.get("start_date") and "start_date" in requested and not requested["start_date"]:
+            # A segment relinked to its card (explicit nulls).
+            card = level if level in ("phase", "subphase") else "card"
+            parts.append(f"follows the {card} dates again")
+        else:
+            parts.append(f"dates {_describe_dates(previous)} → {_describe_dates(requested)}")
     return ", ".join(parts) or "no change"
 
 
@@ -534,7 +598,9 @@ def _request_title(name: str, request: ApprovalRequest, target: str) -> str:
     elif request.action == ACTION_REMOVE:
         title = f"{name} asks to leave {target}"
     else:
-        change = describe_change(ACTION_UPDATE, requested, parse_values(request.previous))
+        change = describe_change(
+            ACTION_UPDATE, requested, parse_values(request.previous), request.level
+        )
         title = f"{name} asks to change their booking on {target}: {change}"
     return title[:_TITLE_MAX]
 
@@ -1061,6 +1127,92 @@ async def _submit_change(
 
 
 # ---------------------------------------------------------
+# Card date changes: segments follow their card
+# ---------------------------------------------------------
+
+
+def _fit_request_values(
+    values: dict[str, Any] | None, fit: Callable[[date, date], tuple[date, date]]
+) -> dict[str, Any] | None:
+    """A request's stored values with a segment's dates fitted (else unchanged)."""
+    if not values or not values.get("start_date") or not values.get("end_date"):
+        return values
+    try:
+        start, end = (
+            date.fromisoformat(values["start_date"]),
+            date.fromisoformat(values["end_date"]),
+        )
+    except (TypeError, ValueError):
+        return values
+    start, end = fit(start, end)
+    return {**values, "start_date": start.isoformat(), "end_date": end.isoformat()}
+
+
+async def fit_card_bookings(
+    db: AsyncSession,
+    level: str,
+    card_id: int,
+    old: tuple[date, date],
+    new: tuple[date, date],
+) -> None:
+    """
+    A phase / subphase whose dates go from `old` to `new`: fit its unlinked
+    segments (rows with own dates, pending ones included) with
+    ``fit_segments_to_card`` -- translated on a move, clamped on a shrink --
+    and the segment dates stored in the rows' open requests (``requested`` /
+    ``previous``), so a pending request stays valid and is not overtaken by
+    the card's own move. Linked rows follow the card by definition. The
+    result is written as is, even when two segments of one person end up
+    overlapping (a shrink pushing both against one edge): the next edit of
+    either resolves it. Staged only; the caller commits.
+    """
+    if tuple(old) == tuple(new):
+        return
+    model: Any = assignment_model(level)
+    on_card = model.phase_id if level == "phase" else model.subphase_id
+    rows = (
+        (
+            await db.execute(
+                select(model)
+                .where(
+                    on_card == card_id,
+                    or_(model.start_date.is_not(None), model.approval_request_id.is_not(None)),
+                )
+                .order_by(model.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    def fit(start: date, end: date) -> tuple[date, date]:
+        return fit_segments_to_card(old[0], old[1], new[0], new[1], [(start, end)])[0]
+
+    for row in rows:
+        if row.start_date is not None and row.end_date is not None:
+            row.start_date, row.end_date = fit(row.start_date, row.end_date)
+    request_ids = [row.approval_request_id for row in rows if row.approval_request_id is not None]
+    if not request_ids:
+        return
+    requests = (
+        (
+            await db.execute(
+                select(ApprovalRequest)
+                .where(ApprovalRequest.id.in_(request_ids), ApprovalRequest.status == "pending")
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for request in requests:
+        if request.requested is not None:
+            request.requested = _dump(_fit_request_values(parse_values(request.requested), fit))
+        if request.previous is not None:
+            request.previous = _dump(_fit_request_values(parse_values(request.previous), fit))
+
+
+# ---------------------------------------------------------
 # Expiry hooks: editor writes and deletions
 # ---------------------------------------------------------
 
@@ -1359,25 +1511,56 @@ async def _revalidate(
     if request.action == ACTION_CREATE:
         if row is None or row.approval_status != "pending":
             return "overtaken", row
+        # The row's own dates (None = linked, the whole card): an approved
+        # booking of the person overlapping them, filed meanwhile, wins.
         duplicate = await find_duplicate(
             db,
             request.level,
             request.target_id,
             row.staff_id,
-            start_date=row.start_date if request.level == "project" else None,  # type: ignore[union-attr]
-            end_date=row.end_date if request.level == "project" else None,  # type: ignore[union-attr]
+            start_date=row.start_date,
+            end_date=row.end_date,
             exclude_id=row.id,
             approved_only=True,
         )
         return ("duplicate" if duplicate is not None else None), row
+    previous = parse_values(request.previous)
     if (
         row is None
         or row.approval_status != "approved"
         or row.approval_request_id != request.id
-        or booking_values(row, request.level) != parse_values(request.previous)
+        or booking_values(row, request.level) != previous
     ):
         return "overtaken", row
+    requested = parse_values(request.requested) or {}
+    if (
+        request.action == ACTION_UPDATE
+        and request.level != "project"
+        and _date_pair(requested) != _date_pair(previous or {})
+    ):
+        # New segment dates: an approved booking of the person overlapping
+        # them, filed meanwhile, wins (as for a create).
+        try:
+            start, end = _day(requested.get("start_date")), _day(requested.get("end_date"))
+        except (TypeError, ValueError):
+            return None, row  # malformed: _values_valid answers INVALID_VALUES
+        duplicate = await find_duplicate(
+            db,
+            request.level,
+            request.target_id,
+            row.staff_id,
+            start_date=start,
+            end_date=end,
+            exclude_id=row.id,
+            approved_only=True,
+        )
+        if duplicate is not None:
+            return "duplicate", row
     return None, row
+
+
+def _date_pair(values: dict[str, Any]) -> tuple[Any, Any]:
+    return values.get("start_date"), values.get("end_date")
 
 
 async def approve(
@@ -1407,7 +1590,7 @@ async def approve(
     if (
         problem is None
         and request.action != ACTION_REMOVE
-        and not _values_valid(request.level, parse_values(request.requested))
+        and not _values_valid(request.level, parse_values(request.requested), context)
     ):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=INVALID_VALUES_DETAIL)
 
@@ -1652,7 +1835,10 @@ def pending_change_text(request: ApprovalRequest | None) -> str:
     if request.action == ACTION_REMOVE:
         return "removal requested"
     return describe_change(
-        ACTION_UPDATE, parse_values(request.requested), parse_values(request.previous)
+        ACTION_UPDATE,
+        parse_values(request.requested),
+        parse_values(request.previous),
+        request.level,
     )
 
 

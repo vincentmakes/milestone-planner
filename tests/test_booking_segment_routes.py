@@ -119,9 +119,16 @@ def test_booking_values_carry_a_segments_own_dates(level):
 def test_describe_change_words_a_link_and_an_unlink():
     unlinked = {"allocation": 50, **SEG}
     relinked = {"allocation": 50, "start_date": None, "end_date": None}
+    # A relink names the card when the level is known.
     assert describe_change(approvals.ACTION_UPDATE, relinked, unlinked) == (
-        "dates 2026-03-03–2026-03-05 → follow the card"
+        "follows the card dates again"
     )
+    assert describe_change(approvals.ACTION_UPDATE, relinked, unlinked, "phase") == (
+        "follows the phase dates again"
+    )
+    assert describe_change(
+        approvals.ACTION_UPDATE, {**relinked, "allocation": 60}, unlinked, "subphase"
+    ) == ("allocation 50% → 60%, follows the subphase dates again")
     assert describe_change(approvals.ACTION_UPDATE, unlinked, {"allocation": 50}) == (
         "dates follow the card → 2026-03-03–2026-03-05"
     )
@@ -582,7 +589,7 @@ async def test_update_relinks_with_null_dates(
     assert response.json() == {"success": True, "linked": True}
     assert (row.start_date, row.end_date, row.allocation) == (None, None, 50)
     ((_, intents, _),) = change_intents
-    assert {i.body for i in intents} == {"dates 2026-03-03–2026-03-05 → follow the card"}
+    assert {i.body for i in intents} == {f"follows the {level} dates again"}
 
 
 @pytest.mark.parametrize("level", LEVELS)

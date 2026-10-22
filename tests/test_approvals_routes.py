@@ -385,7 +385,7 @@ async def test_decision_end_to_end_through_the_service(authed_client, mock_db_se
         return result
 
     context = MagicMock()
-    context.first.return_value = ("Alpha", PM, 1, 11, "Design")
+    context.first.return_value = ("Alpha", PM, 1, 11, "Design", None, None)
     mock_db_session.execute.side_effect = [
         scalar(pending),  # lock
         context,  # project + target

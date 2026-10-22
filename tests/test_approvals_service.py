@@ -289,7 +289,7 @@ async def test_context_reports_missing_project_and_target():
     assert context is not None
     assert context.target_exists is False
     assert context.target_name == "Alpha"
-    db = ApprovalFakeDB(context=[("Alpha", PM, 1, 1, "Alpha")])
+    db = ApprovalFakeDB(context=[("Alpha", PM, 1, 1, "Alpha", None, None)])
     context = await approvals.load_context(db, project_id=1, level="project", target_id=1)
     assert context.target_exists and context.pm_id == PM and context.site_id == 1
 
@@ -383,7 +383,7 @@ async def test_submit_create_inserts_a_pending_row_and_notifies_approvers(pushes
 
 @pytest.mark.asyncio
 async def test_submit_create_at_project_level_stores_the_dates(pushes):
-    db = ApprovalFakeDB(context=[("Alpha", PM, 1, 1, "Alpha")], approvers=[ADMIN])
+    db = ApprovalFakeDB(context=[("Alpha", PM, 1, 1, "Alpha", None, None)], approvers=[ADMIN])
     await approvals.submit_request(
         db,
         _http(),
@@ -432,7 +432,7 @@ async def test_submit_create_needs_values():
 @pytest.mark.asyncio
 async def test_submit_update_stores_requested_and_previous_and_keeps_the_row(pushes):
     row = _project_row()
-    db = ApprovalFakeDB(context=[("Alpha", PM, 1, 1, "Alpha")], approvers=[PM])
+    db = ApprovalFakeDB(context=[("Alpha", PM, 1, 1, "Alpha", None, None)], approvers=[PM])
     values = approvals.booking_dict(80, date(2026, 1, 5), date(2026, 1, 30))
 
     response = await approvals.submit_request(
@@ -631,7 +631,7 @@ async def test_approve_update_writes_the_requested_values():
         requested='{"allocation": 90, "end_date": "2026-02-27", "start_date": "2026-02-02"}',
         previous='{"allocation": 60, "end_date": "2026-01-30", "start_date": "2026-01-05"}',
     )
-    db = approvable_db(request, row, context=[("Alpha", PM, 1, 1, "Alpha")])
+    db = approvable_db(request, row, context=[("Alpha", PM, 1, 1, "Alpha", None, None)])
 
     result = await approvals.approve(db, approval_admin(), 50, visible=None)
 
@@ -918,7 +918,7 @@ async def test_deleting_a_card_expires_its_requests():
     first = approval_request(id=50)
     second = approval_request(id=51, level="subphase", target_id=12, requester_id=OTHER)
     db = ApprovalFakeDB(
-        request=[first, second], context=[("Alpha", PM, 1, 1, "Alpha")], approvers=[PM]
+        request=[first, second], context=[("Alpha", PM, 1, 1, "Alpha", None, None)], approvers=[PM]
     )
 
     effects = await approvals.cancel_for_entity(
@@ -938,7 +938,9 @@ async def test_deleting_a_card_expires_its_requests():
 @pytest.mark.asyncio
 async def test_deleting_a_project_notifies_nobody():
     request = approval_request()
-    db = ApprovalFakeDB(request=[request], context=[("Alpha", PM, 1, 1, "Alpha")], approvers=[PM])
+    db = ApprovalFakeDB(
+        request=[request], context=[("Alpha", PM, 1, 1, "Alpha", None, None)], approvers=[PM]
+    )
     effects = await approvals.cancel_for_entity(
         db, approval_admin(), project_id=1, whole_project=True
     )
@@ -1121,3 +1123,315 @@ async def test_send_user_event_pushes_to_one_user():
     assert (tenant, user_id) == ("acme", 7)
     assert message["type"] == "approval:changed" and message["payload"] == {"id": 50}
     assert message["timestamp"].endswith("Z")
+
+
+# ---------------------------------------------------------
+# Unlinked segments (1.17.0): card-level dates in requests
+# ---------------------------------------------------------
+
+SEG_START, SEG_END = date(2026, 3, 3), date(2026, 3, 5)
+SEG_JSON = {"start_date": "2026-03-03", "end_date": "2026-03-05"}
+
+
+def _card_context(start=date(2026, 3, 2), end=date(2026, 3, 13)) -> approvals.RequestContext:
+    return approvals.RequestContext(
+        project_name="Alpha",
+        pm_id=PM,
+        site_id=1,
+        target_exists=True,
+        target_name="Design",
+        target_start=start,
+        target_end=end,
+    )
+
+
+def _dumped(values: dict) -> str:
+    return approvals._dump(values) or ""
+
+
+def _duplicate_params(db: ApprovalFakeDB) -> list[dict]:
+    """The bound parameters of every find_duplicate query the fake answered."""
+    return [
+        s.compile().params
+        for s in db.statements
+        if getattr(s, "is_select", False) and db.key(s) == "duplicate"
+    ]
+
+
+@pytest.mark.parametrize("level", ["phase", "subphase"])
+@pytest.mark.parametrize(
+    ("values", "valid"),
+    [
+        ({"allocation": 50}, True),  # linked (or dates unchanged)
+        ({"allocation": 50, **SEG_JSON}, True),  # within the card
+        ({"allocation": 50, "start_date": "2026-03-02", "end_date": "2026-03-13"}, True),  # edges
+        ({"allocation": 50, "start_date": None, "end_date": None}, True),  # a relink
+        ({"allocation": 50, "start_date": "2026-03-01", "end_date": "2026-03-05"}, False),
+        ({"allocation": 50, "start_date": "2026-03-10", "end_date": "2026-03-14"}, False),
+        ({"allocation": 50, "start_date": "2026-03-05", "end_date": "2026-03-03"}, False),
+        ({"allocation": 50, "start_date": "2026-03-03", "end_date": None}, False),
+        ({"allocation": 50, "start_date": "2026-03-03"}, False),
+        ({"allocation": 50, "start_date": "nope", "end_date": "2026-03-05"}, False),
+        ({"allocation": 0, **SEG_JSON}, False),
+    ],
+)
+def test_segment_values_validation(level, values, valid):
+    assert approvals._values_valid(level, values, _card_context()) is valid
+
+
+def test_segment_values_without_a_context_check_only_the_order():
+    assert approvals._values_valid("phase", {"allocation": 50, **SEG_JSON}) is True
+    # A card whose dates are unknown cannot hold the segment.
+    unknown = _card_context(start=None, end=None)
+    assert approvals._values_valid("phase", {"allocation": 50, **SEG_JSON}, unknown) is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("level", ["phase", "subphase"])
+async def test_context_carries_the_targets_dates(level):
+    db = ApprovalFakeDB(context=[approval_context()])
+    context = await approvals.load_context(db, project_id=1, level=level, target_id=11)
+    assert (context.target_start, context.target_end) == (date(2026, 3, 2), date(2026, 3, 13))
+    (stmt,) = db.statements
+    table = "project_phases" if level == "phase" else "project_subphases"
+    assert f"{table}.start_date" in str(stmt.compile())
+
+
+def test_write_values_sets_clears_or_keeps_segment_dates():
+    row = pending_phase_row(start_date=SEG_START, end_date=SEG_END)
+    approvals._write_values(row, "phase", {"allocation": 40})
+    assert (row.allocation, row.start_date, row.end_date) == (40, SEG_START, SEG_END)
+    approvals._write_values(
+        row, "phase", {"allocation": 40, "start_date": "2026-03-09", "end_date": "2026-03-11"}
+    )
+    assert (row.start_date, row.end_date) == (date(2026, 3, 9), date(2026, 3, 11))
+    approvals._write_values(row, "phase", {"allocation": 40, "start_date": None, "end_date": None})
+    assert (row.start_date, row.end_date) == (None, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("level", "model"), [("phase", PhaseStaffAssignment), ("subphase", SubphaseStaffAssignment)]
+)
+async def test_submit_create_of_a_segment_files_a_dated_pending_row(pushes, level, model):
+    db = ApprovalFakeDB(context=[approval_context()], approvers=[ADMIN])
+
+    await approvals.submit_request(
+        db,
+        _http(),
+        requester(),
+        action=ACTION_CREATE,
+        level=level,
+        project_id=1,
+        target_id=11,
+        values=approvals.booking_dict(50, SEG_START, SEG_END),
+    )
+
+    row = db.added[1]
+    assert isinstance(row, model) and row.approval_status == "pending"
+    assert (row.start_date, row.end_date) == (SEG_START, SEG_END)
+    assert (
+        db.notifications[0].title
+        == "Test User3 asks to join Design at 50% from 2026-03-03 to 2026-03-05"
+    )
+
+
+@pytest.mark.asyncio
+async def test_amending_a_pending_segment_to_follow_the_card_clears_its_dates(pushes):
+    request = approval_request(requested=_dumped({"allocation": 80, **SEG_JSON}))
+    row = pending_phase_row(start_date=SEG_START, end_date=SEG_END)
+    db = ApprovalFakeDB(request=[request], context=[approval_context()], approvers=[PM])
+
+    await approvals.submit_request(
+        db,
+        _http(),
+        requester(),
+        action=ACTION_UPDATE,
+        level="phase",
+        project_id=1,
+        row=row,
+        values=approvals.booking_dict(80, clear_dates=True),
+    )
+
+    assert (row.start_date, row.end_date) == (None, None)
+    assert approvals.parse_values(request.requested) == {
+        "allocation": 80,
+        "start_date": None,
+        "end_date": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_approve_segment_create_checks_overlap_with_the_rows_own_dates():
+    request = approval_request(requested=_dumped({"allocation": 80, **SEG_JSON}))
+    row = pending_phase_row(start_date=SEG_START, end_date=SEG_END)
+    db = approvable_db(request, row)
+
+    result = await approvals.approve(db, approval_admin(), 50, visible=None)
+
+    assert result.conflict is None
+    assert row.approval_status == "approved"
+    assert (row.start_date, row.end_date) == (SEG_START, SEG_END)
+    (params,) = _duplicate_params(db)
+    assert SEG_START in params.values() and SEG_END in params.values()
+    assert 70 in params.values()  # the row itself is excluded
+    assert [i.body for i in result.effects.change_intents] == [
+        "at 80% from 2026-03-03 to 2026-03-05"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_approve_segment_create_expires_on_an_overlapping_approved_segment():
+    request = approval_request(requested=_dumped({"allocation": 80, **SEG_JSON}))
+    row = pending_phase_row(start_date=SEG_START, end_date=SEG_END)
+    other = pending_phase_row(
+        id=99, approval_status="approved", start_date=SEG_END, end_date=SEG_END
+    )
+    db = approvable_db(request, row, duplicate=[other])
+
+    result = await approvals.approve(db, approval_admin(), 50, visible=None)
+
+    assert request.status == "expired" and request.close_reason == "duplicate"
+    assert result.conflict["close_reason"] == "duplicate"
+    assert db.deleted == [row]
+
+
+@pytest.mark.asyncio
+async def test_approve_linked_create_checks_overlap_with_the_whole_card():
+    request, row = approval_request(), pending_phase_row()
+    db = approvable_db(request, row)
+
+    await approvals.approve(db, approval_admin(), 50, visible=None)
+
+    (params,) = _duplicate_params(db)
+    # No own dates: the overlap is taken against the card's own columns.
+    assert not any(isinstance(value, date) for value in params.values())
+
+
+def _segment_update(requested: dict, previous: dict | None = None) -> ApprovalRequest:
+    return approval_request(
+        action=ACTION_UPDATE,
+        requested=_dumped(requested),
+        previous=_dumped(previous or {"allocation": 60, **SEG_JSON}),
+    )
+
+
+def _approved_segment(**fields) -> PhaseStaffAssignment:
+    values = {
+        "approval_status": "approved",
+        "approval_request_id": 50,
+        "allocation": 60,
+        "start_date": SEG_START,
+        "end_date": SEG_END,
+        **fields,
+    }
+    return pending_phase_row(**values)
+
+
+@pytest.mark.asyncio
+async def test_approve_update_moves_a_segment():
+    row = _approved_segment()
+    moved = {"allocation": 60, "start_date": "2026-03-09", "end_date": "2026-03-11"}
+    db = approvable_db(_segment_update(moved), row)
+
+    result = await approvals.approve(db, approval_admin(), 50, visible=None)
+
+    assert result.conflict is None
+    assert (row.start_date, row.end_date) == (date(2026, 3, 9), date(2026, 3, 11))
+    assert row.approval_request_id is None
+    (params,) = _duplicate_params(db)  # new dates: checked against the person's other rows
+    assert date(2026, 3, 9) in params.values()
+    (intent,) = result.effects.change_intents
+    assert intent.body == "dates 2026-03-03–2026-03-05 → 2026-03-09–2026-03-11"
+
+
+@pytest.mark.asyncio
+async def test_approve_update_relinks_a_segment():
+    row = _approved_segment()
+    relink = {"allocation": 60, "start_date": None, "end_date": None}
+    db = approvable_db(_segment_update(relink), row)
+
+    result = await approvals.approve(db, approval_admin(), 50, visible=None)
+
+    assert result.conflict is None
+    assert (row.start_date, row.end_date) == (None, None)
+    (intent,) = result.effects.change_intents
+    assert intent.body == "follows the phase dates again"
+
+
+@pytest.mark.asyncio
+async def test_approve_update_with_new_dates_expires_on_an_overlapping_segment():
+    row = _approved_segment()
+    moved = {"allocation": 60, "start_date": "2026-03-09", "end_date": "2026-03-11"}
+    other = pending_phase_row(id=99, approval_status="approved")
+    db = approvable_db(_segment_update(moved), row, duplicate=[other])
+
+    result = await approvals.approve(db, approval_admin(), 50, visible=None)
+
+    assert result.conflict["close_reason"] == "duplicate"
+    assert (row.start_date, row.end_date) == (SEG_START, SEG_END)  # untouched
+    assert row.approval_request_id is None
+    assert not db.deleted
+
+
+@pytest.mark.asyncio
+async def test_approve_allocation_only_update_does_not_look_for_overlaps():
+    row = _approved_segment()
+    db = approvable_db(_segment_update({"allocation": 80, **SEG_JSON}), row)
+
+    result = await approvals.approve(db, approval_admin(), 50, visible=None)
+
+    assert result.conflict is None and row.allocation == 80
+    assert (row.start_date, row.end_date) == (SEG_START, SEG_END)
+    assert db.queried("duplicate") == 0
+
+
+@pytest.mark.asyncio
+async def test_approve_update_with_malformed_dates_is_invalid_values():
+    row = _approved_segment()
+    db = approvable_db(
+        _segment_update({"allocation": 60, "start_date": "nope", "end_date": "2026-03-11"}), row
+    )
+    with pytest.raises(HTTPException) as exc:
+        await approvals.approve(db, approval_admin(), 50, visible=None)
+    assert exc.value.detail == INVALID_VALUES_DETAIL
+    assert db.queried("duplicate") == 0
+
+
+@pytest.mark.asyncio
+async def test_approve_update_outside_the_card_is_invalid_values():
+    row = _approved_segment()
+    outside = {"allocation": 60, "start_date": "2026-03-12", "end_date": "2026-03-16"}
+    db = approvable_db(_segment_update(outside), row)
+
+    with pytest.raises(HTTPException) as exc:
+        await approvals.approve(db, approval_admin(), 50, visible=None)
+
+    assert exc.value.status_code == 409 and exc.value.detail == INVALID_VALUES_DETAIL
+    assert (row.start_date, row.end_date) == (SEG_START, SEG_END)
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_approve_update_is_overtaken_by_a_date_change():
+    # The segment moved since the request was filed: its previous dates are stale.
+    row = _approved_segment(start_date=date(2026, 3, 4), end_date=date(2026, 3, 6))
+    db = approvable_db(_segment_update({"allocation": 80, **SEG_JSON}), row)
+
+    result = await approvals.approve(db, approval_admin(), 50, visible=None)
+
+    assert result.conflict["close_reason"] == "overtaken"
+    assert row.allocation == 60
+
+
+def test_relink_wording_in_titles_and_the_export():
+    update = approval_request(
+        action=ACTION_UPDATE,
+        level="subphase",
+        requested=_dumped({"allocation": 60, "start_date": None, "end_date": None}),
+        previous=_dumped({"allocation": 60, **SEG_JSON}),
+    )
+    assert approvals.pending_change_text(update) == "follows the subphase dates again"
+    assert approvals._request_title("Ann", update, "Sub") == (
+        "Ann asks to change their booking on Sub: follows the subphase dates again"
+    )

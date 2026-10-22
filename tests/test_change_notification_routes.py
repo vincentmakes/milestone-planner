@@ -21,6 +21,7 @@ from app.models.project import Project, ProjectPhase
 from app.models.site import Site
 from app.services import change_notifications as cn
 from tests.conftest import FakeUser
+from tests.support import scalars_result
 
 # The real function, captured at import (the autouse change_intents fixture
 # replaces it for every test).
@@ -362,7 +363,7 @@ async def test_assigning_someone_to_a_card_keeps_their_assigned_notification(
 async def test_removing_someone_from_a_card(authed_client, mock_db_session, change_intents):
     client, set_user = authed_client
     set_user(admin())
-    mock_db_session.execute.side_effect = [scalar(_card()), scalar(card_row(allocation=30))]
+    mock_db_session.execute.side_effect = [scalar(_card()), scalars_result([card_row(allocation=30)])]
 
     response = await client.delete(f"/api/kanban/cards/phase/11/assignees/{ANN}")
 

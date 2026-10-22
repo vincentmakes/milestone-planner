@@ -163,7 +163,7 @@ def users(*rows) -> list[tuple]:
 
 
 def context(pm_id=PM, name="Alpha", target="Design") -> tuple:
-    return (name, pm_id, 1, 11, target)
+    return (name, pm_id, 1, 11, target, None, None)
 
 
 def intent(**fields) -> ChangeIntent:
@@ -969,7 +969,7 @@ def test_approval_intent_without_a_manager_is_nothing():
 
 
 async def test_a_project_level_entity_resolves_the_project_as_target(now, pushes):
-    db = ChangeFakeDB(contexts={1: ("Alpha", PM, 1, 1, "Alpha")}, users=users())
+    db = ChangeFakeDB(contexts={1: ("Alpha", PM, 1, 1, "Alpha", None, None)}, users=users())
 
     await run(db, [pm_intent(entity_type="project", entity_id=1)])
 
@@ -1036,3 +1036,31 @@ async def test_card_bookings_are_approved_rows_with_their_allocation(entity_type
     sql = _compiled(db.execute.await_args.args[0])
     assert f"{entity_type}_staff_assignments.{entity_type}_id = 11" in sql
     assert "approval_status = 'approved'" in sql
+
+
+@pytest.mark.parametrize("entity_type", ["phase", "subphase"])
+async def test_card_bookings_name_a_person_with_several_segments_once(entity_type):
+    # Ann (3) holds two segments: one intent, with her first booking's allocation.
+    result = MagicMock()
+    result.all.return_value = [(3, 60), (4, 100), (3, 20)]
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=result)
+
+    bookers = await cn.card_bookings(db, entity_type, 11)
+
+    assert bookers == [(3, 60), (4, 100)]
+    sql = _compiled(db.execute.await_args.args[0])
+    assert f"ORDER BY {entity_type}_staff_assignments.id" in sql
+    intents = cn.card_moved_intents(
+        FakeUser(1, "admin"),
+        project_id=1,
+        entity_type=entity_type,
+        entity_id=11,
+        name="Design",
+        old=(date(2026, 3, 2), date(2026, 3, 13)),
+        new=(date(2026, 3, 9), date(2026, 3, 20)),
+        bookers=bookers,
+    )
+    people = [(i.user_id, i.body) for i in intents if i.recipient == "person"]
+    assert [user_id for user_id, _ in people] == [3, 4]
+    assert people[0][1].endswith("(you are booked at 60%)")

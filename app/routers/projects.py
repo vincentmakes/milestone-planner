@@ -1180,6 +1180,10 @@ async def update_phase(
         if new_dates != old_dates
         else []
     )
+    # Unlinked segments follow the card: translated on a move, clamped on a
+    # shrink (fit_segments_to_card), in this transaction.
+    if new_dates != old_dates:
+        await approvals.fit_card_bookings(db, "phase", phase_id, old_dates, new_dates)
 
     await db.commit()
 
@@ -1603,6 +1607,10 @@ async def update_subphase(
         if new_dates != old_dates
         else []
     )
+    # Unlinked segments follow the card: translated on a move, clamped on a
+    # shrink (fit_segments_to_card), in this transaction.
+    if new_dates != old_dates:
+        await approvals.fit_card_bookings(db, "subphase", subphase_id, old_dates, new_dates)
 
     await db.commit()
 

@@ -17,6 +17,7 @@ from app.models.equipment import Equipment
 from app.models.site import Site
 from app.services.project_access import EDITOR_REQUIRED_DETAIL, OWN_ASSIGNMENT_DETAIL
 from tests.conftest import FakeUser
+from tests.support import scalars_result
 
 PM = 7  # id of the project manager of project 1
 OTHER = 99
@@ -874,7 +875,7 @@ async def test_user_can_leave_a_card(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(FakeUser(5, "user"))
     row = _staff_row(staff_id=5)
-    mock_db_session.execute.side_effect = [_scalar_result(_card()), _scalar_result(row)]
+    mock_db_session.execute.side_effect = [_scalar_result(_card()), scalars_result([row])]
 
     response = await client.delete("/api/kanban/cards/subphase/1/assignees/5")
     assert response.status_code == 200
@@ -1279,15 +1280,15 @@ SELF_ROUTES = [
         "assignments.self_remove",
         "subphase",
         {
-            "allow": lambda: [_scalar_result(_card()), _scalar_result(_staff_row(5))],
+            "allow": lambda: [_scalar_result(_card()), scalars_result([_staff_row(5)])],
             "approval": lambda: [
                 _scalar_result(_card()),
-                _scalar_result(_staff_row(5)),
+                scalars_result([_staff_row(5)]),
                 _pm_result(PM),
             ],
             "deny": lambda: [
                 _scalar_result(_card()),
-                _scalar_result(_staff_row(5)),
+                scalars_result([_staff_row(5)]),
                 _pm_result(PM),
             ],
         },
@@ -1579,7 +1580,7 @@ async def test_editor_removing_a_pending_kanban_assignee_is_409(authed_client, m
     client, set_user = authed_client
     set_user(FakeUser(9, "superuser"))
     pending = _staff_row(5, approval_status="pending", approval_request_id=50)
-    mock_db_session.execute.side_effect = [_scalar_result(_card()), _scalar_result(pending)]
+    mock_db_session.execute.side_effect = [_scalar_result(_card()), scalars_result([pending])]
 
     response = await client.delete("/api/kanban/cards/phase/1/assignees/5")
 

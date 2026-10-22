@@ -499,7 +499,7 @@ async def test_user_leaves_a_card(
         approval_status="approved",
         approval_request_id=None,
     )
-    mock_db_session.execute.side_effect = [scalar_result(make_card()), scalar_result(row)]
+    mock_db_session.execute.side_effect = [scalar_result(make_card()), scalars_result([row])]
 
     response = await client.delete(f"/api/kanban/cards/{entity_type}/10/assignees/7")
 
@@ -521,7 +521,7 @@ async def test_user_leaves_a_card(
 async def test_unassign_missing_assignment_404(authed_client, mock_db_session, wires):
     client, set_user = authed_client
     set_user(FakeUser(1, "admin"))
-    mock_db_session.execute.side_effect = [scalar_result(make_card()), scalar_result(None)]
+    mock_db_session.execute.side_effect = [scalar_result(make_card()), scalars_result([])]
 
     response = await client.delete("/api/kanban/cards/phase/10/assignees/7")
 

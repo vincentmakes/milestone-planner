@@ -18,6 +18,7 @@ for app/services/approvals.py. Prefer these over redefining the helpers per file
 (tests/test_domain_routes_misc.py keeps its own private copies).
 """
 
+from datetime import date
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -197,8 +198,23 @@ class ApprovalFakeDB:
         return [obj for obj in self.added if isinstance(obj, Notification)]
 
 
-def approval_context(*, pm_id=PM_ID, site_id=1, target=True, name="Design"):
-    return ("Alpha", pm_id, site_id, 11 if target else None, name if target else None)
+CARD_START = date(2026, 3, 2)
+CARD_END = date(2026, 3, 13)
+
+
+def approval_context(
+    *, pm_id=PM_ID, site_id=1, target=True, name="Design", start=CARD_START, end=CARD_END
+):
+    """A ``load_context`` row: project name, PM, site, target id / name and dates."""
+    return (
+        "Alpha",
+        pm_id,
+        site_id,
+        11 if target else None,
+        name if target else None,
+        start if target else None,
+        end if target else None,
+    )
 
 
 def approval_request(**fields) -> ApprovalRequest:

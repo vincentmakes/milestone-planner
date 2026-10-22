@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from app.routers.kanban import SEVERAL_BOOKINGS_DETAIL
 from tests.conftest import FakeUser
 
 
@@ -401,3 +402,74 @@ async def test_mentionable_users_include_roles_seeing_every_site(authed_client, 
     rendered = " ".join(str(statement).split())
     assert "role_permissions.permission" in rendered
     assert "sites.view_all" in str(statement.compile(compile_kwargs={"literal_binds": True}))
+
+
+# ---------------------------------------------------------
+# Unassign: one booking per person, else one by one (1.17.0)
+# ---------------------------------------------------------
+
+
+def _rows_result(rows):
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = rows
+    return result
+
+
+def _segment(row_id: int, staff_id: int = 5):
+    row = _staff_row(staff_id)
+    row.id = row_id
+    row.allocation = 50
+    row.start_date = None
+    row.end_date = None
+    return row
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entity_type", ["phase", "subphase"])
+@pytest.mark.parametrize(
+    "user",
+    [FakeUser(1, "admin"), FakeUser(5, "user", {"assignments.self_remove": "approval"})],
+    ids=["editor", "self-in-approval-mode"],
+)
+async def test_unassign_of_a_person_with_several_segments_is_409(
+    authed_client, mock_db_session, entity_type, user
+):
+    client, set_user = authed_client
+    set_user(user)
+    mock_db_session.execute.side_effect = [
+        _scalar_result(_card()),
+        _rows_result([_segment(1), _segment(2)]),
+    ]
+
+    response = await client.delete(f"/api/kanban/cards/{entity_type}/1/assignees/5")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == SEVERAL_BOOKINGS_DETAIL
+    # Decided before the approval resolution: no request filed, nothing deleted.
+    assert mock_db_session.execute.await_count == 2
+    mock_db_session.add.assert_not_called()
+    mock_db_session.delete.assert_not_awaited()
+    mock_db_session.commit.assert_not_awaited()
+    lookup = mock_db_session.execute.await_args_list[1].args[0]
+    assert lookup._limit_clause.value == 2  # two rows are enough to tell
+
+
+@pytest.mark.asyncio
+async def test_unassign_of_a_person_with_one_booking_removes_it(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    row = _segment(7)
+    mock_db_session.execute.side_effect = [_scalar_result(_card()), _rows_result([row])]
+
+    response = await client.delete("/api/kanban/cards/phase/1/assignees/5")
+
+    assert response.status_code == 200
+    assert response.json() == {"success": True}
+    mock_db_session.delete.assert_awaited_once_with(row)
+    mock_db_session.commit.assert_awaited_once()
+
+
+def test_several_bookings_detail_is_plain_words():
+    assert SEVERAL_BOOKINGS_DETAIL == (
+        "This person has several bookings on this card — remove them one by one"
+    )

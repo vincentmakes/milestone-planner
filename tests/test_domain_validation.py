@@ -198,8 +198,9 @@ async def test_single_day_ranges_are_fine(authed_client, mock_db_session):
     phase = _row(
         id=1, project_id=1, type="Design", start_date=date(2026, 1, 1), end_date=date(2026, 1, 9)
     )
-    # The phase, then its approved bookings (the move notifies them).
-    mock_db_session.execute.side_effect = [_scalar_result(phase), MagicMock()]
+    # The phase, its approved bookings (the move notifies them), then its
+    # segments to fit (none).
+    mock_db_session.execute.side_effect = [_scalar_result(phase), MagicMock(), MagicMock()]
 
     response = await client.put(
         "/api/phases/1", json={"start_date": "2026-01-05", "end_date": "2026-01-05"}
