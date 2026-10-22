@@ -5,6 +5,15 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.14.0] - 2026-10-22
+
+### Added
+- A two-month calendar picker for every date in the app — projects, phases, subphases, staff and equipment bookings, equipment blocks, absences, bank holidays, company events, milestone dates and todo due dates: click a date field (or press Enter, Space or the down arrow), pick the start, then the end; weekends are greyed and the site's bank holidays and closures are marked with a dot and their name.
+
+### Changed
+- An end date can no longer be set before the start: picking a start after the end moves the end along and keeps the duration, and picking an end before the start makes it the new start.
+- The optional end date of bank holidays and company events is cleared from the calendar with **Clear end date**; an empty end means the same day.
+
 ## [1.13.0] - 2026-10-22
 
 ### Added

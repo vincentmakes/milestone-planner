@@ -327,7 +327,7 @@ A refresh replaces the site's Nager holidays but never touches custom ones. A cu
 1. Click **Add holiday**
 2. Enter the **Name** (e.g., "Company Anniversary")
 3. Set the **Date** (required)
-4. Optionally set an **End date** for multi-day holidays
+4. Optionally set an **End date** for multi-day holidays — left empty it reads *Same day*, and **Clear end date** in the calendar removes one
 5. Save
 
 Added holidays are custom holidays for the selected site.
@@ -386,7 +386,7 @@ Open **Settings → Company events** (Admins and Superusers). Filter by **Site**
 
 1. Click **Add event**, or the edit icon on an existing event
 2. Enter the **Name** (e.g., "ISO Audit")
-3. Set the **Start date** (required) and optionally an **End date** for multi-day events
+3. Set the **Start date** (required) and optionally an **End date** for multi-day events — left empty it reads *Same day*, and **Clear end date** in the calendar removes one
 4. Under **Sites**, tick every site the event applies to. Superusers can only choose sites they belong to
 5. **Teams (optional)** — for each selected site that has teams, leave **Whole site** on, or switch it off and tick the [teams](#teams) the event is for. A site where no team is ticked keeps the whole site
 6. Pick a **Color**

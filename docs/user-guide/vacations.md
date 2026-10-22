@@ -31,7 +31,7 @@ If an unavailable and an available absence overlap on the same day (for example 
 
 People whose role can **manage others' absences** (admins and superusers by default) can create absences for any staff member at the sites they can see by selecting them from the dropdown; everyone else can only book their own. They can also click an existing absence in the Staff Overview to edit it. A person who belongs to several sites appears once in the staff picker.
 
-An absence whose **To** date is before its **From** date is rejected.
+**From** and **To** are picked on the [shared calendar](gantt-charts.md#picking-dates), so **To** can never fall before **From**; for a recurring absence, the selected weekdays are highlighted in the calendar.
 
 !!! note "What-If mode"
     Adding absences is unavailable while [What-If mode](what-if-planning.md) is active, like other creates — the **Add** buttons are disabled with an explanation. Editing and deleting existing absences still works. (What-If is entered from the Gantt chart; **My absences** stays reachable from the user menu.)

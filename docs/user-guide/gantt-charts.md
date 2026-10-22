@@ -83,6 +83,12 @@ When editing a project, export buttons (CSV and XML) are available in the modal 
 
 ![Edit Project modal with name, dates, customer, tags, and CSV/XML export buttons](../assets/screenshots/project-modal.png){ loading=lazy }
 
+## Picking Dates
+
+Every date in Milestone is picked on the same calendar. Click the **Start Date** or **End Date** field — or press Enter, Space or the down arrow while it has focus — and two months open under the fields (one on a phone); the month and year dropdowns jump to a distant date. The first click sets the start, the second the end, and the calendar closes. The end can never fall before the start: picking a start after the current end moves the end along and keeps the duration, and picking an end before the start makes that day the new start, so you then pick the end. Weekends are greyed, and the current site's bank holidays and closures carry a dot — hover the day to see its name. They are only hints: every day can still be picked. A milestone has a single **Date** field on the same calendar.
+
+![Edit Phase dialog of Bioprocess Scale-Up with the two-month calendar open from the Start Date field, the phase's range highlighted](../assets/screenshots/date-range-picker.png){ loading=lazy }
+
 ## Tags
 
 Tags are coloured labels attached to projects to classify and filter them (e.g. *Critical*, *Internal*, *Customer*). The tag library is shared by the whole workspace: admins define the tags in **Settings → Tags** (see [Tags in Settings](settings.md#tags)), and anyone who can edit a project attaches them.

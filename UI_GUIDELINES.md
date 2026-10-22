@@ -450,9 +450,29 @@ decision, not an oversight.
   same way).
 - **Two fields side by side** (a start/end date pair): a grid of `minmax(0, 1fr) minmax(0, 1fr)`
   (or a flex row whose items have `min-width: 0`), never `1fr 1fr`. A `1fr` track cannot shrink
-  below its content and iOS Safari gives a date input a wide intrinsic width, so the two fields
-  overlapped on iPad; `global.css` also lets `input[type="date"]` shrink. The token test rejects
-  a bare `1fr` track in a module stylesheet.
+  below its content, so a wide field overflows its neighbour on a narrow dialog. The token test
+  rejects a bare `1fr` track in a module stylesheet.
+- **`DateRangeField`** / **`DateField`** (`components/common/DateRangeField`): every model date
+  is entered through them — never a raw `type="date"` input. `DateRangeField` is a start and an
+  end on one two-month calendar (one month at ≤ 640 px): two read-only `Input`s with
+  `role="combobox"` (`startLabel` / `endLabel`, `start` / `end` as `YYYY-MM-DD` or `''`) that open
+  the panel on a click or on Enter / Space / ArrowDown — plain focus never does, so Tab passes
+  through a form. The first click sets the start, the next the end; a start after the end moves
+  the end and keeps the duration, an end before the start becomes the new start, so the end can
+  never precede it. `onChange({ start, end })` fires once per click. `endOptional` +
+  `endPlaceholder` (*Same day*) make the end clearable (*Clear end date*, Backspace) for bank
+  holidays and company events; `separator` sits between the fields, `fieldClassName` is each
+  field's grid-item class (the wrapper is `display: contents`, so the fields stay items of the
+  consumer's `.formRow`). `DateField` is the single date (todo due date, milestone date):
+  `value`, `onChange`, `label`, `clearable` (*Clear date*), `fullWidth`. Both share `disabled`,
+  `highlightWeekdays` (the recurring absence's days) and `markSiteCalendar` (default true): weeks
+  start on Monday, weekends are muted and the header site's bank holidays and closures carry a dot,
+  a tooltip and a note in the day's accessible name, all from `appStore`; the Settings holiday and
+  event forms pass `markSiteCalendar={false}` because they may edit another site. The field text
+  is `formatMediumDate` (`22 Oct 2026`, browser locale); tests read the ISO value from
+  `data-value` through the helpers in `src/test/datePicker.ts`. The calendar is
+  `react-day-picker`, themed by **setting** its `--rdp-*` properties from app tokens in
+  `DateRangeField.module.css` (never read one: the token test would misread the name).
 - **`Select`** (`components/common/Select`): `options: {value, label, disabled?}[]`,
   `groups: {label, options}[]` (labelled `<optgroup>`s after the flat options — the site
   form's countries by region), `placeholder` (rendered as a *disabled* empty option, so only
@@ -517,10 +537,9 @@ decision, not an oversight.
   text-like `<input>`s and `<select>`s per component against `rawFormControlsAllowlist.json`, a
   count may only go down, and the allowlist must not name a file that no longer needs it.
   Checkboxes, radios, ranges, file and colour inputs are native and not Input's job.
-- **Native pickers follow the theme.** `color-scheme` is set once per theme block in
-  `styles/variables.css` / `themes.css` (`dark` or `light`), so a date input's calendar popup
-  and the scrollbars match the theme everywhere. Never set `color-scheme` or invert a
-  `::-webkit-calendar-picker-indicator` in a component stylesheet.
+- **Native controls follow the theme.** `color-scheme` is set once per theme block in
+  `styles/variables.css` / `themes.css` (`dark` or `light`), so the scrollbars and the remaining
+  native controls match the theme everywhere. Never set `color-scheme` in a component stylesheet.
 
 ### 3.5 Modals and dialogs
 
@@ -584,6 +603,9 @@ reference users; the header overflow menu, `UserMenu`, the Panels dropdown, the 
 `CustomColumnHeader` filters, the Staff and Equipment view filters, `DependencyPopup` and
 `ContextMenu` all use it. A panel with checkboxes or radios is a non-modal `role="dialog"` (not
 a `menu`) with an `aria-label`; its trigger carries `aria-expanded` and `aria-haspopup="dialog"`.
+A popover that must escape a scrolling Modal body (the date picker panel) is `position: fixed`
+but rendered inside its trigger's wrapper, never in a portal: staying in the Modal's DOM subtree
+keeps the Tab trap, `aria-modal` and `useDismissableOverlay`'s `wrapperRef.contains` working.
 
 `ContextMenu` (`components/common/ContextMenu`) is the right-click menu: a `role="menu"` of
 `role="menuitem"` buttons (tests select them by that role); items take `danger`, `divider`,
@@ -784,7 +806,9 @@ has no fixed height).
   `Jan 15`, by locale) and `formatShortDateRange` (`15 Jan - 28 Feb`), both from `utils/date.ts`.
   Timeline headers use `formatWeekNumber` (ISO week), `formatMonthYear` and `formatQuarter`.
   Notifications use relative times (`5m ago`). Debt: about 15 ad-hoc `toLocaleDateString` calls
-  and two full numeric formats (`SiteForm`, `KanbanCardModal`); `formatDateDisplay` is unused.
+  and two full numeric formats (`SiteForm`, `KanbanCardModal`).
+- A date field shows `formatMediumDate` (`22 Oct 2026` or `Oct 22, 2026`, by locale; `''` for no
+  date), the `YYYY-MM-DD` wrapper over `formatDateDisplay`.
 - Allocations are whole percentages from 1 to 100 (the slider steps by 5); capacity is a
   percentage too. Counts in toolbars read `12 users`, `3 of 8 cards`.
 

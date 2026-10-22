@@ -53,12 +53,14 @@ export default defineConfig({
       // from a local Node 25 run (lines 91.38, statements 90.27, functions
       // 91.84, branches 81.28), with room for Node 24 and the merged CI shards.
       // Raised with the date picker by its lift on the same local run (lines
-      // 91.51, statements 90.4, functions 91.98, branches 81.55).
+      // 91.51, statements 90.4, functions 91.98, branches 81.55), then with
+      // 1.14.0 to 0.3 under the local totals (lines 91.6, statements 90.48,
+      // functions 91.97, branches 81.59), rounded down.
       thresholds: {
-        lines: 90.9,
-        statements: 89.8,
-        functions: 91.4,
-        branches: 80.9,
+        lines: 91.3,
+        statements: 90.1,
+        functions: 91.6,
+        branches: 81.2,
       },
     },
   },

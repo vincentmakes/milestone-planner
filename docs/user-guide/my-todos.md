@@ -47,6 +47,8 @@ A task is a short personal to-do with an optional due date, notes and link to a 
 4. Optionally pick a **Project** and, within it, a **Card** (a phase or subphase)
 5. Click **Create task**
 
+The due date is picked on the [shared calendar](gantt-charts.md#picking-dates); **Clear date** in the calendar removes it.
+
 With the default roles, everyone can create tasks for themselves. Giving a task to someone else needs **Assign todos to others** (superusers and administrators by default) — or being the project manager of the project the task is linked to. You can only pick people at sites you can see.
 
 The person you give a task to is notified. Reassigning a task notifies the new assignee.
