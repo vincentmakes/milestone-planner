@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The Kanban card dialog removes bookings one by one, and a card shows each person once however many bookings they have on it.
 - The site Excel export's Phase assignments and Subphase assignments sheets have **Start**, **End** and **Linked** columns.
 - Known limit: shortening a phase past two bookings of the same person can leave them overlapping until one of them is edited.
+- The pin and the phase name on a booking row in the Gantt chart are separate controls: the pin links or unlinks the booking (filled when it follows the phase dates, outlined when it has its own), and clicking the name scrolls the timeline to the booking — on an overview row, to the person's first booking.
+- Every icon in the app is now a Material icon, one consistent set in the light and dark themes; the Equipment view has a wrench in the sidebar instead of a cog.
+
+### Fixed
+- The message shown when a drag on the Gantt chart is refused is readable in the dark theme.
 
 ## [1.16.0] - 2026-10-22
 

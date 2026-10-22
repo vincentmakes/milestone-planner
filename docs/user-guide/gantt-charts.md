@@ -176,14 +176,16 @@ On a tablet or phone, the same gestures work with a finger: press a bar and move
 
 ## Bookings on Phases and Subphases
 
-A person booked on a phase or subphase is **linked** to it by default: the booking covers the phase's dates, follows it when the phase moves, and its bar cannot be dragged. The 📌 on the booking's row in the project panel shows this.
+A person booked on a phase or subphase is **linked** to it by default: the booking covers the phase's dates, follows it when the phase moves, and its bar cannot be dragged. The badge at the start of the booking's row in the project panel shows this: it holds a **pin** and the phase's name, and a filled pin means the booking follows the phase dates.
 
 To book someone for only part of a phase — a few days at the start, then a few days at the end — **unlink** the booking:
 
-- **Click the 📌** on the booking's row. It turns into 📍 (*Own dates*), and the booking keeps the phase's dates for now. Click 📍 to make it follow the phase dates again.
+- **Click the pin** on the booking's row. It turns into an outlined pin (*Own dates*), and the booking keeps the phase's dates for now. Click the outlined pin to make it follow the phase dates again.
 - Or turn off **Follow the phase dates** in the [assignment dialog](staff-management.md#assignment-modal) and pick the booking's own dates. The calendar only offers days inside the phase.
 
-An unlinked booking's bar can be moved and resized on the timeline like any other bar, but it stops at the phase's start and end. The pin is a button only for people who may change that booking; others see it as a plain badge.
+An unlinked booking's bar can be moved and resized on the timeline like any other bar, but it stops at the phase's start and end. The pin can only be clicked by people who may change that booking; for everyone else, and while the booking or your change to it awaits approval, it is greyed out but still shows whether the booking follows the phase.
+
+Click the **phase name** in the badge to scroll the timeline to the booking: to its own start date when it is unlinked, to the phase's start when it follows the phase.
 
 A person can hold **several bookings on the same phase**, as long as their dates do not overlap (adjacent days are fine). Booking someone for days that overlap one of their bookings on that phase is refused with *This person is already booked on this card for overlapping dates*.
 
@@ -197,9 +199,9 @@ Linked bookings simply keep following the phase. One limit: shortening a phase p
 
 ### The overview row
 
-When someone has two or more bookings on the same phase or subphase, they are grouped under an **overview row** with the phase or subphase badge, the person's name, the number of bookings and their allocation range (*100%*, or *20–60%* when they differ). On the timeline the overview row shows every booking as a small block (hover one for its dates and allocation; a booking awaiting approval is hatched).
+When someone has two or more bookings on the same phase or subphase, they are grouped under an **overview row** with the phase or subphase badge (without a pin), the person's name, the number of bookings and their allocation range (*100%*, or *20–60%* when they differ). On the timeline the overview row shows every booking as a small block (hover one for its dates and allocation; a booking awaiting approval is hatched).
 
-Click the chevron to collapse the group to that one row, and again to expand it. Groups start expanded, and a collapsed group stays collapsed until you reload the page. The overview row itself has no menu: right-click one of the bookings under it to edit or remove it.
+Click the phase name in its badge to scroll the timeline to the person's first booking on that phase. Click the chevron to collapse the group to that one row, and again to expand it. Groups start expanded, and a collapsed group stays collapsed until you reload the page. The overview row itself has no menu: right-click one of the bookings under it to edit or remove it.
 
 ![Gantt chart: Charlie Clark's overview row under the Analytics phase of Bioprocess Scale-Up, with his two bookings drawn as blocks, and the two booking rows with their own dates below it](../assets/screenshots/assignment-overview-row.png){ loading=lazy }
 

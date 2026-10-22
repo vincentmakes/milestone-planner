@@ -472,7 +472,7 @@ def shot_pending_assignment(context: BrowserContext) -> None:
 def shot_assignment_overview(context: BrowserContext) -> None:
     """Gantt on Bioprocess Scale-Up with Charlie Clark's overview row under
     the Analytics phase: his two unlinked bookings drawn as blocks on the
-    group row, the two booking rows (📍, own dates) below it."""
+    group row, the two booking rows (outlined pin, own dates) below it."""
     page = context.new_page()
     login(page)
     go_to_gantt(page)
