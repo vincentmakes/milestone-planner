@@ -350,7 +350,8 @@ LEGACY_CHANGES = [
     "CREATE TABLE IF NOT EXISTS equipment_sites",
     tp.COMPANY_EVENTS_CLOSURE_COLUMN_SQL,
     *tp.TEAMS_SCHEMA_STATEMENTS,
-    *tp.RBAC_SCHEMA_STATEMENTS,
+    # The notification-types widening runs on every pool creation (own gate).
+    *(s for s in tp.RBAC_SCHEMA_STATEMENTS if s != tp.NOTIFICATIONS_TYPE_CHECK_SQL),
 ]
 
 
@@ -366,8 +367,8 @@ async def test_legacy_tenant_gets_every_step():
     assert "COALESCE(type, 'general')" in conn.log[copy]
     assert copy < conn.log.index("DROP TABLE notes")
     assert "ROLLBACK" not in conn.log
-    # One commit per step (card status: one per table), 19 in all.
-    assert conn.log.count("COMMIT") == 19
+    # One commit per step (card status: one per table), 20 in all.
+    assert conn.log.count("COMMIT") == 20
 
 
 @pytest.mark.asyncio
@@ -392,8 +393,10 @@ async def test_current_tenant_only_probes_and_runs_the_idempotent_backfills():
     assert conn.ran(tp.COMPANY_EVENTS_SITE_NULLABLE_SQL)
     assert conn.ran(tp.COMPANY_EVENTS_SITE_FK_SQL)
     assert conn.ran(tp.EQUIPMENT_SITES_BACKFILL_SQL)
+    assert conn.ran(tp.NOTIFICATIONS_TYPE_CHECK_SQL)
     assert "ROLLBACK" not in conn.log
-    assert conn.log.count("COMMIT") == 2  # only the two always-run back-fill steps
+    # Only the two always-run back-fill steps and the notification-types step.
+    assert conn.log.count("COMMIT") == 3
 
 
 @pytest.mark.asyncio

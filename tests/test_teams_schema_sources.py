@@ -31,6 +31,7 @@ from app.services.tenant_provisioner import (
     COMPANY_EVENT_TEAMS_TABLE_SQL,
     EQUIPMENT_TEAMS_TABLE_SQL,
     PROJECT_TEAMS_TABLE_SQL,
+    NOTIFICATIONS_TYPE_CHECK_SQL,
     RBAC_NEEDS_MIGRATION_SQL,
     TAG_TEAMS_TABLE_SQL,
     TEAM_MEMBERS_TABLE_SQL,
@@ -248,6 +249,7 @@ def test_tenant_auto_migration_executes_the_constants():
 
 
 TEAMS_CHECK = "CHECK team tables"
+WIDEN = "widen notification types"
 
 
 def _teams_conn(tables=(), fail_on: str | None = None):
@@ -269,6 +271,9 @@ def _teams_conn(tables=(), fail_on: str | None = None):
             result = MagicMock()
             result.scalar.return_value = False
             return result
+        if sql == NOTIFICATIONS_TYPE_CHECK_SQL:  # the later step that always runs
+            log.append(WIDEN)
+            return MagicMock()
         if sql in TEAMS_SCHEMA_STATEMENTS:
             log.append(sql)
             if sql == fail_on:
@@ -317,7 +322,8 @@ async def test_auto_migration_skips_an_up_to_date_tenant():
 
     await _run_auto_migrations(conn)
 
-    assert _teams_step(log) == [TEAMS_CHECK]
+    # Nothing between the probe and the notification-types step's commit.
+    assert log[log.index(TEAMS_CHECK) :] == [TEAMS_CHECK, WIDEN, "COMMIT"]
     assert not any(s in TEAMS_SCHEMA_STATEMENTS for s in log)
 
 

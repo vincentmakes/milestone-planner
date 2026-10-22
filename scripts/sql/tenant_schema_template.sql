@@ -453,7 +453,7 @@ CREATE TABLE card_comments (
 CREATE TABLE notifications (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    type VARCHAR(30) NOT NULL CHECK (type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'todo_assigned')),
+    type VARCHAR(30) NOT NULL CHECK (type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'todo_assigned', 'assignment_changed', 'project_changed')),
     actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     entity_type VARCHAR(20),
     entity_id INTEGER,
@@ -713,11 +713,11 @@ BEGIN
         SELECT 1 FROM pg_constraint
         WHERE conrelid = to_regclass('public.notifications')
           AND conname = 'notifications_type_check'
-          AND strpos(pg_get_constraintdef(oid), 'todo_assigned') > 0
+          AND strpos(pg_get_constraintdef(oid), 'project_changed') > 0
     ) THEN
         ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
         ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
-            CHECK (type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'todo_assigned'));
+            CHECK (type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'todo_assigned', 'assignment_changed', 'project_changed'));
     END IF;
 END $$;
 

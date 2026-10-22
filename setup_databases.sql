@@ -772,7 +772,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     body TEXT,
     read_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT notifications_type_check CHECK (type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'todo_assigned'))
+    CONSTRAINT notifications_type_check CHECK (type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'todo_assigned', 'assignment_changed', 'project_changed'))
 );
 
 -- Skills (global, shared across all sites)
@@ -1111,11 +1111,11 @@ BEGIN
         SELECT 1 FROM pg_constraint
         WHERE conrelid = to_regclass('public.notifications')
           AND conname = 'notifications_type_check'
-          AND strpos(pg_get_constraintdef(oid), 'todo_assigned') > 0
+          AND strpos(pg_get_constraintdef(oid), 'project_changed') > 0
     ) THEN
         ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
         ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
-            CHECK (type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'todo_assigned'));
+            CHECK (type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'todo_assigned', 'assignment_changed', 'project_changed'));
     END IF;
 END $$;
 

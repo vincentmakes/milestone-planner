@@ -30,6 +30,7 @@ from app.services.tenant_provisioner import (
     EQUIPMENT_SITE_FK_NEEDS_FIX_SQL,
     EQUIPMENT_SITE_FK_SQL,
     EQUIPMENT_SITES_BACKFILL_SQL,
+    NOTIFICATIONS_TYPE_CHECK_SQL,
     RBAC_NEEDS_MIGRATION_SQL,
     RBAC_SCHEMA_STATEMENTS,
     TAG_GROUPS_DROP_COLORS_STATEMENTS,
@@ -526,7 +527,8 @@ class TenantConnectionManager:
                         CONSTRAINT notifications_type_check
                             CHECK (type IN ('assigned', 'comment', 'mention', 'status_change',
                                             'approval_requested', 'approval_decided',
-                                            'todo_assigned'))
+                                            'todo_assigned', 'assignment_changed',
+                                            'project_changed'))
                     )
                 """)
                 )
@@ -785,6 +787,17 @@ class TenantConnectionManager:
                 logger.info("Auto-migration: Created RBAC tables on tenant %s", slug)
         except Exception as e:
             logger.warning("Auto-migration (rbac) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+
+        # Notification types (add_change_notifications.sql). Runs on every pool
+        # creation: the DO block is its own gate (it replaces the CHECK only
+        # when the newest type is missing), and the RBAC probe above skips
+        # 1.13 / 1.14 tenants whose constraint predates the newest types.
+        try:
+            await conn.execute(text(NOTIFICATIONS_TYPE_CHECK_SQL))
+            await conn.commit()
+        except Exception as e:
+            logger.warning("Auto-migration (notification types) warning for %s: %s", slug, e)
             await _rollback_quietly(conn)
 
         # Tenant-level SSO client secret encrypted at rest. The key is only

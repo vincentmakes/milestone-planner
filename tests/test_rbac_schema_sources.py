@@ -8,8 +8,8 @@ users.role CHECK -> FK swap). get_tenant_schema_sql(), setup_databases.sql,
 migrations/add_rbac.sql and the manual-setup template carry the same text,
 ``roles`` is created before ``users`` everywhere (users.role references
 roles.key), the tenant auto-migration and the data-migration step execute the
-constants, and the ORM declares the same constraints. The widened
-notifications_type_check text is asserted in all seven places that spell it.
+constants, and the ORM declares the same constraints. The
+notifications_type_check text is covered by test_notification_types_schema.py.
 Repo-root files are skipped when the test tree is run outside the repository.
 """
 
@@ -25,7 +25,6 @@ from app.models.assignment import (
     ProjectAssignment,
     SubphaseStaffAssignment,
 )
-from app.models.notification import Notification
 from app.models.rbac import (
     ApprovalPolicy,
     ApprovalPolicyRole,
@@ -49,7 +48,6 @@ from app.services.tenant_provisioner import (
     APPROVAL_REQUESTS_TABLE_SQL,
     ASSIGNMENT_APPROVAL_COLUMN_STATEMENTS,
     ASSIGNMENT_APPROVAL_TABLES,
-    NOTIFICATIONS_TYPE_CHECK,
     NOTIFICATIONS_TYPE_CHECK_SQL,
     RBAC_INDEX_STATEMENTS,
     RBAC_NEEDS_MIGRATION_SQL,
@@ -235,21 +233,6 @@ def test_assignment_columns_are_guarded_upgrades(table):
     ) in request
 
 
-def test_notifications_check_constant():
-    assert NOTIFICATIONS_TYPE_CHECK == (
-        "type IN ('assigned', 'comment', 'mention', 'status_change', "
-        "'approval_requested', 'approval_decided', 'todo_assigned')"
-    )
-    sql = _norm(NOTIFICATIONS_TYPE_CHECK_SQL)
-    assert "ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check" in sql
-    assert (
-        f"ALTER TABLE notifications ADD CONSTRAINT notifications_type_check "
-        f"CHECK ({NOTIFICATIONS_TYPE_CHECK})"
-    ) in sql
-    # Guarded: an already widened constraint is not dropped and re-validated.
-    assert "strpos(pg_get_constraintdef(oid), 'todo_assigned') > 0" in sql
-
-
 def test_sso_default_role_check_is_dropped():
     sql = _norm(SSO_DEFAULT_ROLE_CHECK_DROP_SQL)
     assert "ALTER TABLE sso_config DROP CONSTRAINT sso_config_default_role_check" in sql
@@ -337,37 +320,6 @@ def test_sso_config_has_no_default_role_check(source):
 def test_provisioner_schema_dollar_quoting_still_balanced():
     sql = get_tenant_schema_sql()
     assert sql.count("DO $$") == sql.count("END $$")
-
-
-# ---------------------------------------------------------------------------
-# notifications_type_check: one text in seven places
-# ---------------------------------------------------------------------------
-
-
-def _check_constraint(model, name: str) -> CheckConstraint:
-    (constraint,) = (
-        c for c in model.__table__.constraints if isinstance(c, CheckConstraint) and c.name == name
-    )
-    return constraint
-
-
-def test_notifications_check_is_identical_in_seven_places():
-    from app.services import tenant_manager
-
-    places = {
-        "ORM": str(_check_constraint(Notification, "notifications_type_check").sqltext),
-        "setup_databases.sql": _root_file("setup_databases.sql"),
-        "provisioner": get_tenant_schema_sql(),
-        "template": _template(),
-        "add_kanban_tables.sql": _root_file("migrations/add_kanban_tables.sql"),
-        "tenant_manager": Path(tenant_manager.__file__).read_text(),
-        "NOTIFICATIONS_TYPE_CHECK_SQL": NOTIFICATIONS_TYPE_CHECK_SQL,
-    }
-    for name, text in places.items():
-        normalized = _norm(text)
-        assert NOTIFICATIONS_TYPE_CHECK in normalized, name
-        assert "'mention', 'status_change'))" not in normalized, name  # the old text
-    assert _norm(NOTIFICATIONS_TYPE_CHECK_SQL) in _norm(MIGRATION.read_text())
 
 
 # ---------------------------------------------------------------------------
@@ -501,7 +453,8 @@ async def test_auto_migration_skips_an_up_to_date_tenant():
     await _run_auto_migrations(conn)
 
     assert RBAC_CHECK in log
-    assert not any(s in RBAC_SCHEMA_STATEMENTS for s in log)
+    # Only the notification-types step (its own gate) runs a shared statement.
+    assert [s for s in log if s in RBAC_SCHEMA_STATEMENTS] == [NOTIFICATIONS_TYPE_CHECK_SQL]
 
 
 @pytest.mark.asyncio
@@ -609,6 +562,13 @@ def test_orphan_cleanup_expires_pending_requests_whose_target_is_gone():
 # ---------------------------------------------------------------------------
 # ORM
 # ---------------------------------------------------------------------------
+
+
+def _check_constraint(model, name: str) -> CheckConstraint:
+    (constraint,) = (
+        c for c in model.__table__.constraints if isinstance(c, CheckConstraint) and c.name == name
+    )
+    return constraint
 
 
 def _fk(column):

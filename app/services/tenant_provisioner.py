@@ -823,17 +823,28 @@ ASSIGNMENT_APPROVAL_COLUMN_STATEMENTS: tuple[str, ...] = tuple(
     )
 )
 
-# The notification types; this exact text appears in seven places (the ORM,
-# the four CREATE TABLE notifications sources, the tenant auto-migration and
-# the widening below).
-NOTIFICATIONS_TYPE_CHECK = (
-    "type IN ('assigned', 'comment', 'mention', 'status_change', "
-    "'approval_requested', 'approval_decided', 'todo_assigned')"
+# The notification types, in the order every DDL source spells them. The
+# CHECK text derived from it appears in seven places (the ORM, the four
+# CREATE TABLE notifications sources, the tenant auto-migration and the
+# widening below). Append new types at the end: the widening's marker is the
+# last one.
+NOTIFICATION_TYPES: tuple[str, ...] = (
+    "assigned",
+    "comment",
+    "mention",
+    "status_change",
+    "approval_requested",
+    "approval_decided",
+    "todo_assigned",
+    "assignment_changed",
+    "project_changed",
 )
+
+NOTIFICATIONS_TYPE_CHECK = "type IN (" + ", ".join(f"'{t}'" for t in NOTIFICATION_TYPES) + ")"
 
 # Widen notifications_type_check on an existing table. Skipped when the
 # constraint already allows the newest type, so a migrated table is not
-# re-validated on every run.
+# re-validated on every run (and the step can run on every pool creation).
 NOTIFICATIONS_TYPE_CHECK_SQL = f"""
     DO $$
     BEGIN
@@ -841,7 +852,7 @@ NOTIFICATIONS_TYPE_CHECK_SQL = f"""
             SELECT 1 FROM pg_constraint
             WHERE conrelid = to_regclass('public.notifications')
               AND conname = 'notifications_type_check'
-              AND strpos(pg_get_constraintdef(oid), 'todo_assigned') > 0
+              AND strpos(pg_get_constraintdef(oid), '{NOTIFICATION_TYPES[-1]}') > 0
         ) THEN
             ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
             ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
@@ -1515,7 +1526,9 @@ def get_tenant_schema_sql() -> str:
     CREATE TABLE IF NOT EXISTS notifications (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      type VARCHAR(30) NOT NULL CHECK(type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'todo_assigned')),
+      type VARCHAR(30) NOT NULL CHECK("""
+        + NOTIFICATIONS_TYPE_CHECK
+        + """),
       actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
       entity_type VARCHAR(20),
       entity_id INTEGER,
