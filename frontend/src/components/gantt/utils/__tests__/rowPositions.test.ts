@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import { calculateRowPositions, SECTION_ROW_TOTAL_HEIGHT } from '../rowPositions';
 import { buildGanttRows, flatGanttRows } from '../projectSections';
 import type { GanttSection } from '../projectSections';
-import { allocationRange, cardStaffItems, staffGroupKey, staffRowCount } from '../staffGroups';
+import { allocationRange, cardStaffItems, relinkWouldOverlap, staffGroupKey, staffRowCount } from '../staffGroups';
 import type { Project, StaffAssignment } from '@/types';
 
 function project(id: number, phaseIds: number[] = []): Project {
@@ -90,6 +90,9 @@ function booking(id: number, staffId: number, allocation = 50): StaffAssignment 
 
 // Bob (4) holds two segments, Cleo (5) one; rows interleaved as the API sends them
 const bookings = [booking(1, 4, 20), booking(2, 5), booking(3, 4, 60)];
+const card = (id: number) => ({ id, start_date: '2026-11-02', end_date: '2026-12-18' });
+const segment = (id: number, staffId: number, start: string, end: string, extra: Partial<StaffAssignment> = {}) =>
+  ({ ...booking(id, staffId), start_date: start, end_date: end, linked: false, ...extra }) as StaffAssignment;
 
 describe('staff groups', () => {
   it('keys a group by level, card and person', () => {
@@ -98,24 +101,69 @@ describe('staff groups', () => {
   });
 
   it('groups a person with 2+ bookings and keeps singles, in order of first row', () => {
-    const items = cardStaffItems(bookings, 'phase', 10, new Set());
+    const items = cardStaffItems(bookings, 'phase', card(10), new Set());
     expect(items).toEqual([
       { kind: 'group', key: 'phase:10:4', staffId: 4, rows: [bookings[0], bookings[2]], collapsed: false },
       { kind: 'single', assignment: bookings[1] },
     ]);
-    expect(cardStaffItems(bookings, 'phase', 10, new Set(['phase:10:4']))[0]).toMatchObject({ collapsed: true });
+    expect(cardStaffItems(bookings, 'phase', card(10), new Set(['phase:10:4']))[0]).toMatchObject({ collapsed: true });
     // another card's key does not collapse this one
-    expect(cardStaffItems(bookings, 'phase', 11, new Set(['phase:10:4']))[0]).toMatchObject({ collapsed: false });
-    expect(cardStaffItems(undefined, 'phase', 10, new Set())).toEqual([]);
+    expect(cardStaffItems(bookings, 'phase', card(11), new Set(['phase:10:4']))[0]).toMatchObject({ collapsed: false });
+    expect(cardStaffItems(undefined, 'phase', card(10), new Set())).toEqual([]);
+  });
+
+  it("orders a person's rows by effective start, then id; the group keeps its place", () => {
+    // Dana (6): a December segment first in API order, then a November one, then
+    // a linked row (starts with the card, 2 Nov) and a second November-start
+    // segment with a lower id than the linked row.
+    const dec = segment(30, 6, '2026-12-01', '2026-12-10');
+    const nov = segment(31, 6, '2026-11-16T00:00:00.000Z', '2026-11-20');
+    const linked = { ...booking(33, 6), linked: true, start_date: '2026-11-02', end_date: '2026-12-18' } as StaffAssignment;
+    const early = segment(32, 6, '2026-11-02', '2026-11-04');
+    const cleo = booking(29, 5);
+    const items = cardStaffItems([cleo, dec, nov, linked, early], 'phase', card(10), new Set());
+    expect(items[0]).toEqual({ kind: 'single', assignment: cleo });
+    expect(items[1]).toMatchObject({ kind: 'group', staffId: 6 });
+    // 2 Nov (id 32), 2 Nov (id 33, linked: the card's start), 16 Nov, 1 Dec
+    expect(items[1].kind === 'group' && items[1].rows.map((r) => r.id)).toEqual([32, 33, 31, 30]);
+    // the card's own row list is left as it was
+    expect([dec, nov].map((r) => r.id)).toEqual([30, 31]);
+    // a group's place among the items is its first row in API order
+    const later = cardStaffItems([dec, cleo, nov], 'phase', card(10), new Set());
+    expect(later.map((i) => i.kind)).toEqual(['group', 'single']);
+    expect(later[0].kind === 'group' && later[0].rows.map((r) => r.id)).toEqual([31, 30]);
+    expect(staffRowCount([dec, cleo, nov], 'phase', card(10), new Set())).toBe(4);
   });
 
   it('counts a group as its overview row plus its bookings while expanded', () => {
-    expect(staffRowCount(bookings, 'phase', 10, new Set())).toBe(4); // group + 2 + Cleo
-    expect(staffRowCount(bookings, 'phase', 10, new Set(['phase:10:4']))).toBe(2); // group + Cleo
+    expect(staffRowCount(bookings, 'phase', card(10), new Set())).toBe(4); // group + 2 + Cleo
+    expect(staffRowCount(bookings, 'phase', card(10), new Set(['phase:10:4']))).toBe(2); // group + Cleo
     // one booking per person: one row each, as before
-    expect(staffRowCount([booking(1, 4), booking(2, 5)], 'subphase', 3, new Set())).toBe(2);
-    expect(staffRowCount([], 'phase', 10, new Set())).toBe(0);
-    expect(staffRowCount(undefined, 'phase', 10, new Set())).toBe(0);
+    expect(staffRowCount([booking(1, 4), booking(2, 5)], 'subphase', card(3), new Set())).toBe(2);
+    expect(staffRowCount([], 'phase', card(10), new Set())).toBe(0);
+    expect(staffRowCount(undefined, 'phase', card(10), new Set())).toBe(0);
+  });
+
+  it('tells when relinking a segment would overlap another booking of the person', () => {
+    const c = card(10);
+    const own = segment(40, 4, '2026-11-02', '2026-11-06');
+    // a lone segment, or a linked row (unlinking is never blocked): free
+    expect(relinkWouldOverlap(own, [own], c)).toBe(false);
+    expect(relinkWouldOverlap(own, undefined, c)).toBe(false);
+    const linkedRow = { ...booking(41, 4), linked: true } as StaffAssignment;
+    expect(relinkWouldOverlap(linkedRow, [linkedRow, own], c)).toBe(false);
+    // a linked sibling always overlaps the card
+    expect(relinkWouldOverlap(own, [own, linkedRow], c)).toBe(true);
+    // an unlinked sibling inside the card overlaps it
+    const other = segment(42, 4, '2026-12-01T00:00:00.000Z', '2026-12-05');
+    expect(relinkWouldOverlap(own, [own, other], c)).toBe(true);
+    // ...one outside the card (not fitted yet) does not; neither does a pending one,
+    // nor another person's row
+    const outside = segment(43, 4, '2027-01-04', '2027-01-08');
+    expect(relinkWouldOverlap(own, [own, outside], c)).toBe(false);
+    const pending = segment(44, 4, '2026-12-01', '2026-12-05', { approval_status: 'pending' });
+    expect(relinkWouldOverlap(own, [own, pending], c)).toBe(false);
+    expect(relinkWouldOverlap(own, [own, segment(45, 5, '2026-11-02', '2026-11-06')], c)).toBe(false);
   });
 
   it('shows one allocation or the range', () => {

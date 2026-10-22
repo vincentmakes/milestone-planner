@@ -187,7 +187,7 @@ describe('PhaseRow per-person booking groups', () => {
   it('groups a person with 2+ bookings, expanded, with their rows two levels deeper', () => {
     const { container } = renderRow(groupedPhase());
     // the phase row + the staff block the timeline and the row geometry count
-    expect(container.children).toHaveLength(1 + staffRowCount(bookings as never, 'phase', 1, new Set()));
+    expect(container.children).toHaveLength(1 + staffRowCount(bookings as never, 'phase', groupedPhase(), new Set()));
 
     const toggle = screen.getByRole('button', { name: "Collapse Bob Brown's bookings" });
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -218,7 +218,7 @@ describe('PhaseRow per-person booking groups', () => {
   it('collapses and expands the group from its chevron', () => {
     const { container } = renderRow(groupedPhase());
     fireEvent.click(screen.getByRole('button', { name: "Collapse Bob Brown's bookings" }));
-    expect(container.children).toHaveLength(1 + staffRowCount(bookings as never, 'phase', 1, new Set(['phase:1:4'])));
+    expect(container.children).toHaveLength(1 + staffRowCount(bookings as never, 'phase', groupedPhase(), new Set(['phase:1:4'])));
 
     expect(useViewStore.getState().collapsedStaffGroups.has('phase:1:4')).toBe(true);
     const toggle = screen.getByRole('button', { name: "Expand Bob Brown's bookings" });
@@ -238,6 +238,18 @@ describe('PhaseRow per-person booking groups', () => {
     expect(bookingRows().map((b) => (b.parentElement as HTMLElement).style.paddingLeft)).toEqual(['44px', '44px']);
   });
 
+  it("lists a person's rows in date order, the group where their first row comes", () => {
+    // API order: Bob's September 10 row, Cleo, Bob's September 1 row
+    renderRow(makePhase({ staffAssignments: [bookings[2], bookings[1], bookings[0]] as never }));
+    const names = screen.getAllByTitle(/^(Bob Brown|Cleo Chen)$/).map((el) => el.textContent);
+    expect(names).toEqual(['Bob Brown', 'Bob Brown', 'Bob Brown', 'Cleo Chen']);
+    // Bob's two rows: September 1 (20%) before September 10 (60%)
+    const allocations = bookingRows().map((badge) => (badge.parentElement as HTMLElement).textContent);
+    expect(allocations[0]).toMatch(/20%$/);
+    expect(allocations[1]).toMatch(/60%$/);
+    expect(allocations[2]).toMatch(/^DesignCleo Chen/);
+  });
+
   it("scrolls the timeline to the person's first booking from the group badge", () => {
     // rows out of date order: the earliest start wins, not the first row
     renderRow(makePhase({ staffAssignments: [bookings[2], bookings[1], bookings[0]] as never }));
@@ -253,5 +265,49 @@ describe('PhaseRow per-person booking groups', () => {
   it('shows the single allocation when the bookings agree', () => {
     renderRow(makePhase({ staffAssignments: [bookings[0], { ...bookings[2], allocation: 20 }] as never }));
     expect(screen.getByRole('button', { name: "Collapse Bob Brown's bookings" }).parentElement).toHaveTextContent('bookings20%');
+  });
+
+  describe('relinking pin', () => {
+    const OVERLAP = "Can't follow the phase dates while another booking of this person overlaps them";
+    const RELINK = 'Own dates — click to follow the phase dates again';
+    const pins = () => screen.getAllByRole('button', { name: 'Own dates for Bob Brown' });
+
+    beforeEach(() => {
+      useAppStore.setState({ projects: [], currentUser: makeUser({ id: 1, role: 'admin' }) });
+    });
+
+    it('is disabled with the reason while an unlinked sibling overlaps the card', () => {
+      renderRow(groupedPhase());
+      // Bob's 1–5 and 10–12 September segments both lie inside the card
+      for (const p of pins()) {
+        expect(p).toBeDisabled();
+        expect(p).toHaveAttribute('title', OVERLAP);
+      }
+    });
+
+    it('is disabled while a linked sibling covers the card, which stays free to unlink', () => {
+      renderRow(makePhase({ staffAssignments: [bookings[0], { ...bookings[2], linked: true, start_date: '', end_date: '' }] as never }));
+      const [unlinked, linked] = pins();
+      expect(unlinked).toBeDisabled();
+      expect(unlinked).toHaveAttribute('title', OVERLAP);
+      expect(linked).toBeEnabled();
+      expect(linked).toHaveAttribute('title', 'Follows the phase dates — click to give it its own dates');
+    });
+
+    it('stays enabled when the sibling does not overlap the card', () => {
+      // a sibling outside the card (October), not fitted yet
+      renderRow(
+        makePhase({ staffAssignments: [bookings[0], { ...bookings[2], start_date: '2026-10-05', end_date: '2026-10-09' }] as never })
+      );
+      expect(pins()[0]).toBeEnabled();
+      expect(pins()[0]).toHaveAttribute('title', RELINK);
+    });
+
+    it('stays enabled on a lone segment', () => {
+      renderRow(makePhase({ staffAssignments: [bookings[0], bookings[1]] as never }));
+      expect(pins()).toHaveLength(1);
+      expect(pins()[0]).toBeEnabled();
+      expect(pins()[0]).toHaveAttribute('title', RELINK);
+    });
   });
 });

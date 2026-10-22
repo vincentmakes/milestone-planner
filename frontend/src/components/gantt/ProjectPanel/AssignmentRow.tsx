@@ -49,6 +49,12 @@ interface AssignmentRowProps {
   /** Phase / subphase staff rows: the card's dates (an unlink starts from them) */
   cardStartDate?: string;
   cardEndDate?: string;
+  /**
+   * Phase / subphase staff rows: relinking this unlinked booking would overlap
+   * another booking of the person on the card (the server answers 409), so
+   * the pin is disabled with an explanation.
+   */
+  relinkWouldOverlap?: boolean;
 }
 
 export const AssignmentRow = memo(function AssignmentRow({
@@ -73,6 +79,7 @@ export const AssignmentRow = memo(function AssignmentRow({
   linked = true,
   cardStartDate,
   cardEndDate,
+  relinkWouldOverlap = false,
 }: AssignmentRowProps) {
   const showContextMenu = useUIStore((s) => s.showContextMenu);
   const currentUser = useAppStore((s) => s.currentUser);
@@ -145,6 +152,10 @@ export const AssignmentRow = memo(function AssignmentRow({
   // menu (the pin stays, disabled). CardBadge stops the click from bubbling.
   const isRequester = Boolean(approval && currentUser && approval.requester_id === currentUser.id);
   const canTogglePin = canEdit && !pending && !isRequester && Boolean(cardStartDate && cardEndDate);
+  // Relinking is refused while another booking of the person overlaps the
+  // card's dates (server 409); unlinking is never blocked by it. Only told to
+  // someone who could otherwise toggle -- a locked pin keeps its own title.
+  const relinkBlocked = canTogglePin && !linked && relinkWouldOverlap;
   const handlePinClick = useCallback(async () => {
     if (!cardStartDate || !cardEndDate) return;
     const level = type === 'subphase-staff' ? 'subphase' : 'phase';
@@ -189,14 +200,16 @@ export const AssignmentRow = memo(function AssignmentRow({
     const pin = {
       linked,
       onToggle: handlePinClick,
-      disabled: !canTogglePin,
-      title: canTogglePin
-        ? linked
-          ? `Follows the ${cardWord} dates — click to give it its own dates`
-          : `Own dates — click to follow the ${cardWord} dates again`
-        : linked
-          ? `Follows the ${cardWord} dates`
-          : 'Own dates',
+      disabled: !canTogglePin || relinkBlocked,
+      title: relinkBlocked
+        ? `Can't follow the ${cardWord} dates while another booking of this person overlaps them`
+        : canTogglePin
+          ? linked
+            ? `Follows the ${cardWord} dates — click to give it its own dates`
+            : `Own dates — click to follow the ${cardWord} dates again`
+          : linked
+            ? `Follows the ${cardWord} dates`
+            : 'Own dates',
       label: `Own dates for ${name}`,
     };
     return (

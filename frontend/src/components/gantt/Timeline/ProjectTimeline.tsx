@@ -609,8 +609,8 @@ const CardStaffBars = memo(function CardStaffBars({ assignments, ...barProps }: 
   const collapsedStaffGroups = useViewStore((s) => s.collapsedStaffGroups);
   const staff = useAppStore((s) => s.staff);
   const items = useMemo(
-    () => cardStaffItems(assignments, level, card.id, collapsedStaffGroups),
-    [assignments, level, card.id, collapsedStaffGroups]
+    () => cardStaffItems(assignments, level, card, collapsedStaffGroups),
+    [assignments, level, card, collapsedStaffGroups]
   );
   return (
     <>

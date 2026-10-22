@@ -12,7 +12,7 @@ import { Fragment, memo, useMemo } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { bookingSpan, isUnlinkedBooking } from '@/utils/bookingSegments';
-import { allocationRange, cardStaffItems } from '@/components/gantt/utils/staffGroups';
+import { allocationRange, cardStaffItems, relinkWouldOverlap } from '@/components/gantt/utils/staffGroups';
 import type { Phase, StaffAssignment, Subphase } from '@/types';
 import { AssignmentRow } from './AssignmentRow';
 import { StaffGroupRow } from './StaffGroupRow';
@@ -32,8 +32,8 @@ export const CardStaffRows = memo(function CardStaffRows({ level, card, projectI
   const collapsedStaffGroups = useViewStore((s) => s.collapsedStaffGroups);
   const toggleStaffGroup = useViewStore((s) => s.toggleStaffGroup);
   const items = useMemo(
-    () => cardStaffItems(card.staffAssignments, level, card.id, collapsedStaffGroups),
-    [card.staffAssignments, level, card.id, collapsedStaffGroups]
+    () => cardStaffItems(card.staffAssignments, level, card, collapsedStaffGroups),
+    [card, level, collapsedStaffGroups]
   );
 
   const nameOf = (a: StaffAssignment) => staff.find((s) => s.id === a.staff_id)?.name || a.staff_name || 'Unknown';
@@ -67,6 +67,7 @@ export const CardStaffRows = memo(function CardStaffRows({ level, card, projectI
         linked={!isUnlinkedBooking(assignment)}
         cardStartDate={card.start_date}
         cardEndDate={card.end_date}
+        relinkWouldOverlap={relinkWouldOverlap(assignment, card.staffAssignments, card)}
       />
     );
   };

@@ -142,7 +142,7 @@ export function calculateRowPositions(
 
           // Add phase staff assignments (only if showAssignments is true)
           if (showAssignments) {
-            const phaseStaffRows = staffRowCount(phase.staffAssignments, 'phase', phase.id, collapsedStaffGroups);
+            const phaseStaffRows = staffRowCount(phase.staffAssignments, 'phase', phase, collapsedStaffGroups);
             currentTop += phaseStaffRows * DETAIL_ROW_TOTAL_HEIGHT;
 
             // Add phase equipment assignments
@@ -238,7 +238,7 @@ function addSubphasePositions(
 
       // Add subphase staff assignments (only if showAssignments is true)
       if (showAssignments) {
-        const staffRows = staffRowCount(subphase.staffAssignments, 'subphase', subphase.id, collapsedStaffGroups);
+        const staffRows = staffRowCount(subphase.staffAssignments, 'subphase', subphase, collapsedStaffGroups);
         currentTop += staffRows * DETAIL_ROW_TOTAL_HEIGHT;
 
         // Add subphase equipment assignments  

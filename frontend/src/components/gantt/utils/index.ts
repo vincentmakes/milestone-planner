@@ -27,8 +27,8 @@ export type { DependencyEntity, DependencyItemRef } from './dependencies';
 export { calculateRowPositions, SECTION_ROW_TOTAL_HEIGHT } from './rowPositions';
 export type { RowPosition, RowPositionsResult } from './rowPositions';
 
-export { cardStaffItems, staffRowCount, staffGroupKey, allocationRange } from './staffGroups';
-export type { CardStaffItem, StaffGroupLevel } from './staffGroups';
+export { cardStaffItems, staffRowCount, staffGroupKey, allocationRange, relinkWouldOverlap } from './staffGroups';
+export type { CardStaffItem, StaffCard, StaffGroupLevel } from './staffGroups';
 
 export {
   cascadeDependentPhases,

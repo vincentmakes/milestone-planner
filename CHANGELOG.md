@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Known limit: shortening a phase past two bookings of the same person can leave them overlapping until one of them is edited.
 - The pin and the phase name on a booking row in the Gantt chart are separate controls: the pin links or unlinks the booking (filled when it follows the phase dates, outlined when it has its own), and clicking the name scrolls the timeline to the booking — on an overview row, to the person's first booking.
 - Every icon in the app is now a Material icon, one consistent set in the light and dark themes; the Equipment view has a wrench in the sidebar instead of a cog.
+- A person's bookings on a phase are listed in date order, and an unlinked booking's pin is greyed out, with the reason, while another of their bookings on that phase would overlap the phase dates.
 
 ### Fixed
 - The message shown when a drag on the Gantt chart is refused is readable in the dark theme.

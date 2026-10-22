@@ -157,6 +157,28 @@ describe('AssignmentRow pin', () => {
     expect(cardName()).toBeEnabled();
   });
 
+  it('disables the relink while another booking of the person overlaps the card, never the unlink', () => {
+    const { unmount } = renderPhaseRow({ linked: false, startDate: '2026-03-03', endDate: '2026-03-04', relinkWouldOverlap: true });
+    expect(pin()).toBeDisabled();
+    expect(pin()).toHaveAttribute('title', "Can't follow the phase dates while another booking of this person overlaps them");
+    expect(pin()).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(pin());
+    expect(updateStaffAssignment).not.toHaveBeenCalled();
+    unmount();
+
+    // a linked row may always take its own dates
+    renderPhaseRow({ relinkWouldOverlap: true });
+    expect(pin()).toBeEnabled();
+    expect(pin()).toHaveAttribute('title', 'Follows the phase dates — click to give it its own dates');
+  });
+
+  it('keeps the locked title for someone who may not change the booking', () => {
+    useAppStore.setState({ currentUser: makeUser({ id: 2, role: 'user' }) });
+    renderPhaseRow({ linked: false, startDate: '2026-03-03', endDate: '2026-03-04', relinkWouldOverlap: true });
+    expect(pin()).toBeDisabled();
+    expect(pin()).toHaveAttribute('title', 'Own dates');
+  });
+
   it('keeps a disabled pin on a pending booking and on one with my own request open', () => {
     const request: AssignmentApproval = {
       request_id: 31,
