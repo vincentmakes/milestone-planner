@@ -9,6 +9,7 @@ import { memo, useRef, useCallback } from 'react';
 import { armTouchGesture, getEventCoordinates, isTouchEvent, toMouseLikeEvent, NON_PASSIVE } from '@/utils/touchEvents';
 import { barTextColor } from '@/utils/tags';
 import styles from './PhaseBar.module.css';
+import { Icon, SparklesIcon } from '@/components/common/Icon';
 
 interface PhaseBarProps {
   left: number;
@@ -292,7 +293,9 @@ export const PhaseBar = memo(function PhaseBar({
         
         {/* Changed by indicator */}
         {changedBy && (
-          <span className={styles.changedByBadge}>✨ {changedBy}</span>
+          <span className={styles.changedByBadge}>
+            <Icon icon={SparklesIcon} size={10} /> {changedBy}
+          </span>
         )}
         
         {/* End link zone */}
@@ -380,7 +383,9 @@ export const PhaseBar = memo(function PhaseBar({
       
       {/* Changed by indicator */}
       {changedBy && (
-        <span className={styles.changedByBadge}>✨ {changedBy}</span>
+        <span className={styles.changedByBadge}>
+          <Icon icon={SparklesIcon} size={10} /> {changedBy}
+        </span>
       )}
       
       {/* Right resize handle - enabled for both phases and subphases */}

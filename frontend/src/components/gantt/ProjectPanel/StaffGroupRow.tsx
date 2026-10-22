@@ -16,6 +16,7 @@ import { memo } from 'react';
 import { cardBadgeName, cardBadgeStyle } from './cardBadge';
 import assignmentStyles from './AssignmentRow.module.css';
 import styles from './StaffGroupRow.module.css';
+import { Icon, ChevronRightIcon } from '@/components/common/Icon';
 
 interface StaffGroupRowProps {
   name: string;
@@ -61,18 +62,7 @@ export const StaffGroupRow = memo(function StaffGroupRow({
           onToggle();
         }}
       >
-        <svg
-          className={`${styles.chevron} ${collapsed ? '' : styles.chevronOpen}`}
-          width="10"
-          height="10"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          aria-hidden="true"
-        >
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
+        <Icon icon={ChevronRightIcon} size={12} className={`${styles.chevron} ${collapsed ? '' : styles.chevronOpen}`} />
       </button>
       <span className={assignmentStyles.typeBadge} style={cardBadgeStyle(phaseColor)}>
         {cardBadgeName(phaseType, level)}

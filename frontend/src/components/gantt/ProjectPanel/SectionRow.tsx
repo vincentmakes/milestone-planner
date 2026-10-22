@@ -12,6 +12,7 @@ import { memo } from 'react';
 import { barTextColor } from '@/utils/tags';
 import type { GanttSection } from '../utils/projectSections';
 import styles from './SectionRow.module.css';
+import { Icon, ChevronDownIcon } from '@/components/common/Icon';
 
 interface SectionRowProps {
   section: GanttSection;
@@ -45,18 +46,7 @@ export const SectionRow = memo(function SectionRow({ section, collapsed, onToggl
           toggle();
         }}
       >
-        <svg
-          className={`${styles.chevron} ${collapsed ? styles.chevronCollapsed : ''}`}
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          aria-hidden="true"
-        >
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
+        <Icon icon={ChevronDownIcon} size={12} className={`${styles.chevron} ${collapsed ? styles.chevronCollapsed : ''}`} />
       </button>
       <span className={`${styles.pill} ${section.tag ? '' : styles.pillNone}`} style={pillStyle}>
         {section.label}

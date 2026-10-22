@@ -197,6 +197,12 @@
   text-overflow: ellipsis;
 }
 
+.booleanValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .filterValueEmpty {
   flex: 1;
   color: var(--text-muted);

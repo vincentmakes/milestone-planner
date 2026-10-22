@@ -23,6 +23,7 @@ import { CustomColumnHeader } from '@/components/gantt/CustomColumns';
 import { TagFilterDropdown } from '@/components/common/TagFilterDropdown';
 import type { Project, CustomColumn } from '@/types';
 import styles from './ProjectPanel.module.css';
+import { Icon, PlusIcon, UploadIcon, ColumnsIcon, CheckIcon, UsersIcon, EyeIcon, EyeOffIcon } from '@/components/common/Icon';
 
 interface ProjectPanelProps {
   /** Projects to show (already narrowed by the tag filter). */
@@ -151,12 +152,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                     aria-label="Show staff and equipment"
                     aria-pressed={showAssignments}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                      <circle cx="9" cy="7" r="4" />
-                      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                    </svg>
+                    <Icon icon={UsersIcon} size={14} />
                   </button>
                 
                   {/* Tag filter (shared with the Kanban board, per site) */}
@@ -181,19 +177,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                         aria-expanded={showVisibilityDropdown}
                         aria-haspopup="dialog"
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                          {showAllCustomColumns && hiddenCount === 0 ? (
-                            <>
-                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                              <circle cx="12" cy="12" r="3" />
-                            </>
-                          ) : (
-                            <>
-                              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                              <line x1="1" y1="1" x2="23" y2="23" />
-                            </>
-                          )}
-                        </svg>
+                        <Icon icon={showAllCustomColumns && hiddenCount === 0 ? EyeIcon : EyeOffIcon} size={14} />
                       </button>
                     
                       {showVisibilityDropdown && (
@@ -210,9 +194,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                               onChange={handleToggleAll}
                             />
                             <span className={styles.visibilityCheckbox}>
-                              <svg className={styles.visibilityCheckIcon} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
+                              <Icon icon={CheckIcon} size={12} className={styles.visibilityCheckIcon} />
                             </span>
                             <span>Show All Columns</span>
                           </label>
@@ -229,9 +211,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                                       onChange={() => toggleCustomColumnVisibility(col.id)}
                                     />
                                     <span className={styles.visibilityCheckbox}>
-                                      <svg className={styles.visibilityCheckIcon} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                        <polyline points="20 6 9 17 4 12" />
-                                      </svg>
+                                      <Icon icon={CheckIcon} size={12} className={styles.visibilityCheckIcon} />
                                     </span>
                                     <span>{col.name}</span>
                                   </label>
@@ -258,11 +238,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                           aria-label="Manage custom columns"
                         >
                           {/* Table/spreadsheet icon - more explicit for columns */}
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                            <line x1="3" y1="9" x2="21" y2="9" />
-                            <line x1="9" y1="21" x2="9" y2="9" />
-                          </svg>
+                          <Icon icon={ColumnsIcon} size={14} />
                         </button>
                       )}
                       {canImport && (
@@ -272,11 +248,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                         title="Import Project"
                         aria-label="Import project"
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="17 8 12 3 7 8" />
-                          <line x1="12" y1="3" x2="12" y2="15" />
-                        </svg>
+                        <Icon icon={UploadIcon} size={14} />
                       </button>
                       )}
                       {canCreate && (
@@ -286,10 +258,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                         title="New Project"
                         aria-label="New project"
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                          <line x1="12" y1="5" x2="12" y2="19" />
-                          <line x1="5" y1="12" x2="19" y2="12" />
-                        </svg>
+                        <Icon icon={PlusIcon} size={14} />
                         <span>New</span>
                       </button>
                       )}

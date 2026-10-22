@@ -23,6 +23,7 @@ import { formatShortDateRange, formatSingleDate, daysBetweenDateStrings } from '
 import { canEditProject } from '@/utils/permissions';
 import type { Subphase, CustomColumn, CustomColumnEntityType } from '@/types';
 import styles from './SubphaseRow.module.css';
+import { Icon, ChevronRightIcon, DragDotsIcon } from '@/components/common/Icon';
 
 // Child entity info for cascading values
 interface ChildEntity {
@@ -294,14 +295,7 @@ export const SubphaseRow = memo(function SubphaseRow({
               onDragEnd={handleDragEnd}
               title="Drag to reorder"
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="9" cy="6" r="2" />
-                <circle cx="15" cy="6" r="2" />
-                <circle cx="9" cy="12" r="2" />
-                <circle cx="15" cy="12" r="2" />
-                <circle cx="9" cy="18" r="2" />
-                <circle cx="15" cy="18" r="2" />
-              </svg>
+              <Icon icon={DragDotsIcon} size={12} />
             </div>
           )}
           {/* Expand button */}
@@ -311,16 +305,7 @@ export const SubphaseRow = memo(function SubphaseRow({
             disabled={!hasChildren}
           >
             {hasChildren && (
-              <svg
-                width="10"
-                height="10"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
+              <Icon icon={ChevronRightIcon} size={12} />
             )}
           </button>
 

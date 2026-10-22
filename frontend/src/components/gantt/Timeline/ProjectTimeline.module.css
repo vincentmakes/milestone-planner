@@ -206,6 +206,9 @@
 
 .changedByBadge {
   position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   top: 0;
   z-index: 6;
   font-size: 10px;

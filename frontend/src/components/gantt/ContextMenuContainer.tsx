@@ -30,6 +30,7 @@ import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { recoverFromPersistFailure } from '@/utils/persistFailure';
 import type { Project, Phase, Subphase } from '@/types';
 import { confirmAction } from '@/utils/confirmDialog';
+import { Icon, EditIcon, PlusIcon, TrashIcon, CheckIcon, CloseIcon, PersonIcon, BriefcaseIcon } from '@/components/common/Icon';
 
 /**
  * Run a delete from the context menu. A failed delete must not be an
@@ -152,7 +153,7 @@ export function ContextMenuContainer() {
       return [
         {
           label,
-          icon: <PersonIcon />,
+          icon: <Icon icon={PersonIcon} size={14} />,
           onClick: async () => {
             if (!item) return;
             // A project may have no dates yet; the assignment still needs some.
@@ -189,7 +190,7 @@ export function ContextMenuContainer() {
       return [
         {
           label: 'Edit Project',
-          icon: <EditIcon />,
+          icon: <Icon icon={EditIcon} size={14} />,
           onClick: () => {
             if (project) openProjectModal(project);
           },
@@ -197,7 +198,7 @@ export function ContextMenuContainer() {
         },
         {
           label: 'Add Phase',
-          icon: <AddIcon />,
+          icon: <Icon icon={PlusIcon} size={14} />,
           onClick: () => {
             openPhaseModal(undefined, targetId);
           },
@@ -206,7 +207,7 @@ export function ContextMenuContainer() {
         },
         {
           label: 'Assign Staff',
-          icon: <PersonIcon />,
+          icon: <Icon icon={PersonIcon} size={14} />,
           onClick: () => {
             openModal('staffAssignment', { projectId: targetId });
           },
@@ -216,7 +217,7 @@ export function ContextMenuContainer() {
         ...assignMeItem(),
         {
           label: 'Assign Equipment',
-          icon: <EquipmentIcon />,
+          icon: <Icon icon={BriefcaseIcon} size={14} />,
           onClick: () => {
             openModal('equipmentAssignment', { projectId: targetId });
           },
@@ -226,7 +227,7 @@ export function ContextMenuContainer() {
         { label: '', divider: true, onClick: () => {} },
         {
           label: 'Delete Project',
-          icon: <DeleteIcon />,
+          icon: <Icon icon={TrashIcon} size={14} />,
           danger: true,
           onClick: async () => {
             if (
@@ -255,7 +256,7 @@ export function ContextMenuContainer() {
       return [
         {
           label: 'Edit Phase',
-          icon: <EditIcon />,
+          icon: <Icon icon={EditIcon} size={14} />,
           onClick: () => {
             if (phase && projectId) openPhaseModal(phase, projectId);
           },
@@ -263,7 +264,7 @@ export function ContextMenuContainer() {
         },
         {
           label: 'Add Subphase',
-          icon: <AddIcon />,
+          icon: <Icon icon={PlusIcon} size={14} />,
           onClick: () => {
             openSubphaseModal(undefined, targetId, projectId);
           },
@@ -272,7 +273,7 @@ export function ContextMenuContainer() {
         },
         {
           label: 'Assign Staff',
-          icon: <PersonIcon />,
+          icon: <Icon icon={PersonIcon} size={14} />,
           onClick: () => {
             openModal('staffAssignment', { phaseId: targetId, projectId });
           },
@@ -282,7 +283,7 @@ export function ContextMenuContainer() {
         ...assignMeItem(),
         {
           label: 'Assign Equipment',
-          icon: <EquipmentIcon />,
+          icon: <Icon icon={BriefcaseIcon} size={14} />,
           onClick: () => {
             openModal('equipmentAssignment', { phaseId: targetId, projectId });
           },
@@ -292,7 +293,7 @@ export function ContextMenuContainer() {
         { label: '', divider: true, onClick: () => {} },
         {
           label: 'Delete Phase',
-          icon: <DeleteIcon />,
+          icon: <Icon icon={TrashIcon} size={14} />,
           danger: true,
           onClick: async () => {
             if (
@@ -320,7 +321,7 @@ export function ContextMenuContainer() {
       return [
         {
           label: 'Edit Subphase',
-          icon: <EditIcon />,
+          icon: <Icon icon={EditIcon} size={14} />,
           onClick: () => {
             if (subphase && phaseId && projectId) openSubphaseModal(subphase, phaseId, projectId);
           },
@@ -328,7 +329,7 @@ export function ContextMenuContainer() {
         },
         {
           label: 'Add Child Subphase',
-          icon: <AddIcon />,
+          icon: <Icon icon={PlusIcon} size={14} />,
           onClick: () => {
             // Add subphase as child of this subphase
             // phaseId stays the same, but we pass targetId as parentSubphaseId
@@ -339,7 +340,7 @@ export function ContextMenuContainer() {
         },
         {
           label: 'Assign Staff',
-          icon: <PersonIcon />,
+          icon: <Icon icon={PersonIcon} size={14} />,
           onClick: () => {
             openModal('staffAssignment', { subphaseId: targetId, phaseId, projectId });
           },
@@ -349,7 +350,7 @@ export function ContextMenuContainer() {
         ...assignMeItem(),
         {
           label: 'Assign Equipment',
-          icon: <EquipmentIcon />,
+          icon: <Icon icon={BriefcaseIcon} size={14} />,
           onClick: () => {
             openModal('equipmentAssignment', { subphaseId: targetId, phaseId, projectId });
           },
@@ -359,7 +360,7 @@ export function ContextMenuContainer() {
         { label: '', divider: true, onClick: () => {} },
         {
           label: 'Delete Subphase',
-          icon: <DeleteIcon />,
+          icon: <Icon icon={TrashIcon} size={14} />,
           danger: true,
           onClick: async () => {
             if (
@@ -424,14 +425,14 @@ export function ContextMenuContainer() {
         requestItems.push(
           {
             label: 'Approve request',
-            icon: <CheckIcon />,
+            icon: <Icon icon={CheckIcon} size={14} />,
             onClick: () => refreshAfterDecision(() => approvalsApi.approve(request.request_id)),
             disabled: whatIfMode,
             title: decideBlockedReason,
           },
           {
             label: 'Reject request…',
-            icon: <CrossIcon />,
+            icon: <Icon icon={CloseIcon} size={14} />,
             onClick: () => setRejecting({ requestId: request.request_id, name: assignmentName }),
             disabled: whatIfMode,
             title: decideBlockedReason,
@@ -441,7 +442,7 @@ export function ContextMenuContainer() {
       if (request && isRequester) {
         requestItems.push({
           label: 'Cancel request',
-          icon: <CrossIcon />,
+          icon: <Icon icon={CloseIcon} size={14} />,
           onClick: () => refreshAfterDecision(() => approvalsApi.cancel(request.request_id)),
           disabled: whatIfMode,
           title: decideBlockedReason,
@@ -455,7 +456,7 @@ export function ContextMenuContainer() {
             { label: '', divider: true, onClick: () => {} },
             {
               label: 'Delete Assignment',
-              icon: <DeleteIcon />,
+              icon: <Icon icon={TrashIcon} size={14} />,
               danger: true,
               onClick: async () => {
                 if (
@@ -490,7 +491,7 @@ export function ContextMenuContainer() {
         ...requestItems,
         {
           label: 'Edit Assignment',
-          icon: <EditIcon />,
+          icon: <Icon icon={EditIcon} size={14} />,
           onClick: () => {
             setEditingStaffAssignment({
               id: targetId,
@@ -520,7 +521,7 @@ export function ContextMenuContainer() {
       return [
         {
           label: 'Edit Assignment',
-          icon: <EditIcon />,
+          icon: <Icon icon={EditIcon} size={14} />,
           onClick: () => {
             setEditingEquipmentAssignment({
               id: targetId,
@@ -539,7 +540,7 @@ export function ContextMenuContainer() {
         { label: '', divider: true, onClick: () => {} },
         {
           label: 'Delete Assignment',
-          icon: <DeleteIcon />,
+          icon: <Icon icon={TrashIcon} size={14} />,
           danger: true,
           onClick: async () => {
             if (
@@ -588,52 +589,3 @@ export function ContextMenuContainer() {
     </>
   );
 }
-
-// Simple icons
-const EditIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-  </svg>
-);
-
-const AddIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <line x1="12" y1="5" x2="12" y2="19" />
-    <line x1="5" y1="12" x2="19" y2="12" />
-  </svg>
-);
-
-const DeleteIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <polyline points="3 6 5 6 21 6" />
-    <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-  </svg>
-);
-
-const CheckIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <polyline points="20 6 9 17 4 12" />
-  </svg>
-);
-
-const CrossIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <line x1="18" y1="6" x2="6" y2="18" />
-    <line x1="6" y1="6" x2="18" y2="18" />
-  </svg>
-);
-
-const PersonIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
-    <circle cx="12" cy="7" r="4" />
-  </svg>
-);
-
-const EquipmentIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-    <path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16" />
-  </svg>
-);

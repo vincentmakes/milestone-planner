@@ -212,10 +212,16 @@ describe('ProjectTimeline rows', () => {
       { entity_type: 'staff_assignment', entity_id: 50, user_name: 'Bob B.' },
     ];
     renderTimeline(buildProject());
-    expect(screen.getByText('✨ Vincent D.')).toBeInTheDocument();
-    expect(screen.getByText('✨ Ada A.')).toBeInTheDocument();
+    // The badge: the sparkles icon, then the name.
+    const badge = (name: string) => {
+      const el = screen.getByText(name);
+      expect(el.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+      return el;
+    };
+    expect(badge('Vincent D.')).toBeInTheDocument();
+    expect(badge('Ada A.')).toBeInTheDocument();
     expect(screen.getByTitle('Bob Brown (40%) — just edited by Bob B.')).toBeInTheDocument();
-    expect(screen.getByText('✨ Bob B.')).toBeInTheDocument();
+    expect(badge('Bob B.')).toBeInTheDocument();
   });
 
   it('hides phases and subphases filtered out by a custom column', () => {

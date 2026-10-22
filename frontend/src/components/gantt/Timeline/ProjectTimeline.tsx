@@ -42,6 +42,7 @@ import { DEFAULT_EVENT_COLOR } from '@/utils/colorSwatches';
 import styles from './ProjectTimeline.module.css';
 import { daysBetweenDateStrings, toDateOnly } from '@/utils/date';
 import { armTouchGesture, isTouchEvent } from '@/utils/touchEvents';
+import { Icon, SparklesIcon } from '@/components/common/Icon';
 
 interface ProjectTimelineProps {
   project: Project;
@@ -1377,7 +1378,7 @@ const AssignmentBar = memo(function AssignmentBar({
         )}
       </div>
 
-      {/* Render the "✨ <name>" attribution as a sibling of the bar (not a
+      {/* Render the sparkles + name attribution as a sibling of the bar (not a
           child) so the bar's overflow: hidden doesn't clip it. Positioned
           relative to the row using the same left offset as the bar. */}
       {changedBy && (
@@ -1385,7 +1386,7 @@ const AssignmentBar = memo(function AssignmentBar({
           className={styles.changedByBadge}
           style={{ left: barPosition.left }}
         >
-          ✨ {changedBy}
+          <Icon icon={SparklesIcon} size={10} /> {changedBy}
         </div>
       )}
     </>
