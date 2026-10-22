@@ -1,8 +1,9 @@
 /**
  * Notification bell: loads the inbox on mount and on window focus, merges
  * browser-derived due reminders, opens the card on click (marking a server
- * notification read, dismissing a derived one locally), mark-all, and closes
- * on outside click (a popover, not a modal).
+ * notification read, dismissing a derived one locally) — or the project on
+ * the Gantt, switching site, for a project or when the board is out of
+ * reach —, mark-all, and closes on outside click (a popover, not a modal).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -14,6 +15,7 @@ import {
   markNotificationRead,
 } from '@/api/endpoints/notifications';
 import { dismissDerivedNotification, useDerivedDueNotifications } from '@/hooks/useDerivedDueNotifications';
+import { selectSite } from '@/hooks/useDataLoader';
 import { useAppStore } from '@/stores/appStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -22,7 +24,7 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { resetAllStores } from '@/stores';
 import { useTodoStore } from '@/stores/todoStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
-import { makeUser } from '@/test/factories';
+import { makeProject, makeSite, makeUser } from '@/test/factories';
 import type { AppNotification } from '@/types';
 
 vi.mock('@/api/endpoints/notifications', () => ({
@@ -35,6 +37,11 @@ vi.mock('@/hooks/useDerivedDueNotifications', () => ({
   useDerivedDueNotifications: vi.fn(() => []),
   dismissDerivedNotification: vi.fn(),
 }));
+vi.mock('@/hooks/useDataLoader', () => ({ selectSite: vi.fn() }));
+
+const BASEL = makeSite({ id: 1, name: 'Basel' });
+const BERLIN = makeSite({ id: 2, name: 'Berlin' });
+const NO_KANBAN = ['projects.view'];
 
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
 
@@ -73,6 +80,7 @@ beforeEach(() => {
   vi.mocked(markAllNotificationsRead).mockReset().mockResolvedValue({ success: true });
   vi.mocked(useDerivedDueNotifications).mockReset().mockReturnValue([]);
   vi.mocked(dismissDerivedNotification).mockReset();
+  vi.mocked(selectSite).mockReset().mockResolvedValue();
 });
 
 afterEach(async () => {
@@ -172,18 +180,141 @@ describe('NotificationBell', () => {
     expect(useNotificationStore.getState().items[0].read_at).toBeTruthy();
   });
 
-  it('marks a card notification read without opening the board when views.kanban is missing', async () => {
-    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'viewer', permissions: ['projects.view'] }) });
-    vi.mocked(getNotifications).mockResolvedValue([note()]);
+  it('opens the card\'s project on the Gantt when views.kanban is missing', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 4, role: 'viewer', permissions: NO_KANBAN }),
+      sites: [BASEL],
+      currentSite: BASEL,
+      projects: [makeProject({ id: 1, site_id: 1 })],
+    });
+    useViewStore.getState().setCurrentView('todos');
+    vi.mocked(getNotifications).mockResolvedValue([note({ type: 'assignment_changed', title: 'Alice moved Feasibility' })]);
     vi.mocked(getUnreadCount).mockResolvedValue(1);
     await renderBell();
     fireEvent.click(bell());
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Bob commented/ }));
+      fireEvent.click(screen.getByRole('button', { name: /Alice moved Feasibility/ }));
     });
     expect(useViewStore.getState().currentView).toBe('gantt');
+    expect(useViewStore.getState().expandedProjects.has(1)).toBe(true);
     expect(useUIStore.getState().activeModal).not.toBe('kanbanCard');
+    expect(selectSite).not.toHaveBeenCalled();
     expect(markNotificationRead).toHaveBeenCalledWith(1);
+  });
+
+  it('opens a project notification on the Gantt, on the current site', async () => {
+    useAppStore.setState({ sites: [BASEL], currentSite: BASEL, projects: [makeProject({ id: 1, site_id: 1 })] });
+    useViewStore.getState().setCurrentView('kanban');
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 5, type: 'project_changed', entity_type: 'project', entity_id: 1, title: 'Alice changed Bioprocess' }),
+    ]);
+    await renderBell();
+    fireEvent.click(bell());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Alice changed Bioprocess/ }));
+    });
+    expect(useViewStore.getState().currentView).toBe('gantt');
+    expect(useViewStore.getState().expandedProjects.has(1)).toBe(true);
+    expect(useUIStore.getState().activeModal).toBeNull();
+    expect(selectSite).not.toHaveBeenCalled();
+    expect(useNotificationStore.getState().panelOpen).toBe(false);
+    expect(markNotificationRead).toHaveBeenCalledWith(5);
+  });
+
+  it('switches to the project\'s site when it sits on another visible one', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 4, role: 'user', site_ids: [1, 2] }),
+      sites: [BASEL, BERLIN],
+      currentSite: BASEL,
+      projects: [makeProject({ id: 1, site_id: 1 }), makeProject({ id: 8, site_id: 2, name: 'Trial' })],
+    });
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 5, type: 'project_changed', entity_type: 'project', entity_id: 8, project_id: 8, title: 'Alice changed Trial' }),
+    ]);
+    await renderBell();
+    fireEvent.click(bell());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Alice changed Trial/ }));
+    });
+    expect(selectSite).toHaveBeenCalledWith(BERLIN);
+    expect(useViewStore.getState().currentView).toBe('gantt');
+    expect(useViewStore.getState().expandedProjects.has(8)).toBe(true);
+  });
+
+  it.each([
+    ['deleted', [] as ReturnType<typeof makeProject>[], [BASEL]],
+    ['archived', [makeProject({ id: 1, site_id: 1, archived: true })], [BASEL]],
+    ['on a site the user cannot see', [makeProject({ id: 1, site_id: 2 })], [BASEL, BERLIN]],
+  ])('flashes when the project is %s, and still marks it read', async (_label, projects, sites) => {
+    // A plain user sees only their own site (1).
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'user' }), sites, currentSite: BASEL, projects });
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 5, type: 'project_changed', entity_type: 'project', entity_id: 1, title: 'Alice changed Bioprocess' }),
+    ]);
+    await renderBell();
+    fireEvent.click(bell());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Alice changed Bioprocess/ }));
+    });
+    expect(useUIStore.getState().flashNotice).toMatchObject({ message: 'This project is no longer available' });
+    expect(useViewStore.getState().expandedProjects.has(1)).toBe(false);
+    expect(selectSite).not.toHaveBeenCalled();
+    expect(markNotificationRead).toHaveBeenCalledWith(5);
+  });
+
+  it('only marks read a notification without a project (a deleted project)', async () => {
+    useViewStore.getState().setCurrentView('todos');
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 6, type: 'assignment_changed', entity_type: null, entity_id: null, project_id: null, title: 'Alice deleted Trial' }),
+    ]);
+    await renderBell();
+    fireEvent.click(bell());
+    const row = screen.getByRole('button', { name: /Alice deleted Trial/ });
+    expect(row).toBeEnabled();
+    await act(async () => {
+      fireEvent.click(row);
+    });
+    expect(markNotificationRead).toHaveBeenCalledWith(6);
+    expect(useViewStore.getState().currentView).toBe('todos');
+    expect(useUIStore.getState().flashNotice).toBeNull();
+    expect(selectSite).not.toHaveBeenCalled();
+  });
+
+  it('during What-If, blocks a project on another site but opens one on the current site', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 4, role: 'user', site_ids: [1, 2] }),
+      sites: [BASEL, BERLIN],
+      currentSite: BASEL,
+      projects: [makeProject({ id: 1, site_id: 1 }), makeProject({ id: 8, site_id: 2, name: 'Trial' })],
+    });
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 5, type: 'project_changed', entity_type: 'project', entity_id: 8, project_id: 8, title: 'Alice changed Trial' }),
+      note({ id: 6, type: 'project_changed', entity_type: 'project', entity_id: 1, project_id: 1, title: 'Alice changed Bioprocess' }),
+    ]);
+    useWhatIfStore.getState().enterWhatIfMode([]);
+    await renderBell();
+    fireEvent.click(bell());
+
+    const elsewhere = screen.getByRole('button', { name: /Alice changed Trial/ });
+    expect(elsewhere).toBeDisabled();
+    expect(elsewhere).toHaveAttribute(
+      'title',
+      whatIfUnavailableMessage('Opening a project on another site from a notification')
+    );
+    await act(async () => {
+      fireEvent.click(elsewhere);
+    });
+    expect(selectSite).not.toHaveBeenCalled();
+    expect(markNotificationRead).not.toHaveBeenCalled();
+
+    const here = screen.getByRole('button', { name: /Alice changed Bioprocess/ });
+    expect(here).toBeEnabled();
+    expect(here).not.toHaveAttribute('title');
+    await act(async () => {
+      fireEvent.click(here);
+    });
+    expect(useViewStore.getState().expandedProjects.has(1)).toBe(true);
+    expect(markNotificationRead).toHaveBeenCalledWith(6);
   });
 
   it('refreshes when marking read fails, and skips already-read items', async () => {
@@ -275,13 +406,21 @@ describe('NotificationBell', () => {
       note({ id: 2, type: 'approval_requested', title: 'A request' }),
       note({ id: 3, type: 'approval_decided', title: 'A decision' }),
       note({ id: 4, type: 'todo_assigned', title: 'A task' }),
+      note({ id: 5, type: 'assignment_changed', title: 'A booking change' }),
+      note({ id: 6, type: 'project_changed', title: 'A project change' }),
+      note({ id: 7, type: 'assigned', title: 'An assignment' }),
     ]);
     await renderBell();
     fireEvent.click(bell());
-    const icons = ['A comment', 'A request', 'A decision', 'A task'].map((t) =>
+    const titles = ['A comment', 'A request', 'A decision', 'A task', 'A booking change', 'A project change', 'An assignment'];
+    const icons = titles.map((t) =>
       screen.getByRole('button', { name: new RegExp(t) }).querySelector('svg path')?.getAttribute('d')
     );
-    expect(new Set(icons).size).toBe(4);
+    expect(new Set(icons).size).toBe(titles.length);
+    const iconClass = (t: string) =>
+      screen.getByRole('button', { name: new RegExp(t) }).querySelector('span')?.className ?? '';
+    expect(iconClass('A booking change')).toMatch(/assignmentChanged/);
+    expect(iconClass('A project change')).toMatch(/projectChanged/);
   });
 
   it('opens the card of a decision that names one', async () => {

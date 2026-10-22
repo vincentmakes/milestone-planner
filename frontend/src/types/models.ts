@@ -813,6 +813,13 @@ export type NotificationType =
   | 'approval_decided'
   /** Someone assigned the user a task (entity: the todo) */
   | 'todo_assigned'
+  /**
+   * Someone else added, changed or removed the user's booking (entity: the
+   * card or the project; none, and no project, when the project was deleted)
+   */
+  | 'assignment_changed'
+  /** Someone else changed a project the user manages (same entities) */
+  | 'project_changed'
   /** Derived in the browser from card end dates; never stored server-side. */
   | 'due_soon'
   | 'overdue';

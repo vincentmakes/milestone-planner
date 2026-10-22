@@ -25,7 +25,7 @@ interface NotificationState {
   setLoading: (loading: boolean) => void;
   setPanelOpen: (open: boolean) => void;
   togglePanel: () => void;
-  /** A live push arrived over the WebSocket. */
+  /** A live push arrived over the WebSocket: insert it, or replace the stored row with that id. */
   receive: (notification: AppNotification) => void;
   markReadLocal: (id: number) => void;
   markAllReadLocal: () => void;
@@ -46,11 +46,19 @@ export const useNotificationStore = create<NotificationState>((set) => ({
 
   receive: (notification) =>
     set((state) => {
-      // The same notification can arrive twice (push plus a refetch).
-      if (state.items.some((n) => n.id === notification.id)) return state;
+      // An upsert by id: a change notification coalesced on the server comes
+      // back with the same id, a new title and a later created_at. Pushes can
+      // arrive out of order, so an older copy never replaces a newer one; a
+      // repeat of the stored copy (push plus a refetch, same created_at)
+      // changes nothing, so it cannot undo a local mark-read either.
+      const existing = state.items.find((n) => n.id === notification.id);
+      if (existing && Date.parse(existing.created_at) >= Date.parse(notification.created_at)) {
+        return state;
+      }
+      const delta = (notification.read_at ? 0 : 1) - (existing && !existing.read_at ? 1 : 0);
       return {
-        items: [notification, ...state.items],
-        unreadCount: state.unreadCount + (notification.read_at ? 0 : 1),
+        items: [notification, ...state.items.filter((n) => n.id !== notification.id)],
+        unreadCount: Math.max(0, state.unreadCount + delta),
       };
     }),
 

@@ -9,7 +9,11 @@
  * display; only the former are marked read against the API. A click opens
  * the card on the Kanban board, or — for approval requests, decisions and
  * assigned tasks — My Todos on the matching tab; both are blocked during
- * What-If (they leave the Gantt).
+ * What-If (they leave the Gantt). A notification about a project, or about a
+ * card while the board is out of reach (no `views.kanban`), opens the project
+ * on the Gantt instead, switching site when it sits on another one (blocked
+ * during What-If too); one without a project (a deleted project) is only
+ * marked read.
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef } from 'react';
@@ -32,8 +36,10 @@ import {
 } from '@/hooks/useDerivedDueNotifications';
 import { cardKey } from '@/utils/kanbanCards';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
+import { useVisibleSites } from '@/hooks/useVisibleSites';
+import { selectSite } from '@/hooks/useDataLoader';
 import { relativeTime } from '@/utils/relativeTime';
-import type { AppNotification, NotificationType } from '@/types';
+import type { AppNotification, NotificationType, Project, Site } from '@/types';
 import styles from './NotificationBell.module.css';
 import { useHasPermission } from '@/hooks/useCan';
 
@@ -47,11 +53,31 @@ const TYPE_ICONS: Record<string, string> = {
   approval_requested: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
   approval_decided: 'M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3',
   todo_assigned: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
+  // A person with a pencil: someone else edited your booking.
+  assignment_changed:
+    'M11.5 15H7a4 4 0 0 0-4 4v2M10 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM21.4 16.6a1.4 1.4 0 0 0-2-2l-4 4a2 2 0 0 0-.5.9l-.8 2.8 2.8-.8a2 2 0 0 0 .9-.5z',
+  // A calendar with plan bars: someone else changed your project's plan.
+  project_changed:
+    'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM7 14h6M11 18h6',
 };
 
-/** Does clicking this notification jump to its card on the Kanban board? */
-function opensCard(n: AppNotification): boolean {
-  return Boolean(n.project_id && (n.entity_type === 'phase' || n.entity_type === 'subphase') && n.entity_id);
+/** Icon colour classes for the types whose class name is not the type itself. */
+const TYPE_CLASSES: Partial<Record<NotificationType, string>> = {
+  assignment_changed: styles.assignmentChanged,
+  project_changed: styles.projectChanged,
+};
+
+interface CardRef {
+  entityType: 'phase' | 'subphase';
+  entityId: number;
+  projectId: number;
+}
+
+/** The Kanban card this notification is about, if it is about one. */
+function cardOf(n: AppNotification): CardRef | null {
+  if (!n.project_id || !n.entity_id) return null;
+  if (n.entity_type !== 'phase' && n.entity_type !== 'subphase') return null;
+  return { entityType: n.entity_type, entityId: n.entity_id, projectId: n.project_id };
 }
 
 interface TodosTarget {
@@ -71,14 +97,44 @@ const TODO_TARGETS: Partial<Record<NotificationType, TodosTarget>> = {
   todo_assigned: { tab: 'tasks', filter: 'open' },
 };
 
-/** My Todos' target for this notification, unless it opens a card instead. */
+/** My Todos' target for this notification, unless it is about a card. */
 function todosTargetFor(n: AppNotification): TodosTarget | null {
-  if (opensCard(n)) return null;
+  if (cardOf(n)) return null;
   return TODO_TARGETS[n.type] ?? null;
+}
+
+/** Where a click on a notification leads. */
+type NotificationTarget =
+  | { kind: 'card'; card: CardRef }
+  | { kind: 'todos'; todos: TodosTarget }
+  /** The project on the Gantt, at `site` (one of the visible sites) */
+  | { kind: 'gantt'; project: Project; site: Site }
+  /** It names a project the Gantt cannot show: deleted, archived or not visible */
+  | { kind: 'missing' }
+  /** Nothing to open (no project, e.g. a deleted one): only marked read */
+  | { kind: 'none' };
+
+function targetFor(
+  n: AppNotification,
+  canOpenCards: boolean,
+  projects: readonly Project[],
+  visibleSites: readonly Site[]
+): NotificationTarget {
+  const card = cardOf(n);
+  if (card && canOpenCards) return { kind: 'card', card };
+  const todos = todosTargetFor(n);
+  if (todos) return { kind: 'todos', todos };
+  // A card the board cannot open (all types), or the project itself.
+  if (!n.project_id || !(card || n.entity_type === 'project')) return { kind: 'none' };
+  const project = projects.find((p) => p.id === n.project_id && !p.archived);
+  const site = project && visibleSites.find((s) => s.id === project.site_id);
+  return project && site ? { kind: 'gantt', project, site } : { kind: 'missing' };
 }
 
 const OPEN_CARD_ACTION = 'Opening a card from a notification';
 const OPEN_TODOS_ACTION = 'Opening My Todos from a notification';
+const OPEN_OTHER_SITE_ACTION = 'Opening a project on another site from a notification';
+const MISSING_PROJECT_MESSAGE = 'This project is no longer available';
 
 export function NotificationBell() {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -96,18 +152,24 @@ export function NotificationBell() {
   const markAllReadLocal = useNotificationStore((s) => s.markAllReadLocal);
 
   const currentUser = useAppStore((s) => s.currentUser);
+  const projects = useAppStore((s) => s.projects);
+  const currentSiteId = useAppStore((s) => s.currentSite?.id ?? null);
+  const visibleSites = useVisibleSites();
   const setCurrentView = useViewStore((s) => s.setCurrentView);
   const setKanbanProjectId = useViewStore((s) => s.setKanbanProjectId);
+  const ensureProjectExpanded = useViewStore((s) => s.ensureProjectExpanded);
   const openKanbanCard = useUIStore((s) => s.openKanbanCardModal);
+  const showFlash = useUIStore((s) => s.showFlash);
   const setTodoTab = useTodoStore((s) => s.setActiveTab);
   const setTodoFilter = useTodoStore((s) => s.setStatusFilter);
 
   const derived = useDerivedDueNotifications();
-  // What-If is Gantt-only and the card opens on the Kanban board, so card
-  // links are blocked while the sandbox is active (other rows stay usable).
+  // What-If is Gantt-only and cannot switch site, so a target that leaves the
+  // Gantt or changes site is blocked while the sandbox is active (other rows
+  // stay usable).
   const whatIf = useWhatIfBlocked();
   // Card links open the Kanban board, which needs views.kanban (its reads
-  // answer 403 without it): the notification is still marked read.
+  // answer 403 without it): without it the card's project opens on the Gantt.
   const canOpenCards = useHasPermission('views.kanban');
 
   const refresh = useCallback(async () => {
@@ -144,24 +206,36 @@ export function NotificationBell() {
 
   const totalBadge = unreadCount + derived.length;
 
-  const handleOpen = async (n: AppNotification) => {
-    const todosTarget = todosTargetFor(n);
-    // Both targets leave the Gantt, which What-If cannot do.
-    if ((opensCard(n) || todosTarget) && whatIf.blocked) return;
-    if (
-      canOpenCards &&
-      n.project_id &&
-      (n.entity_type === 'phase' || n.entity_type === 'subphase') &&
-      n.entity_id
-    ) {
-      setKanbanProjectId(n.project_id);
+  /** Why What-If blocks this target, if it does. */
+  const blockedReason = (target: NotificationTarget): string | undefined => {
+    if (!whatIf.blocked) return undefined;
+    if (target.kind === 'card') return whatIf.reason(OPEN_CARD_ACTION);
+    if (target.kind === 'todos') return whatIf.reason(OPEN_TODOS_ACTION);
+    if (target.kind === 'gantt' && target.site.id !== currentSiteId) {
+      return whatIf.reason(OPEN_OTHER_SITE_ACTION);
+    }
+    return undefined;
+  };
+
+  const handleOpen = async (n: AppNotification, target: NotificationTarget) => {
+    if (blockedReason(target)) return;
+    if (target.kind === 'card') {
+      const { entityType, entityId, projectId } = target.card;
+      setKanbanProjectId(projectId);
       setCurrentView('kanban');
-      openKanbanCard(n.entity_type, n.entity_id, n.project_id);
-    } else if (todosTarget) {
+      openKanbanCard(entityType, entityId, projectId);
+    } else if (target.kind === 'todos') {
       // My Todos needs no key: every user has one.
-      setTodoTab(todosTarget.tab);
-      if (todosTarget.filter) setTodoFilter(todosTarget.filter);
+      setTodoTab(target.todos.tab);
+      if (target.todos.filter) setTodoFilter(target.todos.filter);
       setCurrentView('todos');
+    } else if (target.kind === 'gantt') {
+      // selectSite also loads the site's calendar and custom columns.
+      if (target.site.id !== currentSiteId) void selectSite(target.site);
+      setCurrentView('gantt');
+      ensureProjectExpanded(target.project.id);
+    } else if (target.kind === 'missing') {
+      showFlash(MISSING_PROJECT_MESSAGE, 'info');
     }
     setPanelOpen(false);
 
@@ -238,23 +312,18 @@ export function NotificationBell() {
 
           <ul className={styles.list}>
             {merged.map((n) => {
-              const cardBlocked = whatIf.blocked && opensCard(n);
-              const todosBlocked = whatIf.blocked && todosTargetFor(n) !== null;
-              const blockedReason = cardBlocked
-                ? whatIf.reason(OPEN_CARD_ACTION)
-                : todosBlocked
-                  ? whatIf.reason(OPEN_TODOS_ACTION)
-                  : undefined;
+              const target = targetFor(n, canOpenCards, projects, visibleSites);
+              const reason = blockedReason(target);
               return (
                 <li key={`${n.source ?? 'server'}-${n.id}`}>
                   <button
                     type="button"
                     className={`${styles.item} ${!n.read_at ? styles.unread : ''}`}
-                    onClick={() => handleOpen(n)}
-                    disabled={Boolean(blockedReason)}
-                    title={blockedReason}
+                    onClick={() => handleOpen(n, target)}
+                    disabled={Boolean(reason)}
+                    title={reason}
                   >
-                    <span className={`${styles.icon} ${styles[n.type] ?? ''}`}>
+                    <span className={`${styles.icon} ${TYPE_CLASSES[n.type] ?? styles[n.type] ?? ''}`}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d={TYPE_ICONS[n.type] ?? TYPE_ICONS.comment} />
                       </svg>
