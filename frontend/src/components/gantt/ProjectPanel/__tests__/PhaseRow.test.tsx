@@ -163,7 +163,7 @@ describe('PhaseRow permissions', () => {
 
 /**
  * A person with two or more bookings on the phase gets a collapsible overview
- * row (StaffGroupRow), their bookings one level deeper; a person with one
+ * row (StaffGroupRow), their bookings two levels deeper; a person with one
  * booking keeps the plain row.
  */
 describe('PhaseRow per-person booking groups', () => {
@@ -180,7 +180,7 @@ describe('PhaseRow per-person booking groups', () => {
     useViewStore.setState({ expandedPhases: new Set([1]), showAssignments: true, collapsedStaffGroups: new Set() });
   });
 
-  it('groups a person with 2+ bookings, expanded, with their rows one level deeper', () => {
+  it('groups a person with 2+ bookings, expanded, with their rows two levels deeper', () => {
     const { container } = renderRow(groupedPhase());
     // the phase row + the staff block the timeline and the row geometry count
     expect(container.children).toHaveLength(1 + staffRowCount(bookings as never, 'phase', 1, new Set()));
@@ -199,9 +199,9 @@ describe('PhaseRow per-person booking groups', () => {
     expect(group.className).not.toMatch(/row/);
     expect([...group.attributes].some((a) => /^data-.*id$/.test(a.name))).toBe(false);
 
-    // Bob's two rows at depth 2 (60 px), then Cleo's single row at depth 1 (44 px)
+    // Bob's two rows at depth 3 (76 px), right of the group badge; Cleo's single row at depth 1 (44 px)
     const rows = bookingRows().map((badge) => badge.parentElement as HTMLElement);
-    expect(rows.map((r) => r.style.paddingLeft)).toEqual(['60px', '60px', '44px']);
+    expect(rows.map((r) => r.style.paddingLeft)).toEqual(['76px', '76px', '44px']);
     expect(screen.getAllByTitle('Bob Brown')).toHaveLength(3); // group name + 2 rows
     // Cleo has no group
     expect(screen.queryByRole('button', { name: /Cleo Chen's bookings/ })).not.toBeInTheDocument();

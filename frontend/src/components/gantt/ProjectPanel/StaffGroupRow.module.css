@@ -13,12 +13,16 @@
   background: var(--bg-secondary);
 }
 
+/* Chevron + its gap take exactly 20 px (16 + 8 - 4), so the card badge
+   starts 20 px after the row's edge and the grouped booking rows below
+   (two levels deeper, AssignmentRow: depth * 16 + 28) start 12 px right of it. */
 .collapseBtn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
+  width: 16px;
   height: 20px;
+  margin-right: -4px;
   padding: 0;
   flex-shrink: 0;
   color: var(--text-secondary);

@@ -296,7 +296,7 @@ describe('SubphaseRow per-person booking groups', () => {
     useViewStore.setState({ expandedSubphases: new Set([30]), collapsedStaffGroups: new Set() });
   });
 
-  it('groups the person with two bookings, rows one level deeper, singles unchanged', () => {
+  it('groups the person with two bookings, rows two levels deeper, singles unchanged', () => {
     renderRow(grouped);
     const toggle = screen.getByRole('button', { name: "Collapse Bob Brown's bookings" });
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -304,7 +304,7 @@ describe('SubphaseRow per-person booking groups', () => {
     expect(toggle.parentElement).toHaveStyle({ paddingLeft: '76px' }); // like a booking row at depth 3
     const badge = within(toggle.parentElement!).getByText('Screening');
     expect(badge.getAttribute('style')).toBe(badges()[0].getAttribute('style'));
-    expect(badges().map((b) => (b.parentElement as HTMLElement).style.paddingLeft)).toEqual(['92px', '92px', '76px']);
+    expect(badges().map((b) => (b.parentElement as HTMLElement).style.paddingLeft)).toEqual(['108px', '108px', '76px']);
     expect(screen.queryByRole('button', { name: /Dana Diaz's bookings/ })).not.toBeInTheDocument();
   });
 

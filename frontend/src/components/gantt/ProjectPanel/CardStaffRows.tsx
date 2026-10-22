@@ -2,9 +2,10 @@
  * CardStaffRows - the staff bookings of one phase / subphase in the project
  * tree (1.17.0). A person with one booking on the card gets their
  * AssignmentRow as before; a person with two or more gets a StaffGroupRow
- * followed, while the group is expanded, by one AssignmentRow per booking one
- * level deeper. The layout comes from `cardStaffItems`, the same helper the
- * timeline (ProjectTimeline) and `calculateRowPositions` use.
+ * followed, while the group is expanded, by one AssignmentRow per booking two
+ * levels deeper (their badges sit right of the group row's badge). The
+ * layout comes from `cardStaffItems`, the same helper the timeline
+ * (ProjectTimeline) and `calculateRowPositions` use.
  */
 
 import { Fragment, memo, useMemo } from 'react';
@@ -82,7 +83,10 @@ export const CardStaffRows = memo(function CardStaffRows({ level, card, projectI
               phaseType={card.name}
               phaseColor={card.color}
             />
-            {!item.collapsed && item.rows.map((row) => bookingRow(row, depth + 1))}
+            {/* Two levels deeper than the group's edge: the group row's chevron
+                comes before its badge, so one level would put these badges
+                left of the group badge and they would not read as its children. */}
+            {!item.collapsed && item.rows.map((row) => bookingRow(row, depth + 2))}
           </Fragment>
         );
       })}
