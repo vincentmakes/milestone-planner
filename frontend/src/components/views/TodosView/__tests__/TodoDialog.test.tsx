@@ -128,6 +128,61 @@ describe('assignee', () => {
   });
 });
 
+describe('assignee without todos.manage_own', () => {
+  // A role that hands out tasks but holds none of its own.
+  const assignerOnly = [...USER_DEFAULTS.filter((k) => k !== 'todos.manage_own'), 'todos.assign_others'];
+
+  beforeEach(() => {
+    seed(assignerOnly);
+    useAppStore.setState({
+      staff: [
+        ...useAppStore.getState().staff,
+        makeStaff({ id: 8, name: 'Zoe Zimmer', site_id: 1 }),
+      ],
+    });
+  });
+
+  it('defaults to the first other person and disables "me"', () => {
+    render(<TodoDialog isOpen task={null} onClose={onClose} />);
+    expect(optionLabels(assignee())).toEqual(['Bob Brown (me)', 'Alice Smith', 'Zoe Zimmer']);
+    expect(assignee().value).toBe('7');
+    const me = Array.from(assignee().options).find((o) => o.value === '4')!;
+    expect(me.disabled).toBe(true);
+    expect(screen.getByText('You can assign tasks only to others')).toBeInTheDocument();
+  });
+
+  it('creates the task for that person, never for me', async () => {
+    vi.mocked(todosApi.create).mockResolvedValue(makeTodo({ id: 6, title: 'Calibrate', assignee_id: 7 }));
+    render(<TodoDialog isOpen task={null} onClose={onClose} />);
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Calibrate' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create task' }));
+    await waitFor(() => expect(todosApi.create).toHaveBeenCalledWith(expect.objectContaining({ assignee_id: 7 })));
+  });
+
+  it('falls back to the first other person, not me, when the chosen one leaves the list', () => {
+    render(<TodoDialog isOpen task={null} onClose={onClose} />);
+    fireEvent.change(assignee(), { target: { value: '8' } });
+    expect(assignee().value).toBe('8');
+    act(() => {
+      useAppStore.setState({ staff: useAppStore.getState().staff.filter((s) => s.id !== 8) });
+    });
+    expect(assignee().value).toBe('7');
+  });
+
+  it('keeps me on an edited task that is already mine', () => {
+    render(<TodoDialog isOpen task={makeTodo({ id: 3, assignee_id: 4, created_by: 7 })} onClose={onClose} />);
+    expect(assignee().value).toBe('4');
+    expect(Array.from(assignee().options).find((o) => o.value === '4')!.disabled).toBe(false);
+  });
+
+  it('keeps defaulting to me for a role that holds both keys', () => {
+    seed([...USER_DEFAULTS, 'todos.assign_others']);
+    render(<TodoDialog isOpen task={null} onClose={onClose} />);
+    expect(assignee().value).toBe('4');
+    expect(Array.from(assignee().options).every((o) => !o.disabled)).toBe(true);
+  });
+});
+
 describe('project and card', () => {
   it('lists active projects by name and the chosen project’s cards', async () => {
     vi.mocked(todosApi.create).mockResolvedValueOnce(makeTodo({ id: 6 }));

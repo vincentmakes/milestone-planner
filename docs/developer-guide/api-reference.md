@@ -8,7 +8,7 @@ When the application is running, interactive API documentation is available at:
 
 ## Authentication
 
-All API endpoints (except `/health` and `/api/auth/*`) require authentication via session cookie. Every authenticated request re-checks the account's live `active` flag, its role and the role's permissions; a deactivated, deleted or demoted user's sessions are destroyed and further requests get `401`, and an edit of a role's permissions applies on its holders' next request.
+All API endpoints require authentication via session cookie, except the public ones: `/health` (and `/api/health`), `/api/auth/*` (login, logout, `me` and the SSO sign-in routes), every `GET` under `/api/settings` (`/api/settings`, `/api/settings/{key}`, `/api/settings/sso` — so never store a secret in the settings table) and `GET /api/sso/config` (the public SSO details the login page needs). Every authenticated request re-checks the account's live `active` flag, its role and the role's permissions; a deactivated, deleted or demoted user's sessions are destroyed and further requests get `401`, and an edit of a role's permissions applies on its holders' next request.
 
 `GET /api/auth/me` (and the login response) carry the user's `roleName`, `permissions` (the keys the role allows; an administrator gets every key), `approvalRequired` (the own-booking keys in approval mode) and `canSeeAllSites`. Clients gate their UI on these — never on the role key.
 

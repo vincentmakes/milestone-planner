@@ -310,6 +310,8 @@ describe('WebSocketProvider slice refresh', () => {
     await receive('approval_policy');
     expect(rolesApi.getApprovalPolicies).toHaveBeenCalledTimes(1);
     expect(useAppStore.getState().approvalPolicies).toEqual([policy]);
+    // approval_required comes from the role, not the policy: no /auth/me.
+    expect(fetchCurrentUser).not.toHaveBeenCalled();
   });
 
   it('logs a failed approval-policy refresh', async () => {

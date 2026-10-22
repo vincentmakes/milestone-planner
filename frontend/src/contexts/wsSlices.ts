@@ -128,9 +128,10 @@ export function slicesForEntity(entityType: string): Slice[] {
       // list (Settings → Roles, the role pickers).
       return ['currentUser', 'roles'];
     case 'approval_policy':
-      // Who may approve changes the approval_required labels, the approver
-      // names on pending badges and the requests the user may decide.
-      return ['currentUser', 'approvalPolicies', 'approvals'];
+      // Who may approve changes the approver names on pending badges and the
+      // requests the user may decide. approval_required (/auth/me) comes from
+      // the role's modes, so a role edit (change:role) refreshes that.
+      return ['approvalPolicies', 'approvals'];
     case 'approval_request':
       // Approve/reject/cancel flip or remove pending assignment rows.
       return ['projects', 'approvals'];

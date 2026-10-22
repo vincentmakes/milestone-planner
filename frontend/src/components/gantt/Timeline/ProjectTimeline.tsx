@@ -189,7 +189,8 @@ export const ProjectTimeline = memo(function ProjectTimeline({
   const criticalPathEnabled = useAppStore((s) => s.criticalPathEnabled);
   const criticalPathItems = useAppStore((s) => s.criticalPathItems);
 
-  // Permission gate: admins, superusers and the project's manager may move
+  // Permission gate (canEditProject): `projects.edit_any`, or managing this
+  // project (`projects.manage_as_pm` + its pm_id, the PM bundle), may move
   // and resize schedule items.
   const currentUser = useAppStore((s) => s.currentUser);
   const canEdit = canEditProject(currentUser, project);
@@ -548,7 +549,8 @@ const PhaseTimeline = memo(function PhaseTimeline({
   showAssignments,
   criticalPathItems,
 }: PhaseTimelineProps) {
-  // Permission gate: admins, superusers and the project's manager may
+  // Permission gate (canEditProject): `projects.edit_any`, or managing this
+  // project (`projects.manage_as_pm` + its pm_id, the PM bundle), may
   // move/resize, link dependencies and spawn phantom siblings.
   const currentUser = useAppStore((s) => s.currentUser);
   const pmId = useAppStore((s) => s.projects.find((p) => p.id === projectId)?.pm_id);
@@ -784,7 +786,8 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
   showAssignments,
   criticalPathItems,
 }: SubphaseTimelineProps) {
-  // Permission gate: admins, superusers and the project's manager may
+  // Permission gate (canEditProject): `projects.edit_any`, or managing this
+  // project (`projects.manage_as_pm` + its pm_id, the PM bundle), may
   // move/resize, link dependencies and spawn phantom siblings.
   const currentUser = useAppStore((s) => s.currentUser);
   const pmId = useAppStore((s) => s.projects.find((p) => p.id === projectId)?.pm_id);

@@ -38,7 +38,9 @@ describe('slicesForEntity', () => {
     ['role', ['currentUser', 'roles']],
     // A policy edit changes the approver names on pending badges and who may
     // decide; a decision (approval_request) does not touch the policies.
-    ['approval_policy', ['currentUser', 'approvalPolicies', 'approvals']],
+    // approval_required comes from the role's modes (change:role), not the
+    // policy, so /auth/me is not reloaded.
+    ['approval_policy', ['approvalPolicies', 'approvals']],
     ['approval_request', ['projects', 'approvals']],
     ['todo', ['todos']],
   ])('%s → %j', (entity, slices) => {

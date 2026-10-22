@@ -188,7 +188,7 @@ PERMISSIONS: tuple[Permission, ...] = (
         "assignments.self_create",
         "Book myself",
         "Assign myself to a project, phase or subphase, or join a Kanban card, on "
-        "projects I cannot edit.",
+        "projects where I cannot manage others' bookings.",
         _BOTH,
         approvable=True,
     ),
@@ -197,7 +197,7 @@ PERMISSIONS: tuple[Permission, ...] = (
         "assignments.self_update",
         "Change my allocation / dates",
         "Change the allocation of my own assignment, or its dates at project level, on "
-        "projects I cannot edit.",
+        "projects where I cannot manage others' bookings.",
         _BOTH,
         approvable=True,
     ),
@@ -205,7 +205,8 @@ PERMISSIONS: tuple[Permission, ...] = (
         "Staff assignments",
         "assignments.self_remove",
         "Remove my booking",
-        "Remove my own assignment, or leave a Kanban card, on projects I cannot edit.",
+        "Remove my own assignment, or leave a Kanban card, on projects where I cannot "
+        "manage others' bookings.",
         _BOTH,
         approvable=True,
     ),
@@ -636,12 +637,28 @@ def build_default_role_permissions_sql() -> str:
 
 
 def permission_keys_json() -> str:
-    """The content of the committed ``shared/permission-keys.json`` (frontend mirror)."""
-    data = {
+    """
+    The content of the committed ``shared/permission-keys.json`` (frontend mirror).
+
+    ``defaults`` lists each editable system role's allow-mode keys (the
+    frontend test fixtures are checked against it); ``approval`` lists the
+    approval-mode ones and appears only when a shipped default uses that mode.
+    """
+    roles = [role.key for role in SYSTEM_ROLES if role.key != ADMIN_ROLE_KEY]
+    modes = {role: default_modes(role) for role in roles}
+    data: dict[str, Any] = {
         "keys": sorted(PERMISSION_KEYS),
         "approvable": sorted(APPROVABLE_KEYS),
         "pm_bundle": sorted(PM_BUNDLE),
+        "defaults": {
+            role: sorted(k for k, m in modes[role].items() if m == _ALLOW) for role in roles
+        },
     }
+    approval = {
+        role: sorted(k for k, m in modes[role].items() if m == "approval") for role in roles
+    }
+    if any(approval.values()):
+        data["approval"] = approval
     return json.dumps(data, indent=2) + "\n"
 
 

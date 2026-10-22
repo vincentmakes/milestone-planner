@@ -99,6 +99,13 @@ describe('flashSentForApproval / reloadAfterPendingWrite', () => {
     expect(useUIStore.getState().flashNotice).toMatchObject({ message: 'Sent for approval', tone: 'info' });
   });
 
+  it('counts several bookings sent for approval at once', () => {
+    flashSentForApproval(3);
+    expect(useUIStore.getState().flashNotice).toMatchObject({ message: '3 bookings sent for approval', tone: 'info' });
+    flashSentForApproval(1);
+    expect(useUIStore.getState().flashNotice?.message).toBe('Sent for approval');
+  });
+
   it('reloads the projects, clears the undo history and flashes', async () => {
     const fresh = [makeProject({ id: 7 })];
     vi.mocked(loadAllProjects).mockResolvedValue(fresh);

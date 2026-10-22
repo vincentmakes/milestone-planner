@@ -6,7 +6,10 @@
  * multi-line form), due date, assignee, project and card. The assignee is the
  * signed-in user only without `todos.assign_others` — held outright or
  * through the PM bundle on the chosen project, as the server checks it
- * (changing the project re-checks it and falls back to "me"). Cards are the
+ * (changing the project re-checks it and falls back to the default). The
+ * default is "me", unless the role assigns others but lacks
+ * `todos.manage_own`: then "me" is disabled and the first other person on the
+ * list is the default. Cards are the
  * chosen project's (`collectCardsForProjects`). One submit guard covers save
  * and delete; failures show in place. An edit sends every field, so a
  * cleared one goes out as an explicit null.
@@ -37,6 +40,12 @@ export interface TodoDialogProps {
 }
 
 const NONE = '';
+
+interface AssigneeOption {
+  value: string;
+  label: string;
+  disabled?: boolean;
+}
 
 function cardValue(entityType: string | null, entityId: number | null): string {
   return (entityType === 'phase' || entityType === 'subphase') && entityId != null ? `${entityType}:${entityId}` : NONE;
@@ -70,7 +79,8 @@ export function TodoDialog({ isOpen, task, onClose }: TodoDialogProps) {
     setTitle(task?.title ?? '');
     setNotes(task?.notes ?? '');
     setDue(task?.due_date ?? '');
-    setAssigneeId(String(task?.assignee_id ?? meId));
+    // A new task: the fallback effect below picks the default assignee.
+    setAssigneeId(task?.assignee_id != null ? String(task.assignee_id) : NONE);
     setProjectId(task?.project_id != null ? String(task.project_id) : NONE);
     setCard(cardValue(task?.entity_type ?? null, task?.entity_id ?? null));
     setTitleError(null);
@@ -82,6 +92,9 @@ export function TodoDialog({ isOpen, task, onClose }: TodoDialogProps) {
     [projects, projectId]
   );
   const canAssignOthers = can('todos.assign_others', project);
+  // A role that hands out tasks but may hold none itself: "me" is not an
+  // option (an edited task that is already mine keeps it).
+  const meBlocked = canAssignOthers && !can('todos.manage_own') && task?.assignee_id !== meId;
 
   const projectOptions = useMemo(
     () => [
@@ -107,8 +120,12 @@ export function TodoDialog({ isOpen, task, onClose }: TodoDialogProps) {
     [project]
   );
 
-  const assigneeOptions = useMemo(() => {
-    const me = { value: String(meId), label: `${currentUser?.first_name ?? ''} ${currentUser?.last_name ?? ''}`.trim() + ' (me)' };
+  const assigneeOptions = useMemo<AssigneeOption[]>(() => {
+    const me = {
+      value: String(meId),
+      label: `${currentUser?.first_name ?? ''} ${currentUser?.last_name ?? ''}`.trim() + ' (me)',
+      disabled: meBlocked,
+    };
     const others = new Map<number, string>();
     if (canAssignOthers) {
       for (const s of staff) {
@@ -125,12 +142,17 @@ export function TodoDialog({ isOpen, task, onClose }: TodoDialogProps) {
         a.label.localeCompare(b.label)
       ),
     ];
-  }, [canAssignOthers, staff, meId, currentUser, task]);
+  }, [canAssignOthers, meBlocked, staff, meId, currentUser, task]);
 
-  // The chosen assignee left the list (another project): back to me.
+  // "me", or the first other person when "me" is disabled (none: still "me").
+  const defaultAssignee = (assigneeOptions.find((o) => !o.disabled) ?? assigneeOptions[0]).value;
+
+  // No assignee yet (a new task), or the chosen one left the list (another
+  // project, staff reloaded) or is now disabled: back to the default.
   useEffect(() => {
-    if (!assigneeOptions.some((o) => o.value === assigneeId)) setAssigneeId(String(meId));
-  }, [assigneeOptions, assigneeId, meId]);
+    if (!isOpen || assigneeId === defaultAssignee) return;
+    if (!assigneeOptions.some((o) => o.value === assigneeId && !o.disabled)) setAssigneeId(defaultAssignee);
+  }, [isOpen, assigneeOptions, assigneeId, defaultAssignee]);
 
   const handleProjectChange = (value: string) => {
     setProjectId(value);
@@ -238,7 +260,13 @@ export function TodoDialog({ isOpen, task, onClose }: TodoDialogProps) {
             value={assigneeId}
             onChange={(e) => setAssigneeId(e.target.value)}
             disabled={assigneeOptions.length < 2}
-            hint={canAssignOthers ? undefined : 'You can assign tasks only to yourself'}
+            hint={
+              !canAssignOthers
+                ? 'You can assign tasks only to yourself'
+                : meBlocked
+                  ? 'You can assign tasks only to others'
+                  : undefined
+            }
             fullWidth
           />
         </div>

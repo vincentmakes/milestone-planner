@@ -8,6 +8,7 @@ the superuser and user roles), the PM bundle and the approvable keys.
 
 import json
 import re
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -295,8 +296,28 @@ def test_permission_keys_json_shape():
         "keys": sorted(PERMISSION_KEYS),
         "approvable": sorted(APPROVABLE_KEYS),
         "pm_bundle": sorted(PM_BUNDLE),
+        "defaults": {
+            "superuser": sorted(k for _, k, s, _ in CATALOGUE if s == "a"),
+            "user": sorted(k for _, k, _, u in CATALOGUE if u == "a"),
+        },
     }
     assert permission_keys_json().endswith("}\n")
+
+
+def test_permission_keys_json_lists_approval_defaults_separately(monkeypatch):
+    # No shipped default uses approval mode today; one that did would appear
+    # under "approval", never among the allow keys.
+    patched = tuple(
+        replace(p, defaults={**p.defaults, "user": "approval"})
+        if p.key == "assignments.self_create"
+        else p
+        for p in PERMISSIONS
+    )
+    monkeypatch.setattr(perms, "PERMISSIONS", patched)
+    data = json.loads(perms.permission_keys_json())
+    assert data["approval"] == {"superuser": [], "user": ["assignments.self_create"]}
+    assert "assignments.self_create" not in data["defaults"]["user"]
+    assert "assignments.self_create" in data["defaults"]["superuser"]
 
 
 def test_committed_permission_keys_file_is_up_to_date():

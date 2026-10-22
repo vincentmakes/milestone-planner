@@ -1,7 +1,7 @@
 /**
  * The archived view's edit button opens the project editor (which can also
  * unarchive the project), so it is offered to project editors only:
- * admins, superusers and the project's manager (utils/permissions.ts).
+ * `projects.edit_any`, or the project's manager (utils/permissions.ts).
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';

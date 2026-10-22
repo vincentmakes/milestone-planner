@@ -63,9 +63,9 @@ export function useResize() {
   const projects = useAppStore((s) => s.projects);
   const setProjects = useAppStore((s) => s.setProjects);
   const currentUser = useAppStore((s) => s.currentUser);
-  // Per-project rights: admins, superusers and the project's manager may
-  // resize schedule items; a staff booking may also be resized by the person
-  // it books.
+  // Per-project rights: `projects.edit_any`, or managing the project (the PM
+  // bundle), may resize schedule items; a staff booking may also be resized
+  // by the person it books.
   const canEditProjectId = useCallback(
     (projectId: number) => canEditProjectById(currentUser, projects, projectId),
     [currentUser, projects]

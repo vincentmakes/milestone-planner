@@ -28,9 +28,13 @@ import type {
 } from '@/types';
 import { ADMIN_ROLE_KEY } from '@/types/permissions';
 
-/** The info flash after a write that filed a request instead. */
-export function flashSentForApproval(): void {
-  useUIStore.getState().showFlash(SENT_FOR_APPROVAL, 'info');
+/**
+ * The info flash after a write that filed a request instead; `count` > 1
+ * (a What-If Apply replaying several own bookings) names how many.
+ */
+export function flashSentForApproval(count = 1): void {
+  const message = count > 1 ? `${count} bookings sent for approval` : SENT_FOR_APPROVAL;
+  useUIStore.getState().showFlash(message, 'info');
 }
 
 /**
