@@ -26,10 +26,7 @@ export function ColorByDropdown() {
       dialogLabel="Colour projects"
       radioGroupLabel="Colour projects by tag group"
       noneLabel="Default"
-      icon={
-        /* Palette icon */
-        <Icon icon={PaletteIcon} size={14} />
-      }
+      icon={<Icon icon={PaletteIcon} size={14} />}
       value={group}
       groups={tagGroups}
       onChange={setGroup}

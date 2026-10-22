@@ -26,10 +26,7 @@ export function GroupByDropdown() {
       dialogLabel="Group projects"
       radioGroupLabel="Group projects by tag group"
       noneLabel="No grouping"
-      icon={
-        /* Stacked sections icon */
-        <Icon icon={GroupByIcon} size={14} />
-      }
+      icon={<Icon icon={GroupByIcon} size={14} />}
       value={group}
       groups={tagGroups}
       onChange={setGroup}
