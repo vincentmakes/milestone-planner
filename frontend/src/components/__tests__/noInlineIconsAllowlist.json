@@ -1,0 +1,6 @@
+{
+  "components/gantt/Timeline/DependencyLayer.tsx": "Dependency arrows: a drawing layer, not an icon",
+  "components/gantt/Timeline/PhantomArrow.tsx": "Phantom-sibling arrow: a drawing layer, not an icon",
+  "components/gantt/Timeline/PhantomOverlay.tsx": "Phantom-sibling overlay arrow: a drawing layer, not an icon",
+  "components/screens/LoginScreen.tsx": "The four-colour Microsoft logo on the SSO button: a brand mark Material does not have"
+}

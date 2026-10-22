@@ -346,9 +346,9 @@ actions: option chips, tabs, colour swatches, clickable list rows, and the compa
 
 ```tsx
 import { Button } from '@/components/common/Button';
-import { PlusIcon } from '@/components/settings/panels/PanelIcons';
+import { Icon, PlusIcon } from '@/components/common/Icon';
 
-<Button icon={<PlusIcon />} onClick={handleCreate}>
+<Button icon={<Icon icon={PlusIcon} />} onClick={handleCreate}>
   Add holiday
 </Button>
 ```
@@ -375,8 +375,9 @@ Don't use `sm` in a toolbar. A small primary button next to medium ones was the 
 guide was written to stop.
 
 **Icons.** Pass icons through the `icon` prop (`iconPosition="right"` puts it after the label).
-The button sizes the svg — 14 px in `md`, 12 px in `sm`, 20 px in `lg` — and the icon inherits the text colour
-through `currentColor`. Don't put an inline `<svg>` with a hand-tuned margin in the children.
+The button sizes the svg — 14 px in `md`, 12 px in `sm`, 20 px in `lg`, whatever `size` the `Icon`
+was given — and the icon inherits the text colour through `currentColor`. Don't put an icon with a
+hand-tuned margin in the children.
 
 **States.** `disabled` dims to 50 % opacity (the global `button:disabled` rule). `loading` is
 **the** way to show an in-flight write: `<Button loading={isSubmitting}>Save Changes</Button>`
@@ -434,7 +435,7 @@ arrow or a styled link.
 
 **Row actions.** Edit, delete and similar actions repeated on every row are compact **28 px**
 icon-only buttons (`.iconBtn` / `.actionBtn` / `.editBtn` in the panel's module) with
-`PanelIcons` at their default size, each with an `aria-label` that names the row (`Delete ISO
+the §3.14 icon at its row size, each with an `aria-label` that names the row (`Delete ISO
 Audit`) and usually a `title`. They stay compact so a long list remains scannable. The inline
 confirm/cancel pairs (`UsersPanel`, `EquipmentPanel` inline type/skill add) are 28 px too, named
 **Add type** / **Cancel adding a type**. Debt: *My absences* uses text `ghost sm` buttons. None
@@ -762,23 +763,57 @@ allowed in `Header.module.css` / `WhatIfToggle.module.css` are the ≤ 640 px mo
 
 ### 3.14 Icons
 
-Take icons from `components/settings/panels/PanelIcons.tsx` and add a new one there rather than
-inlining an svg. Every icon is `aria-hidden`, so a button's accessible name is its label alone
-and tests select buttons by role and exact name.
+Every icon is a **Material icon** from `@mui/icons-material`, drawn through
+`components/common/Icon`: `icons.ts` binds each app name to its Material component, and
+`Icon` renders one at a size in px in the current text colour.
 
-| Action | Icon | Default size |
+```tsx
+import { Icon, EditIcon, PlusIcon } from '@/components/common/Icon';
+
+<Icon icon={EditIcon} size={15} />                    // a row action
+<Button icon={<Icon icon={PlusIcon} />}>Add type</Button>  // the button sizes it
+```
+
+- **Outlined by default** (`EditOutlined`, `DeleteOutlined`, …). A filled glyph only where
+  Material has a single variant (`Add`, `Close`, `Check`, the chevrons, `Refresh`) or the
+  meaning needs it (`PushPin` = pinned vs `PushPinOutlined` = own dates).
+- **Decorative.** `Icon` is `aria-hidden` unless it gets a `title` (then `role="img"` with that
+  name), so a button's accessible name is its label alone and tests select buttons by role
+  and exact name. A test that needs to tell icons apart reads the Material `data-testid`
+  (`CheckCircleOutlinedIcon`).
+- **Sized by `size`** (px, default 16), which is the svg's font size — Material icons are 1em
+  square. A stylesheet that sets the svg's `width` / `height` (the `Button` icon slot, a row's
+  `.chevron`) wins, and rotations by CSS keep working on the svg element.
+- **Colour** is `currentColor`: colour the parent, or give the `Icon` a `className`.
+- **No inline `<svg>`.** `components/__tests__/noInlineIcons.test.ts` fails on any `<svg>`
+  outside `noInlineIconsAllowlist.json` (the Gantt dependency arrows and the Microsoft logo on
+  the SSO button, each with its reason). No MUI component other than the icons, no theme
+  provider, no `sx` — the one Emotion setting is `IconStyles` in `main.tsx`, which puts the icons'
+  base rules first so CSS Modules win a tie.
+
+**Adding an icon.** Pick the Material icon (outlined variant first), add one line to
+`icons.ts` — `export { default as FooIcon } from '@mui/icons-material/FooOutlined';`, deep path
+so the build keeps only the icons in use — with a short comment saying what it stands for, then
+render it with `Icon`. Reuse an existing name when the meaning is the same.
+
+| Meaning | Icon | Size |
 | --- | --- | --- |
-| Add / create | `PlusIcon` | 14 px |
-| Edit | `EditIcon` | 15 px |
-| Delete | `TrashIcon` | 15 px |
-| Remove a link (e.g. *Remove from my sites*) | `UnlinkIcon` | 15 px |
-| Open a related management section (**Manage Skills**, **Manage Types**) | `GearIcon` | 14 px |
-| Import a file | `UploadIcon` | 14 px |
-| Export / download | `DownloadIcon` | 14 px |
+| Add / create | `PlusIcon` (`Add`) | 14 px |
+| Edit | `EditIcon` (`EditOutlined`) | 15 px in Settings rows, 14 px in menus |
+| Delete | `TrashIcon` (`DeleteOutlined`) | 15 px in Settings rows, 14 px in menus |
+| Remove a link (e.g. *Remove from my sites*) | `UnlinkIcon` (`LinkOffOutlined`) | 15 px |
+| Open a related management section (**Manage Skills**, **Manage Types**), Settings | `GearIcon` (`SettingsOutlined`) | 14 px |
+| Import a file | `UploadIcon` (`UploadOutlined`) | 14 px; 24–48 px in drop zones |
+| Export / download | `DownloadIcon` (`DownloadOutlined`) | 14 px |
 | Refresh from a source | `RefreshIcon` | 14 px |
-| Back | `BackIcon` | 14 px |
-| Log out | `LogoutIcon` | 14 px |
-| Drag handle | `DragHandleIcon` | 16 px |
+| Back, previous | `BackIcon` (`ChevronLeft`) | 14 px; 16 px in the header |
+| Expand (rotated by CSS) / dropdown | `ChevronRightIcon` / `ChevronDownIcon` (`ExpandMore`) | 12 px |
+| Log out | `LogoutIcon` | 14 px; 16 px in the account menu |
+| Drag a list row / a Gantt or resource row | `DragHandleIcon` / `DragDotsIcon` (`DragIndicator`) | 16 px / 12 px |
+| Close, dismiss, cancel | `CloseIcon` | 18 px in `Modal`, 20 px in admin dialogs, 12–14 px inline |
+| A checked option | `CheckIcon` | 12 px in a 16 px checkbox |
+| Warning, conflict | `WarningIcon` (`WarningAmberOutlined`) | 14–16 px |
+| Settings sections, sidebar views | one icon each (`sections.tsx`, `Navigation.tsx`) | 16 px / 18 px |
 
 Row actions in the Settings panels are 28 px buttons rendering these icons (`CheckIcon`,
 `CloseIcon` for an inline confirm/cancel pair, `CheckCircleIcon` / `CircleIcon` for an
@@ -831,7 +866,7 @@ has no fixed height).
 ## 6. Accessibility
 
 - Every icon-only control has an `aria-label` that names its target (`Delete ISO Audit`), and
-  its svg is `aria-hidden`.
+  its `Icon` is `aria-hidden` (§3.14).
 - Toggles are `role="switch"` (`ToggleSwitch`) or carry `aria-pressed` (view modes, **My Todo**,
   *My absences* filters).
 - Dropdown triggers carry `aria-expanded` and `aria-haspopup="dialog"`; a checkbox/radio panel
@@ -922,8 +957,8 @@ plus an entry in `THEMES` and, if it is a new family, `THEME_FAMILIES` in `utils
 | `frontend/src/styles/themes/themes.css` | S-Theme dark and light |
 | `frontend/src/styles/global.css` | Resets, native controls, focus ring, What-If frame, scrollbar, print, mobile and touch rules |
 | `frontend/src/styles/__tests__/cssTokens.test.ts` | Guard: every `var(--x)` read is defined |
-| `frontend/src/components/common/` | `Button`, `Input`, `Select`, `ToggleSwitch`, `Modal`, `ContextMenu`, `AllocationSlider`, `MentionTextarea`, `TagFilterDropdown`, `NotificationBell`, `OnlineUsers`, `ActivityFeed`, `ICSImportPanel`, `OverlapWarningIcon`, `RoleChecklist`, `PendingBadge`, `ApprovalActions`, `useSubmitGuard` |
-| `frontend/src/components/settings/PanelToolbar.tsx`, `panels/PanelIcons.tsx` | Toolbar layout and the icon set |
+| `frontend/src/components/common/` | `Icon` (the icon set, §3.14), `Button`, `Input`, `Select`, `ToggleSwitch`, `Modal`, `ContextMenu`, `AllocationSlider`, `MentionTextarea`, `TagFilterDropdown`, `NotificationBell`, `OnlineUsers`, `ActivityFeed`, `ICSImportPanel`, `OverlapWarningIcon`, `RoleChecklist`, `PendingBadge`, `ApprovalActions`, `useSubmitGuard` |
+| `frontend/src/components/settings/PanelToolbar.tsx` | Toolbar layout |
 | `frontend/src/components/common/Modal/Modal.test.tsx`, `components/admin/modals/CredentialsModal.test.tsx`, `components/common/Button/Button.test.tsx` | Executable guards of the modal and button rules |
 | `frontend/src/utils/themeColors.ts`, `utils/colorSwatches.ts`, `utils/tags.ts` | Theme reads in JS, user-pickable colours, `barTextColor` |
 | `frontend/src/hooks/useHeaderDensity.ts`, `utils/touchEvents.ts`, `hooks/useKeyboardShortcuts.ts` | Header tiers, touch mapping, global shortcuts |
