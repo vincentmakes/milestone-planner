@@ -13,6 +13,7 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { createVacation, importVacations, getVacations } from '@/api/endpoints/vacations';
 import type { AbsenceType } from '@/types';
 import { asSignedIn } from '@/test/permissionFixtures';
+import { dateValue, openDateField, pickEnd, pickRange, showMonth } from '@/test/datePicker';
 
 vi.mock('@/api/endpoints/vacations', () => ({
   createVacation: vi.fn().mockResolvedValue({}),
@@ -71,8 +72,8 @@ describe('VacationModal', () => {
 
     // Falls back to the signed-in user when they are not in the site's staff list
     expect(screen.getByText('Una User')).toBeInTheDocument();
-    expect(screen.getByLabelText('From')).toHaveAttribute('type', 'date');
-    expect(screen.getByLabelText('To')).toHaveAttribute('type', 'date');
+    expect(screen.getByLabelText('From')).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(screen.getByLabelText('To')).toHaveAttribute('aria-haspopup', 'dialog');
     const select = screen.getByLabelText('Absence type') as HTMLSelectElement;
     expect(select.value).toBe('1'); // Holidays, not the first-sorted Home Office
 
@@ -201,10 +202,9 @@ describe('VacationModal', () => {
     const picker = screen.getByLabelText('Staff Member');
     fireEvent.change(picker, { target: { value: '5' } });
     expect(picker).toHaveValue('5');
-    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-11-02' } });
-    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-11-06' } });
-    expect(screen.getByLabelText('From')).toHaveValue('2026-11-02');
-    expect(screen.getByLabelText('To')).toHaveValue('2026-11-06');
+    pickRange('From', '2026-11-02', '2026-11-06');
+    expect(dateValue('From')).toBe('2026-11-02');
+    expect(dateValue('To')).toBe('2026-11-06');
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(createVacation).toHaveBeenCalled());
@@ -213,5 +213,36 @@ describe('VacationModal', () => {
       start_date: '2026-11-02',
       end_date: '2026-11-06',
     });
+  });
+
+  it('never lets the end precede the start', async () => {
+    render(<VacationModal />);
+    pickRange('From', '2026-11-02', '2026-11-06');
+    // An end picked before the start becomes the new start, keeping the duration
+    pickEnd('To', '2026-10-28');
+    expect(dateValue('From')).toBe('2026-10-28');
+    expect(dateValue('To')).toBe('2026-11-01');
+    expect(screen.getByText('5 days')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(createVacation).toHaveBeenCalled());
+    expect(vi.mocked(createVacation).mock.calls[0][0]).toMatchObject({
+      start_date: '2026-10-28',
+      end_date: '2026-11-01',
+    });
+  });
+
+  it('highlights the recurring weekdays in the calendar', () => {
+    render(<VacationModal />);
+    const cellOf = (iso: string) => document.querySelector(`td[data-day="${iso}"]:not([data-outside])`)!;
+
+    showMonth(openDateField('From'), '2026-11-02');
+    expect(cellOf('2026-11-02').className).not.toMatch(/recurring/);
+
+    // The open calendar follows the recurring days as they are picked
+    fireEvent.click(screen.getByRole('switch', { name: /Recurring Absence/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mon' }));
+    expect(cellOf('2026-11-02').className).toMatch(/recurring/); // Monday
+    expect(cellOf('2026-11-03').className).not.toMatch(/recurring/); // Tuesday
   });
 });

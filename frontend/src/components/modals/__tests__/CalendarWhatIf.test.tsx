@@ -20,6 +20,7 @@ import { stubConfirm } from '@/test/confirmDialog';
 import { useViewStore } from '@/stores/viewStore';
 import { tagFilterKey } from '@/utils/tags';
 import { makeTeam } from '@/test/factories';
+import { dateValue, pickEnd, pickRange } from '@/test/datePicker';
 
 const vacationsApi = vi.hoisted(() => ({
   createVacation: vi.fn(),
@@ -157,8 +158,8 @@ describe('EquipmentBlockModal in What-If mode', () => {
     expect(equipment.value).toBe('11');
     expect(Array.from(equipment.options).map((o) => o.text)).toEqual(['Select equipment…', 'HPLC 1 (Analytical Device)']);
     expect(screen.getByLabelText('Reason')).toHaveValue('maintenance');
-    expect(screen.getByLabelText('Start Date')).toHaveValue('2026-08-10');
-    expect(screen.getByLabelText('End Date')).toHaveValue('2026-08-12');
+    expect(dateValue('Start Date')).toBe('2026-08-10');
+    expect(dateValue('End Date')).toBe('2026-08-12');
     expect(screen.getByLabelText('Description')).toHaveValue('Maintenance');
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
     await waitFor(() => expect(blocksApi.updateEquipmentBlock).toHaveBeenCalledWith(4, expect.any(Object)));
@@ -192,10 +193,9 @@ describe('EquipmentBlockModal fields', () => {
     expect(screen.getByLabelText('Reason')).toHaveValue('calibration');
     expect(screen.getByLabelText('Description')).toHaveValue('Calibration');
 
-    fireEvent.change(screen.getByLabelText('Start Date'), { target: { value: '2026-09-01' } });
-    fireEvent.change(screen.getByLabelText('End Date'), { target: { value: '2026-09-03' } });
-    expect(screen.getByLabelText('Start Date')).toHaveValue('2026-09-01');
-    expect(screen.getByLabelText('End Date')).toHaveValue('2026-09-03');
+    pickRange('Start Date', '2026-09-01', '2026-09-03');
+    expect(dateValue('Start Date')).toBe('2026-09-01');
+    expect(dateValue('End Date')).toBe('2026-09-03');
     expect(screen.getByText('Equipment will be blocked for 3 days.')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Yearly check' } });
@@ -210,6 +210,26 @@ describe('EquipmentBlockModal fields', () => {
         reason: 'calibration',
         description: 'Yearly check',
       })
+    );
+  });
+
+  it('never lets the end precede the start', async () => {
+    useWhatIfStore.setState({ whatIfMode: false });
+    act(() => useUIStore.getState().openEquipmentBlockModal(block, 11));
+    render(<EquipmentBlockModal />);
+
+    // An end picked before the start becomes the new start, keeping the duration
+    pickEnd('End Date', '2026-08-05');
+    expect(dateValue('Start Date')).toBe('2026-08-05');
+    expect(dateValue('End Date')).toBe('2026-08-07');
+    expect(screen.getByText('Equipment will be blocked for 3 days.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() =>
+      expect(blocksApi.updateEquipmentBlock).toHaveBeenCalledWith(
+        4,
+        expect.objectContaining({ start_date: '2026-08-05', end_date: '2026-08-07' })
+      )
     );
   });
 });

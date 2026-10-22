@@ -26,6 +26,7 @@ import {
 } from '@/api/endpoints/projects';
 import type { Phase, Project, Subphase } from '@/types';
 import { makeUser } from '@/test/factories';
+import { pickEnd } from '@/test/datePicker';
 
 vi.mock('@/api/endpoints/projects', () => ({
   createPhase: vi.fn().mockResolvedValue({}),
@@ -183,8 +184,7 @@ describe('AssignmentModal in What-If mode', () => {
     });
     render(<AssignmentModal mode="staff" />);
 
-    const [, end] = Array.from(document.body.querySelectorAll<HTMLInputElement>('input[type="date"]'));
-    fireEvent.change(end, { target: { value: '2026-09-21' } });
+    pickEnd('End Date *', '2026-09-21');
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
 
     await waitFor(() => expect(useUIStore.getState().activeModal).toBeNull());

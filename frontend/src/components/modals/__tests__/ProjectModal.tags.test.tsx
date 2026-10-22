@@ -10,6 +10,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { updateProject } from '@/api/endpoints/projects';
 import { makeStaff, makeTeam, makeUser } from '@/test/factories';
+import { dateValue, pickEnd, pickRange } from '@/test/datePicker';
 import { useViewStore } from '@/stores/viewStore';
 import { tagFilterKey } from '@/utils/tags';
 import type { Project, Site } from '@/types';
@@ -89,8 +90,8 @@ describe('ProjectModal fields', () => {
     render(<ProjectModal />);
 
     expect(screen.getByLabelText('Project Name *')).toHaveValue('Bioprocess Scale-Up');
-    expect(screen.getByLabelText('Start Date *')).toHaveValue('2026-09-01');
-    expect(screen.getByLabelText('End Date *')).toHaveValue('2026-10-01');
+    expect(dateValue('Start Date *')).toBe('2026-09-01');
+    expect(dateValue('End Date *')).toBe('2026-10-01');
     expect(screen.getByLabelText('Customer')).toHaveValue('');
     expect(screen.getByLabelText('Sales PM')).toHaveValue('');
     expect(screen.getByLabelText('Project Volume (CHF)')).toHaveValue(null);
@@ -112,14 +113,30 @@ describe('ProjectModal fields', () => {
     expect(updateProject).toHaveBeenCalledWith(9, expect.objectContaining({ name: 'Bioprocess Scale-Up' }));
   });
 
+  it('never lets the end precede the start', async () => {
+    vi.mocked(updateProject).mockResolvedValueOnce({} as never);
+    render(<ProjectModal />);
+    // An end picked before the start becomes the new start, keeping the duration
+    pickEnd('End Date *', '2026-08-20');
+    expect(dateValue('Start Date *')).toBe('2026-08-20');
+    expect(dateValue('End Date *')).toBe('2026-09-19');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    });
+    expect(updateProject).toHaveBeenCalledWith(9, expect.objectContaining({ start_date: '2026-08-20', end_date: '2026-09-19' }));
+  });
+
   it('saves what was typed into each field', async () => {
     vi.mocked(updateProject).mockResolvedValueOnce({} as never);
     render(<ProjectModal />);
 
+    pickRange('Start Date *', '2026-09-15', '2026-11-30');
+    expect(dateValue('Start Date *')).toBe('2026-09-15');
+    expect(dateValue('End Date *')).toBe('2026-11-30');
+
     const edits: [string, string][] = [
       ['Project Name *', 'Catalyst Optimization'],
-      ['Start Date *', '2026-09-15'],
-      ['End Date *', '2026-11-30'],
       ['Customer', 'Acme'],
       ['Sales PM', 'Sam Sales'],
     ];

@@ -9,6 +9,7 @@ import { Modal } from '@/components/common/Modal';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
+import { DateRangeField } from '@/components/common/DateRangeField';
 import { Select } from '@/components/common/Select';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
@@ -223,22 +224,9 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       return;
     }
 
-    // Staff: only require dates for project-level assignments
-    // Equipment: always require dates
-    if (isStaff) {
-      if (!isPhaseOrSubphase && (!startDate || !endDate)) {
-        setError('Please select start and end dates');
-        return;
-      }
-      if (allocation < 5) {
-        setError('Allocation must be at least 5%');
-        return;
-      }
-    } else {
-      if (!startDate || !endDate) {
-        setError('Please select start and end dates');
-        return;
-      }
+    if (isStaff && allocation < 5) {
+      setError('Allocation must be at least 5%');
+      return;
     }
 
     if (selfDenied) return;
@@ -504,19 +492,16 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
         {/* Equipment: always show */}
         {(!isStaff || !isPhaseOrSubphase) && (
           <div className={styles.formRow}>
-            <Input
-              label="Start Date *"
-              type="date"
-              className={styles.field}
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-            <Input
-              label="End Date *"
-              type="date"
-              className={styles.field}
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+            <DateRangeField
+              startLabel="Start Date *"
+              endLabel="End Date *"
+              fieldClassName={styles.field}
+              start={startDate}
+              end={endDate}
+              onChange={({ start, end }) => {
+                setStartDate(start);
+                setEndDate(end);
+              }}
             />
           </div>
         )}

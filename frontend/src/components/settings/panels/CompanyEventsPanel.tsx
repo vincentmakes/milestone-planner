@@ -15,6 +15,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
+import { DateRangeField } from '@/components/common/DateRangeField';
 import { Select } from '@/components/common/Select';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { PanelToolbar } from '../PanelToolbar';
@@ -651,10 +652,6 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
       setError('Please select a start date');
       return;
     }
-    if (endDate && endDate < date) {
-      setError('End date must be on or after the start date');
-      return;
-    }
     const allSiteIds = siteIds;
     if (allSiteIds.length === 0) {
       setError('Select at least one site');
@@ -699,22 +696,20 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
           placeholder="e.g., ISO Audit, All-Hands Meeting"
           autoFocus
         />
-        <Input
-          label="Start date"
-          className={styles.field}
-          id="event-date"
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-        />
-        <Input
-          label="End date (optional)"
-          className={styles.field}
-          id="event-end-date"
-          type="date"
-          value={endDate}
-          min={date || undefined}
-          onChange={(e) => setEndDate(e.target.value)}
+        <DateRangeField
+          startLabel="Start date"
+          endLabel="End date (optional)"
+          startId="event-date"
+          endId="event-end-date"
+          fieldClassName={styles.field}
+          start={date}
+          end={endDate}
+          endOptional
+          endPlaceholder="Same day"
+          onChange={({ start, end }) => {
+            setDate(start);
+            setEndDate(end);
+          }}
         />
       </div>
       <div className={styles.field}>

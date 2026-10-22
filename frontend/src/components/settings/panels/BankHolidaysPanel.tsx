@@ -11,6 +11,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
+import { DateRangeField } from '@/components/common/DateRangeField';
 import { Select } from '@/components/common/Select';
 import { PanelToolbar } from '../PanelToolbar';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -559,10 +560,6 @@ function HolidayForm({ siteId, siteName, holiday, onCancel, onSaved, onDirtyChan
       setError('Please select a date');
       return;
     }
-    if (endDate && endDate < date) {
-      setError('End date must be on or after the start date');
-      return;
-    }
     if (!beginSave()) return;
     setError(null);
     try {
@@ -603,22 +600,20 @@ function HolidayForm({ siteId, siteName, holiday, onCancel, onSaved, onDirtyChan
           placeholder="e.g., Company Day"
           autoFocus
         />
-        <Input
-          label="Date"
-          className={styles.field}
-          id="holiday-date"
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-        />
-        <Input
-          label="End date (optional)"
-          className={styles.field}
-          id="holiday-end-date"
-          type="date"
-          value={endDate}
-          min={date || undefined}
-          onChange={(e) => setEndDate(e.target.value)}
+        <DateRangeField
+          startLabel="Date"
+          endLabel="End date (optional)"
+          startId="holiday-date"
+          endId="holiday-end-date"
+          fieldClassName={styles.field}
+          start={date}
+          end={endDate}
+          endOptional
+          endPlaceholder="Same day"
+          onChange={({ start, end }) => {
+            setDate(start);
+            setEndDate(end);
+          }}
         />
       </div>
       {holiday && !holiday.is_custom && (

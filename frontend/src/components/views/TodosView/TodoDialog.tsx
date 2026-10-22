@@ -20,6 +20,7 @@ import type { FormEvent } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
+import { DateField } from '@/components/common/DateRangeField';
 import { Select } from '@/components/common/Select';
 import { Notice } from '@/components/common/Notice';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -29,6 +30,7 @@ import { useCan } from '@/hooks/useCan';
 import { todosApi } from '@/api/endpoints/todos';
 import { collectCardsForProjects } from '@/utils/kanbanCards';
 import { confirmAction } from '@/utils/confirmDialog';
+import { toDateOnly } from '@/utils/date';
 import type { CreateTodoRequest, TodoTask } from '@/types';
 import styles from './TodoDialog.module.css';
 
@@ -78,7 +80,7 @@ export function TodoDialog({ isOpen, task, onClose }: TodoDialogProps) {
     if (!isOpen) return;
     setTitle(task?.title ?? '');
     setNotes(task?.notes ?? '');
-    setDue(task?.due_date ?? '');
+    setDue(task?.due_date ? toDateOnly(task.due_date) : '');
     // A new task: the fallback effect below picks the default assignee.
     setAssigneeId(task?.assignee_id != null ? String(task.assignee_id) : NONE);
     setProjectId(task?.project_id != null ? String(task.project_id) : NONE);
@@ -253,7 +255,7 @@ export function TodoDialog({ isOpen, task, onClose }: TodoDialogProps) {
           />
         </div>
         <div className={styles.columns}>
-          <Input label="Due date" type="date" value={due} onChange={(e) => setDue(e.target.value)} fullWidth />
+          <DateField label="Due date" value={due} onChange={setDue} clearable fullWidth />
           <Select
             label="Assignee"
             options={assigneeOptions}

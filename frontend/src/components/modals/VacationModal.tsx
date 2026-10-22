@@ -9,6 +9,7 @@ import { Modal } from '@/components/common/Modal';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
+import { DateRangeField } from '@/components/common/DateRangeField';
 import { Select } from '@/components/common/Select';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore, selectCanManageOthersAbsences } from '@/stores/appStore';
@@ -245,16 +246,6 @@ export function VacationModal() {
       return false;
     }
     
-    if (!startDate || !endDate) {
-      setError('Please select start and end dates');
-      return false;
-    }
-    
-    if (daysBetweenDateStrings(startDate, endDate) < 0) {
-      setError('Start date must be before end date');
-      return false;
-    }
-    
     // Validate recurring selection
     if (isRecurring && selectedDays.length === 0) {
       setError('Please select at least one day for the recurring pattern');
@@ -446,27 +437,25 @@ export function VacationModal() {
             <div className={styles.section}>
               <label className={styles.sectionLabel}>Duration</label>
               <div className={styles.dateRow}>
-                <Input
-                  label="From"
-                  type="date"
-                  className={styles.dateField}
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-                
-                <div className={styles.dateSeparator}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                    <polyline points="12 5 19 12 12 19" />
-                  </svg>
-                </div>
-                
-                <Input
-                  label="To"
-                  type="date"
-                  className={styles.dateField}
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
+                <DateRangeField
+                  startLabel="From"
+                  endLabel="To"
+                  fieldClassName={styles.dateField}
+                  start={startDate}
+                  end={endDate}
+                  onChange={({ start, end }) => {
+                    setStartDate(start);
+                    setEndDate(end);
+                  }}
+                  highlightWeekdays={isRecurring ? selectedDays : undefined}
+                  separator={
+                    <div className={styles.dateSeparator}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                        <polyline points="12 5 19 12 12 19" />
+                      </svg>
+                    </div>
+                  }
                 />
               </div>
               

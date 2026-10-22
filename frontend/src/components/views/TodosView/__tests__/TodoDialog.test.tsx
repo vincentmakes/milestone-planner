@@ -6,13 +6,14 @@
  * creator deletes after a confirmation; failures show in place.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { TodoDialog } from '../TodoDialog';
 import { todosApi } from '@/api/endpoints/todos';
 import { useAppStore } from '@/stores/appStore';
 import { useTodoStore } from '@/stores/todoStore';
 import { resetAllStores } from '@/stores';
 import { stubConfirm } from '@/test/confirmDialog';
+import { dateValue, openDateField, pickDate } from '@/test/datePicker';
 import { makePhase, makeProject, makeStaff, makeSubphase, makeTodo, makeUser } from '@/test/factories';
 import { USER_DEFAULTS } from '@/test/permissionFixtures';
 
@@ -70,7 +71,8 @@ describe('create', () => {
     render(<TodoDialog isOpen task={null} onClose={onClose} />);
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: '  Order reagents  ' } });
     fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'Two boxes' } });
-    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-11-02' } });
+    pickDate('Due date', '2026-11-02');
+    expect(dateValue('Due date')).toBe('2026-11-02');
     const create = screen.getByRole('button', { name: 'Create task' });
     act(() => {
       fireEvent.click(create);
@@ -225,13 +227,21 @@ describe('edit', () => {
     entity_id: 10,
   });
 
+  it('shows a midnight-form due date as its calendar day', () => {
+    render(<TodoDialog isOpen task={{ ...task, due_date: '2026-11-02T00:00:00.000Z' }} onClose={onClose} />);
+    expect(dateValue('Due date')).toBe('2026-11-02');
+  });
+
   it('starts from the task and sends explicit nulls for cleared fields', async () => {
     vi.mocked(todosApi.update).mockResolvedValueOnce({ ...task, notes: null, due_date: null });
     render(<TodoDialog isOpen task={task} onClose={onClose} />);
     expect(screen.getByRole('dialog', { name: 'Edit task' })).toBeInTheDocument();
     expect((screen.getByLabelText('Card') as HTMLSelectElement).value).toBe('phase:10');
     fireEvent.change(screen.getByLabelText('Notes'), { target: { value: '' } });
-    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '' } });
+    expect(dateValue('Due date')).toBe('2026-11-02');
+    const panel = openDateField('Due date');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Clear date' }));
+    expect(dateValue('Due date')).toBe('');
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
     await waitFor(() =>
       expect(todosApi.update).toHaveBeenCalledWith(8, {

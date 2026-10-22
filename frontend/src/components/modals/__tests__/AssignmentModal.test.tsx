@@ -14,6 +14,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { createStaffAssignment, deleteStaffAssignment } from '@/api/endpoints/projects';
 import { stubConfirm } from '@/test/confirmDialog';
+import { dateValue, pickDate, pickEnd } from '@/test/datePicker';
 import type { Project } from '@/types';
 import { useViewStore } from '@/stores/viewStore';
 import { tagFilterKey } from '@/utils/tags';
@@ -196,18 +197,13 @@ describe('AssignmentModal remove button', () => {
 });
 
 describe('AssignmentModal initialisation', () => {
-  // The dialog renders in a portal, outside the render container
-  const dateInputs = () =>
-    Array.from(document.body.querySelectorAll<HTMLInputElement>('input[type="date"]'));
-
   it('keeps what the user typed when staff is refetched while open', () => {
     seed({ id: 7, role: 'user', name: 'Alice Anderson' });
     openForProject();
     render(<AssignmentModal mode="staff" />);
 
-    const [start] = dateInputs();
-    expect(start).toHaveValue('2026-09-01');
-    fireEvent.change(start, { target: { value: '2026-10-05' } });
+    expect(dateValue('Start Date *')).toBe('2026-09-01');
+    pickDate('Start Date *', '2026-10-05');
 
     // A WebSocket refetch replaces the staff list (new array, new capacity)
     act(() => {
@@ -220,7 +216,7 @@ describe('AssignmentModal initialisation', () => {
       });
     });
 
-    expect(dateInputs()[0]).toHaveValue('2026-10-05');
+    expect(dateValue('Start Date *')).toBe('2026-10-05');
     // The allocation is not reset to the refetched capacity either
     expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', '60%');
   });
@@ -229,12 +225,42 @@ describe('AssignmentModal initialisation', () => {
     seed({ id: 7, role: 'user', name: 'Alice Anderson' });
     openForProject();
     render(<AssignmentModal mode="staff" />);
-    fireEvent.change(dateInputs()[0], { target: { value: '2026-10-05' } });
+    pickDate('Start Date *', '2026-10-05');
 
     act(() => useUIStore.getState().closeModal());
     act(() => openForProject());
 
-    expect(dateInputs()[0]).toHaveValue('2026-09-01');
+    expect(dateValue('Start Date *')).toBe('2026-09-01');
+  });
+
+  it('refuses an allocation below 5 %', () => {
+    seed({ id: 7, role: 'user', name: 'Alice Anderson' });
+    // A person at 0 % capacity starts at 0 %
+    useAppStore.setState({ staff: [{ id: 7, name: 'Alice Anderson', site_id: 1, active: true, max_capacity: 0 }] as never });
+    openForProject();
+    render(<AssignmentModal mode="staff" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Assign me' }));
+    expect(screen.getByText('Allocation must be at least 5%')).toBeInTheDocument();
+    expect(createStaffAssignment).not.toHaveBeenCalled();
+  });
+
+  it('never lets the end precede the start', async () => {
+    seed({ id: 7, role: 'user', name: 'Alice Anderson' });
+    openForProject();
+    render(<AssignmentModal mode="staff" />);
+
+    // An end picked before the start becomes the new start, keeping the duration
+    pickEnd('End Date *', '2026-08-25');
+    expect(dateValue('Start Date *')).toBe('2026-08-25');
+    expect(dateValue('End Date *')).toBe('2026-12-24');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Assign me' }));
+    await waitFor(() => expect(createStaffAssignment).toHaveBeenCalled());
+    expect(vi.mocked(createStaffAssignment).mock.calls[0][0]).toMatchObject({
+      start_date: '2026-08-25',
+      end_date: '2026-12-24',
+    });
   });
 });
 

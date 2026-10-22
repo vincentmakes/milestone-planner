@@ -8,6 +8,7 @@ import { Modal } from '@/components/common/Modal';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
+import { DateRangeField } from '@/components/common/DateRangeField';
 import { Select } from '@/components/common/Select';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
@@ -402,19 +403,16 @@ export function ProjectModal() {
         />
         
         <div className={styles.formRow}>
-          <Input
-            label="Start Date *"
-            type="date"
-            className={styles.field}
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-          />
-          <Input
-            label="End Date *"
-            type="date"
-            className={styles.field}
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
+          <DateRangeField
+            startLabel="Start Date *"
+            endLabel="End Date *"
+            fieldClassName={styles.field}
+            start={startDate}
+            end={endDate}
+            onChange={({ start, end }) => {
+              setStartDate(start);
+              setEndDate(end);
+            }}
           />
         </div>
         

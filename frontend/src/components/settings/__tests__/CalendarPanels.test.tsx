@@ -16,6 +16,7 @@ import { CompanyEventsPanel } from '../panels/CompanyEventsPanel';
 import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { stubConfirm } from '@/test/confirmDialog';
+import { dateValue, pickDate, pickEnd } from '@/test/datePicker';
 import type { BankHoliday, CompanyEvent, Site, User } from '@/types';
 import { makeTeam } from '@/test/factories';
 
@@ -240,16 +241,29 @@ describe('Calendar delete confirmations', () => {
   });
 });
 
-describe('CompanyEventsPanel date validation', () => {
-  it('shows its own message for an end date before the start (no browser min-date block)', async () => {
+describe('CompanyEventsPanel dates', () => {
+  it('never lets the end precede the start', async () => {
+    api.updateCompanyEvent.mockResolvedValue({});
     render(<CompanyEventsPanel />);
     fireEvent.click(await screen.findByRole('button', { name: 'Edit ISO Audit' }));
-    fireEvent.change(screen.getByLabelText('End date (optional)'), { target: { value: '2026-05-01' } });
+    expect(dateValue('Start date')).toBe('2026-05-12');
+    expect(dateValue('End date (optional)')).toBe('');
+
+    // An end picked before the start becomes the new start; the end is still to pick
+    pickEnd('End date (optional)', '2026-05-01');
+    expect(dateValue('Start date')).toBe('2026-05-01');
+    expect(dateValue('End date (optional)')).toBe('');
+    pickEnd('End date (optional)', '2026-05-03');
+    expect(dateValue('End date (optional)')).toBe('2026-05-03');
 
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
-
-    expect(screen.getByRole('alert')).toHaveTextContent('End date must be on or after the start date');
-    expect(api.updateCompanyEvent).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(api.updateCompanyEvent).toHaveBeenCalledWith(
+        5,
+        expect.objectContaining({ date: '2026-05-01', end_date: '2026-05-03' })
+      )
+    );
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
 
@@ -276,7 +290,7 @@ describe('Calendar forms report unsaved input', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Add holiday/ }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Founders Day' } });
-    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-06-01' } });
+    pickDate('Date', '2026-06-01');
     const form = screen.getByLabelText('Name').closest('form')!;
     fireEvent.submit(form);
     fireEvent.submit(form);
@@ -330,11 +344,12 @@ describe('CompanyEventsPanel filters and form fields', () => {
     expect(year).toHaveValue('all');
 
     fireEvent.click(screen.getByRole('button', { name: /Add event/ }));
-    const end = screen.getByLabelText('End date (optional)');
-    expect(end).not.toHaveAttribute('min');
-    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-07-01' } });
-    expect(screen.getByLabelText('Start date')).toHaveValue('2026-07-01');
-    expect(end).toHaveAttribute('min', '2026-07-01');
+    expect(screen.getByLabelText('End date (optional)')).toHaveAttribute('placeholder', 'Same day');
+    pickDate('Start date', '2026-07-01');
+    expect(dateValue('Start date')).toBe('2026-07-01');
+    pickEnd('End date (optional)', '2026-06-29');
+    expect(dateValue('Start date')).toBe('2026-06-29');
+    expect(dateValue('End date (optional)')).toBe('');
   });
 
   it('sends the teams a closure is limited to and explains who is unavailable', async () => {
@@ -346,7 +361,7 @@ describe('CompanyEventsPanel filters and form fields', () => {
     await screen.findByText('ISO Audit');
     fireEvent.click(screen.getByRole('button', { name: /Add event/ }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Team offsite' } });
-    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-07-01' } });
+    pickDate('Start date', '2026-07-01');
     fireEvent.click(screen.getByRole('switch', { name: /Site closure/ }));
 
     const hint = 'Only members of the ticked teams are unavailable.';

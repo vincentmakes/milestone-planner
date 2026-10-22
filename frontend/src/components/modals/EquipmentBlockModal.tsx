@@ -17,6 +17,7 @@ import { Modal } from '@/components/common/Modal';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
+import { DateRangeField } from '@/components/common/DateRangeField';
 import { Select } from '@/components/common/Select';
 import { toInputDateFormat, formatDateISO, daysBetweenDateStrings } from '@/utils/date';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
@@ -131,14 +132,6 @@ export function EquipmentBlockModal() {
       setError('Please select equipment');
       return;
     }
-    if (!startDate || !endDate) {
-      setError('Please select start and end dates');
-      return;
-    }
-    if (endDate < startDate) {
-      setError('End date must be on or after start date');
-      return;
-    }
 
     if (!beginSubmit()) return;
     setError(null);
@@ -249,19 +242,16 @@ export function EquipmentBlockModal() {
       />
 
       <div className={styles.formRow}>
-        <Input
-          label="Start Date"
-          type="date"
-          className={styles.formGroup}
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-        />
-        <Input
-          label="End Date"
-          type="date"
-          className={styles.formGroup}
-          value={endDate}
-          onChange={(e) => setEndDate(e.target.value)}
+        <DateRangeField
+          startLabel="Start Date"
+          endLabel="End Date"
+          fieldClassName={styles.formGroup}
+          start={startDate}
+          end={endDate}
+          onChange={({ start, end }) => {
+            setStartDate(start);
+            setEndDate(end);
+          }}
         />
       </div>
 
