@@ -9,6 +9,7 @@ import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import type { TenantProvisionOptions } from '@/api/endpoints/admin';
 import { useEscapeKey } from '@/hooks';
 import styles from './AdminModal.module.css';
+import { Icon, CloseIcon } from '@/components/common/Icon';
 
 export const SEED_DEMO_LABEL = 'Seed demo data';
 export const SEED_DEMO_HINT =
@@ -34,10 +35,7 @@ export function ProvisionTenantModal({ tenantName, onClose, onConfirm }: Provisi
         <div className={styles.header}>
           <h2 id={titleId} className={styles.title}>Provision database</h2>
           <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Close dialog">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
+            <Icon icon={CloseIcon} size={20} />
           </button>
         </div>
 

@@ -20,7 +20,7 @@ import type { Site } from '@/types';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { SiteForm } from './SiteForm';
-import { CircleIcon, DownloadIcon, EditIcon, PlusIcon } from './PanelIcons';
+import { Icon, CircleIcon, DownloadIcon, EditIcon, PlusIcon } from '@/components/common/Icon';
 import styles from './SitesPanel.module.css';
 
 // Country lookup for display
@@ -159,7 +159,7 @@ export function SitesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                     title="Export site data as Excel"
                     aria-label={`Export ${site.name} as Excel`}
                   >
-                    {exportingSiteId === site.id ? <CircleIcon /> : <DownloadIcon />}
+                    {exportingSiteId === site.id ? <Icon icon={CircleIcon} size={14} /> : <Icon icon={DownloadIcon} size={14} />}
                   </button>
                 )}
                 {canManageSites && (
@@ -169,7 +169,7 @@ export function SitesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                     title="Edit site"
                     aria-label={`Edit ${site.name}`}
                   >
-                    <EditIcon />
+                    <Icon icon={EditIcon} size={15} />
                   </button>
                 )}
               </div>
@@ -191,7 +191,7 @@ export function SitesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
             onChange={(e) => setNewSiteName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleAddSite()}
           />
-          <Button icon={<PlusIcon />} onClick={handleAddSite} disabled={isSubmitting}>
+          <Button icon={<Icon icon={PlusIcon} />} onClick={handleAddSite} disabled={isSubmitting}>
             Add site
           </Button>
         </div>

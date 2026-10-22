@@ -27,7 +27,7 @@ import { confirmAction } from '@/utils/confirmDialog';
 import { confirmRoleDelete, matrixEquals, roleKeyFromName } from '@/utils/roles';
 import { useReportDirty } from '../useReportDirty';
 import { PermissionMatrix } from './PermissionMatrix';
-import { BackIcon } from './PanelIcons';
+import { Icon, BackIcon } from '@/components/common/Icon';
 import styles from './RolesPanel.module.css';
 
 /** What a new role starts with: the locked key every role holds. */
@@ -145,7 +145,7 @@ export function RoleForm({ role, catalogue, catalogueError = null, existingKeys,
 
   return (
     <form className={styles.form} onSubmit={handleSubmit}>
-      <Button type="button" variant="ghost" icon={<BackIcon />} className={styles.backLink} onClick={leave}>
+      <Button type="button" variant="ghost" icon={<Icon icon={BackIcon} />} className={styles.backLink} onClick={leave}>
         Back to roles
       </Button>
       <h4 className={styles.formTitle}>{role ? `Edit role: ${role.name}` : 'New role'}</h4>

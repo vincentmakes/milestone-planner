@@ -27,7 +27,7 @@ import { PanelToolbar } from '../PanelToolbar';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { ApprovalPoliciesForm } from './ApprovalPoliciesForm';
-import { EditIcon, PlusIcon, TrashIcon } from './PanelIcons';
+import { Icon, EditIcon, PlusIcon, TrashIcon } from '@/components/common/Icon';
 import { RoleForm } from './RoleForm';
 import styles from './RolesPanel.module.css';
 
@@ -155,7 +155,7 @@ export function RolesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
               left={<span className={styles.count}>{plural(roles.length, 'role')}</span>}
               right={
                 <Button
-                  icon={<PlusIcon />}
+                  icon={<Icon icon={PlusIcon} />}
                   onClick={() => {
                     setError(null);
                     setEditing('new');
@@ -203,7 +203,7 @@ export function RolesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                           title="Edit role"
                           aria-label={`Edit ${role.name}`}
                         >
-                          <EditIcon />
+                          <Icon icon={EditIcon} size={15} />
                         </button>
                         {!role.is_system && (
                           <button
@@ -213,7 +213,7 @@ export function RolesPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                             title="Delete role"
                             aria-label={`Delete ${role.name}`}
                           >
-                            <TrashIcon />
+                            <Icon icon={TrashIcon} size={15} />
                           </button>
                         )}
                       </div>

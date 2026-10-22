@@ -25,7 +25,7 @@ import type { Site, Tag, TagGroup } from '@/types';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
 import { SiteChecklist } from './SiteChecklist';
 import { TeamScope } from './TeamScope';
-import { DragHandleIcon, EditIcon, TrashIcon, PlusIcon } from './PanelIcons';
+import { Icon, DragHandleIcon, EditIcon, TrashIcon, PlusIcon } from '@/components/common/Icon';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { confirmAction } from '@/utils/confirmDialog';
@@ -430,7 +430,7 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
       >
         <div className={styles.mainRow}>
           <span className={styles.dragHandle} aria-hidden="true">
-            <DragHandleIcon />
+            <Icon icon={DragHandleIcon} size={16} />
           </span>
           <span
             className={styles.colorDot}
@@ -466,7 +466,7 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
               title="Edit name, color and sites"
               aria-label={`Edit ${tag.name}`}
             >
-              <EditIcon />
+              <Icon icon={EditIcon} size={15} />
             </button>
             <button
               type="button"
@@ -475,7 +475,7 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
               title="Delete"
               aria-label={`Delete ${tag.name}`}
             >
-              <TrashIcon />
+              <Icon icon={TrashIcon} size={15} />
             </button>
           </div>
         </div>
@@ -564,7 +564,7 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                 >
                   <div className={styles.mainRow}>
                     <span className={styles.dragHandle} aria-hidden="true">
-                      <DragHandleIcon />
+                      <Icon icon={DragHandleIcon} size={16} />
                     </span>
                     <div className={styles.name}>
                       {isEditing ? (
@@ -608,7 +608,7 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                           title="Rename"
                           aria-label={`Rename ${group.name}`}
                         >
-                          <EditIcon />
+                          <Icon icon={EditIcon} size={15} />
                         </button>
                       )}
                       <button
@@ -618,7 +618,7 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                         title="Delete"
                         aria-label={`Delete group ${group.name}`}
                       >
-                        <TrashIcon />
+                        <Icon icon={TrashIcon} size={15} />
                       </button>
                     </div>
                   </div>
@@ -645,7 +645,7 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
             <ToggleSwitch checked={newGroupSingle} onChange={setNewGroupSingle} label="Single select" />
             <Button
               type="submit"
-              icon={<PlusIcon />}
+              icon={<Icon icon={PlusIcon} />}
               disabled={groupAdd.isSubmitting || !newGroupName.trim()}
             >
               {groupAdd.isSubmitting ? 'Adding...' : 'Add group'}
@@ -699,7 +699,7 @@ export function TagsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
             />
             <Button
               type="submit"
-              icon={<PlusIcon />}
+              icon={<Icon icon={PlusIcon} />}
               disabled={tagAdd.isSubmitting || !newTagName.trim()}
             >
               {tagAdd.isSubmitting ? 'Adding...' : 'Add tag'}

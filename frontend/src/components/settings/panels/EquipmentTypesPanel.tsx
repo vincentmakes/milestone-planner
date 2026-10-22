@@ -14,7 +14,7 @@ import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { PanelToolbar } from '../PanelToolbar';
-import { BackIcon, EditIcon, TrashIcon } from './PanelIcons';
+import { Icon, BackIcon, EditIcon, TrashIcon, WarningIcon, InfoIcon } from '@/components/common/Icon';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { apiPut, apiDelete } from '@/api/client';
 import { getAllEquipment, getEquipment } from '@/api/endpoints/equipment';
@@ -186,7 +186,7 @@ export function EquipmentTypesPanel({ onDirtyChange }: Partial<SettingsPanelProp
                         title="Rename type"
                         aria-label={`Rename ${typeInfo.name}`}
                       >
-                        <EditIcon />
+                        <Icon icon={EditIcon} size={15} />
                       </button>
                       <button 
                         className={`${styles.actionBtn} ${styles.deleteBtn}`}
@@ -195,7 +195,7 @@ export function EquipmentTypesPanel({ onDirtyChange }: Partial<SettingsPanelProp
                         aria-label={`Delete ${typeInfo.name}`}
                         disabled={deleteGuard.isSubmitting}
                       >
-                        <TrashIcon />
+                        <Icon icon={TrashIcon} size={15} />
                       </button>
                     </div>
                   </div>
@@ -205,11 +205,7 @@ export function EquipmentTypesPanel({ onDirtyChange }: Partial<SettingsPanelProp
           </div>
           
           <div className={styles.infoNote}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="16" x2="12" y2="12" />
-              <line x1="12" y1="8" x2="12.01" y2="8" />
-            </svg>
+            <Icon icon={InfoIcon} size={14} />
             <span>
               Equipment types are shared across all sites. New types are created when you add or
               edit equipment.
@@ -290,7 +286,7 @@ function TypeForm({ typeName, existingTypes, allEquipment, onSave, onCancel, onD
     <form onSubmit={handleSubmit} className={styles.form}>
       <div className={styles.formHeader}>
         <h3>Rename Type</h3>
-        <Button type="button" variant="ghost" icon={<BackIcon />} onClick={onCancel}>
+        <Button type="button" variant="ghost" icon={<Icon icon={BackIcon} />} onClick={onCancel}>
           Back to list
         </Button>
       </div>
@@ -313,11 +309,7 @@ function TypeForm({ typeName, existingTypes, allEquipment, onSave, onCancel, onD
       
       {equipmentCount > 0 && (
         <div className={styles.renameWarning}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-            <line x1="12" y1="9" x2="12" y2="13" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
+          <Icon icon={WarningIcon} size={16} />
           <span>
             Renaming will update {equipmentCount} equipment item{equipmentCount !== 1 ? 's' : ''}
           </span>

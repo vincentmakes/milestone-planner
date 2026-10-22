@@ -25,7 +25,7 @@ import { Input } from '@/components/common/Input';
 import { Select } from '@/components/common/Select';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { PanelToolbar } from '../PanelToolbar';
-import { BackIcon, CheckIcon, CloseIcon, EditIcon, GearIcon, PlusIcon } from './PanelIcons';
+import { Icon, BackIcon, CheckIcon, CloseIcon, EditIcon, GearIcon, PlusIcon, ChevronDownIcon, FilterIcon } from '@/components/common/Icon';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { useUIStore } from '@/stores/uiStore';
@@ -212,13 +212,9 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                     className={`${styles.filterTrigger} ${activeFilterCount > 0 ? styles.hasFilters : ''}`}
                     onClick={() => setIsFilterOpen(!isFilterOpen)}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-                    </svg>
+                    <Icon icon={FilterIcon} size={14} />
                     <span>{activeFilterCount > 0 ? `${activeFilterCount} filter${activeFilterCount > 1 ? 's' : ''}` : 'Filter'}</span>
-                    <svg className={`${styles.chevron} ${isFilterOpen ? styles.open : ''}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
+                    <Icon icon={ChevronDownIcon} size={12} className={`${styles.chevron} ${isFilterOpen ? styles.open : ''}`} />
                   </button>
                 
                   {isFilterOpen && (
@@ -285,12 +281,12 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
               (canManageSkills || canCreateUsers) && (
                 <>
                   {canManageSkills && (
-                    <Button variant="secondary" icon={<GearIcon />} onClick={() => openSettings('skills')}>
+                    <Button variant="secondary" icon={<Icon icon={GearIcon} />} onClick={() => openSettings('skills')}>
                       Manage Skills
                     </Button>
                   )}
                   {canCreateUsers && (
-                    <Button icon={<PlusIcon />} onClick={handleCreate}>
+                    <Button icon={<Icon icon={PlusIcon} />} onClick={handleCreate}>
                       Add User
                     </Button>
                   )}
@@ -377,7 +373,7 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                             title="Edit user"
                             aria-label={`Edit ${user.first_name} ${user.last_name}`}
                           >
-                            <EditIcon />
+                            <Icon icon={EditIcon} size={15} />
                           </button>
                         )}
                       </td>
@@ -811,7 +807,7 @@ function UserForm({ user, sites, skills, currentUser, roles, jobTitleSuggestions
     <form onSubmit={handleSubmit} className={styles.form}>
       <div className={styles.formHeader}>
         <h3>{isEditing ? 'Edit User' : 'Add User'}</h3>
-        <Button type="button" variant="ghost" icon={<BackIcon />} onClick={onCancel}>
+        <Button type="button" variant="ghost" icon={<Icon icon={BackIcon} />} onClick={onCancel}>
           Back to list
         </Button>
       </div>
@@ -967,10 +963,10 @@ function UserForm({ user, sites, skills, currentUser, roles, jobTitleSuggestions
                 }}
               />
               <button type="button" className={styles.confirmBtn} onClick={confirmNewSkill} disabled={isCreatingSkill} aria-label="Add skill" title="Add skill">
-                <CheckIcon />
+                <Icon icon={CheckIcon} size={14} />
               </button>
               <button type="button" className={styles.cancelBtn} onClick={cancelNewSkill} disabled={isCreatingSkill} aria-label="Cancel adding a skill" title="Cancel">
-                <CloseIcon />
+                <Icon icon={CloseIcon} size={14} />
               </button>
             </div>
           ) : (

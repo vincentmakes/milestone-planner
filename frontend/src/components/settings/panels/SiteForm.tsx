@@ -18,7 +18,7 @@ import type { SelectOption } from '@/components/common/Select';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useReportDirty } from '../useReportDirty';
-import { BackIcon, RefreshIcon } from './PanelIcons';
+import { Icon, BackIcon, RefreshIcon, CheckIcon, WarningIcon } from '@/components/common/Icon';
 import type { Site } from '@/types';
 import { confirmAction } from '@/utils/confirmDialog';
 import { isSettingOn } from '@/utils/instanceSettings';
@@ -240,7 +240,7 @@ export function SiteForm({ site, onBack, onDirtyChange }: SiteFormProps) {
   
   return (
     <div className={styles.container}>
-      <Button type="button" variant="ghost" icon={<BackIcon />} className={styles.backLink} onClick={onBack}>
+      <Button type="button" variant="ghost" icon={<Icon icon={BackIcon} />} className={styles.backLink} onClick={onBack}>
         All sites
       </Button>
       <h4 className={styles.formTitle}>Edit site: {site.name}</h4>
@@ -310,20 +310,14 @@ export function SiteForm({ site, onBack, onDirtyChange }: SiteFormProps) {
         
         {nagerOn && !countryCode ? (
           <div className={styles.warning}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-              <line x1="12" y1="9" x2="12" y2="13" />
-              <line x1="12" y1="17" x2="12.01" y2="17" />
-            </svg>
+            <Icon icon={WarningIcon} size={16} />
             Set a country code above to enable automatic bank holiday fetching
           </div>
         ) : (
           <div className={styles.holidayStatusBox}>
             <div className={styles.holidayInfo}>
               <span className={styles.holidayCount}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
+                <Icon icon={CheckIcon} size={14} />
                 {siteHolidayCount === null ? 'Bank holidays' : `${siteHolidayCount} bank holidays`}
               </span>
               {nagerOn && (
@@ -335,7 +329,7 @@ export function SiteForm({ site, onBack, onDirtyChange }: SiteFormProps) {
             {nagerOn && (
               <Button
                 variant="secondary"
-                icon={<RefreshIcon />}
+                icon={<Icon icon={RefreshIcon} />}
                 onClick={handleRefreshHolidays}
                 disabled={isRefreshing}
               >

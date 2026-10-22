@@ -41,15 +41,7 @@ import {
   nameKey,
 } from './calendarUtils';
 import { SiteChecklist } from './SiteChecklist';
-import {
-  EditIcon,
-  TrashIcon,
-  PlusIcon,
-  DownloadIcon,
-  UploadIcon,
-  RefreshIcon,
-  BackIcon,
-} from './PanelIcons';
+import { Icon, EditIcon, TrashIcon, PlusIcon, DownloadIcon, UploadIcon, RefreshIcon, BackIcon } from '@/components/common/Icon';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { confirmAction } from '@/utils/confirmDialog';
@@ -338,7 +330,7 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
     return (
       <div className={styles.container}>
         <div className={styles.importHeader}>
-          <Button variant="ghost" icon={<BackIcon />} onClick={() => setView('list')}>
+          <Button variant="ghost" icon={<Icon icon={BackIcon} />} onClick={() => setView('list')}>
             Back to holidays
           </Button>
         </div>
@@ -402,7 +394,7 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
             {nagerOn && (
               <Button
                 variant="secondary"
-                icon={<RefreshIcon />}
+                icon={<Icon icon={RefreshIcon} />}
                 onClick={handleRefresh}
                 disabled={isRefreshing || !site?.country_code}
                 title={site?.country_code ? 'Fetch public holidays from the Nager API' : "Set the site's country in Sites first"}
@@ -412,16 +404,16 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
             )}
             <Button
               variant="secondary"
-              icon={<DownloadIcon />}
+              icon={<Icon icon={DownloadIcon} />}
               onClick={handleExport}
               disabled={visibleHolidays.length === 0}
             >
               Export .ics
             </Button>
-            <Button variant="secondary" icon={<UploadIcon />} onClick={openImport}>
+            <Button variant="secondary" icon={<Icon icon={UploadIcon} />} onClick={openImport}>
               Import .ics
             </Button>
-            <Button icon={<PlusIcon />} onClick={() => setForm({ mode: 'add' })}>
+            <Button icon={<Icon icon={PlusIcon} />} onClick={() => setForm({ mode: 'add' })}>
               Add holiday
             </Button>
           </>
@@ -498,7 +490,7 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
                         title="Edit holiday"
                         aria-label={`Edit ${holiday.name}`}
                       >
-                        <EditIcon />
+                        <Icon icon={EditIcon} size={15} />
                       </button>
                       <button
                         type="button"
@@ -508,7 +500,7 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
                         title="Delete holiday"
                         aria-label={`Delete ${holiday.name}`}
                       >
-                        <TrashIcon />
+                        <Icon icon={TrashIcon} size={15} />
                       </button>
                     </td>
                   </tr>

@@ -16,7 +16,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react';
 import { Button } from '@/components/common/Button';
 import { Notice } from '@/components/common/Notice';
-import { PlusIcon } from '@/components/settings/panels/PanelIcons';
+import { Icon, PlusIcon } from '@/components/common/Icon';
 import { isMyOpenTask, useTodoStore } from '@/stores/todoStore';
 import type { TodoTab } from '@/stores/todoStore';
 import { useAppStore } from '@/stores/appStore';
@@ -264,7 +264,7 @@ export function TodosView() {
             </div>
           )}
           {canCreate && (
-            <Button icon={<PlusIcon />} onClick={() => setDialog({ task: null })}>
+            <Button icon={<Icon icon={PlusIcon} />} onClick={() => setDialog({ task: null })}>
               New task
             </Button>
           )}

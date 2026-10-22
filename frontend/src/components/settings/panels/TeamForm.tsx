@@ -20,7 +20,7 @@ import { DEFAULT_TEAM_COLOR, TEAM_COLOR_SWATCHES } from '@/utils/colorSwatches';
 import type { Team } from '@/types';
 import { useReportDirty } from '../useReportDirty';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
-import { BackIcon } from './PanelIcons';
+import { Icon, BackIcon } from '@/components/common/Icon';
 import styles from './TeamsPanel.module.css';
 
 interface TeamFormProps {
@@ -104,7 +104,7 @@ export function TeamForm({ team, onBack, onSaved, onDirtyChange }: TeamFormProps
 
   return (
     <form className={styles.form} onSubmit={handleSubmit}>
-      <Button type="button" variant="ghost" icon={<BackIcon />} className={styles.backLink} onClick={onBack}>
+      <Button type="button" variant="ghost" icon={<Icon icon={BackIcon} />} className={styles.backLink} onClick={onBack}>
         Back to teams
       </Button>
       <h4 className={styles.formTitle}>Edit team: {team.name}</h4>

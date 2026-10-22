@@ -49,15 +49,7 @@ import {
 import { SiteChecklist } from './SiteChecklist';
 import { TeamScope } from './TeamScope';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
-import {
-  EditIcon,
-  TrashIcon,
-  PlusIcon,
-  DownloadIcon,
-  UploadIcon,
-  BackIcon,
-  UnlinkIcon,
-} from './PanelIcons';
+import { Icon, EditIcon, TrashIcon, PlusIcon, DownloadIcon, UploadIcon, BackIcon, UnlinkIcon } from '@/components/common/Icon';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { confirmAction } from '@/utils/confirmDialog';
@@ -331,7 +323,7 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
     return (
       <div className={styles.container}>
         <div className={styles.importHeader}>
-          <Button variant="ghost" icon={<BackIcon />} onClick={() => setView('list')}>
+          <Button variant="ghost" icon={<Icon icon={BackIcon} />} onClick={() => setView('list')}>
             Back to events
           </Button>
         </div>
@@ -405,16 +397,16 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
           <>
             <Button
               variant="secondary"
-              icon={<DownloadIcon />}
+              icon={<Icon icon={DownloadIcon} />}
               onClick={handleExport}
               disabled={visibleEvents.length === 0}
             >
               Export .ics
             </Button>
-            <Button variant="secondary" icon={<UploadIcon />} onClick={openImport}>
+            <Button variant="secondary" icon={<Icon icon={UploadIcon} />} onClick={openImport}>
               Import .ics
             </Button>
-            <Button icon={<PlusIcon />} onClick={() => setForm({ mode: 'add' })}>
+            <Button icon={<Icon icon={PlusIcon} />} onClick={() => setForm({ mode: 'add' })}>
               Add event
             </Button>
           </>
@@ -537,7 +529,7 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                           disabled={isShared}
                           aria-label={`Edit ${event.name}`}
                         >
-                          <EditIcon />
+                          <Icon icon={EditIcon} size={15} />
                         </button>
                       </span>
                       {isShared && (
@@ -549,7 +541,7 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                           title="Remove from my sites"
                           aria-label={`Remove ${event.name} from my sites`}
                         >
-                          <UnlinkIcon />
+                          <Icon icon={UnlinkIcon} size={15} />
                         </button>
                       )}
                       <span title={isShared ? SHARED_EVENT_TITLE : 'Delete event'}>
@@ -560,7 +552,7 @@ export function CompanyEventsPanel({ onDirtyChange }: Partial<SettingsPanelProps
                           disabled={isShared || deleteGuard.isSubmitting}
                           aria-label={`Delete ${event.name}`}
                         >
-                          <TrashIcon />
+                          <Icon icon={TrashIcon} size={15} />
                         </button>
                       </span>
                     </td>

@@ -25,7 +25,7 @@ import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { pickDefaultSiteId } from './calendarUtils';
 import { useVisibleSites } from '@/hooks/useVisibleSites';
-import { EditIcon, PlusIcon, TrashIcon } from './PanelIcons';
+import { Icon, EditIcon, PlusIcon, TrashIcon } from '@/components/common/Icon';
 import { TeamForm } from './TeamForm';
 import styles from './TeamsPanel.module.css';
 
@@ -168,7 +168,7 @@ export function TeamsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                   title="Edit team"
                   aria-label={`Edit ${team.name}`}
                 >
-                  <EditIcon />
+                  <Icon icon={EditIcon} size={15} />
                 </button>
                 <button
                   type="button"
@@ -177,7 +177,7 @@ export function TeamsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                   title="Delete team"
                   aria-label={`Delete ${team.name}`}
                 >
-                  <TrashIcon />
+                  <Icon icon={TrashIcon} size={15} />
                 </button>
               </div>
             </li>
@@ -198,7 +198,7 @@ export function TeamsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
           disabled={siteId === null}
         />
         <Button
-          icon={<PlusIcon />}
+          icon={<Icon icon={PlusIcon} />}
           onClick={handleAdd}
           loading={isAdding}
           disabled={isSubmitting || siteId === null}

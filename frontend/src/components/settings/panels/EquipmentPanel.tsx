@@ -26,7 +26,7 @@ import { teamIdsWithinSites } from '@/utils/teams';
 import { useVisibleSites } from '@/hooks/useVisibleSites';
 import { can } from '@/utils/permissions';
 import { TeamScope } from './TeamScope';
-import { BackIcon, CheckIcon, CloseIcon, EditIcon, GearIcon, PlusIcon } from './PanelIcons';
+import { Icon, BackIcon, CheckIcon, CloseIcon, EditIcon, GearIcon, PlusIcon } from '@/components/common/Icon';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { confirmAction } from '@/utils/confirmDialog';
@@ -197,10 +197,10 @@ export function EquipmentPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
           right={
             canManage && (
               <>
-                <Button variant="secondary" icon={<GearIcon />} onClick={() => openSettings('equipment-types')}>
+                <Button variant="secondary" icon={<Icon icon={GearIcon} />} onClick={() => openSettings('equipment-types')}>
                   Manage Types
                 </Button>
-                <Button icon={<PlusIcon />} onClick={handleCreate}>
+                <Button icon={<Icon icon={PlusIcon} />} onClick={handleCreate}>
                   Add Equipment
                 </Button>
               </>
@@ -258,7 +258,7 @@ export function EquipmentPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                           disabled={isShared}
                           aria-label={`Edit ${eq.name}`}
                         >
-                          <EditIcon />
+                          <Icon icon={EditIcon} size={15} />
                         </button>
                       </span>
                     </td>
@@ -440,7 +440,7 @@ function EquipmentForm({
     <form onSubmit={handleSubmit} className={styles.form}>
       <div className={styles.formHeader}>
         <h3>{isEditing ? 'Edit Equipment' : 'Add Equipment'}</h3>
-        <Button type="button" variant="ghost" icon={<BackIcon />} onClick={onCancel}>
+        <Button type="button" variant="ghost" icon={<Icon icon={BackIcon} />} onClick={onCancel}>
           Back to list
         </Button>
       </div>
@@ -485,10 +485,10 @@ function EquipmentForm({
                 }}
               />
               <button type="button" className={styles.confirmBtn} onClick={confirmNewType} aria-label="Add type" title="Add type">
-                <CheckIcon />
+                <Icon icon={CheckIcon} size={14} />
               </button>
               <button type="button" className={styles.cancelBtn} onClick={cancelNewType} aria-label="Cancel adding a type" title="Cancel">
-                <CloseIcon />
+                <Icon icon={CloseIcon} size={14} />
               </button>
             </div>
           ) : type ? (

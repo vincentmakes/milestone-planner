@@ -10,6 +10,7 @@ import { createOrganization } from '@/api';
 import { useEscapeKey } from '@/hooks';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import styles from './AdminModal.module.css';
+import { Icon, CloseIcon } from '@/components/common/Icon';
 
 interface CreateOrganizationModalProps {
   onClose: () => void;
@@ -79,10 +80,7 @@ export function CreateOrganizationModal({ onClose, onCreated }: CreateOrganizati
         <div className={styles.header}>
           <h2 id={titleId} className={styles.title}>Create Organization</h2>
           <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Close dialog">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
+            <Icon icon={CloseIcon} size={20} />
           </button>
         </div>
 

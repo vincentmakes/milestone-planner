@@ -225,7 +225,17 @@ describe('SSO tab', () => {
     expect(screen.getByText('Microsoft rejected the client secret.')).toBeInTheDocument();
     expect(screen.getByText('(AADSTS7000215)', { exact: false })).toBeInTheDocument();
     expect(screen.getByText('Invalid secret')).toBeInTheDocument();
-    expect(['✓', '✕', '!', '?'].every((mark) => screen.getByText(mark))).toBe(true);
+    // One mark per check, in its order: pass, fail, warn, manual.
+    const marks = ['Tenant exists', 'Client secret', 'Redirect URI', 'Groups'].map(
+      // name → its text block → the check's row, whose first child holds the mark
+      (name) => screen.getByText(name).parentElement?.parentElement?.querySelector('svg')?.getAttribute('data-testid')
+    );
+    expect(marks).toEqual([
+      'CheckCircleOutlinedIcon',
+      'CancelOutlinedIcon',
+      'WarningAmberOutlinedIcon',
+      'HelpOutlineIcon',
+    ]);
   });
 
   it('reports a failed test', async () => {

@@ -5,7 +5,7 @@
 
 import { useAdminStore } from '@/stores/adminStore';
 import { Button } from '@/components/common/Button';
-import { RefreshIcon } from '@/components/settings/panels/PanelIcons';
+import { Icon, RefreshIcon } from '@/components/common/Icon';
 import styles from './SystemStatsPanel.module.css';
 
 interface SystemStatsPanelProps {
@@ -36,7 +36,7 @@ export function SystemStatsPanel({ onRefresh }: SystemStatsPanelProps) {
     <div className={styles.container}>
       <div className={styles.header}>
         <h2>System Statistics</h2>
-        <Button variant="secondary" icon={<RefreshIcon />} onClick={onRefresh}>
+        <Button variant="secondary" icon={<Icon icon={RefreshIcon} />} onClick={onRefresh}>
           Refresh
         </Button>
       </div>

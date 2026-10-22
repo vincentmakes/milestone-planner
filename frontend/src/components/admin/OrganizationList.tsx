@@ -9,7 +9,7 @@ import { deleteOrganization } from '@/api';
 import type { Organization } from '@/api/endpoints/admin';
 import { Button } from '@/components/common/Button';
 import { Notice } from '@/components/common/Notice';
-import { PlusIcon } from '@/components/settings/panels/PanelIcons';
+import { Icon, PlusIcon, TrashIcon, EyeIcon } from '@/components/common/Icon';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './TenantList.module.css';
 
@@ -85,7 +85,7 @@ export function OrganizationList({ onCreateNew, onViewDetails, onRefresh }: Orga
       <div className={styles.panel}>
         <div className={styles.panelHeader}>
           <h2>Organizations</h2>
-          <Button icon={<PlusIcon />} onClick={onCreateNew}>
+          <Button icon={<Icon icon={PlusIcon} />} onClick={onCreateNew}>
             Create Organization
           </Button>
         </div>
@@ -153,10 +153,7 @@ export function OrganizationList({ onCreateNew, onViewDetails, onRefresh }: Orga
                               onClick={() => onViewDetails(org.id)}
                               title="View Details & Configure SSO"
                             >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                                <circle cx="12" cy="12" r="3" />
-                              </svg>
+                              <Icon icon={EyeIcon} size={14} />
                             </button>
                             
                             <button
@@ -164,10 +161,7 @@ export function OrganizationList({ onCreateNew, onViewDetails, onRefresh }: Orga
                               onClick={() => handleDelete(org)}
                               title="Delete Organization"
                             >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <polyline points="3 6 5 6 21 6" />
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                              </svg>
+                              <Icon icon={TrashIcon} size={14} />
                             </button>
                           </>
                         )}
