@@ -160,6 +160,17 @@ describe('DateRangeField — picking', () => {
     expect(datePanel()).toBeInTheDocument();
   });
 
+  it('moves the active mark to Start when Start is clicked while opened from End', () => {
+    render(<Harness />);
+    fireEvent.click(endField());
+    expect(endField()).toHaveAttribute('data-active', 'true');
+    expect(startField()).not.toHaveAttribute('data-active');
+    fireEvent.click(startField());
+    expect(datePanel()).toBeInTheDocument();
+    expect(startField()).toHaveAttribute('data-active', 'true');
+    expect(endField()).not.toHaveAttribute('data-active');
+  });
+
   it('opens on the End field to change only the end', () => {
     const spy = vi.fn();
     render(<Harness spy={spy} />);

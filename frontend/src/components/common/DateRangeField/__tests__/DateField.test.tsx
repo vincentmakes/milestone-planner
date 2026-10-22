@@ -93,6 +93,16 @@ describe('DateField', () => {
     expect(dayButton(datePanel(), '2026-03-10')).toHaveFocus();
   });
 
+  it('moves focus into the calendar on Enter after a mouse open', () => {
+    render(<Harness />);
+    fireEvent.click(field());
+    expect(datePanel()).toBeInTheDocument();
+    expect(dayButton(datePanel(), '2026-03-10')).not.toHaveFocus();
+    fireEvent.keyDown(field(), { key: 'Enter' });
+    expect(datePanel()).toBeInTheDocument();
+    expect(dayButton(datePanel(), '2026-03-10')).toHaveFocus();
+  });
+
   it('focuses the calendar’s focus target on a keyboard open without a value', () => {
     render(<Harness initial="" />);
     fireEvent.keyDown(field(), { key: 'Enter' });

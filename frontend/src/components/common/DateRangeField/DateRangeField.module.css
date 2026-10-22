@@ -21,6 +21,13 @@
   cursor: not-allowed;
 }
 
+/* While the panel is open, the field the next click fills. `:not(:disabled)`
+   lifts it above the Input's own hover rule (0,3,0), so it holds under the
+   pointer too. */
+.field input[data-active]:not(:disabled) {
+  border-color: var(--accent-blue);
+}
+
 .panel {
   position: fixed;
   z-index: var(--z-dropdown);
@@ -145,13 +152,16 @@
 }
 
 /* Touch devices: the global 40 px button minimum would stretch 34 px buttons
-   into ovals — make them 40 × 40 in 42 px cells. */
+   (and the 36 px previous / next buttons) into ovals — make them 40 × 40 in
+   42 px cells. */
 @media (hover: none) and (pointer: coarse) {
   .panel .calendar {
     --rdp-day-width: 42px;
     --rdp-day-height: 42px;
     --rdp-day_button-width: 40px;
     --rdp-day_button-height: 40px;
+    --rdp-nav_button-width: 40px;
+    --rdp-nav_button-height: 40px;
   }
 }
 
@@ -166,5 +176,7 @@
     --rdp-day-height: 44px;
     --rdp-day_button-width: 44px;
     --rdp-day_button-height: 44px;
+    --rdp-nav_button-width: 44px;
+    --rdp-nav_button-height: 44px;
   }
 }

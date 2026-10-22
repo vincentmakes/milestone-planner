@@ -42,7 +42,7 @@ export function DateField({
   markSiteCalendar = true,
 }: DateFieldProps) {
   const [open, setOpen] = useState(false);
-  /** 1 after a keyboard open, 0 after a mouse open (see DatePickerPopover). */
+  /** Bumped on each keyboard activation, 0 after a mouse open (see DatePickerPopover). */
   const [focusRequest, setFocusRequest] = useState(0);
   const panelId = useId();
 
@@ -53,9 +53,11 @@ export function DateField({
   const close = useCallback(() => setOpen(false), []);
   const { onBlur } = useDismissableOverlay({ open, onClose: close, wrapperRef, triggerRef: inputRef });
 
+  /** A keyboard activation while open (after a mouse open) moves focus into the calendar, as in DateRangeField. */
   const openPanel = (byKeyboard: boolean) => {
-    if (disabled || open) return;
-    setFocusRequest(byKeyboard ? 1 : 0);
+    if (disabled) return;
+    if (byKeyboard) setFocusRequest((n) => n + 1);
+    else if (!open) setFocusRequest(0);
     setOpen(true);
   };
 
