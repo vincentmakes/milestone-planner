@@ -300,7 +300,7 @@ describe('SubphaseRow per-person booking groups', () => {
     renderRow(grouped);
     const toggle = screen.getByRole('button', { name: "Collapse Bob Brown's bookings" });
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(toggle.parentElement).toHaveTextContent('Bob Brown2 bookings20–50 %');
+    expect(toggle.parentElement).toHaveTextContent('Bob Brown2 bookings20–50%');
     expect(toggle.parentElement).toHaveStyle({ paddingLeft: '56px' }); // depth 3
     expect(badges().map((b) => (b.parentElement as HTMLElement).style.paddingLeft)).toEqual(['92px', '92px', '76px']);
     expect(screen.queryByRole('button', { name: /Dana Diaz's bookings/ })).not.toBeInTheDocument();

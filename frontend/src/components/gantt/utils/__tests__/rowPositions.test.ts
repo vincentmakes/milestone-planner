@@ -119,8 +119,8 @@ describe('staff groups', () => {
   });
 
   it('shows one allocation or the range', () => {
-    expect(allocationRange([booking(1, 4, 40), booking(2, 4, 40)])).toBe('40 %');
-    expect(allocationRange([booking(1, 4, 60), booking(2, 4, 20), booking(3, 4, 30)])).toBe('20–60 %');
+    expect(allocationRange([booking(1, 4, 40), booking(2, 4, 40)])).toBe('40%');
+    expect(allocationRange([booking(1, 4, 60), booking(2, 4, 20), booking(3, 4, 30)])).toBe('20–60%');
   });
 });
 

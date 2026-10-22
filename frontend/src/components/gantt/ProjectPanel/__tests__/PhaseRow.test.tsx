@@ -188,7 +188,7 @@ describe('PhaseRow per-person booking groups', () => {
     const toggle = screen.getByRole('button', { name: "Collapse Bob Brown's bookings" });
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     const group = toggle.parentElement!;
-    expect(group).toHaveTextContent('Bob Brown2 bookings20–60 %');
+    expect(group).toHaveTextContent('Bob Brown2 bookings20–60%');
     expect(group).toHaveStyle({ paddingLeft: '24px' }); // depth 1
     expect(group.className).not.toMatch(/row/);
     expect([...group.attributes].some((a) => /^data-.*id$/.test(a.name))).toBe(false);
@@ -226,6 +226,6 @@ describe('PhaseRow per-person booking groups', () => {
 
   it('shows the single allocation when the bookings agree', () => {
     renderRow(makePhase({ staffAssignments: [bookings[0], { ...bookings[2], allocation: 20 }] as never }));
-    expect(screen.getByRole('button', { name: "Collapse Bob Brown's bookings" }).parentElement).toHaveTextContent('20 %');
+    expect(screen.getByRole('button', { name: "Collapse Bob Brown's bookings" }).parentElement).toHaveTextContent('bookings20%');
   });
 });

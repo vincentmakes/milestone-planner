@@ -67,10 +67,10 @@ export function staffRowCount(
   );
 }
 
-/** "40 %" when every booking has the same allocation, else "20–60 %". */
+/** "40%" when every booking has the same allocation, else "20–60%" (as the booking rows print it). */
 export function allocationRange(rows: readonly StaffAssignment[]): string {
   const values = rows.map((r) => r.allocation);
   const min = Math.min(...values);
   const max = Math.max(...values);
-  return min === max ? `${min} %` : `${min}–${max} %`;
+  return min === max ? `${min}%` : `${min}–${max}%`;
 }

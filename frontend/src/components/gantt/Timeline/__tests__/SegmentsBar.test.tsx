@@ -2,7 +2,7 @@
  * SegmentsBar: one person's bookings on a card as read-only blocks on one
  * timeline row -- each at its effective dates (own dates when unlinked, the
  * card's when linked), tinted with the card's colour, hatched while a request
- * is open, with a "name · start – end · allocation %" tooltip. No block is a
+ * is open, with a "name · start – end · allocation%" tooltip. No block is a
  * drag target.
  */
 import { describe, it, expect } from 'vitest';
@@ -69,11 +69,11 @@ describe('SegmentsBar', () => {
     const { container } = renderBar();
     expect(blocks(container)[0]).toHaveAttribute(
       'title',
-      `Bob Brown · ${formatMediumDate('2026-09-02')} – ${formatMediumDate('2026-09-04')} · 20 %`
+      `Bob Brown · ${formatMediumDate('2026-09-02')} – ${formatMediumDate('2026-09-04')} · 20%`
     );
     expect(blocks(container)[2]).toHaveAttribute(
       'title',
-      `Bob Brown · ${formatMediumDate('2026-09-01')} – ${formatMediumDate('2026-09-20')} · 40 %`
+      `Bob Brown · ${formatMediumDate('2026-09-01')} – ${formatMediumDate('2026-09-20')} · 40%`
     );
   });
 

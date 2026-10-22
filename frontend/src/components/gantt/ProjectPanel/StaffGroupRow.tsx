@@ -18,7 +18,7 @@ interface StaffGroupRowProps {
   name: string;
   /** Number of bookings the person has on the card (2+) */
   count: number;
-  /** "40 %" or "20–60 %" (allocationRange) */
+  /** "40%" or "20–60%" (allocationRange) */
   allocationText: string;
   collapsed: boolean;
   onToggle: () => void;

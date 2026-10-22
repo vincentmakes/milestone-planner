@@ -49,7 +49,7 @@ export const SegmentsBar = memo(function SegmentsBar({ rows, card, name, cells, 
             key={row.id}
             className={`${styles.segment} ${pending ? styles.pendingSegment : ''}`}
             style={style}
-            title={`${name} · ${formatMediumDate(span.start)} – ${formatMediumDate(span.end)} · ${row.allocation} %`}
+            title={`${name} · ${formatMediumDate(span.start)} – ${formatMediumDate(span.end)} · ${row.allocation}%`}
           />
         );
       })}
