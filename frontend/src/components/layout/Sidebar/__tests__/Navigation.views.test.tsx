@@ -42,6 +42,14 @@ describe('Navigation views', () => {
     }
   });
 
+  it('draws the Equipment view with a wrench, not the Settings cog', () => {
+    useAppStore.setState({ currentUser: makeUser({ role: 'admin', site_ids: [1, 2] }) });
+    render(<Navigation />);
+    const equipment = button('Equipment')!;
+    expect(equipment.querySelector('[data-testid="BuildOutlinedIcon"]')).not.toBeNull();
+    expect(equipment.querySelector('[data-testid="SettingsOutlinedIcon"]')).toBeNull();
+  });
+
   it('disables Cross-site with the reason when one site is visible', () => {
     useAppStore.setState({ currentUser: makeUser({ role: 'user', site_ids: [2] }) });
     render(<Navigation />);

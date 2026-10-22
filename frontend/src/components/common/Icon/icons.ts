@@ -68,6 +68,8 @@ export { default as UserPlusIcon } from '@mui/icons-material/PersonAddOutlined';
 export { default as StarIcon } from '@mui/icons-material/StarBorder';
 /** Absence types */
 export { default as UmbrellaIcon } from '@mui/icons-material/BeachAccessOutlined';
+/** The Equipment view in the sidebar (not the cog: that is Settings) */
+export { default as EquipmentViewIcon } from '@mui/icons-material/BuildOutlined';
 /** Equipment */
 export { default as BriefcaseIcon } from '@mui/icons-material/WorkOutlined';
 /** Equipment types */

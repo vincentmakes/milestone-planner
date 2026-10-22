@@ -4,7 +4,7 @@ import { useAllowedViews } from '@/hooks/useAllowedViews';
 import { useTodoStore } from '@/stores/todoStore';
 import type { CurrentView } from '@/types';
 import styles from './Navigation.module.css';
-import { Icon, ArchiveIcon, GlobeIcon, GearIcon, UsersIcon, CheckBoxIcon, KanbanIcon, GanttIcon } from '@/components/common/Icon';
+import { Icon, ArchiveIcon, GlobeIcon, EquipmentViewIcon, UsersIcon, CheckBoxIcon, KanbanIcon, GanttIcon } from '@/components/common/Icon';
 
 interface NavItem {
   view: CurrentView;
@@ -40,7 +40,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     view: 'equipment',
     label: 'Equipment',
-    icon: <Icon icon={GearIcon} size={18} />,
+    icon: <Icon icon={EquipmentViewIcon} size={18} />,
   },
   {
     view: 'crosssite',
