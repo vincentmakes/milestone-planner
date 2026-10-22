@@ -42,23 +42,23 @@ import { relativeTime } from '@/utils/relativeTime';
 import type { AppNotification, NotificationType, Project, Site } from '@/types';
 import styles from './NotificationBell.module.css';
 import { useHasPermission } from '@/hooks/useCan';
+import type { IconComponent } from '@/components/common/Icon';
+import { Icon, AssignedIcon, CommentIcon, MentionIcon, CheckBoxIcon, ClockIcon, WarningIcon, ShieldIcon, CheckCircleIcon, ListIcon, ManageAccountsIcon, EditCalendarIcon, BellIcon } from '@/components/common/Icon';
 
-const TYPE_ICONS: Record<string, string> = {
-  assigned: 'M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M8.5 7a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
-  comment: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
-  mention: 'M12 2a10 10 0 1 0 4 19.2M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0zm0 0v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-4 7.5',
-  status_change: 'M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11',
-  due_soon: 'M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
-  overdue: 'M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z',
-  approval_requested: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
-  approval_decided: 'M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3',
-  todo_assigned: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
-  // A person with a pencil: someone else edited your booking.
-  assignment_changed:
-    'M11.5 15H7a4 4 0 0 0-4 4v2M10 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM21.4 16.6a1.4 1.4 0 0 0-2-2l-4 4a2 2 0 0 0-.5.9l-.8 2.8 2.8-.8a2 2 0 0 0 .9-.5z',
-  // A calendar with plan bars: someone else changed your project's plan.
-  project_changed:
-    'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM7 14h6M11 18h6',
+const TYPE_ICONS: Record<string, IconComponent> = {
+  assigned: AssignedIcon,
+  comment: CommentIcon,
+  mention: MentionIcon,
+  status_change: CheckBoxIcon,
+  due_soon: ClockIcon,
+  overdue: WarningIcon,
+  approval_requested: ShieldIcon,
+  approval_decided: CheckCircleIcon,
+  todo_assigned: ListIcon,
+  // A person with a gear: someone else edited your booking.
+  assignment_changed: ManageAccountsIcon,
+  // A calendar with a pencil: someone else changed your project's plan.
+  project_changed: EditCalendarIcon,
 };
 
 /** Icon colour classes for the types whose class name is not the type itself. */
@@ -284,10 +284,7 @@ export function NotificationBell() {
         aria-controls={panelOpen ? panelId : undefined}
         title="Notifications"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-        </svg>
+        <Icon icon={BellIcon} size={18} />
         {totalBadge > 0 && (
           <span className={styles.badge}>{totalBadge > 99 ? '99+' : totalBadge}</span>
         )}
@@ -324,9 +321,7 @@ export function NotificationBell() {
                     title={reason}
                   >
                     <span className={`${styles.icon} ${TYPE_CLASSES[n.type] ?? styles[n.type] ?? ''}`}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d={TYPE_ICONS[n.type] ?? TYPE_ICONS.comment} />
-                      </svg>
+                      <Icon icon={TYPE_ICONS[n.type] ?? TYPE_ICONS.comment} size={14} />
                     </span>
                     <span className={styles.text}>
                       <span className={styles.title}>{n.title}</span>

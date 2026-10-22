@@ -1,0 +1,6 @@
+/* The red warning triangle of a double booking */
+.warning {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent-red);
+}

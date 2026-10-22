@@ -3,6 +3,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './WhatIfToggle.module.css';
+import { Icon, HelpIcon, CloseIcon } from '@/components/common/Icon';
 
 export function WhatIfToggle() {
   const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
@@ -69,20 +70,7 @@ export function WhatIfToggle() {
         onClick={handleEnter}
         title="Enter What If mode to test changes without saving"
       >
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-          <circle cx="12" cy="17" r="0.5" fill="currentColor" />
-        </svg>
+        <Icon icon={HelpIcon} size={18} />
         <span className={styles.label}>What If</span>
       </button>
     );
@@ -91,20 +79,7 @@ export function WhatIfToggle() {
   return (
     <div className={styles.activeContainer}>
       <div className={styles.indicator}>
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-          <circle cx="12" cy="17" r="0.5" fill="currentColor" />
-        </svg>
+        <Icon icon={HelpIcon} size={16} />
         <span>What If</span>
         {pendingCount > 0 && (
           <span className={styles.pendingBadge}>{pendingCount}</span>
@@ -160,7 +135,7 @@ export function WhatIfToggle() {
               aria-label="Dismiss"
               title="Hide this message (the changes stay queued)"
             >
-              ×
+              <Icon icon={CloseIcon} size={14} />
             </button>
           </div>
         </div>

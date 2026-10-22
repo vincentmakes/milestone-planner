@@ -5,6 +5,7 @@ import { Navigation } from './Navigation';
 import { AdminSection } from './AdminSection';
 import { QuickStats } from './QuickStats';
 import styles from './Sidebar.module.css';
+import { Icon, BackIcon } from '@/components/common/Icon';
 
 export function Sidebar() {
   const sidebarCollapsed = useViewStore((s) => s.sidebarCollapsed);
@@ -28,16 +29,7 @@ export function Sidebar() {
         title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <polyline points="15 18 9 12 15 6" />
-        </svg>
+        <Icon icon={BackIcon} size={16} />
       </button>
 
       <div className={styles.content}>

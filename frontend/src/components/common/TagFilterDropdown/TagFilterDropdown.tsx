@@ -19,6 +19,7 @@ import { useSiteTagFilter } from '@/hooks/useTagFilter';
 import { groupedTags } from '@/utils/tags';
 import type { TagFilter } from '@/utils/tags';
 import styles from './TagFilterDropdown.module.css';
+import { Icon, CheckIcon, FilterIcon } from '@/components/common/Icon';
 
 export interface TagFilterDropdownProps {
   /** Icon-only trigger (the label stays as the accessible name). */
@@ -96,10 +97,7 @@ export function TagFilterDropdown({ compact = false, align = 'left', anchor = 't
         title="Filter projects by tag"
         disabled={siteId === null}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-          <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
-          <line x1="7" y1="7" x2="7.01" y2="7" />
-        </svg>
+        <Icon icon={FilterIcon} size={14} />
         {!compact && <span>Tags</span>}
         {active && <span className={styles.badge} aria-hidden="true">{activeCount}</span>}
       </button>
@@ -140,7 +138,7 @@ export function TagFilterDropdown({ compact = false, align = 'left', anchor = 't
                           aria-label={`(No tag) in ${group.name}`}
                         />
                         <span className={styles.checkbox}>
-                          <CheckIcon />
+                          <Tick />
                         </span>
                         <span className={styles.noneLabel}>(No tag)</span>
                       </label>
@@ -153,7 +151,7 @@ export function TagFilterDropdown({ compact = false, align = 'left', anchor = 't
                           onChange={() => toggleTag(tag.id)}
                         />
                         <span className={styles.checkbox}>
-                          <CheckIcon />
+                          <Tick />
                         </span>
                         <span className={styles.dot} style={{ backgroundColor: tag.color }} aria-hidden="true" />
                         <span className={styles.name}>{tag.name}</span>
@@ -170,10 +168,7 @@ export function TagFilterDropdown({ compact = false, align = 'left', anchor = 't
   );
 }
 
-function CheckIcon() {
-  return (
-    <svg className={styles.checkIcon} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
-  );
+/** The tick drawn in a checked option's box (shown by CSS) */
+function Tick() {
+  return <Icon icon={CheckIcon} size={12} className={styles.checkIcon} />;
 }

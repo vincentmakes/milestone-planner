@@ -13,6 +13,7 @@ import type { ChangePayload } from '@/hooks/useWebSocket';
 import { useAppStore } from '@/stores/appStore';
 import { avatarColorFor } from '@/utils/avatarColor';
 import styles from './ActivityFeed.module.css';
+import { Icon, CloseIcon } from '@/components/common/Icon';
 
 const TOAST_LIFETIME = 6000;
 const MAX_VISIBLE = 4;
@@ -134,7 +135,7 @@ const ActivityToast = memo(function ActivityToast({ toast, projectName, onDismis
         onClick={() => onDismiss(toast._key)}
         aria-label="Dismiss"
       >
-        ×
+        <Icon icon={CloseIcon} size={14} />
       </button>
     </div>
   );

@@ -2,6 +2,7 @@ import { useViewStore } from '@/stores/viewStore';
 import { ResourceTabs } from './ResourceTabs';
 import { ResourceList } from './ResourceList';
 import styles from './ResourcePanel.module.css';
+import { Icon, ChevronRightIcon } from '@/components/common/Icon';
 
 export function ResourcePanel() {
   const resourcePanelCollapsed = useViewStore((s) => s.resourcePanelCollapsed);
@@ -21,16 +22,7 @@ export function ResourcePanel() {
         title={resourcePanelCollapsed ? 'Expand panel' : 'Collapse panel'}
         aria-label={resourcePanelCollapsed ? 'Expand panel' : 'Collapse panel'}
       >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
+        <Icon icon={ChevronRightIcon} size={16} />
       </button>
 
       <div className={styles.content}>

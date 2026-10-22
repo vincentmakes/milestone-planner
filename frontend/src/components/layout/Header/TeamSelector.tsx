@@ -18,6 +18,7 @@ import { useViewStore } from '@/stores/viewStore';
 import { normalizeTeamFilter, teamFilterLabel } from '@/utils/teams';
 import type { TeamFilter } from '@/utils/teams';
 import styles from './TeamSelector.module.css';
+import { Icon, ChevronDownIcon, UsersIcon, CheckIcon } from '@/components/common/Icon';
 
 const NO_FILTER: TeamFilter = { teamIds: [], noTeam: false };
 
@@ -73,16 +74,9 @@ export function TeamSelector() {
         aria-label={`Team filter: ${label}`}
         title="Filter by team"
       >
-        <svg className={styles.icon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-          <circle cx="9" cy="7" r="4" />
-          <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-        </svg>
+        <Icon icon={UsersIcon} size={16} className={styles.icon} />
         <span className={styles.label}>{label}</span>
-        <svg className={styles.chevron} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
+        <Icon icon={ChevronDownIcon} size={12} className={styles.chevron} />
       </button>
 
       {open && (
@@ -100,7 +94,7 @@ export function TeamSelector() {
             <label className={styles.option}>
               <input type="checkbox" checked={!active} onChange={() => clearTeamFilter(siteId)} />
               <span className={styles.checkbox}>
-                <CheckIcon />
+                <Tick />
               </span>
               <span className={styles.name}>Whole site</span>
             </label>
@@ -108,7 +102,7 @@ export function TeamSelector() {
               <label key={team.id} className={styles.option}>
                 <input type="checkbox" checked={selectedIds.has(team.id)} onChange={() => toggleTeam(team.id)} />
                 <span className={styles.checkbox}>
-                  <CheckIcon />
+                  <Tick />
                 </span>
                 <span
                   className={styles.dot}
@@ -121,7 +115,7 @@ export function TeamSelector() {
             <label className={styles.option}>
               <input type="checkbox" checked={current.noTeam} onChange={toggleNoTeam} />
               <span className={styles.checkbox}>
-                <CheckIcon />
+                <Tick />
               </span>
               <span className={styles.noneLabel}>(No team)</span>
             </label>
@@ -132,10 +126,7 @@ export function TeamSelector() {
   );
 }
 
-function CheckIcon() {
-  return (
-    <svg className={styles.checkIcon} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
-  );
+/** The tick drawn in a checked option's box (shown by CSS) */
+function Tick() {
+  return <Icon icon={CheckIcon} size={12} className={styles.checkIcon} />;
 }

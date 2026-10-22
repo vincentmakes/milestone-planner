@@ -84,7 +84,10 @@ describe('ActivityFeed', () => {
   it('describes a change in a project of the current site', () => {
     const view = render(<ActivityFeed />);
     push(view, change());
-    expect(toastTexts()).toEqual(['BBBob Brownupdated phase "Feasibility" in Bioprocess Scale-Up×']);
+    expect(toastTexts()).toEqual(['BBBob Brownupdated phase "Feasibility" in Bioprocess Scale-Up']);
+    // The dismiss button is the close icon, named by its label.
+    const dismiss = screen.getByRole('button', { name: 'Dismiss' });
+    expect(dismiss.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
   });
 
   it.each<[Partial<ChangePayload>, string]>([
