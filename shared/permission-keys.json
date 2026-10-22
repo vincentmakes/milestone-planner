@@ -74,6 +74,9 @@
     "projects.edit_any",
     "todos.assign_others"
   ],
+  "disableable": [
+    "views.kanban"
+  ],
   "defaults": {
     "superuser": [
       "absences.manage_others",

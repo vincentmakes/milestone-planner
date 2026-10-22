@@ -17,6 +17,7 @@ from app.services import permissions as perms
 from app.services.permissions import (
     ADMIN_ROLE_KEY,
     APPROVABLE_KEYS,
+    DISABLEABLE_KEYS,
     LOCKED_KEYS,
     PERMISSION_KEYS,
     PERMISSIONS,
@@ -296,6 +297,7 @@ def test_permission_keys_json_shape():
         "keys": sorted(PERMISSION_KEYS),
         "approvable": sorted(APPROVABLE_KEYS),
         "pm_bundle": sorted(PM_BUNDLE),
+        "disableable": sorted(DISABLEABLE_KEYS),
         "defaults": {
             "superuser": sorted(k for _, k, s, _ in CATALOGUE if s == "a"),
             "user": sorted(k for _, k, _, u in CATALOGUE if u == "a"),

@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import catalogue from '../../../../shared/permission-keys.json';
-import { APPROVABLE_KEYS, PERMISSION_KEYS, PM_BUNDLE } from '@/types/permissions';
+import { APPROVABLE_KEYS, DISABLEABLE_KEYS, PERMISSION_KEYS, PM_BUNDLE } from '@/types/permissions';
 import { SUPERUSER_DEFAULTS, USER_DEFAULTS } from '@/test/permissionFixtures';
 
 const sorted = (keys: Iterable<string>) => [...keys].sort();
@@ -23,6 +23,11 @@ describe('permission catalogue mirror', () => {
 
   it('uses the same project-manager bundle', () => {
     expect(sorted(PM_BUNDLE)).toEqual(sorted(catalogue.pm_bundle));
+  });
+
+  it('lets an instance switch disable the same keys', () => {
+    // roleWithin() skips these while their switch is off, like the server's role_within.
+    expect(sorted(DISABLEABLE_KEYS)).toEqual(sorted(catalogue.disableable));
   });
 
   it('gives the fixtures the shipped default allow keys of each system role', () => {

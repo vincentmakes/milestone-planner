@@ -642,7 +642,9 @@ def permission_keys_json() -> str:
 
     ``defaults`` lists each editable system role's allow-mode keys (the
     frontend test fixtures are checked against it); ``approval`` lists the
-    approval-mode ones and appears only when a shipped default uses that mode.
+    approval-mode ones and appears only when a shipped default uses that mode;
+    ``disableable`` lists the keys an instance switch may take away from
+    everyone (``DISABLEABLE_KEYS``, mirrored by the client's escalation guard).
     """
     roles = [role.key for role in SYSTEM_ROLES if role.key != ADMIN_ROLE_KEY]
     modes = {role: default_modes(role) for role in roles}
@@ -650,6 +652,7 @@ def permission_keys_json() -> str:
         "keys": sorted(PERMISSION_KEYS),
         "approvable": sorted(APPROVABLE_KEYS),
         "pm_bundle": sorted(PM_BUNDLE),
+        "disableable": sorted(DISABLEABLE_KEYS),
         "defaults": {
             role: sorted(k for k, m in modes[role].items() if m == _ALLOW) for role in roles
         },
