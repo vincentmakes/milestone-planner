@@ -510,7 +510,7 @@ def shot_date_picker(context: BrowserContext) -> None:
     page.wait_for_timeout(400)
     page.get_by_role("menuitem", name="Edit Phase").click()
     page.wait_for_timeout(800)
-    page.get_by_role("dialog").get_by_label("Start Date *", exact=True).click()
+    page.get_by_role("dialog", name="Edit Phase").get_by_label("Start Date *", exact=True).click()
     page.get_by_role("dialog", name="Choose dates").wait_for()
     page.wait_for_timeout(400)
     page.screenshot(path=str(OUT / "date-range-picker.png"))

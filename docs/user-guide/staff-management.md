@@ -66,7 +66,7 @@ New assignments (drag-and-drop, **Assign Staff**, **Assign me**) can't be create
 
 - Select a **staff member** from the dropdown
 - Set **allocation percentage** (5–100% in 5% increments). The server accepts any whole number from 1 to 100 for a single assignment and rejects 0 or more than 100; over-allocation comes from several overlapping assignments
-- An assignment whose end date is before its start date is rejected
+- Assignment dates are picked on the [shared calendar](gantt-charts.md#picking-dates), so the end date can never fall before the start date
 - A warning appears if the assignment would exceed capacity
 - Phase/subphase assignments inherit dates automatically
 - Project-level assignments allow custom start/end dates
