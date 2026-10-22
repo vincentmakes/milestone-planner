@@ -23,6 +23,7 @@ from app.models.tenant import Tenant, TenantCredentials
 from app.services.encryption import decrypt
 from app.services.tenant_provisioner import (
     ABSENCE_TYPES_SEED_SQL,
+    BOOKING_SEGMENT_COLUMN_STATEMENTS,
     COMPANY_EVENT_SITES_BACKFILL_SQL,
     COMPANY_EVENTS_CLOSURE_COLUMN_SQL,
     COMPANY_EVENTS_SITE_FK_SQL,
@@ -186,6 +187,18 @@ class TenantConnectionManager:
             await conn.commit()
         except Exception as e:
             logger.warning("Auto-migration (users.is_resource) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+
+        # Unlinked booking segments (add_booking_segments.sql, 1.17.0): own
+        # start_date / end_date on phase and subphase staff bookings plus the
+        # both-or-neither CHECK. Each DO block is its own gate, so this runs on
+        # every pool creation. One statement per execute.
+        try:
+            for statement in BOOKING_SEGMENT_COLUMN_STATEMENTS:
+                await conn.execute(text(statement))
+            await conn.commit()
+        except Exception as e:
+            logger.warning("Auto-migration (booking segments) warning for %s: %s", slug, e)
             await _rollback_quietly(conn)
 
         # Tags / project_tags tables (added in the project-tags feature).

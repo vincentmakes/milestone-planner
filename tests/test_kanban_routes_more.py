@@ -494,6 +494,8 @@ async def test_user_leaves_a_card(
         project_id=1,
         staff_id=7,
         allocation=60,
+        start_date=None,  # linked: follows the card
+        end_date=None,
         approval_status="approved",
         approval_request_id=None,
     )

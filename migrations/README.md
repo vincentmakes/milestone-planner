@@ -97,6 +97,7 @@ The authoritative list is the set of `.sql` files in this folder — run either 
 | Migration | Target | Description |
 |-----------|--------|-------------|
 | `add_absence_types_and_event_sites` | tenant | Adds absence_types (seeded), vacations.absence_type_id (existing rows → "Holidays"), and company_event_sites for multi-site events |
+| `add_booking_segments` | tenant | Adds optional start_date / end_date to phase_staff_assignments and subphase_staff_assignments (both NULL = linked, the booking follows its phase / subphase; both set = an unlinked segment inside it), with a both-or-neither CHECK (1.17.0) |
 | `add_change_notifications` | tenant | Widens the notification types with assignment_changed and project_changed (someone else changed your booking or your project) (1.15.0) |
 | `add_company_events` | tenant | Adds company_events table for non-working-day events |
 | `add_company_event_color` | tenant | Adds color column to company_events |
@@ -119,7 +120,7 @@ The authoritative list is the set of `.sql` files in this folder — run either 
 | `projects_site_fk_cascade` | tenant | Makes the projects.site_id FK ON DELETE CASCADE (deleting a site deletes its projects, as the app does) |
 | `upgrade_to_v90` | tenant | Legacy comprehensive upgrade from the Node.js era (superseded by the files above and the tenant auto-migration) |
 
-Some tenant migrations also run automatically when a tenant's connection pool is created (and at single-tenant startup): `add_tag_groups_and_sites`, `add_teams`, the tables of `add_rbac`, `add_change_notifications` and `add_user_is_resource` via `tenant_manager._run_auto_migrations` (`app/services/tenant_manager.py`), and `card_comments_author_set_null`, `cleanup_orphaned_values`, `projects_site_fk_cascade` and the seed / `users.role` foreign key of `add_rbac` via `app/services/tenant_data_migrations.py`. In both cases the SQL is shared with `app/services/tenant_provisioner.py`.
+Some tenant migrations also run automatically when a tenant's connection pool is created (and at single-tenant startup): `add_tag_groups_and_sites`, `add_teams`, the tables of `add_rbac`, `add_change_notifications`, `add_user_is_resource` and `add_booking_segments` via `tenant_manager._run_auto_migrations` (`app/services/tenant_manager.py`), and `card_comments_author_set_null`, `cleanup_orphaned_values`, `projects_site_fk_cascade` and the seed / `users.role` foreign key of `add_rbac` via `app/services/tenant_data_migrations.py`. In both cases the SQL is shared with `app/services/tenant_provisioner.py`.
 
 ### Additional Migrations (in scripts/sql/migrations/)
 

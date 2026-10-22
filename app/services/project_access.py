@@ -24,6 +24,7 @@ Like `card_access`, the helpers only read `user.id` and `user.permissions`:
 SessionUser, which carries no relationships.
 """
 
+from datetime import date
 from types import EllipsisType
 from typing import Literal
 
@@ -45,6 +46,9 @@ OWN_ASSIGNMENT_DETAIL = "You can only manage your own assignments"
 SELF_BOOKING_DENIED_DETAIL = "You are not allowed to book yourself on projects"
 STAFF_NOT_FOUND_DETAIL = "Staff member not found"
 NOT_BOOKABLE_DETAIL = "This person is not bookable as a resource"
+# An unlinked phase / subphase booking (own dates) lies inside its card;
+# ``{level}`` is "phase" or "subphase".
+SEGMENT_OUTSIDE_CARD_DETAIL = "Booking dates must lie within the {level}"
 
 BookingOutcome = Literal["allow", "approval"]
 # ``pm_id=...`` (the default) means "not loaded yet": look it up when needed.
@@ -171,6 +175,32 @@ async def require_bookable_staff(db: AsyncSession, staff_id: int) -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=STAFF_NOT_FOUND_DETAIL)
     if not is_resource:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=NOT_BOOKABLE_DETAIL)
+
+
+async def require_segment_within_card(
+    db: AsyncSession, level: str, target_id: int, start_date: date, end_date: date
+) -> None:
+    """
+    Own booking dates (an unlinked segment) must lie within the phase /
+    subphase they book (400 ``SEGMENT_OUTSIDE_CARD_DETAIL``; 404 for a card
+    that no longer exists). One query, only when dates are given.
+    """
+    card: type[ProjectPhase] | type[ProjectSubphase] = (
+        ProjectPhase if level == "phase" else ProjectSubphase
+    )
+    row = (
+        await db.execute(select(card.start_date, card.end_date).where(card.id == target_id))
+    ).first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"{level.capitalize()} not found"
+        )
+    card_start, card_end = row[0], row[1]
+    if start_date < card_start or end_date > card_end:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=SEGMENT_OUTSIDE_CARD_DETAIL.format(level=level),
+        )
 
 
 async def project_id_for_phase(db: AsyncSession, phase_id: int) -> int:

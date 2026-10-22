@@ -6,6 +6,8 @@ phases, subphases, and their staff assignments.
 
 import json
 import logging
+from datetime import date
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import and_, delete, func, or_, select, update
@@ -40,6 +42,7 @@ from app.schemas.project import (
     SubphaseUpdate,
 )
 from app.services import approvals, change_notifications
+from app.services.booking_segments import effective_dates
 from app.services.card_status import apply_completion, apply_status
 from app.services.date_range import ensure_date_order
 from app.services.permissions import permission_required_detail
@@ -78,6 +81,17 @@ router = APIRouter()
 # ---------------------------------------------------------
 # Helper Functions
 # ---------------------------------------------------------
+
+
+def _segment_fields(booking: Any, card_start: date, card_end: date) -> dict[str, Any]:
+    """A phase / subphase booking's effective dates and ``linked`` flag."""
+    start, end, linked = effective_dates(
+        getattr(booking, "start_date", None),
+        getattr(booking, "end_date", None),
+        card_start,
+        card_end,
+    )
+    return {"start_date": start, "end_date": end, "linked": linked}
 
 
 def build_subphase_tree_optimized(
@@ -127,6 +141,7 @@ def build_subphase_tree_optimized(
                 "project_id": ssa.project_id,
                 "staff_id": ssa.staff_id,
                 "allocation": ssa.allocation,
+                **_segment_fields(ssa, sp.start_date, sp.end_date),
                 "staff_name": ssa.staff_name if hasattr(ssa, "staff_name") else None,
                 "staff_role": ssa.staff_role if hasattr(ssa, "staff_role") else None,
                 "approval_status": ssa.approval_status,
@@ -642,6 +657,9 @@ async def get_project(
             self.project_id = assignment.project_id
             self.staff_id = assignment.staff_id
             self.allocation = assignment.allocation
+            # Own dates of an unlinked segment (None = linked, follows the card).
+            self.start_date = assignment.start_date
+            self.end_date = assignment.end_date
             self.staff_name = staff_name
             self.staff_role = staff_role
             # 'pending' = a self-booking awaiting approval; `approval` = the
@@ -665,6 +683,7 @@ async def get_project(
                 "project_id": psa.project_id,
                 "staff_id": psa.staff_id,
                 "allocation": psa.allocation,
+                **_segment_fields(psa, p.start_date, p.end_date),
                 "staff_name": psa.staff_name,
                 "staff_role": psa.staff_role,
                 "approval_status": psa.approval_status,
@@ -709,6 +728,7 @@ async def get_project(
             "allocation": r[0].allocation,
             "start_date": r[0].start_date,
             "end_date": r[0].end_date,
+            "linked": False,
             "staff_name": r[1],
             "staff_role": r[2],
             "approval_status": r[0].approval_status,

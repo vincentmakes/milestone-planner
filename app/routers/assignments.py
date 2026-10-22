@@ -34,9 +34,17 @@ files an approval request instead and answers **202**
 no key is a 403. The `project_id` used for those checks is always derived
 server-side from the path or the loaded row, never from the request body.
 
+Phase / subphase bookings are linked (no own dates: they follow the card) or
+unlinked segments with their own ``start_date`` / ``end_date`` inside the card
+(400 outside it; both dates or neither, 422). Responses carry the effective
+dates (own, else the card's) and ``linked``; on update an explicit ``null`` on
+both dates relinks.
+
 A booking awaiting approval is a real row (``approval_status = 'pending'``):
 a second booking of the same person on the target is a 409 (pending or not;
-at project level only with the same dates), and a direct write on a pending
+at project level only with the same dates; on a phase / subphase only when
+the effective dates overlap -- a person may hold several non-overlapping
+segments on one card), and a direct write on a pending
 row is a 409 (decide the request instead). A direct write on a row with an
 open change / removal request closes that request (``expired(overtaken)``).
 Equipment bookings need ``equipment_bookings.manage`` (also in the PM bundle).
@@ -47,10 +55,10 @@ approval path and a no-op update tell nobody.
 """
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,7 +70,7 @@ from app.models.assignment import (
     SubphaseStaffAssignment,
 )
 from app.models.equipment import Equipment, EquipmentAssignment
-from app.models.project import Project
+from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.user import User
 from app.schemas.base import (
     DateRangeOrdered,
@@ -77,12 +85,14 @@ from app.services.approvals import (
     booking_dict,
     booking_values,
 )
+from app.services.booking_segments import effective_dates
 from app.services.project_access import (
     project_id_for_phase,
     project_id_for_subphase,
     project_pm_id,
     require_bookable_staff,
     require_on_project,
+    require_segment_within_card,
     resolve_self_booking,
 )
 from app.services.site_access import (
@@ -126,7 +136,33 @@ class ProjectStaffAssignmentUpdate(DateRangeOrdered):
     end_date: date
 
 
-class PhaseStaffAssignmentCreate(BaseModel):
+SEGMENT_DATES_PAIR_MESSAGE = "Give both dates or neither"
+
+
+class SegmentDates(DateRangeOrdered):
+    """
+    Optional own dates of a phase / subphase booking: given, the booking is
+    an unlinked segment inside its card; absent (or both ``null``), it is
+    linked and follows the card. Both or neither (422). On an update, dates
+    left out keep the row's, an explicit ``null`` on both relinks it.
+    """
+
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @model_validator(mode="after")
+    def _both_dates_or_neither(self):
+        given = {"start_date", "end_date"} & self.model_fields_set
+        if len(given) == 1 or (self.start_date is None) != (self.end_date is None):
+            raise ValueError(SEGMENT_DATES_PAIR_MESSAGE)
+        return self
+
+    @property
+    def dates_given(self) -> bool:
+        return "start_date" in self.model_fields_set
+
+
+class PhaseStaffAssignmentCreate(SegmentDates):
     """Request to assign staff to a phase.
 
     `project_id` is accepted for wire compatibility but ignored: the server
@@ -139,13 +175,13 @@ class PhaseStaffAssignmentCreate(BaseModel):
     allocation: Allocation | None = 100
 
 
-class PhaseStaffAssignmentUpdate(BaseModel):
-    """Request to update a phase staff assignment."""
+class PhaseStaffAssignmentUpdate(SegmentDates):
+    """Request to update a phase staff assignment (allocation None = unchanged)."""
 
-    allocation: Allocation
+    allocation: Allocation | None = None
 
 
-class SubphaseStaffAssignmentCreate(BaseModel):
+class SubphaseStaffAssignmentCreate(SegmentDates):
     """Request to assign staff to a subphase.
 
     `project_id` is accepted for wire compatibility but ignored: the server
@@ -157,10 +193,10 @@ class SubphaseStaffAssignmentCreate(BaseModel):
     allocation: Allocation | None = 100
 
 
-class SubphaseStaffAssignmentUpdate(BaseModel):
-    """Request to update a subphase staff assignment."""
+class SubphaseStaffAssignmentUpdate(SegmentDates):
+    """Request to update a subphase staff assignment (allocation None = unchanged)."""
 
-    allocation: Allocation
+    allocation: Allocation | None = None
 
 
 class EquipmentAssignmentCreate(DateRangeOrdered):
@@ -438,6 +474,76 @@ async def delete_project_staff_assignment(
 
 
 # ---------------------------------------------------------
+# Phase / subphase bookings: own dates (unlinked segments)
+# ---------------------------------------------------------
+
+
+async def _check_segment(
+    db: AsyncSession,
+    level: str,
+    target_id: int,
+    staff_id: int,
+    start_date: date | None,
+    end_date: date | None,
+    *,
+    exclude_id: int | None = None,
+) -> None:
+    """
+    A new or changed phase / subphase booking: own dates inside the card
+    (400), and no other booking of the person on the card for overlapping
+    effective dates (409; `exclude_id` = the row being changed).
+    """
+    if start_date is not None and end_date is not None:
+        await require_segment_within_card(db, level, target_id, start_date, end_date)
+    await approvals.ensure_no_duplicate(
+        db,
+        level,
+        target_id,
+        staff_id,
+        start_date=start_date,
+        end_date=end_date,
+        exclude_id=exclude_id,
+    )
+
+
+def _requested_update(
+    row: PhaseStaffAssignment | SubphaseStaffAssignment,
+    data: PhaseStaffAssignmentUpdate | SubphaseStaffAssignmentUpdate,
+) -> tuple[dict[str, Any], date | None, date | None, bool]:
+    """
+    What a phase / subphase PUT asks for: the full booking values (compared
+    with ``booking_values(row)``, so a PUT changing nothing is a no-op), the
+    new own dates and whether they differ from the row's. A relink of an
+    unlinked row carries explicit ``null`` dates.
+    """
+    allocation = data.allocation if data.allocation is not None else row.allocation
+    if data.dates_given:
+        start_date, end_date = data.start_date, data.end_date
+    else:
+        start_date, end_date = row.start_date, row.end_date
+    values = booking_dict(
+        allocation,
+        start_date,
+        end_date,
+        clear_dates=start_date is None and row.start_date is not None,
+    )
+    changed = (start_date, end_date) != (row.start_date, row.end_date)
+    return values, start_date, end_date, changed
+
+
+def _segment_response(
+    row: PhaseStaffAssignment | SubphaseStaffAssignment, card_start: date, card_end: date
+) -> dict[str, Any]:
+    """Effective dates (own, else the card's) and ``linked`` of a created booking."""
+    start, end, linked = effective_dates(row.start_date, row.end_date, card_start, card_end)
+    return {
+        "start_date": serialize_date_as_datetime_js(start),
+        "end_date": serialize_date_as_datetime_js(end),
+        "linked": linked,
+    }
+
+
+# ---------------------------------------------------------
 # Phase Staff Assignment Routes
 # ---------------------------------------------------------
 
@@ -465,7 +571,8 @@ async def create_phase_staff_assignment(
         action=ACTION_CREATE,
     )
     await require_bookable_staff(db, data.staff_id)
-    await approvals.ensure_no_duplicate(db, "phase", phase_id, data.staff_id)
+    await _check_segment(db, "phase", phase_id, data.staff_id, data.start_date, data.end_date)
+    values = booking_dict(data.allocation or 100, data.start_date, data.end_date)
     if outcome == "approval":
         return await approvals.submit_request(
             db,
@@ -475,7 +582,7 @@ async def create_phase_staff_assignment(
             level="phase",
             project_id=project_id,
             target_id=phase_id,
-            values=booking_dict(data.allocation or 100),
+            values=values,
         )
 
     intents = change_notifications.booking_intents(
@@ -485,26 +592,31 @@ async def create_phase_staff_assignment(
         project_id=project_id,
         target_id=phase_id,
         staff_id=data.staff_id,
-        values=booking_dict(data.allocation or 100),
+        values=values,
     )
     assignment = PhaseStaffAssignment(
         phase_id=phase_id,
         project_id=project_id,
         staff_id=data.staff_id,
         allocation=data.allocation or 100,
+        start_date=data.start_date,
+        end_date=data.end_date,
     )
     db.add(assignment)
     await db.commit()
     await db.refresh(assignment)
 
-    # Get the assignment with staff details
+    # Get the assignment with staff details and the card's dates
     result = await db.execute(
         select(
             PhaseStaffAssignment,
             (User.first_name + " " + User.last_name).label("staff_name"),
             User.job_title.label("staff_role"),
+            ProjectPhase.start_date,
+            ProjectPhase.end_date,
         )
         .join(User, PhaseStaffAssignment.staff_id == User.id)
+        .join(ProjectPhase, ProjectPhase.id == PhaseStaffAssignment.phase_id)
         .where(PhaseStaffAssignment.id == assignment.id)
     )
     row = result.first()
@@ -526,6 +638,7 @@ async def create_phase_staff_assignment(
         "project_id": row[0].project_id,
         "staff_id": row[0].staff_id,
         "allocation": row[0].allocation,
+        **_segment_response(row[0], row[3], row[4]),
         "staff_name": row[1],
         "staff_role": row[2],
     }
@@ -555,6 +668,17 @@ async def update_phase_staff_assignment(
     project_id = assignment.project_id
     await ensure_project_visible(request, db, user, project_id)
     outcome = await approvals.resolve_row_write(db, user, row=assignment, action=ACTION_UPDATE)
+    values, start_date, end_date, dates_changed = _requested_update(assignment, data)
+    if dates_changed:
+        await _check_segment(
+            db,
+            "phase",
+            assignment.phase_id,
+            assignment.staff_id,
+            start_date,
+            end_date,
+            exclude_id=assignment.id,
+        )
     if outcome == "approval":
         return await approvals.submit_request(
             db,
@@ -564,7 +688,7 @@ async def update_phase_staff_assignment(
             level="phase",
             project_id=project_id,
             row=assignment,
-            values=booking_dict(data.allocation),
+            values=values,
         )
     effects = await approvals.expire_overtaken(db, user, level="phase", row=assignment)
     intents = change_notifications.booking_intents(
@@ -574,11 +698,13 @@ async def update_phase_staff_assignment(
         project_id=project_id,
         target_id=assignment.phase_id,
         staff_id=assignment.staff_id,
-        values=booking_dict(data.allocation),
+        values=values,
         previous=booking_values(assignment, "phase"),
     )
 
-    assignment.allocation = data.allocation
+    assignment.allocation = values["allocation"]
+    assignment.start_date = start_date
+    assignment.end_date = end_date
 
     await db.commit()
 
@@ -594,7 +720,7 @@ async def update_phase_staff_assignment(
     await approvals.publish(request, user, effects)
     await change_notifications.deliver(db, request, user.id, intents)
 
-    return {"success": True}
+    return {"success": True, "linked": start_date is None}
 
 
 @router.delete("/phase-staff/{assignment_id}")
@@ -687,7 +813,8 @@ async def create_subphase_staff_assignment(
         action=ACTION_CREATE,
     )
     await require_bookable_staff(db, data.staff_id)
-    await approvals.ensure_no_duplicate(db, "subphase", subphase_id, data.staff_id)
+    await _check_segment(db, "subphase", subphase_id, data.staff_id, data.start_date, data.end_date)
+    values = booking_dict(data.allocation or 100, data.start_date, data.end_date)
     if outcome == "approval":
         return await approvals.submit_request(
             db,
@@ -697,7 +824,7 @@ async def create_subphase_staff_assignment(
             level="subphase",
             project_id=project_id,
             target_id=subphase_id,
-            values=booking_dict(data.allocation or 100),
+            values=values,
         )
 
     intents = change_notifications.booking_intents(
@@ -707,26 +834,31 @@ async def create_subphase_staff_assignment(
         project_id=project_id,
         target_id=subphase_id,
         staff_id=data.staff_id,
-        values=booking_dict(data.allocation or 100),
+        values=values,
     )
     assignment = SubphaseStaffAssignment(
         subphase_id=subphase_id,
         project_id=project_id,
         staff_id=data.staff_id,
         allocation=data.allocation or 100,
+        start_date=data.start_date,
+        end_date=data.end_date,
     )
     db.add(assignment)
     await db.commit()
     await db.refresh(assignment)
 
-    # Get the assignment with staff details
+    # Get the assignment with staff details and the card's dates
     result = await db.execute(
         select(
             SubphaseStaffAssignment,
             (User.first_name + " " + User.last_name).label("staff_name"),
             User.job_title.label("staff_role"),
+            ProjectSubphase.start_date,
+            ProjectSubphase.end_date,
         )
         .join(User, SubphaseStaffAssignment.staff_id == User.id)
+        .join(ProjectSubphase, ProjectSubphase.id == SubphaseStaffAssignment.subphase_id)
         .where(SubphaseStaffAssignment.id == assignment.id)
     )
     row = result.first()
@@ -748,6 +880,7 @@ async def create_subphase_staff_assignment(
         "project_id": row[0].project_id,
         "staff_id": row[0].staff_id,
         "allocation": row[0].allocation,
+        **_segment_response(row[0], row[3], row[4]),
         "staff_name": row[1],
         "staff_role": row[2],
     }
@@ -777,6 +910,17 @@ async def update_subphase_staff_assignment(
     project_id = assignment.project_id
     await ensure_project_visible(request, db, user, project_id)
     outcome = await approvals.resolve_row_write(db, user, row=assignment, action=ACTION_UPDATE)
+    values, start_date, end_date, dates_changed = _requested_update(assignment, data)
+    if dates_changed:
+        await _check_segment(
+            db,
+            "subphase",
+            assignment.subphase_id,
+            assignment.staff_id,
+            start_date,
+            end_date,
+            exclude_id=assignment.id,
+        )
     if outcome == "approval":
         return await approvals.submit_request(
             db,
@@ -786,7 +930,7 @@ async def update_subphase_staff_assignment(
             level="subphase",
             project_id=project_id,
             row=assignment,
-            values=booking_dict(data.allocation),
+            values=values,
         )
     effects = await approvals.expire_overtaken(db, user, level="subphase", row=assignment)
     intents = change_notifications.booking_intents(
@@ -796,11 +940,13 @@ async def update_subphase_staff_assignment(
         project_id=project_id,
         target_id=assignment.subphase_id,
         staff_id=assignment.staff_id,
-        values=booking_dict(data.allocation),
+        values=values,
         previous=booking_values(assignment, "subphase"),
     )
 
-    assignment.allocation = data.allocation
+    assignment.allocation = values["allocation"]
+    assignment.start_date = start_date
+    assignment.end_date = end_date
 
     await db.commit()
 
@@ -816,7 +962,7 @@ async def update_subphase_staff_assignment(
     await approvals.publish(request, user, effects)
     await change_notifications.deliver(db, request, user.id, intents)
 
-    return {"success": True}
+    return {"success": True, "linked": start_date is None}
 
 
 @router.delete("/subphase-staff/{assignment_id}")

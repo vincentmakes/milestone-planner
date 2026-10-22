@@ -37,6 +37,7 @@ from app.models.team import Team
 from app.models.user import User, UserSite
 from app.models.vacation import Vacation
 from app.services.approvals import pending_change_text
+from app.services.booking_segments import effective_dates
 from app.services.site_access import ensure_project_visible, ensure_site_access
 from app.utils import utcnow_naive
 
@@ -1150,6 +1151,14 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
     phase_by_id = {ph.id: (p, ph) for p in project_rows for ph in p.phases}
     subphase_by_id = {sp.id: (p, sp) for p in project_rows for sp in p.subphases}
 
+    def segment_cells(booking: Any, card: Any) -> list[str]:
+        # Effective dates (own, else the card's) and whether the booking is
+        # linked to its card (no own dates).
+        start, end, linked = effective_dates(
+            booking.start_date, booking.end_date, card.start_date, card.end_date
+        )
+        return [_iso(start), _iso(end), _yes_no(linked)]
+
     for p in project_rows:
         for a in p.staff_assignments:
             project_assignment_data.append(
@@ -1179,6 +1188,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                         pa.staff_id,
                         user_by_id[pa.staff_id].full_name if pa.staff_id in user_by_id else "",
                         pa.allocation,
+                        *segment_cells(pa, ph),
                         pa.approval_status,
                         pending_change(pa),
                     ]
@@ -1195,6 +1205,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                         sa.staff_id,
                         user_by_id[sa.staff_id].full_name if sa.staff_id in user_by_id else "",
                         sa.allocation,
+                        *segment_cells(sa, sp),
                         sa.approval_status,
                         pending_change(sa),
                     ]
@@ -1228,6 +1239,9 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
             "Staff ID",
             "Staff name",
             "Allocation %",
+            "Start",
+            "End",
+            "Linked",
             "Approval status",
             "Pending change",
         ],
@@ -1244,6 +1258,9 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
             "Staff ID",
             "Staff name",
             "Allocation %",
+            "Start",
+            "End",
+            "Linked",
             "Approval status",
             "Pending change",
         ],

@@ -36,6 +36,13 @@ def _where(key: dict[str, Any], offset: int) -> str:
     )
 
 
+def _segment_values(booking: dict[str, Any]) -> dict[str, Any]:
+    """The own dates of an unlinked phase / subphase booking (none when linked)."""
+    if booking.get("start_date") is None:
+        return {}
+    return {"start_date": booking["start_date"], "end_date": booking["end_date"]}
+
+
 async def _insert_once(conn: Any, table: str, values: dict[str, Any], key: dict[str, Any]) -> bool:
     """INSERT unless a row with the same natural key exists (no id needed).
 
@@ -427,17 +434,22 @@ async def insert_demo_data(
         )
     counts["dependencies"] = len(demo.dependencies)
 
+    # Phase / subphase bookings: linked (no dates, they follow the card) or
+    # unlinked segments with their own dates; one person may hold several
+    # segments on a card, so the natural key includes the start (NULL-safe).
     for a in demo.phase_assignments:
+        pid = phase_id[(a["project"], a["phase"])]
         await _insert_once(
             conn,
             "phase_staff_assignments",
             {
                 "project_id": project_id[a["project"]],
-                "phase_id": phase_id[(a["project"], a["phase"])],
+                "phase_id": pid,
                 "staff_id": user_id[a["staff"]],
                 "allocation": a["allocation"],
+                **_segment_values(a),
             },
-            {"phase_id": phase_id[(a["project"], a["phase"])], "staff_id": user_id[a["staff"]]},
+            {"phase_id": pid, "staff_id": user_id[a["staff"]], "start_date": a.get("start_date")},
         )
     for a in demo.project_assignments:
         await _insert_once(
@@ -466,8 +478,13 @@ async def insert_demo_data(
                 "subphase_id": sid,
                 "staff_id": user_id[a["staff"]],
                 "allocation": a["allocation"],
+                **_segment_values(a),
             },
-            {"subphase_id": sid, "staff_id": user_id[a["staff"]]},
+            {
+                "subphase_id": sid,
+                "staff_id": user_id[a["staff"]],
+                "start_date": a.get("start_date"),
+            },
         )
     counts["staff_assignments"] = (
         len(demo.phase_assignments) + len(demo.project_assignments) + len(demo.subphase_assignments)

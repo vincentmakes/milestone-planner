@@ -94,6 +94,7 @@ AssignmentRow = ProjectAssignment | PhaseStaffAssignment | SubphaseStaffAssignme
 
 AWAITS_APPROVAL_DETAIL = "This booking awaits approval — approve or reject it instead"
 ALREADY_BOOKED_DETAIL = "That staff member is already booked here"
+ALREADY_BOOKED_OVERLAP_DETAIL = "This person is already booked on this card for overlapping dates"
 ALREADY_PENDING_DETAIL = "This booking already awaits approval"
 REQUEST_NOT_FOUND_DETAIL = "Approval request not found"
 OWN_REQUEST_DETAIL = "You cannot approve your own request"
@@ -150,21 +151,32 @@ def _iso(value: Any) -> Any:
 
 
 def booking_dict(
-    allocation: int, start_date: date | str | None = None, end_date: date | str | None = None
+    allocation: int,
+    start_date: date | str | None = None,
+    end_date: date | str | None = None,
+    *,
+    clear_dates: bool = False,
 ) -> dict[str, Any]:
-    """Booking values as stored in a request: dates (project level) as ``YYYY-MM-DD``."""
+    """
+    Booking values as stored in a request: dates as ``YYYY-MM-DD``, present
+    when given (project level, or an unlinked phase / subphase segment).
+    ``clear_dates`` emits ``"start_date": null, "end_date": null`` -- a
+    segment relinked to its card -- where "no dates" would mean "unchanged".
+    """
     values: dict[str, Any] = {"allocation": allocation}
-    if start_date is not None or end_date is not None:
+    if start_date is not None or end_date is not None or clear_dates:
         values["start_date"] = _iso(start_date)
         values["end_date"] = _iso(end_date)
     return values
 
 
 def booking_values(row: AssignmentRow, level: str) -> dict[str, Any]:
-    """A row's current booking values (dates only at project level)."""
-    if level == "project":
-        return booking_dict(row.allocation, row.start_date, row.end_date)  # type: ignore[union-attr]
-    return booking_dict(row.allocation)
+    """
+    A row's current booking values: dates at project level, and at phase /
+    subphase level the row's own dates when it is an unlinked segment
+    (nothing for a linked row, which follows its card).
+    """
+    return booking_dict(row.allocation, row.start_date, row.end_date)
 
 
 def parse_values(text: str | None) -> dict[str, Any] | None:
@@ -249,8 +261,13 @@ async def find_duplicate(
 ) -> AssignmentRow | None:
     """
     An existing booking of `staff_id` on the target (pending rows included
-    unless `approved_only`). Phases and subphases allow one booking per
-    person; at project level only an exact duplicate (same dates) counts.
+    unless `approved_only`). At project level only an exact duplicate (same
+    dates) counts. On a phase / subphase a person may hold several
+    non-overlapping segments: a row conflicts when its **effective** dates
+    (own dates, else the card's) overlap those of the new / changed row --
+    `start_date` / `end_date` here, None = linked (the whole card). A linked
+    row spans its card, so it conflicts with every other row of the person
+    there. One query: the card's dates come from a join.
     """
     query: Any
     if level == "project":
@@ -261,18 +278,27 @@ async def find_duplicate(
             ProjectAssignment.end_date == end_date,
         )
         model: Any = ProjectAssignment
-    elif level == "phase":
-        query = select(PhaseStaffAssignment).where(
-            PhaseStaffAssignment.phase_id == target_id,
-            PhaseStaffAssignment.staff_id == staff_id,
-        )
-        model = PhaseStaffAssignment
     else:
-        query = select(SubphaseStaffAssignment).where(
-            SubphaseStaffAssignment.subphase_id == target_id,
-            SubphaseStaffAssignment.staff_id == staff_id,
+        card: Any
+        if level == "phase":
+            model, card = PhaseStaffAssignment, ProjectPhase
+            on_card = PhaseStaffAssignment.phase_id
+        else:
+            model, card = SubphaseStaffAssignment, ProjectSubphase
+            on_card = SubphaseStaffAssignment.subphase_id
+        new_start = start_date if start_date is not None else card.start_date
+        new_end = end_date if end_date is not None else card.end_date
+        query = (
+            select(model)
+            .join(card, card.id == on_card)
+            .where(
+                on_card == target_id,
+                model.staff_id == staff_id,
+                # Inclusive-day overlap (booking_segments.segments_overlap).
+                func.coalesce(model.start_date, card.start_date) <= new_end,
+                func.coalesce(model.end_date, card.end_date) >= new_start,
+            )
         )
-        model = SubphaseStaffAssignment
     if exclude_id is not None:
         query = query.where(model.id != exclude_id)
     if approved_only:
@@ -289,16 +315,31 @@ async def ensure_no_duplicate(
     *,
     start_date: date | None = None,
     end_date: date | None = None,
-    detail: str = ALREADY_BOOKED_DETAIL,
+    exclude_id: int | None = None,
+    detail: str | None = None,
 ) -> None:
-    """409 when the person is already booked on the target (a pending booking counts)."""
+    """
+    409 when the person is already booked on the target (a pending booking
+    counts) -- on a phase / subphase, for overlapping dates (`find_duplicate`;
+    `exclude_id` = the row being changed). `detail` overrides the default text
+    (``ALREADY_BOOKED_DETAIL`` at project level, else
+    ``ALREADY_BOOKED_OVERLAP_DETAIL``).
+    """
     existing = await find_duplicate(
-        db, level, target_id, staff_id, start_date=start_date, end_date=end_date
+        db,
+        level,
+        target_id,
+        staff_id,
+        start_date=start_date,
+        end_date=end_date,
+        exclude_id=exclude_id,
     )
     if existing is None:
         return
     if existing.approval_status == "pending":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=ALREADY_PENDING_DETAIL)
+    if detail is None:
+        detail = ALREADY_BOOKED_DETAIL if level == "project" else ALREADY_BOOKED_OVERLAP_DETAIL
     raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
 
@@ -475,11 +516,15 @@ def describe_change(
         requested.get("start_date"),
         requested.get("end_date"),
     ):
-        parts.append(
-            f"dates {previous.get('start_date')}–{previous.get('end_date')} → "
-            f"{requested.get('start_date')}–{requested.get('end_date')}"
-        )
+        parts.append(f"dates {_describe_dates(previous)} → {_describe_dates(requested)}")
     return ", ".join(parts) or "no change"
+
+
+def _describe_dates(values: dict[str, Any]) -> str:
+    # No dates on a phase / subphase booking: it is linked, it follows the card.
+    if not values.get("start_date"):
+        return "follow the card"
+    return f"{values['start_date']}–{values.get('end_date')}"
 
 
 def _request_title(name: str, request: ApprovalRequest, target: str) -> str:

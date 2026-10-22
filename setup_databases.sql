@@ -362,7 +362,12 @@ CREATE TABLE IF NOT EXISTS phase_staff_assignments (
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     phase_id INTEGER NOT NULL REFERENCES project_phases(id) ON DELETE CASCADE,
     staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    allocation INTEGER DEFAULT 100 NOT NULL
+    allocation INTEGER DEFAULT 100 NOT NULL,
+    -- Own dates of an unlinked segment; both NULL = linked (follows the phase)
+    start_date DATE,
+    end_date DATE,
+    CONSTRAINT phase_staff_assignments_segment_dates_check
+        CHECK ((start_date IS NULL) = (end_date IS NULL))
 );
 
 -- Subphase-level staff assignments
@@ -371,7 +376,12 @@ CREATE TABLE IF NOT EXISTS subphase_staff_assignments (
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     subphase_id INTEGER NOT NULL REFERENCES project_subphases(id) ON DELETE CASCADE,
     staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    allocation INTEGER DEFAULT 100 NOT NULL
+    allocation INTEGER DEFAULT 100 NOT NULL,
+    -- Own dates of an unlinked segment; both NULL = linked (follows the subphase)
+    start_date DATE,
+    end_date DATE,
+    CONSTRAINT subphase_staff_assignments_segment_dates_check
+        CHECK ((start_date IS NULL) = (end_date IS NULL))
 );
 
 -- Equipment. Equipment can be shared by several sites (equipment_sites);
@@ -1103,6 +1113,77 @@ BEGIN
           AND column_name = 'approval_request_id'
     ) THEN
         ALTER TABLE subphase_staff_assignments ADD COLUMN approval_request_id INTEGER CONSTRAINT subphase_staff_assignments_approval_request_id_fkey REFERENCES approval_requests(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+-- Unlinked booking segments (1.17.0): own dates on phase / subphase staff
+-- bookings (both NULL = linked, follows the card). No-ops on a fresh database
+-- (CREATE TABLE has them); the same statements as migrations/add_booking_segments.sql.
+DO $$
+BEGIN
+    IF to_regclass('public.phase_staff_assignments') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'phase_staff_assignments'
+          AND column_name = 'start_date'
+    ) THEN
+        ALTER TABLE phase_staff_assignments ADD COLUMN start_date DATE;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF to_regclass('public.phase_staff_assignments') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'phase_staff_assignments'
+          AND column_name = 'end_date'
+    ) THEN
+        ALTER TABLE phase_staff_assignments ADD COLUMN end_date DATE;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF to_regclass('public.phase_staff_assignments') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = to_regclass('public.phase_staff_assignments')
+          AND conname = 'phase_staff_assignments_segment_dates_check'
+    ) THEN
+        ALTER TABLE phase_staff_assignments ADD CONSTRAINT phase_staff_assignments_segment_dates_check
+            CHECK ((start_date IS NULL) = (end_date IS NULL));
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF to_regclass('public.subphase_staff_assignments') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'subphase_staff_assignments'
+          AND column_name = 'start_date'
+    ) THEN
+        ALTER TABLE subphase_staff_assignments ADD COLUMN start_date DATE;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF to_regclass('public.subphase_staff_assignments') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'subphase_staff_assignments'
+          AND column_name = 'end_date'
+    ) THEN
+        ALTER TABLE subphase_staff_assignments ADD COLUMN end_date DATE;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF to_regclass('public.subphase_staff_assignments') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = to_regclass('public.subphase_staff_assignments')
+          AND conname = 'subphase_staff_assignments_segment_dates_check'
+    ) THEN
+        ALTER TABLE subphase_staff_assignments ADD CONSTRAINT subphase_staff_assignments_segment_dates_check
+            CHECK ((start_date IS NULL) = (end_date IS NULL));
     END IF;
 END $$;
 

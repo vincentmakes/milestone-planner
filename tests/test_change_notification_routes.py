@@ -65,6 +65,11 @@ def staff_row(staff_id: int = ANN, **fields):
     return SimpleNamespace(**values)
 
 
+def card_row(staff_id: int = ANN, **fields):
+    """A linked phase / subphase booking: no own dates, it follows the card."""
+    return staff_row(staff_id, **{"start_date": None, "end_date": None, **fields})
+
+
 def only_call(change_intents):
     ((actor_id, intents, already),) = change_intents
     return actor_id, intents, already
@@ -196,7 +201,7 @@ async def test_a_failed_delivery_keeps_the_committed_booking(
 async def test_booking_someone_on_a_card(authed_client, mock_db_session, change_intents, level):
     client, set_user = authed_client
     set_user(admin())
-    details = first((staff_row(), "Ann Lee", "Chemist"))
+    details = first((card_row(), "Ann Lee", "Chemist", date(2026, 3, 2), date(2026, 3, 13)))
     mock_db_session.execute.side_effect = [first((1,)), scalar(True), scalar(None), details]
 
     response = await client.post(
@@ -274,17 +279,22 @@ async def test_a_put_that_changes_nothing_notifies_nobody(
 
 
 @pytest.mark.parametrize(
-    ("path", "level", "was"),
+    ("path", "level", "row", "was"),
     [
-        ("/api/assignments/1", "project", "Was at 50% from 2026-01-01 to 2026-01-31"),
-        ("/api/phase-staff/1", "phase", "Was at 50%"),
-        ("/api/subphase-staff/1", "subphase", "Was at 50%"),
+        ("/api/assignments/1", "project", staff_row(), "Was at 50% from 2026-01-01 to 2026-01-31"),
+        ("/api/phase-staff/1", "phase", card_row(), "Was at 50%"),
+        ("/api/subphase-staff/1", "subphase", card_row(), "Was at 50%"),
+        # An unlinked segment: its own dates are part of what was removed.
+        ("/api/phase-staff/1", "phase", staff_row(), "Was at 50% from 2026-01-01 to 2026-01-31"),
     ],
+    ids=["project", "phase", "subphase", "phase-segment"],
 )
-async def test_removing_someone(authed_client, mock_db_session, change_intents, path, level, was):
+async def test_removing_someone(
+    authed_client, mock_db_session, change_intents, path, level, row, was
+):
     client, set_user = authed_client
     set_user(admin())
-    mock_db_session.execute.side_effect = [scalar(staff_row())]
+    mock_db_session.execute.side_effect = [scalar(row)]
 
     response = await client.delete(path)
 
@@ -352,7 +362,7 @@ async def test_assigning_someone_to_a_card_keeps_their_assigned_notification(
 async def test_removing_someone_from_a_card(authed_client, mock_db_session, change_intents):
     client, set_user = authed_client
     set_user(admin())
-    mock_db_session.execute.side_effect = [scalar(_card()), scalar(staff_row(allocation=30))]
+    mock_db_session.execute.side_effect = [scalar(_card()), scalar(card_row(allocation=30))]
 
     response = await client.delete(f"/api/kanban/cards/phase/11/assignees/{ANN}")
 

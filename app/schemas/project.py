@@ -27,6 +27,11 @@ class StaffAssignmentInPhase(BaseModel):
     project_id: int
     staff_id: int
     allocation: int
+    # Effective dates: the row's own dates (an unlinked segment inside the
+    # card), else the card's; linked = no own dates, the booking follows it.
+    start_date: DateAsDateTimeJS | None = None
+    end_date: DateAsDateTimeJS | None = None
+    linked: bool = True
     staff_name: str | None = None
     staff_role: str | None = None
     # "pending" = a self-booking awaiting approval (not counted in capacity).
@@ -47,6 +52,8 @@ class ProjectStaffAssignmentResponse(BaseModel):
     allocation: int
     start_date: DateAsDateTimeJS
     end_date: DateAsDateTimeJS
+    # Project-level bookings always carry their own dates (a uniform client type).
+    linked: bool = False
     staff_name: str | None = None
     staff_role: str | None = None
     approval_status: str = "approved"

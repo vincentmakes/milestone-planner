@@ -368,8 +368,10 @@ async def test_legacy_tenant_gets_every_step():
     assert copy < conn.log.index("DROP TABLE notes")
     assert "ROLLBACK" not in conn.log
     assert conn.ran(tp.USERS_IS_RESOURCE_SQL)
-    # One commit per step (card status: one per table), 21 in all.
-    assert conn.log.count("COMMIT") == 21
+    for statement in tp.BOOKING_SEGMENT_COLUMN_STATEMENTS:
+        assert conn.ran(statement)
+    # One commit per step (card status: one per table), 22 in all.
+    assert conn.log.count("COMMIT") == 22
 
 
 @pytest.mark.asyncio
@@ -395,12 +397,15 @@ async def test_current_tenant_only_probes_and_runs_the_idempotent_backfills():
     assert conn.ran(tp.COMPANY_EVENTS_SITE_FK_SQL)
     assert conn.ran(tp.EQUIPMENT_SITES_BACKFILL_SQL)
     assert conn.ran(tp.NOTIFICATIONS_TYPE_CHECK_SQL)
-    # users.is_resource: its DO block is its own gate, so it always runs.
+    # users.is_resource and the booking segments: their DO blocks are their
+    # own gates, so they always run.
     assert conn.ran(tp.USERS_IS_RESOURCE_SQL)
+    for statement in tp.BOOKING_SEGMENT_COLUMN_STATEMENTS:
+        assert conn.ran(statement)
     assert "ROLLBACK" not in conn.log
-    # Only the two always-run back-fill steps, the users.is_resource step and
-    # the notification-types step.
-    assert conn.log.count("COMMIT") == 4
+    # Only the two always-run back-fill steps, the users.is_resource step, the
+    # booking-segments step and the notification-types step.
+    assert conn.log.count("COMMIT") == 5
 
 
 @pytest.mark.asyncio

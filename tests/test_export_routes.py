@@ -419,6 +419,8 @@ def _site_rows() -> dict:
                 id=303,
                 staff_id=7,
                 allocation=25,
+                start_date=None,  # linked: follows the subphase
+                end_date=None,
                 approval_status="pending",
                 approval_request_id=61,
             )
@@ -456,6 +458,9 @@ def _site_rows() -> dict:
                 id=202,
                 staff_id=99,
                 allocation=50,
+                # An unlinked segment inside the phase.
+                start_date=date(2026, 2, 10),
+                end_date=date(2026, 2, 12),
                 approval_status="approved",
                 approval_request_id=62,
             )
@@ -880,15 +885,49 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
     ]
     assert _sheet(wb, "Project assignments")[0][-2:] == ["approved", None]
     # Staff outside the site's user list exports with an empty name.
+    # Card bookings: effective Start / End and Linked after the allocation.
+    for title, kind in (
+        ("Phase assignments", "Phase type"),
+        ("Subphase assignments", "Subphase name"),
+    ):
+        assert [c.value for c in wb[title][1]][4:] == [
+            kind,
+            "Staff ID",
+            "Staff name",
+            "Allocation %",
+            "Start",
+            "End",
+            "Linked",
+            "Approval status",
+            "Pending change",
+        ]
     assert _sheet(wb, "Phase assignments") == [
-        [202, 1, "Alpha", 10, "Execution", 99, None, 50, "approved", "allocation 50% → 70%"]
+        [
+            202,
+            1,
+            "Alpha",
+            10,
+            "Execution",
+            99,
+            None,
+            50,
+            "2026-02-10",
+            "2026-02-12",
+            "No",
+            "approved",
+            "allocation 50% → 70%",
+        ]
     ]
+    # A linked booking exports its card's dates.
     assert _sheet(wb, "Subphase assignments")[0][3:] == [
         21,
         "Child",
         7,
         "Alice Martin",
         25,
+        "2026-02-03",
+        "2026-02-04",
+        "Yes",
         "pending",
         "awaiting approval",
     ]

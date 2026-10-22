@@ -37,6 +37,13 @@ def _approval_status_column() -> Mapped[str]:
     return mapped_column(String(10), default="approved", server_default="approved", nullable=False)
 
 
+def _segment_dates_check(table: str) -> CheckConstraint:
+    """Own booking dates come in pairs: both NULL (linked) or both set (a segment)."""
+    return CheckConstraint(
+        "((start_date IS NULL) = (end_date IS NULL))", name=f"{table}_segment_dates_check"
+    )
+
+
 def _approval_request_column(table: str) -> Mapped[int | None]:
     """The open approval request on this row (pending create, change or removal)."""
     return mapped_column(
@@ -99,7 +106,10 @@ class PhaseStaffAssignment(Base):
     """Phase-level staff assignment - assigns staff to specific phases."""
 
     __tablename__ = "phase_staff_assignments"
-    __table_args__ = (_approval_status_check("phase_staff_assignments"),)
+    __table_args__ = (
+        _approval_status_check("phase_staff_assignments"),
+        _segment_dates_check("phase_staff_assignments"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(
@@ -118,7 +128,10 @@ class PhaseStaffAssignment(Base):
         nullable=False,
     )
     allocation: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
-    # Note: No start_date/end_date - dates come from the phase itself
+    # Own dates of an unlinked segment (moves within its phase); both NULL = linked:
+    # the booking follows the phase's dates, as before 1.17.
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     approval_status: Mapped[str] = _approval_status_column()
     approval_request_id: Mapped[int | None] = _approval_request_column("phase_staff_assignments")
@@ -146,7 +159,10 @@ class SubphaseStaffAssignment(Base):
     """Subphase-level staff assignment - assigns staff to specific subphases."""
 
     __tablename__ = "subphase_staff_assignments"
-    __table_args__ = (_approval_status_check("subphase_staff_assignments"),)
+    __table_args__ = (
+        _approval_status_check("subphase_staff_assignments"),
+        _segment_dates_check("subphase_staff_assignments"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(
@@ -165,7 +181,10 @@ class SubphaseStaffAssignment(Base):
         nullable=False,
     )
     allocation: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
-    # Note: No start_date/end_date - dates come from the subphase itself
+    # Own dates of an unlinked segment (moves within its subphase); both NULL = linked:
+    # the booking follows the subphase's dates, as before 1.17.
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     approval_status: Mapped[str] = _approval_status_column()
     approval_request_id: Mapped[int | None] = _approval_request_column("subphase_staff_assignments")

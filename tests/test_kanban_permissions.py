@@ -292,6 +292,8 @@ async def test_a_user_leaves_a_card_with_the_board_off(authed_client, mock_db_se
         project_id=3,
         staff_id=7,
         allocation=60,
+        start_date=None,  # linked: follows the card
+        end_date=None,
         approval_status="approved",
         approval_request_id=None,
     )

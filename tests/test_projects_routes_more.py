@@ -219,6 +219,9 @@ def _subphase(sp_id, parent_id, parent_type, depth, deps=None):
 def _assignment(aid, staff_id, **extra):
     extra.setdefault("approval_status", "approved")
     extra.setdefault("approval_request_id", None)
+    # Phase / subphase rows without own dates are linked (follow the card).
+    extra.setdefault("start_date", None)
+    extra.setdefault("end_date", None)
     return SimpleNamespace(id=aid, project_id=1, staff_id=staff_id, allocation=50, **extra)
 
 
@@ -293,6 +296,20 @@ async def test_project_detail_builds_the_tree(authed_client, mock_db_session):
     assert first["staffAssignments"][0]["approval_status"] == "approved"
     assert first["staffAssignments"][0]["approval"] is None
     assert body["staffAssignments"][0]["approval"] is None
+    # Card bookings without own dates are linked: their dates are the card's.
+    phase_booking = first["staffAssignments"][0]
+    assert phase_booking["linked"] is True
+    assert (phase_booking["start_date"], phase_booking["end_date"]) == (
+        "2026-01-05T00:00:00.000Z",
+        "2026-02-05T00:00:00.000Z",
+    )
+    child_booking = child["staffAssignments"][0]
+    assert child_booking["linked"] is True
+    assert (child_booking["start_date"], child_booking["end_date"]) == (
+        "2026-01-06T00:00:00.000Z",
+        "2026-01-09T00:00:00.000Z",
+    )
+    assert body["staffAssignments"][0]["linked"] is False
 
 
 @pytest.mark.asyncio

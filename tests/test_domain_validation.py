@@ -110,9 +110,19 @@ async def test_phase_assignment_without_allocation_still_defaults_to_100(
     resolved.first.return_value = (1,)
     detail = MagicMock()
     detail.first.return_value = (
-        _row(id=3, phase_id=1, project_id=1, staff_id=5, allocation=100),
+        _row(
+            id=3,
+            phase_id=1,
+            project_id=1,
+            staff_id=5,
+            allocation=100,
+            start_date=None,
+            end_date=None,
+        ),
         "A B",
         None,
+        date(2026, 3, 2),
+        date(2026, 3, 13),
     )
     mock_db_session.execute.side_effect = [
         resolved,

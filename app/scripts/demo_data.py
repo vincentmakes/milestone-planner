@@ -87,6 +87,8 @@ class DemoData:
     subphases: list[Row] = field(default_factory=list)
     dependencies: list[Row] = field(default_factory=list)
     project_assignments: list[Row] = field(default_factory=list)
+    # Phase / subphase bookings: optional start_date / end_date make the row an
+    # unlinked segment inside its card (absent = linked, follows the card).
     phase_assignments: list[Row] = field(default_factory=list)
     subphase_assignments: list[Row] = field(default_factory=list)
     # Pending own bookings: the request and its pending assignment row.
@@ -681,6 +683,21 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
                 d.phase_assignments.append(
                     dict(project=p["name"], phase=ph["type"], staff=second, allocation=25)
                 )
+
+    # Charlie works the Analytics phase of Bioprocess in two stays instead of
+    # throughout: unlinked segments on days 1-3 and 8-10 of the phase, at the
+    # allocation the rotation gave him (the Gantt's per-person overview row).
+    analytics_start, _ = phase_window[(BIOPROCESS, "Analytics")]
+    at = next(
+        i
+        for i, a in enumerate(d.phase_assignments)
+        if (a["project"], a["phase"], a["staff"]) == (BIOPROCESS, "Analytics", CHARLIE)
+    )
+    single = d.phase_assignments[at]
+    d.phase_assignments[at : at + 1] = [
+        dict(single, start_date=analytics_start, end_date=analytics_start + day(2)),
+        dict(single, start_date=analytics_start + day(7), end_date=analytics_start + day(9)),
+    ]
 
     trial_start, _ = phase_window[(BIOPROCESS, "Trial")]
     d.project_assignments = [

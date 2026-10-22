@@ -836,6 +836,45 @@ ASSIGNMENT_APPROVAL_COLUMN_STATEMENTS: tuple[str, ...] = tuple(
     )
 )
 
+# Unlinked booking segments (1.17.0): a phase / subphase staff booking may
+# carry its own dates (a segment that moves within its card); both NULL =
+# linked, the booking follows the card. Guarded ADD COLUMNs plus the
+# both-or-neither CHECK, added when missing (add_booking_segments.sql, the
+# tenant auto-migration and the fresh schema share these statements).
+BOOKING_SEGMENT_TABLES: tuple[str, ...] = (
+    "phase_staff_assignments",
+    "subphase_staff_assignments",
+)
+
+BOOKING_SEGMENT_DATES_CHECK = "((start_date IS NULL) = (end_date IS NULL))"
+
+
+def _segment_dates_check_if_missing(table: str) -> str:
+    """Guarded ``ADD CONSTRAINT <table>_segment_dates_check`` (literal identifiers only)."""
+    return f"""
+    DO $$
+    BEGIN
+        IF to_regclass('public.{table}') IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.{table}')
+              AND conname = '{table}_segment_dates_check'
+        ) THEN
+            ALTER TABLE {table} ADD CONSTRAINT {table}_segment_dates_check
+                CHECK {BOOKING_SEGMENT_DATES_CHECK};
+        END IF;
+    END $$"""
+
+
+BOOKING_SEGMENT_COLUMN_STATEMENTS: tuple[str, ...] = tuple(
+    _statement(sql)
+    for table in BOOKING_SEGMENT_TABLES
+    for sql in (
+        _add_column_if_missing(table, "start_date", "DATE"),
+        _add_column_if_missing(table, "end_date", "DATE"),
+        _segment_dates_check_if_missing(table),
+    )
+)
+
 # The notification types, in the order every DDL source spells them. The
 # CHECK text derived from it appears in seven places (the ORM, the four
 # CREATE TABLE notifications sources, the tenant auto-migration and the
@@ -1378,7 +1417,11 @@ def get_tenant_schema_sql() -> str:
       project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
       staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       allocation INTEGER DEFAULT 100,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      start_date DATE,
+      end_date DATE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT phase_staff_assignments_segment_dates_check
+        CHECK ((start_date IS NULL) = (end_date IS NULL))
     );
 
     -- Subphase staff assignments
@@ -1388,7 +1431,11 @@ def get_tenant_schema_sql() -> str:
       project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
       staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       allocation INTEGER DEFAULT 100,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      start_date DATE,
+      end_date DATE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT subphase_staff_assignments_segment_dates_check
+        CHECK ((start_date IS NULL) = (end_date IS NULL))
     );
 
     -- Equipment assignments
@@ -1615,7 +1662,8 @@ def get_tenant_schema_sql() -> str:
         + """
 
     -- Approval policies (seeded: the project manager approves), approval
-    -- requests, todos, the assignment approval columns, the widened
+    -- requests, todos, the assignment approval columns, the booking segment
+    -- columns (no-ops here: CREATE TABLE has them), the widened
     -- notification types, the SSO default-role CHECK dropped, and indexes.
     """
         + _sql_block(
@@ -1625,6 +1673,7 @@ def get_tenant_schema_sql() -> str:
             APPROVAL_REQUESTS_TABLE_SQL,
             TODOS_TABLE_SQL,
             *ASSIGNMENT_APPROVAL_COLUMN_STATEMENTS,
+            *BOOKING_SEGMENT_COLUMN_STATEMENTS,
             NOTIFICATIONS_TYPE_CHECK_SQL,
             SSO_DEFAULT_ROLE_CHECK_DROP_SQL,
             *RBAC_INDEX_STATEMENTS,

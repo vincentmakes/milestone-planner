@@ -567,13 +567,11 @@ async def test_level_assignment_uses_the_servers_project_id(authed_client, mock_
     _assign_id_on_refresh(mock_db_session)
     resolved = MagicMock()
     resolved.first.return_value = (1,)
-    detail_row = MagicMock()
-    detail_row.first.return_value = (_staff_row(staff_id=5), "Test User5", "Engineer")
     mock_db_session.execute.side_effect = [
         resolved,
         _scalar_result(True),
         _scalar_result(None),  # no duplicate
-        detail_row,
+        _detail_row(5),
     ]
 
     response = await client.post(path, json={"staff_id": 5, "project_id": 999, "allocation": 40})
@@ -1101,9 +1099,14 @@ def _resolved(project_id: int = 1):
     return result
 
 
-def _detail_row(staff_id: int = 5):
+CARD_START, CARD_END = date(2026, 3, 2), date(2026, 3, 13)
+
+
+def _detail_row(staff_id: int = 5, **fields):
+    """The created phase / subphase row with the staff details and the card's dates."""
+    row = _staff_row(staff_id, **{"start_date": None, "end_date": None, **fields})
     result = MagicMock()
-    result.first.return_value = (_staff_row(staff_id), "Test User5", "Engineer")
+    result.first.return_value = (row, "Test User5", "Engineer", CARD_START, CARD_END)
     return result
 
 
@@ -1460,15 +1463,33 @@ async def test_self_booking_in_approval_mode_answers_202_with_the_documented_bod
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("path", "body", "head"),
+    ("path", "body", "head", "detail"),
     [
-        ("/api/projects/1/staff", {"staff_id": 8, **PROJECT_STAFF}, [_pm_result(PM)]),
-        ("/api/phases/1/staff", {"staff_id": 8, "project_id": 1}, [_resolved()]),
-        ("/api/subphases/1/staff", {"staff_id": 8, "project_id": 1}, [_resolved()]),
+        (
+            "/api/projects/1/staff",
+            {"staff_id": 8, **PROJECT_STAFF},
+            [_pm_result(PM)],
+            "That staff member is already booked here",
+        ),
+        # On a card a second booking conflicts by overlapping (effective) dates.
+        (
+            "/api/phases/1/staff",
+            {"staff_id": 8, "project_id": 1},
+            [_resolved()],
+            "This person is already booked on this card for overlapping dates",
+        ),
+        (
+            "/api/subphases/1/staff",
+            {"staff_id": 8, "project_id": 1},
+            [_resolved()],
+            "This person is already booked on this card for overlapping dates",
+        ),
     ],
     ids=["project", "phase", "subphase"],
 )
-async def test_booking_someone_twice_is_409(authed_client, mock_db_session, path, body, head):
+async def test_booking_someone_twice_is_409(
+    authed_client, mock_db_session, path, body, head, detail
+):
     client, set_user = authed_client
     set_user(FakeUser(9, "superuser"))
     existing = _staff_row(8)
@@ -1477,7 +1498,7 @@ async def test_booking_someone_twice_is_409(authed_client, mock_db_session, path
     response = await client.post(path, json=body)
 
     assert response.status_code == 409
-    assert response.json()["detail"] == "That staff member is already booked here"
+    assert response.json()["detail"] == detail
     mock_db_session.add.assert_not_called()
 
 
