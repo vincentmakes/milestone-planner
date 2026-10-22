@@ -477,6 +477,47 @@ def shot_assign_staff_modal(context: BrowserContext) -> None:
     page.close()
 
 
+def shot_date_picker(context: BrowserContext) -> None:
+    """Edit Phase dialog of Bioprocess Scale-Up's Trial phase with the two-month
+    date range calendar open from its Start Date field (range highlighted,
+    weekends muted, the site's bank holidays dotted)."""
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    expand_all_projects(page)
+    # Phase names repeat across projects: take the first "Trial" phase row
+    # that follows the Bioprocess Scale-Up project row in the project panel.
+    phase_id = page.evaluate(
+        """() => {
+            const project = [...document.querySelectorAll('[data-project-id]')]
+                .find((row) => row.textContent.includes('Bioprocess Scale-Up'));
+            if (!project) return null;
+            const phase = [...document.querySelectorAll('[data-phase-id]')].find(
+                (row) =>
+                    project.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING &&
+                    row.textContent.trim().startsWith('Trial')
+            );
+            return phase ? phase.getAttribute('data-phase-id') : null;
+        }"""
+    )
+    if phase_id is None:
+        raise RuntimeError("Trial phase of Bioprocess Scale-Up not found")
+    row = page.locator(f'[data-phase-id="{phase_id}"]').first
+    row.scroll_into_view_if_needed()
+    row.click(button="right")
+    page.wait_for_timeout(400)
+    page.get_by_role("menuitem", name="Edit Phase").click()
+    page.wait_for_timeout(800)
+    page.get_by_role("dialog").get_by_label("Start Date *", exact=True).click()
+    page.get_by_role("dialog", name="Choose dates").wait_for()
+    page.wait_for_timeout(400)
+    page.screenshot(path=str(OUT / "date-range-picker.png"))
+    log("[done] date-range-picker.png")
+    page.close()
+
+
 def _sidebar_modal_shot(context: BrowserContext, label: str, outfile: str) -> None:
     page = context.new_page()
     login(page)
@@ -884,6 +925,7 @@ TARGETS = {
     "my-todos": shot_my_todos,
     "pending": shot_pending_assignment,
     "assign-staff": shot_assign_staff_modal,
+    "date-picker": shot_date_picker,
     "settings": shot_settings_modal,
     "sites": shot_manage_sites,
     "users": shot_manage_users,

@@ -161,6 +161,7 @@ the default General section.
 | `kanban` | `kanban-board.png` | The Kanban board view |
 | `grouped` | `gantt-grouped.png` | The Gantt chart grouped by the *Project type* tag group (collapsible pill sections) |
 | `color-by` | `gantt-color-by.png` | The Gantt chart's *Colour by* dropdown, open, with *Project type* selected |
+| `date-picker` | `date-range-picker.png` | The Edit Phase dialog of Bioprocess Scale-Up's *Trial* phase with the two-month date calendar open from *Start Date* |
 
 Project bar colours are a per-user browser preference (*Colour by*), not
 seeded data. The `main` shot sets *Colour by* = *Project type*, and since all
