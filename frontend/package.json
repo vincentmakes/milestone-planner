@@ -17,6 +17,11 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@emotion/cache": "11.14.0",
+    "@emotion/react": "11.14.0",
+    "@emotion/styled": "11.14.1",
+    "@mui/icons-material": "7.3.11",
+    "@mui/material": "7.3.11",
     "date-fns": "^4.1.0",
     "react": "^18.3.1",
     "react-day-picker": "10.0.2",
