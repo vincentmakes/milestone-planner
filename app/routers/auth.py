@@ -92,6 +92,7 @@ def build_user_session_info(user: User, permissions: PermissionSet) -> UserSessi
         permissions=permissions.allow_keys(),
         approvalRequired=permissions.approval_keys(),
         canSeeAllSites=permissions.has("sites.view_all"),
+        isResource=bool(user.is_resource),
         siteIds=[s.id for s in sites],
         sites=[
             UserSiteInfo(

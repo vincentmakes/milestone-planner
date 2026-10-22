@@ -432,9 +432,21 @@ def _add_column_if_missing(table: str, column: str, definition: str, backfill: s
 # file has ever added therefore needs an equivalent here. All no-ops on a
 # fresh database.
 
+# users.is_resource (1.16.0): the person may be booked on projects and appears
+# in the Staff panel. Existing administrators are back-filled FALSE, everyone
+# else keeps the column default TRUE, so an upgrade changes nobody's
+# bookability. Shared by USERS_UPGRADE_SQL, migrations/add_user_is_resource.sql
+# and the tenant auto-migration (tenant_manager._run_auto_migrations).
+USERS_IS_RESOURCE_SQL = _add_column_if_missing(
+    "users",
+    "is_resource",
+    "BOOLEAN NOT NULL DEFAULT TRUE",
+    "UPDATE users SET is_resource = FALSE WHERE role = 'admin';",
+)
+
 # users.max_capacity (part-time staff), users.is_system (protected admin: the
 # first admin becomes the system user, as add_is_system_column.sql /
-# the auto-migration do), users.updated_at.
+# the auto-migration do), users.updated_at, users.is_resource.
 USERS_UPGRADE_SQL = (
     _add_column_if_missing(
         "users",
@@ -451,6 +463,7 @@ USERS_UPGRADE_SQL = (
         "(SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 1);",
     )
     + _add_column_if_missing("users", "updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    + USERS_IS_RESOURCE_SQL
 )
 
 # bank_holidays.end_date (multi-day holidays) and bank_holidays.year (back-
@@ -1233,6 +1246,7 @@ def get_tenant_schema_sql() -> str:
       sso_provider TEXT,
       sso_id TEXT,
       active INTEGER DEFAULT 1 NOT NULL,
+      is_resource BOOLEAN NOT NULL DEFAULT TRUE,
       is_system INTEGER DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -1713,8 +1727,9 @@ async def run_seed_data(conn: asyncpg.Connection, admin_email: str, admin_passwo
         await conn.execute(statement)
     # User input - use parameterized queries
     await conn.execute(
-        "INSERT INTO users (email, password, first_name, last_name, job_title, role, is_system) "
-        "VALUES ($1, $2, 'Admin', 'User', 'Administrator', 'admin', 1) "
+        "INSERT INTO users "
+        "(email, password, first_name, last_name, job_title, role, is_system, is_resource) "
+        "VALUES ($1, $2, 'Admin', 'User', 'Administrator', 'admin', 1, FALSE) "
         "ON CONFLICT (email) DO NOTHING",
         admin_email,
         admin_password_hash,

@@ -89,6 +89,8 @@ class StaffCreate(BaseModel):
     # A role key; the router checks it exists in ``roles`` (404 otherwise).
     role: str = Field(default="user", pattern=ROLE_KEY_PATTERN)
     max_capacity: int = Field(default=100, ge=1, le=100)  # Max work capacity %
+    # Bookable as a resource; omitted = bookable unless the role is admin.
+    is_resource: bool | None = None
     site_ids: list[int] = []
     skill_ids: list[int] = []
     team_ids: TeamIds = []
@@ -106,6 +108,7 @@ class StaffUpdate(BaseModel):
     role: str | None = Field(None, pattern=ROLE_KEY_PATTERN)
     max_capacity: int | None = Field(None, ge=1, le=100)  # Max work capacity %
     active: int | None = None
+    is_resource: bool | None = None  # Bookable as a resource
     site_ids: list[int] | None = None
     skill_ids: list[int] | None = None
     team_ids: TeamIds | None = None
@@ -126,6 +129,7 @@ class UserResponse(BaseModel):
     role_name: str | None = None  # the role's display name
     max_capacity: int = 100  # Max work capacity %
     active: int
+    is_resource: bool = True  # Bookable as a resource
     created_at: DateTimeJS
     site_ids: list[int] = []
     site_names: list[str] = []
@@ -152,6 +156,7 @@ class UserDetailResponse(BaseModel):
     role_name: str | None = None  # the role's display name
     max_capacity: int = 100  # Max work capacity %
     active: int
+    is_resource: bool = True  # Bookable as a resource
     created_at: DateTimeJS
     site_ids: list[int] = []
     sites: list[UserSiteResponse] = []

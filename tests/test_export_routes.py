@@ -396,6 +396,7 @@ def _site_rows() -> dict:
         role="user",
         max_capacity=80,
         active=1,
+        is_resource=False,
         sso_provider=None,
         created_at=STAMP,
     )
@@ -815,6 +816,11 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
     assert projects[1][16] == "Yes"  # Kickoff is a milestone
     assert projects[3][18] == '[{"id": 11}]'
     assert [r[22] for r in projects] == [None, "done", "in_progress", "in_progress", "todo"]
+
+    # Users: "Bookable" (users.is_resource) right after "Active".
+    users_header = [c.value for c in wb["Users"][1]]
+    assert users_header[7:9] == ["Active", "Bookable"]
+    assert [r[7:9] for r in _sheet(wb, "Users")] == [["Yes", "No"]]
 
     assert [c.value for c in wb["Teams"][1]] == [
         "ID",

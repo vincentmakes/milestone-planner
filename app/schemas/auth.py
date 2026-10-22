@@ -55,6 +55,8 @@ class UserSessionInfo(BaseModel):
     permissions: list[str] = []
     approvalRequired: list[str] = []
     canSeeAllSites: bool = False
+    # Bookable as a resource (users.is_resource).
+    isResource: bool = True
 
     class Config:
         from_attributes = True

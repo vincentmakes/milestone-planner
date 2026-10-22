@@ -266,6 +266,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         max_capacity: int = 100,
         active: bool = True,
         is_system: bool = False,
+        is_resource: bool | None = None,
     ) -> Row:
         return dict(
             email=email,
@@ -278,6 +279,8 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             max_capacity=max_capacity,
             active=active,
             is_system=is_system,
+            # Bookable unless an administrator, like a new account.
+            is_resource=role != "admin" if is_resource is None else is_resource,
         )
 
     d.users = [

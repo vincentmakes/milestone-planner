@@ -213,6 +213,7 @@ async def insert_demo_data(
                 "max_capacity": u["max_capacity"],
                 "active": 1 if u["active"] else 0,
                 "is_system": 1 if u["is_system"] else 0,
+                "is_resource": bool(u["is_resource"]),
             },
             {"email": u["email"]},
         )

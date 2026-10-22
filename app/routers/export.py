@@ -950,6 +950,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
             "Role",
             "Max capacity %",
             "Active",
+            "Bookable",
             "SSO provider",
             "Created at",
         ],
@@ -963,6 +964,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                 u.role,
                 u.max_capacity,
                 _yes_no(u.active),
+                _yes_no(u.is_resource),
                 u.sso_provider,
                 _iso(u.created_at),
             ]

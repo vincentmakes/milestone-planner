@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     Integer,
@@ -64,6 +65,8 @@ class User(Base):
     sso_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
     sso_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     active: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    # Bookable as a resource: may be booked on projects and appears in the Staff panel
+    is_resource: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_system: Mapped[int | None] = mapped_column(
         Integer, default=0, nullable=True
     )  # Protected admin created by master panel

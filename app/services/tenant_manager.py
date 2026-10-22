@@ -41,6 +41,7 @@ from app.services.tenant_provisioner import (
     TAGS_UPGRADE_STATEMENTS,
     TEAM_TABLES,
     TEAMS_SCHEMA_STATEMENTS,
+    USERS_IS_RESOURCE_SQL,
 )
 from app.utils import utcnow_naive
 
@@ -176,6 +177,16 @@ class TenantConnectionManager:
         except Exception as e:
             logger.warning("Auto-migration warning for %s: %s", slug, e)
             # Don't fail if migration has issues - continue with connection
+
+        # users.is_resource, "Bookable as a resource" (add_user_is_resource.sql,
+        # 1.16.0). The DO block is its own gate: it adds the column (existing
+        # administrators back-filled FALSE) only when it is missing.
+        try:
+            await conn.execute(text(USERS_IS_RESOURCE_SQL))
+            await conn.commit()
+        except Exception as e:
+            logger.warning("Auto-migration (users.is_resource) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
 
         # Tags / project_tags tables (added in the project-tags feature).
         # Idempotent CREATE IF NOT EXISTS so this is safe to run on every boot.

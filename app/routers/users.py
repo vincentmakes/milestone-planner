@@ -319,6 +319,10 @@ async def create_user(
         role=data.role,
         max_capacity=data.max_capacity,
         active=1,
+        # Omitted: bookable unless the account is an administrator.
+        is_resource=(
+            data.is_resource if data.is_resource is not None else data.role != ADMIN_ROLE_KEY
+        ),
     )
 
     # Unknown sites/skills are a 400 before anything is written (they used to
@@ -363,8 +367,9 @@ async def update_user(
     """
     Update a user. Each kind of change needs its key:
 
-    - name, job title, capacity, sites, teams, skills: ``users.edit`` (sites
-      and teams within the caller's visible sites);
+    - name, job title, capacity, bookable (``is_resource``), sites, teams,
+      skills: ``users.edit`` (sites and teams within the caller's visible
+      sites);
     - an account holding the admin role at all: ``users.edit_admins``;
     - another user's email or password: ``users.edit_credentials`` (one's own:
       always);
@@ -407,6 +412,7 @@ async def update_user(
             data.last_name,
             data.job_title,
             data.max_capacity,
+            data.is_resource,
             data.site_ids,
             data.team_ids,
             data.skill_ids,
@@ -488,6 +494,9 @@ async def update_user(
         user.role = data.role
     if data.max_capacity is not None:
         user.max_capacity = data.max_capacity
+    if data.is_resource is not None:
+        # Existing bookings stay; the flag only gates new ones.
+        user.is_resource = data.is_resource
     if data.active is not None:
         user.active = data.active
 
