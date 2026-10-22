@@ -14,10 +14,12 @@ import pytest
 
 from app.services.permissions import (
     APPROVABLE_KEYS,
+    DISABLEABLE_KEYS,
     PERMISSION_KEYS,
     PM_BUNDLE,
     PermissionSet,
     default_modes,
+    effective_permission_set,
     load_permission_set,
     role_display_name,
 )
@@ -218,3 +220,80 @@ def test_role_key_pattern_matches_the_roles_check_constraint():
 
     checks = [c.sqltext.text for c in Role.__table__.constraints if hasattr(c, "sqltext")]
     assert f"key ~ '{ROLE_KEY_PATTERN}'" in checks
+
+
+# ---------------------------------------------------------------------------
+# disabled_keys: a feature switch turned off (instance_settings.FLAG_DISABLES)
+# ---------------------------------------------------------------------------
+
+OFF = frozenset({"views.kanban"})
+
+
+def test_only_the_board_view_can_be_disabled():
+    assert DISABLEABLE_KEYS == frozenset({"views.kanban"})
+    assert PermissionSet("user", {}).disabled_keys == frozenset()
+
+
+@pytest.mark.parametrize("key", ["projects.view", "roles.manage", "no.such_key"])
+def test_other_keys_cannot_be_disabled(key):
+    with pytest.raises(ValueError, match=key):
+        PermissionSet("admin", {}, frozenset({key}))
+
+
+def test_a_disabled_key_is_denied_to_the_admin_too():
+    admin = PermissionSet("admin", {}, OFF)
+    assert admin.mode("views.kanban") is None
+    assert not admin.has("views.kanban")
+    assert not admin.can("views.kanban", pm_id=1, user_id=1)
+    assert "views.kanban" not in admin.allow_keys()
+    assert "views.kanban" not in admin.effective_modes()
+    assert admin.allow_keys() == sorted(PERMISSION_KEYS - OFF)
+    # Every other key stays as it was.
+    assert admin.has("projects.view") and admin.has("roles.manage")
+
+
+def test_a_disabled_key_is_denied_whatever_the_rows_say():
+    role = PermissionSet("user", {"views.kanban": "allow", "kanban.comment": "allow"}, OFF)
+    assert not role.has("views.kanban")
+    assert role.allow_keys() == ["kanban.comment", "projects.view"]
+    # The configured matrix is untouched (Settings -> Roles shows it).
+    assert role.modes == {"views.kanban": "allow", "kanban.comment": "allow"}
+
+
+def test_disabled_keys_accept_any_iterable_and_compare_equal():
+    assert PermissionSet("user", {}, {"views.kanban"}).disabled_keys == OFF  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stored", "disabled"), [(None, frozenset()), ("true", frozenset()), ("false", OFF)]
+)
+async def test_effective_permission_set_folds_in_the_kanban_switch(stored, disabled):
+    db = MagicMock()
+    matrix = MagicMock()
+    matrix.all.return_value = [("views.kanban", "allow")]
+    flag = MagicMock()
+    flag.scalar_one_or_none.return_value = stored
+    db.execute = AsyncMock(side_effect=[matrix, flag])
+
+    perms = await effective_permission_set(db, "user")
+
+    assert perms.disabled_keys == disabled
+    assert perms.has("views.kanban") is (stored != "false")
+    flag_sql = str(
+        db.execute.await_args_list[1].args[0].compile(compile_kwargs={"literal_binds": True})
+    )
+    assert "settings.key = 'kanban_enabled'" in flag_sql
+
+
+@pytest.mark.asyncio
+async def test_effective_permission_set_for_the_admin_costs_only_the_flag_query():
+    db = MagicMock()
+    flag = MagicMock()
+    flag.scalar_one_or_none.return_value = "false"
+    db.execute = AsyncMock(return_value=flag)
+
+    perms = await effective_permission_set(db, "admin")
+
+    assert perms.is_admin and not perms.has("views.kanban")
+    db.execute.assert_awaited_once()

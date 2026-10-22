@@ -112,7 +112,7 @@ async def test_docs_gate_uses_the_tenant_db_and_the_live_role(live_role, expecte
 
     db = MagicMock()
     live = MagicMock()
-    live.all.return_value = [(1, live_role, None, None)]
+    live.all.return_value = [(1, live_role, None, None, None)]
     db.execute = AsyncMock(return_value=live)
 
     with (
@@ -143,7 +143,7 @@ async def test_docs_gate_refuses_a_deactivated_admin():
 
     db = MagicMock()
     live = MagicMock()
-    live.all.return_value = [(0, "admin", None, None)]
+    live.all.return_value = [(0, "admin", None, None, None)]
     db.execute = AsyncMock(return_value=live)
 
     with (

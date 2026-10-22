@@ -48,6 +48,7 @@ from app.services.holidays import (
     is_relevant_holiday,
     should_skip_nager_holiday,
 )
+from app.services.instance_settings import is_enabled
 from app.services.site_access import (
     can_access_sites,
     ensure_site_access,
@@ -69,6 +70,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 HOLIDAY_DUPLICATE_DETAIL = "A holiday with this name already exists on this date"
+NAGER_OFF_DETAIL = "Holiday refresh from Nager is turned off"
 
 
 def _validate_range(start: date, end: date | None, label: str = "End date") -> None:
@@ -194,8 +196,8 @@ async def create_site(
         logger.exception("Database error while saving sites")
         raise HTTPException(status_code=500, detail="Could not save the changes") from e
 
-    # Fetch bank holidays if country code provided
-    if site.country_code:
+    # Fetch bank holidays if country code provided (and Nager is on)
+    if site.country_code and await is_enabled(db, "nager_enabled"):
         await fetch_and_store_bank_holidays(db, site)
 
     return site
@@ -249,8 +251,13 @@ async def update_site(
         logger.exception("Database error while saving sites")
         raise HTTPException(status_code=500, detail="Could not save the changes") from e
 
-    # Re-fetch holidays if country code changed
-    if site.country_code and site.country_code != old_country_code:
+    # Re-fetch holidays if country code changed (and Nager is on; with it off
+    # the stored holidays stay)
+    if (
+        site.country_code
+        and site.country_code != old_country_code
+        and await is_enabled(db, "nager_enabled")
+    ):
         await fetch_and_store_bank_holidays(db, site)
         # Refresh again after holiday fetch
         await db.refresh(site)
@@ -621,8 +628,13 @@ async def refresh_bank_holidays(
     unreachable, the currently stored holidays are kept.
     Requires ``bank_holidays.manage``, at a visible site.
     Superusers can only refresh holidays for sites they're assigned to.
+    409 while the Nager import is turned off (``nager_enabled``), checked
+    before the site lookup so it reveals nothing about the site.
     Matches: POST /api/sites/:id/holidays/refresh
     """
+    if not await is_enabled(db, "nager_enabled"):
+        raise HTTPException(status_code=409, detail=NAGER_OFF_DETAIL)
+
     result = await db.execute(select(Site).where(Site.id == site_id))
     site = result.scalar_one_or_none()
 

@@ -48,6 +48,11 @@ def matrix_result(*rows):
     return result
 
 
+def kanban_switch(value: str | None = None):
+    """The ``kanban_enabled`` lookup that follows the matrix (None: no row, on)."""
+    return scalar_result(value)
+
+
 async def me(app_client):
     with patch.object(SessionService, "get_user_from_session", AsyncMock(return_value={"id": 7})):
         resp = await app_client.get("/api/auth/me", cookies={"connect.sid": "s%3Asid."})
@@ -63,6 +68,7 @@ async def test_me_returns_the_custom_roles_permissions(app_client, mock_db_sessi
             ("assignments.self_create", "approval"),
             ("assignments.self_remove", "approval"),
         ),
+        kanban_switch(),
     ]
 
     user = await me(app_client)
@@ -75,7 +81,10 @@ async def test_me_returns_the_custom_roles_permissions(app_client, mock_db_sessi
 
 
 async def test_me_for_an_admin_lists_every_key(app_client, mock_db_session):
-    mock_db_session.execute.side_effect = [scalar_result(orm_user("admin", "Administrator"))]
+    mock_db_session.execute.side_effect = [
+        scalar_result(orm_user("admin", "Administrator")),
+        kanban_switch(),
+    ]
 
     user = await me(app_client)
 
@@ -83,14 +92,15 @@ async def test_me_for_an_admin_lists_every_key(app_client, mock_db_session):
     assert user["permissions"] == sorted(PERMISSION_KEYS)
     assert user["approvalRequired"] == []
     assert user["canSeeAllSites"] is True
-    # The admin's set needs no role_permissions query.
-    assert mock_db_session.execute.await_count == 1
+    # The admin's set needs no role_permissions query, only the switch.
+    assert mock_db_session.execute.await_count == 2
 
 
 async def test_me_with_sites_view_all(app_client, mock_db_session):
     mock_db_session.execute.side_effect = [
         scalar_result(orm_user("auditor", "Auditor")),
         matrix_result(("sites.view_all", "allow")),
+        kanban_switch(),
     ]
 
     user = await me(app_client)
@@ -100,7 +110,11 @@ async def test_me_with_sites_view_all(app_client, mock_db_session):
 
 
 async def test_me_falls_back_to_the_system_role_name(app_client, mock_db_session):
-    mock_db_session.execute.side_effect = [scalar_result(orm_user("superuser")), matrix_result()]
+    mock_db_session.execute.side_effect = [
+        scalar_result(orm_user("superuser")),
+        matrix_result(),
+        kanban_switch(),
+    ]
 
     user = await me(app_client)
 
@@ -112,6 +126,7 @@ async def test_login_returns_the_permission_fields(app_client, mock_db_session):
     mock_db_session.execute.side_effect = [
         scalar_result(orm_user("team_lead", "Team Lead")),
         matrix_result(("views.kanban", "allow"), ("assignments.self_update", "approval")),
+        kanban_switch("true"),
     ]
 
     with patch.object(SessionService, "create_session", AsyncMock(return_value="sid")):
@@ -125,3 +140,56 @@ async def test_login_returns_the_permission_fields(app_client, mock_db_session):
     assert user["permissions"] == ["projects.view", "views.kanban"]
     assert user["approvalRequired"] == ["assignments.self_update"]
     assert user["canSeeAllSites"] is False
+
+
+# ---------------------------------------------------------------------------
+# The Kanban switch: views.kanban leaves the list for everyone
+# ---------------------------------------------------------------------------
+
+
+async def test_me_without_the_board_for_an_admin(app_client, mock_db_session):
+    mock_db_session.execute.side_effect = [
+        scalar_result(orm_user("admin", "Administrator")),
+        kanban_switch("false"),
+    ]
+
+    user = await me(app_client)
+
+    assert "views.kanban" not in user["permissions"]
+    assert user["permissions"] == sorted(PERMISSION_KEYS - {"views.kanban"})
+    sql = str(
+        mock_db_session.execute.await_args_list[1]
+        .args[0]
+        .compile(compile_kwargs={"literal_binds": True})
+    )
+    assert "settings.key = 'kanban_enabled'" in sql
+
+
+async def test_me_without_the_board_for_a_role_holding_it(app_client, mock_db_session):
+    mock_db_session.execute.side_effect = [
+        scalar_result(orm_user("team_lead", "Team Lead")),
+        matrix_result(("views.kanban", "allow"), ("kanban.comment", "allow")),
+        kanban_switch("false"),
+    ]
+
+    user = await me(app_client)
+
+    assert user["permissions"] == ["kanban.comment", "projects.view"]
+
+
+async def test_login_without_the_board(app_client, mock_db_session):
+    mock_db_session.execute.side_effect = [
+        scalar_result(orm_user("team_lead", "Team Lead")),
+        matrix_result(("views.kanban", "allow"), ("assignments.self_update", "approval")),
+        kanban_switch("false"),
+    ]
+
+    with patch.object(SessionService, "create_session", AsyncMock(return_value="sid")):
+        resp = await app_client.post(
+            "/api/auth/login", json={"email": "ada@example.com", "password": "correct-horse"}
+        )
+
+    assert resp.status_code == 200
+    user = resp.json()["user"]
+    assert user["permissions"] == ["projects.view"]
+    assert user["approvalRequired"] == ["assignments.self_update"]

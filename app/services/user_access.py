@@ -22,6 +22,8 @@ Like the other access services, the caller is read through ``id`` and
 ``permissions`` only (it is often the lightweight SessionUser).
 """
 
+from dataclasses import replace
+
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,12 +64,16 @@ def role_within(role: PermissionSet, holder: PermissionSet) -> bool:
     Whether every permission of `role` is held by `holder` at least as strongly.
 
     An ``allow`` in `role` needs ``allow`` in `holder`; an ``approval`` needs
-    either mode. The admin role is within the admin role only.
+    either mode. The admin role is within the admin role only. A key a
+    feature switch disabled still counts as held: the escalation guard
+    compares the configured matrices (otherwise nobody but an admin could
+    assign a role holding ``views.kanban`` while the board is off).
     """
     if holder.is_admin:
         return True
     if role.is_admin:
         return False
+    holder = replace(holder, disabled_keys=frozenset())
     for key, mode in role.effective_modes().items():
         held = holder.mode(key)
         if held is None or (mode == "allow" and held != "allow"):

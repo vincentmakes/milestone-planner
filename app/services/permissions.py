@@ -29,7 +29,7 @@ provisioner imports it to build the schema.
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -672,6 +672,10 @@ _MODES: frozenset[str] = frozenset({"allow", "approval"})
 _ALWAYS_ALLOWED: frozenset[str] = frozenset({"projects.view"})
 _ADMIN_ONLY: frozenset[str] = frozenset({"roles.manage"})
 _SYSTEM_ROLE_NAMES: dict[str, str] = {role.key: role.name for role in SYSTEM_ROLES}
+# The keys an instance feature switch may take away from everyone, admins
+# included (app/services/instance_settings.py FLAG_DISABLES). Locked keys never
+# appear here, so projects.view cannot be disabled.
+DISABLEABLE_KEYS: frozenset[str] = frozenset({"views.kanban"})
 
 
 def _clean_modes(modes: Mapping[str, Any]) -> dict[str, Mode]:
@@ -699,13 +703,23 @@ class PermissionSet:
     ``modes`` holds the role's ``role_permissions`` rows (``{key: mode}``, deny =
     absent), cleaned on construction and read-only. The admin role holds every
     catalogue key in code.
+
+    ``disabled_keys`` are the keys an instance feature switch turned off
+    (``DISABLEABLE_KEYS`` only): denied to every role, the admin included,
+    whatever ``modes`` says. A role's configured matrix is built without them.
     """
 
     role_key: str
     modes: Mapping[str, Mode] = field(default_factory=dict)
+    disabled_keys: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "modes", MappingProxyType(_clean_modes(self.modes)))
+        disabled = frozenset(self.disabled_keys)
+        unknown = disabled - DISABLEABLE_KEYS
+        if unknown:
+            raise ValueError(f"Permission cannot be disabled: {', '.join(sorted(unknown))}")
+        object.__setattr__(self, "disabled_keys", disabled)
 
     @property
     def is_admin(self) -> bool:
@@ -713,7 +727,7 @@ class PermissionSet:
 
     def mode(self, key: str) -> Mode | None:
         """``allow``, ``approval`` or ``None`` (deny) for ``key``."""
-        if key not in PERMISSION_KEYS:
+        if key in self.disabled_keys or key not in PERMISSION_KEYS:
             return None
         if self.is_admin or key in _ALWAYS_ALLOWED:
             return _ALLOW
@@ -729,7 +743,10 @@ class PermissionSet:
         """
         ``has(key)``, or the PM bundle: ``key`` is in ``PM_BUNDLE``, the role
         allows ``projects.manage_as_pm`` and the user manages the project.
+        A disabled key is denied even through the bundle.
         """
+        if key in self.disabled_keys:
+            return False
         if self.has(key):
             return True
         return (
@@ -781,6 +798,22 @@ async def load_permission_set(db: "AsyncSession", role_key: str) -> PermissionSe
         )
     ).all()
     return PermissionSet(role_key, {permission: mode for permission, mode in rows})
+
+
+async def effective_permission_set(db: "AsyncSession", role_key: str) -> PermissionSet:
+    """
+    ``load_permission_set`` with the instance feature switches applied.
+
+    One more query (the ``kanban_enabled`` row), the admin included: a board
+    turned off is off for everyone. What ``/auth/me`` and login report.
+    """
+    from app.services.instance_settings import disabled_permission_keys, get_value
+
+    permissions = await load_permission_set(db, role_key)
+    disabled = disabled_permission_keys(await get_value(db, "kanban_enabled"))
+    if not disabled:
+        return permissions
+    return replace(permissions, disabled_keys=disabled)
 
 
 def role_display_name(role_key: str, name: str | None = None) -> str:

@@ -110,6 +110,19 @@ def test_role_within_approval_needs_some_mode_and_allow_needs_allow():
     assert not role_within(approving, PermissionSet("z", {}))
 
 
+def test_role_within_ignores_keys_a_feature_switch_disabled():
+    """The board turned off must not stop anyone assigning a role holding views.kanban."""
+    board_off = frozenset({"views.kanban"})
+    user = PermissionSet("user", default_modes("user"))
+    assert user.has("views.kanban")
+    assert role_within(user, PermissionSet("hr", HR, board_off))
+    superuser = PermissionSet("superuser", default_modes("superuser"), board_off)
+    assert role_within(user, superuser)
+    # The rest of the comparison is unchanged: a key the holder lacks still fails.
+    assert not superuser.has("users.edit_admins")
+    assert not role_within(PermissionSet("x", {"users.edit_admins": "allow"}), superuser)
+
+
 # ---------------------------------------------------------------------------
 # Role changes: key + escalation guard
 # ---------------------------------------------------------------------------
@@ -128,6 +141,22 @@ async def test_a_role_within_mine_can_be_assigned(
     assert resp.status_code == 200
     assert target.role == "user"
     destroy_sessions.assert_awaited_once()
+
+
+async def test_a_role_holding_the_board_can_be_assigned_while_it_is_off(
+    authed_client, mock_db_session, destroy_sessions, role_sets
+):
+    client, set_user = authed_client
+    hr = FakeUser(3, "hr")
+    hr.permissions = PermissionSet("hr", HR, frozenset({"views.kanban"}))
+    set_user(hr)
+    target = make_user(7, "viewer")
+    mock_db_session.execute = AsyncMock(side_effect=[lookup(target)])
+
+    resp = await client.put("/api/users/7", json={"role": "user"})
+
+    assert resp.status_code == 200
+    assert target.role == "user"
 
 
 async def test_a_role_beyond_mine_cannot_be_assigned(

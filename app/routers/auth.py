@@ -48,7 +48,11 @@ from app.services.login_throttle import (
     record_login_failure,
     record_login_success,
 )
-from app.services.permissions import PermissionSet, load_permission_set, role_display_name
+from app.services.permissions import (
+    PermissionSet,
+    effective_permission_set,
+    role_display_name,
+)
 from app.services.session import SessionService
 from app.services.sso import (
     apply_secret_update,
@@ -70,8 +74,9 @@ def build_user_session_info(user: User, permissions: PermissionSet) -> UserSessi
     """
     Build user session info from User model matching Node.js format.
 
-    ``permissions`` is the user's live set (``load_permission_set``): its
-    allow keys, approval keys and ``sites.view_all`` go out with the user.
+    ``permissions`` is the user's live set (``effective_permission_set``: the
+    role's matrix with the feature switches applied): its allow keys, approval
+    keys and ``sites.view_all`` go out with the user.
     """
     sites = user.sites if user.sites else []
 
@@ -187,7 +192,7 @@ async def login(
 
     return LoginResponse(
         success=True,
-        user=build_user_session_info(user, await load_permission_set(db, user.role)),
+        user=build_user_session_info(user, await effective_permission_set(db, user.role)),
     )
 
 
@@ -271,7 +276,7 @@ async def get_current_session(
         return AuthMeResponse(user=None)
 
     return AuthMeResponse(
-        user=build_user_session_info(user, await load_permission_set(db, user.role))
+        user=build_user_session_info(user, await effective_permission_set(db, user.role))
     )
 
 

@@ -4,19 +4,28 @@ Tests for the card-level permission gate (app/services/card_access.py).
 The rule: ``kanban.move_any`` (outright or through the PM bundle) moves any
 card; otherwise ``kanban.move_assigned`` moves the cards the user holds an
 approved assignment on. Without either key, nothing moves.
+
+The Kanban switch (``kanban_enabled = false``) takes ``views.kanban`` from
+everyone, admins included: the board's four reads answer 403, while the card
+writes (status, assignees, comments) gate on other keys and keep working.
 """
 
+from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
 
+from app.models.user import User
 from app.services.card_access import (
     MOVE_ASSIGNED_DENIED_DETAIL,
     require_card_status_write,
     user_is_card_assignee,
 )
+from app.services.permissions import PermissionSet, default_modes
+from tests.conftest import FakeUser
+from tests.support import scalar_result, scalars_result
 
 
 def _db_returning(row):
@@ -171,3 +180,134 @@ async def test_approval_notifications_rank_between_mention_and_assigned():
     assert dedupe_by_recipient(batches)[0].type == "mention"
     batches = [[note("status_change")], [note("todo_assigned")]]
     assert dedupe_by_recipient(batches)[0].type == "todo_assigned"
+
+
+# ---------------------------------------------------------
+# The Kanban switch turned off
+# ---------------------------------------------------------
+
+BOARD_OFF = frozenset({"views.kanban"})
+
+
+def board_off(user_id: int, role: str) -> FakeUser:
+    user = FakeUser(user_id, role)
+    user.permissions = PermissionSet(role, default_modes(role), BOARD_OFF)
+    return user
+
+
+def _card(project_id=3):
+    return SimpleNamespace(
+        id=10, project_id=project_id, status="todo", completion=0, name=None, type="Design"
+    )
+
+
+@pytest.fixture
+def wires():
+    with (
+        patch("app.routers.kanban.broadcast_change", new_callable=AsyncMock),
+        patch("app.routers.kanban.send_notification", new_callable=AsyncMock),
+        patch("app.routers.kanban.card_assignee_ids", new_callable=AsyncMock) as assignees,
+    ):
+        assignees.return_value = []
+        yield
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/kanban/projects/3/comment-counts",
+        "/api/kanban/sites/1/comment-counts",
+        "/api/kanban/sites/1/mentionable-users",
+        "/api/kanban/cards/phase/10/comments",
+    ],
+)
+async def test_the_board_reads_are_403_for_an_admin_when_off(authed_client, mock_db_session, path):
+    client, set_user = authed_client
+    set_user(board_off(1, "admin"))
+
+    response = await client.get(path)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Permission required: views.kanban"
+    mock_db_session.execute.assert_not_awaited()
+
+
+async def test_an_admin_moves_a_card_with_the_board_off(authed_client, mock_db_session, wires):
+    client, set_user = authed_client
+    set_user(board_off(1, "admin"))
+    mock_db_session.execute.side_effect = [scalar_result(_card()), scalars_result([])]
+
+    response = await client.put("/api/kanban/cards/phase/10/status", json={"status": "done"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "done"
+
+
+async def test_an_assignee_moves_their_card_with_the_board_off(
+    authed_client, mock_db_session, wires
+):
+    client, set_user = authed_client
+    set_user(board_off(5, "user"))
+    pm = MagicMock()
+    pm.first.return_value = (99,)
+    assigned = MagicMock()
+    assigned.first.return_value = (42,)
+    mock_db_session.execute.side_effect = [
+        scalar_result(_card()),
+        pm,
+        assigned,
+        scalars_result([5]),
+    ]
+
+    response = await client.put("/api/kanban/cards/phase/10/status", json={"status": "in_progress"})
+
+    assert response.status_code == 200
+
+
+async def test_an_admin_assigns_a_card_with_the_board_off(authed_client, mock_db_session, wires):
+    client, set_user = authed_client
+    set_user(board_off(1, "admin"))
+    assignee = User(id=7, email="b@example.com", first_name="Bob", last_name="B", max_capacity=60)
+    mock_db_session.execute.side_effect = [
+        scalar_result(_card()),
+        scalar_result(assignee),
+        scalar_result(None),
+    ]
+
+    async def refresh(obj):
+        obj.id = 300
+
+    mock_db_session.refresh.side_effect = refresh
+
+    response = await client.post("/api/kanban/cards/phase/10/assignees", json={"staff_id": 7})
+
+    assert response.status_code == 201
+
+
+async def test_a_user_leaves_a_card_with_the_board_off(authed_client, mock_db_session, wires):
+    client, set_user = authed_client
+    set_user(board_off(7, "user"))
+    row = SimpleNamespace(
+        id=300, project_id=3, staff_id=7, approval_status="approved", approval_request_id=None
+    )
+    mock_db_session.execute.side_effect = [scalar_result(_card()), scalar_result(row)]
+
+    response = await client.delete("/api/kanban/cards/phase/10/assignees/7")
+
+    assert response.status_code == 200
+
+
+async def test_a_user_comments_with_the_board_off(authed_client, mock_db_session, wires):
+    client, set_user = authed_client
+    set_user(board_off(5, "user"))
+    mock_db_session.execute.side_effect = [scalar_result(_card())]
+
+    async def refresh(obj):
+        obj.id = 61
+        obj.created_at = obj.updated_at = datetime(2026, 1, 1, 12, 0, 0)
+
+    mock_db_session.refresh.side_effect = refresh
+
+    response = await client.post("/api/kanban/cards/phase/10/comments", json={"body": "hi"})
+
+    assert response.status_code == 201

@@ -17,7 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.rbac import Role, RolePermission
+from app.models.settings import Settings
 from app.models.user import User
+from app.services.instance_settings import disabled_permission_keys
 from app.services.permissions import (
     PERMISSION_KEYS,
     PM_BUNDLE,
@@ -36,11 +38,22 @@ async def load_live_user(db: AsyncSession, user_id: Any) -> tuple[bool, str, Per
 
     One round trip: the ``users`` row outer-joined to its role's
     ``role_permissions`` rows (one result row per permission, a single row
-    with NULL permission columns for a role without rows, such as admin).
+    with NULL permission columns for a role without rows, such as admin),
+    plus the ``kanban_enabled`` switch as a fifth column (a scalar subquery;
+    ``false`` disables ``views.kanban`` for everyone).
     """
+    kanban_enabled = (
+        select(Settings.value).where(Settings.key == "kanban_enabled").scalar_subquery()
+    )
     rows = (
         await db.execute(
-            select(User.active, User.role, RolePermission.permission, RolePermission.mode)
+            select(
+                User.active,
+                User.role,
+                RolePermission.permission,
+                RolePermission.mode,
+                kanban_enabled,
+            )
             .select_from(User)
             .outerjoin(Role, Role.key == User.role)
             .outerjoin(RolePermission, RolePermission.role_id == Role.id)
@@ -51,7 +64,8 @@ async def load_live_user(db: AsyncSession, user_id: Any) -> tuple[bool, str, Per
         return None
     active, role = rows[0][0], rows[0][1]
     modes = {row[2]: row[3] for row in rows if row[2] is not None}
-    return bool(active), role, PermissionSet(role, modes)
+    disabled = disabled_permission_keys(rows[0][4])
+    return bool(active), role, PermissionSet(role, modes, disabled)
 
 
 async def get_current_user_from_session(request: Request) -> dict[str, Any] | None:

@@ -31,6 +31,16 @@ def sso_row(**overrides) -> SSOConfig:
     return SSOConfig(**values)
 
 
+DEFAULTS = {
+    "gantt_default_panel": "none",
+    "staff_panel_default_skills": "[]",
+    "equipment_panel_default_types": "[]",
+    "kanban_enabled": "true",
+    "nager_enabled": "true",
+    "new_project_preselect_phases": "true",
+}
+
+
 @pytest.fixture
 def no_org_sso():
     with patch("app.routers.settings._active_org_sso", new_callable=AsyncMock) as mock:
@@ -52,7 +62,11 @@ async def test_all_settings_is_a_flat_dict(app_client, mock_db_session):
     response = await app_client.get("/api/settings")
 
     assert response.status_code == 200
-    assert response.json() == {"instance_title": "R&D Lab", "show_weekends": None}
+    assert response.json() == {
+        **DEFAULTS,
+        "instance_title": "R&D Lab",
+        "show_weekends": None,
+    }
 
 
 @pytest.mark.asyncio
@@ -131,6 +145,187 @@ async def test_setting_write_rejects_non_string_value(authed_client, mock_db_ses
 
     assert response.status_code == 422
     mock_db_session.execute.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Known keys: admin defaults and feature switches (instance_settings.py)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_all_settings_merge_defaults_without_writing(app_client, mock_db_session):
+    mock_db_session.execute.return_value = scalars_result(
+        [Settings(key="kanban_enabled", value="false"), Settings(key="nager_enabled", value=None)]
+    )
+
+    response = await app_client.get("/api/settings")
+
+    assert response.status_code == 200
+    # A stored row wins, even a NULL one; only missing known keys are filled.
+    assert response.json() == {**DEFAULTS, "kanban_enabled": "false", "nager_enabled": None}
+    mock_db_session.add.assert_not_called()
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("key", "default"), list(DEFAULTS.items()))
+async def test_a_missing_known_key_reads_as_its_default(app_client, mock_db_session, key, default):
+    mock_db_session.execute.return_value = scalar_result(None)
+
+    response = await app_client.get(f"/api/settings/{key}")
+
+    assert response.status_code == 200
+    assert response.json() == {"key": key, "value": default}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("key", "raw", "stored"),
+    [
+        ("gantt_default_panel", " Staff ", "staff"),
+        ("staff_panel_default_skills", "[3, 1, 3]", "[3,1]"),
+        ("equipment_panel_default_types", '[" HPLC ", "GC", "HPLC"]', '["HPLC","GC"]'),
+        ("kanban_enabled", "OFF", "false"),
+        ("nager_enabled", "0", "false"),
+        ("new_project_preselect_phases", "Yes", "true"),
+    ],
+)
+async def test_a_known_key_stores_its_canonical_form(
+    authed_client, mock_db_session, key, raw, stored
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.return_value = scalar_result(None)
+
+    response = await client.put(f"/api/settings/{key}", json={"value": raw})
+
+    assert response.status_code == 200
+    assert response.json() == {"key": key, "value": stored}
+    (row,) = (c.args[0] for c in mock_db_session.add.call_args_list)
+    assert (row.key, row.value) == (key, stored)
+
+
+@pytest.mark.asyncio
+async def test_a_known_key_updates_its_row_canonically(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    row = Settings(key="kanban_enabled", value="true")
+    mock_db_session.execute.return_value = scalar_result(row)
+
+    response = await client.put("/api/settings/kanban_enabled", json={"value": "False"})
+
+    assert response.status_code == 200
+    assert row.value == "false"
+    mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("key", "raw"),
+    [
+        ("gantt_default_panel", "kanban"),
+        ("staff_panel_default_skills", "[0]"),
+        ("staff_panel_default_skills", "1,2"),
+        ("equipment_panel_default_types", '[""]'),
+        ("equipment_panel_default_types", '["' + "x" * 101 + '"]'),
+        ("kanban_enabled", "maybe"),
+        ("nager_enabled", ""),
+        ("new_project_preselect_phases", "2"),
+    ],
+)
+async def test_an_invalid_value_for_a_known_key_is_422(authed_client, mock_db_session, key, raw):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+
+    response = await client.put(f"/api/settings/{key}", json={"value": raw})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == f"Invalid value for {key}"
+    mock_db_session.execute.assert_not_awaited()
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_key_stays_free(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.return_value = scalar_result(None)
+
+    response = await client.put("/api/settings/logo_url", json={"value": " maybe [0] "})
+
+    assert response.status_code == 200
+    assert response.json() == {"key": "logo_url", "value": " maybe [0] "}
+
+
+@pytest.mark.asyncio
+async def test_null_on_a_known_key_deletes_the_row(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    row = Settings(key="gantt_default_panel", value="staff")
+    mock_db_session.execute.return_value = scalar_result(row)
+
+    response = await client.put("/api/settings/gantt_default_panel", json={"value": None})
+
+    assert response.status_code == 200
+    # The default applies again, and is what the route answers.
+    assert response.json() == {"key": "gantt_default_panel", "value": "none"}
+    mock_db_session.delete.assert_awaited_once_with(row)
+    mock_db_session.commit.assert_awaited_once()
+    mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_null_on_a_known_key_without_a_row_writes_nothing(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.return_value = scalar_result(None)
+
+    response = await client.put("/api/settings/nager_enabled", json={"value": None})
+
+    assert response.status_code == 200
+    assert response.json() == {"key": "nager_enabled", "value": "true"}
+    mock_db_session.delete.assert_not_awaited()
+    mock_db_session.add.assert_not_called()
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_null_on_an_unknown_key_is_stored(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    row = Settings(key="instance_title", value="Lab")
+    mock_db_session.execute.return_value = scalar_result(row)
+
+    response = await client.put("/api/settings/instance_title", json={"value": None})
+
+    assert response.status_code == 200
+    assert row.value is None
+    mock_db_session.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["user", "superuser"])
+async def test_known_keys_need_settings_general(authed_client, mock_db_session, role):
+    client, set_user = authed_client
+    set_user(FakeUser(1, role))
+
+    response = await client.put("/api/settings/kanban_enabled", json={"value": "false"})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Permission required: settings.general"
+    mock_db_session.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_known_keys_follow_the_settings_general_permission(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(4, "ops", {"settings.general"}))
+    mock_db_session.execute.return_value = scalar_result(None)
+
+    response = await client.put("/api/settings/nager_enabled", json={"value": "false"})
+
+    assert response.status_code == 200
+    assert response.json()["value"] == "false"
 
 
 # ---------------------------------------------------------------------------

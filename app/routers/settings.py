@@ -8,7 +8,7 @@ It matches the Node.js API at /api/settings exactly.
 
 import logging
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +19,12 @@ from app.models.user import User
 from app.routers.auth import _active_org_sso, _reject_if_org_sso_active
 from app.schemas.auth import SSOConfigResponse, SSOConfigUpdate
 from app.schemas.settings import SettingsResponse, SettingUpdate
+from app.services.instance_settings import (
+    KNOWN_SETTINGS,
+    canonicalise,
+    default_for,
+    with_defaults,
+)
 from app.services.sso import apply_secret_update, ensure_sso_default_role
 
 logger = logging.getLogger(__name__)
@@ -37,7 +43,8 @@ async def get_all_settings(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Settings))
     settings = result.scalars().all()
 
-    return {s.key: s.value for s in settings}
+    # The known keys without a row read as their default (nothing is written).
+    return with_defaults({s.key: s.value for s in settings})
 
 
 # ---------------------------------------------------------
@@ -148,7 +155,7 @@ async def get_setting(key: str, db: AsyncSession = Depends(get_db)):
     """
     Get a specific setting by key.
 
-    This endpoint is public.
+    This endpoint is public. A known key without a row reads as its default.
     Matches: GET /api/settings/:key
     """
     result = await db.execute(select(Settings).where(Settings.key == key))
@@ -157,7 +164,7 @@ async def get_setting(key: str, db: AsyncSession = Depends(get_db)):
     if setting:
         return SettingsResponse(key=key, value=setting.value)
     else:
-        return SettingsResponse(key=key, value=None)
+        return SettingsResponse(key=key, value=default_for(key))
 
 
 @router.put("/settings/{key}", response_model=SettingsResponse)
@@ -170,19 +177,39 @@ async def update_setting(
     """
     Update a setting (create if not exists).
 
-    Requires ``settings.general``.
+    Requires ``settings.general``. A known key (``KNOWN_SETTINGS``) stores its
+    canonical form (422 ``Invalid value for <key>`` otherwise), and ``null``
+    deletes its row so the default applies again (answered as the value).
+    Any other key stores the value as given.
     Matches: PUT /api/settings/:key
     """
+    known = key in KNOWN_SETTINGS
+    value = data.value
+    if known and value is not None:
+        try:
+            value = canonicalise(key, value)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid value for {key}",
+            ) from exc
+
     # Check if setting exists
     result = await db.execute(select(Settings).where(Settings.key == key))
     setting = result.scalar_one_or_none()
 
+    if known and value is None:
+        if setting:
+            await db.delete(setting)
+            await db.commit()
+        return SettingsResponse(key=key, value=default_for(key))
+
     if setting:
         # Update existing
-        setting.value = data.value
+        setting.value = value
     else:
         # Create new
-        setting = Settings(key=key, value=data.value)
+        setting = Settings(key=key, value=value)
         db.add(setting)
 
     await db.commit()
