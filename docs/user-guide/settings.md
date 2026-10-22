@@ -71,6 +71,8 @@ What each person may do in Milestone is decided by their **role**. A role is a n
 
 The **Roles** tab lists every role with its description and how many users hold it. The three built-in roles carry a **System** badge.
 
+![Settings → Roles: the User role's permission matrix with Allow, Needs approval and Deny chips; the three own-booking permissions are set to Needs approval](../assets/screenshots/roles-settings.png){ loading=lazy }
+
 ### The Built-in Roles
 
 | Role | What it can do by default |
@@ -141,6 +143,8 @@ There is one card per action — **Book myself**, **Change my allocation / dates
 
 - **The project's manager can approve** — the *Project Manager* of the project the booking is on
 - **Roles that can approve** — tick the roles whose holders may approve. The Administrator role is always ticked: administrators can approve every request
+
+![Settings → Roles → Approvals: for 'Book myself', the project's manager can approve and the Team Lead role is ticked; administrators are always listed as approvers](../assets/screenshots/approvals-settings.png){ loading=lazy }
 
 If neither the project's manager nor any role is set, a warning says that only administrators can approve these requests. Click **Save Changes** on the card to apply it. An approver must be able to see the project's site, and nobody approves their own request.
 

@@ -91,6 +91,8 @@ If your role books your own time **with approval**, the same actions send a requ
 - A requested change keeps the booking as it was and shows the old and new values (*40% → 60%*, *Change pending*); a requested removal shows *Removal requested*. The bar stays where it is and cannot be dragged while the request is open
 - While a request is open, right-click your row and choose **Cancel request** to withdraw it (or **Cancel request** on the Kanban card). The rest of the row stays locked until the request is decided
 
+![Gantt chart with a dashed, hatched pending assignment bar and a 'Pending approval' badge on Diana Davis's row of the Analytics phase](../assets/screenshots/pending-assignment.png){ loading=lazy }
+
 Approvers — the project's manager and the roles chosen in [Settings → Roles → Approvals](settings.md#approvals), and always administrators — get a notification. They can decide from [My Todos](my-todos.md), from the Kanban card or right here: right-click the dashed row and choose **Approve request** or **Reject request…** (with an optional reason). Approving turns the row into a normal booking; rejecting removes it. You are notified either way.
 
 People who can manage anyone's bookings — and project managers on their own projects — never need approval, not even for themselves.

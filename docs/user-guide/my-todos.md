@@ -4,6 +4,8 @@
 
 The sidebar entry carries a badge with the number of open items: requests waiting for your decision plus open tasks assigned to you (up to *99+*). It updates live — when someone sends you a request, gives you a task or decides one of your requests, the badge and the lists change without a reload.
 
+![My Todos signed in as a project manager: the To decide tab lists Diana Davis's request to join a phase at 50% with Approve and Reject buttons](../assets/screenshots/my-todos.png){ loading=lazy }
+
 ## The Three Tabs
 
 | Tab | What it lists |
