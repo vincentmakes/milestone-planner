@@ -15,6 +15,7 @@ import {
   toInputDateFormat,
   formatDateISO,
   formatQuarter,
+  formatMediumDate,
 } from '../date';
 
 const ymd = (d: Date) => formatDateISO(d);
@@ -78,5 +79,23 @@ describe('toInputDateFormat', () => {
     expect(toInputDateFormat('2026-03-02T00:00:00.000Z')).toBe('2026-03-02');
     expect(toInputDateFormat('2026-03-02')).toBe('2026-03-02');
     expect(toInputDateFormat(null)).toBe('');
+  });
+});
+
+describe('formatMediumDate', () => {
+  const medium = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+
+  it('shows a model date in the browser locale with a short month', () => {
+    expect(formatMediumDate('2026-10-22')).toBe(medium.format(new Date(2026, 9, 22)));
+    expect(formatMediumDate('2026-10-22')).toMatch(/22/);
+    expect(formatMediumDate('2026-10-22')).toMatch(/2026/);
+  });
+
+  it('reads the midnight ISO form as the same calendar day', () => {
+    expect(formatMediumDate('2026-03-02T00:00:00.000Z')).toBe(medium.format(new Date(2026, 2, 2)));
+  });
+
+  it('is empty for no date', () => {
+    expect(formatMediumDate('')).toBe('');
   });
 });

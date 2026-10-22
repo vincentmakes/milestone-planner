@@ -1,0 +1,132 @@
+import { useCallback, useId, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
+import { Input } from '../Input';
+import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
+import { formatMediumDate } from '@/utils/date';
+import { DatePickerPopover } from './DatePickerPopover';
+import { DATE_PLACEHOLDER, OPEN_KEYS } from './dateRangeLogic';
+import type { IsoDate } from './dateRangeLogic';
+import type { CommonDateFieldProps } from './DateRangeField';
+import styles from './DateRangeField.module.css';
+
+/**
+ * DateField — one date on the same calendar as `DateRangeField` (a todo's due
+ * date, a milestone's date): a read-only `Input` (`role="combobox"`, ISO value
+ * in `data-value`) that opens the calendar on a click or Enter / Space /
+ * ArrowDown; one click on a day selects it, closes the panel and returns focus
+ * to the field. `clearable` adds "Clear date" (and Backspace) for an optional
+ * date.
+ */
+
+export interface DateFieldProps extends CommonDateFieldProps {
+  value: IsoDate;
+  onChange: (next: IsoDate) => void;
+  label: string;
+  id?: string;
+  clearable?: boolean;
+  placeholder?: string;
+  fullWidth?: boolean;
+}
+
+export function DateField({
+  value,
+  onChange,
+  label,
+  id,
+  clearable = false,
+  placeholder = DATE_PLACEHOLDER,
+  fullWidth = false,
+  disabled = false,
+  fieldClassName,
+  highlightWeekdays,
+  markSiteCalendar = true,
+}: DateFieldProps) {
+  const [open, setOpen] = useState(false);
+  const [openedByKeyboard, setOpenedByKeyboard] = useState(false);
+  const panelId = useId();
+
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const anchors = useMemo(() => [inputRef], []);
+
+  const close = useCallback(() => setOpen(false), []);
+  const { onBlur } = useDismissableOverlay({ open, onClose: close, wrapperRef, triggerRef: inputRef });
+
+  const openPanel = (byKeyboard: boolean) => {
+    if (disabled || open) return;
+    setOpenedByKeyboard(byKeyboard);
+    setOpen(true);
+  };
+
+  /** Close with focus on the field — moved before the panel unmounts, so it never drops to <body>. */
+  const finish = () => {
+    inputRef.current?.focus();
+    setOpen(false);
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (OPEN_KEYS.has(e.key)) {
+      // Never submit the enclosing form, never scroll the page
+      e.preventDefault();
+      openPanel(true);
+    } else if (e.key === 'Backspace' && clearable && value) {
+      e.preventDefault();
+      onChange('');
+    }
+  };
+
+  const handleDayClick = (day: IsoDate) => {
+    onChange(day);
+    finish();
+  };
+
+  return (
+    <div ref={wrapperRef} className={styles.wrapper} onBlur={onBlur}>
+      <Input
+        ref={inputRef}
+        id={id}
+        label={label}
+        placeholder={placeholder}
+        fullWidth={fullWidth}
+        readOnly
+        role="combobox"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
+        data-value={value}
+        autoComplete="off"
+        value={formatMediumDate(value)}
+        disabled={disabled}
+        className={[styles.field, fieldClassName].filter(Boolean).join(' ')}
+        onClick={() => openPanel(false)}
+        onKeyDown={handleKeyDown}
+      />
+      {open && (
+        <DatePickerPopover
+          id={panelId}
+          mode="single"
+          state={{ start: value, end: '', active: 'start' }}
+          emptyEndIsSameDay={false}
+          anchors={anchors}
+          focusOnOpen={openedByKeyboard}
+          onDayClick={handleDayClick}
+          onAnchorHidden={close}
+          clear={
+            clearable
+              ? {
+                  label: 'Clear date',
+                  disabled: !value,
+                  onClick: () => {
+                    onChange('');
+                    finish();
+                  },
+                }
+              : undefined
+          }
+          highlightWeekdays={highlightWeekdays}
+          markSiteCalendar={markSiteCalendar}
+        />
+      )}
+    </div>
+  );
+}
