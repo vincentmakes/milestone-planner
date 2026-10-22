@@ -113,6 +113,7 @@ describe('ProjectModal fields', () => {
     expect(updateProject).toHaveBeenCalledWith(9, expect.objectContaining({ name: 'Bioprocess Scale-Up' }));
   });
 
+  // The rule itself is proven in dateRangeLogic.test; this guards the form's payload wiring
   it('never lets the end precede the start', async () => {
     vi.mocked(updateProject).mockResolvedValueOnce({} as never);
     render(<ProjectModal />);

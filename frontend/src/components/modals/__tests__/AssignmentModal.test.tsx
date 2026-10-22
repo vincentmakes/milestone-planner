@@ -245,6 +245,7 @@ describe('AssignmentModal initialisation', () => {
     expect(createStaffAssignment).not.toHaveBeenCalled();
   });
 
+  // The rule itself is proven in dateRangeLogic.test; this guards the form's payload wiring
   it('never lets the end precede the start', async () => {
     seed({ id: 7, role: 'user', name: 'Alice Anderson' });
     openForProject();

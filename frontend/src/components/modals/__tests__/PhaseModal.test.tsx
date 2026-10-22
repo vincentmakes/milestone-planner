@@ -49,9 +49,9 @@ function buildProject(): Project {
 const nameInput = () => screen.getByPlaceholderText(/Preparation, Analytics/) as HTMLInputElement;
 const rangeValues = () => [dateValue('Start Date *'), dateValue('End Date *')];
 
-function fill(name: string, start?: string, end?: string) {
+function fill(name: string, range?: [start: string, end: string]) {
   fireEvent.change(nameInput(), { target: { value: name } });
-  if (start !== undefined && end !== undefined) pickRange('Start Date *', start, end);
+  if (range) pickRange('Start Date *', ...range);
 }
 
 beforeEach(() => {
@@ -78,6 +78,7 @@ describe('PhaseModal create', () => {
     expect(createPhase).not.toHaveBeenCalled();
   });
 
+  // The rule itself is proven in dateRangeLogic.test; this guards the form's payload wiring
   it('never lets the end precede the start', async () => {
     act(() => useUIStore.getState().openPhaseModal(undefined, 1));
     render(<PhaseModal />);
@@ -102,7 +103,7 @@ describe('PhaseModal create', () => {
   it('creates the phase, expands the project and grows it to fit', async () => {
     act(() => useUIStore.getState().openPhaseModal(undefined, 1));
     render(<PhaseModal />);
-    fill('Transfer', '2026-01-19', '2026-05-15');
+    fill('Transfer', ['2026-01-19', '2026-05-15']);
     fireEvent.click(screen.getByRole('button', { name: 'Add Phase' }));
 
     await waitFor(() => expect(useUIStore.getState().activeModal).toBeNull());
@@ -117,7 +118,7 @@ describe('PhaseModal create', () => {
   it('leaves the project dates alone when the phase fits', async () => {
     act(() => useUIStore.getState().openPhaseModal(undefined, 1));
     render(<PhaseModal />);
-    fill('Inside', '2026-03-02', '2026-03-06');
+    fill('Inside', ['2026-03-02', '2026-03-06']);
     fireEvent.click(screen.getByRole('button', { name: 'Add Phase' }));
     await waitFor(() => expect(useUIStore.getState().activeModal).toBeNull());
     expect(updateProject).not.toHaveBeenCalled();

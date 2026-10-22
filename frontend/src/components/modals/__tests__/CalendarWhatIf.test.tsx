@@ -213,6 +213,7 @@ describe('EquipmentBlockModal fields', () => {
     );
   });
 
+  // The rule itself is proven in dateRangeLogic.test; this guards the form's payload wiring
   it('never lets the end precede the start', async () => {
     useWhatIfStore.setState({ whatIfMode: false });
     act(() => useUIStore.getState().openEquipmentBlockModal(block, 11));

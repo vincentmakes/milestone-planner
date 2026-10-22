@@ -701,6 +701,8 @@ function EventForm({ event, manageableSites, defaultSiteIds, onCancel, onSaved, 
           endLabel="End date (optional)"
           startId="event-date"
           endId="event-end-date"
+          // This form defines the calendar: no hints from the header site's holidays and closures
+          markSiteCalendar={false}
           fieldClassName={styles.field}
           start={date}
           end={endDate}

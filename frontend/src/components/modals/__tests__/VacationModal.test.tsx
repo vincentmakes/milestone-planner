@@ -215,6 +215,7 @@ describe('VacationModal', () => {
     });
   });
 
+  // The rule itself is proven in dateRangeLogic.test; this guards the form's payload wiring
   it('never lets the end precede the start', async () => {
     render(<VacationModal />);
     pickRange('From', '2026-11-02', '2026-11-06');

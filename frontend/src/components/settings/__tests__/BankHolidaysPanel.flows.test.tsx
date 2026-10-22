@@ -12,7 +12,7 @@ import { resetAllStores, useAppStore, useUIStore, useWhatIfStore } from '@/store
 import { downloadICS } from '@/utils/ics';
 import { makeSite, makeUser } from '@/test/factories';
 import { stubConfirm } from '@/test/confirmDialog';
-import { dateValue, openDateField, pickDate, pickEnd } from '@/test/datePicker';
+import { dateValue, dayButton, openDateField, pickDate, pickEnd, showMonth } from '@/test/datePicker';
 import type { BankHoliday } from '@/types';
 
 const api = vi.hoisted(() => ({
@@ -188,6 +188,22 @@ describe('BankHolidaysPanel add and edit', () => {
         end_date: null,
       })
     );
+  });
+
+  it("does not mark the header site's holidays and closures in its calendar", async () => {
+    await renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Lab shutdown' }));
+    act(() =>
+      useAppStore.setState({
+        bankHolidays: [shutdown],
+        bankHolidayDates: new Set([`${YEAR}-12-24`, `${YEAR}-12-28`]),
+        closureIndex: new Map([[`${YEAR}-12-29`, [{ id: 7, name: 'Inventory' } as never]]]),
+      })
+    );
+    const panel = openDateField('Date');
+    showMonth(panel, `${YEAR}-12-01`);
+    expect(dayButton(panel, `${YEAR}-12-24`)).toBeInTheDocument();
+    expect(panel.querySelector('[class*="holiday"], [class*="closure"]')).toBeNull();
   });
 
   it('clears an end date from the calendar', async () => {

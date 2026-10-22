@@ -16,7 +16,7 @@ import { CompanyEventsPanel } from '../panels/CompanyEventsPanel';
 import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { stubConfirm } from '@/test/confirmDialog';
-import { dateValue, pickDate, pickEnd } from '@/test/datePicker';
+import { dateValue, dayButton, openDateField, pickDate, pickEnd, showMonth } from '@/test/datePicker';
 import type { BankHoliday, CompanyEvent, Site, User } from '@/types';
 import { makeTeam } from '@/test/factories';
 
@@ -242,6 +242,23 @@ describe('Calendar delete confirmations', () => {
 });
 
 describe('CompanyEventsPanel dates', () => {
+  it("does not mark the header site's holidays and closures in its calendar", async () => {
+    render(<CompanyEventsPanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit ISO Audit' }));
+    act(() =>
+      useAppStore.setState({
+        bankHolidays: [holiday],
+        bankHolidayDates: new Set(['2026-05-12', '2026-05-14']),
+        closureIndex: new Map([['2026-05-15', [audit]]]),
+      })
+    );
+    const panel = openDateField('Start date');
+    showMonth(panel, '2026-05-01');
+    expect(dayButton(panel, '2026-05-12')).toBeInTheDocument();
+    expect(panel.querySelector('[class*="holiday"], [class*="closure"]')).toBeNull();
+  });
+
+  // The rule itself is proven in dateRangeLogic.test; this guards the form's payload wiring
   it('never lets the end precede the start', async () => {
     api.updateCompanyEvent.mockResolvedValue({});
     render(<CompanyEventsPanel />);

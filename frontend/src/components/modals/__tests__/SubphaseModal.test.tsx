@@ -78,10 +78,9 @@ function buildProject(): Project {
 const nameInput = () => screen.getByPlaceholderText(/Task 1, Setup/) as HTMLInputElement;
 const rangeValues = () => [dateValue('Start Date *'), dateValue('End Date *')];
 
-function fill(name: string, start?: string, end?: string) {
+function fill(name: string, range?: [start: string, end: string]) {
   fireEvent.change(nameInput(), { target: { value: name } });
-  if (start !== undefined && end !== undefined) pickRange('Start Date *', start, end);
-  else if (start !== undefined) pickDate('Start Date *', start);
+  if (range) pickRange('Start Date *', ...range);
 }
 
 function openNew(context: Record<string, unknown>) {
@@ -117,6 +116,7 @@ describe('SubphaseModal validation', () => {
     expect(createSubphase).not.toHaveBeenCalled();
   });
 
+  // The rule itself is proven in dateRangeLogic.test; this guards the form's payload wiring
   it('never lets the end precede the start', async () => {
     openNew({ phaseId: 10, projectId: 1 });
     render(<SubphaseModal />);
@@ -155,7 +155,7 @@ describe('SubphaseModal create', () => {
   it('creates under the phase, expands it and grows the phase and the project', async () => {
     openNew({ phaseId: 10, projectId: 1 });
     render(<SubphaseModal />);
-    fill('Report', '2026-02-20', '2026-07-15');
+    fill('Report', ['2026-02-20', '2026-07-15']);
     fireEvent.click(screen.getByRole('button', { name: 'Add Subphase' }));
 
     await waitFor(() => expect(useUIStore.getState().activeModal).toBeNull());
@@ -179,7 +179,7 @@ describe('SubphaseModal create', () => {
   it('does not touch the parents when the new subphase fits inside them', async () => {
     openNew({ phaseId: 10, projectId: 1 });
     render(<SubphaseModal />);
-    fill('Inside', '2026-02-03', '2026-02-10');
+    fill('Inside', ['2026-02-03', '2026-02-10']);
     fireEvent.click(screen.getByRole('button', { name: 'Add Subphase' }));
     await waitFor(() => expect(createSubphase).toHaveBeenCalled());
     await waitFor(() => expect(useUIStore.getState().activeModal).toBeNull());
@@ -190,7 +190,7 @@ describe('SubphaseModal create', () => {
   it('creates a nested subphase and grows every parent subphase on the way up', async () => {
     openNew({ phaseId: 10, projectId: 1, subphaseId: 21 });
     render(<SubphaseModal />);
-    fill('Deeper', '2026-01-30', '2026-02-20');
+    fill('Deeper', ['2026-01-30', '2026-02-20']);
     fireEvent.click(screen.getByRole('button', { name: 'Add Subphase' }));
 
     await waitFor(() => expect(useUIStore.getState().activeModal).toBeNull());
@@ -254,7 +254,7 @@ describe('SubphaseModal edit and delete', () => {
     openEdit(screening);
     render(<SubphaseModal />);
     expect(screen.getByText('Edit Subphase')).toBeInTheDocument();
-    fill('Screening v2', '2026-02-03');
+    fill('Screening v2', ['2026-02-03', '2026-02-13']);
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
 
     await waitFor(() => expect(useUIStore.getState().activeModal).toBeNull());

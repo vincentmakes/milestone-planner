@@ -605,6 +605,8 @@ function HolidayForm({ siteId, siteName, holiday, onCancel, onSaved, onDirtyChan
           endLabel="End date (optional)"
           startId="holiday-date"
           endId="holiday-end-date"
+          // This form defines the calendar: no hints from the header site's holidays and closures
+          markSiteCalendar={false}
           fieldClassName={styles.field}
           start={date}
           end={endDate}
