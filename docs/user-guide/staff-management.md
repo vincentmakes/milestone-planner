@@ -52,7 +52,7 @@ New assignments (drag-and-drop, **Assign Staff**, **Assign me**) can't be create
 
 1. Grab a staff member by the drag handle in the Staff Overview or the resource panel
 2. Drag them onto a project/phase/subphase bar on the Gantt timeline
-3. A five-day assignment at the person's maximum capacity is created where you drop it — adjust its dates or allocation afterwards
+3. On a project bar, a five-day assignment at the person's maximum capacity is created where you drop it; on a phase or subphase bar, the person is booked at their maximum capacity for the whole phase (a [linked booking](gantt-charts.md#bookings-on-phases-and-subphases)) — adjust its dates or allocation afterwards
 
 ### Method 2: Context Menu
 
@@ -68,7 +68,8 @@ New assignments (drag-and-drop, **Assign Staff**, **Assign me**) can't be create
 - Set **allocation percentage** (5–100% in 5% increments). The server accepts any whole number from 1 to 100 for a single assignment and rejects 0 or more than 100; over-allocation comes from several overlapping assignments
 - Assignment dates are picked on the [shared calendar](gantt-charts.md#picking-dates), so the end date can never fall before the start date
 - A warning appears if the assignment would exceed capacity
-- Phase/subphase assignments inherit dates automatically
+- Phase/subphase assignments follow the phase's dates while **Follow the phase dates** is on (the default). Turn it off to give the booking its own dates inside the phase: the calendar only offers days within the phase. Editing a booking with the switch back on makes it follow the phase again — the same as clicking its [pin](gantt-charts.md#bookings-on-phases-and-subphases) in the Gantt chart
+- The same person can be booked several times on one phase or subphase with own dates that do not overlap — for example a few days at the start and a few at the end. An overlapping booking is refused, and the bookings are grouped under an [overview row](gantt-charts.md#the-overview-row) in the Gantt chart
 - Project-level assignments allow custom start/end dates
 
 ## Adding Yourself to a Project
@@ -76,9 +77,9 @@ New assignments (drag-and-drop, **Assign Staff**, **Assign me**) can't be create
 With the default roles, anyone — including users with the plain **User** role — can book their own time on a project, change it and withdraw it again, without being able to assign other people. An administrator can change that per role in [Settings → Roles](settings.md#roles-permissions): booking yourself, changing your booking and removing it can each be allowed, need approval (see [below](#booking-yourself-when-approval-is-required)) or be denied — then the matching menu entries and buttons are hidden.
 
 - **Right-click** a project, phase or subphase in the Gantt chart and choose **Assign me**. You are booked at your own maximum capacity for the item's dates. The entry reads **Assigned to me** (greyed out) once you are on it
-- **Drag your own card** from the Staff Overview or the resource panel onto a project, phase or subphase bar — this creates a five-day assignment at your maximum capacity where you drop it (in quarter and year views, starting at the day under the pointer). Only your own card can be dragged
+- **Drag your own card** from the Staff Overview or the resource panel onto a project, phase or subphase bar — on a project this creates a five-day assignment at your maximum capacity where you drop it (in quarter and year views, starting at the day under the pointer); on a phase or subphase it books you for the whole phase. Only your own card can be dragged
 - On the [Kanban board](kanban-board.md#joining-a-card-yourself), open a card and click **Join this card**
-- On **your own** assignment row you can change the allocation with the slider, move or resize your own assignment bar, and remove the assignment. **Edit Assignment** in its right-click menu opens the assignment dialog with the staff member fixed to **You**
+- On **your own** assignment row you can change the allocation with the slider, move or resize your own assignment bar (on a phase or subphase once it has [its own dates](gantt-charts.md#bookings-on-phases-and-subphases)), and remove the assignment. **Edit Assignment** in its right-click menu opens the assignment dialog with the staff member fixed to **You**
 
 If you are not **bookable as a resource** (see [Settings → Users](settings.md#bookable-as-a-resource)), **Assign me**, **Join this card** and dragging your own card are hidden, and the assignment dialog explains that you cannot book your own time. Your existing bookings can still be changed and removed.
 
@@ -90,7 +91,7 @@ If your role books your own time **with approval**, the same actions send a requ
 
 - The entries read **Request to assign me** (right-click menu and assignment dialog), **Request to join** (Kanban card), **Request change** and **Request removal**. After sending, *Sent for approval* appears
 - A new booking shows at once as a **dashed row** with a **Pending approval** badge, and a hatched bar on the timeline. Hover the badge to see who can approve it. Until it is approved it is **not counted** in the workload heatmap, the availability or the resource cards, and it does not make you an assignee of a Kanban card
-- A requested change keeps the booking as it was and shows the old and new values (*40% → 60%*, *Change pending*); a requested removal shows *Removal requested*. The bar stays where it is and cannot be dragged while the request is open
+- A requested change keeps the booking as it was and shows the old and new values (*40% → 60%*, *Change pending*); a requested removal shows *Removal requested*. Giving a phase booking its own dates, changing them or making it follow the phase again (the pin, or the assignment dialog) is a change too, and the request carries the dates. The bar stays where it is and cannot be dragged while the request is open
 - While a request is open, right-click your row and choose **Cancel request** to withdraw it (or **Cancel request** on the Kanban card). The rest of the row stays locked until the request is decided
 
 ![Gantt chart with a dashed, hatched pending assignment bar and a 'Pending approval' badge on Diana Davis's row of the Analytics phase](../assets/screenshots/pending-assignment.png){ loading=lazy }

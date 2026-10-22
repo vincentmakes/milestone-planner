@@ -74,6 +74,8 @@ Open a card and add someone under **Assignees**. This is not just a label:
 
 The dropdown shows what each person will be booked at. Because the booking takes its dates from the card, rescheduling the bar in the Gantt chart moves the booking with it — you never have to adjust it separately. Removing someone from a card releases the booking.
 
+In the Gantt chart a booking can also be given [its own dates inside the phase](gantt-charts.md#bookings-on-phases-and-subphases), and a person can hold several such bookings on one phase. The card still shows that person **once** (hover the avatar to see every allocation), while the card's detail lists **one line per booking**, with the dates of each booking that has its own. Each line has its own **×**, so bookings are removed one at a time; the confirmation names the dates of the booking you are removing.
+
 ### Changing how much time is booked
 
 Someone is booked at their full capacity to begin with, which is rarely what you want for a card they are only partly on. Each assignee has a slider beside their name: drag it and the booking changes as soon as you let go, in the Gantt chart and the workload heatmap alike. It is the same control as the allocation slider in the Gantt chart — the same 5% steps, the same range — so a booking means the same thing whichever view you set it from.
@@ -82,7 +84,7 @@ A slider shown in red is above that person's own maximum capacity: a part-timer 
 
 A single booking is always between **1 and 100 %** — the server rejects 0 or anything above 100, here and on every other assignment. Over-allocation is what several overlapping bookings add up to, never one booking on its own.
 
-Adding, removing and changing other people's bookings requires **Assign and manage anyone** (superusers by default) or being the project's manager. Your **own** booking is yours to manage when your role allows it: you can change your allocation with your slider and remove yourself with the **×** on your row. Removing an assignee asks for confirmation first, because their booking is deleted with them.
+Adding, removing and changing other people's bookings requires **Assign and manage anyone** (superusers by default) or being the project's manager. Your **own** booking is yours to manage when your role allows it: you can change your allocation with your slider and remove yourself with the **×** on your row (one **×** per booking when you have several on the card). Removing an assignee asks for confirmation first, because their booking is deleted with them.
 
 Adding assignees and joining a card are unavailable in [What-If mode](what-if-planning.md), like other creates. What-If itself is entered from the Gantt chart; while a plan is open the board waits until it is applied or discarded.
 

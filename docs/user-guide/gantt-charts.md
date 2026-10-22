@@ -168,10 +168,40 @@ The timeline supports direct manipulation (on projects you can edit; your own as
 - **Move a bar** — Drag left/right to change dates (phantom preview shows target position)
 - **Resize a bar** — Drag left/right edge to extend or shorten duration
 - **Reorder phases** — Drag within the project panel to reorder
+- **Move a booking inside its phase** — an [unlinked booking](#bookings-on-phases-and-subphases) on a phase or subphase can be dragged and resized, but never past the phase's start or end
 
 ### Touch screens
 
 On a tablet or phone, the same gestures work with a finger: press a bar and move it to change its dates, or press one of its edges to resize it (the edge handles are wider on touch screens). A tap opens the item's dialog; a small wobble of the finger during a tap never moves or resizes a bar. A swipe that starts **on a bar you can edit** moves the bar, so swipe on empty row space, the project panel or the header to scroll the chart (bars you cannot edit scroll as usual). If the system interrupts a drag (an incoming call, a gesture the browser takes over), the bar returns to where it was and nothing is saved.
+
+## Bookings on Phases and Subphases
+
+A person booked on a phase or subphase is **linked** to it by default: the booking covers the phase's dates, follows it when the phase moves, and its bar cannot be dragged. The 📌 on the booking's row in the project panel shows this.
+
+To book someone for only part of a phase — a few days at the start, then a few days at the end — **unlink** the booking:
+
+- **Click the 📌** on the booking's row. It turns into 📍 (*Own dates*), and the booking keeps the phase's dates for now. Click 📍 to make it follow the phase dates again.
+- Or turn off **Follow the phase dates** in the [assignment dialog](staff-management.md#assignment-modal) and pick the booking's own dates. The calendar only offers days inside the phase.
+
+An unlinked booking's bar can be moved and resized on the timeline like any other bar, but it stops at the phase's start and end. The pin is a button only for people who may change that booking; others see it as a plain badge.
+
+A person can hold **several bookings on the same phase**, as long as their dates do not overlap (adjacent days are fine). Booking someone for days that overlap one of their bookings on that phase is refused with *This person is already booked on this card for overlapping dates*.
+
+When the phase itself changes:
+
+- **Moving the phase** (same duration) moves its unlinked bookings by the same number of days.
+- **Shortening it** fits them inside the new dates: a booking that sticks out is cut at the new edge, and a booking left entirely outside is placed against the nearest edge with its length kept (never longer than the phase).
+- **Lengthening it** leaves them where they are.
+
+Linked bookings simply keep following the phase. One limit: shortening a phase past two bookings of the same person can push both against the same edge so that they overlap. They are kept as they are until you edit one of them; move one of them apart to resolve it.
+
+### The overview row
+
+When someone has two or more bookings on the same phase or subphase, they are grouped under an **overview row** with the person's name, the number of bookings and their allocation range (*100 %*, or *20–60 %* when they differ). On the timeline the overview row shows every booking as a small block (hover one for its dates and allocation; a booking awaiting approval is hatched).
+
+Click the chevron to collapse the group to that one row, and again to expand it. Groups start expanded, and a collapsed group stays collapsed until you reload the page. The overview row itself has no menu: right-click one of the bookings under it to edit or remove it.
+
+![Gantt chart: Charlie Clark's overview row under the Analytics phase of Bioprocess Scale-Up, with his two bookings drawn as blocks, and the two booking rows with their own dates below it](../assets/screenshots/assignment-overview-row.png){ loading=lazy }
 
 ## Completion Tracking
 

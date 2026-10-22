@@ -96,12 +96,12 @@ Project list and detail responses carry `team_ids`; create and update accept `te
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | `POST` | `/t/{slug}/api/projects/{id}/phases` | user (PM) | Create a phase |
-| `PUT` | `/t/{slug}/api/phases/{id}` | user (PM) | Update a phase (dates, name, dependencies, completion) |
+| `PUT` | `/t/{slug}/api/phases/{id}` | user (PM) | Update a phase (dates, name, dependencies, completion); a date change fits the phase's unlinked bookings (see [Booking segments](#booking-segments)) |
 | `DELETE` | `/t/{slug}/api/phases/{id}` | user (PM) | Delete a phase with its subphases and their assignments, comments and custom-column values |
 | `PUT` | `/t/{slug}/api/projects/{id}/phases/reorder` | user (PM) | Reorder phases |
 | `POST` | `/t/{slug}/api/phases/{id}/subphases` | user (PM) | Create a subphase |
 | `POST` | `/t/{slug}/api/subphases/{id}/children` | user (PM) | Create a nested subphase |
-| `PUT` | `/t/{slug}/api/subphases/{id}` | user (PM) | Update a subphase (dates, name, dependencies) |
+| `PUT` | `/t/{slug}/api/subphases/{id}` | user (PM) | Update a subphase (dates, name, dependencies); a date change fits its unlinked bookings like a phase |
 | `DELETE` | `/t/{slug}/api/subphases/{id}` | user (PM) | Delete a subphase |
 | `PUT` | `/t/{slug}/api/subphases/{parent_id}/reorder` | user (PM) | Reorder the subphases under a parent |
 
@@ -174,7 +174,18 @@ The *own-assignment* rule lets a user add, change and remove the assignments tha
 - an update or removal leaves the row as it is and files the request with the `requested` (and `previous`) values;
 - deleting one's own pending create cancels it and answers `200` `{success: true, cancelled: true, request_id, id}`; updating it amends the request.
 
-Related rules: the `POST`s (and the Kanban assignee `POST`) return `404` for an unknown person and `400` `This person is not bookable as a resource` when the person's `is_resource` is false — checked before any `202`, so no request is filed; their existing rows can still be updated and removed. The `POST`s return `409` when the person is already booked on the target (a pending booking counts; at project level only with the same dates); an editor's `PUT`/`DELETE` on someone else's pending create returns `409` (*approve or reject it instead*); an editor's direct write on a row with an open request closes that request as `expired` (`overtaken`). Assignment rows carry `approval_status`, and in `GET /projects/{id}` an `approval` object (`{request_id, action, requester_id, requested, previous, created_at, can_decide}` or `null`).
+Related rules: the `POST`s (and the Kanban assignee `POST`) return `404` for an unknown person and `400` `This person is not bookable as a resource` when the person's `is_resource` is false — checked before any `202`, so no request is filed; their existing rows can still be updated and removed. The `POST`s return `409` when the person is already booked on the target (a pending booking counts; at project level only with the same dates; on a phase or subphase only for overlapping dates, see [Booking segments](#booking-segments)); an editor's `PUT`/`DELETE` on someone else's pending create returns `409` (*approve or reject it instead*); an editor's direct write on a row with an open request closes that request as `expired` (`overtaken`). Assignment rows carry `approval_status`, and in `GET /projects/{id}` an `approval` object (`{request_id, action, requester_id, requested, previous, created_at, can_decide}` or `null`).
+
+#### Booking segments
+
+A phase or subphase booking is either **linked** (no own dates: it covers the card's dates and follows them) or an **unlinked segment** with its own `start_date` / `end_date` inside the card. A person may hold several segments on one card as long as their dates do not overlap (inclusive days; adjacent days are fine).
+
+- `POST /phases/{id}/staff` and `POST /subphases/{id}/staff` accept optional `start_date` / `end_date` (`YYYY-MM-DD`): both given = an unlinked segment, neither = linked. One without the other → `422` `Give both dates or neither` (an inverted range → the usual `422`); dates outside the card → `400` `Booking dates must lie within the phase` (or `the subphase`); dates overlapping another booking of that person on the card → `409` `This person is already booked on this card for overlapping dates` (a linked booking spans the whole card, so it overlaps everything; a pending one answers `This booking already awaits approval`).
+- `PUT /phase-staff/{id}` and `PUT /subphase-staff/{id}` take `allocation`, `start_date` and `end_date`, each optional. Both dates set = (re)date the segment, explicit `null` on both = relink it to the card. The same `422` / `400` / `409` rules apply; the overlap is checked only when the dates change, and never against the row itself. A direct write answers `{"success": true, "linked": <bool>}`.
+- Responses (the `POST`s, and every phase/subphase `staffAssignments` item of `GET /projects/{id}`) carry the **effective** `start_date` / `end_date` (the row's own, else the card's) and `linked`; project-level rows carry `linked: false`.
+- Own bookings in approval mode carry the dates in the request: `requested` / `previous` hold `{allocation, start_date, end_date}` for a segment, and explicit `null` dates for a relink. Approving re-checks the dates inside the card and, for a create or a date change, the overlap (`409`, request closed `expired` / `duplicate`).
+- **Fit rule** (`PUT /phases/{id}`, `PUT /subphases/{id}`, in the same transaction): when the card keeps its duration and only moves, every unlinked segment moves by the same number of days; on any other date change each segment is clamped to the new dates, and a segment left entirely outside is placed against the nearest edge with its length kept (capped to the card). The dates stored in open approval requests on those rows are fitted the same way. The rule is shared with the frontend (`app/services/booking_segments.py` ↔ `frontend/src/utils/bookingSegments.ts`). A shrink can leave two segments of one person overlapping; they are stored as they are until one of them is edited.
+- Kanban: `DELETE /kanban/cards/{entity_type}/{id}/assignees/{staff_id}` answers `409` `This person has several bookings on this card — remove them one by one` when the person holds two or more bookings there; remove them through `DELETE /phase-staff/{id}` / `DELETE /subphase-staff/{id}`.
 
 `PUT` / `DELETE /equipment-assignments/{id}` are implemented once, in `app/routers/equipment.py`; the duplicate (shadowed) handlers that used to live in `assignments.py` were removed.
 
@@ -349,7 +360,7 @@ The board has no read endpoint of its own — `GET /projects/{id}` already retur
 | `GET` | `/t/{slug}/api/kanban/projects/{id}/comment-counts` | Comment counts per card for one project |
 | `PUT` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/status` | Move a card between columns (`entity_type` is `phase` or `subphase`) — `kanban.move_any` (PM bundle) or an approved assignee with `kanban.move_assigned` |
 | `POST` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/assignees` | Assign staff — also books their time — user (PM/own-assignment); `400` for a person who is not bookable as a resource |
-| `DELETE` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/assignees/{staff_id}` | Unassign and release the booking — user (PM/own-assignment) |
+| `DELETE` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/assignees/{staff_id}` | Unassign and release the booking — user (PM/own-assignment); `409` when the person has several bookings on the card |
 | `GET` / `POST` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/comments` | Read / post comments |
 | `PUT` / `DELETE` | `/t/{slug}/api/kanban/comments/{id}` | Edit / delete a comment |
 

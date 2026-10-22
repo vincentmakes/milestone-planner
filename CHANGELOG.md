@@ -5,6 +5,20 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.17.0] - 2026-10-22
+
+### Added
+- A booking on a phase or subphase can be **unlinked** — click the pin on its row in the Gantt chart, or turn off **Follow the phase dates** in the assignment dialog — to give it its own dates inside the phase; an unlinked booking can be dragged and resized on the timeline within the phase, and clicking the pin again makes it follow the phase dates.
+- A person can be booked several times on the same phase or subphase (for example a few days at the start and a few days at the end), as long as the bookings do not overlap.
+- A person with several bookings on a phase or subphase gets an overview row in the Gantt chart that groups them; it can be collapsed to one line that shows the bookings as blocks.
+
+### Changed
+- Moving a phase or subphase moves its unlinked bookings with it, and shortening it fits them inside its new dates.
+- Booking a person on a phase or subphase for dates that overlap one of their bookings there is refused.
+- The Kanban card dialog removes bookings one by one, and a card shows each person once however many bookings they have on it.
+- The site Excel export's Phase assignments and Subphase assignments sheets have **Start**, **End** and **Linked** columns.
+- Known limit: shortening a phase past two bookings of the same person can leave them overlapping until one of them is edited.
+
 ## [1.16.0] - 2026-10-22
 
 ### Added

@@ -97,8 +97,8 @@ Each kind of data lives on its own sheet, so the file opens cleanly in Excel, Li
 | **Absence types** | Absence type definitions (name, color, counts as unavailable, active, order) |
 | **Vacations** | All absence entries for users on this site, including recurring patterns, with their **Type** and **Type ID** |
 | **Project assignments** | Staff assigned at the project level |
-| **Phase assignments** | Staff assigned at the phase level (with allocation %) |
-| **Subphase assignments** | Staff assigned at the subphase level. The three assignment sheets carry an **Approval status** (approved or pending) and a **Pending change** column |
+| **Phase assignments** | Staff assigned at the phase level (with allocation %, **Start** / **End** — the booking's own dates, or the phase's — and **Linked**: yes when the booking follows the phase dates) |
+| **Subphase assignments** | Staff assigned at the subphase level (same Start / End / Linked columns). The three assignment sheets carry an **Approval status** (approved or pending) and a **Pending change** column |
 | **Approval requests** | Own-booking requests of the site's projects: requester, action, target, requested and previous values, status, decision and reason |
 | **Equipment assignments** | Equipment booked against projects/phases/subphases |
 | **Custom columns** | Custom column definitions for this site (name, type, scope, options) |

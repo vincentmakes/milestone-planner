@@ -126,6 +126,7 @@ same reason; use `run_migration.py` instead.
 | `add_rbac` | Tenant | Roles and permissions, approval policies and requests for own bookings, and My Todos (1.13.0, also applied automatically on startup) — see below |
 | `add_change_notifications` | Tenant | Widens the notification types with `assignment_changed` and `project_changed` (1.15.0, also applied automatically on startup) — see below |
 | `add_user_is_resource` | Tenant | Adds `users.is_resource`, the "Bookable as a resource" flag (1.16.0, also applied automatically on startup) — see below |
+| `add_booking_segments` | Tenant | Adds optional own dates to phase and subphase bookings (1.17.0, also applied automatically on startup) — see below |
 | `upgrade_to_v90` | Tenant | Major version upgrade |
 
 ### Absence Types and Multi-Site Events (1.5.0)
@@ -202,6 +203,14 @@ python migrations/run_migration.py add_change_notifications
 
 ```bash
 python migrations/run_migration.py add_user_is_resource
+```
+
+### Booking Segments (1.17.0)
+
+`add_booking_segments` adds `start_date` and `end_date` (`DATE`, nullable) to `phase_staff_assignments` and `subphase_staff_assignments`, with a CHECK (`<table>_segment_dates_check`) that both are empty or both set. Both empty is a **linked** booking that follows its phase or subphase — every existing booking stays that way, so the upgrade changes nobody's plan. Both set is an **unlinked** booking with its own dates inside the phase (see [Bookings on Phases and Subphases](../user-guide/gantt-charts.md#bookings-on-phases-and-subphases)). Each column and the CHECK are added only when missing. The same statements run **automatically** every time a tenant's connection pool is created (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)), so running it by hand is optional.
+
+```bash
+python migrations/run_migration.py add_booking_segments
 ```
 
 ### Writing New Migrations
