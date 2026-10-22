@@ -43,6 +43,8 @@ EDITOR_REQUIRED_DETAIL = (
 )
 OWN_ASSIGNMENT_DETAIL = "You can only manage your own assignments"
 SELF_BOOKING_DENIED_DETAIL = "You are not allowed to book yourself on projects"
+STAFF_NOT_FOUND_DETAIL = "Staff member not found"
+NOT_BOOKABLE_DETAIL = "This person is not bookable as a resource"
 
 BookingOutcome = Literal["allow", "approval"]
 # ``pm_id=...`` (the default) means "not loaded yet": look it up when needed.
@@ -151,6 +153,24 @@ async def resolve_self_booking(
     if mode == "approval":
         return "approval"
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=SELF_BOOKING_DENIED_DETAIL)
+
+
+async def require_bookable_staff(db: AsyncSession, staff_id: int) -> None:
+    """
+    The person a new booking is for must exist (404, instead of an FK error)
+    and be bookable as a resource (``users.is_resource``, 400).
+
+    Only new bookings check it: existing rows of someone no longer bookable
+    stay editable and removable. Callers run it before filing an approval
+    request, so a non-bookable person never files one.
+    """
+    is_resource = (
+        await db.execute(select(User.is_resource).where(User.id == staff_id))
+    ).scalar_one_or_none()
+    if is_resource is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=STAFF_NOT_FOUND_DETAIL)
+    if not is_resource:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=NOT_BOOKABLE_DETAIL)
 
 
 async def project_id_for_phase(db: AsyncSession, phase_id: int) -> int:

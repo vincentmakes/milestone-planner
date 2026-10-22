@@ -672,7 +672,8 @@ async def test_approve_remove_deletes_the_row():
         ({"context": [approval_context(target=False)]}, "target_deleted"),
         ({"context": []}, "target_deleted"),
         ({"requester": []}, "requester_inactive"),
-        ({"requester": [(0, "user")]}, "requester_inactive"),
+        ({"requester": [(0, "user", True)]}, "requester_inactive"),
+        ({"requester": [(1, "user", False)]}, "requester_not_bookable"),
         ({"perms": []}, "permission_lost"),  # role no longer holds the key
         ({"member": []}, "permission_lost"),  # requester lost the project's site
         ({"context": [approval_context(site_id=None)]}, "permission_lost"),
@@ -702,7 +703,7 @@ async def test_approve_create_expires_when_revalidation_fails(answers, reason):
 @pytest.mark.asyncio
 async def test_expired_create_deletes_its_pending_row():
     request, row = approval_request(), pending_phase_row()
-    db = approvable_db(request, row, requester=[(0, "user")])
+    db = approvable_db(request, row, requester=[(0, "user", True)])
     result = await approvals.approve(db, approval_admin(), 50, visible=None)
     assert db.deleted == [row]
     assert result.effects.assignment_changes[0].action == "delete"

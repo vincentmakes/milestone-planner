@@ -9,7 +9,7 @@ Note: The Node.js API returns one row per user-site combination,
 so users with multiple sites appear multiple times in the results.
 
 Staff CUD (Create/Update/Delete) operations are handled via
-User Management (/api/users routes). Staff = non-admin users assigned to sites.
+User Management (/api/users routes). Staff = bookable users (`is_resource`) assigned to sites.
 """
 
 from datetime import timedelta
@@ -81,12 +81,12 @@ async def get_staff(
     of every visible site.
 
     Note: Returns one row per user-site combination (matching Node.js).
-    Admin users are excluded from results.
+    Non-bookable users (``is_resource`` false) are excluded from results.
 
     Matches: GET /api/staff
     """
     # Build query matching Node.js exactly:
-    # - Excludes admin users
+    # - Excludes non-bookable users
     # - Returns one row per user-site combo
     # - Orders by first_name, last_name
     # - Eager load skills
@@ -94,7 +94,7 @@ async def get_staff(
         select(User, Site)
         .outerjoin(UserSite, User.id == UserSite.user_id)
         .outerjoin(Site, UserSite.site_id == Site.id)
-        .where(User.role != "admin")  # Exclude admins
+        .where(User.is_resource.is_(True))  # Exclude non-bookable users
         .where(User.active == 1)
         .options(selectinload(User.skills), selectinload(User.teams))
         .order_by(User.first_name, User.last_name)

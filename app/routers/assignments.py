@@ -81,6 +81,7 @@ from app.services.project_access import (
     project_id_for_phase,
     project_id_for_subphase,
     project_pm_id,
+    require_bookable_staff,
     require_on_project,
     resolve_self_booking,
 )
@@ -170,13 +171,6 @@ class EquipmentAssignmentCreate(DateRangeOrdered):
     end_date: date
 
 
-async def _require_staff(db: AsyncSession, staff_id: int) -> None:
-    """404 for an unknown staff member (instead of an FK violation -> 500)."""
-    found = (await db.execute(select(User.id).where(User.id == staff_id))).scalar_one_or_none()
-    if found is None:
-        raise HTTPException(status_code=404, detail="Staff member not found")
-
-
 # ---------------------------------------------------------
 # Project Staff Assignment Routes
 # ---------------------------------------------------------
@@ -258,7 +252,7 @@ async def create_project_staff_assignment(
         staff_id=data.staff_id,
         action=ACTION_CREATE,
     )
-    await _require_staff(db, data.staff_id)
+    await require_bookable_staff(db, data.staff_id)
     await approvals.ensure_no_duplicate(
         db,
         "project",
@@ -470,7 +464,7 @@ async def create_phase_staff_assignment(
         staff_id=data.staff_id,
         action=ACTION_CREATE,
     )
-    await _require_staff(db, data.staff_id)
+    await require_bookable_staff(db, data.staff_id)
     await approvals.ensure_no_duplicate(db, "phase", phase_id, data.staff_id)
     if outcome == "approval":
         return await approvals.submit_request(
@@ -692,7 +686,7 @@ async def create_subphase_staff_assignment(
         staff_id=data.staff_id,
         action=ACTION_CREATE,
     )
-    await _require_staff(db, data.staff_id)
+    await require_bookable_staff(db, data.staff_id)
     await approvals.ensure_no_duplicate(db, "subphase", subphase_id, data.staff_id)
     if outcome == "approval":
         return await approvals.submit_request(

@@ -236,7 +236,7 @@ def approvable_db(pending, assignment, /, **extra):
     answers = {
         "request": [pending],
         "context": [approval_context()],
-        "requester": [(1, "user")],
+        "requester": [(1, "user", True)],
         "perms": [(pending.action, "approval")],
         "member": [(REQUESTER_ID,)],
         "row": [assignment] if assignment is not None else [],

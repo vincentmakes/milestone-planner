@@ -57,7 +57,12 @@ from app.services.notifications import (
     notification_payload,
 )
 from app.services.permissions import ADMIN_ROLE_KEY, permission_required_detail
-from app.services.project_access import can_on_project, resolve_self_booking
+from app.services.project_access import (
+    NOT_BOOKABLE_DETAIL,
+    STAFF_NOT_FOUND_DETAIL,
+    can_on_project,
+    resolve_self_booking,
+)
 from app.services.site_access import ensure_project_visible, ensure_site_visible, visible_site_ids
 from app.utils import utcnow_naive
 from app.websocket.broadcast import broadcast_change, send_notification
@@ -353,9 +358,12 @@ async def assign_card(
         action=ACTION_CREATE,
     )
 
+    # Same rule as require_bookable_staff, on the row loaded for the allocation.
     assignee = (await db.execute(select(User).where(User.id == data.staff_id))).scalar_one_or_none()
     if not assignee:
-        raise HTTPException(status_code=404, detail="Staff member not found")
+        raise HTTPException(status_code=404, detail=STAFF_NOT_FOUND_DETAIL)
+    if assignee.is_resource is False:
+        raise HTTPException(status_code=400, detail=NOT_BOOKABLE_DETAIL)
 
     # One booking per person and card; a pending (awaiting approval) one counts.
     await approvals.ensure_no_duplicate(

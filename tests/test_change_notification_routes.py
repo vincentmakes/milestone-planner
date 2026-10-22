@@ -82,7 +82,7 @@ def by_recipient(intents):
 async def test_booking_someone_on_a_project(authed_client, mock_db_session, change_intents):
     client, set_user = authed_client
     set_user(admin())
-    mock_db_session.execute.side_effect = [first((PM,)), scalar(ANN), scalar(None)]
+    mock_db_session.execute.side_effect = [first((PM,)), scalar(True), scalar(None)]
 
     response = await client.post(
         "/api/projects/1/staff",
@@ -124,7 +124,7 @@ def give_id(assignment_id: int):
 async def test_notifications_are_delivered_after_the_commit(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(admin())
-    mock_db_session.execute.side_effect = [first((PM,)), scalar(ANN), scalar(None)]
+    mock_db_session.execute.side_effect = [first((PM,)), scalar(True), scalar(None)]
     log: list[str] = []
     mock_db_session.commit.side_effect = lambda: log.append("commit")
 
@@ -148,7 +148,7 @@ async def test_a_failed_delivery_keeps_the_committed_booking(
     """
     client, set_user = authed_client
     set_user(admin())
-    mock_db_session.execute.side_effect = [first((PM,)), scalar(ANN), scalar(None)]
+    mock_db_session.execute.side_effect = [first((PM,)), scalar(True), scalar(None)]
     mock_db_session.refresh.side_effect = give_id(42)
     own = AsyncMock()
 
@@ -197,7 +197,7 @@ async def test_booking_someone_on_a_card(authed_client, mock_db_session, change_
     client, set_user = authed_client
     set_user(admin())
     details = first((staff_row(), "Ann Lee", "Chemist"))
-    mock_db_session.execute.side_effect = [first((1,)), scalar(ANN), scalar(None), details]
+    mock_db_session.execute.side_effect = [first((1,)), scalar(True), scalar(None), details]
 
     response = await client.post(
         f"/api/{level}s/11/staff", json={"staff_id": ANN, "project_id": 1, "allocation": 40}
@@ -334,7 +334,7 @@ async def test_assigning_someone_to_a_card_keeps_their_assigned_notification(
 ):
     client, set_user = authed_client
     set_user(admin())
-    assignee = SimpleNamespace(id=ANN, full_name="Ann Lee", max_capacity=80)
+    assignee = SimpleNamespace(id=ANN, full_name="Ann Lee", max_capacity=80, is_resource=True)
     mock_db_session.execute.side_effect = [scalar(_card()), scalar(assignee), scalar(None)]
     mock_db_session.refresh.side_effect = lambda obj: setattr(obj, "id", 70)
 

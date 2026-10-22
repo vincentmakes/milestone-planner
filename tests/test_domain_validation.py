@@ -116,7 +116,7 @@ async def test_phase_assignment_without_allocation_still_defaults_to_100(
     )
     mock_db_session.execute.side_effect = [
         resolved,
-        _scalar_result(5),
+        _scalar_result(True),
         _scalar_result(None),
         detail,
     ]

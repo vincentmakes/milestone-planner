@@ -411,7 +411,11 @@ async def test_user_can_assign_themself_to_a_project(authed_client, mock_db_sess
     _assign_id_on_refresh(mock_db_session)
     # The project-existence lookup (the user is not its PM), the
     # staff-existence check, then the duplicate check.
-    mock_db_session.execute.side_effect = [_pm_result(PM), _scalar_result(5), _scalar_result(None)]
+    mock_db_session.execute.side_effect = [
+        _pm_result(PM),
+        _scalar_result(True),
+        _scalar_result(None),
+    ]
 
     response = await client.post(
         "/api/projects/1/staff",
@@ -480,7 +484,11 @@ async def test_pm_can_assign_anyone_to_their_project(authed_client, mock_db_sess
     client, set_user = authed_client
     set_user(FakeUser(PM, "user"))
     _assign_id_on_refresh(mock_db_session)
-    mock_db_session.execute.side_effect = [_pm_result(PM), _scalar_result(8), _scalar_result(None)]
+    mock_db_session.execute.side_effect = [
+        _pm_result(PM),
+        _scalar_result(True),
+        _scalar_result(None),
+    ]
 
     response = await client.post(
         "/api/projects/1/staff",
@@ -563,7 +571,7 @@ async def test_level_assignment_uses_the_servers_project_id(authed_client, mock_
     detail_row.first.return_value = (_staff_row(staff_id=5), "Test User5", "Engineer")
     mock_db_session.execute.side_effect = [
         resolved,
-        _scalar_result(5),
+        _scalar_result(True),
         _scalar_result(None),  # no duplicate
         detail_row,
     ]
@@ -848,7 +856,7 @@ async def test_user_can_join_a_card(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(FakeUser(5, "user"))
     _assign_id_on_refresh(mock_db_session)
-    me = SimpleNamespace(id=5, full_name="Test User5", max_capacity=80)
+    me = SimpleNamespace(id=5, full_name="Test User5", max_capacity=80, is_resource=True)
     # card load, assignee lookup, duplicate check
     mock_db_session.execute.side_effect = [
         _scalar_result(_card()),
@@ -1040,7 +1048,11 @@ async def test_manage_others_books_anyone_without_the_pm_lookup(authed_client, m
     set_user(FakeUser(5, "dispatcher", {"assignments.manage_others"}))
     _assign_id_on_refresh(mock_db_session)
     # Project existence (always), the staff and duplicate checks -- no editor lookup.
-    mock_db_session.execute.side_effect = [_pm_result(PM), _scalar_result(8), _scalar_result(None)]
+    mock_db_session.execute.side_effect = [
+        _pm_result(PM),
+        _scalar_result(True),
+        _scalar_result(None),
+    ]
 
     response = await client.post("/api/projects/1/staff", json={"staff_id": 8, **PROJECT_STAFF})
 
@@ -1095,7 +1107,7 @@ def _detail_row(staff_id: int = 5):
     return result
 
 
-ME = SimpleNamespace(id=5, full_name="Test User5", max_capacity=80)
+ME = SimpleNamespace(id=5, full_name="Test User5", max_capacity=80, is_resource=True)
 
 # (id, method, path, body, action, level, results per mode). The results are
 # the queries before the decision (plus, for "allow", what the direct write
@@ -1109,8 +1121,8 @@ SELF_ROUTES = [
         "assignments.self_create",
         "project",
         {
-            "allow": lambda: [_pm_result(PM), _scalar_result(5), _scalar_result(None)],
-            "approval": lambda: [_pm_result(PM), _scalar_result(5), _scalar_result(None)],
+            "allow": lambda: [_pm_result(PM), _scalar_result(True), _scalar_result(None)],
+            "approval": lambda: [_pm_result(PM), _scalar_result(True), _scalar_result(None)],
             "deny": lambda: [_pm_result(PM)],
         },
     ),
@@ -1148,11 +1160,16 @@ SELF_ROUTES = [
         "assignments.self_create",
         "phase",
         {
-            "allow": lambda: [_resolved(), _scalar_result(5), _scalar_result(None), _detail_row()],
+            "allow": lambda: [
+                _resolved(),
+                _scalar_result(True),
+                _scalar_result(None),
+                _detail_row(),
+            ],
             "approval": lambda: [
                 _resolved(),
                 _pm_result(PM),
-                _scalar_result(5),
+                _scalar_result(True),
                 _scalar_result(None),
             ],
             "deny": lambda: [_resolved(), _pm_result(PM)],
@@ -1192,11 +1209,16 @@ SELF_ROUTES = [
         "assignments.self_create",
         "subphase",
         {
-            "allow": lambda: [_resolved(), _scalar_result(5), _scalar_result(None), _detail_row()],
+            "allow": lambda: [
+                _resolved(),
+                _scalar_result(True),
+                _scalar_result(None),
+                _detail_row(),
+            ],
             "approval": lambda: [
                 _resolved(),
                 _pm_result(PM),
-                _scalar_result(5),
+                _scalar_result(True),
                 _scalar_result(None),
             ],
             "deny": lambda: [_resolved(), _pm_result(PM)],
@@ -1401,7 +1423,7 @@ async def test_self_booking_in_approval_mode_answers_202_with_the_documented_bod
     mock_db_session.execute.side_effect = [
         _resolved(),
         _pm_result(PM),
-        _scalar_result(5),
+        _scalar_result(True),
         _scalar_result(None),
     ]
     with (
@@ -1450,7 +1472,7 @@ async def test_booking_someone_twice_is_409(authed_client, mock_db_session, path
     client, set_user = authed_client
     set_user(FakeUser(9, "superuser"))
     existing = _staff_row(8)
-    mock_db_session.execute.side_effect = [*head, _scalar_result(8), _scalar_result(existing)]
+    mock_db_session.execute.side_effect = [*head, _scalar_result(True), _scalar_result(existing)]
 
     response = await client.post(path, json=body)
 
@@ -1464,7 +1486,11 @@ async def test_project_level_duplicate_compares_the_dates(authed_client, mock_db
     client, set_user = authed_client
     set_user(FakeUser(9, "superuser"))
     _assign_id_on_refresh(mock_db_session)
-    mock_db_session.execute.side_effect = [_pm_result(PM), _scalar_result(8), _scalar_result(None)]
+    mock_db_session.execute.side_effect = [
+        _pm_result(PM),
+        _scalar_result(True),
+        _scalar_result(None),
+    ]
 
     response = await client.post("/api/projects/1/staff", json={"staff_id": 8, **PROJECT_STAFF})
 
@@ -1486,7 +1512,7 @@ async def test_pending_booking_counts_as_a_duplicate(authed_client, mock_db_sess
     mock_db_session.execute.side_effect = [
         _resolved(),
         _pm_result(PM),
-        _scalar_result(5),
+        _scalar_result(True),
         _scalar_result(pending),
     ]
 
