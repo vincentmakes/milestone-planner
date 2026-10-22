@@ -158,6 +158,7 @@ the default General section.
 | `approvals` | `approvals-settings.png` | Settings → Roles → **Approvals**: who approves each own-booking action |
 | `my-todos` | `my-todos.png` | My Todos signed in as **Bob**, *To decide* tab with Diana's request to join Analytics |
 | `pending` | `pending-assignment.png` | The Gantt chart with Diana's dashed *Pending approval* row on Bioprocess Scale-Up |
+| `assignment-overview-row` | `assignment-overview-row.png` | The Gantt chart with Charlie Clark's overview row under Bioprocess Scale-Up's *Analytics* phase (his two own-date bookings as blocks); closes a default panel and scrolls the timeline to the phase |
 | `kanban` | `kanban-board.png` | The Kanban board view |
 | `grouped` | `gantt-grouped.png` | The Gantt chart grouped by the *Project type* tag group (collapsible pill sections) |
 | `color-by` | `gantt-color-by.png` | The Gantt chart's *Colour by* dropdown, open, with *Project type* selected |

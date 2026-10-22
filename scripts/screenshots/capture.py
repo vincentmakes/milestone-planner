@@ -469,6 +469,34 @@ def shot_pending_assignment(context: BrowserContext) -> None:
     page.close()
 
 
+def shot_assignment_overview(context: BrowserContext) -> None:
+    """Gantt on Bioprocess Scale-Up with Charlie Clark's overview row under
+    the Analytics phase: his two unlinked bookings drawn as blocks on the
+    group row, the two booking rows (📍, own dates) below it."""
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    # An instance-wide default panel (Settings → Features & defaults) would
+    # take half the height: close it for this shot.
+    if page.get_by_text("Equipment Overview", exact=True).count() > 0:
+        open_panel(page, "Equipment")
+    # (the sidebar's "Staff Overview" view entry is one match already)
+    if page.get_by_text("Staff Overview", exact=True).count() > 1:
+        open_panel(page, "Staff")
+    expand_all_projects(page)
+    click_today(page)
+    group = page.get_by_role("button", name="Collapse Charlie Clark's bookings")
+    group.first.scroll_into_view_if_needed()
+    # The Analytics phase starts a few weeks after today: bring it into view.
+    scroll_timeline_right(page, 350)
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(OUT / "assignment-overview-row.png"))
+    log("[done] assignment-overview-row.png")
+    page.close()
+
+
 def shot_assign_staff_modal(context: BrowserContext) -> None:
     """Assign Staff modal (project level) with a member selected so the
     allocation slider is populated."""
@@ -938,6 +966,7 @@ TARGETS = {
     "defaults-settings": shot_defaults_settings,
     "my-todos": shot_my_todos,
     "pending": shot_pending_assignment,
+    "assignment-overview-row": shot_assignment_overview,
     "assign-staff": shot_assign_staff_modal,
     "date-picker": shot_date_picker,
     "settings": shot_settings_modal,
