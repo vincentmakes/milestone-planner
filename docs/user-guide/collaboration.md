@@ -47,8 +47,17 @@ You are notified when someone:
 | Asks for your approval to book themselves, change or remove their booking | [My Todos](my-todos.md) → **To decide** |
 | Approves, rejects or (as an administrator) cancels your request, or your request expires | My Todos → **My requests**, showing decided requests |
 | Gives you a task, or reassigns one to you | My Todos → **My tasks** |
+| Books you on a project, phase or subphase, changes your allocation or dates, removes you, moves the dates of a phase or subphase you are booked on, deletes one, or deletes the project | The project on the Gantt chart (or, for a phase or subphase, its card on the Kanban board) |
+| *(project managers)* Changes your project: books, changes or removes someone's time or an equipment booking, edits the name, dates, customer, confirmed status or volume, archives or restores it, hands it over to you or from you, adds, moves or deletes a phase or subphase, deletes the project, or approves a request on it | The project on the Gantt chart (or the card on the Kanban board) |
 
-You are never notified about your own actions. If one event concerns you twice, you get the most specific notification only — a mention before an approval request, then a decision, an assignment, a task, a card move and a comment.
+You are never notified about your own actions. If one event concerns you twice, you get the most specific notification only — a mention before an approval request, then a decision, an assignment, a task, a change to your booking, a change to your project, a card move and a comment.
+
+**Changes to your plan merge into one line.** Booking and project-change notifications go only to the person whose booking changed and to the project's manager — never to the person who made the change, and never to other administrators or superusers. Several changes by the same person on the same project within ten minutes update one unread line (*"3 changes by Alice Anderson on Bioprocess Scale-Up"*, showing the latest change) instead of adding a new one; once you have read it, the next change starts a new line. Dragging a phase on the Gantt chart, which also moves its subphases and bookings, therefore gives each person one line. Changes waiting for [approval](my-todos.md) notify nobody until they are approved.
+
+Clicking a notification about a project on another site switches to that site first. A project that no longer exists, or that you can no longer see, shows a short message instead; the notification of a deleted project is only marked as read.
+
+!!! note "When the Kanban board is turned off"
+    An administrator can turn the Kanban board off for everyone ([Features & defaults](settings.md#features-defaults)). Card notifications then open the project on the Gantt chart instead of the board.
 
 Notifications are stored per user, so they survive a reload or a restart — you will not miss one because a browser tab was closed. See the [Kanban Board guide](kanban-board.md#notifications) for the full list of triggers.
 

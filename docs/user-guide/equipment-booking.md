@@ -74,6 +74,8 @@ Click the **filter button** in the Equipment panel header to filter by equipment
 3. Use **Select All** / **Clear** for quick selection
 4. The filter button shows the active count when filtering (e.g., "3 types")
 
+If an administrator set default equipment types in [Settings → Features & defaults](settings.md#features-defaults), the Equipment view and panel open with those types ticked (and again when you switch site); change them as usual.
+
 ## Managing Equipment
 
 Open **Settings → Equipment** from the sidebar's **Settings** entry (Admins and Superusers only).

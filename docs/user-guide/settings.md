@@ -12,6 +12,7 @@ All administration happens in one **Settings** window. Open it from the **Settin
 | Group | Section | What it manages | Who sees it (default roles) |
 |-------|---------|-----------------|-------------|
 | General | [General](#general) | Instance title, theme, logos, display defaults | Admin (Superuser: theme only) |
+| | [Features & defaults](#features-defaults) | What the Gantt opens with, the panels' default filters, the Kanban board, the bank-holiday import, phase pre-selection | Admin |
 | | [Roles](#roles-permissions) | Roles and their permissions; who approves own bookings ([Approvals](#approvals)) | Admin |
 | Sites & calendar | [Sites](#sites) | Locations, country/region, site Excel export | Admin |
 | | [Teams](#teams) | Teams per site, their members; the header team filter | Admin, Superuser |
@@ -29,7 +30,7 @@ All administration happens in one **Settings** window. Open it from the **Settin
 Each person only sees the sections their role's [permissions](#roles-permissions) let them change — with the default roles, **superusers** see General (theme only), Teams, Bank holidays, Company events, Users, Skills, Equipment, Equipment types and Predefined phases. Someone whose role grants none of these sections has no Settings entry; they manage their own time off from [My absences](vacations.md#my-absences) in the user menu.
 
 !!! note "Unsaved changes"
-    If you switch section or close the window while a form holds unsaved input — in **General**, **Roles**, **Users**, **Equipment**, **Sites**, **Teams**, **Skills**, **Bank holidays**, **Company events**, **Absence types**, **Equipment types** or **Tags** — Milestone asks before discarding it. Clicking outside the window never closes it.
+    If you switch section or close the window while a form holds unsaved input — in **General**, **Features & defaults**, **Roles**, **Users**, **Equipment**, **Sites**, **Teams**, **Skills**, **Bank holidays**, **Company events**, **Absence types**, **Equipment types** or **Tags** — Milestone asks before discarding it. Clicking outside the window never closes it.
 
 Saving is protected against double submission: pressing Enter twice or double-clicking a Save, Add or Delete button runs the action only once.
 
@@ -62,6 +63,31 @@ The **General** section holds the theme picker and, for roles with **Edit instan
 | Week Starts On | Monday or Sunday |
 | Show Weekends | Toggle weekend columns on/off |
 | Auto-expand Projects | Automatically expand all projects on load |
+
+---
+
+## Features & defaults
+
+**Settings → Features & defaults** (roles with **Edit instance settings** — admins by default) sets what everyone in the workspace starts with and turns whole features on or off. Change the controls and click **Save Changes**; **Reset** discards the unsaved changes.
+
+![Settings → Features & defaults — the Gantt panel, the default filters and the feature switches](../assets/screenshots/defaults-settings.png){ loading=lazy }
+
+| Setting | What it does | Default |
+|---------|--------------|---------|
+| **Open the Gantt with** | *Nothing*, *Staff panel* or *Equipment panel*: the [resource panel](gantt-charts.md#resource-panels) docked under the Gantt chart each time someone opens it — for everyone who may see the panels (people who can edit any project, and project managers). They can close it for the rest of their visit. *Nothing* leaves each browser's own choice | Nothing |
+| **Staff panel skills** | The Staff panel and the Staff view open showing only people with one of the ticked [skills](#skills-management). None ticked shows everyone | None |
+| **Equipment panel types** | The Equipment panel and view open showing only the ticked [equipment types](#equipment-types). None ticked shows all equipment | None |
+| **Kanban board** | Turns the [Kanban board](kanban-board.md) on or off for the whole workspace | On |
+| **Bank-holiday import (Nager)** | Turns the automatic [public-holiday fetching](#automatic-fetching) on or off | On |
+| **Pre-select predefined phases in new projects** | Whether a new project starts with every active [predefined phase](#predefined-phases) selected, or with none | On |
+
+The default filters are a starting point, not a restriction: people change them as usual, and the default applies again the next time the panel opens. A skill that was deleted or an equipment type that was renamed is shown as *(no longer exists)* so you can untick it; until then it is simply ignored.
+
+**With the Kanban board off**, nobody sees the board or its sidebar entry, whatever their role — administrators included — and it takes effect for people already signed in without a new login. Card comments stay stored and reappear when the board is turned on again. [My Todos](my-todos.md) keeps working (its card links become plain text), and card notifications open the project on the Gantt chart instead. Turning the board off does not change any role: the [permission matrix](#the-permission-matrix) still shows the **Kanban board** permission as configured.
+
+**With the bank-holiday import off**, the **Refresh from Nager** button, the site form's **Refresh** button and its *Last updated* line disappear, and setting or changing a site's country no longer fetches holidays. The holidays already imported stay, and you can still add, edit, delete and [import](#importing-holidays-from-a-calendar-file) holidays by hand.
+
+**With phase pre-selection off**, the **New Project** dialog shows the predefined phases with none selected; click the ones the project needs. The phases you pick are created spread over the project's dates, as before.
 
 ---
 
@@ -295,11 +321,11 @@ Open **Settings → Bank holidays** (Admins and Superusers; superusers only for 
 - **Nager** — fetched automatically from the public-holiday service
 - **Custom** — added by hand, imported from a calendar file, or a Nager holiday that has been edited
 
-From the toolbar you can **Refresh from Nager**, **Export .ics**, **Import .ics** and **Add holiday**.
+From the toolbar you can **Refresh from Nager**, **Export .ics**, **Import .ics** and **Add holiday**. **Refresh from Nager** is not shown while the bank-holiday import is turned off in [Features & defaults](#features-defaults).
 
 ### Automatic Fetching
 
-If a site has a **country** set, Milestone can auto-fetch public holidays from the [Nager holiday API](https://nagerholidays.com/):
+If a site has a **country** set, Milestone can auto-fetch public holidays from the [Nager holiday API](https://nagerholidays.com/). Creating a site with a country, or changing a site's country, fetches them straight away. An administrator can turn this import off in [Features & defaults](#features-defaults); the holidays already imported then stay and are no longer refreshed.
 
 1. In **Settings → Sites**, edit the site and set its **Country** (and optionally **Region/State Code**), then click **Save Changes**
 2. In **Settings → Bank holidays**, select the site and click **Refresh from Nager** (the **Refresh** button in the site's details form does the same) — Milestone fetches public holidays for the current and next year
@@ -337,7 +363,7 @@ Added holidays are custom holidays for the selected site.
 Every holiday can be edited or deleted with the icons at the end of its row, whatever its source:
 
 - **Editing a Nager holiday** turns it into a **Custom** holiday. It keeps your changes on the next refresh instead of being overwritten or duplicated. A holiday moved to another date is recognised by its name, so the original does not come back — but if you both **rename and move** it, the refresh no longer recognises it and the Nager original returns at its original date. Keep the original name when you move a holiday.
-- **Deleting a Nager holiday** removes it until the next **Refresh from Nager**, which brings it back. To drop a public holiday for good, edit it instead (for example rename it) or accept that it returns on refresh.
+- **Deleting a Nager holiday** removes it until the next **Refresh from Nager**, which brings it back. To drop a public holiday for good, edit it instead (for example rename it) or accept that it returns on refresh. While the import is turned off, a deleted holiday does not come back.
 - **Deleting a custom holiday** removes it permanently.
 
 ### Importing Holidays from a Calendar File
@@ -670,7 +696,7 @@ Tags are listed under their group, with ungrouped tags under **Other**.
 
 ## Predefined Phases
 
-Phase templates that appear as pre-selected options when creating a new project.
+Phase templates that appear as options when creating a new project — pre-selected, unless an administrator turned that off in [Features & defaults](#features-defaults).
 
 ![Predefined phases — drag handles, active toggles, and the Add Phase form](../assets/screenshots/predefined-phases.png){ loading=lazy }
 

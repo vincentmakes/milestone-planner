@@ -70,7 +70,7 @@ The PM bundle is `projects.edit_any`, `projects.archive`, `assignments.manage_ot
 
 The per-project levels are checked inside the handler (`app/services/project_access.py`) after the entity is loaded, against a `project_id` derived server-side from the path or the loaded phase/subphase/assignment row — a `project_id` in the request body is never used for the check. Failures return `403`; a missing project/phase/subphase returns `404`.
 
-**Visible sites.** Every route is also limited to the caller's visible sites: every site with `sites.view_all` (administrators by default), otherwise the sites in their account (`app/services/site_access.py`). A `siteId` parameter or body `site_id` outside them, and any write on a project or site outside them, return `403`; reading a site, team, person, equipment item or absence outside them returns `404`; lists are filtered. Site-less projects and equipment need `sites.view_all`. The `views.*` keys gate the reads behind their views: `views.kanban` (Kanban reads), `views.staff` (per-person availability and assignments), `views.equipment` (equipment, bookings, blocks), `views.crosssite` (`includeOtherSites=true`) and `views.archived` (`archived=true`; `archived=all` leaves archived projects out without it).
+**Visible sites.** Every route is also limited to the caller's visible sites: every site with `sites.view_all` (administrators by default), otherwise the sites in their account (`app/services/site_access.py`). A `siteId` parameter or body `site_id` outside them, and any write on a project or site outside them, return `403`; reading a site, team, person, equipment item or absence outside them returns `404`; lists are filtered. Site-less projects and equipment need `sites.view_all`. The `views.*` keys gate the reads behind their views: `views.kanban` (Kanban reads; while the `kanban_enabled` setting is `false` nobody holds it, administrators included, and `/api/auth/me` leaves it out of `permissions` — the card status, assignee and comment writes are unaffected), `views.staff` (per-person availability and assignments), `views.equipment` (equipment, bookings, blocks), `views.crosssite` (`includeOtherSites=true`) and `views.archived` (`archived=true`; `archived=all` leaves archived projects out without it).
 
 ### Validation
 
@@ -231,11 +231,11 @@ Holiday writes need `bank_holidays.manage` (superusers and administrators by def
 | `GET` | `/t/{slug}/api/holidays?siteId=&startDate=&endDate=` | Holidays of a site within a date range |
 | `POST` | `/t/{slug}/api/sites/{id}/holidays` | Add a custom holiday — `{date, end_date?, name}` |
 | `PUT` | `/t/{slug}/api/sites/{id}/holidays/{holiday_id}` | Edit any holiday (partial `date`, `end_date`, `name`). The holiday becomes custom (`is_custom = 1`) |
-| `DELETE` | `/t/{slug}/api/sites/{id}/holidays/{holiday_id}` | Delete any holiday, custom or fetched; a fetched one returns on the next refresh |
+| `DELETE` | `/t/{slug}/api/sites/{id}/holidays/{holiday_id}` | Delete any holiday, custom or fetched; a fetched one returns on the next refresh (while the Nager import is on) |
 | `POST` | `/t/{slug}/api/sites/{id}/holidays/import` | Bulk-import custom holidays — `{items: [{date, end_date?, name}]}` → `{created, skipped}` |
-| `POST` | `/t/{slug}/api/sites/{id}/holidays/refresh` | Re-fetch public holidays from the Nager API |
+| `POST` | `/t/{slug}/api/sites/{id}/holidays/refresh` | Re-fetch public holidays from the Nager API. `409` `Holiday refresh from Nager is turned off` while the `nager_enabled` setting is `false` (after the permission check, before the site lookup) |
 
-Imported items whose `(date, name)` already exists on the site, or repeat within the batch, are skipped. A refresh replaces the site's non-custom holidays and skips any Nager holiday falling on a day already covered by a custom holiday, so edited and imported holidays are never overwritten or duplicated.
+Imported items whose `(date, name)` already exists on the site, or repeat within the batch, are skipped. Creating a site with a `country_code`, or changing a site's `country_code`, fetches its holidays the same way — only while `nager_enabled` is on; with it off the stored holidays stay. A refresh replaces the site's non-custom holidays and skips any Nager holiday falling on a day already covered by a custom holiday, so edited and imported holidays are never overwritten or duplicated.
 
 ### Company Events
 
@@ -368,6 +368,13 @@ The status endpoint returns the resulting `{status, completion}` pair, because t
 | `PUT` | `/t/{slug}/api/notifications/{id}/read` | Mark one as read |
 | `PUT` | `/t/{slug}/api/notifications/read-all` | Mark all as read |
 
+Notification `type` is one of `assigned`, `comment`, `mention`, `status_change`, `approval_requested`, `approval_decided`, `todo_assigned`, `assignment_changed` and `project_changed`. The last two report a change someone else made to the recipient's plan:
+
+- `assignment_changed` goes to the **booked person** when their approved booking is added directly, changed (allocation or dates), removed, when the phase or subphase they are booked on moves or is deleted, or when the project is deleted;
+- `project_changed` goes to the **project manager** for the same booking events on their project, equipment bookings added, changed or removed, project field changes (name, dates, customer, confirmed, volume, archived, a hand-over — to the new and the old manager), phases and subphases added, moved or deleted, the project deleted, and an approval applied by someone else.
+
+Never to the person who made the change, never to an inactive user, and never broadcast. `entity_type` is `project`, `phase` or `subphase`; the notification of a project delete has `project_id: null` and `entity_type: null`. Several changes by the same actor on the same project within ten minutes update the recipient's newest **unread** row of that type in place (title `N changes by <Actor> on <Project>`, body the latest change, `created_at` bumped, the entity widened to the project when the changes concern different items) and push it again with the same `id` — clients replace the stored row rather than adding one. These rows are written after the change commits; a notification failure never fails the change.
+
 Every endpoint is implicitly scoped to the session user; there is no user id to pass. Requesting another user's notification returns `404`, not `403`, so the endpoint cannot be used to probe for their existence.
 
 Due-soon and overdue reminders are **not** served here — they are derived in the browser from loaded project data.
@@ -408,8 +415,8 @@ Besides the tenant-wide `change:<entity>` events (now also `change:role`, `chang
 | `POST` | `/t/{slug}/api/skills` | Create a skill |
 | `PUT` | `/t/{slug}/api/skills/{id}` | Update a skill |
 | `DELETE` | `/t/{slug}/api/skills/{id}` | Delete a skill |
-| `GET` | `/t/{slug}/api/settings` | Get instance settings |
-| `PUT` | `/t/{slug}/api/settings/{key}` | Update one setting |
+| `GET` | `/t/{slug}/api/settings` | Get instance settings; the [known keys](#instance-settings) without a stored value are returned with their default |
+| `PUT` | `/t/{slug}/api/settings/{key}` | Update one setting (`settings.general`). A known key is validated (`422` `Invalid value for <key>`) and stored in canonical form; `{"value": null}` deletes it, so the default applies again (the response carries the default). Other keys are stored as given |
 | `GET` | `/t/{slug}/api/users` | List users at the visible sites (`users.view`); responses carry `role` (the key) and `role_name` |
 | `POST` | `/t/{slug}/api/users` | Create a user (`users.create`; optional `team_ids`). A `role` other than `user` also needs `users.change_role` and must be within the caller's own permissions (`403`); an unknown role key is `404`, a malformed one `422` |
 | `PUT` | `/t/{slug}/api/users/{id}` | Update a user — one key per kind of change: profile, sites, teams, skills `users.edit`; an admin target `users.edit_admins`; another user's email or password `users.edit_credentials`; `role` `users.change_role` (both the old and the new role must be within the caller's); `active` `users.toggle_active`. Nobody changes their own role or deactivates themself (`400`); the last active admin stays one (`400`). `team_ids`, when given, replaces the memberships |
@@ -421,6 +428,21 @@ Besides the tenant-wide `change:<entity>` events (now also `change:role`, `chang
 | `GET` | `/t/{slug}/api/notes` | List notes |
 | `POST` | `/t/{slug}/api/notes` | Create a note |
 | `DELETE` | `/t/{slug}/api/notes/{id}` | Delete a note |
+
+#### Instance settings
+
+The admin defaults and feature switches set in [Settings → Features & defaults](../user-guide/settings.md#features-defaults):
+
+| Key | Stored value | Default | Effect |
+|-----|--------------|---------|--------|
+| `gantt_default_panel` | `none`, `staff` or `equipment` | `none` | Resource panel opened with the Gantt chart |
+| `staff_panel_default_skills` | JSON array of unique positive skill ids, at most 500, stored compact (`[1,2]`) | `[]` | Initial skill filter of the Staff panel and view |
+| `equipment_panel_default_types` | JSON array of unique equipment type names, trimmed, 1–100 characters each | `[]` | Initial type filter of the Equipment panel and view |
+| `kanban_enabled` | `true` or `false` | `true` | `false` takes `views.kanban` away from everyone |
+| `nager_enabled` | `true` or `false` | `true` | `false` stops the holiday refresh (`409`) and the automatic fetch on site create/update |
+| `new_project_preselect_phases` | `true` or `false` | `true` | Whether the New Project dialog pre-selects the active predefined phases |
+
+Booleans also accept `1`/`0`, `yes`/`no` and `on`/`off` (any case) and are stored as `true`/`false`; a switch counts as on unless its value is exactly `false`. Only the shape is validated: ids of deleted skills and names of renamed types are accepted and ignored by the client. A change broadcasts `change:settings`.
 
 ### Permissions & Roles
 

@@ -40,6 +40,8 @@ People who can edit any project (administrators and superusers by default) and p
 
 This is the fastest way to see scheduling and capacity together: changes you make in the Gantt are reflected in the panel below in real time.
 
+An administrator can choose a panel that opens every time the Gantt chart is opened, and default skills or equipment types for the panels' filters, in [Settings → Features & defaults](settings.md#features-defaults). You can still close the panel or change the filter; the default applies again the next time you open the Gantt chart.
+
 ![Gantt chart with the Staff Overview panel docked below, showing assignments per person](../assets/screenshots/gantt-with-staff-panel.png){ loading=lazy }
 
 ![Gantt chart with the Equipment panel docked below, showing equipment availability](../assets/screenshots/gantt-with-equipment-panel.png){ loading=lazy }
@@ -68,7 +70,7 @@ Creating a project needs the *Create projects* permission (admins and superusers
 2. Fill in required fields: **Project Name**, **Start Date**, **End Date**
 3. Optionally set: Project Manager, Customer, Sales PM, Project Volume
 4. If the site has [teams](settings.md#teams), tick the **Teams** the project belongs to — the teams of the active [team filter](settings.md#team-filter) are ticked already, so the new project shows in the view you are on
-5. Select which **predefined phases** to include (all active phases are pre-selected)
+5. Select which **predefined phases** to include (all active phases are pre-selected, unless an administrator [turned that off](settings.md#features-defaults) — then none is, and you pick them)
 6. Check **Project Confirmed** if the project is approved
 7. Click **Create Project**
 

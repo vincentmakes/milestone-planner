@@ -133,11 +133,18 @@ The bell in the header shows unread notifications. You are notified when someone
 - comments on a card you are assigned to,
 - mentions you in any comment,
 - moves a card you are assigned to into another column,
-- asks for your approval to book themselves, decides your own request, or gives you a task — these lead to [My Todos](my-todos.md#notifications).
+- asks for your approval to book themselves, decides your own request, or gives you a task — these lead to [My Todos](my-todos.md#notifications),
+- books you, changes or removes your booking, or moves or deletes a card you are booked on,
+- changes a project you manage (bookings, equipment, project details, phases and subphases, an approval).
+
+The last two go only to the booked person and the project manager. Several changes by the same person on the same project within ten minutes merge into one unread line — see [Notifications](collaboration.md#notifications) for the full list.
 
 You are never notified about your own actions. If you are both assigned to a card and mentioned in a comment on it, you get the mention only.
 
-Clicking a card notification opens that card's board and detail (if your role has the Kanban board); an approval or task notification opens the matching tab of My Todos.
+Clicking a card notification opens that card's board and detail (if your role has the Kanban board; otherwise the project on the Gantt chart); a project notification opens the project on the Gantt chart; an approval or task notification opens the matching tab of My Todos.
+
+!!! note "Turning the board off"
+    An administrator can turn the Kanban board off for the whole workspace in **Settings → [Features & defaults](settings.md#features-defaults)**. Nobody then sees the board or its sidebar entry, whatever their role — administrators included. Comments stay stored and come back when the board is turned on again, My Todos keeps working (its card links become plain text), and card notifications open the Gantt chart instead.
 
 !!! info "Due and overdue reminders work differently"
     Reminders for cards that are due within a week, or already past their end date, are worked out **in your browser** from the plan you already have loaded. They need no configuration and appear alongside the other notifications.

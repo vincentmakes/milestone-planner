@@ -107,6 +107,8 @@ Click the **Filter** dropdown to filter by:
 
 The header shows filtered/total count (e.g., "12/20 staff") when filters are active.
 
+If an administrator set default skills in [Settings → Features & defaults](settings.md#features-defaults), the Staff view and panel open with those skills already ticked; change or clear them as usual.
+
 ![Staff filter dropdown with role and skill checkboxes](../assets/screenshots/staff-filter-dropdown.png){ loading=lazy }
 
 ## Staff Notes

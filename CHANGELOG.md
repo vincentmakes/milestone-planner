@@ -5,6 +5,16 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.15.0] - 2026-10-22
+
+### Added
+- **Settings → Features & defaults**: administrators choose whether the Gantt chart opens with the Staff or the Equipment panel, which skills the Staff panel and which equipment types the Equipment panel show by default (everyone can still close the panel or change the filter), turn the Kanban board off for everyone, turn the automatic bank-holiday import (Nager) off, and choose whether new projects start with the predefined phases selected.
+- Notifications when someone else changes your plan: the booked person hears when their booking is added, changed or removed or its phase moves or is deleted, and the project manager hears about bookings, equipment, project details, phases and approvals on their project — never the person who made the change; several changes by the same person on the same project within ten minutes merge into one line.
+
+### Changed
+- Instance settings are now validated: a value that does not fit a known setting is refused instead of being saved.
+- Clicking a notification about a project opens it on the Gantt chart, switching site if needed, and card notifications do the same while the Kanban board is turned off.
+
 ## [1.14.0] - 2026-10-22
 
 ### Added

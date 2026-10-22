@@ -124,6 +124,7 @@ same reason; use `run_migration.py` instead.
 | `cleanup_orphaned_values` | Tenant | Delete orphaned custom-column values and card comments (1.5.0, also automatic) |
 | `add_teams` | Tenant | Teams per site, team membership and team scoping of projects, tags, equipment and company events (1.12.0, also applied automatically on startup) |
 | `add_rbac` | Tenant | Roles and permissions, approval policies and requests for own bookings, and My Todos (1.13.0, also applied automatically on startup) — see below |
+| `add_change_notifications` | Tenant | Widens the notification types with `assignment_changed` and `project_changed` (1.15.0, also applied automatically on startup) — see below |
 | `upgrade_to_v90` | Tenant | Major version upgrade |
 
 ### Absence Types and Multi-Site Events (1.5.0)
@@ -184,6 +185,14 @@ Nobody's access changes on upgrade: existing admins, superusers and users keep t
 
 ```bash
 python migrations/run_migration.py add_rbac
+```
+
+### Change Notifications (1.15.0)
+
+`add_change_notifications` widens the CHECK constraint on `notifications.type` with `assignment_changed` (someone else changed your booking) and `project_changed` (someone else changed a project you manage). It replaces the constraint only when `project_changed` is missing, so a second run changes nothing. The same step runs **automatically** every time a tenant's connection pool is created (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)) — including on tenants already upgraded to 1.13 or 1.14 — so running it by hand is optional. No data changes, and the new instance settings of 1.15.0 need no migration: a setting without a stored value reads as its default.
+
+```bash
+python migrations/run_migration.py add_change_notifications
 ```
 
 ### Writing New Migrations

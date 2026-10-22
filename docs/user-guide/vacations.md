@@ -21,6 +21,9 @@ If an unavailable and an available absence overlap on the same day (for example 
 !!! note "Site closures"
     A shutdown or company holiday that applies to a whole site doesn't need an absence for every person: a [company event marked as a site closure](settings.md#site-closures) makes everyone on its sites unavailable for its dates, shown in the Staff workload view under the event's name and color. A closure limited to [teams](settings.md#teams) disappears from the timeline when the header [team filter](settings.md#team-filter) leaves its teams out, while a whole-site closure always shows.
 
+!!! note "Bank holidays"
+    Public holidays are not absences: they are kept per site in [Settings → Bank holidays](settings.md#bank-holidays) and fetched from the Nager holiday service when a site has a country. An administrator can turn that import off in [Features & defaults](settings.md#features-defaults) — the holidays already imported stay, and holidays can still be added or imported from an `.ics` file by hand.
+
 ## Creating an Absence
 
 1. In the Staff Overview, expand a staff member and click **+ Add vacation / time off** — or use [My absences](#my-absences) for your own
