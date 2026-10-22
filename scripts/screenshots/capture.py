@@ -425,6 +425,19 @@ def shot_approvals_settings(context: BrowserContext) -> None:
     page.close()
 
 
+def shot_defaults_settings(context: BrowserContext) -> None:
+    """Settings -> Features & defaults: the Gantt panel, the default filters
+    and the three switches, as the demo ships them (nothing saved)."""
+    page = context.new_page()
+    login(page)
+    open_settings_section(page, "Features & defaults")
+    page.get_by_role("group", name="Staff panel skills").wait_for()
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(OUT / "defaults-settings.png"))
+    log("[done] defaults-settings.png")
+    page.close()
+
+
 def shot_my_todos(context: BrowserContext) -> None:
     """My Todos as Bob (PM of Bioprocess Scale-Up), on the To decide tab with
     Diana's request to join Analytics."""
@@ -922,6 +935,7 @@ TARGETS = {
     "settings-teams": shot_teams_settings,
     "roles": shot_roles_settings,
     "approvals": shot_approvals_settings,
+    "defaults-settings": shot_defaults_settings,
     "my-todos": shot_my_todos,
     "pending": shot_pending_assignment,
     "assign-staff": shot_assign_staff_modal,
