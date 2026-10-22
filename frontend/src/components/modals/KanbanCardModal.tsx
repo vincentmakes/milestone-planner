@@ -14,7 +14,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { useTeamFilter } from '@/hooks/useTeamFilter';
-import { loadAllProjects, updateStaffAssignment } from '@/api/endpoints/projects';
+import { deleteStaffAssignment, loadAllProjects, updateStaffAssignment } from '@/api/endpoints/projects';
 import {
   assignCard,
   createComment,
@@ -22,7 +22,6 @@ import {
   getComments,
   getMentionableUsers,
   moveCard,
-  unassignCard,
   type CardComment,
   type MentionableUser,
 } from '@/api/endpoints/kanban';
@@ -42,7 +41,8 @@ import {
   type MentionAnchor,
 } from '@/utils/mentions';
 import { MentionText, MentionTextarea } from '@/components/common/MentionTextarea';
-import { formatDateShort, parseDateISO } from '@/utils/date';
+import { formatDateShort, formatMediumDate, parseDateISO, toDateOnly } from '@/utils/date';
+import { isUnlinkedBooking } from '@/utils/bookingSegments';
 import { can, canBookSelf, canEditAssignment, isSelf, needsApproval } from '@/utils/permissions';
 import { approvalsApi, isPendingResponse } from '@/api/endpoints/approvals';
 import { ApprovalActions } from '@/components/common/ApprovalActions';
@@ -55,7 +55,7 @@ import {
   updateProjectLocally,
 } from '@/utils/localProjectTree';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
-import type { CardStatus } from '@/types';
+import type { CardStatus, StaffAssignment } from '@/types';
 import styles from './KanbanCardModal.module.css';
 import { confirmAction } from '@/utils/confirmDialog';
 
@@ -283,18 +283,25 @@ export function KanbanCardModal() {
     }
   };
 
-  const handleUnassign = async (staffId: number, staffName?: string | null) => {
+  // One row at a time: a person may hold several bookings (segments) on a
+  // card, so the row's own route removes exactly that one (the per-person
+  // Kanban route answers 409 then).
+  const handleRemoveRow = async (row: StaffAssignment) => {
     if (!card) return;
     // Removing an assignee deletes their booking (allocation and dates) and
     // cannot be undone -- confirm like the Gantt assignment dialog does.
-    const who = staffName ? `"${staffName}"` : 'this assignee';
-    const asRequest = !isEditor && isSelf(currentUser, staffId) && needsApproval(currentUser, 'assignments.self_remove');
+    const who = row.staff_name ? `"${row.staff_name}"` : 'this assignee';
+    const asRequest =
+      !isEditor && isSelf(currentUser, row.staff_id) && needsApproval(currentUser, 'assignments.self_remove');
+    const segment = isUnlinkedBooking(row)
+      ? ` from ${formatMediumDate(toDateOnly(row.start_date))} to ${formatMediumDate(toDateOnly(row.end_date))}`
+      : '';
     if (
       !(await confirmAction({
         title: 'Remove assignee',
         message: asRequest
-          ? 'Ask to leave this card? Your removal will be sent for approval.'
-          : `Remove ${who} from this card? Their booking on it will be deleted.`,
+          ? `Ask to leave this card${segment}? Your removal will be sent for approval.`
+          : `Remove ${who} from this card${segment}? Their booking on it will be deleted.`,
         destructive: true,
       }))
     )
@@ -302,17 +309,16 @@ export function KanbanCardModal() {
     if (!begin()) return; // another write on this card is still running
     setError(null);
     try {
-      const res = await unassignCard(card.entityType, card.entityId, staffId);
-      const removed = card.assignments.find((a) => a.staff_id === staffId);
+      const res = await deleteStaffAssignment(row.id, card.entityType);
       if (isPendingResponse(res)) {
         // Sent for approval: the booking stays until someone decides.
-        if (removed && currentUser) {
-          markRequestPendingLocally(card.projectId, removed.id, card.entityType, currentUser.id,
+        if (currentUser) {
+          markRequestPendingLocally(card.projectId, row.id, card.entityType, currentUser.id,
             'assignments.self_remove', res, null);
         }
         flashSentForApproval();
-      } else if (removed) {
-        removeStaffAssignmentLocally(card.projectId, removed.id, card.entityType);
+      } else {
+        removeStaffAssignmentLocally(card.projectId, row.id, card.entityType);
       }
       setProjects(await loadAllProjects());
     } catch (err) {
@@ -474,6 +480,11 @@ export function KanbanCardModal() {
                   <li key={a.id} className={`${styles.assignee} ${pending ? styles.assigneePending : ''}`}>
                     <span className={styles.assigneeName}>
                       {name}
+                      {isUnlinkedBooking(a) && (
+                        <span className={styles.segmentDates} title="Own dates inside this card">
+                          {formatMediumDate(toDateOnly(a.start_date))} – {formatMediumDate(toDateOnly(a.end_date))}
+                        </span>
+                      )}
                       <PendingBadge assignment={a} projectId={card.projectId} className={styles.assigneeBadge} />
                     </span>
                     {canSlide ? (
@@ -523,7 +534,7 @@ export function KanbanCardModal() {
                         <button
                           type="button"
                           className={styles.removeBtn}
-                          onClick={() => handleUnassign(a.staff_id, a.staff_name)}
+                          onClick={() => handleRemoveRow(a)}
                           disabled={busy}
                           aria-label={`Remove ${a.staff_name ?? 'assignee'}`}
                         >

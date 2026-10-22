@@ -17,6 +17,7 @@ import type {
   AssignmentApproval,
   PendingBookingResponse,
   CreateStaffAssignmentRequest,
+  UpdateStaffAssignmentRequest,
   EquipmentAssignment,
   CreateEquipmentAssignmentRequest,
   CardStatus,
@@ -270,11 +271,13 @@ export async function createStaffAssignment(
 
 /**
  * Update a staff assignment
- * Routes to correct endpoint based on assignment level
+ * Routes to correct endpoint based on assignment level. On a phase /
+ * subphase, `{start_date, end_date}` unlink the booking (dates within the
+ * card) and `{start_date: null, end_date: null}` relink it.
  */
 export async function updateStaffAssignment(
   assignmentId: number, 
-  data: Partial<CreateStaffAssignmentRequest>,
+  data: UpdateStaffAssignmentRequest,
   level: 'project' | 'phase' | 'subphase' = 'project'
 ): Promise<StaffAssignmentWrite> {
   const endpoint = level === 'subphase' 
@@ -359,7 +362,7 @@ function transformProject(project: Record<string, unknown>): Project {
     ...(project as unknown as Project),
     // Ensure arrays exist and transform nested data
     phases: phases.map(transformPhase),
-    staffAssignments: staffAssignments.map(transformStaffAssignment),
+    staffAssignments: staffAssignments.map((a) => transformStaffAssignment(a)),
     equipmentAssignments: equipmentAssignments.map(transformEquipmentAssignment),
   };
 }
@@ -419,7 +422,7 @@ function transformPhase(phase: Record<string, unknown>): Phase {
     is_milestone: Boolean(phase.is_milestone),
     dependencies: (phase.dependencies ?? []) as Phase['dependencies'],
     children: children.map((s: Record<string, unknown>) => transformSubphase(s, 1)),
-    staffAssignments: staffAssignments.map(transformStaffAssignment),
+    staffAssignments: staffAssignments.map((a) => transformStaffAssignment(a, phase)),
     equipmentAssignments: equipmentAssignments.map(transformEquipmentAssignment),
   };
 }
@@ -446,12 +449,21 @@ function transformSubphase(subphase: Record<string, unknown>, depth: number = 1)
     is_milestone: Boolean(subphase.is_milestone),
     dependencies: (subphase.dependencies ?? []) as Subphase['dependencies'],
     children: children.map((s: Record<string, unknown>) => transformSubphase(s, actualDepth + 1)),
-    staffAssignments: staffAssignments.map(transformStaffAssignment),
+    staffAssignments: staffAssignments.map((a) => transformStaffAssignment(a, subphase)),
     equipmentAssignments: equipmentAssignments.map(transformEquipmentAssignment),
   };
 }
 
-function transformStaffAssignment(assignment: Record<string, unknown>): StaffAssignment {
+/**
+ * `card` = the phase / subphase the row is booked on (absent at project
+ * level). Card rows carry their effective dates and `linked` from the server;
+ * a server before 1.17.0 sent neither, so such a row reads as linked with the
+ * card's dates.
+ */
+function transformStaffAssignment(
+  assignment: Record<string, unknown>,
+  card?: Record<string, unknown>
+): StaffAssignment {
   return {
     id: assignment.id as number,
     staff_id: assignment.staff_id as number,
@@ -460,8 +472,9 @@ function transformStaffAssignment(assignment: Record<string, unknown>): StaffAss
     phase_id: assignment.phase_id as number | null | undefined,
     subphase_id: assignment.subphase_id as number | null | undefined,
     allocation: (assignment.allocation ?? assignment.allocation_percent ?? 100) as number,
-    start_date: assignment.start_date as string,
-    end_date: assignment.end_date as string,
+    start_date: (assignment.start_date ?? card?.start_date) as string,
+    end_date: (assignment.end_date ?? card?.end_date) as string,
+    linked: card ? assignment.linked == null || Boolean(assignment.linked) : false,
     approval_status: assignment.approval_status === 'pending' ? 'pending' : 'approved',
     approval: transformApproval(assignment.approval),
   };

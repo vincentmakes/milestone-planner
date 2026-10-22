@@ -108,7 +108,7 @@ describe('ContextMenuContainer subphase target', () => {
     expect(screen.getByRole('menuitem', { name: /assign me/i })).toBeEnabled();
   });
 
-  it('books the nested subphase with its own dates', async () => {
+  it('books the nested subphase as a linked booking (no dates: it follows the subphase)', async () => {
     render(<ContextMenuContainer />);
 
     fireEvent.click(screen.getByRole('menuitem', { name: /assign me/i }));
@@ -118,12 +118,13 @@ describe('ContextMenuContainer subphase target', () => {
       expect.objectContaining({
         staff_id: 7,
         allocation: 80,
-        start_date: '2026-09-10',
-        end_date: '2026-09-15',
         project_id: 1,
         subphase_id: 30,
       })
     );
+    const body = vi.mocked(createStaffAssignment).mock.calls[0][0];
+    expect(body).not.toHaveProperty('start_date');
+    expect(body).not.toHaveProperty('end_date');
   });
 
   it('shows "Assigned to me" once the user is booked on the nested subphase', () => {

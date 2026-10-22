@@ -4,7 +4,7 @@ import { Input } from '../Input';
 import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import { formatMediumDate } from '@/utils/date';
 import { DatePickerPopover } from './DatePickerPopover';
-import { applyRangeClick, collapseOptionalEnd, DATE_PLACEHOLDER, OPEN_KEYS } from './dateRangeLogic';
+import { applyRangeClick, clampDay, collapseOptionalEnd, DATE_PLACEHOLDER, OPEN_KEYS } from './dateRangeLogic';
 import type { ActiveField, IsoDate } from './dateRangeLogic';
 import styles from './DateRangeField.module.css';
 
@@ -35,6 +35,13 @@ export interface CommonDateFieldProps {
   highlightWeekdays?: readonly number[];
   /** Mark the current site's bank holidays and closures (default true). */
   markSiteCalendar?: boolean;
+  /**
+   * The first / last day that may be picked (`YYYY-MM-DD`, e.g. a booking
+   * inside its phase): days outside are disabled in the calendar, and a pick
+   * whose rules would carry the other end outside is cut at the bound.
+   */
+  minDate?: IsoDate;
+  maxDate?: IsoDate;
 }
 
 export interface DateRangeFieldProps extends CommonDateFieldProps {
@@ -69,6 +76,8 @@ export function DateRangeField({
   fieldClassName,
   highlightWeekdays,
   markSiteCalendar = true,
+  minDate,
+  maxDate,
 }: DateRangeFieldProps) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<ActiveField>('start');
@@ -122,7 +131,9 @@ export function DateRangeField({
 
   const handleDayClick = (day: IsoDate) => {
     const next = applyRangeClick({ start, end, active }, day);
-    onChange(collapseOptionalEnd({ start: next.start, end: next.end }, endOptional));
+    // A start picked after the end moves the end (duration kept): never past maxDate.
+    const bounded = { start: clampDay(next.start, minDate, maxDate), end: clampDay(next.end, minDate, maxDate) };
+    onChange(collapseOptionalEnd(bounded, endOptional));
     if (next.done) finish();
     else activate(next.active);
   };
@@ -178,6 +189,8 @@ export function DateRangeField({
           }
           highlightWeekdays={highlightWeekdays}
           markSiteCalendar={markSiteCalendar}
+          minDate={minDate}
+          maxDate={maxDate}
         />
       )}
     </div>

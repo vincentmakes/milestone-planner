@@ -118,10 +118,10 @@ describe('ResourceDropOverlay in quarter view', () => {
     await act(async () => {});
 
     const body = vi.mocked(createStaffAssignment).mock.calls[0][0];
-    expect(body.start_date.startsWith('2026-03-1')).toBe(true);
+    expect(body.start_date!.startsWith('2026-03-1')).toBe(true);
     const days =
-      (Date.UTC(...(body.end_date.split('-').map(Number) as [number, number, number])) -
-        Date.UTC(...(body.start_date.split('-').map(Number) as [number, number, number]))) /
+      (Date.UTC(...(body.end_date!.split('-').map(Number) as [number, number, number])) -
+        Date.UTC(...(body.start_date!.split('-').map(Number) as [number, number, number]))) /
       86400000;
     expect(days).toBe(4);
   });

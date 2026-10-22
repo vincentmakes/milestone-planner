@@ -374,6 +374,47 @@ describe('fetchAllProjects transform layer', () => {
     expect(grandchild.staffAssignments[0].allocation).toBe(10);
   });
 
+  it('maps the booking dates and linked flag of card rows (older servers: linked, the card dates)', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/projects?')) return { items: [{ id: 1 }], total: 1 };
+      return {
+        id: 1,
+        staff_assignments: [{ id: 1, staff_id: 4, allocation: 40, start_date: '2026-03-01', end_date: '2026-03-31', linked: false }],
+        phases: [
+          {
+            id: 10,
+            start_date: '2026-03-02T00:00:00.000Z',
+            end_date: '2026-03-13T00:00:00.000Z',
+            staff_assignments: [
+              { id: 3, staff_id: 5, allocation: 50, start_date: '2026-03-03T00:00:00.000Z', end_date: '2026-03-05T00:00:00.000Z', linked: false },
+              { id: 4, staff_id: 6, allocation: 50, start_date: '2026-03-02T00:00:00.000Z', end_date: '2026-03-13T00:00:00.000Z', linked: true },
+              // A server before 1.17.0: no dates, no flag
+              { id: 5, staff_id: 7, allocation: 50 },
+            ],
+            subphases: [
+              {
+                id: 20,
+                parent_type: 'phase',
+                parent_id: 10,
+                name: 'S',
+                start_date: '2026-03-02',
+                end_date: '2026-03-06',
+                staff_assignments: [{ id: 6, staff_id: 5, allocation: 20, start_date: '2026-03-04', end_date: '2026-03-04', linked: false }],
+              },
+            ],
+          },
+        ],
+      };
+    });
+    const [project] = await fetchAllProjects();
+    expect(project.staffAssignments[0].linked).toBe(false);
+    const [segment, linked, legacy] = project.phases[0].staffAssignments;
+    expect(segment).toMatchObject({ linked: false, start_date: '2026-03-03T00:00:00.000Z', end_date: '2026-03-05T00:00:00.000Z' });
+    expect(linked.linked).toBe(true);
+    expect(legacy).toMatchObject({ linked: true, start_date: '2026-03-02T00:00:00.000Z', end_date: '2026-03-13T00:00:00.000Z' });
+    expect(project.phases[0].children[0].staffAssignments[0]).toMatchObject({ linked: false, start_date: '2026-03-04' });
+  });
+
   it('uses an explicit subphase depth for its colour', async () => {
     get.mockImplementation(async (url: string) => {
       if (url.startsWith('/api/projects?')) return { items: [{ id: 1 }], total: 1 };

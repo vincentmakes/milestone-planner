@@ -13,9 +13,10 @@ import { useViewStore } from '@/stores/viewStore';
 import { tagFilterKey } from '@/utils/tags';
 import { makeTeam, makeUser } from '@/test/factories';
 import { assignCard, createComment, deleteComment, getComments, getMentionableUsers, unassignCard } from '@/api/endpoints/kanban';
-import { updateStaffAssignment } from '@/api/endpoints/projects';
+import { deleteStaffAssignment, updateStaffAssignment } from '@/api/endpoints/projects';
 import type { Phase, Project, Subphase } from '@/types';
 import { stubConfirm } from '@/test/confirmDialog';
+import { formatMediumDate } from '@/utils/date';
 
 vi.mock('@/api/endpoints/kanban', () => ({
   getComments: vi.fn().mockResolvedValue([]),
@@ -35,6 +36,7 @@ vi.mock('@/api/endpoints/kanban', () => ({
 vi.mock('@/api/endpoints/projects', () => ({
   loadAllProjects: vi.fn().mockResolvedValue([]),
   updateStaffAssignment: vi.fn().mockResolvedValue({}),
+  deleteStaffAssignment: vi.fn().mockResolvedValue({ success: true }),
 }));
 
 // The modal derives its card from appStore.projects, so an empty store renders
@@ -615,17 +617,17 @@ describe('KanbanCardModal confirmations', () => {
         })
       )
     );
-    expect(unassignCard).not.toHaveBeenCalled();
+    expect(deleteStaffAssignment).not.toHaveBeenCalled();
   });
 
-  it('removes the assignee once confirmed', async () => {
+  it('removes the assignee once confirmed, through the row route (not the per-person Kanban route)', async () => {
     stubConfirm(true);
-    vi.mocked(unassignCard).mockResolvedValue(undefined as never);
     render(<KanbanCardModal />);
 
     fireEvent.click(screen.getByLabelText('Remove Bob Brown'));
 
-    await waitFor(() => expect(unassignCard).toHaveBeenCalledWith('subphase', 10, 4));
+    await waitFor(() => expect(deleteStaffAssignment).toHaveBeenCalledWith(1, 'subphase'));
+    expect(unassignCard).not.toHaveBeenCalled();
   });
 
   it('asks before deleting a comment', async () => {
@@ -751,5 +753,57 @@ describe('KanbanCardModal comments of deleted users', () => {
     await act(async () => finish({}));
     await waitFor(() => expect(composer()).toHaveValue(''));
     expect(createComment).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('KanbanCardModal: several bookings of one person (segments)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    seedStore();
+    const project = seedProject();
+    const sub = project.phases[0].children[0];
+    sub.staffAssignments = [
+      { ...sub.staffAssignments[0], linked: false, start_date: '2026-09-01', end_date: '2026-09-03' },
+      {
+        id: 2,
+        staff_id: 4,
+        staff_name: 'Bob Brown',
+        allocation: 50,
+        start_date: '2026-09-08',
+        end_date: '2026-09-10',
+        linked: false,
+      },
+    ];
+    useAppStore.setState({ projects: [project] });
+  });
+
+  it('lists each booking on its own line with its own dates', () => {
+    render(<KanbanCardModal />);
+    expect(screen.getAllByLabelText('Remove Bob Brown')).toHaveLength(2);
+    expect(screen.getByText(`${formatMediumDate('2026-09-08')} – ${formatMediumDate('2026-09-10')}`)).toBeInTheDocument();
+  });
+
+  it('removes exactly the clicked booking through its row route', async () => {
+    const confirm = stubConfirm(true);
+    render(<KanbanCardModal />);
+
+    fireEvent.click(screen.getAllByLabelText('Remove Bob Brown')[1]);
+
+    await waitFor(() => expect(deleteStaffAssignment).toHaveBeenCalledWith(2, 'subphase'));
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: `Remove "Bob Brown" from this card from ${formatMediumDate('2026-09-08')} to ${formatMediumDate('2026-09-10')}? Their booking on it will be deleted.`,
+      })
+    );
+    expect(deleteStaffAssignment).toHaveBeenCalledTimes(1);
+    expect(unassignCard).not.toHaveBeenCalled();
+  });
+
+  it('shows a refusal in place', async () => {
+    stubConfirm(true);
+    vi.mocked(deleteStaffAssignment).mockRejectedValueOnce(new Error('Booking not found'));
+    render(<KanbanCardModal />);
+    fireEvent.click(screen.getAllByLabelText('Remove Bob Brown')[0]);
+    expect(await screen.findByText('Booking not found')).toBeInTheDocument();
   });
 });

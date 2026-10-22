@@ -11,6 +11,7 @@ import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { DateRangeField } from '@/components/common/DateRangeField';
 import { Select } from '@/components/common/Select';
+import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useTeamFilter } from '@/hooks/useTeamFilter';
@@ -24,7 +25,8 @@ import {
   loadAllProjects
 } from '@/api/endpoints/projects';
 import { useWhatIfStore } from '@/stores/whatIfStore';
-import { toInputDateFormat, formatDateISO } from '@/utils/date';
+import { toInputDateFormat, formatDateISO, toDateOnly } from '@/utils/date';
+import type { UpdateStaffAssignmentRequest } from '@/types';
 import {
   patchEquipmentAssignmentLocally,
   patchStaffAssignmentLocally,
@@ -80,6 +82,9 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   const [allocation, setAllocation] = useState(100);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  // Phase / subphase staff: the booking follows the card's dates (linked) or
+  // has its own dates inside the card (an unlinked segment).
+  const [followCard, setFollowCard] = useState(true);
   const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
 
@@ -177,6 +182,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       if (isStaff && editingStaffAssignment) {
         setResourceId(editingStaffAssignment.staff_id.toString());
         setAllocation(editingStaffAssignment.allocation);
+        setFollowCard(editingStaffAssignment.linked !== false);
       } else if (!isStaff && editingEquipmentAssignment) {
         setResourceId(editingEquipmentAssignment.equipment_id.toString());
       }
@@ -195,6 +201,8 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       }
       setStartDate(toInputDateFormat(targetItem?.start_date) || today);
       setEndDate(toInputDateFormat(targetItem?.end_date) || today);
+      // A new booking is linked by default; the switch gives it own dates.
+      setFollowCard(true);
     }
     setError(null);
   }, [isOpen, initKey, editingAssignment, editingStaffAssignment, editingEquipmentAssignment, isStaff, targetItem, selfOnly, currentUser, ownMaxCapacity]);
@@ -213,6 +221,23 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   // Determine assignment level for API calls
   const assignmentLevel: 'project' | 'phase' | 'subphase' = subphaseId ? 'subphase' : (phaseId ? 'phase' : 'project');
   const isPhaseOrSubphase = assignmentLevel !== 'project';
+  // A card booking with its own dates: the date fields show, bounded by the card.
+  const ownCardDates = isStaff && isPhaseOrSubphase && !followCard;
+  const cardStart = isPhaseOrSubphase && targetItem?.start_date ? toDateOnly(targetItem.start_date) : undefined;
+  const cardEnd = isPhaseOrSubphase && targetItem?.end_date ? toDateOnly(targetItem.end_date) : undefined;
+
+  const handleFollowCardChange = (follow: boolean) => {
+    setFollowCard(follow);
+    if (!follow && cardStart && cardEnd) {
+      // Own dates start inside the card (the card's own dates when unset or outside)
+      const s = startDate ? toDateOnly(startDate) : '';
+      const e = endDate ? toDateOnly(endDate) : '';
+      if (!s || !e || s < cardStart || e > cardEnd || s > e) {
+        setStartDate(cardStart);
+        setEndDate(cardEnd);
+      }
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -240,10 +265,16 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
     try {
       if (isStaff) {
         if (isEditing && editingStaffAssignment) {
-          // For phase/subphase, only update allocation (no dates)
-          const updateData = isPhaseOrSubphase
-            ? { allocation }
-            : { allocation, start_date: startDate, end_date: endDate };
+          // Phase / subphase: the allocation, plus own dates (unlinked) or
+          // null dates to follow the card again (only when it had own dates).
+          const wasUnlinked = editingStaffAssignment.linked === false;
+          const updateData: UpdateStaffAssignmentRequest = !isPhaseOrSubphase
+            ? { allocation, start_date: startDate, end_date: endDate }
+            : !followCard
+              ? { allocation, start_date: startDate, end_date: endDate }
+              : wasUnlinked
+                ? { allocation, start_date: null, end_date: null }
+                : { allocation };
           const res = await updateStaffAssignment(editingStaffAssignment.id, updateData, assignmentLevel);
           if (isPendingResponse(res)) {
             // Sent for approval: the booking keeps its values until decided.
@@ -254,14 +285,28 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
             }
           } else if (projectId) {
             // Show the edit right away (the reload below is a no-op in What-If).
-            patchStaffAssignmentLocally(projectId, editingStaffAssignment.id, assignmentLevel, updateData);
+            patchStaffAssignmentLocally(
+              projectId,
+              editingStaffAssignment.id,
+              assignmentLevel,
+              isPhaseOrSubphase
+                ? {
+                    allocation,
+                    linked: followCard,
+                    start_date: followCard ? cardStart ?? startDate : startDate,
+                    end_date: followCard ? cardEnd ?? endDate : endDate,
+                  }
+                : { allocation, start_date: startDate, end_date: endDate }
+            );
           }
         } else {
+          // On a phase / subphase, dates make an unlinked segment: sent only
+          // when the booking does not follow the card.
+          const withDates = !isPhaseOrSubphase || !followCard;
           const assignmentData = {
             staff_id: parseInt(resourceId),
             allocation,
-            start_date: startDate,
-            end_date: endDate,
+            ...(withDates ? { start_date: startDate, end_date: endDate } : {}),
             project_id: projectId || undefined,
             phase_id: phaseId || undefined,
             subphase_id: subphaseId || undefined,
@@ -433,7 +478,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
         {createBlockedReason && (
           <div className={styles.error} role="status">{createBlockedReason}</div>
         )}
-        {error && error !== createBlockedReason && <div className={styles.error}>{error}</div>}
+        {error && error !== createBlockedReason && <Notice tone="error">{error}</Notice>}
         {selfDenied && (
           <Notice tone="info">
             {isEditing
@@ -492,10 +537,24 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
           </div>
         )}
 
-        {/* Date fields */}
-        {/* Staff: only show for project-level assignments */}
-        {/* Equipment: always show */}
-        {(!isStaff || !isPhaseOrSubphase) && (
+        {/* Phase / subphase staff: follow the card's dates, or own dates inside it */}
+        {isStaff && isPhaseOrSubphase && (
+          <ToggleSwitch
+            checked={followCard}
+            onChange={handleFollowCardChange}
+            label={`Follow the ${assignmentLevelLabel.toLowerCase()} dates`}
+          />
+        )}
+
+        {/* Info for linked phase/subphase assignments - staff mode only */}
+        {isStaff && isPhaseOrSubphase && followCard && (
+          <div className={styles.infoBox}>
+            <p>📌 This assignment uses the {assignmentLevelLabel.toLowerCase()}'s dates automatically.</p>
+          </div>
+        )}
+
+        {/* Date fields: project-level staff, own-dates card staff (bounded by the card), equipment */}
+        {(!isStaff || !isPhaseOrSubphase || ownCardDates) && (
           <div className={styles.formRow}>
             <DateRangeField
               startLabel="Start Date *"
@@ -503,18 +562,13 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
               fieldClassName={styles.field}
               start={startDate}
               end={endDate}
+              minDate={ownCardDates ? cardStart : undefined}
+              maxDate={ownCardDates ? cardEnd : undefined}
               onChange={({ start, end }) => {
                 setStartDate(start);
                 setEndDate(end);
               }}
             />
-          </div>
-        )}
-
-        {/* Info for phase/subphase assignments - staff mode only */}
-        {isStaff && isPhaseOrSubphase && (
-          <div className={styles.infoBox}>
-            <p>📌 This assignment uses the {assignmentLevelLabel.toLowerCase()}'s dates automatically.</p>
           </div>
         )}
       </form>

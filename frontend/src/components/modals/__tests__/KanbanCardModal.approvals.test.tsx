@@ -11,8 +11,8 @@ import { KanbanCardModal } from '../KanbanCardModal';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
-import { assignCard, unassignCard } from '@/api/endpoints/kanban';
-import { loadAllProjects, updateStaffAssignment } from '@/api/endpoints/projects';
+import { assignCard } from '@/api/endpoints/kanban';
+import { deleteStaffAssignment, loadAllProjects, updateStaffAssignment } from '@/api/endpoints/projects';
 import { approvalsApi } from '@/api/endpoints/approvals';
 import { makePhase, makeProject, makeUser } from '@/test/factories';
 import { USER_DEFAULTS } from '@/test/permissionFixtures';
@@ -33,6 +33,7 @@ vi.mock('@/api/endpoints/kanban', () => ({
 vi.mock('@/api/endpoints/projects', () => ({
   loadAllProjects: vi.fn(),
   updateStaffAssignment: vi.fn(),
+  deleteStaffAssignment: vi.fn(),
 }));
 
 vi.mock('@/api/endpoints/approvals', async (importOriginal) => ({
@@ -236,7 +237,7 @@ describe('KanbanCardModal self bookings and approval', () => {
   it('asks before requesting to leave and marks the row on a 202', async () => {
     seed(selfUser(4, 'approval', 'assignments.self_remove'));
     const confirm = stubConfirm(true);
-    vi.mocked(unassignCard).mockResolvedValue(PENDING);
+    vi.mocked(deleteStaffAssignment).mockResolvedValue(PENDING);
     render(<KanbanCardModal />);
     fireEvent.click(screen.getByLabelText('Remove Bob Brown'));
     await waitFor(() =>

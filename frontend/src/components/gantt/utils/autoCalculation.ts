@@ -18,6 +18,7 @@ import type { Project, Phase, Subphase, Dependency, DependencyType, StaffAssignm
 import { updatePhase, updateSubphase, updateProject, updateStaffAssignment, updateEquipmentAssignment } from '@/api/endpoints/projects';
 import { parseLocalDate, formatLocalDate, toDateOnly } from '@/utils/date';
 import { isPendingAssignment } from '@/utils/kanbanCards';
+import { fitCardBookingRows } from '@/utils/bookingSegments';
 
 // Accumulated updates to batch save to server
 export interface PendingUpdate {
@@ -36,9 +37,15 @@ export interface PendingUpdate {
   allocation?: number;
   /**
    * Staff assignment only: the route family to PUT (ids are unique per level).
-   * Absent = 'project', the only level whose rows carry dates of their own.
+   * Absent = 'project'. Phase / subphase updates are unlinked segments only
+   * (linked rows have no dates of their own).
    */
   level?: StaffAssignmentLevel;
+  /**
+   * Phase / subphase booking only: make it follow its card again (sent as
+   * null dates); `start_date` / `end_date` then hold the card's dates.
+   */
+  relink?: boolean;
   /**
    * Phase/subphase only: the full dependency list to write. Set by undo/redo
    * (diffProjects) when a snapshot's links differ from the current ones, so a
@@ -53,21 +60,16 @@ export interface PendingUpdate {
 const formatDateLocal = formatLocalDate;
 
 /**
- * Move staff assignments by offset.
- *
- * Only project-level rows have dates of their own: phase and subphase rows
- * follow their item, so they are never cascaded (their ids are unique per
- * level only, and a PUT on the project route would hit another row). Pending
- * rows are own bookings awaiting approval: they keep their requested dates
- * (an editor's write on one is refused by the server).
+ * Move project-level staff assignments by offset (they have dates of their
+ * own). Pending rows are own bookings awaiting approval: they keep their
+ * requested dates (an editor's write on one is refused by the server).
+ * Phase / subphase rows follow their card through `fitCardBookings`.
  */
 function moveStaffAssignmentsByOffset(
   assignments: StaffAssignment[],
-  level: StaffAssignmentLevel,
   dayOffset: number,
   pendingUpdates: PendingUpdate[]
 ): void {
-  if (level !== 'project') return;
   for (const assignment of assignments) {
     if (isPendingAssignment(assignment)) continue;
     // Skip assignments without valid dates
@@ -97,10 +99,41 @@ function moveStaffAssignmentsByOffset(
     pendingUpdates.push({
       type: 'staffAssignment',
       id: assignment.id,
-      level,
+      level: 'project',
       start_date: assignment.start_date,
       end_date: assignment.end_date,
       allocation: assignment.allocation ?? 100, // Backend requires allocation
+    });
+  }
+}
+
+/**
+ * Fit a card's bookings to the card's new dates (already set on `card`),
+ * the client half of the server's card PUT (`fit_segments_to_card`, mirrored
+ * by utils/bookingSegments.ts): linked rows take the card's dates locally (no
+ * write -- they have none of their own), unlinked segments are translated
+ * (same duration) or clamped. Every changed approved segment gets a
+ * `staffAssignment` update with its level; pending rows are fitted locally
+ * only (the server fits them in the card PUT, and an editor's write on a
+ * pending row is refused). `savePendingUpdates` sends these after the card
+ * updates, so a segment PUT never precedes its card's.
+ */
+export function fitCardBookings(
+  card: Phase | Subphase,
+  level: 'phase' | 'subphase',
+  oldStart: string,
+  oldEnd: string,
+  pendingUpdates: PendingUpdate[]
+): void {
+  for (const row of fitCardBookingRows(card, oldStart, oldEnd)) {
+    if (isPendingAssignment(row)) continue;
+    pendingUpdates.push({
+      type: 'staffAssignment',
+      id: row.id,
+      level,
+      start_date: row.start_date,
+      end_date: row.end_date,
+      allocation: row.allocation ?? 100,
     });
   }
 }
@@ -158,6 +191,8 @@ export function moveChildrenByOffset(
   pendingUpdates: PendingUpdate[]
 ): void {
   for (const child of children) {
+    const previousStart = child.start_date;
+    const previousEnd = child.end_date;
     const oldStart = parseLocalDate(child.start_date);
     const oldEnd = parseLocalDate(child.end_date);
     
@@ -177,10 +212,9 @@ export function moveChildrenByOffset(
       end_date: child.end_date,
     });
     
-    // Staff assignments on this subphase follow it (no dates of their own)
-    if (child.staffAssignments?.length) {
-      moveStaffAssignmentsByOffset(child.staffAssignments, 'subphase', dayOffset, pendingUpdates);
-    }
+    // Staff bookings on this subphase: linked rows follow it, unlinked
+    // segments move with it (same duration = translate).
+    fitCardBookings(child, 'subphase', previousStart, previousEnd, pendingUpdates);
     
     // Move equipment assignments on this subphase
     if (child.equipmentAssignments?.length) {
@@ -205,6 +239,8 @@ export function movePhasesWithProject(
   pendingUpdates: PendingUpdate[]
 ): void {
   for (const phase of project.phases ?? []) {
+    const previousStart = phase.start_date;
+    const previousEnd = phase.end_date;
     const oldStart = parseLocalDate(phase.start_date);
     const oldEnd = parseLocalDate(phase.end_date);
     
@@ -224,10 +260,9 @@ export function movePhasesWithProject(
       end_date: phase.end_date,
     });
     
-    // Staff assignments on this phase follow it (no dates of their own)
-    if (phase.staffAssignments?.length) {
-      moveStaffAssignmentsByOffset(phase.staffAssignments, 'phase', dayOffset, pendingUpdates);
-    }
+    // Staff bookings on this phase: linked rows follow it, unlinked segments
+    // move with it (same duration = translate).
+    fitCardBookings(phase, 'phase', previousStart, previousEnd, pendingUpdates);
     
     // Move equipment assignments on this phase
     if (phase.equipmentAssignments?.length) {
@@ -242,7 +277,7 @@ export function movePhasesWithProject(
   
   // Move project-level staff assignments
   if (project.staffAssignments?.length) {
-    moveStaffAssignmentsByOffset(project.staffAssignments, 'project', dayOffset, pendingUpdates);
+    moveStaffAssignmentsByOffset(project.staffAssignments, dayOffset, pendingUpdates);
   }
   
   // Move project-level equipment assignments
@@ -536,6 +571,8 @@ export function cascadeParentDatesUp(
     
     const currentStart = parseLocalDate(parent.start_date);
     const currentEnd = parseLocalDate(parent.end_date);
+    const previousStart = parent.start_date;
+    const previousEnd = parent.end_date;
     
     let needsUpdate = false;
     
@@ -558,6 +595,8 @@ export function cascadeParentDatesUp(
         start_date: parent.start_date,
         end_date: parent.end_date,
       });
+      // The parent's own bookings follow its new dates (a contraction clamps them).
+      fitCardBookings(parent, parentInfo.type, previousStart, previousEnd, pendingUpdates);
     }
     
     // Move up to the next parent
@@ -598,6 +637,8 @@ export function cascadePhaseDatesFromChildren(
   
   const currentStart = parseLocalDate(phase.start_date);
   const currentEnd = parseLocalDate(phase.end_date);
+  const previousStart = phase.start_date;
+  const previousEnd = phase.end_date;
   
   let needsUpdate = false;
   
@@ -620,6 +661,8 @@ export function cascadePhaseDatesFromChildren(
       start_date: phase.start_date,
       end_date: phase.end_date,
     });
+    // The phase's own bookings follow its new dates.
+    fitCardBookings(phase, 'phase', previousStart, previousEnd, pendingUpdates);
     
     // Also update project dates
     autoAdjustProjectDates(project, pendingUpdates);
@@ -747,8 +790,8 @@ function persistPendingUpdate(update: PendingUpdate): Promise<unknown> {
       return updateStaffAssignment(
         update.id,
         {
-          start_date: update.start_date,
-          end_date: update.end_date,
+          start_date: update.relink ? null : update.start_date,
+          end_date: update.relink ? null : update.end_date,
           allocation: update.allocation ?? 100, // Backend requires allocation
         },
         update.level ?? 'project'
@@ -763,8 +806,17 @@ function persistPendingUpdate(update: PendingUpdate): Promise<unknown> {
   }
 }
 
+/** Booking rows: written in the second wave, after the cards they sit on. */
+function isAssignmentUpdate(update: PendingUpdate): boolean {
+  return update.type === 'staffAssignment' || update.type === 'equipmentAssignment';
+}
+
 /**
- * Save all pending updates to the server.
+ * Save all pending updates to the server, in two waves: projects, phases and
+ * subphases first, then staff and equipment assignments. A card PUT fits its
+ * unlinked segments server-side, so a segment PUT sent before (or alongside)
+ * its card's would be overwritten -- an undo of a clamp would not restore
+ * the segment's dates.
  *
  * All updates are attempted; if any fails, a PendingUpdatesError listing the
  * failures is thrown after the others settle. Callers must treat that like
@@ -772,16 +824,23 @@ function persistPendingUpdate(update: PendingUpdate): Promise<unknown> {
  * (see utils/persistFailure.ts).
  */
 export async function savePendingUpdates(pendingUpdates: PendingUpdate[]): Promise<void> {
-  const results = await Promise.allSettled(pendingUpdates.map(persistPendingUpdate));
+  const waves = [
+    pendingUpdates.filter((u) => !isAssignmentUpdate(u)),
+    pendingUpdates.filter(isAssignmentUpdate),
+  ];
 
   const failures: PendingUpdateFailure[] = [];
-  results.forEach((result, i) => {
-    if (result.status === 'rejected') {
-      const update = pendingUpdates[i];
-      console.error(`Failed to save ${update.type} ${update.id}:`, result.reason);
-      failures.push({ update, error: result.reason });
-    }
-  });
+  for (const wave of waves) {
+    if (wave.length === 0) continue;
+    const results = await Promise.allSettled(wave.map(persistPendingUpdate));
+    results.forEach((result, i) => {
+      if (result.status === 'rejected') {
+        const update = wave[i];
+        console.error(`Failed to save ${update.type} ${update.id}:`, result.reason);
+        failures.push({ update, error: result.reason });
+      }
+    });
+  }
 
   if (failures.length > 0) {
     throw new PendingUpdatesError(failures, pendingUpdates.length);

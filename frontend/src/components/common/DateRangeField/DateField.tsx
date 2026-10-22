@@ -4,7 +4,7 @@ import { Input } from '../Input';
 import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import { formatMediumDate } from '@/utils/date';
 import { DatePickerPopover } from './DatePickerPopover';
-import { DATE_PLACEHOLDER, OPEN_KEYS } from './dateRangeLogic';
+import { clampDay, DATE_PLACEHOLDER, OPEN_KEYS } from './dateRangeLogic';
 import type { IsoDate } from './dateRangeLogic';
 import type { CommonDateFieldProps } from './DateRangeField';
 import styles from './DateRangeField.module.css';
@@ -40,6 +40,8 @@ export function DateField({
   fieldClassName,
   highlightWeekdays,
   markSiteCalendar = true,
+  minDate,
+  maxDate,
 }: DateFieldProps) {
   const [open, setOpen] = useState(false);
   /** Bumped on each keyboard activation, 0 after a mouse open (see DatePickerPopover). */
@@ -79,7 +81,7 @@ export function DateField({
   };
 
   const handleDayClick = (day: IsoDate) => {
-    onChange(day);
+    onChange(clampDay(day, minDate, maxDate));
     finish();
   };
 
@@ -128,6 +130,8 @@ export function DateField({
           }
           highlightWeekdays={highlightWeekdays}
           markSiteCalendar={markSiteCalendar}
+          minDate={minDate}
+          maxDate={maxDate}
         />
       )}
     </div>

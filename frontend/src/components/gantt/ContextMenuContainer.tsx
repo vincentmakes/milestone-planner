@@ -158,11 +158,14 @@ export function ContextMenuContainer() {
             // A project may have no dates yet; the assignment still needs some.
             const today = formatDateISO(new Date());
             try {
+              // On a phase / subphase the booking is linked (no dates: it
+              // follows the card); a project booking takes the project's days.
               const res = await createStaffAssignment({
                 staff_id: currentUser.id,
                 allocation: ownDefaultAllocation,
-                start_date: item.start_date || today,
-                end_date: item.end_date || today,
+                ...(type === 'project'
+                  ? { start_date: item.start_date || today, end_date: item.end_date || today }
+                  : {}),
                 project_id: type === 'project' ? targetId : projectId,
                 phase_id: type === 'phase' ? targetId : undefined,
                 subphase_id: type === 'subphase' ? targetId : undefined,
@@ -497,8 +500,10 @@ export function ContextMenuContainer() {
               staff_id: assignmentData?.staffId || 0,
               staff_name: assignmentData?.name || '',
               allocation: assignmentData?.allocation || 100,
-              start_date: assignmentData?.startDate || '',
-              end_date: assignmentData?.endDate || '',
+              // Effective dates: a card booking's own, or its card's when linked
+              start_date: assignmentData?.startDate || row?.start_date || '',
+              end_date: assignmentData?.endDate || row?.end_date || '',
+              linked: assignmentData?.linked ?? row?.linked,
             });
             openModal('staffAssignment', { projectId, phaseId, subphaseId });
           },

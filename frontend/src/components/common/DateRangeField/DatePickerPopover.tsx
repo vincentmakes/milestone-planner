@@ -128,6 +128,9 @@ export interface DatePickerPopoverProps {
   clear?: { label: string; disabled: boolean; onClick: () => void };
   highlightWeekdays?: readonly number[];
   markSiteCalendar: boolean;
+  /** Days before / after these (`YYYY-MM-DD`) are disabled. */
+  minDate?: IsoDate;
+  maxDate?: IsoDate;
 }
 
 export function DatePickerPopover({
@@ -142,6 +145,8 @@ export function DatePickerPopover({
   clear,
   highlightWeekdays,
   markSiteCalendar,
+  minDate,
+  maxDate,
 }: DatePickerPopoverProps) {
   const phone = usePhoneLayout();
   const numberOfMonths = phone ? 1 : 2;
@@ -206,6 +211,15 @@ export function DatePickerPopover({
       recurring: highlightWeekdays && highlightWeekdays.length > 0 ? { dayOfWeek: [...highlightWeekdays] } : false,
     }),
     [markSiteCalendar, bankHolidayDates, closureIndex, previewFrom, previewTo, highlightWeekdays]
+  );
+
+  // Days outside the bounds cannot be picked (DayPicker renders them disabled).
+  const disabledDays = useMemo(
+    () => [
+      ...(minDate ? [{ before: parseLocalDate(minDate) }] : []),
+      ...(maxDate ? [{ after: parseLocalDate(maxDate) }] : []),
+    ],
+    [minDate, maxDate]
   );
 
   // ---- placement ----
@@ -305,6 +319,7 @@ export function DatePickerPopover({
     captionLayout: 'dropdown' as const,
     modifiers,
     modifiersClassNames: MODIFIER_CLASSES,
+    disabled: disabledDays.length > 0 ? disabledDays : undefined,
     components: COMPONENTS,
     labels,
     onDayClick: handleDayClick,

@@ -343,3 +343,61 @@ describe('ProjectTimeline gestures', () => {
     expect(screen.getByTitle('Bob Brown (40%)').querySelector('.resize-handle')).toBeNull();
   });
 });
+
+describe('ProjectTimeline card bookings (linked / unlinked)', () => {
+  function withSegment(): Project {
+    const project = buildProject();
+    project.phases[0].staffAssignments = [
+      { id: 71, staff_id: 4, staff_name: 'Bob Brown', allocation: 30, start_date: '2026-09-01', end_date: '2026-09-20', linked: true },
+      { id: 73, staff_id: 5, staff_name: 'Cleo Chen', allocation: 60, start_date: '2026-09-07', end_date: '2026-09-09', linked: false },
+    ];
+    project.phases[0].children[0].staffAssignments = [
+      { id: 81, staff_id: 4, staff_name: 'Bob Brown', allocation: 20, start_date: '2026-09-03', end_date: '2026-09-04', linked: false },
+    ];
+    return project;
+  }
+
+  it('draws an unlinked segment at its own dates, movable and resizable within the card', () => {
+    renderTimeline(withSegment());
+    const segment = screen.getByTitle('Cleo Chen (60%)');
+    expect(segment).toHaveAttribute('data-start', '2026-09-07');
+    expect(segment).toHaveAttribute('data-end', '2026-09-09');
+    expect(segment.className).toMatch(/interactive/);
+
+    fireEvent.mouseDown(segment, { clientX: 0 });
+    expect(useUIStore.getState()).toMatchObject({ dragType: 'staffAssignment', dragItemId: 73 });
+    fireEvent.mouseUp(document);
+
+    const handles = segment.querySelectorAll('.resize-handle');
+    expect(handles).toHaveLength(2);
+    fireEvent.mouseDown(handles[1], { clientX: 0 });
+    expect(useUIStore.getState()).toMatchObject({ isResizing: true, resizeItemType: 'staffAssignment', resizeItemId: 73 });
+    fireEvent.mouseUp(document);
+
+    // A subphase segment too
+    const subSegment = screen.getByTitle('Bob Brown (20%)');
+    expect(subSegment).toHaveAttribute('data-start', '2026-09-03');
+    fireEvent.mouseDown(subSegment, { clientX: 0 });
+    expect(useUIStore.getState()).toMatchObject({ dragType: 'staffAssignment', dragItemId: 81 });
+    fireEvent.mouseUp(document);
+  });
+
+  it('keeps a linked booking read-only, spanning its card', () => {
+    renderTimeline(withSegment());
+    const linked = screen.getByTitle('Bob Brown (30%)');
+    expect(linked).toHaveAttribute('data-start', '2026-09-01');
+    expect(linked).toHaveAttribute('data-end', '2026-09-20');
+    expect(linked.className).not.toMatch(/interactive/);
+    expect(linked.querySelector('.resize-handle')).toBeNull();
+    fireEvent.mouseDown(linked, { clientX: 0 });
+    expect(useUIStore.getState().isDragging).toBe(false);
+  });
+
+  it("keeps someone else's segment read-only for a plain user", () => {
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'user' }) });
+    renderTimeline(withSegment());
+    expect(screen.getByTitle('Cleo Chen (60%)').querySelector('.resize-handle')).toBeNull();
+    // ...while their own segment may move
+    expect(screen.getByTitle('Bob Brown (20%)').querySelectorAll('.resize-handle')).toHaveLength(2);
+  });
+});

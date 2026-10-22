@@ -95,3 +95,11 @@ export function initialMonth(state: RangeState, numberOfMonths: number, today: I
   }
   return month;
 }
+
+/** A day kept within the optional bounds (`minDate` / `maxDate`); empty stays empty. */
+export function clampDay(day: IsoDate, minDate?: IsoDate, maxDate?: IsoDate): IsoDate {
+  if (!day) return day;
+  if (minDate && day < minDate) return minDate;
+  if (maxDate && day > maxDate) return maxDate;
+  return day;
+}

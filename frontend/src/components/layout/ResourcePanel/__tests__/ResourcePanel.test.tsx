@@ -10,7 +10,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useViewStore } from '@/stores/viewStore';
 import { resetAllStores } from '@/stores';
-import { formatDateISO } from '@/utils/date';
+import { addDaysToDateString, formatDateISO } from '@/utils/date';
 import {
   makeEquipment,
   makePhase,
@@ -139,6 +139,37 @@ describe('ResourcePanel', () => {
     });
     render(<ResourcePanel />);
     // Only the approved 30 % counts.
+    expect(card('Bob Brown')).toHaveTextContent('70%');
+  });
+
+  it("counts an unlinked card booking on its own days only, a linked one over its card", () => {
+    // Phase and subphase span today; Bob's unlinked segments do not include it.
+    const yesterday = addDaysToDateString(today, -1);
+    const tomorrow = addDaysToDateString(today, 1);
+    const later = addDaysToDateString(today, 5);
+    const sub = makeSubphase({
+      start_date: yesterday,
+      end_date: later,
+      staffAssignments: [
+        { ...assignment(4, 10), linked: false, start_date: tomorrow, end_date: later },
+        { ...assignment(4, 5), linked: true, start_date: yesterday, end_date: later },
+      ],
+    });
+    const phase = makePhase({
+      start_date: yesterday,
+      end_date: later,
+      staffAssignments: [
+        { ...assignment(4, 20), linked: false, start_date: yesterday, end_date: yesterday },
+        { ...assignment(4, 25), linked: false, start_date: today, end_date: tomorrow },
+      ],
+      children: [sub],
+    });
+    useAppStore.setState({
+      staff: [makeStaff({ id: 4, name: 'Bob Brown' })],
+      projects: [makeProject({ phases: [phase] })],
+    });
+    render(<ResourcePanel />);
+    // Today: the 25 % segment and the linked 5 % -> 70 % left
     expect(card('Bob Brown')).toHaveTextContent('70%');
   });
 

@@ -130,3 +130,34 @@ describe('ResourceDropOverlay in America/New_York', () => {
     expect(useUIStore.getState().resourceDrag.active).toBe(false);
   });
 });
+
+describe('ResourceDropOverlay on a phase', () => {
+  it('creates a linked booking: no dates, it follows the phase', async () => {
+    const withPhase = {
+      ...project,
+      phases: [{ id: 10, name: 'Design', start_date: '2026-03-02', end_date: '2026-03-13', children: [] }],
+    } as unknown as Project;
+    useAppStore.setState({ projects: [withPhase] });
+    const container = document.createElement('div');
+    container.getBoundingClientRect = () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => ({}) });
+    const { container: host } = render(
+      <ResourceDropOverlay
+        projects={[withPhase]}
+        cells={cells}
+        cellWidth={CELL_WIDTH}
+        totalWidth={cells.length * CELL_WIDTH}
+        containerRef={{ current: container }}
+        rowPositions={new Map([['project-1', { top: 0, height: 32 }], ['phase-10', { top: 32, height: 32 }]])}
+      />
+    );
+    const overlay = host.firstChild as HTMLElement;
+    fireDrag('dragOver', overlay, 120, 40);
+    fireDrag('drop', overlay, 120, 40);
+    await act(async () => {});
+
+    expect(createStaffAssignment).toHaveBeenCalledWith(expect.objectContaining({ staff_id: 7, phase_id: 10, project_id: 1 }));
+    const body = vi.mocked(createStaffAssignment).mock.calls[0][0];
+    expect(body).not.toHaveProperty('start_date');
+    expect(body).not.toHaveProperty('end_date');
+  });
+});

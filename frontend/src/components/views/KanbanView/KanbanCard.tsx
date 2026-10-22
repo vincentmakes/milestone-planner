@@ -8,6 +8,7 @@ import { dueStateOf } from '@/utils/kanbanCards';
 import { formatDateShort, parseDateISO } from '@/utils/date';
 import { avatarColorFor } from '@/utils/avatarColor';
 import { isPendingAssignment } from '@/utils/kanbanCards';
+import { groupCardBookings } from '@/utils/bookingSegments';
 import { PendingBadge } from '@/components/common/PendingBadge';
 import { useAppStore } from '@/stores/appStore';
 import styles from './KanbanCard.module.css';
@@ -105,16 +106,19 @@ export function KanbanCard({
 
       <div className={styles.footer}>
         <div className={styles.avatars}>
-          {card.assignments.map((a) => {
-            const pending = isPendingAssignment(a);
+          {/* One avatar per person: someone may hold several bookings (segments) on a card */}
+          {Array.from(groupCardBookings(card.assignments), ([staffId, rows]) => {
+            // Dashed only while none of their bookings is approved yet
+            const pending = rows.every((a) => isPendingAssignment(a));
+            const name = rows[0].staff_name;
             return (
               <span
-                key={a.id}
+                key={staffId}
                 className={pending ? `${styles.avatar} ${styles.pendingAvatar}` : styles.avatar}
-                style={{ background: avatarColorFor(a.staff_id) }}
-                title={`${a.staff_name ?? 'Staff'} - ${a.allocation}%${pending ? ' (pending approval)' : ''}`}
+                style={{ background: avatarColorFor(staffId) }}
+                title={`${name ?? 'Staff'} - ${rows.map((a) => `${a.allocation}%`).join(', ')}${pending ? ' (pending approval)' : ''}`}
               >
-                {initials(a.staff_name ?? '?')}
+                {initials(name ?? '?')}
               </span>
             );
           })}

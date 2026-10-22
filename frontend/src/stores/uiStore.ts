@@ -273,6 +273,8 @@ interface UIState {
       allocation?: number;
       startDate?: string;
       endDate?: string;
+      /** Phase / subphase bookings: follows the card (true) or has its own dates */
+      linked?: boolean;
     };
   };
   
@@ -401,6 +403,7 @@ interface UIState {
       allocation?: number;
       startDate?: string;
       endDate?: string;
+      linked?: boolean;
     }
   ) => void;
   hideContextMenu: () => void;

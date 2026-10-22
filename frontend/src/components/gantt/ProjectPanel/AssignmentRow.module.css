@@ -81,3 +81,18 @@
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* The pin of a phase / subphase booking, as a toggle (follow the card / own dates) */
+.pinBadge {
+  border: 1px solid transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.pinBadge:hover {
+  border-color: currentColor;
+}
+
+.pinBadge[aria-pressed="true"] {
+  border-color: currentColor;
+}

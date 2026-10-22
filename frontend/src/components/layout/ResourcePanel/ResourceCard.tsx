@@ -17,6 +17,7 @@ import { formatDateISO, parseLocalDate } from '@/utils/date';
 import { canBookSelf, canManageAnyProject } from '@/utils/permissions';
 import { isPendingAssignment } from '@/utils/kanbanCards';
 import styles from './ResourceCard.module.css';
+import { bookingSpan } from '@/utils/bookingSegments';
 
 interface ResourceCardProps {
   resource: Staff | Equipment;
@@ -72,11 +73,12 @@ function calculateStaffAllocationToday(
       }
     }
     
-    // Phase-level assignments - check if phase dates contain today
+    // Phase-level assignments - check if the booking's effective dates (own
+    // when unlinked, else the phase's) contain today
     for (const phase of project.phases || []) {
       for (const assignment of phase.staffAssignments || []) {
         if (assignment.staff_id === staffId && !isPendingAssignment(assignment) &&
-            isActiveToday(phase.start_date, phase.end_date, today)) {
+            isActiveToday(bookingSpan(assignment, phase).start, bookingSpan(assignment, phase).end, today)) {
           total += assignment.allocation || 0;
         }
       }
@@ -86,7 +88,7 @@ function calculateStaffAllocationToday(
         for (const subphase of subphases || []) {
           for (const assignment of subphase.staffAssignments || []) {
             if (assignment.staff_id === staffId && !isPendingAssignment(assignment) &&
-                isActiveToday(subphase.start_date, subphase.end_date, today)) {
+                isActiveToday(bookingSpan(assignment, subphase).start, bookingSpan(assignment, subphase).end, today)) {
               total += assignment.allocation || 0;
             }
           }

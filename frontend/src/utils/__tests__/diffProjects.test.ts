@@ -4,7 +4,7 @@
  * on undo, not only the dates.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Project, Phase, Subphase, Dependency } from '@/types';
+import type { Project, Phase, Subphase, Dependency, StaffAssignment } from '@/types';
 
 vi.mock('@/api/endpoints/projects', () => ({
   updatePhase: vi.fn(async () => ({})),
@@ -116,6 +116,75 @@ describe('diffProjects', () => {
   });
 });
 
+describe('diffProjects card bookings (unlinked segments)', () => {
+  const row = (over: Partial<StaffAssignment>): StaffAssignment => ({
+    id: 5,
+    staff_id: 4,
+    allocation: 40,
+    start_date: '2026-03-03',
+    end_date: '2026-03-05',
+    linked: false,
+    ...over,
+  });
+  const withRows = <T extends Phase | Subphase>(card: T, rows: StaffAssignment[]): T => ({ ...card, staffAssignments: rows });
+
+  it('restores an unlinked segment of a phase and of a subphase with its level', () => {
+    const current = project([
+      withRows(phase(10, '2026-03-02', '2026-03-13', [], [withRows(sub(20, '2026-03-02', '2026-03-06'), [row({ id: 6, start_date: '2026-03-04', end_date: '2026-03-04' })])]), [
+        row({ start_date: '2026-03-10', end_date: '2026-03-12' }),
+      ]),
+    ]);
+    const snapshot = project([
+      withRows(phase(10, '2026-03-02', '2026-03-13', [], [withRows(sub(20, '2026-03-02', '2026-03-06'), [row({ id: 6, start_date: '2026-03-03', end_date: '2026-03-04' })])]), [
+        row({}),
+      ]),
+    ]);
+
+    expect(diffProjects([current], [snapshot])).toEqual([
+      { type: 'staffAssignment', id: 5, level: 'phase', start_date: '2026-03-03', end_date: '2026-03-05', allocation: 40 },
+      { type: 'staffAssignment', id: 6, level: 'subphase', start_date: '2026-03-03', end_date: '2026-03-04', allocation: 40 },
+    ]);
+  });
+
+  it('unlinks again a row the snapshot had unlinked, and relinks one it had linked', () => {
+    const current = project([
+      withRows(phase(10, '2026-03-02', '2026-03-13'), [
+        row({ id: 5, linked: true, start_date: '2026-03-02', end_date: '2026-03-13' }),
+        row({ id: 6 }),
+      ]),
+    ]);
+    const snapshot = project([
+      withRows(phase(10, '2026-03-02', '2026-03-13'), [
+        row({ id: 5 }),
+        row({ id: 6, linked: true, start_date: '2026-03-02', end_date: '2026-03-13' }),
+      ]),
+    ]);
+
+    expect(diffProjects([current], [snapshot])).toEqual([
+      { type: 'staffAssignment', id: 5, level: 'phase', start_date: '2026-03-03', end_date: '2026-03-05', allocation: 40 },
+      { type: 'staffAssignment', id: 6, level: 'phase', start_date: '2026-03-02', end_date: '2026-03-13', allocation: 40, relink: true },
+    ]);
+  });
+
+  it('skips linked rows, pending rows and rows missing on one side', () => {
+    const current = project([
+      withRows(phase(10, '2026-03-09', '2026-03-20'), [
+        row({ id: 5, linked: true, start_date: '2026-03-09', end_date: '2026-03-20' }),
+        row({ id: 6, approval_status: 'pending', start_date: '2026-03-10', end_date: '2026-03-12' }),
+      ]),
+    ]);
+    const snapshot = project([
+      withRows(phase(10, '2026-03-02', '2026-03-13'), [
+        row({ id: 5, linked: true, start_date: '2026-03-02', end_date: '2026-03-13' }),
+        row({ id: 6, approval_status: 'pending' }),
+        row({ id: 7 }),
+      ]),
+    ]);
+
+    expect(diffProjects([current], [snapshot]).filter((u) => u.type === 'staffAssignment')).toEqual([]);
+  });
+});
+
 describe('savePendingUpdates', () => {
   beforeEach(() => {
     vi.mocked(updatePhase).mockClear();
@@ -136,5 +205,23 @@ describe('savePendingUpdates', () => {
   it('leaves dependencies untouched for date-only updates', async () => {
     await savePendingUpdates([{ type: 'phase', id: 10, start_date: '2026-03-02', end_date: '2026-03-06' }]);
     expect(updatePhase).toHaveBeenCalledWith(10, { start_date: '2026-03-02', end_date: '2026-03-06' });
+  });
+});
+
+describe('diffProjects card bookings: date formats', () => {
+  it('reads the midnight ISO form and the calendar day as the same date', () => {
+    const rowOf = (start: string, end: string) =>
+      ({ id: 5, staff_id: 4, allocation: 40, start_date: start, end_date: end, linked: false }) as StaffAssignment;
+    const current = project([{ ...phase(10, '2026-03-02', '2026-03-13'), staffAssignments: [rowOf('2026-03-03', '2026-03-05')] }]);
+    const same = project([
+      { ...phase(10, '2026-03-02', '2026-03-13'), staffAssignments: [rowOf('2026-03-03T00:00:00.000Z', '2026-03-05T00:00:00.000Z')] },
+    ]);
+    expect(diffProjects([current], [same])).toEqual([]);
+    const moved = project([
+      { ...phase(10, '2026-03-02', '2026-03-13'), staffAssignments: [rowOf('2026-03-04T00:00:00.000Z', '2026-03-06T00:00:00.000Z')] },
+    ]);
+    expect(diffProjects([current], [moved])).toEqual([
+      { type: 'staffAssignment', id: 5, level: 'phase', start_date: '2026-03-04', end_date: '2026-03-06', allocation: 40 },
+    ]);
   });
 });

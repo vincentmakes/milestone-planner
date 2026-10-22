@@ -38,6 +38,7 @@ export {
   processSubphaseMove,
   moveChildrenByOffset,
   movePhasesWithProject,
+  fitCardBookings,
   cloneProject,
 } from './autoCalculation';
 export type { PendingUpdate } from './autoCalculation';
@@ -50,6 +51,9 @@ export {
 export type { CriticalPathResult } from './criticalPath';
 
 export { diffProjects } from './diffProjects';
+
+export { pixelOfDate } from './timelinePixels';
+export type { DomTimelineCell } from './timelinePixels';
 
 export {
   buildProjectSections,

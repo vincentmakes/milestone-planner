@@ -269,3 +269,10 @@
   justify-content: flex-end;
   gap: 4px;
 }
+
+/* An unlinked booking's own dates, after the name */
+.assigneeName .segmentDates {
+  margin-left: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}

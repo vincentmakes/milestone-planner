@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+  fitCardBookings,
   autoAdjustProjectDates,
   cascadeDependentPhases,
   cascadeDependentSubphases,
@@ -24,10 +25,11 @@ import {
   updatePhase,
   updateProject,
   updateSubphase,
+  updateStaffAssignment,
   updateEquipmentAssignment,
 } from '@/api/endpoints/projects';
 import { makePhase, makeProject, makeSubphase } from '@/test/factories';
-import type { DependencyType, Project } from '@/types';
+import type { DependencyType, Project, StaffAssignment } from '@/types';
 
 vi.mock('@/api/endpoints/projects', () => ({
   updatePhase: vi.fn(),
@@ -236,7 +238,8 @@ describe('moving bookings with their parents', () => {
           id: 10,
           start_date: '2026-03-02',
           end_date: '2026-03-06',
-          // Phase/subphase staff rows follow their item: never cascaded
+          // Linked phase/subphase staff rows follow their item: never written
+          // (unlinked segments: see "unlinked card bookings" below)
           staffAssignments: [{ id: 11, staff_id: 4, allocation: 50, start_date: '2026-03-02', end_date: '2026-03-03' }],
           equipmentAssignments: [
             { id: 2, equipment_id: 1, start_date: '2026-03-04', end_date: '2026-03-05' },
@@ -337,5 +340,193 @@ describe('savePendingUpdates per type', () => {
       confirmed: true,
     });
     expect(updateEquipmentAssignment).toHaveBeenCalledWith(5, { start_date: 'a', end_date: 'b' });
+  });
+});
+
+const seg = (id: number, start: string, end: string, over: Partial<StaffAssignment> = {}): StaffAssignment => ({
+  id,
+  staff_id: 4,
+  allocation: 40,
+  start_date: start,
+  end_date: end,
+  linked: false,
+  ...over,
+});
+const linkedRow = (id: number, start: string, end: string): StaffAssignment => ({
+  id,
+  staff_id: 5,
+  allocation: 60,
+  start_date: start,
+  end_date: end,
+  linked: true,
+});
+
+describe('unlinked card bookings follow their card (mirror of the card PUT)', () => {
+  it('translates the unlinked segments of moved phases and subphases, with their level', () => {
+    const project = makeProject({
+      id: 1,
+      phases: [
+        makePhase({
+          id: 10,
+          start_date: '2026-03-02',
+          end_date: '2026-03-13',
+          staffAssignments: [
+            linkedRow(1, '2026-03-02', '2026-03-13'),
+            seg(2, '2026-03-03', '2026-03-05'),
+            seg(3, '2026-03-09', '2026-03-11', { approval_status: 'pending' }),
+          ],
+          children: [
+            makeSubphase({
+              id: 20,
+              start_date: '2026-03-02',
+              end_date: '2026-03-06',
+              staffAssignments: [seg(2, '2026-03-04', '2026-03-04')],
+            }),
+          ],
+        }),
+      ],
+    });
+    const updates: PendingUpdate[] = [];
+
+    movePhasesWithProject(project, 7, updates);
+
+    const staffUpdates = updates.filter((u) => u.type === 'staffAssignment');
+    expect(staffUpdates).toEqual([
+      { type: 'staffAssignment', id: 2, level: 'phase', start_date: '2026-03-10', end_date: '2026-03-12', allocation: 40 },
+      { type: 'staffAssignment', id: 2, level: 'subphase', start_date: '2026-03-11', end_date: '2026-03-11', allocation: 40 },
+    ]);
+    const [linked, moved, pending] = project.phases[0].staffAssignments;
+    // Linked: no write, the card's dates locally. Pending: fitted locally only.
+    expect([linked.start_date, linked.end_date]).toEqual(['2026-03-09', '2026-03-20']);
+    expect(moved.start_date).toBe('2026-03-10');
+    expect([pending.start_date, pending.end_date]).toEqual(['2026-03-16', '2026-03-18']);
+  });
+
+  it('clamps the segments of a parent the cascade contracts', () => {
+    const project = makeProject({
+      id: 1,
+      start_date: '2026-03-02',
+      end_date: '2026-03-13',
+      phases: [
+        makePhase({
+          id: 10,
+          start_date: '2026-03-02',
+          end_date: '2026-03-13',
+          staffAssignments: [seg(5, '2026-03-09', '2026-03-12')],
+          children: [makeSubphase({ id: 20, start_date: '2026-03-02', end_date: '2026-03-10' })],
+        }),
+      ],
+    });
+    const updates: PendingUpdate[] = [];
+
+    cascadeParentDatesUp(project, 20, updates);
+
+    expect(project.phases[0].end_date).toBe('2026-03-10');
+    expect(updates).toContainEqual({
+      type: 'staffAssignment',
+      id: 5,
+      level: 'phase',
+      start_date: '2026-03-09',
+      end_date: '2026-03-10',
+      allocation: 40,
+    });
+  });
+
+  it('fits the phase bookings when the phase takes its children\'s dates', () => {
+    const project = makeProject({
+      id: 1,
+      start_date: '2026-03-02',
+      end_date: '2026-03-13',
+      phases: [
+        makePhase({
+          id: 10,
+          start_date: '2026-03-02',
+          end_date: '2026-03-13',
+          staffAssignments: [seg(5, '2026-03-02', '2026-03-03')],
+          children: [makeSubphase({ id: 20, start_date: '2026-03-09', end_date: '2026-03-13' })],
+        }),
+      ],
+    });
+    const updates: PendingUpdate[] = [];
+
+    cascadePhaseDatesFromChildren(project, 10, updates);
+
+    // Fully before the new start: against it, length kept
+    expect(updates).toContainEqual(
+      expect.objectContaining({ type: 'staffAssignment', id: 5, level: 'phase', start_date: '2026-03-09', end_date: '2026-03-10' })
+    );
+  });
+
+  it('fitCardBookings writes nothing when the card kept its dates', () => {
+    const card = makeSubphase({ id: 20, start_date: '2026-03-02', end_date: '2026-03-06', staffAssignments: [seg(2, '2026-03-03', '2026-03-04')] });
+    const updates: PendingUpdate[] = [];
+    fitCardBookings(card, 'subphase', '2026-03-02', '2026-03-06', updates);
+    expect(updates).toEqual([]);
+  });
+
+  it('savePendingUpdates writes the cards first, then the bookings (two waves)', async () => {
+    const order: string[] = [];
+    let releasePhase: () => void = () => {};
+    vi.mocked(updatePhase).mockReset().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releasePhase = () => {
+            order.push('phase done');
+            resolve({} as never);
+          };
+        })
+    );
+    vi.mocked(updateStaffAssignment).mockReset().mockImplementation(async () => {
+      order.push('segment');
+      return {} as never;
+    });
+    vi.mocked(updateEquipmentAssignment).mockReset().mockImplementation(async () => {
+      order.push('equipment');
+      return {} as never;
+    });
+
+    // The booking is listed first: the waves, not the list order, decide.
+    const saving = savePendingUpdates([
+      { type: 'staffAssignment', id: 2, level: 'phase', start_date: '2026-03-10', end_date: '2026-03-12', allocation: 40 },
+      { type: 'equipmentAssignment', id: 3, start_date: '2026-03-10', end_date: '2026-03-12' },
+      { type: 'phase', id: 10, start_date: '2026-03-09', end_date: '2026-03-20' },
+    ]);
+    await Promise.resolve();
+    expect(updateStaffAssignment).not.toHaveBeenCalled();
+    expect(updateEquipmentAssignment).not.toHaveBeenCalled();
+
+    releasePhase();
+    await saving;
+
+    expect(order).toEqual(['phase done', 'segment', 'equipment']);
+    expect(updateStaffAssignment).toHaveBeenCalledWith(
+      2,
+      { start_date: '2026-03-10', end_date: '2026-03-12', allocation: 40 },
+      'phase'
+    );
+  });
+
+  it('a failed card still lets its bookings be attempted, and every failure is reported', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(updatePhase).mockReset().mockRejectedValue(new Error('card failed'));
+    vi.mocked(updateStaffAssignment).mockReset().mockRejectedValue(new Error('segment failed'));
+
+    await expect(
+      savePendingUpdates([
+        { type: 'phase', id: 10, start_date: 'a', end_date: 'b' },
+        { type: 'staffAssignment', id: 2, level: 'phase', start_date: 'a', end_date: 'b', allocation: 40 },
+      ])
+    ).rejects.toMatchObject({ name: 'PendingUpdatesError', total: 2, failures: [
+      expect.objectContaining({ update: expect.objectContaining({ type: 'phase' }) }),
+      expect.objectContaining({ update: expect.objectContaining({ type: 'staffAssignment' }) }),
+    ] });
+  });
+
+  it('a relink update sends null dates', async () => {
+    vi.mocked(updateStaffAssignment).mockReset().mockResolvedValue({} as never);
+    await savePendingUpdates([
+      { type: 'staffAssignment', id: 2, level: 'subphase', start_date: '2026-03-02', end_date: '2026-03-06', allocation: 40, relink: true },
+    ]);
+    expect(updateStaffAssignment).toHaveBeenCalledWith(2, { start_date: null, end_date: null, allocation: 40 }, 'subphase');
   });
 });

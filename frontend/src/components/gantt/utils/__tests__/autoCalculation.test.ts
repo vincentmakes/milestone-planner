@@ -150,12 +150,13 @@ describe('autoCalculation dates in America/New_York', () => {
     expect(updates).toEqual([expect.objectContaining({ type: 'staffAssignment', id: 7, level: 'project' })]);
   });
 
-  // Regression (RBAC): phase/subphase staff rows have no dates of their own
-  // (they follow their item) and their ids are only unique per level, so a
-  // cascaded update for one used to PUT /api/assignments/{id} -- the
-  // project-level row that happens to share the id. A pending row is a
-  // request awaiting approval: an editor's PUT on it is a 409.
-  it('never cascades phase/subphase staff rows or pending rows', () => {
+  // Regression (RBAC): linked phase/subphase staff rows have no dates of
+  // their own (they follow their item) and their ids are only unique per
+  // level, so a cascaded update for one used to PUT /api/assignments/{id} --
+  // the project-level row that happens to share the id. A pending row is a
+  // request awaiting approval: an editor's PUT on it is a 409. (Unlinked
+  // segments are fitted with their card: autoCalculation.cascades.test.ts.)
+  it('never writes linked phase/subphase staff rows or pending rows', () => {
     const dated = { staff_id: 2, allocation: 40, start_date: '2026-03-02', end_date: '2026-03-04' };
     const child = sub(2, '2026-03-02', '2026-03-04');
     child.staffAssignments = [{ id: 7, ...dated }];
@@ -170,9 +171,9 @@ describe('autoCalculation dates in America/New_York', () => {
     movePhasesWithProject(p, 7, updates);
 
     expect(updates.filter((u) => u.type === 'staffAssignment')).toEqual([]);
-    // Nothing moved locally either: the rows follow their item / await a decision.
-    expect(ph.staffAssignments[0].start_date).toBe('2026-03-02');
-    expect(child.staffAssignments[0].start_date).toBe('2026-03-02');
+    // Linked rows show their item's new dates locally; the pending row awaits a decision.
+    expect(ph.staffAssignments[0].start_date).toBe('2026-03-09');
+    expect(child.staffAssignments[0].start_date).toBe('2026-03-09');
     expect(p.staffAssignments[0].start_date).toBe('2026-03-02');
   });
 

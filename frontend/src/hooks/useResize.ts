@@ -11,7 +11,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { updatePhase, updateSubphase, updateStaffAssignment, updateEquipmentAssignment } from '@/api/endpoints/projects';
-import { parseLocalDate, addDaysToDateString, daysBetweenDateStrings } from '@/utils/date';
+import { parseLocalDate, addDaysToDateString, daysBetweenDateStrings, toDateOnly } from '@/utils/date';
 import { recoverFromPersistFailure } from '@/utils/persistFailure';
 import { reloadAfterPendingWrite } from '@/utils/pendingBookings';
 import { isPendingResponse } from '@/api/endpoints/approvals';
@@ -21,11 +21,16 @@ import {
   processPhaseMove,
   processSubphaseMove,
   savePendingUpdates,
-  cloneProject
+  cloneProject,
+  fitCardBookings,
+  pixelOfDate,
 } from '@/components/gantt/utils';
 import type { PendingUpdate } from '@/components/gantt/utils';
 import { canBookEquipmentById, canEditProjectById, canEditAssignment } from '@/utils/permissions';
-import type { ViewMode, Subphase } from '@/types';
+import type { ViewMode, Subphase, StaffAssignmentLevel } from '@/types';
+import type { DateSpan } from '@/utils/bookingSegments';
+import { findStaffAssignment } from '@/utils/localProjectTree';
+import type { CardBookingDrag } from './useDragAndDrop';
 
 type ResizeEdge = 'left' | 'right';
 
@@ -43,6 +48,20 @@ interface ResizeData {
   originalInlineWidth: string;
   originalStartDate: string;
   originalEndDate: string;
+  /** Staff bookings: the route family (ids are unique per level only). */
+  level?: StaffAssignmentLevel;
+  /** An unlinked phase / subphase booking stays inside its card's dates. */
+  bounds?: DateSpan;
+}
+
+/** The moved edge kept inside the card: the start never before it, the end never after it. */
+function keepEdgeInside(start: string, end: string, bounds: DateSpan | undefined): DateSpan {
+  if (!bounds) return { start, end };
+  const s = toDateOnly(start);
+  const e = toDateOnly(end);
+  const bs = toDateOnly(bounds.start);
+  const be = toDateOnly(bounds.end);
+  return { start: s < bs ? bs : s, end: e > be ? be : e };
 }
 
 export function useResize() {
@@ -245,28 +264,38 @@ export function useResize() {
     
     let newLeft = data.originalLeft;
     let newWidth = data.originalWidth;
-    
-    // Update element size/position visually
-    if (data.element) {
+    if (data.edge === 'left') {
+      newLeft = data.originalLeft + deltaX;
+      newWidth = data.originalWidth - deltaX;
+    } else {
+      newWidth = data.originalWidth + deltaX;
+    }
+
+    const cells = getTimelineCellsFromDOM();
+    // An unlinked card booking never leaves its card: the edge stops there.
+    if (data.bounds && cells && cells.length > 0) {
       if (data.edge === 'left') {
-        // Resizing from left: move left edge, adjust width
-        newLeft = data.originalLeft + deltaX;
-        newWidth = data.originalWidth - deltaX;
-        if (newWidth >= currentCellWidth) { // Minimum 1 cell width
-          data.element.style.left = `${newLeft}px`;
-          data.element.style.width = `${newWidth}px`;
+        const start = calculateDateFromPosition(newLeft, cells, currentCellWidth, currentViewMode, 'left');
+        if (start && start < data.bounds.start) {
+          const rightEdge = data.originalLeft + data.originalWidth;
+          newLeft = pixelOfDate(data.bounds.start, cells, currentCellWidth, currentViewMode);
+          newWidth = rightEdge - newLeft;
         }
       } else {
-        // Resizing from right: just adjust width
-        newWidth = data.originalWidth + deltaX;
-        if (newWidth >= currentCellWidth) { // Minimum 1 cell width
-          data.element.style.width = `${newWidth}px`;
+        const end = calculateDateFromPosition(newLeft + newWidth, cells, currentCellWidth, currentViewMode, 'right');
+        if (end && end > data.bounds.end) {
+          newWidth = pixelOfDate(addDaysToDateString(data.bounds.end, 1), cells, currentCellWidth, currentViewMode) - newLeft;
         }
       }
     }
     
+    // Update element size/position visually (minimum 1 cell width)
+    if (data.element && newWidth >= currentCellWidth) {
+      if (data.edge === 'left') data.element.style.left = `${newLeft}px`;
+      data.element.style.width = `${newWidth}px`;
+    }
+    
     // Calculate and show resize indicator
-    const cells = getTimelineCellsFromDOM();
     if (cells && cells.length > 0 && newWidth >= currentCellWidth && data.element) {
       const dateStr = data.edge === 'left'
         ? calculateDateFromPosition(newLeft, cells, currentCellWidth, currentViewMode, 'left')
@@ -409,6 +438,9 @@ export function useResize() {
       }
     }
     
+    // An unlinked card booking stays inside its card (the server refuses it otherwise)
+    ({ start: newStartDate, end: newEndDate } = keepEdgeInside(newStartDate, newEndDate, data.bounds));
+
     let sentForApproval = false;
     try {
       // Save undo state
@@ -426,12 +458,17 @@ export function useResize() {
       // Clone the project for mutations
       const projectCopy = cloneProject(projects[projectIndex]);
       
+      // The resized card's bookings: linked rows follow, unlinked segments
+      // are clamped into the new dates (written after the card's own update)
+      const bookingUpdates: PendingUpdate[] = [];
+
       // First, update the resized item itself
       if (data.type === 'phase') {
         const phase = (projectCopy.phases ?? []).find(p => p.id === data.id);
         if (phase) {
           phase.start_date = newStartDate;
           phase.end_date = newEndDate;
+          fitCardBookings(phase, 'phase', data.originalStartDate, data.originalEndDate, bookingUpdates);
         }
       } else if (data.type === 'subphase') {
         // Update subphase in tree
@@ -440,6 +477,7 @@ export function useResize() {
             if (child.id === data.id) {
               child.start_date = newStartDate;
               child.end_date = newEndDate;
+              fitCardBookings(child, 'subphase', data.originalStartDate, data.originalEndDate, bookingUpdates);
               return true;
             }
             if (child.children?.length && updateInTree(child.children)) {
@@ -455,7 +493,8 @@ export function useResize() {
           }
         }
       } else if (data.type === 'staffAssignment') {
-        const assignment = projectCopy.staffAssignments?.find(a => a.id === data.id);
+        // At its own level (ids are unique per level only)
+        const assignment = findStaffAssignment(projectCopy, data.level ?? 'project', data.id);
         if (assignment) {
           assignment.start_date = newStartDate;
           assignment.end_date = newEndDate;
@@ -486,6 +525,7 @@ export function useResize() {
         );
       }
       // Assignments don't have auto-calculations
+      pendingUpdates.push(...bookingUpdates);
       
       // Update local state with all changes (including cascaded)
       const updatedProjects = projects.map((p, idx) => 
@@ -506,12 +546,17 @@ export function useResize() {
         });
       } else if (data.type === 'staffAssignment') {
         // Staff assignment requires allocation field
-        const assignment = projectCopy.staffAssignments?.find(a => a.id === data.id);
-        const res = await updateStaffAssignment(data.id, {
-          start_date: newStartDate,
-          end_date: newEndDate,
-          allocation: assignment?.allocation ?? 100,
-        });
+        const level = data.level ?? 'project';
+        const assignment = findStaffAssignment(projectCopy, level, data.id);
+        const res = await updateStaffAssignment(
+          data.id,
+          {
+            start_date: newStartDate,
+            end_date: newEndDate,
+            allocation: assignment?.allocation ?? 100,
+          },
+          level
+        );
         // An own booking whose change needs approval: the server filed a
         // request (202) and kept the old dates, so the optimistic move cannot
         // stand -- reload, clear the undo history, tell the user.
@@ -530,6 +575,9 @@ export function useResize() {
 
       if (sentForApproval) await reloadAfterPendingWrite();
     } catch (err) {
+      // A refused booking says why (e.g. an overlap with the person's other
+      // booking on the card, 409) -- the bar snaps back with the reload.
+      if (data.type === 'staffAssignment' && err instanceof Error) useUIStore.getState().showFlash(err.message);
       // Optimistic-write failure protocol: reload + clear the undo stack.
       await recoverFromPersistFailure('Resize', err);
     }
@@ -675,7 +723,8 @@ export function useResize() {
     startDate: string,
     endDate: string,
     targetElement?: HTMLElement,
-    staffId?: number
+    staffId?: number,
+    booking?: CardBookingDrag
   ) => {
     if (!canEditStaffAssignment(projectId, staffId)) return;
 
@@ -704,6 +753,8 @@ export function useResize() {
       originalInlineWidth: element.style.width,
       originalStartDate: startDate,
       originalEndDate: endDate,
+      level: booking?.level ?? 'project',
+      bounds: booking?.bounds,
     };
     
     currentXRef.current = e.clientX;

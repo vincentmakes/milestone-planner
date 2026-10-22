@@ -12,6 +12,7 @@ import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useReorder } from '@/contexts/ReorderContext';
 import { AssignmentRow } from './AssignmentRow';
+import { bookingSpan, isUnlinkedBooking } from '@/utils/bookingSegments';
 import { PhantomRow } from './PhantomRow';
 import { usePhantomSibling } from '@/hooks';
 import { CompletionSlider } from '@/components/gantt/CompletionSlider';
@@ -440,6 +441,11 @@ export const SubphaseRow = memo(function SubphaseRow({
                 depth={depth + 1}
                 approvalStatus={assignment.approval_status}
                 approval={assignment.approval}
+                startDate={bookingSpan(assignment, subphase).start}
+                endDate={bookingSpan(assignment, subphase).end}
+                linked={!isUnlinkedBooking(assignment)}
+                cardStartDate={subphase.start_date}
+                cardEndDate={subphase.end_date}
               />
             );
           })}

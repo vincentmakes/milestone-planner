@@ -45,6 +45,7 @@ import type { Project, Phase, Subphase, StaffAssignment } from '@/types';
 import { confirmAction } from '@/utils/confirmDialog';
 import { parseIdList } from '@/utils/instanceSettings';
 import styles from './StaffView.module.css';
+import { bookingSpan } from '@/utils/bookingSegments';
 
 // Height constants matching Gantt rows
 const BASE_ROW_HEIGHT = 44;  // Minimum row height
@@ -321,8 +322,9 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
           const existing = map.get(sa.staff_id) || [];
           existing.push({
             ...sa,
-            start_date: sa.start_date || subphase.start_date,
-            end_date: sa.end_date || subphase.end_date,
+            // Effective dates: an unlinked booking's own, else the subphase's
+            start_date: bookingSpan(sa, subphase).start,
+            end_date: bookingSpan(sa, subphase).end,
             projectName: project.name,
             projectId: project.id,
             phaseName: phase.name,
@@ -364,8 +366,9 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
           const existing = map.get(sa.staff_id) || [];
           existing.push({
             ...sa,
-            start_date: sa.start_date || phase.start_date,
-            end_date: sa.end_date || phase.end_date,
+            // Effective dates: an unlinked booking's own, else the phase's
+            start_date: bookingSpan(sa, phase).start,
+            end_date: bookingSpan(sa, phase).end,
             projectName: project.name,
             projectId: project.id,
             phaseName: phase.name,

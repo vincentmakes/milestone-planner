@@ -540,3 +540,26 @@ describe('DateRangeField — navigation and layout', () => {
     expect(queryPanel()).not.toBeInTheDocument();
   });
 });
+
+describe('DateRangeField bounds (minDate / maxDate)', () => {
+  it('disables the days outside the bounds', () => {
+    render(<Harness minDate="2026-03-09" maxDate="2026-03-13" />);
+    const panel = openDateField('Start date');
+    showMonth(panel, '2026-03-01');
+    expect(dayButton(panel, '2026-03-08')).toBeDisabled();
+    expect(dayButton(panel, '2026-03-14')).toBeDisabled();
+    expect(dayButton(panel, '2026-03-09')).not.toBeDisabled();
+    expect(dayButton(panel, '2026-03-13')).not.toBeDisabled();
+  });
+
+  it('never carries the end past maxDate when a later start moves it', () => {
+    const spy = vi.fn();
+    render(<Harness spy={spy} maxDate="2026-03-13" />);
+    const panel = openDateField('Start date');
+    showMonth(panel, '2026-03-01');
+    // A start after the end moves the end and keeps the 2-day duration: Mar 15, cut to Mar 13
+    fireEvent.click(dayButton(panel, '2026-03-13'));
+    expect(spy).toHaveBeenLastCalledWith({ start: '2026-03-13', end: '2026-03-13' });
+    expect(dateValue('End date')).toBe('2026-03-13');
+  });
+});

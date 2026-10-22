@@ -4,7 +4,7 @@
  * start moved past the end drags the end along, keeping the duration.
  */
 import { describe, it, expect } from 'vitest';
-import { applyRangeClick, collapseOptionalEnd, initialMonth, previewRange } from '../dateRangeLogic';
+import { applyRangeClick, clampDay, collapseOptionalEnd, initialMonth, previewRange } from '../dateRangeLogic';
 
 describe('applyRangeClick — start active', () => {
   it('sets the start and hands over to the end when the click is not after the end', () => {
@@ -155,5 +155,15 @@ describe('initialMonth', () => {
   it('falls back to the start, then to today', () => {
     expect(initialMonth({ start: '2026-03-10', end: '', active: 'end' }, 2, '2026-10-22')).toBe('2026-03-01');
     expect(initialMonth({ start: '', end: '', active: 'start' }, 2, '2026-10-22')).toBe('2026-10-01');
+  });
+});
+
+describe('clampDay', () => {
+  it('keeps a day within the optional bounds, empty stays empty', () => {
+    expect(clampDay('2026-03-01', '2026-03-05', '2026-03-20')).toBe('2026-03-05');
+    expect(clampDay('2026-03-25', '2026-03-05', '2026-03-20')).toBe('2026-03-20');
+    expect(clampDay('2026-03-10', '2026-03-05', '2026-03-20')).toBe('2026-03-10');
+    expect(clampDay('2026-03-10')).toBe('2026-03-10');
+    expect(clampDay('', '2026-03-05')).toBe('');
   });
 });

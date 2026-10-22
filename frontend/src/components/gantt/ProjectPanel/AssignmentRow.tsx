@@ -7,12 +7,19 @@
 import { memo, useCallback } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useUndoStore } from '@/stores/undoStore';
+import { updateStaffAssignment } from '@/api/endpoints/projects';
+import { isPendingResponse } from '@/api/endpoints/approvals';
+import { flashSentForApproval, markRequestPendingLocally } from '@/utils/pendingBookings';
+import { patchStaffAssignmentLocally } from '@/utils/localProjectTree';
+import { recoverFromPersistFailure } from '@/utils/persistFailure';
+import { toDateOnly } from '@/utils/date';
 import { useEquipmentOverlaps } from '@/hooks/useEquipmentOverlaps';
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
 import { PendingBadge } from '@/components/common/PendingBadge';
 import { canBookEquipment, canEditAssignment } from '@/utils/permissions';
 import { isPendingAssignment, requestedAllocation } from '@/utils/kanbanCards';
-import type { AssignmentApproval, StaffAssignment } from '@/types';
+import type { AssignmentApproval, StaffAssignment, UpdateStaffAssignmentRequest } from '@/types';
 import styles from './AssignmentRow.module.css';
 
 interface AssignmentRowProps {
@@ -36,6 +43,11 @@ interface AssignmentRowProps {
   approvalStatus?: StaffAssignment['approval_status'];
   /** Staff rows: the open approval request (create, change or removal) */
   approval?: AssignmentApproval | null;
+  /** Phase / subphase staff rows: follows the card (true, the default) or has its own dates */
+  linked?: boolean;
+  /** Phase / subphase staff rows: the card's dates (an unlink starts from them) */
+  cardStartDate?: string;
+  cardEndDate?: string;
 }
 
 export const AssignmentRow = memo(function AssignmentRow({
@@ -57,6 +69,9 @@ export const AssignmentRow = memo(function AssignmentRow({
   endDate,
   approvalStatus,
   approval,
+  linked = true,
+  cardStartDate,
+  cardEndDate,
 }: AssignmentRowProps) {
   const showContextMenu = useUIStore((s) => s.showContextMenu);
   const currentUser = useAppStore((s) => s.currentUser);
@@ -118,28 +133,87 @@ export const AssignmentRow = memo(function AssignmentRow({
         allocation,
         startDate,
         endDate,
+        ...(type === 'phase-staff' || type === 'subphase-staff' ? { linked } : {}),
       }
     );
-  }, [canOpenMenu, showContextMenu, type, assignmentId, projectId, phaseId, subphaseId, staffId, equipmentId, name, allocation, startDate, endDate]);
+  }, [canOpenMenu, showContextMenu, type, assignmentId, projectId, phaseId, subphaseId, staffId, equipmentId, name, allocation, startDate, endDate, linked]);
 
-  // Phase/subphase staff has special styling - shows 📌 and phase type badge
+  // The pin: a card booking follows its card (📌) or has its own dates (📍).
+  // Whoever may change the booking toggles it; a pending booking, or one with
+  // my own request open, is locked like in the context menu.
+  const isRequester = Boolean(approval && currentUser && approval.requester_id === currentUser.id);
+  const canTogglePin = canEdit && !pending && !isRequester && Boolean(cardStartDate && cardEndDate);
+  const handlePinClick = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!cardStartDate || !cardEndDate) return;
+    const level = type === 'subphase-staff' ? 'subphase' : 'phase';
+    const cardStart = toDateOnly(cardStartDate);
+    const cardEnd = toDateOnly(cardEndDate);
+    // Unlink: own dates, starting as the card's. Relink: null dates.
+    const body: UpdateStaffAssignmentRequest = linked
+      ? { start_date: cardStart, end_date: cardEnd }
+      : { start_date: null, end_date: null };
+    const before = { linked, start_date: startDate ?? cardStart, end_date: endDate ?? cardEnd };
+    useUndoStore.getState().saveState(useAppStore.getState().projects, 'booking dates');
+    patchStaffAssignmentLocally(projectId, assignmentId, level, {
+      linked: !linked,
+      start_date: cardStart,
+      end_date: cardEnd,
+    });
+    try {
+      const res = await updateStaffAssignment(assignmentId, body, level);
+      if (isPendingResponse(res)) {
+        // Sent for approval: the booking keeps its dates until someone decides.
+        patchStaffAssignmentLocally(projectId, assignmentId, level, before);
+        const me = useAppStore.getState().currentUser;
+        if (me) markRequestPendingLocally(projectId, assignmentId, level, me.id, 'assignments.self_update', res, body);
+        flashSentForApproval();
+      }
+    } catch (err) {
+      useUIStore.getState().showFlash(err instanceof Error ? err.message : 'Could not change the booking');
+      await recoverFromPersistFailure('Booking', err);
+    }
+  }, [type, linked, cardStartDate, cardEndDate, startDate, endDate, projectId, assignmentId]);
+
+  // Phase/subphase staff has special styling - shows the pin and phase type badge
   if (type === 'phase-staff' || type === 'subphase-staff') {
+    const cardWord = type === 'subphase-staff' ? 'subphase' : 'phase';
+    const pinTitle = linked
+      ? `Follows the ${cardWord} dates — click to give it its own dates`
+      : `Own dates — click to follow the ${cardWord} dates again`;
+    const badgeStyle = {
+      backgroundColor: phaseColor ? `${phaseColor}33` : 'rgba(139, 92, 246, 0.2)',
+      color: phaseColor || 'var(--accent-purple)',
+    };
+    const badgeText = `${linked ? '📌' : '📍'} ${phaseType || (type === 'subphase-staff' ? 'Subphase' : 'Phase')}`;
     return (
       <div 
         className={rowClass} 
         style={{ paddingLeft }}
         onContextMenu={handleContextMenu}
       >
-        {/* Phase type badge with pin icon */}
-        <span 
-          className={styles.typeBadge}
-          style={{ 
-            backgroundColor: phaseColor ? `${phaseColor}33` : 'rgba(139, 92, 246, 0.2)',
-            color: phaseColor || 'var(--accent-purple)' 
-          }}
-        >
-          📌 {phaseType || (type === 'subphase-staff' ? 'Subphase' : 'Phase')}
-        </span>
+        {/* Phase type badge with the pin: a toggle for whoever may change the booking */}
+        {canTogglePin ? (
+          <button
+            type="button"
+            className={`${styles.typeBadge} ${styles.pinBadge}`}
+            style={badgeStyle}
+            aria-pressed={!linked}
+            aria-label={`Own dates for ${name}`}
+            title={pinTitle}
+            onClick={handlePinClick}
+          >
+            {badgeText}
+          </button>
+        ) : (
+          <span
+            className={styles.typeBadge}
+            style={badgeStyle}
+            title={linked ? `Follows the ${cardWord} dates` : 'Own dates'}
+          >
+            {badgeText}
+          </span>
+        )}
 
         {/* Staff name */}
         <span className={styles.name} title={name}>

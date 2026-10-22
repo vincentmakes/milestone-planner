@@ -265,6 +265,26 @@ describe('assignment menus', () => {
     });
   });
 
+  it('edits a phase booking with its effective dates and whether it follows the phase', () => {
+    useUIStore.getState().showContextMenu('staffAssignment', 71, 0, 0, 1, 10, undefined, {
+      staffId: 4,
+      name: 'Bob Brown',
+      allocation: 30,
+      startDate: '2026-01-07',
+      endDate: '2026-01-08',
+      linked: false,
+    });
+    render(<ContextMenuContainer />);
+    fireEvent.click(item('Edit Assignment'));
+    expect(useUIStore.getState().editingStaffAssignment).toMatchObject({
+      id: 71,
+      phase_id: 10,
+      start_date: '2026-01-07',
+      end_date: '2026-01-08',
+      linked: false,
+    });
+  });
+
   it('deletes a phase-level staff booking through the phase route', async () => {
     const confirm = stubConfirm(true);
     useUIStore.getState().showContextMenu('staffAssignment', 71, 0, 0, 1, 10, undefined, { staffId: 4, name: 'Bob Brown' });

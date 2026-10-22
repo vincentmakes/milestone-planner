@@ -173,6 +173,32 @@ describe('StaffView panel', () => {
     expect(screen.getByTestId('staff-bar-assignment-101').className).not.toMatch(/pendingBar/);
   });
 
+  it('counts an unlinked phase booking on its own days only', () => {
+    seed();
+    const [project, archived] = useAppStore.getState().projects;
+    const phase = project.phases[0];
+    useAppStore.setState({
+      projects: [
+        {
+          ...project,
+          phases: [
+            {
+              ...phase,
+              // Alice's 30 % on the phase now has its own dates, after today
+              staffAssignments: [
+                { id: 201, staff_id: 4, allocation: 30, start_date: isoOffset(2), end_date: isoOffset(4), linked: false },
+              ],
+            },
+          ],
+        },
+        archived,
+      ],
+    });
+    render(<StaffView />);
+    // Only the subphase's 20 % is booked today
+    expect(within(rowFor('Alice Ames')).getByText('80% available')).toBeInTheDocument();
+  });
+
   it('does not let a user without assignments.self_create drag their own row', () => {
     seed('user', 4);
     useAppStore.setState({

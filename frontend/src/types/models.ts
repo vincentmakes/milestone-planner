@@ -216,8 +216,19 @@ export interface StaffAssignment {
   phase_id?: number | null;
   subphase_id?: number | null;
   allocation: number;
+  /**
+   * Effective dates: project-level rows hold their own; a phase / subphase
+   * row holds its own when unlinked, else (linked) the card's dates.
+   */
   start_date: string;
   end_date: string;
+  /**
+   * Phase / subphase rows: true = follows the card's dates (no dates of its
+   * own), false = an unlinked segment with its own dates inside the card
+   * (`utils/bookingSegments.ts`). Project-level rows: false. Rows built
+   * locally may omit it (read as linked on a card).
+   */
+  linked?: boolean;
   /**
    * 'pending' = an own booking awaiting approval (a real row, excluded from
    * capacity until approved); absent on older servers = approved.
@@ -234,9 +245,12 @@ export interface StaffAssignment {
 /** The booking values a request asks for, or the row held when it was filed. */
 export interface BookingValues {
   allocation?: number;
-  /** Project-level rows only (`YYYY-MM-DD`) */
-  start_date?: string;
-  end_date?: string;
+  /**
+   * `YYYY-MM-DD`: project-level rows, and unlinked phase / subphase segments;
+   * both `null` = a relink (the booking follows its card again).
+   */
+  start_date?: string | null;
+  end_date?: string | null;
 }
 
 /** The open approval request on a staff assignment (its `approval` field). */
@@ -714,8 +728,24 @@ export interface CreateStaffAssignmentRequest {
   phase_id?: number | null;
   subphase_id?: number | null;
   allocation: number;
-  start_date: string;
-  end_date: string;
+  /**
+   * Required at project level. On a phase / subphase, both dates make an
+   * unlinked segment (within the card); leave both out for a linked booking.
+   */
+  start_date?: string;
+  end_date?: string;
+}
+
+/**
+ * PUT body of a staff assignment. Project level: allocation and dates. Phase /
+ * subphase level: `allocation` alone keeps the dates; both dates (within the
+ * card) make or move a segment; both `null` relink it (dates left out =
+ * unchanged, one date alone = 422).
+ */
+export interface UpdateStaffAssignmentRequest {
+  allocation?: number;
+  start_date?: string | null;
+  end_date?: string | null;
 }
 
 export interface CreateEquipmentAssignmentRequest {

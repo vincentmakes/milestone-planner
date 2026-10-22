@@ -180,3 +180,16 @@ describe('DateField', () => {
     expect(dayButton(datePanel(), '2026-03-20')).not.toHaveAttribute('title');
   });
 });
+
+describe('DateField bounds (minDate / maxDate)', () => {
+  it('disables the days outside the bounds and picks inside them', () => {
+    const spy = vi.fn();
+    render(<Harness spy={spy} minDate="2026-03-05" maxDate="2026-03-20" />);
+    fireEvent.click(field());
+    const panel = datePanel();
+    expect(dayButton(panel, '2026-03-04')).toBeDisabled();
+    expect(dayButton(panel, '2026-03-21')).toBeDisabled();
+    fireEvent.click(dayButton(panel, '2026-03-12'));
+    expect(spy).toHaveBeenCalledWith('2026-03-12');
+  });
+});

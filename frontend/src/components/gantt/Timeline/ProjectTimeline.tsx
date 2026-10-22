@@ -9,6 +9,7 @@ import { PhaseBar } from './PhaseBar';
 import { calculateBarPosition } from '../utils';
 import type { TimelineCell } from '../utils';
 import type { Project, Phase, Subphase, ViewMode, StaffAssignment, EquipmentAssignment, AssignmentApproval } from '@/types';
+import { bookingSpan, isUnlinkedBooking } from '@/utils/bookingSegments';
 import { isPendingAssignment, requestedAllocation } from '@/utils/kanbanCards';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
@@ -38,7 +39,7 @@ import {
 } from '@/stores/appStore';
 import { DEFAULT_EVENT_COLOR } from '@/utils/colorSwatches';
 import styles from './ProjectTimeline.module.css';
-import { daysBetweenDateStrings } from '@/utils/date';
+import { daysBetweenDateStrings, toDateOnly } from '@/utils/date';
 import { armTouchGesture, isTouchEvent } from '@/utils/touchEvents';
 
 interface ProjectTimelineProps {
@@ -338,6 +339,23 @@ export const ProjectTimeline = memo(function ProjectTimeline({
     startStaffAssignmentResize(e, assignmentId, project.id, edge, startDate, endDate, undefined, staffId);
   }, [startStaffAssignmentResize, project.id]);
 
+  // Phase / subphase bookings: only unlinked segments move, within their card
+  const handleCardBookingDragStart = useCallback<CardBookingDragStart>((e, assignment, level, card) => {
+    const span = bookingSpan(assignment, card);
+    startStaffAssignmentDrag(e, assignment.id, project.id, span.start, span.end, undefined, assignment.staff_id, {
+      level,
+      bounds: { start: toDateOnly(card.start_date), end: toDateOnly(card.end_date) },
+    });
+  }, [startStaffAssignmentDrag, project.id]);
+
+  const handleCardBookingResizeStart = useCallback<CardBookingResizeStart>((e, edge, assignment, level, card) => {
+    const span = bookingSpan(assignment, card);
+    startStaffAssignmentResize(e, assignment.id, project.id, edge, span.start, span.end, undefined, assignment.staff_id, {
+      level,
+      bounds: { start: toDateOnly(card.start_date), end: toDateOnly(card.end_date) },
+    });
+  }, [startStaffAssignmentResize, project.id]);
+
   // Equipment assignment handlers (project-level)
   const handleEquipmentAssignmentDragStart = useCallback((e: React.MouseEvent, assignmentId: number, startDate: string, endDate: string) => {
     startEquipmentAssignmentDrag(e, assignmentId, project.id, startDate, endDate);
@@ -420,6 +438,8 @@ export const ProjectTimeline = memo(function ProjectTimeline({
                   onSubphaseDragStart={handleSubphaseDragStart}
                   onSubphaseResizeStart={handleSubphaseResizeStart}
                   onSubphaseClick={handleSubphaseClick}
+                  onBookingDragStart={handleCardBookingDragStart}
+                  onBookingResizeStart={handleCardBookingResizeStart}
                   onLinkZoneClick={handleLinkZone}
                   isLinkingDependency={isLinkingDependency}
                   linkingFromId={linkingFromId}
@@ -493,6 +513,84 @@ export const ProjectTimeline = memo(function ProjectTimeline({
   );
 });
 
+/** Start dragging / resizing an unlinked booking of a phase or subphase (kept inside the card). */
+type CardBookingDragStart = (
+  e: React.MouseEvent,
+  assignment: StaffAssignment,
+  level: 'phase' | 'subphase',
+  card: Phase | Subphase
+) => void;
+type CardBookingResizeStart = (
+  e: React.MouseEvent,
+  edge: 'left' | 'right',
+  assignment: StaffAssignment,
+  level: 'phase' | 'subphase',
+  card: Phase | Subphase
+) => void;
+
+interface CardBookingBarProps {
+  assignment: StaffAssignment;
+  level: 'phase' | 'subphase';
+  card: Phase | Subphase;
+  projectId: number;
+  phaseId: number;
+  pmId: number | null | undefined;
+  cells: TimelineCell[];
+  cellWidth: number;
+  viewMode: ViewMode;
+  onDragStart: CardBookingDragStart;
+  onResizeStart: CardBookingResizeStart;
+}
+
+/**
+ * One staff booking on a phase / subphase: a linked row spans its card and
+ * is read-only (it follows the card); an unlinked segment sits at its own
+ * dates and may be moved / resized within the card by whoever may change it.
+ */
+const CardBookingBar = memo(function CardBookingBar({
+  assignment,
+  level,
+  card,
+  projectId,
+  phaseId,
+  pmId,
+  cells,
+  cellWidth,
+  viewMode,
+  onDragStart,
+  onResizeStart,
+}: CardBookingBarProps) {
+  const currentUser = useAppStore((s) => s.currentUser);
+  const span = bookingSpan(assignment, card);
+  const canMoveThis = isUnlinkedBooking(assignment) && canEditAssignment(currentUser, { pm_id: pmId }, assignment.staff_id);
+  return (
+    <div className={styles.row}>
+      <AssignmentBar
+        assignmentId={assignment.id}
+        assignmentType="staff"
+        projectId={projectId}
+        phaseId={phaseId}
+        subphaseId={level === 'subphase' ? card.id : undefined}
+        startDate={span.start}
+        endDate={span.end}
+        cells={cells}
+        cellWidth={cellWidth}
+        viewMode={viewMode}
+        type={level === 'phase' ? 'phase-staff' : 'subphase-staff'}
+        name={assignment.staff_name}
+        allocation={assignment.allocation}
+        phaseColor={card.color}
+        staffId={assignment.staff_id}
+        approvalStatus={assignment.approval_status}
+        approval={assignment.approval}
+        interactive={canMoveThis}
+        onDragStart={canMoveThis ? (e) => onDragStart(e, assignment, level, card) : undefined}
+        onResizeStart={canMoveThis ? (e, edge) => onResizeStart(e, edge, assignment, level, card) : undefined}
+      />
+    </div>
+  );
+});
+
 // Phase timeline sub-component
 interface PhaseTimelineProps {
   phase: Phase;
@@ -509,6 +607,8 @@ interface PhaseTimelineProps {
   onSubphaseDragStart: (e: React.MouseEvent, subphase: Subphase, phaseId: number, element: HTMLElement) => void;
   onSubphaseResizeStart: (e: React.MouseEvent, subphase: Subphase, edge: 'left' | 'right', element: HTMLElement) => void;
   onSubphaseClick: (subphase: Subphase, phaseId: number) => void;
+  onBookingDragStart: CardBookingDragStart;
+  onBookingResizeStart: CardBookingResizeStart;
   // Dependency linking
   onLinkZoneClick: (e: React.MouseEvent, itemId: number, itemType: 'phase' | 'subphase', zone: 'start' | 'end') => void;
   isLinkingDependency: boolean;
@@ -539,6 +639,8 @@ const PhaseTimeline = memo(function PhaseTimeline({
   onSubphaseDragStart,
   onSubphaseResizeStart,
   onSubphaseClick,
+  onBookingDragStart,
+  onBookingResizeStart,
   onLinkZoneClick,
   isLinkingDependency,
   linkingFromId,
@@ -669,6 +771,8 @@ const PhaseTimeline = memo(function PhaseTimeline({
                   onSubphaseDragStart={onSubphaseDragStart}
                   onSubphaseResizeStart={onSubphaseResizeStart}
                   onSubphaseClick={onSubphaseClick}
+                  onBookingDragStart={onBookingDragStart}
+                  onBookingResizeStart={onBookingResizeStart}
                   onLinkZoneClick={onLinkZoneClick}
                   isLinkingDependency={isLinkingDependency}
                   linkingFromId={linkingFromId}
@@ -686,28 +790,22 @@ const PhaseTimeline = memo(function PhaseTimeline({
             );
           })}
 
-          {/* Phase-level assignments - use phase dates since phase assignments don't have their own - filtered */}
+          {/* Phase-level bookings: linked rows span the phase, unlinked segments their own dates - filtered */}
           {showAssignments && (phase.staffAssignments ?? []).map((assignment: StaffAssignment) => (
-            <div key={`staff-${assignment.id}`} className={styles.row}>
-              <AssignmentBar
-                assignmentId={assignment.id}
-                assignmentType="staff"
-                projectId={projectId}
-                phaseId={phase.id}
-                startDate={phase.start_date}
-                endDate={phase.end_date}
-                cells={cells}
-                cellWidth={cellWidth}
-                viewMode={viewMode}
-                type="phase-staff"
-                name={assignment.staff_name}
-                allocation={assignment.allocation}
-                phaseColor={phase.color}
-                staffId={assignment.staff_id}
-                approvalStatus={assignment.approval_status}
-                approval={assignment.approval}
-              />
-            </div>
+            <CardBookingBar
+              key={`staff-${assignment.id}`}
+              assignment={assignment}
+              level="phase"
+              card={phase}
+              projectId={projectId}
+              phaseId={phase.id}
+              pmId={pmId}
+              cells={cells}
+              cellWidth={cellWidth}
+              viewMode={viewMode}
+              onDragStart={onBookingDragStart}
+              onResizeStart={onBookingResizeStart}
+            />
           ))}
 
           {showAssignments && (phase.equipmentAssignments ?? []).map((assignment: EquipmentAssignment) => (
@@ -748,6 +846,8 @@ interface SubphaseTimelineProps {
   onSubphaseDragStart: (e: React.MouseEvent, subphase: Subphase, phaseId: number, element: HTMLElement) => void;
   onSubphaseResizeStart: (e: React.MouseEvent, subphase: Subphase, edge: 'left' | 'right', element: HTMLElement) => void;
   onSubphaseClick: (subphase: Subphase, phaseId: number) => void;
+  onBookingDragStart: CardBookingDragStart;
+  onBookingResizeStart: CardBookingResizeStart;
   // Dependency linking
   onLinkZoneClick: (e: React.MouseEvent, itemId: number, itemType: 'phase' | 'subphase', zone: 'start' | 'end') => void;
   isLinkingDependency: boolean;
@@ -776,6 +876,8 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
   onSubphaseDragStart,
   onSubphaseResizeStart,
   onSubphaseClick,
+  onBookingDragStart,
+  onBookingResizeStart,
   onLinkZoneClick,
   isLinkingDependency,
   linkingFromId,
@@ -904,6 +1006,8 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
                   onSubphaseDragStart={onSubphaseDragStart}
                   onSubphaseResizeStart={onSubphaseResizeStart}
                   onSubphaseClick={onSubphaseClick}
+                  onBookingDragStart={onBookingDragStart}
+                  onBookingResizeStart={onBookingResizeStart}
                   onLinkZoneClick={onLinkZoneClick}
                   isLinkingDependency={isLinkingDependency}
                   linkingFromId={linkingFromId}
@@ -921,29 +1025,22 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
             );
           })}
 
-          {/* Subphase-level assignments - use subphase dates - filtered */}
+          {/* Subphase-level bookings: linked rows span the subphase, unlinked segments their own dates - filtered */}
           {showAssignments && (subphase.staffAssignments ?? []).map((assignment: StaffAssignment) => (
-            <div key={`staff-${assignment.id}`} className={styles.row}>
-              <AssignmentBar
-                assignmentId={assignment.id}
-                assignmentType="staff"
-                projectId={projectId}
-                phaseId={phaseId}
-                subphaseId={subphase.id}
-                startDate={subphase.start_date}
-                endDate={subphase.end_date}
-                cells={cells}
-                cellWidth={cellWidth}
-                viewMode={viewMode}
-                type="subphase-staff"
-                name={assignment.staff_name}
-                allocation={assignment.allocation}
-                phaseColor={subphase.color}
-                staffId={assignment.staff_id}
-                approvalStatus={assignment.approval_status}
-                approval={assignment.approval}
-              />
-            </div>
+            <CardBookingBar
+              key={`staff-${assignment.id}`}
+              assignment={assignment}
+              level="subphase"
+              card={subphase}
+              projectId={projectId}
+              phaseId={phaseId}
+              pmId={pmId}
+              cells={cells}
+              cellWidth={cellWidth}
+              viewMode={viewMode}
+              onDragStart={onBookingDragStart}
+              onResizeStart={onBookingResizeStart}
+            />
           ))}
 
           {showAssignments && (subphase.equipmentAssignments ?? []).map((assignment: EquipmentAssignment) => (
