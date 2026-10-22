@@ -5,11 +5,12 @@
  * projects of a collapsed section are not rendered and get no row position.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { TimelineBody } from '../TimelineBody';
 import { generateTimelineCells } from '../../utils';
 import { buildGanttRows } from '../../utils/projectSections';
 import type { GanttSection } from '../../utils/projectSections';
+import { useViewStore } from '@/stores/viewStore';
 import type { Project } from '@/types';
 
 const seen = vi.hoisted(() => ({ positions: null as Map<string, unknown> | null }));
@@ -75,5 +76,41 @@ describe('TimelineBody section bands', () => {
     expect(container.querySelectorAll('[data-section-key]')).toHaveLength(2);
     expect(seen.positions?.has('project-1')).toBe(false);
     expect(seen.positions?.get('project-3')).toEqual({ top: 74, height: 45 });
+  });
+});
+
+describe('TimelineBody per-person booking groups', () => {
+  it('lays out a collapsed group as one row and moves the rows below it up', () => {
+    const bob = (id: number) => ({ id, staff_id: 4, allocation: 50, start_date: '', end_date: '' });
+    const grouped = {
+      id: 9,
+      name: 'P9',
+      phases: [
+        { id: 90, children: [], staffAssignments: [bob(1), bob(2), bob(3)], equipmentAssignments: [] },
+        { id: 91, children: [], staffAssignments: [], equipmentAssignments: [] },
+      ],
+      staffAssignments: [],
+      equipmentAssignments: [],
+    } as unknown as Project;
+    useViewStore.setState({
+      expandedProjects: new Set([9]),
+      expandedPhases: new Set([90]),
+      showAssignments: true,
+      collapsedStaffGroups: new Set(),
+    });
+    render(
+      <TimelineBody
+        cells={cells}
+        projects={[grouped]}
+        cellWidth={30}
+        totalWidth={cells.length * 30}
+        viewMode="month"
+      />
+    );
+    // phase 90 + group + 3 bookings
+    expect(seen.positions?.get('phase-91')).toEqual({ top: 45 + 5 * 33, height: 32 });
+
+    act(() => useViewStore.getState().toggleStaffGroup('phase:90:4'));
+    expect(seen.positions?.get('phase-91')).toEqual({ top: 45 + 2 * 33, height: 32 });
   });
 });

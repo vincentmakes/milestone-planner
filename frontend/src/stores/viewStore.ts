@@ -230,6 +230,9 @@ interface ViewState {
 
   // ---------------------------------------------
   // EXPANDED STATES (for tree views)
+  // Projects, phases and subphases are persisted; the rest are session-only
+  // (left out of `partialize` and `merge` on purpose): expandedStaff,
+  // expandedEquipment, expandedBankHolidays and collapsedStaffGroups.
   // ---------------------------------------------
   expandedProjects: Set<number>;
   expandedPhases: Set<number>;
@@ -237,6 +240,13 @@ interface ViewState {
   expandedStaff: Set<number>;
   expandedEquipment: Set<number>;
   expandedBankHolidays: boolean;
+  /**
+   * Gantt per-person booking groups (a person with 2+ bookings on one card)
+   * the user collapsed, keyed `"<level>:<cardId>:<staffId>"` (`staffGroupKey`
+   * in components/gantt/utils/staffGroups.ts). Groups start expanded, so only
+   * collapsed ones are listed. Session-only.
+   */
+  collapsedStaffGroups: Set<string>;
 
   // ---------------------------------------------
   // UI LAYOUT STATE
@@ -292,6 +302,7 @@ interface ViewState {
   toggleStaffExpanded: (staffId: number) => void;
   toggleEquipmentExpanded: (equipmentId: number) => void;
   toggleBankHolidaysExpanded: () => void;
+  toggleStaffGroup: (key: string) => void;
   ensureProjectExpanded: (projectId: number) => void;
   ensurePhaseExpanded: (phaseId: number) => void;
   ensureSubphaseExpanded: (subphaseId: number) => void;
@@ -358,6 +369,7 @@ const initialViewState = {
   expandedStaff: new Set<number>(),
   expandedEquipment: new Set<number>(),
   expandedBankHolidays: false,
+  collapsedStaffGroups: new Set<string>(),
 
   // UI layout
   sidebarCollapsed: false,
@@ -605,6 +617,16 @@ export const useViewStore = create<ViewState>()(
         expandedBankHolidays: !state.expandedBankHolidays,
       })),
 
+      toggleStaffGroup: (key) => set((state) => {
+        const collapsed = new Set(state.collapsedStaffGroups);
+        if (collapsed.has(key)) {
+          collapsed.delete(key);
+        } else {
+          collapsed.add(key);
+        }
+        return { collapsedStaffGroups: collapsed };
+      }),
+
       // Ensure expanded (only add, never remove)
       ensureProjectExpanded: (projectId) => set((state) => {
         if (state.expandedProjects.has(projectId)) return state;
@@ -637,6 +659,8 @@ export const useViewStore = create<ViewState>()(
         expandedSubphases: new Set(),
         expandedStaff: new Set(),
         expandedEquipment: new Set(),
+        // Booking groups reopen expanded with their card
+        collapsedStaffGroups: new Set(),
       }),
 
       expandAll: (projects: Project[]) => {
@@ -662,6 +686,8 @@ export const useViewStore = create<ViewState>()(
           expandedProjects: projectIds,
           expandedPhases: phaseIds,
           expandedSubphases: subphaseIds,
+          // "Expand all" opens the per-person booking groups too
+          collapsedStaffGroups: new Set(),
         });
       },
 
@@ -770,9 +796,11 @@ export const useViewStore = create<ViewState>()(
           resourcePanelCollapsed: (persisted?.resourcePanelCollapsed as boolean) ?? currentState.resourcePanelCollapsed,
           showStaffOverview: (persisted?.showStaffOverview as boolean) ?? currentState.showStaffOverview,
           showEquipmentOverview: (persisted?.showEquipmentOverview as boolean) ?? currentState.showEquipmentOverview,
-          // Kanban: every field added to partialize above MUST also be listed
-          // here -- this merge is field-by-field, not a spread of `persisted`,
-          // so an omission silently resets the value on every reload.
+          // Every field added to partialize above MUST also be listed here
+          // -- this merge is field-by-field, not a spread of `persisted`, so
+          // an omission silently resets the value on every reload. The
+          // session-only Sets (expandedStaff / expandedEquipment /
+          // expandedBankHolidays / collapsedStaffGroups) are in neither.
           kanbanProjectId: (persisted?.kanbanProjectId as number | null) ?? currentState.kanbanProjectId,
           kanbanGrouping: (persisted?.kanbanGrouping as KanbanGrouping) ?? currentState.kanbanGrouping,
           kanbanGroupingColumnId: (persisted?.kanbanGroupingColumnId as number | null) ?? currentState.kanbanGroupingColumnId,

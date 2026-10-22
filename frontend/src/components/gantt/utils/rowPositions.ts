@@ -5,6 +5,7 @@
 
 import type { Subphase } from '@/types';
 import type { GanttRow } from './projectSections';
+import { staffRowCount } from './staffGroups';
 
 // Row heights - CSS variables
 // --row-height: 44px (project rows)
@@ -54,6 +55,11 @@ export type DescendantMatchFn = (subphases: Subphase[]) => boolean;
  * a section header row occupies SECTION_ROW_TOTAL_HEIGHT under
  * `section-<key>`; projects of a collapsed section are not in `rows`, so they
  * get no position (no dependency arrows, no resource drop target).
+ *
+ * A card's staff block takes `staffRowCount` rows: a person with 2+ bookings
+ * on the card has an overview row, plus their rows unless the group's key is
+ * in `collapsedStaffGroups` (viewStore). Overview rows get no key: nothing
+ * targets them.
  */
 export function calculateRowPositions(
   rows: GanttRow[],
@@ -63,7 +69,8 @@ export function calculateRowPositions(
   phantomConfig?: PhantomRowConfig | null,
   showAssignments: boolean = true,
   entityPassesFilters?: EntityFilterFn,
-  anyDescendantMatches?: DescendantMatchFn
+  anyDescendantMatches?: DescendantMatchFn,
+  collapsedStaffGroups: ReadonlySet<string> = new Set()
 ): RowPositionsResult {
   const positions = new Map<string, RowPosition>();
   let currentTop = 0;
@@ -125,7 +132,8 @@ export function calculateRowPositions(
             undefined,
             showAssignments,
             entityPassesFilters,
-            anyDescendantMatches
+            anyDescendantMatches,
+            collapsedStaffGroups
           );
           currentTop = subphaseResult.currentTop;
           if (subphaseResult.phantomRowTop !== undefined) {
@@ -134,8 +142,8 @@ export function calculateRowPositions(
 
           // Add phase staff assignments (only if showAssignments is true)
           if (showAssignments) {
-            const phaseStaffCount = phase.staffAssignments?.length ?? 0;
-            currentTop += phaseStaffCount * DETAIL_ROW_TOTAL_HEIGHT;
+            const phaseStaffRows = staffRowCount(phase.staffAssignments, 'phase', phase.id, collapsedStaffGroups);
+            currentTop += phaseStaffRows * DETAIL_ROW_TOTAL_HEIGHT;
 
             // Add phase equipment assignments
             const phaseEquipCount = phase.equipmentAssignments?.length ?? 0;
@@ -173,7 +181,8 @@ function addSubphasePositions(
   _parentSubphaseId?: number,
   showAssignments: boolean = true,
   entityPassesFilters?: EntityFilterFn,
-  anyDescendantMatches?: DescendantMatchFn
+  anyDescendantMatches?: DescendantMatchFn,
+  collapsedStaffGroups: ReadonlySet<string> = new Set()
 ): { currentTop: number; phantomRowTop?: number } {
   let phantomRowTop: number | undefined;
 
@@ -218,7 +227,8 @@ function addSubphasePositions(
           subphase.id,
           showAssignments,
           entityPassesFilters,
-          anyDescendantMatches
+          anyDescendantMatches,
+          collapsedStaffGroups
         );
         currentTop = nestedResult.currentTop;
         if (nestedResult.phantomRowTop !== undefined) {
@@ -228,8 +238,8 @@ function addSubphasePositions(
 
       // Add subphase staff assignments (only if showAssignments is true)
       if (showAssignments) {
-        const staffCount = subphase.staffAssignments?.length ?? 0;
-        currentTop += staffCount * DETAIL_ROW_TOTAL_HEIGHT;
+        const staffRows = staffRowCount(subphase.staffAssignments, 'subphase', subphase.id, collapsedStaffGroups);
+        currentTop += staffRows * DETAIL_ROW_TOTAL_HEIGHT;
 
         // Add subphase equipment assignments  
         const equipCount = subphase.equipmentAssignments?.length ?? 0;

@@ -9,7 +9,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { ProjectTimeline } from '../ProjectTimeline';
-import { generateTimelineCells } from '../../utils';
+import { calculateRowPositions, generateTimelineCells } from '../../utils';
+import { flatGanttRows } from '../../utils/projectSections';
 import {
   resetAllStores,
   useAppStore,
@@ -399,5 +400,63 @@ describe('ProjectTimeline card bookings (linked / unlinked)', () => {
     expect(screen.getByTitle('Cleo Chen (60%)').querySelector('.resize-handle')).toBeNull();
     // ...while their own segment may move
     expect(screen.getByTitle('Bob Brown (20%)').querySelectorAll('.resize-handle')).toHaveLength(2);
+  });
+});
+
+describe('ProjectTimeline per-person booking groups', () => {
+  function withGroups(): Project {
+    const project = buildProject();
+    project.phases[0].staffAssignments = [
+      { id: 71, staff_id: 4, staff_name: 'Bob Brown', allocation: 30, start_date: '2026-09-01', end_date: '2026-09-03', linked: false },
+      { id: 73, staff_id: 5, staff_name: 'Cleo Chen', allocation: 60, start_date: '', end_date: '' },
+      { id: 74, staff_id: 4, staff_name: 'Bob Brown', allocation: 50, start_date: '2026-09-14', end_date: '2026-09-16', linked: false },
+    ];
+    project.phases[0].children[0].staffAssignments = [
+      { id: 81, staff_id: 4, staff_name: 'Bob Brown', allocation: 20, start_date: '2026-09-03', end_date: '2026-09-04', linked: false },
+      { id: 82, staff_id: 4, staff_name: 'Bob Brown', allocation: 20, start_date: '2026-09-08', end_date: '2026-09-09', linked: false },
+    ];
+    return project;
+  }
+
+  /** Rows the panel and the row geometry expect: project row + 33 px detail rows. */
+  function expectedRowCount(project: Project, collapsed: Set<string>): number {
+    const { totalHeight } = calculateRowPositions(
+      flatGanttRows([project]), new Set([1]), new Set([10]), new Set([20]), null, true, undefined, undefined, collapsed
+    );
+    return 1 + (totalHeight - 45) / 33;
+  }
+  const staffBarIds = () =>
+    [...document.querySelectorAll('[data-assignment-type="staff"]')].map((el) => Number(el.getAttribute('data-assignment-id')));
+  const segmentTitles = () => screen.queryAllByTitle(/^Bob Brown · /).map((el) => el.getAttribute('title'));
+
+  it('adds a segments row per group, in the panel order, as many rows as the geometry counts', () => {
+    const project = withGroups();
+    const { container } = renderTimeline(project);
+    expect(container.children).toHaveLength(expectedRowCount(project, new Set()));
+    // subphase group (81, 82), then the phase group (71, 74) before Cleo; project row 50 last
+    expect(staffBarIds()).toEqual([81, 82, 71, 74, 73, 50]);
+    // one block per segment on the two overview rows, read-only
+    expect(segmentTitles()).toHaveLength(4);
+    for (const block of screen.queryAllByTitle(/^Bob Brown · /)) {
+      expect(block.parentElement?.className).toMatch(/row/);
+      expect(block.closest('[data-assignment-id]')).toBeNull();
+      fireEvent.mouseDown(block, { clientX: 0 });
+      expect(useUIStore.getState().isDragging).toBe(false);
+    }
+  });
+
+  it('keeps only the segments row of a collapsed group', () => {
+    const project = withGroups();
+    const collapsed = new Set(['phase:10:4', 'subphase:20:4']);
+    useViewStore.setState({ collapsedStaffGroups: collapsed });
+    const { container } = renderTimeline(project);
+    expect(container.children).toHaveLength(expectedRowCount(project, collapsed));
+    expect(staffBarIds()).toEqual([73, 50]);
+    expect(segmentTitles()).toHaveLength(4);
+
+    // reopening one group brings its bars back
+    act(() => useViewStore.getState().toggleStaffGroup('phase:10:4'));
+    expect(staffBarIds()).toEqual([71, 74, 73, 50]);
+    expect(container.children).toHaveLength(expectedRowCount(project, useViewStore.getState().collapsedStaffGroups));
   });
 });

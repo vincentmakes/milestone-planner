@@ -57,12 +57,13 @@ export default defineConfig({
       // 1.14.0 to 0.3 under the local totals (lines 91.6, statements 90.48,
       // functions 91.97, branches 81.59), rounded down; with the admin
       // defaults likewise (lines 91.78, statements 90.67, functions 92.2,
-      // branches 81.88).
+      // branches 81.88); with the per-person booking rows of 1.17.0 (local
+      // lines 92.2, statements 91.08, functions 92.44, branches 82.64).
       thresholds: {
-        lines: 91.9,
-        statements: 90.8,
-        functions: 92.2,
-        branches: 82.2,
+        lines: 92.1,
+        statements: 91.0,
+        functions: 92.3,
+        branches: 82.5,
       },
     },
   },

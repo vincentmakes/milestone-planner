@@ -277,3 +277,41 @@ describe('SubphaseRow editing', () => {
     expect(row(40).className).not.toMatch(/dragging/);
   });
 });
+
+describe('SubphaseRow per-person booking groups', () => {
+  const grouped = makeSubphase({
+    id: 30,
+    name: 'Screening',
+    start_date: '2026-03-02',
+    end_date: '2026-03-13',
+    staffAssignments: [
+      { id: 81, staff_id: 4, allocation: 20, start_date: '2026-03-02', end_date: '2026-03-03', linked: false },
+      { id: 82, staff_id: 4, allocation: 50, start_date: '2026-03-09', end_date: '2026-03-10', linked: false },
+      { id: 83, staff_id: 6, staff_name: 'Dana Diaz', allocation: 30, start_date: '', end_date: '' },
+    ],
+  });
+  const badges = () => screen.queryAllByText(/^(📌|📍) Screening$/);
+
+  beforeEach(() => {
+    useViewStore.setState({ expandedSubphases: new Set([30]), collapsedStaffGroups: new Set() });
+  });
+
+  it('groups the person with two bookings, rows one level deeper, singles unchanged', () => {
+    renderRow(grouped);
+    const toggle = screen.getByRole('button', { name: "Collapse Bob Brown's bookings" });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(toggle.parentElement).toHaveTextContent('Bob Brown2 bookings20–50 %');
+    expect(toggle.parentElement).toHaveStyle({ paddingLeft: '56px' }); // depth 3
+    expect(badges().map((b) => (b.parentElement as HTMLElement).style.paddingLeft)).toEqual(['92px', '92px', '76px']);
+    expect(screen.queryByRole('button', { name: /Dana Diaz's bookings/ })).not.toBeInTheDocument();
+  });
+
+  it('collapses the group to its overview row', () => {
+    renderRow(grouped);
+    fireEvent.click(screen.getByRole('button', { name: "Collapse Bob Brown's bookings" }));
+    expect(useViewStore.getState().collapsedStaffGroups.has('subphase:30:4')).toBe(true);
+    expect(screen.getByRole('button', { name: "Expand Bob Brown's bookings" })).toHaveAttribute('aria-expanded', 'false');
+    expect(badges()).toHaveLength(1);
+    expect(screen.getByTitle('Dana Diaz')).toBeInTheDocument();
+  });
+});

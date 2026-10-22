@@ -6,7 +6,8 @@
 import { memo, useMemo, useCallback, Fragment } from 'react';
 import { ProjectBar } from './ProjectBar';
 import { PhaseBar } from './PhaseBar';
-import { calculateBarPosition } from '../utils';
+import { calculateBarPosition, cardStaffItems } from '../utils';
+import { SegmentsBar } from './SegmentsBar';
 import type { TimelineCell } from '../utils';
 import type { Project, Phase, Subphase, ViewMode, StaffAssignment, EquipmentAssignment, AssignmentApproval } from '@/types';
 import { bookingSpan, isUnlinkedBooking } from '@/utils/bookingSegments';
@@ -591,6 +592,47 @@ const CardBookingBar = memo(function CardBookingBar({
   );
 });
 
+interface CardStaffBarsProps extends Omit<CardBookingBarProps, 'assignment'> {
+  /** The staff bookings, as `card.staffAssignments` */
+  assignments: StaffAssignment[] | undefined;
+}
+
+/**
+ * The staff bookings of one phase / subphase, row for row like the panel's
+ * CardStaffRows (both lay out from `cardStaffItems`): a person with one
+ * booking gets its bar; a person with two or more a SegmentsBar overview row,
+ * then, while the group is expanded, one bar per booking.
+ */
+const CardStaffBars = memo(function CardStaffBars({ assignments, ...barProps }: CardStaffBarsProps) {
+  const { level, card, cells, cellWidth, viewMode } = barProps;
+  const collapsedStaffGroups = useViewStore((s) => s.collapsedStaffGroups);
+  const staff = useAppStore((s) => s.staff);
+  const items = useMemo(
+    () => cardStaffItems(assignments, level, card.id, collapsedStaffGroups),
+    [assignments, level, card.id, collapsedStaffGroups]
+  );
+  return (
+    <>
+      {items.map((item) => {
+        if (item.kind === 'single') {
+          return <CardBookingBar key={`staff-${item.assignment.id}`} assignment={item.assignment} {...barProps} />;
+        }
+        const first = item.rows[0];
+        const name = staff.find((s) => s.id === item.staffId)?.name || first.staff_name || 'Unknown';
+        return (
+          <Fragment key={`group-${item.key}`}>
+            <div className={styles.row}>
+              <SegmentsBar rows={item.rows} card={card} name={name} cells={cells} cellWidth={cellWidth} viewMode={viewMode} />
+            </div>
+            {!item.collapsed &&
+              item.rows.map((row) => <CardBookingBar key={`staff-${row.id}`} assignment={row} {...barProps} />)}
+          </Fragment>
+        );
+      })}
+    </>
+  );
+});
+
 // Phase timeline sub-component
 interface PhaseTimelineProps {
   phase: Phase;
@@ -790,11 +832,10 @@ const PhaseTimeline = memo(function PhaseTimeline({
             );
           })}
 
-          {/* Phase-level bookings: linked rows span the phase, unlinked segments their own dates - filtered */}
-          {showAssignments && (phase.staffAssignments ?? []).map((assignment: StaffAssignment) => (
-            <CardBookingBar
-              key={`staff-${assignment.id}`}
-              assignment={assignment}
+          {/* Phase-level bookings: linked rows span the phase, unlinked segments their own dates, a person with 2+ grouped - filtered */}
+          {showAssignments && (
+            <CardStaffBars
+              assignments={phase.staffAssignments}
               level="phase"
               card={phase}
               projectId={projectId}
@@ -806,7 +847,7 @@ const PhaseTimeline = memo(function PhaseTimeline({
               onDragStart={onBookingDragStart}
               onResizeStart={onBookingResizeStart}
             />
-          ))}
+          )}
 
           {showAssignments && (phase.equipmentAssignments ?? []).map((assignment: EquipmentAssignment) => (
             <div key={`equip-${assignment.id}`} className={styles.row}>
@@ -1025,11 +1066,10 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
             );
           })}
 
-          {/* Subphase-level bookings: linked rows span the subphase, unlinked segments their own dates - filtered */}
-          {showAssignments && (subphase.staffAssignments ?? []).map((assignment: StaffAssignment) => (
-            <CardBookingBar
-              key={`staff-${assignment.id}`}
-              assignment={assignment}
+          {/* Subphase-level bookings: linked rows span the subphase, unlinked segments their own dates, a person with 2+ grouped - filtered */}
+          {showAssignments && (
+            <CardStaffBars
+              assignments={subphase.staffAssignments}
               level="subphase"
               card={subphase}
               projectId={projectId}
@@ -1041,7 +1081,7 @@ const SubphaseTimeline = memo(function SubphaseTimeline({
               onDragStart={onBookingDragStart}
               onResizeStart={onBookingResizeStart}
             />
-          ))}
+          )}
 
           {showAssignments && (subphase.equipmentAssignments ?? []).map((assignment: EquipmentAssignment) => (
             <div key={`equip-${assignment.id}`} className={styles.row}>

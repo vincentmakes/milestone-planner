@@ -12,7 +12,7 @@ import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useReorder } from '@/contexts/ReorderContext';
 import { AssignmentRow } from './AssignmentRow';
-import { bookingSpan, isUnlinkedBooking } from '@/utils/bookingSegments';
+import { CardStaffRows } from './CardStaffRows';
 import { PhantomRow } from './PhantomRow';
 import { usePhantomSibling } from '@/hooks';
 import { CompletionSlider } from '@/components/gantt/CompletionSlider';
@@ -120,7 +120,6 @@ export const SubphaseRow = memo(function SubphaseRow({
 }: SubphaseRowProps) {
   const expandedSubphases = useViewStore((s) => s.expandedSubphases);
   const toggleSubphaseExpanded = useViewStore((s) => s.toggleSubphaseExpanded);
-  const staff = useAppStore((s) => s.staff);
   const equipment = useAppStore((s) => s.equipment);
   const currentUser = useAppStore((s) => s.currentUser);
   const showAssignments = useViewStore((s) => s.showAssignments);
@@ -421,34 +420,16 @@ export const SubphaseRow = memo(function SubphaseRow({
             criticalPathItems={criticalPathItems}
           />
 
-          {/* Subphase-level staff assignments - filtered by showAssignments */}
-          {showAssignments && (subphase.staffAssignments ?? []).map((assignment) => {
-            const staffMember = staff.find((s) => s.id === assignment.staff_id);
-            return (
-              <AssignmentRow
-                key={`staff-${assignment.id}`}
-                type="subphase-staff"
-                assignmentId={assignment.id}
-                projectId={projectId}
-                phaseId={phaseId}
-                subphaseId={subphase.id}
-                staffId={assignment.staff_id}
-                name={staffMember?.name || assignment.staff_name || 'Unknown'}
-                role={staffMember?.role}
-                allocation={assignment.allocation}
-                phaseType={subphase.name}
-                phaseColor={subphase.color}
-                depth={depth + 1}
-                approvalStatus={assignment.approval_status}
-                approval={assignment.approval}
-                startDate={bookingSpan(assignment, subphase).start}
-                endDate={bookingSpan(assignment, subphase).end}
-                linked={!isUnlinkedBooking(assignment)}
-                cardStartDate={subphase.start_date}
-                cardEndDate={subphase.end_date}
-              />
-            );
-          })}
+          {/* Subphase-level staff bookings (a person with 2+ grouped) - filtered by showAssignments */}
+          {showAssignments && (
+            <CardStaffRows
+              level="subphase"
+              card={subphase}
+              projectId={projectId}
+              phaseId={phaseId}
+              depth={depth + 1}
+            />
+          )}
 
           {/* Subphase-level equipment assignments - filtered by showAssignments */}
           {showAssignments && (subphase.equipmentAssignments ?? []).map((assignment) => {

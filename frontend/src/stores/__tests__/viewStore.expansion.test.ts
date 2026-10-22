@@ -154,6 +154,39 @@ describe('expansion state', () => {
   });
 });
 
+describe('per-person booking groups', () => {
+  it('starts expanded and toggles a group collapsed and back', () => {
+    expect(view().collapsedStaffGroups.size).toBe(0);
+    view().toggleStaffGroup('phase:10:4');
+    view().toggleStaffGroup('subphase:21:5');
+    expect([...view().collapsedStaffGroups]).toEqual(['phase:10:4', 'subphase:21:5']);
+    view().toggleStaffGroup('phase:10:4');
+    expect([...view().collapsedStaffGroups]).toEqual(['subphase:21:5']);
+  });
+
+  it('collapseAll and expandAll both reopen every group', () => {
+    view().toggleStaffGroup('phase:10:4');
+    view().collapseAll();
+    expect(view().collapsedStaffGroups.size).toBe(0);
+
+    view().toggleStaffGroup('phase:10:4');
+    view().expandAll([makeProject({ id: 1 })]);
+    expect(view().collapsedStaffGroups.size).toBe(0);
+  });
+
+  it('is session-only: never persisted, never restored', async () => {
+    view().toggleStaffGroup('phase:10:4');
+    view().setExpandedProjects(new Set([1]));
+    const raw = JSON.parse(localStorage.getItem(KEY) as string);
+    expect(raw.state).not.toHaveProperty('collapsedStaffGroups');
+
+    localStorage.setItem(KEY, JSON.stringify({ state: { collapsedStaffGroups: ['phase:1:2'] }, version: 0 }));
+    view().resetView();
+    await useViewStore.persist.rehydrate();
+    expect(view().collapsedStaffGroups.size).toBe(0);
+  });
+});
+
 describe('level-by-level expansion', () => {
   // Project 1 → phases 10 (sub 20 → sub 30), 11 (no children), milestone 12.
   const tree: Project[] = [

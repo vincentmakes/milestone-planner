@@ -12,7 +12,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useReorder } from '@/contexts/ReorderContext';
 import { SubphaseRow } from './SubphaseRow';
 import { AssignmentRow } from './AssignmentRow';
-import { bookingSpan, isUnlinkedBooking } from '@/utils/bookingSegments';
+import { CardStaffRows } from './CardStaffRows';
 import { PhantomRow } from './PhantomRow';
 import { usePhantomSibling } from '@/hooks';
 import { CustomColumnCell } from '@/components/gantt/CustomColumns';
@@ -112,7 +112,6 @@ export const PhaseRow = memo(function PhaseRow({
 }: PhaseRowProps) {
   const expandedPhases = useViewStore((s) => s.expandedPhases);
   const togglePhaseExpanded = useViewStore((s) => s.togglePhaseExpanded);
-  const staff = useAppStore((s) => s.staff);
   const equipment = useAppStore((s) => s.equipment);
   const currentUser = useAppStore((s) => s.currentUser);
   const showAssignments = useViewStore((s) => s.showAssignments);
@@ -375,33 +374,16 @@ export const PhaseRow = memo(function PhaseRow({
             criticalPathItems={criticalPathItems}
           />
 
-          {/* Phase-level staff assignments - filtered by showAssignments */}
-          {showAssignments && (phase.staffAssignments ?? []).map((assignment) => {
-            const staffMember = staff.find((s) => s.id === assignment.staff_id);
-            return (
-              <AssignmentRow
-                key={`staff-${assignment.id}`}
-                type="phase-staff"
-                assignmentId={assignment.id}
-                projectId={projectId}
-                phaseId={phase.id}
-                staffId={assignment.staff_id}
-                name={staffMember?.name || assignment.staff_name || 'Unknown'}
-                role={staffMember?.role}
-                allocation={assignment.allocation}
-                phaseType={phase.name}
-                phaseColor={phase.color}
-                depth={depth + 1}
-                approvalStatus={assignment.approval_status}
-                approval={assignment.approval}
-                startDate={bookingSpan(assignment, phase).start}
-                endDate={bookingSpan(assignment, phase).end}
-                linked={!isUnlinkedBooking(assignment)}
-                cardStartDate={phase.start_date}
-                cardEndDate={phase.end_date}
-              />
-            );
-          })}
+          {/* Phase-level staff bookings (a person with 2+ grouped) - filtered by showAssignments */}
+          {showAssignments && (
+            <CardStaffRows
+              level="phase"
+              card={phase}
+              projectId={projectId}
+              phaseId={phase.id}
+              depth={depth + 1}
+            />
+          )}
 
           {/* Phase-level equipment assignments - filtered by showAssignments */}
           {showAssignments && (phase.equipmentAssignments ?? []).map((assignment) => {
