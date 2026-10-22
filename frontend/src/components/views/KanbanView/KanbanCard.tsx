@@ -12,6 +12,7 @@ import { groupCardBookings } from '@/utils/bookingSegments';
 import { PendingBadge } from '@/components/common/PendingBadge';
 import { useAppStore } from '@/stores/appStore';
 import styles from './KanbanCard.module.css';
+import { Icon, CommentIcon } from '@/components/common/Icon';
 
 interface KanbanCardProps {
   card: KanbanCardData;
@@ -125,9 +126,7 @@ export function KanbanCard({
         </div>
         {commentCount > 0 && (
           <span className={styles.comments} title={`${commentCount} comment(s)`}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
+            <Icon icon={CommentIcon} size={12} />
             {commentCount}
           </span>
         )}

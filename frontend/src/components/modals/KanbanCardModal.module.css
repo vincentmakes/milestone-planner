@@ -151,6 +151,8 @@
 }
 
 .removeBtn {
+  display: inline-flex;
+  align-items: center;
   background: none;
   border: none;
   color: var(--text-tertiary);

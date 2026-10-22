@@ -7,6 +7,7 @@ import { TagFilterDropdown } from '@/components/common/TagFilterDropdown';
 import type { CustomColumn, Project } from '@/types';
 import type { KanbanGrouping } from '@/utils/kanbanCards';
 import styles from './KanbanToolbar.module.css';
+import { Icon, CheckBoxIcon } from '@/components/common/Icon';
 
 interface KanbanToolbarProps {
   projects: Project[];
@@ -101,10 +102,7 @@ export function KanbanToolbar({
         aria-pressed={myTodoOnly}
         title="Show only cards assigned to me"
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M9 11l3 3L22 4" />
-          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-        </svg>
+        <Icon icon={CheckBoxIcon} size={14} />
         My Todo
       </button>
 

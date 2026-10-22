@@ -42,6 +42,7 @@ import { flashSentForApproval, markRequestPendingLocally } from '@/utils/pending
 import { AllocationSlider, snapToStep } from '@/components/common/AllocationSlider';
 import styles from './AssignmentModal.module.css';
 import { confirmAction } from '@/utils/confirmDialog';
+import { Icon, PinIcon } from '@/components/common/Icon';
 
 interface AssignmentModalProps {
   mode: 'staff' | 'equipment';
@@ -549,7 +550,10 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
         {/* Info for linked phase/subphase assignments - staff mode only */}
         {isStaff && isPhaseOrSubphase && followCard && (
           <div className={styles.infoBox}>
-            <p>📌 This assignment uses the {assignmentLevelLabel.toLowerCase()}'s dates automatically.</p>
+            <p className={styles.infoLine}>
+              <Icon icon={PinIcon} size={14} />
+              This assignment uses the {assignmentLevelLabel.toLowerCase()}&apos;s dates automatically.
+            </p>
           </div>
         )}
 

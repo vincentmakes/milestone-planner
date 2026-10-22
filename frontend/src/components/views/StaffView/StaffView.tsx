@@ -46,6 +46,7 @@ import { confirmAction } from '@/utils/confirmDialog';
 import { parseIdList } from '@/utils/instanceSettings';
 import styles from './StaffView.module.css';
 import { bookingSpan } from '@/utils/bookingSegments';
+import { Icon, PlusIcon, CloseIcon, RepeatIcon, ChevronRightIcon, DragDotsIcon, CheckIcon, ChevronDownIcon, FilterIcon } from '@/components/common/Icon';
 
 // Height constants matching Gantt rows
 const BASE_ROW_HEIGHT = 44;  // Minimum row height
@@ -642,29 +643,9 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
               aria-expanded={isFilterOpen}
               aria-haspopup="dialog"
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
-              >
-                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-              </svg>
+              <Icon icon={FilterIcon} size={14} />
               <span className={styles.filterLabel}>{filterLabel()}</span>
-              <svg
-                className={`${styles.chevron} ${isFilterOpen ? styles.open : ''}`}
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
+              <Icon icon={ChevronDownIcon} size={12} className={`${styles.chevron} ${isFilterOpen ? styles.open : ''}`} />
             </button>
             
             {isFilterOpen && (
@@ -693,9 +674,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                               onChange={() => toggleRole(role)}
                             />
                             <span className={styles.filterCheckbox}>
-                              <svg className={styles.checkIcon} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
+                              <Icon icon={CheckIcon} size={12} className={styles.checkIcon} />
                             </span>
                             <span className={styles.filterOptionText}>{role}</span>
                           </label>
@@ -720,9 +699,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                               onChange={() => toggleSkill(skill.id)}
                             />
                             <span className={styles.filterCheckbox}>
-                              <svg className={styles.checkIcon} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
+                              <Icon icon={CheckIcon} size={12} className={styles.checkIcon} />
                             </span>
                             <span 
                               className={styles.filterOptionText}
@@ -779,20 +756,11 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                   >
                     {canDrag && (
                       <div className={styles.dragHandle} title="Drag to assign">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                          <circle cx="9" cy="5" r="2" />
-                          <circle cx="9" cy="12" r="2" />
-                          <circle cx="9" cy="19" r="2" />
-                          <circle cx="15" cy="5" r="2" />
-                          <circle cx="15" cy="12" r="2" />
-                          <circle cx="15" cy="19" r="2" />
-                        </svg>
+                        <Icon icon={DragDotsIcon} size={12} />
                       </div>
                     )}
                     <div className={`${styles.expandIcon} ${isExpanded ? styles.expanded : ''}`}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="9 18 15 12 9 6" />
-                      </svg>
+                      <Icon icon={ChevronRightIcon} size={12} />
                     </div>
                     <div 
                       className={`${styles.status} ${available > 0 ? styles.available : styles.overloaded} ${isPartTime ? styles.partTime : ''}`}
@@ -843,12 +811,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                             {recurringPattern && (
                               <span className={`${styles.detailType} ${styles.vacation}`}>
                                 <span className={styles.recurringBadge} title={getRecurringDaysDisplay(recurringPattern.daysOfWeek)}>
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M17 1l4 4-4 4" />
-                                    <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-                                    <path d="M7 23l-4-4 4-4" />
-                                    <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-                                  </svg>
+                                  <Icon icon={RepeatIcon} size={12} />
                                   Recurring
                                 </span>
                               </span>
@@ -875,10 +838,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                                 }}
                                 title="Delete vacation"
                               >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <line x1="18" y1="6" x2="6" y2="18" />
-                                  <line x1="6" y1="6" x2="18" y2="18" />
-                                </svg>
+                                <Icon icon={CloseIcon} size={14} />
                               </span>
                             )}
                           </div>
@@ -892,10 +852,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
                           onClick={() => openVacationModal(undefined, staffMember.id)}
                         >
                           <span className={styles.addIcon}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <line x1="12" y1="5" x2="12" y2="19" />
-                              <line x1="5" y1="12" x2="19" y2="12" />
-                            </svg>
+                            <Icon icon={PlusIcon} size={14} />
                           </span>
                           <span className={styles.addText}>Add vacation / time off</span>
                         </div>

@@ -19,6 +19,7 @@ import styles from './StaffView.module.css';
 import { parseLocalDate } from '@/utils/date';
 import { teamsForSite, teamIdsOnSite } from '@/utils/teams';
 import { can } from '@/utils/permissions';
+import { Icon, PlusIcon, CloseIcon, DownloadIcon, ChevronRightIcon } from '@/components/common/Icon';
 
 interface CompanyEventsRowProps {
   isExpanded: boolean;
@@ -153,9 +154,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
       >
         {onToggle && (
           <div className={`${styles.expandIcon} ${isExpanded ? styles.expanded : ''}`}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
+            <Icon icon={ChevronRightIcon} size={12} />
           </div>
         )}
         <div className={`${styles.status} ${styles.companyEventStatus}`} />
@@ -173,11 +172,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
             onClick={exportToICS}
             title="Export to Outlook"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
+            <Icon icon={DownloadIcon} size={14} />
           </button>
           {canEdit && (
             <button 
@@ -187,10 +182,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
               title={addBlockedReason ?? 'Add company event'}
               aria-label="Add company event"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
+              <Icon icon={PlusIcon} size={14} />
             </button>
           )}
         </div>
@@ -236,10 +228,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
                       disabled={deleteBlockedReason !== null}
                       title={deleteBlockedReason ?? ((event.site_ids?.length ?? 1) > 1 ? 'Remove from this site' : 'Delete company event')}
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
+                      <Icon icon={CloseIcon} size={14} />
                     </button>
                   )}
                 </div>
@@ -262,10 +251,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
               title={addBlockedReason ?? undefined}
             >
               <span className={styles.addIcon}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
+                <Icon icon={PlusIcon} size={12} />
               </span>
               <span className={styles.addText}>Add company event</span>
             </div>

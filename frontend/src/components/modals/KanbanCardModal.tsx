@@ -58,6 +58,7 @@ import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import type { CardStatus, StaffAssignment } from '@/types';
 import styles from './KanbanCardModal.module.css';
 import { confirmAction } from '@/utils/confirmDialog';
+import { Icon, CloseIcon } from '@/components/common/Icon';
 
 export function KanbanCardModal() {
   const activeModal = useUIStore((s) => s.activeModal);
@@ -538,7 +539,7 @@ export function KanbanCardModal() {
                           disabled={busy}
                           aria-label={`Remove ${a.staff_name ?? 'assignee'}`}
                         >
-                          &times;
+                          <Icon icon={CloseIcon} size={14} />
                         </button>
                       )}
                     </span>
@@ -604,7 +605,7 @@ export function KanbanCardModal() {
                         disabled={busy}
                         aria-label="Delete comment"
                       >
-                        &times;
+                        <Icon icon={CloseIcon} size={14} />
                       </button>
                     )}
                   </div>

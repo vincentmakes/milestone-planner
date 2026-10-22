@@ -29,6 +29,7 @@ import type { Tag } from '@/types';
 import styles from './TagPicker.module.css';
 import { confirmAction } from '@/utils/confirmDialog';
 import { can } from '@/utils/permissions';
+import { Icon, CheckIcon, CloseIcon } from '@/components/common/Icon';
 
 /** Search box placeholder (referenced by scripts/screenshots). */
 export const TAG_PICKER_PLACEHOLDER = 'Find a tag...';
@@ -170,7 +171,7 @@ export function TagPicker({ selectedIds, onChange, siteId, teamIds = NO_TEAMS, d
                   aria-label={`Remove ${tag.name}`}
                   disabled={disabled}
                 >
-                  ×
+                  <Icon icon={CloseIcon} size={12} />
                 </button>
               </span>
             );
@@ -246,18 +247,7 @@ export function TagPicker({ selectedIds, onChange, siteId, teamIds = NO_TEAMS, d
                         {tag.name}
                       </span>
                       {selected && (
-                        <svg
-                          className={styles.check}
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="3"
-                          aria-hidden="true"
-                        >
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
+                        <Icon icon={CheckIcon} size={14} className={styles.check} />
                       )}
                     </button>
                   );

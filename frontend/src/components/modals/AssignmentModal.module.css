@@ -94,3 +94,10 @@
 .infoBox p {
   margin: 0;
 }
+
+/* The pin in front of the linked-dates note */
+.infoLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
