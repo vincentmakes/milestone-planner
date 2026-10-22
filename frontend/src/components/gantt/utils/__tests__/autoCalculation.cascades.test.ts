@@ -362,7 +362,9 @@ const linkedRow = (id: number, start: string, end: string): StaffAssignment => (
 });
 
 describe('unlinked card bookings follow their card (mirror of the card PUT)', () => {
-  it('translates the unlinked segments of moved phases and subphases, with their level', () => {
+  // Locally only: the server fits a card's segments in the card PUT, so no
+  // staffAssignment update is emitted for them.
+  it('translates the unlinked segments of moved phases and subphases locally, writing none', () => {
     const project = makeProject({
       id: 1,
       phases: [
@@ -390,19 +392,17 @@ describe('unlinked card bookings follow their card (mirror of the card PUT)', ()
 
     movePhasesWithProject(project, 7, updates);
 
-    const staffUpdates = updates.filter((u) => u.type === 'staffAssignment');
-    expect(staffUpdates).toEqual([
-      { type: 'staffAssignment', id: 2, level: 'phase', start_date: '2026-03-10', end_date: '2026-03-12', allocation: 40 },
-      { type: 'staffAssignment', id: 2, level: 'subphase', start_date: '2026-03-11', end_date: '2026-03-11', allocation: 40 },
-    ]);
+    expect(updates.filter((u) => u.type === 'staffAssignment')).toEqual([]);
+    expect(updates.map((u) => [u.type, u.id])).toEqual([['phase', 10], ['subphase', 20]]);
     const [linked, moved, pending] = project.phases[0].staffAssignments;
-    // Linked: no write, the card's dates locally. Pending: fitted locally only.
+    // Linked: the card's dates. Unlinked and pending: translated.
     expect([linked.start_date, linked.end_date]).toEqual(['2026-03-09', '2026-03-20']);
-    expect(moved.start_date).toBe('2026-03-10');
+    expect([moved.start_date, moved.end_date]).toEqual(['2026-03-10', '2026-03-12']);
+    expect(project.phases[0].children[0].staffAssignments[0]).toMatchObject({ start_date: '2026-03-11', end_date: '2026-03-11' });
     expect([pending.start_date, pending.end_date]).toEqual(['2026-03-16', '2026-03-18']);
   });
 
-  it('clamps the segments of a parent the cascade contracts', () => {
+  it('clamps the segments of a parent the cascade contracts, locally', () => {
     const project = makeProject({
       id: 1,
       start_date: '2026-03-02',
@@ -422,14 +422,8 @@ describe('unlinked card bookings follow their card (mirror of the card PUT)', ()
     cascadeParentDatesUp(project, 20, updates);
 
     expect(project.phases[0].end_date).toBe('2026-03-10');
-    expect(updates).toContainEqual({
-      type: 'staffAssignment',
-      id: 5,
-      level: 'phase',
-      start_date: '2026-03-09',
-      end_date: '2026-03-10',
-      allocation: 40,
-    });
+    expect(project.phases[0].staffAssignments[0]).toMatchObject({ start_date: '2026-03-09', end_date: '2026-03-10' });
+    expect(updates.filter((u) => u.type === 'staffAssignment')).toEqual([]);
   });
 
   it('fits the phase bookings when the phase takes its children\'s dates', () => {
@@ -452,16 +446,14 @@ describe('unlinked card bookings follow their card (mirror of the card PUT)', ()
     cascadePhaseDatesFromChildren(project, 10, updates);
 
     // Fully before the new start: against it, length kept
-    expect(updates).toContainEqual(
-      expect.objectContaining({ type: 'staffAssignment', id: 5, level: 'phase', start_date: '2026-03-09', end_date: '2026-03-10' })
-    );
+    expect(project.phases[0].staffAssignments[0]).toMatchObject({ start_date: '2026-03-09', end_date: '2026-03-10' });
+    expect(updates.filter((u) => u.type === 'staffAssignment')).toEqual([]);
   });
 
-  it('fitCardBookings writes nothing when the card kept its dates', () => {
+  it('fitCardBookings changes nothing when the card kept its dates', () => {
     const card = makeSubphase({ id: 20, start_date: '2026-03-02', end_date: '2026-03-06', staffAssignments: [seg(2, '2026-03-03', '2026-03-04')] });
-    const updates: PendingUpdate[] = [];
-    fitCardBookings(card, 'subphase', '2026-03-02', '2026-03-06', updates);
-    expect(updates).toEqual([]);
+    fitCardBookings(card, '2026-03-02', '2026-03-06');
+    expect(card.staffAssignments[0]).toMatchObject({ start_date: '2026-03-03', end_date: '2026-03-04' });
   });
 
   it('savePendingUpdates writes the cards first, then the bookings (two waves)', async () => {

@@ -458,17 +458,15 @@ export function useResize() {
       // Clone the project for mutations
       const projectCopy = cloneProject(projects[projectIndex]);
       
-      // The resized card's bookings: linked rows follow, unlinked segments
-      // are clamped into the new dates (written after the card's own update)
-      const bookingUpdates: PendingUpdate[] = [];
-
       // First, update the resized item itself
       if (data.type === 'phase') {
         const phase = (projectCopy.phases ?? []).find(p => p.id === data.id);
         if (phase) {
           phase.start_date = newStartDate;
           phase.end_date = newEndDate;
-          fitCardBookings(phase, 'phase', data.originalStartDate, data.originalEndDate, bookingUpdates);
+          // Its bookings, locally: linked rows follow, unlinked segments are
+          // clamped (the server fits them itself in the phase PUT)
+          fitCardBookings(phase, data.originalStartDate, data.originalEndDate);
         }
       } else if (data.type === 'subphase') {
         // Update subphase in tree
@@ -477,7 +475,7 @@ export function useResize() {
             if (child.id === data.id) {
               child.start_date = newStartDate;
               child.end_date = newEndDate;
-              fitCardBookings(child, 'subphase', data.originalStartDate, data.originalEndDate, bookingUpdates);
+              fitCardBookings(child, data.originalStartDate, data.originalEndDate);
               return true;
             }
             if (child.children?.length && updateInTree(child.children)) {
@@ -525,7 +523,6 @@ export function useResize() {
         );
       }
       // Assignments don't have auto-calculations
-      pendingUpdates.push(...bookingUpdates);
       
       // Update local state with all changes (including cascaded)
       const updatedProjects = projects.map((p, idx) => 

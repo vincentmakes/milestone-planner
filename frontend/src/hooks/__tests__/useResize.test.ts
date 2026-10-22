@@ -567,49 +567,35 @@ describe('useResize: unlinked card bookings', () => {
     await waitFor(() => expect(loadAllProjects).toHaveBeenCalled());
   });
 
-  it('shortening a phase clamps its unlinked segments after the phase update', async () => {
+  it('shortening a phase clamps its unlinked segments locally, without writing them', async () => {
     marchCells();
-    const order: string[] = [];
-    vi.mocked(updatePhase).mockImplementation(async () => {
-      order.push('phase');
-      return {} as never;
-    });
-    vi.mocked(updateStaffAssignment).mockImplementation(async () => {
-      order.push('booking');
-      return {} as never;
-    });
     const bar = makeBar({ phaseId: '10' }, 30, 150);
     const { result } = renderHook(() => useResize());
     act(() => result.current.startPhaseResize(mouseDown(bar, 180), 10, 1, 'right', '2026-03-02', '2026-03-06', bar));
     move(90); // end Mar 3
     up();
-    await waitFor(() =>
-      expect(updateStaffAssignment).toHaveBeenCalledWith(
-        70,
-        { start_date: '2026-03-03', end_date: '2026-03-03', allocation: 50 },
-        'phase'
-      )
-    );
-    expect(updatePhase).toHaveBeenCalledWith(10, { start_date: '2026-03-02', end_date: '2026-03-03' });
-    expect(updateStaffAssignment).not.toHaveBeenCalledWith(71, expect.anything(), expect.anything());
-    expect(order).toEqual(['phase', 'booking']);
+    await waitFor(() => expect(updatePhase).toHaveBeenCalledWith(10, { start_date: '2026-03-02', end_date: '2026-03-03' }));
+    await waitFor(() => expect(useUIStore.getState().isResizing).toBe(false));
     const phase = useAppStore.getState().projects[0].phases[0];
+    // The server clamps them itself in the phase PUT: no segment write
+    expect(phase.staffAssignments[0]).toMatchObject({ start_date: '2026-03-03', end_date: '2026-03-03' });
     expect(phase.staffAssignments[1].end_date).toBe('2026-03-03'); // the linked row follows locally
+    expect(updateStaffAssignment).not.toHaveBeenCalled();
   });
 
-  it('shortening a subphase clamps its segments too', async () => {
+  it('shortening a subphase clamps its segments locally too', async () => {
     marchCells();
     const bar = makeBar({ subphaseId: '20' }, 30, 90); // Mar 2 .. Mar 4
     const { result } = renderHook(() => useResize());
     act(() => result.current.startSubphaseResize(mouseDown(bar, 120), 20, 1, 'right', '2026-03-02', '2026-03-04', bar));
     move(90); // end Mar 3
     up();
-    await waitFor(() =>
-      expect(updateStaffAssignment).toHaveBeenCalledWith(
-        70,
-        { start_date: '2026-03-03', end_date: '2026-03-03', allocation: 20 },
-        'subphase'
-      )
-    );
+    await waitFor(() => expect(updateSubphase).toHaveBeenCalledWith(20, { start_date: '2026-03-02', end_date: '2026-03-03' }));
+    await waitFor(() => expect(useUIStore.getState().isResizing).toBe(false));
+    expect(useAppStore.getState().projects[0].phases[0].children[0].staffAssignments[0]).toMatchObject({
+      start_date: '2026-03-03',
+      end_date: '2026-03-03',
+    });
+    expect(updateStaffAssignment).not.toHaveBeenCalled();
   });
 });

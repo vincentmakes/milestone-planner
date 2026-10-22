@@ -37,8 +37,9 @@ export interface PendingUpdate {
   allocation?: number;
   /**
    * Staff assignment only: the route family to PUT (ids are unique per level).
-   * Absent = 'project'. Phase / subphase updates are unlinked segments only
-   * (linked rows have no dates of their own).
+   * Absent = 'project'. Phase / subphase updates are unlinked segments
+   * restored by undo (diffProjects) -- a card move never emits them, the
+   * server fits the card's segments in the card PUT.
    */
   level?: StaffAssignmentLevel;
   /**
@@ -109,33 +110,17 @@ function moveStaffAssignmentsByOffset(
 
 /**
  * Fit a card's bookings to the card's new dates (already set on `card`),
- * the client half of the server's card PUT (`fit_segments_to_card`, mirrored
- * by utils/bookingSegments.ts): linked rows take the card's dates locally (no
- * write -- they have none of their own), unlinked segments are translated
- * (same duration) or clamped. Every changed approved segment gets a
- * `staffAssignment` update with its level; pending rows are fitted locally
- * only (the server fits them in the card PUT, and an editor's write on a
- * pending row is refused). `savePendingUpdates` sends these after the card
- * updates, so a segment PUT never precedes its card's.
+ * locally: the client half of the server's card PUT (`fit_segments_to_card`,
+ * mirrored by utils/bookingSegments.ts). Linked rows take the card's dates,
+ * unlinked segments (pending ones included) are translated (same duration)
+ * or clamped. No update is emitted for them: the server fits the card's
+ * segments itself in the card PUT (`approvals.fit_card_bookings`), and the
+ * mirror rule makes the local copy end up identical, so a segment PUT would
+ * only repeat it (and be refused for a role that may edit the card but not
+ * others' bookings).
  */
-export function fitCardBookings(
-  card: Phase | Subphase,
-  level: 'phase' | 'subphase',
-  oldStart: string,
-  oldEnd: string,
-  pendingUpdates: PendingUpdate[]
-): void {
-  for (const row of fitCardBookingRows(card, oldStart, oldEnd)) {
-    if (isPendingAssignment(row)) continue;
-    pendingUpdates.push({
-      type: 'staffAssignment',
-      id: row.id,
-      level,
-      start_date: row.start_date,
-      end_date: row.end_date,
-      allocation: row.allocation ?? 100,
-    });
-  }
+export function fitCardBookings(card: Phase | Subphase, oldStart: string, oldEnd: string): void {
+  fitCardBookingRows(card, oldStart, oldEnd);
 }
 
 /**
@@ -212,9 +197,9 @@ export function moveChildrenByOffset(
       end_date: child.end_date,
     });
     
-    // Staff bookings on this subphase: linked rows follow it, unlinked
-    // segments move with it (same duration = translate).
-    fitCardBookings(child, 'subphase', previousStart, previousEnd, pendingUpdates);
+    // Staff bookings on this subphase, locally: linked rows follow it,
+    // unlinked segments move with it (the server does the same in its PUT).
+    fitCardBookings(child, previousStart, previousEnd);
     
     // Move equipment assignments on this subphase
     if (child.equipmentAssignments?.length) {
@@ -260,9 +245,9 @@ export function movePhasesWithProject(
       end_date: phase.end_date,
     });
     
-    // Staff bookings on this phase: linked rows follow it, unlinked segments
-    // move with it (same duration = translate).
-    fitCardBookings(phase, 'phase', previousStart, previousEnd, pendingUpdates);
+    // Staff bookings on this phase, locally: linked rows follow it, unlinked
+    // segments move with it (the server does the same in its PUT).
+    fitCardBookings(phase, previousStart, previousEnd);
     
     // Move equipment assignments on this phase
     if (phase.equipmentAssignments?.length) {
@@ -595,8 +580,8 @@ export function cascadeParentDatesUp(
         start_date: parent.start_date,
         end_date: parent.end_date,
       });
-      // The parent's own bookings follow its new dates (a contraction clamps them).
-      fitCardBookings(parent, parentInfo.type, previousStart, previousEnd, pendingUpdates);
+      // The parent's own bookings follow its new dates locally (a contraction clamps them).
+      fitCardBookings(parent, previousStart, previousEnd);
     }
     
     // Move up to the next parent
@@ -661,8 +646,8 @@ export function cascadePhaseDatesFromChildren(
       start_date: phase.start_date,
       end_date: phase.end_date,
     });
-    // The phase's own bookings follow its new dates.
-    fitCardBookings(phase, 'phase', previousStart, previousEnd, pendingUpdates);
+    // The phase's own bookings follow its new dates locally.
+    fitCardBookings(phase, previousStart, previousEnd);
     
     // Also update project dates
     autoAdjustProjectDates(project, pendingUpdates);

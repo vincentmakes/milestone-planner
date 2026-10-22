@@ -496,8 +496,9 @@ export function useDragAndDrop() {
         if (phase) {
           phase.start_date = newStartDate;
           phase.end_date = newEndDate;
-          // Its bookings: linked rows follow, unlinked segments move along
-          fitCardBookings(phase, 'phase', data.originalStartDate, data.originalEndDate, childUpdates);
+          // Its bookings, locally: linked rows follow, unlinked segments move
+          // along (the server fits them itself in the phase PUT)
+          fitCardBookings(phase, data.originalStartDate, data.originalEndDate);
           
           // Move all children (subphases) by the same offset
           if (phase.children?.length && dayOffset !== 0) {
@@ -511,7 +512,7 @@ export function useDragAndDrop() {
             if (child.id === data.id) {
               child.start_date = newStartDate;
               child.end_date = newEndDate;
-              fitCardBookings(child, 'subphase', data.originalStartDate, data.originalEndDate, childUpdates);
+              fitCardBookings(child, data.originalStartDate, data.originalEndDate);
               
               // Move nested children by the same offset
               if (child.children?.length && dayOffset !== 0) {

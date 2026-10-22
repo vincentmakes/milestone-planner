@@ -708,45 +708,24 @@ describe('useDragAndDrop: unlinked card bookings', () => {
     act(() => up());
   });
 
-  it('moves the unlinked segments of a dragged phase with it, after the phase update', async () => {
+  it('moves the unlinked segments of a dragged phase with it locally, without writing them', async () => {
     marchCells();
-    const order: string[] = [];
-    vi.mocked(updatePhase).mockImplementation(async (id) => {
-      order.push(`phase ${id}`);
-      return {} as never;
-    });
-    vi.mocked(updateSubphase).mockImplementation(async (id) => {
-      order.push(`subphase ${id}`);
-      return {} as never;
-    });
-    vi.mocked(updateStaffAssignment).mockImplementation(async (id, _body, level) => {
-      order.push(`${level} booking ${id}`);
-      return {} as never;
-    });
     const bar = makeBar({ phaseId: '10' }, 30);
     const { result } = renderHook(() => useDragAndDrop());
     act(() => result.current.startPhaseDrag(mouseDown(bar, 0), 10, 1, '2026-03-02', '2026-03-06', false, bar));
     move(90); // +3 days
     up();
 
-    await waitFor(() =>
-      expect(updateStaffAssignment).toHaveBeenCalledWith(
-        70,
-        { start_date: '2026-03-06', end_date: '2026-03-07', allocation: 50 },
-        'phase'
-      )
-    );
-    expect(updateStaffAssignment).toHaveBeenCalledWith(
-      70,
-      { start_date: '2026-03-06', end_date: '2026-03-06', allocation: 20 },
-      'subphase'
-    );
-    // The linked row is never written, but shows the phase's new dates
-    expect(updateStaffAssignment).not.toHaveBeenCalledWith(71, expect.anything(), expect.anything());
-    expect(phaseOf(10).staffAssignments[1].start_date).toBe('2026-03-05');
-    // Cards first, then their bookings
-    expect(order.indexOf('phase 10')).toBeLessThan(order.indexOf('phase booking 70'));
-    expect(order.indexOf('subphase 20')).toBeLessThan(order.indexOf('subphase booking 70'));
+    await waitFor(() => expect(updatePhase).toHaveBeenCalledWith(10, { start_date: '2026-03-05', end_date: '2026-03-09' }));
+    await waitFor(() => expect(useUIStore.getState().isDragging).toBe(false));
+    const phase = phaseOf(10);
+    // Segments translated, the linked row on the phase's dates -- the server
+    // fits them itself in the card PUTs, so nothing is written for them.
+    expect(phase.staffAssignments[0]).toMatchObject({ start_date: '2026-03-06', end_date: '2026-03-07' });
+    expect(phase.staffAssignments[1]).toMatchObject({ start_date: '2026-03-05', end_date: '2026-03-09' });
+    expect(phase.children[0].staffAssignments[0]).toMatchObject({ start_date: '2026-03-06', end_date: '2026-03-06' });
+    expect(updateSubphase).toHaveBeenCalledWith(20, expect.objectContaining({ start_date: '2026-03-05' }));
+    expect(updateStaffAssignment).not.toHaveBeenCalled();
   });
 
   it('says why a refused segment move failed, then reloads', async () => {
@@ -768,19 +747,16 @@ describe('useDragAndDrop: unlinked card bookings', () => {
     await waitFor(() => expect(loadAllProjects).toHaveBeenCalled());
   });
 
-  it('moves the unlinked segments of a dragged subphase', async () => {
+  it('moves the unlinked segments of a dragged subphase locally, without writing them', async () => {
     marchCells();
     const bar = makeBar({ subphaseId: '20' }, 30);
     const { result } = renderHook(() => useDragAndDrop());
     act(() => result.current.startSubphaseDrag(mouseDown(bar, 0), 20, 1, 10, '2026-03-02', '2026-03-04', false, bar));
     move(30); // +1 day
     up();
-    await waitFor(() =>
-      expect(updateStaffAssignment).toHaveBeenCalledWith(
-        70,
-        { start_date: '2026-03-04', end_date: '2026-03-04', allocation: 20 },
-        'subphase'
-      )
-    );
+    await waitFor(() => expect(updateSubphase).toHaveBeenCalledWith(20, { start_date: '2026-03-03', end_date: '2026-03-05' }));
+    await waitFor(() => expect(useUIStore.getState().isDragging).toBe(false));
+    expect(phaseOf(10).children[0].staffAssignments[0]).toMatchObject({ start_date: '2026-03-04', end_date: '2026-03-04' });
+    expect(updateStaffAssignment).not.toHaveBeenCalled();
   });
 });
