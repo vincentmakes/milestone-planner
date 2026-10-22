@@ -1,9 +1,12 @@
 /**
- * The pin on a phase / subphase booking row: a toggle between following the
- * card's dates (📌, linked) and own dates inside it (📍, unlinked) for
- * whoever may change the booking; a plain badge otherwise. An unlink starts
- * from the card's dates, a relink sends null dates; a 202 files a request
- * instead, a failure reloads and says why.
+ * The card badge on a phase / subphase booking row holds two controls. The
+ * pin toggles between following the card's dates (PinIcon, linked) and own
+ * dates inside it (PinOffIcon, unlinked) for whoever may change the booking,
+ * and stays in place, disabled, for anyone else and on a pending booking. An
+ * unlink starts from the card's dates, a relink sends null dates; a 202 files
+ * a request instead, a failure reloads and says why. The card name scrolls
+ * the timeline to the booking: its own start when unlinked, the card's start
+ * when linked.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -77,6 +80,9 @@ function renderPhaseRow(props: Partial<React.ComponentProps<typeof AssignmentRow
 }
 
 const pin = () => screen.getByRole('button', { name: 'Own dates for Bob Brown' });
+const cardName = (name = 'Design') => screen.getByRole('button', { name });
+const LINKED_ICON = '[data-testid="PushPinIcon"]';
+const UNLINKED_ICON = '[data-testid="PushPinOutlinedIcon"]';
 
 beforeEach(() => {
   resetAllStores();
@@ -94,7 +100,9 @@ describe('AssignmentRow pin', () => {
     renderPhaseRow();
     expect(pin()).toHaveAttribute('aria-pressed', 'false');
     expect(pin()).toHaveAttribute('title', 'Follows the phase dates — click to give it its own dates');
-    expect(pin()).toHaveTextContent('📌 Design');
+    expect(pin().querySelector(LINKED_ICON)).not.toBeNull();
+    expect(pin()).toBeEnabled();
+    expect(cardName()).toHaveAttribute('title', 'Scroll to this booking');
 
     fireEvent.click(pin());
 
@@ -128,7 +136,8 @@ describe('AssignmentRow pin', () => {
     );
     expect(pin()).toHaveAttribute('aria-pressed', 'true');
     expect(pin()).toHaveAttribute('title', 'Own dates — click to follow the subphase dates again');
-    expect(pin()).toHaveTextContent('📍 Subphase');
+    expect(pin().querySelector(UNLINKED_ICON)).not.toBeNull();
+    expect(cardName('Subphase')).toBeInTheDocument();
 
     fireEvent.click(pin());
 
@@ -136,14 +145,19 @@ describe('AssignmentRow pin', () => {
     expect(rowAt('subphase')).toMatchObject({ linked: true, start_date: '2026-03-02', end_date: '2026-03-06' });
   });
 
-  it('is a plain badge for someone who may not change the booking', () => {
+  it('keeps a disabled pin for someone who may not change the booking', () => {
     useAppStore.setState({ currentUser: makeUser({ id: 2, role: 'user' }) });
     renderPhaseRow();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    expect(screen.getByTitle('Follows the phase dates')).toHaveTextContent('📌 Design');
+    expect(pin()).toBeDisabled();
+    expect(pin()).toHaveAttribute('title', 'Follows the phase dates');
+    expect(pin().querySelector(LINKED_ICON)).not.toBeNull();
+    fireEvent.click(pin());
+    expect(updateStaffAssignment).not.toHaveBeenCalled();
+    // The card name still scrolls
+    expect(cardName()).toBeEnabled();
   });
 
-  it('is a plain badge on a pending booking and on one with my own request open', () => {
+  it('keeps a disabled pin on a pending booking and on one with my own request open', () => {
     const request: AssignmentApproval = {
       request_id: 31,
       action: 'assignments.self_update',
@@ -154,11 +168,59 @@ describe('AssignmentRow pin', () => {
       can_decide: false,
     };
     const { unmount } = renderPhaseRow({ approvalStatus: 'pending', linked: false });
-    expect(screen.queryByRole('button', { name: 'Own dates for Bob Brown' })).not.toBeInTheDocument();
-    expect(screen.getByTitle('Own dates')).toHaveTextContent('📍 Design');
+    expect(pin()).toBeDisabled();
+    expect(pin()).toHaveAttribute('title', 'Own dates');
+    expect(pin().querySelector(UNLINKED_ICON)).not.toBeNull();
     unmount();
     renderPhaseRow({ approval: request });
-    expect(screen.queryByRole('button', { name: 'Own dates for Bob Brown' })).not.toBeInTheDocument();
+    expect(pin()).toBeDisabled();
+    fireEvent.click(pin());
+    expect(updateStaffAssignment).not.toHaveBeenCalled();
+  });
+
+  it("scrolls to an unlinked booking's own start from the card name", () => {
+    renderPhaseRow({ linked: false, startDate: '2026-03-09T00:00:00.000Z', endDate: '2026-03-11' });
+    fireEvent.click(cardName());
+    expect(useUIStore.getState().scrollToDateTrigger?.date).toBe('2026-03-09');
+    expect(updateStaffAssignment).not.toHaveBeenCalled();
+  });
+
+  it("scrolls to the card's start for a linked booking", () => {
+    renderPhaseRow({ startDate: '2026-03-05', cardStartDate: '2026-03-02T00:00:00.000Z' });
+    fireEvent.click(cardName());
+    expect(useUIStore.getState().scrollToDateTrigger?.date).toBe('2026-03-02');
+  });
+
+  it('does not scroll when the pin is clicked, and neither click reaches the row', () => {
+    const onRowClick = vi.fn();
+    render(
+      <div onClick={onRowClick}>
+        <AssignmentRow
+          type="phase-staff"
+          assignmentId={9}
+          projectId={1}
+          phaseId={3}
+          staffId={4}
+          name="Bob Brown"
+          depth={1}
+          phaseType="Design"
+          linked
+          cardStartDate="2026-03-02"
+          cardEndDate="2026-03-13"
+        />
+      </div>
+    );
+    fireEvent.click(pin());
+    expect(useUIStore.getState().scrollToDateTrigger).toBeNull();
+    fireEvent.click(cardName());
+    expect(useUIStore.getState().scrollToDateTrigger?.date).toBe('2026-03-02');
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+
+  it('opens the row menu on a right-click on the badge', () => {
+    renderPhaseRow();
+    fireEvent.contextMenu(cardName());
+    expect(useUIStore.getState().contextMenu).toMatchObject({ visible: true, type: 'staffAssignment', targetId: 9 });
   });
 
   it('files a request on a 202: the row keeps its dates and shows the open change', async () => {

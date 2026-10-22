@@ -38,6 +38,11 @@ export const CardStaffRows = memo(function CardStaffRows({ level, card, projectI
 
   const nameOf = (a: StaffAssignment) => staff.find((s) => s.id === a.staff_id)?.name || a.staff_name || 'Unknown';
 
+  // The earliest effective start among a person's bookings: the overview
+  // row's badge scrolls the timeline there.
+  const firstStart = (rows: StaffAssignment[]) =>
+    rows.map((row) => bookingSpan(row, card).start).reduce((a, b) => (b < a ? b : a));
+
   const bookingRow = (assignment: StaffAssignment, rowDepth: number) => {
     const span = bookingSpan(assignment, card);
     return (
@@ -82,6 +87,7 @@ export const CardStaffRows = memo(function CardStaffRows({ level, card, projectI
               level={level}
               phaseType={card.name}
               phaseColor={card.color}
+              firstStart={firstStart(item.rows)}
             />
             {/* Two levels deeper than the group's edge: the group row's chevron
                 comes before its badge, so one level would put these badges

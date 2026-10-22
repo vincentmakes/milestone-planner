@@ -1,8 +1,10 @@
 /**
  * The card badge of a phase / subphase booking row in the project tree: the
- * card's name tinted with its colour. Shared by AssignmentRow (where it also
- * carries the pin) and StaffGroupRow (without the pin), together with
- * AssignmentRow.module.css's `typeBadge` class, so the two cannot drift.
+ * card's name tinted with its colour. Its tint and text; the badge itself is
+ * the `CardBadge` component (CardBadgeView.tsx, kept apart so this module
+ * stays plain helpers), rendered by AssignmentRow (with the pin) and
+ * StaffGroupRow (without it) in AssignmentRow.module.css's `cardBadge`
+ * class, so the rectangle is the same on every row.
  */
 
 import type { CSSProperties } from 'react';

@@ -1,7 +1,8 @@
 /**
  * StaffGroupRow - the overview row of one person's bookings on one phase /
  * subphase (1.17.0), shown when the person has two or more rows there:
- * chevron, the card badge (as on the booking rows, without the pin), name,
+ * chevron, the card badge (as on the booking rows, without the pin; its
+ * name scrolls the timeline to the person's first booking), name,
  * "N bookings" and the allocation range. The bookings follow two levels
  * deeper while expanded (CardStaffRows); the timeline draws the matching
  * SegmentsBar row.
@@ -13,8 +14,9 @@
  */
 
 import { memo } from 'react';
-import { cardBadgeName, cardBadgeStyle } from './cardBadge';
-import assignmentStyles from './AssignmentRow.module.css';
+import { useUIStore } from '@/stores/uiStore';
+import { toDateOnly } from '@/utils/date';
+import { CardBadge } from './CardBadgeView';
 import styles from './StaffGroupRow.module.css';
 import { Icon, ChevronRightIcon } from '@/components/common/Icon';
 
@@ -32,6 +34,8 @@ interface StaffGroupRowProps {
   level: 'phase' | 'subphase';
   phaseType?: string;
   phaseColor?: string;
+  /** The effective start of the person's first booking on the card (the badge's name scrolls there) */
+  firstStart?: string;
 }
 
 export const StaffGroupRow = memo(function StaffGroupRow({
@@ -44,6 +48,7 @@ export const StaffGroupRow = memo(function StaffGroupRow({
   level,
   phaseType,
   phaseColor,
+  firstStart,
 }: StaffGroupRowProps) {
   // Indented like a booking row of the card (AssignmentRow: depth * 16 + 28),
   // not like a phase row: the chevron takes the first 20 px of that edge and
@@ -64,9 +69,15 @@ export const StaffGroupRow = memo(function StaffGroupRow({
       >
         <Icon icon={ChevronRightIcon} size={12} className={`${styles.chevron} ${collapsed ? '' : styles.chevronOpen}`} />
       </button>
-      <span className={assignmentStyles.typeBadge} style={cardBadgeStyle(phaseColor)}>
-        {cardBadgeName(phaseType, level)}
-      </span>
+      <CardBadge
+        phaseType={phaseType}
+        phaseColor={phaseColor}
+        level={level}
+        onNameClick={() => {
+          if (firstStart) useUIStore.getState().triggerScrollToDate(toDateOnly(firstStart));
+        }}
+        nameTitle={`Scroll to ${name}'s first booking`}
+      />
       <span className={styles.name} title={name}>
         {name}
       </span>

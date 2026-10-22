@@ -20,7 +20,7 @@ import { PendingBadge } from '@/components/common/PendingBadge';
 import { canBookEquipment, canEditAssignment } from '@/utils/permissions';
 import { isPendingAssignment, requestedAllocation } from '@/utils/kanbanCards';
 import type { AssignmentApproval, StaffAssignment, UpdateStaffAssignmentRequest } from '@/types';
-import { cardBadgeName, cardBadgeStyle } from './cardBadge';
+import { CardBadge } from './CardBadgeView';
 import styles from './AssignmentRow.module.css';
 
 interface AssignmentRowProps {
@@ -139,13 +139,13 @@ export const AssignmentRow = memo(function AssignmentRow({
     );
   }, [canOpenMenu, showContextMenu, type, assignmentId, projectId, phaseId, subphaseId, staffId, equipmentId, name, allocation, startDate, endDate, linked]);
 
-  // The pin: a card booking follows its card (📌) or has its own dates (📍).
-  // Whoever may change the booking toggles it; a pending booking, or one with
-  // my own request open, is locked like in the context menu.
+  // The pin: a card booking follows its card (PinIcon) or has its own dates
+  // (PinOffIcon). Whoever may change the booking toggles it; a pending
+  // booking, or one with my own request open, is locked like in the context
+  // menu (the pin stays, disabled). CardBadge stops the click from bubbling.
   const isRequester = Boolean(approval && currentUser && approval.requester_id === currentUser.id);
   const canTogglePin = canEdit && !pending && !isRequester && Boolean(cardStartDate && cardEndDate);
-  const handlePinClick = useCallback(async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handlePinClick = useCallback(async () => {
     if (!cardStartDate || !cardEndDate) return;
     const level = type === 'subphase-staff' ? 'subphase' : 'phase';
     const cardStart = toDateOnly(cardStartDate);
@@ -176,42 +176,44 @@ export const AssignmentRow = memo(function AssignmentRow({
     }
   }, [type, linked, cardStartDate, cardEndDate, startDate, endDate, projectId, assignmentId]);
 
-  // Phase/subphase staff has special styling - shows the pin and phase type badge
+  // The name: scroll the timeline to the booking -- its own start when it has
+  // own dates, the card's start while it follows the card.
+  const scrollStart = linked ? cardStartDate ?? startDate : startDate ?? cardStartDate;
+  const handleNameClick = useCallback(() => {
+    if (scrollStart) useUIStore.getState().triggerScrollToDate(toDateOnly(scrollStart));
+  }, [scrollStart]);
+
+  // Phase/subphase staff: the card badge (pin + card name) instead of a type badge
   if (type === 'phase-staff' || type === 'subphase-staff') {
     const cardWord = type === 'subphase-staff' ? 'subphase' : 'phase';
-    const pinTitle = linked
-      ? `Follows the ${cardWord} dates — click to give it its own dates`
-      : `Own dates — click to follow the ${cardWord} dates again`;
-    const badgeStyle = cardBadgeStyle(phaseColor);
-    const badgeText = `${linked ? '📌' : '📍'} ${cardBadgeName(phaseType, cardWord)}`;
+    const pin = {
+      linked,
+      onToggle: handlePinClick,
+      disabled: !canTogglePin,
+      title: canTogglePin
+        ? linked
+          ? `Follows the ${cardWord} dates — click to give it its own dates`
+          : `Own dates — click to follow the ${cardWord} dates again`
+        : linked
+          ? `Follows the ${cardWord} dates`
+          : 'Own dates',
+      label: `Own dates for ${name}`,
+    };
     return (
       <div 
         className={rowClass} 
         style={{ paddingLeft }}
         onContextMenu={handleContextMenu}
       >
-        {/* Phase type badge with the pin: a toggle for whoever may change the booking */}
-        {canTogglePin ? (
-          <button
-            type="button"
-            className={`${styles.typeBadge} ${styles.pinBadge}`}
-            style={badgeStyle}
-            aria-pressed={!linked}
-            aria-label={`Own dates for ${name}`}
-            title={pinTitle}
-            onClick={handlePinClick}
-          >
-            {badgeText}
-          </button>
-        ) : (
-          <span
-            className={styles.typeBadge}
-            style={badgeStyle}
-            title={linked ? `Follows the ${cardWord} dates` : 'Own dates'}
-          >
-            {badgeText}
-          </span>
-        )}
+        {/* The card badge: the pin (link / unlink) and the card name (scroll to the booking) */}
+        <CardBadge
+          phaseType={phaseType}
+          phaseColor={phaseColor}
+          level={cardWord}
+          pin={pin}
+          onNameClick={handleNameClick}
+          nameTitle="Scroll to this booking"
+        />
 
         {/* Staff name */}
         <span className={styles.name} title={name}>

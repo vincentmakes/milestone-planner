@@ -82,17 +82,70 @@
   font-style: italic;
 }
 
-/* The pin of a phase / subphase booking, as a toggle (follow the card / own dates) */
-.pinBadge {
-  border: 1px solid transparent;
-  font-family: inherit;
+/* The card badge of a phase / subphase booking row and of the overview row
+   (CardBadgeView.tsx): one rectangle on every row, pin or not. The tint comes
+   inline from cardBadgeStyle; the two buttons inside inherit its type. */
+.cardBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 3px;
+  box-sizing: border-box;
+  font-size: 9px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cardBadgePin,
+.cardBadgeName {
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
   cursor: pointer;
 }
 
-.pinBadge:hover {
-  border-color: currentColor;
+.cardBadgePin {
+  flex-shrink: 0;
 }
 
-.pinBadge[aria-pressed="true"] {
-  border-color: currentColor;
+.cardBadgePin:hover:not(:disabled) {
+  background: color-mix(in srgb, currentColor 20%, transparent);
+}
+
+.cardBadgePin:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.cardBadgeName {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cardBadgeName:hover {
+  text-decoration: underline;
+}
+
+.cardBadgePin:focus-visible,
+.cardBadgeName:focus-visible {
+  outline: 1px solid currentColor;
+  outline-offset: 1px;
 }

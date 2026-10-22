@@ -173,8 +173,12 @@ describe('PhaseRow per-person booking groups', () => {
     { id: 73, staff_id: 4, staff_name: 'Bob Brown', allocation: 60, start_date: '2026-09-10', end_date: '2026-09-12', linked: false },
   ];
   const groupedPhase = () => makePhase({ staffAssignments: bookings as never });
-  /** The booking rows, by their pin badge (plain badge: nobody signed in). */
-  const bookingRows = () => screen.queryAllByText(/Design$/).filter((el) => el.textContent?.startsWith('📍') || el.textContent?.startsWith('📌'));
+  /** The card badges of the booking rows: the ones holding a pin (disabled: nobody signed in). */
+  const bookingRows = () =>
+    screen
+      .queryAllByRole('button', { name: 'Design' })
+      .map((name) => name.parentElement as HTMLElement)
+      .filter((badge) => within(badge).queryByRole('button', { name: /^Own dates for / }));
 
   beforeEach(() => {
     useViewStore.setState({ expandedPhases: new Set([1]), showAssignments: true, collapsedStaffGroups: new Set() });
@@ -191,10 +195,14 @@ describe('PhaseRow per-person booking groups', () => {
     expect(group).toHaveTextContent('DesignBob Brown2 bookings20–60%');
     // indented like the card's booking rows (depth 1), not like a phase row
     expect(group).toHaveStyle({ paddingLeft: '44px' });
-    // the card badge, tinted like the booking rows' badges, without the pin
-    const badge = within(group).getByText('Design');
+    // the card badge: the same rectangle (class and tint) as the booking rows', without the pin
+    const badge = within(group).getByRole('button', { name: 'Design' }).parentElement as HTMLElement;
     expect(badge).toHaveStyle({ backgroundColor: 'rgba(59, 130, 246, 0.2)', color: 'rgb(59, 130, 246)' });
+    expect(badge.className).toMatch(/cardBadge/);
+    expect(badge.className).toBe(bookingRows()[0].className);
     expect(badge.getAttribute('style')).toBe(bookingRows()[0].getAttribute('style'));
+    expect(within(badge).queryByRole('button', { name: /^Own dates for / })).not.toBeInTheDocument();
+    expect(within(badge).getAllByRole('button')).toHaveLength(1);
     expect(badge.previousElementSibling).toBe(toggle);
     expect(group.className).not.toMatch(/row/);
     expect([...group.attributes].some((a) => /^data-.*id$/.test(a.name))).toBe(false);
@@ -228,6 +236,18 @@ describe('PhaseRow per-person booking groups', () => {
     renderRow(makePhase({ staffAssignments: [bookings[0], bookings[1]] as never }));
     expect(screen.queryByRole('button', { name: /bookings$/ })).not.toBeInTheDocument();
     expect(bookingRows().map((b) => (b.parentElement as HTMLElement).style.paddingLeft)).toEqual(['44px', '44px']);
+  });
+
+  it("scrolls the timeline to the person's first booking from the group badge", () => {
+    // rows out of date order: the earliest start wins, not the first row
+    renderRow(makePhase({ staffAssignments: [bookings[2], bookings[1], bookings[0]] as never }));
+    const group = screen.getByRole('button', { name: "Collapse Bob Brown's bookings" }).parentElement!;
+    const name = within(group).getByRole('button', { name: 'Design' });
+    expect(name).toHaveAttribute('title', "Scroll to Bob Brown's first booking");
+    fireEvent.click(name);
+    expect(useUIStore.getState().scrollToDateTrigger?.date).toBe('2026-09-01');
+    // the chevron stays a toggle only
+    expect(useViewStore.getState().collapsedStaffGroups.size).toBe(0);
   });
 
   it('shows the single allocation when the bookings agree', () => {
