@@ -137,7 +137,7 @@ The bell in the header shows unread notifications. You are notified when someone
 - books you, changes or removes your booking, or moves or deletes a card you are booked on,
 - changes a project you manage (bookings, equipment, project details, phases and subphases, an approval).
 
-The last two go only to the booked person and the project manager. Several changes by the same person on the same project within ten minutes merge into one unread line — see [Notifications](collaboration.md#notifications) for the full list.
+The last two go only to the booked person and the project manager. Several changes by the same person on the same project merge into one unread line while each comes within ten minutes of the previous one (so one line can span a long editing session) — see [Notifications](collaboration.md#notifications) for the full list.
 
 You are never notified about your own actions. If you are both assigned to a card and mentioned in a comment on it, you get the mention only.
 
