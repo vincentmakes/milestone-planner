@@ -42,7 +42,8 @@ export function DateField({
   markSiteCalendar = true,
 }: DateFieldProps) {
   const [open, setOpen] = useState(false);
-  const [openedByKeyboard, setOpenedByKeyboard] = useState(false);
+  /** 1 after a keyboard open, 0 after a mouse open (see DatePickerPopover). */
+  const [focusRequest, setFocusRequest] = useState(0);
   const panelId = useId();
 
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -54,7 +55,7 @@ export function DateField({
 
   const openPanel = (byKeyboard: boolean) => {
     if (disabled || open) return;
-    setOpenedByKeyboard(byKeyboard);
+    setFocusRequest(byKeyboard ? 1 : 0);
     setOpen(true);
   };
 
@@ -108,7 +109,7 @@ export function DateField({
           state={{ start: value, end: '', active: 'start' }}
           emptyEndIsSameDay={false}
           anchors={anchors}
-          focusOnOpen={openedByKeyboard}
+          focusRequest={focusRequest}
           onDayClick={handleDayClick}
           onAnchorHidden={close}
           clear={

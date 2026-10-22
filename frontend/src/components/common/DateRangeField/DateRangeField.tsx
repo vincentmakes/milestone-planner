@@ -72,7 +72,8 @@ export function DateRangeField({
 }: DateRangeFieldProps) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<ActiveField>('start');
-  const [openedByKeyboard, setOpenedByKeyboard] = useState(false);
+  /** Bumped on each keyboard activation, 0 after a mouse open (see DatePickerPopover). */
+  const [focusRequest, setFocusRequest] = useState(0);
   const panelId = useId();
 
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -95,7 +96,8 @@ export function DateRangeField({
   const openFrom = (field: ActiveField, byKeyboard: boolean) => {
     if (disabled) return;
     activate(field);
-    if (!open) setOpenedByKeyboard(byKeyboard);
+    if (byKeyboard) setFocusRequest((n) => n + 1);
+    else if (!open) setFocusRequest(0);
     setOpen(true);
   };
 
@@ -159,7 +161,7 @@ export function DateRangeField({
           state={{ start, end, active }}
           emptyEndIsSameDay={endOptional}
           anchors={anchors}
-          focusOnOpen={openedByKeyboard}
+          focusRequest={focusRequest}
           onDayClick={handleDayClick}
           onAnchorHidden={close}
           clear={

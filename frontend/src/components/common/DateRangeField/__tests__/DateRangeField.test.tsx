@@ -182,6 +182,17 @@ describe('DateRangeField — picking', () => {
     expect(cell('2026-03-14').className).not.toMatch(/preview/);
   });
 
+  it('drops the preview on a click (a touch tap never sends mouseleave)', () => {
+    render(<Harness />);
+    fireEvent.click(startField());
+    const day = dayButton(datePanel(), '2026-03-16');
+    fireEvent.mouseEnter(day); // what a tap sends before the click
+    expect(cell('2026-03-17').className).toMatch(/preview/);
+    fireEvent.click(day);
+    expect(datePanel()).toBeInTheDocument(); // the end is awaited now
+    expect(datePanel().querySelectorAll('td[class*="preview"]')).toHaveLength(0);
+  });
+
   it('highlights the range days', () => {
     render(<Harness />);
     fireEvent.click(startField());
@@ -269,6 +280,27 @@ describe('DateRangeField — keyboard and dismissal', () => {
     expect(day).toHaveFocus();
     fireEvent.keyDown(day, { key: 'ArrowRight' });
     expect(dayButton(datePanel(), '2026-03-13')).toHaveFocus();
+  });
+
+  it('moves focus to the End field’s day when End is activated from the keyboard while open', () => {
+    render(<Harness />);
+    fireEvent.keyDown(startField(), { key: 'Enter' });
+    expect(dayButton(datePanel(), '2026-03-10')).toHaveFocus();
+
+    endField().focus(); // Shift+Tab back out of the calendar onto End
+    expect(datePanel()).toBeInTheDocument();
+    fireEvent.keyDown(endField(), { key: 'ArrowDown' });
+    expect(endField()).toHaveAttribute('data-active', 'true');
+    expect(dayButton(datePanel(), '2026-03-12')).toHaveFocus();
+  });
+
+  it('leaves focus on the field on a mouse open, even after a keyboard open', () => {
+    render(<Harness />);
+    fireEvent.keyDown(startField(), { key: 'Enter' });
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
+    fireEvent.click(endField());
+    expect(datePanel()).toBeInTheDocument();
+    expect(startField()).toHaveFocus(); // Escape put it back there; the click moves nothing
   });
 
   it('leaves focus on the field on a mouse open', () => {
@@ -450,6 +482,34 @@ describe('DateRangeField — navigation and layout', () => {
     // The union of the moved Start field and the (zero-rect) End field
     expect(datePanel().style.top).toBe('140px');
     expect(datePanel().style.left).toBe('8px');
+  });
+
+  it('re-measures when the status row appears after the first click', () => {
+    render(<Harness />);
+    fireEvent.click(startField());
+    const panel = datePanel();
+    const rect = { top: 600, bottom: 636, left: 100, right: 500, width: 400, height: 36, x: 100, y: 600 };
+    for (const field of [startField(), endField()]) {
+      vi.spyOn(field, 'getBoundingClientRect').mockReturnValue({ ...rect, toJSON: () => rect } as DOMRect);
+    }
+    // jsdom lays nothing out: the status row adds 30 px to the panel
+    Object.defineProperty(panel, 'scrollHeight', {
+      configurable: true,
+      get: () => (panel.textContent?.includes('Now pick the end date') ? 330 : 300),
+    });
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      cb(0);
+      return 0;
+    });
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    // The 768 px jsdom viewport leaves 120 px below the fields: the panel sits above
+    expect(panel.style.top).toBe(`${600 - 4 - 300}px`);
+
+    fireEvent.click(dayButton(panel, '2026-03-11'));
+    expect(panel).toHaveTextContent('Now pick the end date');
+    expect(panel.style.top).toBe(`${600 - 4 - 330}px`);
   });
 
   it('closes when the fields scroll out of view', () => {

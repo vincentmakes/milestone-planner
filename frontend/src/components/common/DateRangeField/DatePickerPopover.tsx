@@ -36,6 +36,9 @@ const PHONE_QUERY = '(max-width: 640px)';
 const NAV_YEARS = 10;
 const STATUS_AWAITING_END = 'Now pick the end date';
 
+/** DayPicker's onSelect: the selection is controlled, the click rules run in onDayClick. */
+const noop = () => {};
+
 function readPhone(): boolean {
   // jsdom has no matchMedia: fall back to the desktop layout (two months).
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
@@ -112,8 +115,12 @@ export interface DatePickerPopoverProps {
   emptyEndIsSameDay: boolean;
   /** The fields the panel hangs from; their union is the anchor. */
   anchors: readonly RefObject<HTMLElement | null>[];
-  /** Opened from the keyboard: focus the active field's day. */
-  focusOnOpen: boolean;
+  /**
+   * Bumped on every keyboard activation of a field (0 = opened with the
+   * mouse): focus moves to the active field's day, on open and again when
+   * the other field is activated from the keyboard while open.
+   */
+  focusRequest: number;
   onDayClick: (day: IsoDate) => void;
   /** The fields scrolled out of view: close. */
   onAnchorHidden: () => void;
@@ -129,7 +136,7 @@ export function DatePickerPopover({
   state,
   emptyEndIsSameDay,
   anchors,
-  focusOnOpen,
+  focusRequest,
   onDayClick,
   onAnchorHidden,
   clear,
@@ -235,10 +242,12 @@ export function DatePickerPopover({
     );
   }, []);
 
-  // Before paint, and again whenever the calendar's size may change.
+  // Before paint, and again whenever the calendar's size may change: another
+  // month (5 or 6 weeks), one or two months, or the status row DayPicker adds
+  // while the end is awaited (`active`).
   useLayoutEffect(() => {
     measure();
-  }, [measure, month, numberOfMonths]);
+  }, [measure, month, numberOfMonths, active]);
 
   useEffect(() => {
     let frame = 0;
@@ -258,28 +267,32 @@ export function DatePickerPopover({
     };
   }, [measure]);
 
-  // A keyboard open lands on the active field's day (DayPicker's own
+  // A keyboard activation lands on the active field's day (DayPicker's own
   // autoFocus would pick the first day of the range, and also on mouse opens).
-  // Read once, on open: later clicks keep focus where DayPicker puts it.
-  const openFocusRef = useRef(focusOnOpen ? { day: active === 'end' ? end || start : start } : null);
+  // Only on a new request: clicks keep focus where DayPicker puts it.
+  const focusDayRef = useRef<IsoDate>('');
+  focusDayRef.current = active === 'end' ? end || start : start;
   useEffect(() => {
     const panel = panelRef.current;
-    const focus = openFocusRef.current;
-    if (!panel || !focus) return;
+    if (!panel || focusRequest === 0) return;
+    const day = focusDayRef.current;
     const target =
-      (focus.day && panel.querySelector<HTMLButtonElement>(`td[data-day="${focus.day}"]:not([data-outside]) button`)) ||
+      (day && panel.querySelector<HTMLButtonElement>(`td[data-day="${day}"]:not([data-outside]) button`)) ||
       panel.querySelector<HTMLButtonElement>('td button[tabindex="0"]');
     target?.focus();
-  }, []);
+  }, [focusRequest]);
 
   const style: CSSProperties = position
     ? { top: position.top, left: position.left, maxHeight: position.maxHeight }
     : { top: 0, left: 0 };
 
-  const handleDayClick = (date: Date) => onDayClick(formatLocalDate(date));
+  const handleDayClick = (date: Date) => {
+    // A touch tap fires mouseenter but never mouseleave: drop the preview
+    setHovered(null);
+    onDayClick(formatLocalDate(date));
+  };
   const handleMouseEnter = (date: Date) => setHovered(formatLocalDate(date));
   const handleMouseLeave = () => setHovered(null);
-  const noop = () => {};
 
   const shared = {
     className: styles.calendar,
