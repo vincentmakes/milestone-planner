@@ -46,6 +46,7 @@ const ada: User = {
   name: 'Ada Admin',
   role: 'admin',
   active: true,
+  is_resource: false,
   site_ids: [1, 2],
 };
 
@@ -57,6 +58,7 @@ const sam: User = {
   name: 'Sam Super',
   role: 'superuser',
   active: true,
+  is_resource: true,
   site_ids: [1],
 };
 
@@ -69,6 +71,7 @@ const bob: User = {
   name: 'Bob Brown',
   role: 'user',
   active: true,
+  is_resource: true,
   site_ids: [1, 2],
   job_title: 'Analyst',
 };
@@ -280,6 +283,7 @@ describe('UsersPanel filters and new user form (admin)', () => {
       email: 'cleo@demo.local',
       password: 'welcome-1',
       role: 'superuser',
+      is_resource: true,
     });
   });
 });
@@ -662,5 +666,99 @@ describe('UsersPanel by permission key', () => {
     await openEditor('Bob Brown');
     expect(screen.getByLabelText('Role *')).toHaveValue('viewer');
     expect(screen.getByRole('option', { name: 'Viewer' })).toBeInTheDocument();
+  });
+});
+
+describe('UsersPanel bookable as a resource', () => {
+  beforeEach(() => {
+    seed(ada, [siteA, siteB]);
+    vi.mocked(createUser).mockReset().mockResolvedValue({} as never);
+  });
+
+  const bookable = () => screen.getByRole('switch', { name: 'Bookable as a resource' });
+
+  async function openCreate() {
+    render(<UsersPanel />);
+    await rowOf('Bob Brown');
+    fireEvent.click(screen.getByRole('button', { name: 'Add User' }));
+    fireEvent.change(screen.getByLabelText('First Name *'), { target: { value: 'Cleo' } });
+    fireEvent.change(screen.getByLabelText('Last Name *'), { target: { value: 'Chen' } });
+    fireEvent.change(screen.getByLabelText('Email *'), { target: { value: 'cleo@demo.local' } });
+    fireEvent.change(screen.getByLabelText('Password *'), { target: { value: 'welcome-1' } });
+  }
+
+  it('shows the switch with its hint, following the role on a new account', async () => {
+    await openCreate();
+    const toggle = bookable();
+    expect(toggle).toBeChecked();
+    expect(toggle).toBeEnabled();
+    expect(toggle).toHaveAccessibleDescription(
+      'Appears in the Staff panel and can be booked on projects. Add the person to a site to list them there.'
+    );
+
+    fireEvent.change(screen.getByLabelText('Role *'), { target: { value: 'admin' } });
+    expect(bookable()).not.toBeChecked();
+    fireEvent.change(screen.getByLabelText('Role *'), { target: { value: 'superuser' } });
+    expect(bookable()).toBeChecked();
+
+    fireEvent.change(screen.getByLabelText('Role *'), { target: { value: 'admin' } });
+    fireEvent.submit(screen.getByLabelText('Role *').closest('form')!);
+    await waitFor(() => expect(createUser).toHaveBeenCalled());
+    expect(vi.mocked(createUser).mock.calls[0][0]).toMatchObject({ role: 'admin', is_resource: false });
+  });
+
+  it('keeps a touched switch whatever role is picked afterwards', async () => {
+    await openCreate();
+    fireEvent.click(bookable());
+    expect(bookable()).not.toBeChecked();
+    fireEvent.change(screen.getByLabelText('Role *'), { target: { value: 'superuser' } });
+    expect(bookable()).not.toBeChecked();
+
+    fireEvent.change(screen.getByLabelText('Role *'), { target: { value: 'admin' } });
+    fireEvent.click(bookable());
+    fireEvent.change(screen.getByLabelText('Role *'), { target: { value: 'user' } });
+    expect(bookable()).toBeChecked();
+
+    fireEvent.submit(screen.getByLabelText('Role *').closest('form')!);
+    await waitFor(() => expect(createUser).toHaveBeenCalled());
+    expect(vi.mocked(createUser).mock.calls[0][0]).toMatchObject({ role: 'user', is_resource: true });
+  });
+
+  it("shows an account's own flag, ignores role changes and sends it on update", async () => {
+    const onDirtyChange = vi.fn();
+    render(<UsersPanel onDirtyChange={onDirtyChange} />);
+    await openEditor('Bob Brown');
+    expect(bookable()).toBeChecked();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+
+    fireEvent.change(screen.getByLabelText('Role *'), { target: { value: 'admin' } });
+    expect(bookable()).toBeChecked();
+    fireEvent.change(screen.getByLabelText('Role *'), { target: { value: 'user' } });
+
+    fireEvent.click(bookable());
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    fireEvent.click(bookable());
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    fireEvent.click(bookable());
+    save();
+
+    await waitFor(() => expect(updateUser).toHaveBeenCalled());
+    expect(updateUser.mock.calls[0]).toEqual([4, expect.objectContaining({ is_resource: false })]);
+  });
+
+  it('sends the unchanged flag on every update', async () => {
+    render(<UsersPanel />);
+    await openEditor('Ada Admin');
+    expect(bookable()).not.toBeChecked();
+    save();
+    await waitFor(() => expect(updateUser).toHaveBeenCalled());
+    expect(updateUser.mock.calls[0]).toEqual([1, expect.objectContaining({ is_resource: false })]);
+  });
+
+  it('marks people who are not bookable in the list', async () => {
+    render(<UsersPanel />);
+    expect(within(await rowOf('Ada Admin')).getByText('Not bookable')).toBeInTheDocument();
+    expect(within(await rowOf('Bob Brown')).queryByText('Not bookable')).not.toBeInTheDocument();
+    expect(within(await rowOf('Sam Super')).queryByText('Not bookable')).not.toBeInTheDocument();
   });
 });

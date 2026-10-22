@@ -330,6 +330,9 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                             <span className={styles.userEmail}>{user.email}</span>
                           </div>
                           {!user.active && <span className={styles.disabledBadge}>Disabled</span>}
+                          {user.is_resource === false && (
+                            <span className={styles.notBookableBadge}>Not bookable</span>
+                          )}
                         </div>
                       </td>
                       <td className={styles.jobTitleCell}>
@@ -573,6 +576,12 @@ function UserForm({ user, sites, skills, currentUser, roles, jobTitleSuggestions
   const [role, setRole] = useState<UserRole>(user?.role || 'user');
   const [maxCapacity, setMaxCapacity] = useState(user?.max_capacity ?? 100);
   const [active, setActive] = useState(user?.active ?? true);
+  // Bookable as a resource. A new account follows its role (the administrator
+  // role is not bookable, the others are, like the backend default) until the
+  // switch is used; then it keeps the choice.
+  const initialIsResource = user?.is_resource ?? (user?.role || 'user') !== ADMIN_ROLE_KEY;
+  const [isResourceChoice, setIsResourceChoice] = useState<boolean | null>(isEditing ? initialIsResource : null);
+  const isResource = isResourceChoice ?? role !== ADMIN_ROLE_KEY;
   const [selectedSiteIds, setSelectedSiteIds] = useState<number[]>(user?.site_ids || []);
   // Whether the site picker was used: superusers only send site_ids then
   const [sitesTouched, setSitesTouched] = useState(false);
@@ -604,6 +613,7 @@ function UserForm({ user, sites, skills, currentUser, roles, jobTitleSuggestions
       role !== (user?.role || 'user') ||
       maxCapacity !== (user?.max_capacity ?? 100) ||
       active !== (user?.active ?? true) ||
+      isResource !== initialIsResource ||
       !sameIds(selectedSiteIds, user?.site_ids || []) ||
       !sameIds(selectedSkillIds, user?.skills?.map((s) => s.id) || [])
   );
@@ -737,6 +747,7 @@ function UserForm({ user, sites, skills, currentUser, roles, jobTitleSuggestions
           last_name: lastName.trim(),
           job_title: jobTitle.trim() || undefined,
           max_capacity: maxCapacity,
+          is_resource: isResource,
           skill_ids: selectedSkillIds,
         };
         if (canEditCredentials) {
@@ -760,6 +771,7 @@ function UserForm({ user, sites, skills, currentUser, roles, jobTitleSuggestions
           job_title: jobTitle.trim() || undefined,
           role,
           max_capacity: maxCapacity,
+          is_resource: isResource,
           site_ids: selectedSiteIds,
           skill_ids: selectedSkillIds,
         };
@@ -879,6 +891,19 @@ function UserForm({ user, sites, skills, currentUser, roles, jobTitleSuggestions
             {!canToggleActive && <span className={styles.hint}>{!can(currentUser, 'users.toggle_active') ? 'Your role cannot enable or disable users' : user?.id === currentUser?.id ? "Can't disable yourself" : 'Insufficient permissions'}</span>}
           </div>
         )}
+        <div className={styles.field}>
+          <label>Resource</label>
+          <ToggleSwitch
+            className={styles.toggleLabel}
+            checked={isResource}
+            onChange={setIsResourceChoice}
+            label="Bookable as a resource"
+            aria-describedby="isResourceHint"
+          />
+          <span id="isResourceHint" className={styles.hint}>
+            Appears in the Staff panel and can be booked on projects. Add the person to a site to list them there.
+          </span>
+        </div>
       </div>
       
       {/* Site Assignments - Button Style */}

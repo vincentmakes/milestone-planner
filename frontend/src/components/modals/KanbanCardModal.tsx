@@ -43,7 +43,7 @@ import {
 } from '@/utils/mentions';
 import { MentionText, MentionTextarea } from '@/components/common/MentionTextarea';
 import { formatDateShort, parseDateISO } from '@/utils/date';
-import { can, canEditAssignment, canSelf, isSelf, needsApproval } from '@/utils/permissions';
+import { can, canBookSelf, canEditAssignment, isSelf, needsApproval } from '@/utils/permissions';
 import { approvalsApi, isPendingResponse } from '@/api/endpoints/approvals';
 import { ApprovalActions } from '@/components/common/ApprovalActions';
 import { PendingBadge } from '@/components/common/PendingBadge';
@@ -117,8 +117,9 @@ export function KanbanCardModal() {
   const isAssigned = Boolean(currentUser && card?.assigneeIds.includes(currentUser.id));
   // On the card in any way, approved or awaiting approval (no second Join).
   const isOnCard = Boolean(currentUser && (isAssigned || card?.pendingAssigneeIds.includes(currentUser.id)));
-  // Own bookings follow the role's assignments.self_* keys (allow, approval, or denied).
-  const canJoin = canSelf(currentUser, 'assignments.self_create');
+  // Own bookings follow the role's assignments.self_* keys (allow, approval, or
+  // denied), and only someone bookable as a resource may join (else 400).
+  const canJoin = canBookSelf(currentUser, currentUser?.id);
   const joinNeedsApproval = needsApproval(currentUser, 'assignments.self_create');
   // Mirrors app/services/card_access.py: any card, or the cards I am on.
   const canMove =

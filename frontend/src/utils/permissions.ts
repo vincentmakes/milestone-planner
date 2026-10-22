@@ -23,7 +23,8 @@ import type { ApprovableKey, PermissionKey } from '@/types/permissions';
 export type ProjectLike = Pick<Project, 'pm_id'>;
 
 /** The parts of a user a permission check needs. */
-export type UserLike = Pick<User, 'id'> & Partial<Pick<User, 'permissions' | 'approval_required'>>;
+export type UserLike = Pick<User, 'id'> &
+  Partial<Pick<User, 'permissions' | 'approval_required' | 'is_resource'>>;
 
 function holds(user: UserLike | null | undefined, key: PermissionKey): boolean {
   return Boolean(user?.permissions?.includes(key));
@@ -63,12 +64,24 @@ export function canSelf(user: UserLike | null | undefined, key: ApprovableKey): 
 }
 
 /**
+ * Whether the user is bookable as a resource (`is_resource`, "Bookable as a
+ * resource" in Settings → Users). A missing flag counts as bookable; a
+ * missing user does not. Mirrors `project_access.require_bookable_staff`:
+ * the server answers 400 "This person is not bookable as a resource" to any
+ * new booking of someone who is not, before any approval request.
+ */
+export function isBookable(user: UserLike | null | undefined): boolean {
+  return Boolean(user) && user!.is_resource !== false;
+}
+
+/**
  * Whether the user may book `staffId`'s time as their own booking (drag
- * themselves from the resource panel or the Staff view): it is them, and
- * their role holds `assignments.self_create` (allow or approval mode).
+ * themselves from the resource panel or the Staff view, "Assign me", Join a
+ * Kanban card): it is them, they are bookable (`isBookable`), and their role
+ * holds `assignments.self_create` (allow or approval mode).
  */
 export function canBookSelf(user: UserLike | null | undefined, staffId: number | null | undefined): boolean {
-  return isSelf(user, staffId) && canSelf(user, 'assignments.self_create');
+  return isSelf(user, staffId) && isBookable(user) && canSelf(user, 'assignments.self_create');
 }
 
 /** Whether `staffId` is the user's own id. */

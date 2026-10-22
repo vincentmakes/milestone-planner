@@ -59,6 +59,7 @@ export function makeUser(overrides: Partial<User> = {}): User {
     role_name: roleNameFor(role),
     max_capacity: 100,
     active: true,
+    is_resource: role !== 'admin',
     site_ids: [1],
     skills: [],
     team_ids: [],

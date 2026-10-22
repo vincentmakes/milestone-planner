@@ -18,6 +18,8 @@ import {
   canBookEquipment,
   canBookEquipmentById,
   canBookEquipmentOnAny,
+  canBookSelf,
+  isBookable,
 } from '../permissions';
 import { makeUser } from '@/test/factories';
 
@@ -202,5 +204,31 @@ describe('equipment bookings (equipment_bookings.manage)', () => {
     expect(canBookEquipmentOnAny(editor, [managed, other])).toBe(false);
     expect(canBookEquipmentOnAny(pm, [other, managed])).toBe(true);
     expect(canBookEquipmentOnAny(user, undefined)).toBe(false);
+  });
+});
+
+describe('isBookable / canBookSelf', () => {
+  it('reads the bookable flag, a missing flag counting as bookable', () => {
+    expect(isBookable(makeUser({ id: 5, role: 'user', is_resource: true }))).toBe(true);
+    expect(isBookable(makeUser({ id: 5, role: 'user', is_resource: false }))).toBe(false);
+    expect(isBookable({ id: 5 })).toBe(true);
+    expect(isBookable(null)).toBe(false);
+    expect(isBookable(undefined)).toBe(false);
+  });
+
+  it('lets a bookable user book themself with assignments.self_create', () => {
+    expect(canBookSelf(user, user.id)).toBe(true);
+    expect(canBookSelf(user, admin.id)).toBe(false);
+    expect(canBookSelf(viewer, viewer.id)).toBe(false);
+    expect(canBookSelf(null, 4)).toBe(false);
+  });
+
+  it('refuses a user who is not bookable as a resource, even holding the key', () => {
+    const notBookable = makeUser({ id: 6, role: 'user', is_resource: false });
+    expect(canSelf(notBookable, 'assignments.self_create')).toBe(true);
+    expect(canBookSelf(notBookable, notBookable.id)).toBe(false);
+    // The administrator is not bookable by default, whatever its keys.
+    expect(canBookSelf(admin, admin.id)).toBe(false);
+    expect(canBookSelf(makeUser({ id: 1, role: 'admin', is_resource: true }), 1)).toBe(true);
   });
 });

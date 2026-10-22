@@ -27,6 +27,7 @@ function setRole(role: UserRole) {
     name: 'Some One',
     role,
     active: true,
+    is_resource: role !== 'admin',
     site_ids: [1],
   };
   useAppStore.setState({ currentUser: asSignedIn(user) });

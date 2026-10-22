@@ -10,7 +10,7 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { useDataLoader } from '@/hooks/useDataLoader';
 import { ContextMenu, type ContextMenuItem } from '@/components/common';
 import { deleteProject, deletePhase, deleteSubphase, deleteStaffAssignment, deleteEquipmentAssignment, createStaffAssignment } from '@/api';
-import { can, canBookEquipment, canEditProject, canEditAssignment, canSelf, isSelf, needsApproval } from '@/utils/permissions';
+import { can, canBookEquipment, canBookSelf, canEditProject, canEditAssignment, canSelf, isSelf, needsApproval } from '@/utils/permissions';
 import { approvalsApi, isPendingResponse } from '@/api/endpoints/approvals';
 import { ApiError } from '@/api/client';
 import { RejectRequestDialog } from '@/components/common/ApprovalActions';
@@ -134,8 +134,9 @@ export function ContextMenuContainer() {
     // on the project, phase or subphase the menu was opened on. Hidden for
     // editors (they have the full "Assign Staff" dialog) and once assigned.
     const assignMeItem = (): ContextMenuItem[] => {
-      // Hidden when the role may not book its own time at all.
-      if (canEdit || !currentUser || !canSelf(currentUser, 'assignments.self_create')) return [];
+      // Hidden when the role may not book its own time at all, or when the
+      // user is not bookable as a resource (the server would answer 400).
+      if (canEdit || !currentUser || !canBookSelf(currentUser, currentUser.id)) return [];
       const item = target as Project | Phase | Subphase | undefined;
       const mine = (item?.staffAssignments ?? []).find((a) => a.staff_id === currentUser.id);
       const alreadyAssigned = Boolean(mine);

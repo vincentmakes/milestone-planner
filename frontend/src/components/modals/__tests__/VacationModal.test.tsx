@@ -57,6 +57,7 @@ beforeEach(() => {
       last_name: 'User',
       role: 'user',
       active: true,
+      is_resource: true,
       site_ids: [1],
     }),
     staff: [],

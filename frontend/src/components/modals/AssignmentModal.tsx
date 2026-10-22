@@ -33,7 +33,7 @@ import {
 } from '@/utils/localProjectTree';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { findSubphaseById } from '@/utils/subphaseUtils';
-import { can, canBookEquipment, canSelf, isSelf, needsApproval } from '@/utils/permissions';
+import { can, canBookEquipment, canSelf, isBookable, isSelf, needsApproval } from '@/utils/permissions';
 import { Notice } from '@/components/common/Notice';
 import { isPendingResponse } from '@/api/endpoints/approvals';
 import { flashSentForApproval, markRequestPendingLocally } from '@/utils/pendingBookings';
@@ -101,7 +101,10 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   // approval (the server answers 202 and files a request), or denied (the
   // control is hidden and a notice says why).
   const ownKey = isEditing ? 'assignments.self_update' : 'assignments.self_create';
-  const selfDenied = selfOnly && !canSelf(currentUser, ownKey);
+  // A new booking also needs the user to be bookable as a resource (the
+  // server answers 400 otherwise); an existing one stays editable.
+  const selfNotBookable = selfOnly && !isEditing && !isBookable(currentUser);
+  const selfDenied = selfOnly && (!canSelf(currentUser, ownKey) || selfNotBookable);
   const selfNeedsApproval = selfOnly && needsApproval(currentUser, ownKey);
   const removalNeedsApproval = selfOnly && needsApproval(currentUser, 'assignments.self_remove');
   const ownMaxCapacity = useMemo(() => {
@@ -435,7 +438,9 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
           <Notice tone="info">
             {isEditing
               ? 'You cannot change your own booking on this project.'
-              : 'You cannot book your own time on this project.'}
+              : selfNotBookable
+                ? 'You are not bookable as a resource, so you cannot book your own time.'
+                : 'You cannot book your own time on this project.'}
           </Notice>
         )}
         {selfNeedsApproval && !selfDenied && (

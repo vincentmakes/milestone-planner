@@ -60,6 +60,7 @@ function user(role: User['role'], siteIds: number[]): User {
     name: 'Ada Admin',
     role,
     active: true,
+    is_resource: role !== 'admin',
     site_ids: siteIds,
   });
 }

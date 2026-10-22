@@ -163,6 +163,14 @@ describe('project menu', () => {
     err.mockRestore();
   });
 
+  it('hides "Assign me" from a user who is not bookable as a resource', () => {
+    seed(makeUser({ id: 5, role: 'user', is_resource: false }));
+    useUIStore.getState().showContextMenu('project', 1, 0, 0);
+    render(<ContextMenuContainer />);
+    expect(item('Edit Project')).toBeDisabled();
+    expect(screen.queryByRole('menuitem', { name: /assign me/i })).not.toBeInTheDocument();
+  });
+
   it('shows "Assigned to me" once booked', () => {
     seed(makeUser({ id: 4, role: 'user' }));
     useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);

@@ -25,6 +25,8 @@ function transformUser(apiUser: Record<string, unknown>): User {
     role_name: (apiUser.roleName ?? role) as string,
     max_capacity: (apiUser.maxCapacity ?? apiUser.max_capacity ?? 100) as number,
     active: true,
+    // Older servers send no flag: everyone stays bookable, as before.
+    is_resource: apiUser.isResource !== false,
     site_ids: (apiUser.siteIds || []) as number[],
     skills: (apiUser.skills || []) as User['skills'],
     permissions: (apiUser.permissions ?? []) as string[],

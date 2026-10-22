@@ -485,6 +485,13 @@ describe('KanbanCardModal assignee permissions', () => {
     expect(screen.queryByLabelText('Add assignee')).not.toBeInTheDocument();
   });
 
+  it('does not offer "Join this card" to someone not bookable as a resource', () => {
+    useAppStore.setState({ currentUser: makeUser({ id: 5, role: 'user', is_resource: false }) });
+    render(<KanbanCardModal />);
+    expect(screen.queryByRole('button', { name: 'Join this card' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /request to join/i })).not.toBeInTheDocument();
+  });
+
   it('does not offer "Join this card" to someone already on the card', () => {
     useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'user' }) });
     render(<KanbanCardModal />);

@@ -39,6 +39,7 @@ const admin: User = {
   name: 'Ada Admin',
   role: 'admin',
   active: true,
+  is_resource: false,
   site_ids: [1],
 };
 

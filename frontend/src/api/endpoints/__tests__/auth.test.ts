@@ -49,6 +49,7 @@ describe('auth endpoints', () => {
         role_name: 'Superuser',
         max_capacity: 80,
         active: true,
+        is_resource: true,
         site_ids: [1, 2],
         skills: [{ id: 1, name: 'HPLC' }],
         permissions: ['projects.view', 'whatif.use'],
@@ -64,6 +65,15 @@ describe('auth endpoints', () => {
     await expect(checkAuth()).resolves.toEqual({ user: null });
     get.mockRejectedValueOnce(new Error('offline'));
     await expect(checkAuth()).resolves.toEqual({ user: null });
+  });
+
+  it('maps isResource, an absent flag meaning bookable', async () => {
+    get.mockResolvedValueOnce({ user: { id: 1, isResource: false } });
+    expect((await fetchCurrentUser())?.is_resource).toBe(false);
+    get.mockResolvedValueOnce({ user: { id: 1, isResource: true } });
+    expect((await fetchCurrentUser())?.is_resource).toBe(true);
+    get.mockResolvedValueOnce({ user: { id: 1 } });
+    expect((await fetchCurrentUser())?.is_resource).toBe(true);
   });
 
   it('fetchCurrentUser defaults capacity, sites and skills', async () => {

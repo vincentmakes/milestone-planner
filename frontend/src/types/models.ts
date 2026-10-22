@@ -337,6 +337,12 @@ export interface User {
   role_name?: string;
   max_capacity?: number;  // Max work capacity % (e.g., 80 for part-time), defaults to 100
   active: boolean;
+  /**
+   * Bookable as a resource: listed in the Staff panel and bookable on
+   * projects. Off = new bookings of the person are refused (400); existing
+   * ones stay.
+   */
+  is_resource: boolean;
   site_ids: number[];
   skills?: Skill[];  // User's skills
   /** Teams the user belongs to, across all their sites */
@@ -752,6 +758,8 @@ export interface CreateUserRequest {
   job_title?: string;
   role: UserRole;
   max_capacity?: number;  // Max work capacity % (default 100)
+  /** Bookable as a resource; omitted = every role but admin */
+  is_resource?: boolean;
   site_ids: number[];
   skill_ids?: number[];
 }
@@ -765,6 +773,8 @@ export interface UpdateUserRequest {
   role?: UserRole;
   max_capacity?: number;  // Max work capacity %
   active?: boolean;
+  /** Bookable as a resource */
+  is_resource?: boolean;
   site_ids?: number[];
   skill_ids?: number[];
 }

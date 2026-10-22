@@ -103,6 +103,23 @@ describe('AssignmentModal self booking needing approval', () => {
     expect(screen.queryByRole('button', { name: /assign me/i })).not.toBeInTheDocument();
   });
 
+  it('refuses a new own booking to someone not bookable as a resource, keeping their edits', () => {
+    seed('allow');
+    useAppStore.setState({ currentUser: { ...useAppStore.getState().currentUser!, is_resource: false } });
+    openCreate();
+    const { unmount } = render(<AssignmentModal mode="staff" />);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'You are not bookable as a resource, so you cannot book your own time.'
+    );
+    expect(screen.queryByRole('button', { name: /assign me/i })).not.toBeInTheDocument();
+    unmount();
+
+    openEdit();
+    render(<AssignmentModal mode="staff" />);
+    expect(screen.getByRole('button', { name: 'Save Changes' })).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
   it('keeps the plain label and no flash on a direct booking', async () => {
     seed('allow');
     vi.mocked(createStaffAssignment).mockResolvedValue({ id: 12, staff_id: 4, allocation: 80, start_date: '', end_date: '' });
