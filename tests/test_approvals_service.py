@@ -606,6 +606,18 @@ async def test_approve_create_activates_the_pending_row():
     change = result.effects.assignment_changes[0]
     assert (change.assignment_id, change.action) == (70, "create")
     assert result.effects.events[0].recipients == frozenset({REQ, ADMIN, PM})
+    # The PM is told an approval was applied -- here the PM approved, so the
+    # delivery drops them as the actor.
+    (intent,) = result.effects.change_intents
+    assert (intent.recipient, intent.type, intent.user_id, intent.person_id) == (
+        "pm",
+        "project_changed",
+        PM,
+        REQ,
+    )
+    assert intent.title == "Test User7 approved {person}'s request on Design"
+    assert intent.body == "at 80%"
+    assert (intent.project_id, intent.entity_type, intent.entity_id) == (1, "phase", 11)
 
 
 @pytest.mark.asyncio
@@ -630,6 +642,14 @@ async def test_approve_update_writes_the_requested_values():
         date(2026, 2, 27),
     )
     assert row.approval_request_id is None
+    # An admin approved: the PM gets the change line.
+    (intent,) = result.effects.change_intents
+    assert intent.user_id == PM and intent.person_id == REQ
+    assert intent.title == "Test User1 approved {person}'s request on Alpha"
+    assert intent.body == (
+        "allocation 60% → 90%, dates 2026-01-05–2026-01-30 → 2026-02-02–2026-02-27"
+    )
+    assert (intent.entity_type, intent.entity_id) == ("project", 1)
 
 
 @pytest.mark.asyncio
@@ -642,6 +662,7 @@ async def test_approve_remove_deletes_the_row():
 
     assert db.deleted == [row]
     assert result.effects.assignment_changes[0].action == "delete"
+    assert [i.body for i in result.effects.change_intents] == ["removal"]
 
 
 @pytest.mark.asyncio
@@ -675,6 +696,7 @@ async def test_approve_create_expires_when_revalidation_fails(answers, reason):
     assert note.user_id == REQ and note.title.startswith("Your booking on ")
     assert note.title.endswith(" expired")
     db.commit.assert_awaited_once()
+    assert result.effects.change_intents == []  # nothing was applied
 
 
 @pytest.mark.asyncio
@@ -786,6 +808,7 @@ async def test_reject_create_deletes_the_pending_row_and_tells_the_requester():
     assert note.title == "Your booking on Design was rejected by Test User7"
     assert note.body == "Full"
     assert result.effects.assignment_changes[0].action == "delete"
+    assert result.effects.change_intents == []
 
 
 @pytest.mark.asyncio
@@ -811,6 +834,7 @@ async def test_requester_cancels_without_notifying_anyone():
     assert db.deleted == [row]
     assert not db.notifications
     assert result.effects.events[0].recipients == frozenset({REQ, ADMIN, PM})
+    assert result.effects.change_intents == []
 
 
 @pytest.mark.asyncio

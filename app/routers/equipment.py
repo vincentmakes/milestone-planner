@@ -25,6 +25,7 @@ from app.schemas.equipment import (
     EquipmentResponse,
     EquipmentUpdate,
 )
+from app.services import change_notifications
 from app.services.date_range import ensure_date_order, parse_day_range
 from app.services.project_access import require_on_project
 from app.services.site_access import (
@@ -540,6 +541,9 @@ async def update_equipment_assignment(
 
     await ensure_project_visible(request, db, user, assignment.project_id)
     await require_on_project(db, user, "equipment_bookings.manage", assignment.project_id)
+    old_name = assignment.equipment.name if assignment.equipment else "equipment"
+    old_dates = (assignment.start_date, assignment.end_date)
+    new_name: str | None = None
 
     # Rebooking onto other equipment: same site rule as creating a booking
     # (POST /projects/{id}/equipment) -- the equipment must be linked to the
@@ -555,6 +559,7 @@ async def update_equipment_assignment(
             raise HTTPException(
                 status_code=400, detail="Equipment is not available at this project's site"
             )
+        new_name = equipment.name
 
     # Update fields
     if data.equipment_id is not None:
@@ -565,6 +570,23 @@ async def update_equipment_assignment(
         assignment.end_date = data.end_date
     if data.start_date is not None or data.end_date is not None:
         ensure_date_order(assignment.start_date, assignment.end_date)
+    body = change_notifications.equipment_change_body(
+        old_name=old_name,
+        new_name=new_name,
+        old_dates=old_dates,
+        new_dates=(assignment.start_date, assignment.end_date),
+    )
+    intents = (
+        change_notifications.equipment_intents(
+            user,
+            kind="update",
+            project_id=assignment.project_id,
+            equipment_name=old_name,
+            body=body,
+        )
+        if body
+        else []
+    )
 
     await db.commit()
     await db.refresh(assignment)
@@ -585,6 +607,7 @@ async def update_equipment_assignment(
         project_id=assignment.project_id,
         action="update",
     )
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return EquipmentAssignmentResponse(
         id=assignment.id,
@@ -612,7 +635,9 @@ async def delete_equipment_assignment(
     Matches: DELETE /api/equipment-assignments/:id
     """
     result = await db.execute(
-        select(EquipmentAssignment).where(EquipmentAssignment.id == assignment_id)
+        select(EquipmentAssignment)
+        .where(EquipmentAssignment.id == assignment_id)
+        .options(selectinload(EquipmentAssignment.equipment))
     )
     assignment = result.scalar_one_or_none()
 
@@ -622,6 +647,13 @@ async def delete_equipment_assignment(
     project_id = assignment.project_id
     await ensure_project_visible(request, db, user, project_id)
     await require_on_project(db, user, "equipment_bookings.manage", project_id)
+    intents = change_notifications.equipment_intents(
+        user,
+        kind="remove",
+        project_id=project_id,
+        equipment_name=assignment.equipment.name if assignment.equipment else "equipment",
+        body=f"Was from {assignment.start_date} to {assignment.end_date}",
+    )
 
     await db.delete(assignment)
     await db.commit()
@@ -634,6 +666,7 @@ async def delete_equipment_assignment(
         project_id=project_id,
         action="delete",
     )
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 

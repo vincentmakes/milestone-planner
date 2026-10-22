@@ -45,8 +45,8 @@ from app.schemas.kanban import (
     CommentCountsResponse,
     MentionableUserResponse,
 )
-from app.services import approvals
-from app.services.approvals import ACTION_CREATE, ACTION_REMOVE, booking_dict
+from app.services import approvals, change_notifications
+from app.services.approvals import ACTION_CREATE, ACTION_REMOVE, booking_dict, booking_values
 from app.services.card_access import require_card_status_write
 from app.services.card_status import STATUS_LABELS, apply_status
 from app.services.mentions import parse_mention_ids, strip_mention_tokens
@@ -398,6 +398,18 @@ async def assign_card(
     db.add(assignment)
 
     card_name = _card_name(card)
+    # The person gets the ``assigned`` notification below; the PM a change one.
+    intents = change_notifications.booking_intents(
+        user,
+        kind="create",
+        level=entity_type,
+        project_id=card.project_id,
+        target_id=entity_id,
+        staff_id=data.staff_id,
+        values=booking_dict(allocation),
+        target_name=card_name,
+        person_name=assignee.full_name,
+    )
     rows = build_notifications(
         recipient_ids=[data.staff_id],
         notification_type="assigned",
@@ -423,6 +435,9 @@ async def assign_card(
         summary=f"{assignee.full_name} assigned to {card_name}",
     )
     await _push_notifications(request, rows)
+    await change_notifications.deliver(
+        db, request, user.id, intents, already_notified={data.staff_id}
+    )
 
     return {
         "success": True,
@@ -489,6 +504,16 @@ async def unassign_card(
             row=assignment,
         )
     effects = await approvals.expire_overtaken(db, user, level=entity_type, row=assignment)
+    intents = change_notifications.booking_intents(
+        user,
+        kind="remove",
+        level=entity_type,
+        project_id=card.project_id,
+        target_id=entity_id,
+        staff_id=staff_id,
+        previous=booking_values(assignment, entity_type),
+        target_name=_card_name(card),
+    )
 
     assignment_id = assignment.id
     await db.delete(assignment)
@@ -504,6 +529,7 @@ async def unassign_card(
         summary=f"unassigned from {_card_name(card)}",
     )
     await approvals.publish(request, user, effects)
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 

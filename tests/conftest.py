@@ -23,6 +23,25 @@ from tests.shard_plugin import (  # noqa: F401
 )
 
 
+@pytest.fixture(autouse=True)
+def change_intents():
+    """
+    Records ``change_notifications.deliver`` calls instead of writing them.
+
+    Route tests assert the intents a change produces (``(actor_id, intents,
+    already_notified)`` per call) without mocking the delivery queries;
+    tests/test_change_notifications.py calls the real function, which it
+    captures at import time (before any fixture runs).
+    """
+    calls: list[tuple[int, list, set]] = []
+
+    async def record(_db, _request, actor_id, intents, already_notified=()):
+        calls.append((actor_id, list(intents), set(already_notified)))
+
+    with patch("app.services.change_notifications.deliver", side_effect=record):
+        yield calls
+
+
 @pytest.fixture
 def test_settings():
     """Settings configured for testing (no real DB connection needed)."""

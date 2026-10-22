@@ -288,7 +288,12 @@ async def test_a_user_leaves_a_card_with_the_board_off(authed_client, mock_db_se
     client, set_user = authed_client
     set_user(board_off(7, "user"))
     row = SimpleNamespace(
-        id=300, project_id=3, staff_id=7, approval_status="approved", approval_request_id=None
+        id=300,
+        project_id=3,
+        staff_id=7,
+        allocation=60,
+        approval_status="approved",
+        approval_request_id=None,
     )
     mock_db_session.execute.side_effect = [scalar_result(_card()), scalar_result(row)]
 

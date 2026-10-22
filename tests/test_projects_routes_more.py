@@ -786,7 +786,7 @@ async def test_subphase_parent_404(authed_client, mock_db_session, broadcast, ur
 
 
 @pytest.mark.asyncio
-async def test_update_phase_fields(authed_client, mock_db_session, broadcast):
+async def test_update_phase_fields(authed_client, mock_db_session, broadcast, change_intents):
     client, set_user = authed_client
     set_user(FakeUser(1, "superuser"))
     phase = ProjectPhase(
@@ -799,7 +799,9 @@ async def test_update_phase_fields(authed_client, mock_db_session, broadcast):
         completion=0,
         status="todo",
     )
-    mock_db_session.execute.side_effect = [scalar_result(phase)]
+    bookings = MagicMock()
+    bookings.all.return_value = [(4, 60)]
+    mock_db_session.execute.side_effect = [scalar_result(phase), bookings]
 
     response = await client.put(
         "/api/phases/10",
@@ -817,10 +819,17 @@ async def test_update_phase_fields(authed_client, mock_db_session, broadcast):
     assert (phase.start_date, phase.end_date) == (date(2026, 1, 6), date(2026, 1, 31))
     assert phase.dependencies == '[{"id": 9, "type": "SS"}]'
     assert broadcast.await_args.kwargs["project_id"] == 1
+    ((_, intents, _),) = change_intents
+    dates = "dates 2026-01-05–2026-01-30 → 2026-01-06–2026-01-31"
+    assert [(i.recipient, i.user_id, i.title, i.body) for i in intents] == [
+        ("person", 4, "Test User1 moved New", f"{dates} (you are booked at 60%)"),
+        ("pm", None, "Test User1 moved New", dates),
+    ]
+    assert all((i.entity_type, i.entity_id, i.project_id) == ("phase", 10, 1) for i in intents)
 
 
 @pytest.mark.asyncio
-async def test_update_subphase_fields(authed_client, mock_db_session, broadcast):
+async def test_update_subphase_fields(authed_client, mock_db_session, broadcast, change_intents):
     client, set_user = authed_client
     set_user(FakeUser(1, "superuser"))
     subphase = ProjectSubphase(
@@ -833,7 +842,7 @@ async def test_update_subphase_fields(authed_client, mock_db_session, broadcast)
         completion=0,
         status="todo",
     )
-    mock_db_session.execute.side_effect = [scalar_result(subphase)]
+    mock_db_session.execute.side_effect = [scalar_result(subphase), MagicMock()]
 
     response = await client.put(
         "/api/subphases/20",
@@ -849,6 +858,8 @@ async def test_update_subphase_fields(authed_client, mock_db_session, broadcast)
     assert response.status_code == 200
     assert (subphase.name, subphase.is_milestone, subphase.dependencies) == ("New", 0, "[]")
     assert subphase.end_date == date(2026, 1, 31)
+    ((_, intents, _),) = change_intents
+    assert [(i.recipient, i.entity_type, i.entity_id) for i in intents] == [("pm", "subphase", 20)]
 
 
 @pytest.mark.asyncio

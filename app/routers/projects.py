@@ -39,7 +39,7 @@ from app.schemas.project import (
     SubphaseReorderRequest,
     SubphaseUpdate,
 )
-from app.services import approvals
+from app.services import approvals, change_notifications
 from app.services.card_status import apply_completion, apply_status
 from app.services.date_range import ensure_date_order
 from app.services.permissions import permission_required_detail
@@ -836,6 +836,15 @@ async def create_project(
         action="create",
         summary=project.name,
     )
+    # A project created for someone else: its manager is told.
+    await change_notifications.deliver(
+        db,
+        request,
+        user.id,
+        change_notifications.manager_intents(
+            user, project_id=project.id, project_name=project.name, pm_id=data.pm_id
+        ),
+    )
 
     return {"id": project.id, "success": True}
 
@@ -875,6 +884,7 @@ async def update_project(
         check_project_editor(user, project.pm_id)
     if archiving and not user_can(user, "projects.archive", project.pm_id):
         raise HTTPException(status_code=403, detail=permission_required_detail("projects.archive"))
+    before = {name: getattr(project, name) for name in change_notifications.PROJECT_FIELDS}
 
     # Update fields if provided
     if data.name is not None:
@@ -914,6 +924,13 @@ async def update_project(
     if data.tag_ids is not None or data.team_ids is not None:
         tag_ids = data.tag_ids if data.tag_ids is not None else [t.id for t in project.tags]
         project.tags = await validate_project_tags(db, project.site_id, tag_ids, project.team_ids)
+    intents = change_notifications.project_update_intents(
+        user,
+        project_id=project_id,
+        project_name=project.name,
+        before=before,
+        after={name: getattr(project, name) for name in change_notifications.PROJECT_FIELDS},
+    )
 
     await db.commit()
 
@@ -926,6 +943,7 @@ async def update_project(
         action="update",
         summary=project.name,
     )
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 
@@ -955,6 +973,14 @@ async def delete_project(
     # Its approval requests cascade with the project; close them first so the
     # requesters and approvers are told their items are gone.
     effects = await approvals.cancel_for_entity(db, user, project_id=project_id, whole_project=True)
+    # Who to tell, resolved before anything is deleted (the notifications
+    # carry no project_id: the FK cascade would remove them).
+    intents = change_notifications.project_deleted_intents(
+        user,
+        project_name=project_name,
+        pm_id=project.pm_id,
+        bookers=await change_notifications.approved_bookers(db, project_id=project_id),
+    )
 
     # Polymorphic rows first (comments, custom-column values, the subphase
     # subtree with its assignments) -- nothing cascades to them.
@@ -982,6 +1008,7 @@ async def delete_project(
         summary=project_name,
     )
     await approvals.publish(request, user, effects)
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 
@@ -1051,6 +1078,20 @@ async def create_phase(
         action="create",
         summary=phase.type,
     )
+    await change_notifications.deliver(
+        db,
+        request,
+        user.id,
+        change_notifications.card_added_intents(
+            user,
+            project_id=project_id,
+            entity_type="phase",
+            entity_id=phase.id,
+            name=phase.type,
+            start=phase.start_date,
+            end=phase.end_date,
+        ),
+    )
 
     return {"id": phase.id, "success": True}
 
@@ -1080,6 +1121,7 @@ async def update_phase(
 
     if data.type is not None:
         phase.type = data.type
+    old_dates = (phase.start_date, phase.end_date)
     if data.start_date is not None:
         phase.start_date = data.start_date
     if data.end_date is not None:
@@ -1098,6 +1140,23 @@ async def update_phase(
         apply_completion(phase, data.completion if data.completion is not None else 0)
     if data.status is not None:
         apply_status(phase, data.status)
+    # Only a move of the start or end notifies (not a rename, dependency,
+    # status, completion or milestone change).
+    new_dates = (phase.start_date, phase.end_date)
+    intents = (
+        change_notifications.card_moved_intents(
+            user,
+            project_id=project_id,
+            entity_type="phase",
+            entity_id=phase_id,
+            name=phase.type,
+            old=old_dates,
+            new=new_dates,
+            bookers=await change_notifications.card_bookings(db, "phase", phase_id),
+        )
+        if new_dates != old_dates
+        else []
+    )
 
     await db.commit()
 
@@ -1110,6 +1169,7 @@ async def update_phase(
         project_id=project_id,
         action="update",
     )
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 
@@ -1146,6 +1206,14 @@ async def delete_phase(
     effects = await approvals.cancel_for_entity(
         db, user, project_id=project_id, phase_ids=[phase_id], subphase_ids=subphase_ids
     )
+    intents = change_notifications.card_deleted_intents(
+        user,
+        project_id=project_id,
+        name=phase_type,
+        bookers=await change_notifications.approved_bookers(
+            db, phase_ids=[phase_id], subphase_ids=subphase_ids
+        ),
+    )
     await delete_subphases_and_dependents(db, subphase_ids)
 
     # card_comments / custom_column_values are polymorphic and carry no FK
@@ -1177,6 +1245,7 @@ async def delete_phase(
         summary=phase_type,
     )
     await approvals.publish(request, user, effects)
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 
@@ -1299,6 +1368,20 @@ async def create_subphase_under_phase(
         action="create",
         summary=subphase.name,
     )
+    await change_notifications.deliver(
+        db,
+        request,
+        user.id,
+        change_notifications.card_added_intents(
+            user,
+            project_id=project_id,
+            entity_type="subphase",
+            entity_id=subphase.id,
+            name=subphase.name,
+            start=subphase.start_date,
+            end=subphase.end_date,
+        ),
+    )
 
     return {
         "id": subphase.id,
@@ -1402,6 +1485,20 @@ async def create_child_subphase(
         action="create",
         summary=subphase.name,
     )
+    await change_notifications.deliver(
+        db,
+        request,
+        user.id,
+        change_notifications.card_added_intents(
+            user,
+            project_id=project_id,
+            entity_type="subphase",
+            entity_id=subphase.id,
+            name=subphase.name,
+            start=subphase.start_date,
+            end=subphase.end_date,
+        ),
+    )
 
     return {
         "id": subphase.id,
@@ -1447,6 +1544,7 @@ async def update_subphase(
 
     if data.name is not None:
         subphase.name = data.name
+    old_dates = (subphase.start_date, subphase.end_date)
     if data.start_date is not None:
         subphase.start_date = data.start_date
     if data.end_date is not None:
@@ -1465,6 +1563,23 @@ async def update_subphase(
         apply_completion(subphase, data.completion if data.completion is not None else 0)
     if data.status is not None:
         apply_status(subphase, data.status)
+    # Only a move of the start or end notifies (not a rename, dependency,
+    # status, completion or milestone change).
+    new_dates = (subphase.start_date, subphase.end_date)
+    intents = (
+        change_notifications.card_moved_intents(
+            user,
+            project_id=project_id,
+            entity_type="subphase",
+            entity_id=subphase_id,
+            name=subphase.name,
+            old=old_dates,
+            new=new_dates,
+            bookers=await change_notifications.card_bookings(db, "subphase", subphase_id),
+        )
+        if new_dates != old_dates
+        else []
+    )
 
     await db.commit()
 
@@ -1477,6 +1592,7 @@ async def update_subphase(
         project_id=project_id,
         action="update",
     )
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 
@@ -1508,6 +1624,12 @@ async def delete_subphase(
     effects = await approvals.cancel_for_entity(
         db, user, project_id=project_id, subphase_ids=all_ids
     )
+    intents = change_notifications.card_deleted_intents(
+        user,
+        project_id=project_id,
+        name=sp_name,
+        bookers=await change_notifications.approved_bookers(db, subphase_ids=all_ids),
+    )
     await delete_subphases_and_dependents(db, all_ids)
 
     await db.commit()
@@ -1522,6 +1644,7 @@ async def delete_subphase(
         summary=sp_name,
     )
     await approvals.publish(request, user, effects)
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 

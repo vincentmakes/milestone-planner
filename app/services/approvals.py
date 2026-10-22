@@ -48,7 +48,7 @@ import logging
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
@@ -79,6 +79,9 @@ from app.services.project_access import (
 from app.services.site_access import site_is_visible, visible_site_ids, visible_sites_clause
 from app.utils import utcnow_naive
 from app.websocket.broadcast import broadcast_change, send_notification, send_user_event
+
+if TYPE_CHECKING:
+    from app.services.change_notifications import ChangeIntent
 
 logger = logging.getLogger(__name__)
 
@@ -527,11 +530,17 @@ class AssignmentChange:
 
 @dataclass
 class ApprovalEffects:
-    """Staged notifications plus the broadcasts and pushes to send after the commit."""
+    """Staged notifications plus the broadcasts and pushes to send after the commit.
+
+    ``change_intents``: the change notifications (an approval applied by
+    someone else tells the project's manager), delivered by the router after
+    ``publish`` (``change_notifications.deliver``).
+    """
 
     notifications: list[Notification] = field(default_factory=list)
     events: list[RequestEvent] = field(default_factory=list)
     assignment_changes: list[AssignmentChange] = field(default_factory=list)
+    change_intents: list["ChangeIntent"] = field(default_factory=list)
 
 
 async def publish(http: Request, actor: Any, effects: ApprovalEffects) -> None:
@@ -1408,6 +1417,22 @@ async def approve(
     db.add_all(effects.notifications)
     await _mark_requests_read(db, [request.id])
     await db.commit()
+
+    # Imported here: change_notifications imports this module.
+    from app.services.change_notifications import approval_intents
+
+    effects.change_intents = approval_intents(
+        user,
+        project_id=request.project_id,
+        level=request.level,
+        target_id=request.target_id,
+        target_name=target,
+        pm_id=context.pm_id if context else None,
+        requester_id=request.requester_id,
+        action=request.action,
+        requested=parse_values(request.requested),
+        previous=parse_values(request.previous),
+    )
 
     summary = f"{target}: booking approved"
     effects.assignment_changes.append(

@@ -40,6 +40,10 @@ at project level only with the same dates), and a direct write on a pending
 row is a 409 (decide the request instead). A direct write on a row with an
 open change / removal request closes that request (``expired(overtaken)``).
 Equipment bookings need ``equipment_bookings.manage`` (also in the PM bundle).
+
+A direct write tells the booked person and the project manager (never the
+actor) through ``change_notifications.deliver`` after the commit; the 202
+approval path and a no-op update tell nobody.
 """
 
 from datetime import date
@@ -65,8 +69,14 @@ from app.schemas.base import (
     serialize_date_as_datetime_js,
     serialize_datetime_js,
 )
-from app.services import approvals
-from app.services.approvals import ACTION_CREATE, ACTION_REMOVE, ACTION_UPDATE, booking_dict
+from app.services import approvals, change_notifications
+from app.services.approvals import (
+    ACTION_CREATE,
+    ACTION_REMOVE,
+    ACTION_UPDATE,
+    booking_dict,
+    booking_values,
+)
 from app.services.project_access import (
     project_id_for_phase,
     project_id_for_subphase,
@@ -269,6 +279,15 @@ async def create_project_staff_assignment(
             values=booking_dict(data.allocation, data.start_date, data.end_date),
         )
 
+    intents = change_notifications.booking_intents(
+        user,
+        kind="create",
+        level="project",
+        project_id=project_id,
+        target_id=project_id,
+        staff_id=data.staff_id,
+        values=booking_dict(data.allocation, data.start_date, data.end_date),
+    )
     assignment = ProjectAssignment(
         project_id=project_id,
         staff_id=data.staff_id,
@@ -289,6 +308,7 @@ async def create_project_staff_assignment(
         project_id=project_id,
         action="create",
     )
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"id": assignment.id, "success": True}
 
@@ -329,6 +349,16 @@ async def update_project_staff_assignment(
             values=booking_dict(data.allocation, data.start_date, data.end_date),
         )
     effects = await approvals.expire_overtaken(db, user, level="project", row=assignment)
+    intents = change_notifications.booking_intents(
+        user,
+        kind="update",
+        level="project",
+        project_id=project_id,
+        target_id=project_id,
+        staff_id=assignment.staff_id,
+        values=booking_dict(data.allocation, data.start_date, data.end_date),
+        previous=booking_values(assignment, "project"),
+    )
 
     assignment.allocation = data.allocation
     assignment.start_date = data.start_date
@@ -346,6 +376,7 @@ async def update_project_staff_assignment(
         action="update",
     )
     await approvals.publish(request, user, effects)
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 
@@ -384,6 +415,15 @@ async def delete_project_staff_assignment(
             row=assignment,
         )
     effects = await approvals.expire_overtaken(db, user, level="project", row=assignment)
+    intents = change_notifications.booking_intents(
+        user,
+        kind="remove",
+        level="project",
+        project_id=project_id,
+        target_id=project_id,
+        staff_id=assignment.staff_id,
+        previous=booking_values(assignment, "project"),
+    )
 
     await db.delete(assignment)
     await db.commit()
@@ -398,6 +438,7 @@ async def delete_project_staff_assignment(
         action="delete",
     )
     await approvals.publish(request, user, effects)
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 
@@ -443,6 +484,15 @@ async def create_phase_staff_assignment(
             values=booking_dict(data.allocation or 100),
         )
 
+    intents = change_notifications.booking_intents(
+        user,
+        kind="create",
+        level="phase",
+        project_id=project_id,
+        target_id=phase_id,
+        staff_id=data.staff_id,
+        values=booking_dict(data.allocation or 100),
+    )
     assignment = PhaseStaffAssignment(
         phase_id=phase_id,
         project_id=project_id,
@@ -474,6 +524,7 @@ async def create_phase_staff_assignment(
         project_id=project_id,
         action="create",
     )
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {
         "id": row[0].id,
@@ -522,6 +573,16 @@ async def update_phase_staff_assignment(
             values=booking_dict(data.allocation),
         )
     effects = await approvals.expire_overtaken(db, user, level="phase", row=assignment)
+    intents = change_notifications.booking_intents(
+        user,
+        kind="update",
+        level="phase",
+        project_id=project_id,
+        target_id=assignment.phase_id,
+        staff_id=assignment.staff_id,
+        values=booking_dict(data.allocation),
+        previous=booking_values(assignment, "phase"),
+    )
 
     assignment.allocation = data.allocation
 
@@ -537,6 +598,7 @@ async def update_phase_staff_assignment(
         action="update",
     )
     await approvals.publish(request, user, effects)
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 
@@ -575,6 +637,15 @@ async def delete_phase_staff_assignment(
             row=assignment,
         )
     effects = await approvals.expire_overtaken(db, user, level="phase", row=assignment)
+    intents = change_notifications.booking_intents(
+        user,
+        kind="remove",
+        level="phase",
+        project_id=project_id,
+        target_id=assignment.phase_id,
+        staff_id=assignment.staff_id,
+        previous=booking_values(assignment, "phase"),
+    )
 
     await db.delete(assignment)
     await db.commit()
@@ -589,6 +660,7 @@ async def delete_phase_staff_assignment(
         action="delete",
     )
     await approvals.publish(request, user, effects)
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 
@@ -634,6 +706,15 @@ async def create_subphase_staff_assignment(
             values=booking_dict(data.allocation or 100),
         )
 
+    intents = change_notifications.booking_intents(
+        user,
+        kind="create",
+        level="subphase",
+        project_id=project_id,
+        target_id=subphase_id,
+        staff_id=data.staff_id,
+        values=booking_dict(data.allocation or 100),
+    )
     assignment = SubphaseStaffAssignment(
         subphase_id=subphase_id,
         project_id=project_id,
@@ -665,6 +746,7 @@ async def create_subphase_staff_assignment(
         project_id=project_id,
         action="create",
     )
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {
         "id": row[0].id,
@@ -713,6 +795,16 @@ async def update_subphase_staff_assignment(
             values=booking_dict(data.allocation),
         )
     effects = await approvals.expire_overtaken(db, user, level="subphase", row=assignment)
+    intents = change_notifications.booking_intents(
+        user,
+        kind="update",
+        level="subphase",
+        project_id=project_id,
+        target_id=assignment.subphase_id,
+        staff_id=assignment.staff_id,
+        values=booking_dict(data.allocation),
+        previous=booking_values(assignment, "subphase"),
+    )
 
     assignment.allocation = data.allocation
 
@@ -728,6 +820,7 @@ async def update_subphase_staff_assignment(
         action="update",
     )
     await approvals.publish(request, user, effects)
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 
@@ -766,6 +859,15 @@ async def delete_subphase_staff_assignment(
             row=assignment,
         )
     effects = await approvals.expire_overtaken(db, user, level="subphase", row=assignment)
+    intents = change_notifications.booking_intents(
+        user,
+        kind="remove",
+        level="subphase",
+        project_id=project_id,
+        target_id=assignment.subphase_id,
+        staff_id=assignment.staff_id,
+        previous=booking_values(assignment, "subphase"),
+    )
 
     await db.delete(assignment)
     await db.commit()
@@ -780,6 +882,7 @@ async def delete_subphase_staff_assignment(
         action="delete",
     )
     await approvals.publish(request, user, effects)
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 
@@ -822,6 +925,13 @@ async def create_equipment_assignment(
             status_code=400, detail="Equipment is not available at this project's site"
         )
 
+    intents = change_notifications.equipment_intents(
+        user,
+        kind="create",
+        project_id=project_id,
+        equipment_name=equipment.name,
+        body=f"from {data.start_date} to {data.end_date}",
+    )
     assignment = EquipmentAssignment(
         project_id=project_id,
         equipment_id=data.equipment_id,
@@ -841,5 +951,6 @@ async def create_equipment_assignment(
         project_id=project_id,
         action="create",
     )
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"id": assignment.id, "success": True}

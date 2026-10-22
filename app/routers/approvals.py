@@ -38,7 +38,7 @@ from app.schemas.approval import (
     ApprovalScope,
     ApprovalStatus,
 )
-from app.services import approvals
+from app.services import approvals, change_notifications
 from app.services.site_access import visible_site_ids
 
 router = APIRouter(prefix="/approval-requests", tags=["approval requests"])
@@ -71,9 +71,18 @@ async def get_approval_request(
 
 
 async def _finish(
-    request: Request, user: User, result: approvals.DecisionResult
+    db: AsyncSession, request: Request, user: User, result: approvals.DecisionResult
 ) -> JSONResponse | dict:
     await approvals.publish(request, user, result.effects)
+    # An approval applied: the project's manager (the requester already has
+    # approval_decided). Reject, cancel and an expiry carry no change intents.
+    await change_notifications.deliver(
+        db,
+        request,
+        user.id,
+        result.effects.change_intents,
+        already_notified={result.request.requester_id},
+    )
     if result.conflict is not None:
         return JSONResponse(status_code=409, content=result.conflict)
     return {"success": True, "id": result.request.id, "status": result.request.status}
@@ -97,7 +106,7 @@ async def approve_request(
         result = await approvals.approve(db, user, request_id, note=_note(data), visible=visible)
     except approvals.RequestClosedError as closed:
         return JSONResponse(status_code=409, content=closed.body)
-    return await _finish(request, user, result)
+    return await _finish(db, request, user, result)
 
 
 @router.post("/{request_id}/reject", response_model=ApprovalDecisionResponse)
@@ -114,7 +123,7 @@ async def reject_request(
         result = await approvals.reject(db, user, request_id, note=_note(data), visible=visible)
     except approvals.RequestClosedError as closed:
         return JSONResponse(status_code=409, content=closed.body)
-    return await _finish(request, user, result)
+    return await _finish(db, request, user, result)
 
 
 @router.post("/{request_id}/cancel", response_model=ApprovalDecisionResponse)
@@ -130,4 +139,4 @@ async def cancel_request(
         result = await approvals.cancel(db, user, request_id, note=_note(data))
     except approvals.RequestClosedError as closed:
         return JSONResponse(status_code=409, content=closed.body)
-    return await _finish(request, user, result)
+    return await _finish(db, request, user, result)

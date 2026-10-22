@@ -483,12 +483,19 @@ async def test_assign_unknown_staff_is_404(authed_client, mock_db_session, wires
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("entity_type", ["phase", "subphase"])
-async def test_user_leaves_a_card(authed_client, mock_db_session, wires, entity_type):
+async def test_user_leaves_a_card(
+    authed_client, mock_db_session, wires, entity_type, change_intents
+):
     client, set_user = authed_client
     set_user(FakeUser(7, "user"))  # removing themself needs no editor rights
     broadcast, _, _ = wires
     row = SimpleNamespace(
-        id=300, project_id=1, staff_id=7, approval_status="approved", approval_request_id=None
+        id=300,
+        project_id=1,
+        staff_id=7,
+        allocation=60,
+        approval_status="approved",
+        approval_request_id=None,
     )
     mock_db_session.execute.side_effect = [scalar_result(make_card()), scalar_result(row)]
 
@@ -499,6 +506,13 @@ async def test_user_leaves_a_card(authed_client, mock_db_session, wires, entity_
     mock_db_session.delete.assert_awaited_once_with(row)
     assert broadcast.await_args.kwargs["entity_id"] == 300
     assert broadcast.await_args.kwargs["summary"] == "unassigned from Design"
+    # The person left themself: only the PM is told (the actor is dropped at delivery).
+    ((actor_id, intents, already),) = change_intents
+    assert (actor_id, already) == (7, set())
+    by = {i.recipient: i for i in intents}
+    assert by["pm"].title == "Test User7 removed themself from Design"
+    assert by["pm"].body == "Was at 60%"
+    assert (by["pm"].entity_type, by["pm"].entity_id) == (entity_type, 10)
 
 
 @pytest.mark.asyncio

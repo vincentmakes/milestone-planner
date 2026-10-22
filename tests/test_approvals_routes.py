@@ -263,6 +263,55 @@ async def test_decision_success_publishes(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("approver", [FakeUser(1, "admin"), FakeUser(PM, "user")])
+async def test_an_applied_approval_tells_the_pm_after_publishing(
+    authed_client, mock_db_session, published, change_intents, approver
+):
+    """The router delivers the service's PM intent; the requester (approval_decided
+    already) is excluded, and a PM approving is dropped as the actor at delivery."""
+    from app.services.change_notifications import approval_intents
+
+    client, set_user = authed_client
+    set_user(approver)
+    decided = _decided("approved")
+    decided.effects.change_intents = approval_intents(
+        approver,
+        project_id=1,
+        level="phase",
+        target_id=11,
+        target_name="Design",
+        pm_id=PM,
+        requester_id=REQ,
+        action="assignments.self_create",
+        requested={"allocation": 80},
+        previous=None,
+    )
+    with patch.object(approvals, "approve", AsyncMock(return_value=decided)):
+        response = await client.post("/api/approval-requests/50/approve")
+
+    assert response.status_code == 200
+    published.assert_awaited_once()
+    ((actor_id, intents, already),) = change_intents
+    assert actor_id == approver.id
+    assert already == {REQ}
+    assert intents == decided.effects.change_intents
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("verb", ["reject", "cancel"])
+async def test_reject_and_cancel_tell_nobody_else(
+    authed_client, mock_db_session, published, change_intents, verb
+):
+    client, set_user = authed_client
+    set_user(FakeUser(PM, "user"))
+    with patch.object(approvals, verb, AsyncMock(return_value=_decided("rejected"))):
+        response = await client.post(f"/api/approval-requests/50/{verb}")
+
+    assert response.status_code == 200
+    assert [intents for _, intents, _ in change_intents] == [[]]
+
+
+@pytest.mark.asyncio
 async def test_decision_body_is_optional(authed_client, mock_db_session, published):
     client, set_user = authed_client
     set_user(FakeUser(PM, "user"))

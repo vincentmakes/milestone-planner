@@ -152,11 +152,12 @@ async def test_pm_can_delete_a_phase(authed_client, mock_db_session):
     no_children = MagicMock()
     no_children.all.return_value = []
     # phase load, pm lookup, subphase descendants, pending approval requests,
-    # comment + column-value cleanup
+    # approved bookers, comment + column-value cleanup
     mock_db_session.execute.side_effect = [
         _scalar_result(_phase()),
         _pm_result(PM),
         no_children,
+        MagicMock(),
         MagicMock(),
         MagicMock(),
         MagicMock(),
@@ -279,12 +280,13 @@ async def test_pm_can_delete_a_subphase(authed_client, mock_db_session):
     set_user(FakeUser(PM, "user"))
     no_children = MagicMock()
     no_children.all.return_value = []
-    # target load, pm lookup, descendants, pending approval requests, staff
-    # cleanup, comments, column values, row delete
+    # target load, pm lookup, descendants, pending approval requests, approved
+    # bookers, staff cleanup, comments, column values, row delete
     mock_db_session.execute.side_effect = [
         _scalar_result(_subphase()),
         _pm_result(PM),
         no_children,
+        MagicMock(),
         MagicMock(),
         MagicMock(),
         MagicMock(),
@@ -683,15 +685,27 @@ async def test_booking_missing_equipment_is_404(authed_client, mock_db_session):
 
 
 @pytest.mark.asyncio
-async def test_pm_can_delete_an_equipment_booking(authed_client, mock_db_session):
+async def test_pm_can_delete_an_equipment_booking(authed_client, mock_db_session, change_intents):
     client, set_user = authed_client
     set_user(FakeUser(PM, "user"))
-    booking = SimpleNamespace(id=1, project_id=1)
+    booking = SimpleNamespace(
+        id=1,
+        project_id=1,
+        equipment=SimpleNamespace(name="HPLC"),
+        start_date=date(2025, 1, 1),
+        end_date=date(2025, 1, 5),
+    )
     mock_db_session.execute.side_effect = [_scalar_result(booking), _pm_result(PM)]
 
     response = await client.delete("/api/equipment-assignments/1")
     assert response.status_code == 200
     mock_db_session.delete.assert_awaited_once_with(booking)
+    ((actor_id, (only,), _),) = change_intents
+    assert actor_id == PM  # the PM's own change: dropped at delivery
+    assert (only.recipient, only.type, only.user_id) == ("pm", "project_changed", None)
+    assert only.title == f"Test User{PM} removed the HPLC booking from {{project}}"
+    assert only.body == "Was from 2025-01-01 to 2025-01-05"
+    assert (only.entity_type, only.entity_id, only.project_id) == ("project", 1, 1)
 
 
 @pytest.mark.asyncio
@@ -727,6 +741,7 @@ def _booking(equipment_id: int = 3, project_site_id: int = 1):
         id=1,
         project_id=1,
         project=SimpleNamespace(name="Project", site_id=project_site_id),
+        equipment=SimpleNamespace(name="HPLC"),
         equipment_id=equipment_id,
         start_date=date(2025, 1, 1),
         end_date=date(2025, 1, 5),
@@ -768,16 +783,18 @@ async def test_rebooking_onto_missing_equipment_is_404(authed_client, mock_db_se
 
 @pytest.mark.asyncio
 async def test_rebooking_onto_equipment_shared_with_the_projects_site(
-    authed_client, mock_db_session
+    authed_client, mock_db_session, change_intents
 ):
     client, set_user = authed_client
     set_user(FakeUser(9, "superuser"))
     booking = _booking(equipment_id=3, project_site_id=2)
     reloaded = MagicMock()
     reloaded.scalar_one.return_value = booking
+    other = _equipment_at(1, 2, equipment_id=4)
+    other.name = "GC"
     mock_db_session.execute.side_effect = [
         _scalar_result(booking),
-        _scalar_result(_equipment_at(1, 2, equipment_id=4)),
+        _scalar_result(other),
         reloaded,
     ]
 
@@ -785,11 +802,14 @@ async def test_rebooking_onto_equipment_shared_with_the_projects_site(
     assert response.status_code == 200
     assert response.json()["equipment_id"] == 4
     mock_db_session.commit.assert_awaited_once()
+    ((_, (only,), _),) = change_intents
+    assert only.title == "Test User9 changed the HPLC booking for {project}"
+    assert only.body == "equipment HPLC → GC"
 
 
 @pytest.mark.asyncio
 async def test_updating_a_booking_on_the_same_equipment_skips_the_site_check(
-    authed_client, mock_db_session
+    authed_client, mock_db_session, change_intents
 ):
     """Dates-only edits (or re-sending the current equipment_id) cost no equipment query."""
     client, set_user = authed_client
@@ -804,6 +824,9 @@ async def test_updating_a_booking_on_the_same_equipment_skips_the_site_check(
     )
     assert response.status_code == 200
     assert booking.end_date == date(2025, 3, 1)
+    ((_, (only,), _),) = change_intents
+    assert only.title == "Test User9 changed the HPLC booking for {project}"
+    assert only.body == "dates 2025-01-01–2025-01-05 → 2025-01-01–2025-03-01"
 
 
 # ---------------------------------------------------------
@@ -1272,7 +1295,17 @@ def submit():
     ("name", "method", "path", "body", "action", "level", "results"), SELF_ROUTES, ids=_ROUTE_IDS
 )
 async def test_self_route_in_allow_mode_writes_directly(
-    authed_client, mock_db_session, submit, name, method, path, body, action, level, results
+    authed_client,
+    mock_db_session,
+    submit,
+    change_intents,
+    name,
+    method,
+    path,
+    body,
+    action,
+    level,
+    results,
 ):
     client, set_user = authed_client
     set_user(SELF_MODES["allow"])
@@ -1285,6 +1318,10 @@ async def test_self_route_in_allow_mode_writes_directly(
     assert "pending" not in response.json()
     submit.assert_not_awaited()
     mock_db_session.commit.assert_awaited_once()
+    # A direct write reports itself (the actor is dropped at delivery).
+    ((actor_id, intents, _),) = change_intents
+    assert actor_id == 5
+    assert {i.recipient for i in intents} == {"person", "pm"}
 
 
 @pytest.mark.asyncio
@@ -1292,7 +1329,17 @@ async def test_self_route_in_allow_mode_writes_directly(
     ("name", "method", "path", "body", "action", "level", "results"), SELF_ROUTES, ids=_ROUTE_IDS
 )
 async def test_self_route_in_approval_mode_files_a_request(
-    authed_client, mock_db_session, submit, name, method, path, body, action, level, results
+    authed_client,
+    mock_db_session,
+    submit,
+    change_intents,
+    name,
+    method,
+    path,
+    body,
+    action,
+    level,
+    results,
 ):
     client, set_user = authed_client
     set_user(SELF_MODES["approval"])
@@ -1302,6 +1349,7 @@ async def test_self_route_in_approval_mode_files_a_request(
 
     assert response.status_code == 202
     assert response.json() == {"success": True, "pending": True, "request_id": 50, "id": 70}
+    assert change_intents == []  # a request changes no booking yet
     kwargs = submit.await_args.kwargs
     assert (kwargs["action"], kwargs["level"], kwargs["project_id"]) == (action, level, 1)
     if method == "post":

@@ -1,12 +1,17 @@
 """
-Notification creation for Kanban events.
+Notification creation for Kanban, approval and todo events.
 
 Rules live here rather than in the routers so every trigger behaves the same:
   - the actor never notifies themselves
   - one notification per recipient per event (a user who is both assigned and
     @mentioned gets the mention, which is the more specific signal)
   - rows are staged before the caller's commit, so a notification and the
-    mutation that caused it land in the same transaction
+    mutation that caused it land in the same transaction -- except the change
+    notifications (``assignment_changed`` / ``project_changed``,
+    app/services/change_notifications.py), written after the caller's commit
+    in their own short transaction: they coalesce under an advisory lock that
+    must stay short, and the Gantt saves one drag as parallel PUTs whose
+    notifications must merge
 
 Due-soon/overdue reminders are deliberately absent: they are derived in the
 browser from already-loaded project data (there is no scheduler in this app),
@@ -27,6 +32,8 @@ _TYPE_PRIORITY = (
     "approval_decided",
     "assigned",
     "todo_assigned",
+    "assignment_changed",
+    "project_changed",
     "status_change",
     "comment",
 )
