@@ -5,6 +5,16 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.16.0] - 2026-10-22
+
+### Added
+- A **Bookable as a resource** switch on each user in Settings → Users, so administrators (and anyone else) can be booked on projects: administrators are not bookable by default, everyone else is, and the user list marks the people who are not bookable.
+
+### Changed
+- Who appears in the Staff view and the Staff panel no longer depends on the role: everyone bookable is listed, nobody else.
+- A person marked not bookable keeps their existing bookings but cannot receive new ones — booking them is refused with a message, their own "Assign me" and "Join" entries are hidden, and their pending requests to join something can no longer be approved (requests to change or remove an existing booking still can).
+- The site Excel export's Users sheet has a **Bookable** column.
+
 ## [1.15.0] - 2026-10-22
 
 ### Added

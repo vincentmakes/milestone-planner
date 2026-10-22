@@ -87,7 +87,7 @@ Each kind of data lives on its own sheet, so the file opens cleanly in Excel, Li
 |---|---|
 | **Site** | Site metadata: name, city, country, region code, active flag |
 | **Projects** | All projects on the site with their phases and subphases (full hierarchy, dates, project manager, customer, completion %) |
-| **Users** | Users assigned to this site (name, email, role, job title, active flag) |
+| **Users** | Users assigned to this site (name, email, role, job title, active flag, **Bookable** — whether they can be booked as a resource) |
 | **Equipment** | Equipment items linked to the site, with type, active status and a **Sites** column listing every site each item belongs to |
 | **Skills** | Skills defined on the instance (name, color, description) |
 | **User skills** | User → Skill associations |

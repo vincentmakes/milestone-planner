@@ -125,6 +125,7 @@ same reason; use `run_migration.py` instead.
 | `add_teams` | Tenant | Teams per site, team membership and team scoping of projects, tags, equipment and company events (1.12.0, also applied automatically on startup) |
 | `add_rbac` | Tenant | Roles and permissions, approval policies and requests for own bookings, and My Todos (1.13.0, also applied automatically on startup) — see below |
 | `add_change_notifications` | Tenant | Widens the notification types with `assignment_changed` and `project_changed` (1.15.0, also applied automatically on startup) — see below |
+| `add_user_is_resource` | Tenant | Adds `users.is_resource`, the "Bookable as a resource" flag (1.16.0, also applied automatically on startup) — see below |
 | `upgrade_to_v90` | Tenant | Major version upgrade |
 
 ### Absence Types and Multi-Site Events (1.5.0)
@@ -193,6 +194,14 @@ python migrations/run_migration.py add_rbac
 
 ```bash
 python migrations/run_migration.py add_change_notifications
+```
+
+### Bookable Users (1.16.0)
+
+`add_user_is_resource` adds `users.is_resource` (`BOOLEAN NOT NULL DEFAULT TRUE`), the **Bookable as a resource** flag: only bookable people are listed in the Staff view and panel and can receive new bookings (see [Settings → Users](../user-guide/settings.md#bookable-as-a-resource)). When it adds the column it back-fills existing administrators as **not bookable** and leaves everyone else bookable, so the upgrade changes nobody's bookability. It does nothing when the column already exists, so a second run never resets a choice made since. The same step runs **automatically** every time a tenant's connection pool is created (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)), so running it by hand is optional.
+
+```bash
+python migrations/run_migration.py add_user_is_resource
 ```
 
 ### Writing New Migrations

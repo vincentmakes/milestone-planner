@@ -10,7 +10,7 @@ When the application is running, interactive API documentation is available at:
 
 All API endpoints require authentication via session cookie, except the public ones: `/health` (and `/api/health`), `/api/auth/*` (login, logout, `me` and the SSO sign-in routes), every `GET` under `/api/settings` (`/api/settings`, `/api/settings/{key}`, `/api/settings/sso` — so never store a secret in the settings table) and `GET /api/sso/config` (the public SSO details the login page needs). Every authenticated request re-checks the account's live `active` flag, its role and the role's permissions; a deactivated, deleted or demoted user's sessions are destroyed and further requests get `401`, and an edit of a role's permissions applies on its holders' next request.
 
-`GET /api/auth/me` (and the login response) carry the user's `roleName`, `permissions` (the keys the role allows; an administrator gets every key), `approvalRequired` (the own-booking keys in approval mode) and `canSeeAllSites`. Clients gate their UI on these — never on the role key.
+`GET /api/auth/me` (and the login response) carry the user's `roleName`, `permissions` (the keys the role allows; an administrator gets every key), `approvalRequired` (the own-booking keys in approval mode), `canSeeAllSites` and `isResource` (whether the user is bookable as a resource). Clients gate their UI on these — never on the role key.
 
 The interactive docs (`/api/docs`, `/api/redoc`, `/api/openapi.json`) require a signed-in tenant user whose role holds `system.api_docs` (administrators by default); in multi-tenant mode open them under the workspace URL (`/t/{slug}/api/docs`).
 
@@ -113,13 +113,13 @@ Project list and detail responses carry `team_ids`; create and update accept `te
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/t/{slug}/api/staff` | List all staff |
+| `GET` | `/t/{slug}/api/staff` | List the bookable people (`is_resource` true, whatever the role) at the visible sites |
 | `GET` | `/t/{slug}/api/staff/{id}` | Get a staff member |
 | `GET` | `/t/{slug}/api/staff/{id}/availability?startDate=&endDate=` | Availability calculation (validated dates, at most 366 days; `views.staff`; approved bookings only) |
 
 Staff endpoints are read-only — staff members *are* users and are created and managed via the `/users` endpoints.
 
-`GET /staff` returns one row per user–site pair; each row's `team_ids` are the user's teams **at that row's site**. `GET /staff/{id}` returns all of them.
+`GET /staff` lists only users with `is_resource` true — an administrator appears once marked bookable, a non-bookable user of any role does not; `GET /staff/{id}` returns any visible person. `GET /staff` returns one row per user–site pair; each row's `team_ids` are the user's teams **at that row's site**. `GET /staff/{id}` returns all of them.
 
 ### Equipment
 
@@ -174,7 +174,7 @@ The *own-assignment* rule lets a user add, change and remove the assignments tha
 - an update or removal leaves the row as it is and files the request with the `requested` (and `previous`) values;
 - deleting one's own pending create cancels it and answers `200` `{success: true, cancelled: true, request_id, id}`; updating it amends the request.
 
-Related rules: the `POST`s return `409` when the person is already booked on the target (a pending booking counts; at project level only with the same dates); an editor's `PUT`/`DELETE` on someone else's pending create returns `409` (*approve or reject it instead*); an editor's direct write on a row with an open request closes that request as `expired` (`overtaken`). Assignment rows carry `approval_status`, and in `GET /projects/{id}` an `approval` object (`{request_id, action, requester_id, requested, previous, created_at, can_decide}` or `null`).
+Related rules: the `POST`s (and the Kanban assignee `POST`) return `404` for an unknown person and `400` `This person is not bookable as a resource` when the person's `is_resource` is false — checked before any `202`, so no request is filed; their existing rows can still be updated and removed. The `POST`s return `409` when the person is already booked on the target (a pending booking counts; at project level only with the same dates); an editor's `PUT`/`DELETE` on someone else's pending create returns `409` (*approve or reject it instead*); an editor's direct write on a row with an open request closes that request as `expired` (`overtaken`). Assignment rows carry `approval_status`, and in `GET /projects/{id}` an `approval` object (`{request_id, action, requester_id, requested, previous, created_at, can_decide}` or `null`).
 
 `PUT` / `DELETE /equipment-assignments/{id}` are implemented once, in `app/routers/equipment.py`; the duplicate (shadowed) handlers that used to live in `assignments.py` were removed.
 
@@ -322,7 +322,7 @@ Response: `{id, site_id, name, description, color, active, member_ids, created_a
 | `GET` | `/t/{slug}/api/import/mpp/test` | Diagnostic — verify Java/MPP toolchain is available |
 | `GET` / `POST` | `/t/{slug}/api/export/csv/{id}` | Export a single project as CSV (`projects.export`) |
 | `POST` | `/t/{slug}/api/export/mpp/{id}` | Export a single project for Microsoft Project (`projects.export`) |
-| `GET` | `/t/{slug}/api/export/site/{site_id}/excel` | Export the full site (multi-sheet `.xlsx`) — `sites.export`, visible sites only |
+| `GET` | `/t/{slug}/api/export/site/{site_id}/excel` | Export the full site (multi-sheet `.xlsx`; the Users sheet has a **Bookable** column for `is_resource`) — `sites.export`, visible sites only |
 
 Import uploads are limited to **20 MB** (`413` above that) and are parsed in a worker thread. Exports prefix text cells that start with `=`, `+`, `-`, `@`, tab or CR with `'` (spreadsheet formula injection guard).
 
@@ -348,7 +348,7 @@ The board has no read endpoint of its own — `GET /projects/{id}` already retur
 |--------|----------|-------------|
 | `GET` | `/t/{slug}/api/kanban/projects/{id}/comment-counts` | Comment counts per card for one project |
 | `PUT` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/status` | Move a card between columns (`entity_type` is `phase` or `subphase`) — `kanban.move_any` (PM bundle) or an approved assignee with `kanban.move_assigned` |
-| `POST` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/assignees` | Assign staff — also books their time — user (PM/own-assignment) |
+| `POST` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/assignees` | Assign staff — also books their time — user (PM/own-assignment); `400` for a person who is not bookable as a resource |
 | `DELETE` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/assignees/{staff_id}` | Unassign and release the booking — user (PM/own-assignment) |
 | `GET` / `POST` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/comments` | Read / post comments |
 | `PUT` / `DELETE` | `/t/{slug}/api/kanban/comments/{id}` | Edit / delete a comment |
@@ -417,9 +417,9 @@ Besides the tenant-wide `change:<entity>` events (now also `change:role`, `chang
 | `DELETE` | `/t/{slug}/api/skills/{id}` | Delete a skill |
 | `GET` | `/t/{slug}/api/settings` | Get instance settings; the [known keys](#instance-settings) without a stored value are returned with their default |
 | `PUT` | `/t/{slug}/api/settings/{key}` | Update one setting (`settings.general`). A known key is validated (`422` `Invalid value for <key>`) and stored in canonical form; `{"value": null}` deletes it, so the default applies again (the response carries the default). Other keys are stored as given |
-| `GET` | `/t/{slug}/api/users` | List users at the visible sites (`users.view`); responses carry `role` (the key) and `role_name` |
-| `POST` | `/t/{slug}/api/users` | Create a user (`users.create`; optional `team_ids`). A `role` other than `user` also needs `users.change_role` and must be within the caller's own permissions (`403`); an unknown role key is `404`, a malformed one `422` |
-| `PUT` | `/t/{slug}/api/users/{id}` | Update a user — one key per kind of change: profile, sites, teams, skills `users.edit`; an admin target `users.edit_admins`; another user's email or password `users.edit_credentials`; `role` `users.change_role` (both the old and the new role must be within the caller's); `active` `users.toggle_active`. Nobody changes their own role or deactivates themself (`400`); the last active admin stays one (`400`). `team_ids`, when given, replaces the memberships |
+| `GET` | `/t/{slug}/api/users` | List users at the visible sites (`users.view`); responses carry `role` (the key), `role_name` and `is_resource` |
+| `POST` | `/t/{slug}/api/users` | Create a user (`users.create`; optional `team_ids`; optional `is_resource`, default `true` unless the role is `admin`). A `role` other than `user` also needs `users.change_role` and must be within the caller's own permissions (`403`); an unknown role key is `404`, a malformed one `422` |
+| `PUT` | `/t/{slug}/api/users/{id}` | Update a user — one key per kind of change: profile (incl. `is_resource`), sites, teams, skills `users.edit`; an admin target `users.edit_admins`; another user's email or password `users.edit_credentials`; `role` `users.change_role` (both the old and the new role must be within the caller's); `active` `users.toggle_active`. Nobody changes their own role or deactivates themself (`400`); the last active admin stays one (`400`). `team_ids`, when given, replaces the memberships |
 | `DELETE` | `/t/{slug}/api/users/{id}` | Delete a user (`users.delete`) |
 | `GET` | `/t/{slug}/api/predefined-phases` | List predefined phases |
 | `POST` | `/t/{slug}/api/predefined-phases` | Create a predefined phase |
@@ -504,7 +504,7 @@ Own-booking requests are filed by the assignment and Kanban routes (`202`, see [
 
 A request: `{id, action, status, close_reason, requester_id, requester_name, project_id, project_name, level, target_id, target_name, assignment_id, requested, previous, note, decided_by, decided_by_name, decided_at, decision_note, superseded_by_id, created_at, updated_at, can_decide}`. `level` is `project`, `phase` or `subphase`; `requested` / `previous` hold `{allocation, start_date?, end_date?}`.
 
-**Statuses**: `pending` → `approved`, `rejected`, `cancelled`, `superseded` (the requester changed it before a decision) or `expired`, with `close_reason` one of `target_deleted`, `requester_inactive`, `permission_lost`, `overtaken`, `duplicate`.
+**Statuses**: `pending` → `approved`, `rejected`, `cancelled`, `superseded` (the requester changed it before a decision) or `expired`, with `close_reason` one of `target_deleted`, `requester_inactive`, `permission_lost`, `overtaken`, `duplicate`. Approving a create request whose requester is no longer bookable as a resource (`is_resource` false) closes it `expired` with `permission_lost` (`409`); update and removal requests of such a requester stay approvable.
 
 **Eligible approvers** are resolved live: administrators; the project's manager when the policy's `pm_approves`; holders of the policy's roles — active, able to see the project's site, and never the requester.
 

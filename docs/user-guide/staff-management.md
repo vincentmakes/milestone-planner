@@ -9,7 +9,7 @@ The **Staff Overview** provides a timeline view centered on people rather than p
 
 ## Staff List Panel
 
-The left panel shows all staff members with:
+The left panel lists every person of the site who is **bookable as a resource** — whatever their role. Administrators are not bookable by default, so they appear only once an administrator turns on **Bookable as a resource** for them in [Settings → Users](settings.md#bookable-as-a-resource); people with the switch off are not listed and cannot be booked, but keep the bookings they already have. Each person is shown with:
 
 - **Status indicator**: Green (available) or Red (overallocated)
 - **Part-time badge**: Shows maximum capacity if less than 100%
@@ -79,6 +79,8 @@ With the default roles, anyone — including users with the plain **User** role 
 - **Drag your own card** from the Staff Overview or the resource panel onto a project, phase or subphase bar — this creates a five-day assignment at your maximum capacity where you drop it (in quarter and year views, starting at the day under the pointer). Only your own card can be dragged
 - On the [Kanban board](kanban-board.md#joining-a-card-yourself), open a card and click **Join this card**
 - On **your own** assignment row you can change the allocation with the slider, move or resize your own assignment bar, and remove the assignment. **Edit Assignment** in its right-click menu opens the assignment dialog with the staff member fixed to **You**
+
+If you are not **bookable as a resource** (see [Settings → Users](settings.md#bookable-as-a-resource)), **Assign me**, **Join this card** and dragging your own card are hidden, and the assignment dialog explains that you cannot book your own time. Your existing bookings can still be changed and removed.
 
 Assigning or editing someone else still needs **Assign and manage anyone** (superusers by default) or being the project's manager.
 

@@ -477,6 +477,18 @@ Deactivating, deleting or demoting a user, or resetting their password, signs th
 | **Skills** | Tags for resource planning (see Skills Management below) |
 | **Teams** | Shown read-only in the user list; membership is edited in [Settings → Teams](#teams) |
 | **Active** | Deactivate to prevent login without deleting |
+| **Bookable as a resource** | Whether the person appears in the Staff view and panel and can be booked on projects — see [Bookable as a Resource](#bookable-as-a-resource). Off by default for administrators, on for everyone else |
+
+### Bookable as a Resource
+
+The **Bookable as a resource** switch (under **Resource** in the user form) decides who can be planned, independently of the role:
+
+- **On** — the person is listed in the [Staff view and panel](staff-management.md#staff-list-panel) of their sites and can be booked on projects, phases, subphases and Kanban cards, by others or by themself
+- **Off** — the person is not listed and cannot receive new bookings: booking them is refused with *This person is not bookable as a resource*, and their own **Assign me** and **Join** entries are hidden. Their existing bookings stay as they are and can still be changed or removed. A pending request of theirs to be booked somewhere can no longer be approved — it closes as expired; their requests to change or remove an existing booking can still be decided
+
+New administrator accounts start with the switch **off** (an administrator who also works on projects can simply turn it on); every other new account starts with it **on**. While you create an account the switch follows the role you pick until you change it yourself. Upgrading changes nobody: existing administrators are not bookable, everyone else is. The user list shows a **Not bookable** badge next to people with the switch off.
+
+Changing the switch is a profile edit: it needs the same permission as editing the person's name or capacity (and **Edit administrator accounts** for an administrator). The site's [Excel export](import-export.md#site-excel-export) lists it in the **Bookable** column of the Users sheet.
 
 ### User Roles
 
