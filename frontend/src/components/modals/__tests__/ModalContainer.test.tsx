@@ -33,7 +33,8 @@ describe('ModalContainer', () => {
   ] as const)('opens the %s dialog', async (modal, context, title) => {
     render(<ModalContainer />);
     act(() => useUIStore.getState().openModal(modal, context));
-    const dialog = await screen.findByRole('dialog');
+    // Lazy chunk: the first one also loads the icon runtime, slow under coverage.
+    const dialog = await screen.findByRole('dialog', {}, { timeout: 5000 });
     expect(dialog).toHaveAccessibleName(title);
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
 
