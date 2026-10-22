@@ -20,6 +20,7 @@ import { PendingBadge } from '@/components/common/PendingBadge';
 import { canBookEquipment, canEditAssignment } from '@/utils/permissions';
 import { isPendingAssignment, requestedAllocation } from '@/utils/kanbanCards';
 import type { AssignmentApproval, StaffAssignment, UpdateStaffAssignmentRequest } from '@/types';
+import { cardBadgeName, cardBadgeStyle } from './cardBadge';
 import styles from './AssignmentRow.module.css';
 
 interface AssignmentRowProps {
@@ -181,11 +182,8 @@ export const AssignmentRow = memo(function AssignmentRow({
     const pinTitle = linked
       ? `Follows the ${cardWord} dates — click to give it its own dates`
       : `Own dates — click to follow the ${cardWord} dates again`;
-    const badgeStyle = {
-      backgroundColor: phaseColor ? `${phaseColor}33` : 'rgba(139, 92, 246, 0.2)',
-      color: phaseColor || 'var(--accent-purple)',
-    };
-    const badgeText = `${linked ? '📌' : '📍'} ${phaseType || (type === 'subphase-staff' ? 'Subphase' : 'Phase')}`;
+    const badgeStyle = cardBadgeStyle(phaseColor);
+    const badgeText = `${linked ? '📌' : '📍'} ${cardBadgeName(phaseType, cardWord)}`;
     return (
       <div 
         className={rowClass} 

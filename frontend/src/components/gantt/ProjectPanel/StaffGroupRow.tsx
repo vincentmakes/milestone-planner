@@ -1,7 +1,8 @@
 /**
  * StaffGroupRow - the overview row of one person's bookings on one phase /
  * subphase (1.17.0), shown when the person has two or more rows there:
- * chevron, name, "N bookings" and the allocation range. The bookings follow
+ * chevron, the card badge (as on the booking rows, without the pin), name,
+ * "N bookings" and the allocation range. The bookings follow
  * at the next depth while expanded (CardStaffRows); the timeline draws the
  * matching SegmentsBar row.
  *
@@ -12,6 +13,8 @@
  */
 
 import { memo } from 'react';
+import { cardBadgeName, cardBadgeStyle } from './cardBadge';
+import assignmentStyles from './AssignmentRow.module.css';
 import styles from './StaffGroupRow.module.css';
 
 interface StaffGroupRowProps {
@@ -22,7 +25,12 @@ interface StaffGroupRowProps {
   allocationText: string;
   collapsed: boolean;
   onToggle: () => void;
+  /** The depth of the card's booking rows: the group row lines up with them */
   depth: number;
+  /** The card: its badge (name, colour) as on the booking rows, without the pin */
+  level: 'phase' | 'subphase';
+  phaseType?: string;
+  phaseColor?: string;
 }
 
 export const StaffGroupRow = memo(function StaffGroupRow({
@@ -32,10 +40,14 @@ export const StaffGroupRow = memo(function StaffGroupRow({
   collapsed,
   onToggle,
   depth,
+  level,
+  phaseType,
+  phaseColor,
 }: StaffGroupRowProps) {
-  // Same left edge as a phase row at this depth (chevron in the expand slot),
-  // so the name lines up with an assignment row's badge at the same depth.
-  const paddingLeft = depth * 16 + 8;
+  // Indented like a booking row of the card (AssignmentRow: depth * 16 + 28),
+  // not like a phase row: the chevron takes the first 20 px of that edge and
+  // the card badge follows, so the group reads as one of the card's bookings.
+  const paddingLeft = depth * 16 + 28;
   return (
     <div className={styles.staffGroup} style={{ paddingLeft }}>
       <button
@@ -61,6 +73,9 @@ export const StaffGroupRow = memo(function StaffGroupRow({
           <polyline points="9 18 15 12 9 6" />
         </svg>
       </button>
+      <span className={assignmentStyles.typeBadge} style={cardBadgeStyle(phaseColor)}>
+        {cardBadgeName(phaseType, level)}
+      </span>
       <span className={styles.name} title={name}>
         {name}
       </span>

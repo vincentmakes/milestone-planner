@@ -78,6 +78,9 @@ export const CardStaffRows = memo(function CardStaffRows({ level, card, projectI
               collapsed={item.collapsed}
               onToggle={() => toggleStaffGroup(item.key)}
               depth={depth}
+              level={level}
+              phaseType={card.name}
+              phaseColor={card.color}
             />
             {!item.collapsed && item.rows.map((row) => bookingRow(row, depth + 1))}
           </Fragment>

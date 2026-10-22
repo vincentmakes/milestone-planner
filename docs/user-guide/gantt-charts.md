@@ -197,7 +197,7 @@ Linked bookings simply keep following the phase. One limit: shortening a phase p
 
 ### The overview row
 
-When someone has two or more bookings on the same phase or subphase, they are grouped under an **overview row** with the person's name, the number of bookings and their allocation range (*100%*, or *20–60%* when they differ). On the timeline the overview row shows every booking as a small block (hover one for its dates and allocation; a booking awaiting approval is hatched).
+When someone has two or more bookings on the same phase or subphase, they are grouped under an **overview row** with the phase or subphase badge, the person's name, the number of bookings and their allocation range (*100%*, or *20–60%* when they differ). On the timeline the overview row shows every booking as a small block (hover one for its dates and allocation; a booking awaiting approval is hatched).
 
 Click the chevron to collapse the group to that one row, and again to expand it. Groups start expanded, and a collapsed group stays collapsed until you reload the page. The overview row itself has no menu: right-click one of the bookings under it to edit or remove it.
 

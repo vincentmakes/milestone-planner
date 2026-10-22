@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { PhaseRow } from '../PhaseRow';
 import { ReorderProvider } from '@/contexts/ReorderContext';
 import { useUIStore } from '@/stores/uiStore';
@@ -188,8 +188,14 @@ describe('PhaseRow per-person booking groups', () => {
     const toggle = screen.getByRole('button', { name: "Collapse Bob Brown's bookings" });
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     const group = toggle.parentElement!;
-    expect(group).toHaveTextContent('Bob Brown2 bookings20–60%');
-    expect(group).toHaveStyle({ paddingLeft: '24px' }); // depth 1
+    expect(group).toHaveTextContent('DesignBob Brown2 bookings20–60%');
+    // indented like the card's booking rows (depth 1), not like a phase row
+    expect(group).toHaveStyle({ paddingLeft: '44px' });
+    // the card badge, tinted like the booking rows' badges, without the pin
+    const badge = within(group).getByText('Design');
+    expect(badge).toHaveStyle({ backgroundColor: 'rgba(59, 130, 246, 0.2)', color: 'rgb(59, 130, 246)' });
+    expect(badge.getAttribute('style')).toBe(bookingRows()[0].getAttribute('style'));
+    expect(badge.previousElementSibling).toBe(toggle);
     expect(group.className).not.toMatch(/row/);
     expect([...group.attributes].some((a) => /^data-.*id$/.test(a.name))).toBe(false);
 
