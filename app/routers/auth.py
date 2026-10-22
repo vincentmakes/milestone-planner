@@ -53,6 +53,7 @@ from app.services.permissions import (
     effective_permission_set,
     role_display_name,
 )
+from app.services.response_builders import get_is_resource
 from app.services.session import SessionService
 from app.services.sso import (
     apply_secret_update,
@@ -92,7 +93,7 @@ def build_user_session_info(user: User, permissions: PermissionSet) -> UserSessi
         permissions=permissions.allow_keys(),
         approvalRequired=permissions.approval_keys(),
         canSeeAllSites=permissions.has("sites.view_all"),
-        isResource=bool(user.is_resource),
+        isResource=get_is_resource(user),
         siteIds=[s.id for s in sites],
         sites=[
             UserSiteInfo(

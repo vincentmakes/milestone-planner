@@ -236,6 +236,17 @@ async def test_me_carries_is_resource(app_client, mock_db_session, value):
     assert user["isResource"] is value
 
 
+async def test_me_reads_an_unset_flag_as_bookable(app_client, mock_db_session):
+    """Same rule as the /users responses: an unset flag is the column default."""
+    unset = make_user(7, "admin", is_resource=None)
+    assert unset.is_resource is None
+    mock_db_session.execute.side_effect = [scalar_result(unset), kanban_switch()]
+
+    user = await me(app_client)
+
+    assert user["isResource"] is True
+
+
 async def test_login_carries_is_resource(app_client, mock_db_session):
     matrix = MagicMock()
     matrix.all.return_value = []
