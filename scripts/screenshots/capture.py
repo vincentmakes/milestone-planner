@@ -5,12 +5,10 @@ Outputs PNGs at 1440x900 to docs/assets/screenshots/.
 
 Prerequisites
 -------------
-1. Demo instance running at http://localhost:8486/t/demo/ — see scripts/screenshots/README.md.
+1. Demo instance running at http://localhost:8486/t/demo/, seeded with
+   `python -m app.scripts.seed_demo` — see scripts/screenshots/README.md.
    Set SCREENSHOT_BASE_URL (e.g. http://localhost:8487) to capture from another instance.
-2. seed_extras.sql applied so custom columns, vacations, and bank holidays are populated:
-       docker exec -i milestone-fresh-db psql -U milestone_demo -d milestone_demo \\
-         < scripts/screenshots/seed_extras.sql
-3. Playwright Python in a venv:
+2. Playwright Python in a venv:
        python3 -m venv /tmp/pw-venv
        /tmp/pw-venv/bin/pip install playwright
        /tmp/pw-venv/bin/playwright install chromium

@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - A change to a role's permissions applies to everyone holding it on their next action, without signing out.
 - The API documentation is open to roles with the **API documentation** permission (administrators by default).
 - The Users list filters by any role, and the role picker offers only roles whose permissions you hold yourself.
+- Superusers can no longer change an administrator's skills; that now needs the permission to edit administrator accounts.
 - Upgrading creates the role, approval and todo tables and the default roles automatically on startup; the `add_rbac` migration is also available through `run_migration.py`.
 
 ### Fixed

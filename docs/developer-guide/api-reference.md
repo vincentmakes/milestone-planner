@@ -490,7 +490,7 @@ A request: `{id, action, status, close_reason, requester_id, requester_name, pro
 |--------|------|
 | `403` | Deciding your own request (`You cannot approve your own request`); not an eligible approver; cancelling someone else's request without being an admin |
 | `404` | Unknown request, or one the caller may not see |
-| `409` | The request is no longer pending — `{detail: "Request already <status>", status}`; or approving found that the booking can no longer apply, which closes it — `{detail, status: "expired", close_reason}` |
+| `409` | The request is no longer pending — `{detail: "Request already <status>", status}`; or approving found that the booking can no longer apply, which closes it — `{detail, status: "expired", close_reason}`; or the stored requested values are not valid for the request's level (`The requested values are not valid — reject the request instead`), which leaves the request pending |
 | `422` | `note` longer than 2000 characters; an unknown `scope` |
 
 Every transition notifies (`approval_requested` to the approvers, `approval_decided` to the requester), broadcasts `change:approval_request` (approve and reject also `change:staff_assignment`) and pushes `approval:changed` to the requester and the approvers.
