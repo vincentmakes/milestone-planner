@@ -104,7 +104,7 @@ export const PM_BUNDLE: ReadonlySet<PermissionKey> = new Set<PermissionKey>([
  * while the Kanban board is turned off. /auth/me then omits them, though the
  * roles' matrices still hold them.
  */
-export const DISABLEABLE_KEYS: ReadonlySet<PermissionKey> = new Set<PermissionKey>(['views.kanban']);
+export const DISABLEABLE_KEYS: readonly PermissionKey[] = ['views.kanban'];
 
 /**
  * The key of the one administrator role, which always holds every permission.

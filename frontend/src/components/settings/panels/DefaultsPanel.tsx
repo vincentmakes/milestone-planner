@@ -80,17 +80,12 @@ function valuesFrom(settings: InstanceSettings): Values {
   };
 }
 
-interface Loaded {
-  values: Values;
-  equipmentTypes: string[];
-}
-
 export function DefaultsPanel({ onDirtyChange }: SettingsPanelProps) {
   const skills = useAppStore((s) => s.skills);
   const setInstanceSettings = useAppStore((s) => s.setInstanceSettings);
   const setCurrentUser = useAppStore((s) => s.setCurrentUser);
 
-  const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const [equipmentTypes, setEquipmentTypes] = useState<string[] | null>(null);
   const [original, setOriginal] = useState<Values | null>(null);
   const [values, setValues] = useState<Values | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -104,7 +99,7 @@ export function DefaultsPanel({ onDirtyChange }: SettingsPanelProps) {
       .then(([settings, equipmentTypes]) => {
         if (cancelled) return;
         const initial = valuesFrom(settings);
-        setLoaded({ values: initial, equipmentTypes });
+        setEquipmentTypes(equipmentTypes);
         setOriginal(initial);
         setValues(initial);
       })
@@ -124,28 +119,29 @@ export function DefaultsPanel({ onDirtyChange }: SettingsPanelProps) {
   const dirty = changedKeys.length > 0;
   useReportDirty(onDirtyChange, dirty);
 
-  // Checklist rows: what exists today, then the stored entries that no
-  // longer do (deleted skill, renamed type), so they can be unticked.
+  // Checklist rows: what exists today, then the saved entries that no
+  // longer do (deleted skill, renamed type), so they can be unticked; one
+  // unticked and saved is gone.
   const skillItems = useMemo(() => {
     const known = skills.map((skill) => ({ value: skill.id, label: skill.name, stale: false }));
     const knownIds = new Set(skills.map((skill) => skill.id));
-    const stale = loaded
-      ? parseIdList(loaded.values.staff_panel_default_skills)
+    const stale = original
+      ? parseIdList(original.staff_panel_default_skills)
           .filter((id) => !knownIds.has(id))
           .map((id) => ({ value: id, label: `Skill #${id}`, stale: true }))
       : [];
     return [...known, ...stale];
-  }, [skills, loaded]);
+  }, [skills, original]);
 
   const typeItems = useMemo(() => {
-    if (!loaded) return [];
-    const known = loaded.equipmentTypes.map((type) => ({ value: type, label: type, stale: false }));
-    const knownTypes = new Set(loaded.equipmentTypes);
-    const stale = parseNameList(loaded.values.equipment_panel_default_types)
+    if (!equipmentTypes || !original) return [];
+    const known = equipmentTypes.map((type) => ({ value: type, label: type, stale: false }));
+    const knownTypes = new Set(equipmentTypes);
+    const stale = parseNameList(original.equipment_panel_default_types)
       .filter((type) => !knownTypes.has(type))
       .map((type) => ({ value: type, label: type, stale: true }));
     return [...known, ...stale];
-  }, [loaded]);
+  }, [equipmentTypes, original]);
 
   if (loadError) {
     return (
@@ -164,6 +160,7 @@ export function DefaultsPanel({ onDirtyChange }: SettingsPanelProps) {
 
   const change = (key: DefaultedSettingKey, value: string) => {
     setValues((prev) => (prev ? { ...prev, [key]: value } : prev));
+    setError(null);
     setSuccess(null);
   };
 
@@ -295,14 +292,21 @@ interface SwitchFieldProps {
   disabled: boolean;
 }
 
+/** A switch named by its visible label and described by its hint */
 function SwitchField({ label, hint, checked, onChange, disabled }: SwitchFieldProps) {
+  const hintId = useId();
   return (
-    <div className={styles.toggleField}>
-      <div className={styles.toggleInfo}>
-        <span className={styles.label}>{label}</span>
-        <span className={styles.hint}>{hint}</span>
-      </div>
-      <ToggleSwitch checked={checked} onChange={onChange} aria-label={label} disabled={disabled} />
+    <div className={styles.switchField}>
+      <ToggleSwitch
+        checked={checked}
+        onChange={onChange}
+        label={label}
+        aria-describedby={hintId}
+        disabled={disabled}
+      />
+      <span className={styles.hint} id={hintId}>
+        {hint}
+      </span>
     </div>
   );
 }

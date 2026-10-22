@@ -19,6 +19,8 @@ export interface ToggleSwitchProps {
   disabled?: boolean;
   title?: string;
   'aria-label'?: string;
+  /** Id of the hint that describes the switch */
+  'aria-describedby'?: string;
   /** Extra class on the wrapping label, for layout by the caller */
   className?: string;
   id?: string;
@@ -31,6 +33,7 @@ export function ToggleSwitch({
   disabled = false,
   title,
   'aria-label': ariaLabel,
+  'aria-describedby': ariaDescribedBy,
   className,
   id,
 }: ToggleSwitchProps) {
@@ -48,6 +51,7 @@ export function ToggleSwitch({
         checked={checked}
         disabled={disabled}
         aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
         onChange={(e) => onChange(e.target.checked)}
       />
       <span className={styles.track} aria-hidden="true" />

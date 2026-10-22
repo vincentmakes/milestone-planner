@@ -44,16 +44,20 @@ describe('roleWithin', () => {
     expect(roleWithin(allowRole, viaApproval)).toBe(false);
   });
 
-  it('skips the keys an instance switch took away (views.kanban while the board is off)', () => {
+  it('skips the switched-off keys only while they are off (views.kanban, board off)', () => {
     // /auth/me omits views.kanban from everyone while the board is off
     const me = makeUser({
       role: 'superuser',
       permissions: SUPERUSER_DEFAULTS.filter((key) => key !== 'views.kanban'),
     });
     expect(user.permissions['views.kanban']).toBe('allow');
-    expect(roleWithin(user, me)).toBe(true);
-    expect(roleWithin(superuser, me)).toBe(true);
-    expect(DISABLEABLE_KEYS).toEqual(new Set(['views.kanban']));
+    // Board on: lacking views.kanban really means lacking it
+    expect(roleWithin(user, me)).toBe(false);
+    expect(roleWithin(user, me, [])).toBe(false);
+    // Board off: the key is skipped, like the backend guard
+    expect(roleWithin(user, me, DISABLEABLE_KEYS)).toBe(true);
+    expect(roleWithin(superuser, me, DISABLEABLE_KEYS)).toBe(true);
+    expect(DISABLEABLE_KEYS).toEqual(['views.kanban']);
   });
 
   it('is false without a user', () => {

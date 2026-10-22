@@ -85,10 +85,12 @@ describe('DefaultsPanel', () => {
     expect(screen.getByRole('switch', { name: 'Kanban board' })).toBeChecked();
     expect(screen.getByRole('switch', { name: 'Bank-holiday import (Nager)' })).toBeChecked();
     expect(screen.getByRole('switch', { name: 'Pre-select predefined phases in new projects' })).toBeChecked();
-    expect(screen.getByText('When off, nobody sees the board, whatever their role.')).toBeInTheDocument();
-    expect(
-      screen.getByText('Holidays already imported stay; refresh and automatic fetching stop.')
-    ).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Kanban board' })).toHaveAccessibleDescription(
+      'When off, nobody sees the board, whatever their role.'
+    );
+    expect(screen.getByRole('switch', { name: 'Bank-holiday import (Nager)' })).toHaveAccessibleDescription(
+      'Holidays already imported stay; refresh and automatic fetching stop.'
+    );
     expect(screen.getByRole('button', { name: 'Save Changes' })).toBeDisabled();
   });
 
@@ -221,6 +223,35 @@ describe('DefaultsPanel', () => {
       ['kanban_enabled', 'false'],
       ['nager_enabled', 'false'],
     ]);
+  });
+
+  it('clears a save error as soon as a control changes', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    api.updateSetting.mockRejectedValue(new Error('Invalid value for nager_enabled'));
+    await renderPanel();
+    fireEvent.click(screen.getByRole('switch', { name: 'Bank-holiday import (Nager)' }));
+    save();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid value for nager_enabled');
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Kanban board' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('drops a stale row once it is unticked and saved', async () => {
+    await renderPanel();
+    fireEvent.click(within(skillsGroup()).getByRole('checkbox', { name: 'Skill #9 (no longer exists)' }));
+    fireEvent.click(within(typesGroup()).getByRole('checkbox', { name: 'Old type (no longer exists)' }));
+    // Still listed while unsaved, so it can be ticked again
+    expect(within(skillsGroup()).getByRole('checkbox', { name: 'Skill #9 (no longer exists)' })).not.toBeChecked();
+    save();
+
+    await screen.findByText('Settings saved');
+    expect(api.updateSetting.mock.calls).toEqual([
+      ['staff_panel_default_skills', '[2]'],
+      ['equipment_panel_default_types', '["HPLC"]'],
+    ]);
+    expect(within(skillsGroup()).queryByRole('checkbox', { name: /no longer exists/ })).not.toBeInTheDocument();
+    expect(within(typesGroup()).queryByRole('checkbox', { name: /no longer exists/ })).not.toBeInTheDocument();
   });
 
   it('saves once when Save is clicked twice before the first save settles', async () => {

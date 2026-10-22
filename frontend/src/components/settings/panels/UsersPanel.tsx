@@ -40,7 +40,8 @@ import styles from './UsersPanel.module.css';
 import { can } from '@/utils/permissions';
 import { roleWithin } from '@/utils/roles';
 import { useRoles } from '@/hooks/useRoles';
-import { ADMIN_ROLE_KEY } from '@/types/permissions';
+import { ADMIN_ROLE_KEY, DISABLEABLE_KEYS } from '@/types/permissions';
+import { isSettingOn } from '@/utils/instanceSettings';
 
 // Badge colours of the system roles; a custom role gets a neutral badge.
 // The label is the role's current name (Settings → Roles can rename it).
@@ -553,7 +554,14 @@ function sameIds(a: number[], b: number[]): boolean {
   return a.length === b.length && a.every((id) => b.includes(id));
 }
 
+/** No permission key switched off (a stable reference for the memo below) */
+const NO_DISABLED_KEYS: readonly string[] = [];
+
 function UserForm({ user, sites, skills, currentUser, roles, jobTitleSuggestions, onSave, onDelete, onCancel, onDirtyChange }: UserFormProps) {
+  // views.kanban is missing from /auth/me while the Kanban board is off; the
+  // escalation guard then skips it, like the backend.
+  const kanbanOn = useAppStore((s) => isSettingOn(s.instanceSettings, 'kanban_enabled'));
+  const disabledKeys = kanbanOn ? NO_DISABLED_KEYS : DISABLEABLE_KEYS;
 
   const isEditing = !!user;
   
@@ -616,11 +624,11 @@ function UserForm({ user, sites, skills, currentUser, roles, jobTitleSuggestions
   const initialRoleDef = roles.find((r) => r.key === initialRole);
   const targetWithinMine =
     !isEditing ||
-    (initialRoleDef ? roleWithin(initialRoleDef, currentUser) : initialRole !== ADMIN_ROLE_KEY || canAssignAdmin);
+    (initialRoleDef ? roleWithin(initialRoleDef, currentUser, disabledKeys) : initialRole !== ADMIN_ROLE_KEY || canAssignAdmin);
   const canChangeRole = mayChangeRoles && !isOwnAccount && targetWithinMine;
   const roleOptions = useMemo(() => {
     const options = roles.map((r) => {
-      const assignable = roleWithin(r, currentUser);
+      const assignable = roleWithin(r, currentUser, disabledKeys);
       const suffix = assignable ? '' : r.key === ADMIN_ROLE_KEY ? ' (admin only)' : ' (more than your role)';
       return { value: r.key, label: `${r.name}${suffix}`, disabled: !assignable };
     });
@@ -629,7 +637,7 @@ function UserForm({ user, sites, skills, currentUser, roles, jobTitleSuggestions
       options.unshift({ value: initialRole, label: user?.role_name ?? initialRole, disabled: false });
     }
     return options;
-  }, [roles, currentUser, initialRole, user?.role_name]);
+  }, [roles, currentUser, disabledKeys, initialRole, user?.role_name]);
   const roleHint = canChangeRole
     ? roleOptions.some((o) => o.disabled)
       ? "Roles granting permissions you don't hold can't be assigned"

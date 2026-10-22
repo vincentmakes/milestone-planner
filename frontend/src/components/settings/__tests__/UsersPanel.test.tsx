@@ -84,7 +84,7 @@ const leadRole = makeRole({
 const ROLES = makeSystemRoles(leadRole, viewerRole);
 
 function seed(currentUser: User, sites: Site[]) {
-  useAppStore.setState({ currentUser: asSignedIn(currentUser), sites, skills: [], roles: ROLES });
+  useAppStore.setState({ currentUser: asSignedIn(currentUser), sites, skills: [], roles: ROLES, instanceSettings: null });
 }
 
 const rowOf = async (name: string) => (await screen.findByText(name)).closest('tr') as HTMLElement;
@@ -602,6 +602,7 @@ describe('UsersPanel by permission key', () => {
     const withoutBoard = SUPERUSER_DEFAULTS.filter((key) => key !== 'views.kanban');
     getUsers.mockResolvedValue([ada, sam, { ...bob, role: 'viewer', role_name: 'Viewer' }]);
     seed({ ...sam, permissions: [...withoutBoard, 'users.change_role'] }, [siteA]);
+    useAppStore.setState({ instanceSettings: { kanban_enabled: 'false' } });
     render(<UsersPanel />);
     await openEditor('Bob Brown');
 
@@ -612,6 +613,16 @@ describe('UsersPanel by permission key', () => {
     save();
     await waitFor(() => expect(updateUser).toHaveBeenCalled());
     expect(updateUser.mock.calls[0][1]).toMatchObject({ role: 'user' });
+  });
+
+  it('keeps the user role out of reach of someone lacking views.kanban while the board is on', async () => {
+    const withoutBoard = SUPERUSER_DEFAULTS.filter((key) => key !== 'views.kanban');
+    getUsers.mockResolvedValue([ada, sam, { ...bob, role: 'viewer', role_name: 'Viewer' }]);
+    seed({ ...sam, permissions: [...withoutBoard, 'users.change_role'] }, [siteA]);
+    useAppStore.setState({ instanceSettings: { kanban_enabled: 'true' } });
+    render(<UsersPanel />);
+    await openEditor('Bob Brown');
+    expect(screen.getByRole('option', { name: 'User (more than your role)' })).toBeDisabled();
   });
 
   it("keeps the role of someone whose role grants more than the editor's", async () => {

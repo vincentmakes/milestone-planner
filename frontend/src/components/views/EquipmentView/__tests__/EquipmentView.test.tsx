@@ -165,6 +165,29 @@ describe('EquipmentView panel', () => {
     expect(screen.queryByText('Bioreactor 50L')).not.toBeInTheDocument();
   });
 
+  it("re-seeds the filter with each site's own default types when the site changes", () => {
+    seed();
+    useAppStore.setState({ instanceSettings: { equipment_panel_default_types: '["Analytics","Mixer"]' } });
+    render(<EquipmentView />);
+    expect(screen.getByRole('button', { name: /Analytics/ })).toBeInTheDocument();
+
+    // Mixer is the only default type at site 2
+    act(() => useAppStore.setState({ currentSite: makeSite({ id: 2, name: 'Zurich' }) }));
+    expect(screen.getByRole('button', { name: /Mixer/ })).toBeInTheDocument();
+    expect(screen.getByText('Remote mixer')).toBeInTheDocument();
+    expect(countBadge()).toHaveTextContent('1');
+
+    // A site without any default type opens unfiltered
+    act(() =>
+      useAppStore.setState({
+        currentSite: makeSite({ id: 3, name: 'Lyon' }),
+        equipment: [...useAppStore.getState().equipment, makeEquipment({ id: 5, name: 'Lyon oven', type: 'Oven', site_id: 3 })],
+      })
+    );
+    expect(screen.getByRole('button', { name: /All Types/ })).toBeInTheDocument();
+    expect(screen.getByText('Lyon oven')).toBeInTheDocument();
+  });
+
   it('starts unfiltered when no default type exists at the site', () => {
     seed();
     useAppStore.setState({ instanceSettings: { equipment_panel_default_types: '["Mixer"]' } });

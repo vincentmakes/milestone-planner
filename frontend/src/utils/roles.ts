@@ -12,8 +12,7 @@
  */
 
 import type { PermissionMatrix, Role } from '@/types';
-import { ADMIN_ROLE_KEY, DISABLEABLE_KEYS } from '@/types/permissions';
-import type { PermissionKey } from '@/types/permissions';
+import { ADMIN_ROLE_KEY } from '@/types/permissions';
 import { confirmAction } from './confirmDialog';
 import { can } from './permissions';
 import type { UserLike } from './permissions';
@@ -24,11 +23,16 @@ const MAX_KEY_LENGTH = 20;
  * Whether `user` may give `role` to someone. An administrator (the only role
  * holding `roles.manage`) assigns any role; nobody else assigns the admin
  * role; otherwise every `allow` of the role must be held outright and every
- * `approval` in either mode. Keys an instance switch turned off are skipped:
- * /auth/me omits them from everyone while the backend guard compares the
- * configured matrices, so the Kanban switch never blocks a role change.
+ * `approval` in either mode. `disabledKeys` are the keys an instance switch
+ * currently takes away from everyone (`views.kanban` while the board is off):
+ * /auth/me omits them, while the backend guard compares the configured
+ * matrices, so they are skipped — only while switched off, like the backend.
  */
-export function roleWithin(role: Pick<Role, 'key' | 'permissions'>, user: UserLike | null | undefined): boolean {
+export function roleWithin(
+  role: Pick<Role, 'key' | 'permissions'>,
+  user: UserLike | null | undefined,
+  disabledKeys: readonly string[] = []
+): boolean {
   if (!user) return false;
   if (can(user, 'roles.manage')) return true;
   if (role.key === ADMIN_ROLE_KEY) return false;
@@ -36,7 +40,7 @@ export function roleWithin(role: Pick<Role, 'key' | 'permissions'>, user: UserLi
   const approval = new Set(user.approval_required ?? []);
   return Object.entries(role.permissions).every(
     ([key, mode]) =>
-      DISABLEABLE_KEYS.has(key as PermissionKey) ||
+      disabledKeys.includes(key) ||
       (mode === 'allow' ? allowed.has(key) : allowed.has(key) || approval.has(key))
   );
 }

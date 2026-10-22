@@ -46,6 +46,11 @@ interface EquipmentViewProps {
   height?: number;
 }
 
+/** The admin's default types (stored JSON list) that exist among `siteTypes` */
+function defaultTypeSelection(stored: string | undefined, siteTypes: readonly string[]): Set<string> {
+  return new Set(parseNameList(stored).filter((type) => siteTypes.includes(type)));
+}
+
 export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange, height }: EquipmentViewProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const timelineBodyRef = useRef<HTMLDivElement>(null);
@@ -193,12 +198,19 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   }, [allSiteEquipment]);
 
   // Type filter state, seeded with the admin's default types (Settings →
-  // Features & defaults) found among the site's types, each time the panel
-  // mounts; changes last the session.
+  // Features & defaults) found among the site's types each time the panel
+  // mounts, and again when the site changes (each site opens with its own
+  // defaults); changes last the session.
   const defaultTypes = useAppStore((s) => s.instanceSettings?.equipment_panel_default_types);
-  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(
-    () => new Set(parseNameList(defaultTypes).filter((type) => equipmentTypes.includes(type)))
+  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(() =>
+    defaultTypeSelection(defaultTypes, equipmentTypes)
   );
+  const seededSiteId = useRef(currentSite?.id);
+  useLayoutEffect(() => {
+    if (seededSiteId.current === currentSite?.id) return;
+    seededSiteId.current = currentSite?.id;
+    setSelectedTypes(defaultTypeSelection(defaultTypes, equipmentTypes));
+  }, [currentSite?.id, defaultTypes, equipmentTypes]);
   
   // Filter equipment based on selected types (show all if none selected)
   const siteEquipment = useMemo(() => {

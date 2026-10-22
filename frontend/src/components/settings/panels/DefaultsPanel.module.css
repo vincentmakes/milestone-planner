@@ -51,20 +51,12 @@
   color: var(--text-tertiary);
 }
 
-/* On/off switches: text on the left, the switch on the right */
-.toggleField {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.25rem 0;
-}
-
-.toggleInfo {
+/* On/off switches: the labelled switch, its hint below */
+.switchField {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 0.25rem;
-  min-width: 0;
 }
 
 /* Checklists */

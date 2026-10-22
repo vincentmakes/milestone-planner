@@ -4,7 +4,7 @@
  * Optionally shows Staff or Equipment Overview panel below when toggled
  */
 
-import { useRef, useMemo, useState, useCallback, useEffect } from 'react';
+import { useRef, useMemo, useState, useCallback, useLayoutEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
@@ -60,7 +60,8 @@ export function GanttContainer() {
   const setShowStaffOverview = useViewStore((s) => s.setShowStaffOverview);
   const setShowEquipmentOverview = useViewStore((s) => s.setShowEquipmentOverview);
   const defaultPanelApplied = useRef(false);
-  useEffect(() => {
+  // Before paint, so the panel does not appear a frame late.
+  useLayoutEffect(() => {
     if (defaultPanelApplied.current || !settingsLoaded || !canShowOverview) return;
     defaultPanelApplied.current = true;
     if (defaultPanel === 'staff') setShowStaffOverview(true);
