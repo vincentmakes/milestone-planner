@@ -7,6 +7,8 @@ import { describe, it, expect } from 'vitest';
 import { confirmRoleDelete, matrixEquals, roleKeyFromName, roleWithin } from '../roles';
 import { stubConfirm } from '@/test/confirmDialog';
 import { makeRole, makeSystemRoles, makeUser } from '@/test/factories';
+import { SUPERUSER_DEFAULTS } from '@/test/permissionFixtures';
+import { DISABLEABLE_KEYS } from '@/types/permissions';
 
 const [admin, superuser, user] = makeSystemRoles();
 
@@ -40,6 +42,18 @@ describe('roleWithin', () => {
     expect(roleWithin(approvalRole, viaApproval)).toBe(true);
     // An allow needs an allow
     expect(roleWithin(allowRole, viaApproval)).toBe(false);
+  });
+
+  it('skips the keys an instance switch took away (views.kanban while the board is off)', () => {
+    // /auth/me omits views.kanban from everyone while the board is off
+    const me = makeUser({
+      role: 'superuser',
+      permissions: SUPERUSER_DEFAULTS.filter((key) => key !== 'views.kanban'),
+    });
+    expect(user.permissions['views.kanban']).toBe('allow');
+    expect(roleWithin(user, me)).toBe(true);
+    expect(roleWithin(superuser, me)).toBe(true);
+    expect(DISABLEABLE_KEYS).toEqual(new Set(['views.kanban']));
   });
 
   it('is false without a user', () => {

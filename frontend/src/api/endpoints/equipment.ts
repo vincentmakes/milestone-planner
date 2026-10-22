@@ -28,6 +28,14 @@ export async function getAllEquipment(): Promise<Equipment[]> {
 }
 
 /**
+ * The distinct equipment type names of the tenant (any signed-in user; not
+ * site-scoped), sorted by the server.
+ */
+export async function getEquipmentTypes(): Promise<string[]> {
+  return apiGet<string[]>('/api/equipment-types');
+}
+
+/**
  * Get a single equipment item
  */
 export async function getEquipmentItem(id: number): Promise<Equipment> {

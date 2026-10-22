@@ -324,6 +324,33 @@ describe('BankHolidaysPanel delete, refresh, export', () => {
   });
 });
 
+describe('BankHolidaysPanel with the Nager import off', () => {
+  beforeEach(() => {
+    useAppStore.setState({ instanceSettings: { nager_enabled: 'false' } });
+  });
+
+  it('offers no refresh and no longer promises that a deleted Nager holiday returns', async () => {
+    const confirm = stubConfirm(false);
+    await renderPanel();
+    expect(screen.queryByRole('button', { name: /Refresh from Nager/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/Fetching holidays from Nager is turned off/)).toBeInTheDocument();
+    // The source stays visible
+    expect(within(rowOf('National Day')).getByText('Nager')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete National Day' }));
+    await waitFor(() => expect(confirm).toHaveBeenCalled());
+    expect(confirm.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ message: 'Delete the holiday "National Day"?', destructive: true })
+    );
+  });
+
+  it('does not suggest a refresh on an empty site', async () => {
+    api.getBankHolidays.mockResolvedValue([]);
+    render(<BankHolidaysPanel />);
+    expect(await screen.findByText('No holidays for this site yet. Add one or import an .ics file.')).toBeInTheDocument();
+  });
+});
+
 describe('BankHolidaysPanel import view', () => {
   it('targets the shown site, loads other targets for duplicate checks and goes back', async () => {
     await renderPanel();

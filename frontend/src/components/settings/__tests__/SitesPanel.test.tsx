@@ -41,10 +41,35 @@ beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset();
   api.getBankHolidays.mockResolvedValue([]);
   api.updateSite.mockImplementation(async (id: number, data: Partial<Site>) => ({ ...basel, ...data, id }));
-  useAppStore.setState({ currentUser: admin, sites: [basel], currentSite: basel });
+  useAppStore.setState({ currentUser: admin, sites: [basel], currentSite: basel, instanceSettings: null });
 });
 
 describe('SiteForm', () => {
+  it('asks for a country to fetch holidays while the Nager import is on', async () => {
+    render(<SiteForm site={{ ...basel, country_code: null }} onBack={vi.fn()} />);
+    expect(screen.getByText('Set a country code above to enable automatic bank holiday fetching')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Refresh' })).not.toBeInTheDocument();
+    await waitFor(() => expect(api.getBankHolidays).toHaveBeenCalledWith(1));
+  });
+
+  it('hides the Nager refresh, its last update and the country hint while the import is off', async () => {
+    useAppStore.setState({ instanceSettings: { nager_enabled: 'false' } });
+    api.getBankHolidays.mockResolvedValue([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    const { unmount } = render(<SiteForm site={basel} onBack={vi.fn()} />);
+
+    expect(await screen.findByText('3 bank holidays')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Refresh' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Last updated/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Fetching bank holidays from the Nager public holiday API is turned off/)
+    ).toBeInTheDocument();
+    unmount();
+
+    render(<SiteForm site={{ ...basel, country_code: null }} onBack={vi.fn()} />);
+    expect(await screen.findByText('3 bank holidays')).toBeInTheDocument();
+    expect(screen.queryByText(/Set a country code above/)).not.toBeInTheDocument();
+  });
+
   it('refreshes the bank holidays from Nager only after confirmation', async () => {
     const confirm = stubConfirm(false);
     api.refreshBankHolidays.mockResolvedValue([{ id: 1 }, { id: 2 }]);

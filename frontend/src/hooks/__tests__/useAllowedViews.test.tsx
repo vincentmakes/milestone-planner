@@ -9,6 +9,7 @@ import { useAllowedViews, CROSS_SITE_DISABLED_REASON } from '../useAllowedViews'
 import { useAppStore } from '@/stores/appStore';
 import { resetAllStores } from '@/stores';
 import { makeSite, makeUser } from '@/test/factories';
+import { PERMISSION_KEYS } from '@/types/permissions';
 
 beforeEach(() => {
   resetAllStores();
@@ -32,6 +33,15 @@ describe('useAllowedViews', () => {
     expect(result.current.isAllowed('kanban')).toBe(false);
     expect(result.current.isAllowed('todos')).toBe(true);
     expect(result.current.isAllowed('gantt')).toBe(true);
+  });
+
+  it('hides the Kanban board from an administrator while the board is turned off', () => {
+    // /auth/me omits views.kanban from everyone, admins included, while it is off
+    const withoutBoard = PERMISSION_KEYS.filter((key) => key !== 'views.kanban');
+    useAppStore.setState({ currentUser: makeUser({ role: 'admin', permissions: withoutBoard, site_ids: [1, 2] }) });
+    const { result } = renderHook(() => useAllowedViews());
+    expect(result.current.visible).toEqual(['gantt', 'todos', 'staff', 'equipment', 'crosssite', 'archived']);
+    expect(result.current.isAllowed('kanban')).toBe(false);
   });
 
   it('disables Cross-site with the reason while only one site is visible', () => {

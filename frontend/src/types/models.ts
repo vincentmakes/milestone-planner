@@ -530,8 +530,28 @@ export interface SSOConfig {
   redirect_uri?: string;
 }
 
+/**
+ * Instance settings (GET /api/settings, written with settings.general).
+ * The admin defaults and feature switches always arrive (the backend fills a
+ * missing row with its default); the readers in utils/instanceSettings.ts
+ * parse them.
+ */
 export interface InstanceSettings {
   instance_title?: string;
+  instance_name?: string;
+  show_weekends?: string;
+  /** `none` / `staff` / `equipment`: the overview panel the Gantt opens with */
+  gantt_default_panel?: string;
+  /** Compact JSON array of skill ids: the Staff panel's initial skill filter */
+  staff_panel_default_skills?: string;
+  /** Compact JSON array of type names: the Equipment panel's initial type filter */
+  equipment_panel_default_types?: string;
+  /** `false` turns the Kanban board off for everyone */
+  kanban_enabled?: string;
+  /** `false` turns the Nager bank-holiday import off */
+  nager_enabled?: string;
+  /** `false`: a new project starts with no predefined phase selected */
+  new_project_preselect_phases?: string;
   [key: string]: string | undefined;
 }
 

@@ -28,6 +28,7 @@ import styles from './ProjectModal.module.css';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { TeamChecklist } from '@/components/common/TeamChecklist';
 import { can } from '@/utils/permissions';
+import { isSettingOn } from '@/utils/instanceSettings';
 
 // Local interface for predefined phases from API
 interface PredefinedPhaseFromAPI {
@@ -114,9 +115,15 @@ export function ProjectModal() {
           const typedPhases = phases as PredefinedPhaseFromAPI[];
           const activePhases = typedPhases.filter(p => p.is_active !== false);
           setPredefinedPhases(activePhases);
-          // Select all by default for new projects
+          // A new project starts with every phase selected, or with none
+          // when the admin turned that off (Settings → Features & defaults):
+          // the creator then picks them. Read when the dialog opens only.
           if (!isEditing) {
-            setSelectedPhases(new Set(activePhases.map(p => p.name)));
+            const preselect = isSettingOn(
+              useAppStore.getState().instanceSettings,
+              'new_project_preselect_phases'
+            );
+            setSelectedPhases(preselect ? new Set(activePhases.map(p => p.name)) : new Set());
           }
         })
         .catch(err => console.error('Failed to load predefined phases:', err));

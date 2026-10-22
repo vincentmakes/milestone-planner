@@ -89,7 +89,7 @@ describe('slicesForEntity', () => {
   });
 
   it('maps settings, notes and users explicitly instead of refreshing everything', () => {
-    expect(slicesForEntity('settings')).toEqual(['settings']);
+    expect(slicesForEntity('settings')).toEqual(['settings', 'currentUser']);
     expect(slicesForEntity('note')).toEqual([]);
     expect(slicesForEntity('user')).toEqual(['staff', 'currentUser', 'projects', 'teams', 'roles']);
     expect(slicesForEntity('staff')).toEqual(['staff', 'projects']);
@@ -182,10 +182,14 @@ describe('WebSocketProvider refresh runner', () => {
     expect(loadAllProjects).toHaveBeenCalledTimes(2);
   });
 
-  it('reloads instance settings on change:settings without touching projects', async () => {
+  it('reloads instance settings and the signed-in user on change:settings without touching projects', async () => {
     vi.mocked(getInstanceSettings).mockResolvedValue({ instance_title: 'Renamed', show_weekends: 'false' });
+    // The Kanban switch turned off: /auth/me no longer lists views.kanban.
+    vi.mocked(fetchCurrentUser).mockResolvedValue(makeUser({ id: 5, role: 'admin', permissions: ['projects.view'] }));
+    useAppStore.setState({ isAuthenticated: true, currentUser: makeUser({ id: 5, role: 'admin' }) });
     await receive('settings');
     expect(useAppStore.getState().instanceSettings).toEqual({ instance_title: 'Renamed', show_weekends: 'false' });
+    expect(useAppStore.getState().currentUser?.permissions).toEqual(['projects.view']);
     expect(loadAllProjects).not.toHaveBeenCalled();
   });
 

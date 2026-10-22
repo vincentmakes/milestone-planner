@@ -143,6 +143,36 @@ describe('EquipmentView panel', () => {
     expect(screen.queryByText('Select All')).not.toBeInTheDocument();
   });
 
+  it("starts with the admin's default types found at the site, ignoring unknown ones; Clear works for the session", () => {
+    seed();
+    // Mixer exists only at another site, Gone nowhere
+    useAppStore.setState({ instanceSettings: { equipment_panel_default_types: '["Analytics","Mixer","Gone"]' } });
+    const { unmount } = render(<EquipmentView />);
+
+    expect(screen.getByText('HPLC Agilent')).toBeInTheDocument();
+    expect(screen.queryByText('Bioreactor 50L')).not.toBeInTheDocument();
+    expect(countBadge()).toHaveTextContent('1');
+
+    fireEvent.click(screen.getByRole('button', { name: /Analytics/ }));
+    expect(screen.getByRole('checkbox', { name: 'Analytics' })).toBeChecked();
+    fireEvent.click(screen.getByText('Clear'));
+    expect(screen.getByText('Bioreactor 50L')).toBeInTheDocument();
+    expect(countBadge()).toHaveTextContent('3');
+
+    // The next opening applies the default again
+    unmount();
+    render(<EquipmentView embedded />);
+    expect(screen.queryByText('Bioreactor 50L')).not.toBeInTheDocument();
+  });
+
+  it('starts unfiltered when no default type exists at the site', () => {
+    seed();
+    useAppStore.setState({ instanceSettings: { equipment_panel_default_types: '["Mixer"]' } });
+    render(<EquipmentView />);
+    expect(screen.getByRole('button', { name: /All Types/ })).toBeInTheDocument();
+    expect(countBadge()).toHaveTextContent('3');
+  });
+
   it('with an active team filter, hides non-matching equipment and keeps matching ones', () => {
     seed();
     useAppStore.setState({

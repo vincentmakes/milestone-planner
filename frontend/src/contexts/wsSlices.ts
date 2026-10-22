@@ -72,7 +72,9 @@ export function slicesForEntity(entityType: string): Slice[] {
       // write fell through to ALL_SLICES / the N+1 project reload.
       return [];
     case 'settings':
-      return ['settings'];
+      // The Kanban switch takes views.kanban away from everyone, so the
+      // signed-in user's resolved permissions (/auth/me) move with it.
+      return ['settings', 'currentUser'];
     case 'custom_column':
     case 'custom_column_value':
       // Definitions and values live in customColumnStore, not the project tree.

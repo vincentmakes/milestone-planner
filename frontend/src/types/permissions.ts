@@ -99,6 +99,14 @@ export const PM_BUNDLE: ReadonlySet<PermissionKey> = new Set<PermissionKey>([
 ]);
 
 /**
+ * Keys an instance switch can take away from everyone, admins included
+ * (mirror of DISABLEABLE_KEYS in app/services/permissions.py): `views.kanban`
+ * while the Kanban board is turned off. /auth/me then omits them, though the
+ * roles' matrices still hold them.
+ */
+export const DISABLEABLE_KEYS: ReadonlySet<PermissionKey> = new Set<PermissionKey>(['views.kanban']);
+
+/**
  * The key of the one administrator role, which always holds every permission.
  * Compare a *target* user's role with it (e.g. "is this account an admin?");
  * never gate the signed-in user on it — read their permissions instead.

@@ -45,9 +45,11 @@ vi.mock('../panels/EquipmentTypesPanel', () => ({ EquipmentTypesPanel: () => <di
 vi.mock('../panels/PredefinedPhasesPanel', () => ({ PredefinedPhasesPanel: () => <div>Predefined phases panel</div> }));
 vi.mock('../panels/SSOPanel', () => ({ SSOPanel: () => <div>SSO panel</div> }));
 vi.mock('../panels/RolesPanel', () => ({ RolesPanel: () => <div>Roles panel</div> }));
+vi.mock('../panels/DefaultsPanel', () => ({ DefaultsPanel: () => <div>Defaults panel</div> }));
 
 const ALL_SECTIONS = [
   'General',
+  'Features & defaults',
   'Roles',
   'Sites',
   'Teams',
@@ -64,7 +66,7 @@ const ALL_SECTIONS = [
 // Keys only admins hold by default. General is listed for everyone who opens
 // the hub (per-browser appearance; the panel keeps the instance-wide settings
 // for settings.general), and superusers see Sites for its export control.
-const ADMIN_ONLY = ['Absence types', 'SSO', 'Roles'];
+const ADMIN_ONLY = ['Features & defaults', 'Absence types', 'SSO', 'Roles'];
 
 /** The hub as mounted in the app, next to the global keyboard shortcuts */
 function HubWithShortcuts() {
@@ -336,6 +338,26 @@ describe('canOpenSettings / getVisibleSections', () => {
     expect(ids(['sites.manage'])).toEqual(['general', 'sites']);
     expect(ids(['sites.export'])).toEqual(['general', 'sites']);
     expect(ids(['settings.sso', 'tags.manage'])).toEqual(['general', 'tags', 'sso']);
+  });
+
+  it('lists Features & defaults with settings.general, after General, and opens the hub with it alone', async () => {
+    const ids = (permissions: string[]) =>
+      getVisibleSections(makeUser({ role: 'x', permissions })).map((s) => s.id);
+    expect(ids(['settings.general'])).toEqual(['general', 'defaults']);
+    expect(canOpenSettings(makeUser({ role: 'x', permissions: ['settings.general'] }))).toBe(true);
+    expect(ids(['users.view'])).not.toContain('defaults');
+    expect(getVisibleSections(makeUser({ role: 'admin' })).map((s) => s.id).slice(0, 3)).toEqual([
+      'general',
+      'defaults',
+      'roles',
+    ]);
+    const section = getVisibleSections(makeUser({ role: 'admin' })).find((s) => s.id === 'defaults');
+    expect(section).toMatchObject({ group: 'General', label: 'Features & defaults', permission: 'settings.general' });
+
+    setRole('admin');
+    act(() => useUIStore.getState().openSettings('defaults'));
+    render(<SettingsHub />);
+    expect(await screen.findByText('Defaults panel')).toBeInTheDocument();
   });
 
   it('lists Roles with roles.manage, in the General group', async () => {

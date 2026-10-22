@@ -17,7 +17,7 @@ describe('slicesForEntity', () => {
     ['predefined_phase', ['projects']],
     ['note', []],
     ['card_comment', []],
-    ['settings', ['settings']],
+    ['settings', ['settings', 'currentUser']],
     ['custom_column', ['customColumns']],
     ['custom_column_value', ['customColumns']],
     ['bank_holiday', ['siteCalendar']],

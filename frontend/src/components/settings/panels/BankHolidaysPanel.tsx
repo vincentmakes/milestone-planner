@@ -2,7 +2,8 @@
  * BankHolidaysPanel (Settings hub > Bank holidays)
  *
  * Holidays of one site at a time: add, edit and delete them, refresh them from
- * the Nager holiday API, export them as .ics, or import an .ics file into one or
+ * the Nager holiday API (unless the admin turned the import off in Settings →
+ * Features & defaults), export them as .ics, or import an .ics file into one or
  * more sites. Editing a Nager holiday turns it into a custom one, which then
  * takes precedence over Nager for that date. Superusers only see their sites.
  */
@@ -52,6 +53,7 @@ import {
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { confirmAction } from '@/utils/confirmDialog';
+import { isSettingOn } from '@/utils/instanceSettings';
 import styles from './CalendarPanel.module.css';
 import { useVisibleSites } from '@/hooks/useVisibleSites';
 
@@ -68,6 +70,7 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
   const settingsIntent = useUIStore((s) => s.settingsIntent);
   const clearSettingsIntent = useUIStore((s) => s.clearSettingsIntent);
   const currentSite = useAppStore((s) => s.currentSite);
+  const nagerOn = useAppStore((s) => isSettingOn(s.instanceSettings, 'nager_enabled'));
   const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
   const manageableSites = useVisibleSites();
 
@@ -191,7 +194,9 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
 
   const handleDelete = async (holiday: BankHoliday) => {
     if (siteId === null) return;
-    const message = holiday.is_custom
+    // A Nager holiday returns on the next refresh, which cannot happen while
+    // the import is off.
+    const message = holiday.is_custom || !nagerOn
       ? `Delete the holiday "${holiday.name}"?`
       : `Delete the holiday "${holiday.name}"?\n\nIt comes from Nager, so it will return on the next refresh from Nager.`;
     // A second click while the first DELETE runs would 404 and show an error
@@ -394,15 +399,17 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
         }
         right={
           <>
-            <Button
-              variant="secondary"
-              icon={<RefreshIcon />}
-              onClick={handleRefresh}
-              disabled={isRefreshing || !site?.country_code}
-              title={site?.country_code ? 'Fetch public holidays from the Nager API' : "Set the site's country in Sites first"}
-            >
-              {isRefreshing ? 'Refreshing...' : 'Refresh from Nager'}
-            </Button>
+            {nagerOn && (
+              <Button
+                variant="secondary"
+                icon={<RefreshIcon />}
+                onClick={handleRefresh}
+                disabled={isRefreshing || !site?.country_code}
+                title={site?.country_code ? 'Fetch public holidays from the Nager API' : "Set the site's country in Sites first"}
+              >
+                {isRefreshing ? 'Refreshing...' : 'Refresh from Nager'}
+              </Button>
+            )}
             <Button
               variant="secondary"
               icon={<DownloadIcon />}
@@ -451,7 +458,9 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
         ) : visibleHolidays.length === 0 ? (
           <div className={styles.empty}>
             {holidays.length === 0
-              ? 'No holidays for this site yet. Add one, import an .ics file or refresh from Nager.'
+              ? nagerOn
+                ? 'No holidays for this site yet. Add one, import an .ics file or refresh from Nager.'
+                : 'No holidays for this site yet. Add one or import an .ics file.'
               : 'No holidays in this year.'}
           </div>
         ) : (
@@ -511,9 +520,9 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
       </div>
 
       <p className={styles.help}>
-        Holidays are non-working days in every plan of the site. Nager holidays are fetched from
-        the public holiday API; editing one turns it into a custom holiday, which then wins over
-        Nager for that date on later refreshes.
+        {nagerOn
+          ? 'Holidays are non-working days in every plan of the site. Nager holidays are fetched from the public holiday API; editing one turns it into a custom holiday, which then wins over Nager for that date on later refreshes.'
+          : 'Holidays are non-working days in every plan of the site. Fetching holidays from Nager is turned off; the holidays already imported stay.'}
       </p>
     </div>
   );

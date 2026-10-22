@@ -55,12 +55,14 @@ export default defineConfig({
       // Raised with the date picker by its lift on the same local run (lines
       // 91.51, statements 90.4, functions 91.98, branches 81.55), then with
       // 1.14.0 to 0.3 under the local totals (lines 91.6, statements 90.48,
-      // functions 91.97, branches 81.59), rounded down.
+      // functions 91.97, branches 81.59), rounded down; with the admin
+      // defaults likewise (lines 91.78, statements 90.67, functions 92.2,
+      // branches 81.88).
       thresholds: {
-        lines: 91.3,
-        statements: 90.1,
-        functions: 91.6,
-        branches: 81.2,
+        lines: 91.4,
+        statements: 90.3,
+        functions: 91.9,
+        branches: 81.5,
       },
     },
   },

@@ -43,6 +43,7 @@ import { canBookSelf, canManageAbsencesOf, canManageAnyProject } from '@/utils/p
 import { isPendingAssignment } from '@/utils/kanbanCards';
 import type { Project, Phase, Subphase, StaffAssignment } from '@/types';
 import { confirmAction } from '@/utils/confirmDialog';
+import { parseIdList } from '@/utils/instanceSettings';
 import styles from './StaffView.module.css';
 
 // Height constants matching Gantt rows
@@ -134,7 +135,13 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   
   // Filter state
   const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set());
-  const [selectedSkills, setSelectedSkills] = useState<Set<number>>(new Set());
+  // Seeded with the admin's default skills (Settings → Features & defaults)
+  // that still exist, each time the panel mounts; changes last the session.
+  const defaultSkills = useAppStore((s) => s.instanceSettings?.staff_panel_default_skills);
+  const [selectedSkills, setSelectedSkills] = useState<Set<number>>(() => {
+    const known = new Set(skills.map((skill) => skill.id));
+    return new Set(parseIdList(defaultSkills).filter((id) => known.has(id)));
+  });
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [filterDropdownStyle, setFilterDropdownStyle] = useState<React.CSSProperties>({});
 

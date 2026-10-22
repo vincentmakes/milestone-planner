@@ -64,6 +64,7 @@ export type ModalType =
 /** Sections of the Settings hub (see components/settings/sections.tsx) */
 export type SettingsSectionId =
   | 'general'
+  | 'defaults'
   | 'roles'
   | 'sites'
   | 'teams'

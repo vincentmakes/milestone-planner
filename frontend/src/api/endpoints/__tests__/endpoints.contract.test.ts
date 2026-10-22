@@ -134,6 +134,7 @@ describe('equipment and staff endpoints', () => {
     ['getEquipment (site)', () => equipment.getEquipment(), 'GET', '/api/equipment'],
     ['getEquipment (all sites)', () => equipment.getEquipment(true), 'GET', '/api/equipment?includeAllSites=true'],
     ['getAllEquipment', () => equipment.getAllEquipment(), 'GET', '/api/equipment/all'],
+    ['getEquipmentTypes', () => equipment.getEquipmentTypes(), 'GET', '/api/equipment-types'],
     ['getEquipmentItem', () => equipment.getEquipmentItem(2), 'GET', '/api/equipment/2'],
     ['createEquipment', () => equipment.createEquipment({ name: 'E', type: 'T', site_id: 1 } as never), 'POST', '/api/equipment', { name: 'E', type: 'T', site_id: 1 }],
     ['updateEquipment', () => equipment.updateEquipment(2, { name: 'F' }), 'PUT', '/api/equipment/2', { name: 'F' }],
@@ -222,14 +223,47 @@ describe('settings endpoints', () => {
     await expect(settings.getInstanceTitle()).resolves.toBe('R&D Planning');
   });
 
-  it('getInstanceSettings maps empty values to undefined', async () => {
-    fns.GET.mockResolvedValue({ instance_title: 'T', instance_name: '', show_weekends: 'true', other: 'x' });
+  it('getInstanceSettings copies the known keys, empty display values as undefined', async () => {
+    fns.GET.mockResolvedValue({
+      instance_title: 'T',
+      instance_name: '',
+      show_weekends: 'true',
+      header_logo_dark: 'data:image/png;base64,x',
+      other: 'x',
+      gantt_default_panel: 'staff',
+      staff_panel_default_skills: '[1,2]',
+      equipment_panel_default_types: '["HPLC"]',
+      kanban_enabled: 'false',
+      nager_enabled: 'false',
+      new_project_preselect_phases: 'false',
+    });
     await expect(settings.getInstanceSettings()).resolves.toEqual({
       instance_title: 'T',
       instance_name: undefined,
       show_weekends: 'true',
+      gantt_default_panel: 'staff',
+      staff_panel_default_skills: '[1,2]',
+      equipment_panel_default_types: '["HPLC"]',
+      kanban_enabled: 'false',
+      nager_enabled: 'false',
+      new_project_preselect_phases: 'false',
     });
     expect(fns.GET).toHaveBeenCalledWith('/api/settings');
+  });
+
+  it('getInstanceSettings fills the admin defaults the response lacks, like the backend', async () => {
+    fns.GET.mockResolvedValue({ instance_title: 'T', kanban_enabled: '' });
+    const loaded = await settings.getInstanceSettings();
+    expect(loaded).toMatchObject(settings.INSTANCE_SETTING_DEFAULTS);
+    expect(settings.INSTANCE_SETTING_DEFAULTS).toEqual({
+      gantt_default_panel: 'none',
+      staff_panel_default_skills: '[]',
+      equipment_panel_default_types: '[]',
+      kanban_enabled: 'true',
+      nager_enabled: 'true',
+      new_project_preselect_phases: 'true',
+    });
+    expect(settings.INSTANCE_SETTING_KEYS).toHaveLength(9);
   });
 });
 

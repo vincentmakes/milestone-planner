@@ -17,7 +17,7 @@ import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { stubConfirm } from '@/test/confirmDialog';
 import { makeRole, makeSystemRoles, makeTeam } from '@/test/factories';
 import type { Site, User } from '@/types';
-import { asSignedIn } from '@/test/permissionFixtures';
+import { asSignedIn, SUPERUSER_DEFAULTS } from '@/test/permissionFixtures';
 
 const getUsers = vi.fn();
 const updateUser = vi.fn();
@@ -595,6 +595,23 @@ describe('UsersPanel by permission key', () => {
     const payload = updateUser.mock.calls[0][1];
     expect(payload).toMatchObject({ role: 'team_lead' });
     expect(payload).not.toHaveProperty('active');
+  });
+
+  it('lets a superuser give the user role while the Kanban board is off', async () => {
+    // /auth/me omits views.kanban while the board is off; the User role still holds it
+    const withoutBoard = SUPERUSER_DEFAULTS.filter((key) => key !== 'views.kanban');
+    getUsers.mockResolvedValue([ada, sam, { ...bob, role: 'viewer', role_name: 'Viewer' }]);
+    seed({ ...sam, permissions: [...withoutBoard, 'users.change_role'] }, [siteA]);
+    render(<UsersPanel />);
+    await openEditor('Bob Brown');
+
+    const role = screen.getByLabelText('Role *');
+    expect(role).toBeEnabled();
+    expect(screen.getByRole('option', { name: 'User' })).toBeEnabled();
+    fireEvent.change(role, { target: { value: 'user' } });
+    save();
+    await waitFor(() => expect(updateUser).toHaveBeenCalled());
+    expect(updateUser.mock.calls[0][1]).toMatchObject({ role: 'user' });
   });
 
   it("keeps the role of someone whose role grants more than the editor's", async () => {

@@ -28,6 +28,7 @@ import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
 import { EquipmentTimelineBody } from './EquipmentTimelineBody';
 import { confirmAction } from '@/utils/confirmDialog';
+import { parseNameList } from '@/utils/instanceSettings';
 import styles from './EquipmentView.module.css';
 
 // Shared row-height constants (used by EquipmentTimelineBody to keep rows in sync)
@@ -143,8 +144,6 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
     embedded
   );
   
-  // Type filter state
-  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [filterDropdownStyle, setFilterDropdownStyle] = useState<React.CSSProperties>({});
 
@@ -192,6 +191,14 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
     });
     return Array.from(types).sort((a, b) => a.localeCompare(b));
   }, [allSiteEquipment]);
+
+  // Type filter state, seeded with the admin's default types (Settings →
+  // Features & defaults) found among the site's types, each time the panel
+  // mounts; changes last the session.
+  const defaultTypes = useAppStore((s) => s.instanceSettings?.equipment_panel_default_types);
+  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(
+    () => new Set(parseNameList(defaultTypes).filter((type) => equipmentTypes.includes(type)))
+  );
   
   // Filter equipment based on selected types (show all if none selected)
   const siteEquipment = useMemo(() => {

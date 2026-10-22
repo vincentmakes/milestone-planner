@@ -36,16 +36,42 @@ export async function getInstanceTitle(): Promise<string> {
 }
 
 /**
+ * Defaults of the admin defaults and feature switches, as in the backend's
+ * KNOWN_SETTINGS (app/services/instance_settings.py). The backend already
+ * fills a missing row with its default; these cover an empty value.
+ */
+export const INSTANCE_SETTING_DEFAULTS = {
+  gantt_default_panel: 'none',
+  staff_panel_default_skills: '[]',
+  equipment_panel_default_types: '[]',
+  kanban_enabled: 'true',
+  nager_enabled: 'true',
+  new_project_preselect_phases: 'true',
+} as const;
+
+export type DefaultedSettingKey = keyof typeof INSTANCE_SETTING_DEFAULTS;
+
+/** The keys copied into appStore.instanceSettings (logos and the rest stay out). */
+export const INSTANCE_SETTING_KEYS = [
+  'instance_title',
+  'instance_name',
+  'show_weekends',
+  ...(Object.keys(INSTANCE_SETTING_DEFAULTS) as DefaultedSettingKey[]),
+] as const;
+
+/**
  * Get all instance settings
  * Uses the GET /api/settings endpoint that returns all settings as key-value
  */
 export async function getInstanceSettings(): Promise<InstanceSettings> {
   const allSettings = await apiGet<Record<string, string | null>>('/api/settings');
-  return {
-    instance_title: allSettings.instance_title || undefined,
-    instance_name: allSettings.instance_name || undefined,
-    show_weekends: allSettings.show_weekends || undefined,
-  };
+  const settings: InstanceSettings = {};
+  for (const key of INSTANCE_SETTING_KEYS) {
+    const fallback: string | undefined =
+      key in INSTANCE_SETTING_DEFAULTS ? INSTANCE_SETTING_DEFAULTS[key as DefaultedSettingKey] : undefined;
+    settings[key] = allSettings[key] || fallback;
+  }
+  return settings;
 }
 
 /**
