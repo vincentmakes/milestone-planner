@@ -680,7 +680,7 @@ In the **Equipment View**, use the type filter dropdown to show/hide equipment b
 
 Project fields are what a project holds besides its name, dates, manager and teams (see [Project fields in the Gantt chart](gantt-charts.md#project-fields)). Open **Settings → Project fields** (Admins — the *Manage project fields* permission); everyone who can edit a project fills them in the project dialog.
 
-![Settings → Project fields: the built-in fields with their labels and Shown switches, and the Project type dropdown open on its items](../assets/screenshots/project-fields-settings.png){ loading=lazy }
+![Settings → Project fields: the built-in fields with their labels and Shown switches, the Project type dropdown open on its items, the Area multi-select field and the add-field row under the list](../assets/screenshots/project-fields-settings.png){ loading=lazy }
 
 ### Built-in Fields
 

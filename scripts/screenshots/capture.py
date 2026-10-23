@@ -358,11 +358,11 @@ def shot_project_fields_settings(context: BrowserContext) -> None:
     # ProjectFieldsPanel: a dropdown field's items toggle is labelled "Items of <field>".
     page.get_by_role("button", name="Items of Project type", exact=True).click()
     page.wait_for_timeout(600)
-    # The items open under the field, below the built-in block: scroll the
-    # panel so the Confirmed row, the custom fields and the open items share
-    # the frame.
-    page.get_by_role("group", name="Items of Project type").evaluate(
-        "el => el.scrollIntoView({block: 'end'})"
+    # The items open under the field, below the built-in block; the add-field
+    # row sits after the list (ProjectFieldsPanel): scroll the panel so the
+    # custom fields, the open items and that row share the frame.
+    page.get_by_label("New field name", exact=True).evaluate(
+        "el => (el.closest('form') || el).scrollIntoView({block: 'end'})"
     )
     page.wait_for_timeout(300)
     page.screenshot(path=str(OUT / "project-fields-settings.png"))
