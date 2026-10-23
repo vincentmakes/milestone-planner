@@ -463,17 +463,35 @@ def shot_defaults_settings(context: BrowserContext) -> None:
     page.close()
 
 
-def shot_my_todos(context: BrowserContext) -> None:
-    """My Todos as Bob (PM of Bioprocess Scale-Up), on the To decide tab with
+def _open_my_work(page: Page) -> None:
+    """Open My Work from the sidebar; its accessible name carries the badge
+    ("My Work, 1 approval to decide")."""
+    page.locator("aside, nav").first.get_by_role("button", name=re.compile(r"^My Work")).click()
+    page.wait_for_timeout(800)
+
+
+def shot_my_work(context: BrowserContext) -> None:
+    """My Work as Bob (PM of Bioprocess Scale-Up), on the My Approvals tab with
     Diana's request to join Analytics."""
     fresh, page = _login_as(context, "bob.brown@demo.local")
-    open_sidebar_item(page, "My Todos")
+    _open_my_work(page)
+    # The tab's accessible name carries its count ("My Approvals, 1 item").
+    page.get_by_role("tab", name=re.compile(r"^My Approvals")).click()
     page.wait_for_timeout(800)
-    # The tab's accessible name carries its count ("To decide, 1 item").
-    page.get_by_role("tab", name=re.compile(r"^To decide")).click()
+    page.screenshot(path=str(OUT / "my-work.png"))
+    log("[done] my-work.png")
+    fresh.close()
+
+
+def shot_my_assignments(context: BrowserContext) -> None:
+    """My Work as Bob, on the My Assignments tab: his current and upcoming
+    bookings, soonest first."""
+    fresh, page = _login_as(context, "bob.brown@demo.local")
+    _open_my_work(page)
+    page.get_by_role("tab", name=re.compile(r"^My Assignments")).click()
     page.wait_for_timeout(800)
-    page.screenshot(path=str(OUT / "my-todos.png"))
-    log("[done] my-todos.png")
+    page.screenshot(path=str(OUT / "my-assignments.png"))
+    log("[done] my-assignments.png")
     fresh.close()
 
 
@@ -998,7 +1016,8 @@ TARGETS = {
     "roles": shot_roles_settings,
     "approvals": shot_approvals_settings,
     "defaults-settings": shot_defaults_settings,
-    "my-todos": shot_my_todos,
+    "my-work": shot_my_work,
+    "my-assignments": shot_my_assignments,
     "pending": shot_pending_assignment,
     "assignment-overview-row": shot_assignment_overview,
     "assign-staff": shot_assign_staff_modal,
