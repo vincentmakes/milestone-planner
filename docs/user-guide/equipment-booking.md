@@ -61,7 +61,7 @@ The right side shows a horizontal timeline with booking bars:
 
 ![Assign Equipment modal with equipment dropdown and booking dates](../assets/screenshots/equipment-assignment-modal.png){ loading=lazy }
 
-- Select the **equipment item** from a dropdown
+- Select the **equipment item** from the dropdown: it opens with a search box that finds an item by its name or its type ([how the pickers work](gantt-charts.md#picking-a-person))
 - Set **start and end dates** for the booking
 - Click **Save** to confirm
 

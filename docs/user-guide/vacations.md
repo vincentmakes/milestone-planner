@@ -32,7 +32,7 @@ If an unavailable and an available absence overlap on the same day (for example 
 4. Optionally add a **description** (e.g., "Annual Leave", "Conference")
 5. Click **Save**
 
-People whose role can **manage others' absences** (admins and superusers by default) can create absences for any staff member at the sites they can see by selecting them from the dropdown; everyone else can only book their own. They can also click an existing absence in the Staff Overview to edit it. A person who belongs to several sites appears once in the staff picker.
+People whose role can **manage others' absences** (admins and superusers by default) can create absences for any staff member at the sites they can see by picking them in the **Staff Member** dropdown, which opens with a search box — type to find a person ([how the pickers work](gantt-charts.md#picking-a-person)); everyone else can only book their own. They can also click an existing absence in the Staff Overview to edit it. A person who belongs to several sites appears once in the staff picker.
 
 **From** and **To** are picked on the [shared calendar](gantt-charts.md#picking-dates), so **To** can never fall before **From**; for a recurring absence, the selected weekdays are highlighted in the calendar.
 

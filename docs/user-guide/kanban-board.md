@@ -72,7 +72,7 @@ Open a card and add someone under **Assignees**. This is not just a label:
 
     Someone assigned to five overlapping cards is booked at five times their capacity and the workload heatmap will show it. If you want lightweight ownership without booking time, say so in a comment instead.
 
-The dropdown shows what each person will be booked at. Because the booking takes its dates from the card, rescheduling the bar in the Gantt chart moves the booking with it — you never have to adjust it separately. Removing someone from a card releases the booking.
+The **Add someone…** dropdown opens with a search box — type to find a person ([how the pickers work](gantt-charts.md#picking-a-person)) — and each row notes what that person will be booked at, such as *books 80%*. Because the booking takes its dates from the card, rescheduling the bar in the Gantt chart moves the booking with it — you never have to adjust it separately. Removing someone from a card releases the booking.
 
 In the Gantt chart a booking can also be given [its own dates inside the phase](gantt-charts.md#bookings-on-phases-and-subphases), and a person can hold several such bookings on one phase. The card still shows that person **once** (hover the avatar to see every allocation), while the card's detail lists **one line per booking**, with the dates of each booking that has its own. Each line has its own **×**, so bookings are removed one at a time; the confirmation names the dates of the booking you are removing.
 

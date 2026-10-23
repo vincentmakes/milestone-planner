@@ -491,7 +491,27 @@ decision, not an oversight.
   (`aria-haspopup="listbox"`, named by the label and the chosen names); the panel is a
   `role="listbox"` `aria-multiselectable` of `role="option"` rows (checkbox glyph, colour dot,
   name) that stays open while items are ticked, with a **Clear** row, and closes through
-  `useDismissableOverlay`. Tags keep their pills (`TagPicker` over `OptionPicker`).
+  `useDismissableOverlay`. `searchable` adds the search box of `SearchableSelect` above the rows
+  (focused on open and after Clear; the rows filter on `name` and an optional per-item `hint`;
+  Enter ticks the active row and keeps the panel open; Space types), `summary(chosen)` replaces
+  the joined names in the trigger (*5 members*) and `allowClear={false}` drops the Clear row —
+  the team member list in Settings → Teams uses all three, with the chosen members listed under
+  it, each with a × button. Tags keep their pills (`TagPicker` over `OptionPicker`).
+- **`SearchableSelect`** (`components/common/SearchableSelect`): pick one item of **any list of
+  people, or any list longer than a handful** (project manager, booking dialog staff or
+  equipment, Kanban *Add someone…*, absence staff); `Select` stays for short fixed choices.
+  `label` (or `aria-label` for a hidden one), `options: {id, label, hint?, note?, disabled?}[]`,
+  `value: number | null`, `onChange(id)` (only on a real change, like a native select),
+  `emptyLabel` (a first row that picks `null`), `placeholder`, `disabled`, `title`, `className`
+  (on the wrapper). The trigger looks like the `Select` box; the panel opens under it with a
+  focused search `Input` (`role="combobox"`, `aria-activedescendant` on it) over a
+  `role="listbox"` whose rows show the label, a muted `hint` (searched: job title, equipment
+  type) and a muted `note` (not searched: *80% capacity*). Filtering starts at the first
+  character; a printable key on the closed trigger opens it with that character typed; Enter
+  picks the active row and never submits a host form; Escape, Tab out and an outside mousedown
+  close it through `useDismissableOverlay`. The list is 14 rem tall and the panel scrolls itself
+  into view on open. Tests use the helpers in `src/test/searchableSelect.ts` (`pickOption`,
+  `pickerOptions`, `pickerSearch`).
 - **`ToggleSwitch`** (`components/common/ToggleSwitch`): every on/off flag, in Settings and in
   dialogs alike. A visually hidden checkbox with `role="switch"`, so keyboard, screen-reader and
   label behaviour come for free; pass `label` for visible text (a `ReactNode`, so an icon may sit
@@ -503,8 +523,7 @@ decision, not an oversight.
   raw checkbox is right only for **picking several items from a list**: the tag, type, role and
   skill filters, column visibility, the `.ics` import rows, `SiteChecklist`, the equipment
   site picker, the header team filter (`TeamSelector`), `TeamChecklist` (project teams and the
-  teams a tag, piece of equipment or company event is limited to) and the team member list in
-  Settings → Teams. A "limit to teams" choice per site is a *Whole site* switch over a
+  teams a tag, piece of equipment or company event is limited to). A "limit to teams" choice per site is a *Whole site* switch over a
   `TeamChecklist` (`TeamScope`). Tests reach a switch with `getByRole('switch', { name })`.
 - **`RoleChecklist`** (`components/common/RoleChecklist`): the roles that may approve a request
   (Settings → Roles → Approvals). Same shape as `TeamChecklist` without colours: a labelled
@@ -937,6 +956,10 @@ has no fixed height).
   gets the `min-height`), which toggles the box anyway. Put a checkbox inside its label, not
   next to it, or the phone gets no touch target for it.
   `src/styles/__tests__/mobileTouchTargets.test.ts` pins the exclusion.
+- **Listbox rows are touch targets too**: at ≤ 640 px every `[role="option"]` row gets a 44 px
+  `min-height` (rows are full width, so only the height grows) — the `SearchableSelect` and
+  `MultiSelectDropdown` rows, the tag and `@` suggestions and the job-title autocomplete alike.
+  Pinned by the same test.
 - `@media (hover: none) and (pointer: coarse)` (touch devices at any width) raises buttons to a
   40 px `min-height`, keeps the completion/type badges and `wbsLevel` chips at their own size,
   shows drag handles at 60 % opacity, disables hover transitions and enables touch scrolling on

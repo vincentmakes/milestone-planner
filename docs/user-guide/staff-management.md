@@ -64,7 +64,7 @@ New assignments (drag-and-drop, **Assign Staff**, **Assign me**) can't be create
 
 ![Assign Staff modal with staff dropdown, allocation slider, and date range](../assets/screenshots/assign-staff-modal.png){ loading=lazy }
 
-- Select a **staff member** from the dropdown
+- Select a **staff member** from the dropdown: it opens with a search box — type to find a person ([how the pickers work](gantt-charts.md#picking-a-person)); a person below full capacity carries a note such as *80% capacity*, and picking someone sets the allocation to their capacity
 - Set **allocation percentage** (5–100% in 5% increments). The server accepts any whole number from 1 to 100 for a single assignment and rejects 0 or more than 100; over-allocation comes from several overlapping assignments
 - Assignment dates are picked on the [shared calendar](gantt-charts.md#picking-dates), so the end date can never fall before the start date
 - A warning appears if the assignment would exceed capacity

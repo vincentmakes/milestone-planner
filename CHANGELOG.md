@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The site Excel export has **Project fields**, **Project field options** and **Project field values** sheets.
 - **My Work** replaces My Todos, with three tabs: **My Approvals** (the booking requests you may decide), **My Assignments** (your bookings across projects, current and upcoming by default or all, each with an **Open** button that shows the booking in its dialog) and **My Requests** (your own requests). The sidebar badge counts the requests waiting for your decision.
 - **Comments on bookings**: the dialog of a staff booking has a **Comments** section with @-mentions. A booking on a phase or subphase shares the comment thread of its Kanban card; project-level bookings have their own project thread. The site Excel export's **Card comments** sheet also lists the project threads.
+- Every people picker (project manager, booking, Kanban assignee, absence, team members) has a search box that opens focused and filters as you type.
 
 ### Changed
 - Tag groups became dropdown project fields: existing groups are converted automatically on upgrade (a single-select group becomes a dropdown, any other group a multi-select dropdown); their tags become the field's items with the same colours, order and site and team limits, and projects keep what they had selected.

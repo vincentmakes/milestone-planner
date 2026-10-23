@@ -267,7 +267,7 @@ Pick the **Site** at the top; the list shows that site's teams with their colour
 | **Description** | Optional free text |
 | **Color** | Shown as a dot next to the team in lists and the team filter |
 | **Active** | An inactive team is no longer offered in the header team filter or in new selections |
-| **Members** | Tick the people of the site who belong to the team. A member must belong to the team's site; someone can be in several teams |
+| **Members** | Open the dropdown, search and tick the people of the site who belong to the team (Enter ticks the highlighted person and keeps the list open). The chosen members are listed under it, each with a **×** to remove them. A member must belong to the team's site; someone can be in several teams |
 
 Click **Save Changes** to save, or **Cancel** to go back without saving. The teams a person belongs to are shown, read-only, in the **Teams** column of [Users](#user-management). Removing a site from a person also removes them from that site's teams.
 

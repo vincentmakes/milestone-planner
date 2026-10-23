@@ -68,7 +68,7 @@ Creating a project needs the *Create projects* permission (admins and superusers
 
 1. Click **+ New Project** in the panel header
 2. Fill in required fields: **Project Name**, **Start Date**, **End Date**
-3. Optionally set: Project Manager, Customer, Sales PM, Volume (an administrator may have [renamed or hidden](settings.md#project-fields) these)
+3. Optionally set: Project Manager (type a few letters of a name to [find the person](#picking-a-person)), Customer, Sales PM, Volume (an administrator may have [renamed or hidden](settings.md#project-fields) these)
 4. If the site has [teams](settings.md#teams), tick the **Teams** the project belongs to — the teams of the active [team filter](settings.md#team-filter) are ticked already, so the new project shows in the view you are on
 5. Fill in any [project fields](#project-fields) and tags
 6. Select which **predefined phases** to include (all active phases are pre-selected, unless an administrator [turned that off](settings.md#features-defaults) — then none is, and you pick them)
@@ -91,6 +91,10 @@ When editing a project, export buttons (CSV and XML) are available in the modal 
 Every date in Milestone is picked on the same calendar. Click the **Start Date** or **End Date** field — or press Enter, Space or the down arrow while it has focus — and two months open under the fields (one on a phone); the month and year dropdowns jump to a distant date. The first click sets the start, the second the end, and the calendar closes. The end can never fall before the start: picking a start after the current end moves the end along and keeps the duration, and picking an end before the start makes that day the new start, so you then pick the end. Weekends are greyed, and the current site's bank holidays and closures carry a dot — hover the day to see its name. They are only hints: every day can still be picked. A milestone has a single **Date** field on the same calendar.
 
 ![Edit Phase dialog of Bioprocess Scale-Up with the two-month calendar open from the Start Date field, the phase's range highlighted](../assets/screenshots/date-range-picker.png){ loading=lazy }
+
+## Picking a Person
+
+Every list of people — the project's **Project Manager**, the booking dialog's **Staff Member** (and its **Equipment** list), the Kanban card's **Add someone…**, the absence dialog's **Staff Member** and a team's **Members** — opens with a search box that already has the focus: type to find a person, the list narrows from the first letter, on the name and, where the row shows one, the job title (the type for equipment). Use the arrow keys and Enter, or click, to pick; Escape closes the list and leaves the dialog open. Typing a letter while the closed field has the focus opens it with that letter already typed. A muted note on a row, such as *80% capacity* or *— already on this card*, is shown but not searched.
 
 ## Project Fields
 
