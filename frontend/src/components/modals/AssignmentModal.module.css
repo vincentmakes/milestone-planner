@@ -6,6 +6,16 @@
   gap: 1rem;
 }
 
+/*
+ * Create mode: room for the open resource picker under its trigger. The panel
+ * (search box + a 14rem list, ~16rem) opens ~8rem down the form, so 26rem
+ * keeps it whole inside the dialog body without scrolling it. On a short
+ * window the Modal's max-height still wins and the body scrolls.
+ */
+.formTall {
+  min-height: 26rem;
+}
+
 .formGroup {
   display: flex;
   flex-direction: column;

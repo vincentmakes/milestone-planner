@@ -20,6 +20,7 @@ import { useViewStore } from '@/stores/viewStore';
 import { tagFilterKey } from '@/utils/tags';
 import { makeTeam, makeUser } from '@/test/factories';
 import { optionLabel, pickOption, pickerOptions, pickerTrigger } from '@/test/searchableSelect';
+import styles from '../AssignmentModal.module.css';
 
 vi.mock('@/api/endpoints/projects', () => ({
   createStaffAssignment: vi.fn().mockResolvedValue({}),
@@ -160,6 +161,53 @@ describe('AssignmentModal picker', () => {
     pickOption(/^Equipment/, 'Bioreactor');
     expect(pickerTrigger(/^Equipment/)).toHaveAccessibleName('Equipment * Bioreactor');
     expect(screen.getByRole('button', { name: 'Assign Equipment' })).toBeInTheDocument();
+  });
+});
+
+describe('AssignmentModal height', () => {
+  // The open picker panel must fit under its trigger without scrolling the body.
+  function form(): HTMLFormElement {
+    const el = document.querySelector('form');
+    if (!el) throw new Error('no form');
+    return el;
+  }
+
+  it('makes room for the open staff picker when creating', () => {
+    seed({ id: 99, role: 'superuser' });
+    openForProject();
+    render(<AssignmentModal mode="staff" />);
+    fireEvent.click(pickerTrigger(/^Staff Member/));
+    expect(screen.getByRole('combobox', { name: 'Find a person' })).toHaveFocus();
+    expect(form()).toHaveClass(styles.form, styles.formTall);
+  });
+
+  it('makes room for the open equipment picker when creating', () => {
+    seed({ id: 99, role: 'superuser' });
+    useAppStore.setState({ equipment: [{ id: 11, name: 'Bioreactor', type: 'Reactor', site_id: 1 }] as never });
+    useUIStore.setState({ editingEquipmentAssignment: null });
+    useUIStore.getState().openModal('equipmentAssignment', { projectId: 1 });
+    render(<AssignmentModal mode="equipment" />);
+    fireEvent.click(pickerTrigger(/^Equipment/));
+    expect(form()).toHaveClass(styles.formTall);
+  });
+
+  it('keeps an edit dialog at its content height', () => {
+    seed({ id: 99, role: 'superuser' });
+    useUIStore.getState().setEditingStaffAssignment({
+      id: 11,
+      project_id: 1,
+      phase_id: null,
+      subphase_id: null,
+      staff_id: 4,
+      staff_name: 'Bob Brown',
+      allocation: 50,
+      start_date: '2026-09-01',
+      end_date: '2026-09-14',
+    });
+    useUIStore.getState().openModal('staffAssignment', { projectId: 1 });
+    render(<AssignmentModal mode="staff" />);
+    expect(form()).toHaveClass(styles.form);
+    expect(form()).not.toHaveClass(styles.formTall);
   });
 });
 

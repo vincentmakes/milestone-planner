@@ -517,7 +517,10 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       size={showComments ? 'lg' : 'md'}
       footer={footer}
     >
-      <form onSubmit={handleSubmit} className={styles.form}>
+      <form
+        onSubmit={handleSubmit}
+        className={isEditing ? styles.form : `${styles.form} ${styles.formTall}`}
+      >
         {createBlockedReason && (
           <div className={styles.error} role="status">{createBlockedReason}</div>
         )}
