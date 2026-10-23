@@ -23,11 +23,34 @@
   opacity: 1;
 }
 
-.container :global(.react-grid-item > .react-resizable-handle::after) {
-  border-right-color: var(--text-muted);
-  border-bottom-color: var(--text-muted);
-}
-
 .editing :global(.react-grid-item) {
   box-shadow: var(--shadow-sm);
+}
+
+/* The resize corner (edit mode only: the library does not render it in view
+   mode): clearly visible but quiet, its mark inside the card's rounded corner. */
+.editing :global(.react-grid-item > .react-resizable-handle.react-resizable-handle-se) {
+  right: 0;
+  bottom: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background-image: none;
+  cursor: se-resize;
+  opacity: 0.7;
+}
+
+.editing :global(.react-grid-item:hover > .react-resizable-handle.react-resizable-handle-se) {
+  opacity: 1;
+}
+
+.editing :global(.react-grid-item > .react-resizable-handle.react-resizable-handle-se::after) {
+  content: '';
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--text-secondary);
+  border-bottom: 2px solid var(--text-secondary);
 }

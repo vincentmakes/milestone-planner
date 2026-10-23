@@ -87,6 +87,22 @@ describe('DashboardGrid', () => {
     expect(rendered[2].style.width).toBe('776px');
   });
 
+  it('shows the resize corner in edit mode only, inside the editing grid', () => {
+    const { container: root, unmount } = render(<DashboardGrid widgets={widgets} data={data} />);
+    // View mode: the library hides every handle (display: none on .react-resizable-hide)
+    // and the grid carries no editing class, so the edit-mode corner style never applies.
+    const hidden = [...root.querySelectorAll('.react-grid-item > .react-resizable-handle')];
+    expect(hidden.every((h) => h.parentElement?.classList.contains('react-resizable-hide'))).toBe(true);
+    expect(root.querySelector('[class*="editing"]')).toBeNull();
+    unmount();
+    const editing = render(<DashboardGrid widgets={widgets} data={data} editing />).container;
+    const handles = editing.querySelectorAll('.react-grid-item > .react-resizable-handle.react-resizable-handle-se');
+    expect(handles).toHaveLength(widgets.length);
+    expect([...handles].some((h) => h.parentElement?.classList.contains('react-resizable-hide'))).toBe(false);
+    // The edit-mode rule that styles it (DashboardGrid.module.css) scopes on the editing class.
+    expect(handles[0].closest('[class*="editing"]')).not.toBeNull();
+  });
+
   it('neither drags nor resizes in view mode', () => {
     const { container: root } = render(<DashboardGrid widgets={widgets} data={data} />);
     // The library hides the resize handles and does not make items draggable
