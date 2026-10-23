@@ -60,12 +60,14 @@ export default defineConfig({
       // branches 81.88); with the per-person booking rows of 1.17.0 (local
       // lines 92.2, statements 91.08, functions 92.44, branches 82.64);
       // with the project fields of 2.0.0, 0.3 under the local totals (lines
-      // 92.7, statements 91.61, functions 93.32, branches 83.14).
+      // 92.7, statements 91.61, functions 93.32, branches 83.14); with its
+      // follow-up (second bookings, multi-select dropdown), the same rule on
+      // lines 92.78, statements 91.69, functions 93.35, branches 83.23.
       thresholds: {
         lines: 92.4,
         statements: 91.3,
         functions: 93.0,
-        branches: 82.8,
+        branches: 82.9,
       },
     },
   },
