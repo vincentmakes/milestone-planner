@@ -16,6 +16,11 @@
  * (`reloadData(true)`). A 404 on the dashboard or its data means it is no
  * longer shared with the user: `current` is cleared, the notice says so and
  * the list reloads.
+ *
+ * While the builder edits the open dashboard (`editing`, set by
+ * `useDashboardEditor`), a live "dashboard changed" reload never replaces
+ * `current` under the draft: it is skipped and run once editing ends (a save
+ * shows the saved dashboard instead). The list and the data still refresh.
  */
 
 import { create } from 'zustand';
@@ -53,6 +58,8 @@ interface DashboardData {
   loadError: string | null;
   /** The list has loaded at least once (the WebSocket provider reloads only a list the view asked for) */
   listLoaded: boolean;
+  /** The builder is editing the open dashboard: live reloads leave `current` alone */
+  editing: boolean;
 }
 
 interface DashboardState extends DashboardData {
@@ -75,6 +82,11 @@ interface DashboardState extends DashboardData {
   remove: (id: number) => Promise<void>;
   /** Copy a dashboard's widgets into a new private one named `name`; it opens */
   duplicate: (id: number, name: string) => Promise<Dashboard>;
+  /**
+   * The builder enters / leaves edit mode. Leaving runs the reload of the
+   * open dashboard that a live change asked for meanwhile.
+   */
+  setEditing: (editing: boolean) => void;
   /** The dashboard to open first: the last opened if still listed, else the default, else the first */
   pickInitial: () => number | null;
   reset: () => void;
@@ -89,6 +101,7 @@ const initialData = (): DashboardData => ({
   dataLoading: false,
   loadError: null,
   listLoaded: false,
+  editing: false,
 });
 
 const isNotFound = (err: unknown): boolean => err instanceof ApiError && err.status === 404;
@@ -103,6 +116,8 @@ let pendingDetail = false;
 let generation = 0;
 let openSeq = 0;
 let dataSeq = 0;
+/** A live reload of the open dashboard was skipped while the builder edited it. */
+let skippedWhileEditing = false;
 
 function clearReloadTimer(): void {
   if (reloadTimer !== null) {
@@ -166,11 +181,20 @@ export const useDashboardStore = create<DashboardState>((set, get) => {
   const reloadCurrent = async (): Promise<void> => {
     const dashboard = get().current;
     if (!dashboard) return;
+    // Never under the builder's draft: run it when editing ends.
+    if (get().editing) {
+      skippedWhileEditing = true;
+      return;
+    }
     const started = generation;
     const seq = ++openSeq;
     try {
       const fresh = await dashboardsApi.get(dashboard.id);
       if (started !== generation || seq !== openSeq || get().current?.id !== dashboard.id) return;
+      if (get().editing) {
+        skippedWhileEditing = true;
+        return;
+      }
       set({ current: fresh });
     } catch (err) {
       if (started !== generation || seq !== openSeq) return;
@@ -198,6 +222,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => {
   const showSaved = async (saved: Dashboard): Promise<void> => {
     clearReloadTimer();
     pendingDetail = false;
+    skippedWhileEditing = false;
     openSeq += 1;
     set({ current: saved, data: {}, loadedAt: null, loading: false, loadError: null });
     useViewStore.getState().setLastDashboardId(saved.id);
@@ -304,6 +329,15 @@ export const useDashboardStore = create<DashboardState>((set, get) => {
       return saved;
     },
 
+    setEditing: (editing) => {
+      if (get().editing === editing) return;
+      set({ editing });
+      if (!editing && skippedWhileEditing) {
+        skippedWhileEditing = false;
+        void reloadCurrent();
+      }
+    },
+
     pickInitial: () => {
       const { dashboards } = get();
       if (dashboards.length === 0) return null;
@@ -317,6 +351,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => {
       listInFlight = null;
       clearReloadTimer();
       pendingDetail = false;
+      skippedWhileEditing = false;
       set(initialData());
     },
   };

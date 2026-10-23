@@ -27,6 +27,7 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { resetAllStores } from '@/stores';
 import { useWorkStore } from '@/stores/workStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
+import { setViewLeaveGuard } from '@/utils/viewLeaveGuard';
 import { makePhase, makeProject, makeSite, makeSubphase, makeUser } from '@/test/factories';
 import { stubConfirm } from '@/test/confirmDialog';
 import type { AppNotification } from '@/types';
@@ -186,6 +187,29 @@ describe('NotificationBell', () => {
     expect(useNotificationStore.getState().panelOpen).toBe(false);
     expect(markNotificationRead).toHaveBeenCalledWith(1);
     expect(useNotificationStore.getState().items[0].read_at).toBeTruthy();
+  });
+
+  it('asks the view leave guard first, and opens nothing when it refuses', async () => {
+    vi.mocked(getNotifications).mockResolvedValue([note()]);
+    vi.mocked(getUnreadCount).mockResolvedValue(1);
+    useViewStore.setState({ currentView: 'dashboards' });
+    const guard = vi.fn(async () => false);
+    const unregister = setViewLeaveGuard(guard);
+    await renderBell();
+    fireEvent.click(bell());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Bob commented/ }));
+    });
+    expect(guard).toHaveBeenCalledTimes(1);
+    expect(useViewStore.getState().currentView).toBe('dashboards');
+    expect(useUIStore.getState().activeModal).toBeNull();
+    expect(markNotificationRead).not.toHaveBeenCalled();
+    guard.mockResolvedValue(true);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Bob commented/ }));
+    });
+    expect(useViewStore.getState().currentView).toBe('kanban');
+    unregister();
   });
 
   it('opens the card\'s project on the Gantt when views.kanban is missing', async () => {

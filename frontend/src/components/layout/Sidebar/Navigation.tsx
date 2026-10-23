@@ -1,5 +1,6 @@
 import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
+import { leaveViewThen } from '@/utils/viewLeaveGuard';
 import { useAllowedViews } from '@/hooks/useAllowedViews';
 import { useWorkStore } from '@/stores/workStore';
 import type { CurrentView } from '@/types';
@@ -94,7 +95,11 @@ export function Navigation({ collapsed = false }: NavigationProps) {
             key={item.view}
             type="button"
             className={`${styles.navItem} ${currentView === item.view ? styles.active : ''}`}
-            onClick={() => setCurrentView(item.view)}
+            onClick={() => {
+              if (item.view === currentView) return;
+              // A view with unsaved work (the dashboard builder) may ask first.
+              leaveViewThen(() => setCurrentView(item.view));
+            }}
             disabled={isBlocked}
             title={isBlocked ? reason('Switching views') : collapsed ? item.label : undefined}
             aria-label={name}

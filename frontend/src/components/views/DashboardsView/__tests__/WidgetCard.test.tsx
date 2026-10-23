@@ -102,10 +102,10 @@ describe('WidgetCard', () => {
         })}
       />
     );
-    expect(TRUNCATED_TEXT).toBe('Showing the last five years');
+    expect(TRUNCATED_TEXT).toBe('Period cut to five years');
     expect(
       screen.getByText(
-        'Team 14 no longer exists · A project with several "Tag" items counts in each · Showing the last five years'
+        'Team 14 no longer exists · A project with several "Tag" items counts in each · Period cut to five years'
       )
     ).toBeInTheDocument();
   });

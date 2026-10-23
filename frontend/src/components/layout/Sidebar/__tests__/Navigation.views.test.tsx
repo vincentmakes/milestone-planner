@@ -3,8 +3,8 @@
  * without its `views.*` key is hidden, Cross-site is hidden while only one
  * site is visible, and What-If blocks every view but the Gantt with its hint.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { Navigation } from '../Navigation';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
@@ -12,6 +12,7 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { resetAllStores } from '@/stores';
 import { useWorkStore } from '@/stores/workStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
+import { setViewLeaveGuard } from '@/utils/viewLeaveGuard';
 import { makeApprovalRequest, makeSite, makeUser } from '@/test/factories';
 
 const twoSites = [makeSite({ id: 1 }), makeSite({ id: 2, name: 'Zurich' })];
@@ -125,6 +126,29 @@ describe('Navigation views', () => {
     expect(dashboards).toHaveAttribute('title', whatIfUnavailableMessage('Switching views'));
     fireEvent.click(dashboards);
     expect(useViewStore.getState().currentView).toBe('gantt');
+  });
+
+  it('asks the view leave guard before switching, and stays when it refuses', async () => {
+    useAppStore.setState({ currentUser: makeUser({ role: 'admin', site_ids: [1, 2] }) });
+    useViewStore.setState({ currentView: 'dashboards' });
+    let answer = false;
+    const guard = vi.fn(async () => answer);
+    const unregister = setViewLeaveGuard(guard);
+    render(<Navigation />);
+    // The current view never asks
+    fireEvent.click(button('Dashboards')!);
+    expect(guard).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.click(button('Gantt Chart')!);
+    });
+    expect(guard).toHaveBeenCalledTimes(1);
+    expect(useViewStore.getState().currentView).toBe('dashboards');
+    answer = true;
+    await act(async () => {
+      fireEvent.click(button('Gantt Chart')!);
+    });
+    expect(useViewStore.getState().currentView).toBe('gantt');
+    unregister();
   });
 
   it('badges My Work with the approvals to decide, in its accessible name', () => {

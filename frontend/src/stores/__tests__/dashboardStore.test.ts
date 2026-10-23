@@ -360,6 +360,70 @@ describe('refreshCurrent', () => {
   });
 });
 
+describe('editing', () => {
+  it('never replaces the open dashboard under the builder, and reloads it once editing ends', async () => {
+    await useDashboardStore.getState().open(1);
+    useDashboardStore.getState().setEditing(true);
+    expect(useDashboardStore.getState().editing).toBe(true);
+    vi.useFakeTimers();
+    api.get.mockResolvedValue(detail(1, [21, 22]));
+    api.data.mockResolvedValue(data({ 21: 1, 22: 2 }));
+    useDashboardStore.getState().refreshCurrent();
+    await vi.advanceTimersByTimeAsync(LIVE_RELOAD_DELAY_MS);
+    expect(api.get).toHaveBeenCalledTimes(1);
+    expect(useDashboardStore.getState().current?.widgets.map((w) => w.id)).toEqual([11]);
+    // The list still refreshes
+    await useDashboardStore.getState().refreshList();
+    expect(api.list).toHaveBeenCalledTimes(1);
+    // Leaving edit mode runs the skipped reload
+    useDashboardStore.getState().setEditing(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.get).toHaveBeenCalledTimes(2);
+    expect(useDashboardStore.getState().current?.widgets.map((w) => w.id)).toEqual([21, 22]);
+  });
+
+  it('drops a dashboard read that lands after editing began', async () => {
+    await useDashboardStore.getState().open(1);
+    const pending = deferred<Dashboard>();
+    api.get.mockReturnValueOnce(pending.promise);
+    vi.useFakeTimers();
+    useDashboardStore.getState().refreshCurrent();
+    await vi.advanceTimersByTimeAsync(LIVE_RELOAD_DELAY_MS);
+    useDashboardStore.getState().setEditing(true);
+    pending.resolve(detail(1, [31]));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useDashboardStore.getState().current?.widgets.map((w) => w.id)).toEqual([11]);
+  });
+
+  it('runs nothing when editing ends without a skipped reload, and ignores a repeated flag', async () => {
+    await useDashboardStore.getState().open(1);
+    useDashboardStore.getState().setEditing(true);
+    useDashboardStore.getState().setEditing(true);
+    useDashboardStore.getState().setEditing(false);
+    expect(api.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('forgets a skipped reload when a save shows the saved dashboard', async () => {
+    await useDashboardStore.getState().open(1);
+    useDashboardStore.getState().setEditing(true);
+    vi.useFakeTimers();
+    useDashboardStore.getState().refreshCurrent();
+    await vi.advanceTimersByTimeAsync(LIVE_RELOAD_DELAY_MS);
+    api.update.mockResolvedValueOnce(detail(1, [41]));
+    await useDashboardStore.getState().save({ id: 1, name: 'Dashboard 1', visibility: 'everyone' });
+    useDashboardStore.getState().setEditing(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.get).toHaveBeenCalledTimes(1);
+    expect(useDashboardStore.getState().current?.widgets.map((w) => w.id)).toEqual([41]);
+  });
+
+  it('is reset with the store', () => {
+    useDashboardStore.getState().setEditing(true);
+    useDashboardStore.getState().reset();
+    expect(useDashboardStore.getState().editing).toBe(false);
+  });
+});
+
 describe('save, remove, duplicate', () => {
   it('creates a dashboard and opens it with fresh data', async () => {
     api.create.mockResolvedValue(detail(7, [70]));

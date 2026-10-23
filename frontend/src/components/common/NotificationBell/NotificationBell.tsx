@@ -29,6 +29,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useWorkStore } from '@/stores/workStore';
+import { viewLeaveGuard } from '@/utils/viewLeaveGuard';
 import type { RequestsFilter, WorkTab } from '@/stores/workStore';
 import {
   clearNotifications,
@@ -263,6 +264,9 @@ export function NotificationBell() {
 
   const handleOpen = async (n: AppNotification, target: NotificationTarget) => {
     if (blockedReason(target)) return;
+    // A view with unsaved work (the dashboard builder) may ask first.
+    const leaveGuard = target.kind !== 'missing' ? viewLeaveGuard() : null;
+    if (leaveGuard && !(await leaveGuard())) return;
     if (target.kind === 'card') {
       const { entityType, entityId, projectId } = target.card;
       setKanbanProjectId(projectId);

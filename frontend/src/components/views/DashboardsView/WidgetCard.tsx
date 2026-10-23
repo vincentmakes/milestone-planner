@@ -21,7 +21,7 @@ import { KpiTile } from './charts/KpiTile';
 import { TableWidget } from './charts/TableWidget';
 import styles from './WidgetCard.module.css';
 
-export const TRUNCATED_TEXT = 'Showing the last five years';
+export const TRUNCATED_TEXT = 'Period cut to five years';
 
 export interface WidgetCardProps {
   widget: DashboardWidget;
