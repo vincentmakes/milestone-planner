@@ -8,9 +8,10 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import { GroupByDropdown } from '../GroupByDropdown';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
-import type { Site, Tag, TagGroup } from '@/types';
+import type { Site } from '@/types';
+import type { TagGroup, LegacyGroupedTag } from '@/utils/tags';
 
-function tag(id: number, name: string, groupId: number): Tag {
+function tag(id: number, name: string, groupId: number): LegacyGroupedTag {
   return { id, name, color: '#10b981', group_id: groupId, all_sites: true, site_ids: [], sort_order: 0 };
 }
 

@@ -57,7 +57,7 @@ beforeEach(() => {
     staff: [],
     projects: [],
     tags: [],
-    tagGroups: [],
+    projectFields: [],
     teams: [],
   });
 });

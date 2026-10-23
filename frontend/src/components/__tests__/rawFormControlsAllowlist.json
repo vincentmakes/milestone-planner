@@ -1,11 +1,11 @@
 {
   "admin/modals/CredentialsModal.tsx": 2,
+  "common/OptionPicker/OptionPicker.tsx": 1,
   "gantt/CustomColumns/CustomColumnCell.tsx": 1,
   "layout/Header/SiteSelector.tsx": 1,
-  "modals/TagPicker.tsx": 1,
   "settings/SettingsHub.tsx": 1,
   "settings/panels/AbsenceTypesPanel.tsx": 1,
   "settings/panels/PredefinedPhasesPanel.tsx": 1,
-  "settings/panels/TagsPanel.tsx": 2,
+  "settings/panels/TagsPanel.tsx": 1,
   "settings/panels/UsersPanel.tsx": 1
 }

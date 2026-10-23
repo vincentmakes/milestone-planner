@@ -15,7 +15,8 @@ import * as sites from '../sites';
 import * as staff from '../staff';
 import * as users from '../users';
 import * as vacations from '../vacations';
-import { tagsApi, tagGroupsApi } from '../tags';
+import { tagsApi } from '../tags';
+import { projectFieldsApi } from '../projectFields';
 import { teamsApi } from '../teams';
 import { rolesApi } from '../roles';
 import { approvalsApi } from '../approvals';
@@ -236,6 +237,8 @@ describe('settings endpoints', () => {
       kanban_enabled: 'false',
       nager_enabled: 'false',
       new_project_preselect_phases: 'false',
+      project_field_labels: '{"customer":"Client"}',
+      project_fields_hidden: '["volume"]',
     });
     await expect(settings.getInstanceSettings()).resolves.toEqual({
       instance_title: 'T',
@@ -247,6 +250,8 @@ describe('settings endpoints', () => {
       kanban_enabled: 'false',
       nager_enabled: 'false',
       new_project_preselect_phases: 'false',
+      project_field_labels: '{"customer":"Client"}',
+      project_fields_hidden: '["volume"]',
     });
     expect(fns.GET).toHaveBeenCalledWith('/api/settings');
   });
@@ -262,8 +267,10 @@ describe('settings endpoints', () => {
       kanban_enabled: 'true',
       nager_enabled: 'true',
       new_project_preselect_phases: 'true',
+      project_field_labels: '{}',
+      project_fields_hidden: '[]',
     });
-    expect(settings.INSTANCE_SETTING_KEYS).toHaveLength(9);
+    expect(settings.INSTANCE_SETTING_KEYS).toHaveLength(11);
   });
 });
 
@@ -331,11 +338,6 @@ describe('tags, skills and absence-type endpoints', () => {
     ['tags update', () => tagsApi.update(1, { color: '#fff' }), 'PUT', '/api/tags/1', { color: '#fff' }],
     ['tags delete', () => tagsApi.delete(1), 'DELETE', '/api/tags/1'],
     ['tags reorder', () => tagsApi.reorder([2, 1]), 'PUT', '/api/tags/reorder', { tag_order: [2, 1] }],
-    ['tag groups getAll', () => tagGroupsApi.getAll(), 'GET', '/api/tag-groups'],
-    ['tag groups create', () => tagGroupsApi.create({ name: 'G' }), 'POST', '/api/tag-groups', { name: 'G' }],
-    ['tag groups update', () => tagGroupsApi.update(1, { single_select: true }), 'PUT', '/api/tag-groups/1', { single_select: true }],
-    ['tag groups delete', () => tagGroupsApi.delete(1), 'DELETE', '/api/tag-groups/1'],
-    ['tag groups reorder', () => tagGroupsApi.reorder([1]), 'PUT', '/api/tag-groups/reorder', { group_order: [1] }],
     ['skills getAll', () => skillsApi.getAll(), 'GET', '/api/skills'],
     ['skills get', () => skillsApi.get(2), 'GET', '/api/skills/2'],
     ['skills create', () => skillsApi.create({ name: 'HPLC' }), 'POST', '/api/skills', { name: 'HPLC' }],
@@ -350,6 +352,45 @@ describe('tags, skills and absence-type endpoints', () => {
     ['absence types update', () => absenceTypesApi.update(1, { is_active: false }), 'PUT', '/api/absence-types/1', { is_active: false }],
     ['absence types remove', () => absenceTypesApi.remove(1), 'DELETE', '/api/absence-types/1'],
     ['absence types reorder', () => absenceTypesApi.reorder([1]), 'PUT', '/api/absence-types/reorder', { type_order: [1] }],
+  ]);
+});
+
+describe('project field endpoints', () => {
+  runCases([
+    ['fields getAll', () => projectFieldsApi.getAll(), 'GET', '/api/project-fields'],
+    [
+      'fields create',
+      () => projectFieldsApi.create({ name: 'Budget', field_type: 'number' }),
+      'POST',
+      '/api/project-fields',
+      { name: 'Budget', field_type: 'number' },
+    ],
+    ['fields update', () => projectFieldsApi.update(3, { name: 'Area' }), 'PUT', '/api/project-fields/3', { name: 'Area' }],
+    ['fields remove', () => projectFieldsApi.remove(3), 'DELETE', '/api/project-fields/3'],
+    ['fields reorder', () => projectFieldsApi.reorder([3, 1]), 'PUT', '/api/project-fields/reorder', { field_order: [3, 1] }],
+    ['fields usage', () => projectFieldsApi.usage(3), 'GET', '/api/project-fields/3/usage'],
+    [
+      'items create',
+      () => projectFieldsApi.createOption(3, { name: 'QA', color: '#10b981', all_sites: true }),
+      'POST',
+      '/api/project-fields/3/options',
+      { name: 'QA', color: '#10b981', all_sites: true },
+    ],
+    [
+      'items update',
+      () => projectFieldsApi.updateOption(51, { all_sites: false, site_ids: [2], team_ids: [] }),
+      'PUT',
+      '/api/project-fields/options/51',
+      { all_sites: false, site_ids: [2], team_ids: [] },
+    ],
+    ['items remove', () => projectFieldsApi.removeOption(51), 'DELETE', '/api/project-fields/options/51'],
+    [
+      'items reorder',
+      () => projectFieldsApi.reorderOptions(3, [52, 51]),
+      'PUT',
+      '/api/project-fields/3/options/reorder',
+      { option_order: [52, 51] },
+    ],
   ]);
 });
 

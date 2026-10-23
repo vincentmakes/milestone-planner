@@ -45,7 +45,8 @@ vi.mock('@/api/endpoints/sites', () => ({
   buildEventDateSet: () => new Set(),
 }));
 vi.mock('@/api/endpoints/skills', () => ({ skillsApi: { getAll: vi.fn(async () => []) } }));
-vi.mock('@/api/endpoints/tags', () => ({ tagsApi: { getAll: vi.fn(async () => []) }, tagGroupsApi: { getAll: vi.fn(async () => []) } }));
+vi.mock('@/api/endpoints/tags', () => ({ tagsApi: { getAll: vi.fn(async () => []) } }));
+vi.mock('@/api/endpoints/projectFields', () => ({ projectFieldsApi: { getAll: vi.fn(async () => []) } }));
 vi.mock('@/api/endpoints/teams', () => ({ teamsApi: { getAll: vi.fn(async () => []) } }));
 vi.mock('@/api/endpoints/roles', () => ({ rolesApi: { getAll: vi.fn(async () => []) } }));
 vi.mock('@/api/endpoints/absenceTypes', () => ({ absenceTypesApi: { getAll: vi.fn(async () => []) } }));
@@ -62,8 +63,9 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { getInstanceSettings } from '@/api/endpoints/settings';
 import { fetchCurrentUser } from '@/api/endpoints/auth';
 import { getStaff } from '@/api/endpoints/staff';
-import { tagsApi, tagGroupsApi } from '@/api/endpoints/tags';
-import type { Tag, TagGroup, User } from '@/types';
+import { tagsApi } from '@/api/endpoints/tags';
+import { projectFieldsApi } from '@/api/endpoints/projectFields';
+import type { ProjectField, Tag, User } from '@/types';
 import { makeUser } from '@/test/factories';
 
 function change(entity_type: string): ChangePayload {
@@ -200,51 +202,38 @@ describe('WebSocketProvider refresh runner', () => {
     expect(getStaff).not.toHaveBeenCalled();
   });
 
-  it('writes tags and tag groups together on change:tag_group (no half-loaded render)', async () => {
-    const group = { id: 4, name: 'Phase', sort_order: 0, single_select: true } as TagGroup;
-    const tag = { id: 9, name: 'Pilot', color: '#ff0000', group_id: 4, all_sites: true, site_ids: [] } as unknown as Tag;
+  it('refreshes tags alone on change:tag (and the projects)', async () => {
+    const tag = { id: 9, name: 'Pilot', color: '#ff0000', all_sites: true, site_ids: [], sort_order: 0 } as Tag;
     vi.mocked(tagsApi.getAll).mockResolvedValueOnce([tag]);
-    // Groups answer later than tags: a separate write per list would render
-    // the tag before its group exists.
-    vi.mocked(tagGroupsApi.getAll).mockImplementationOnce(
-      () => new Promise((resolve) => setTimeout(() => resolve([group]), 50))
-    );
-    useAppStore.setState({ tags: [], tagGroups: [] });
-    const rendered: Array<[number, number]> = [];
-    function Probe() {
-      const t = useAppStore((s) => s.tags.length);
-      const g = useAppStore((s) => s.tagGroups.length);
-      rendered.push([t, g]);
-      return null;
-    }
-    render(<Probe />);
+    vi.mocked(projectFieldsApi.getAll).mockClear();
+    useAppStore.setState({ tags: [] });
 
-    // Two acts: one past the 200 ms debounce (tags answered, groups pending),
-    // one after the groups answer — so an intermediate state would render.
-    await act(async () => {
-      hookOptions.onChangeReceived!(change('tag_group'));
-      await vi.advanceTimersByTimeAsync(220);
-    });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(100);
-    });
+    await receive('tag');
 
     expect(useAppStore.getState().tags).toEqual([tag]);
-    expect(useAppStore.getState().tagGroups).toEqual([group]);
-    // Never a render with the tag loaded but its group missing.
-    expect(rendered).toEqual([[0, 0], [1, 1]]);
+    expect(projectFieldsApi.getAll).not.toHaveBeenCalled();
+    expect(loadAllProjects).toHaveBeenCalled();
   });
 
-  it('keeps both tag lists when one of the two fetches fails', async () => {
-    const kept = [{ id: 1, name: 'Old' } as unknown as Tag];
-    useAppStore.setState({ tags: kept, tagGroups: [] });
+  it('refreshes the project fields on change:project_field', async () => {
+    const field = { id: 4, name: 'Area', field_type: 'multiselect', sort_order: 0, options: [] } as ProjectField;
+    vi.mocked(projectFieldsApi.getAll).mockResolvedValueOnce([field]);
+    useAppStore.setState({ projectFields: [] });
+
+    await receive('project_field');
+
+    expect(useAppStore.getState().projectFields).toEqual([field]);
+  });
+
+  it('keeps the project fields when their fetch fails', async () => {
+    const kept = [{ id: 1, name: 'Old', field_type: 'text', sort_order: 0, options: [] } as ProjectField];
+    useAppStore.setState({ projectFields: kept });
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.mocked(tagsApi.getAll).mockResolvedValueOnce([]);
-    vi.mocked(tagGroupsApi.getAll).mockRejectedValueOnce(new Error('boom'));
+    vi.mocked(projectFieldsApi.getAll).mockRejectedValueOnce(new Error('boom'));
 
-    await receive('tag_group');
+    await receive('project_field');
 
-    expect(useAppStore.getState().tags).toBe(kept);
+    expect(useAppStore.getState().projectFields).toBe(kept);
   });
 
   it('refreshes the signed-in user on change:user', async () => {

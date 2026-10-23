@@ -7,6 +7,7 @@
 
 import { useMemo, useRef, useEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { isBuiltInFieldHidden } from '@/utils/instanceSettings';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useScrollSync, useCtrlScrollZoom } from '@/hooks';
@@ -30,6 +31,8 @@ export function CrossSiteView() {
   // Company events narrowed by the header team filter
   const { events: companyEvents, eventDates: companyEventDates } = useTeamFilteredCompanyEvents();
   const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
+  // A hidden Customer field (Settings → Project fields) is left out, masked or not
+  const customerHidden = useAppStore((s) => isBuiltInFieldHidden(s.instanceSettings, 'customer'));
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
   const cellWidth = useViewStore((s) => s.cellWidth);
@@ -128,13 +131,13 @@ export function CrossSiteView() {
           isCurrentSite,
           // Mask details for other sites
           displayName: isCurrentSite ? project.name : 'Confidential Project',
-          displayCustomer: isCurrentSite ? (project.customer || '') : '***',
+          displayCustomer: customerHidden ? '' : isCurrentSite ? (project.customer || '') : '***',
         });
       });
     });
     
     return result;
-  }, [sites, projectsBySite, currentSite]);
+  }, [sites, projectsBySite, currentSite, customerHidden]);
   
   return (
     <div className={styles.container}>

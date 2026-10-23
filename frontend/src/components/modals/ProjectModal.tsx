@@ -21,14 +21,24 @@ import { updateProjectLocally } from '@/utils/localProjectTree';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { exportAndDownload } from '@/utils/csvExport';
 import { exportProjectToXML } from '@/utils/xmlExport';
-import { tagsForProjectScope, violatesSingleSelect } from '@/utils/tags';
+import { tagsForProjectScope } from '@/utils/tags';
+import {
+  draftFromValue,
+  normalizeStoredValue,
+  optionsForProjectScope,
+  sameFieldValue,
+  valueFromDraft,
+} from '@/utils/projectFields';
+import type { FieldDraft } from '@/utils/projectFields';
 import { teamIdsOnSite, teamsForSite } from '@/utils/teams';
 import { TagPicker } from './TagPicker';
+import { ProjectFieldInputs } from './ProjectFieldInputs';
 import styles from './ProjectModal.module.css';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { TeamChecklist } from '@/components/common/TeamChecklist';
 import { can } from '@/utils/permissions';
-import { isSettingOn } from '@/utils/instanceSettings';
+import { builtInFieldLabel, isBuiltInFieldHidden, isSettingOn } from '@/utils/instanceSettings';
+import type { ProjectFieldOption, ProjectFieldValue } from '@/types';
 import { Icon, DownloadIcon } from '@/components/common/Icon';
 
 // Local interface for predefined phases from API
@@ -40,13 +50,37 @@ interface PredefinedPhaseFromAPI {
   is_active?: boolean;
 }
 
+/** Dialog drafts of a project's field values, one per current field. */
+function draftsFor(values: Record<number, ProjectFieldValue> | undefined): Record<number, FieldDraft> {
+  const drafts: Record<number, FieldDraft> = {};
+  for (const field of useAppStore.getState().projectFields) {
+    drafts[field.id] = draftFromValue(field, values?.[field.id]);
+  }
+  return drafts;
+}
+
+/** `current` with the sent changes applied; a cleared field is removed. */
+function applyFieldValues(
+  current: Record<number, ProjectFieldValue> | undefined,
+  changes: Record<number, ProjectFieldValue>
+): Record<number, ProjectFieldValue> {
+  const next = { ...(current ?? {}) };
+  for (const [key, value] of Object.entries(changes)) {
+    const id = Number(key);
+    if (value === null || (Array.isArray(value) && value.length === 0)) delete next[id];
+    else next[id] = value;
+  }
+  return next;
+}
+
 export function ProjectModal() {
   const { activeModal, editingProject, closeModal } = useUIStore();
   const currentSite = useAppStore((s) => s.currentSite);
   const staff = useAppStore((s) => s.staff);
   const setProjects = useAppStore((s) => s.setProjects);
   const allTags = useAppStore((s) => s.tags);
-  const tagGroups = useAppStore((s) => s.tagGroups);
+  const projectFields = useAppStore((s) => s.projectFields);
+  const instanceSettings = useAppStore((s) => s.instanceSettings);
   const teams = useAppStore((s) => s.teams);
   const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
   const { staffMatches, filter: teamFilter } = useTeamFilter();
@@ -78,6 +112,7 @@ export function ProjectModal() {
   const [predefinedPhases, setPredefinedPhases] = useState<PredefinedPhaseFromAPI[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<Set<number>>(new Set());
   const [selectedTeamIds, setSelectedTeamIds] = useState<number[]>([]);
+  const [fieldDrafts, setFieldDrafts] = useState<Record<number, FieldDraft>>({});
   const { isSubmitting, begin: beginSubmit, end: endSubmit } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
   
@@ -98,6 +133,21 @@ export function ProjectModal() {
     () => siteTeams.filter((t) => t.active || selectedTeamIds.includes(t.id)),
     [siteTeams, selectedTeamIds]
   );
+
+  // Built-in fields: renamed or hidden instance-wide (Settings → Project
+  // fields). A hidden one is neither shown nor sent, so its value is kept.
+  const customerHidden = isBuiltInFieldHidden(instanceSettings, 'customer');
+  const salesPmHidden = isBuiltInFieldHidden(instanceSettings, 'sales_pm');
+  const volumeHidden = isBuiltInFieldHidden(instanceSettings, 'volume');
+
+  // Dropdown items on offer: those applying to the project's site and teams
+  const optionsByField = useMemo(() => {
+    const map = new Map<number, ProjectFieldOption[]>();
+    for (const field of projectFields) {
+      map.set(field.id, optionsForProjectScope(field, tagSiteId, selectedTeamIds, siteTeams));
+    }
+    return map;
+  }, [projectFields, tagSiteId, selectedTeamIds, siteTeams]);
 
   // "Select PM" stays a real, selectable choice: picking it clears the manager.
   const pmOptions = useMemo(
@@ -148,6 +198,7 @@ export function ProjectModal() {
         setSelectedPhases(new Set()); // Don't select phases when editing
         setSelectedTagIds(new Set((editingProject.tags ?? []).map((t) => t.id)));
         setSelectedTeamIds(editingProject.team_ids ?? []);
+        setFieldDrafts(draftsFor(editingProject.field_values));
       } else {
         // New project mode
         const today = new Date();
@@ -166,6 +217,7 @@ export function ProjectModal() {
         setSelectedTagIds(new Set());
         // A project created while a team filter is active shows in that view.
         setSelectedTeamIds(teamFilterRef.current?.teamIds ?? []);
+        setFieldDrafts(draftsFor(undefined));
       }
       setError(null);
     }
@@ -213,9 +265,21 @@ export function ProjectModal() {
       tagsForProjectScope(allTags, tagSiteId, selectedTeamIds, siteTeams).map((t) => t.id)
     );
     const tagIds = Array.from(selectedTagIds).filter((id) => applicableTagIds.has(id));
-    if (violatesSingleSelect(tagIds, allTags, tagGroups)) {
-      setError('Pick at most one tag per single-choice tag group');
-      return;
+
+    // Project fields: only those that changed are sent (a teammate's edit to
+    // another field is kept); items no longer applying are dropped like tags.
+    const fieldValues: Record<number, ProjectFieldValue> = {};
+    for (const field of projectFields) {
+      const allowed = new Set((optionsByField.get(field.id) ?? []).map((o) => o.id));
+      const value = valueFromDraft(field, fieldDrafts[field.id], allowed);
+      if (value === undefined) {
+        setError(`Invalid value for "${field.name}"`);
+        return;
+      }
+      const before = isEditing ? normalizeStoredValue(field, editingProject?.field_values?.[field.id]) : null;
+      if (!sameFieldValue(value, before)) {
+        fieldValues[field.id] = value === null && field.field_type === 'multiselect' ? [] : value;
+      }
     }
 
     if (!beginSubmit()) return;
@@ -252,10 +316,10 @@ export function ProjectModal() {
       const projectData = {
         name: name.trim(),
         site_id: currentSite.id,
-        customer: customer.trim() || null,
+        ...(customerHidden ? {} : { customer: customer.trim() || null }),
         pm_id: pmId ? parseInt(pmId) : null,
-        sales_pm: salesPm.trim() || null,
-        volume: volume ? parseInt(volume) : null,
+        ...(salesPmHidden ? {} : { sales_pm: salesPm.trim() || null }),
+        ...(volumeHidden ? {} : { volume: volume ? parseInt(volume) : null }),
         confirmed,
         archived,
         start_date: startDate,
@@ -265,6 +329,7 @@ export function ProjectModal() {
         // Only teams still on the site (any, active or not): one deleted
         // over WebSocket while the dialog is open is not sent.
         team_ids: teamIdsOnSite(selectedTeamIds, siteTeams),
+        ...(Object.keys(fieldValues).length > 0 ? { field_values: fieldValues } : {}),
       };
       
       if (isEditing && editingProject) {
@@ -272,22 +337,23 @@ export function ProjectModal() {
         // Show the edit right away (the reload below is a no-op in What-If).
         updateProjectLocally(editingProject.id, (p) => {
           p.name = projectData.name;
-          p.customer = projectData.customer;
+          if (projectData.customer !== undefined) p.customer = projectData.customer;
           p.pm_id = projectData.pm_id;
           p.pm_name = projectData.pm_id
             ? staff.find((s) => s.id === projectData.pm_id)?.name ?? p.pm_name
             : null;
-          p.sales_pm = projectData.sales_pm;
-          p.volume = projectData.volume;
+          if (projectData.sales_pm !== undefined) p.sales_pm = projectData.sales_pm;
+          if (projectData.volume !== undefined) p.volume = projectData.volume;
           p.confirmed = projectData.confirmed;
           p.archived = projectData.archived;
           p.start_date = projectData.start_date;
           p.end_date = projectData.end_date;
-          // Inline shape of project responses ({id, name, color, group_id}).
+          // Inline shape of project responses ({id, name, color}).
           p.tags = allTags
             .filter((t) => projectData.tag_ids.includes(t.id))
-            .map(({ id, name, color, group_id }) => ({ id, name, color, group_id }));
+            .map(({ id, name, color }) => ({ id, name, color }));
           p.team_ids = projectData.team_ids;
+          p.field_values = applyFieldValues(p.field_values, fieldValues);
         });
       } else {
         await createProject(projectData);
@@ -424,34 +490,42 @@ export function ProjectModal() {
             onChange={(e) => setPmId(e.target.value)}
             options={pmOptions}
           />
-          <Input
-            label="Customer"
-            type="text"
-            className={styles.field}
-            value={customer}
-            onChange={(e) => setCustomer(e.target.value)}
-            placeholder="Customer name"
-          />
+          {!customerHidden && (
+            <Input
+              label={builtInFieldLabel(instanceSettings, 'customer', 'Customer')}
+              type="text"
+              className={styles.field}
+              value={customer}
+              onChange={(e) => setCustomer(e.target.value)}
+              placeholder="Customer name"
+            />
+          )}
         </div>
         
-        <div className={styles.formRow}>
-          <Input
-            label="Sales PM"
-            type="text"
-            className={styles.field}
-            value={salesPm}
-            onChange={(e) => setSalesPm(e.target.value)}
-            placeholder="Sales contact"
-          />
-          <Input
-            label="Project Volume (CHF)"
-            type="number"
-            className={styles.field}
-            value={volume}
-            onChange={(e) => setVolume(e.target.value)}
-            placeholder="0"
-          />
-        </div>
+        {!(salesPmHidden && volumeHidden) && (
+          <div className={styles.formRow}>
+            {!salesPmHidden && (
+              <Input
+                label={builtInFieldLabel(instanceSettings, 'sales_pm', 'Sales PM')}
+                type="text"
+                className={styles.field}
+                value={salesPm}
+                onChange={(e) => setSalesPm(e.target.value)}
+                placeholder="Sales contact"
+              />
+            )}
+            {!volumeHidden && (
+              <Input
+                label={builtInFieldLabel(instanceSettings, 'volume', 'Project Volume (CHF)')}
+                type="number"
+                className={styles.field}
+                value={volume}
+                onChange={(e) => setVolume(e.target.value)}
+                placeholder="0"
+              />
+            )}
+          </div>
+        )}
         
         {projectTeams.length > 0 && (
           <div className={styles.formGroup}>
@@ -465,6 +539,14 @@ export function ProjectModal() {
             />
           </div>
         )}
+
+        <ProjectFieldInputs
+          fields={projectFields}
+          optionsByField={optionsByField}
+          drafts={fieldDrafts}
+          onChange={(fieldId, draft) => setFieldDrafts((prev) => ({ ...prev, [fieldId]: draft }))}
+          disabled={isSubmitting}
+        />
 
         <div className={styles.formGroup}>
           <label className={styles.label}>Tags</label>
@@ -499,7 +581,11 @@ export function ProjectModal() {
         
         <div className={styles.formRow}>
           <div className={styles.formGroup}>
-            <ToggleSwitch checked={confirmed} onChange={setConfirmed} label="Project Confirmed" />
+            <ToggleSwitch
+              checked={confirmed}
+              onChange={setConfirmed}
+              label={builtInFieldLabel(instanceSettings, 'confirmed', 'Project Confirmed')}
+            />
           </div>
           {isEditing && (
             <div className={styles.formGroup}>

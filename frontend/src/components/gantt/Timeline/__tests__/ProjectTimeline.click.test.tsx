@@ -16,7 +16,8 @@ import { generateTimelineCells } from '../../utils';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
-import type { Phase, Project, Site, Subphase, Tag, TagGroup, User } from '@/types';
+import type { Phase, Project, Site, Subphase, User } from '@/types';
+import type { TagGroup, LegacyGroupedTag } from '@/utils/tags';
 import { makeUser } from '@/test/factories';
 
 vi.mock('@/contexts/WebSocketContext', () => ({
@@ -213,7 +214,7 @@ describe('ProjectTimeline subscriptions', () => {
 describe('ProjectTimeline colour by', () => {
   const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, sort_order: 0 };
   const AREA: TagGroup = { id: 2, name: 'Area', single_select: false, sort_order: 1 };
-  const internal: Tag = {
+  const internal: LegacyGroupedTag = {
     id: 10, name: 'Internal', color: '#f59e0b', group_id: 1, all_sites: true, site_ids: [], sort_order: 0,
   };
 
@@ -230,7 +231,7 @@ describe('ProjectTimeline colour by', () => {
 
   function taggedProject(): Project {
     // Inline colour is stale on purpose: the store's tag colour wins.
-    return { ...makeProject(PM), tags: [{ id: 10, name: 'Internal', color: '#000000', group_id: 1 }] };
+    return { ...makeProject(PM), tags: [{ id: 10, name: 'Internal', color: '#000000' }] };
   }
 
   it('has no tag colour while Colour by is unset', () => {

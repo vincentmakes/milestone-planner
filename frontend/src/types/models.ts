@@ -58,21 +58,26 @@ export interface Project {
   tags?: ProjectTagRef[];
   /** Teams of the project's site the project belongs to */
   team_ids?: number[];
+  /**
+   * Values of the project fields, keyed by field id (transformProject turns
+   * the JSON string keys into numbers). A field without a value is absent.
+   * Item ids, like tag ids, are resolved through appStore.projectFields.
+   */
+  field_values?: Record<number, ProjectFieldValue>;
 }
 
 /** Shape of `project.tags[]` in project responses. */
-export type ProjectTagRef = Pick<Tag, 'id' | 'name' | 'color' | 'group_id'>;
+export type ProjectTagRef = Pick<Tag, 'id' | 'name' | 'color'>;
 
 /**
  * Project tag. Tags are tenant-wide but may be limited to some sites
- * (`all_sites: false` + `site_ids`); an optional group makes them a category
- * (see TagGroup). Snake_case straight from the API, like Equipment.
+ * (`all_sites: false` + `site_ids`) and, per site, to some teams.
+ * Snake_case straight from the API, like Equipment.
  */
 export interface Tag {
   id: number;
   name: string;
   color: string;
-  group_id: number | null;
   all_sites: boolean;
   site_ids: number[];
   sort_order: number;
@@ -80,18 +85,41 @@ export interface Tag {
   team_ids?: number[];
 }
 
+/** Kinds of project field. `select` / `multiselect` are the dropdown fields with items. */
+export type ProjectFieldType = 'text' | 'number' | 'toggle' | 'select' | 'multiselect';
+
 /**
- * A category of tags (e.g. "Project type": Internal / Customer). A
- * single-select group allows one of its tags per project. Any group can
- * colour the Gantt project bars — a per-user choice ("Colour by",
- * viewStore.ganttColorBy), not a property of the group.
+ * An item of a dropdown project field. Scoped like a tag: `all_sites`, or
+ * the sites in `site_ids`; per site optionally limited to some teams.
  */
-export interface TagGroup {
+export interface ProjectFieldOption {
   id: number;
   name: string;
-  single_select: boolean;
+  color: string;
   sort_order: number;
+  all_sites: boolean;
+  site_ids: number[];
+  /** Teams the item is restricted to (flat across sites; empty = no restriction) */
+  team_ids: number[];
 }
+
+/** A project field defined in Settings → Project fields (instance-wide). */
+export interface ProjectField {
+  id: number;
+  name: string;
+  /** Fixed at creation */
+  field_type: ProjectFieldType;
+  sort_order: number;
+  /** Items in display order; empty for text, number and toggle fields */
+  options: ProjectFieldOption[];
+}
+
+/**
+ * A project's value for one field, as the API carries it: text = string,
+ * number = number, toggle = boolean, select = item id, multiselect = item
+ * ids in item order. `null` (or `""` / `[]`) clears a field on a write.
+ */
+export type ProjectFieldValue = string | number | boolean | number[] | null;
 
 /**
  * Kanban column. Kept in sync with `completion` by utils/kanbanCards.ts,
@@ -572,6 +600,10 @@ export interface InstanceSettings {
   nager_enabled?: string;
   /** `false`: a new project starts with no predefined phase selected */
   new_project_preselect_phases?: string;
+  /** Compact JSON object: custom labels of the built-in project fields (customer, sales_pm, volume, confirmed) */
+  project_field_labels?: string;
+  /** Compact JSON array of the hidden built-in project fields (customer, sales_pm, volume) */
+  project_fields_hidden?: string;
   [key: string]: string | undefined;
 }
 
@@ -675,6 +707,8 @@ export interface CreateProjectRequest {
   end_date?: string | null;
   tag_ids?: number[];
   team_ids?: number[];
+  /** Only the fields given change; `null` / `[]` clears one */
+  field_values?: Record<number, ProjectFieldValue>;
 }
 
 export interface UpdateProjectRequest extends Partial<CreateProjectRequest> {

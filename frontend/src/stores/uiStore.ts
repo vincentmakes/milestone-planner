@@ -76,6 +76,7 @@ export type SettingsSectionId =
   | 'equipment'
   | 'equipment-types'
   | 'predefined-phases'
+  | 'project-fields'
   | 'tags'
   | 'sso';
 

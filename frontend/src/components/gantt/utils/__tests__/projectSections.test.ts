@@ -11,9 +11,10 @@ import {
   buildProjectSections,
   flatGanttRows,
 } from '../projectSections';
-import type { Project, Tag, TagGroup } from '@/types';
+import type { Project } from '@/types';
+import type { TagGroup, LegacyGroupedTag } from '@/utils/tags';
 
-function tag(id: number, name: string, extra: Partial<Tag> = {}): Tag {
+function tag(id: number, name: string, extra: Partial<LegacyGroupedTag> = {}): LegacyGroupedTag {
   return { id, name, color: '#10b981', group_id: 1, all_sites: true, site_ids: [], sort_order: 0, ...extra };
 }
 
@@ -32,7 +33,7 @@ function project(id: number, tagIds: number[]): Project {
   return {
     id,
     name: `P${id}`,
-    tags: tagIds.map((t) => ({ id: t, name: 'stale', color: '#000000', group_id: null })),
+    tags: tagIds.map((t) => ({ id: t, name: 'stale', color: '#000000' })),
   } as unknown as Project;
 }
 

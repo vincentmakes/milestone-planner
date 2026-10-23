@@ -22,7 +22,7 @@ import { useId, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import { sortTagGroups } from '@/utils/tags';
-import type { TagGroup } from '@/types';
+import type { TagGroup } from '@/utils/tags';
 import styles from './TagGroupChoiceDropdown.module.css';
 
 export interface TagGroupChoiceDropdownProps {

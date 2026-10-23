@@ -8,7 +8,8 @@ import { renderHook, act } from '@testing-library/react';
 import { useGanttColorBy } from '../useGanttColorBy';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
-import type { Site, TagGroup } from '@/types';
+import type { Site } from '@/types';
+import type { TagGroup } from '@/utils/tags';
 
 const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, sort_order: 0 };
 const AREA: TagGroup = { id: 2, name: 'Area', single_select: false, sort_order: 1 };

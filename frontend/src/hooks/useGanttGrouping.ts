@@ -17,7 +17,8 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { tagFilterKey, tagsForSite } from '@/utils/tags';
 import { allSectionKeys } from '@/components/gantt/utils/projectSections';
-import type { Tag, TagGroup } from '@/types';
+import type { Tag } from '@/types';
+import type { TagGroup } from '@/utils/tags';
 
 const NO_KEYS: readonly string[] = Object.freeze([]);
 

@@ -27,7 +27,7 @@ import {
   getCustomColumnsWithValues,
   skillsApi,
   tagsApi,
-  tagGroupsApi,
+  projectFieldsApi,
   teamsApi,
   absenceTypesApi,
 } from '@/api';
@@ -113,7 +113,7 @@ export function useDataLoader(): UseDataLoaderReturn {
     setInstanceSettings,
     setSkills,
     setTags,
-    setTagGroups,
+    setProjectFields,
     setTeams,
     setAbsenceTypes,
   } = useAppStore(
@@ -130,7 +130,7 @@ export function useDataLoader(): UseDataLoaderReturn {
       setInstanceSettings: s.setInstanceSettings,
       setSkills: s.setSkills,
       setTags: s.setTags,
-      setTagGroups: s.setTagGroups,
+      setProjectFields: s.setProjectFields,
       setTeams: s.setTeams,
       setAbsenceTypes: s.setAbsenceTypes,
     }))
@@ -148,7 +148,7 @@ export function useDataLoader(): UseDataLoaderReturn {
 
     try {
       // Load core data in parallel
-      const [sites, staff, equipment, equipmentBlocks, vacations, instanceSettings, skills, tags, tagGroups, teams, absenceTypes] = await Promise.all([
+      const [sites, staff, equipment, equipmentBlocks, vacations, instanceSettings, skills, tags, projectFields, teams, absenceTypes] = await Promise.all([
         getSites(),
         getStaff(true), // Include all sites
         // Equipment is view-gated (views.equipment): empty without the key
@@ -158,7 +158,7 @@ export function useDataLoader(): UseDataLoaderReturn {
         getInstanceSettings().catch(() => null), // Don't fail if settings not available
         skillsApi.getAll().catch(() => []), // Don't fail if skills not available
         tagsApi.getAll().catch(() => []), // Don't fail if tags not available
-        tagGroupsApi.getAll().catch(() => []),
+        projectFieldsApi.getAll().catch(() => []), // Don't fail on servers without project fields
         teamsApi.getAll().catch(() => []), // Don't fail on servers without teams
         absenceTypesApi.getAll().catch(() => []), // Don't fail on servers without absence types
       ]);
@@ -171,7 +171,7 @@ export function useDataLoader(): UseDataLoaderReturn {
       setVacations(vacations);
       setSkills(skills);
       setTags(tags);
-      setTagGroups(tagGroups);
+      setProjectFields(projectFields);
       setTeams(teams);
       setAbsenceTypes(absenceTypes);
       if (instanceSettings) {
@@ -247,7 +247,7 @@ export function useDataLoader(): UseDataLoaderReturn {
     setInstanceSettings,
     setSkills,
     setTags,
-    setTagGroups,
+    setProjectFields,
     setTeams,
     setAbsenceTypes,
     setCustomColumns,

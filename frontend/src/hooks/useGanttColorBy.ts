@@ -17,7 +17,7 @@ import { useCallback, useMemo } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { tagFilterKey } from '@/utils/tags';
-import type { TagGroup } from '@/types';
+import type { TagGroup } from '@/utils/tags';
 
 export interface GanttColorBy {
   siteId: number | null;

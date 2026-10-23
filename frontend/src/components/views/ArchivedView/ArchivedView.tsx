@@ -11,6 +11,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useScrollSync } from '@/hooks';
 import { useTeamFilter, useTeamFilteredCompanyEvents } from '@/hooks/useTeamFilter';
 import { canEditProject } from '@/utils/permissions';
+import { builtInFieldLabel, isBuiltInFieldHidden } from '@/utils/instanceSettings';
 import { generateTimelineCells, generateTimelineHeaders } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { TimelineRow } from './TimelineRow';
@@ -29,6 +30,9 @@ export function ArchivedView() {
   // Company events narrowed by the header team filter
   const { events: companyEvents, eventDates: companyEventDates } = useTeamFilteredCompanyEvents();
   const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
+  // The Customer field may be renamed or hidden (Settings → Project fields)
+  const customerHidden = useAppStore((s) => isBuiltInFieldHidden(s.instanceSettings, 'customer'));
+  const customerLabel = useAppStore((s) => builtInFieldLabel(s.instanceSettings, 'customer', 'customer'));
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
   const cellWidth = useViewStore((s) => s.cellWidth);
@@ -92,8 +96,12 @@ export function ArchivedView() {
                     <div className={styles.projectName}>{project.name}</div>
                     <div className={styles.projectMeta}>
                       <span className={styles.pmName}>{project.pm_name || 'No PM'}</span>
-                      <span> · </span>
-                      <span>{project.customer || 'No customer'}</span>
+                      {!customerHidden && (
+                        <>
+                          <span> · </span>
+                          <span>{project.customer || `No ${customerLabel}`}</span>
+                        </>
+                      )}
                     </div>
                   </div>
                   

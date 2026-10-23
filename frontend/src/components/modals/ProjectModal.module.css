@@ -31,6 +31,39 @@
   color: var(--text-secondary);
 }
 
+/* Project fields: two per row like the built-in ones; a multi-select spans the row */
+.fieldsGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: end;
+}
+
+.fieldWide {
+  grid-column: 1 / -1;
+}
+
+/* A switch sits on the baseline of the inputs beside it */
+.fieldToggle {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  min-width: 0;
+}
+
+.manageRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.hint {
+  margin-right: auto;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
 /* Phase tags */
 .phaseTags {
   display: flex;
@@ -101,7 +134,8 @@
 
 /* Responsive */
 @media (max-width: 640px) {
-  .formRow {
+  .formRow,
+  .fieldsGrid {
     grid-template-columns: minmax(0, 1fr);
   }
 }

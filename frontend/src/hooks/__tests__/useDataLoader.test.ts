@@ -14,6 +14,7 @@ import {
   makeCustomColumn,
   makeEquipment,
   makeProject,
+  makeProjectField,
   makeSite,
   makeStaff,
   makeTag,
@@ -36,7 +37,7 @@ vi.mock('@/api', async (importOriginal) => ({
   getCustomColumnsWithValues: vi.fn(),
   skillsApi: { getAll: vi.fn() },
   tagsApi: { getAll: vi.fn() },
-  tagGroupsApi: { getAll: vi.fn() },
+  projectFieldsApi: { getAll: vi.fn() },
   teamsApi: { getAll: vi.fn() },
   absenceTypesApi: { getAll: vi.fn() },
 }));
@@ -70,7 +71,7 @@ function happyPath() {
   } as never);
   vi.mocked(m.skillsApi.getAll).mockResolvedValue([{ id: 1, name: 'HPLC', color: '#000' }]);
   vi.mocked(m.tagsApi.getAll).mockResolvedValue([makeTag()]);
-  vi.mocked(m.tagGroupsApi.getAll).mockResolvedValue([]);
+  vi.mocked(m.projectFieldsApi.getAll).mockResolvedValue([makeProjectField()]);
   vi.mocked(m.teamsApi.getAll).mockResolvedValue([makeTeam()]);
   vi.mocked(m.absenceTypesApi.getAll).mockResolvedValue([absenceType]);
 }
@@ -96,6 +97,7 @@ describe('useDataLoader.loadAllData', () => {
     expect(s.vacations).toHaveLength(1);
     expect(s.skills).toHaveLength(1);
     expect(s.tags).toHaveLength(1);
+    expect(s.projectFields).toEqual([makeProjectField()]);
     expect(m.teamsApi.getAll).toHaveBeenCalledWith();
     expect(s.teams).toEqual([makeTeam()]);
     expect(s.absenceTypes).toEqual([absenceType]);
@@ -167,7 +169,7 @@ describe('useDataLoader.loadAllData', () => {
     m.getInstanceSettings.mockRejectedValue(new Error('x'));
     vi.mocked(m.skillsApi.getAll).mockRejectedValue(new Error('x'));
     vi.mocked(m.tagsApi.getAll).mockRejectedValue(new Error('x'));
-    vi.mocked(m.tagGroupsApi.getAll).mockRejectedValue(new Error('x'));
+    vi.mocked(m.projectFieldsApi.getAll).mockRejectedValue(new Error('x'));
     vi.mocked(m.teamsApi.getAll).mockRejectedValue(new Error('x'));
     vi.mocked(m.absenceTypesApi.getAll).mockRejectedValue(new Error('x'));
     m.getCustomColumnsWithValues.mockRejectedValue(new Error('no columns'));

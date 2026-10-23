@@ -6,10 +6,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { differenceInDays, eachDayOfInterval, isWeekend, format } from 'date-fns';
-import type { Phase, Subphase, Project, Tag, TagGroup } from '@/types';
+import type { Phase, Subphase, Project, Tag } from '@/types';
 import styles from './ShiftTooltip.module.css';
 import { parseLocalDate } from '@/utils/date';
-import { barTextColor, groupedTags } from '@/utils/tags';
+import { barTextColor } from '@/utils/tags';
+import { builtInFieldLabel, isBuiltInFieldHidden } from '@/utils/instanceSettings';
 
 interface StaffInfo {
   name: string;
@@ -40,25 +41,21 @@ interface TooltipData {
 
 interface TooltipTag {
   id: number;
-  /** "Group: Tag" for grouped tags, the tag name otherwise. */
   label: string;
   color: string;
 }
 
 /**
  * The project's tags resolved through the store (inline project.tags can be
- * stale, e.g. in What-If), in group order; deleted tags are dropped.
+ * stale, e.g. in What-If), in tag order; deleted tags are dropped.
  */
-function resolveTooltipTags(project: Project, tags: Tag[], groups: TagGroup[]): TooltipTag[] {
+function resolveTooltipTags(project: Project, tags: Tag[]): TooltipTag[] {
   const ids = new Set((project.tags ?? []).map((t) => t.id));
   if (ids.size === 0) return [];
-  return groupedTags(tags.filter((t) => ids.has(t.id)), groups).flatMap((section) =>
-    section.tags.map((t) => ({
-      id: t.id,
-      label: section.group ? `${section.group.name}: ${t.name}` : t.name,
-      color: t.color,
-    }))
-  );
+  return tags
+    .filter((t) => ids.has(t.id))
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
+    .map((t) => ({ id: t.id, label: t.name, color: t.color }));
 }
 
 // Calculate work days excluding weekends and holidays
@@ -216,7 +213,7 @@ export function ShiftTooltip() {
   const projects = useAppStore((s) => s.projects);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
   const storeTags = useAppStore((s) => s.tags);
-  const tagGroups = useAppStore((s) => s.tagGroups);
+  const instanceSettings = useAppStore((s) => s.instanceSettings);
   const currentBarRef = useRef<HTMLElement | null>(null);
 
   // Track shift key
@@ -386,12 +383,12 @@ export function ShiftTooltip() {
         customer: project.customer,
         pmName: project.pm_name,
         confirmed: project.confirmed,
-        tags: resolveTooltipTags(project, storeTags, tagGroups),
+        tags: resolveTooltipTags(project, storeTags),
         x,
         y,
       });
     }
-  }, [projects, bankHolidayDates, storeTags, tagGroups]);
+  }, [projects, bankHolidayDates, storeTags]);
 
   // Handle mouse move to track hover and update position
   useEffect(() => {
@@ -495,9 +492,9 @@ export function ShiftTooltip() {
       {/* Project-specific: show customer, PM, status */}
       {tooltipData.type === 'project' && (
         <>
-          {tooltipData.customer && (
+          {tooltipData.customer && !isBuiltInFieldHidden(instanceSettings, 'customer') && (
             <div className={styles.row}>
-              <span className={styles.label}>Customer:</span>
+              <span className={styles.label}>{builtInFieldLabel(instanceSettings, 'customer', 'Customer')}:</span>
               <span>{tooltipData.customer}</span>
             </div>
           )}

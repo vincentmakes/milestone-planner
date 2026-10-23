@@ -5,6 +5,7 @@
 
 import { memo, useMemo, useCallback, Fragment, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { isBuiltInFieldHidden } from '@/utils/instanceSettings';
 import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -119,6 +120,7 @@ export const ProjectRow = memo(function ProjectRow({
   const isCriticalPathEnabled = useAppStore((s) => s.isCriticalPathEnabled);
   const criticalPathItems = useAppStore((s) => s.criticalPathItems);
   const projects = useAppStore((s) => s.projects);
+  const customerHidden = useAppStore((s) => isBuiltInFieldHidden(s.instanceSettings, 'customer'));
   const openProjectModal = useUIStore((s) => s.openProjectModal);
 
   const isExpanded = expandedProjects.has(project.id);
@@ -320,7 +322,7 @@ export const ProjectRow = memo(function ProjectRow({
               {project.pm_name && (
                 <span className={styles.pm}>{project.pm_name}</span>
               )}
-              {project.customer && (
+              {project.customer && !customerHidden && (
                 <span className={styles.customer}> · {project.customer}</span>
               )}
             </span>

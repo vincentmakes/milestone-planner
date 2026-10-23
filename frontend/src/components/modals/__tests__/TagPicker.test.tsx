@@ -3,8 +3,8 @@
  * - Escape inside the dropdown closes only the dropdown, not the dialog it
  *   sits in (ProjectModal): the shared Modal listens for Escape on document,
  *   so the picker stops propagation while its dropdown is open.
- * - Only tags applying to the project's site are offered.
- * - Single-select groups behave like radio buttons.
+ * - Only tags applying to the project's site are offered, in tag order (one
+ *   flat list since 2.0.0: tag groups became project fields).
  * - Admins get a "Manage tags…" shortcut to Settings → Tags.
  */
 
@@ -18,22 +18,19 @@ import { useUIStore } from '@/stores/uiStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { stubConfirm } from '@/test/confirmDialog';
-import type { Tag, TagGroup } from '@/types';
+import type { Tag } from '@/types';
 import { makeTeam, makeUser } from '@/test/factories';
 
 function tag(id: number, name: string, extra: Partial<Tag> = {}): Tag {
-  return { id, name, color: '#3b82f6', group_id: null, all_sites: true, site_ids: [], sort_order: 0, ...extra };
+  return { id, name, color: '#3b82f6', all_sites: true, site_ids: [], sort_order: id, ...extra };
 }
 
-const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, sort_order: 0 };
-const AREA: TagGroup = { id: 2, name: 'Area', single_select: false, sort_order: 1 };
-
 const tags: Tag[] = [
-  tag(1, 'Pilot'),
-  tag(2, 'Internal', { group_id: 1 }),
-  tag(3, 'Customer', { group_id: 1, sort_order: 1 }),
-  tag(4, 'Bio', { group_id: 2 }),
-  tag(5, 'Chem', { group_id: 2 }),
+  tag(1, 'Pilot', { sort_order: 4 }),
+  tag(2, 'Internal'),
+  tag(3, 'Customer'),
+  tag(4, 'Bio'),
+  tag(5, 'Chem'),
   tag(6, 'Basel only', { all_sites: false, site_ids: [2] }),
 ];
 
@@ -49,14 +46,13 @@ function Harness({ initial = [] as number[], siteId = 1 as number | null, teamId
 
 function openDropdown() {
   const search = screen.getByPlaceholderText(TAG_PICKER_PLACEHOLDER);
-  fireEvent.focus(search);
+  fireEvent.click(search);
   return { search, listbox: screen.getByRole('listbox') };
 }
 
 beforeEach(() => {
   useAppStore.setState({
     tags,
-    tagGroups: [AREA, TYPE],
     currentUser: makeUser({ id: 1, name: 'Ada Admin', role: 'admin' }),
   });
 });
@@ -89,13 +85,13 @@ describe('TagPicker inside a modal', () => {
 });
 
 describe('TagPicker options', () => {
-  it('lists tags in group sections, ungrouped last', () => {
+  it('lists the tags in one list, in tag order', () => {
     render(<Harness />);
     const { listbox } = openDropdown();
-    const groups = within(listbox).getAllByRole('group');
-    expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['Project type', 'Area', 'Other']);
-    expect(within(groups[0]).getAllByRole('option').map((o) => o.textContent)).toEqual(['Internal', 'Customer']);
-    expect(within(groups[0]).getByText('pick one')).toBeInTheDocument();
+    expect(within(listbox).queryAllByRole('group')).toHaveLength(0);
+    expect(within(listbox).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Internal', 'Customer', 'Bio', 'Pilot', 'Chem',
+    ]);
   });
 
   it('only offers tags that apply to the site', () => {
@@ -135,13 +131,15 @@ describe('TagPicker options', () => {
     expect(screen.queryByLabelText('Remove Basel only')).not.toBeInTheDocument();
   });
 
-  it('replaces the choice inside a single-select group, adds freely elsewhere', () => {
+  it('adds and removes tags freely (no single choice left)', () => {
     render(<Harness initial={[2]} />);
     const { listbox } = openDropdown();
     fireEvent.click(within(listbox).getByRole('option', { name: 'Customer' }));
+    expect(screen.getByTestId('selected').textContent).toBe('2,3');
+    fireEvent.click(screen.getByLabelText('Remove Internal'));
     expect(screen.getByTestId('selected').textContent).toBe('3');
 
-    fireEvent.focus(screen.getByPlaceholderText(TAG_PICKER_PLACEHOLDER));
+    fireEvent.click(screen.getByPlaceholderText(TAG_PICKER_PLACEHOLDER));
     fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'Bio' }));
     fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'Chem' }));
     expect(screen.getByTestId('selected').textContent).toBe('3,4,5');
@@ -166,7 +164,7 @@ describe('TagPicker options', () => {
   it('picks the only remaining match on Enter, and nothing while several match', () => {
     render(<Harness />);
     const { search } = openDropdown();
-    fireEvent.change(search, { target: { value: 'i' } }); // Pilot, Internal, Bio
+    fireEvent.change(search, { target: { value: 'i' } }); // Internal, Bio, Pilot
     fireEvent.keyDown(search, { key: 'Enter' });
     expect(screen.getByTestId('selected').textContent).toBe('');
 

@@ -67,10 +67,10 @@ function seed() {
     ],
     bankHolidayDates: new Set(['2026-03-06']),
     tags: [
-      makeTag({ id: 1, name: 'Pilot', group_id: 5 }),
-      makeTag({ id: 2, name: 'Urgent', group_id: null }),
+      makeTag({ id: 1, name: 'Pilot', sort_order: 1 }),
+      makeTag({ id: 2, name: 'Urgent', sort_order: 0 }),
     ],
-    tagGroups: [{ id: 5, name: 'Stage', single_select: false, sort_order: 0 }],
+    instanceSettings: null,
   });
 }
 
@@ -174,13 +174,32 @@ describe('ShiftTooltip', () => {
     expect(screen.getByText('Customer:').nextSibling).toHaveTextContent('Acme Pharma');
     expect(screen.getByText('PM:').nextSibling).toHaveTextContent('Pat Manager');
     expect(screen.getByText('Unconfirmed')).toBeInTheDocument();
-    // grouped tag first, then ungrouped; a deleted tag is dropped
+    // in tag order; a deleted tag is dropped
     const pills = screen.getByText('Tags:').nextSibling as HTMLElement;
-    expect(Array.from(pills.children).map((p) => p.textContent)).toEqual(['Stage: Pilot', 'Urgent']);
+    expect(Array.from(pills.children).map((p) => p.textContent)).toEqual(['Urgent', 'Pilot']);
     expect(screen.getByText('Period:').nextSibling).toHaveTextContent('Mar 2, 2026 - Mar 20, 2026');
     // (70 % x 12 days + 0 % x 5 days) / 17 days
     expect(screen.getByText('49% (calc)')).toBeInTheDocument();
     expect(screen.queryByText('Project:')).not.toBeInTheDocument();
+  });
+
+  it('names the customer with its label, and leaves it out while hidden', () => {
+    setup();
+    useAppStore.setState({ instanceSettings: { project_field_labels: '{"customer":"Client"}' } });
+    holdShift();
+    hover('project-bar');
+    expect(screen.getByText('Client:').nextSibling).toHaveTextContent('Acme Pharma');
+    expect(screen.queryByText('Customer:')).not.toBeInTheDocument();
+  });
+
+  it('leaves out a hidden customer', () => {
+    setup();
+    useAppStore.setState({ instanceSettings: { project_fields_hidden: '["customer"]' } });
+    holdShift();
+    hover('project-bar');
+    expect(screen.queryByText('Customer:')).not.toBeInTheDocument();
+    expect(screen.queryByText('Acme Pharma')).not.toBeInTheDocument();
+    expect(screen.getByText('PM:')).toBeInTheDocument();
   });
 
   it('shows a dash for a confirmed project without completion and no tags', () => {

@@ -20,7 +20,7 @@ vi.mock('@/api/endpoints/settings', () => ({ getPredefinedPhases: vi.fn(async ()
 const project = makeProject({ id: 9, site_id: 1, pm_id: 7 });
 
 beforeEach(() => {
-  useAppStore.setState({ currentSite: makeSite({ id: 1 }), staff: [], projects: [project], tags: [], tagGroups: [], teams: [] });
+  useAppStore.setState({ currentSite: makeSite({ id: 1 }), staff: [], projects: [project], tags: [], projectFields: [], teams: [] });
 });
 
 afterEach(() => {

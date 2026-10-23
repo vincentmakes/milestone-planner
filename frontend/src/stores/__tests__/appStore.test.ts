@@ -15,7 +15,7 @@ import {
 } from '../appStore';
 import { useUndoStore } from '../undoStore';
 import { resetAllStores } from '..';
-import { makePhase, makeProject, makeSite, makeStaff, makeTeam, makeUser } from '@/test/factories';
+import { makePhase, makeProject, makeProjectField, makeSite, makeStaff, makeTeam, makeUser } from '@/test/factories';
 import type { CompanyEvent } from '@/types';
 
 const KEY = 'milestone-app-storage-v3';
@@ -38,7 +38,7 @@ describe('data setters', () => {
     app().setInstanceSettings({ instance_title: 'Lab' });
     app().setSkills([]);
     app().setTags([]);
-    app().setTagGroups([]);
+    app().setProjectFields([makeProjectField()]);
     app().setTeams([makeTeam()]);
     app().setAbsenceTypes([]);
     app().setCurrentUser(makeUser({ id: 9 }));
@@ -52,6 +52,7 @@ describe('data setters', () => {
     });
     expect(app().staff).toHaveLength(1);
     expect(app().teams).toEqual([makeTeam()]);
+    expect(app().projectFields).toEqual([makeProjectField()]);
     expect(app().currentUser?.id).toBe(9);
   });
 

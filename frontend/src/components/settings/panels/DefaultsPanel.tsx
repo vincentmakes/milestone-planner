@@ -38,10 +38,13 @@ import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import styles from './DefaultsPanel.module.css';
 
-/** The six settings as the backend stores them */
-type Values = Record<DefaultedSettingKey, string>;
+/** The settings of this panel (the project field labels live in Settings → Project fields) */
+type DefaultsKey = Exclude<DefaultedSettingKey, 'project_field_labels' | 'project_fields_hidden'>;
 
-const SAVE_ORDER: DefaultedSettingKey[] = [
+/** The six settings as the backend stores them */
+type Values = Record<DefaultsKey, string>;
+
+const SAVE_ORDER: DefaultsKey[] = [
   'gantt_default_panel',
   'staff_panel_default_skills',
   'equipment_panel_default_types',
@@ -158,7 +161,7 @@ export function DefaultsPanel({ onDirtyChange }: SettingsPanelProps) {
   const selectedSkills = parseIdList(values.staff_panel_default_skills);
   const selectedTypes = parseNameList(values.equipment_panel_default_types);
 
-  const change = (key: DefaultedSettingKey, value: string) => {
+  const change = (key: DefaultsKey, value: string) => {
     setValues((prev) => (prev ? { ...prev, [key]: value } : prev));
     setError(null);
     setSuccess(null);

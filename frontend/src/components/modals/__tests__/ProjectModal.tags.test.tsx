@@ -47,7 +47,7 @@ beforeEach(() => {
     staff: [],
     projects: [project],
     tags: [],
-    tagGroups: [],
+    projectFields: [],
   });
   act(() => useUIStore.getState().openProjectModal(project));
 });

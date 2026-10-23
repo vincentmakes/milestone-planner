@@ -15,6 +15,8 @@ export type Slice =
   | 'sites'
   | 'skills'
   | 'tags'
+  /** Project field definitions with their items — appStore.projectFields */
+  | 'projectFields'
   /** Teams of every site — appStore.teams */
   | 'teams'
   /** Roles with their matrices and user counts — appStore.roles */
@@ -41,7 +43,7 @@ export type Slice =
 
 export const ALL_SLICES: Slice[] = [
   'projects', 'staff', 'equipment', 'equipmentBlocks', 'vacations',
-  'sites', 'skills', 'tags', 'teams', 'roles', 'absenceTypes', 'siteCalendar', 'customColumns',
+  'sites', 'skills', 'tags', 'projectFields', 'teams', 'roles', 'absenceTypes', 'siteCalendar', 'customColumns',
   'settings', 'currentUser', 'approvals', 'approvalPolicies', 'todos',
 ];
 
@@ -108,23 +110,25 @@ export function slicesForEntity(entityType: string): Slice[] {
       // Site writes include holiday refreshes and site-scoped event links, so
       // the current site's calendar (holidays/events) is refetched as well.
       // Site writes are rare admin actions, and a delete cascades on the
-      // server to the site's projects (FK CASCADE), site-only tags and
-      // site-only equipment, which other clients would otherwise keep
-      // showing — so those slices reload too, and so do the site's teams.
-      return ['sites', 'siteCalendar', 'projects', 'tags', 'equipment', 'teams'];
+      // server to the site's projects (FK CASCADE), site-only tags, site-only
+      // project field items and site-only equipment, which other clients
+      // would otherwise keep showing — so those slices reload too, and so do
+      // the site's teams.
+      return ['sites', 'siteCalendar', 'projects', 'tags', 'projectFields', 'equipment', 'teams'];
     case 'skill':
       return ['skills', 'staff'];
     case 'tag':
       return ['tags', 'projects'];
-    case 'tag_group':
-      // Groups live in the same slice as tags (both reloaded together); the
-      // project tree does not change when a group is edited.
-      return ['tags'];
+    case 'project_field':
+      // Every /api/project-fields write (fields and items). Deleting a field
+      // or an item removes project values server-side, so the tree reloads.
+      return ['projectFields', 'projects'];
     case 'team':
       // Membership changes staff rows' team_ids. A team delete cascades on
-      // the server to its project, tag, equipment and company-event links;
-      // like 'site', a rare admin action, so those slices reload too.
-      return ['teams', 'staff', 'projects', 'tags', 'equipment', 'siteCalendar'];
+      // the server to its project, tag, field item, equipment and
+      // company-event links; like 'site', a rare admin action, so those
+      // slices reload too.
+      return ['teams', 'staff', 'projects', 'tags', 'projectFields', 'equipment', 'siteCalendar'];
     case 'role':
       // The signed-in user's resolved permissions (/auth/me) and the role
       // list (Settings → Roles, the role pickers).

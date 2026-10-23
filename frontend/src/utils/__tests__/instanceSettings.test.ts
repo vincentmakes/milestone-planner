@@ -3,7 +3,19 @@
  * as the default (an empty list, a switch that is on, no default panel).
  */
 import { describe, it, expect } from 'vitest';
-import { ganttDefaultPanel, isSettingOn, parseIdList, parseNameList } from '../instanceSettings';
+import {
+  BUILT_IN_PROJECT_FIELDS,
+  builtInFieldLabel,
+  fieldLabelsValue,
+  ganttDefaultPanel,
+  hiddenFieldsValue,
+  isBuiltInFieldHidden,
+  isSettingOn,
+  parseFieldLabels,
+  parseHiddenFields,
+  parseIdList,
+  parseNameList,
+} from '../instanceSettings';
 
 describe('parseIdList', () => {
   it('keeps the unique positive integers in order', () => {
@@ -57,5 +69,52 @@ describe('ganttDefaultPanel', () => {
     expect(ganttDefaultPanel({ gantt_default_panel: 'none' })).toBe('none');
     expect(ganttDefaultPanel({ gantt_default_panel: 'Staff' })).toBe('none');
     expect(ganttDefaultPanel(null)).toBe('none');
+  });
+});
+
+describe('built-in project fields', () => {
+  it('lists the four built-in fields in display order', () => {
+    expect(BUILT_IN_PROJECT_FIELDS.map((f) => f.key)).toEqual(['customer', 'sales_pm', 'volume', 'confirmed']);
+  });
+
+  it('reads the custom labels, trimmed, known keys only', () => {
+    expect(parseFieldLabels('{"customer":" Client ","confirmed":"Won","other":"x","volume":"  ","sales_pm":3}')).toEqual({
+      customer: 'Client',
+      confirmed: 'Won',
+    });
+    expect(parseFieldLabels(undefined)).toEqual({});
+    expect(parseFieldLabels('not json')).toEqual({});
+    expect(parseFieldLabels('["customer"]')).toEqual({});
+    expect(parseFieldLabels('null')).toEqual({});
+  });
+
+  it('reads the hidden fields in display order, never confirmed', () => {
+    expect(parseHiddenFields('["volume","customer","confirmed","other","volume"]')).toEqual(['customer', 'volume']);
+    expect(parseHiddenFields(null)).toEqual([]);
+    expect(parseHiddenFields('{"customer":true}')).toEqual([]);
+  });
+
+  it('labels a field with its custom label, else the caller default', () => {
+    const settings = { project_field_labels: '{"customer":"Client"}' };
+    expect(builtInFieldLabel(settings, 'customer', 'Customer')).toBe('Client');
+    expect(builtInFieldLabel(settings, 'volume', 'Project Volume (CHF)')).toBe('Project Volume (CHF)');
+    expect(builtInFieldLabel(null, 'customer', 'Customer')).toBe('Customer');
+  });
+
+  it('hides only the listed hideable fields; Confirmed never', () => {
+    const settings = { project_fields_hidden: '["sales_pm","confirmed"]' };
+    expect(isBuiltInFieldHidden(settings, 'sales_pm')).toBe(true);
+    expect(isBuiltInFieldHidden(settings, 'customer')).toBe(false);
+    expect(isBuiltInFieldHidden(settings, 'confirmed')).toBe(false);
+    expect(isBuiltInFieldHidden(undefined, 'volume')).toBe(false);
+  });
+
+  it('writes the canonical values the backend stores', () => {
+    expect(fieldLabelsValue({ confirmed: ' Won ', customer: 'Client', volume: '' })).toBe(
+      '{"customer":"Client","confirmed":"Won"}'
+    );
+    expect(fieldLabelsValue({})).toBe('{}');
+    expect(hiddenFieldsValue(['volume', 'customer', 'confirmed', 'volume'])).toBe('["customer","volume"]');
+    expect(hiddenFieldsValue([])).toBe('[]');
   });
 });

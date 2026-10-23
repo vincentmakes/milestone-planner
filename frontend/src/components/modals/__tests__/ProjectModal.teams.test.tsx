@@ -49,7 +49,6 @@ const analyticsOnly: Tag = {
   id: 7,
   name: 'Analytics only',
   color: '#3b82f6',
-  group_id: null,
   all_sites: true,
   site_ids: [],
   team_ids: [1],
@@ -63,7 +62,7 @@ const sentData = (fn: typeof createProject | typeof updateProject) => {
   return (fn === createProject ? last[0] : last[1]) as { team_ids?: number[]; tag_ids?: number[] };
 };
 function offeredTags() {
-  fireEvent.focus(screen.getByPlaceholderText(TAG_PICKER_PLACEHOLDER));
+  fireEvent.click(screen.getByPlaceholderText(TAG_PICKER_PLACEHOLDER));
   return screen.queryAllByRole('option').map((o) => o.textContent);
 }
 
@@ -77,7 +76,7 @@ beforeEach(() => {
     staff: [],
     projects: [project],
     tags: [analyticsOnly],
-    tagGroups: [],
+    projectFields: [],
     teams: [analytics, processTeam, zurichLab],
   });
 });

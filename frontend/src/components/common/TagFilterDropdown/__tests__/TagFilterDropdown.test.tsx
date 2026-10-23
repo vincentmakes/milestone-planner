@@ -3,14 +3,15 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import { TagFilterDropdown } from '../TagFilterDropdown';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
-import type { Site, Tag, TagGroup } from '@/types';
+import type { Site } from '@/types';
+import type { TagGroup, LegacyGroupedTag } from '@/utils/tags';
 
-function tag(id: number, name: string, extra: Partial<Tag> = {}): Tag {
+function tag(id: number, name: string, extra: Partial<LegacyGroupedTag> = {}): LegacyGroupedTag {
   return { id, name, color: '#10b981', group_id: null, all_sites: true, site_ids: [], sort_order: 0, ...extra };
 }
 
 const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, sort_order: 0 };
-const tags: Tag[] = [
+const tags: LegacyGroupedTag[] = [
   tag(1, 'Internal', { group_id: 1 }),
   tag(2, 'Customer', { group_id: 1 }),
   tag(3, 'Pilot'),

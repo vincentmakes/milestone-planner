@@ -47,7 +47,6 @@
   "components/modals/MyAbsencesModal.module.css": 1,
   "components/modals/PhaseModal.module.css": 2,
   "components/modals/ProjectModal.module.css": 2,
-  "components/modals/TagPicker.module.css": 2,
   "components/modals/VacationModal.module.css": 4,
   "components/screens/LoginScreen.module.css": 2,
   "components/settings/panels/AbsenceTypesPanel.module.css": 3,

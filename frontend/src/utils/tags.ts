@@ -1,12 +1,13 @@
 /**
- * Project tag helpers: site scoping, grouping, single-select groups, the
- * Gantt/Kanban tag filter and the tag-driven project bar colour.
+ * Project tag helpers: site scoping, the Gantt/Kanban tag filter and the
+ * tag-driven project bar colour (the last two still over the pre-2.0 tag
+ * groups, see the Task 4 shim below).
  *
  * Pure functions. They mirror the server rules (app/routers/tags.py and the
  * project tag validation): a tag applies to a project when it is `all_sites`
  * or lists the project's site; a team-restricted tag applies to a project that
  * shares a team with it (its teams at the project's site — teams of other
- * sites are ignored); a project holds at most one tag per single-select group.
+ * sites are ignored).
  *
  * Inline `project.tags[]` entries can be stale (What-If, a teammate's edit to
  * a tag), so everything except the tag *ids* is resolved through the store's
@@ -17,8 +18,32 @@
  */
 
 import { getTenantPrefix } from '@/api/client';
-import type { Project, Tag, TagGroup, Team } from '@/types';
+import type { Project, Tag, Team } from '@/types';
 import { teamIdsOnSite } from './teams';
+
+// =============================================================================
+// TASK 4 SHIM — tag groups are gone (2.0.0)
+// =============================================================================
+
+/**
+ * @deprecated Temporary shim: tag groups became project fields in 2.0.0 and
+ * the API no longer serves them (`appStore.tagGroups` stays empty). The
+ * Gantt / Kanban filter, Group by and Colour by below still take groups until
+ * they move to project fields; remove this type with them.
+ */
+export interface TagGroup {
+  id: number;
+  name: string;
+  single_select: boolean;
+  sort_order: number;
+}
+
+/** @deprecated Shim: a tag as the pre-2.0 grouping helpers read it (`group_id` is always absent now). */
+export type LegacyGroupedTag = Tag & { group_id?: number | null };
+
+function groupIdOf(tag: Tag | undefined): number | null {
+  return (tag as LegacyGroupedTag | undefined)?.group_id ?? null;
+}
 
 // =============================================================================
 // SITE SCOPING + GROUPING
@@ -80,7 +105,8 @@ export function groupedTags(
   const groupIds = new Set(groups.map((g) => g.id));
   const byGroup = new Map<number | null, Tag[]>();
   for (const tag of scoped) {
-    const key = tag.group_id != null && groupIds.has(tag.group_id) ? tag.group_id : null;
+    const gid = groupIdOf(tag);
+    const key = gid != null && groupIds.has(gid) ? gid : null;
     const list = byGroup.get(key);
     if (list) list.push(tag);
     else byGroup.set(key, [tag]);
@@ -94,59 +120,6 @@ export function groupedTags(
   const other = byGroup.get(null);
   if (other?.length) sections.push({ group: null, tags: [...other].sort(bySortThenName) });
   return sections;
-}
-
-// =============================================================================
-// SINGLE-SELECT GROUPS
-// =============================================================================
-
-function singleSelectGroupIds(groups: TagGroup[]): Set<number> {
-  return new Set(groups.filter((g) => g.single_select).map((g) => g.id));
-}
-
-/** True when the selection holds two or more tags of one single-select group. */
-export function violatesSingleSelect(
-  selectedIds: Iterable<number>,
-  tags: Tag[],
-  groups: TagGroup[]
-): boolean {
-  const single = singleSelectGroupIds(groups);
-  const tagById = new Map(tags.map((t) => [t.id, t]));
-  const seen = new Set<number>();
-  for (const id of selectedIds) {
-    const gid = tagById.get(id)?.group_id;
-    if (gid == null || !single.has(gid)) continue;
-    if (seen.has(gid)) return true;
-    seen.add(gid);
-  }
-  return false;
-}
-
-/**
- * Toggle `tagId` in the selection. Selecting a tag of a single-select group
- * replaces that group's current selection (radio behaviour); toggling an
- * already-selected tag removes it. Returns a new Set.
- */
-export function applyTagSelection(
-  selectedIds: Set<number>,
-  tagId: number,
-  tags: Tag[],
-  groups: TagGroup[]
-): Set<number> {
-  const next = new Set(selectedIds);
-  if (next.has(tagId)) {
-    next.delete(tagId);
-    return next;
-  }
-  const tag = tags.find((t) => t.id === tagId);
-  const gid = tag?.group_id;
-  if (gid != null && singleSelectGroupIds(groups).has(gid)) {
-    for (const other of tags) {
-      if (other.group_id === gid) next.delete(other.id);
-    }
-  }
-  next.add(tagId);
-  return next;
 }
 
 // =============================================================================
@@ -196,7 +169,8 @@ function filterBuckets(filter: TagFilter, tags: Tag[], groups: TagGroup[]): Map<
   for (const id of filter.tagIds ?? []) {
     const tag = tagById.get(id);
     if (!tag) continue;
-    const gid = tag.group_id != null && groupIds.has(tag.group_id) ? tag.group_id : null;
+    const tagGid = groupIdOf(tag);
+    const gid = tagGid != null && groupIds.has(tagGid) ? tagGid : null;
     bucket(gid === null ? OTHER_BUCKET : String(gid), gid).tagIds.add(id);
   }
   for (const gid of filter.noneGroupIds ?? []) {
@@ -227,7 +201,7 @@ export function projectPassesTagFilter(
 
   for (const b of buckets.values()) {
     const hasWanted = [...b.tagIds].some((id) => projectTagIds.has(id));
-    const hasNone = b.none && !projectTags.some((t) => t.group_id === b.groupId);
+    const hasNone = b.none && !projectTags.some((t) => groupIdOf(t) === b.groupId);
     if (!hasWanted && !hasNone) return false;
   }
   return true;
@@ -325,7 +299,7 @@ export function projectBarColor(
   let best: Tag | null = null;
   for (const ref of project.tags ?? []) {
     const tag = tagById.get(ref.id);
-    if (tag && tag.group_id === group.id && (best === null || bySortThenName(tag, best) < 0)) {
+    if (tag && groupIdOf(tag) === group.id && (best === null || bySortThenName(tag, best) < 0)) {
       best = tag;
     }
   }

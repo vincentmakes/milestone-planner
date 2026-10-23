@@ -53,7 +53,8 @@ vi.mock('@/api/endpoints/sites', async () => {
   };
 });
 vi.mock('@/api/endpoints/skills', () => ({ skillsApi: { getAll: vi.fn() } }));
-vi.mock('@/api/endpoints/tags', () => ({ tagsApi: { getAll: vi.fn() }, tagGroupsApi: { getAll: vi.fn() } }));
+vi.mock('@/api/endpoints/tags', () => ({ tagsApi: { getAll: vi.fn() } }));
+vi.mock('@/api/endpoints/projectFields', () => ({ projectFieldsApi: { getAll: vi.fn() } }));
 vi.mock('@/api/endpoints/teams', () => ({ teamsApi: { getAll: vi.fn() } }));
 vi.mock('@/api/endpoints/roles', () => ({ rolesApi: { getAll: vi.fn(), getApprovalPolicies: vi.fn() } }));
 vi.mock('@/api/endpoints/absenceTypes', () => ({ absenceTypesApi: { getAll: vi.fn() } }));
@@ -68,7 +69,8 @@ import { getEquipment, getEquipmentBlocks } from '@/api/endpoints/equipment';
 import { getVacations } from '@/api/endpoints/vacations';
 import { getBankHolidays, getCompanyEvents, getSites } from '@/api/endpoints/sites';
 import { skillsApi } from '@/api/endpoints/skills';
-import { tagGroupsApi, tagsApi } from '@/api/endpoints/tags';
+import { tagsApi } from '@/api/endpoints/tags';
+import { projectFieldsApi } from '@/api/endpoints/projectFields';
 import { teamsApi } from '@/api/endpoints/teams';
 import { rolesApi } from '@/api/endpoints/roles';
 import { absenceTypesApi } from '@/api/endpoints/absenceTypes';
@@ -82,6 +84,7 @@ import {
   makeCustomColumn,
   makeEquipment,
   makeProject,
+  makeProjectField,
   makeRole,
   makeSite,
   makeSystemRoles,
@@ -110,7 +113,7 @@ function seedApi() {
   vi.mocked(getCompanyEvents).mockResolvedValue([event]);
   vi.mocked(skillsApi.getAll).mockResolvedValue([{ id: 1, name: 'HPLC' } as never]);
   vi.mocked(tagsApi.getAll).mockResolvedValue([makeTag()]);
-  vi.mocked(tagGroupsApi.getAll).mockResolvedValue([{ id: 1, name: 'Type' } as never]);
+  vi.mocked(projectFieldsApi.getAll).mockResolvedValue([makeProjectField()]);
   vi.mocked(teamsApi.getAll).mockResolvedValue([makeTeam()]);
   vi.mocked(rolesApi.getAll).mockResolvedValue(makeSystemRoles(makeRole()));
   vi.mocked(absenceTypesApi.getAll).mockResolvedValue([{ id: 1, name: 'Sick' } as never]);
@@ -164,7 +167,7 @@ describe('WebSocketProvider slice refresh', () => {
     expect(app.sites.map((s) => s.name)).toEqual(['Basel', 'Zurich']);
     expect(app.skills).toHaveLength(1);
     expect(app.tags).toHaveLength(1);
-    expect(app.tagGroups).toHaveLength(1);
+    expect(app.projectFields).toEqual([makeProjectField()]);
     expect(app.teams).toEqual([makeTeam()]);
     expect(app.roles.map((r) => r.key)).toEqual(['admin', 'superuser', 'user', 'team_lead']);
     expect(app.absenceTypes).toHaveLength(1);
@@ -186,6 +189,7 @@ describe('WebSocketProvider slice refresh', () => {
     }
     vi.mocked(skillsApi.getAll).mockImplementation(fail);
     vi.mocked(tagsApi.getAll).mockImplementation(fail);
+    vi.mocked(projectFieldsApi.getAll).mockImplementation(fail);
     vi.mocked(teamsApi.getAll).mockImplementation(fail);
     vi.mocked(rolesApi.getAll).mockImplementation(fail);
     vi.mocked(absenceTypesApi.getAll).mockImplementation(fail);
@@ -204,6 +208,7 @@ describe('WebSocketProvider slice refresh', () => {
         '[WS] sites refresh failed',
         '[WS] skills refresh failed',
         '[WS] tags refresh failed',
+        '[WS] project fields refresh failed',
         '[WS] teams refresh failed',
         '[WS] roles refresh failed',
         '[WS] absence types refresh failed',
@@ -335,6 +340,18 @@ describe('WebSocketProvider slice refresh', () => {
     expect(loadAllProjects).not.toHaveBeenCalled();
   });
 
+  it('reloads the project fields and the projects on change:project_field', async () => {
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    await receive('project_field');
+
+    const app = useAppStore.getState();
+    expect(projectFieldsApi.getAll).toHaveBeenCalledTimes(1);
+    expect(app.projectFields).toEqual([makeProjectField()]);
+    expect(app.projects.map((p) => p.name)).toEqual(['Fresh']);
+    expect(tagsApi.getAll).not.toHaveBeenCalled();
+    expect(teamsApi.getAll).not.toHaveBeenCalled();
+  });
+
   it('reloads teams and the slices that carry team links on change:team', async () => {
     render(<WebSocketProvider><div /></WebSocketProvider>);
     await receive('team');
@@ -345,6 +362,7 @@ describe('WebSocketProvider slice refresh', () => {
     expect(app.staff).toHaveLength(1);
     expect(app.projects.map((p) => p.name)).toEqual(['Fresh']);
     expect(app.tags).toHaveLength(1);
+    expect(app.projectFields).toEqual([makeProjectField()]);
     expect(app.equipment).toHaveLength(1);
     expect(getCompanyEvents).toHaveBeenCalledWith(1);
     expect(getVacations).not.toHaveBeenCalled();

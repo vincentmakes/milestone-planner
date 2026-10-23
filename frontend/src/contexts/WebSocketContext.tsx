@@ -24,7 +24,8 @@ import {
   buildEventDateSet,
 } from '@/api/endpoints/sites';
 import { skillsApi } from '@/api/endpoints/skills';
-import { tagsApi, tagGroupsApi } from '@/api/endpoints/tags';
+import { tagsApi } from '@/api/endpoints/tags';
+import { projectFieldsApi } from '@/api/endpoints/projectFields';
 import { teamsApi } from '@/api/endpoints/teams';
 import { rolesApi } from '@/api/endpoints/roles';
 import { refreshApprovalPoliciesIfLoaded } from '@/hooks/useApprovalPolicies';
@@ -75,7 +76,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   const setSites = useAppStore((s) => s.setSites);
   const setSkills = useAppStore((s) => s.setSkills);
   const setTags = useAppStore((s) => s.setTags);
-  const setTagGroups = useAppStore((s) => s.setTagGroups);
+  const setProjectFields = useAppStore((s) => s.setProjectFields);
   const setTeams = useAppStore((s) => s.setTeams);
   const setRoles = useAppStore((s) => s.setRoles);
   const setAbsenceTypes = useAppStore((s) => s.setAbsenceTypes);
@@ -167,16 +168,13 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
           tasks.push(skillsApi.getAll().then(setSkills).catch((e) => console.error('[WS] skills refresh failed', e)));
           break;
         case 'tags':
-          // Groups and tags are one slice: a group edit can re-group or recolour tags.
-          // Fetched together and written back to back, so no render sees a
-          // tag whose group_id points at a not-yet-loaded group.
+          tasks.push(tagsApi.getAll().then(setTags).catch((e) => console.error('[WS] tags refresh failed', e)));
+          break;
+        case 'projectFields':
           tasks.push(
-            Promise.all([tagsApi.getAll(), tagGroupsApi.getAll()])
-              .then(([tags, groups]) => {
-                setTags(tags);
-                setTagGroups(groups);
-              })
-              .catch((e) => console.error('[WS] tags refresh failed', e))
+            projectFieldsApi.getAll()
+              .then(setProjectFields)
+              .catch((e) => console.error('[WS] project fields refresh failed', e))
           );
           break;
         case 'teams':
@@ -266,7 +264,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     }
   }, [
     setProjects, setStaff, setEquipment, setEquipmentBlocks, setVacations, setSites,
-    setSkills, setTags, setTagGroups, setTeams, setRoles, setAbsenceTypes, setBankHolidays, setCompanyEvents,
+    setSkills, setTags, setProjectFields, setTeams, setRoles, setAbsenceTypes, setBankHolidays, setCompanyEvents,
     setInstanceSettings, setCurrentUser,
   ]);
 

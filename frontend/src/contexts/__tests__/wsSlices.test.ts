@@ -28,11 +28,12 @@ describe('slicesForEntity', () => {
     ['equipment', ['equipment', 'projects']],
     ['equipment_block', ['equipmentBlocks']],
     ['vacation', ['vacations']],
-    ['site', ['sites', 'siteCalendar', 'projects', 'tags', 'equipment', 'teams']],
+    ['site', ['sites', 'siteCalendar', 'projects', 'tags', 'projectFields', 'equipment', 'teams']],
     ['skill', ['skills', 'staff']],
     ['tag', ['tags', 'projects']],
-    ['tag_group', ['tags']],
-    ['team', ['teams', 'staff', 'projects', 'tags', 'equipment', 'siteCalendar']],
+    // Fields and items: a delete removes project values, so the tree reloads
+    ['project_field', ['projectFields', 'projects']],
+    ['team', ['teams', 'staff', 'projects', 'tags', 'projectFields', 'equipment', 'siteCalendar']],
     // RBAC: a role edit changes the signed-in user's permissions (/auth/me)
     // and the role list of Settings → Roles and the role pickers
     ['role', ['currentUser', 'roles']],
@@ -49,8 +50,8 @@ describe('slicesForEntity', () => {
 
   it('refreshes every slice for an unknown entity', () => {
     expect(slicesForEntity('brand_new_thing')).toBe(ALL_SLICES);
-    expect(new Set(ALL_SLICES).size).toBe(18);
-    expect(ALL_SLICES).toEqual(expect.arrayContaining(['approvals', 'approvalPolicies', 'todos', 'roles']));
+    expect(new Set(ALL_SLICES).size).toBe(19);
+    expect(ALL_SLICES).toEqual(expect.arrayContaining(['approvals', 'approvalPolicies', 'todos', 'roles', 'projectFields']));
   });
 
   it('sandboxes only the What-If plan slices', () => {

@@ -25,12 +25,13 @@ import type {
   InstanceSettings,
   Skill,
   Tag,
-  TagGroup,
+  ProjectField,
   Team,
   Role,
   ApprovalPolicy,
   AbsenceType,
 } from '@/types';
+import type { TagGroup } from '@/utils/tags';
 import { buildClosureIndex } from '@/utils/siteClosure';
 import type { ClosureIndex } from '@/utils/siteClosure';
 import { indexAbsenceTypes } from '@/utils/recurringVacation';
@@ -67,7 +68,14 @@ interface AppState {
   instanceSettings: InstanceSettings | null;
   skills: Skill[];
   tags: Tag[];
+  /**
+   * @deprecated Task 4 shim: tag groups are gone (2.0.0); nothing loads this
+   * any more, so it stays empty. Only the Gantt filter / Group by / Colour by
+   * code still reads it until it moves to project fields.
+   */
   tagGroups: TagGroup[];
+  /** Project field definitions with their items, in display order */
+  projectFields: ProjectField[];
   /** Teams of every site, including inactive ones */
   teams: Team[];
   /**
@@ -119,7 +127,9 @@ interface AppState {
   setInstanceSettings: (settings: InstanceSettings | null) => void;
   setSkills: (skills: Skill[]) => void;
   setTags: (tags: Tag[]) => void;
+  /** @deprecated Task 4 shim, see `tagGroups` */
   setTagGroups: (tagGroups: TagGroup[]) => void;
+  setProjectFields: (projectFields: ProjectField[]) => void;
   setTeams: (teams: Team[]) => void;
   setRoles: (roles: Role[]) => void;
   setApprovalPolicies: (approvalPolicies: ApprovalPolicy[]) => void;
@@ -177,6 +187,7 @@ const initialState = {
   skills: [] as Skill[],
   tags: [] as Tag[],
   tagGroups: [] as TagGroup[],
+  projectFields: [] as ProjectField[],
   teams: [] as Team[],
   roles: [] as Role[],
   approvalPolicies: [] as ApprovalPolicy[],
@@ -236,6 +247,8 @@ export const useAppStore = create<AppState>()(
       setTags: (tags) => set({ tags }),
 
       setTagGroups: (tagGroups) => set({ tagGroups }),
+
+      setProjectFields: (projectFields) => set({ projectFields }),
 
       setTeams: (teams) => set({ teams }),
 

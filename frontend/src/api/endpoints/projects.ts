@@ -21,6 +21,7 @@ import type {
   EquipmentAssignment,
   CreateEquipmentAssignmentRequest,
   CardStatus,
+  ProjectFieldValue,
 } from '@/types';
 
 // =============================================================================
@@ -354,6 +355,21 @@ export async function deleteEquipmentAssignment(assignmentId: number): Promise<v
 /**
  * Transform API response from snake_case to camelCase
  */
+/**
+ * `field_values` as the API sends it (a JSON object keyed by the field id as a
+ * string) → numeric keys. Non-numeric keys are dropped; a missing or
+ * malformed object becomes `{}`.
+ */
+export function transformFieldValues(raw: unknown): Record<number, ProjectFieldValue> {
+  const values: Record<number, ProjectFieldValue> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return values;
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const id = Number(key);
+    if (Number.isInteger(id) && id > 0) values[id] = value as ProjectFieldValue;
+  }
+  return values;
+}
+
 function transformProject(project: Record<string, unknown>): Project {
   const phases = (project.phases ?? []) as Record<string, unknown>[];
   const staffAssignments = (project.staff_assignments ?? project.staffAssignments ?? []) as Record<string, unknown>[];
@@ -364,6 +380,7 @@ function transformProject(project: Record<string, unknown>): Project {
     phases: phases.map(transformPhase),
     staffAssignments: staffAssignments.map((a) => transformStaffAssignment(a)),
     equipmentAssignments: equipmentAssignments.map(transformEquipmentAssignment),
+    field_values: transformFieldValues(project.field_values),
   };
 }
 

@@ -14,6 +14,8 @@ import type {
   Equipment,
   Phase,
   Project,
+  ProjectField,
+  ProjectFieldOption,
   Role,
   Site,
   Staff,
@@ -24,6 +26,7 @@ import type {
   User,
   Vacation,
 } from '@/types';
+import type { LegacyGroupedTag } from '@/utils/tags';
 import { permissionsForRole, roleNameFor } from './permissionFixtures';
 import type { PermissionMatrix } from '@/types';
 
@@ -130,6 +133,7 @@ export function makeProject(overrides: Partial<Project> = {}): Project {
     equipmentAssignments: [],
     tags: [],
     team_ids: [],
+    field_values: {},
     ...overrides,
   };
 }
@@ -189,16 +193,43 @@ export function makeVacation(overrides: Partial<Vacation> = {}): Vacation {
   };
 }
 
-export function makeTag(overrides: Partial<Tag> = {}): Tag {
+/**
+ * A tag. `group_id` is accepted only for the Gantt grouping tests until they
+ * move to project fields (Task 4 shim: tags have no group since 2.0.0).
+ */
+export function makeTag(overrides: Partial<LegacyGroupedTag> = {}): Tag {
   return {
     id: 1,
     name: 'Customer',
     color: '#10b981',
-    group_id: null,
     all_sites: true,
     site_ids: [],
     sort_order: 0,
     team_ids: [],
+    ...overrides,
+  };
+}
+
+export function makeProjectFieldOption(overrides: Partial<ProjectFieldOption> = {}): ProjectFieldOption {
+  return {
+    id: 1,
+    name: 'Internal',
+    color: '#6366f1',
+    sort_order: 0,
+    all_sites: true,
+    site_ids: [],
+    team_ids: [],
+    ...overrides,
+  };
+}
+
+export function makeProjectField(overrides: Partial<ProjectField> = {}): ProjectField {
+  return {
+    id: 1,
+    name: 'Project type',
+    field_type: 'select',
+    sort_order: 0,
+    options: [],
     ...overrides,
   };
 }

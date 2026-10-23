@@ -9,7 +9,8 @@ import { KanbanView } from '../KanbanView';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
-import type { Project, Tag } from '@/types';
+import type { Project } from '@/types';
+import type { LegacyGroupedTag } from '@/utils/tags';
 import { tagFilterKey } from '@/utils/tags';
 import { makeTeam, makeUser } from '@/test/factories';
 
@@ -21,7 +22,7 @@ vi.mock('@/contexts/WebSocketContext', () => ({
   useWebSocketContext: () => ({ recentChanges: [] }),
 }));
 
-const pilot: Tag = { id: 7, name: 'Pilot', color: '#10b981', group_id: null, all_sites: true, site_ids: [], sort_order: 0 };
+const pilot: LegacyGroupedTag = { id: 7, name: 'Pilot', color: '#10b981', group_id: null, all_sites: true, site_ids: [], sort_order: 0 };
 
 function makeProject(id: number, name: string, tagIds: number[]): Project {
   return {
@@ -36,7 +37,7 @@ function makeProject(id: number, name: string, tagIds: number[]): Project {
     phases: [],
     staffAssignments: [],
     equipmentAssignments: [],
-    tags: tagIds.map((t) => ({ id: t, name: 'stale', color: '#000000', group_id: null })),
+    tags: tagIds.map((t) => ({ id: t, name: 'stale', color: '#000000' })),
   } as Project;
 }
 

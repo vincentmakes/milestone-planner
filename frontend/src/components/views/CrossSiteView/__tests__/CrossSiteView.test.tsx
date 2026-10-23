@@ -60,6 +60,16 @@ describe('CrossSiteView', () => {
     expect(screen.getAllByText('***')).toHaveLength(2);
   });
 
+  it('leaves the customer out, masked or not, while the Customer field is hidden', () => {
+    useAppStore.setState({ instanceSettings: { project_fields_hidden: '["customer"]' } });
+    const { container } = render(<CrossSiteView />);
+    const panel = container.querySelector('[class*="panelBody"]')!;
+    expect(panel.textContent).toMatch(/Alpha Study.*Zeta Upgrade/);
+    expect(panel.textContent).not.toMatch(/Acme/);
+    expect(screen.queryAllByText('***')).toHaveLength(0);
+    expect(screen.getAllByText('Confidential Project')).toHaveLength(2);
+  });
+
   it('lists only the sites the user can see', () => {
     const bern = makeSite({ id: 3, name: 'Bern' });
     useAppStore.setState({ sites: [basel, zurich, bern], currentUser: makeUser({ role: 'user', site_ids: [1, 3] }) });

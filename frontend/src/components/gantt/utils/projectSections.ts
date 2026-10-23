@@ -16,7 +16,8 @@
  */
 
 import { groupedTags } from '@/utils/tags';
-import type { Project, Tag, TagGroup } from '@/types';
+import type { Project, Tag } from '@/types';
+import type { TagGroup } from '@/utils/tags';
 
 /** `tag-<tag id>`, or `none` for projects without a tag of the group. */
 export type GanttSectionKey = `tag-${number}` | 'none';

@@ -13,7 +13,8 @@ import type { TimelineCell } from '../utils/timeline';
 import { buildEventDateSet } from '@/api';
 import { tagFilterKey } from '@/utils/tags';
 import { makeTeam } from '@/test/factories';
-import type { CompanyEvent, Project, Site, Tag, TagGroup } from '@/types';
+import type { CompanyEvent, Project, Site } from '@/types';
+import type { TagGroup, LegacyGroupedTag } from '@/utils/tags';
 
 interface PanelProps { rows?: GanttRow[]; onProjectReorder?: unknown; onToggleSection?: (k: string) => void }
 interface TimelineProps { rows?: GanttRow[]; projects: Project[]; cells: TimelineCell[] }
@@ -42,7 +43,7 @@ vi.mock('@/components/views/StaffView/StaffView', () => ({ StaffView: () => null
 vi.mock('@/components/views/EquipmentView/EquipmentView', () => ({ EquipmentView: () => null }));
 
 const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, sort_order: 0 };
-const tags: Tag[] = [
+const tags: LegacyGroupedTag[] = [
   { id: 1, name: 'Internal', color: '#fde047', group_id: 1, all_sites: true, site_ids: [], sort_order: 0 },
 ];
 const projects = [

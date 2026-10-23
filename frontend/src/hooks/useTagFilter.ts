@@ -23,7 +23,8 @@ import { useViewStore } from '@/stores/viewStore';
 import { useTeamFilter } from '@/hooks/useTeamFilter';
 import { normalizeSiteTagFilter, projectPassesTagFilter, tagFilterKey, tagsForSite } from '@/utils/tags';
 import type { TagFilter } from '@/utils/tags';
-import type { Project, Tag, TagGroup } from '@/types';
+import type { Project, Tag } from '@/types';
+import type { TagGroup } from '@/utils/tags';
 
 export interface SiteTagFilter {
   siteId: number | null;

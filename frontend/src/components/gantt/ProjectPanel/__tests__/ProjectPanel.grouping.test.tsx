@@ -13,7 +13,8 @@ import { buildGanttRows, buildProjectSections, flatGanttRows } from '../../utils
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
-import type { Project, Site, Tag, TagGroup } from '@/types';
+import type { Project, Site } from '@/types';
+import type { TagGroup, LegacyGroupedTag } from '@/utils/tags';
 import { makeUser } from '@/test/factories';
 
 vi.mock('@/api', () => ({}));
@@ -32,7 +33,7 @@ vi.mock('../ProjectRow', () => ({
 }));
 
 const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, sort_order: 0 };
-const tags: Tag[] = [
+const tags: LegacyGroupedTag[] = [
   { id: 1, name: 'Internal', color: '#fde047', group_id: 1, all_sites: true, site_ids: [], sort_order: 0 },
   { id: 2, name: 'Customer', color: '#1d4ed8', group_id: 1, all_sites: true, site_ids: [], sort_order: 1 },
 ];

@@ -3,8 +3,6 @@ import {
   tagsForSite,
   tagsForProjectScope,
   groupedTags,
-  violatesSingleSelect,
-  applyTagSelection,
   projectPassesTagFilter,
   isTagFilterActive,
   normalizeTagFilter,
@@ -17,10 +15,11 @@ import {
   relativeLuminance,
   EMPTY_TAG_FILTER,
 } from '../tags';
-import type { Tag, TagGroup, Project } from '@/types';
+import type { Tag, Project } from '@/types';
+import type { TagGroup, LegacyGroupedTag } from '@/utils/tags';
 import { makeTeam } from '@/test/factories';
 
-function tag(id: number, name: string, extra: Partial<Tag> = {}): Tag {
+function tag(id: number, name: string, extra: Partial<LegacyGroupedTag> = {}): LegacyGroupedTag {
   return {
     id,
     name,
@@ -139,31 +138,6 @@ describe('groupedTags', () => {
     const orphan = tag(40, 'Orphan', { group_id: 77 });
     const sections = groupedTags([orphan], groups);
     expect(sections).toEqual([{ group: null, tags: [orphan] }]);
-  });
-});
-
-describe('single-select groups', () => {
-  it('detects two tags of one single-select group', () => {
-    expect(violatesSingleSelect([10, 11], tags, groups)).toBe(true);
-    expect(violatesSingleSelect(new Set([10, 20, 21, 30]), tags, groups)).toBe(false);
-    expect(violatesSingleSelect([], tags, groups)).toBe(false);
-  });
-
-  it('replaces the group selection when adding a single-select tag', () => {
-    const next = applyTagSelection(new Set([10, 20]), 11, tags, groups);
-    expect([...next].sort()).toEqual([11, 20]);
-  });
-
-  it('adds freely in multi-select groups and ungrouped tags', () => {
-    expect([...applyTagSelection(new Set([20]), 21, tags, groups)].sort()).toEqual([20, 21]);
-    expect([...applyTagSelection(new Set([30]), 31, tags, groups)].sort()).toEqual([30, 31]);
-  });
-
-  it('removes an already-selected tag and never mutates the input', () => {
-    const input = new Set([10, 20]);
-    const next = applyTagSelection(input, 10, tags, groups);
-    expect([...next]).toEqual([20]);
-    expect([...input]).toEqual([10, 20]);
   });
 });
 

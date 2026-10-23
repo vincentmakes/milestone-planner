@@ -8,15 +8,16 @@ import { renderHook, act } from '@testing-library/react';
 import { useGanttGrouping } from '../useGanttGrouping';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
-import type { Site, Tag, TagGroup } from '@/types';
+import type { Site } from '@/types';
+import type { TagGroup, LegacyGroupedTag } from '@/utils/tags';
 
-function tag(id: number, name: string, extra: Partial<Tag> = {}): Tag {
+function tag(id: number, name: string, extra: Partial<LegacyGroupedTag> = {}): LegacyGroupedTag {
   return { id, name, color: '#10b981', group_id: 1, all_sites: true, site_ids: [], sort_order: 0, ...extra };
 }
 
 const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, sort_order: 0 };
 const AREA: TagGroup = { id: 2, name: 'Area', single_select: false, sort_order: 1 };
-const tags: Tag[] = [
+const tags: LegacyGroupedTag[] = [
   tag(1, 'Internal'),
   tag(2, 'Customer'),
   tag(3, 'Bio', { group_id: 2, all_sites: false, site_ids: [2] }),

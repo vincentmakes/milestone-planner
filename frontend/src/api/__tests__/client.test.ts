@@ -86,21 +86,25 @@ describe('apiRequest', () => {
       ]);
     });
 
-    it('lets tag and tag-group writes through while a project write is still queued', async () => {
+    it('lets tag and project-field writes through while a project write is still queued', async () => {
       whatIf = true;
       fetchMock.mockImplementation(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
       await apiRequest('/api/tags', { method: 'POST', body: { name: 'Pilot' } });
       await apiRequest('/api/tags/3', { method: 'PUT', body: { color: '#ff0000' } });
       await apiRequest('/api/tags/reorder', { method: 'PUT', body: { tag_order: [3, 1] } });
-      await apiRequest('/api/tag-groups', { method: 'POST', body: { name: 'Type' } });
-      await apiRequest('/api/tag-groups/2', { method: 'DELETE' });
-      await apiRequest('/api/tag-groups/reorder', { method: 'PUT', body: { group_order: [2] } });
-      expect(fetchMock).toHaveBeenCalledTimes(6);
+      await apiRequest('/api/project-fields', { method: 'POST', body: { name: 'Type', field_type: 'select' } });
+      await apiRequest('/api/project-fields/2', { method: 'DELETE' });
+      await apiRequest('/api/project-fields/reorder', { method: 'PUT', body: { field_order: [2] } });
+      await apiRequest('/api/project-fields/2/options', { method: 'POST', body: { name: 'QA' } });
+      await apiRequest('/api/project-fields/options/51', { method: 'PUT', body: { color: '#ff0000' } });
+      expect(fetchMock).toHaveBeenCalledTimes(8);
       expect(queued).toEqual([]);
 
-      await apiRequest('/api/projects/7', { method: 'PUT', body: { tag_ids: [3] } });
-      expect(fetchMock).toHaveBeenCalledTimes(6);
-      expect(queued).toEqual([{ method: 'PUT', url: '/api/projects/7', body: { tag_ids: [3] } }]);
+      // A project's tags and field values are plan data: queued
+      const body = { tag_ids: [3], field_values: { 2: [51] } };
+      await apiRequest('/api/projects/7', { method: 'PUT', body });
+      expect(fetchMock).toHaveBeenCalledTimes(8);
+      expect(queued).toEqual([{ method: 'PUT', url: '/api/projects/7', body }]);
     });
 
     const CONFIGURATION_URLS = [
@@ -121,7 +125,10 @@ describe('apiRequest', () => {
       '/api/users/8/toggle-active',
       '/api/tags',
       '/api/tags/3',
-      '/api/tag-groups/2',
+      '/api/project-fields',
+      '/api/project-fields/2',
+      '/api/project-fields/2/usage',
+      '/api/project-fields/options/51',
       '/api/teams',
       '/api/teams/3',
       '/api/sites',

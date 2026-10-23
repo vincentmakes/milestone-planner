@@ -21,6 +21,7 @@ import {
   deleteSubphase,
   fetchAllProjects,
   getProject,
+  transformFieldValues,
   getProjects,
   restoreProject,
   updateEquipmentAssignment,
@@ -229,6 +230,37 @@ describe('assignments route by level', () => {
     await deleteEquipmentAssignment(8);
     expect(put).toHaveBeenCalledWith('/api/equipment-assignments/8', { end_date: 'c' });
     expect(del).toHaveBeenCalledWith('/api/equipment-assignments/8');
+  });
+});
+
+describe('transformFieldValues', () => {
+  it('turns the JSON string keys into field ids and keeps every value shape', () => {
+    expect(transformFieldValues({ '1': 'Pilot plant', '2': 1250, '3': false, '4': 42, '5': [51, 52] })).toEqual({
+      1: 'Pilot plant',
+      2: 1250,
+      3: false,
+      4: 42,
+      5: [51, 52],
+    });
+  });
+
+  it('drops keys that are not field ids and reads anything else as no values', () => {
+    expect(transformFieldValues({ x: 1, '0': 2, '-3': 3, '1.5': 4, '7': 'ok' })).toEqual({ 7: 'ok' });
+    expect(transformFieldValues(undefined)).toEqual({});
+    expect(transformFieldValues(null)).toEqual({});
+    expect(transformFieldValues([1, 2])).toEqual({});
+    expect(transformFieldValues('nope')).toEqual({});
+  });
+
+  it('is applied by fetchAllProjects (absent = {})', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/projects?')) return { items: [{ id: 1 }, { id: 2 }], total: 2 };
+      return url.endsWith('/1')
+        ? { id: 1, name: 'A', site_id: 1, field_values: { '3': [7] } }
+        : { id: 2, name: 'B', site_id: 1 };
+    });
+    const projects = await fetchAllProjects();
+    expect(projects.map((p) => p.field_values)).toEqual([{ 3: [7] }, {}]);
   });
 });
 

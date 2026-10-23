@@ -74,6 +74,38 @@ describe('ArchivedView edit button', () => {
   });
 });
 
+describe('ArchivedView customer', () => {
+  afterEach(() => useAppStore.setState({ instanceSettings: null }));
+
+  it('shows the customer, or "No customer" named with the custom label', () => {
+    seed({ id: 1, role: 'admin' });
+    const { unmount } = render(<ArchivedView />);
+    expect(screen.getByText('Acme')).toBeInTheDocument();
+    unmount();
+
+    useAppStore.setState({
+      projects: [{ ...archived, customer: null }],
+      instanceSettings: { project_field_labels: '{"customer":"Client"}' },
+    });
+    const second = render(<ArchivedView />);
+    expect(screen.getByText('No Client')).toBeInTheDocument();
+    second.unmount();
+
+    useAppStore.setState({ instanceSettings: null });
+    render(<ArchivedView />);
+    expect(screen.getByText('No customer')).toBeInTheDocument();
+  });
+
+  it('leaves the customer out while the Customer field is hidden', () => {
+    seed({ id: 1, role: 'admin' });
+    useAppStore.setState({ instanceSettings: { project_fields_hidden: '["customer"]' } });
+    render(<ArchivedView />);
+    expect(screen.getByText('Pat Manager')).toBeInTheDocument();
+    expect(screen.queryByText('Acme')).not.toBeInTheDocument();
+    expect(screen.queryByText(' · ')).not.toBeInTheDocument();
+  });
+});
+
 describe('ArchivedView team filter', () => {
   afterEach(() => {
     useViewStore.setState({ teamFilters: {} });
