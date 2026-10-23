@@ -149,6 +149,17 @@ describe('ProjectModal project fields', () => {
     expect(useAppStore.getState().projects[0].field_values).toEqual({});
   });
 
+  it('keeps the inline tags in the response shape ({id, name, color}) on the local patch', async () => {
+    useAppStore.setState({
+      tags: [{ id: 7, name: 'GMP', color: '#ef4444', all_sites: true, site_ids: [], sort_order: 0 }],
+    });
+    act(() => useUIStore.getState().openProjectModal({ ...project, tags: [{ id: 7, name: 'stale', color: '#000000' }] }));
+    render(<ProjectModal />);
+    await save();
+    expect(sent(updateProject).tag_ids).toEqual([7]);
+    expect(useAppStore.getState().projects[0].tags).toEqual([{ id: 7, name: 'GMP', color: '#ef4444' }]);
+  });
+
   it('sends no field_values when nothing changed', async () => {
     act(() => useUIStore.getState().openProjectModal(project));
     render(<ProjectModal />);
