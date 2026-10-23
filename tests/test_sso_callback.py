@@ -370,3 +370,57 @@ async def test_callback_reports_an_unreachable_identity_provider(app_client, moc
 
     assert resp.status_code == 302
     assert "Could not reach the identity provider" in sso_error_of(resp)
+
+
+# ---------------------------------------------------------------------------
+# Code scanning: nothing derived from the secret is logged, and every SSO
+# redirect stays a same-origin path
+# ---------------------------------------------------------------------------
+
+
+def test_config_fingerprint_logs_only_the_presence_of_the_secret():
+    """Neither the secret nor a digest of it reaches the log line."""
+    import hashlib
+
+    from app.routers.auth import _config_fingerprint
+
+    secret = ORG_CONFIG["client_secret"]
+    line = _config_fingerprint(ORG_CONFIG, "organization")
+    assert "secret=set" in line
+    assert secret not in line
+    assert hashlib.sha256(secret.encode()).hexdigest()[:8] not in line
+    assert "secret=missing" in _config_fingerprint({**ORG_CONFIG, "client_secret": " "}, "tenant")
+    assert "secret=missing" in _config_fingerprint({**ORG_CONFIG, "client_secret": None}, "tenant")
+
+
+@pytest.mark.asyncio
+async def test_callback_log_carries_no_secret_digest(app_client, mock_db_session, caplog):
+    """The callback's own log lines (both hops' fingerprint) hold no secret material."""
+    import hashlib
+    import logging
+
+    state = browser_state(app_client, "acme")
+    entra = MagicMock()
+    entra.post = AsyncMock(return_value=entra_rejection("AADSTS7000215"))
+    entra.__aenter__ = AsyncMock(return_value=entra)
+    entra.__aexit__ = AsyncMock(return_value=False)
+    with (
+        caplog.at_level(logging.INFO, logger="app.routers.auth"),
+        resolved_tenant(mock_db_session),
+        patch.object(
+            SSOService,
+            "get_effective_sso_config",
+            AsyncMock(return_value=(ORG_CONFIG, "organization")),
+        ),
+        patch("app.routers.auth.httpx.AsyncClient", return_value=entra),
+    ):
+        resp = await app_client.get(
+            f"/api/auth/sso/callback?code=abc&state={state}", follow_redirects=False
+        )
+
+    assert resp.status_code == 302
+    secret = ORG_CONFIG["client_secret"]
+    digest = hashlib.sha256(secret.encode()).hexdigest()[:8]
+    assert "secret=set" in caplog.text
+    assert secret not in caplog.text
+    assert digest not in caplog.text

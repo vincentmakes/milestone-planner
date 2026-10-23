@@ -5,7 +5,6 @@ Handles login, logout, session management, and SSO.
 Matches the Node.js API at /api/auth exactly.
 """
 
-import hashlib
 import logging
 from contextlib import asynccontextmanager
 from urllib.parse import quote_plus
@@ -799,15 +798,14 @@ def _config_fingerprint(config: dict, source: str) -> str:
     independently, and a redemption that quietly used a *different* config than
     the sign-in is the hardest SSO failure to see from the outside — Entra just
     reports a redirect-URI mismatch. Logging this on both hops makes the two
-    directly comparable. The secret is reduced to a short digest, which proves
-    both hops used the same credential without disclosing it.
+    directly comparable. Of the secret only its presence is logged: nothing
+    derived from it (not even a digest) goes to the log.
     """
-    secret = config.get("client_secret") or ""
-    secret_fp = hashlib.sha256(secret.encode()).hexdigest()[:8] if secret else "none"
+    secret_state = "set" if (config.get("client_secret") or "").strip() else "missing"
     return (
         f"source={source} client_id={config.get('client_id')} "
         f"entra_tenant={config.get('tenant_id')} redirect_uri={config.get('redirect_uri')} "
-        f"secret_fp={secret_fp}"
+        f"secret={secret_state}"
     )
 
 
