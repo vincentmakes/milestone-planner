@@ -126,7 +126,8 @@ async def test_rows_come_in_foreign_key_order(loaded):
         "users",
         "teams",
         "equipment",
-        "tag_groups",
+        "project_fields",
+        "project_field_options",
         "tags",
         "projects",
         "project_phases",
@@ -149,6 +150,7 @@ async def test_rows_come_in_foreign_key_order(loaded):
     assert conn.first_insert_index("user_sites") > conn.first_insert_index("users")
     assert conn.first_insert_index("equipment_sites") > conn.first_insert_index("equipment")
     assert conn.first_insert_index("project_tags") > conn.first_insert_index("projects")
+    assert conn.first_insert_index("project_field_selections") > conn.first_insert_index("projects")
     assert conn.first_insert_index("company_event_sites") > conn.first_insert_index(
         "company_events"
     )
@@ -174,6 +176,14 @@ async def test_counts_match_the_data_set(loaded):
     assert len(conn.inserts("team_members")) == sum(len(t["members"]) for t in demo.teams)
     assert len(conn.inserts("project_teams")) == sum(len(p["teams"]) for p in demo.projects)
     assert len(conn.inserts("tag_teams")) == sum(len(t["teams"]) for t in demo.tags)
+    assert counts["project_fields"] == len(demo.project_fields)
+    assert len(conn.inserts("project_fields")) == len(demo.project_fields)
+    assert len(conn.inserts("project_field_options")) == sum(
+        len(f["options"]) for f in demo.project_fields
+    )
+    assert len(conn.inserts("project_field_selections")) == sum(
+        len(items) for p in demo.projects for items in p["fields"].values()
+    )
     assert len(conn.inserts("equipment_teams")) == sum(len(e["teams"]) for e in demo.equipment)
     assert len(conn.inserts("company_event_teams")) == sum(
         len(ev["teams"]) for ev in demo.company_events
@@ -233,6 +243,57 @@ async def test_team_links_resolve_to_the_handed_out_ids(loaded):
     spectrometer = conn.ids[("equipment", ("Mass Spectrometer",))]
     assert links("equipment_teams") >= {(spectrometer, lab)}
     assert all("ON CONFLICT DO NOTHING" in s for s, _ in conn.inserts("team_members"))
+
+
+async def test_project_field_rows_resolve_to_the_handed_out_ids(loaded):
+    conn, _, _ = loaded
+
+    def field(name):
+        return conn.ids[("project_fields", (name,))]
+
+    def item(field_name, name):
+        return conn.ids[("project_field_options", (field(field_name), name))]
+
+    fields = {args[0]: args for _, args in conn.inserts("project_fields")}
+    assert fields["Project type"][:3] == ("Project type", "select", 0)
+    assert fields["Area"][:3] == ("Area", "multiselect", 1)
+    options = {args[1]: args for _, args in conn.inserts("project_field_options")}
+    # field_id, name, color, all_sites, sort_order
+    assert options["Customer"][:5] == (field("Project type"), "Customer", "#0ea5e9", True, 1)
+    assert options["QA"][0] == field("Area")
+    site = conn.ids[("sites", ("Winterthur",))]
+    bioprocess = conn.ids[("projects", ("Bioprocess Scale-Up", site))]
+    analytical = conn.ids[("projects", ("Analytical Method Transfer", site))]
+    selections = {args for _, args in conn.inserts("project_field_selections")}
+    assert (bioprocess, item("Project type", "Customer")) in selections
+    assert (bioprocess, item("Area", "Process")) in selections
+    assert {(analytical, item("Area", "Analytics")), (analytical, item("Area", "QA"))} <= selections
+    assert all("ON CONFLICT DO NOTHING" in s for s, _ in conn.inserts("project_field_selections"))
+    # Tags no longer carry a group.
+    assert all("group_id" not in s for s, _ in conn.inserts("tags"))
+
+
+async def test_restricted_field_items_get_their_site_and_team_links():
+    conn = RecordingConn()
+    demo = build_demo(date(2026, 10, 17))
+    qa = next(o for o in demo.project_fields[1]["options"] if o["name"] == "QA")
+    qa["sites"] = ["Frankfurt"]
+    qa["teams"] = [("Frankfurt", "QA & Compliance")]
+    for p in demo.projects:  # keep the data consistent: QA only on the Frankfurt project
+        if p["site"] != "Frankfurt" and "QA" in p["fields"].get("Area", []):
+            p["fields"]["Area"].remove("QA")
+
+    await demo_seed.insert_demo_data(conn, demo)
+
+    frankfurt = conn.ids[("sites", ("Frankfurt",))]
+    team = conn.ids[("teams", (frankfurt, "QA & Compliance"))]
+    option = conn.ids[("project_field_options", (conn.ids[("project_fields", ("Area",))], "QA"))]
+    assert [args for _, args in conn.inserts("project_field_option_sites")] == [(option, frankfurt)]
+    assert [args for _, args in conn.inserts("project_field_option_teams")] == [(option, team)]
+    assert next(a for _, a in conn.inserts("project_field_options") if a[1] == "QA")[3] is False
+    for table in ("project_field_option_sites", "project_field_option_teams"):
+        assert all("ON CONFLICT DO NOTHING" in s for s, _ in conn.inserts(table))
+        assert conn.first_insert_index(table) > conn.first_insert_index("project_field_options")
 
 
 async def test_dependency_json_uses_resolved_ids_and_names_the_kind(loaded):

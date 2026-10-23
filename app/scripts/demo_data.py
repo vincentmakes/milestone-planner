@@ -2,12 +2,13 @@
 The demo tenant's data, as plain Python — no database.
 
 `build_demo(today)` returns every row the demo seed inserts, keyed by *names*
-(e-mails for people, names for sites/projects/phases/equipment/tags) and with
+(e-mails for people, names for sites/projects/phases/equipment/tags/project
+fields and their items) and with
 every date relative to `today`. `app/scripts/seed_demo.py` resolves the names
 to ids as it inserts; `tests/test_demo_data.py` checks the data against the
-app's rules (status/completion pairs, single-select tag groups, site-restricted
-tags, team scopes, mention tokens, dependency shape, PM membership) without a
-database.
+app's rules (status/completion pairs, one item per single-select project
+field, site-restricted tags, team scopes, mention tokens, dependency shape, PM
+membership) without a database.
 
 The four canonical projects (Bioprocess Scale-Up, Catalyst Optimization,
 Analytical Method Transfer, Quality System Upgrade) and the people's names are
@@ -80,7 +81,9 @@ class DemoData:
     users: list[Row] = field(default_factory=list)  # incl. the admin
     teams: list[Row] = field(default_factory=list)  # per site, members by e-mail
     equipment: list[Row] = field(default_factory=list)
-    tag_groups: list[Row] = field(default_factory=list)
+    # Project fields (2.0.0) with their dropdown items; projects name their
+    # chosen items per field (``fields``: {field name: [item names]}).
+    project_fields: list[Row] = field(default_factory=list)
     tags: list[Row] = field(default_factory=list)
     projects: list[Row] = field(default_factory=list)
     phases: list[Row] = field(default_factory=list)
@@ -430,35 +433,35 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         dict(name="Freeze Dryer", type="Processing", sites=[FRANKFURT], teams=[]),
     ]
 
-    d.tag_groups = [
-        dict(name="Project type", single_select=True, sort_order=0),
-        dict(name="Area", single_select=False, sort_order=1),
+    # The former tag groups (converted by the 2.0.0 migration): "Project type"
+    # is a single-select field, "Area" a multiselect one; items keep the tags'
+    # colours and order. Every item is available at every site.
+    def item(name: str, color: str, sort_order: int) -> Row:
+        return dict(name=name, color=color, sort_order=sort_order, sites=None, teams=[])
+
+    d.project_fields = [
+        dict(
+            name="Project type",
+            field_type="select",
+            sort_order=0,
+            options=[item("Internal", "#6366f1", 0), item("Customer", "#0ea5e9", 1)],
+        ),
+        dict(
+            name="Area",
+            field_type="multiselect",
+            sort_order=1,
+            options=[
+                item("Process", "#f97316", 0),
+                item("Analytics", "#8b5cf6", 1),
+                item("QA", "#10b981", 2),
+            ],
+        ),
     ]
     d.tags = [
-        dict(
-            name="Internal",
-            color="#6366f1",
-            group="Project type",
-            sort_order=0,
-            sites=None,
-            teams=[],
-        ),
-        dict(
-            name="Customer",
-            color="#0ea5e9",
-            group="Project type",
-            sort_order=1,
-            sites=None,
-            teams=[],
-        ),
-        dict(name="Process", color="#f97316", group="Area", sort_order=0, sites=None, teams=[]),
-        dict(name="Analytics", color="#8b5cf6", group="Area", sort_order=1, sites=None, teams=[]),
-        dict(name="QA", color="#10b981", group="Area", sort_order=2, sites=None, teams=[]),
-        dict(name="Critical", color="#ef4444", group=None, sort_order=0, sites=None, teams=[]),
+        dict(name="Critical", color="#ef4444", sort_order=0, sites=None, teams=[]),
         dict(
             name="Tech Transfer",
             color="#14b8a6",
-            group=None,
             sort_order=1,
             sites=None,
             teams=[],
@@ -468,7 +471,6 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         dict(
             name="GMP",
             color="#a855f7",
-            group=None,
             sort_order=2,
             sites=[FRANKFURT],
             teams=[(FRANKFURT, "QA & Compliance")],
@@ -486,6 +488,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         pm: str | None = None,
         sales_pm: str | None = None,
         tags: tuple[str, ...] = (),
+        fields: dict[str, list[str]] | None = None,
         teams: tuple[str, ...] = (),
         archived: bool = False,
         notes: str | None = None,
@@ -500,6 +503,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             pm=pm,
             sales_pm=sales_pm,
             tags=list(tags),
+            fields=dict(fields or {}),  # {project field name: [item names]}
             teams=list(teams),  # team names at the project's site
             archived=archived,
             notes=notes,
@@ -514,7 +518,8 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             today - day(30),
             today + day(150),
             sales_pm="M. Keller",
-            tags=("Internal", "Critical", "Analytics"),
+            tags=("Critical",),
+            fields={"Project type": ["Internal"], "Area": ["Analytics"]},
             teams=("Analytical Lab",),
         ),
         project(
@@ -525,7 +530,8 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             today - day(15),
             today + day(200),
             pm=BOB,
-            tags=("Customer", "Critical", "Process", "Tech Transfer"),
+            tags=("Critical", "Tech Transfer"),
+            fields={"Project type": ["Customer"], "Area": ["Process"]},
             teams=("Process Development", "Analytical Lab"),
         ),
         project(
@@ -537,7 +543,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             today + day(120),
             pm=CHARLIE,  # a plain user who manages one project (PM rule)
             sales_pm="S. Weber",
-            tags=("Customer", "Analytics", "QA"),
+            fields={"Project type": ["Customer"], "Area": ["Analytics", "QA"]},
         ),
         project(
             QUALITY,
@@ -546,7 +552,8 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             True,
             today - day(60),
             today + day(90),
-            tags=("Internal", "QA", "GMP"),
+            tags=("GMP",),
+            fields={"Project type": ["Internal"], "Area": ["QA"]},
             teams=("QA & Compliance",),
         ),
         project(

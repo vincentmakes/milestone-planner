@@ -291,9 +291,46 @@ async def insert_demo_data(
             )
     counts["equipment"] = len(equipment_id)
 
-    group_id: dict[str, int] = {}
-    for g in demo.tag_groups:
-        group_id[g["name"]] = await _insert_id(conn, "tag_groups", dict(g), {"name": g["name"]})
+    # Project fields and their dropdown items (natural keys: the field's name,
+    # the item's name within its field), with the items' site / team limits.
+    option_id: dict[tuple[str, str], int] = {}
+    for f in demo.project_fields:
+        fid = await _insert_id(
+            conn,
+            "project_fields",
+            {"name": f["name"], "field_type": f["field_type"], "sort_order": f["sort_order"]},
+            {"name": f["name"]},
+        )
+        for o in f["options"]:
+            oid = await _insert_id(
+                conn,
+                "project_field_options",
+                {
+                    "field_id": fid,
+                    "name": o["name"],
+                    "color": o["color"],
+                    "all_sites": o["sites"] is None,
+                    "sort_order": o["sort_order"],
+                },
+                {"field_id": fid, "name": o["name"]},
+            )
+            option_id[(f["name"], o["name"])] = oid
+            for site in o["sites"] or []:
+                await conn.execute(
+                    "INSERT INTO project_field_option_sites (option_id, site_id) VALUES ($1, $2) "
+                    "ON CONFLICT DO NOTHING",
+                    oid,
+                    site_id[site],
+                )
+            for team in o["teams"]:
+                await conn.execute(
+                    "INSERT INTO project_field_option_teams (option_id, team_id) VALUES ($1, $2) "
+                    "ON CONFLICT DO NOTHING",
+                    oid,
+                    team_id[team],
+                )
+    counts["project_fields"] = len(demo.project_fields)
+
     tag_id: dict[str, int] = {}
     for t in demo.tags:
         tag_id[t["name"]] = await _insert_id(
@@ -302,7 +339,6 @@ async def insert_demo_data(
             {
                 "name": t["name"],
                 "color": t["color"],
-                "group_id": group_id[t["group"]] if t["group"] else None,
                 "all_sites": t["sites"] is None,
                 "sort_order": t["sort_order"],
             },
@@ -347,6 +383,14 @@ async def insert_demo_data(
                 project_id[p["name"]],
                 tag_id[tag],
             )
+        for field_name, items in p["fields"].items():
+            for name in items:
+                await conn.execute(
+                    "INSERT INTO project_field_selections (project_id, option_id) "
+                    "VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    project_id[p["name"]],
+                    option_id[(field_name, name)],
+                )
         for name in p["teams"]:
             await conn.execute(
                 "INSERT INTO project_teams (project_id, team_id) VALUES ($1, $2) "

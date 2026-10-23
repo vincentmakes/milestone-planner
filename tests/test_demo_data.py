@@ -1,7 +1,8 @@
 """
 The demo data set (app/scripts/demo_data.py) checked against the app's own
 rules, without a database: every name a row refers to exists once, the
-single-select tag group holds one tag per project, the site-restricted tag sits
+single-select project field holds one item per project (the former tag groups
+are project fields with the tags' colours and order), the site-restricted tag sits
 only on projects of its site, status/completion pairs follow card_status.py,
 dependencies carry `entity` and form no cycle, the PM belongs to the project's
 site, recurring absences use the `[R:…]` pattern, mention placeholders name
@@ -53,10 +54,10 @@ def test_every_reference_resolves_to_exactly_one_row(demo: DemoData):
     skills = _names(demo.skills)
     equipment = _names(demo.equipment)
     projects = _names(demo.projects)
-    groups = _names(demo.tag_groups)
+    fields = _names(demo.project_fields)
     tags = _names(demo.tags)
     columns = _names(demo.custom_columns)
-    for pool in (sites, users, skills, equipment, projects, groups, tags, columns):
+    for pool in (sites, users, skills, equipment, projects, fields, tags, columns):
         assert len(pool) == len(set(pool))
     teams = [(t["site"], t["name"]) for t in demo.teams]
     assert len(teams) == len(set(teams))
@@ -86,10 +87,17 @@ def test_every_reference_resolves_to_exactly_one_row(demo: DemoData):
     for e in demo.equipment:
         assert e["sites"] and set(e["sites"]) <= set(sites)
     for t in demo.tags:
-        assert t["group"] is None or t["group"] in groups
         assert t["sites"] is None or set(t["sites"]) <= set(sites)
+    items = {f["name"]: _names(f["options"]) for f in demo.project_fields}
+    for f in demo.project_fields:
+        assert len(items[f["name"]]) == len(set(items[f["name"]])), f["name"]
+        for o in f["options"]:
+            assert o["sites"] is None or set(o["sites"]) <= set(sites)
+            assert set(o["teams"]) <= set(teams), (f["name"], o["name"])
     for p in demo.projects:
         assert p["site"] in sites and set(p["tags"]) <= set(tags)
+        for field_name, chosen in p["fields"].items():
+            assert field_name in items and set(chosen) <= set(items[field_name]), p["name"]
         assert p["pm"] is None or p["pm"] in users
     for ph in demo.phases:
         assert ph["project"] in projects and ph["type"] in PHASE_TYPES
@@ -158,15 +166,44 @@ def test_canonical_projects_and_people_are_present(demo: DemoData):
     assert any(p["archived"] for p in demo.projects)
 
 
-def test_single_select_group_has_one_tag_per_project(demo: DemoData):
-    single = {g["name"] for g in demo.tag_groups if g["single_select"]}
+def test_single_select_field_has_one_item_per_project(demo: DemoData):
+    single = {f["name"] for f in demo.project_fields if f["field_type"] == "select"}
     assert single == {"Project type"}
-    tag_group = {t["name"]: t["group"] for t in demo.tags}
     for p in demo.projects:
-        in_group = [t for t in p["tags"] if tag_group[t] == "Project type"]
-        assert len(in_group) <= 1, p["name"]
+        chosen = p["fields"].get("Project type", [])
+        assert len(chosen) <= 1, p["name"]
         if not p["archived"]:
-            assert in_group, f"{p['name']} needs a project type for the colour-by screenshots"
+            assert chosen, f"{p['name']} needs a project type for the colour-by screenshots"
+
+
+def test_former_tag_groups_are_dropdown_fields_with_the_tags_colours(demo: DemoData):
+    fields = {f["name"]: f for f in demo.project_fields}
+    assert [(f["name"], f["field_type"], f["sort_order"]) for f in demo.project_fields] == [
+        ("Project type", "select", 0),
+        ("Area", "multiselect", 1),
+    ]
+    assert [
+        (o["name"], o["color"], o["sort_order"]) for o in fields["Project type"]["options"]
+    ] == [
+        ("Internal", "#6366f1", 0),
+        ("Customer", "#0ea5e9", 1),
+    ]
+    assert [(o["name"], o["color"], o["sort_order"]) for o in fields["Area"]["options"]] == [
+        ("Process", "#f97316", 0),
+        ("Analytics", "#8b5cf6", 1),
+        ("QA", "#10b981", 2),
+    ]
+    # Tags keep only the ungrouped ones; GMP keeps its Frankfurt / team limit.
+    assert _names(demo.tags) == ["Critical", "Tech Transfer", "GMP"]
+    gmp = next(t for t in demo.tags if t["name"] == "GMP")
+    assert (gmp["sites"], gmp["teams"]) == (["Frankfurt"], [("Frankfurt", "QA & Compliance")])
+    # A multiselect field holds several items on one project.
+    assert any(len(p["fields"].get("Area", [])) > 1 for p in demo.projects)
+    selections = {p["name"]: p["fields"] for p in demo.projects}
+    assert selections["Bioprocess Scale-Up"] == {
+        "Project type": ["Customer"],
+        "Area": ["Process"],
+    }
 
 
 def test_site_restricted_tags_sit_only_on_their_sites(demo: DemoData):
