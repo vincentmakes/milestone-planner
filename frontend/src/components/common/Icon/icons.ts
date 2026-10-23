@@ -102,8 +102,10 @@ export { default as BellIcon } from '@mui/icons-material/NotificationsOutlined';
 export { default as GanttIcon } from '@mui/icons-material/ViewTimelineOutlined';
 /** Kanban view */
 export { default as KanbanIcon } from '@mui/icons-material/ViewKanbanOutlined';
-/** My Todos; a boolean column */
+/** My Todos; a boolean column; a ticked box (multi-select dropdown rows) */
 export { default as CheckBoxIcon } from '@mui/icons-material/CheckBoxOutlined';
+/** An unticked box (multi-select dropdown rows) */
+export { default as CheckBoxBlankIcon } from '@mui/icons-material/CheckBoxOutlineBlank';
 /** Cross-site view */
 export { default as GlobeIcon } from '@mui/icons-material/PublicOutlined';
 /** Archived projects */

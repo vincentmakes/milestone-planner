@@ -63,6 +63,10 @@ const project: Project = makeProject({
   field_values: { 1: 11, 2: [23, 21], 3: 1250, 5: 'PO-1' },
 });
 
+/** The multi-select field's dropdown box, named "Area <chosen items>" */
+const area = () => screen.getByRole('button', { name: /^Area\b/ });
+const areaOption = (name: string) => within(screen.getByRole('listbox', { name: 'Area' })).getByRole('option', { name });
+
 const sent = (fn: typeof createProject | typeof updateProject) => {
   const calls = vi.mocked(fn).mock.calls;
   const last = calls[calls.length - 1];
@@ -106,11 +110,26 @@ describe('ProjectModal project fields', () => {
     expect(screen.getByLabelText('Budget')).toHaveValue(1250);
     expect(screen.getByRole('switch', { name: 'Regulated' })).not.toBeChecked();
     expect(screen.getByLabelText('Reference')).toHaveValue('PO-1');
-    // Multi-select: pills in item order
-    const area = screen.getByRole('combobox', { name: 'Area' });
-    expect(area).toBeInTheDocument();
-    expect(screen.getByLabelText('Remove Process')).toBeInTheDocument();
-    expect(screen.getByLabelText('Remove Analytics')).toBeInTheDocument();
+    // Multi-select: a dropdown box naming the chosen items in item order
+    expect(area()).toHaveTextContent('Process, Analytics');
+    expect(area()).toHaveAttribute('aria-haspopup', 'listbox');
+    expect(screen.queryByRole('combobox', { name: 'Area' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Remove Process')).not.toBeInTheDocument();
+  });
+
+  it('ticks multi-select items in an open dropdown, which stays open', () => {
+    act(() => useUIStore.getState().openProjectModal(project));
+    render(<ProjectModal />);
+    fireEvent.click(area());
+    expect(areaOption('Process')).toHaveAttribute('aria-selected', 'true');
+    expect(areaOption('QA')).toHaveAttribute('aria-selected', 'false');
+    fireEvent.click(areaOption('QA'));
+    expect(areaOption('QA')).toHaveAttribute('aria-selected', 'true');
+    expect(area()).toHaveTextContent('Process, QA, Analytics');
+    // Escape closes the dropdown, not the dialog
+    fireEvent.keyDown(screen.getByRole('listbox', { name: 'Area' }), { key: 'Escape' });
+    expect(screen.queryByRole('listbox', { name: 'Area' })).not.toBeInTheDocument();
+    expect(useUIStore.getState().activeModal).toBe('project');
   });
 
   it('sends only the fields that changed, and shows them in the store at once', async () => {
@@ -119,8 +138,8 @@ describe('ProjectModal project fields', () => {
 
     fireEvent.change(screen.getByLabelText('Budget'), { target: { value: '99.5' } });
     fireEvent.click(screen.getByRole('switch', { name: 'Regulated' }));
-    fireEvent.click(screen.getByRole('combobox', { name: 'Area' }));
-    fireEvent.click(within(screen.getByRole('listbox', { name: 'Area' })).getByRole('option', { name: 'QA' }));
+    fireEvent.click(area());
+    fireEvent.click(areaOption('QA'));
     await save();
 
     expect(sent(updateProject).field_values).toEqual({ 2: [21, 22, 23], 3: 99.5, 4: true });
@@ -141,8 +160,8 @@ describe('ProjectModal project fields', () => {
     fireEvent.change(screen.getByLabelText('Reference'), { target: { value: '   ' } });
     fireEvent.change(screen.getByLabelText('Budget'), { target: { value: '' } });
     fireEvent.click(screen.getByRole('switch', { name: 'Regulated' }));
-    fireEvent.click(screen.getByLabelText('Remove Process'));
-    fireEvent.click(screen.getByLabelText('Remove Analytics'));
+    fireEvent.click(area());
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
     await save();
 
     expect(sent(updateProject).field_values).toEqual({ 1: null, 2: [], 3: null, 4: null, 5: null });
@@ -187,8 +206,9 @@ describe('ProjectModal project fields', () => {
 
     // "Analytics" is limited to the Analytics team: unticking the team drops it
     fireEvent.click(screen.getByRole('checkbox', { name: 'Analytics' }));
-    expect(screen.queryByLabelText('Remove Analytics')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('combobox', { name: 'Area' }));
+    expect(area()).toHaveTextContent('Process');
+    expect(area()).not.toHaveTextContent('Analytics');
+    fireEvent.click(area());
     const options = within(screen.getByRole('listbox', { name: 'Area' })).getAllByRole('option');
     expect(options.map((o) => o.textContent)).toEqual(['Process', 'QA']);
     await save();
@@ -342,7 +362,7 @@ describe('ProjectModal "Manage fields…"', () => {
     expect(screen.getByLabelText('Budget')).toBeDisabled();
     expect(screen.getByLabelText('Project type')).toBeDisabled();
     expect(screen.getByRole('switch', { name: 'Regulated' })).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: 'Area' })).toBeDisabled();
+    expect(area()).toBeDisabled();
     await act(async () => resolve({}));
   });
 });

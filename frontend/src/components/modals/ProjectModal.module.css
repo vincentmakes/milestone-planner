@@ -39,10 +39,6 @@
   align-items: end;
 }
 
-.fieldWide {
-  grid-column: 1 / -1;
-}
-
 /* A switch sits on the baseline of the inputs beside it */
 .fieldToggle {
   display: flex;

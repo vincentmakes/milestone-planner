@@ -720,7 +720,7 @@ Click the list icon (**Items**) of a dropdown or multi-select dropdown field (a 
 - **Order** — Drag items to reorder them within the field. The order decides which item a project is grouped under and coloured by when it holds several.
 - **Delete** — Removes the item from every project; you are asked to confirm.
 
-The item colours are the pills in the project dialog, the Filter dots, the section headers of **Group by** and the bar colours of **Colour by**.
+The item colours are the dots in the project dialog's multi-select dropdowns, the Filter dots, the section headers of **Group by** and the bar colours of **Colour by**.
 
 !!! note "Former tag groups"
     Version 2.0.0 turned tag groups into project fields. On upgrade, each tag group became a dropdown field — a single-select group a **Dropdown**, any other group a **Multi-select dropdown** — with its tags as the items, keeping their colours, order and site and team limits; projects keep what they had selected. Tags that were in no group stay tags.

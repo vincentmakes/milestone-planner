@@ -1,7 +1,8 @@
 /**
  * ProjectFieldInputs - the project fields in the project dialog, in field
  * order: text → Input, number → Input type=number, toggle → ToggleSwitch,
- * select → Select with an empty choice, multiselect → OptionPicker.
+ * select → Select with an empty choice, multiselect → MultiSelectDropdown
+ * (the same box, ticking several items).
  *
  * Dropdowns offer only the items that apply to the project's site and teams
  * (`optionsByField`, computed by the dialog). Holders of
@@ -13,7 +14,7 @@ import { useMemo } from 'react';
 import { Input } from '@/components/common/Input';
 import { Select } from '@/components/common/Select';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
-import { OptionPicker } from '@/components/common/OptionPicker';
+import { MultiSelectDropdown } from '@/components/common/MultiSelectDropdown';
 import { useAppStore } from '@/stores/appStore';
 import { can } from '@/utils/permissions';
 import type { FieldDraft } from '@/utils/projectFields';
@@ -124,20 +125,14 @@ function FieldInput({ field, options, draft, onChange, disabled }: FieldInputPro
       );
     case 'multiselect':
       return (
-        <div className={`${styles.fieldWide} ${styles.formGroup}`}>
-          <span className={styles.label}>{field.name}</span>
-          <OptionPicker
-            options={options}
-            selectedIds={selectedIds}
-            onChange={(next) => onChange(options.filter((o) => next.has(o.id)).map((o) => o.id))}
-            searchLabel={field.name}
-            placeholder="Find an item..."
-            emptyText="None"
-            noOptionsText="No items for this site"
-            noMatchText="No items match"
-            disabled={disabled}
-          />
-        </div>
+        <MultiSelectDropdown
+          label={field.name}
+          className={styles.field}
+          options={options}
+          selectedIds={selectedIds}
+          onChange={onChange}
+          disabled={disabled}
+        />
       );
     default:
       return (

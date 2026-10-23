@@ -1,6 +1,7 @@
 /**
- * OptionPicker - choose several coloured items from a list (project tags,
- * the items of a multi-select project field).
+ * OptionPicker - choose several coloured items from a list as pills (the
+ * project tags, through TagPicker; multi-select project fields use the
+ * dropdown-looking MultiSelectDropdown instead).
  *
  * - Chosen items show as removable pills filled with their colour (text
  *   colour from `barTextColor`), in the order of `options`.

@@ -96,7 +96,7 @@ Every date in Milestone is picked on the same calendar. Click the **Start Date**
 
 Besides its name, dates and manager, a project carries **fields**. Four are built in — **Customer**, **Sales PM**, **Volume** and **Confirmed** — and an administrator can rename them (the new name then replaces the default wherever the field is named), hide the first three, and add fields of the workspace's own in **Settings → Project fields** (see [Project fields in Settings](settings.md#project-fields)). The project dialog shows the added fields after **Teams**, in the order set there:
 
-- **Dropdown** — pick one item (for example *Project type* → Internal / Customer), or several items in a multi-select dropdown such as *Area*: type to find an item, click it (or press Enter on a unique match) and it appears as a coloured pill; click the **×** on a pill to remove it
+- **Dropdown** — pick one item (for example *Project type* → Internal / Customer), or several items in a multi-select dropdown such as *Area*: open the dropdown and tick the items (click a row, or move with the arrow keys and press Space); it stays open until you click elsewhere or press Escape, the box lists the chosen items, and **Clear** unticks them all
 - **Text** — up to 2,000 characters
 - **Number** — any number, shown as typed
 - **Switch** — on or off

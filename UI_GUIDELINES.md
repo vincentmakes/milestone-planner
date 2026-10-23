@@ -479,6 +479,14 @@ decision, not an oversight.
   form's countries by region), `placeholder` (rendered as a *disabled* empty option, so only
   for a choice the user must replace; a selectable "none" is a normal `options` entry),
   `icon`, `label`, `error`, `hint`, `fullWidth`. 36 px.
+- **`MultiSelectDropdown`** (`components/common/MultiSelectDropdown`): several items of a short
+  coloured list in a box that looks like `Select` (the project dialog's multi-select project
+  fields). `label`, `options: {id, name, color?}[]`, `selectedIds`, `onChange(ids in item order)`,
+  `disabled`, `placeholder` (*None*), `emptyText`. The trigger is a `<button>`
+  (`aria-haspopup="listbox"`, named by the label and the chosen names); the panel is a
+  `role="listbox"` `aria-multiselectable` of `role="option"` rows (checkbox glyph, colour dot,
+  name) that stays open while items are ticked, with a **Clear** row, and closes through
+  `useDismissableOverlay`. Tags keep their pills (`TagPicker` over `OptionPicker`).
 - **`ToggleSwitch`** (`components/common/ToggleSwitch`): every on/off flag, in Settings and in
   dialogs alike. A visually hidden checkbox with `role="switch"`, so keyboard, screen-reader and
   label behaviour come for free; pass `label` for visible text (a `ReactNode`, so an icon may sit
