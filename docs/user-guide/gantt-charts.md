@@ -9,9 +9,9 @@ The Gantt Chart is the primary view and the default when you log in. It combines
 The left panel displays your projects in a tree structure. The header buttons sit at the right edge of the panel, after any custom columns:
 
 - **Staff & Equipment** — Show or hide the assignment rows
-- **Tags** — [Filter projects by tag](#filtering-projects-by-tag)
-- **Group by** — [Group projects by a tag group](#grouping-projects-by-tag-group) (shown once tag groups exist)
-- **Colour by** — [Colour the project bars by a tag group](#project-colours) (shown once tag groups exist)
+- **Filter** — [Filter projects by their dropdown fields and tags](#filtering-projects)
+- **Group by** — [Group projects by a dropdown field](#grouping-projects-by-a-field) (shown once a dropdown field has an item at the site)
+- **Colour by** — [Colour the project bars by a dropdown field or the tags](#project-colours) (shown once there is a dropdown field or a tag at the site)
 - **Column Visibility** — Show or hide custom columns
 - **+ New Project** — Create a new project
 - **Import** — Import from CSV, XML, or MPP
@@ -68,11 +68,12 @@ Creating a project needs the *Create projects* permission (admins and superusers
 
 1. Click **+ New Project** in the panel header
 2. Fill in required fields: **Project Name**, **Start Date**, **End Date**
-3. Optionally set: Project Manager, Customer, Sales PM, Project Volume
+3. Optionally set: Project Manager, Customer, Sales PM, Project Volume (an administrator may have [renamed or hidden](settings.md#project-fields) these)
 4. If the site has [teams](settings.md#teams), tick the **Teams** the project belongs to — the teams of the active [team filter](settings.md#team-filter) are ticked already, so the new project shows in the view you are on
-5. Select which **predefined phases** to include (all active phases are pre-selected, unless an administrator [turned that off](settings.md#features-defaults) — then none is, and you pick them)
-6. Check **Project Confirmed** if the project is approved
-7. Click **Create Project**
+5. Fill in any [project fields](#project-fields) and tags
+6. Select which **predefined phases** to include (all active phases are pre-selected, unless an administrator [turned that off](settings.md#features-defaults) — then none is, and you pick them)
+7. Check **Project Confirmed** if the project is approved
+8. Click **Create Project**
 
 ## Editing Projects, Phases & Subphases
 
@@ -91,75 +92,90 @@ Every date in Milestone is picked on the same calendar. Click the **Start Date**
 
 ![Edit Phase dialog of Bioprocess Scale-Up with the two-month calendar open from the Start Date field, the phase's range highlighted](../assets/screenshots/date-range-picker.png){ loading=lazy }
 
+## Project Fields
+
+Besides its name, dates and manager, a project carries **fields**. Four are built in — **Customer**, **Sales PM**, **Project Volume** and **Project Confirmed** — and an administrator can rename them, hide the first three, and add fields of the workspace's own in **Settings → Project fields** (see [Project fields in Settings](settings.md#project-fields)). The project dialog shows the added fields after **Teams**, in the order set there:
+
+- **Dropdown** — pick one item (for example *Project type* → Internal / Customer), or several items in a multi-select dropdown such as *Area*: type to find an item, click it (or press Enter on a unique match) and it appears as a coloured pill; click the **×** on a pill to remove it
+- **Text** — up to 2,000 characters
+- **Number** — any number, shown as typed
+- **Switch** — on or off
+
+No field is required. A dropdown item can be limited to some sites and to some [teams](settings.md#teams) of a site, so the dialog only offers the items that apply to the project's site and teams; unticking a project's last matching team removes such an item from the project when you save. People who can manage project fields (admins by default) see a **Manage fields…** link that opens Settings → Project fields.
+
 ## Tags
 
-Tags are coloured labels attached to projects to classify and filter them (e.g. *Critical*, *Internal*, *Customer*). The tag library is shared by the whole workspace: admins define the tags in **Settings → Tags** (see [Tags in Settings](settings.md#tags)), and anyone who can edit a project attaches them.
+Tags are coloured labels attached to projects to classify and filter them (e.g. *Critical*, *Tech Transfer*). The tag library is shared by the whole workspace: admins define the tags in **Settings → Tags** (see [Tags in Settings](settings.md#tags)), and anyone who can edit a project attaches them. Categories with fixed choices, such as a project type, are [dropdown project fields](#project-fields) rather than tags.
 
-Tags can be organised into **groups** such as *Project type* → Internal / Customer. A **single-select** group allows one of its tags per project. Each tag applies to **all sites** or only to the sites an admin picked, so the picker and the filter only offer the tags that apply to the project's site. A tag can also be limited to some [teams](settings.md#teams) of a site: there, the picker offers it only on projects of one of those teams, and unticking a project's last matching team removes the tag from the project when you save.
+Each tag applies to **all sites** or only to the sites an admin picked, so the picker and the filter only offer the tags that apply to the project's site. A tag can also be limited to some [teams](settings.md#teams) of a site: there, the picker offers it only on projects of one of those teams, and unticking a project's last matching team removes the tag from the project when you save.
 
-![Tag picker in the project modal](../assets/screenshots/project-tags.png){ loading=lazy }
+![The Edit Project dialog with its Project type and Area fields, and the tag picker's list open under the Tags field](../assets/screenshots/project-tags.png){ loading=lazy }
 
 ### Attaching a tag
 
 1. Open the project (Edit, or while creating a new one).
-2. Click the **Tags** field. The dropdown lists the available tags by group, with ungrouped tags under *Other*.
-3. Start typing to filter, then click a tag (or press Enter on a unique match) to attach it. It appears as a coloured pill above the field. In a single-select group, choosing a tag replaces the one already selected from that group.
+2. Click the **Tags** field (or start typing in it). The list shows the available tags in their order.
+3. Type to narrow the list, then click a tag (or press Enter on a unique match) to attach it. It appears as a coloured pill above the field.
 4. Click the **×** on a pill to detach the tag.
 
 People who can manage tags (admins by default) see a **Manage tags…** link in the picker that opens Settings → Tags.
 
-### Project colours
+## Filtering, Grouping and Colouring Projects
 
-Each user can colour the project bars by a tag group:
+### Filtering projects
 
-1. Click the **Colour by** button in the project panel header (next to **Group by**).
-2. Pick a tag group — any group, single-select or not. **Default** returns to the standard bar colour.
+The **Filter** button in the project panel header (and in the Kanban toolbar) opens one section per dropdown field that has an item at the site, in field order, then a **Tags** section:
 
-The project bar on the timeline then takes the colour of the project's tag from that group — for example blue for internal projects and green for customer projects. A project carrying several tags of the group takes the colour of the first of them in the group's order (the same tag *Group by* files it under); a project without a tag from the group keeps the default colour. Unconfirmed projects keep their striped look on top of the colour.
-
-![The Colour by dropdown open above the Gantt chart, Project type selected](../assets/screenshots/gantt-color-by.png){ loading=lazy }
-
-The choice is yours alone: it is remembered per site in your browser, like the tag filter, and does not change what other users see. It is independent of **Group by** — you can group by one group and colour by another.
-
-### Filtering projects by tag
-
-The **Tags** button in the project panel header (and in the Kanban toolbar) opens a filter listed by group:
-
-- Tick one or more tags of a group to show projects carrying **any** of them.
-- Tick tags in several groups to show only projects matching **every** group.
-- **(No tag)** in a group matches projects without a tag from that group, and combines with the group's tags.
+- Tick one or more items of a field to show projects holding **any** of them.
+- Tick items in several fields, or tags as well, to show only projects matching **every** field (the tags count as one more field).
+- **(None)** in a field matches projects without an item of that field, and combines with the field's items.
 - **Clear** removes the whole filter.
 
-![Tag filter dropdown in the project panel, listed by group with a (No tag) option](../assets/screenshots/tag-filter-dropdown.png){ loading=lazy }
+![The Filter panel of the project panel, open: the Area field with its (None) option and items, then the Tags section](../assets/screenshots/project-filter.png){ loading=lazy }
 
-The button shows how many tags are selected, and the panel header shows *x of y* projects while a filter is active. The selection is remembered per site, so switching site or reloading brings it back. Tags that are deleted later are simply ignored.
+The button shows how many choices are ticked, and the panel header shows *x of y* projects while a filter is active. The selection is remembered per site, so switching site or reloading brings it back. Items and tags that are deleted later are simply ignored. With a [team filter](settings.md#team-filter) active, the panel only lists the items and tags available to the selected teams.
 
-### Grouping projects by tag group
+!!! note "Upgrading to 2.0.0"
+    A filter, grouping or colour choice saved in your browser before version 2.0.0 is reset once, because tag groups became project fields — pick it again.
 
-To see the portfolio at a glance, split the project list into sections, one per tag of a group — for example *Project type* → Internal / Customer:
+### Grouping projects by a field
 
-1. Click the **Group by** button in the project panel header (next to **Tags**).
-2. Pick a tag group. **No grouping** returns to the plain list.
+To see the portfolio at a glance, split the project list into sections, one per item of a dropdown field — for example *Project type* → Internal / Customer:
 
-Each section starts with a header showing the tag as a coloured pill and the number of projects in it; the timeline shows a matching band across the chart. Projects without a tag of that group are listed last under **No *group name***. Sections without projects are left out, and a project carrying several tags of the same group is listed once, under the first of them in the group's order.
+1. Click the **Group by** button in the project panel header (next to **Filter**).
+2. Pick a dropdown field. **No grouping** returns to the plain list.
+
+Each section starts with a header showing the item as a coloured pill and the number of projects in it; the timeline shows a matching band across the chart. Projects without an item of that field are listed last under **No *field name***. Sections without projects are left out, and a project holding several items of a multi-select field is listed once, under the first of them in the field's item order.
 
 ![Gantt project list grouped by Project type, with a pill header per section](../assets/screenshots/gantt-grouped.png){ loading=lazy }
 
 - Click a section header (or its arrow) to collapse or expand it. **Collapse all** / **Expand all** in the Group by panel act on every section at once.
-- The tag filter applies first, then the grouping: sections only hold the projects that pass the filter. The header count still counts projects.
+- The filter applies first, then the grouping: sections only hold the projects that pass the filter. The header count still counts projects.
 - Projects cannot be reordered by dragging while the list is grouped; choose **No grouping** to change the order.
-- A project you create, or re-tag, into a collapsed section stays hidden until you expand that section.
-- The grouping and the collapsed sections are remembered per site in your browser, like the tag filter.
+- A project you create, or change, into a collapsed section stays hidden until you expand that section.
+- The grouping and the collapsed sections are remembered per site in your browser, like the filter.
+
+### Project colours
+
+Each user can colour the project bars by a dropdown field or by the tags:
+
+1. Click the **Colour by** button in the project panel header (next to **Group by**).
+2. Pick a dropdown field, or **Tags**. **Default** returns to the standard bar colour.
+
+With a field, the project bar on the timeline takes the colour of the project's item of that field — for example blue for internal projects and green for customer projects. A project holding several items of a multi-select field takes the colour of the first of them in the field's item order (the same item *Group by* files it under). With **Tags**, the bar takes the colour of the project's first tag in the tag order. A project without an item of the field (or without a tag) keeps the default colour. Unconfirmed projects keep their striped look on top of the colour.
+
+![The Colour by dropdown open above the Gantt chart: Default, Project type (selected), Area and Tags](../assets/screenshots/gantt-color-by.png){ loading=lazy }
+
+The choice is yours alone: it is remembered per site in your browser, like the filter, and does not change what other users see. It is independent of **Group by** — you can group by one field and colour by another.
 
 ### Permissions
 
-| Action                              | Who can do it                                  |
-| ----------------------------------- | ---------------------------------------------- |
-| Attach / detach a tag               | Anyone who can edit the project                |
-| Filter by tag                       | Everyone                                       |
-| Group by a tag group                | Everyone                                       |
-| Colour by a tag group               | Everyone                                       |
-| Create, edit, group, delete tags    | Admins (Settings → Tags)                       |
+| Action                                      | Who can do it                                  |
+| ------------------------------------------- | ---------------------------------------------- |
+| Fill in project fields, attach / detach a tag | Anyone who can edit the project              |
+| Filter, group and colour projects           | Everyone                                       |
+| Create, edit, reorder, delete tags          | Admins (Settings → Tags)                       |
+| Create, edit, reorder, delete project fields; rename or hide built-in fields | Admins (Settings → Project fields) |
 
 ## Drag & Drop
 

@@ -39,7 +39,7 @@ Imports are blocked as well:
 - Importing a Microsoft Project or CSV file — imports cannot be sandboxed, so exit What-If mode first
 - Importing `.ics` calendar files (bank holidays, company events, absences), because calendar data is not part of the What-If snapshot
 
-Kanban comments and your notification inbox are not part of the plan: comments you post in What-If mode are saved immediately. The same goes for **tags and tag groups** in Settings: they are configuration, so an admin's changes there apply straight away even while a What-If plan is open. Attaching tags to a project is part of the plan and is queued like any other edit; if an admin makes a group single-select while your queued edit still holds two of its tags, Apply stops at that edit with an explanation — discard it and redo the change.
+Kanban comments and your notification inbox are not part of the plan: comments you post in What-If mode are saved immediately. The same goes for **tags and project fields** in Settings: they are configuration, so an admin's changes there apply straight away even while a What-If plan is open. Attaching tags to a project and filling in its fields are part of the plan and are queued like any other edit; if an admin meanwhile limits a tag or a dropdown item your queued edit relies on to other sites or teams, Apply stops at that edit with an explanation — discard it and redo the change.
 
 ## Applying and Discarding
 

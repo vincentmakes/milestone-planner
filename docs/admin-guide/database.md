@@ -112,7 +112,7 @@ same reason; use `run_migration.py` instead.
 | `add_company_event_color` | Tenant | Color column for company events |
 | `add_equipment_blocks` | Tenant | Equipment maintenance blocks |
 | `add_tags_tables` | Tenant | Project tags |
-| `add_tag_groups_and_sites` | Tenant | Tag groups, per-site tags (`tag_sites`) and the `group_id` / `all_sites` / `sort_order` tag columns |
+| `add_tag_groups_and_sites` | Tenant | Tag groups, per-site tags (`tag_sites`) and the `group_id` / `all_sites` / `sort_order` tag columns (the groups are converted into project fields by `add_project_fields` since 2.0.0; the automatic upgrade no longer creates `tag_groups`) |
 | `add_project_presence` | Tenant | Real-time presence tracking |
 | `add_is_system_column` | Tenant | System column flag |
 | `add_staff_notes` | Tenant | Staff notes table (migrates and drops the legacy `notes` table) |
@@ -127,6 +127,7 @@ same reason; use `run_migration.py` instead.
 | `add_change_notifications` | Tenant | Widens the notification types with `assignment_changed` and `project_changed` (1.15.0, also applied automatically on startup) — see below |
 | `add_user_is_resource` | Tenant | Adds `users.is_resource`, the "Bookable as a resource" flag (1.16.0, also applied automatically on startup) — see below |
 | `add_booking_segments` | Tenant | Adds optional own dates to phase and subphase bookings (1.17.0, also applied automatically on startup) — see below |
+| `add_project_fields` | Tenant | Project fields and their values; converts the tag groups into dropdown fields and drops `tag_groups` and `tags.group_id` (2.0.0, also applied automatically on startup; requires `add_teams`) — see below |
 | `upgrade_to_v90` | Tenant | Major version upgrade |
 
 ### Absence Types and Multi-Site Events (1.5.0)
@@ -211,6 +212,23 @@ python migrations/run_migration.py add_user_is_resource
 
 ```bash
 python migrations/run_migration.py add_booking_segments
+```
+
+### Project Fields (2.0.0)
+
+`add_project_fields` creates the project-field tables — `project_fields` (name unique, `field_type` one of `text` / `number` / `toggle` / `select` / `multiselect`, `sort_order`), `project_field_options` (the dropdown items: name unique per field, colour, `all_sites`, `sort_order`), `project_field_option_sites` and `project_field_option_teams` (the items' site and team limits, shaped like `tag_sites` / `tag_teams`), `project_field_values` (one row per project and text, number or switch field) and `project_field_selections` (the items chosen per project, shaped like `project_tags`); every foreign key cascades. It needs the `teams` table (`add_teams`).
+
+Then, **only while `tag_groups` exists**, one `DO` block converts the tag groups:
+
+- each group becomes a field — `select` for a single-select group, `multiselect` otherwise — with the group's order; a name already used by a field gets ` (tags)` appended (then ` (tags 2)`, …);
+- each grouped tag becomes an item of that field with its name, colour, `all_sites` and order, and its `tag_sites` / `tag_teams` rows become the item's site and team limits;
+- every project carrying such a tag gets the item as a selection;
+- the grouped tags are deleted (with their project, site and team links), the remaining tags are renumbered `0..n-1` by their order and name, and `idx_tags_group`, `tags.group_id` and `tag_groups` are dropped.
+
+Ungrouped tags stay tags. **This is a breaking change** (hence 2.0.0): the `/api/tag-groups` routes are gone. Take a backup first; the conversion cannot be undone by a later migration. The same statements run **automatically** when a tenant's connection pool is created and a project-field table is missing or `tag_groups` still exists (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)), so running it by hand is optional, and a second run does nothing.
+
+```bash
+python migrations/run_migration.py add_project_fields
 ```
 
 ### Writing New Migrations

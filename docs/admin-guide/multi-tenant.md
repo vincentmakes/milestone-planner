@@ -69,7 +69,7 @@ new tenant with the same data set as the Codespaces demo tenant and the document
 screenshots: two sites (Winterthur and Frankfurt), nine people with skills and part-time
 capacity, four projects with phases, nested subphases and dependencies, staff and equipment
 bookings, equipment blocks, Swiss and German bank holidays, a site closure, absences of every
-type, tag groups, custom columns, Kanban comments with mentions and notifications. Dates are
+type, project fields, tags, custom columns, Kanban comments with mentions and notifications. Dates are
 relative to the day you provision.
 
 - The tenant's admin e-mail becomes the demo's system administrator and signs in with the

@@ -58,12 +58,14 @@ export default defineConfig({
       // functions 91.97, branches 81.59), rounded down; with the admin
       // defaults likewise (lines 91.78, statements 90.67, functions 92.2,
       // branches 81.88); with the per-person booking rows of 1.17.0 (local
-      // lines 92.2, statements 91.08, functions 92.44, branches 82.64).
+      // lines 92.2, statements 91.08, functions 92.44, branches 82.64);
+      // with the project fields of 2.0.0, 0.3 under the local totals (lines
+      // 92.7, statements 91.61, functions 93.32, branches 83.14).
       thresholds: {
-        lines: 92.1,
-        statements: 91.0,
-        functions: 92.3,
-        branches: 82.5,
+        lines: 92.4,
+        statements: 91.3,
+        functions: 93.0,
+        branches: 82.8,
       },
     },
   },

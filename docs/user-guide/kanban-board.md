@@ -2,7 +2,7 @@
 
 The Kanban board shows a project's work as cards moving through four columns. It is not a separate plan — it is the **same data as the Gantt chart, seen differently**. Move a card and the Gantt chart updates; change a percentage in the Gantt chart and the card moves. There is nothing to keep in sync by hand.
 
-![Kanban board with the project picker, tag filter, grouping and My Todo toggle](../assets/screenshots/kanban-board.png){ loading=lazy }
+![Kanban board with the project picker, Filter, grouping and My Todo toggle](../assets/screenshots/kanban-board.png){ loading=lazy }
 
 Open it from **Kanban Board** in the sidebar (shown when your role has the **Kanban board** permission — every built-in role does).
 
@@ -43,7 +43,7 @@ You can move a card if your role may **move any card** (admins and superusers by
 
 ## Choosing what to show
 
-The project picker chooses the board. **All projects** shows everything active at the site at once, which is the natural companion to grouping by project or filtering to My Todo. The **Tags** button next to the picker narrows the board to projects carrying the selected tags — the same filter as in the Gantt chart, remembered per site (see [Filtering projects by tag](gantt-charts.md#filtering-projects-by-tag)).
+The project picker chooses the board. **All projects** shows everything active at the site at once, which is the natural companion to grouping by project or filtering to My Todo. The **Filter** button next to the picker narrows the board to projects holding the selected dropdown-field items and tags — the same filter as in the Gantt chart, remembered per site (see [Filtering projects](gantt-charts.md#filtering-projects)). The board's grouping does not offer project fields.
 
 Projects appear in the same order as the Gantt chart, including any custom order you have dragged them into there.
 

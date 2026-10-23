@@ -24,13 +24,14 @@ All administration happens in one **Settings** window. Open it from the **Settin
 | Resources | Equipment | Lab equipment on one or more sites — see [Equipment Booking](equipment-booking.md#managing-equipment) | Admin, Superuser |
 | | [Equipment types](#equipment-types) | Equipment categories | Admin, Superuser |
 | Projects | [Predefined phases](#predefined-phases) | Phase templates for new projects | Admin, Superuser |
-| | [Tags](#tags) | Project tags, tag groups and the sites they apply to | Admin |
+| | [Project fields](#project-fields) | The built-in project fields' labels, and your own dropdown, text, number and switch fields | Admin |
+| | [Tags](#tags) | Project tags and the sites they apply to | Admin |
 | Integrations | SSO | Microsoft Entra single sign-on for this workspace — see [Organization & SSO](../admin-guide/organizations-sso.md#configuring-sso-in-milestone) | Admin |
 
 Each person only sees the sections their role's [permissions](#roles-permissions) let them change — with the default roles, **superusers** see General (theme only), Teams, Bank holidays, Company events, Users, Skills, Equipment, Equipment types and Predefined phases. Someone whose role grants none of these sections has no Settings entry; they manage their own time off from [My absences](vacations.md#my-absences) in the user menu.
 
 !!! note "Unsaved changes"
-    If you switch section or close the window while a form holds unsaved input — in **General**, **Features & defaults**, **Roles**, **Users**, **Equipment**, **Sites**, **Teams**, **Skills**, **Bank holidays**, **Company events**, **Absence types**, **Equipment types** or **Tags** — Milestone asks before discarding it. Clicking outside the window never closes it.
+    If you switch section or close the window while a form holds unsaved input — in **General**, **Features & defaults**, **Roles**, **Users**, **Equipment**, **Sites**, **Teams**, **Skills**, **Bank holidays**, **Company events**, **Absence types**, **Equipment types**, **Project fields** or **Tags** — Milestone asks before discarding it. Clicking outside the window never closes it.
 
 Saving is protected against double submission: pressing Enter twice or double-clicking a Save, Add or Delete button runs the action only once.
 
@@ -245,7 +246,7 @@ The Sites section has no delete button: untick **Active** to hide a site from th
 
 ## Teams
 
-A team is a group of people within **one** site — a lab, a department, a shift. Teams let everyone narrow the views to the work and people they care about, and let you limit tags, equipment and company events to some teams of a site. Open **Settings → Teams** (Admins, and Superusers for the sites they belong to).
+A team is a group of people within **one** site — a lab, a department, a shift. Teams let everyone narrow the views to the work and people they care about, and let you limit tags, dropdown-field items, equipment and company events to some teams of a site. Open **Settings → Teams** (Admins, and Superusers for the sites they belong to).
 
 Pick the **Site** at the top; the list shows that site's teams with their colour, description, number of members and an **Inactive** badge where it applies.
 
@@ -275,7 +276,7 @@ Click **Save Changes** to save, or **Cancel** to go back without saving. The tea
 
 ### Deleting a Team
 
-Click the **delete icon** and confirm. The team's members, projects, tags, equipment and company events keep working without it; anything that was limited to that team alone becomes whole-site again. Deleting is refused while a project of the team carries a [tag](#tags) that is also limited to other teams of the site and the project is in none of them — it would be left with a tag it no longer qualifies for. Add the project to one of the tag's other teams, or widen the tag, then delete the team. Deleting a site deletes its teams.
+Click the **delete icon** and confirm. The team's members, projects, tags, equipment and company events keep working without it; anything that was limited to that team alone becomes whole-site again. Deleting is refused while a project of the team carries a [tag](#tags) or a [dropdown-field item](#project-fields) that is also limited to other teams of the site and the project is in none of them — it would be left with a tag or item it no longer qualifies for. Add the project to one of the other teams, or widen the tag or item, then delete the team. Deleting a site deletes its teams.
 
 ### Team Filter
 
@@ -287,7 +288,7 @@ The **team filter** sits in the header next to the [site selector](#site-selecto
 - one or more **teams** — what belongs to any of them
 - **(No team)** — projects and people without a team; combines with the teams you ticked
 
-**Clear** goes back to the whole site. The button shows the current choice, for example *Analytical Lab* or *2 teams + no team*. The choice is remembered **per site in this browser**, like the tag filter, and does not change what other users see.
+**Clear** goes back to the whole site. The button shows the current choice, for example *Analytical Lab* or *2 teams + no team*. The choice is remembered **per site in this browser**, like the project filter, and does not change what other users see.
 
 The filter narrows:
 
@@ -296,7 +297,7 @@ The filter narrows:
 - the Staff and Equipment views
 - the project-manager list in the project dialog, and the staff, equipment and equipment-block pickers — a person or item already selected in the dialog stays listed
 - in the [Cross-Site view](cross-site-view.md), the current site's lane only
-- the options of the [tag filter](gantt-charts.md#filtering-projects-by-tag): a tag limited to teams at this site is offered only while one of them is ticked
+- the options of the [project filter](gantt-charts.md#filtering-projects): a tag or dropdown-field item limited to teams at this site is offered only while one of them is ticked
 
 Equipment that is not limited to any team of the site is always shown; equipment limited to teams is shown when one of them is ticked. A [company event](#company-events) limited to teams follows the same rule: it shows on the timelines and in the Staff Overview's Company Events row only while one of its teams is ticked (or under **Whole site**), while a whole-site event always shows.
 
@@ -506,7 +507,7 @@ What each role may do is set in [Settings → Roles](#roles-permissions). With t
 | Manage teams (own sites) | Yes | Yes | No |
 | Edit users, skills, equipment, equipment types, predefined phases | Yes | Yes | No |
 | Create, delete, enable/disable users; change roles | Yes | No | No |
-| General settings, sites, absence types, tags, custom columns, SSO, roles | Yes | No | No |
+| General settings, sites, absence types, tags, project fields, custom columns, SSO, roles | Yes | No | No |
 | See every site | Yes | No (own sites) | No (own sites) |
 | Book own absences ([My absences](vacations.md#my-absences)) | Yes | Yes | Yes |
 | Personal tasks in [My Todos](my-todos.md); give tasks to others | Yes | Yes | Own tasks only |
@@ -675,33 +676,67 @@ In the **Equipment View**, use the type filter dropdown to show/hide equipment b
 
 ---
 
+## Project Fields
+
+Project fields are what a project holds besides its name, dates, manager and teams (see [Project fields in the Gantt chart](gantt-charts.md#project-fields)). Open **Settings → Project fields** (Admins — the *Manage project fields* permission); everyone who can edit a project fills them in the project dialog.
+
+![Settings → Project fields: the built-in fields with their labels and Shown switches, and the Project type dropdown open on its items](../assets/screenshots/project-fields-settings.png){ loading=lazy }
+
+### Built-in Fields
+
+**Customer**, **Sales PM**, **Volume** and **Confirmed** are part of every project. For each:
+
+- **Label** — Type another name (for example *Client* instead of *Customer*); leave the box empty to keep the default. The new name is used for the whole workspace: in the project dialog, the Gantt chart, the Cross-Site and Archived views.
+- **Shown** — Switch Customer, Sales PM or Volume off to hide it from the project dialog and the views. Hiding keeps the values stored; switching the field back on shows them again.
+
+**Confirmed** can be renamed but not hidden: it drives the project status, the striped look of unconfirmed projects, the default project order and the sidebar counts.
+
+Click **Save Changes** to apply the labels and switches; **Reset** discards the edits.
+
+### Custom Fields
+
+Under **Custom fields**, type a name, pick a **Type** and click **Add field**:
+
+| Type | In the project dialog |
+|------|-----------------------|
+| **Dropdown** | One item of a list |
+| **Multi-select dropdown** | Any number of items of a list |
+| **Text** | Free text, up to 2,000 characters |
+| **Number** | A number |
+| **Switch** | On or off |
+
+- **Order** — Drag fields to change the order of the project dialog, the [Filter](gantt-charts.md#filtering-projects) and the **Group by** / **Colour by** lists.
+- **Rename** — Click the pencil. A field's type cannot be changed after it is created.
+- **Delete** — Click the bin; the confirmation says how many projects hold a value, and every value of the field is removed.
+
+No field is required, and custom fields cannot be hidden — delete one you no longer need.
+
+### Dropdown Items
+
+Click the list icon (**Items**) of a dropdown or multi-select dropdown field (a new one opens there directly) to edit its items:
+
+- **Add** — Type the item's name, pick a colour and click **Add item**. A new item is available at all sites.
+- **Name, colour and sites** — Click the pencil on an item. By default an item applies to **all sites**; switch that off to pick the sites where it is offered. For each site that has [teams](#teams), leave **Whole site** on, or switch it off and tick teams: at that site the item is then offered only on projects of those teams. Restricting an item is refused while a project at a removed site, or outside the ticked teams, still holds it; the message says how many.
+- **Order** — Drag items to reorder them within the field. The order decides which item a project is grouped under and coloured by when it holds several.
+- **Delete** — Removes the item from every project; you are asked to confirm.
+
+The item colours are the pills in the project dialog, the Filter dots, the section headers of **Group by** and the bar colours of **Colour by**.
+
+!!! note "Former tag groups"
+    Version 2.0.0 turned tag groups into project fields. On upgrade, each tag group became a dropdown field — a single-select group a **Dropdown**, any other group a **Multi-select dropdown** — with its tags as the items, keeping their colours, order and site and team limits; projects keep what they had selected. Tags that were in no group stay tags.
+
+---
+
 ## Tags
 
-Tags are coloured labels attached to projects (see [Tags in the Gantt chart](gantt-charts.md#tags)). Admins manage them in **Settings → Tags**; everyone who can edit a project attaches them from the project dialog.
+Tags are coloured labels attached to projects (see [Tags in the Gantt chart](gantt-charts.md#tags)). Admins manage them in **Settings → Tags**; everyone who can edit a project attaches them from the project dialog. Categories with fixed choices, such as a project type, belong in a dropdown [project field](#project-fields).
 
-![Settings → Tags: tag groups with single-select toggles, and tags listed per group](../assets/screenshots/settings-tags.png){ loading=lazy }
-
-### Tag Groups
-
-A group turns a set of tags into a category, for example **Project type** with the tags *Internal* and *Customer*.
-
-- **Single select** — A project can carry at most one tag of the group. In the project dialog the group's tags behave like radio buttons: choosing one replaces the other.
-- **Order** — Drag groups to change the order in which they appear in the picker and the filter.
-- **Delete** — The group's tags are kept and become ungrouped.
-
-Switching a group to single select is refused while any project holds two or more of its tags; the message says how many projects need attention first.
-
-Colouring the Gantt project bars by a group is not set here: each user picks it with **Colour by** in the Gantt chart (see [Project colours](gantt-charts.md#project-colours)).
-
-### Managing Tags
-
-Tags are listed under their group, with ungrouped tags under **Other**.
+![Settings → Tags: the tag list with colours and the sites each tag applies to, and the Add tag row](../assets/screenshots/settings-tags.png){ loading=lazy }
 
 - **Name and colour** — Edit the name inline; pick a colour from the swatches or enter a custom one.
-- **Group** — Move a tag into a group or out of it. Moving it into a single-select group is refused if a project already holds another tag of that group together with it.
 - **Sites** — By default a tag applies to **all sites**. Switch that off to pick the sites where the tag is offered. Restricting a tag is refused while projects at a site you are removing still use it. Deleting a site also deletes tags that were limited to that site only.
 - **Teams** — For each site where the tag applies and that has [teams](#teams), leave **Whole site** on, or switch it off and tick teams: at that site the tag is then offered only on projects of those teams. Limiting a tag is refused while a project outside the ticked teams still uses it. The tag list shows *limited to N teams* next to the sites.
-- **Order** — Drag tags to reorder them within their group.
+- **Order** — Drag tags to reorder them; the order is the one of the picker, the Filter and **Colour by → Tags**.
 - **Delete** — Removes the tag from every project; you are asked to confirm.
 
 ---

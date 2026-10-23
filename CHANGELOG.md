@@ -5,6 +5,22 @@ All notable changes to Milestone Planner are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] - 2026-10-23
+
+### Added
+- **Project fields**: administrators add their own fields to projects in Settings → Project fields — a dropdown with one or several choices, whose coloured items can be reordered and limited to some sites and teams, a text, a number or a switch — and everyone who edits a project fills them in the project dialog.
+- The built-in Customer, Sales PM and Volume fields can be renamed and hidden for the whole instance in Settings → Project fields; Confirmed can be renamed.
+- The site Excel export has **Project fields**, **Project field options** and **Project field values** sheets.
+
+### Changed
+- Tag groups became dropdown project fields: existing groups are converted automatically on upgrade (a single-select group becomes a dropdown, any other group a multi-select dropdown); their tags become the field's items with the same colours, order and site and team limits, and projects keep what they had selected.
+- The Gantt and Kanban **Filter** (formerly **Tags**) lists the dropdown fields and the tags; **Colour by** offers the dropdown fields and Tags, **Group by** the dropdown fields.
+- A Gantt filter, grouping or colour choice saved before 2.0.0 is reset once, because the saved choices changed shape.
+- Settings → Tags lists tags only.
+
+### Removed
+- Tag groups: the `/api/tag-groups` routes, the `tags.group_id` column and the `tag_groups` table are removed once the groups are converted.
+
 ## [1.17.0] - 2026-10-22
 
 ### Added

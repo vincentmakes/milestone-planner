@@ -91,9 +91,11 @@ Each kind of data lives on its own sheet, so the file opens cleanly in Excel, Li
 | **Equipment** | Equipment items linked to the site, with type, active status and a **Sites** column listing every site each item belongs to |
 | **Skills** | Skills defined on the instance (name, color, description) |
 | **User skills** | User → Skill associations |
-| **Tag groups** | Tag group definitions (name, single select, order) |
-| **Tags** | Project tags that apply to this site (name, color, group, all sites / sites, order) |
-| **Project tags** | Project → Tag associations, with the tag's group |
+| **Tags** | Project tags that apply to this site (name, color, all sites / sites, teams, order) |
+| **Project tags** | Project → Tag associations |
+| **Project fields** | Every project field (name, type — text, number, toggle, select, multiselect — and order) |
+| **Project field options** | The dropdown items that apply to this site (field, name, color, all sites / sites, teams at the site, order) |
+| **Project field values** | One row per project of the site and field with a value: text, number, Yes / No for a switch, the chosen items joined by commas |
 | **Absence types** | Absence type definitions (name, color, counts as unavailable, active, order) |
 | **Vacations** | All absence entries for users on this site, including recurring patterns, with their **Type** and **Type ID** |
 | **Project assignments** | Staff assigned at the project level |

@@ -53,7 +53,7 @@ All tenant routes are prefixed with `/t/{slug}/api/`.
 
 ### Access levels
 
-Every route is gated on a **permission key** from the catalogue in `app/services/permissions.py` (59 keys; `GET /api/permissions` lists them). A role holds each key as `allow`, as `approval` (only the three own-booking keys) or not at all. The Administrator role holds every key. A missing key returns `403` with `detail` `Permission required: <key>` (several alternatives: `… <a> or <b>`).
+Every route is gated on a **permission key** from the catalogue in `app/services/permissions.py` (60 keys; `GET /api/permissions` lists them). A role holds each key as `allow`, as `approval` (only the three own-booking keys) or not at all. The Administrator role holds every key. A missing key returns `403` with `detail` `Permission required: <key>` (several alternatives: `… <a> or <b>`).
 
 The **Auth** column used below names the key; the label says who holds it with the shipped roles:
 
@@ -86,10 +86,17 @@ The per-project levels are checked inside the handler (`app/services/project_acc
 | `GET` | `/t/{slug}/api/projects` | user | List all projects (with phases, subphases, assignments) |
 | `POST` | `/t/{slug}/api/projects` | superuser (`projects.create`) | Create a project at a visible site |
 | `GET` | `/t/{slug}/api/projects/{id}` | user | Get project details with full hierarchy |
-| `PUT` | `/t/{slug}/api/projects/{id}` | user (PM) (`projects.edit_any`) | Update a project — every field, including `pm_id` (so a manager can hand the project over), `archived` (needs `projects.archive`), `tag_ids` and `team_ids` |
+| `PUT` | `/t/{slug}/api/projects/{id}` | user (PM) (`projects.edit_any`) | Update a project — every field, including `pm_id` (so a manager can hand the project over), `archived` (needs `projects.archive`), `tag_ids`, `team_ids` and `field_values` |
 | `DELETE` | `/t/{slug}/api/projects/{id}` | superuser (`projects.delete`) | Delete a project (not in the PM bundle: a project manager cannot) |
 
-Project list and detail responses carry `team_ids`; create and update accept `team_ids` (omitted = unchanged, `[]` = no team). Every team must be at the project's site (`400`; a project without a site cannot have teams). Unknown team ids are dropped silently, like unknown tag ids, so a What-If replay survives a team deleted in the meantime. Changing the teams re-checks the project's tags: a tag limited to teams the project no longer shares is refused (`400`).
+Project list and detail responses carry `team_ids`; create and update accept `team_ids` (omitted = unchanged, `[]` = no team). Every team must be at the project's site (`400`; a project without a site cannot have teams). Unknown team ids are dropped silently, like unknown tag ids, so a What-If replay survives a team deleted in the meantime. Changing the teams re-checks the project's tags and dropdown-field items: a tag or item limited to teams the project no longer shares is refused (`400`).
+
+**Project field values.** List and detail responses carry `field_values`, an object keyed by the [project field](#project-fields) id as a string: a text field → string, number → number, toggle → boolean (`false` is a value), select → the item id, multiselect → the item ids in item order, e.g. `{"1": "Pilot plant", "2": 1250, "3": false, "4": 42, "5": [51, 52]}`. Fields without a value are absent; masked cross-site rows (`includeOtherSites`) carry `{}`. `POST` and `PUT` accept `field_values: {field_id: value}` (at most 500 keys, `422` beyond); only the fields given change, and `null`, `""` or `[]` clears one. A select takes an item id or a one-item list, a multiselect a list (at most 500 items, duplicates folded). Unknown field and item ids are dropped silently, like unknown tag ids (What-If replay).
+
+| Status | Detail |
+|--------|--------|
+| `422` | `Invalid value for "<field>"` (wrong type, non-finite number, too many items); `"<field>" can be at most 2000 characters` |
+| `400` | `The item "<item>" is not an item of "<field>"`; `Only one item of "<field>" can be chosen`; `The item "<item>" of "<field>" is not available at this project's site`; `The item "<item>" of "<field>" is limited to teams this project is not part of` |
 
 ### Phases & Subphases
 
@@ -281,16 +288,48 @@ There is no create endpoint: a type exists as long as some equipment carries it.
 
 ### Tags
 
-Project tags are colored labels shared across all projects in the instance. See [Gantt Charts — Tags](../user-guide/gantt-charts.md#tags) for the user-facing behaviour. To attach or detach tags from a project, send a `tag_ids` array in the project `PUT` payload.
+Project tags are colored labels shared across all projects in the instance. See [Gantt Charts — Tags](../user-guide/gantt-charts.md#tags) for the user-facing behaviour. To attach or detach tags from a project, send a `tag_ids` array in the project `PUT` payload; a project embeds its tags as `{id, name, color}`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/t/{slug}/api/tags` | List all tags (`group_id`, `all_sites`, `site_ids`, `team_ids`, `sort_order`) |
+| `GET` | `/t/{slug}/api/tags` | List all tags in `sort_order, name` (`all_sites`, `site_ids`, `team_ids`, `sort_order`) |
 | `POST` | `/t/{slug}/api/tags` | Create a tag (`tags.manage`) |
-| `PUT` | `/t/{slug}/api/tags/{id}` | Update a tag — name, color, group, sites, teams (`tags.manage`) |
+| `PUT` | `/t/{slug}/api/tags/{id}` | Update a tag — name, color, sites, teams (`tags.manage`) |
+| `PUT` | `/t/{slug}/api/tags/reorder` | `{tag_order: [ids]}` (`tags.manage`) |
 | `DELETE` | `/t/{slug}/api/tags/{id}` | Delete a tag from every project (`tags.manage`) |
 
-A tag can be limited to teams with `team_ids`. Per site: no team of the tag at a site means every project there may carry it; otherwise only projects sharing one of those teams (`400` on the project write). Each team must be at one of the tag's sites unless the tag applies to all sites (`400`). Narrowing `team_ids` while projects at those teams' sites outside them use the tag is refused with `409`; narrowing the sites without `team_ids` drops the teams of the sites removed.
+A tag can be limited to teams with `team_ids`. Per site: no team of the tag at a site means every project there may carry it; otherwise only projects sharing one of those teams (`400` on the project write). Each team must be at one of the tag's sites unless the tag applies to all sites (`400`). Narrowing `team_ids` while projects at those teams' sites outside them use the tag is refused with `409`; narrowing the sites without `team_ids` drops the teams of the sites removed. Tag bodies reject unknown keys (`422`) — `group_id` included.
+
+!!! warning "Removed in 2.0.0"
+    Tag groups are gone: `/api/tag-groups` answers `404`/`405`, and tags no longer carry `group_id`. The upgrade converts every group into a dropdown [project field](#project-fields) (a single-select group → `select`, any other → `multiselect`), its tags into the field's items and the projects' tags of the group into selections.
+
+### Project Fields
+
+Fields every project carries besides the built-in ones (see [Settings — Project fields](../user-guide/settings.md#project-fields)). Every authenticated user reads them; writes need `project_fields.manage` (administrators by default). Writes are configuration: they bypass What-If queuing and broadcast a coarse `change:project_field`. Values are written on the project (`field_values`, see [Projects](#projects)).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/t/{slug}/api/project-fields` | Every field in `sort_order, id` with its items |
+| `GET` | `/t/{slug}/api/project-fields/{id}/usage` | `{projects: n}` — projects holding a value or an item of the field |
+| `POST` | `/t/{slug}/api/project-fields` | `{name, field_type}` → `201`, appended last |
+| `PUT` | `/t/{slug}/api/project-fields/reorder` | `{field_order: [ids]}` (≤ 500; unknown ids ignored) |
+| `PUT` | `/t/{slug}/api/project-fields/{id}` | `{name?, field_type?}` — the type cannot change (`422`) |
+| `DELETE` | `/t/{slug}/api/project-fields/{id}` | `204`; its items, values and selections go with it |
+| `POST` | `/t/{slug}/api/project-fields/{id}/options` | Add an item `{name, color?, all_sites?, site_ids?, team_ids?}` → `201` (dropdown fields only) |
+| `PUT` | `/t/{slug}/api/project-fields/{id}/options/reorder` | `{option_order: [ids]}` within the field |
+| `PUT` | `/t/{slug}/api/project-fields/options/{oid}` | Update an item |
+| `DELETE` | `/t/{slug}/api/project-fields/options/{oid}` | `204`; removed from every project |
+
+A field is `{id, name, field_type, sort_order, options}` with `field_type` one of `text`, `number`, `toggle`, `select`, `multiselect` (`options` is `[]` for the first three); an item is `{id, name, color, sort_order, all_sites, site_ids, team_ids}`. Items follow the tag rules: `color` `#rrggbb` (default `#6366f1`), omitted `all_sites` with `site_ids` = restricted, explicit `all_sites: true` clears the sites, `site_ids` / `team_ids` at most 200, each team at one of the item's sites (`400`), a site-only change drops the teams of removed sites.
+
+| Status | Detail |
+|--------|--------|
+| `400` | `Field name cannot be empty`; `A project field with this name already exists` (case-insensitive); `Only dropdown fields (select, multiselect) have items`; `Item name cannot be empty`; `This field already has an item with this name`; `Select at least one site or make the item available at all sites`; `The team "<name>" is not at one of the selected sites` |
+| `404` | `Project field not found`; `Item not found`; `Site not found`; `Team not found` |
+| `409` | Narrowing an item's sites or teams while projects outside still hold it (`N projects at other sites use this item` / `N projects outside these teams use this item`) |
+| `422` | `The type of a project field cannot be changed`; a bad colour or type |
+
+Deleting a team is refused (`409`) while a project of the team would keep a tag or item limited to other teams of the site.
 
 ### Teams
 
@@ -442,7 +481,7 @@ Besides the tenant-wide `change:<entity>` events (now also `change:role`, `chang
 
 #### Instance settings
 
-The admin defaults and feature switches set in [Settings → Features & defaults](../user-guide/settings.md#features-defaults):
+The admin defaults and feature switches set in [Settings → Features & defaults](../user-guide/settings.md#features-defaults), and the built-in project field settings of [Settings → Project fields](../user-guide/settings.md#project-fields):
 
 | Key | Stored value | Default | Effect |
 |-----|--------------|---------|--------|
@@ -452,6 +491,8 @@ The admin defaults and feature switches set in [Settings → Features & defaults
 | `kanban_enabled` | `true` or `false` | `true` | `false` takes `views.kanban` away from everyone |
 | `nager_enabled` | `true` or `false` | `true` | `false` stops the holiday refresh (`409`) and the automatic fetch on site create/update |
 | `new_project_preselect_phases` | `true` or `false` | `true` | Whether the New Project dialog pre-selects the active predefined phases |
+| `project_field_labels` | JSON object, keys among `customer`, `sales_pm`, `volume`, `confirmed`, labels trimmed to 1–60 characters, stored compact in that key order (`{"customer":"Client"}`) | `{}` | Instance-wide labels of the built-in project fields ([Settings → Project fields](../user-guide/settings.md#project-fields)) |
+| `project_fields_hidden` | JSON array, entries among `customer`, `sales_pm`, `volume` (`confirmed` → `422`), stored in that order | `[]` | Built-in project fields hidden from the dialog and the views; their values stay stored and writable |
 
 Booleans also accept `1`/`0`, `yes`/`no` and `on`/`off` (any case) and are stored as `true`/`false`; a switch counts as on unless its value is exactly `false`. Only the shape is validated: ids of deleted skills and names of renamed types are accepted and ignored by the client. A change broadcasts `change:settings`.
 

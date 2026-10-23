@@ -39,4 +39,4 @@ Launch a fully configured development environment in your browser with PostgreSQ
 | **Admin Portal** | `/admin/` | `admin@demo.local` | `demo1234` |
 | **Demo Tenant** | `/t/demo/` | `admin@demo.local` | `demo1234` |
 
-The demo tenant includes 2 sites (Winterthur, Frankfurt), 5 projects (one archived) with phases, nested subphases, dependencies, staff and equipment bookings, 9 people (incl. a part-time member, a project manager and an inactive account) with skills, 8 equipment items, tag groups, custom columns, bank holidays, a site closure, absences of every type, Kanban comments and notifications. All staff accounts use password `demo1234`.
+The demo tenant includes 2 sites (Winterthur, Frankfurt), 5 projects (one archived) with phases, nested subphases, dependencies, staff and equipment bookings, 9 people (incl. a part-time member, a project manager and an inactive account) with skills, 8 equipment items, project fields, tags, custom columns, bank holidays, a site closure, absences of every type, Kanban comments and notifications. All staff accounts use password `demo1234`.
