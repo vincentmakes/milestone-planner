@@ -7,6 +7,7 @@ from app.models.absence_type import AbsenceType
 from app.models.assignment import PhaseStaffAssignment, ProjectAssignment, SubphaseStaffAssignment
 from app.models.card_comment import CardComment
 from app.models.custom_column import CustomColumn, CustomColumnValue
+from app.models.dashboard import Dashboard, DashboardRole, DashboardWidget
 from app.models.equipment import Equipment, EquipmentAssignment, EquipmentBlock, EquipmentSite
 from app.models.note import Note
 from app.models.notification import Notification
@@ -104,6 +105,9 @@ __all__ = [
     "ApprovalPolicy",
     "ApprovalPolicyRole",
     "ApprovalRequest",
+    "Dashboard",
+    "DashboardRole",
+    "DashboardWidget",
     # Multi-tenant admin models (use separate MasterBase)
     "MasterBase",
     "Tenant",

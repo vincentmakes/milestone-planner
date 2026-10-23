@@ -32,6 +32,8 @@ from app.models.project_field import (
 )
 from app.services import tenant_provisioner as tp
 from app.services.tenant_provisioner import (
+    DASHBOARD_TABLES,
+    DASHBOARDS_PROBE_SQL,
     NOTIFICATIONS_TYPE_CHECK_SQL,
     PROJECT_FIELD_DECIMALS_SQL,
     PROJECT_FIELD_OPTION_SITES_TABLE_SQL,
@@ -387,6 +389,8 @@ def _conn(tables=(), fail_on: str | None = None):
             result = MagicMock()
             result.scalar.return_value = False
             return result
+        if sql == DASHBOARDS_PROBE_SQL:  # the later dashboards step: up to date
+            return rows(DASHBOARD_TABLES)
         if sql == NOTIFICATIONS_TYPE_CHECK_SQL:
             log.append(WIDEN)
             return MagicMock()

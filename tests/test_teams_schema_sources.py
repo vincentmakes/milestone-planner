@@ -29,6 +29,8 @@ from app.models.team import (
 from app.models.user import User
 from app.services.tenant_provisioner import (
     COMPANY_EVENT_TEAMS_TABLE_SQL,
+    DASHBOARD_TABLES,
+    DASHBOARDS_PROBE_SQL,
     EQUIPMENT_TEAMS_TABLE_SQL,
     NOTIFICATIONS_TYPE_CHECK_SQL,
     PROJECT_FIELD_DECIMALS_SQL,
@@ -273,6 +275,10 @@ def _teams_conn(tables=(), fail_on: str | None = None):
         if sql == RBAC_NEEDS_MIGRATION_SQL:  # the later RBAC step: nothing to do
             result = MagicMock()
             result.scalar.return_value = False
+            return result
+        if sql == DASHBOARDS_PROBE_SQL:  # the later dashboards step: up to date
+            result = MagicMock()
+            result.fetchall.return_value = [(t,) for t in DASHBOARD_TABLES]
             return result
         if sql == NOTIFICATIONS_TYPE_CHECK_SQL:  # the later step that always runs
             log.append(WIDEN)

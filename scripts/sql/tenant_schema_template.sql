@@ -662,6 +662,45 @@ CREATE TABLE project_field_selections (
     PRIMARY KEY (project_id, option_id)
 );
 
+-- Dashboards (2.1.0): KPI and chart dashboards over the planning data. Owner
+-- (NULL = admin-owned, e.g. the seeded "Overview"), visibility private /
+-- roles / everyone, at most one default. Same DDL as
+-- tenant_provisioner.DASHBOARDS_SCHEMA_STATEMENTS and
+-- migrations/add_dashboards.sql.
+CREATE TABLE dashboards (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    visibility VARCHAR(10) NOT NULL,
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT dashboards_visibility_check
+        CHECK (visibility IN ('private', 'roles', 'everyone'))
+);
+
+-- Roles a dashboard with visibility 'roles' is shared with (many-to-many)
+CREATE TABLE dashboard_roles (
+    dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+    role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    PRIMARY KEY (dashboard_id, role_id)
+);
+
+-- Widgets of a dashboard: query / options / layout are JSON texts
+CREATE TABLE dashboard_widgets (
+    id SERIAL PRIMARY KEY,
+    dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+    kind VARCHAR(12) NOT NULL,
+    title VARCHAR(120) NOT NULL,
+    query TEXT NOT NULL,
+    options TEXT NOT NULL DEFAULT '{}',
+    layout TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    CONSTRAINT dashboard_widgets_kind_check
+        CHECK (kind IN ('kpi', 'bar', 'line', 'pie', 'table'))
+);
+
 -- ============================================================================
 -- APPROVALS (approval policies per approvable action, approval requests
 -- for own bookings) and the RBAC upgrades of the tables
@@ -969,6 +1008,9 @@ CREATE INDEX idx_project_field_option_sites_site ON project_field_option_sites(s
 CREATE INDEX idx_project_field_option_teams_team ON project_field_option_teams(team_id);
 CREATE INDEX idx_project_field_values_project ON project_field_values(project_id);
 CREATE INDEX idx_project_field_selections_option ON project_field_selections(option_id);
+CREATE UNIQUE INDEX dashboards_one_default ON dashboards(is_default) WHERE is_default;
+CREATE INDEX idx_dashboard_roles_role ON dashboard_roles(role_id);
+CREATE INDEX idx_dashboard_widgets_dashboard ON dashboard_widgets(dashboard_id);
 CREATE INDEX idx_approval_policy_roles_role ON approval_policy_roles(role_id);
 CREATE INDEX idx_approval_requests_project_status ON approval_requests(project_id, status);
 CREATE INDEX idx_approval_requests_requester_status ON approval_requests(requester_id, status);

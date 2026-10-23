@@ -1298,6 +1298,78 @@ STALE_APPROVAL_POINTER_CLEANUP_SQL: tuple[str, ...] = tuple(
 )
 
 
+# --- Dashboards (add_dashboards.sql, 2.1.0) ---------------------------------
+# KPI and chart dashboards: the dashboards, the roles a dashboard is shared
+# with, and its widgets (the metric query, display options and grid layout as
+# JSON text). dashboards.owner_id references users and dashboard_roles.role_id
+# references roles, so the block follows both tables in every DDL source. At
+# most one default dashboard (partial unique index dashboards_one_default,
+# created before any seed insert: the seed's ON CONFLICT names it). One
+# statement per constant: the auto-migration executes them one at a time
+# (asyncpg runs a single statement per call); setup_databases.sql, the
+# template and migrations/add_dashboards.sql carry the same text
+# (tests/test_dashboards_schema.py).
+DASHBOARDS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS dashboards (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      description TEXT,
+      owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      visibility VARCHAR(10) NOT NULL,
+      is_default BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT dashboards_visibility_check
+        CHECK (visibility IN ('private', 'roles', 'everyone'))
+    )"""
+
+DASHBOARD_ROLES_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS dashboard_roles (
+      dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+      role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+      PRIMARY KEY (dashboard_id, role_id)
+    )"""
+
+DASHBOARD_WIDGETS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS dashboard_widgets (
+      id SERIAL PRIMARY KEY,
+      dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+      kind VARCHAR(12) NOT NULL,
+      title VARCHAR(120) NOT NULL,
+      query TEXT NOT NULL,
+      options TEXT NOT NULL DEFAULT '{}',
+      layout TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      CONSTRAINT dashboard_widgets_kind_check
+        CHECK (kind IN ('kpi', 'bar', 'line', 'pie', 'table'))
+    )"""
+
+DASHBOARDS_INDEX_STATEMENTS: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS dashboards_one_default "
+    "ON dashboards(is_default) WHERE is_default",
+    "CREATE INDEX IF NOT EXISTS idx_dashboard_roles_role ON dashboard_roles(role_id)",
+    "CREATE INDEX IF NOT EXISTS idx_dashboard_widgets_dashboard ON dashboard_widgets(dashboard_id)",
+)
+
+DASHBOARDS_SCHEMA_STATEMENTS: tuple[str, ...] = (
+    DASHBOARDS_TABLE_SQL,
+    DASHBOARD_ROLES_TABLE_SQL,
+    DASHBOARD_WIDGETS_TABLE_SQL,
+    *DASHBOARDS_INDEX_STATEMENTS,
+)
+
+DASHBOARD_TABLES: tuple[str, ...] = ("dashboards", "dashboard_roles", "dashboard_widgets")
+
+DASHBOARDS_SCHEMA_SQL = ";\n".join(DASHBOARDS_SCHEMA_STATEMENTS) + ";"
+
+# Probe of the dashboards auto-migration step: the step (schema, base
+# dashboard, permission backfill) runs only while a table is missing.
+DASHBOARDS_PROBE_SQL = (
+    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' "
+    "AND table_name IN (" + ", ".join(f"'{t}'" for t in DASHBOARD_TABLES) + ")"
+)
+
+
 def _sql_block(*statements: str) -> str:
     """Statements joined for a multi-statement script (each terminated by ';')."""
     return "".join(f"{statement};\n" for statement in statements)
@@ -1901,6 +1973,12 @@ def get_tenant_schema_sql() -> str:
     -- A number field's decimals (2.1.0), added to the table above.
     """
         + PROJECT_FIELD_DECIMALS_SQL
+        + """
+
+    -- Dashboards (after users and roles), the roles they are shared with and
+    -- their widgets, with their indexes
+    """
+        + DASHBOARDS_SCHEMA_SQL
         + """
 
     -- Approval policies (seeded: the project manager approves), approval

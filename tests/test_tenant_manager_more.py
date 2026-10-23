@@ -265,6 +265,7 @@ ALL_KNOWN_NAMES = [
     "project_subphases",
     *tp.TEAM_TABLES,
     *tp.PROJECT_FIELD_TABLES,
+    *tp.DASHBOARD_TABLES,
 ]
 
 
@@ -348,6 +349,7 @@ LEGACY_CHANGES = [
     *tp.TEAMS_SCHEMA_STATEMENTS,
     *tp.PROJECT_FIELDS_SCHEMA_STATEMENTS,
     tp.PROJECT_FIELDS_MIGRATION_SQL,
+    *tp.DASHBOARDS_SCHEMA_STATEMENTS,
     # The notification-types widening runs on every pool creation (own gate).
     *(s for s in tp.RBAC_SCHEMA_STATEMENTS if s != tp.NOTIFICATIONS_TYPE_CHECK_SQL),
 ]
@@ -381,8 +383,8 @@ async def test_legacy_tenant_gets_every_step():
     assert conn.log.index(tp.PROJECT_FIELDS_MIGRATION_SQL) > max(
         conn.log.index(s) for s in tp.PROJECT_FIELDS_SCHEMA_STATEMENTS
     )
-    # One commit per step (card status: one per table), 25 in all.
-    assert conn.log.count("COMMIT") == 25
+    # One commit per step (card status: one per table), 26 in all.
+    assert conn.log.count("COMMIT") == 26
 
 
 @pytest.mark.asyncio

@@ -21,6 +21,8 @@ from sqlalchemy import CheckConstraint
 
 from app.models.notification import Notification
 from app.services.tenant_provisioner import (
+    DASHBOARD_TABLES,
+    DASHBOARDS_PROBE_SQL,
     NOTIFICATION_TYPES,
     NOTIFICATIONS_TYPE_CHECK,
     NOTIFICATIONS_TYPE_CHECK_SQL,
@@ -180,6 +182,10 @@ def _conn(rbac_needed: bool, fail_widening: bool = False):
             log.append("RBAC probe")
             result = MagicMock()
             result.scalar.return_value = rbac_needed
+            return result
+        if sql == DASHBOARDS_PROBE_SQL:  # the dashboards step: up to date
+            result = MagicMock()
+            result.fetchall.return_value = [(t,) for t in DASHBOARD_TABLES]
             return result
         if sql == NOTIFICATIONS_TYPE_CHECK_SQL:
             log.append("WIDEN")

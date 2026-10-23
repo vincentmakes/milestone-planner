@@ -105,6 +105,9 @@ def test_schema_creates_tables_added_by_auto_migrations(schema_sql):
         "project_field_option_teams",
         "project_field_values",
         "project_field_selections",
+        "dashboards",
+        "dashboard_roles",
+        "dashboard_widgets",
     ):
         assert f"CREATE TABLE IF NOT EXISTS {table} (" in schema_sql, table
 

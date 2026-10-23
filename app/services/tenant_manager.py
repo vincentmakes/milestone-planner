@@ -28,6 +28,9 @@ from app.services.tenant_provisioner import (
     COMPANY_EVENTS_CLOSURE_COLUMN_SQL,
     COMPANY_EVENTS_SITE_FK_SQL,
     COMPANY_EVENTS_SITE_NULLABLE_SQL,
+    DASHBOARD_TABLES,
+    DASHBOARDS_PROBE_SQL,
+    DASHBOARDS_SCHEMA_STATEMENTS,
     EQUIPMENT_ASSIGNMENTS_NOTE_SQL,
     EQUIPMENT_SITE_FK_NEEDS_FIX_SQL,
     EQUIPMENT_SITE_FK_SQL,
@@ -848,6 +851,22 @@ class TenantConnectionManager:
                 logger.info("Auto-migration: Created RBAC tables on tenant %s", slug)
         except Exception as e:
             logger.warning("Auto-migration (rbac) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+
+        # Dashboards (add_dashboards.sql, 2.1.0): the three tables and their
+        # indexes. After the RBAC step: dashboard_roles references roles.
+        # Skipped once every table exists. One statement per execute.
+        try:
+            tables_check = await conn.execute(text(DASHBOARDS_PROBE_SQL))
+            existing = {row[0] for row in tables_check.fetchall()}
+            if not existing.issuperset(DASHBOARD_TABLES):
+                logger.info("Auto-migration: Adding dashboards on tenant %s...", slug)
+                for statement in DASHBOARDS_SCHEMA_STATEMENTS:
+                    await conn.execute(text(statement))
+                await conn.commit()
+                logger.info("Auto-migration: Added dashboards on tenant %s", slug)
+        except Exception as e:
+            logger.warning("Auto-migration (dashboards) warning for %s: %s", slug, e)
             await _rollback_quietly(conn)
 
         # Notification types (add_change_notifications.sql). Runs on every pool
