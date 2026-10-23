@@ -31,12 +31,14 @@ DEFAULTS = {
     "kanban_enabled": "true",
     "nager_enabled": "true",
     "new_project_preselect_phases": "true",
+    "project_field_labels": "{}",
+    "project_fields_hidden": "[]",
 }
 
 BOOLEAN_KEYS = ["kanban_enabled", "nager_enabled", "new_project_preselect_phases"]
 
 
-def test_the_six_known_keys_and_their_defaults():
+def test_the_known_keys_and_their_defaults():
     assert {key: spec.default for key, spec in KNOWN_SETTINGS.items()} == DEFAULTS
     assert all(default_for(key) == value for key, value in DEFAULTS.items())
     assert default_for("instance_title") is None
@@ -175,6 +177,74 @@ def test_type_names_are_at_most_100_characters():
     assert canonicalise("equipment_panel_default_types", json.dumps(["x" * 100]))
     with pytest.raises(ValueError):
         canonicalise("equipment_panel_default_types", json.dumps(["x" * 101]))
+
+
+# ---------------------------------------------------------------------------
+# Built-in project fields: labels and hidden fields
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "canonical"),
+    [
+        ("{}", "{}"),
+        (" { } ", "{}"),
+        ('{"customer": "Client"}', '{"customer":"Client"}'),
+        # Trimmed, keys in display order, non-ASCII kept as is.
+        (
+            '{"confirmed": " Gewonnen ", "volume": "Menge (kg)", "sales_pm": "Vertrieb"}',
+            '{"sales_pm":"Vertrieb","volume":"Menge (kg)","confirmed":"Gewonnen"}',
+        ),
+        ('{"customer": "Kundé"}', '{"customer":"Kundé"}'),
+        ('{"customer": "' + "x" * 60 + '"}', '{"customer":"' + "x" * 60 + '"}'),
+    ],
+)
+def test_field_labels_are_a_compact_object_of_trimmed_labels(raw, canonical):
+    assert canonicalise("project_field_labels", raw) == canonical
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "",
+        "nope",
+        "[]",
+        '"customer"',
+        '{"name": "Title"}',  # not a built-in field
+        '{"notes": "Remarks"}',
+        '{"customer": ""}',
+        '{"customer": "   "}',
+        '{"customer": null}',
+        '{"customer": 5}',
+        '{"customer": "' + "x" * 61 + '"}',
+    ],
+)
+def test_field_labels_reject_anything_else(raw):
+    with pytest.raises(ValueError):
+        canonicalise("project_field_labels", raw)
+
+
+@pytest.mark.parametrize(
+    ("raw", "canonical"),
+    [
+        ("[]", "[]"),
+        ('["volume"]', '["volume"]'),
+        ('["volume", "customer", "volume"]', '["customer","volume"]'),
+        ('["sales_pm", "volume", "customer"]', '["customer","sales_pm","volume"]'),
+    ],
+)
+def test_hidden_fields_are_unique_hideable_keys_in_display_order(raw, canonical):
+    assert canonicalise("project_fields_hidden", raw) == canonical
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["", "{}", '"customer"', '["confirmed"]', '["customer", "confirmed"]', '["notes"]', "[1]"],
+)
+def test_hidden_fields_reject_confirmed_and_unknown_keys(raw):
+    # Confirmed drives the stripes, ordering and counts: it can be renamed only.
+    with pytest.raises(ValueError):
+        canonicalise("project_fields_hidden", raw)
 
 
 # ---------------------------------------------------------------------------

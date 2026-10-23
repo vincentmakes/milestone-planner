@@ -29,6 +29,14 @@ if TYPE_CHECKING:
 
 MAX_DEFAULT_SKILLS = 500
 MAX_TYPE_NAME_LENGTH = 100
+MAX_FIELD_LABEL_LENGTH = 60
+
+# The built-in project fields an admin may rename (project_field_labels), in
+# display order, and those that may be hidden (project_fields_hidden): Confirmed
+# drives the Gantt stripes, ordering and counts, so it is never hidden. Hiding
+# is UI only -- the API keeps accepting and returning the values.
+BUILT_IN_PROJECT_FIELDS: tuple[str, ...] = ("customer", "sales_pm", "volume", "confirmed")
+HIDEABLE_PROJECT_FIELDS: tuple[str, ...] = ("customer", "sales_pm", "volume")
 
 _TRUE = frozenset({"true", "1", "yes", "on"})
 _FALSE = frozenset({"false", "0", "no", "off"})
@@ -101,6 +109,40 @@ def _type_names(value: str) -> str:
     return _compact(names)
 
 
+def _field_labels(value: str) -> str:
+    """``{built-in field: label}``, labels trimmed, keys in display order."""
+    try:
+        labels = json.loads(value)
+    except ValueError as exc:
+        raise ValueError("expected a JSON object") from exc
+    if not isinstance(labels, dict):
+        raise ValueError("expected a JSON object")
+    canonical: dict[str, str] = {}
+    for key in labels:
+        if key not in BUILT_IN_PROJECT_FIELDS:
+            raise ValueError(f"expected keys among {', '.join(BUILT_IN_PROJECT_FIELDS)}")
+    for key in BUILT_IN_PROJECT_FIELDS:
+        if key not in labels:
+            continue
+        label = labels[key]
+        if not isinstance(label, str):
+            raise ValueError("expected labels")
+        label = label.strip()
+        if not label or len(label) > MAX_FIELD_LABEL_LENGTH:
+            raise ValueError(f"labels are 1 to {MAX_FIELD_LABEL_LENGTH} characters")
+        canonical[key] = label
+    return json.dumps(canonical, separators=(",", ":"), ensure_ascii=False)
+
+
+def _hidden_fields(value: str) -> str:
+    """The hidden built-in fields, unique, in display order (never ``confirmed``)."""
+    items = _json_list(value)
+    for item in items:
+        if not isinstance(item, str) or item not in HIDEABLE_PROJECT_FIELDS:
+            raise ValueError(f"expected fields among {', '.join(HIDEABLE_PROJECT_FIELDS)}")
+    return _compact([key for key in HIDEABLE_PROJECT_FIELDS if key in items])
+
+
 KNOWN_SETTINGS: dict[str, SettingSpec] = {
     "gantt_default_panel": SettingSpec(_choice("none", "staff", "equipment"), "none"),
     "staff_panel_default_skills": SettingSpec(_skill_ids, "[]"),
@@ -108,6 +150,8 @@ KNOWN_SETTINGS: dict[str, SettingSpec] = {
     "kanban_enabled": SettingSpec(_boolean, "true"),
     "nager_enabled": SettingSpec(_boolean, "true"),
     "new_project_preselect_phases": SettingSpec(_boolean, "true"),
+    "project_field_labels": SettingSpec(_field_labels, "{}"),
+    "project_fields_hidden": SettingSpec(_hidden_fields, "[]"),
 }
 
 # The permission keys a switch turned off disables for everyone.

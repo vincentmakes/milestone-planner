@@ -38,6 +38,8 @@ DEFAULTS = {
     "kanban_enabled": "true",
     "nager_enabled": "true",
     "new_project_preselect_phases": "true",
+    "project_field_labels": "{}",
+    "project_fields_hidden": "[]",
 }
 
 
@@ -188,6 +190,12 @@ async def test_a_missing_known_key_reads_as_its_default(app_client, mock_db_sess
         ("kanban_enabled", "OFF", "false"),
         ("nager_enabled", "0", "false"),
         ("new_project_preselect_phases", "Yes", "true"),
+        (
+            "project_field_labels",
+            '{"confirmed": " Won ", "customer": "Client"}',
+            '{"customer":"Client","confirmed":"Won"}',
+        ),
+        ("project_fields_hidden", '["volume", "customer", "volume"]', '["customer","volume"]'),
     ],
 )
 async def test_a_known_key_stores_its_canonical_form(
@@ -231,6 +239,13 @@ async def test_a_known_key_updates_its_row_canonically(authed_client, mock_db_se
         ("kanban_enabled", "maybe"),
         ("nager_enabled", ""),
         ("new_project_preselect_phases", "2"),
+        ("project_field_labels", '{"name": "Title"}'),
+        ("project_field_labels", '{"customer": "   "}'),
+        ("project_field_labels", '{"customer": "' + "x" * 61 + '"}'),
+        ("project_field_labels", '["customer"]'),
+        ("project_fields_hidden", '["confirmed"]'),
+        ("project_fields_hidden", '["customer", "notes"]'),
+        ("project_fields_hidden", '{"customer": true}'),
     ],
 )
 async def test_an_invalid_value_for_a_known_key_is_422(authed_client, mock_db_session, key, raw):
@@ -272,6 +287,29 @@ async def test_null_on_a_known_key_deletes_the_row(authed_client, mock_db_sessio
     mock_db_session.delete.assert_awaited_once_with(row)
     mock_db_session.commit.assert_awaited_once()
     mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("key", "stored", "default"),
+    [
+        ("project_field_labels", '{"customer":"Client"}', "{}"),
+        ("project_fields_hidden", '["sales_pm"]', "[]"),
+    ],
+)
+async def test_null_resets_a_built_in_field_setting(
+    authed_client, mock_db_session, key, stored, default
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    row = Settings(key=key, value=stored)
+    mock_db_session.execute.return_value = scalar_result(row)
+
+    response = await client.put(f"/api/settings/{key}", json={"value": None})
+
+    assert response.status_code == 200
+    assert response.json() == {"key": key, "value": default}
+    mock_db_session.delete.assert_awaited_once_with(row)
 
 
 @pytest.mark.asyncio
