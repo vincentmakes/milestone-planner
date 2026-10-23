@@ -152,8 +152,14 @@ export { default as RepeatIcon } from '@mui/icons-material/Repeat';
 export { default as CommentIcon } from '@mui/icons-material/ChatBubbleOutline';
 /** Tenants */
 export { default as BuildingIcon } from '@mui/icons-material/ApartmentOutlined';
-/** Statistics */
+/** Statistics; a bar chart widget */
 export { default as BarChartIcon } from '@mui/icons-material/BarChartOutlined';
+/** The Dashboards view */
+export { default as DashboardIcon } from '@mui/icons-material/DashboardOutlined';
+/** A pie chart widget */
+export { default as PieChartIcon } from '@mui/icons-material/PieChartOutlined';
+/** A line chart widget */
+export { default as LineChartIcon } from '@mui/icons-material/ShowChartOutlined';
 /** Disable */
 export { default as BanIcon } from '@mui/icons-material/BlockOutlined';
 /** Open in a new tab */

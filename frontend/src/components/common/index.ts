@@ -44,3 +44,6 @@ export { RoleChecklist } from './RoleChecklist';
 export type { RoleChecklistProps } from './RoleChecklist';
 
 export { ConfirmDialog } from './ConfirmDialog';
+
+export { ErrorBoundary, ErrorBoundaryFallback, ERROR_BOUNDARY_MESSAGE } from './ErrorBoundary';
+export type { ErrorBoundaryProps } from './ErrorBoundary';

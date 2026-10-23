@@ -629,6 +629,7 @@ export type CurrentView =
   | 'gantt'
   | 'kanban'
   | 'work'
+  | 'dashboards'
   | 'staff'
   | 'equipment'
   | 'crosssite'
@@ -940,4 +941,193 @@ export interface AppNotification {
    * and are dismissed into localStorage rather than marked read on the server.
    */
   source?: 'server' | 'derived';
+}
+
+// =============================================================================
+// DASHBOARDS (2.1.0)
+// =============================================================================
+// Snake_case on both sides, like the API (api/endpoints/dashboards.ts). The
+// metric-query spec mirrors app/schemas/dashboard.py; the measure → dimension
+// matrix lives in utils/metrics.ts (asserted against shared/metric-matrix.json).
+
+export type WidgetKind = 'kpi' | 'bar' | 'line' | 'pie' | 'table';
+
+export type DashboardVisibility = 'private' | 'roles' | 'everyone';
+
+export type Measure =
+  | 'booked_days'
+  | 'booked_weeks'
+  | 'booking_count'
+  | 'people_booked'
+  | 'project_count'
+  | 'project_weeks'
+  | 'project_volume'
+  | 'phase_count'
+  | 'phase_weeks';
+
+export type DimensionKind =
+  | 'site'
+  | 'team'
+  | 'project_team'
+  | 'person'
+  | 'project'
+  | 'project_manager'
+  | 'customer'
+  | 'confirmed'
+  | 'tag'
+  | 'phase_type'
+  | 'field'
+  | 'period';
+
+export type Grain = 'year' | 'quarter' | 'month' | 'week';
+
+export type RelativePeriod =
+  | 'this_year'
+  | 'last_year'
+  | 'this_quarter'
+  | 'last_quarter'
+  | 'last_12_months'
+  | 'all';
+
+/** Units of a result: the measure's, or `percent` when the query asks a percentage. */
+export type MetricUnit = 'days' | 'weeks' | 'count' | 'people' | 'projects' | 'phases' | 'volume' | 'percent';
+
+export type MetricDimension =
+  | { kind: Exclude<DimensionKind, 'field' | 'period'> }
+  | { kind: 'field'; field_id: number }
+  | { kind: 'period'; grain: Grain };
+
+/** A relative period, or an absolute one (`YYYY-MM-DD`, ≤ five years). */
+export type MetricPeriod = { relative: RelativePeriod } | { from: string; to: string };
+
+export interface MetricFilters {
+  site_ids?: number[] | null;
+  /** The booked person's teams */
+  team_ids?: number[] | null;
+  /** The project's teams */
+  project_team_ids?: number[] | null;
+  person_ids?: number[] | null;
+  project_ids?: number[] | null;
+  project_manager_ids?: number[] | null;
+  tag_ids?: number[] | null;
+  confirmed?: boolean | null;
+  /** Field id (as a JSON key) → item ids */
+  field_options?: Record<string, number[]> | null;
+  archived?: 'exclude' | 'include' | 'only';
+  period?: MetricPeriod;
+}
+
+export interface MetricQuery {
+  measure: Measure;
+  dimensions?: MetricDimension[];
+  filters?: MetricFilters;
+  percent_of?: 'total' | 'first_dimension' | null;
+  top_n?: number | null;
+}
+
+/** One dimension value of a row: `key` true/false (confirmed, toggles), an id, a text, a period key, `null` (empty bucket) or `"__other__"`. */
+export interface MetricKey {
+  key: string | number | boolean | null;
+  label: string;
+  color?: string | null;
+}
+
+export interface MetricRow {
+  keys: MetricKey[];
+  value: number;
+}
+
+export interface MetricResult {
+  unit: MetricUnit;
+  dimensions: { kind: DimensionKind; label: string }[];
+  rows: MetricRow[];
+  total: number;
+  /** The `all` period was cut to five years */
+  truncated: boolean;
+  /** Stale ids dropped from the filters ("Team 14 no longer exists") */
+  warnings: string[];
+  /** Set when a fact really counted in several values of a multi-valued dimension */
+  note?: string | null;
+  /** The resolved period (`YYYY-MM-DD`) */
+  period?: { from: string; to: string };
+}
+
+/** A widget whose query failed on `/data` (deleted field, missing permission, invalid spec). */
+export interface MetricError {
+  error: string;
+}
+
+export interface WidgetOptions {
+  stacked?: boolean | null;
+  percent?: boolean | null;
+  orientation?: 'horizontal' | 'vertical' | null;
+  number_format?: 'integer' | 'decimal' | 'percent' | null;
+  show_legend?: boolean | null;
+  /** The KPI's bucket when `percent_of` is set: a dimension value's key */
+  kpi_bucket?: boolean | number | string | null;
+}
+
+export interface GridPosition {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Grid position per breakpoint (`lg` 12 columns, `md` 8, `sm` 4). */
+export interface WidgetLayout {
+  lg: GridPosition;
+  md: GridPosition;
+  sm: GridPosition;
+}
+
+export interface DashboardWidget {
+  id: number;
+  kind: WidgetKind;
+  title: string;
+  query: MetricQuery;
+  options: WidgetOptions;
+  layout: WidgetLayout;
+  sort_order: number;
+}
+
+export interface DashboardSummary {
+  id: number;
+  name: string;
+  description: string | null;
+  visibility: DashboardVisibility;
+  role_ids: number[];
+  owner_id: number | null;
+  owner_name: string | null;
+  is_default: boolean;
+  widget_count: number;
+  can_edit: boolean;
+  updated_at: string;
+}
+
+export interface Dashboard extends DashboardSummary {
+  widgets: DashboardWidget[];
+}
+
+/** A widget as sent in a save (ids are reassigned by the server). */
+export type DashboardWidgetDraft = Omit<DashboardWidget, 'id' | 'sort_order'> & {
+  id?: number;
+  sort_order?: number;
+};
+
+/** The body of a create / update. `widgets` omitted on a PUT keeps them. */
+export interface DashboardDraft {
+  id?: number;
+  name: string;
+  description?: string | null;
+  visibility: DashboardVisibility;
+  role_ids?: number[];
+  widgets?: DashboardWidgetDraft[];
+  /** POST only: copy this dashboard's widgets */
+  source_id?: number;
+}
+
+export interface DashboardData {
+  widgets: Record<string, MetricResult | MetricError>;
+  loaded_at: string;
 }

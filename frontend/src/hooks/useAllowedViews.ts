@@ -20,6 +20,7 @@ export const VIEW_PERMISSIONS: Readonly<Record<CurrentView, PermissionKey | null
   gantt: null,
   kanban: 'views.kanban',
   work: null,
+  dashboards: 'views.dashboards',
   staff: 'views.staff',
   equipment: 'views.equipment',
   crosssite: 'views.crosssite',

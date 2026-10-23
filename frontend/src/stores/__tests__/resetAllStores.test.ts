@@ -16,6 +16,7 @@ import { useWorkStore } from '../workStore';
 import { useCustomColumnStore } from '../customColumnStore';
 import { useUIStore } from '../uiStore';
 import { useViewStore } from '../viewStore';
+import { useDashboardStore } from '../dashboardStore';
 
 const PROJECT = { id: 1, name: 'P', site_id: 1, phases: [] } as unknown as Project;
 const USER = { id: 9, email: 'a@b.c', first_name: 'A', last_name: 'B', role: 'admin' } as User;
@@ -42,7 +43,14 @@ function seedSignedInState() {
     showAllCustomColumns: false,
   });
   useUIStore.setState({ activeModal: 'project', isDragging: true });
-  useViewStore.setState({ viewMode: 'quarter' });
+  useViewStore.setState({ viewMode: 'quarter', lastDashboardId: { '': 3 } });
+  useDashboardStore.setState({
+    dashboards: [{ id: 3, name: 'Overview' } as never],
+    current: { id: 3, name: 'Overview', widgets: [] } as never,
+    data: { 1: { error: 'x' } },
+    listLoaded: true,
+    loadError: 'This dashboard is no longer shared with you',
+  });
 }
 
 describe('resetAllStores', () => {
@@ -72,6 +80,12 @@ describe('resetAllStores', () => {
     expect(useCustomColumnStore.getState().customColumnFilters).toEqual({});
     expect(useUIStore.getState().activeModal).toBeNull();
     expect(useUIStore.getState().isDragging).toBe(false);
+    const dashboards = useDashboardStore.getState();
+    expect(dashboards.dashboards).toEqual([]);
+    expect(dashboards.current).toBeNull();
+    expect(dashboards.data).toEqual({});
+    expect(dashboards.listLoaded).toBe(false);
+    expect(dashboards.loadError).toBeNull();
   });
 
   it('removes the <body> classes of an in-progress gesture or mode (phantom sibling, drags, What-If)', () => {
@@ -92,6 +106,8 @@ describe('resetAllStores', () => {
 
     expect(useAppStore.getState()._persistedSiteId).toBe(4);
     expect(useViewStore.getState().viewMode).toBe('quarter');
+    // The last opened dashboard is a per-browser preference too
+    expect(useViewStore.getState().lastDashboardId).toEqual({ '': 3 });
     expect(useCustomColumnStore.getState().hiddenCustomColumns).toEqual(new Set([5]));
     expect(useCustomColumnStore.getState().showAllCustomColumns).toBe(false);
   });

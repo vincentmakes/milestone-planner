@@ -4,7 +4,17 @@ import { useAllowedViews } from '@/hooks/useAllowedViews';
 import { useWorkStore } from '@/stores/workStore';
 import type { CurrentView } from '@/types';
 import styles from './Navigation.module.css';
-import { Icon, ArchiveIcon, GlobeIcon, EquipmentViewIcon, UsersIcon, WorkIcon, KanbanIcon, GanttIcon } from '@/components/common/Icon';
+import {
+  Icon,
+  ArchiveIcon,
+  DashboardIcon,
+  GlobeIcon,
+  EquipmentViewIcon,
+  UsersIcon,
+  WorkIcon,
+  KanbanIcon,
+  GanttIcon,
+} from '@/components/common/Icon';
 
 interface NavItem {
   view: CurrentView;
@@ -31,6 +41,11 @@ const NAV_ITEMS: NavItem[] = [
     view: 'work',
     label: 'My Work',
     icon: <Icon icon={WorkIcon} size={18} />,
+  },
+  {
+    view: 'dashboards',
+    label: 'Dashboards',
+    icon: <Icon icon={DashboardIcon} size={18} />,
   },
   {
     view: 'staff',

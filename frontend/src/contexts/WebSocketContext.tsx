@@ -38,7 +38,9 @@ import { useAppStore } from '@/stores/appStore';
 import { expireSession } from '@/stores';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
-import { slicesForEntity, WHAT_IF_SANDBOXED_SLICES } from './wsSlices';
+import { useDashboardStore } from '@/stores/dashboardStore';
+import { useViewStore } from '@/stores/viewStore';
+import { DASHBOARD_DATA_SLICES, slicesForEntity, WHAT_IF_SANDBOXED_SLICES } from './wsSlices';
 import type { Slice } from './wsSlices';
 
 // Re-export types for convenience
@@ -237,6 +239,17 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
               .catch((e) => console.error('[WS] approvals refresh failed', e))
           );
           break;
+        case 'dashboards': {
+          // The list only once the view has loaded it (a user without
+          // views.dashboards never asks for it); the open dashboard itself
+          // (its widgets may have been replaced) through the store's debounce.
+          const dashboards = useDashboardStore.getState();
+          if (dashboards.listLoaded) {
+            tasks.push(dashboards.refreshList().catch((e) => console.error('[WS] dashboards refresh failed', e)));
+          }
+          if (useViewStore.getState().currentView === 'dashboards') dashboards.refreshCurrent();
+          break;
+        }
         case 'currentUser':
           tasks.push(
             fetchCurrentUser()
@@ -249,6 +262,15 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
           );
           break;
       }
+    }
+
+    // The open dashboard computes from these slices: its data reloads after
+    // dashboardStore's own 2 s debounce (the one throttle of live reloads).
+    if (
+      useViewStore.getState().currentView === 'dashboards' &&
+      batch.some((slice) => DASHBOARD_DATA_SLICES.has(slice))
+    ) {
+      void useDashboardStore.getState().reloadData();
     }
 
     await Promise.all(tasks);

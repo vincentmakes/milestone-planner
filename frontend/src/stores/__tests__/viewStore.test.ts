@@ -558,3 +558,73 @@ describe('viewStore.setCurrentView during What-If', () => {
     expect(useViewStore.getState().currentView).toBe('kanban');
   });
 });
+
+describe('viewStore last dashboard (2.1.0)', () => {
+  const KEY = 'milestone-view-storage-v1';
+
+  beforeEach(() => {
+    localStorage.clear();
+    useViewStore.setState({ lastDashboardId: {} });
+  });
+
+  afterEach(() => {
+    window.history.pushState({}, '', '/');
+  });
+
+  it('remembers the dashboard per tenant (single-tenant key "")', () => {
+    const { setLastDashboardId } = useViewStore.getState();
+    setLastDashboardId(4);
+    window.history.pushState({}, '', '/t/acme/');
+    setLastDashboardId(9);
+    window.history.pushState({}, '', '/t/globex/');
+    setLastDashboardId(null);
+    expect(useViewStore.getState().lastDashboardId).toEqual({ '': 4, acme: 9, globex: null });
+  });
+
+  it('survives a reload (partialize + merge round-trip)', async () => {
+    window.history.pushState({}, '', '/t/acme/');
+    useViewStore.getState().setLastDashboardId(7);
+    const raw = JSON.parse(localStorage.getItem(KEY) as string);
+    expect(raw.state.lastDashboardId).toEqual({ acme: 7 });
+
+    useViewStore.setState({ lastDashboardId: {} });
+    localStorage.setItem(KEY, JSON.stringify(raw));
+    await useViewStore.persist.rehydrate();
+    expect(useViewStore.getState().lastDashboardId).toEqual({ acme: 7 });
+  });
+
+  it('keeps only tenant keys with an id or null', async () => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        state: {
+          lastDashboardId: {
+            '': 3,
+            acme: null,
+            globex: 'x',
+            initech: -2,
+            hooli: 1.5,
+            'Bad Key': 4,
+            'acme:1': 5,
+          },
+        },
+        version: VIEW_STORE_VERSION,
+      })
+    );
+    await useViewStore.persist.rehydrate();
+    expect(useViewStore.getState().lastDashboardId).toEqual({ '': 3, acme: null });
+  });
+
+  it('falls back to empty when the persisted value is not an object', async () => {
+    localStorage.setItem(KEY, JSON.stringify({ state: { lastDashboardId: [1, 2] }, version: VIEW_STORE_VERSION }));
+    await useViewStore.persist.rehydrate();
+    expect(useViewStore.getState().lastDashboardId).toEqual({});
+  });
+
+  it('restores the Dashboards view as the current view', async () => {
+    localStorage.setItem(KEY, JSON.stringify({ state: { currentView: 'dashboards' }, version: VIEW_STORE_VERSION }));
+    await useViewStore.persist.rehydrate();
+    expect(useViewStore.getState().currentView).toBe('dashboards');
+    useViewStore.setState({ currentView: 'gantt' });
+  });
+});

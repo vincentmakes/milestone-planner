@@ -84,7 +84,16 @@ export function indexTags(tags: Tag[]): Map<number, Tag> {
  * preference to tenant B's site with the same id.
  */
 export function siteKey(siteId: number, tenantPrefix: string = getTenantPrefix()): string {
-  return `${tenantPrefix.replace(/^\/t\//, '')}:${siteId}`;
+  return `${tenantKey(tenantPrefix)}:${siteId}`;
+}
+
+/**
+ * The tenant part of a {@link siteKey}: the slug of the current `/t/{slug}/`
+ * prefix, `''` in single-tenant mode. Keys per-tenant (not per-site)
+ * preferences such as the last opened dashboard.
+ */
+export function tenantKey(tenantPrefix: string = getTenantPrefix()): string {
+  return tenantPrefix.replace(/^\/t\//, '');
 }
 
 /** Shape of a {@link siteKey} (legacy site-id-only keys do not match). */

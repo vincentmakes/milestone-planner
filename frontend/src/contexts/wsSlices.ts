@@ -37,13 +37,31 @@ export type Slice =
   /** Approval requests (own and to decide) — the My Work view (workStore) */
   | 'approvals'
   /** Who approves each own-booking action — appStore.approvalPolicies (pending badges) */
-  | 'approvalPolicies';
+  | 'approvalPolicies'
+  /**
+   * The dashboards shared with the user and the open one — dashboardStore
+   * (the list, once the view has loaded it; the open dashboard while the
+   * Dashboards view is shown)
+   */
+  | 'dashboards';
 
 export const ALL_SLICES: Slice[] = [
   'projects', 'staff', 'equipment', 'equipmentBlocks', 'vacations',
   'sites', 'skills', 'tags', 'projectFields', 'teams', 'roles', 'absenceTypes', 'siteCalendar', 'customColumns',
-  'settings', 'currentUser', 'approvals', 'approvalPolicies',
+  'settings', 'currentUser', 'approvals', 'approvalPolicies', 'dashboards',
 ];
+
+/**
+ * Slices whose data the open dashboard's widgets compute from: a refresh of
+ * one of them also reloads the dashboard's data, through dashboardStore's
+ * 2 s debounce, while the Dashboards view is shown.
+ */
+export const DASHBOARD_DATA_SLICES: ReadonlySet<Slice> = new Set<Slice>([
+  'projects',
+  'staff',
+  'teams',
+  'projectFields',
+]);
 
 /**
  * Slices that hold What-If sandbox state. While What-If mode is active the
@@ -96,8 +114,9 @@ export function slicesForEntity(entityType: string): Slice[] {
       // Staff are users; assignments carry their names. The user may also be
       // the one signed in here (role/site changes, deactivation). A deleted
       // user also leaves their teams' member_ids, and a role change moves the
-      // roles' user counts (Settings → Roles).
-      return ['staff', 'currentUser', 'projects', 'teams', 'roles'];
+      // roles' user counts (Settings → Roles). A role change also changes
+      // which dashboards the user may see.
+      return ['staff', 'currentUser', 'projects', 'teams', 'roles', 'dashboards'];
     case 'equipment':
       return ['equipment', 'projects'];
     case 'equipment_block':
@@ -144,6 +163,10 @@ export function slicesForEntity(entityType: string): Slice[] {
     case 'approval_request':
       // Approve/reject/cancel flip or remove pending assignment rows.
       return ['projects', 'approvals'];
+    case 'dashboard':
+      // Every /api/dashboards write (the reads /query and /data never
+      // broadcast): the list, and the open dashboard when it is shown.
+      return ['dashboards'];
     case 'card_comment':
       // Comment threads and counts have their own fetches. Without this case
       // every comment anyone posts would refetch every slice -- including

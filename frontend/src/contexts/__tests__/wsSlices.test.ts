@@ -4,7 +4,7 @@
  * change; entities with their own fetches refresh nothing.
  */
 import { describe, it, expect } from 'vitest';
-import { ALL_SLICES, WHAT_IF_SANDBOXED_SLICES, slicesForEntity } from '../wsSlices';
+import { ALL_SLICES, DASHBOARD_DATA_SLICES, WHAT_IF_SANDBOXED_SLICES, slicesForEntity } from '../wsSlices';
 
 describe('slicesForEntity', () => {
   it.each([
@@ -24,7 +24,8 @@ describe('slicesForEntity', () => {
     ['company_event', ['siteCalendar']],
     ['absence_type', ['absenceTypes', 'vacations']],
     ['staff', ['staff', 'projects']],
-    ['user', ['staff', 'currentUser', 'projects', 'teams', 'roles']],
+    // A role change also changes which dashboards the user may see
+    ['user', ['staff', 'currentUser', 'projects', 'teams', 'roles', 'dashboards']],
     ['equipment', ['equipment', 'projects']],
     ['equipment_block', ['equipmentBlocks']],
     ['vacation', ['vacations']],
@@ -44,15 +45,23 @@ describe('slicesForEntity', () => {
     // policy, so /auth/me is not reloaded.
     ['approval_policy', ['approvalPolicies', 'approvals']],
     ['approval_request', ['projects', 'approvals']],
+    // Every /api/dashboards write; /query and /data never broadcast
+    ['dashboard', ['dashboards']],
   ])('%s → %j', (entity, slices) => {
     expect(slicesForEntity(entity)).toEqual(slices);
   });
 
   it('refreshes every slice for an unknown entity', () => {
     expect(slicesForEntity('brand_new_thing')).toBe(ALL_SLICES);
-    expect(new Set(ALL_SLICES).size).toBe(18);
-    expect(ALL_SLICES).toEqual(expect.arrayContaining(['approvals', 'approvalPolicies', 'roles', 'projectFields']));
+    expect(new Set(ALL_SLICES).size).toBe(19);
+    expect(ALL_SLICES).toEqual(
+      expect.arrayContaining(['approvals', 'approvalPolicies', 'roles', 'projectFields', 'dashboards'])
+    );
     expect(ALL_SLICES).not.toContain('todos');
+  });
+
+  it('reloads the open dashboard data for the plan slices only', () => {
+    expect([...DASHBOARD_DATA_SLICES].sort()).toEqual(['projectFields', 'projects', 'staff', 'teams']);
   });
 
   it('sandboxes only the What-If plan slices', () => {

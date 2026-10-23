@@ -97,6 +97,36 @@ describe('Navigation views', () => {
     expect(button('My Work')!.querySelector('[data-testid="AssignmentIndOutlinedIcon"]')).not.toBeNull();
   });
 
+  it('lists Dashboards right after My Work, with the dashboard icon, and opens it', () => {
+    useAppStore.setState({ currentUser: makeUser({ role: 'user', site_ids: [1, 2] }) });
+    render(<Navigation />);
+    const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'));
+    expect(labels.slice(2, 5)).toEqual(['My Work', 'Dashboards', 'Staff Overview']);
+    const dashboards = button('Dashboards')!;
+    expect(dashboards.querySelector('[data-testid="DashboardOutlinedIcon"]')).not.toBeNull();
+    fireEvent.click(dashboards);
+    expect(useViewStore.getState().currentView).toBe('dashboards');
+  });
+
+  it('hides Dashboards without views.dashboards', () => {
+    useAppStore.setState({
+      currentUser: makeUser({ role: 'viewer', permissions: ['projects.view', 'views.staff'], site_ids: [1, 2] }),
+    });
+    render(<Navigation />);
+    expect(button('Dashboards')).not.toBeInTheDocument();
+  });
+
+  it('keeps Dashboards out of reach while What-If is active', () => {
+    useAppStore.setState({ currentUser: makeUser({ role: 'admin', site_ids: [1, 2] }) });
+    useWhatIfStore.getState().enterWhatIfMode([]);
+    render(<Navigation />);
+    const dashboards = button('Dashboards')!;
+    expect(dashboards).toBeDisabled();
+    expect(dashboards).toHaveAttribute('title', whatIfUnavailableMessage('Switching views'));
+    fireEvent.click(dashboards);
+    expect(useViewStore.getState().currentView).toBe('gantt');
+  });
+
   it('badges My Work with the approvals to decide, in its accessible name', () => {
     useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'user' }) });
     useWorkStore.getState().setToDecide([makeApprovalRequest({ id: 1 }), makeApprovalRequest({ id: 2 })]);
