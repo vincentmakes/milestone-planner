@@ -242,7 +242,9 @@ FROM new_roles r JOIN (VALUES
   ('superuser', 'views.equipment', 'allow'),
   ('superuser', 'views.crosssite', 'allow'),
   ('superuser', 'views.archived', 'allow'),
+  ('superuser', 'views.dashboards', 'allow'),
   ('superuser', 'whatif.use', 'allow'),
+  ('superuser', 'dashboards.manage', 'allow'),
   ('user', 'projects.view', 'allow'),
   ('user', 'projects.manage_as_pm', 'allow'),
   ('user', 'assignments.self_create', 'allow'),
@@ -257,7 +259,8 @@ FROM new_roles r JOIN (VALUES
   ('user', 'views.staff', 'allow'),
   ('user', 'views.equipment', 'allow'),
   ('user', 'views.crosssite', 'allow'),
-  ('user', 'views.archived', 'allow')
+  ('user', 'views.archived', 'allow'),
+  ('user', 'views.dashboards', 'allow')
 ) AS d(role_key, permission, mode) ON d.role_key = r.key
 ON CONFLICT (role_id, permission) DO NOTHING;
 

@@ -529,6 +529,13 @@ PERMISSIONS: tuple[Permission, ...] = (
     ),
     _p(
         "Views and tools",
+        "views.dashboards",
+        "Dashboards",
+        "Open the Dashboards view and see the dashboards shared with your role or with everyone.",
+        _BOTH,
+    ),
+    _p(
+        "Views and tools",
         "whatif.use",
         "What-If mode",
         "Plan in the What-If sandbox before applying the changes.",
@@ -547,6 +554,13 @@ PERMISSIONS: tuple[Permission, ...] = (
         "WebSocket debug",
         "Use the WebSocket diagnostics endpoints.",
         _NONE,
+    ),  # --- Dashboards -------------------------------------------------------
+    _p(
+        "Dashboards",
+        "dashboards.manage",
+        "Manage dashboards",
+        "Create, edit, share and delete your own dashboards.",
+        _SU,
     ),
 )
 
