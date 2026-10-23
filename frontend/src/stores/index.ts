@@ -6,7 +6,7 @@ import { useUndoStore } from './undoStore';
 import { useWhatIfStore } from './whatIfStore';
 import { useCustomColumnStore } from './customColumnStore';
 import { useNotificationStore } from './notificationStore';
-import { useTodoStore } from './todoStore';
+import { useWorkStore } from './workStore';
 import { useConfirmStore } from './confirmStore';
 
 export {
@@ -24,8 +24,8 @@ export { useWhatIfStore } from './whatIfStore';
 export type { WhatIfOperation } from './whatIfStore';
 export { useCustomColumnStore } from './customColumnStore';
 export { useNotificationStore } from './notificationStore';
-export { useTodoStore } from './todoStore';
-export type { TodoTab, TodoStatusFilter } from './todoStore';
+export { useWorkStore } from './workStore';
+export type { WorkTab, RequestsFilter, AssignmentsFilter } from './workStore';
 export { useConfirmStore } from './confirmStore';
 export type { ConfirmOptions } from './confirmStore';
 
@@ -45,8 +45,8 @@ const TRANSIENT_BODY_CLASSES = [
 /**
  * Forget everything that belongs to the signed-in tenant user (logout, or a
  * session that expired/was revoked): domain data, the What-If sandbox and its
- * queue, the undo history, the notification inbox, the todos and approval
- * requests (todoStore), custom-column data, any
+ * queue, the undo history, the notification inbox, the approval requests
+ * (workStore), custom-column data, any
  * pending confirmation (answered `false`) and any open modal or in-progress
  * gesture (including its <body> class). Without this, the next user to sign in
  * on the same tab would inherit (and could Apply) the previous user's queue.
@@ -66,7 +66,7 @@ export function resetAllStores(): void {
   useWhatIfStore.getState().reset();
   useUndoStore.getState().clear();
   useNotificationStore.getState().reset();
-  useTodoStore.getState().reset();
+  useWorkStore.getState().reset();
   useCustomColumnStore.setState({
     customColumns: [],
     customColumnValues: {},

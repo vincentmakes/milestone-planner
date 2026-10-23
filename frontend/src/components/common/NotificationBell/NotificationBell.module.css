@@ -160,7 +160,6 @@
 .overdue { color: var(--status-blocked); }
 .approval_requested { color: var(--accent-orange); }
 .approval_decided { color: var(--status-done); }
-.todo_assigned { color: var(--status-in-progress); }
 .assignmentChanged { color: var(--accent-blue); }
 .projectChanged { color: var(--accent-teal); }
 

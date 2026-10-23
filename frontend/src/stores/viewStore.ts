@@ -192,24 +192,29 @@ function sanitizeCollapsedGanttSections(value: unknown): Record<string, string[]
 /**
  * Persisted shape version of the view store (zustand persist `version`).
  * 1 = 2.0.0: project fields replaced tag groups.
+ * 2 = 2.0.0: My Work replaced My Todos (`currentView` 'todos' → 'work').
  */
-export const VIEW_STORE_VERSION = 1;
+export const VIEW_STORE_VERSION = 2;
 
 /**
  * Bring a persisted view state from an older {@link VIEW_STORE_VERSION} up to
  * date before `merge`. Below 1, the per-site Gantt filter, grouping, colour
  * and collapsed-section choices hold tag-group / tag ids that mean nothing
  * since 2.0.0 (and could collide with a project field id), so they are
- * dropped once; every other field is kept as is.
+ * dropped once. Below 2, a remembered `currentView: 'todos'` becomes
+ * `'work'` (merge copies the value as is). Every other field is kept as is.
  */
 export function migrateViewState(persisted: unknown, version: number): unknown {
   if (!persisted || typeof persisted !== 'object' || Array.isArray(persisted)) return persisted;
-  if (version >= 1) return persisted;
+  if (version >= VIEW_STORE_VERSION) return persisted;
   const rest = { ...(persisted as Record<string, unknown>) };
-  delete rest.tagFilters;
-  delete rest.ganttGrouping;
-  delete rest.ganttColorBy;
-  delete rest.collapsedGanttSections;
+  if (version < 1) {
+    delete rest.tagFilters;
+    delete rest.ganttGrouping;
+    delete rest.ganttColorBy;
+    delete rest.collapsedGanttSections;
+  }
+  if (rest.currentView === 'todos') rest.currentView = 'work';
   return rest;
 }
 

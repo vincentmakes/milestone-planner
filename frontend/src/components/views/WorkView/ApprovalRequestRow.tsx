@@ -1,13 +1,13 @@
 /**
- * My Todos' request entries.
+ * My Work's request entries.
  *
- * ApprovalRequestRow — a request I may decide ("To decide"): the action
+ * ApprovalRequestRow — a request I may decide (My Approvals): the action
  * sentence, its card and age, the requester's note, and the shared
  * ApprovalActions (Approve at once, Reject with an optional reason; one
  * submit guard, `loading` while the write runs). `onDecided` drops it here
  * and reloads the projects (the booking row flips or disappears).
  *
- * MyRequestRow — one of my own requests ("My requests"): the sentence, its
+ * MyRequestRow — one of my own requests (My Requests): the sentence, its
  * outcome, the decider's note, and Cancel while it is pending.
  */
 
@@ -18,7 +18,7 @@ import { relativeTime } from '@/utils/relativeTime';
 import { CardLink } from './CardLink';
 import { describeRequest, requestOutcome } from './requestText';
 import type { ApprovalRequest } from '@/types';
-import styles from './TodosView.module.css';
+import styles from './WorkView.module.css';
 
 function RequestCard({ request }: { request: ApprovalRequest }) {
   if (request.level === 'project' || !request.target_name) {

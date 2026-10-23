@@ -1,5 +1,5 @@
 /**
- * The sentences My Todos shows for an approval request: what the requester
+ * The sentences My Work shows for an approval request: what the requester
  * asks for (to a decider) or asked for (to the requester), and its outcome.
  */
 import { describe, it, expect } from 'vitest';

@@ -68,6 +68,7 @@ describe('apiRequest', () => {
       ['PUT', '/api/kanban/comments/5'],
       ['POST', '/api/kanban/cards/phase/12/comments'],
       ['POST', '/api/kanban/cards/subphase/7/comments'],
+      ['POST', '/api/kanban/cards/project/3/comments'],
     ] as const)('lets exempt write %s %s through', async (method, url) => {
       whatIf = true;
       await apiRequest(url, { method, body: {} });
@@ -135,13 +136,11 @@ describe('apiRequest', () => {
       '/api/sites/1',
       '/api/equipment',
       '/api/equipment/6',
-      // RBAC: configuration, private rows, and decisions addressed to a person
+      // RBAC: configuration, and decisions addressed to a person
       '/api/roles',
       '/api/roles/4',
       '/api/permissions',
       '/api/approval-policies/assignments.self_create',
-      '/api/todos',
-      '/api/todos/3',
       '/api/approval-requests/5/approve',
       '/api/approval-requests/5/reject',
       '/api/approval-requests/5/cancel',
@@ -212,7 +211,9 @@ describe('apiRequest', () => {
       expect(isWhatIfExempt('/t/acme/api/sites/3/events')).toBe(false);
       expect(isWhatIfExempt('/api/equipmentx')).toBe(false);
       expect(isWhatIfExempt('/api/rolesx')).toBe(false);
-      expect(isWhatIfExempt('/api/todos-archive')).toBe(false);
+      // Personal todos are gone: nothing exempts them any more.
+      expect(isWhatIfExempt('/api/todos')).toBe(false);
+      expect(isWhatIfExempt('/api/kanban/cards/card/3/comments')).toBe(false);
     });
 
     it('sends every write for real outside What-If (PATCH included)', async () => {

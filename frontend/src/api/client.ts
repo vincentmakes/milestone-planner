@@ -138,14 +138,13 @@ const WHAT_IF_EXEMPT_PREFIXES: readonly string[] = [
  * /api/equipment/{id}/… sub-resources.
  */
 const WHAT_IF_EXEMPT_PATTERNS: readonly RegExp[] = [
-  /^\/api\/kanban\/cards\/(phase|subphase)\/\d+\/comments/,
+  /^\/api\/kanban\/cards\/(phase|subphase|project)\/\d+\/comments/,
   /^\/api\/(absence-types|skills|equipment-types|predefined-phases|users|tags|project-fields|teams)(\/|$)/,
-  // RBAC. Roles, permissions and approval policies are configuration; todos
-  // are private rows like notifications; an approval decision (approve,
-  // reject, cancel) is a message to a person: queued, Discard would silently
-  // un-decide it. Own bookings stay queued on the assignment routes (a 202 on
-  // Apply becomes a request).
-  /^\/api\/(roles|permissions|approval-policies|todos|approval-requests)(\/|$)/,
+  // RBAC. Roles, permissions and approval policies are configuration; an
+  // approval decision (approve, reject, cancel) is a message to a person:
+  // queued, Discard would silently un-decide it. Own bookings stay queued on
+  // the assignment routes (a 202 on Apply becomes a request).
+  /^\/api\/(roles|permissions|approval-policies|approval-requests)(\/|$)/,
   /^\/api\/sites(\/\d+)?$/,
   /^\/api\/equipment(\/\d+)?$/,
 ];

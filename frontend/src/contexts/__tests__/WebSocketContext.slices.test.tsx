@@ -11,7 +11,6 @@ import type { ChangePayload } from '@/hooks/useWebSocket';
 
 const hookState = vi.hoisted(() => ({
   onChangeReceived: undefined as undefined | ((c: ChangePayload) => void),
-  onTodoChanged: undefined as undefined | (() => void),
   onApprovalChanged: undefined as undefined | (() => void),
   recentChanges: [] as ChangePayload[],
   connect: vi.fn(),
@@ -21,11 +20,9 @@ const hookState = vi.hoisted(() => ({
 vi.mock('@/hooks/useWebSocket', () => ({
   useWebSocket: (opts: {
     onChangeReceived?: (c: ChangePayload) => void;
-    onTodoChanged?: () => void;
     onApprovalChanged?: () => void;
   }) => {
     hookState.onChangeReceived = opts.onChangeReceived;
-    hookState.onTodoChanged = opts.onTodoChanged;
     hookState.onApprovalChanged = opts.onApprovalChanged;
     return {
       connectionState: 'connected',
@@ -79,7 +76,7 @@ import { fetchCurrentUser } from '@/api/endpoints/auth';
 import { useAppStore } from '@/stores/appStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { resetAllStores } from '@/stores';
-import { useTodoStore } from '@/stores/todoStore';
+import { useWorkStore } from '@/stores/workStore';
 import {
   makeCustomColumn,
   makeEquipment,
@@ -129,12 +126,12 @@ async function receive(entity_type: string) {
   });
 }
 
-const todoRefresh = vi.fn(async () => {});
-const realTodoRefresh = useTodoStore.getState().refresh;
+const workRefresh = vi.fn(async () => {});
+const realWorkRefresh = useWorkStore.getState().refresh;
 
 beforeEach(() => {
-  todoRefresh.mockClear();
-  useTodoStore.setState({ refresh: todoRefresh });
+  workRefresh.mockClear();
+  useWorkStore.setState({ refresh: workRefresh });
   vi.useFakeTimers();
   vi.spyOn(console, 'info').mockImplementation(() => {});
   vi.clearAllMocks();
@@ -145,7 +142,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  useTodoStore.setState({ refresh: realTodoRefresh });
+  useWorkStore.setState({ refresh: realWorkRefresh });
   cleanup();
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -241,64 +238,67 @@ describe('WebSocketProvider slice refresh', () => {
     expect(useAppStore.getState().equipmentBlocks).toEqual([]);
   });
 
-  it('loads the todo store on mount and on window focus (the sidebar badge)', async () => {
+  it('loads the work store on mount and on window focus (the sidebar badge)', async () => {
     render(<WebSocketProvider><div /></WebSocketProvider>);
-    expect(todoRefresh).toHaveBeenCalledTimes(1);
+    expect(workRefresh).toHaveBeenCalledTimes(1);
     await act(async () => {
       window.dispatchEvent(new Event('focus'));
     });
-    expect(todoRefresh).toHaveBeenCalledTimes(2);
+    expect(workRefresh).toHaveBeenCalledTimes(2);
     cleanup();
     window.dispatchEvent(new Event('focus'));
-    expect(todoRefresh).toHaveBeenCalledTimes(2);
+    expect(workRefresh).toHaveBeenCalledTimes(2);
   });
 
-  it('refreshes the todo store, and only it, on change:todo', async () => {
+  it('logs a failed mount load of the work store', async () => {
+    workRefresh.mockRejectedValueOnce(new Error('boom'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     render(<WebSocketProvider><div /></WebSocketProvider>);
-    todoRefresh.mockClear(); // the mount load
-    await receive('todo');
-    expect(todoRefresh).toHaveBeenCalledTimes(1);
-    expect(loadAllProjects).not.toHaveBeenCalled();
-    expect(fetchCurrentUser).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(error).toHaveBeenCalledWith('[WS] approvals refresh failed', expect.any(Error));
   });
 
-  it('reloads the projects and the todo store once, not the policies, on change:approval_request', async () => {
+  it('reloads the projects and the work store once, not the policies, on change:approval_request', async () => {
     useAppStore.setState({
       approvalPolicies: [{ action: 'assignments.self_create', label: 'x', pm_approves: true, role_ids: [] }],
     });
     render(<WebSocketProvider><div /></WebSocketProvider>);
-    todoRefresh.mockClear(); // the mount load
+    workRefresh.mockClear(); // the mount load
     await receive('approval_request');
     expect(loadAllProjects).toHaveBeenCalledTimes(1);
-    expect(todoRefresh).toHaveBeenCalledTimes(1);
+    expect(workRefresh).toHaveBeenCalledTimes(1);
     expect(rolesApi.getApprovalPolicies).not.toHaveBeenCalled();
   });
 
-  it('refreshes the todo store once for both slices of an unknown entity', async () => {
+  it('refreshes the work store once for an unknown entity', async () => {
     render(<WebSocketProvider><div /></WebSocketProvider>);
-    todoRefresh.mockClear(); // the mount load
+    workRefresh.mockClear(); // the mount load
     await receive('brand_new_entity');
-    expect(todoRefresh).toHaveBeenCalledTimes(1);
+    expect(workRefresh).toHaveBeenCalledTimes(1);
   });
 
-  it('logs a failed todo refresh', async () => {
-    todoRefresh.mockRejectedValueOnce(new Error('boom'));
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  it('logs a failed approvals refresh', async () => {
     render(<WebSocketProvider><div /></WebSocketProvider>);
-    await receive('todo');
-    expect(error).toHaveBeenCalledWith('[WS] todos refresh failed', expect.any(Error));
-  });
-
-  it('refreshes the todo store on the per-user todo:changed / approval:changed pushes, debounced', async () => {
-    render(<WebSocketProvider><div /></WebSocketProvider>);
-    todoRefresh.mockClear(); // the mount load
     await act(async () => {
-      hookState.onTodoChanged!();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    workRefresh.mockRejectedValueOnce(new Error('boom'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await receive('approval_request');
+    expect(error).toHaveBeenCalledWith('[WS] approvals refresh failed', expect.any(Error));
+  });
+
+  it('refreshes the work store on the per-user approval:changed push, debounced', async () => {
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    workRefresh.mockClear(); // the mount load
+    await act(async () => {
       hookState.onApprovalChanged!();
-      hookState.onTodoChanged!();
+      hookState.onApprovalChanged!();
       await vi.advanceTimersByTimeAsync(250);
     });
-    expect(todoRefresh).toHaveBeenCalledTimes(1);
+    expect(workRefresh).toHaveBeenCalledTimes(1);
     expect(loadAllProjects).not.toHaveBeenCalled();
   });
 

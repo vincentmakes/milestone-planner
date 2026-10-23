@@ -616,7 +616,7 @@ export type ViewMode = 'week' | 'month' | 'quarter' | 'year';
 export type CurrentView =
   | 'gantt'
   | 'kanban'
-  | 'todos'
+  | 'work'
   | 'staff'
   | 'equipment'
   | 'crosssite'
@@ -885,8 +885,6 @@ export type NotificationType =
   | 'approval_requested'
   /** The user's own request was approved, rejected or expired */
   | 'approval_decided'
-  /** Someone assigned the user a task (entity: the todo) */
-  | 'todo_assigned'
   /**
    * Someone else added, changed or removed the user's booking (entity: the
    * card or the project; none, and no project, when the project was deleted)
@@ -903,7 +901,7 @@ export interface AppNotification {
   type: NotificationType;
   actor_id?: number | null;
   actor_name?: string | null;
-  entity_type?: 'phase' | 'subphase' | 'project' | 'todo' | 'approval_request' | null;
+  entity_type?: 'phase' | 'subphase' | 'project' | 'approval_request' | null;
   entity_id?: number | null;
   project_id?: number | null;
   title: string;
@@ -915,57 +913,4 @@ export interface AppNotification {
    * and are dismissed into localStorage rather than marked read on the server.
    */
   source?: 'server' | 'derived';
-}
-
-// =============================================================================
-// TODOS (My Todos)
-// =============================================================================
-
-export type TodoStatus = 'open' | 'done' | 'cancelled';
-
-/**
- * One My Todos entry (GET /api/todos/mine): a `task` (a private todo row,
- * the caller is its assignee or creator) or an `approval` (a pending request
- * the caller may decide, id `approval:<n>`, the request in `approval_request`).
- */
-export interface TodoItem {
-  id: number | string;
-  kind: 'task' | 'approval';
-  title: string;
-  notes: string | null;
-  /** YYYY-MM-DD */
-  due_date: string | null;
-  status: TodoStatus;
-  assignee_id: number | null;
-  assignee_name: string | null;
-  created_by: number | null;
-  created_by_name: string | null;
-  project_id: number | null;
-  project_name: string | null;
-  /** The linked card ('phase' | 'subphase'), or a request's level */
-  entity_type: string | null;
-  entity_id: number | null;
-  completed_at: string | null;
-  approval_request: ApprovalRequest | null;
-  created_at: string | null;
-  updated_at: string | null;
-}
-
-/** A task (`kind: 'task'`): its id is the todo row's number. */
-export type TodoTask = TodoItem & { id: number; kind: 'task' };
-
-/** POST /api/todos — the assignee defaults to the caller. */
-export interface CreateTodoRequest {
-  title: string;
-  notes?: string | null;
-  due_date?: string | null;
-  assignee_id?: number;
-  project_id?: number | null;
-  entity_type?: 'phase' | 'subphase' | null;
-  entity_id?: number | null;
-}
-
-/** PUT /api/todos/{id} — partial; an explicit null clears notes, due date and the links. */
-export interface UpdateTodoRequest extends Partial<CreateTodoRequest> {
-  status?: TodoStatus;
 }

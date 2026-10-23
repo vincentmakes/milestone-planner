@@ -67,7 +67,7 @@
   text-overflow: ellipsis;
 }
 
-/* Open My Todos items. "Badge" in the class name keeps the phone-size
+/* My Work's approvals to decide. "Badge" in the class name keeps the phone-size
    44 px touch-target rule off it (UI_GUIDELINES §7). */
 .countBadge {
   margin-left: auto;

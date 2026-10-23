@@ -53,7 +53,7 @@ export interface ServerMessage {
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
 
-/** The payload of a per-user push (`todo:changed`, `approval:changed`): a hint, refetch for the state. */
+/** The payload of a per-user push (`approval:changed`): a hint, refetch for the state. */
 export interface UserEventPayload {
   id?: number;
   action?: string;
@@ -67,8 +67,6 @@ interface UseWebSocketOptions {
   onChangeReceived?: (change: ChangePayload) => void;
   /** Called when a notification addressed to this user arrives */
   onNotificationReceived?: (notification: AppNotification) => void;
-  /** Called when one of this user's todos changed (per-user `todo:changed` push) */
-  onTodoChanged?: (payload: UserEventPayload) => void;
   /** Called when an approval request of or for this user changed (`approval:changed`) */
   onApprovalChanged?: (payload: UserEventPayload) => void;
   /**
@@ -152,7 +150,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     onPresenceChange, 
     onChangeReceived,
     onNotificationReceived,
-    onTodoChanged,
     onApprovalChanged,
     onSessionInvalid,
     autoConnect = true,
@@ -185,7 +182,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const onPresenceChangeRef = useRef(onPresenceChange);
   const onChangeReceivedRef = useRef(onChangeReceived);
   const onNotificationReceivedRef = useRef(onNotificationReceived);
-  const onTodoChangedRef = useRef(onTodoChanged);
   const onApprovalChangedRef = useRef(onApprovalChanged);
   const onSessionInvalidRef = useRef(onSessionInvalid);
   
@@ -201,10 +197,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   useEffect(() => {
     onNotificationReceivedRef.current = onNotificationReceived;
   }, [onNotificationReceived]);
-
-  useEffect(() => {
-    onTodoChangedRef.current = onTodoChanged;
-  }, [onTodoChanged]);
 
   useEffect(() => {
     onApprovalChangedRef.current = onApprovalChanged;
@@ -283,13 +275,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           break;
         }
 
-        // Per-user pushes, like notification:new: not "change:*", so the
-        // default branch would drop them.
-        case 'todo:changed': {
-          onTodoChangedRef.current?.((message.payload ?? {}) as UserEventPayload);
-          break;
-        }
-
+        // Per-user push, like notification:new: not "change:*", so the
+        // default branch would drop it.
         case 'approval:changed': {
           onApprovalChangedRef.current?.((message.payload ?? {}) as UserEventPayload);
           break;

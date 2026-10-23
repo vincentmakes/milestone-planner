@@ -43,15 +43,15 @@ describe('slicesForEntity', () => {
     // policy, so /auth/me is not reloaded.
     ['approval_policy', ['approvalPolicies', 'approvals']],
     ['approval_request', ['projects', 'approvals']],
-    ['todo', ['todos']],
   ])('%s → %j', (entity, slices) => {
     expect(slicesForEntity(entity)).toEqual(slices);
   });
 
   it('refreshes every slice for an unknown entity', () => {
     expect(slicesForEntity('brand_new_thing')).toBe(ALL_SLICES);
-    expect(new Set(ALL_SLICES).size).toBe(19);
-    expect(ALL_SLICES).toEqual(expect.arrayContaining(['approvals', 'approvalPolicies', 'todos', 'roles', 'projectFields']));
+    expect(new Set(ALL_SLICES).size).toBe(18);
+    expect(ALL_SLICES).toEqual(expect.arrayContaining(['approvals', 'approvalPolicies', 'roles', 'projectFields']));
+    expect(ALL_SLICES).not.toContain('todos');
   });
 
   it('sandboxes only the What-If plan slices', () => {

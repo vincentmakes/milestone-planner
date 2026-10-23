@@ -1,5 +1,5 @@
 /**
- * A link from a My Todos entry to its Kanban card: opens the card dialog in
+ * A link from a My Work entry to its Kanban card: opens the card dialog in
  * place (no view switch). Plain text without `views.kanban` (the card's reads
  * need it); disabled with the reason during What-If, like the bell's card
  * links (the card dialog writes plan data).
@@ -8,7 +8,7 @@
 import { useUIStore } from '@/stores/uiStore';
 import { useHasPermission } from '@/hooks/useCan';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
-import styles from './TodosView.module.css';
+import styles from './WorkView.module.css';
 
 export const OPEN_CARD_ACTION = 'Opening a card';
 

@@ -22,7 +22,6 @@ import type {
   Subphase,
   Tag,
   Team,
-  TodoTask,
   User,
   Vacation,
 } from '@/types';
@@ -275,31 +274,6 @@ export function makeSystemRoles(...extra: Role[]): Role[] {
     makeRole({ id: 3, key: 'user', name: 'User', is_system: true, sort_order: 2, permissions: allowMatrix('user'), user_count: 2 }),
     ...extra,
   ];
-}
-
-/** An open task Bob Brown (id 4) created for himself, unlinked. */
-export function makeTodo(overrides: Partial<TodoTask> = {}): TodoTask {
-  return {
-    id: 1,
-    kind: 'task',
-    title: 'Order reagents',
-    notes: null,
-    due_date: null,
-    status: 'open',
-    assignee_id: 4,
-    assignee_name: 'Bob Brown',
-    created_by: 4,
-    created_by_name: 'Bob Brown',
-    project_id: null,
-    project_name: null,
-    entity_type: null,
-    entity_id: null,
-    completed_at: null,
-    approval_request: null,
-    created_at: '2026-10-20T08:00:00.000Z',
-    updated_at: null,
-    ...overrides,
-  };
 }
 
 /** Bob Brown's (id 4) pending request to join phase 10 of project 1 at 40%. */

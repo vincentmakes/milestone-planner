@@ -1,10 +1,10 @@
 import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { useAllowedViews } from '@/hooks/useAllowedViews';
-import { useTodoStore } from '@/stores/todoStore';
+import { useWorkStore } from '@/stores/workStore';
 import type { CurrentView } from '@/types';
 import styles from './Navigation.module.css';
-import { Icon, ArchiveIcon, GlobeIcon, EquipmentViewIcon, UsersIcon, CheckBoxIcon, KanbanIcon, GanttIcon } from '@/components/common/Icon';
+import { Icon, ArchiveIcon, GlobeIcon, EquipmentViewIcon, UsersIcon, WorkIcon, KanbanIcon, GanttIcon } from '@/components/common/Icon';
 
 interface NavItem {
   view: CurrentView;
@@ -28,9 +28,9 @@ const NAV_ITEMS: NavItem[] = [
     icon: <Icon icon={KanbanIcon} size={18} />,
   },
   {
-    view: 'todos',
-    label: 'My Todos',
-    icon: <Icon icon={CheckBoxIcon} size={18} />,
+    view: 'work',
+    label: 'My Work',
+    icon: <Icon icon={WorkIcon} size={18} />,
   },
   {
     view: 'staff',
@@ -64,16 +64,17 @@ export function Navigation({ collapsed = false }: NavigationProps) {
   // Views without their key are hidden; Cross-site is disabled with a reason
   // while only one site is visible (VIEW_PERMISSIONS in useAllowedViews).
   const { visible, disabledReason } = useAllowedViews();
-  // Requests to decide + my open tasks (a primitive: todoStore keeps it current).
-  const todoCount = useTodoStore((s) => s.openCount);
+  // Approval requests to decide (a primitive: workStore keeps it current).
+  const approvalCount = useWorkStore((s) => s.openCount);
 
   return (
     <nav className={`${styles.nav} ${collapsed ? styles.collapsed : ''}`}>
       {NAV_ITEMS.filter((item) => visible.includes(item.view)).map((item) => {
         const isBlocked = blocked && item.view !== currentView && item.view !== 'gantt';
         const unavailable = disabledReason[item.view];
-        const badge = item.view === 'todos' && todoCount > 0 ? todoCount : 0;
-        const name = badge > 0 ? `${item.label}, ${badge} open item${badge === 1 ? '' : 's'}` : item.label;
+        const badge = item.view === 'work' && approvalCount > 0 ? approvalCount : 0;
+        const name =
+          badge > 0 ? `${item.label}, ${badge} approval${badge === 1 ? '' : 's'} to decide` : item.label;
         return (
           <button
             key={item.view}

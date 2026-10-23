@@ -7,7 +7,7 @@
 
 import React, { createContext, useContext, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useNotificationStore } from '@/stores/notificationStore';
-import { useTodoStore } from '@/stores/todoStore';
+import { useWorkStore } from '@/stores/workStore';
 import { useWebSocket, ConnectionState } from '@/hooks/useWebSocket';
 import type { PresenceUser, ChangePayload } from '@/hooks/useWebSocket';
 import type { AppNotification } from '@/types';
@@ -125,16 +125,6 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     }
 
     const tasks: Array<Promise<unknown>> = [];
-    // Both lists live in todoStore, which reloads them together: one refresh
-    // when either slice (or both) is due.
-    if (batch.includes('approvals') || batch.includes('todos')) {
-      tasks.push(
-        useTodoStore
-          .getState()
-          .refresh()
-          .catch((e) => console.error('[WS] todos refresh failed', e))
-      );
-    }
     for (const slice of batch) {
       switch (slice) {
         case 'projects':
@@ -235,8 +225,13 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
           );
           break;
         case 'approvals':
-        case 'todos':
-          // todoStore, refreshed once above.
+          // Both request lists live in workStore, which reloads them together.
+          tasks.push(
+            useWorkStore
+              .getState()
+              .refresh()
+              .catch((e) => console.error('[WS] approvals refresh failed', e))
+          );
           break;
         case 'currentUser':
           tasks.push(
@@ -293,9 +288,8 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     stageSlices(slicesForEntity(change.entity_type));
   }, [stageSlices]);
 
-  // Per-user pushes (todos are private, requests reach their people): a live
-  // hint like notification:new; todoStore reloads through the same debounce.
-  const handleTodoChanged = useCallback(() => stageSlices(['todos']), [stageSlices]);
+  // Per-user push (a request reaches its people): a live hint like
+  // notification:new; workStore reloads through the same debounce.
   const handleApprovalChanged = useCallback(() => stageSlices(['approvals']), [stageSlices]);
 
   // The server closed the socket for an invalid / revoked session (4001), a
@@ -330,24 +324,23 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     autoConnect: true,
     onChangeReceived: handleChangeReceived,
     onNotificationReceived: handleNotificationReceived,
-    onTodoChanged: handleTodoChanged,
     onApprovalChanged: handleApprovalChanged,
     onSessionInvalid: handleSessionInvalid,
   });
 
-  // todoStore feeds the sidebar's My Todos badge, so it loads with the
+  // workStore feeds the sidebar's My Work badge, so it loads with the
   // signed-in app (this provider) and again on window focus: the pushes and
   // slices above are hints that a user on another worker misses.
   useEffect(() => {
-    const refreshTodos = () => {
-      useTodoStore
+    const refreshWork = () => {
+      useWorkStore
         .getState()
         .refresh()
-        .catch((e) => console.error('[WS] todos refresh failed', e));
+        .catch((e) => console.error('[WS] approvals refresh failed', e));
     };
-    refreshTodos();
-    window.addEventListener('focus', refreshTodos);
-    return () => window.removeEventListener('focus', refreshTodos);
+    refreshWork();
+    window.addEventListener('focus', refreshWork);
+    return () => window.removeEventListener('focus', refreshWork);
   }, []);
 
   // When What-If mode exits, run the refreshes that were deferred during it.

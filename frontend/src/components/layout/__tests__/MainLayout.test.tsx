@@ -22,7 +22,7 @@ vi.mock('@/components/gantt', () => ({ GanttContainer: () => <div>Gantt view</di
 vi.mock('@/components/gantt/ShiftTooltip', () => ({ ShiftTooltip: () => null }));
 vi.mock('@/components/views', () => ({
   KanbanView: () => <div>Kanban view</div>,
-  TodosView: () => <div>Todos view</div>,
+  WorkView: () => <div>Work view</div>,
   StaffView: () => <div>Staff view</div>,
   EquipmentView: () => <div>Equipment view</div>,
   CrossSiteView: () => <div>Cross-site view</div>,
@@ -44,7 +44,7 @@ describe('MainLayout', () => {
   it.each<[CurrentView, string]>([
     ['gantt', 'Gantt view'],
     ['kanban', 'Kanban view'],
-    ['todos', 'Todos view'],
+    ['work', 'Work view'],
     ['staff', 'Staff view'],
     ['equipment', 'Equipment view'],
     ['crosssite', 'Cross-site view'],

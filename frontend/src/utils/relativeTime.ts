@@ -1,6 +1,6 @@
 /**
  * "just now" / "5m ago" / "3h ago" / "2d ago" for a real timestamp
- * (`created_at`, …) — the notification bell and My Todos. Empty for a
+ * (`created_at`, …) — the notification bell and My Work. Empty for a
  * missing or unreadable value.
  */
 export function relativeTime(iso: string | null | undefined): string {

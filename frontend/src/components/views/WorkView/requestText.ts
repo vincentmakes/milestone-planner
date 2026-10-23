@@ -1,5 +1,5 @@
 /**
- * The words My Todos shows for an approval request, mirroring the server's
+ * The words My Work shows for an approval request, mirroring the server's
  * titles (app/services/approvals.py `_request_title`, `describe_change`,
  * `CLOSE_REASON_DETAILS`): to a decider, "Bob wants to join Design of
  * Bioprocess at 40%"; to the requester, "Join Design of Bioprocess at 40%".

@@ -7,8 +7,8 @@
  *
  * Server notifications and browser-derived due reminders are merged for
  * display; only the former are marked read against the API. A click opens
- * the card on the Kanban board, or — for approval requests, decisions and
- * assigned tasks — My Todos on the matching tab; both are blocked during
+ * the card on the Kanban board, or — for approval requests and decisions —
+ * My Work on the matching tab; both are blocked during
  * What-If (they leave the Gantt). A notification about a project, or about a
  * card while the board is out of reach (no `views.kanban`), opens the project
  * on the Gantt instead, switching site when it sits on another one (blocked
@@ -22,8 +22,8 @@ import { useNotificationStore } from '@/stores/notificationStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
-import { useTodoStore } from '@/stores/todoStore';
-import type { TodoStatusFilter, TodoTab } from '@/stores/todoStore';
+import { useWorkStore } from '@/stores/workStore';
+import type { RequestsFilter, WorkTab } from '@/stores/workStore';
 import {
   getNotifications,
   getUnreadCount,
@@ -43,7 +43,7 @@ import type { AppNotification, NotificationType, Project, Site } from '@/types';
 import styles from './NotificationBell.module.css';
 import { useHasPermission } from '@/hooks/useCan';
 import type { IconComponent } from '@/components/common/Icon';
-import { Icon, AssignedIcon, CommentIcon, MentionIcon, CheckBoxIcon, ClockIcon, WarningIcon, ShieldIcon, CheckCircleIcon, ListIcon, ManageAccountsIcon, EditCalendarIcon, BellIcon } from '@/components/common/Icon';
+import { Icon, AssignedIcon, CommentIcon, MentionIcon, CheckBoxIcon, ClockIcon, WarningIcon, ShieldIcon, CheckCircleIcon, ManageAccountsIcon, EditCalendarIcon, BellIcon } from '@/components/common/Icon';
 
 const TYPE_ICONS: Record<string, IconComponent> = {
   assigned: AssignedIcon,
@@ -54,7 +54,6 @@ const TYPE_ICONS: Record<string, IconComponent> = {
   overdue: WarningIcon,
   approval_requested: ShieldIcon,
   approval_decided: CheckCircleIcon,
-  todo_assigned: ListIcon,
   // A person with a gear: someone else edited your booking.
   assignment_changed: ManageAccountsIcon,
   // A calendar with a pencil: someone else changed your project's plan.
@@ -80,33 +79,31 @@ function cardOf(n: AppNotification): CardRef | null {
   return { entityType: n.entity_type, entityId: n.entity_id, projectId: n.project_id };
 }
 
-interface TodosTarget {
-  tab: TodoTab;
-  /** The Open/Done filter that shows the item (none on To decide, which has no filter) */
-  filter?: TodoStatusFilter;
+interface WorkTarget {
+  tab: WorkTab;
+  /** The Open/Done filter of My Requests that shows the item (none on My Approvals) */
+  filter?: RequestsFilter;
 }
 
 /**
- * Where in My Todos a notification about a request or a task lands. A
- * decision is about a request that is no longer pending, so My requests
- * opens on Done; a new task is open.
+ * Where in My Work a notification about a request lands. A decision is about
+ * a request that is no longer pending, so My Requests opens on Done.
  */
-const TODO_TARGETS: Partial<Record<NotificationType, TodosTarget>> = {
-  approval_requested: { tab: 'decide' },
+const WORK_TARGETS: Partial<Record<NotificationType, WorkTarget>> = {
+  approval_requested: { tab: 'approvals' },
   approval_decided: { tab: 'requests', filter: 'done' },
-  todo_assigned: { tab: 'tasks', filter: 'open' },
 };
 
-/** My Todos' target for this notification, unless it is about a card. */
-function todosTargetFor(n: AppNotification): TodosTarget | null {
+/** My Work's target for this notification, unless it is about a card. */
+function workTargetFor(n: AppNotification): WorkTarget | null {
   if (cardOf(n)) return null;
-  return TODO_TARGETS[n.type] ?? null;
+  return WORK_TARGETS[n.type] ?? null;
 }
 
 /** Where a click on a notification leads. */
 type NotificationTarget =
   | { kind: 'card'; card: CardRef }
-  | { kind: 'todos'; todos: TodosTarget }
+  | { kind: 'work'; work: WorkTarget }
   /** The project on the Gantt, at `site` (one of the visible sites) */
   | { kind: 'gantt'; project: Project; site: Site }
   /** It names a project the Gantt cannot show: deleted, archived or not visible */
@@ -122,8 +119,8 @@ function targetFor(
 ): NotificationTarget {
   const card = cardOf(n);
   if (card && canOpenCards) return { kind: 'card', card };
-  const todos = todosTargetFor(n);
-  if (todos) return { kind: 'todos', todos };
+  const work = workTargetFor(n);
+  if (work) return { kind: 'work', work };
   // A card the board cannot open (all types), or the project itself.
   if (!n.project_id || !(card || n.entity_type === 'project')) return { kind: 'none' };
   const project = projects.find((p) => p.id === n.project_id && !p.archived);
@@ -132,7 +129,7 @@ function targetFor(
 }
 
 const OPEN_CARD_ACTION = 'Opening a card from a notification';
-const OPEN_TODOS_ACTION = 'Opening My Todos from a notification';
+const OPEN_WORK_ACTION = 'Opening My Work from a notification';
 const OPEN_OTHER_SITE_ACTION = 'Opening a project on another site from a notification';
 const MISSING_PROJECT_MESSAGE = 'This project is no longer available';
 
@@ -160,8 +157,8 @@ export function NotificationBell() {
   const ensureProjectExpanded = useViewStore((s) => s.ensureProjectExpanded);
   const openKanbanCard = useUIStore((s) => s.openKanbanCardModal);
   const showFlash = useUIStore((s) => s.showFlash);
-  const setTodoTab = useTodoStore((s) => s.setActiveTab);
-  const setTodoFilter = useTodoStore((s) => s.setStatusFilter);
+  const setWorkTab = useWorkStore((s) => s.setActiveTab);
+  const setRequestsFilter = useWorkStore((s) => s.setRequestsFilter);
 
   const derived = useDerivedDueNotifications();
   // What-If is Gantt-only and cannot switch site, so a target that leaves the
@@ -210,7 +207,7 @@ export function NotificationBell() {
   const blockedReason = (target: NotificationTarget): string | undefined => {
     if (!whatIf.blocked) return undefined;
     if (target.kind === 'card') return whatIf.reason(OPEN_CARD_ACTION);
-    if (target.kind === 'todos') return whatIf.reason(OPEN_TODOS_ACTION);
+    if (target.kind === 'work') return whatIf.reason(OPEN_WORK_ACTION);
     if (target.kind === 'gantt' && target.site.id !== currentSiteId) {
       return whatIf.reason(OPEN_OTHER_SITE_ACTION);
     }
@@ -224,11 +221,11 @@ export function NotificationBell() {
       setKanbanProjectId(projectId);
       setCurrentView('kanban');
       openKanbanCard(entityType, entityId, projectId);
-    } else if (target.kind === 'todos') {
-      // My Todos needs no key: every user has one.
-      setTodoTab(target.todos.tab);
-      if (target.todos.filter) setTodoFilter(target.todos.filter);
-      setCurrentView('todos');
+    } else if (target.kind === 'work') {
+      // My Work needs no key: every user has one.
+      setWorkTab(target.work.tab);
+      if (target.work.filter) setRequestsFilter(target.work.filter);
+      setCurrentView('work');
     } else if (target.kind === 'gantt') {
       // selectSite also loads the site's calendar and custom columns.
       if (target.site.id !== currentSiteId) void selectSite(target.site);

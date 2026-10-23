@@ -10,10 +10,10 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { resetAllStores } from '@/stores';
-import { useTodoStore } from '@/stores/todoStore';
+import { useWorkStore } from '@/stores/workStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { CROSS_SITE_DISABLED_REASON } from '@/hooks/useAllowedViews';
-import { makeApprovalRequest, makeSite, makeTodo, makeUser } from '@/test/factories';
+import { makeApprovalRequest, makeSite, makeUser } from '@/test/factories';
 
 const twoSites = [makeSite({ id: 1 }), makeSite({ id: 2, name: 'Zurich' })];
 
@@ -74,38 +74,45 @@ describe('Navigation views', () => {
     expect(button('Cross-Site')).toHaveAttribute('title', whatIfUnavailableMessage('Switching views'));
   });
 
-  it('lists My Todos right after the Kanban board, even without any view key', () => {
+  it('lists My Work right after the Kanban board, even without any view key', () => {
     useAppStore.setState({ currentUser: makeUser({ role: 'viewer', permissions: ['projects.view'] }) });
     render(<Navigation />);
     const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'));
-    expect(labels).toEqual(['Gantt Chart', 'My Todos']);
-    fireEvent.click(button('My Todos')!);
-    expect(useViewStore.getState().currentView).toBe('todos');
+    expect(labels).toEqual(['Gantt Chart', 'My Work']);
+    fireEvent.click(button('My Work')!);
+    expect(useViewStore.getState().currentView).toBe('work');
   });
 
-  it('places My Todos after Kanban', () => {
+  it('places My Work after Kanban, with the work icon', () => {
     useAppStore.setState({ currentUser: makeUser({ role: 'user', site_ids: [1, 2] }) });
     render(<Navigation />);
     const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'));
-    expect(labels.slice(0, 3)).toEqual(['Gantt Chart', 'Kanban Board', 'My Todos']);
+    expect(labels.slice(0, 3)).toEqual(['Gantt Chart', 'Kanban Board', 'My Work']);
+    expect(button('My Work')!.querySelector('[data-testid="WorkOutlineIcon"]')).not.toBeNull();
   });
 
-  it('badges My Todos with the open count, in its accessible name', () => {
+  it('badges My Work with the approvals to decide, in its accessible name', () => {
     useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'user' }) });
-    useTodoStore.getState().setTasks([makeTodo({ id: 1 }), makeTodo({ id: 2 })]);
-    useTodoStore.getState().setToDecide([makeApprovalRequest()]);
+    useWorkStore.getState().setToDecide([makeApprovalRequest({ id: 1 }), makeApprovalRequest({ id: 2 })]);
+    // My own requests are not counted.
+    useWorkStore.getState().setMine([makeApprovalRequest({ id: 3 })]);
     render(<Navigation />);
-    const todos = screen.getByRole('button', { name: 'My Todos, 3 open items' });
-    expect(todos).toHaveTextContent('3');
+    const work = screen.getByRole('button', { name: 'My Work, 2 approvals to decide' });
+    expect(work).toHaveTextContent('2');
   });
 
   it('caps the badge and shows it collapsed, without one when nothing is open', () => {
     useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'user' }) });
-    useTodoStore.getState().setTasks(Array.from({ length: 120 }, (_, i) => makeTodo({ id: i + 1 })));
+    useWorkStore.getState().setToDecide([makeApprovalRequest({ id: 1 })]);
     const { rerender } = render(<Navigation collapsed />);
-    expect(screen.getByRole('button', { name: 'My Todos, 120 open items' })).toHaveTextContent('99+');
-    useTodoStore.getState().setTasks([]);
+    expect(screen.getByRole('button', { name: 'My Work, 1 approval to decide' })).toHaveTextContent('1');
+    useWorkStore
+      .getState()
+      .setToDecide(Array.from({ length: 120 }, (_, i) => makeApprovalRequest({ id: i + 1 })));
     rerender(<Navigation collapsed />);
-    expect(screen.getByRole('button', { name: 'My Todos' })).toHaveTextContent('');
+    expect(screen.getByRole('button', { name: 'My Work, 120 approvals to decide' })).toHaveTextContent('99+');
+    useWorkStore.getState().setToDecide([]);
+    rerender(<Navigation collapsed />);
+    expect(screen.getByRole('button', { name: 'My Work' })).toHaveTextContent('');
   });
 });

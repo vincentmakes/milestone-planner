@@ -56,8 +56,6 @@ export const PERMISSION_KEYS = [
   'system.ws_debug',
   'tags.manage',
   'teams.manage',
-  'todos.assign_others',
-  'todos.manage_own',
   'users.change_role',
   'users.create',
   'users.delete',
@@ -96,7 +94,6 @@ export const PM_BUNDLE: ReadonlySet<PermissionKey> = new Set<PermissionKey>([
   'kanban.move_any',
   'projects.archive',
   'projects.edit_any',
-  'todos.assign_others',
 ]);
 
 /**

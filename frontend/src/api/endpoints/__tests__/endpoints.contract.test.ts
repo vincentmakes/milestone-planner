@@ -20,7 +20,6 @@ import { projectFieldsApi } from '../projectFields';
 import { teamsApi } from '../teams';
 import { rolesApi } from '../roles';
 import { approvalsApi } from '../approvals';
-import { todosApi } from '../todos';
 import { skillsApi } from '../skills';
 import { absenceTypesApi } from '../absenceTypes';
 import { getAppVersion } from '../health';
@@ -446,16 +445,6 @@ describe('approval request endpoints', () => {
     ['approvals reject', () => approvalsApi.reject(7), 'POST', '/api/approval-requests/7/reject', {}],
     ['approvals reject with a reason', () => approvalsApi.reject(7, 'Too busy'), 'POST', '/api/approval-requests/7/reject', { note: 'Too busy' }],
     ['approvals cancel', () => approvalsApi.cancel(7), 'POST', '/api/approval-requests/7/cancel', {}],
-  ]);
-});
-
-describe('todo endpoints', () => {
-  runCases([
-    ['todos getMine', () => (fns.GET.mockResolvedValueOnce([]), todosApi.getMine()), 'GET', '/api/todos/mine?status=open'],
-    ['todos getMine all', () => (fns.GET.mockResolvedValueOnce([]), todosApi.getMine('all')), 'GET', '/api/todos/mine?status=all'],
-    ['todos create', () => todosApi.create({ title: 'Order', assignee_id: 4 }), 'POST', '/api/todos', { title: 'Order', assignee_id: 4 }],
-    ['todos update', () => todosApi.update(3, { status: 'done' }), 'PUT', '/api/todos/3', { status: 'done' }],
-    ['todos remove', () => todosApi.remove(3), 'DELETE', '/api/todos/3'],
   ]);
 });
 

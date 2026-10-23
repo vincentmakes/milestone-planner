@@ -12,7 +12,6 @@ import {
   makeStaff,
   makeSubphase,
   makeTag,
-  makeTodo,
   makeUser,
   makeVacation,
 } from '../factories';
@@ -29,7 +28,6 @@ describe('test factories', () => {
     ['makeVacation', makeVacation],
     ['makeTag', makeTag],
     ['makeCustomColumn', makeCustomColumn],
-    ['makeTodo', makeTodo],
     ['makeApprovalRequest', makeApprovalRequest],
   ] as const)('%s applies an override and keeps the other defaults', (_name, factory) => {
     const base = factory();

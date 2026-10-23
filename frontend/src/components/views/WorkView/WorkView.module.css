@@ -146,11 +146,6 @@
   border-radius: var(--radius-md);
 }
 
-.itemDone .itemTitleButton {
-  color: var(--text-muted);
-  text-decoration: line-through;
-}
-
 .itemMain {
   display: flex;
   flex: 1;
@@ -159,26 +154,11 @@
   min-width: 0;
 }
 
-.itemTitle,
-.itemTitleButton {
+.itemTitle {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   color: var(--text-primary);
   overflow-wrap: anywhere;
-}
-
-.itemTitleButton {
-  align-self: flex-start;
-  padding: 0;
-  font-family: inherit;
-  text-align: left;
-  background: none;
-  border: none;
-  cursor: pointer;
-}
-
-.itemTitleButton:hover {
-  color: var(--accent-blue);
 }
 
 .itemMeta {
@@ -201,6 +181,17 @@
   color: var(--text-secondary);
 }
 
+.siteName {
+  font-weight: var(--font-weight-normal);
+  color: var(--text-tertiary);
+}
+
+.linkedPin {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-secondary);
+}
+
 .cardLink {
   padding: 0;
   font-family: inherit;
@@ -215,23 +206,13 @@
   text-decoration: underline;
 }
 
-.dueChip,
-.statusChip {
+.statusChip,
+.allocationChip {
   padding: 1px 0.5rem;
   font-weight: var(--font-weight-medium);
   color: var(--text-secondary);
   background: var(--bg-tertiary);
   border-radius: var(--radius-sm);
-}
-
-.dueOverdue {
-  color: var(--status-blocked);
-  background: var(--status-blocked-soft);
-}
-
-.dueSoon {
-  color: var(--status-in-progress);
-  background: var(--status-in-progress-soft);
 }
 
 .status_pending {

@@ -34,17 +34,15 @@ export type Slice =
    * and so does a role edit (permissions, approval modes, visible sites).
    */
   | 'currentUser'
-  /** Approval requests (own and to decide) — the My Todos view (todoStore) */
+  /** Approval requests (own and to decide) — the My Work view (workStore) */
   | 'approvals'
   /** Who approves each own-booking action — appStore.approvalPolicies (pending badges) */
-  | 'approvalPolicies'
-  /** The signed-in user's todos — the My Todos view (todoStore) */
-  | 'todos';
+  | 'approvalPolicies';
 
 export const ALL_SLICES: Slice[] = [
   'projects', 'staff', 'equipment', 'equipmentBlocks', 'vacations',
   'sites', 'skills', 'tags', 'projectFields', 'teams', 'roles', 'absenceTypes', 'siteCalendar', 'customColumns',
-  'settings', 'currentUser', 'approvals', 'approvalPolicies', 'todos',
+  'settings', 'currentUser', 'approvals', 'approvalPolicies',
 ];
 
 /**
@@ -141,8 +139,6 @@ export function slicesForEntity(entityType: string): Slice[] {
     case 'approval_request':
       // Approve/reject/cancel flip or remove pending assignment rows.
       return ['projects', 'approvals'];
-    case 'todo':
-      return ['todos'];
     case 'card_comment':
       // Comment threads and counts have their own fetches. Without this case
       // every comment anyone posts would refetch every slice -- including

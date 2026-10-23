@@ -419,7 +419,7 @@ describe('viewStore Gantt colour by', () => {
   });
 });
 
-describe('viewStore persist version 0 → 1 (2.0.0 project fields)', () => {
+describe('viewStore persist versions (2.0.0: project fields, My Work)', () => {
   const KEY = 'milestone-view-storage-v1';
   const preferences = {
     tagFilters: { ':1': { tagIds: [3], noneGroupIds: [2] } },
@@ -454,10 +454,30 @@ describe('viewStore persist version 0 → 1 (2.0.0 project fields)', () => {
     });
   });
 
-  it('is version 1 and writes it', () => {
-    expect(VIEW_STORE_VERSION).toBe(1);
+  it('is version 2 and writes it', () => {
+    expect(VIEW_STORE_VERSION).toBe(2);
     useViewStore.getState().setGanttColorBy(1, 'tags');
-    expect(JSON.parse(localStorage.getItem(KEY) as string).version).toBe(1);
+    expect(JSON.parse(localStorage.getItem(KEY) as string).version).toBe(2);
+  });
+
+  it.each([0, 1])('opens My Work for a version-%i payload that remembered My Todos', async (version) => {
+    useViewStore.setState({ currentView: 'gantt' });
+    localStorage.setItem(KEY, JSON.stringify({ state: { ...others, currentView: 'todos' }, version }));
+    await useViewStore.persist.rehydrate();
+    expect(useViewStore.getState().currentView).toBe('work');
+    expect(useViewStore.getState().viewMode).toBe('month');
+  });
+
+  it('keeps every other remembered view, and the Gantt choices of a version-1 payload', async () => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({ state: { ...preferences, ...others, currentView: 'kanban' }, version: 1 })
+    );
+    await useViewStore.persist.rehydrate();
+    const state = useViewStore.getState();
+    expect(state.currentView).toBe('kanban');
+    expect(state.ganttGrouping).toEqual({ ':1': 2 });
+    expect(state.ganttColorBy).toEqual({ ':1': 4 });
   });
 
   it('drops the saved Gantt filter, grouping, colour and collapsed sections of a version-0 payload, keeping the rest', async () => {
@@ -496,7 +516,10 @@ describe('viewStore persist version 0 → 1 (2.0.0 project fields)', () => {
     const input = { ...preferences, ...others };
     expect(migrateViewState(input, 0)).toEqual(others);
     expect(input).toHaveProperty('ganttGrouping');
-    expect(migrateViewState(input, 1)).toBe(input);
+    expect(migrateViewState(input, 1)).toEqual(input);
+    expect(migrateViewState(input, 2)).toBe(input);
+    expect(migrateViewState({ currentView: 'todos' }, 1)).toEqual({ currentView: 'work' });
+    expect(migrateViewState({ currentView: 'todos' }, 2)).toEqual({ currentView: 'todos' });
     expect(migrateViewState(null, 0)).toBeNull();
     expect(migrateViewState([1], 0)).toEqual([1]);
     expect(migrateViewState('x', 0)).toBe('x');

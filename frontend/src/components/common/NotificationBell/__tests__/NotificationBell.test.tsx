@@ -22,7 +22,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { resetAllStores } from '@/stores';
-import { useTodoStore } from '@/stores/todoStore';
+import { useWorkStore } from '@/stores/workStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { makeProject, makeSite, makeUser } from '@/test/factories';
 import type { AppNotification } from '@/types';
@@ -187,7 +187,7 @@ describe('NotificationBell', () => {
       currentSite: BASEL,
       projects: [makeProject({ id: 1, site_id: 1 })],
     });
-    useViewStore.getState().setCurrentView('todos');
+    useViewStore.getState().setCurrentView('work');
     vi.mocked(getNotifications).mockResolvedValue([note({ type: 'assignment_changed', title: 'Alice moved Feasibility' })]);
     vi.mocked(getUnreadCount).mockResolvedValue(1);
     await renderBell();
@@ -218,6 +218,28 @@ describe('NotificationBell', () => {
     expect(useUIStore.getState().activeModal).toBeNull();
     expect(selectSite).not.toHaveBeenCalled();
     expect(useNotificationStore.getState().panelOpen).toBe(false);
+    expect(markNotificationRead).toHaveBeenCalledWith(5);
+  });
+
+  it('opens a comment on a project thread on the Gantt, even without views.kanban', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 4, role: 'viewer', permissions: NO_KANBAN }),
+      sites: [BASEL],
+      currentSite: BASEL,
+      projects: [makeProject({ id: 1, site_id: 1 })],
+    });
+    useViewStore.getState().setCurrentView('work');
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 5, type: 'mention', entity_type: 'project', entity_id: 1, title: 'Alice mentioned you on Bioprocess' }),
+    ]);
+    await renderBell();
+    fireEvent.click(bell());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Alice mentioned you on Bioprocess/ }));
+    });
+    expect(useViewStore.getState().currentView).toBe('gantt');
+    expect(useViewStore.getState().expandedProjects.has(1)).toBe(true);
+    expect(useUIStore.getState().activeModal).toBeNull();
     expect(markNotificationRead).toHaveBeenCalledWith(5);
   });
 
@@ -263,7 +285,7 @@ describe('NotificationBell', () => {
   });
 
   it('only marks read a notification without a project (a deleted project)', async () => {
-    useViewStore.getState().setCurrentView('todos');
+    useViewStore.getState().setCurrentView('work');
     vi.mocked(getNotifications).mockResolvedValue([
       note({ id: 6, type: 'assignment_changed', entity_type: null, entity_id: null, project_id: null, title: 'Alice deleted Trial' }),
     ]);
@@ -275,7 +297,7 @@ describe('NotificationBell', () => {
       fireEvent.click(row);
     });
     expect(markNotificationRead).toHaveBeenCalledWith(6);
-    expect(useViewStore.getState().currentView).toBe('todos');
+    expect(useViewStore.getState().currentView).toBe('work');
     expect(useUIStore.getState().flashNotice).toBeNull();
     expect(selectSite).not.toHaveBeenCalled();
   });
@@ -380,13 +402,12 @@ describe('NotificationBell', () => {
   });
 
   it.each([
-    ['approval_requested', 'approval_request', 'decide', 'Bob asks to join Feasibility'],
+    ['approval_requested', 'approval_request', 'approvals', 'Bob asks to join Feasibility'],
     ['approval_decided', 'approval_request', 'requests', 'Your booking on Feasibility was approved by Alice'],
-    ['todo_assigned', 'todo', 'tasks', 'Alice assigned you a task: Order reagents'],
-  ] as const)('opens My Todos on the right tab for %s', async (type, entityType, tab, title) => {
+  ] as const)('opens My Work on the right tab for %s', async (type, entityType, tab, title) => {
     vi.mocked(getNotifications).mockResolvedValue([note({ id: 9, type, entity_type: entityType, entity_id: 31, title })]);
     vi.mocked(getUnreadCount).mockResolvedValue(1);
-    // Even a role without views.kanban: My Todos is always available.
+    // Even a role without views.kanban: My Work is always available.
     useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'viewer', permissions: ['projects.view'] }) });
     await renderBell();
     fireEvent.click(bell());
@@ -394,8 +415,8 @@ describe('NotificationBell', () => {
     await act(async () => {
       fireEvent.click(item);
     });
-    expect(useViewStore.getState().currentView).toBe('todos');
-    expect(useTodoStore.getState().activeTab).toBe(tab);
+    expect(useViewStore.getState().currentView).toBe('work');
+    expect(useWorkStore.getState().activeTab).toBe(tab);
     expect(useUIStore.getState().activeModal).toBeNull();
     expect(markNotificationRead).toHaveBeenCalledWith(9);
   });
@@ -405,14 +426,13 @@ describe('NotificationBell', () => {
       note({ id: 1, title: 'A comment' }),
       note({ id: 2, type: 'approval_requested', title: 'A request' }),
       note({ id: 3, type: 'approval_decided', title: 'A decision' }),
-      note({ id: 4, type: 'todo_assigned', title: 'A task' }),
       note({ id: 5, type: 'assignment_changed', title: 'A booking change' }),
       note({ id: 6, type: 'project_changed', title: 'A project change' }),
       note({ id: 7, type: 'assigned', title: 'An assignment' }),
     ]);
     await renderBell();
     fireEvent.click(bell());
-    const titles = ['A comment', 'A request', 'A decision', 'A task', 'A booking change', 'A project change', 'An assignment'];
+    const titles = ['A comment', 'A request', 'A decision', 'A booking change', 'A project change', 'An assignment'];
     const icons = titles.map((t) =>
       screen.getByRole('button', { name: new RegExp(t) }).querySelector('svg path')?.getAttribute('d')
     );
@@ -436,16 +456,16 @@ describe('NotificationBell', () => {
     expect(useUIStore.getState().modalContext).toMatchObject({ cardEntityType: 'subphase', cardEntityId: 20 });
   });
 
-  it('does not open My Todos while What-If is active', async () => {
+  it('does not open My Work while What-If is active', async () => {
     vi.mocked(getNotifications).mockResolvedValue([
-      note({ id: 9, type: 'todo_assigned', entity_type: 'todo', entity_id: 3, title: 'Alice assigned you a task' }),
+      note({ id: 9, type: 'approval_requested', entity_type: 'approval_request', entity_id: 3, title: 'Alice asks to join' }),
     ]);
     useWhatIfStore.getState().enterWhatIfMode([]);
     await renderBell();
     fireEvent.click(bell());
-    const item = screen.getByRole('button', { name: /Alice assigned you a task/ });
+    const item = screen.getByRole('button', { name: /Alice asks to join/ });
     expect(item).toBeDisabled();
-    expect(item).toHaveAttribute('title', whatIfUnavailableMessage('Opening My Todos from a notification'));
+    expect(item).toHaveAttribute('title', whatIfUnavailableMessage('Opening My Work from a notification'));
     await act(async () => {
       fireEvent.click(item);
     });
