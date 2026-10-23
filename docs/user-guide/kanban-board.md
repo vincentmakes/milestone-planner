@@ -61,7 +61,7 @@ Click a lane heading to collapse it.
 
 ## My Todo
 
-The **My Todo** toggle hides every card you are not assigned to. Cards you have asked to join, still awaiting approval, are included. (For tasks and approval requests, see [My Todos](my-todos.md).) Combine it with **All projects** to see everything on your plate across the site at once, or with grouping by phase to see where your own work sits in one plan.
+The **My Todo** toggle hides every card you are not assigned to. Cards you have asked to join, still awaiting approval, are included. (For your bookings and approval requests across every project, see [My Work](my-work.md).) Combine it with **All projects** to see everything on your plate across the site at once, or with grouping by phase to see where your own work sits in one plan.
 
 ## Assigning people — and booking their time
 
@@ -102,11 +102,11 @@ When your role books your own time [with approval](settings.md#approvals), the b
 - Moving your own slider sends a change request instead — the slider stays put and *requested 60%* appears beside it. Clicking **×** asks *Ask to leave this card?* and sends a removal request
 - While your request is open, your row shows **Cancel request** instead of the slider and **×**
 
-People who may decide the request see **Approve** and **Reject** on that row of the card. Every request also appears in their [My Todos](my-todos.md), and you are notified of the decision.
+People who may decide the request see **Approve** and **Reject** on that row of the card. Every request also appears in their [My Work](my-work.md), and you are notified of the decision.
 
 ## Comments and mentions
 
-Every card has a comment thread. Anyone whose role may **comment on cards** can comment — every built-in role. You can delete your own comments (after a confirmation); roles that **moderate comments** (admins and superusers by default) can delete any.
+Every card has a comment thread. It is the same thread as in the [assignment dialog](my-work.md#comments-on-a-booking) of a booking on that phase or subphase, so a comment posted in either place shows in both. Anyone who can see the project can read it; anyone whose role may **comment on cards** can comment — every built-in role. You can delete your own comments (after a confirmation); roles that **moderate comments** (admins and superusers by default) can delete any.
 
 When a user account is deleted, their comments stay on the card and are shown as written by **Deleted user**.
 
@@ -137,7 +137,7 @@ The bell in the header shows unread notifications. You are notified when someone
 - comments on a card you are assigned to,
 - mentions you in any comment,
 - moves a card you are assigned to into another column,
-- asks for your approval to book themselves, decides your own request, or gives you a task — these lead to [My Todos](my-todos.md#notifications),
+- asks for your approval to book themselves or decides your own request — these lead to [My Work](my-work.md#notifications),
 - books you, changes or removes your booking, or moves or deletes a card you are booked on,
 - changes a project you manage (bookings, equipment, project details, phases and subphases, an approval).
 
@@ -145,10 +145,10 @@ The last two go only to the booked person and the project manager. Several chang
 
 You are never notified about your own actions. If you are both assigned to a card and mentioned in a comment on it, you get the mention only.
 
-Clicking a card notification opens that card's board and detail (if your role has the Kanban board; otherwise the project on the Gantt chart); a project notification opens the project on the Gantt chart; an approval or task notification opens the matching tab of My Todos.
+Clicking a card notification opens that card's board and detail (if your role has the Kanban board; otherwise the project on the Gantt chart); a project notification opens the project on the Gantt chart; an approval notification opens the matching tab of My Work.
 
 !!! note "Turning the board off"
-    An administrator can turn the Kanban board off for the whole workspace in **Settings → [Features & defaults](settings.md#features-defaults)**. Nobody then sees the board or its sidebar entry, whatever their role — administrators included. Comments stay stored and come back when the board is turned on again, My Todos keeps working (its card links become plain text), and card notifications open the Gantt chart instead.
+    An administrator can turn the Kanban board off for the whole workspace in **Settings → [Features & defaults](settings.md#features-defaults)**. Nobody then sees the board or its sidebar entry, whatever their role — administrators included. Comments stay stored and can still be read and added from the assignment dialog of a booking on the card, My Work keeps working (its card links become plain text), and card notifications open the Gantt chart instead.
 
 !!! info "Due and overdue reminders work differently"
     Reminders for cards that are due within a week, or already past their end date, are worked out **in your browser** from the plan you already have loaded. They need no configuration and appear alongside the other notifications.
@@ -157,4 +157,4 @@ Clicking a card notification opens that card's board and detail (if your role ha
 
 ## What gets exported
 
-The [site export](import-export.md) includes a **Kanban status** column on the Projects sheet and a **Card comments** sheet. Notifications are not exported — they are personal inbox state rather than project data.
+The [site export](import-export.md) includes a **Kanban status** column on the Projects sheet and a **Card comments** sheet (which also holds the project threads of [project-level bookings](my-work.md#comments-on-a-booking)). Notifications are not exported — they are personal inbox state rather than project data.

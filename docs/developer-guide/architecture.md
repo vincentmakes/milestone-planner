@@ -43,7 +43,6 @@ app/
 │   ├── skills.py            # Skills management
 │   ├── tags.py              # Project tags
 │   ├── staff.py             # Staff management
-│   ├── todos.py             # My Todos: personal tasks + approvals to decide
 │   ├── users.py             # User management
 │   └── vacations.py         # Vacation/absence management (+ bulk .ics import)
 ├── models/                  # SQLAlchemy ORM models
@@ -63,7 +62,6 @@ app/
 │   ├── custom_column.py     # CustomColumn, CustomColumnValue
 │   ├── tag.py               # Tag, ProjectTag
 │   ├── rbac.py              # Role, RolePermission, ApprovalPolicy(+Role), ApprovalRequest
-│   ├── todo.py              # Todo
 │   ├── note.py              # Note (tablename: staff_notes)
 │   ├── settings.py          # Settings (KV), PredefinedPhase, SSOConfig
 │   ├── session.py           # Session (express-session compatible)
@@ -114,7 +112,8 @@ frontend/src/
 ├── components/
 │   ├── admin/               # Admin portal (AdminApp, TenantList, OrgList, etc.)
 │   ├── gantt/               # Gantt chart components
-│   ├── views/               # Main views (ArchivedView, CrossSiteView, EquipmentView, StaffView)
+│   ├── views/               # Main views (ArchivedView, CrossSiteView, EquipmentView, StaffView,
+│   │                        #   KanbanView, WorkView = My Work)
 │   ├── screens/             # Full-screen pages (LoginScreen, LoadingScreen, LoadErrorScreen)
 │   ├── settings/            # Settings hub (SettingsHub, sections.tsx registry, useReportDirty, panels/)
 │   ├── modals/              # Modal dialogs
@@ -128,6 +127,7 @@ frontend/src/
 │   ├── viewStore.ts         # Current view state
 │   ├── whatIfStore.ts       # What-If mode state
 │   ├── customColumnStore.ts # Custom columns state
+│   ├── workStore.ts         # My Work: approval requests to decide and my own requests
 │   └── undoStore.ts         # Undo/redo state
 ├── types/                   # TypeScript type definitions
 │   ├── models.ts            # Data model types
@@ -154,14 +154,14 @@ A `401` from any session-bound API call fires the API client's `onUnauthorized` 
 
 ### What-If mode
 
-What-If is a Gantt-only mode: the header renders the toggle only while `currentView === 'gantt'`, and while a sandbox is open the sidebar navigation, the notification bell's card links and every entry to the Settings hub are disabled through `useWhatIfBlocked` (store guards back this up: `viewStore.setCurrentView` accepts only `gantt`, and `uiStore.openSettings` and its legacy modal aliases are no-ops while a sandbox is open). While What-If is active the API client queues every `POST`/`PUT`/`PATCH`/`DELETE` instead of sending it, except auth, settings, admin-portal, notification and Kanban-comment calls, the RBAC endpoints (roles, permissions, approval policies, approval requests, todos) and the **configuration endpoints** (tags, project fields, teams, absence types, skills, equipment types, predefined phases, users, site and equipment definitions), which are not part of the sandbox. Own bookings stay queued: one whose key is in approval mode becomes an approval request (`202`) on Apply. Create entry points are disabled (`useWhatIfBlocked`), including absences and equipment blocks, and so are the Delete buttons for equipment and users (their bookings are plan data) and the holiday/event deletes in the embedded Staff view rows (calendar data is not in the snapshot). Apply replays the queue in order and **stops at the first failure**: the rest stays queued, the view reloads from the server, and `whatIfApplyError` drives a header banner with Retry / Discard / Dismiss. Edits queued while the post-Apply reload runs are kept. Undo history is cleared on enter, Discard and Apply.
+What-If is a Gantt-only mode: the header renders the toggle only while `currentView === 'gantt'`, and while a sandbox is open the sidebar navigation, the notification bell's card links and every entry to the Settings hub are disabled through `useWhatIfBlocked` (store guards back this up: `viewStore.setCurrentView` accepts only `gantt`, and `uiStore.openSettings` and its legacy modal aliases are no-ops while a sandbox is open). While What-If is active the API client queues every `POST`/`PUT`/`PATCH`/`DELETE` instead of sending it, except auth, settings, admin-portal, notification and comment calls, the RBAC endpoints (roles, permissions, approval policies, approval requests) and the **configuration endpoints** (tags, project fields, teams, absence types, skills, equipment types, predefined phases, users, site and equipment definitions), which are not part of the sandbox. Own bookings stay queued: one whose key is in approval mode becomes an approval request (`202`) on Apply. Create entry points are disabled (`useWhatIfBlocked`), including absences and equipment blocks, and so are the Delete buttons for equipment and users (their bookings are plan data) and the holiday/event deletes in the embedded Staff view rows (calendar data is not in the snapshot). Apply replays the queue in order and **stops at the first failure**: the rest stays queued, the view reloads from the server, and `whatIfApplyError` drives a header banner with Retry / Discard / Dismiss. Edits queued while the post-Apply reload runs are kept. Undo history is cleared on enter, Discard and Apply.
 
 ## Permissions Model
 
 A user's **role** (`users.role`, a foreign key to `roles.key`) is a permission set: one mode per key of the catalogue in `app/services/permissions.py` — `allow`, `approval` (only on the three own-booking keys) or nothing (deny). The Administrator role holds every key in code and cannot be edited; the Superuser and User system roles ship with defaults that reproduce the pre-1.13 behaviour, and administrators add custom roles in Settings → Roles. `get_current_user` resolves the live role and matrix on every request (`load_live_user`), so a role edit applies on the next request.
 
 - **Gates** are dependencies from `app/middleware/auth.py`: `require_permission(key)`, `require_any_permission(*keys)` and `require_project_permission(key)`. `require_admin` guards only the role and approval-policy writes (lockout-proof). Never gate on a role name.
-- **PM bundle** — a role holding `projects.manage_as_pm` gets seven keys (`projects.edit_any`, `projects.archive`, `assignments.manage_others`, `equipment_bookings.manage`, `kanban.move_any`, `custom_columns.set_values`, `todos.assign_others`) on the projects whose `pm_id` is the user (`project_access.can_on_project`). Never delete, create, import or export.
+- **PM bundle** — a role holding `projects.manage_as_pm` gets six keys (`projects.edit_any`, `projects.archive`, `assignments.manage_others`, `equipment_bookings.manage`, `kanban.move_any`, `custom_columns.set_values`) on the projects whose `pm_id` is the user (`project_access.can_on_project`). Never delete, create, import or export.
 - **Own bookings, editor first** — `assignments.manage_others` (or the PM) books anyone without approval; otherwise a user may book only themself, in the mode of `assignments.self_create` / `self_update` / `self_remove`: `allow` writes, `approval` files a request and answers `202` (`app/services/approvals.py`), no mode is `403`.
 - **Visible sites** — every read and write is limited to the user's sites unless the role holds `sites.view_all` (`app/services/site_access.py`, a request-cached `visible_site_ids`). The `views.*` keys gate the reads behind each view.
 - **Accounts** — `app/services/user_access.py`: editing an admin needs `users.edit_admins`; roles are assignable only within the caller's own permissions (escalation guard), never one's own; the last active admin is protected.

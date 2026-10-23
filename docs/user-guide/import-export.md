@@ -109,7 +109,7 @@ Each kind of data lives on its own sheet, so the file opens cleanly in Excel, Li
 | **Company events** | Company events linked to the site, with a **Sites** column listing every site each event applies to and a **Staff unavailable** column marking site closures |
 | **Equipment blocks** | Maintenance/unavailability windows on the site's equipment |
 | **Staff notes** | Notes pinned to the site's staff timeline |
-| **Card comments** | Kanban card comments on the site's phases and subphases |
+| **Card comments** | The comment threads of the site's phases and subphases and of its projects (the threads of project-level bookings): **Card type** is `phase`, `subphase` or `project`, and for a project thread **Card ID** is the project's id |
 
 !!! note
     The Site Excel Export needs the *Export site data (Excel)* permission — **Admins and Superusers** by default — and works for the sites you can see: superusers export the sites they belong to, admins any site. Superusers find it in **Settings → Sites**, which shows them the export only (editing sites stays admin-only).

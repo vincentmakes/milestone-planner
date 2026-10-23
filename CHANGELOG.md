@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Project fields**: administrators add their own fields to projects in Settings → Project fields — a dropdown with one or several choices, whose coloured items can be reordered and limited to some sites and teams, a text, a number or a switch — and everyone who edits a project fills them in the project dialog.
 - The built-in Customer, Sales PM and Volume fields can be renamed and hidden for the whole instance in Settings → Project fields; Confirmed can be renamed. A custom name replaces the default one everywhere the field is named, and the defaults are the same short names everywhere (Customer, Sales PM, Volume, Confirmed).
 - The site Excel export has **Project fields**, **Project field options** and **Project field values** sheets.
+- **My Work** replaces My Todos, with three tabs: **My Approvals** (the booking requests you may decide), **My Assignments** (your bookings across projects, current and upcoming by default or all, each with an **Open** button that shows the booking in its dialog) and **My Requests** (your own requests). The sidebar badge counts the requests waiting for your decision.
+- **Comments on bookings**: the dialog of a staff booking has a **Comments** section with @-mentions. A booking on a phase or subphase shares the comment thread of its Kanban card; project-level bookings have their own project thread. The site Excel export's **Card comments** sheet also lists the project threads.
 
 ### Changed
 - Tag groups became dropdown project fields: existing groups are converted automatically on upgrade (a single-select group becomes a dropdown, any other group a multi-select dropdown); their tags become the field's items with the same colours, order and site and team limits, and projects keep what they had selected.
@@ -20,9 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Booking a person a second time on a phase or subphase now places the new booking automatically: a booking that covered the whole phase is split in half (it keeps the first half, the new one gets the second), otherwise the new booking takes the largest free stretch; it is refused only when their bookings already cover the whole phase. When the booking needs approval, the split or the free stretch is applied when the request is approved.
 - The Gantt context menu offers **Assign me again** on a phase or subphase you are already booked on, and the Kanban card dialog lets an editor book someone already on the card a second time.
 - The Gantt header dropdowns (Filter, Group by, Colour by and the column menus) and the Staff and Equipment overview filters are no longer cut off by an open overview panel or the bottom of the window: they open above their button when there is more room there.
+- The default skills and equipment types of Settings → Features & defaults apply only to the Staff and Equipment panels below the Gantt chart; the standalone Staff and Equipment views open unfiltered.
+- Of My Todos' tabs, **To decide** is now **My Approvals** and **My requests** is **My Requests**; **My tasks** gives way to **My Assignments**.
+- Reading a comment thread no longer needs the Kanban board: anyone who can see the project can read it (posting still needs the comment permission), so the booking dialog's thread works while the board is turned off.
+- The booking dialog opens read-only, with the reason, for a booking you cannot change: someone else's booking awaiting approval, or your own while your change request on it is open. The Gantt context menu's **Edit Assignment** follows the same rule.
 
 ### Removed
 - Tag groups: the `/api/tag-groups` routes, the `tags.group_id` column and the `tag_groups` table are removed once the groups are converted.
+- Personal tasks: My Todos' tasks, the task dialog, the `/api/todos` routes, the `todos.manage_own` and `todos.assign_others` permissions and the task notifications.
 
 ## [1.17.0] - 2026-10-22
 

@@ -159,7 +159,8 @@ the default General section.
 | `settings-teams` | `settings-teams.png` | Settings → Teams for the current site |
 | `roles` | `roles-settings.png` | Settings → Roles with the *User* role open on its permission matrix (own bookings in *Needs approval*) |
 | `approvals` | `approvals-settings.png` | Settings → Roles → **Approvals**: who approves each own-booking action |
-| `my-todos` | `my-todos.png` | My Todos signed in as **Bob**, *To decide* tab with Diana's request to join Analytics |
+| `my-work` | `my-work.png` | My Work signed in as **Bob**, *My Approvals* tab with Diana's request to join Analytics |
+| `my-assignments` | `my-assignments.png` | My Work signed in as **Bob**, *My Assignments* tab (his current and upcoming bookings) |
 | `pending` | `pending-assignment.png` | The Gantt chart with Diana's dashed *Pending approval* row on Bioprocess Scale-Up |
 | `assignment-overview-row` | `assignment-overview-row.png` | The Gantt chart with Charlie Clark's overview row under Bioprocess Scale-Up's *Analytics* phase (his two own-date bookings as blocks); closes a default panel and scrolls the timeline to the phase |
 | `kanban` | `kanban-board.png` | The Kanban board view |
@@ -173,7 +174,7 @@ seeded data. The `main` shot sets *Colour by* = *Project type*, and since all
 later Gantt shots keep the coloured bars. `grouped` sets it too (so it works
 when captured on its own), and `dark-theme` sets it in its fresh context.
 
-`my-todos` signs in as `bob.brown@demo.local` (password `demo1234`, like every
+`my-work` and `my-assignments` sign in as `bob.brown@demo.local` (password `demo1234`, like every
 demo person) in a fresh browser context via `_login_as()`, so the shared
 context stays the admin's. The approval shots rely on the demo seed's RBAC
 data: the User role books itself with approval, the *Book myself* policy names

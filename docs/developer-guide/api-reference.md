@@ -53,7 +53,7 @@ All tenant routes are prefixed with `/t/{slug}/api/`.
 
 ### Access levels
 
-Every route is gated on a **permission key** from the catalogue in `app/services/permissions.py` (60 keys; `GET /api/permissions` lists them). A role holds each key as `allow`, as `approval` (only the three own-booking keys) or not at all. The Administrator role holds every key. A missing key returns `403` with `detail` `Permission required: <key>` (several alternatives: `… <a> or <b>`).
+Every route is gated on a **permission key** from the catalogue in `app/services/permissions.py` (58 keys; `GET /api/permissions` lists them). A role holds each key as `allow`, as `approval` (only the three own-booking keys) or not at all. The Administrator role holds every key. A missing key returns `403` with `detail` `Permission required: <key>` (several alternatives: `… <a> or <b>`).
 
 The **Auth** column used below names the key; the label says who holds it with the shipped roles:
 
@@ -66,11 +66,11 @@ The **Auth** column used below names the key; the label says who holds it with t
 | **user (PM)** (`key`) | Holders of the key, **or the project's manager** (`projects.pm_id == user.id`) when the key is in the PM bundle and the role holds `projects.manage_as_pm` |
 | **user (PM/own-assignment)** | Holders of `assignments.manage_others` or the project's manager (*editor first*); otherwise **the staff member the assignment books**, in the mode of `assignments.self_create` / `self_update` / `self_remove`: `allow` → done, `approval` → `202` approval request, no mode → `403` |
 
-The PM bundle is `projects.edit_any`, `projects.archive`, `assignments.manage_others`, `equipment_bookings.manage`, `kanban.move_any`, `custom_columns.set_values` and `todos.assign_others`.
+The PM bundle is `projects.edit_any`, `projects.archive`, `assignments.manage_others`, `equipment_bookings.manage`, `kanban.move_any` and `custom_columns.set_values`.
 
 The per-project levels are checked inside the handler (`app/services/project_access.py`) after the entity is loaded, against a `project_id` derived server-side from the path or the loaded phase/subphase/assignment row — a `project_id` in the request body is never used for the check. Failures return `403`; a missing project/phase/subphase returns `404`.
 
-**Visible sites.** Every route is also limited to the caller's visible sites: every site with `sites.view_all` (administrators by default), otherwise the sites in their account (`app/services/site_access.py`). A `siteId` parameter or body `site_id` outside them, and any write on a project or site outside them, return `403`; reading a site, team, person, equipment item or absence outside them returns `404`; lists are filtered. Site-less projects and equipment need `sites.view_all`. The `views.*` keys gate the reads behind their views: `views.kanban` (Kanban reads; while the `kanban_enabled` setting is `false` nobody holds it, administrators included, and `/api/auth/me` leaves it out of `permissions` — the card status, assignee and comment writes are unaffected), `views.staff` (per-person availability and assignments), `views.equipment` (equipment, bookings, blocks), `views.crosssite` (`includeOtherSites=true`) and `views.archived` (`archived=true`; `archived=all` leaves archived projects out without it).
+**Visible sites.** Every route is also limited to the caller's visible sites: every site with `sites.view_all` (administrators by default), otherwise the sites in their account (`app/services/site_access.py`). A `siteId` parameter or body `site_id` outside them, and any write on a project or site outside them, return `403`; reading a site, team, person, equipment item or absence outside them returns `404`; lists are filtered. Site-less projects and equipment need `sites.view_all`. The `views.*` keys gate the reads behind their views: `views.kanban` (the Kanban comment counts — comment threads and the mention list need only visibility; while the `kanban_enabled` setting is `false` nobody holds it, administrators included, and `/api/auth/me` leaves it out of `permissions` — the card status, assignee and comment writes are unaffected), `views.staff` (per-person availability and assignments), `views.equipment` (equipment, bookings, blocks), `views.crosssite` (`includeOtherSites=true`) and `views.archived` (`archived=true`; `archived=all` leaves archived projects out without it).
 
 ### Validation
 
@@ -402,10 +402,12 @@ The board has no read endpoint of its own — `GET /projects/{id}` already retur
 | `PUT` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/status` | Move a card between columns (`entity_type` is `phase` or `subphase`) — `kanban.move_any` (PM bundle) or an approved assignee with `kanban.move_assigned` |
 | `POST` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/assignees` | Assign staff — also books their time — user (PM/own-assignment); `400` for a person who is not bookable as a resource. Someone already on the card is [placed](#booking-segments) like a dateless phase/subphase `POST` (`409` when their bookings cover the card); the `201` body is `{success, id, staff_id, staff_name, allocation, start_date, end_date, linked, adjusted}` |
 | `DELETE` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/assignees/{staff_id}` | Unassign and release the booking — user (PM/own-assignment); `409` when the person has several bookings on the card |
-| `GET` / `POST` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/comments` | Read / post comments |
+| `GET` | `/t/{slug}/api/kanban/sites/{site_id}/comment-counts` | Comment counts for every card of a site (the board's *All projects* mode) |
+| `GET` | `/t/{slug}/api/kanban/sites/{site_id}/mentionable-users` | The `@`-mention picker: active members of the site plus every active user whose role sees all sites → `{id, name, job_title}` |
+| `GET` / `POST` | `/t/{slug}/api/kanban/cards/{entity_type}/{id}/comments` | Read / post a thread: `entity_type` is `phase` or `subphase` (the card's thread, shared by the Kanban card dialog and the booking dialog) or `project` with the project's id (the thread of its project-level bookings); another type is `422`, an unknown target `404` |
 | `PUT` / `DELETE` | `/t/{slug}/api/kanban/comments/{id}` | Edit / delete a comment |
 
-Permissions: moving a card needs `kanban.move_any` (the project's manager through the PM bundle) or an **approved** assignment on the card plus `kanban.move_assigned`; reads need `views.kanban`; commenting needs `kanban.comment`, deleting someone else's comment `kanban.moderate_comments`. Assigning or unassigning other people follows *user (PM/own-assignment)*: editors manage anyone, and a user may join or leave a card themselves (`staff_id` = their own id) — with a `202` approval request when their role needs approval. The assignee body takes an optional `allocation` (1–100; default: the person's `max_capacity`).
+Permissions: moving a card needs `kanban.move_any` (the project's manager through the PM bundle) or an **approved** assignment on the card plus `kanban.move_assigned`; the comment counts need `views.kanban`; reading a thread and the mentionable users need only the project / site to be visible (`403` outside the visible sites), so the booking dialog's thread works without the board; commenting needs `kanban.comment`, deleting someone else's comment `kanban.moderate_comments`. A comment notifies the people it mentions (`mention`) and the target's approved assignees (`comment`) — for a project thread, the people with an approved project-level booking; its notifications carry `entity_type: "project"` and `entity_id` = the project id. Assigning or unassigning other people follows *user (PM/own-assignment)*: editors manage anyone, and a user may join or leave a card themselves (`staff_id` = their own id) — with a `202` approval request when their role needs approval. The assignee body takes an optional `allocation` (1–100; default: the person's `max_capacity`).
 
 Comments keep a nullable `author_id`: when the author's account is deleted the comment remains with `author_id: null` (shown as *Deleted user*).
 
@@ -420,7 +422,7 @@ The status endpoint returns the resulting `{status, completion}` pair, because t
 | `PUT` | `/t/{slug}/api/notifications/{id}/read` | Mark one as read |
 | `PUT` | `/t/{slug}/api/notifications/read-all` | Mark all as read |
 
-Notification `type` is one of `assigned`, `comment`, `mention`, `status_change`, `approval_requested`, `approval_decided`, `todo_assigned`, `assignment_changed` and `project_changed`. The last two report a change someone else made to the recipient's plan:
+Notification `type` is one of `assigned`, `comment`, `mention`, `status_change`, `approval_requested`, `approval_decided`, `assignment_changed` and `project_changed`. The last two report a change someone else made to the recipient's plan:
 
 - `assignment_changed` goes to the **booked person** when their approved booking is added directly, changed (allocation or dates), removed, when the phase or subphase they are booked on moves or is deleted, or when the project is deleted;
 - `project_changed` goes to the **project manager** for the same booking events on their project, equipment bookings added, changed or removed, project field changes (name, dates, customer, confirmed, volume, archived, a hand-over — to the new and the old manager), phases and subphases added, moved or deleted, the project deleted, and an approval applied by someone else.
@@ -453,7 +455,7 @@ The handshake is refused when the `Origin` header names another site (it must ma
 | `GET` | `/api/ws-debug` | admin (`system.ws_debug`) | WebSocket diagnostics |
 | `POST` | `/api/ws-debug/broadcast` | admin (`system.ws_debug`) | Send a synthetic `change:project` event |
 
-Besides the tenant-wide `change:<entity>` events (now also `change:role`, `change:approval_policy` and `change:approval_request`), the server pushes per-user events: `notification:new`, `approval:changed` (to a request's requester and approvers) and `todo:changed` (to a todo's assignee and creator) — hints to refetch, never the data itself.
+Besides the tenant-wide `change:<entity>` events (now also `change:role`, `change:approval_policy` and `change:approval_request`), the server pushes per-user events: `notification:new` and `approval:changed` (to a request's requester and approvers) — hints to refetch, never the data itself.
 
 ### Other Endpoints
 
@@ -570,24 +572,6 @@ A request: `{id, action, status, close_reason, requester_id, requester_name, pro
 | `422` | `note` longer than 2000 characters; an unknown `scope` |
 
 Every transition notifies (`approval_requested` to the approvers, `approval_decided` to the requester), broadcasts `change:approval_request` (approve and reject also `change:staff_assignment`) and pushes `approval:changed` to the requester and the approvers.
-
-### Todos
-
-Personal tasks for **My Todos**. Private like notifications: only a todo's assignee and creator see it (`404` for anyone else), and it is never broadcast tenant-wide — the people concerned get a `todo:changed` push.
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| `GET` | `/t/{slug}/api/todos/mine?status=` | user | `status` is `open` (default) or `all`. The caller's tasks (assigned to or created by them, `kind: "task"`) plus the pending requests they may decide (`kind: "approval"`, id `approval:<n>`, the request in `approval_request`); open first, then by due date (none last), then oldest. A `status` other than `open` / `all` is `422` |
-| `POST` | `/t/{slug}/api/todos` | `todos.manage_own` (own) / `todos.assign_others` (someone else) | Create — `{title, notes?, due_date?, assignee_id?, project_id?, entity_type?, entity_id?}` → `201`; the assignee defaults to the caller |
-| `PUT` | `/t/{slug}/api/todos/{id}` | assignee or creator | Partial update, incl. `status` (`open` / `done` / `cancelled`; `done` sets `completed_at`) and reassignment; an explicit `null` clears `notes`, `due_date` or the link |
-| `DELETE` | `/t/{slug}/api/todos/{id}` | creator | Delete (the assignee may once the creator's account is gone) → `200` `{success: true, id}` |
-
-A todo: `{id, kind, title, notes, due_date, status, assignee_id, assignee_name, created_by, created_by_name, project_id, project_name, entity_type, entity_id, completed_at, approval_request, created_at, updated_at}`.
-
-- **Giving a todo to someone else** needs `todos.assign_others` — or, through the PM bundle, being the manager of the linked project. Rights are checked on the todo as it is and as it becomes.
-- **Assignee**: must exist and be visible to the caller (`404`), and be active (`400`). The new assignee gets a `todo_assigned` notification.
-- **Link**: `entity_type` (`phase` / `subphase`) + `entity_id` resolve their own project — an unknown card is `404`, a different `project_id` `400`; an unknown project is `404`, one at an invisible site `403`.
-- **Delete**: the assignee of someone else's todo gets `403` (`Only the creator can delete this todo`).
 
 ## Admin API Routes
 

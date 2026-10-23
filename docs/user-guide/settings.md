@@ -84,7 +84,7 @@ The **General** section holds the theme picker and, for roles with **Edit instan
 
 The default filters are a starting point, not a restriction: people change them as usual, and the default applies again the next time the panel below the Gantt chart opens. The standalone Staff and Equipment views always open unfiltered. A skill that was deleted or an equipment type that was renamed is shown as *(no longer exists)* so you can untick it; until then it is simply ignored.
 
-**With the Kanban board off**, nobody sees the board or its sidebar entry, whatever their role — administrators included — and it takes effect for people already signed in without a new login. Card comments stay stored and reappear when the board is turned on again. [My Todos](my-todos.md) keeps working (its card links become plain text), and card notifications open the project on the Gantt chart instead. Turning the board off does not change any role: the [permission matrix](#the-permission-matrix) still shows the **Kanban board** permission as configured.
+**With the Kanban board off**, nobody sees the board or its sidebar entry, whatever their role — administrators included — and it takes effect for people already signed in without a new login. Card comments stay stored and can still be read and added from the assignment dialog of a booking on the card ([My Work](my-work.md#comments-on-a-booking)); the board shows them again when it is turned on. [My Work](my-work.md) keeps working (its card links become plain text), and card notifications open the project on the Gantt chart instead. Turning the board off does not change any role: the [permission matrix](#the-permission-matrix) still shows the **Kanban board** permission as configured.
 
 **With the bank-holiday import off**, the **Refresh from Nager** button, the site form's **Refresh** button and its *Last updated* line disappear, and setting or changing a site's country no longer fetches holidays. The holidays already imported stay, and you can still add, edit, delete and [import](#importing-holidays-from-a-calendar-file) holidays by hand.
 
@@ -106,9 +106,9 @@ The **Roles** tab lists every role with its description and how many users hold 
 |------|---------------------------|
 | **Administrator** | Everything, at every site. Its permissions cannot be edited and it cannot be deleted, so there is always someone who can manage roles |
 | **Superuser** | Plans projects, people and equipment at the sites they belong to: creates, edits, archives, deletes, imports and exports projects, assigns anyone, books equipment, manages colleagues' absences, staff notes, equipment, bank holidays, company events, teams, skills and phase templates, views and edits non-admin users, exports the site, uses What-If |
-| **User** | Sees the plan at their sites, books their own time, manages their own absences and todos, comments on Kanban cards and moves the cards they are assigned to |
+| **User** | Sees the plan at their sites, books their own time, manages their own absences, comments on Kanban cards and bookings and moves the cards they are assigned to |
 
-Both the Superuser and the User role can **act as project manager**: on a project where they are the *Project Manager*, they edit the project, archive it, assign people, book equipment, move cards, set column values and give todos to others — but never delete, create, import or export projects.
+Both the Superuser and the User role can **act as project manager**: on a project where they are the *Project Manager*, they edit the project, archive it, assign people, book equipment, move cards and set column values — but never delete, create, import or export projects.
 
 The defaults of Superuser and User match what these roles could do before roles became editable, so upgrading changes nothing for existing accounts — except that superusers now work only at the sites they belong to (see [Who sees which sites](#who-sees-which-sites)). An administrator can change the permissions of Superuser and User, but not delete them.
 
@@ -123,7 +123,7 @@ Click the **edit icon** to change a role, then **Save Changes**. Custom roles ca
 
 ### The Permission Matrix
 
-Permissions are grouped by topic: *Projects*, *Staff assignments*, *Equipment bookings*, *Kanban*, *Custom columns*, *Absences*, *Staff notes*, *Equipment*, *Calendar*, *Sites*, *Teams*, *Users*, *Skills*, *Project configuration*, *Instance settings*, *Roles, approvals, todos* and *Views and tools*. Each row shows what the permission allows and three choices:
+Permissions are grouped by topic: *Projects*, *Staff assignments*, *Equipment bookings*, *Kanban*, *Custom columns*, *Absences*, *Staff notes*, *Equipment*, *Calendar*, *Sites*, *Teams*, *Users*, *Skills*, *Project configuration*, *Instance settings*, *Roles and approvals* and *Views and tools*. Each row shows what the permission allows and three choices:
 
 - **Allow** — the role may do it
 - **Needs approval** — only on the three own-booking permissions (*Book myself*, *Change my allocation / dates*, *Remove my booking*): people with the role can ask, and the booking waits for an approver (see [Approvals](#approvals))
@@ -179,7 +179,7 @@ If neither the project's manager nor any role is set, a warning says that only a
 
 1. The person books themself as usual — the button reads **Request to assign me**, **Request to join**, **Request change** or **Request removal** — and sees *Sent for approval*
 2. A new booking appears at once as a dashed row with a **Pending approval** badge (a change shows *Change pending* with the old and new values, a removal *Removal requested*). Hovering the badge shows who can approve it. A pending booking does **not** count towards anyone's workload until it is approved
-3. The approvers get a notification and find the request in [My Todos](my-todos.md) under **To decide**. They can also approve or reject it from the booking's right-click menu in the Gantt chart or from the Kanban card. Rejecting can include a reason
+3. The approvers get a notification and find the request in [My Work](my-work.md) under **My Approvals**. They can also approve or reject it from the booking's right-click menu in the Gantt chart or from the Kanban card. Rejecting can include a reason
 4. The requester is notified of the decision and sees the outcome under **My requests**. Until then they can **Cancel request**
 
 A request also closes on its own when it can no longer apply — the card or project was deleted, the requester's account was deactivated or lost the right to book themself there, someone changed the booking in the meantime, or the person is already booked there. The requester sees why under **My requests**.
@@ -237,7 +237,7 @@ People whose role has **See all sites** (administrators by default) see every ac
 
 ### Deactivating and Deleting a Site
 
-The Sites section has no delete button: untick **Active** to hide a site from the site selector while keeping its data. Deleting a site is only possible through the API (`DELETE /api/sites/{id}`) and **deletes all of its projects** — with their phases, subphases, assignments, equipment bookings, Kanban comments and custom-column values — and its holidays. This now happens consistently, both in the application and at the database level. Equipment and company events shared with other sites stay on those sites; equipment or an event left without any site is deleted.
+The Sites section has no delete button: untick **Active** to hide a site from the site selector while keeping its data. Deleting a site is only possible through the API (`DELETE /api/sites/{id}`) and **deletes all of its projects** — with their phases, subphases, assignments, equipment bookings, comments and custom-column values — and its holidays. This now happens consistently, both in the application and at the database level. Equipment and company events shared with other sites stay on those sites; equipment or an event left without any site is deleted.
 
 !!! danger
     Deleting a site is irreversible and removes all data associated with it. To keep its projects, move them to another site first, or deactivate the site instead.
@@ -510,7 +510,6 @@ What each role may do is set in [Settings → Roles](#roles-permissions). With t
 | General settings, sites, absence types, tags, project fields, custom columns, SSO, roles | Yes | No | No |
 | See every site | Yes | No (own sites) | No (own sites) |
 | Book own absences ([My absences](vacations.md#my-absences)) | Yes | Yes | Yes |
-| Personal tasks in [My Todos](my-todos.md); give tasks to others | Yes | Yes | Own tasks only |
 
 ### Filtering Users
 

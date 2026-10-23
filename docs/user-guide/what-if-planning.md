@@ -26,7 +26,7 @@
 
 ### Own bookings that need approval
 
-If your role books your own time [with approval](settings.md#approvals), a change or removal of your own booking made in What-If mode looks applied in the sandbox like any other edit. On **Apply** it becomes an approval request: the booking keeps its values, shows *Change pending* or *Removal requested*, and waits for an approver. Approving or rejecting requests and creating tasks in [My Todos](my-todos.md) are unavailable while a plan is open.
+If your role books your own time [with approval](settings.md#approvals), a change or removal of your own booking made in What-If mode looks applied in the sandbox like any other edit. On **Apply** it becomes an approval request: the booking keeps its values, shows *Change pending* or *Removal requested*, and waits for an approver. Approving or rejecting requests in [My Work](my-work.md) is unavailable while a plan is open; comments in the assignment dialog still post at once (they are not part of the plan).
 
 ### What is unavailable in What-If mode
 
@@ -39,7 +39,7 @@ Imports are blocked as well:
 - Importing a Microsoft Project or CSV file — imports cannot be sandboxed, so exit What-If mode first
 - Importing `.ics` calendar files (bank holidays, company events, absences), because calendar data is not part of the What-If snapshot
 
-Kanban comments and your notification inbox are not part of the plan: comments you post in What-If mode are saved immediately. The same goes for **tags and project fields** in Settings: they are configuration, so an admin's changes there apply straight away even while a What-If plan is open. Attaching tags to a project and filling in its fields are part of the plan and are queued like any other edit; if an admin meanwhile limits a tag or a dropdown item your queued edit relies on to other sites or teams, Apply stops at that edit with an explanation — discard it and redo the change.
+Comments (on Kanban cards and in the assignment dialog) and your notification inbox are not part of the plan: comments you post in What-If mode are saved immediately. The same goes for **tags and project fields** in Settings: they are configuration, so an admin's changes there apply straight away even while a What-If plan is open. Attaching tags to a project and filling in its fields are part of the plan and are queued like any other edit; if an admin meanwhile limits a tag or a dropdown item your queued edit relies on to other sites or teams, Apply stops at that edit with an explanation — discard it and redo the change.
 
 ## Applying and Discarding
 
