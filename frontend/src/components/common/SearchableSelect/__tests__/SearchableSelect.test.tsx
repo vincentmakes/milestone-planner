@@ -362,7 +362,7 @@ describe('SearchableSelect', () => {
     Element.prototype.scrollIntoView = scrollIntoView;
     const rect = vi
       .spyOn(Element.prototype, 'getBoundingClientRect')
-      .mockReturnValue({ top: 0, bottom: window.innerHeight + 40 } as DOMRect);
+      .mockReturnValue({ top: 140, bottom: window.innerHeight + 40, height: 100 } as DOMRect);
     try {
       render(<Harness />);
       fireEvent.click(trigger());
