@@ -96,12 +96,12 @@ def test_detail_strings():
     assert other_teams_conflict_detail(1) == "1 project outside these teams uses this tag"
     assert other_teams_conflict_detail(3) == "3 projects outside these teams use this tag"
     assert team_delete_strands_projects_detail(1) == (
-        "1 project would keep a tag limited to other teams; "
-        "move it to another of the tag's teams or widen the tag first"
+        "1 project would keep a tag or field item limited to other teams; "
+        "move it to another of those teams or widen the tag or item first"
     )
     assert team_delete_strands_projects_detail(4) == (
-        "4 projects would keep tags limited to other teams; "
-        "move them to another of the tags' teams or widen the tags first"
+        "4 projects would keep tags or field items limited to other teams; "
+        "move them to another of those teams or widen the tags or items first"
     )
 
 
@@ -317,16 +317,34 @@ async def test_count_projects_stranded_by_team_delete_query():
     assert await count_projects_stranded_by_team_delete(db, _team(3, 1)) == 2
 
     (sql,) = _sql(db)
-    assert sql.startswith("SELECT count(distinct(projects.id))")
+    # One query: the distinct projects stranded by a tag or by a field item.
+    assert sql.startswith("SELECT count(*)")
+    by_tag, by_item = sql.split(" UNION ")
     # Projects of the team at its site, holding a tag linked to the team...
-    assert "project_teams.project_id = projects.id AND project_teams.team_id = 3" in sql
-    assert "JOIN project_tags ON project_tags.project_id = projects.id" in sql
-    assert "tag_teams.tag_id = project_tags.tag_id AND tag_teams.team_id = 3" in sql
-    assert "projects.site_id = 1" in sql
+    assert "project_teams.project_id = projects.id AND project_teams.team_id = 3" in by_tag
+    assert "JOIN project_tags ON project_tags.project_id = projects.id" in by_tag
+    assert "tag_teams.tag_id = project_tags.tag_id AND tag_teams.team_id = 3" in by_tag
+    assert "projects.site_id = 1" in by_tag
     # ...that the tag also limits to another team at the site...
-    assert "AND (EXISTS (SELECT" in sql
-    assert "tag_teams_1.team_id != 3" in sql
-    assert "teams_1.site_id = 1" in sql
+    assert "AND (EXISTS (SELECT" in by_tag
+    assert "tag_teams_1.team_id != 3" in by_tag
+    assert "teams_1.site_id = 1" in by_tag
     # ...none of which the project is part of.
-    assert "NOT (EXISTS (SELECT" in sql
-    assert "project_teams_1.project_id = projects.id" in sql
+    assert "NOT (EXISTS (SELECT" in by_tag
+    assert "project_teams_1.project_id = projects.id" in by_tag
+    # The same rule over the project-field items (selections + item teams).
+    assert "project_teams.project_id = projects.id AND project_teams.team_id = 3" in by_item
+    assert (
+        "JOIN project_field_selections ON project_field_selections.project_id = projects.id"
+        in by_item
+    )
+    assert (
+        "project_field_option_teams.option_id = project_field_selections.option_id "
+        "AND project_field_option_teams.team_id = 3"
+    ) in by_item
+    assert "projects.site_id = 1" in by_item
+    assert "project_field_option_teams_1.team_id != 3" in by_item
+    assert "teams_2.site_id = 1" in by_item
+    assert "NOT (EXISTS (SELECT" in by_item
+    assert "project_teams_2.project_id = projects.id" in by_item
+    assert "tag" not in by_item

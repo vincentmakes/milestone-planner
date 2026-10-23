@@ -436,8 +436,15 @@ PERMISSIONS: tuple[Permission, ...] = (
     _p(
         "Project configuration",
         "tags.manage",
-        "Manage tags and tag groups",
-        "Create, edit, reorder and delete tags and tag groups.",
+        "Manage tags",
+        "Create, edit, reorder and delete tags.",
+        _NONE,
+    ),
+    _p(
+        "Project configuration",
+        "project_fields.manage",
+        "Manage project fields",
+        "Create, edit, reorder and delete project fields and their dropdown items.",
         _NONE,
     ),
     _p(

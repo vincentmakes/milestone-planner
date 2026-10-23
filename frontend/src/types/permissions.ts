@@ -34,6 +34,7 @@ export const PERMISSION_KEYS = [
   'kanban.move_any',
   'kanban.move_assigned',
   'predefined_phases.manage',
+  'project_fields.manage',
   'projects.archive',
   'projects.create',
   'projects.delete',

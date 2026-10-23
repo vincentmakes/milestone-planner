@@ -632,6 +632,7 @@ async def test_site_delete_removes_restricted_tags_left_without_a_site(
         _scalars_result([]),  # equipment
         _scalars_result([]),  # projects
         _scalars_result([9, 10]),  # tags linked to the site
+        _scalars_result([]),  # project-field items linked to the site (none)
         MagicMock(),  # delete orphaned restricted tags
     ]
 
@@ -640,10 +641,11 @@ async def test_site_delete_removes_restricted_tags_left_without_a_site(
     assert response.status_code == 200, response.text
     sql = _sql(mock_db_session)
     assert "FROM tag_sites" in sql[4] and "tag_sites.site_id = 1" in sql[4]
-    assert sql[5].startswith("DELETE FROM tags ")
-    assert "tags.id IN (9, 10)" in sql[5]
-    assert "tags.all_sites IS false" in sql[5]
-    assert "NOT (EXISTS" in sql[5] and "tag_sites.tag_id = tags.id" in sql[5]
+    assert sql[6].startswith("DELETE FROM tags ")
+    assert "tags.id IN (9, 10)" in sql[6]
+    assert "tags.all_sites IS false" in sql[6]
+    assert "NOT (EXISTS" in sql[6] and "tag_sites.tag_id = tags.id" in sql[6]
+    assert len(sql) == 7  # no item left without a site: no item cleanup
     # The site row goes first so its tag_sites links are gone (FK cascade).
     mock_db_session.delete.assert_awaited_once_with(site)
 

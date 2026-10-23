@@ -135,6 +135,7 @@ async def test_delete_site_cleans_up_after_its_projects(authed_client, mock_db_s
         MagicMock(),  # values
         MagicMock(),  # comments
         _scalars_result([]),  # tags restricted to the site
+        _scalars_result([]),  # project-field items restricted to the site
     ]
 
     response = await client.delete("/api/sites/3")

@@ -56,6 +56,11 @@ def test_existing_entity_paths_still_resolve():
         ("/api/sites/2/holidays/9", "bank_holiday"),
         ("/api/sites/2/holidays/import", "bank_holiday"),
         ("/api/vacations/import", "vacation"),
+        ("/api/project-fields", "project_field"),
+        ("/api/project-fields/reorder", "project_field"),
+        ("/api/project-fields/4", "project_field"),
+        ("/api/project-fields/4/options", "project_field"),
+        ("/api/project-fields/options/9", "project_field"),
         ("/api/tags/reorder", "tag"),
         ("/api/teams", "team"),
         ("/api/teams/3", "team"),
@@ -70,6 +75,12 @@ def test_tag_groups_no_longer_broadcast():
     """/api/tag-groups was removed in 2.0.0 (tag groups became project fields)."""
     assert _resolve_entity_type("/api/tag-groups") is None
     assert _resolve_entity_type("/api/tag-groups/4") is None
+
+
+def test_project_fields_are_not_mistaken_for_projects():
+    """/api/projects is skipped (rich broadcasts); /api/project-fields is not."""
+    assert _resolve_entity_type("/api/projects/3") is None
+    assert _resolve_entity_type("/api/project-fields/3") == "project_field"
 
 
 def test_events_pattern_does_not_shadow_sites():

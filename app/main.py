@@ -203,6 +203,7 @@ def create_app() -> FastAPI:
         notes,
         notifications,
         predefined_phases,
+        project_fields,
         projects,
         roles,
         sites,
@@ -237,6 +238,7 @@ def create_app() -> FastAPI:
     app.include_router(custom_columns.router, prefix="/api", tags=["Custom Columns"])
     app.include_router(skills.router, prefix="/api", tags=["Skills"])
     app.include_router(tags.router, prefix="/api", tags=["Tags"])
+    app.include_router(project_fields.router, prefix="/api", tags=["Project Fields"])
     app.include_router(teams.router, prefix="/api", tags=["Teams"])
     app.include_router(kanban.router, prefix="/api", tags=["Kanban"])
     app.include_router(notifications.router, prefix="/api", tags=["Notifications"])

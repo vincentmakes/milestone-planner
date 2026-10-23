@@ -19,6 +19,7 @@ from app.database import get_db
 from app.middleware.auth import get_current_user, require_permission
 from app.models.equipment import Equipment, EquipmentSite
 from app.models.project import Project
+from app.models.project_field import ProjectFieldOption, ProjectFieldOptionSite
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.tag import Tag, TagSite
 from app.models.team import Team
@@ -319,6 +320,11 @@ async def delete_site(
     # rows of the site's teams, cascade too).
     linked = await db.execute(select(TagSite.tag_id).where(TagSite.site_id == site_id))
     tag_ids = list(linked.scalars().all())
+    # Same for project-field items restricted to this site.
+    linked = await db.execute(
+        select(ProjectFieldOptionSite.option_id).where(ProjectFieldOptionSite.site_id == site_id)
+    )
+    option_ids = list(linked.scalars().all())
 
     await db.delete(site)
     await db.flush()
@@ -360,6 +366,17 @@ async def delete_site(
             .where(Tag.id.in_(tag_ids))
             .where(Tag.all_sites.is_(False))
             .where(~exists().where(TagSite.tag_id == Tag.id))
+            .execution_options(synchronize_session=False)
+        )
+
+    # And a site-restricted project-field item left without any site (its
+    # projects' selections cascade).
+    if option_ids:
+        await db.execute(
+            delete(ProjectFieldOption)
+            .where(ProjectFieldOption.id.in_(option_ids))
+            .where(ProjectFieldOption.all_sites.is_(False))
+            .where(~exists().where(ProjectFieldOptionSite.option_id == ProjectFieldOption.id))
             .execution_options(synchronize_session=False)
         )
 

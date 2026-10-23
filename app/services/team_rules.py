@@ -11,19 +11,22 @@ Team rules shared by the routers that link teams to other data.
 ``load_teams`` resolves the ids a request carries; the ``*_detail`` helpers
 give the 400 messages each router raises through ``ensure_teams_within_sites``.
 ``count_projects_stranded_by_team_delete`` backs the 409 that refuses to
-delete a team while a project would keep a tag limited to other teams.
+delete a team while a project would keep a tag or a project-field item limited
+to other teams.
 
 Error details are plain strings (the frontend renders ``detail`` as text).
 """
 
 from collections.abc import Callable, Iterable
+from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import and_, func, literal, not_, select
+from sqlalchemy import Select, and_, func, literal, not_, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.models.project import Project
+from app.models.project_field import ProjectFieldOptionTeam, ProjectFieldSelection
 from app.models.tag import ProjectTag
 from app.models.team import ProjectTeam, TagTeam, Team
 from app.models.user import User, UserSite
@@ -49,12 +52,12 @@ def team_outside_user_sites_detail(team_name: str) -> str:
 def team_delete_strands_projects_detail(count: int) -> str:
     if count == 1:
         return (
-            "1 project would keep a tag limited to other teams; "
-            "move it to another of the tag's teams or widen the tag first"
+            "1 project would keep a tag or field item limited to other teams; "
+            "move it to another of those teams or widen the tag or item first"
         )
     return (
-        f"{count} projects would keep tags limited to other teams; "
-        "move them to another of the tags' teams or widen the tags first"
+        f"{count} projects would keep tags or field items limited to other teams; "
+        "move them to another of those teams or widen the tags or items first"
     )
 
 
@@ -120,52 +123,79 @@ async def load_site_members(db: AsyncSession, site_id: int, user_ids: Iterable[i
     return users
 
 
-async def count_projects_stranded_by_team_delete(db: AsyncSession, team: Team) -> int:
+def _stranded_project_ids(
+    team: Team, link: Any, link_entity: Any, scope: Any, scope_entity: Any
+) -> Select[Any]:
     """
-    Projects that deleting ``team`` would leave holding a tag limited to other teams.
+    Ids of the projects of ``team`` (at its site) that deleting it would strand
+    on one kind of team-scoped entity (tags, project-field items).
 
-    A project at the team's site, in ``team``, holding a tag whose team rows at
-    that site name ``team`` and at least one other team, while the project is
-    in none of those other teams: once ``team``'s rows go (ON DELETE CASCADE),
-    the tag is limited to teams the project is not part of. (A tag linked to
-    ``team`` alone at the site becomes open to the whole site instead.) One query.
+    ``link`` / ``link_entity``: the project junction and its entity column
+    (``project_tags.tag_id``); ``scope`` / ``scope_entity``: the entity's team
+    junction and its entity column (``tag_teams.tag_id``). A project is
+    stranded when it holds an entity linked to ``team`` and to at least one
+    other team at the site, while it is in none of those other teams.
     """
-    other_link = aliased(TagTeam)
+    other_link = aliased(scope)
+    other_entity = getattr(other_link, scope_entity.key)
     other_team = aliased(Team)
     other_membership = aliased(ProjectTeam)
-    # Aliases throughout: the outer query already uses tag_teams and
+    # Aliases throughout: the outer query already uses the team junction and
     # project_teams, which would otherwise be correlated out of the subqueries.
-    other_teams_of_tag = (
+    other_teams_of_entity = (
         select(literal(1))
         .select_from(other_link)
         .join(other_team, other_team.id == other_link.team_id)
         .where(
-            other_link.tag_id == ProjectTag.tag_id,
+            other_entity == link_entity,
             other_link.team_id != team.id,
             other_team.site_id == team.site_id,
         )
     )
-    in_another_tag_team = other_teams_of_tag.join(
+    in_another_entity_team = other_teams_of_entity.join(
         other_membership,
         and_(
             other_membership.team_id == other_link.team_id,
             other_membership.project_id == Project.id,
         ),
     )
-    query = (
-        select(func.count(func.distinct(Project.id)))
+    return (
+        select(Project.id)
         .select_from(Project)
         .join(
             ProjectTeam,
             and_(ProjectTeam.project_id == Project.id, ProjectTeam.team_id == team.id),
         )
-        .join(ProjectTag, ProjectTag.project_id == Project.id)
-        .join(TagTeam, and_(TagTeam.tag_id == ProjectTag.tag_id, TagTeam.team_id == team.id))
+        .join(link, link.project_id == Project.id)
+        .join(scope, and_(scope_entity == link_entity, scope.team_id == team.id))
         .where(
             Project.site_id == team.site_id,
-            other_teams_of_tag.exists(),
-            not_(in_another_tag_team.exists()),
+            other_teams_of_entity.exists(),
+            not_(in_another_entity_team.exists()),
         )
     )
-    result = await db.execute(query)
+
+
+async def count_projects_stranded_by_team_delete(db: AsyncSession, team: Team) -> int:
+    """
+    Projects that deleting ``team`` would leave holding a tag or a project-field
+    item limited to other teams.
+
+    A project at the team's site, in ``team``, holding a tag (or an item) whose
+    team rows at that site name ``team`` and at least one other team, while the
+    project is in none of those other teams: once ``team``'s rows go (ON DELETE
+    CASCADE), the tag / item is limited to teams the project is not part of. (A
+    tag or item linked to ``team`` alone at the site becomes open to the whole
+    site instead.) One query; a project stranded both ways counts once.
+    """
+    by_tag = _stranded_project_ids(team, ProjectTag, ProjectTag.tag_id, TagTeam, TagTeam.tag_id)
+    by_item = _stranded_project_ids(
+        team,
+        ProjectFieldSelection,
+        ProjectFieldSelection.option_id,
+        ProjectFieldOptionTeam,
+        ProjectFieldOptionTeam.option_id,
+    )
+    stranded = union(by_tag, by_item).subquery()
+    result = await db.execute(select(func.count()).select_from(stranded))
     return int(result.scalar() or 0)

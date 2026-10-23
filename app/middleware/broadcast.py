@@ -71,6 +71,8 @@ ENTITY_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"^/api/sites(?:/|$)"), "site"),
     (re.compile(r"^/api/skills(?:/|$)"), "skill"),
     (re.compile(r"^/api/tags(?:/|$)"), "tag"),
+    # Project fields and their items (2.0.0): configuration, coarse refresh.
+    (re.compile(r"^/api/project-fields(?:/|$)"), "project_field"),
     (re.compile(r"^/api/teams(?:/|$)"), "team"),
     (re.compile(r"^/api/custom-columns(?:/|$)"), "custom_column"),
     (re.compile(r"^/api/notes(?:/|$)"), "note"),

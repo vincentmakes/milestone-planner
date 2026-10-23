@@ -79,6 +79,7 @@ CATALOGUE = [
     ("Skills", "skills.manage", "a", "-"),
     ("Skills", "skills.assign", "a", "-"),
     ("Project configuration", "tags.manage", "-", "-"),
+    ("Project configuration", "project_fields.manage", "-", "-"),
     ("Project configuration", "absence_types.manage", "-", "-"),
     ("Project configuration", "predefined_phases.manage", "a", "-"),
     ("Instance settings", "settings.general", "-", "-"),
@@ -111,11 +112,10 @@ def test_catalogue_lists_every_key_in_order_with_its_group():
     assert [(p.group, p.key) for p in PERMISSIONS] == [(g, k) for g, k, _, _ in CATALOGUE]
 
 
-def test_catalogue_has_59_unique_keys():
-    # The plan's prose says "58 keys"; its own table (and the design draft's)
-    # lists 59. The table is the binding key list.
+def test_catalogue_has_60_unique_keys():
+    # 59 keys in 1.13.0 (the RBAC plan's table); project_fields.manage (2.0.0) is the 60th.
     keys = [p.key for p in PERMISSIONS]
-    assert len(keys) == 59
+    assert len(keys) == 60
     assert len(set(keys)) == len(keys)
     assert frozenset(keys) == PERMISSION_KEYS
 

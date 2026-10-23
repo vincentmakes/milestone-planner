@@ -77,6 +77,7 @@ GATES = [
     ("custom_columns", "DELETE", "/api/custom-columns/1", "custom_columns.manage", None),
     ("absence_types", "DELETE", "/api/absence-types/1", "absence_types.manage", None),
     ("tags", "DELETE", "/api/tags/1", "tags.manage", None),
+    ("project_fields", "DELETE", "/api/project-fields/1", "project_fields.manage", None),
     ("settings", "PUT", "/api/settings/instance_title", "settings.general", {"value": "X"}),
     ("settings", "PUT", "/api/settings/sso", "settings.sso", {"default_role": "user"}),
     ("auth", "GET", "/api/sso/config/full", "settings.sso", None),

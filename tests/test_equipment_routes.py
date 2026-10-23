@@ -487,6 +487,7 @@ async def test_site_delete_removes_only_equipment_left_without_a_site(
         _scalars_result([7, 8]),  # equipment linked to the site
         _scalars_result([]),  # the site's projects (none: no comment/value cleanup)
         _scalars_result([]),  # tags restricted to the site (none: no tag cleanup)
+        _scalars_result([]),  # project-field items restricted to the site (none)
         MagicMock(),  # delete orphaned equipment
         MagicMock(),  # re-point survivors' site_id
     ]
@@ -496,11 +497,11 @@ async def test_site_delete_removes_only_equipment_left_without_a_site(
     assert response.status_code == 200
     mock_db_session.delete.assert_awaited_once_with(SITE_A)
     statements = _statements(mock_db_session)
-    assert len(statements) == 7
-    assert statements[5].startswith("DELETE FROM equipment ")
-    assert "NOT (EXISTS" in statements[5] and "equipment_sites" in statements[5]
-    assert statements[6].startswith("UPDATE equipment SET site_id=")
-    assert "min(equipment_sites.site_id)" in statements[6]
+    assert len(statements) == 8
+    assert statements[6].startswith("DELETE FROM equipment ")
+    assert "NOT (EXISTS" in statements[6] and "equipment_sites" in statements[6]
+    assert statements[7].startswith("UPDATE equipment SET site_id=")
+    assert "min(equipment_sites.site_id)" in statements[7]
     mock_db_session.commit.assert_awaited()
 
 
@@ -516,12 +517,13 @@ async def test_site_delete_without_linked_equipment_skips_the_cleanup(
         _scalars_result([]),  # equipment
         _scalars_result([]),  # projects
         _scalars_result([]),  # tags restricted to the site
+        _scalars_result([]),  # project-field items restricted to the site
     ]
 
     response = await client.delete("/api/sites/1")
 
     assert response.status_code == 200
-    assert mock_db_session.execute.await_count == 5
+    assert mock_db_session.execute.await_count == 6
 
 
 # ---------------------------------------------------------
