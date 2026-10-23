@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Tag groups: the `/api/tag-groups` routes, the `tags.group_id` column and the `tag_groups` table are removed once the groups are converted.
 - Personal tasks: My Todos' tasks, the task dialog, the `/api/todos` routes, the `todos.manage_own` and `todos.assign_others` permissions and the task notifications.
 
+### Fixed
+- A newly posted comment no longer shows *(edited)*.
+
 ## [1.17.0] - 2026-10-22
 
 ### Added
