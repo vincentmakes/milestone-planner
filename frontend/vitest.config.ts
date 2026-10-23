@@ -64,9 +64,9 @@ export default defineConfig({
       // follow-up (second bookings, multi-select dropdown), the same rule on
       // lines 92.78, statements 91.69, functions 93.35, branches 83.23.
       thresholds: {
-        lines: 92.4,
-        statements: 91.3,
-        functions: 93.0,
+        lines: 92.5,
+        statements: 91.4,
+        functions: 93.1,
         branches: 82.9,
       },
     },
