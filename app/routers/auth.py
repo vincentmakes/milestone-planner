@@ -6,8 +6,9 @@ Matches the Node.js API at /api/auth exactly.
 """
 
 import logging
+import re
 from contextlib import asynccontextmanager
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -786,8 +787,45 @@ def _sso_error_redirect(tenant_slug: str | None, message: str) -> RedirectRespon
     signed state has given us the slug we send the user back to their own tenant
     login screen instead, with the reason attached.
     """
-    base = f"/t/{tenant_slug}/" if tenant_slug else "/"
-    return RedirectResponse(url=f"{base}?sso_error={quote_plus(message)}", status_code=302)
+    return RedirectResponse(
+        url=f"{_tenant_home(tenant_slug)}?sso_error={quote_plus(message)}", status_code=302
+    )
+
+
+# The slugs TenantMiddleware resolves (``/t/{slug}/``); nothing else is a tenant.
+_TENANT_SLUG_RE = re.compile(r"[a-z0-9]|[a-z0-9][a-z0-9-]*[a-z0-9]")
+
+
+def _tenant_home(tenant_slug: str | None) -> str:
+    """
+    The local path of a tenant's workspace, ``/`` without a valid slug.
+
+    The slug comes from the HMAC-signed state, so it is one we minted; checking
+    its shape as well keeps every SSO redirect a same-origin path even if a
+    signing key leaked or a future caller passed something else.
+    """
+    if tenant_slug and _TENANT_SLUG_RE.fullmatch(tenant_slug):
+        return f"/t/{tenant_slug}/"
+    return "/"
+
+
+def _local_redirect_path(path: str) -> str:
+    """
+    ``path`` when it is a same-origin absolute path, else ``/``.
+
+    Refuses scheme-relative (``//host``) and backslash forms (``/\\host``),
+    which browsers follow to another origin, and anything with a scheme or host.
+    """
+    parsed = urlparse(path)
+    if (
+        path.startswith("/")
+        and not path.startswith("//")
+        and "\\" not in path
+        and not parsed.scheme
+        and not parsed.netloc
+    ):
+        return path
+    return "/"
 
 
 def _config_fingerprint(config: dict, source: str) -> str:
@@ -1281,19 +1319,17 @@ async def _sso_callback(
 
         # Determine redirect URL - land back inside the tenant workspace.
         if tenant_slug:
-            redirect_url = f"/t/{tenant_slug}/"
+            redirect_url = _tenant_home(tenant_slug)
         else:
             # Single-tenant / legacy state: derive from the callback path as before.
             redirect_url = "/"
             if config.get("redirect_uri"):
-                from urllib.parse import urlparse
-
                 parsed = urlparse(config["redirect_uri"])
                 path = parsed.path
                 if "/api/auth/sso/callback" in path:
                     tenant_path = path.replace("/api/auth/sso/callback", "")
                     if tenant_path:
-                        redirect_url = (
+                        redirect_url = _local_redirect_path(
                             tenant_path if tenant_path.endswith("/") else tenant_path + "/"
                         )
 
