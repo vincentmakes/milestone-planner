@@ -4,7 +4,8 @@
  * excluded: a checkbox is 16 px on every device and the label row around it
  * is the touch target (UI_GUIDELINES §7). Without the exclusion the dialog
  * checkboxes rendered as 44 px squares on an iPhone while staying 16 px on a
- * desktop.
+ * desktop. Listbox rows (`role="option"`: the picker dropdowns, the mention
+ * and tag suggestions) get the 44 px height too.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -44,5 +45,12 @@ describe('mobile touch targets (global.css)', () => {
   it('gives the label row around a checkbox or radio the touch height instead', () => {
     expect(block).toMatch(/label:has\(> input\[type="checkbox"\]\)[\s\S]*?min-height: 44px/);
     expect(block).toMatch(/label:has\(> input\[type="radio"\]\)[\s\S]*?min-height: 44px/);
+  });
+
+  it('gives listbox option rows the touch height, not a width', () => {
+    const rule = block.match(/\[role="option"\]\s*\{([^}]*)\}/);
+    expect(rule).not.toBeNull();
+    expect(rule![1]).toMatch(/min-height: 44px/);
+    expect(rule![1]).not.toMatch(/min-width/);
   });
 });

@@ -416,6 +416,12 @@ body.phantom-sibling-mode * {
   label:has(> input[type="radio"]) {
     min-height: 44px;
   }
+
+  /* Listbox rows (the picker dropdowns, mention and tag suggestions) are
+     touch targets too: a full-width row, so only the height grows */
+  [role="option"] {
+    min-height: 44px;
+  }
   
   /* Better scrolling on mobile */
   * {
