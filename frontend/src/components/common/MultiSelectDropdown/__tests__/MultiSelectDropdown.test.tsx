@@ -86,6 +86,10 @@ describe('MultiSelectDropdown', () => {
     const onChange = vi.fn();
     render(<Harness initial={[3]} onChange={onChange} />);
     fireEvent.click(trigger());
+    // a mousedown on a row or on Clear never takes focus out of the list
+    expect(fireEvent.mouseDown(option('Process'))).toBe(false);
+    expect(fireEvent.mouseDown(screen.getByRole('button', { name: 'Clear' }))).toBe(false);
+    expect(listbox()).toHaveFocus();
     fireEvent.click(option('Process'));
     expect(onChange).toHaveBeenLastCalledWith([1, 3]);
     expect(listbox()).toBeInTheDocument();
