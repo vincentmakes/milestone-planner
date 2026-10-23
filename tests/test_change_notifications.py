@@ -268,13 +268,12 @@ async def run(db, intents, *, actor_id=ACTOR, already=(), caller=None):
 # ---------------------------------------------------------------------------
 
 
-def test_priority_keeps_change_types_between_todo_and_status():
+def test_priority_keeps_change_types_between_assigned_and_status():
     assert _TYPE_PRIORITY == (
         "mention",
         "approval_requested",
         "approval_decided",
         "assigned",
-        "todo_assigned",
         "assignment_changed",
         "project_changed",
         "status_change",

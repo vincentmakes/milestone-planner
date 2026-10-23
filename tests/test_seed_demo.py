@@ -10,7 +10,7 @@ whole thing.
 
 import json
 import re
-from datetime import date, timedelta
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -141,7 +141,6 @@ async def test_rows_come_in_foreign_key_order(loaded):
         "custom_column_values",
         "card_comments",
         "notifications",
-        "todos",
         "staff_notes",
     ]
     positions = [conn.first_insert_index(t) for t in order]
@@ -443,7 +442,7 @@ async def test_apply_schema_seeds_an_empty_database(capsys):
 
 
 # ---------------------------------------------------------------------------
-# Roles, approvals, todos
+# Roles and approvals
 # ---------------------------------------------------------------------------
 
 
@@ -524,27 +523,10 @@ async def test_approval_notification_names_the_request(loaded):
     assert entity_id == next(v for k, v in conn.ids.items() if k[0] == "approval_requests")
 
 
-async def test_todos_resolve_people_projects_and_cards(loaded):
-    conn, demo, _ = loaded
-    rows = {args[0]: args for _, args in conn.inserts("todos")}
-    assert set(rows) == {"Prepare QC checklist", "Review Q3 capacity"}
-    qc = rows["Prepare QC checklist"]
-    alice, charlie = (
-        _user(conn, "alice.anderson@demo.local"),
-        _user(conn, "charlie.clark@demo.local"),
-    )
-    assert (qc[3], qc[4]) == (charlie, alice)
-    assert qc[2] == demo.today + timedelta(days=5)
-    assert qc[6] == "subphase" and isinstance(qc[7], int) and isinstance(qc[5], int)
-    admin = _user(conn, "admin@demo.local")
-    review = rows["Review Q3 capacity"]
-    assert (review[3], review[4], review[5], review[6], review[7]) == (
-        admin,
-        admin,
-        None,
-        None,
-        None,
-    )
+async def test_no_todos_are_seeded(loaded):
+    conn, _, counts = loaded
+    assert conn.inserts("todos") == []
+    assert "todos" not in counts
 
 
 async def test_a_missing_system_role_stops_the_seed():

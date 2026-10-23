@@ -2108,7 +2108,7 @@ def pending_change_text(request: ApprovalRequest | None) -> str:
 
 
 # ---------------------------------------------------------
-# Listing (GET /approval-requests, and My Todos' approval items)
+# Listing (GET /approval-requests)
 # ---------------------------------------------------------
 
 VIEW_ALL_KEY = "approvals.view_all"
@@ -2286,50 +2286,6 @@ async def _to_decide_rows(
     query = query.order_by(ApprovalRequest.created_at.desc(), ApprovalRequest.id.desc())
     rows = list((await db.execute(query.limit(limit))).all())
     return rows, policies, visible
-
-
-# My Todos shows at most this many approvals to decide (newest first).
-TODO_APPROVALS_LIMIT = 200
-
-
-async def decidable_todo_items(db: AsyncSession, http: Request, user: Any) -> list[dict[str, Any]]:
-    """
-    My Todos' ``approval`` items: the pending requests the caller may decide,
-    as ``TodoItem`` dicts (id ``approval:<n>``, status ``open``, the requester
-    as ``created_by``, the card or project as the entity, the full request in
-    ``approval_request``).
-    """
-    rows, policies, visible = await _to_decide_rows(db, http, user, limit=TODO_APPROVALS_LIMIT)
-    items = []
-    for row in rows:
-        if not _row_can_decide(user, row, policies, visible):
-            continue  # pragma: no cover - the query holds the same rule
-        request: ApprovalRequest = row[0]
-        requester_name = row[4] or "Someone"
-        target = row[6] or row[1] or "a project"
-        items.append(
-            {
-                "id": f"approval:{request.id}",
-                "kind": "approval",
-                "title": _request_title(requester_name, request, target),
-                "notes": request.note,
-                "due_date": None,
-                "status": "open",
-                "assignee_id": user.id,
-                "assignee_name": None,
-                "created_by": request.requester_id,
-                "created_by_name": row[4],
-                "project_id": request.project_id,
-                "project_name": row[1],
-                "entity_type": request.level,
-                "entity_id": request.target_id,
-                "completed_at": None,
-                "approval_request": serialize_request_row(row, can_decide_flag=True),
-                "created_at": request.created_at,
-                "updated_at": request.updated_at,
-            }
-        )
-    return items
 
 
 async def get_request(

@@ -1,10 +1,10 @@
--- Migration: Add role-based access control, approvals and todos (PostgreSQL)
+-- Migration: Add role-based access control and approvals (PostgreSQL)
 -- Description: Creates roles (the admin / superuser / user system roles plus
 -- custom roles), role_permissions (one row per granted permission key, mode
 -- allow or approval; no row = deny; the admin role has none, it holds every
 -- permission in code), approval_policies / approval_policy_roles (who approves
--- an own booking: the project manager and/or roles), approval_requests and
--- todos. Adds approval_status / approval_request_id to the three staff
+-- an own booking: the project manager and/or roles) and approval_requests.
+-- Adds approval_status / approval_request_id to the three staff
 -- assignment tables (pending self-bookings are real rows), widens the
 -- notification types, drops the sso_config default-role CHECK (roles are
 -- editable; validated in code), seeds the system roles with their default
@@ -83,25 +83,6 @@ CREATE TABLE IF NOT EXISTS approval_requests (
     CONSTRAINT approval_requests_close_reason_check CHECK (close_reason IN ('target_deleted', 'requester_inactive', 'permission_lost', 'overtaken', 'duplicate'))
 );
 
--- Todos (My Todos)
-CREATE TABLE IF NOT EXISTS todos (
-    id SERIAL PRIMARY KEY,
-    title VARCHAR(200) NOT NULL,
-    notes TEXT,
-    due_date DATE,
-    assignee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    status VARCHAR(10) NOT NULL DEFAULT 'open',
-    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
-    entity_type VARCHAR(20),
-    entity_id INTEGER,
-    completed_at TIMESTAMP,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT todos_status_check CHECK (status IN ('open', 'done', 'cancelled')),
-    CONSTRAINT todos_entity_type_check CHECK (entity_type IN ('phase', 'subphase'))
-);
-
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_approval_policy_roles_role ON approval_policy_roles(role_id);
 
@@ -110,8 +91,6 @@ CREATE INDEX IF NOT EXISTS idx_approval_requests_project_status ON approval_requ
 CREATE INDEX IF NOT EXISTS idx_approval_requests_requester_status ON approval_requests(requester_id, status);
 
 CREATE INDEX IF NOT EXISTS idx_approval_requests_pending ON approval_requests(status) WHERE status = 'pending';
-
-CREATE INDEX IF NOT EXISTS idx_todos_assignee_status ON todos(assignee_id, status);
 
 -- Staff assignments: approval_status + the open approval request
 DO $$
@@ -180,7 +159,7 @@ BEGIN
     END IF;
 END $$;
 
--- Notification types for approvals and todos
+-- Notification types for approvals
 DO $$
 BEGIN
     IF to_regclass('public.notifications') IS NOT NULL AND NOT EXISTS (
@@ -191,7 +170,7 @@ BEGIN
     ) THEN
         ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
         ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
-            CHECK (type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'todo_assigned', 'assignment_changed', 'project_changed'));
+            CHECK (type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'assignment_changed', 'project_changed'));
     END IF;
 END $$;
 
@@ -254,8 +233,6 @@ FROM new_roles r JOIN (VALUES
   ('superuser', 'skills.manage', 'allow'),
   ('superuser', 'skills.assign', 'allow'),
   ('superuser', 'predefined_phases.manage', 'allow'),
-  ('superuser', 'todos.manage_own', 'allow'),
-  ('superuser', 'todos.assign_others', 'allow'),
   ('superuser', 'views.kanban', 'allow'),
   ('superuser', 'views.staff', 'allow'),
   ('superuser', 'views.equipment', 'allow'),
@@ -272,7 +249,6 @@ FROM new_roles r JOIN (VALUES
   ('user', 'custom_columns.set_values', 'allow'),
   ('user', 'absences.view_others', 'allow'),
   ('user', 'absences.manage_own', 'allow'),
-  ('user', 'todos.manage_own', 'allow'),
   ('user', 'views.kanban', 'allow'),
   ('user', 'views.staff', 'allow'),
   ('user', 'views.equipment', 'allow'),
@@ -321,10 +297,8 @@ BEGIN
     EXECUTE format('GRANT ALL PRIVILEGES ON TABLE approval_policies TO %I', db_owner);
     EXECUTE format('GRANT ALL PRIVILEGES ON TABLE approval_policy_roles TO %I', db_owner);
     EXECUTE format('GRANT ALL PRIVILEGES ON TABLE approval_requests TO %I', db_owner);
-    EXECUTE format('GRANT ALL PRIVILEGES ON TABLE todos TO %I', db_owner);
     EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE roles_id_seq TO %I', db_owner);
     EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE approval_requests_id_seq TO %I', db_owner);
-    EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE todos_id_seq TO %I', db_owner);
 
     RAISE NOTICE 'Granted permissions to database owner: %', db_owner;
 END $$;
@@ -333,5 +307,5 @@ END $$;
 DO $$
 BEGIN
     RAISE NOTICE 'RBAC migration completed successfully';
-    RAISE NOTICE 'Tables created: roles, role_permissions, approval_policies, approval_policy_roles, approval_requests, todos';
+    RAISE NOTICE 'Tables created: roles, role_permissions, approval_policies, approval_policy_roles, approval_requests';
 END $$;

@@ -1,5 +1,5 @@
 """
-Notification creation for Kanban, approval and todo events.
+Notification creation for comment, Kanban and approval events.
 
 Rules live here rather than in the routers so every trigger behaves the same:
   - the actor never notifies themselves
@@ -31,7 +31,6 @@ _TYPE_PRIORITY = (
     "approval_requested",
     "approval_decided",
     "assigned",
-    "todo_assigned",
     "assignment_changed",
     "project_changed",
     "status_change",

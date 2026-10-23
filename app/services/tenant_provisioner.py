@@ -898,7 +898,7 @@ TAGS_UPGRADE_STATEMENTS: tuple[str, ...] = (
 )
 TAGS_UPGRADE_SQL = "".join(TAGS_UPGRADE_STATEMENTS)
 
-# --- RBAC: roles, permissions, approvals, todos (add_rbac.sql, 1.13.0) -----
+# --- RBAC: roles, permissions, approvals (add_rbac.sql, 1.13.0) -----------
 # users.role holds a role key and references roles.key, so `roles` (with its
 # seeded system roles) is created BEFORE `users` in every DDL source. One
 # statement per constant: the tenant auto-migration and the data-migration
@@ -969,25 +969,6 @@ APPROVAL_REQUESTS_TABLE_SQL = """
       CONSTRAINT approval_requests_close_reason_check CHECK (close_reason IN ('target_deleted', 'requester_inactive', 'permission_lost', 'overtaken', 'duplicate'))
     )"""
 
-TODOS_TABLE_SQL = """
-    CREATE TABLE IF NOT EXISTS todos (
-      id SERIAL PRIMARY KEY,
-      title VARCHAR(200) NOT NULL,
-      notes TEXT,
-      due_date DATE,
-      assignee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      status VARCHAR(10) NOT NULL DEFAULT 'open',
-      project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
-      entity_type VARCHAR(20),
-      entity_id INTEGER,
-      completed_at TIMESTAMP,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      CONSTRAINT todos_status_check CHECK (status IN ('open', 'done', 'cancelled')),
-      CONSTRAINT todos_entity_type_check CHECK (entity_type IN ('phase', 'subphase'))
-    )"""
-
 RBAC_INDEX_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_approval_policy_roles_role ON approval_policy_roles(role_id)",
     "CREATE INDEX IF NOT EXISTS idx_approval_requests_project_status "
@@ -996,7 +977,6 @@ RBAC_INDEX_STATEMENTS: tuple[str, ...] = (
     "ON approval_requests(requester_id, status)",
     "CREATE INDEX IF NOT EXISTS idx_approval_requests_pending "
     "ON approval_requests(status) WHERE status = 'pending'",
-    "CREATE INDEX IF NOT EXISTS idx_todos_assignee_status ON todos(assignee_id, status)",
 )
 
 # Pending self-bookings are real assignment rows: approval_status = 'pending'
@@ -1086,7 +1066,6 @@ NOTIFICATION_TYPES: tuple[str, ...] = (
     "status_change",
     "approval_requested",
     "approval_decided",
-    "todo_assigned",
     "assignment_changed",
     "project_changed",
 )
@@ -1131,7 +1110,6 @@ RBAC_SCHEMA_STATEMENTS: tuple[str, ...] = (
     APPROVAL_POLICIES_TABLE_SQL,
     APPROVAL_POLICY_ROLES_TABLE_SQL,
     APPROVAL_REQUESTS_TABLE_SQL,
-    TODOS_TABLE_SQL,
     *RBAC_INDEX_STATEMENTS,
     *ASSIGNMENT_APPROVAL_COLUMN_STATEMENTS,
     NOTIFICATIONS_TYPE_CHECK_SQL,
@@ -1144,7 +1122,6 @@ RBAC_TABLES: tuple[str, ...] = (
     "approval_policies",
     "approval_policy_roles",
     "approval_requests",
-    "todos",
 )
 
 # --- RBAC seed (run after the tables; order matters) ------------------------
@@ -1862,7 +1839,7 @@ def get_tenant_schema_sql() -> str:
         + """
 
     -- Approval policies (seeded: the project manager approves), approval
-    -- requests, todos, the assignment approval columns, the booking segment
+    -- requests, the assignment approval columns, the booking segment
     -- columns (no-ops here: CREATE TABLE has them), the widened
     -- notification types, the SSO default-role CHECK dropped, and indexes.
     """
@@ -1871,7 +1848,6 @@ def get_tenant_schema_sql() -> str:
             APPROVAL_POLICY_ROLES_TABLE_SQL,
             RBAC_SEED_POLICIES_SQL,
             APPROVAL_REQUESTS_TABLE_SQL,
-            TODOS_TABLE_SQL,
             *ASSIGNMENT_APPROVAL_COLUMN_STATEMENTS,
             *BOOKING_SEGMENT_COLUMN_STATEMENTS,
             NOTIFICATIONS_TYPE_CHECK_SQL,

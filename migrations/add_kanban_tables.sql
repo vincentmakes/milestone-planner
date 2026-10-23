@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT notifications_type_check
         CHECK (type IN ('assigned', 'comment', 'mention', 'status_change',
-                        'approval_requested', 'approval_decided', 'todo_assigned',
+                        'approval_requested', 'approval_decided',
                         'assignment_changed', 'project_changed'))
 );
 

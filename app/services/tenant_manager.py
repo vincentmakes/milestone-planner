@@ -532,8 +532,7 @@ class TenantConnectionManager:
                         CONSTRAINT notifications_type_check
                             CHECK (type IN ('assigned', 'comment', 'mention', 'status_change',
                                             'approval_requested', 'approval_decided',
-                                            'todo_assigned', 'assignment_changed',
-                                            'project_changed'))
+                                            'assignment_changed', 'project_changed'))
                     )
                 """)
                 )
@@ -798,7 +797,7 @@ class TenantConnectionManager:
             await _rollback_quietly(conn)
 
         # RBAC (1.13.0): roles, role_permissions, approval policies / requests,
-        # todos, the assignment approval columns, the widened notification
+        # the assignment approval columns, the widened notification
         # types (add_rbac.sql). The seed (system roles + defaults, policies)
         # and the users.role CHECK -> FK swap follow in the data migrations
         # (tenant_data_migrations.RBAC_SEED_STEP). One statement per execute.

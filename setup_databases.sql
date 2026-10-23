@@ -237,8 +237,6 @@ FROM new_roles r JOIN (VALUES
   ('superuser', 'skills.manage', 'allow'),
   ('superuser', 'skills.assign', 'allow'),
   ('superuser', 'predefined_phases.manage', 'allow'),
-  ('superuser', 'todos.manage_own', 'allow'),
-  ('superuser', 'todos.assign_others', 'allow'),
   ('superuser', 'views.kanban', 'allow'),
   ('superuser', 'views.staff', 'allow'),
   ('superuser', 'views.equipment', 'allow'),
@@ -255,7 +253,6 @@ FROM new_roles r JOIN (VALUES
   ('user', 'custom_columns.set_values', 'allow'),
   ('user', 'absences.view_others', 'allow'),
   ('user', 'absences.manage_own', 'allow'),
-  ('user', 'todos.manage_own', 'allow'),
   ('user', 'views.kanban', 'allow'),
   ('user', 'views.staff', 'allow'),
   ('user', 'views.equipment', 'allow'),
@@ -705,8 +702,8 @@ CREATE TABLE IF NOT EXISTS project_field_selections (
 -- Approval policies (per approvable action: does the project manager approve,
 -- and which roles), approval requests (an own booking awaiting a decision;
 -- assignment_id points into the assignment table chosen by level, hence no
--- FK) and todos (My Todos). Same DDL as tenant_provisioner.RBAC_SCHEMA_STATEMENTS
--- and migrations/add_rbac.sql.
+-- FK). Same DDL as tenant_provisioner.RBAC_SCHEMA_STATEMENTS and
+-- migrations/add_rbac.sql.
 CREATE TABLE IF NOT EXISTS approval_policies (
     action VARCHAR(60) PRIMARY KEY,
     pm_approves BOOLEAN NOT NULL DEFAULT TRUE,
@@ -741,24 +738,6 @@ CREATE TABLE IF NOT EXISTS approval_requests (
     CONSTRAINT approval_requests_level_check CHECK (level IN ('project', 'phase', 'subphase')),
     CONSTRAINT approval_requests_status_check CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled', 'superseded', 'expired')),
     CONSTRAINT approval_requests_close_reason_check CHECK (close_reason IN ('target_deleted', 'requester_inactive', 'permission_lost', 'overtaken', 'duplicate'))
-);
-
-CREATE TABLE IF NOT EXISTS todos (
-    id SERIAL PRIMARY KEY,
-    title VARCHAR(200) NOT NULL,
-    notes TEXT,
-    due_date DATE,
-    assignee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    status VARCHAR(10) NOT NULL DEFAULT 'open',
-    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
-    entity_type VARCHAR(20),
-    entity_id INTEGER,
-    completed_at TIMESTAMP,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT todos_status_check CHECK (status IN ('open', 'done', 'cancelled')),
-    CONSTRAINT todos_entity_type_check CHECK (entity_type IN ('phase', 'subphase'))
 );
 
 -- Staff notes pinned to a site/date
@@ -824,7 +803,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     body TEXT,
     read_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT notifications_type_check CHECK (type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'todo_assigned', 'assignment_changed', 'project_changed'))
+    CONSTRAINT notifications_type_check CHECK (type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'assignment_changed', 'project_changed'))
 );
 
 -- Skills (global, shared across all sites)
@@ -1238,7 +1217,7 @@ BEGIN
     ) THEN
         ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
         ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
-            CHECK (type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'todo_assigned', 'assignment_changed', 'project_changed'));
+            CHECK (type IN ('assigned', 'comment', 'mention', 'status_change', 'approval_requested', 'approval_decided', 'assignment_changed', 'project_changed'));
     END IF;
 END $$;
 
@@ -1292,7 +1271,6 @@ CREATE INDEX IF NOT EXISTS idx_approval_policy_roles_role ON approval_policy_rol
 CREATE INDEX IF NOT EXISTS idx_approval_requests_project_status ON approval_requests(project_id, status);
 CREATE INDEX IF NOT EXISTS idx_approval_requests_requester_status ON approval_requests(requester_id, status);
 CREATE INDEX IF NOT EXISTS idx_approval_requests_pending ON approval_requests(status) WHERE status = 'pending';
-CREATE INDEX IF NOT EXISTS idx_todos_assignee_status ON todos(assignee_id, status);
 CREATE INDEX IF NOT EXISTS idx_staff_notes_site_date ON staff_notes(site_id, date);
 CREATE INDEX IF NOT EXISTS idx_custom_columns_site_id ON custom_columns(site_id);
 CREATE INDEX IF NOT EXISTS idx_custom_column_values_column_id ON custom_column_values(custom_column_id);

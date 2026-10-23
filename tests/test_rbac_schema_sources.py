@@ -33,7 +33,6 @@ from app.models.rbac import (
     RolePermission,
 )
 from app.models.settings import SSOConfig
-from app.models.todo import Todo
 from app.models.user import User
 from app.services import tenant_data_migrations as tdm
 from app.services.permissions import (
@@ -60,7 +59,6 @@ from app.services.tenant_provisioner import (
     ROLE_PERMISSIONS_TABLE_SQL,
     ROLES_TABLE_SQL,
     SSO_DEFAULT_ROLE_CHECK_DROP_SQL,
-    TODOS_TABLE_SQL,
     USERS_ROLE_FK_CLAUSE,
     USERS_ROLE_FK_SQL,
     USERS_ROLE_RESET_SQL,
@@ -78,16 +76,14 @@ TABLE_SQL = {
     "approval_policies": APPROVAL_POLICIES_TABLE_SQL,
     "approval_policy_roles": APPROVAL_POLICY_ROLES_TABLE_SQL,
     "approval_requests": APPROVAL_REQUESTS_TABLE_SQL,
-    "todos": TODOS_TABLE_SQL,
 }
 INDEX_NAMES = (
     "idx_approval_policy_roles_role",
     "idx_approval_requests_project_status",
     "idx_approval_requests_requester_status",
     "idx_approval_requests_pending",
-    "idx_todos_assignee_status",
 )
-NEW_NOTIFICATION_TYPES = ("approval_requested", "approval_decided", "todo_assigned")
+NEW_NOTIFICATION_TYPES = ("approval_requested", "approval_decided")
 
 
 def _norm(sql: str) -> str:
@@ -144,7 +140,6 @@ def test_rbac_tables_in_creation_order():
         "approval_policies",
         "approval_policy_roles",
         "approval_requests",
-        "todos",
     )
 
 
@@ -295,8 +290,6 @@ def test_rbac_tables_follow_their_parents_and_upgrades_follow_their_tables(sourc
     assert create("approval_policies") < _position(sql, RBAC_SEED_POLICIES_SQL)
     for parent in ("users", "projects", "roles"):
         assert create(parent) < create("approval_requests"), parent
-    for parent in ("users", "projects"):
-        assert create(parent) < create("todos"), parent
     for table in ASSIGNMENT_APPROVAL_TABLES:
         for statement in ASSIGNMENT_APPROVAL_COLUMN_STATEMENTS:
             if f"'{table}'" in statement:
@@ -350,7 +343,7 @@ def test_migration_grants_every_table_and_sequence(migration_statements):
     (grants,) = (s for s in migration_statements if "GRANT ALL" in s)
     for table in RBAC_TABLES:
         assert f"GRANT ALL PRIVILEGES ON TABLE {table} TO %I" in grants, table
-    for sequence in ("roles_id_seq", "approval_requests_id_seq", "todos_id_seq"):
+    for sequence in ("roles_id_seq", "approval_requests_id_seq"):
         assert f"GRANT USAGE, SELECT ON SEQUENCE {sequence} TO %I" in grants, sequence
 
 
@@ -638,18 +631,14 @@ def test_approval_request_model_matches_the_ddl():
     assert str(where) == "status = 'pending'"
 
 
-def test_todo_model_matches_the_ddl():
-    table = Todo.__table__
-    assert table.name == "todos"
-    assert table.c.title.type.length == 200
-    assert _fk(table.c.assignee_id).ondelete == "CASCADE"
-    assert table.c.assignee_id.nullable is False
-    assert _fk(table.c.created_by).ondelete == "SET NULL"
-    assert _fk(table.c.project_id).ondelete == "CASCADE"
-    assert table.c.project_id.nullable is True
-    _assert_check(Todo, "todos_status_check", TODOS_TABLE_SQL)
-    _assert_check(Todo, "todos_entity_type_check", TODOS_TABLE_SQL)
-    assert {i.name for i in table.indexes} == {"idx_todos_assignee_status"}
+def test_personal_todos_are_gone():
+    # Removed in 2.0.0 (never shipped): no model, no table in any DDL source.
+    import app.models as models
+
+    assert "Todo" not in models.__all__
+    for name, sql in _full_sources().items():
+        assert "todos" not in sql, name
+    assert "todos" not in MIGRATION.read_text()
 
 
 def test_user_role_references_roles_key():
@@ -698,7 +687,6 @@ def test_models_package_exports_the_rbac_models():
         "ApprovalPolicy": "app.models.rbac",
         "ApprovalPolicyRole": "app.models.rbac",
         "ApprovalRequest": "app.models.rbac",
-        "Todo": "app.models.todo",
     }
     for name, module in expected.items():
         assert name in models.__all__
@@ -734,8 +722,3 @@ def test_model_helpers():
     assert repr(request) == "<ApprovalRequest 7 assignments.self_create pending>"
     request.status = "approved"
     assert not request.is_pending
-    todo = Todo(id=3, title="Prepare QC checklist", assignee_id=5, status="open")
-    assert todo.is_open
-    assert repr(todo) == "<Todo 3 -> user 5 (open)>"
-    todo.status = "done"
-    assert not todo.is_open

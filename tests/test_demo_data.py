@@ -143,11 +143,6 @@ def test_every_reference_resolves_to_exactly_one_row(demo: DemoData):
     for r in demo.approval_requests:
         assert r["requester"] in users and r["project"] in projects
         assert entity_exists((r["level"], r["project"], r["target"]))
-    for t in demo.todos:
-        assert t["assignee"] in users and t["creator"] in users
-        assert t["project"] is None or t["project"] in projects
-        if t["entity"] is not None:
-            assert entity_exists(t["entity"]) and t["entity"][1] == t["project"]
     for note in demo.staff_notes:
         assert note["site"] in sites and note["staff"] in users
 
@@ -483,7 +478,7 @@ def test_some_projects_have_teams_and_one_has_none(demo: DemoData):
 
 
 # ---------------------------------------------------------------------------
-# Roles, approvals, todos
+# Roles and approvals
 # ---------------------------------------------------------------------------
 
 
@@ -512,10 +507,10 @@ def test_custom_roles_use_known_keys_and_modes(demo: DemoData):
         assert all(mode in ("allow", "approval") for mode in overrides.values())
 
 
-def test_team_lead_is_user_defaults_plus_three_keys_held_by_fiona(demo: DemoData):
+def test_team_lead_is_user_defaults_plus_two_keys_held_by_fiona(demo: DemoData):
     (lead,) = (r for r in demo.roles if r["key"] == "team_lead")
     assert lead["name"] == "Team Lead"
-    extra = {"projects.create", "absences.manage_others", "todos.assign_others"}
+    extra = {"projects.create", "absences.manage_others"}
     assert lead["permissions"] == {**default_modes("user"), **dict.fromkeys(extra, "allow")}
     holders = [u["email"] for u in demo.users if u["role"] == "team_lead"]
     assert holders == ["fiona.fischer@demo.local"]
@@ -570,17 +565,8 @@ def test_pending_request_is_a_bookable_self_assignment(demo: DemoData):
     assert project["site"] in users[project["pm"]]["sites"]
 
 
-def test_todos_are_alices_for_charlie_and_the_admins_own(demo: DemoData):
-    by_title = {t["title"]: t for t in demo.todos}
-    qc = by_title["Prepare QC checklist"]
-    assert (qc["creator"], qc["assignee"]) == (
-        "alice.anderson@demo.local",
-        "charlie.clark@demo.local",
-    )
-    assert qc["due_date"] == TODAY + timedelta(days=5)
-    # Alice may assign it: her role holds todos.assign_others.
-    users = {u["email"]: u for u in demo.users}
-    assert _role_modes(demo)[users[qc["creator"]]["role"]]["todos.assign_others"] == "allow"
-    review = by_title["Review Q3 capacity"]
-    assert review["creator"] == review["assignee"] == demo.admin_email
-    assert len(demo.todos) == 2
+def test_demo_has_no_personal_todos(demo: DemoData):
+    # Personal todos were removed in 2.0.0.
+    assert not hasattr(demo, "todos")
+    for role in demo.roles:
+        assert not any(key.startswith("todos.") for key in role["permissions"])

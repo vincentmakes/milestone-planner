@@ -106,12 +106,10 @@ def test_rbac_configuration_paths_broadcast_their_entity(path, entity):
     [
         "/api/approval-requests",
         "/api/approval-requests/3/approve",
-        "/api/todos",
-        "/api/todos/9",
     ],
 )
-def test_approval_and_todo_paths_are_skipped(path):
-    """Approval decisions broadcast richly and todos are pushed per user."""
+def test_approval_paths_are_skipped(path):
+    """Approval decisions broadcast richly from their router."""
     assert _resolve_entity_type(path) is None
     # Skipped on purpose, not merely unmatched: a later catch-all must not reach them.
     assert any(pattern.match(path) for pattern in SKIP_PATTERNS)
@@ -119,4 +117,8 @@ def test_approval_and_todo_paths_are_skipped(path):
 
 def test_rbac_patterns_do_not_shadow_neighbours():
     assert _resolve_entity_type("/api/rolesx") is None
-    assert _resolve_entity_type("/api/todosx") is None
+
+
+def test_no_todos_pattern_is_left():
+    # Personal todos were removed in 2.0.0: no skip pattern names them.
+    assert not any("todos" in pattern.pattern for pattern in SKIP_PATTERNS)

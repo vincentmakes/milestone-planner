@@ -99,7 +99,6 @@ def test_schema_creates_tables_added_by_auto_migrations(schema_sql):
         "approval_policies",
         "approval_policy_roles",
         "approval_requests",
-        "todos",
         "project_fields",
         "project_field_options",
         "project_field_option_sites",

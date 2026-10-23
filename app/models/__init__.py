@@ -49,7 +49,6 @@ from app.models.tenant import (
     TenantAuditLog,
     TenantCredentials,
 )
-from app.models.todo import Todo
 from app.models.user import User, UserSite
 from app.models.vacation import Vacation
 
@@ -105,7 +104,6 @@ __all__ = [
     "ApprovalPolicy",
     "ApprovalPolicyRole",
     "ApprovalRequest",
-    "Todo",
     # Multi-tenant admin models (use separate MasterBase)
     "MasterBase",
     "Tenant",

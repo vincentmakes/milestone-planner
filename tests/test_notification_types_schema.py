@@ -36,11 +36,13 @@ IN_REPO = (ROOT / "setup_databases.sql").exists() and (ROOT / "Dockerfile").exis
 
 FULL_LIST = (
     "type IN ('assigned', 'comment', 'mention', 'status_change', "
-    "'approval_requested', 'approval_decided', 'todo_assigned', "
+    "'approval_requested', 'approval_decided', "
     "'assignment_changed', 'project_changed')"
 )
-# The 1.13 / 1.14 text: the list ending at todo_assigned.
+# The pre-release 1.13 / 1.14 text: the list ending at todo_assigned (a type
+# removed with the personal todos in 2.0.0; no source names it any more).
 OLD_TAIL = "'todo_assigned')"
+REMOVED_TYPE = "todo_assigned"
 
 
 def _norm(sql: str) -> str:
@@ -66,7 +68,6 @@ def test_notification_types_list():
         "status_change",
         "approval_requested",
         "approval_decided",
-        "todo_assigned",
         "assignment_changed",
         "project_changed",
     )
@@ -80,7 +81,7 @@ def test_widening_is_guarded_by_the_newest_type():
         "ALTER TABLE notifications ADD CONSTRAINT notifications_type_check "
         f"CHECK ({NOTIFICATIONS_TYPE_CHECK})"
     ) in sql
-    # Guarded on the last type: a 1.14 constraint (which already contains
+    # Guarded on the last type: a pre-release 1.14 constraint (ending at
     # 'todo_assigned') must still be widened.
     assert "strpos(pg_get_constraintdef(oid), 'project_changed') > 0" in sql
     assert "'todo_assigned') > 0" not in sql
@@ -125,6 +126,7 @@ def test_full_list_in_every_place():
         normalized = _norm(text).replace("CHECK(", "CHECK (")
         assert FULL_LIST in normalized, name
         assert OLD_TAIL not in normalized, name  # the 1.14 text is gone
+        assert REMOVED_TYPE not in normalized, name  # todos removed in 2.0.0
         assert "'mention', 'status_change'))" not in normalized, name  # the 1.4 text
 
 
@@ -135,6 +137,13 @@ def test_widening_sources_carry_the_constant_verbatim():
         (ROOT / "migrations" / "add_rbac.sql").read_text()
     )
     assert _norm(NOTIFICATIONS_TYPE_CHECK_SQL) in _norm(get_tenant_schema_sql())
+
+
+def test_no_migration_names_the_removed_type():
+    # add_rbac.sql / add_change_notifications.sql never shipped on their own
+    # and were edited when the personal todos went (see migrations/README.md).
+    for path in sorted((ROOT / "migrations").glob("*.sql")):
+        assert REMOVED_TYPE not in path.read_text(), path.name
 
 
 # ---------------------------------------------------------------------------

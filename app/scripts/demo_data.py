@@ -105,7 +105,6 @@ class DemoData:
     custom_column_values: list[Row] = field(default_factory=list)
     comments: list[Row] = field(default_factory=list)
     notifications: list[Row] = field(default_factory=list)
-    todos: list[Row] = field(default_factory=list)
     staff_notes: list[Row] = field(default_factory=list)
 
 
@@ -236,19 +235,18 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
         dict(name="Quality Control", description="QC procedures", color="#ef4444"),
     ]
 
-    # A team lead: what a user may do, plus creating projects, managing
-    # colleagues' absences and handing out todos.
+    # A team lead: what a user may do, plus creating projects and managing
+    # colleagues' absences.
     d.roles = [
         dict(
             key=TEAM_LEAD,
             name="Team Lead",
-            description="Leads a team: creates projects, manages absences, assigns todos.",
+            description="Leads a team: creates projects and manages absences.",
             sort_order=3,
             permissions={
                 **default_modes("user"),
                 "projects.create": "allow",
                 "absences.manage_others": "allow",
-                "todos.assign_others": "allow",
             },
         )
     ]
@@ -1020,28 +1018,6 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             read=False,
         )
     )
-
-    # My Todos: a task Alice hands Charlie on his card, and the admin's own.
-    d.todos = [
-        dict(
-            title="Prepare QC checklist",
-            notes="Needed before the second pilot batch is released.",
-            assignee=CHARLIE,
-            creator=ALICE,
-            due_date=today + day(5),
-            project=BIOPROCESS,
-            entity=("subphase", BIOPROCESS, "Pilot batch 2"),
-        ),
-        dict(
-            title="Review Q3 capacity",
-            notes=None,
-            assignee=admin_email,
-            creator=admin_email,
-            due_date=None,
-            project=None,
-            entity=None,
-        ),
-    ]
 
     d.staff_notes = [
         dict(

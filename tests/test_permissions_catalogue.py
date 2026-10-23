@@ -84,10 +84,8 @@ CATALOGUE = [
     ("Project configuration", "predefined_phases.manage", "a", "-"),
     ("Instance settings", "settings.general", "-", "-"),
     ("Instance settings", "settings.sso", "-", "-"),
-    ("Roles, approvals, todos", "roles.manage", "-", "-"),
-    ("Roles, approvals, todos", "approvals.view_all", "-", "-"),
-    ("Roles, approvals, todos", "todos.manage_own", "a", "a"),
-    ("Roles, approvals, todos", "todos.assign_others", "a", "-"),
+    ("Roles and approvals", "roles.manage", "-", "-"),
+    ("Roles and approvals", "approvals.view_all", "-", "-"),
     ("Views and tools", "views.kanban", "a", "a"),
     ("Views and tools", "views.staff", "a", "a"),
     ("Views and tools", "views.equipment", "a", "a"),
@@ -112,10 +110,12 @@ def test_catalogue_lists_every_key_in_order_with_its_group():
     assert [(p.group, p.key) for p in PERMISSIONS] == [(g, k) for g, k, _, _ in CATALOGUE]
 
 
-def test_catalogue_has_60_unique_keys():
-    # 59 keys in 1.13.0 (the RBAC plan's table); project_fields.manage (2.0.0) is the 60th.
+def test_catalogue_has_58_unique_keys():
+    # 59 keys in 1.13.0 (the RBAC plan's table); 2.0.0 adds project_fields.manage
+    # and removes the two personal-todo keys (todos.manage_own / assign_others).
     keys = [p.key for p in PERMISSIONS]
-    assert len(keys) == 60
+    assert len(keys) == 58
+    assert not any(key.startswith("todos.") for key in keys)
     assert len(set(keys)) == len(keys)
     assert frozenset(keys) == PERMISSION_KEYS
 
@@ -165,7 +165,6 @@ def test_pm_bundle():
             "equipment_bookings.manage",
             "kanban.move_any",
             "custom_columns.set_values",
-            "todos.assign_others",
         }
     )
     assert PM_BUNDLE <= PERMISSION_KEYS

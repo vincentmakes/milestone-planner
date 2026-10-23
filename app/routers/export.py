@@ -1304,8 +1304,7 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         subphase_assignment_data,
     )
 
-    # Approval requests (own bookings awaiting or past a decision). Per-user
-    # todos are not exported (private inbox state, like notifications).
+    # Approval requests (own bookings awaiting or past a decision).
     def target_name(request: ApprovalRequest) -> str:
         if request.level == "phase" and request.target_id in phase_by_id:
             return phase_by_id[request.target_id][1].type or ""

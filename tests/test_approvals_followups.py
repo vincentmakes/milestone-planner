@@ -284,19 +284,10 @@ async def test_to_decide_by_policy_role_and_for_an_admin(sqlite_db):
     assert [i["id"] for i in everything] == [6, 5, 4]
 
 
-@pytest.mark.asyncio
-async def test_todo_items_are_the_decidable_requests(sqlite_db):
-    items = await approvals.decidable_todo_items(sqlite_db, _http(), FakeUser(PM, "user"))
-
-    assert [i["id"] for i in items] == ["approval:2", "approval:1"]
-    item = items[0]
-    assert item["kind"] == "approval" and item["status"] == "open"
-    assert item["title"] == "Rita Req asks to join Design at 50%"
-    assert (item["created_by"], item["created_by_name"]) == (REQ, "Rita Req")
-    assert (item["project_id"], item["project_name"]) == (1, "Mine")
-    assert (item["entity_type"], item["entity_id"]) == ("phase", 11)
-    assert item["assignee_id"] == PM
-    assert item["approval_request"]["id"] == 2 and item["approval_request"]["can_decide"]
+def test_my_todos_helper_is_gone():
+    # Personal todos were removed in 2.0.0; My Work lists to_decide directly.
+    assert not hasattr(approvals, "decidable_todo_items")
+    assert not hasattr(approvals, "TODO_APPROVALS_LIMIT")
 
 
 def test_decider_clause_mirrors_can_decide():

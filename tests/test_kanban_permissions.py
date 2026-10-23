@@ -179,8 +179,8 @@ async def test_approval_notifications_rank_between_mention_and_assigned():
     assert dedupe_by_recipient(batches)[0].type == "approval_requested"
     batches = [[note("approval_requested")], [note("mention")]]
     assert dedupe_by_recipient(batches)[0].type == "mention"
-    batches = [[note("status_change")], [note("todo_assigned")]]
-    assert dedupe_by_recipient(batches)[0].type == "todo_assigned"
+    batches = [[note("status_change")], [note("assignment_changed")]]
+    assert dedupe_by_recipient(batches)[0].type == "assignment_changed"
 
 
 # ---------------------------------------------------------

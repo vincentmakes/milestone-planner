@@ -141,8 +141,8 @@ PERMISSIONS: tuple[Permission, ...] = (
         "Projects",
         "projects.manage_as_pm",
         "Act as project manager",
-        "On projects I manage: edit, archive, assign people, book equipment, move cards, "
-        "set column values and assign todos. Never delete, create, import or export.",
+        "On projects I manage: edit, archive, assign people, book equipment, move cards "
+        "and set column values. Never delete, create, import or export.",
         _BOTH,
     ),
     _p(
@@ -476,34 +476,20 @@ PERMISSIONS: tuple[Permission, ...] = (
         "Read and change the tenant's single sign-on configuration.",
         _NONE,
     ),
-    # --- Roles, approvals, todos ------------------------------------------
+    # --- Roles and approvals ----------------------------------------------
     _p(
-        "Roles, approvals, todos",
+        "Roles and approvals",
         "roles.manage",
         "Manage roles and approval policies",
         "Create, edit and delete roles and set who approves bookings. Administrators only.",
         _NONE,
     ),
     _p(
-        "Roles, approvals, todos",
+        "Roles and approvals",
         "approvals.view_all",
         "See all approval requests",
         "Browse every approval request, not only mine and those I may decide.",
         _NONE,
-    ),
-    _p(
-        "Roles, approvals, todos",
-        "todos.manage_own",
-        "Personal todos",
-        "Create, edit, complete and delete my own todos.",
-        _BOTH,
-    ),
-    _p(
-        "Roles, approvals, todos",
-        "todos.assign_others",
-        "Assign todos to others",
-        "Create todos for other people.",
-        _SU,
     ),
     # --- Views and tools --------------------------------------------------
     _p(
@@ -576,7 +562,6 @@ PM_BUNDLE: frozenset[str] = frozenset(
         "equipment_bookings.manage",
         "kanban.move_any",
         "custom_columns.set_values",
-        "todos.assign_others",
     }
 )
 

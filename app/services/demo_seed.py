@@ -783,26 +783,6 @@ async def insert_demo_data(
         )
     counts["notifications"] = len(demo.notifications)
 
-    for todo in demo.todos:
-        entity = todo["entity"]
-        await _insert_once(
-            conn,
-            "todos",
-            {
-                "title": todo["title"],
-                "notes": todo["notes"],
-                "due_date": todo["due_date"],
-                "assignee_id": user_id[todo["assignee"]],
-                "created_by": user_id[todo["creator"]],
-                "project_id": project_id[todo["project"]] if todo["project"] else None,
-                "entity_type": entity[0] if entity else None,
-                "entity_id": entity_id(entity) if entity else None,
-                "status": "open",
-            },
-            {"title": todo["title"], "assignee_id": user_id[todo["assignee"]]},
-        )
-    counts["todos"] = len(demo.todos)
-
     for note in demo.staff_notes:
         await _insert_once(
             conn,

@@ -134,7 +134,7 @@ async def send_notification(request: Request, user_id: int, payload: dict) -> No
 
 async def send_user_event(request: Request, user_id: int, event_type: str, payload: dict) -> None:
     """
-    Push one per-user event (``approval:changed``, ``todo:changed``) to a
+    Push one per-user event (``approval:changed``) to a
     single user's connections.
 
     Like ``send_notification``, call it after the commit; it is a live hint
