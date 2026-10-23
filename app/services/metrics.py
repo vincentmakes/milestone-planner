@@ -256,6 +256,9 @@ def missing_permission(query: Any, viewer: Viewer) -> str | None:
         needed = NEEDS.get(dimension.kind)
         if needed == "views.staff" and not viewer.can_see_staff:
             return needed
+    # A People filter rebuilds the per-person breakdown one id at a time.
+    if query.filters.person_ids and not viewer.can_see_staff:
+        return NEEDS["person"]
     if query.filters.archived != "exclude" and not viewer.can_see_archived:
         return ARCHIVED_NEEDS
     return None

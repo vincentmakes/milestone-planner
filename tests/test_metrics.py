@@ -1105,6 +1105,18 @@ SPEC_REFUSALS = [
         "A period can cover at most five years",
     ),
     ({"measure": "project_count", "dimensions": [{"kind": "team"}]}, None),
+    (
+        {"dimensions": [{"kind": "field", "field_id": 30}, {"kind": "field", "field_id": 30}]},
+        "The two dimensions must be different",
+    ),
+    (
+        {"measure": "project_count", "filters": {"team_ids": [10]}},
+        "The Teams and People filters apply to booked time only",
+    ),
+    (
+        {"measure": "phase_weeks", "filters": {"person_ids": [2]}},
+        "The Teams and People filters apply to booked time only",
+    ),
 ]
 
 
@@ -1116,6 +1128,25 @@ def test_spec_refusals(body, message):
         MetricQuery.model_validate({"measure": "booked_days", **body})
     if message is not None:
         assert caught.value.errors()[0]["msg"] == message
+
+
+def test_spec_accepts_two_fields_and_booking_only_filters_where_they_apply():
+    two_fields = MetricQuery.model_validate(
+        {
+            "measure": "project_count",
+            "dimensions": [{"kind": "field", "field_id": 30}, {"kind": "field", "field_id": 31}],
+        }
+    )
+    assert [d.field_id for d in two_fields.dimensions] == [30, 31]
+    booked = MetricQuery.model_validate(
+        {"measure": "booked_weeks", "filters": {"team_ids": [10], "person_ids": [2]}}
+    )
+    assert booked.filters.team_ids == [10]
+    # Empty lists are no filter: a project measure accepts them.
+    empty = MetricQuery.model_validate(
+        {"measure": "project_count", "filters": {"team_ids": [], "person_ids": []}}
+    )
+    assert empty.filters.person_ids == []
 
 
 def test_spec_accepts_the_longest_period_and_defaults():
@@ -1141,6 +1172,9 @@ def test_spec_accepts_the_longest_period_and_defaults():
         ),
         ({"options": {"colour": "red"}}, None),
         ({"kind": "radar"}, None),
+        ({"options": {"kpi_bucket": "x" * 201}}, None),
+        ({"layout": {**LAYOUT, "lg": {"x": 0, "y": 10001, "w": 6, "h": 4}}}, None),
+        ({"layout": {**LAYOUT, "md": {"x": 0, "y": 0, "w": 8, "h": 41}}}, None),
     ],
 )
 def test_widget_refusals(widget, message):
@@ -1151,6 +1185,20 @@ def test_widget_refusals(widget, message):
         WidgetIn.model_validate({**body, **widget})
     if message is not None:
         assert caught.value.errors()[0]["msg"] == message
+
+
+def test_widget_bounds_accept_their_limits():
+    widget = WidgetIn.model_validate(
+        {
+            "kind": "kpi",
+            "title": "T",
+            "query": {"measure": "booked_days"},
+            "options": {"kpi_bucket": "x" * 200},
+            "layout": {**LAYOUT, "lg": {"x": 0, "y": 10000, "w": 6, "h": 40}},
+        }
+    )
+    assert widget.layout.lg.h == 40
+    assert widget.options.kpi_bucket == "x" * 200
 
 
 def test_dashboard_body_names_the_failing_widget():

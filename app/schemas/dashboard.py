@@ -34,6 +34,7 @@ from pydantic_core import PydanticCustomError
 from app.models.dashboard import DASHBOARD_VISIBILITIES, DASHBOARD_WIDGET_KINDS
 from app.services.dashboard_seed import GRID_COLUMNS
 from app.services.metrics import (
+    BOOKING_MEASURES,
     DIMENSION_LABELS,
     MAX_PERIOD_DAYS,
     PERIOD_TOO_LONG_DETAIL,
@@ -73,6 +74,13 @@ Visibility = Literal["private", "roles", "everyone"]
 # Ids per filter list and widgets per dashboard (bounds on one request).
 MAX_FILTER_IDS = 500
 MAX_WIDGETS = 50
+# Bounds on the stored widget JSON (a huge row or height would freeze every
+# viewer's grid): the grid row and height, and the KPI bucket key.
+MAX_GRID_Y = 10000
+MAX_GRID_H = 40
+MAX_KPI_BUCKET_LENGTH = 200
+
+BOOKING_ONLY_FILTERS_DETAIL = "The Teams and People filters apply to booked time only"
 
 
 def _error(message: str) -> PydanticCustomError:
@@ -161,12 +169,20 @@ class MetricQuery(_Strict):
         if len(self.dimensions) > 2:
             raise _error("A widget can be broken down by two dimensions at most")
         kinds = [d.kind for d in self.dimensions]
-        if len(set(kinds)) != len(kinds):
+        # Two project fields are two dimensions; the same one twice is not.
+        identities = [(d.kind, getattr(d, "field_id", None)) for d in self.dimensions]
+        if len(set(identities)) != len(identities):
             raise _error("The two dimensions must be different")
         for kind in kinds:
             message = matrix_error(self.measure, kind)
             if message:
                 raise _error(message)
+        # The person's teams and the person exist only on a booking: a project
+        # or phase measure would silently ignore them.
+        if self.measure not in BOOKING_MEASURES and (
+            self.filters.team_ids or self.filters.person_ids
+        ):
+            raise _error(BOOKING_ONLY_FILTERS_DETAIL)
         if self.percent_of is not None and not self.dimensions:
             raise _error("A percentage needs a dimension")
         if self.percent_of == "first_dimension" and len(self.dimensions) != 2:
@@ -187,14 +203,14 @@ class WidgetOptions(_Strict):
     number_format: Literal["integer", "decimal", "percent"] | None = None
     show_legend: bool | None = None
     # The KPI's bucket when ``percent_of`` is set: the dimension value's key.
-    kpi_bucket: bool | int | str | None = None
+    kpi_bucket: bool | int | Annotated[str, Field(max_length=MAX_KPI_BUCKET_LENGTH)] | None = None
 
 
 class GridPosition(_Strict):
     x: int = Field(ge=0)
-    y: int = Field(ge=0)
+    y: int = Field(ge=0, le=MAX_GRID_Y)
     w: int = Field(ge=1)
-    h: int = Field(ge=1)
+    h: int = Field(ge=1, le=MAX_GRID_H)
 
 
 class WidgetLayout(_Strict):

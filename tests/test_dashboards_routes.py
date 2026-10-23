@@ -194,6 +194,16 @@ def sqlite():
                         {"measure": "project_count", "filters": {"period": {"relative": "all"}}},
                         6,
                     ),
+                    widget_row(
+                        "Projects of a team",
+                        {"measure": "project_count", "filters": {"team_ids": [1]}},
+                        7,
+                    ),
+                    widget_row(
+                        "One person",
+                        {**BY_SITE, "filters": {**BY_SITE["filters"], "person_ids": [UMA]}},
+                        8,
+                    ),
                 ],
             ),
         ]
@@ -265,7 +275,7 @@ async def test_list_row_shape(authed_client):
     assert rows[3]["can_edit"] is True
     # A roles dashboard with no role left: its owner sees it, shared with none.
     assert rows[5]["role_ids"] == [] and rows[5]["visibility"] == "roles"
-    assert rows[7]["widget_count"] == 7
+    assert rows[7]["widget_count"] == 9
     assert rows[1]["updated_at"].endswith("Z")
 
 
@@ -494,7 +504,7 @@ async def test_update_keeps_widgets_when_not_given_and_swaps_roles(authed_client
     )
     assert resp.json()["role_ids"] == [3]
     resp = await client.put("/api/dashboards/7", json={"name": "Mixed", "visibility": "everyone"})
-    assert len(resp.json()["widgets"]) == 7
+    assert len(resp.json()["widgets"]) == 9
 
 
 async def test_admin_edits_the_default_which_stays_default(authed_client):
@@ -628,6 +638,10 @@ def _detail(resp) -> str:
             {**BY_SITE, "filters": {"period": {"from": "2020-01-01", "to": "2026-01-01"}}},
             "A period can cover at most five years",
         ),
+        (
+            {"measure": "project_weeks", "filters": {"person_ids": [1]}},
+            "The Teams and People filters apply to booked time only",
+        ),
         ({**BY_SITE, "dimensions": [{"kind": "field", "field_id": 30}]}, '"Notes" cannot be used'),
         ({**BY_SITE, "dimensions": [{"kind": "field", "field_id": 99}]}, "no longer exists"),
     ],
@@ -652,6 +666,11 @@ async def test_query_refusals(authed_client, body, message):
             {"views.dashboards", "views.staff"},
             {**BY_SITE, "filters": {**BY_SITE["filters"], "archived": "only"}},
             "This widget needs the Archived view permission",
+        ),
+        (
+            {"views.dashboards", "views.archived"},
+            {**BY_SITE, "filters": {**BY_SITE["filters"], "person_ids": [UMA]}},
+            "This widget needs the Staff view permission",
         ),
     ],
 )
@@ -710,6 +729,11 @@ async def test_data_answers_each_widget_from_one_load(authed_client):
     assert widgets["Archived only"] == {"error": "This widget needs the Archived view permission"}
     assert widgets["Gone field"] == {"error": "The project field of this widget no longer exists"}
     assert widgets["All time"]["rows"] == [{"keys": [], "value": 1}]
+    assert widgets["Projects of a team"] == {
+        "error": "The Teams and People filters apply to booked time only"
+    }
+    # A People filter needs the Staff view, like the person dimension.
+    assert widgets["One person"] == {"error": "This widget needs the Staff view permission"}
 
 
 async def test_data_with_every_permission(authed_client):
@@ -720,6 +744,8 @@ async def test_data_with_every_permission(authed_client):
     widgets = {w["title"]: results[str(w["id"])] for w in detail["widgets"]}
     assert [r["keys"][0]["label"] for r in widgets["By person"]["rows"]] == ["Leo Test", "Uma Test"]
     assert widgets["Archived only"]["rows"] == []  # no archived project
+    assert "error" not in widgets["One person"]
+    assert "error" in widgets["Projects of a team"]
 
 
 async def test_data_of_an_invisible_dashboard_is_404(authed_client):
