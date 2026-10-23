@@ -187,7 +187,7 @@ describe('ProjectFieldsPanel — custom fields', () => {
   it('says so when there is no field yet, and when the list fails to load', async () => {
     projectFieldsApi.getAll.mockResolvedValueOnce([]);
     const { unmount } = render(<ProjectFieldsPanel />);
-    expect(await screen.findByText('No custom fields yet. Add one above.')).toBeInTheDocument();
+    expect(await screen.findByText('No custom fields yet. Add one below.')).toBeInTheDocument();
     unmount();
 
     projectFieldsApi.getAll.mockRejectedValueOnce(new Error('Server down'));
@@ -201,10 +201,10 @@ describe('ProjectFieldsPanel — custom fields', () => {
     projectFieldsApi.create.mockReturnValue(new Promise((r) => (finish = r)));
     const onDirtyChange = await renderPanel();
 
-    fireEvent.change(screen.getByLabelText('New field'), { target: { value: '  Area ' } });
+    fireEvent.change(screen.getByLabelText('New field name'), { target: { value: '  Area ' } });
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
     fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'multiselect' } });
-    const form = screen.getByLabelText('New field').closest('form')!;
+    const form = screen.getByLabelText('New field name').closest('form')!;
     fireEvent.submit(form);
     fireEvent.submit(form);
     expect(projectFieldsApi.create).toHaveBeenCalledTimes(1);
@@ -214,13 +214,29 @@ describe('ProjectFieldsPanel — custom fields', () => {
     await act(async () => finish(created));
     expect(await screen.findByRole('group', { name: 'Items of Area' })).toBeInTheDocument();
     expect(screen.getByText('No items yet. Add the first one below.')).toBeInTheDocument();
-    expect(screen.getByLabelText('New field')).toHaveValue('');
+    expect(screen.getByLabelText('New field name')).toHaveValue('');
+  });
+
+  it('puts the name, the type and "Add field" side by side in one add row after the list', async () => {
+    await renderPanel();
+    const name = screen.getByRole('textbox', { name: 'New field name' });
+    expect(name).toHaveAttribute('placeholder', 'New field, e.g. Budget');
+    const row = name.closest('form')!.firstElementChild as HTMLElement;
+    expect(within(row).getByRole('combobox', { name: 'Type' })).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Add field' })).toBeDisabled();
+    // no visible "New field" / "Type" labels any more: the controls are named by aria-label
+    expect(screen.queryByText('New field')).not.toBeInTheDocument();
+    // the form comes after the field list
+    const list = screen.getByTestId(`field-${FIELDS[0].id}`);
+    expect(list.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.change(name, { target: { value: 'Budget' } });
+    expect(within(row).getByRole('button', { name: 'Add field' })).toBeEnabled();
   });
 
   it('shows a refused add inline (duplicate name)', async () => {
     projectFieldsApi.create.mockRejectedValue(new Error('A project field with this name already exists'));
     await renderPanel();
-    fireEvent.change(screen.getByLabelText('New field'), { target: { value: 'Budget' } });
+    fireEvent.change(screen.getByLabelText('New field name'), { target: { value: 'Budget' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('A project field with this name already exists');
     await waitFor(() => expect(projectFieldsApi.getAll).toHaveBeenCalledTimes(2));

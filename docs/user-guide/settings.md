@@ -695,7 +695,7 @@ Click **Save Changes** to apply the labels and switches; **Reset** discards the 
 
 ### Custom Fields
 
-Under **Custom fields**, type a name, pick a **Type** and click **Add field**:
+In the add row under the **Custom fields** list, type the new field's name, pick its type and click **Add field**:
 
 | Type | In the project dialog |
 |------|-----------------------|

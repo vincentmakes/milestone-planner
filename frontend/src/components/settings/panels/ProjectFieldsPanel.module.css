@@ -297,6 +297,11 @@
   min-width: 0;
 }
 
+/* The type picker of the "New field" row keeps its natural width */
+.addType {
+  flex: 0 0 auto;
+}
+
 @media (max-width: 1024px) {
   .editRow {
     padding-left: 0;

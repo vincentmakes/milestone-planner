@@ -43,7 +43,6 @@ import {
 import type { BuiltInFieldKey } from '@/utils/instanceSettings';
 import { FIELD_TYPE_LABELS, isDropdownField } from '@/utils/projectFields';
 import type { ProjectField, ProjectFieldOption, ProjectFieldType, Site, Team } from '@/types';
-import { PanelToolbar } from '../PanelToolbar';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
@@ -455,46 +454,8 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
         <h3 id="project-fields-custom" className={styles.blockTitle}>
           Custom fields
         </h3>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void handleAddField();
-          }}
-        >
-          <PanelToolbar
-            align="end"
-            left={
-              <>
-                <Input
-                  label="New field"
-                  className={styles.addInput}
-                  value={newFieldName}
-                  onChange={(e) => setNewFieldName(e.target.value)}
-                  placeholder="e.g. Budget"
-                  maxLength={100}
-                />
-                <Select
-                  label="Type"
-                  value={newFieldType}
-                  options={TYPE_OPTIONS}
-                  onChange={(e) => setNewFieldType(e.target.value as ProjectFieldType)}
-                />
-              </>
-            }
-            right={
-              <Button
-                type="submit"
-                icon={<Icon icon={PlusIcon} />}
-                disabled={!newFieldName.trim()}
-                loading={fieldAdd.isSubmitting}
-              >
-                Add field
-              </Button>
-            }
-          />
-        </form>
         {fields.length === 0 ? (
-          <div className={`${styles.list} ${styles.empty}`}>No custom fields yet. Add one above.</div>
+          <div className={`${styles.list} ${styles.empty}`}>No custom fields yet. Add one below.</div>
         ) : (
           <div className={styles.list}>
             {fields.map((field) => {
@@ -607,6 +568,39 @@ export function ProjectFieldsPanel({ onDirtyChange }: Partial<SettingsPanelProps
             })}
           </div>
         )}
+        <form
+          className={styles.addForm}
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleAddField();
+          }}
+        >
+          <div className={styles.addRow}>
+            <Input
+              className={styles.addInput}
+              value={newFieldName}
+              onChange={(e) => setNewFieldName(e.target.value)}
+              placeholder="New field, e.g. Budget"
+              aria-label="New field name"
+              maxLength={100}
+            />
+            <Select
+              className={styles.addType}
+              value={newFieldType}
+              options={TYPE_OPTIONS}
+              onChange={(e) => setNewFieldType(e.target.value as ProjectFieldType)}
+              aria-label="Type"
+            />
+            <Button
+              type="submit"
+              icon={<Icon icon={PlusIcon} />}
+              disabled={!newFieldName.trim()}
+              loading={fieldAdd.isSubmitting}
+            >
+              Add field
+            </Button>
+          </div>
+        </form>
       </section>
     </div>
   );
