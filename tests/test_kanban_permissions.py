@@ -6,8 +6,9 @@ card; otherwise ``kanban.move_assigned`` moves the cards the user holds an
 approved assignment on. Without either key, nothing moves.
 
 The Kanban switch (``kanban_enabled = false``) takes ``views.kanban`` from
-everyone, admins included: the board's four reads answer 403, while the card
-writes (status, assignees, comments) gate on other keys and keep working.
+everyone, admins included: the board's two reads (the comment counts) answer
+403, while the comment threads, the mention picker and the card writes
+(status, assignees, comments) gate on other keys and keep working.
 """
 
 from datetime import datetime
@@ -225,8 +226,6 @@ def wires():
     [
         "/api/kanban/projects/3/comment-counts",
         "/api/kanban/sites/1/comment-counts",
-        "/api/kanban/sites/1/mentionable-users",
-        "/api/kanban/cards/phase/10/comments",
     ],
 )
 async def test_the_board_reads_are_403_for_an_admin_when_off(authed_client, mock_db_session, path):
@@ -238,6 +237,30 @@ async def test_the_board_reads_are_403_for_an_admin_when_off(authed_client, mock
     assert response.status_code == 403
     assert response.json()["detail"] == "Permission required: views.kanban"
     mock_db_session.execute.assert_not_awaited()
+
+
+async def test_a_card_thread_reads_with_the_board_off(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(board_off(5, "user"))
+    comments = MagicMock()
+    comments.all.return_value = []
+    mock_db_session.execute.side_effect = [scalar_result(_card()), comments]
+
+    response = await client.get("/api/kanban/cards/phase/10/comments")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+async def test_the_mention_picker_reads_with_the_board_off(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(board_off(5, "user"))
+    mock_db_session.execute.return_value = scalars_result([])
+
+    response = await client.get("/api/kanban/sites/1/mentionable-users")
+
+    assert response.status_code == 200
+    assert response.json() == []
 
 
 async def test_an_admin_moves_a_card_with_the_board_off(authed_client, mock_db_session, wires):

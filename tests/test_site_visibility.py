@@ -1154,11 +1154,17 @@ async def test_a_note_outside_cannot_be_deleted(authed_client, mock_db_session):
 # ---------------------------------------------------------
 
 
+# The board's own reads. Comment threads and the mention picker are not
+# Kanban-only since 2.0.0 (the booking dialog shows them too).
 KANBAN_READS = [
     "/api/kanban/projects/1/comment-counts",
     "/api/kanban/sites/1/comment-counts",
+]
+COMMENT_READS = [
     "/api/kanban/sites/1/mentionable-users",
     "/api/kanban/cards/phase/1/comments",
+    "/api/kanban/cards/subphase/1/comments",
+    "/api/kanban/cards/project/1/comments",
 ]
 
 
@@ -1173,6 +1179,21 @@ async def test_kanban_reads_need_views_kanban(authed_client, mock_db_session, pa
     assert response.json()["detail"] == permission_required_detail("views.kanban")
 
 
+@pytest.mark.parametrize("path", COMMENT_READS)
+async def test_comment_reads_need_no_kanban_key(authed_client, mock_db_session, site_links, path):
+    client, set_user = authed_client
+    set_user(without("user", "views.kanban"))
+    site_links.projects[1] = 1
+    result = empty_result()
+    result.scalar_one_or_none.return_value = _card()
+    mock_db_session.execute.return_value = result
+
+    response = await client.get(path)
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 @pytest.mark.parametrize(
     ("path", "detail"),
     [
@@ -1180,6 +1201,7 @@ async def test_kanban_reads_need_views_kanban(authed_client, mock_db_session, pa
         ("/api/kanban/sites/2/comment-counts", SITE_NOT_VISIBLE_DETAIL),
         ("/api/kanban/sites/2/mentionable-users", SITE_NOT_VISIBLE_DETAIL),
         ("/api/kanban/cards/phase/1/comments", PROJECT_NOT_VISIBLE_DETAIL),
+        ("/api/kanban/cards/project/1/comments", PROJECT_NOT_VISIBLE_DETAIL),
     ],
 )
 async def test_kanban_reads_outside_are_403(

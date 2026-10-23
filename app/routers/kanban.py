@@ -1,10 +1,13 @@
 """
-Kanban board API routes.
+Kanban board API routes, and the comment threads.
 
 The board itself has no read endpoint: GET /projects/{id} already returns the
 whole phase/subphase tree, so the client derives cards from data it already
 holds. What lives here is everything that tree does not carry -- status moves,
-card assignees (which also book staff time), and comments.
+card assignees (which also book staff time), and comments. A comment thread
+hangs on a card (phase / subphase, shared by the Kanban card dialog and the
+booking dialog of that card) or, since 2.0.0, on a project (the thread of its
+project-level bookings, shown in their booking dialog).
 
 Auth note: moving a card needs ``kanban.move_any`` (the project's manager holds
 it through the PM bundle, see app/services/project_access.py), or
@@ -15,9 +18,11 @@ anyone, and ``assignments.self_create`` / ``self_remove`` let a user join or
 leave a card themself -- in approval mode as an approval request (202, see
 app/services/approvals.py); a pending joiner is not an assignee yet (cannot
 move the card, is not notified as one). Commenting needs ``kanban.comment``; deleting someone
-else's comment ``kanban.moderate_comments``. The reads (comment counts,
-mentionable users, comment threads) need ``views.kanban``, and every route
-works only on projects and sites the user can see (``site_access``).
+else's comment ``kanban.moderate_comments``. Reading a thread and the list of
+mentionable users need no key (comments are not Kanban-only: project and site
+visibility suffice); the comment counts, used by the board only, need
+``views.kanban``. Every route works only on projects and sites the user can
+see (``site_access``).
 """
 
 import logging
@@ -65,7 +70,7 @@ from app.services.project_access import (
     can_on_project,
     resolve_self_booking,
 )
-from app.services.site_access import ensure_project_visible, ensure_site_visible, visible_site_ids
+from app.services.site_access import ensure_project_visible, ensure_site_visible
 from app.utils import utcnow_naive
 from app.websocket.broadcast import broadcast_change, send_notification
 
@@ -74,9 +79,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/kanban")
 
 CardEntityType = Literal["phase", "subphase"]
+# What a comment thread hangs on (app/models/card_comment.COMMENT_ENTITY_TYPES).
+CommentEntityType = Literal["phase", "subphase", "project"]
 
-# The board's reads: comment counts, mentionable users, comment threads.
+# The board's own reads: the comment counts.
 require_kanban_view = require_permission("views.kanban")
+
+# No fallback: an entity type that is not a card is never read as a subphase.
+_CARD_MODELS: dict[str, type[ProjectPhase] | type[ProjectSubphase]] = {
+    "phase": ProjectPhase,
+    "subphase": ProjectSubphase,
+}
 
 # The per-person DELETE removes one booking; a person holding several
 # segments on the card is removed segment by segment (the per-row routes).
@@ -92,7 +105,7 @@ async def _load_card(
     db: AsyncSession, entity_type: str, entity_id: int
 ) -> ProjectPhase | ProjectSubphase:
     """Fetch a card (phase or subphase) or raise 404."""
-    model = ProjectPhase if entity_type == "phase" else ProjectSubphase
+    model = _CARD_MODELS[entity_type]
     result = await db.execute(select(model).where(model.id == entity_id))
     card = result.scalar_one_or_none()
     if not card:
@@ -103,6 +116,25 @@ async def _load_card(
 def _card_name(card: ProjectPhase | ProjectSubphase) -> str:
     """Phases carry their name in `type`, subphases in `name`."""
     return getattr(card, "name", None) or getattr(card, "type", "") or "card"
+
+
+async def _load_comment_target(
+    db: AsyncSession, entity_type: CommentEntityType, entity_id: int
+) -> tuple[int, str]:
+    """``(project_id, name)`` of a thread's target, or 404.
+
+    A project thread's ``entity_id`` is the project id. One branch per type,
+    no fallback.
+    """
+    if entity_type == "project":
+        project = (
+            await db.execute(select(Project).where(Project.id == entity_id))
+        ).scalar_one_or_none()
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return project.id, project.name or "project"
+    card = await _load_card(db, entity_type, entity_id)
+    return card.project_id, _card_name(card)
 
 
 def _comment_response(comment: CardComment, author_name: str | None) -> dict:
@@ -215,9 +247,9 @@ async def get_mentionable_users(
     site_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db_readonly),
-    user: User = Depends(require_kanban_view),
+    user: User = Depends(get_current_user),
 ):
-    """Everyone who can be @-mentioned on a card at this site.
+    """Everyone who can be @-mentioned in a comment thread at this site.
 
     Deliberately not GET /staff, which excludes administrators and so left the
     person most likely to need pinging -- the project manager -- unmentionable.
@@ -229,7 +261,8 @@ async def get_mentionable_users(
         row only, so joining on membership alone would hide them on every
         other site.
 
-    Needs ``views.kanban`` and a visible site (403). Only the fields a
+    Needs a visible site (403), no key: the picker serves every comment thread
+    (the Kanban card dialog and the booking dialog alike). Only the fields a
     mention picker needs are returned.
     """
     await ensure_site_visible(request, db, user, site_id)
@@ -586,17 +619,18 @@ async def unassign_card(
 
 @router.get("/cards/{entity_type}/{entity_id}/comments", response_model=list[CardCommentResponse])
 async def get_card_comments(
-    entity_type: CardEntityType,
+    entity_type: CommentEntityType,
     entity_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db_readonly),
-    user: User = Depends(require_kanban_view),
+    user: User = Depends(get_current_user),
 ):
-    """Comment thread for one card, oldest first (``views.kanban``; 403 outside
-    the visible sites)."""
-    if await visible_site_ids(request, db, user) is not None:
-        card = await _load_card(db, entity_type, entity_id)
-        await ensure_project_visible(request, db, user, card.project_id)
+    """Comment thread of a card or a project, oldest first.
+
+    No key: seeing the project is enough (403 outside the visible sites, 404
+    for an unknown target)."""
+    project_id, _ = await _load_comment_target(db, entity_type, entity_id)
+    await ensure_project_visible(request, db, user, project_id)
     result = await db.execute(
         select(CardComment, User.first_name, User.last_name)
         .outerjoin(User, CardComment.author_id == User.id)
@@ -617,16 +651,21 @@ async def get_card_comments(
     status_code=201,
 )
 async def create_card_comment(
-    entity_type: CardEntityType,
+    entity_type: CommentEntityType,
     entity_id: int,
     data: CardCommentCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission("kanban.comment")),
 ):
-    """Post a comment (``kanban.comment``)."""
-    card = await _load_card(db, entity_type, entity_id)
-    await ensure_project_visible(request, db, user, card.project_id)
+    """Post a comment on a card or a project thread (``kanban.comment``).
+
+    Notifies the mentioned users (``mention``) and the target's approved
+    assignees -- the card's, or for a project thread the project-level
+    bookings' (``comment``); the notifications carry the thread's entity
+    (``project`` / project id for a project thread)."""
+    project_id, card_name = await _load_comment_target(db, entity_type, entity_id)
+    await ensure_project_visible(request, db, user, project_id)
 
     mentioned = await _validate_mention_ids(db, data.body)
     # Strip before truncating, or a preview can end mid-token as "@[Alice And".
@@ -635,14 +674,13 @@ async def create_card_comment(
     comment = CardComment(
         entity_type=entity_type,
         entity_id=entity_id,
-        project_id=card.project_id,
+        project_id=project_id,
         author_id=user.id,
         body=data.body,
     )
     comment.set_mentions(mentioned)
     db.add(comment)
 
-    card_name = _card_name(card)
     author_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or "Someone"
     assignees = await card_assignee_ids(db, entity_type, entity_id)
 
@@ -655,7 +693,7 @@ async def create_card_comment(
                 actor_id=user.id,
                 entity_type=entity_type,
                 entity_id=entity_id,
-                project_id=card.project_id,
+                project_id=project_id,
                 title=f"{author_name} mentioned you on {card_name}",
                 body=preview,
             ),
@@ -665,7 +703,7 @@ async def create_card_comment(
                 actor_id=user.id,
                 entity_type=entity_type,
                 entity_id=entity_id,
-                project_id=card.project_id,
+                project_id=project_id,
                 title=f"{author_name} commented on {card_name}",
                 body=preview,
             ),
@@ -681,7 +719,7 @@ async def create_card_comment(
         user=user,
         entity_type="card_comment",
         entity_id=comment.id,
-        project_id=card.project_id,
+        project_id=project_id,
         action="create",
         summary=f"commented on {card_name}",
     )
