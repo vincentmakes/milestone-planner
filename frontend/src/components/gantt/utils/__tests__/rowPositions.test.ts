@@ -27,7 +27,7 @@ const expanded = new Set([1, 2, 3]);
 const none = new Set<number>();
 
 function section(key: GanttSection['key'], projects: Project[]): GanttSection {
-  return { key, tag: null, label: key, projects };
+  return { key, option: null, label: key, projects };
 }
 
 describe('calculateRowPositions', () => {
@@ -43,9 +43,9 @@ describe('calculateRowPositions', () => {
 
   it('offsets every row below a section header by 37 px', () => {
     expect(SECTION_ROW_TOTAL_HEIGHT).toBe(37);
-    const rows = buildGanttRows([section('tag-5', [p1]), section('none', [p2])], []);
+    const rows = buildGanttRows([section('field-5', [p1]), section('none', [p2])], []);
     const { positions, totalHeight } = calculateRowPositions(rows, expanded, none, none);
-    expect(positions.get('section-tag-5')).toEqual({ top: 0, height: 37 });
+    expect(positions.get('section-field-5')).toEqual({ top: 0, height: 37 });
     expect(positions.get('project-1')).toEqual({ top: 37, height: 45 });
     expect(positions.get('phase-11')).toEqual({ top: 37 + 45 + 33, height: 32 });
     expect(positions.get('section-none')).toEqual({ top: 148, height: 37 });
@@ -55,19 +55,19 @@ describe('calculateRowPositions', () => {
   });
 
   it('gives the projects of a collapsed section no position', () => {
-    const rows = buildGanttRows([section('tag-5', [p1, p3]), section('none', [p2])], ['tag-5']);
+    const rows = buildGanttRows([section('field-5', [p1, p3]), section('none', [p2])], ['field-5']);
     const { positions, totalHeight } = calculateRowPositions(rows, expanded, none, none);
     expect(positions.has('project-1')).toBe(false);
     expect(positions.has('phase-10')).toBe(false);
     expect(positions.has('project-3')).toBe(false);
-    expect(positions.get('section-tag-5')).toEqual({ top: 0, height: 37 });
+    expect(positions.get('section-field-5')).toEqual({ top: 0, height: 37 });
     expect(positions.get('section-none')).toEqual({ top: 37, height: 37 });
     expect(positions.get('project-2')).toEqual({ top: 74, height: 45 });
     expect(totalHeight).toBe(74 + 45 + 33);
   });
 
   it('places the phantom row after its source, below the section offset', () => {
-    const rows = buildGanttRows([section('tag-5', [p1])], []);
+    const rows = buildGanttRows([section('field-5', [p1])], []);
     const { positions, phantomRowTop, totalHeight } = calculateRowPositions(rows, expanded, none, none, {
       projectId: 1,
       sourceId: 10,

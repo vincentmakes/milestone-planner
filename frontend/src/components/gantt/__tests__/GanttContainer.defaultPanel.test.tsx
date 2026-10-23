@@ -21,7 +21,7 @@ vi.mock('../Timeline', async () => {
 });
 vi.mock('@/hooks', () => ({
   useScrollSync: () => {},
-  useTagFilteredProjects: (projects: Project[]) => projects,
+  useFilteredProjects: (projects: Project[]) => projects,
 }));
 vi.mock('@/components/views/StaffView/StaffView', () => ({ StaffView: () => <div>Staff overview</div> }));
 vi.mock('@/components/views/EquipmentView/EquipmentView', () => ({
@@ -35,7 +35,6 @@ function seed(panel: string | null, user = makeUser({ id: 9, role: 'admin' })) {
   useAppStore.setState({
     projects,
     tags: [],
-    tagGroups: [],
     teams: [],
     currentSite: { id: 1, name: 'Basel' } as Site,
     currentUser: user,

@@ -1,7 +1,7 @@
 /**
  * viewStore: view-mode zoom defaults, overview mutual exclusion, Kanban
  * settings, tree expansion (toggle / ensure / all / level-by-level) and the
- * persist round-trip of the Set-valued expansion state. Tag filters, Gantt
+ * persist round-trip of the Set-valued expansion state. Project filters, Gantt
  * grouping/colouring and date navigation live in viewStore.test.ts.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';

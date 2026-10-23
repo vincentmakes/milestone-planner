@@ -109,6 +109,10 @@ export const STORAGE_KEYS = {
   // Zustand persist() keys (documentation of record — the stores declare
   // these inline in their persist config; keep this list in sync)
   ZUSTAND_APP_STORE: 'milestone-app-storage-v3',
+  // The view store kept its key through 2.0.0, when the per-site
+  // `tagFilters` (tag groups) became `projectFilters` (project fields + tags):
+  // its merge drops the old entries, and `ganttGrouping` / `ganttColorBy` now
+  // hold project field ids (`'tags'` too for Colour by).
   ZUSTAND_VIEW_STORE: 'milestone-view-storage-v1',
   ZUSTAND_CUSTOM_COLUMN_STORE: 'milestone-custom-columns-storage-v1',
 } as const;

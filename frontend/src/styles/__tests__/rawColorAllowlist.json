@@ -9,7 +9,7 @@
   "components/common/Modal/Modal.module.css": 1,
   "components/common/NotificationBell/NotificationBell.module.css": 1,
   "components/common/OnlineUsers/OnlineUsers.module.css": 4,
-  "components/common/TagFilterDropdown/TagFilterDropdown.module.css": 1,
+  "components/common/ProjectFilterDropdown/ProjectFilterDropdown.module.css": 1,
   "components/common/ToggleSwitch/ToggleSwitch.module.css": 2,
   "components/gantt/CompletionSlider/CompletionSlider.module.css": 3,
   "components/gantt/CustomColumns/CustomColumnCell.module.css": 3,

@@ -148,10 +148,10 @@ describe('ProjectPanel header grouping', () => {
     expect(screen.getByTitle('Import Project')).toBeInTheDocument();
     expect(screen.getByTitle('New Project')).toBeInTheDocument();
     expect(screen.queryByTitle('Manage Custom Columns')).not.toBeInTheDocument();
-    // The tag filter belongs to the view controls, before the divider.
+    // The project filter belongs to the view controls, before the divider.
     const divider = screen.getByTestId('header-divider');
-    const tagTrigger = screen.getByRole('button', { name: 'Tags' });
-    expect(tagTrigger.compareDocumentPosition(divider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const filterTrigger = screen.getByRole('button', { name: 'Filter' });
+    expect(filterTrigger.compareDocumentPosition(divider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows no divider to a plain user, who has no actions', () => {

@@ -1,38 +1,37 @@
 /**
- * GroupByDropdown - "Group by tag group" control of the Gantt project panel.
+ * GroupByDropdown - "Group by" control of the Gantt project panel.
  *
- * Trigger "Group by" / "Grouped by <group>"; options "No grouping" plus one
- * per tag group (group display order), and Collapse all / Expand all while
- * grouped. Shell, close rules and placement: TagGroupChoiceDropdown.
+ * Trigger "Group by" / "Grouped by <field>"; options "No grouping" plus one
+ * per dropdown project field applying to the site (field display order), and
+ * Collapse all / Expand all while grouped. Renders nothing when no field is
+ * available. Shell, close rules and placement: FieldChoiceDropdown.
  */
 
-import { useAppStore } from '@/stores/appStore';
 import { useGanttGrouping } from '@/hooks/useGanttGrouping';
-import { TagGroupChoiceDropdown } from './TagGroupChoiceDropdown';
+import { FieldChoiceDropdown } from './FieldChoiceDropdown';
 // Footer styles live with the shared shell
-import styles from './TagGroupChoiceDropdown.module.css';
+import styles from './FieldChoiceDropdown.module.css';
 import { Icon, GroupByIcon } from '@/components/common/Icon';
 
 export function GroupByDropdown() {
-  const tagGroups = useAppStore((s) => s.tagGroups);
-  const { siteId, group, collapsedKeys, setGroup, collapseAll, expandAll } = useGanttGrouping();
+  const { siteId, field, fields, collapsedKeys, setField, collapseAll, expandAll } = useGanttGrouping();
 
   return (
-    <TagGroupChoiceDropdown
+    <FieldChoiceDropdown
       triggerLabel="Group by"
-      activeLabel={(g) => `Grouped by ${g.name}`}
-      idleTitle="Group projects by tag group"
+      activeLabel={(f) => `Grouped by ${f.name}`}
+      idleTitle="Group projects by a field"
       headerLabel="Group by"
       dialogLabel="Group projects"
-      radioGroupLabel="Group projects by tag group"
+      radioGroupLabel="Group projects by a field"
       noneLabel="No grouping"
       icon={<Icon icon={GroupByIcon} size={14} />}
-      value={group}
-      groups={tagGroups}
-      onChange={setGroup}
+      value={field}
+      choices={fields}
+      onChange={setField}
       disabled={siteId === null}
       footer={
-        group && (
+        field && (
           <div className={styles.footer}>
             <button type="button" className={styles.footerBtn} onClick={collapseAll}>
               Collapse all

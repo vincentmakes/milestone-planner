@@ -5,7 +5,7 @@
  * the choice is stored per tenant + site in viewStore.teamFilters and read by
  * the views through useTeamFilter. A site without active teams shows nothing.
  *
- * The panel is a non-modal dialog of checkboxes (the TagFilterDropdown shell)
+ * The panel is a non-modal dialog of checkboxes (the ProjectFilterDropdown shell)
  * and dismisses through useDismissableOverlay. Below the `full` header tier the
  * trigger drops its label and keeps the icon and chevron (data-density rules
  * in the module).

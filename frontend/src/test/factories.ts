@@ -26,7 +26,6 @@ import type {
   User,
   Vacation,
 } from '@/types';
-import type { LegacyGroupedTag } from '@/utils/tags';
 import { permissionsForRole, roleNameFor } from './permissionFixtures';
 import type { PermissionMatrix } from '@/types';
 
@@ -193,11 +192,7 @@ export function makeVacation(overrides: Partial<Vacation> = {}): Vacation {
   };
 }
 
-/**
- * A tag. `group_id` is accepted only for the Gantt grouping tests until they
- * move to project fields (Task 4 shim: tags have no group since 2.0.0).
- */
-export function makeTag(overrides: Partial<LegacyGroupedTag> = {}): Tag {
+export function makeTag(overrides: Partial<Tag> = {}): Tag {
   return {
     id: 1,
     name: 'Customer',

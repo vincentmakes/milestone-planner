@@ -1,6 +1,7 @@
 /**
- * SectionRow - header of one "Group by tag group" section in the project
- * tree: chevron + tag pill + project count. Clicking anywhere toggles it.
+ * SectionRow - header of one Gantt "Group by" section in the project tree:
+ * chevron + item pill (the field item's colour) + project count. Clicking
+ * anywhere toggles it.
  *
  * Its height (--section-row-height + 1 px border) must equal the timeline's
  * `groupBand` (TimelineBody) and SECTION_ROW_TOTAL_HEIGHT (rowPositions.ts).
@@ -25,8 +26,8 @@ interface SectionRowProps {
 export const SectionRow = memo(function SectionRow({ section, collapsed, onToggle, width }: SectionRowProps) {
   const count = section.projects.length;
   const toggle = () => onToggle(section.key);
-  const pillStyle = section.tag
-    ? { backgroundColor: section.tag.color, color: barTextColor(section.tag.color) }
+  const pillStyle = section.option
+    ? { backgroundColor: section.option.color, color: barTextColor(section.option.color) }
     : undefined;
 
   return (
@@ -48,7 +49,7 @@ export const SectionRow = memo(function SectionRow({ section, collapsed, onToggl
       >
         <Icon icon={ChevronDownIcon} size={12} className={`${styles.chevron} ${collapsed ? styles.chevronCollapsed : ''}`} />
       </button>
-      <span className={`${styles.pill} ${section.tag ? '' : styles.pillNone}`} style={pillStyle}>
+      <span className={`${styles.pill} ${section.option ? '' : styles.pillNone}`} style={pillStyle}>
         {section.label}
       </span>
       <span className={styles.count}>

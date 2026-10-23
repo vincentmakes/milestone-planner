@@ -37,7 +37,7 @@ const row = (id: number, staffId: number, over: Partial<StaffAssignment> = {}): 
 beforeEach(() => {
   localStorage.clear();
   useUIStore.setState({ activeModal: null });
-  useViewStore.setState({ kanbanProjectId: null, tagFilters: {}, teamFilters: {}, kanbanMyTodoOnly: true, kanbanGrouping: 'none' });
+  useViewStore.setState({ kanbanProjectId: null, projectFilters: {}, teamFilters: {}, kanbanMyTodoOnly: true, kanbanGrouping: 'none' });
   useAppStore.setState({
     projects: [
       makeProject({
@@ -58,7 +58,6 @@ beforeEach(() => {
     currentUser: makeUser({ id: me, role: 'user' }),
     staff: [],
     tags: [],
-    tagGroups: [],
     teams: [],
     approvalPolicies: [],
     roles: [],

@@ -14,19 +14,19 @@
  * to the whole site, so it is hidden under any team filter (and shown under
  * Whole site).
  *
- * The hook narrows projects, staff rows, equipment, company events and tags
- * (`*Matches` predicates); `useTeamFilteredProjects` and
+ * The hook narrows projects, staff rows, equipment, company events, tags and
+ * project field items (`*Matches` predicates); `useTeamFilteredProjects` and
  * `useTeamFilteredCompanyEvents` apply it to the project list and to the
  * store's company events and their date set.
  *
- * Filters are stored per tenant + site (`tagFilterKey`), like the tag filter.
+ * Filters are stored per tenant + site (`siteKey`), like the project filter.
  */
 
 import { useCallback, useMemo } from 'react';
 import { buildEventDateSet } from '@/api';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
-import { tagFilterKey } from '@/utils/tags';
+import { siteKey } from '@/utils/tags';
 import {
   equipmentMatchesTeamFilter,
   eventMatchesTeamFilter,
@@ -37,7 +37,7 @@ import {
   teamsForSite,
 } from '@/utils/teams';
 import type { TeamFilter } from '@/utils/teams';
-import type { CompanyEvent, Equipment, Project, Staff, Tag, Team } from '@/types';
+import type { CompanyEvent, Equipment, Project, ProjectFieldOption, Staff, Tag, Team } from '@/types';
 
 export interface SiteTeamFilter {
   siteId: number | null;
@@ -50,14 +50,16 @@ export interface SiteTeamFilter {
   staffMatches: (row: Staff) => boolean;
   equipmentMatches: (e: Equipment) => boolean;
   eventMatches: (e: CompanyEvent) => boolean;
-  tagMatches: (t: Tag) => boolean;
+  tagMatches: (t: Pick<Tag, 'team_ids'>) => boolean;
+  /** Same per-site rule for a project field item (offered by the project filter). */
+  optionMatches: (o: Pick<ProjectFieldOption, 'team_ids'>) => boolean;
 }
 
 export function useTeamFilter(): SiteTeamFilter {
   const siteId = useAppStore((s) => s.currentSite?.id ?? null);
   const teams = useAppStore((s) => s.teams);
   const stored = useViewStore((s) =>
-    siteId === null ? undefined : s.teamFilters[tagFilterKey(siteId)]
+    siteId === null ? undefined : s.teamFilters[siteKey(siteId)]
   );
 
   const siteTeams = useMemo(() => teamsForSite(teams, siteId, { activeOnly: true }), [teams, siteId]);
@@ -78,7 +80,7 @@ export function useTeamFilter(): SiteTeamFilter {
     [filter, allSiteTeams]
   );
   const tagMatches = useCallback(
-    (t: Tag) => tagMatchesTeamFilter(t, filter, allSiteTeams),
+    (t: Pick<Tag, 'team_ids'>) => tagMatchesTeamFilter(t, filter, allSiteTeams),
     [filter, allSiteTeams]
   );
 
@@ -92,6 +94,8 @@ export function useTeamFilter(): SiteTeamFilter {
     equipmentMatches,
     eventMatches,
     tagMatches,
+    // Items follow the tag rule (no team at this site = the whole site).
+    optionMatches: tagMatches,
   };
 }
 

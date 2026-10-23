@@ -1,7 +1,8 @@
 /**
- * ProjectBar tag colour: a `color` paints the bar solid with a contrasting
- * label; unconfirmed projects keep their stripe class (the stripes are a
- * ::before layer, so they combine with the inline colour).
+ * ProjectBar "Colour by" colour (a field item's or a tag's): a `color`
+ * paints the bar solid with a contrasting label; unconfirmed projects keep
+ * their stripe class (the stripes are a ::before layer, so they combine with
+ * the inline colour).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';

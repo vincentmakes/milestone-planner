@@ -10,7 +10,7 @@ import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { ProjectPanel } from './ProjectPanel';
 import { Timeline } from './Timeline';
-import { useScrollSync, useTagFilteredProjects } from '@/hooks';
+import { useScrollSync, useFilteredProjects } from '@/hooks';
 import { useGanttGrouping } from '@/hooks/useGanttGrouping';
 import { useTeamFilteredCompanyEvents, useTeamFilteredProjects } from '@/hooks/useTeamFilter';
 import { generateTimelineCells, generateTimelineHeaders } from './utils';
@@ -84,20 +84,21 @@ export function GanttContainer() {
   );
 
   // Projects shown in the tree and on the timeline: the site's projects
-  // narrowed by the per-site tag and team filters (same filters as the Kanban
+  // narrowed by the per-site project and team filters (same filters as the Kanban
   // board). Reordering still works on the full list so hidden projects keep
   // their place.
-  const visibleProjects = useTeamFilteredProjects(useTagFilteredProjects(filteredProjects));
+  const visibleProjects = useTeamFilteredProjects(useFilteredProjects(filteredProjects));
 
-  // "Group by tag group": the (tag-filtered) projects split into sections.
-  // Both panes render the same flat row list, so they stack identically.
-  const { group, siteTags, collapsedKeys, toggleSection } = useGanttGrouping();
+  // "Group by" a project field: the (filtered) projects split into one
+  // section per item. Both panes render the same flat row list, so they
+  // stack identically.
+  const { field: groupField, collapsedKeys, toggleSection } = useGanttGrouping();
   const ganttRows = useMemo(
     () =>
-      group
-        ? buildGanttRows(buildProjectSections(visibleProjects, group, siteTags), collapsedKeys)
+      groupField
+        ? buildGanttRows(buildProjectSections(visibleProjects, groupField), collapsedKeys)
         : flatGanttRows(visibleProjects),
-    [visibleProjects, group, siteTags, collapsedKeys]
+    [visibleProjects, groupField, collapsedKeys]
   );
   
   // Handler to reorder projects (called from ProjectPanel)
@@ -222,7 +223,7 @@ export function GanttContainer() {
           onToggleSection={toggleSection}
           width={panelWidth}
           // Sections reorder nothing: the order is per site, not per section.
-          onProjectReorder={group ? undefined : handleProjectReorder}
+          onProjectReorder={groupField ? undefined : handleProjectReorder}
         />
         
         <div

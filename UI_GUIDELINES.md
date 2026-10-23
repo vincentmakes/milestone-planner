@@ -22,7 +22,7 @@ The structure follows the one used for Turbo EA's guidelines; the content is Mil
 4. **Accessibility first.** Visible focus ring on everything, an accessible name on every icon-only
    control, `role="switch"` for toggles, 44 px touch targets on phones.
 5. **Don't reinvent.** If a pattern exists (`Button`, `PanelToolbar`, `Modal`, `ToggleSwitch`,
-   `Input`, `Select`, `AllocationSlider`, `TagFilterDropdown`, `ContextMenu`), use it.
+   `Input`, `Select`, `AllocationSlider`, `ProjectFilterDropdown`, `ContextMenu`), use it.
 
 ---
 
@@ -598,7 +598,7 @@ All three come from one hook, `useDismissableOverlay({ open, onClose, wrapperRef
 (`src/hooks/useDismissableOverlay.ts`), which returns the `onBlur` to put on the wrapper. While a
 confirmation (§3.12) is pending the hook is inert: the confirm owns Escape and the overlay that
 asked (e.g. the dependency popover) stays open until the answer. Never
-hand-roll a click-outside effect. `TagFilterDropdown` and `TagGroupChoiceDropdown` are the
+hand-roll a click-outside effect. `ProjectFilterDropdown` and `FieldChoiceDropdown` are the
 reference users; the header overflow menu, `UserMenu`, the Panels dropdown, the header `TeamSelector`, `NotificationBell`
 (which also `aria-controls` its panel), the `ProjectPanel` column-visibility dropdown,
 `CustomColumnHeader` filters, the Staff and Equipment view filters, `DependencyPopup` and
@@ -711,7 +711,7 @@ from the inline `project.tags[].color`, which is stale during What-If.
 - Drag is `KanbanDragContext` (HTML5 drag events, like `ReorderContext` and
   `useResourceDragDrop`; no library). The move is optimistic; a failure goes through
   `recoverFromPersistFailure` and then tells the user.
-- The filter toolbar (`KanbanToolbar`) is a single compact row — project picker, tag filter,
+- The filter toolbar (`KanbanToolbar`) is a single compact row — project picker, project filter,
   grouping, the **My Todo** toggle with `aria-pressed`, card count — and is a documented
   exception to `PanelToolbar`: it holds filters, not actions.
 
@@ -832,7 +832,7 @@ activate toggle), each with an `aria-label` naming the row (`Edit Bob Brown`, `D
 next to its `title`.
 
 **Documented exception — the Gantt header.** The project panel's header actions (staff and
-equipment toggle, tag filter, group by, colour by, column visibility, custom-column manager,
+equipment toggle, project filter, group by, colour by, column visibility, custom-column manager,
 import, new project) are compact 28 px buttons, mostly icon-only, because the header sits above
 a dense timeline where 36 px labelled buttons would take too much room. Keep them compact, give
 each a `title` *and* an `aria-label`, mark svgs `aria-hidden`, give on/off toggles
@@ -968,7 +968,7 @@ plus an entry in `THEMES` and, if it is a new family, `THEME_FAMILIES` in `utils
 | `frontend/src/styles/themes/themes.css` | S-Theme dark and light |
 | `frontend/src/styles/global.css` | Resets, native controls, focus ring, What-If frame, scrollbar, print, mobile and touch rules |
 | `frontend/src/styles/__tests__/cssTokens.test.ts` | Guard: every `var(--x)` read is defined |
-| `frontend/src/components/common/` | `Icon` (the icon set, §3.14), `Button`, `Input`, `Select`, `ToggleSwitch`, `Modal`, `ContextMenu`, `AllocationSlider`, `MentionTextarea`, `TagFilterDropdown`, `NotificationBell`, `OnlineUsers`, `ActivityFeed`, `ICSImportPanel`, `OverlapWarningIcon`, `RoleChecklist`, `PendingBadge`, `ApprovalActions`, `useSubmitGuard` |
+| `frontend/src/components/common/` | `Icon` (the icon set, §3.14), `Button`, `Input`, `Select`, `ToggleSwitch`, `Modal`, `ContextMenu`, `AllocationSlider`, `MentionTextarea`, `ProjectFilterDropdown`, `NotificationBell`, `OnlineUsers`, `ActivityFeed`, `ICSImportPanel`, `OverlapWarningIcon`, `RoleChecklist`, `PendingBadge`, `ApprovalActions`, `useSubmitGuard` |
 | `frontend/src/components/settings/PanelToolbar.tsx` | Toolbar layout |
 | `frontend/src/components/common/Modal/Modal.test.tsx`, `components/admin/modals/CredentialsModal.test.tsx`, `components/common/Button/Button.test.tsx` | Executable guards of the modal and button rules |
 | `frontend/src/utils/themeColors.ts`, `utils/colorSwatches.ts`, `utils/tags.ts` | Theme reads in JS, user-pickable colours, `barTextColor` |

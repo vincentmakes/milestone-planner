@@ -28,8 +28,8 @@ export type { ICSImportPanelProps, ICSImportRow } from './ICSImportPanel';
 export { useSubmitGuard } from './useSubmitGuard';
 export type { SubmitGuard } from './useSubmitGuard';
 
-export { TagFilterDropdown } from './TagFilterDropdown';
-export type { TagFilterDropdownProps } from './TagFilterDropdown';
+export { ProjectFilterDropdown } from './ProjectFilterDropdown';
+export type { ProjectFilterDropdownProps } from './ProjectFilterDropdown';
 
 export { TeamChecklist } from './TeamChecklist';
 export type { TeamChecklistProps } from './TeamChecklist';

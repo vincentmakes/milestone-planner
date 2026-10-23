@@ -20,15 +20,15 @@ import { useDataLoader } from '@/hooks';
 import { ReorderProvider } from '@/contexts/ReorderContext';
 import { CustomColumnModal, CustomColumnsManagerModal } from '@/components/modals';
 import { CustomColumnHeader } from '@/components/gantt/CustomColumns';
-import { TagFilterDropdown } from '@/components/common/TagFilterDropdown';
+import { ProjectFilterDropdown } from '@/components/common/ProjectFilterDropdown';
 import type { Project, CustomColumn } from '@/types';
 import styles from './ProjectPanel.module.css';
 import { Icon, PlusIcon, UploadIcon, ColumnsIcon, CheckIcon, UsersIcon, EyeIcon, EyeOffIcon } from '@/components/common/Icon';
 
 interface ProjectPanelProps {
-  /** Projects to show (already narrowed by the tag filter). */
+  /** Projects to show (already narrowed by the project filter). */
   projects: Project[];
-  /** Site projects before the tag filter; the count reads "X of Y" when they differ. */
+  /** Site projects before the filters; the count reads "X of Y" when they differ. */
   totalCount?: number;
   /**
    * Rows to render (Group-by sections + projects, see projectSections.ts);
@@ -120,7 +120,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
     const hiddenCount = customColumns.length - visibleColumns.length;
 
     const total = totalCount ?? projects.length;
-    const isTagFiltered = total !== projects.length;
+    const isFiltered = total !== projects.length;
 
     const flatRows = useMemo(() => flatGanttRows(projects), [projects]);
     const visibleRows = rows ?? flatRows;
@@ -136,9 +136,9 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                 <span className={styles.headerTitle}>Projects</span>
                 <span
                   className={styles.headerCount}
-                  title={isTagFiltered ? 'Projects matching the tag filter' : undefined}
+                  title={isFiltered ? 'Projects matching the filter' : undefined}
                 >
-                  {isTagFiltered ? `${projects.length} of ${total}` : projects.length}
+                  {isFiltered ? `${projects.length} of ${total}` : projects.length}
                 </span>
               </div>
               <div className={styles.headerActions}>
@@ -155,13 +155,13 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                     <Icon icon={UsersIcon} size={14} />
                   </button>
                 
-                  {/* Tag filter (shared with the Kanban board, per site) */}
-                  <TagFilterDropdown compact align="right" anchor="container" />
+                  {/* Project filter: fields and tags (shared with the Kanban board, per site) */}
+                  <ProjectFilterDropdown compact align="right" anchor="container" />
 
-                  {/* Group the project list by a tag group (only when groups exist) */}
+                  {/* Group the project list by a project field (only when one applies) */}
                   <GroupByDropdown />
 
-                  {/* Colour the project bars by a tag group (only when groups exist) */}
+                  {/* Colour the project bars by a field or the tags (only when one applies) */}
                   <ColorByDropdown />
 
                   {/* Column visibility dropdown (only if columns exist) */}
@@ -288,10 +288,10 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
           <div ref={ref} className={styles.body}>
             {projects.length === 0 ? (
               <div className={styles.empty}>
-                <p>{isTagFiltered ? 'No projects match the tag filter' : 'No projects found'}</p>
+                <p>{isFiltered ? 'No projects match the filter' : 'No projects found'}</p>
                 <p className={styles.emptyHint}>
-                  {isTagFiltered
-                    ? 'Change or clear the tag filter to see more projects'
+                  {isFiltered
+                    ? 'Change or clear the filter to see more projects'
                     : canCreate ? 'Click "New" to create a project' : 'No projects available for this site'}
                 </p>
               </div>

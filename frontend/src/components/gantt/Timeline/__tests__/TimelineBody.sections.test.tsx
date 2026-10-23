@@ -32,8 +32,8 @@ const p1 = project(1);
 const p2 = project(2);
 const p3 = project(3);
 const sections: GanttSection[] = [
-  { key: 'tag-7', tag: null, label: 'Bio', projects: [p1, p2] },
-  { key: 'none', tag: null, label: 'No Area', projects: [p3] },
+  { key: 'field-7', option: null, label: 'Bio', projects: [p1, p2] },
+  { key: 'none', option: null, label: 'No Area', projects: [p3] },
 ];
 const cells = generateTimelineCells(new Date(2026, 2, 15), 'month', new Set(), []);
 
@@ -54,13 +54,13 @@ describe('TimelineBody section bands', () => {
   it('renders a band per section, interleaved with the project rows in .rows', () => {
     const { container } = renderBody([]);
     const bands = [...container.querySelectorAll('[data-section-key]')];
-    expect(bands.map((b) => b.getAttribute('data-section-key'))).toEqual(['tag-7', 'none']);
+    expect(bands.map((b) => b.getAttribute('data-section-key'))).toEqual(['field-7', 'none']);
 
     const rowsContainer = bands[0].parentElement!;
     expect(rowsContainer.className).toMatch(/rows/);
     expect(
       [...rowsContainer.children].map((c) => c.getAttribute('data-section-key') ?? `p${c.getAttribute('data-project-id')}`)
-    ).toEqual(['tag-7', 'p1', 'p2', 'none', 'p3']);
+    ).toEqual(['field-7', 'p1', 'p2', 'none', 'p3']);
 
     for (const band of bands) {
       expect(band).toHaveAttribute('aria-hidden', 'true');
@@ -71,7 +71,7 @@ describe('TimelineBody section bands', () => {
   });
 
   it('skips the projects of a collapsed section', () => {
-    const { container } = renderBody(['tag-7']);
+    const { container } = renderBody(['field-7']);
     expect([...container.querySelectorAll('[data-project-id]')].map((e) => e.getAttribute('data-project-id'))).toEqual(['3']);
     expect(container.querySelectorAll('[data-section-key]')).toHaveLength(2);
     expect(seen.positions?.has('project-1')).toBe(false);

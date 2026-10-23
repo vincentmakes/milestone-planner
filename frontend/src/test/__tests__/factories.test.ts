@@ -58,7 +58,7 @@ describe('test factories', () => {
   it('accepts overrides that set nullable fields', () => {
     expect(makeUser({ role: 'user', site_ids: [] })).toMatchObject({ role: 'user', site_ids: [] });
     expect(makeCustomColumn({ column_type: 'text', list_options: null }).list_options).toBeNull();
-    expect(makeTag({ group_id: 5, all_sites: false, site_ids: [2] })).toMatchObject({ group_id: 5, site_ids: [2] });
+    expect(makeTag({ all_sites: false, site_ids: [2] })).toMatchObject({ all_sites: false, site_ids: [2] });
     expect(makeVacation({ absence_type_id: 3 }).absence_type_id).toBe(3);
     expect(makeSite({ name: 'Zurich' }).name).toBe('Zurich');
     expect(makeEquipment({ type: 'HPLC' }).type).toBe('HPLC');

@@ -1,9 +1,9 @@
 /**
- * Kanban toolbar: project picker, tag filter, swimlane grouping, My Todo filter.
+ * Kanban toolbar: project picker, project filter, swimlane grouping, My Todo filter.
  */
 
 import { Select } from '@/components/common';
-import { TagFilterDropdown } from '@/components/common/TagFilterDropdown';
+import { ProjectFilterDropdown } from '@/components/common/ProjectFilterDropdown';
 import type { CustomColumn, Project } from '@/types';
 import type { KanbanGrouping } from '@/utils/kanbanCards';
 import styles from './KanbanToolbar.module.css';
@@ -86,7 +86,7 @@ export function KanbanToolbar({
         }
       />
 
-      <TagFilterDropdown />
+      <ProjectFilterDropdown />
 
       <Select
         aria-label="Swimlane grouping"

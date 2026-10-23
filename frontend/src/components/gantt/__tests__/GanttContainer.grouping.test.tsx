@@ -1,5 +1,5 @@
 /**
- * GanttContainer wiring of "Group by tag group": both panes get the very same
+ * GanttContainer wiring of "Group by" a project field: both panes get the very same
  * row list (so they stack identically), the ProjectPanel can toggle sections,
  * and project reordering is switched off while grouped.
  */
@@ -11,10 +11,9 @@ import { useViewStore } from '@/stores/viewStore';
 import type { GanttRow } from '../utils/projectSections';
 import type { TimelineCell } from '../utils/timeline';
 import { buildEventDateSet } from '@/api';
-import { tagFilterKey } from '@/utils/tags';
-import { makeTeam } from '@/test/factories';
+import { siteKey } from '@/utils/tags';
+import { makeProject, makeProjectField, makeProjectFieldOption, makeTeam } from '@/test/factories';
 import type { CompanyEvent, Project, Site } from '@/types';
-import type { TagGroup, LegacyGroupedTag } from '@/utils/tags';
 
 interface PanelProps { rows?: GanttRow[]; onProjectReorder?: unknown; onToggleSection?: (k: string) => void }
 interface TimelineProps { rows?: GanttRow[]; projects: Project[]; cells: TimelineCell[] }
@@ -37,19 +36,20 @@ vi.mock('../Timeline', async () => {
 });
 vi.mock('@/hooks', () => ({
   useScrollSync: () => {},
-  useTagFilteredProjects: (projects: Project[]) => projects,
+  useFilteredProjects: (projects: Project[]) => projects,
 }));
 vi.mock('@/components/views/StaffView/StaffView', () => ({ StaffView: () => null }));
 vi.mock('@/components/views/EquipmentView/EquipmentView', () => ({ EquipmentView: () => null }));
 
-const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, sort_order: 0 };
-const tags: LegacyGroupedTag[] = [
-  { id: 1, name: 'Internal', color: '#fde047', group_id: 1, all_sites: true, site_ids: [], sort_order: 0 },
-];
+const TYPE = makeProjectField({
+  id: 1,
+  name: 'Project type',
+  options: [makeProjectFieldOption({ id: 1, name: 'Internal', color: '#fde047' })],
+});
 const projects = [
-  { id: 1, name: 'Alpha', site_id: 1, confirmed: true, tags: [{ id: 1 }] },
-  { id: 2, name: 'Beta', site_id: 1, confirmed: true, tags: [] },
-] as unknown as Project[];
+  makeProject({ id: 1, name: 'Alpha', site_id: 1, confirmed: true, field_values: { 1: 1 } }),
+  makeProject({ id: 2, name: 'Beta', site_id: 1, confirmed: true, field_values: {} }),
+];
 
 const describeRows = (rows: GanttRow[] | undefined) =>
   rows?.map((r) => (r.type === 'section' ? `${r.section.key}${r.collapsed ? ' (collapsed)' : ''}` : r.project.id));
@@ -61,8 +61,8 @@ beforeEach(() => {
   useViewStore.setState({ ganttGrouping: {}, collapsedGanttSections: {}, teamFilters: {} });
   useAppStore.setState({
     projects,
-    tags,
-    tagGroups: [TYPE],
+    tags: [],
+    projectFields: [TYPE],
     teams: [],
     currentSite: { id: 1, name: 'Basel' } as Site,
     currentUser: { id: 9, name: 'Admin', role: 'admin' } as never,
@@ -80,14 +80,14 @@ describe('GanttContainer grouping', () => {
   it('passes the same sectioned rows to both panes and disables reordering', () => {
     useViewStore.setState({ ganttGrouping: { ':1': 1 } });
     render(<GanttContainer />);
-    expect(describeRows(panelProps()?.rows)).toEqual(['tag-1', 1, 'none', 2]);
+    expect(describeRows(panelProps()?.rows)).toEqual(['field-1', 1, 'none', 2]);
     expect(timelineProps()?.rows).toBe(panelProps()?.rows);
     expect(panelProps()?.onProjectReorder).toBeUndefined();
     // The timeline still gets every project (dependency arrows, drop targets)
     expect(timelineProps()?.projects.map((p) => p.id)).toEqual([1, 2]);
 
-    act(() => panelProps()?.onToggleSection?.('tag-1'));
-    expect(describeRows(panelProps()?.rows)).toEqual(['tag-1 (collapsed)', 'none', 2]);
+    act(() => panelProps()?.onToggleSection?.('field-1'));
+    expect(describeRows(panelProps()?.rows)).toEqual(['field-1 (collapsed)', 'none', 2]);
     expect(timelineProps()?.rows).toBe(panelProps()?.rows);
   });
 
@@ -96,7 +96,7 @@ describe('GanttContainer grouping', () => {
       teams: [makeTeam({ id: 1, site_id: 1 })],
       projects: [{ ...projects[0], team_ids: [1] }, { ...projects[1], team_ids: [] }],
     });
-    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    useViewStore.setState({ teamFilters: { [siteKey(1)]: { teamIds: [1], noTeam: false } } });
     render(<GanttContainer />);
     expect(describeRows(panelProps()?.rows)).toEqual([1]);
     expect(timelineProps()?.rows).toBe(panelProps()?.rows);
@@ -115,7 +115,7 @@ describe('GanttContainer grouping', () => {
     useViewStore.setState({
       viewMode: 'week',
       currentDate: new Date(2026, 9, 21),
-      teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } },
+      teamFilters: { [siteKey(1)]: { teamIds: [1], noTeam: false } },
     });
     const eventNames = () =>
       timelineProps()?.cells.filter((c) => c.isCompanyEvent).map((c) => c.companyEventName);

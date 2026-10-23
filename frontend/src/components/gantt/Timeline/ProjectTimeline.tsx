@@ -30,7 +30,7 @@ import {
   cleanVacationDescription,
 } from '@/utils/recurringVacation';
 import { EMPTY_TEAM_SET, getClosureOn } from '@/utils/siteClosure';
-import { indexTags, projectBarColor } from '@/utils/tags';
+import { projectBarColor } from '@/utils/projectFilters';
 import { useGanttColorBy } from '@/hooks/useGanttColorBy';
 import {
   selectStaffSiteIds,
@@ -200,14 +200,15 @@ export const ProjectTimeline = memo(function ProjectTimeline({
   // Equipment bookings: equipment_bookings.manage (or managing the project)
   const canBook = canBookEquipment(currentUser, project);
 
-  // Bar colour from the project's tag in the user's "Colour by" group,
-  // resolved through the store (inline project.tags can be stale in What-If).
-  // indexTags is cached per tags array, so rows share one map.
+  // Bar colour from the user's "Colour by" choice (a project field's item or
+  // a tag), resolved through the store (inline project.tags can be stale in
+  // What-If). The tag index is cached per tags array, so rows share one map.
   const tags = useAppStore((s) => s.tags);
-  const { group: colorByGroup } = useGanttColorBy();
+  const { colorBy, fields: colorByFields } = useGanttColorBy();
+  const colorByChoice = colorBy === 'tags' ? 'tags' : colorBy?.id ?? null;
   const barColor = useMemo(
-    () => projectBarColor(project, indexTags(tags), colorByGroup),
-    [project, tags, colorByGroup]
+    () => projectBarColor(project, colorByFields, tags, colorByChoice),
+    [project, colorByFields, tags, colorByChoice]
   );
 
   // Get critical path items for this project (empty set if not enabled)
