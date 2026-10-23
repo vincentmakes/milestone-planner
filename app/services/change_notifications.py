@@ -337,7 +337,8 @@ def project_update_intents(
 ) -> list[ChangeIntent]:
     """
     A project PUT: the manager, for a real difference in ``PROJECT_FIELDS``.
-    A hand-over tells the previous manager and the new one.
+    A hand-over tells the previous manager and the new one; a cleared manager
+    tells the previous one.
     """
     changes = _project_changes(before, after)
     body = "; ".join(changes) or None
@@ -358,13 +359,19 @@ def project_update_intents(
         ]
     intents = []
     if old_pm is not None:
+        # Cleared: nobody took it over.
+        title = (
+            f"{_actor(actor)} handed {literal(project_name)} over to {{person}}"
+            if new_pm is not None
+            else f"{_actor(actor)} removed you as the manager of {literal(project_name)}"
+        )
         intents.append(
             _intent(
                 "pm",
                 user_id=old_pm,
                 project_id=project_id,
                 entity=entity,
-                title=f"{_actor(actor)} handed {literal(project_name)} over to {{person}}",
+                title=title,
                 body=body,
                 person_id=new_pm,
             )

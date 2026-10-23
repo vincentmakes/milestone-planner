@@ -820,6 +820,20 @@ def test_project_hand_over_notifies_both_managers():
     assert by_user[BOB].body == "volume 10 → 11"
 
 
+def test_project_manager_cleared_tells_the_previous_one():
+    out = cn.project_update_intents(
+        actor(),
+        project_id=1,
+        project_name="Alpha",
+        before=BEFORE,
+        after={**BEFORE, "pm_id": None},
+    )
+    assert [(i.user_id, i.title, i.person_id) for i in out] == [
+        (PM, "Ada Admin removed you as the manager of Alpha", None)
+    ]
+    assert out[0].body is None
+
+
 def test_project_hand_over_from_nobody():
     out = cn.project_update_intents(
         actor(),

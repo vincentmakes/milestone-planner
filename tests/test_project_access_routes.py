@@ -985,6 +985,34 @@ async def test_archive_rights_do_not_edit_other_fields(authed_client, mock_db_se
 
 
 @pytest.mark.asyncio
+async def test_archive_rights_do_not_clear_the_manager(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "archivist", {"projects.archive"}))
+    project = _archivable_project(pm_id=PM)
+    mock_db_session.execute.side_effect = [_scalar_result(project)]
+
+    response = await client.put("/api/projects/1", json={"pm_id": None, "archived": True})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == EDITOR_REQUIRED_DETAIL
+    assert project.pm_id == PM
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_archive_with_a_null_manager_on_a_project_without_one(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "archivist", {"projects.archive"}))
+    project = _archivable_project(pm_id=None)
+    mock_db_session.execute.side_effect = [_scalar_result(project)]
+
+    response = await client.put("/api/projects/1", json={"pm_id": None, "archived": True})
+
+    assert response.status_code == 200
+    assert (project.pm_id, project.archived) == (None, 1)
+
+
+@pytest.mark.asyncio
 async def test_resending_the_unchanged_archived_flag_needs_no_archive_key(
     authed_client, mock_db_session
 ):

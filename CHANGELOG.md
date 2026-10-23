@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - A newly posted comment no longer shows *(edited)*.
+- The project manager can be cleared again from the project dialog.
 
 ## [1.17.0] - 2026-10-22
 

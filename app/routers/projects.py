@@ -917,7 +917,8 @@ async def update_project(
     Update a project.
 
     ``projects.edit_any``, or the project's manager through the PM bundle (who
-    may change every field, including handing the project over via `pm_id`).
+    may change every field, including handing the project over via `pm_id`;
+    an explicit ``null`` clears it, an omitted one leaves it).
     Changing ``archived`` needs ``projects.archive`` (also in the bundle); a
     request that only archives or restores needs nothing else.
 
@@ -941,6 +942,10 @@ async def update_project(
     await ensure_site_visible(request, db, user, project.site_id, PROJECT_NOT_VISIBLE_DETAIL)
 
     sent = {field for field in data.model_fields_set if getattr(data, field) is not None}
+    # An explicit null clears the manager: an edit like any other.
+    clearing_pm = "pm_id" in data.model_fields_set and data.pm_id is None
+    if clearing_pm and project.pm_id is not None:
+        sent.add("pm_id")
     archiving = "archived" in sent and bool(data.archived) != bool(project.archived)
     if sent - {"archived"} or not archiving:
         check_project_editor(user, project.pm_id)
@@ -957,6 +962,8 @@ async def update_project(
         if data.pm_id != project.pm_id:
             await _require_user_exists(db, data.pm_id, "Project manager not found")
         project.pm_id = data.pm_id
+    elif clearing_pm:
+        project.pm_id = None
     if data.sales_pm is not None:
         project.sales_pm = data.sales_pm
     if data.confirmed is not None:

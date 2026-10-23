@@ -86,7 +86,7 @@ The per-project levels are checked inside the handler (`app/services/project_acc
 | `GET` | `/t/{slug}/api/projects` | user | List all projects (with phases, subphases, assignments) |
 | `POST` | `/t/{slug}/api/projects` | superuser (`projects.create`) | Create a project at a visible site |
 | `GET` | `/t/{slug}/api/projects/{id}` | user | Get project details with full hierarchy |
-| `PUT` | `/t/{slug}/api/projects/{id}` | user (PM) (`projects.edit_any`) | Update a project — every field, including `pm_id` (so a manager can hand the project over), `archived` (needs `projects.archive`), `tag_ids`, `team_ids` and `field_values` |
+| `PUT` | `/t/{slug}/api/projects/{id}` | user (PM) (`projects.edit_any`) | Update a project — every field, including `pm_id` (so a manager can hand the project over; an explicit `null` clears it), `archived` (needs `projects.archive`), `tag_ids`, `team_ids` and `field_values` |
 | `DELETE` | `/t/{slug}/api/projects/{id}` | superuser (`projects.delete`) | Delete a project (not in the PM bundle: a project manager cannot) |
 
 Project list and detail responses carry `team_ids`; create and update accept `team_ids` (omitted = unchanged, `[]` = no team). Every team must be at the project's site (`400`; a project without a site cannot have teams). Unknown team ids are dropped silently, like unknown tag ids, so a What-If replay survives a team deleted in the meantime. Changing the teams re-checks the project's tags and dropdown-field items: a tag or item limited to teams the project no longer shares is refused (`400`).

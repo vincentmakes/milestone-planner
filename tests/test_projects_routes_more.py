@@ -612,6 +612,43 @@ async def test_update_project_unknown_new_pm_404(authed_client, mock_db_session,
 
 
 @pytest.mark.asyncio
+async def test_update_project_explicit_null_clears_the_pm(
+    authed_client, mock_db_session, broadcast, change_intents
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    project = make_project(1, pm_id=7)
+    mock_db_session.execute.side_effect = [scalar_result(project)]
+
+    response = await client.put("/api/projects/1", json={"pm_id": None})
+
+    assert response.status_code == 200
+    assert project.pm_id is None
+    # No user lookup for a cleared manager
+    assert mock_db_session.execute.await_count == 1
+    mock_db_session.commit.assert_awaited()
+    ((_, intents, _),) = change_intents
+    assert [(i.user_id, i.title) for i in intents] == [
+        (7, "Test User1 removed you as the manager of Project 1")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_update_project_omitted_pm_is_left_alone(
+    authed_client, mock_db_session, broadcast, change_intents
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    project = make_project(1, pm_id=7)
+    mock_db_session.execute.side_effect = [scalar_result(project)]
+
+    response = await client.put("/api/projects/1", json={"customer": "Initech"})
+
+    assert response.status_code == 200
+    assert (project.pm_id, project.customer) == (7, "Initech")
+
+
+@pytest.mark.asyncio
 async def test_update_project_merged_dates_must_be_ordered(
     authed_client, mock_db_session, broadcast
 ):
