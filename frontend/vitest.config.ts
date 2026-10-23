@@ -68,7 +68,9 @@ export default defineConfig({
       // with the searchable people pickers, the same rule on lines 92.9,
       // statements 91.83, functions 93.48, branches 83.66; with the pilot
       // feedback round 2 of 2.1.0, raised to lines 93.0, statements 92.0,
-      // functions 93.4, branches 84.0.
+      // functions 93.4, branches 84.0; with the Dashboards view of
+      // 2.2.0 (measured lines 93.12, statements 92.07, functions 93.7, branches
+      // 84.11 before the rebase), each floor the higher of the two.
       thresholds: {
         lines: 93.0,
         statements: 92.0,
