@@ -68,14 +68,16 @@ export default defineConfig({
       // with the searchable people pickers, the same rule on lines 92.9,
       // statements 91.83, functions 93.48, branches 83.66; with the pilot
       // feedback round 2 of 2.1.0, raised to lines 93.0, statements 92.0,
-      // functions 93.4, branches 84.0; with the Dashboards view of
-      // 2.2.0 (measured lines 93.12, statements 92.07, functions 93.7, branches
-      // 84.11 before the rebase), each floor the higher of the two.
+      // functions 93.4, branches 84.0; with the
+      // Dashboards view of 2.2.0, the same rule on lines 93.12, statements
+      // 92.07, functions 93.7, branches 84.11; with the dashboard builder,
+      // on lines 93.32, statements 92.28, functions 93.89, branches 84.6.
+      // Each floor is the higher of the two lines (rebase of 2.2.0).
       thresholds: {
         lines: 93.0,
         statements: 92.0,
-        functions: 93.4,
-        branches: 84.0,
+        functions: 93.5,
+        branches: 84.3,
       },
     },
   },

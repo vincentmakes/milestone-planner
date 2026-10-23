@@ -384,6 +384,9 @@ describe('WidgetEditor — filters and period', () => {
 
 describe('WidgetEditor — preview', () => {
   it('waits 400 ms after the last change, and ignores an answer a newer request superseded', async () => {
+    // Fake time only: real time passing (a loaded machine) must not move the clock
+    vi.useRealTimers();
+    vi.useFakeTimers();
     let releaseFirst!: (r: MetricResult) => void;
     api.query.mockReturnValueOnce(new Promise<MetricResult>((r) => (releaseFirst = r)));
     renderEditor();
@@ -402,7 +405,7 @@ describe('WidgetEditor — preview', () => {
     fireEvent.change(screen.getByLabelText('Measure'), { target: { value: 'booked_days' } });
     await flushPreview();
     expect(api.query).toHaveBeenCalledTimes(2);
-    expect(await screen.findByText('12.0')).toBeInTheDocument();
+    expect(screen.getByText('12.0')).toBeInTheDocument();
     // The first answer lands late: ignored
     await act(async () => releaseFirst(result([{ keys: [], value: 99 }])));
     expect(screen.queryByText('99.0')).not.toBeInTheDocument();
