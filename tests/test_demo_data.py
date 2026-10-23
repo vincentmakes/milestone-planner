@@ -343,7 +343,8 @@ def test_every_range_is_ordered_and_relative_to_today(demo: DemoData):
 
 def test_holidays_carry_their_year_and_both_sites(demo: DemoData):
     assert {h["site"] for h in demo.bank_holidays} == {"Winterthur", "Frankfurt"}
-    assert {h["year"] for h in demo.bank_holidays} == {TODAY.year, TODAY.year + 1}
+    # Last year too: the dashboards count its working days.
+    assert {h["year"] for h in demo.bank_holidays} == {TODAY.year - 1, TODAY.year, TODAY.year + 1}
     for h in demo.bank_holidays:
         assert h["date"].year == h["year"]
     keys = [(h["site"], h["date"], h["name"]) for h in demo.bank_holidays]

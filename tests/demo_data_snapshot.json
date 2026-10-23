@@ -1,0 +1,296 @@
+{
+ "settings": [
+  ["instance_title", "Demo Instance"],
+  ["fiscal_year_start", "1"]
+ ],
+ "predefined_phases": [
+  "Preparation",
+  "Analytics",
+  "Trial",
+  "Cleaning",
+  "Report"
+ ],
+ "sites": [
+  {"city": "Winterthur", "country_code": "CH", "location": "Winterthur", "name": "Winterthur", "region_code": "ZH", "timezone": "Europe/Zurich"},
+  {"city": "Frankfurt", "country_code": "DE", "location": "Frankfurt", "name": "Frankfurt", "region_code": "HE", "timezone": "Europe/Berlin"}
+ ],
+ "skills": [
+  {"color": "#3b82f6", "description": "Planning and execution", "name": "Project Management"},
+  {"color": "#e74c3c", "description": "High-Performance Liquid Chromatography", "name": "HPLC"},
+  {"color": "#8b5cf6", "description": "Statistical analysis", "name": "Data Analysis"},
+  {"color": "#10b981", "description": "Mammalian cell culture", "name": "Cell Culture"},
+  {"color": "#f59e0b", "description": "Documentation and reports", "name": "Technical Writing"},
+  {"color": "#ef4444", "description": "QC procedures", "name": "Quality Control"}
+ ],
+ "roles": [
+  {"description": "Leads a team: creates projects and manages absences.", "key": "team_lead", "name": "Team Lead", "permissions": {"absences.manage_others": "allow", "absences.manage_own": "allow", "absences.view_others": "allow", "assignments.self_create": "allow", "assignments.self_remove": "allow", "assignments.self_update": "allow", "custom_columns.set_values": "allow", "kanban.comment": "allow", "kanban.move_assigned": "allow", "projects.create": "allow", "projects.manage_as_pm": "allow", "projects.view": "allow", "views.archived": "allow", "views.crosssite": "allow", "views.dashboards": "allow", "views.equipment": "allow", "views.kanban": "allow", "views.staff": "allow"}, "sort_order": 3}
+ ],
+ "approval_policies": [
+  {"action": "assignments.self_create", "pm_approves": true, "roles": ["team_lead"]}
+ ],
+ "users": [
+  {"active": true, "email": "admin@demo.local", "first_name": "Admin", "is_resource": false, "is_system": true, "job_title": "System Administrator", "last_name": "User", "max_capacity": 100, "role": "admin", "sites": ["Winterthur", "Frankfurt"], "skills": []},
+  {"active": true, "email": "alice.anderson@demo.local", "first_name": "Alice", "is_resource": true, "is_system": false, "job_title": "Research Scientist", "last_name": "Anderson", "max_capacity": 100, "role": "superuser", "sites": ["Winterthur"], "skills": ["HPLC", "Data Analysis", "Technical Writing"]},
+  {"active": true, "email": "bob.brown@demo.local", "first_name": "Bob", "is_resource": true, "is_system": false, "job_title": "Project Manager", "last_name": "Brown", "max_capacity": 100, "role": "superuser", "sites": ["Winterthur"], "skills": ["Project Management", "Technical Writing"]},
+  {"active": true, "email": "charlie.clark@demo.local", "first_name": "Charlie", "is_resource": true, "is_system": false, "job_title": "Lab Technician", "last_name": "Clark", "max_capacity": 60, "role": "user", "sites": ["Winterthur"], "skills": ["HPLC", "Cell Culture", "Quality Control"]},
+  {"active": true, "email": "diana.davis@demo.local", "first_name": "Diana", "is_resource": true, "is_system": false, "job_title": "Data Analyst", "last_name": "Davis", "max_capacity": 100, "role": "user", "sites": ["Winterthur", "Frankfurt"], "skills": ["Data Analysis", "Technical Writing"]},
+  {"active": false, "email": "edward.evans@demo.local", "first_name": "Edward", "is_resource": true, "is_system": false, "job_title": "Process Engineer", "last_name": "Evans", "max_capacity": 100, "role": "user", "sites": ["Winterthur"], "skills": []},
+  {"active": true, "email": "fiona.fischer@demo.local", "first_name": "Fiona", "is_resource": true, "is_system": false, "job_title": "Analytical Chemist", "last_name": "Fischer", "max_capacity": 100, "role": "team_lead", "sites": ["Frankfurt"], "skills": ["HPLC", "Quality Control"]},
+  {"active": true, "email": "george.garcia@demo.local", "first_name": "George", "is_resource": true, "is_system": false, "job_title": "R&D Engineer", "last_name": "Garcia", "max_capacity": 100, "role": "user", "sites": ["Frankfurt"], "skills": ["Cell Culture", "Data Analysis"]},
+  {"active": true, "email": "hannah.harris@demo.local", "first_name": "Hannah", "is_resource": true, "is_system": false, "job_title": "Quality Specialist", "last_name": "Harris", "max_capacity": 100, "role": "user", "sites": ["Frankfurt"], "skills": ["Quality Control"]}
+ ],
+ "teams": [
+  {"color": "#0ea5e9", "description": "Method development and routine analytics", "members": ["alice.anderson@demo.local", "charlie.clark@demo.local", "diana.davis@demo.local"], "name": "Analytical Lab", "site": "Winterthur"},
+  {"color": "#f97316", "description": "Scale-up and process transfer", "members": ["bob.brown@demo.local", "charlie.clark@demo.local"], "name": "Process Development", "site": "Winterthur"},
+  {"color": "#10b981", "description": "Quality assurance, GMP and audits", "members": ["fiona.fischer@demo.local", "hannah.harris@demo.local"], "name": "QA & Compliance", "site": "Frankfurt"},
+  {"color": "#8b5cf6", "description": "Formulation and stability studies", "members": ["george.garcia@demo.local", "diana.davis@demo.local"], "name": "Formulation", "site": "Frankfurt"}
+ ],
+ "equipment": [
+  {"name": "HPLC System 1", "sites": ["Winterthur"], "teams": [], "type": "Analytical"},
+  {"name": "Mass Spectrometer", "sites": ["Winterthur", "Frankfurt"], "teams": [["Winterthur", "Analytical Lab"]], "type": "Analytical"},
+  {"name": "PCR Thermocycler", "sites": ["Winterthur"], "teams": [], "type": "Molecular Biology"},
+  {"name": "Biosafety Cabinet", "sites": ["Winterthur"], "teams": [], "type": "Cell Culture"},
+  {"name": "Centrifuge", "sites": ["Winterthur"], "teams": [], "type": "General Lab"},
+  {"name": "HPLC System 2", "sites": ["Frankfurt"], "teams": [], "type": "Analytical"},
+  {"name": "Plate Reader", "sites": ["Frankfurt"], "teams": [["Frankfurt", "QA & Compliance"]], "type": "Analytical"},
+  {"name": "Freeze Dryer", "sites": ["Frankfurt"], "teams": [], "type": "Processing"}
+ ],
+ "project_fields": [
+  {"field_type": "select", "name": "Project type", "options": [{"color": "#6366f1", "name": "Internal", "sites": null, "sort_order": 0, "teams": []}, {"color": "#0ea5e9", "name": "Customer", "sites": null, "sort_order": 1, "teams": []}], "sort_order": 0},
+  {"field_type": "multiselect", "name": "Area", "options": [{"color": "#f97316", "name": "Process", "sites": null, "sort_order": 0, "teams": []}, {"color": "#8b5cf6", "name": "Analytics", "sites": null, "sort_order": 1, "teams": []}, {"color": "#10b981", "name": "QA", "sites": null, "sort_order": 2, "teams": []}], "sort_order": 1}
+ ],
+ "tags": [
+  {"color": "#ef4444", "name": "Critical", "sites": null, "sort_order": 0, "teams": []},
+  {"color": "#14b8a6", "name": "Tech Transfer", "sites": null, "sort_order": 1, "teams": []},
+  {"color": "#a855f7", "name": "GMP", "sites": ["Frankfurt"], "sort_order": 2, "teams": [["Frankfurt", "QA & Compliance"]]}
+ ],
+ "projects": [
+  {"archived": false, "confirmed": true, "customer": "Novachem AG", "end_date": {"d": 150}, "fields": {"Area": ["Analytics"], "Project type": ["Internal"]}, "name": "Catalyst Optimization", "notes": null, "pm": null, "sales_pm": "M. Keller", "site": "Winterthur", "start_date": {"d": -30}, "tags": ["Critical"], "teams": ["Analytical Lab"]},
+  {"archived": false, "confirmed": true, "customer": "BioGen Ltd", "end_date": {"d": 200}, "fields": {"Area": ["Process"], "Project type": ["Customer"]}, "name": "Bioprocess Scale-Up", "notes": null, "pm": "bob.brown@demo.local", "sales_pm": null, "site": "Winterthur", "start_date": {"d": -15}, "tags": ["Critical", "Tech Transfer"], "teams": ["Process Development", "Analytical Lab"]},
+  {"archived": false, "confirmed": false, "customer": "PharmaCore", "end_date": {"d": 120}, "fields": {"Area": ["Analytics", "QA"], "Project type": ["Customer"]}, "name": "Analytical Method Transfer", "notes": null, "pm": "charlie.clark@demo.local", "sales_pm": "S. Weber", "site": "Winterthur", "start_date": {"d": 14}, "tags": [], "teams": []},
+  {"archived": false, "confirmed": true, "customer": "Internal", "end_date": {"d": 90}, "fields": {"Area": ["QA"], "Project type": ["Internal"]}, "name": "Quality System Upgrade", "notes": null, "pm": null, "sales_pm": null, "site": "Frankfurt", "start_date": {"d": -60}, "tags": ["GMP"], "teams": ["QA & Compliance"]},
+  {"archived": true, "confirmed": true, "customer": "AquaPure GmbH", "end_date": {"d": 30}, "fields": {}, "name": "Legacy Filtration Study", "notes": null, "pm": null, "sales_pm": null, "site": "Winterthur", "start_date": {"d": -120}, "tags": [], "teams": []}
+ ],
+ "phases": [
+  {"completion": 86, "end_date": {"d": 5}, "is_milestone": false, "project": "Catalyst Optimization", "sort_order": 0, "start_date": {"d": -30}, "status": "in_progress", "type": "Preparation"},
+  {"completion": 0, "end_date": {"d": 41}, "is_milestone": false, "project": "Catalyst Optimization", "sort_order": 1, "start_date": {"d": 6}, "status": "blocked", "type": "Analytics"},
+  {"completion": 0, "end_date": {"d": 77}, "is_milestone": false, "project": "Catalyst Optimization", "sort_order": 2, "start_date": {"d": 42}, "status": "todo", "type": "Trial"},
+  {"completion": 0, "end_date": {"d": 113}, "is_milestone": false, "project": "Catalyst Optimization", "sort_order": 3, "start_date": {"d": 78}, "status": "todo", "type": "Cleaning"},
+  {"completion": 0, "end_date": {"d": 149}, "is_milestone": false, "project": "Catalyst Optimization", "sort_order": 4, "start_date": {"d": 114}, "status": "todo", "type": "Report"},
+  {"completion": 36, "end_date": {"d": 27}, "is_milestone": false, "project": "Bioprocess Scale-Up", "sort_order": 0, "start_date": {"d": -15}, "status": "in_progress", "type": "Preparation"},
+  {"completion": 0, "end_date": {"d": 70}, "is_milestone": false, "project": "Bioprocess Scale-Up", "sort_order": 1, "start_date": {"d": 28}, "status": "blocked", "type": "Analytics"},
+  {"completion": 0, "end_date": {"d": 113}, "is_milestone": false, "project": "Bioprocess Scale-Up", "sort_order": 2, "start_date": {"d": 71}, "status": "todo", "type": "Trial"},
+  {"completion": 0, "end_date": {"d": 156}, "is_milestone": false, "project": "Bioprocess Scale-Up", "sort_order": 3, "start_date": {"d": 114}, "status": "todo", "type": "Cleaning"},
+  {"completion": 0, "end_date": {"d": 199}, "is_milestone": false, "project": "Bioprocess Scale-Up", "sort_order": 4, "start_date": {"d": 157}, "status": "todo", "type": "Report"},
+  {"completion": 0, "end_date": {"d": 34}, "is_milestone": false, "project": "Analytical Method Transfer", "sort_order": 0, "start_date": {"d": 14}, "status": "blocked", "type": "Preparation"},
+  {"completion": 0, "end_date": {"d": 55}, "is_milestone": false, "project": "Analytical Method Transfer", "sort_order": 1, "start_date": {"d": 35}, "status": "todo", "type": "Analytics"},
+  {"completion": 0, "end_date": {"d": 76}, "is_milestone": false, "project": "Analytical Method Transfer", "sort_order": 2, "start_date": {"d": 56}, "status": "todo", "type": "Trial"},
+  {"completion": 0, "end_date": {"d": 97}, "is_milestone": false, "project": "Analytical Method Transfer", "sort_order": 3, "start_date": {"d": 77}, "status": "todo", "type": "Cleaning"},
+  {"completion": 0, "end_date": {"d": 118}, "is_milestone": false, "project": "Analytical Method Transfer", "sort_order": 4, "start_date": {"d": 98}, "status": "todo", "type": "Report"},
+  {"completion": 100, "end_date": {"d": -31}, "is_milestone": false, "project": "Quality System Upgrade", "sort_order": 0, "start_date": {"d": -60}, "status": "done", "type": "Preparation"},
+  {"completion": 100, "end_date": {"d": -1}, "is_milestone": false, "project": "Quality System Upgrade", "sort_order": 1, "start_date": {"d": -30}, "status": "done", "type": "Analytics"},
+  {"completion": 5, "end_date": {"d": 29}, "is_milestone": false, "project": "Quality System Upgrade", "sort_order": 2, "start_date": {"d": 0}, "status": "in_progress", "type": "Trial"},
+  {"completion": 0, "end_date": {"d": 59}, "is_milestone": false, "project": "Quality System Upgrade", "sort_order": 3, "start_date": {"d": 30}, "status": "blocked", "type": "Cleaning"},
+  {"completion": 0, "end_date": {"d": 89}, "is_milestone": false, "project": "Quality System Upgrade", "sort_order": 4, "start_date": {"d": 60}, "status": "todo", "type": "Report"}
+ ],
+ "subphases": [
+  {"completion": 0, "depth": 1, "end_date": {"d": 84}, "is_milestone": false, "name": "Pilot batch 1", "parent": null, "phase": "Trial", "project": "Bioprocess Scale-Up", "sort_order": 0, "start_date": {"d": 71}, "status": "todo"},
+  {"completion": 0, "depth": 1, "end_date": {"d": 100}, "is_milestone": false, "name": "Pilot batch 2", "parent": null, "phase": "Trial", "project": "Bioprocess Scale-Up", "sort_order": 1, "start_date": {"d": 87}, "status": "todo"},
+  {"completion": 0, "depth": 2, "end_date": {"d": 77}, "is_milestone": false, "name": "Sampling", "parent": "Pilot batch 1", "phase": "Trial", "project": "Bioprocess Scale-Up", "sort_order": 0, "start_date": {"d": 73}, "status": "todo"},
+  {"completion": 0, "depth": 1, "end_date": {"d": 103}, "is_milestone": true, "name": "Batch release", "parent": null, "phase": "Trial", "project": "Bioprocess Scale-Up", "sort_order": 2, "start_date": {"d": 103}, "status": "todo"},
+  {"completion": 0, "depth": 1, "end_date": {"d": 15}, "is_milestone": false, "name": "Screening", "parent": null, "phase": "Analytics", "project": "Catalyst Optimization", "sort_order": 0, "start_date": {"d": 6}, "status": "todo"},
+  {"completion": 0, "depth": 1, "end_date": {"d": 27}, "is_milestone": false, "name": "Kinetics", "parent": null, "phase": "Analytics", "project": "Catalyst Optimization", "sort_order": 1, "start_date": {"d": 16}, "status": "todo"},
+  {"completion": 100, "depth": 1, "end_date": {"d": -53}, "is_milestone": false, "name": "Gap analysis", "parent": null, "phase": "Preparation", "project": "Quality System Upgrade", "sort_order": 0, "start_date": {"d": -60}, "status": "done"},
+  {"completion": 100, "depth": 1, "end_date": {"d": -47}, "is_milestone": false, "name": "Training plan", "parent": null, "phase": "Preparation", "project": "Quality System Upgrade", "sort_order": 1, "start_date": {"d": -52}, "status": "done"}
+ ],
+ "dependencies": [
+  {"lag": 0, "predecessor": ["phase", "Catalyst Optimization", "Preparation"], "successor": ["phase", "Catalyst Optimization", "Analytics"], "type": "FS"},
+  {"lag": 0, "predecessor": ["phase", "Catalyst Optimization", "Analytics"], "successor": ["phase", "Catalyst Optimization", "Trial"], "type": "FS"},
+  {"lag": 0, "predecessor": ["phase", "Catalyst Optimization", "Trial"], "successor": ["phase", "Catalyst Optimization", "Cleaning"], "type": "FS"},
+  {"lag": 0, "predecessor": ["phase", "Catalyst Optimization", "Cleaning"], "successor": ["phase", "Catalyst Optimization", "Report"], "type": "FS"},
+  {"lag": 2, "predecessor": ["subphase", "Bioprocess Scale-Up", "Pilot batch 1"], "successor": ["subphase", "Bioprocess Scale-Up", "Pilot batch 2"], "type": "FS"},
+  {"lag": 0, "predecessor": ["subphase", "Bioprocess Scale-Up", "Sampling"], "successor": ["phase", "Bioprocess Scale-Up", "Trial"], "type": "SS"}
+ ],
+ "project_assignments": [
+  {"allocation": 20, "end_date": {"d": 200}, "project": "Bioprocess Scale-Up", "staff": "bob.brown@demo.local", "start_date": {"d": -15}},
+  {"allocation": 50, "end_date": {"d": 77}, "project": "Bioprocess Scale-Up", "staff": "alice.anderson@demo.local", "start_date": {"d": 71}}
+ ],
+ "phase_assignments": [
+  {"allocation": 50, "phase": "Preparation", "project": "Catalyst Optimization", "staff": "alice.anderson@demo.local"},
+  {"allocation": 25, "phase": "Preparation", "project": "Catalyst Optimization", "staff": "charlie.clark@demo.local"},
+  {"allocation": 100, "phase": "Analytics", "project": "Catalyst Optimization", "staff": "bob.brown@demo.local"},
+  {"allocation": 75, "phase": "Trial", "project": "Catalyst Optimization", "staff": "charlie.clark@demo.local"},
+  {"allocation": 25, "phase": "Trial", "project": "Catalyst Optimization", "staff": "alice.anderson@demo.local"},
+  {"allocation": 50, "phase": "Cleaning", "project": "Catalyst Optimization", "staff": "diana.davis@demo.local"},
+  {"allocation": 25, "phase": "Report", "project": "Catalyst Optimization", "staff": "alice.anderson@demo.local"},
+  {"allocation": 25, "phase": "Report", "project": "Catalyst Optimization", "staff": "charlie.clark@demo.local"},
+  {"allocation": 50, "phase": "Preparation", "project": "Bioprocess Scale-Up", "staff": "bob.brown@demo.local"},
+  {"allocation": 25, "phase": "Preparation", "project": "Bioprocess Scale-Up", "staff": "diana.davis@demo.local"},
+  {"allocation": 100, "end_date": {"d": 30}, "phase": "Analytics", "project": "Bioprocess Scale-Up", "staff": "charlie.clark@demo.local", "start_date": {"d": 28}},
+  {"allocation": 100, "end_date": {"d": 37}, "phase": "Analytics", "project": "Bioprocess Scale-Up", "staff": "charlie.clark@demo.local", "start_date": {"d": 35}},
+  {"allocation": 75, "phase": "Trial", "project": "Bioprocess Scale-Up", "staff": "diana.davis@demo.local"},
+  {"allocation": 25, "phase": "Trial", "project": "Bioprocess Scale-Up", "staff": "bob.brown@demo.local"},
+  {"allocation": 50, "phase": "Cleaning", "project": "Bioprocess Scale-Up", "staff": "alice.anderson@demo.local"},
+  {"allocation": 25, "phase": "Report", "project": "Bioprocess Scale-Up", "staff": "bob.brown@demo.local"},
+  {"allocation": 25, "phase": "Report", "project": "Bioprocess Scale-Up", "staff": "diana.davis@demo.local"},
+  {"allocation": 50, "phase": "Preparation", "project": "Analytical Method Transfer", "staff": "charlie.clark@demo.local"},
+  {"allocation": 25, "phase": "Preparation", "project": "Analytical Method Transfer", "staff": "alice.anderson@demo.local"},
+  {"allocation": 100, "phase": "Analytics", "project": "Analytical Method Transfer", "staff": "diana.davis@demo.local"},
+  {"allocation": 75, "phase": "Trial", "project": "Analytical Method Transfer", "staff": "alice.anderson@demo.local"},
+  {"allocation": 25, "phase": "Trial", "project": "Analytical Method Transfer", "staff": "charlie.clark@demo.local"},
+  {"allocation": 50, "phase": "Cleaning", "project": "Analytical Method Transfer", "staff": "bob.brown@demo.local"},
+  {"allocation": 25, "phase": "Report", "project": "Analytical Method Transfer", "staff": "charlie.clark@demo.local"},
+  {"allocation": 25, "phase": "Report", "project": "Analytical Method Transfer", "staff": "alice.anderson@demo.local"},
+  {"allocation": 50, "phase": "Preparation", "project": "Quality System Upgrade", "staff": "diana.davis@demo.local"},
+  {"allocation": 25, "phase": "Preparation", "project": "Quality System Upgrade", "staff": "george.garcia@demo.local"},
+  {"allocation": 100, "phase": "Analytics", "project": "Quality System Upgrade", "staff": "fiona.fischer@demo.local"},
+  {"allocation": 75, "phase": "Trial", "project": "Quality System Upgrade", "staff": "george.garcia@demo.local"},
+  {"allocation": 25, "phase": "Trial", "project": "Quality System Upgrade", "staff": "diana.davis@demo.local"},
+  {"allocation": 50, "phase": "Cleaning", "project": "Quality System Upgrade", "staff": "hannah.harris@demo.local"},
+  {"allocation": 25, "phase": "Report", "project": "Quality System Upgrade", "staff": "diana.davis@demo.local"},
+  {"allocation": 25, "phase": "Report", "project": "Quality System Upgrade", "staff": "george.garcia@demo.local"}
+ ],
+ "subphase_assignments": [
+  {"allocation": 100, "project": "Bioprocess Scale-Up", "staff": "alice.anderson@demo.local", "subphase": "Pilot batch 1"},
+  {"allocation": 60, "project": "Bioprocess Scale-Up", "staff": "charlie.clark@demo.local", "subphase": "Pilot batch 2"},
+  {"allocation": 50, "project": "Catalyst Optimization", "staff": "diana.davis@demo.local", "subphase": "Screening"}
+ ],
+ "approval_requests": [
+  {"action": "assignments.self_create", "allocation": 50, "level": "phase", "note": "I can take the statistics of the analytics runs.", "project": "Bioprocess Scale-Up", "requester": "diana.davis@demo.local", "target": "Analytics"}
+ ],
+ "equipment_bookings": [
+  {"end_date": {"d": 10}, "equipment": "HPLC System 1", "project": "Catalyst Optimization", "start_date": {"d": -5}},
+  {"end_date": {"d": 15}, "equipment": "HPLC System 1", "project": "Bioprocess Scale-Up", "start_date": {"d": 5}},
+  {"end_date": {"d": 9}, "equipment": "Plate Reader", "project": "Quality System Upgrade", "start_date": {"d": 3}}
+ ],
+ "equipment_blocks": [
+  {"description": "Annual preventive maintenance", "end_date": {"d": 5}, "equipment": "HPLC System 1", "reason": "maintenance", "start_date": {"d": -2}},
+  {"description": "Detector lamp replacement", "end_date": {"d": 24}, "equipment": "Mass Spectrometer", "reason": "defect", "start_date": {"d": 20}},
+  {"description": "Calibration", "end_date": {"d": 41}, "equipment": "Freeze Dryer", "reason": "maintenance", "start_date": {"d": 40}}
+ ],
+ "bank_holidays": [
+  {"date": {"d": -289}, "name": "New Year's Day", "site": "Winterthur", "year": 2026},
+  {"date": {"d": -288}, "name": "Berchtoldstag", "site": "Winterthur", "year": 2026},
+  {"date": {"d": -197}, "name": "Good Friday", "site": "Winterthur", "year": 2026},
+  {"date": {"d": -194}, "name": "Easter Monday", "site": "Winterthur", "year": 2026},
+  {"date": {"d": -169}, "name": "Labour Day", "site": "Winterthur", "year": 2026},
+  {"date": {"d": -156}, "name": "Ascension", "site": "Winterthur", "year": 2026},
+  {"date": {"d": -145}, "name": "Whit Monday", "site": "Winterthur", "year": 2026},
+  {"date": {"d": -77}, "name": "Swiss National Day", "site": "Winterthur", "year": 2026},
+  {"date": {"d": 69}, "name": "Christmas Day", "site": "Winterthur", "year": 2026},
+  {"date": {"d": 70}, "name": "St. Stephen's Day", "site": "Winterthur", "year": 2026},
+  {"date": {"d": -289}, "name": "New Year's Day", "site": "Frankfurt", "year": 2026},
+  {"date": {"d": -197}, "name": "Good Friday", "site": "Frankfurt", "year": 2026},
+  {"date": {"d": -194}, "name": "Easter Monday", "site": "Frankfurt", "year": 2026},
+  {"date": {"d": -169}, "name": "Labour Day", "site": "Frankfurt", "year": 2026},
+  {"date": {"d": -156}, "name": "Ascension Day", "site": "Frankfurt", "year": 2026},
+  {"date": {"d": -145}, "name": "Whit Monday", "site": "Frankfurt", "year": 2026},
+  {"date": {"d": -135}, "name": "Corpus Christi", "site": "Frankfurt", "year": 2026},
+  {"date": {"d": -14}, "name": "German Unity Day", "site": "Frankfurt", "year": 2026},
+  {"date": {"d": 69}, "name": "Christmas Day", "site": "Frankfurt", "year": 2026},
+  {"date": {"d": 70}, "name": "Boxing Day", "site": "Frankfurt", "year": 2026},
+  {"date": {"d": 76}, "name": "New Year's Day", "site": "Winterthur", "year": 2027},
+  {"date": {"d": 77}, "name": "Berchtoldstag", "site": "Winterthur", "year": 2027},
+  {"date": {"d": 160}, "name": "Good Friday", "site": "Winterthur", "year": 2027},
+  {"date": {"d": 163}, "name": "Easter Monday", "site": "Winterthur", "year": 2027},
+  {"date": {"d": 196}, "name": "Labour Day", "site": "Winterthur", "year": 2027},
+  {"date": {"d": 201}, "name": "Ascension", "site": "Winterthur", "year": 2027},
+  {"date": {"d": 212}, "name": "Whit Monday", "site": "Winterthur", "year": 2027},
+  {"date": {"d": 288}, "name": "Swiss National Day", "site": "Winterthur", "year": 2027},
+  {"date": {"d": 434}, "name": "Christmas Day", "site": "Winterthur", "year": 2027},
+  {"date": {"d": 435}, "name": "St. Stephen's Day", "site": "Winterthur", "year": 2027},
+  {"date": {"d": 76}, "name": "New Year's Day", "site": "Frankfurt", "year": 2027},
+  {"date": {"d": 160}, "name": "Good Friday", "site": "Frankfurt", "year": 2027},
+  {"date": {"d": 163}, "name": "Easter Monday", "site": "Frankfurt", "year": 2027},
+  {"date": {"d": 196}, "name": "Labour Day", "site": "Frankfurt", "year": 2027},
+  {"date": {"d": 201}, "name": "Ascension Day", "site": "Frankfurt", "year": 2027},
+  {"date": {"d": 212}, "name": "Whit Monday", "site": "Frankfurt", "year": 2027},
+  {"date": {"d": 222}, "name": "Corpus Christi", "site": "Frankfurt", "year": 2027},
+  {"date": {"d": 351}, "name": "German Unity Day", "site": "Frankfurt", "year": 2027},
+  {"date": {"d": 434}, "name": "Christmas Day", "site": "Frankfurt", "year": 2027},
+  {"date": {"d": 435}, "name": "Boxing Day", "site": "Frankfurt", "year": 2027}
+ ],
+ "company_events": [
+  {"color": "#f59e0b", "counts_as_unavailable": false, "date": {"d": 12}, "end_date": {"d": 13}, "name": "ISO 9001 audit", "sites": ["Winterthur"], "teams": []},
+  {"color": "#ef4444", "counts_as_unavailable": true, "date": {"d": 68}, "end_date": {"d": 77}, "name": "Year-end shutdown", "sites": ["Winterthur", "Frankfurt"], "teams": []},
+  {"color": "#3b82f6", "counts_as_unavailable": false, "date": {"d": 30}, "end_date": null, "name": "Formulation stability review", "sites": ["Frankfurt"], "teams": [["Frankfurt", "Formulation"]]}
+ ],
+ "vacations": [
+  {"description": "Summer vacation", "end_date": {"d": 37}, "staff": "alice.anderson@demo.local", "start_date": {"d": 30}, "type": "Holidays"},
+  {"description": "Conference", "end_date": {"d": 64}, "staff": "bob.brown@demo.local", "start_date": {"d": 60}, "type": "Business Trip"},
+  {"description": "Flu", "end_date": {"d": -1}, "staff": "charlie.clark@demo.local", "start_date": {"d": -3}, "type": "Illness"},
+  {"description": "[R:1,3] Home Office", "end_date": {"d": 120}, "staff": "diana.davis@demo.local", "start_date": {"d": -60}, "type": "Home Office"},
+  {"description": "GMP refresher", "end_date": {"d": 22}, "staff": "fiona.fischer@demo.local", "start_date": {"d": 21}, "type": "Training"},
+  {"description": "Family holiday", "end_date": {"d": 52}, "staff": "george.garcia@demo.local", "start_date": {"d": 45}, "type": "Holidays"}
+ ],
+ "custom_columns": [
+  {"column_type": "list", "display_order": 0, "list_options": "[\"High\", \"Medium\", \"Low\"]", "name": "Priority", "site": null, "width": 110},
+  {"column_type": "text", "display_order": 1, "list_options": null, "name": "Owner", "site": null, "width": 140},
+  {"column_type": "boolean", "display_order": 2, "list_options": null, "name": "Reviewed", "site": null, "width": 90},
+  {"column_type": "list", "display_order": 3, "list_options": "[\"Lab A\", \"Lab B\"]", "name": "Lab", "site": "Frankfurt", "width": 100}
+ ],
+ "custom_column_values": [
+  {"column": "Priority", "entity": ["phase", "Catalyst Optimization", "Preparation"], "value": "High"},
+  {"column": "Owner", "entity": ["phase", "Catalyst Optimization", "Preparation"], "value": "A. Anderson"},
+  {"column": "Reviewed", "entity": ["phase", "Catalyst Optimization", "Preparation"], "value": "true"},
+  {"column": "Priority", "entity": ["phase", "Catalyst Optimization", "Analytics"], "value": "Medium"},
+  {"column": "Owner", "entity": ["phase", "Catalyst Optimization", "Analytics"], "value": "B. Brown"},
+  {"column": "Priority", "entity": ["phase", "Catalyst Optimization", "Trial"], "value": "Low"},
+  {"column": "Owner", "entity": ["phase", "Catalyst Optimization", "Trial"], "value": "C. Clark"},
+  {"column": "Reviewed", "entity": ["phase", "Catalyst Optimization", "Trial"], "value": "false"},
+  {"column": "Priority", "entity": ["phase", "Catalyst Optimization", "Cleaning"], "value": "High"},
+  {"column": "Owner", "entity": ["phase", "Catalyst Optimization", "Cleaning"], "value": "D. Davis"},
+  {"column": "Priority", "entity": ["phase", "Catalyst Optimization", "Report"], "value": "Medium"},
+  {"column": "Owner", "entity": ["phase", "Catalyst Optimization", "Report"], "value": "A. Anderson"},
+  {"column": "Reviewed", "entity": ["phase", "Catalyst Optimization", "Report"], "value": "true"},
+  {"column": "Priority", "entity": ["phase", "Bioprocess Scale-Up", "Preparation"], "value": "Low"},
+  {"column": "Owner", "entity": ["phase", "Bioprocess Scale-Up", "Preparation"], "value": "B. Brown"},
+  {"column": "Priority", "entity": ["phase", "Bioprocess Scale-Up", "Analytics"], "value": "High"},
+  {"column": "Owner", "entity": ["phase", "Bioprocess Scale-Up", "Analytics"], "value": "C. Clark"},
+  {"column": "Reviewed", "entity": ["phase", "Bioprocess Scale-Up", "Analytics"], "value": "false"},
+  {"column": "Priority", "entity": ["phase", "Bioprocess Scale-Up", "Trial"], "value": "Medium"},
+  {"column": "Owner", "entity": ["phase", "Bioprocess Scale-Up", "Trial"], "value": "D. Davis"},
+  {"column": "Priority", "entity": ["phase", "Bioprocess Scale-Up", "Cleaning"], "value": "Low"},
+  {"column": "Owner", "entity": ["phase", "Bioprocess Scale-Up", "Cleaning"], "value": "A. Anderson"},
+  {"column": "Reviewed", "entity": ["phase", "Bioprocess Scale-Up", "Cleaning"], "value": "true"},
+  {"column": "Priority", "entity": ["phase", "Bioprocess Scale-Up", "Report"], "value": "High"},
+  {"column": "Owner", "entity": ["phase", "Bioprocess Scale-Up", "Report"], "value": "B. Brown"},
+  {"column": "Priority", "entity": ["phase", "Analytical Method Transfer", "Preparation"], "value": "Medium"},
+  {"column": "Owner", "entity": ["phase", "Analytical Method Transfer", "Preparation"], "value": "C. Clark"},
+  {"column": "Reviewed", "entity": ["phase", "Analytical Method Transfer", "Preparation"], "value": "false"},
+  {"column": "Priority", "entity": ["phase", "Analytical Method Transfer", "Analytics"], "value": "Low"},
+  {"column": "Owner", "entity": ["phase", "Analytical Method Transfer", "Analytics"], "value": "D. Davis"},
+  {"column": "Priority", "entity": ["phase", "Analytical Method Transfer", "Trial"], "value": "High"},
+  {"column": "Owner", "entity": ["phase", "Analytical Method Transfer", "Trial"], "value": "A. Anderson"},
+  {"column": "Reviewed", "entity": ["phase", "Analytical Method Transfer", "Trial"], "value": "true"},
+  {"column": "Priority", "entity": ["phase", "Analytical Method Transfer", "Cleaning"], "value": "Medium"},
+  {"column": "Owner", "entity": ["phase", "Analytical Method Transfer", "Cleaning"], "value": "B. Brown"},
+  {"column": "Priority", "entity": ["phase", "Analytical Method Transfer", "Report"], "value": "Low"},
+  {"column": "Owner", "entity": ["phase", "Analytical Method Transfer", "Report"], "value": "C. Clark"},
+  {"column": "Reviewed", "entity": ["phase", "Analytical Method Transfer", "Report"], "value": "false"},
+  {"column": "Priority", "entity": ["subphase", "Bioprocess Scale-Up", "Pilot batch 1"], "value": "High"},
+  {"column": "Priority", "entity": ["subphase", "Bioprocess Scale-Up", "Pilot batch 2"], "value": "High"},
+  {"column": "Priority", "entity": ["subphase", "Bioprocess Scale-Up", "Sampling"], "value": "High"},
+  {"column": "Lab", "entity": ["phase", "Quality System Upgrade", "Preparation"], "value": "Lab A"},
+  {"column": "Lab", "entity": ["phase", "Quality System Upgrade", "Analytics"], "value": "Lab B"},
+  {"column": "Lab", "entity": ["phase", "Quality System Upgrade", "Trial"], "value": "Lab A"},
+  {"column": "Lab", "entity": ["phase", "Quality System Upgrade", "Cleaning"], "value": "Lab B"},
+  {"column": "Lab", "entity": ["phase", "Quality System Upgrade", "Report"], "value": "Lab A"}
+ ],
+ "comments": [
+  {"author": "bob.brown@demo.local", "body": "{mention:alice.anderson@demo.local} can you confirm the sampling plan before we book the HPLC?", "entity": ["subphase", "Bioprocess Scale-Up", "Pilot batch 1"], "project": "Bioprocess Scale-Up"},
+  {"author": "alice.anderson@demo.local", "body": "Confirmed — plan is in the shared folder. HPLC System 1 is blocked until next week though.", "entity": ["subphase", "Bioprocess Scale-Up", "Pilot batch 1"], "project": "Bioprocess Scale-Up"},
+  {"author": "charlie.clark@demo.local", "body": "{mention:bob.brown@demo.local} do we need the second batch at 60 % or full time?", "entity": ["subphase", "Bioprocess Scale-Up", "Pilot batch 1"], "project": "Bioprocess Scale-Up"},
+  {"author": "alice.anderson@demo.local", "body": "Kinetics data is in. {mention:admin@demo.local} — ready for the review on Friday.", "entity": ["phase", "Catalyst Optimization", "Trial"], "project": "Catalyst Optimization"}
+ ],
+ "notifications": [
+  {"actor": "alice.anderson@demo.local", "body": "Kinetics data is in. Ready for the review on Friday.", "entity": ["phase", "Catalyst Optimization", "Trial"], "project": "Catalyst Optimization", "read": false, "title": "Alice Anderson mentioned you on Trial", "type": "mention", "user": "admin@demo.local"},
+  {"actor": "bob.brown@demo.local", "body": null, "entity": ["subphase", "Bioprocess Scale-Up", "Pilot batch 1"], "project": "Bioprocess Scale-Up", "read": false, "title": "Bob Brown assigned you to Pilot batch 1", "type": "assigned", "user": "admin@demo.local"},
+  {"actor": "bob.brown@demo.local", "body": null, "entity": ["phase", "Bioprocess Scale-Up", "Preparation"], "project": "Bioprocess Scale-Up", "read": true, "title": "Bob Brown moved Preparation to Done", "type": "status_change", "user": "admin@demo.local"},
+  {"actor": "bob.brown@demo.local", "body": "Can you confirm the sampling plan before we book the HPLC?", "entity": ["subphase", "Bioprocess Scale-Up", "Pilot batch 1"], "project": "Bioprocess Scale-Up", "read": false, "title": "Bob Brown mentioned you on Pilot batch 1", "type": "mention", "user": "alice.anderson@demo.local"},
+  {"actor": "diana.davis@demo.local", "body": null, "entity": ["approval_request", "Bioprocess Scale-Up", "Analytics"], "project": "Bioprocess Scale-Up", "read": false, "title": "Diana Davis asks to join Analytics at 50%", "type": "approval_requested", "user": "bob.brown@demo.local"}
+ ],
+ "staff_notes": [
+  {"date": {"d": 7}, "site": "Winterthur", "staff": "alice.anderson@demo.local", "text": "Covering weekend shift for stability study sampling", "type": "general"}
+ ]
+}
