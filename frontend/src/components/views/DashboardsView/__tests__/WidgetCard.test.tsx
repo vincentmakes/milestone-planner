@@ -14,7 +14,9 @@ import { resolvedPeriodLabel } from '@/utils/metrics';
 import type { DashboardWidget, MetricResult } from '@/types';
 
 vi.mock('../charts/EChart', () => ({
-  EChart: ({ kind, label }: { kind: string; label: string }) => <div data-testid="echart" data-kind={kind} aria-label={label} />,
+  EChart: ({ kind, label, measureLabel }: { kind: string; label: string; measureLabel?: string }) => (
+    <div data-testid="echart" data-kind={kind} data-measure={measureLabel} aria-label={label} />
+  ),
 }));
 
 const layout = { lg: { x: 0, y: 0, w: 6, h: 5 }, md: { x: 0, y: 0, w: 8, h: 5 }, sm: { x: 0, y: 0, w: 4, h: 5 } };
@@ -53,6 +55,8 @@ describe('WidgetCard', () => {
     expect(screen.getByText(resolvedPeriodLabel({ from: '2026-01-01', to: '2026-12-31' }))).toBeInTheDocument();
     expect(screen.getByText('weeks')).toBeInTheDocument();
     expect(screen.getByTestId('echart')).toHaveAttribute('data-kind', 'bar');
+    // The single series is named after the measure.
+    expect(screen.getByTestId('echart')).toHaveAttribute('data-measure', 'Booked weeks');
   });
 
   it.each(['line', 'pie'] as const)('draws a %s chart', (kind) => {

@@ -18,7 +18,7 @@ import type { DashboardWidget, MetricError, MetricResult } from '@/types';
 import { useAppStore } from '@/stores/appStore';
 import { Notice } from '@/components/common/Notice';
 import { Icon, CloseIcon, DragDotsIcon, EditIcon } from '@/components/common/Icon';
-import { dimensionLabel, queryUnit, resolvedPeriodLabel, UNIT_LABELS } from '@/utils/metrics';
+import { dimensionLabel, MEASURES, queryUnit, resolvedPeriodLabel, UNIT_LABELS } from '@/utils/metrics';
 import { EChart } from './charts/EChart';
 import { KpiTile } from './charts/KpiTile';
 import { TableWidget } from './charts/TableWidget';
@@ -76,7 +76,16 @@ export function WidgetCard({ widget, result, loading = false, editing = false, o
   } else if (metric.rows.length === 0) {
     body = <p className={styles.placeholder}>Nothing to show for this period.</p>;
   } else {
-    body = <EChart kind={widget.kind} result={metric} options={widget.options} label={widget.title} />;
+    const measureLabel = MEASURES.find((m) => m.key === widget.query.measure)?.label;
+    body = (
+      <EChart
+        kind={widget.kind}
+        result={metric}
+        options={widget.options}
+        label={widget.title}
+        measureLabel={measureLabel}
+      />
+    );
   }
 
   return (

@@ -42,7 +42,7 @@ describe('toOption — bar and line, one dimension', () => {
     expect(option.xAxis).toMatchObject({ type: 'category', data: ['Alpha', 'Beta'] });
     expect(option.yAxis).toMatchObject({ type: 'value' });
     expect(option.series).toHaveLength(1);
-    expect(option.series[0]).toMatchObject({ type: 'bar', name: 'weeks', data: [3, 5], itemStyle: { color: 'p0' } });
+    expect(option.series[0]).toMatchObject({ type: 'bar', name: 'Value', data: [3, 5], itemStyle: { color: 'p0' } });
     expect(option.legend).toEqual({ show: false });
     expect(option.aria).toEqual({ show: true, decal: { show: true } });
   });
@@ -70,11 +70,22 @@ describe('toOption — bar and line, one dimension', () => {
     expect(option.tooltip).toMatchObject({ trigger: 'axis', axisPointer: { type: 'line' } });
   });
 
-  it('formats tooltip values with the unit and the number format', () => {
+  it('formats tooltip values with the number format, followed by the unit word', () => {
     const option = toOption('bar', single, { number_format: 'integer' }, theme) as AnyOption;
-    expect(option.tooltip.valueFormatter(12.4)).toBe('12');
+    expect(option.tooltip.valueFormatter(12.4)).toBe('12 weeks');
     expect(toOption('bar', single, {}, theme).tooltip).toBeDefined();
-    expect((toOption('bar', single, {}, theme) as AnyOption).tooltip.valueFormatter(12.4)).toBe('12.4');
+    expect((toOption('bar', single, {}, theme) as AnyOption).tooltip.valueFormatter(70.1)).toBe('70.1 weeks');
+    const asPercent = toOption('line', single, { number_format: 'percent' }, theme) as AnyOption;
+    expect(asPercent.tooltip.valueFormatter(60)).toMatch(/^60\s%$/);
+  });
+
+  it('names a single series after the measure, two series after the second dimension', () => {
+    const option = toOption('bar', single, {}, theme, 'Booked weeks') as AnyOption;
+    expect(option.series[0].name).toBe('Booked weeks');
+    expect((toOption('line', single, null, theme, 'Booked weeks') as AnyOption).series[0].name).toBe('Booked weeks');
+    const two = result([row([A, yes], 4), row([A, no], 1)], 2);
+    const named = toOption('bar', two, {}, theme, 'Booked weeks') as AnyOption;
+    expect(named.series.map((s: AnyOption) => s.name)).toEqual(['Confirmed', 'Not confirmed']);
   });
 
   it('labels value-axis ticks compactly', () => {

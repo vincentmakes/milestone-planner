@@ -23,8 +23,10 @@
  * - The legend shows the series of a second dimension unless
  *   `show_legend === false`; a pie shows its slices in a legend only when
  *   `show_legend === true` (its labels name them already). The tooltip
- *   formats values with `formatMetric`; the pie's adds the unit word
- *   ("3 weeks"), which the axis charts carry in their series name.
+ *   formats values with `formatMetric` followed by the unit word ("3 weeks";
+ *   nothing after a percentage). A single series is named after the measure
+ *   (`measureLabel`, "Booked weeks"), two series after the second
+ *   dimension's values.
  */
 
 import type { MetricKey, MetricResult, MetricUnit, WidgetKind, WidgetOptions } from '@/types';
@@ -69,9 +71,17 @@ export function toOption(
   kind: ChartKind,
   result: MetricResult,
   options: WidgetOptions | null | undefined,
-  theme: ChartTheme
+  theme: ChartTheme,
+  /** The measure's name, for a single series ("Booked weeks") */
+  measureLabel?: string
 ): ChartOption {
   const opts = options ?? {};
+  /** A value with its unit word ("70.1 weeks"); nothing after a percentage. */
+  const withUnit = (value: number, unit: MetricUnit, format: WidgetOptions | null) => {
+    const text = formatMetric(value, unit, format);
+    const word = unit !== 'percent' && format?.number_format !== 'percent' ? UNIT_LABELS[unit] : '';
+    return word ? `${text} ${word}` : text;
+  };
   const palette = theme.palette;
   const muted = theme.textMuted;
   const aria = { show: true, decal: { show: true } };
@@ -84,15 +94,11 @@ export function toOption(
       valueOf.set(id, (valueOf.get(id) ?? 0) + row.value);
     }
     const unit = result.unit;
-    const unitWord = unit !== 'percent' && opts.number_format !== 'percent' ? UNIT_LABELS[unit] : '';
     return {
       aria,
       tooltip: {
         trigger: 'item',
-        valueFormatter: (value: number) => {
-          const text = formatMetric(value, unit, opts);
-          return unitWord ? `${text} ${unitWord}` : text;
-        },
+        valueFormatter: (value: number) => withUnit(value, unit, opts),
       },
       legend: opts.show_legend === true ? { show: true, type: 'scroll', top: 0 } : { show: false },
       series: [
@@ -151,7 +157,7 @@ export function toOption(
     const color = key ? widgetColor(key, s, palette, muted) : widgetColor(null, 0, palette);
     return {
       type: kind,
-      name: key ? key.label : UNIT_LABELS[displayUnit] || 'Value',
+      name: key ? key.label : measureLabel || 'Value',
       ...(stacked ? { stack: 'total' } : {}),
       ...(kind === 'line' ? { showSymbol: categories.length <= 24, ...(stacked ? { areaStyle: { opacity: 0.25 } } : {}) } : {}),
       ...(kind === 'bar' ? { barMaxWidth: 48 } : {}),
@@ -194,7 +200,7 @@ export function toOption(
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: kind === 'line' ? 'line' : 'shadow' },
-      valueFormatter: (value: number) => formatMetric(value, displayUnit, percentMode ? null : opts),
+      valueFormatter: (value: number) => withUnit(value, displayUnit, percentMode ? null : opts),
     },
     xAxis: horizontal ? valueAxis : categoryAxis,
     yAxis: horizontal ? categoryAxis : valueAxis,

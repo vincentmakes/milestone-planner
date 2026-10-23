@@ -50,6 +50,8 @@ export interface EChartProps {
   options?: WidgetOptions | null;
   /** Accessible name of the chart (the widget title) */
   label: string;
+  /** The measure's name, naming a single series ("Booked weeks") */
+  measureLabel?: string;
 }
 
 /** Bumped on every `data-theme` change of `<html>`. */
@@ -63,14 +65,17 @@ function useThemeVersion(): number {
   return version;
 }
 
-export function EChart({ kind, result, options, label }: EChartProps) {
+export function EChart({ kind, result, options, label, measureLabel }: EChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ChartInstance | null>(null);
   const themeVersion = useThemeVersion();
   // The theme follows the tokens of the active app theme.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- themeVersion is the trigger: the tokens live in the DOM
   const theme = useMemo(() => buildTheme(), [themeVersion]);
-  const option = useMemo(() => toOption(kind, result, options, theme), [kind, result, options, theme]);
+  const option = useMemo(
+    () => toOption(kind, result, options, theme, measureLabel),
+    [kind, result, options, theme, measureLabel]
+  );
   const appliedTheme = useRef(themeVersion);
 
   // One instance per mount; disposed on unmount.
