@@ -283,6 +283,8 @@ A later start never repeats this, so an Overview an administrator deleted, or a 
 !!! warning "Run it by hand only after the application"
     Running `add_dashboards` **by hand before 2.1.0 first starts** on a tenant creates the tables, so the automatic upgrade finds them and adds neither the Overview nor the two permissions. Let the application upgrade the tenant; running the file afterwards changes nothing. If it already happened, an administrator can allow the permissions in Settings → Roles and build a dashboard by hand.
 
+    A database created by hand from `setup_databases.sql` or `scripts/sql/tenant_schema_template.sql` gets the tables and the default permissions, but no Overview: the automatic upgrade finds the tables and seeds nothing. An administrator builds the first dashboard in the app.
+
 ```bash
 python migrations/run_migration.py add_dashboards
 ```

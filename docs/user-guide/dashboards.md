@@ -117,7 +117,7 @@ Only the owner (or an administrator) can change or delete a dashboard. When two 
 
 ## Limits
 
-- A period covers at most **five years**. **All time** runs from the first to the last project in scope; when that is longer than five years it ends at most a year from today and the widget says *Period cut to five years*
+- A period covers at most **five years**. **All time** runs from the first to the last project in scope; when that is longer than five years it ends at most a year from today and the widget says *Period cut to five years*. All time spans the projects' dates at your sites: a booking placed outside its project's dates is counted only by a period that covers it
 - Bank holidays count only for the years an administrator **loaded** for the site (see [Bank Holidays](settings.md#bank-holidays)); in a year without holidays every weekday is a working day
 - Bookings waiting for approval are never counted
 - "Today" and "this year" follow the server's date (UTC)
