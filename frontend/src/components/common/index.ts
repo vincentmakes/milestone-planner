@@ -7,6 +7,9 @@ export type { InputProps } from './Input';
 export { Select } from './Select';
 export type { SelectProps, SelectOption } from './Select';
 
+export { SearchableSelect } from './SearchableSelect';
+export type { SearchableSelectProps, SearchableOption } from './SearchableSelect';
+
 export { Modal } from './Modal';
 export type { ModalProps } from './Modal';
 

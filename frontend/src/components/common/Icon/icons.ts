@@ -44,6 +44,8 @@ export { default as DragDotsIcon } from '@mui/icons-material/DragIndicator';
 export { default as CheckIcon } from '@mui/icons-material/Check';
 /** Cancel, dismiss, close a dialog */
 export { default as CloseIcon } from '@mui/icons-material/Close';
+/** Find in a list (the search box of a searchable dropdown) */
+export { default as SearchIcon } from '@mui/icons-material/SearchOutlined';
 /** An item that is active; a success */
 export { default as CheckCircleIcon } from '@mui/icons-material/CheckCircleOutlined';
 /** An item that is inactive */
