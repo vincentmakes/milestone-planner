@@ -127,7 +127,7 @@ describe('ContextMenuContainer subphase target', () => {
     expect(body).not.toHaveProperty('end_date');
   });
 
-  it('shows "Assigned to me" once the user is booked on the nested subphase', () => {
+  it('offers "Assign me again" once the user is booked on the nested subphase', () => {
     const booked = makeSubphase({
       ...nested,
       staffAssignments: [{ id: 5, staff_id: 7 } as unknown as Subphase['staffAssignments'][number]],
@@ -140,7 +140,7 @@ describe('ContextMenuContainer subphase target', () => {
 
     render(<ContextMenuContainer />);
 
-    expect(screen.getByRole('menuitem', { name: /assigned to me/i })).toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: 'Assign me again' })).toBeEnabled();
   });
 });
 

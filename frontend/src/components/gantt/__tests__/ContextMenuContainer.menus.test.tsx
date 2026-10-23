@@ -171,9 +171,40 @@ describe('project menu', () => {
     expect(screen.queryByRole('menuitem', { name: /assign me/i })).not.toBeInTheDocument();
   });
 
-  it('shows "Assigned to me" once booked', () => {
+  it('offers "Assign me again" once booked on a phase, and books a dateless second booking', async () => {
+    seed(makeUser({ id: 4, role: 'user', max_capacity: 100 }));
+    useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
+    render(<ContextMenuContainer />);
+    expect(item('Assign me again')).toBeEnabled();
+    expect(screen.queryByRole('menuitem', { name: 'Assigned to me' })).not.toBeInTheDocument();
+    fireEvent.click(item('Assign me again'));
+    await waitFor(() => expect(refreshProjects).toHaveBeenCalled());
+    const body = vi.mocked(createStaffAssignment).mock.calls[0][0];
+    // no dates: the server places it (halves the booking or fills a gap)
+    expect(body).toMatchObject({ staff_id: 4, project_id: 1, phase_id: 10 });
+    expect(body).not.toHaveProperty('start_date');
+  });
+
+  it('reports the server refusing a second booking on a full card', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(createStaffAssignment).mockRejectedValueOnce(
+      new Error("This person's bookings already cover the whole card — shorten one of them first")
+    );
     seed(makeUser({ id: 4, role: 'user' }));
     useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
+    render(<ContextMenuContainer />);
+    fireEvent.click(item('Assign me again'));
+    await waitFor(() =>
+      expect(useUIStore.getState().flashNotice?.message).toBe(
+        "Could not assign you: This person's bookings already cover the whole card — shorten one of them first"
+      )
+    );
+    err.mockRestore();
+  });
+
+  it('keeps "Assigned to me" disabled on a project already booked (project bookings carry dates)', () => {
+    seed(makeUser({ id: 4, role: 'user' }));
+    useUIStore.getState().showContextMenu('project', 1, 0, 0);
     render(<ContextMenuContainer />);
     expect(item('Assigned to me')).toBeDisabled();
   });

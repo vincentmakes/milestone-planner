@@ -133,23 +133,32 @@ export function ContextMenuContainer() {
 
     // "Assign me" for people who cannot manage the project: a self-assignment
     // on the project, phase or subphase the menu was opened on. Hidden for
-    // editors (they have the full "Assign Staff" dialog) and once assigned.
+    // editors (they have the full "Assign Staff" dialog).
     const assignMeItem = (): ContextMenuItem[] => {
       // Hidden when the role may not book its own time at all, or when the
       // user is not bookable as a resource (the server would answer 400).
       if (canEdit || !currentUser || !canBookSelf(currentUser, currentUser.id)) return [];
       const item = target as Project | Phase | Subphase | undefined;
-      const mine = (item?.staffAssignments ?? []).find((a) => a.staff_id === currentUser.id);
-      const alreadyAssigned = Boolean(mine);
+      const mine = (item?.staffAssignments ?? []).filter((a) => a.staff_id === currentUser.id);
+      const pending = mine.some(isPendingAssignment);
+      // A project booking carries its own dates, so one per person; on a
+      // phase / subphase the server places a dateless second booking (it
+      // halves a full-span one or fills the largest free gap, or refuses).
+      const again = mine.length > 0 && !pending && type !== 'project';
+      const blocked = mine.length > 0 && !again;
       // In approval mode the server files a request instead (202).
       const asRequest = needsApproval(currentUser, 'assignments.self_create');
-      const label = mine
-        ? isPendingAssignment(mine)
-          ? 'Assignment requested'
-          : 'Assigned to me'
-        : asRequest
-          ? 'Request to assign me'
-          : 'Assign me';
+      const label = pending
+        ? 'Assignment requested'
+        : mine.length > 0
+          ? again
+            ? asRequest
+              ? 'Request to assign me again'
+              : 'Assign me again'
+            : 'Assigned to me'
+          : asRequest
+            ? 'Request to assign me'
+            : 'Assign me';
       return [
         {
           label,
@@ -178,8 +187,8 @@ export function ContextMenuContainer() {
               flashError(err, 'Could not assign you: ');
             }
           },
-          disabled: alreadyAssigned || !item || whatIfMode,
-          title: alreadyAssigned ? undefined : createBlockedReason,
+          disabled: blocked || !item || whatIfMode,
+          title: blocked ? undefined : createBlockedReason,
         },
       ];
     };

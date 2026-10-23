@@ -396,19 +396,19 @@ export function KanbanCardModal() {
   // On a card of the current site, candidates also follow the header team
   // filter; a card of another site (opened from the cross-site view) lists
   // everyone there.
+  // Someone already on the card stays a candidate: the server places a
+  // second (dateless) booking itself — it halves the person's booking or
+  // fills their largest free gap — or refuses with a 409 shown in place.
   const filterByTeam = project?.site_id === filterSiteId;
-  const unassignedStaff = siteStaff.filter(
-    (s) =>
-      !card?.assigneeIds.includes(s.id) &&
-      !card?.pendingAssigneeIds.includes(s.id) &&
-      (!filterByTeam || staffMatches(s))
-  );
+  const candidateStaff = siteStaff.filter((s) => !filterByTeam || staffMatches(s));
+  const onCard = (id: number) =>
+    Boolean(card?.assigneeIds.includes(id) || card?.pendingAssigneeIds.includes(id));
   // After the early return, so no useMemo; the empty entry stays selectable (as before).
   const assigneeOptions = [
     { value: '', label: 'Add someone…' },
-    ...unassignedStaff.map((s) => ({
+    ...candidateStaff.map((s) => ({
       value: s.id,
-      label: `${s.name} (books ${s.max_capacity ?? 100}%)`,
+      label: `${s.name} (books ${s.max_capacity ?? 100}%)${onCard(s.id) ? ' — already on this card' : ''}`,
     })),
   ];
 
@@ -561,7 +561,7 @@ export function KanbanCardModal() {
               </div>
             )}
 
-            {isEditor && unassignedStaff.length > 0 && (
+            {isEditor && candidateStaff.length > 0 && (
               <div className={styles.assignRow}>
                 <Select
                   className={styles.assigneeSelect}

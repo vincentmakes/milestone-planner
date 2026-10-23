@@ -807,3 +807,58 @@ describe('KanbanCardModal: several bookings of one person (segments)', () => {
     expect(await screen.findByText('Booking not found')).toBeInTheDocument();
   });
 });
+
+describe('KanbanCardModal: a second booking of someone already on the card', () => {
+  const CARD_FULL = "This person's bookings already cover the whole card — shorten one of them first";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    seedStore();
+  });
+
+  const picker = () => screen.getByLabelText('Add assignee') as HTMLSelectElement;
+  const optionTexts = () =>
+    within(picker())
+      .getAllByRole('option')
+      .map((o) => o.textContent);
+
+  it('lists an assigned person with the "already on this card" suffix', () => {
+    render(<KanbanCardModal />);
+    expect(optionTexts()).toEqual([
+      'Add someone…',
+      'Alice Anderson (books 100%)',
+      'Bob Brown (books 100%) — already on this card',
+    ]);
+  });
+
+  it('assigns someone already on the card again (the server places the booking)', async () => {
+    vi.mocked(assignCard).mockResolvedValueOnce({ success: true } as never);
+    render(<KanbanCardModal />);
+    fireEvent.change(picker(), { target: { value: '4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Assign' }));
+    await waitFor(() => expect(assignCard).toHaveBeenCalledWith('subphase', 10, 4));
+  });
+
+  it('shows the server refusing a second booking in place', async () => {
+    vi.mocked(assignCard).mockRejectedValueOnce(new Error(CARD_FULL));
+    render(<KanbanCardModal />);
+    fireEvent.change(picker(), { target: { value: '4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Assign' }));
+    expect(await screen.findByText(CARD_FULL)).toBeInTheDocument();
+  });
+
+  it('renders the picker when everyone of the site is already on the card', () => {
+    const project = seedProject();
+    const sub = project.phases[0].children[0];
+    sub.staffAssignments = [
+      ...sub.staffAssignments,
+      { id: 2, staff_id: 7, staff_name: 'Alice Anderson', allocation: 50, start_date: '2026-09-01', end_date: '2026-09-14' },
+    ];
+    useAppStore.setState({ projects: [project] });
+    render(<KanbanCardModal />);
+    expect(optionTexts().filter((t) => t !== 'Add someone…')).toEqual([
+      'Alice Anderson (books 100%) — already on this card',
+      'Bob Brown (books 100%) — already on this card',
+    ]);
+  });
+});

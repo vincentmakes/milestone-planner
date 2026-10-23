@@ -135,6 +135,21 @@ describe('AssignmentModal: new phase booking', () => {
     expect(dateValue('End Date *')).toBe('2026-09-25');
   });
 
+  it('books someone already on the phase again without dates, and shows a refused placement in place', async () => {
+    const CARD_FULL = "This person's bookings already cover the whole card — shorten one of them first";
+    vi.mocked(createStaffAssignment).mockRejectedValueOnce(new Error(CARD_FULL));
+    // Bob (4) already holds a linked booking on the phase: the dialog still
+    // offers him, and the server places (or here refuses) the second one.
+    openNew();
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Staff' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(CARD_FULL);
+    const body = vi.mocked(createStaffAssignment).mock.calls[0][0];
+    expect(body).toMatchObject({ staff_id: 4, phase_id: 3 });
+    expect(body).not.toHaveProperty('start_date');
+    expect(useUIStore.getState().activeModal).toBe('staffAssignment');
+  });
+
   it('names the subphase on a subphase booking', () => {
     openNew({ phaseId: 3, subphaseId: 5 });
     fireEvent.click(screen.getByRole('switch', { name: 'Follow the subphase dates' }));

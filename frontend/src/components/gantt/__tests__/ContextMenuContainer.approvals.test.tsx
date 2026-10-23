@@ -127,6 +127,23 @@ describe('"Assign me" and approval', () => {
     render(<ContextMenuContainer />);
     expect(item('Assignment requested')).toBeDisabled();
   });
+
+  it('stays "Assignment requested" when one of my several rows awaits approval', () => {
+    seed(selfUser('approval', 'assignments.self_create'), [
+      { id: 70, staff_id: 4, allocation: 30, start_date: '2026-01-05', end_date: '2026-01-09', linked: false },
+      { id: 71, staff_id: 4, allocation: 30, start_date: '', end_date: '', approval_status: PENDING, approval: approval() },
+    ]);
+    useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
+    render(<ContextMenuContainer />);
+    expect(item('Assignment requested')).toBeDisabled();
+  });
+
+  it('reads "Request to assign me again" in approval mode once booked', () => {
+    seed(selfUser('approval', 'assignments.self_create'));
+    useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
+    render(<ContextMenuContainer />);
+    expect(item('Request to assign me again')).toBeEnabled();
+  });
 });
 
 describe('requester actions on a pending row', () => {
