@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 - Dashboards: build KPI and chart dashboards over projects, phases and bookings, keep them private or share them with roles; an Overview dashboard ships for everyone.
+- Dashboard numbers count approved bookings as allocation-weighted working days of the project's site, bank holidays excluded; pending bookings and absences are left out.
 
 ## [2.2.1] - 2026-11-02
 

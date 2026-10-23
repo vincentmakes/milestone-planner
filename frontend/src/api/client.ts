@@ -147,6 +147,8 @@ const WHAT_IF_EXEMPT_PATTERNS: readonly RegExp[] = [
   /^\/api\/(roles|permissions|approval-policies|approval-requests)(\/|$)/,
   /^\/api\/sites(\/\d+)?$/,
   /^\/api\/equipment(\/\d+)?$/,
+  // Dashboards are reports and their configuration, never plan data.
+  /^\/api\/dashboards(\/|$)/,
 ];
 
 /**
