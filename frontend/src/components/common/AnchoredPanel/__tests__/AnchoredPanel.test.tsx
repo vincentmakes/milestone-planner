@@ -11,6 +11,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { createRef, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { AnchoredPanel } from '../AnchoredPanel';
 
 interface Box {
@@ -359,5 +361,19 @@ describe('AnchoredPanel keyboard order', () => {
     expect(screen.getByRole('button', { name: 'First' })).toHaveFocus();
     fireEvent.focus(panel().querySelector<HTMLElement>('[data-focus-sentinel="end"]')!, { relatedTarget: null });
     expect(screen.getByRole('button', { name: 'Last' })).toHaveFocus();
+  });
+});
+
+describe('AnchoredPanel stacking', () => {
+  // Read through fs: under Vitest a `.module.css` import is the CSS-module stub.
+  const css = (path: string) => readFileSync(join(__dirname, path), 'utf8');
+  const zToken = (name: string) =>
+    Number(new RegExp(`--${name}:\\s*(\\d+);`).exec(css('../../../../styles/variables.css'))?.[1]);
+
+  it('stacks on --z-popover: above the app header, below a modal backdrop', () => {
+    const panelRule = /\.panel\s*\{([^}]*)\}/.exec(css('../AnchoredPanel.module.css'))?.[1] ?? '';
+    expect(panelRule).toMatch(/z-index:\s*var\(--z-popover\);/);
+    expect(zToken('z-popover')).toBeGreaterThan(zToken('z-header'));
+    expect(zToken('z-popover')).toBeLessThan(zToken('z-modal-backdrop'));
   });
 });

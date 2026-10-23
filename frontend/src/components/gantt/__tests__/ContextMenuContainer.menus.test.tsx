@@ -202,6 +202,20 @@ describe('project menu', () => {
     err.mockRestore();
   });
 
+  it('keeps "Assigned to me" disabled on a one-day phase already booked (no room for a second)', () => {
+    seed(makeUser({ id: 4, role: 'user' }));
+    useAppStore.setState((state) => ({
+      projects: state.projects.map((p) => ({
+        ...p,
+        phases: p.phases.map((ph) => (ph.id === 10 ? { ...ph, end_date: ph.start_date } : ph)),
+      })),
+    }));
+    useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
+    render(<ContextMenuContainer />);
+    expect(item('Assigned to me')).toBeDisabled();
+    expect(screen.queryByRole('menuitem', { name: 'Assign me again' })).not.toBeInTheDocument();
+  });
+
   it('keeps "Assigned to me" disabled on a project already booked (project bookings carry dates)', () => {
     seed(makeUser({ id: 4, role: 'user' }));
     useUIStore.getState().showContextMenu('project', 1, 0, 0);

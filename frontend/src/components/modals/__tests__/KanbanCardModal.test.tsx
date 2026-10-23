@@ -847,6 +847,15 @@ describe('KanbanCardModal: a second booking of someone already on the card', () 
     expect(await screen.findByText(CARD_FULL)).toBeInTheDocument();
   });
 
+  it('leaves the people already on a one-day card out of the picker (no room for a second)', () => {
+    const project = seedProject();
+    const sub = project.phases[0].children[0];
+    sub.end_date = sub.start_date;
+    useAppStore.setState({ projects: [project] });
+    render(<KanbanCardModal />);
+    expect(optionTexts()).toEqual(['Add someone…', 'Alice Anderson (books 100%)']);
+  });
+
   it('renders the picker when everyone of the site is already on the card', () => {
     const project = seedProject();
     const sub = project.phases[0].children[0];

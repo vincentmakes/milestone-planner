@@ -15,7 +15,9 @@
  *     leaving the window (the shell is a column flex box);
  *   - re-measured after every render (content changes), on `resize` and on any
  *     `scroll` outside the panel (capture phase) while open.
- * `z-index: var(--z-dropdown)`: under `--z-modal`, so a confirm stacks above.
+ * `z-index: var(--z-popover)`: above the app header (`--z-header`), so a panel
+ * flipped up to the viewport top is not hidden under it, and below a modal
+ * backdrop (`--z-modal-backdrop`), so a confirm stacks above.
  *
  * Only the panel moves: the trigger stays where it is, with its
  * `aria-expanded` / `aria-haspopup`. The caller dismisses it through

@@ -144,7 +144,10 @@ export function ContextMenuContainer() {
       // A project booking carries its own dates, so one per person; on a
       // phase / subphase the server places a dateless second booking (it
       // halves a full-span one or fills the largest free gap, or refuses).
-      const again = mine.length > 0 && !pending && type !== 'project';
+      // A one-day card has no room for a second one: the server always
+      // refuses, so the item stays "Assigned to me".
+      const oneDay = !!item?.start_date && item.start_date === item.end_date;
+      const again = mine.length > 0 && !pending && type !== 'project' && !oneDay;
       const blocked = mine.length > 0 && !again;
       // In approval mode the server files a request instead (202).
       const asRequest = needsApproval(currentUser, 'assignments.self_create');
@@ -168,8 +171,11 @@ export function ContextMenuContainer() {
             // A project may have no dates yet; the assignment still needs some.
             const today = formatDateISO(new Date());
             try {
-              // On a phase / subphase the booking is linked (no dates: it
-              // follows the card); a project booking takes the project's days.
+              // On a phase / subphase the booking is sent without dates: the
+              // server books it linked when it is the person's first on the
+              // card and places it (largest free gap, or the half of a
+              // full-span booking) on "Assign me again"; a project booking
+              // takes the project's days.
               const res = await createStaffAssignment({
                 staff_id: currentUser.id,
                 allocation: ownDefaultAllocation,

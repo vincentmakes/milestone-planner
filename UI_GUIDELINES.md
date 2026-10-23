@@ -281,6 +281,7 @@ underline.
 | `--z-dropdown` | 100 | Dropdowns, popovers, context menus |
 | `--z-sticky` | 200 | Sticky headers inside scroll areas |
 | `--z-header` | 500 | App header |
+| `--z-popover` | 600 | `AnchoredPanel` (portaled dropdown panels): above the app header, below a modal backdrop |
 | `--z-modal-backdrop` / `--z-modal` | 1000 / 1001 | Modal layer |
 | `--z-tooltip` | 2000 | Tooltips, the Shift-hover date tooltip |
 | `--z-what-if-border` / `--z-what-if-banner` | 9999 / 10000 | What-If frame and banner, above everything |
@@ -618,7 +619,8 @@ Group by, Colour by and column menus while an overview panel is open, the Staff 
 overview filters) is an `AnchoredPanel` (`components/common/AnchoredPanel`): portaled to `<body>`,
 `position: fixed` under the trigger (or above it when the room below is short), `align`
 `start` / `end`, its `max-height` the measured room minus 16 px so the panel's own list scrolls,
-`z-index: var(--z-dropdown)`. Only the panel moves — the trigger keeps its place and its
+`z-index: var(--z-popover)` (above the app header, so a panel flipped up to the viewport top is
+not hidden under it; below a modal backdrop). Only the panel moves — the trigger keeps its place and its
 `aria-expanded` / `aria-haspopup`, Tab from the trigger enters the panel and Tab from its end goes
 on to the element after the trigger. Its caller passes the panel's ref as `panelRef`; its class
 draws the panel and never sets position, inset or z-index. A popover that must escape a scrolling

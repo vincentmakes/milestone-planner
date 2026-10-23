@@ -399,10 +399,15 @@ export function KanbanCardModal() {
   // Someone already on the card stays a candidate: the server places a
   // second (dateless) booking itself — it halves the person's booking or
   // fills their largest free gap — or refuses with a 409 shown in place.
+  // Not on a one-day card, which has no room for a second booking (the
+  // server always refuses): there the people on it are left out.
   const filterByTeam = project?.site_id === filterSiteId;
-  const candidateStaff = siteStaff.filter((s) => !filterByTeam || staffMatches(s));
   const onCard = (id: number) =>
     Boolean(card?.assigneeIds.includes(id) || card?.pendingAssigneeIds.includes(id));
+  const oneDayCard = !!card?.startDate && card.startDate === card.endDate;
+  const candidateStaff = siteStaff.filter(
+    (s) => (!filterByTeam || staffMatches(s)) && !(oneDayCard && onCard(s.id))
+  );
   // After the early return, so no useMemo; the empty entry stays selectable (as before).
   const assigneeOptions = [
     { value: '', label: 'Add someone…' },
