@@ -6,6 +6,10 @@ on:
   # Every pull request, whatever its base (stacked PRs included).
   pull_request:
 
+# Least privilege: the jobs only read the repository.
+permissions:
+  contents: read
+
 # A new push to a pull request supersedes the run still going for the previous
 # one. Pushes to main are never cancelled, so every commit on main is known to
 # build.
