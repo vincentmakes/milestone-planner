@@ -33,7 +33,6 @@ from app.services.project_field_rules import (
     option_not_applicable_to_teams_detail,
     single_item_detail,
     text_too_long_detail,
-    unknown_field_detail,
     validate_field_values,
 )
 from tests.support import scalars_result
@@ -106,7 +105,6 @@ async def _reject(db, values, status, detail, site_id=1, team_ids=()):
 
 
 def test_detail_texts():
-    assert unknown_field_detail(9) == "Unknown project field: 9"
     assert invalid_value_detail("Budget") == 'Invalid value for "Budget"'
     assert text_too_long_detail("Remark") == '"Remark" can be at most 2000 characters'
     assert (
@@ -219,9 +217,25 @@ async def test_text_is_at_most_2000_characters():
     await _reject(_db(_fields_result(1)), {1: longest + "y"}, 422, text_too_long_detail("Remark"))
 
 
-async def test_an_unknown_field_is_400_before_any_value_check():
-    # Field 99 does not exist; field 2's bad value is not even looked at.
-    await _reject(_db(_fields_result(2)), {2: "bad", 99: 1}, 400, unknown_field_detail(99))
+async def test_unknown_field_ids_are_dropped_silently():
+    # Field 99 was deleted meanwhile (a What-If replay): its key is ignored,
+    # whatever it carries, and the known fields are written.
+    db = _db(_fields_result(2))
+
+    normalised = await validate_field_values(db, 1, [], {2: 7, 99: "anything"})
+
+    assert normalised.scalars == {2: ScalarValue(value_number=7.0)}
+    assert normalised.selections == {}
+    assert "project_fields.id IN (2, 99)" in _sql(db)[0]
+
+
+async def test_only_unknown_field_ids_write_nothing():
+    db = _db(_fields_result())
+
+    normalised = await validate_field_values(db, 1, [], {98: [1, 2], 99: None})
+
+    assert not normalised
+    assert db.execute.await_count == 1  # no item lookup
 
 
 async def test_dropdown_items_are_checked_and_ordered_by_item_order():

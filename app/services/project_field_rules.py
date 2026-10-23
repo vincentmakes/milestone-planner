@@ -62,11 +62,6 @@ MAX_TEXT_VALUE_LENGTH = 2000
 MAX_ITEMS_PER_VALUE = 500
 
 
-def unknown_field_detail(field_id: int) -> str:
-    """400: a ``field_values`` key that is no project field."""
-    return f"Unknown project field: {field_id}"
-
-
 def invalid_value_detail(field_name: str) -> str:
     """422: a value of the wrong type for its field (or a non-finite number)."""
     return f'Invalid value for "{field_name}"'
@@ -267,13 +262,14 @@ async def validate_field_values(
     """
     Check a project's ``field_values`` write for a project at ``site_id`` in ``team_ids``.
 
-    400 for an unknown field, an item of another field, more than one item on
-    a ``select`` field, or an item that does not apply to the project's site
-    or teams (the tag rules); 422 for a value of the wrong type, a non-finite
-    number or a text over 2000 characters. Unknown item ids are dropped
-    silently (deliberate, like tags: a What-If replay may carry the id of an
-    item deleted in the meantime). Two queries at most (the fields, then the
-    items with their sites and teams); none for an empty write.
+    400 for an item of another field, more than one item on a ``select``
+    field, or an item that does not apply to the project's site or teams (the
+    tag rules); 422 for a value of the wrong type, a non-finite number or a
+    text over 2000 characters. Unknown field and item ids are dropped silently
+    (deliberate, like tags: a What-If replay may carry the id of a field or an
+    item deleted in the meantime), whatever value they carry. Two queries at
+    most (the fields, then the items with their sites and teams); none for an
+    empty write.
     """
     normalised = NormalisedValues()
     if not field_values:
@@ -285,12 +281,8 @@ async def validate_field_values(
         )
     )
     fields = {row[0]: (row[1], row[2]) for row in result.all()}
-    for field_id in sorted(field_values):
-        if field_id not in fields:
-            raise HTTPException(status_code=400, detail=unknown_field_detail(field_id))
-
     wanted: dict[int, list[int]] = {}
-    for field_id in sorted(field_values):
+    for field_id in sorted(fields):
         name, field_type = fields[field_id]
         value = field_values[field_id]
         if field_type in DROPDOWN_FIELD_TYPES:

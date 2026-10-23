@@ -25,7 +25,6 @@ from app.services.project_field_rules import (
     option_not_applicable_detail,
     option_not_applicable_to_teams_detail,
     single_item_detail,
-    unknown_field_detail,
 )
 from tests.conftest import FakeUser
 from tests.support import scalar_result, scalars_result
@@ -304,7 +303,6 @@ async def test_create_project_without_field_values_runs_no_field_query(
 @pytest.mark.parametrize(
     ("field_values", "results", "status", "detail"),
     [
-        ({"9": "x"}, [fields_result()], 400, unknown_field_detail(9)),
         ({"2": "12"}, [fields_result(2)], 422, invalid_value_detail("Budget")),
         (
             {"4": [41, 42]},
@@ -349,6 +347,37 @@ async def test_create_project_field_values_must_be_keyed_by_field_id(
 
     assert response.status_code == 422
     mock_db_session.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_project_ignores_an_unknown_field(authed_client, mock_db_session, broadcast):
+    # A What-If replay may carry a field deleted meantime: the write succeeds.
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    mock_db_session.execute.side_effect = [scalar_result(1), fields_result(2)]
+
+    response = await client.post("/api/projects", json=_body(field_values={"2": 5, "9": "x"}))
+
+    assert response.status_code == 200, response.text
+    project = added_project(mock_db_session)
+    assert [(r.field_id, r.value_number) for r in project.field_values] == [(2, 5.0)]
+    assert project.field_selections == []
+    mock_db_session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_update_project_ignores_an_unknown_field(authed_client, mock_db_session, broadcast):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    project = make_project(1)
+    mock_db_session.execute.side_effect = [scalar_result(project), fields_result()]
+
+    response = await client.put("/api/projects/1", json={"field_values": {"9": [1]}})
+
+    assert response.status_code == 200, response.text
+    assert (project.field_values, project.field_selections) == ([], [])
+    assert mock_db_session.execute.await_count == 2
+    mock_db_session.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
