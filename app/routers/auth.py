@@ -805,7 +805,7 @@ def _tenant_home(tenant_slug: str | None) -> str:
     signing key leaked or a future caller passed something else.
     """
     if tenant_slug and _TENANT_SLUG_RE.fullmatch(tenant_slug):
-        return f"/t/{tenant_slug}/"
+        return _local_redirect_path(f"/t/{tenant_slug}/")
     return "/"
 
 
@@ -816,15 +816,16 @@ def _local_redirect_path(path: str) -> str:
     Refuses scheme-relative (``//host``) and backslash forms (``/\\host``),
     which browsers follow to another origin, and anything with a scheme or host.
     """
-    parsed = urlparse(path)
+    # Browsers read a backslash as a slash, so "/\\host" is "//host" to them.
+    candidate = path.replace("\\", "")
     if (
-        path.startswith("/")
-        and not path.startswith("//")
-        and "\\" not in path
-        and not parsed.scheme
-        and not parsed.netloc
+        candidate == path
+        and candidate.startswith("/")
+        and not candidate.startswith("//")
+        and not urlparse(candidate).netloc
+        and not urlparse(candidate).scheme
     ):
-        return path
+        return candidate
     return "/"
 
 
@@ -839,11 +840,11 @@ def _config_fingerprint(config: dict, source: str) -> str:
     directly comparable. Of the secret only its presence is logged: nothing
     derived from it (not even a digest) goes to the log.
     """
-    secret_state = "set" if (config.get("client_secret") or "").strip() else "missing"
+    configured = "set" if (config.get("client_secret") or "").strip() else "missing"
     return (
         f"source={source} client_id={config.get('client_id')} "
         f"entra_tenant={config.get('tenant_id')} redirect_uri={config.get('redirect_uri')} "
-        f"secret={secret_state}"
+        f"secret={configured}"
     )
 
 
