@@ -571,7 +571,7 @@ async def test_level_assignment_uses_the_servers_project_id(authed_client, mock_
     mock_db_session.execute.side_effect = [
         resolved,
         _scalar_result(True),
-        _scalar_result(None),  # no duplicate
+        _placement(),  # no booking of the person on the card yet
         _detail_row(5),
     ]
 
@@ -847,6 +847,7 @@ def _card(project_id: int = 1):
     card.project_id = project_id
     card.type = "Design"
     card.name = None
+    card.start_date, card.end_date = CARD_START, CARD_END
     return card
 
 
@@ -856,11 +857,11 @@ async def test_user_can_join_a_card(authed_client, mock_db_session):
     set_user(FakeUser(5, "user"))
     _assign_id_on_refresh(mock_db_session)
     me = SimpleNamespace(id=5, full_name="Test User5", max_capacity=80, is_resource=True)
-    # card load, assignee lookup, duplicate check
+    # card load, assignee lookup, placement (not on the card yet)
     mock_db_session.execute.side_effect = [
         _scalar_result(_card()),
         _scalar_result(me),
-        _scalar_result(None),
+        _placement(),
     ]
 
     response = await client.post("/api/kanban/cards/phase/1/assignees", json={"staff_id": 5})
@@ -868,6 +869,13 @@ async def test_user_can_join_a_card(authed_client, mock_db_session):
     body = response.json()
     assert body["staff_id"] == 5
     assert body["allocation"] == 80  # defaults to the member's max_capacity
+    # Not on the card yet: a linked booking over the card's dates.
+    assert (body["linked"], body["start_date"], body["end_date"], body["adjusted"]) == (
+        True,
+        "2026-03-02T00:00:00.000Z",
+        "2026-03-13T00:00:00.000Z",
+        [],
+    )
 
 
 @pytest.mark.asyncio
@@ -1103,6 +1111,13 @@ def _resolved(project_id: int = 1):
 CARD_START, CARD_END = date(2026, 3, 2), date(2026, 3, 13)
 
 
+def _placement(*rows, start=CARD_START, end=CARD_END):
+    """Result of ``approvals.plan_placement``: the person's rows on the card with its dates."""
+    result = MagicMock()
+    result.all.return_value = [(start, end, row) for row in rows]
+    return result
+
+
 def _detail_row(staff_id: int = 5, **fields):
     """The created phase / subphase row with the staff details and the card's dates."""
     row = _staff_row(staff_id, **{"start_date": None, "end_date": None, **fields})
@@ -1167,14 +1182,14 @@ SELF_ROUTES = [
             "allow": lambda: [
                 _resolved(),
                 _scalar_result(True),
-                _scalar_result(None),
+                _placement(),
                 _detail_row(),
             ],
             "approval": lambda: [
                 _resolved(),
                 _pm_result(PM),
                 _scalar_result(True),
-                _scalar_result(None),
+                _placement(),
             ],
             "deny": lambda: [_resolved(), _pm_result(PM)],
         },
@@ -1216,14 +1231,14 @@ SELF_ROUTES = [
             "allow": lambda: [
                 _resolved(),
                 _scalar_result(True),
-                _scalar_result(None),
+                _placement(),
                 _detail_row(),
             ],
             "approval": lambda: [
                 _resolved(),
                 _pm_result(PM),
                 _scalar_result(True),
-                _scalar_result(None),
+                _placement(),
             ],
             "deny": lambda: [_resolved(), _pm_result(PM)],
         },
@@ -1262,12 +1277,12 @@ SELF_ROUTES = [
         "assignments.self_create",
         "phase",
         {
-            "allow": lambda: [_scalar_result(_card()), _scalar_result(ME), _scalar_result(None)],
+            "allow": lambda: [_scalar_result(_card()), _scalar_result(ME), _placement()],
             "approval": lambda: [
                 _scalar_result(_card()),
                 _pm_result(PM),
                 _scalar_result(ME),
-                _scalar_result(None),
+                _placement(),
             ],
             "deny": lambda: [_scalar_result(_card()), _pm_result(PM)],
         },
@@ -1428,7 +1443,7 @@ async def test_self_booking_in_approval_mode_answers_202_with_the_documented_bod
         _resolved(),
         _pm_result(PM),
         _scalar_result(True),
-        _scalar_result(None),
+        _placement(),
     ]
     with (
         patch(
@@ -1463,43 +1478,23 @@ async def test_self_booking_in_approval_mode_answers_202_with_the_documented_bod
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("path", "body", "head", "detail"),
-    [
-        (
-            "/api/projects/1/staff",
-            {"staff_id": 8, **PROJECT_STAFF},
-            [_pm_result(PM)],
-            "That staff member is already booked here",
-        ),
-        # On a card a second booking conflicts by overlapping (effective) dates.
-        (
-            "/api/phases/1/staff",
-            {"staff_id": 8, "project_id": 1},
-            [_resolved()],
-            "This person is already booked on this card for overlapping dates",
-        ),
-        (
-            "/api/subphases/1/staff",
-            {"staff_id": 8, "project_id": 1},
-            [_resolved()],
-            "This person is already booked on this card for overlapping dates",
-        ),
-    ],
-    ids=["project", "phase", "subphase"],
-)
-async def test_booking_someone_twice_is_409(
-    authed_client, mock_db_session, path, body, head, detail
-):
+async def test_booking_someone_twice_is_409(authed_client, mock_db_session):
+    # Project level: the same dates twice. (On a phase / subphase a dateless
+    # second booking is placed automatically, explicit overlapping dates are a
+    # 409: tests/test_booking_segment_routes.py.)
     client, set_user = authed_client
     set_user(FakeUser(9, "superuser"))
     existing = _staff_row(8)
-    mock_db_session.execute.side_effect = [*head, _scalar_result(True), _scalar_result(existing)]
+    mock_db_session.execute.side_effect = [
+        _pm_result(PM),
+        _scalar_result(True),
+        _scalar_result(existing),
+    ]
 
-    response = await client.post(path, json=body)
+    response = await client.post("/api/projects/1/staff", json={"staff_id": 8, **PROJECT_STAFF})
 
     assert response.status_code == 409
-    assert response.json()["detail"] == detail
+    assert response.json()["detail"] == "That staff member is already booked here"
     mock_db_session.add.assert_not_called()
 
 
@@ -1530,12 +1525,15 @@ async def test_project_level_duplicate_compares_the_dates(authed_client, mock_db
 async def test_pending_booking_counts_as_a_duplicate(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(SELF_MODES["approval"])
-    pending = _staff_row(5, approval_status="pending", approval_request_id=50)
+    # The person's one booking on the card awaits approval: never split.
+    pending = _staff_row(
+        5, approval_status="pending", approval_request_id=50, start_date=None, end_date=None
+    )
     mock_db_session.execute.side_effect = [
         _resolved(),
         _pm_result(PM),
         _scalar_result(True),
-        _scalar_result(pending),
+        _placement(pending),
     ]
 
     response = await client.post(

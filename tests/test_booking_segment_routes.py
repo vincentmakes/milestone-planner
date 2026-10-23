@@ -28,6 +28,7 @@ from app.services.approvals import (
     ALREADY_BOOKED_DETAIL,
     ALREADY_BOOKED_OVERLAP_DETAIL,
     ALREADY_PENDING_DETAIL,
+    CARD_FULL_DETAIL,
     booking_dict,
     booking_values,
     describe_change,
@@ -40,6 +41,7 @@ from tests.test_project_access_routes import (
     PM,
     SELF_MODES,
     _detail_row,
+    _placement,
     _pm_result,
     _resolved,
     _scalar_result,
@@ -144,6 +146,10 @@ def test_the_details_are_plain_words():
     assert SEGMENT_OUTSIDE_CARD_DETAIL.format(level="phase") == (
         "Booking dates must lie within the phase"
     )
+    assert CARD_FULL_DETAIL == (
+        "This person's bookings already cover the whole card — shorten one of them first"
+    )
+    assert ALREADY_PENDING_DETAIL == "This booking already awaits approval"
 
 
 # ---------------------------------------------------------------------------
@@ -364,7 +370,7 @@ async def test_create_without_dates_is_linked_with_the_cards_dates(
     mock_db_session.execute.side_effect = [
         _resolved(),
         _scalar_result(True),
-        _scalar_result(None),  # no card lookup: nothing to check
+        _placement(),  # the person holds no booking on the card
         _detail_row(STAFF),
     ]
 
@@ -379,8 +385,14 @@ async def test_create_without_dates_is_linked_with_the_cards_dates(
         "2026-03-02T00:00:00.000Z",
         "2026-03-13T00:00:00.000Z",
     )
+    assert body["adjusted"] == []
     added = mock_db_session.add.call_args[0][0]
     assert (added.start_date, added.end_date) == (None, None)
+    ((_, intents, _),) = change_intents
+    assert {i.body for i in intents} == {"at 40%"}
+    # The placement query locks the person's rows on the card.
+    placement_query = mock_db_session.execute.await_args_list[2].args[0]
+    assert placement_query._for_update_arg is not None
 
 
 @pytest.mark.parametrize("level", LEVELS)
@@ -812,3 +824,258 @@ async def test_project_detail_marks_unlinked_bookings(authed_client, mock_db_ses
     (sub_booking,) = phase["children"][0]["staffAssignments"]
     assert sub_booking["linked"] is False
     assert sub_booking["start_date"] == "2026-01-12T00:00:00.000Z"
+
+
+# ---------------------------------------------------------------------------
+# A dateless second booking is placed automatically (2.0.0)
+# ---------------------------------------------------------------------------
+
+
+def _create(level: str, allocation: int = 40) -> dict:
+    return {"staff_id": STAFF, "project_id": 1, "allocation": allocation}
+
+
+@pytest.fixture
+def published():
+    """approvals.publish's channels: the shortened row's broadcast and pushes."""
+    with (
+        patch("app.services.approvals.broadcast_change", AsyncMock()) as broadcast,
+        patch("app.services.approvals.send_notification", AsyncMock()) as notify,
+        patch("app.services.approvals.send_user_event", AsyncMock()) as event,
+    ):
+        yield SimpleNamespace(broadcast=broadcast, notify=notify, event=event)
+
+
+@pytest.mark.parametrize("level", LEVELS)
+async def test_second_booking_splits_a_full_span_booking(
+    authed_client, mock_db_session, change_intents, published, level
+):
+    client, set_user = authed_client
+    set_user(ADMIN)
+    _assign_id(mock_db_session)
+    linked = _row(level, id=7)
+    mock_db_session.execute.side_effect = [
+        _resolved(),
+        _scalar_result(True),
+        _placement(linked),
+        _detail_row(STAFF, start_date=date(2026, 3, 8), end_date=date(2026, 3, 13)),
+    ]
+
+    response = await client.post(_post_path(level), json=_create(level))
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["linked"], body["start_date"], body["end_date"]) == (
+        False,
+        "2026-03-08T00:00:00.000Z",
+        "2026-03-13T00:00:00.000Z",
+    )
+    assert body["adjusted"] == [
+        {
+            "id": 7,
+            "start_date": "2026-03-02T00:00:00.000Z",
+            "end_date": "2026-03-07T00:00:00.000Z",
+            "linked": False,
+        }
+    ]
+    # The existing booking keeps the first half, the new one the second.
+    assert (linked.start_date, linked.end_date) == (date(2026, 3, 2), date(2026, 3, 7))
+    added = mock_db_session.add.call_args[0][0]
+    assert (added.start_date, added.end_date) == (date(2026, 3, 8), date(2026, 3, 13))
+    mock_db_session.commit.assert_awaited_once()  # both rows in one transaction
+    # One create and one update, both for the same person (merged by deliver).
+    ((_, intents, _),) = change_intents
+    assert [(i.recipient, i.user_id, i.body) for i in intents] == [
+        ("person", STAFF, "at 40% from 2026-03-08 to 2026-03-13"),
+        ("pm", None, "at 40% from 2026-03-08 to 2026-03-13"),
+        ("person", STAFF, "dates follow the card → 2026-03-02–2026-03-07"),
+        ("pm", None, "dates follow the card → 2026-03-02–2026-03-07"),
+    ]
+    # The shortened row's update goes out through approvals.publish.
+    kwargs = published.broadcast.await_args.kwargs
+    assert (kwargs["entity_type"], kwargs["entity_id"], kwargs["action"]) == (
+        "staff_assignment",
+        7,
+        "update",
+    )
+
+
+@pytest.mark.parametrize("level", LEVELS)
+async def test_second_booking_splits_an_unlinked_full_span_booking(
+    authed_client, mock_db_session, published, level
+):
+    client, set_user = authed_client
+    set_user(ADMIN)
+    _assign_id(mock_db_session)
+    whole = _row(level, id=7, start_date=CARD_START, end_date=CARD_END)
+    mock_db_session.execute.side_effect = [
+        _resolved(),
+        _scalar_result(True),
+        _placement(whole),
+        _detail_row(STAFF, start_date=date(2026, 3, 8), end_date=date(2026, 3, 13)),
+    ]
+
+    response = await client.post(_post_path(level), json=_create(level))
+
+    assert response.status_code == 200, response.text
+    assert (whole.start_date, whole.end_date) == (date(2026, 3, 2), date(2026, 3, 7))
+    assert [a["id"] for a in response.json()["adjusted"]] == [7]
+
+
+@pytest.mark.parametrize("level", LEVELS)
+@pytest.mark.parametrize(
+    ("existing", "expected"),
+    [
+        # One booking at the start: the rest of the card.
+        ([(date(2026, 3, 2), date(2026, 3, 4))], (date(2026, 3, 5), date(2026, 3, 13))),
+        # Gaps before (1 day), between (3) and after (2): the largest.
+        (
+            [(date(2026, 3, 3), date(2026, 3, 5)), (date(2026, 3, 9), date(2026, 3, 11))],
+            (date(2026, 3, 6), date(2026, 3, 8)),
+        ),
+    ],
+    ids=["rest-of-the-card", "largest-gap"],
+)
+async def test_second_booking_fills_the_largest_free_stretch(
+    authed_client, mock_db_session, change_intents, published, level, existing, expected
+):
+    client, set_user = authed_client
+    set_user(ADMIN)
+    _assign_id(mock_db_session)
+    rows = [
+        _row(level, id=7 + n, start_date=start, end_date=end)
+        for n, (start, end) in enumerate(existing)
+    ]
+    mock_db_session.execute.side_effect = [
+        _resolved(),
+        _scalar_result(True),
+        _placement(*rows),
+        _detail_row(STAFF, start_date=expected[0], end_date=expected[1]),
+    ]
+
+    response = await client.post(_post_path(level), json=_create(level))
+
+    assert response.status_code == 200, response.text
+    assert response.json()["adjusted"] == []
+    added = mock_db_session.add.call_args[0][0]
+    assert (added.start_date, added.end_date) == expected
+    assert [(r.start_date, r.end_date) for r in rows] == existing  # untouched
+    published.broadcast.assert_not_awaited()
+    ((_, intents, _),) = change_intents
+    assert len(intents) == 2  # the create only
+
+
+@pytest.mark.parametrize("level", LEVELS)
+@pytest.mark.parametrize(
+    ("rows", "detail"),
+    [
+        (
+            [
+                {"id": 7, "start_date": date(2026, 3, 2), "end_date": date(2026, 3, 7)},
+                {"id": 8, "start_date": date(2026, 3, 8), "end_date": date(2026, 3, 13)},
+            ],
+            CARD_FULL_DETAIL,
+        ),
+        (
+            [{"id": 7, "approval_status": "pending", "approval_request_id": 50}],
+            ALREADY_PENDING_DETAIL,
+        ),
+    ],
+    ids=["card-covered", "full-span-pending"],
+)
+async def test_second_booking_without_room_is_409(
+    authed_client, mock_db_session, change_intents, level, rows, detail
+):
+    client, set_user = authed_client
+    set_user(ADMIN)
+    existing = [_row(level, **fields) for fields in rows]
+    mock_db_session.execute.side_effect = [
+        _resolved(),
+        _scalar_result(True),
+        _placement(*existing),
+    ]
+
+    response = await client.post(_post_path(level), json=_create(level))
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == detail
+    mock_db_session.add.assert_not_called()
+    mock_db_session.commit.assert_not_awaited()
+    assert change_intents == []
+
+
+@pytest.mark.parametrize("level", LEVELS)
+async def test_second_booking_overtakes_an_open_request_on_the_split_booking(
+    authed_client, mock_db_session, published, level
+):
+    client, set_user = authed_client
+    set_user(ADMIN)
+    _assign_id(mock_db_session)
+    linked = _row(level, id=7, approval_request_id=60)
+    overtaken = approvals.ApprovalEffects(
+        events=[approvals.RequestEvent(60, 1, "expired", "update", "overtaken", frozenset({STAFF}))]
+    )
+    mock_db_session.execute.side_effect = [
+        _resolved(),
+        _scalar_result(True),
+        _placement(linked),
+        _detail_row(STAFF, start_date=date(2026, 3, 8), end_date=date(2026, 3, 13)),
+    ]
+
+    with patch(
+        "app.services.approvals.expire_overtaken", AsyncMock(return_value=overtaken)
+    ) as expire:
+        response = await client.post(_post_path(level), json=_create(level))
+
+    assert response.status_code == 200, response.text
+    assert expire.await_args.kwargs["row"] is linked
+    # Published after the commit: the shortened row, then the closed request.
+    broadcasts = [
+        (c.kwargs["entity_type"], c.kwargs["entity_id"])
+        for c in published.broadcast.await_args_list
+    ]
+    assert broadcasts == [("staff_assignment", 7), ("approval_request", 60)]
+    published.event.assert_awaited_once()
+
+
+@pytest.mark.parametrize("level", LEVELS)
+@pytest.mark.parametrize(
+    ("existing", "values"),
+    [
+        # The planned half: the full-span booking stays untouched until approved.
+        (
+            {"id": 7},
+            {
+                "allocation": 40,
+                "start_date": "2026-03-08",
+                "end_date": "2026-03-13",
+                "placement": "auto",
+            },
+        ),
+        # No booking on the card: linked, still marked.
+        (None, {"allocation": 40, "placement": "auto"}),
+    ],
+    ids=["split-planned", "linked"],
+)
+async def test_second_booking_in_approval_mode_files_the_planned_dates(
+    authed_client, mock_db_session, submit, change_intents, level, existing, values
+):
+    client, set_user = authed_client
+    set_user(SELF_MODES["approval"])
+    rows = [] if existing is None else [_row(level, **existing)]
+    mock_db_session.execute.side_effect = [
+        _resolved(),
+        _pm_result(PM),
+        _scalar_result(True),
+        _placement(*rows),
+    ]
+
+    response = await client.post(_post_path(level), json=_create(level))
+
+    assert response.status_code == 202
+    assert submit.await_args.kwargs["values"] == values
+    for row in rows:
+        assert (row.start_date, row.end_date) == (None, None)
+    mock_db_session.add.assert_not_called()
+    mock_db_session.commit.assert_not_awaited()
+    assert change_intents == []

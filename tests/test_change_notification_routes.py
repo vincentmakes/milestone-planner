@@ -22,6 +22,7 @@ from app.models.site import Site
 from app.services import change_notifications as cn
 from tests.conftest import FakeUser
 from tests.support import scalars_result
+from tests.test_project_access_routes import _placement
 
 # The real function, captured at import (the autouse change_intents fixture
 # replaces it for every test).
@@ -203,7 +204,7 @@ async def test_booking_someone_on_a_card(authed_client, mock_db_session, change_
     client, set_user = authed_client
     set_user(admin())
     details = first((card_row(), "Ann Lee", "Chemist", date(2026, 3, 2), date(2026, 3, 13)))
-    mock_db_session.execute.side_effect = [first((1,)), scalar(True), scalar(None), details]
+    mock_db_session.execute.side_effect = [first((1,)), scalar(True), _placement(), details]
 
     response = await client.post(
         f"/api/{level}s/11/staff", json={"staff_id": ANN, "project_id": 1, "allocation": 40}
@@ -337,6 +338,7 @@ def _card():
     card.project_id = 1
     card.type = "Design"
     card.name = None
+    card.start_date, card.end_date = date(2026, 3, 2), date(2026, 3, 13)
     return card
 
 
@@ -346,7 +348,7 @@ async def test_assigning_someone_to_a_card_keeps_their_assigned_notification(
     client, set_user = authed_client
     set_user(admin())
     assignee = SimpleNamespace(id=ANN, full_name="Ann Lee", max_capacity=80, is_resource=True)
-    mock_db_session.execute.side_effect = [scalar(_card()), scalar(assignee), scalar(None)]
+    mock_db_session.execute.side_effect = [scalar(_card()), scalar(assignee), _placement()]
     mock_db_session.refresh.side_effect = lambda obj: setattr(obj, "id", 70)
 
     response = await client.post("/api/kanban/cards/phase/11/assignees", json={"staff_id": ANN})

@@ -47,6 +47,7 @@ from tests.test_project_access_routes import (
     SELF_MODES,
     _card,
     _detail_row,
+    _placement,
     _pm_result,
     _resolved,
 )
@@ -138,21 +139,21 @@ CREATES = [
         "/api/phases/1/staff",
         {"staff_id": STAFF, "project_id": 1, "allocation": 40},
         lambda: [_resolved()],
-        lambda: [scalar_result(None), _detail_row(STAFF)],
+        lambda: [_placement(), _detail_row(STAFF)],
     ),
     (
         "subphase",
         "/api/subphases/1/staff",
         {"staff_id": STAFF, "project_id": 1, "allocation": 40},
         lambda: [_resolved()],
-        lambda: [scalar_result(None), _detail_row(STAFF)],
+        lambda: [_placement(), _detail_row(STAFF)],
     ),
     (
         "kanban",
         "/api/kanban/cards/phase/1/assignees",
         {"staff_id": STAFF},
         lambda: [scalar_result(_card())],
-        lambda: [scalar_result(None)],
+        lambda: [_placement()],
     ),
 ]
 _IDS = [c[0] for c in CREATES]

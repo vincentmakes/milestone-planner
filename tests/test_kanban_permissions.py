@@ -26,6 +26,7 @@ from app.services.card_access import (
 from app.services.permissions import PermissionSet, default_modes
 from tests.conftest import FakeUser
 from tests.support import scalar_result, scalars_result
+from tests.test_project_access_routes import CARD_END, CARD_START, _placement
 
 
 def _db_returning(row):
@@ -197,7 +198,14 @@ def board_off(user_id: int, role: str) -> FakeUser:
 
 def _card(project_id=3):
     return SimpleNamespace(
-        id=10, project_id=project_id, status="todo", completion=0, name=None, type="Design"
+        id=10,
+        project_id=project_id,
+        status="todo",
+        completion=0,
+        name=None,
+        type="Design",
+        start_date=CARD_START,
+        end_date=CARD_END,
     )
 
 
@@ -271,7 +279,7 @@ async def test_an_admin_assigns_a_card_with_the_board_off(authed_client, mock_db
     mock_db_session.execute.side_effect = [
         scalar_result(_card()),
         scalar_result(assignee),
-        scalar_result(None),
+        _placement(),
     ]
 
     async def refresh(obj):

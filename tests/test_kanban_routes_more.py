@@ -9,7 +9,7 @@ Mock-based, house style; ``broadcast_change``, ``send_notification`` and
 what each write announces and to whom.
 """
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,16 +19,34 @@ from app.models.assignment import PhaseStaffAssignment, SubphaseStaffAssignment
 from app.models.card_comment import CardComment
 from app.models.notification import Notification
 from app.models.user import User
+from app.services.approvals import ALREADY_PENDING_DETAIL, CARD_FULL_DETAIL
 from tests.conftest import FakeUser
 from tests.support import scalar_result, scalars_result
 
 STAMP = datetime(2026, 1, 1, 12, 0, 0)
 
 
+CARD_START, CARD_END = date(2026, 3, 2), date(2026, 3, 13)
+
+
 def make_card(project_id=3, status="todo", completion=None, name=None, type_="Design"):
     return SimpleNamespace(
-        id=10, project_id=project_id, status=status, completion=completion, name=name, type=type_
+        id=10,
+        project_id=project_id,
+        status=status,
+        completion=completion,
+        name=name,
+        type=type_,
+        start_date=CARD_START,
+        end_date=CARD_END,
     )
+
+
+def placement(*rows):
+    """Result of ``approvals.plan_placement``: the person's rows on the card with its dates."""
+    result = MagicMock()
+    result.all.return_value = [(CARD_START, CARD_END, row) for row in rows]
+    return result
 
 
 def make_comment(comment_id=50, author_id=5, mentions=None, edited=False):
@@ -420,7 +438,7 @@ async def test_assign_books_at_max_capacity(
     mock_db_session.execute.side_effect = [
         scalar_result(make_card()),
         scalar_result(assignee),
-        scalar_result(None),  # not yet assigned
+        placement(),  # not on the card yet
     ]
 
     async def refresh(obj):
@@ -439,10 +457,15 @@ async def test_assign_books_at_max_capacity(
         "staff_id": 7,
         "staff_name": "Bob B",
         "allocation": 60,
+        "start_date": "2026-03-02T00:00:00.000Z",
+        "end_date": "2026-03-13T00:00:00.000Z",
+        "linked": True,
+        "adjusted": [],
     }
     (assignment,) = (c.args[0] for c in mock_db_session.add.call_args_list)
     assert isinstance(assignment, model)
     assert assignment.project_id == 3
+    assert (assignment.start_date, assignment.end_date) == (None, None)
     (row,) = notifications(mock_db_session)
     assert (row.user_id, row.type, row.body) == (
         7,
@@ -453,20 +476,145 @@ async def test_assign_books_at_max_capacity(
     push.assert_awaited_once()
 
 
+def _booking(entity_type, **fields):
+    values = {
+        "id": 1,
+        "project_id": 3,
+        "staff_id": 7,
+        "allocation": 50,
+        "approval_status": "approved",
+        "approval_request_id": None,
+        "start_date": None,
+        "end_date": None,
+        **fields,
+    }
+    if entity_type == "phase":
+        return PhaseStaffAssignment(phase_id=10, **values)
+    return SubphaseStaffAssignment(subphase_id=10, **values)
+
+
 @pytest.mark.asyncio
-async def test_assign_duplicate_is_409(authed_client, mock_db_session, wires):
+@pytest.mark.parametrize("entity_type", ["phase", "subphase"])
+async def test_assign_someone_already_on_the_card_splits_their_booking(
+    authed_client, mock_db_session, wires, change_intents, entity_type
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    broadcast, _, _ = wires
+    full_span = _booking(entity_type)
+    mock_db_session.execute.side_effect = [
+        scalar_result(make_card()),
+        scalar_result(User(id=7, first_name="Bob", last_name="B", max_capacity=60)),
+        placement(full_span),
+    ]
+    mock_db_session.refresh.side_effect = lambda obj: setattr(obj, "id", 300)
+
+    with patch("app.services.approvals.broadcast_change", new_callable=AsyncMock) as shortened:
+        response = await client.post(
+            f"/api/kanban/cards/{entity_type}/10/assignees", json={"staff_id": 7}
+        )
+
+    assert response.status_code == 201, response.text
+    assert response.json() == {
+        "success": True,
+        "id": 300,
+        "staff_id": 7,
+        "staff_name": "Bob B",
+        "allocation": 60,
+        "start_date": "2026-03-08T00:00:00.000Z",
+        "end_date": "2026-03-13T00:00:00.000Z",
+        "linked": False,
+        "adjusted": [
+            {
+                "id": 1,
+                "start_date": "2026-03-02T00:00:00.000Z",
+                "end_date": "2026-03-07T00:00:00.000Z",
+                "linked": False,
+            }
+        ],
+    }
+    assert (full_span.start_date, full_span.end_date) == (date(2026, 3, 2), date(2026, 3, 7))
+    (assignment,) = (c.args[0] for c in mock_db_session.add.call_args_list)
+    assert (assignment.start_date, assignment.end_date) == (date(2026, 3, 8), date(2026, 3, 13))
+    mock_db_session.commit.assert_awaited_once()
+    (row,) = notifications(mock_db_session)
+    assert row.body == (
+        "Booked at 60% from 2026-03-08 to 2026-03-13. "
+        "Your booking 2026-03-02–2026-03-13 was shortened to 2026-03-02–2026-03-07."
+    )
+    # The new row (router) and the shortened one (approvals.publish).
+    assert broadcast.await_args.kwargs["action"] == "create"
+    assert (
+        shortened.await_args.kwargs["entity_id"],
+        shortened.await_args.kwargs["action"],
+    ) == (1, "update")
+    # The person is told by ``assigned``; the PM gets both changes.
+    ((_, intents, already),) = change_intents
+    assert already == {7}
+    assert [(i.recipient, i.body) for i in intents] == [
+        ("person", "at 60% from 2026-03-08 to 2026-03-13"),
+        ("pm", "at 60% from 2026-03-08 to 2026-03-13"),
+        ("person", "dates follow the card → 2026-03-02–2026-03-07"),
+        ("pm", "dates follow the card → 2026-03-02–2026-03-07"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_assign_takes_the_free_stretch_of_the_card(authed_client, mock_db_session, wires):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    first = _booking("phase", start_date=date(2026, 3, 2), end_date=date(2026, 3, 4))
+    mock_db_session.execute.side_effect = [
+        scalar_result(make_card()),
+        scalar_result(User(id=7, first_name="Bob", last_name="B", max_capacity=60)),
+        placement(first),
+    ]
+    mock_db_session.refresh.side_effect = lambda obj: setattr(obj, "id", 300)
+
+    response = await client.post("/api/kanban/cards/phase/10/assignees", json={"staff_id": 7})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert (body["start_date"], body["end_date"], body["linked"], body["adjusted"]) == (
+        "2026-03-05T00:00:00.000Z",
+        "2026-03-13T00:00:00.000Z",
+        False,
+        [],
+    )
+    (row,) = notifications(mock_db_session)
+    assert row.body == "Booked at 60% from 2026-03-05 to 2026-03-13."
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("rows", "detail"),
+    [
+        (
+            [
+                {"id": 1, "start_date": date(2026, 3, 2), "end_date": date(2026, 3, 7)},
+                {"id": 2, "start_date": date(2026, 3, 8), "end_date": date(2026, 3, 13)},
+            ],
+            CARD_FULL_DETAIL,
+        ),
+        ([{"id": 1, "approval_status": "pending"}], ALREADY_PENDING_DETAIL),
+    ],
+    ids=["card-covered", "pending-booking"],
+)
+async def test_assign_without_room_is_409(authed_client, mock_db_session, wires, rows, detail):
     client, set_user = authed_client
     set_user(FakeUser(1, "superuser"))
     mock_db_session.execute.side_effect = [
         scalar_result(make_card()),
         scalar_result(User(id=7, first_name="Bob", last_name="B")),
-        scalar_result(PhaseStaffAssignment(id=1, staff_id=7)),
+        placement(*(_booking("phase", **fields) for fields in rows)),
     ]
 
     response = await client.post("/api/kanban/cards/phase/10/assignees", json={"staff_id": 7})
 
     assert response.status_code == 409
+    assert response.json()["detail"] == detail
     mock_db_session.add.assert_not_called()
+    mock_db_session.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

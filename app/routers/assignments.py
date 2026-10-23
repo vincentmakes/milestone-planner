@@ -40,11 +40,22 @@ unlinked segments with their own ``start_date`` / ``end_date`` inside the card
 dates (own, else the card's) and ``linked``; on update an explicit ``null`` on
 both dates relinks.
 
+A **dateless** phase / subphase create is placed by the server
+(``approvals.plan_placement``): linked when the person has no booking on the
+card; else the largest free stretch of the card (ties -> the earliest); else,
+when one booking covers the whole card, that booking is shortened to the
+first half and the new one takes the second; else 409 ``CARD_FULL_DETAIL``
+(``ALREADY_PENDING_DETAIL`` when the booking to split awaits approval). The
+create answers ``adjusted: [{id, start_date, end_date, linked: false}]`` --
+the rows it shortened. In approval mode the request carries the planned
+dates (``placement: "auto"``) and nothing is shortened until it is approved,
+when the placement is planned again.
+
 A booking awaiting approval is a real row (``approval_status = 'pending'``):
-a second booking of the same person on the target is a 409 (pending or not;
-at project level only with the same dates; on a phase / subphase only when
-the effective dates overlap -- a person may hold several non-overlapping
-segments on one card), and a direct write on a pending
+a second booking of the same person on the target with explicit dates is a
+409 (pending or not; at project level only with the same dates; on a phase /
+subphase only when the effective dates overlap -- a person may hold several
+non-overlapping segments on one card), and a direct write on a pending
 row is a 409 (decide the request instead). A direct write on a row with an
 open change / removal request closes that request (``expired(overtaken)``).
 Equipment bookings need ``equipment_bookings.manage`` (also in the PM bundle).
@@ -506,6 +517,40 @@ async def _check_segment(
     )
 
 
+async def _plan_create(
+    db: AsyncSession,
+    level: str,
+    target_id: int,
+    staff_id: int,
+    allocation: int,
+    start_date: date | None,
+    end_date: date | None,
+) -> tuple[approvals.PlannedBooking, dict[str, Any]]:
+    """
+    Where a new phase / subphase booking goes, and its booking values.
+
+    - Own dates given: they stay (inside the card, 400; overlapping another
+      booking of the person, 409 ``ALREADY_BOOKED_OVERLAP_DETAIL``).
+    - No dates: placed by the server (``approvals.plan_placement``) -- linked
+      when the person has no row on the card, else the largest free stretch,
+      else the halving of the one booking covering the card (``plan.shrink``,
+      shortened only on a direct write), else 409 ``CARD_FULL_DETAIL`` /
+      ``ALREADY_PENDING_DETAIL``. The values carry ``placement: "auto"``, so
+      an approval re-plans them.
+    """
+    if start_date is not None and end_date is not None:
+        await _check_segment(db, level, target_id, staff_id, start_date, end_date)
+        return approvals.PlannedBooking(start_date, end_date), booking_dict(
+            allocation, start_date, end_date
+        )
+    plan = approvals.require_placement(
+        await approvals.plan_placement(db, level, target_id, staff_id)
+    )
+    return plan, booking_dict(
+        allocation, plan.start_date, plan.end_date, placement=approvals.AUTO_PLACEMENT
+    )
+
+
 def _requested_update(
     row: PhaseStaffAssignment | SubphaseStaffAssignment,
     data: PhaseStaffAssignmentUpdate | SubphaseStaffAssignmentUpdate,
@@ -560,6 +605,9 @@ async def create_phase_staff_assignment(
     Assign staff to a phase.
 
     Matches: POST /api/phases/:phaseId/staff
+
+    Without dates the booking is placed by the server (see the module
+    docstring); ``adjusted`` lists the booking it shortened, if any.
     """
     project_id = await project_id_for_phase(db, phase_id)
     await ensure_project_visible(request, db, user, project_id)
@@ -571,8 +619,9 @@ async def create_phase_staff_assignment(
         action=ACTION_CREATE,
     )
     await require_bookable_staff(db, data.staff_id)
-    await _check_segment(db, "phase", phase_id, data.staff_id, data.start_date, data.end_date)
-    values = booking_dict(data.allocation or 100, data.start_date, data.end_date)
+    plan, values = await _plan_create(
+        db, "phase", phase_id, data.staff_id, data.allocation or 100, data.start_date, data.end_date
+    )
     if outcome == "approval":
         return await approvals.submit_request(
             db,
@@ -585,6 +634,10 @@ async def create_phase_staff_assignment(
             values=values,
         )
 
+    effects = approvals.ApprovalEffects()
+    shrink_intents = await approvals.apply_shrink(
+        db, user, level="phase", plan=plan, effects=effects
+    )
     intents = change_notifications.booking_intents(
         user,
         kind="create",
@@ -599,8 +652,8 @@ async def create_phase_staff_assignment(
         project_id=project_id,
         staff_id=data.staff_id,
         allocation=data.allocation or 100,
-        start_date=data.start_date,
-        end_date=data.end_date,
+        start_date=plan.start_date,
+        end_date=plan.end_date,
     )
     db.add(assignment)
     await db.commit()
@@ -630,7 +683,9 @@ async def create_phase_staff_assignment(
         project_id=project_id,
         action="create",
     )
-    await change_notifications.deliver(db, request, user.id, intents)
+    # The shortened row's update change (and a request it overtook).
+    await approvals.publish(request, user, effects)
+    await change_notifications.deliver(db, request, user.id, intents + shrink_intents)
 
     return {
         "id": row[0].id,
@@ -641,6 +696,7 @@ async def create_phase_staff_assignment(
         **_segment_response(row[0], row[3], row[4]),
         "staff_name": row[1],
         "staff_role": row[2],
+        "adjusted": approvals.adjusted_rows(plan),
     }
 
 
@@ -802,6 +858,9 @@ async def create_subphase_staff_assignment(
     Assign staff to a subphase.
 
     Matches: POST /api/subphases/:subphaseId/staff
+
+    Without dates the booking is placed by the server (see the module
+    docstring); ``adjusted`` lists the booking it shortened, if any.
     """
     project_id = await project_id_for_subphase(db, subphase_id)
     await ensure_project_visible(request, db, user, project_id)
@@ -813,8 +872,15 @@ async def create_subphase_staff_assignment(
         action=ACTION_CREATE,
     )
     await require_bookable_staff(db, data.staff_id)
-    await _check_segment(db, "subphase", subphase_id, data.staff_id, data.start_date, data.end_date)
-    values = booking_dict(data.allocation or 100, data.start_date, data.end_date)
+    plan, values = await _plan_create(
+        db,
+        "subphase",
+        subphase_id,
+        data.staff_id,
+        data.allocation or 100,
+        data.start_date,
+        data.end_date,
+    )
     if outcome == "approval":
         return await approvals.submit_request(
             db,
@@ -827,6 +893,10 @@ async def create_subphase_staff_assignment(
             values=values,
         )
 
+    effects = approvals.ApprovalEffects()
+    shrink_intents = await approvals.apply_shrink(
+        db, user, level="subphase", plan=plan, effects=effects
+    )
     intents = change_notifications.booking_intents(
         user,
         kind="create",
@@ -841,8 +911,8 @@ async def create_subphase_staff_assignment(
         project_id=project_id,
         staff_id=data.staff_id,
         allocation=data.allocation or 100,
-        start_date=data.start_date,
-        end_date=data.end_date,
+        start_date=plan.start_date,
+        end_date=plan.end_date,
     )
     db.add(assignment)
     await db.commit()
@@ -872,7 +942,9 @@ async def create_subphase_staff_assignment(
         project_id=project_id,
         action="create",
     )
-    await change_notifications.deliver(db, request, user.id, intents)
+    # The shortened row's update change (and a request it overtook).
+    await approvals.publish(request, user, effects)
+    await change_notifications.deliver(db, request, user.id, intents + shrink_intents)
 
     return {
         "id": row[0].id,
@@ -883,6 +955,7 @@ async def create_subphase_staff_assignment(
         **_segment_response(row[0], row[3], row[4]),
         "staff_name": row[1],
         "staff_role": row[2],
+        "adjusted": approvals.adjusted_rows(plan),
     }
 
 

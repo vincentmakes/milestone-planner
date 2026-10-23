@@ -34,6 +34,7 @@ from app.models.card_comment import CardComment
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.rbac import Role, RolePermission
 from app.models.user import User, UserSite
+from app.schemas.base import serialize_date_as_datetime_js
 from app.schemas.kanban import (
     CardAssigneeCreate,
     CardAssigneeResponse,
@@ -47,6 +48,7 @@ from app.schemas.kanban import (
 )
 from app.services import approvals, change_notifications
 from app.services.approvals import ACTION_CREATE, ACTION_REMOVE, booking_dict, booking_values
+from app.services.booking_segments import effective_dates
 from app.services.card_access import require_card_status_write
 from app.services.card_status import STATUS_LABELS, apply_status
 from app.services.mentions import parse_mention_ids, strip_mention_tokens
@@ -343,14 +345,21 @@ async def assign_card(
     user: User = Depends(get_current_user),
 ):
     """
-    Assign a staff member to a card, booking their time over the card's dates.
+    Assign a staff member to a card, booking their time on it.
 
     ``assignments.manage_others`` (or the PM) assigns anyone; a user joins a
     card themself under ``assignments.self_create``.
 
-    Phase- and subphase-level assignments carry no dates of their own -- they
-    inherit the card's -- so the booking stays in step when the card moves in
-    the Gantt chart, with no second write.
+    The booking is dateless, so the server places it (``approvals.plan_placement``,
+    as on POST ``/phases/{id}/staff``): a person not on the card yet is booked
+    linked (no own dates -- it follows the card when it moves in the Gantt
+    chart, with no second write); someone already on it gets the largest free
+    stretch of the card, or the second half when one booking of theirs covers
+    the whole card (that booking keeps the first half, listed in
+    ``adjusted``); a covered card is 409 ``CARD_FULL_DETAIL``, a booking to
+    split that awaits approval 409 ``ALREADY_PENDING_DETAIL``. Removing a
+    person who holds several bookings goes booking by booking (the per-row
+    routes; the per-person DELETE answers 409).
     """
     card = await _load_card(db, entity_type, entity_id)
     await ensure_project_visible(request, db, user, card.project_id)
@@ -369,17 +378,17 @@ async def assign_card(
     if assignee.is_resource is False:
         raise HTTPException(status_code=400, detail=NOT_BOOKABLE_DETAIL)
 
-    # One booking per person and card; a pending (awaiting approval) one counts.
-    await approvals.ensure_no_duplicate(
-        db,
-        entity_type,
-        entity_id,
-        data.staff_id,
-        detail="That staff member is already assigned to this card",
+    # Placed by the server: linked, a free stretch, or half of a full-span
+    # booking; a covered card (or a pending booking to split) is a 409.
+    plan = approvals.require_placement(
+        await approvals.plan_placement(db, entity_type, entity_id, data.staff_id)
     )
 
     # Resolve the booking size server-side; the client must not guess it.
     allocation = data.allocation if data.allocation is not None else assignee.max_capacity or 100
+    values = booking_dict(
+        allocation, plan.start_date, plan.end_date, placement=approvals.AUTO_PLACEMENT
+    )
     if outcome == "approval":
         return await approvals.submit_request(
             db,
@@ -389,9 +398,16 @@ async def assign_card(
             level=entity_type,
             project_id=card.project_id,
             target_id=entity_id,
-            values=booking_dict(allocation),
+            values=values,
         )
 
+    card_name = _card_name(card)
+    effects = approvals.ApprovalEffects()
+    # The shortened booking's person intent is dropped (already_notified):
+    # the ``assigned`` body below names it.
+    shrink_intents = await approvals.apply_shrink(
+        db, user, level=entity_type, plan=plan, effects=effects
+    )
     assignment: PhaseStaffAssignment | SubphaseStaffAssignment
     if entity_type == "phase":
         assignment = PhaseStaffAssignment(
@@ -399,6 +415,8 @@ async def assign_card(
             staff_id=data.staff_id,
             allocation=allocation,
             phase_id=entity_id,
+            start_date=plan.start_date,
+            end_date=plan.end_date,
         )
     else:
         assignment = SubphaseStaffAssignment(
@@ -406,10 +424,11 @@ async def assign_card(
             staff_id=data.staff_id,
             allocation=allocation,
             subphase_id=entity_id,
+            start_date=plan.start_date,
+            end_date=plan.end_date,
         )
     db.add(assignment)
 
-    card_name = _card_name(card)
     # The person gets the ``assigned`` notification below; the PM a change one.
     intents = change_notifications.booking_intents(
         user,
@@ -418,7 +437,7 @@ async def assign_card(
         project_id=card.project_id,
         target_id=entity_id,
         staff_id=data.staff_id,
-        values=booking_dict(allocation),
+        values=values,
         target_name=card_name,
         person_name=assignee.full_name,
     )
@@ -430,7 +449,7 @@ async def assign_card(
         entity_id=entity_id,
         project_id=card.project_id,
         title=f"You were assigned to {card_name}",
-        body=f"Booked at {allocation}% over the card's dates.",
+        body=approvals.placement_body(allocation, plan),
     )
     db.add_all(rows)
 
@@ -447,16 +466,25 @@ async def assign_card(
         summary=f"{assignee.full_name} assigned to {card_name}",
     )
     await _push_notifications(request, rows)
+    # The shortened row's update change (and a request it overtook).
+    await approvals.publish(request, user, effects)
     await change_notifications.deliver(
-        db, request, user.id, intents, already_notified={data.staff_id}
+        db, request, user.id, intents + shrink_intents, already_notified={data.staff_id}
     )
 
+    start, end, linked = effective_dates(
+        assignment.start_date, assignment.end_date, card.start_date, card.end_date
+    )
     return {
         "success": True,
         "id": assignment.id,
         "staff_id": assignment.staff_id,
         "staff_name": assignee.full_name,
         "allocation": assignment.allocation,
+        "start_date": serialize_date_as_datetime_js(start),
+        "end_date": serialize_date_as_datetime_js(end),
+        "linked": linked,
+        "adjusted": approvals.adjusted_rows(plan),
     }
 
 
