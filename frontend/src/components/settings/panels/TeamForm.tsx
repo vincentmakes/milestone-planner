@@ -2,15 +2,18 @@
  * TeamForm (Settings hub > Teams > edit)
  *
  * Name, description, colour, active flag and members of one team. Members
- * are the people of the team's site (one staff row per user-site pair);
+ * are the people of the team's site (one staff row per user-site pair),
+ * picked in a searchable dropdown and listed under it with a remove button;
  * inactive people are offered only while they are still members, so they can
- * be removed.
+ * be removed. A member the list does not offer (e.g. someone not bookable,
+ * absent from GET /staff) is kept as is.
  */
 
 import { useMemo, useState } from 'react';
 import { teamsApi } from '@/api';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
+import { MultiSelectDropdown } from '@/components/common/MultiSelectDropdown';
 import { Notice } from '@/components/common/Notice';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -20,7 +23,7 @@ import { DEFAULT_TEAM_COLOR, TEAM_COLOR_SWATCHES } from '@/utils/colorSwatches';
 import type { Team } from '@/types';
 import { useReportDirty } from '../useReportDirty';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
-import { Icon, BackIcon } from '@/components/common/Icon';
+import { Icon, BackIcon, CloseIcon } from '@/components/common/Icon';
 import styles from './TeamsPanel.module.css';
 
 interface TeamFormProps {
@@ -68,11 +71,24 @@ export function TeamForm({ team, onBack, onSaved, onDirtyChange }: TeamFormProps
       membersChanged
   );
 
-  const toggleMember = (id: number) =>
+  const memberOptions = useMemo(
+    () => people.map((person) => ({ id: person.id, name: person.name, hint: person.role })),
+    [people]
+  );
+  const chosenPeople = useMemo(() => people.filter((person) => memberIds.has(person.id)), [people, memberIds]);
+
+  // The dropdown reports only the people it lists: members it does not list
+  // are kept, never dropped silently.
+  const setListedMembers = (ids: number[]) =>
+    setMemberIds((prev) => {
+      const listed = new Set(people.map((person) => person.id));
+      return new Set([...[...prev].filter((id) => !listed.has(id)), ...ids]);
+    });
+
+  const removeMember = (id: number) =>
     setMemberIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      next.delete(id);
       return next;
     });
 
@@ -143,23 +159,40 @@ export function TeamForm({ team, onBack, onSaved, onDirtyChange }: TeamFormProps
       <ToggleSwitch checked={active} onChange={setActive} label="Active" />
 
       <div className={styles.field}>
-        <span className={styles.fieldLabel}>Members</span>
-        {people.length === 0 ? (
-          <div className={styles.membersEmpty}>No people on this site yet.</div>
-        ) : (
-          <div role="group" aria-label="Team members" className={styles.memberList}>
-            {people.map((person) => (
-              <label key={person.id} className={styles.member}>
-                <input
-                  type="checkbox"
-                  checked={memberIds.has(person.id)}
-                  onChange={() => toggleMember(person.id)}
-                />
+        <MultiSelectDropdown
+          label="Members"
+          searchable
+          allowClear={false}
+          options={memberOptions}
+          selectedIds={memberIds}
+          onChange={setListedMembers}
+          placeholder="No members"
+          emptyText="No people on this site yet."
+          summary={(chosen) => (chosen.length === 1 ? '1 member' : `${chosen.length} members`)}
+        />
+        {chosenPeople.length > 0 && (
+          <ul aria-label="Team members" className={styles.memberList}>
+            {chosenPeople.map((person) => (
+              <li key={person.id} className={styles.member}>
                 <span className={styles.memberName}>{person.name}</span>
-                {person.role && <span className={styles.memberRole}>{person.role}</span>}
-              </label>
+                {person.role && (
+                  <>
+                    {' '}
+                    <span className={styles.memberRole}>· {person.role}</span>
+                  </>
+                )}
+                <button
+                  type="button"
+                  className={styles.memberRemove}
+                  onClick={() => removeMember(person.id)}
+                  aria-label={`Remove ${person.name}`}
+                  title={`Remove ${person.name}`}
+                >
+                  <Icon icon={CloseIcon} size={14} />
+                </button>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </div>
 

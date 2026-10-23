@@ -25,6 +25,7 @@ import { createStaffAssignment, loadAllProjects, updateStaffAssignment } from '@
 import { dateValue, dayButton, openDateField, pickRange, showMonth } from '@/test/datePicker';
 import { makePhase, makeProject, makeSubphase, makeUser } from '@/test/factories';
 import type { Project, StaffAssignment } from '@/types';
+import { pickOption } from '@/test/searchableSelect';
 
 function buildProject(): Project {
   return makeProject({
@@ -68,7 +69,7 @@ const follow = () => screen.getByRole('switch', { name: 'Follow the phase dates'
 function openNew(context: { phaseId?: number; subphaseId?: number } = { phaseId: 3 }) {
   useUIStore.getState().openModal('staffAssignment', { projectId: 1, ...context });
   render(<AssignmentModal mode="staff" />);
-  fireEvent.change(screen.getByLabelText('Staff Member'), { target: { value: '4' } });
+  pickOption(/^Staff Member/, 'Bob Brown');
 }
 
 function openEdit(row: StaffAssignment) {

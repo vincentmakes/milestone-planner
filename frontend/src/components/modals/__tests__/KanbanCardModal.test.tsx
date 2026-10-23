@@ -17,6 +17,7 @@ import { deleteStaffAssignment, updateStaffAssignment } from '@/api/endpoints/pr
 import type { Phase, Project, Subphase } from '@/types';
 import { stubConfirm } from '@/test/confirmDialog';
 import { formatMediumDate } from '@/utils/date';
+import { pickOption, pickerOptions, pickerTrigger } from '@/test/searchableSelect';
 
 vi.mock('@/api/endpoints/kanban', () => ({
   getComments: vi.fn().mockResolvedValue([]),
@@ -484,7 +485,7 @@ describe('KanbanCardModal assignee permissions', () => {
 
     await waitFor(() => expect(assignCard).toHaveBeenCalledWith('subphase', 10, 5));
     // No add-assignee picker: that is for the project's editors.
-    expect(screen.queryByLabelText('Add assignee')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Add assignee/ })).not.toBeInTheDocument();
   });
 
   it('does not offer "Join this card" to someone not bookable as a resource', () => {
@@ -540,7 +541,7 @@ describe('KanbanCardModal assignee permissions', () => {
 
     expect(bobSlider()).toBeInTheDocument();
     expect(screen.getByLabelText('Remove Bob Brown')).toBeInTheDocument();
-    expect(screen.getByLabelText('Add assignee')).toBeInTheDocument();
+    expect(pickerTrigger(/^Add assignee/)).toHaveAccessibleName('Add assignee Add someone…');
     expect(screen.queryByRole('button', { name: 'Join this card' })).not.toBeInTheDocument();
   });
 });
@@ -575,21 +576,20 @@ describe('KanbanCardModal assignee candidates under the header team filter', () 
   });
 
   const candidates = () =>
-    within(screen.getByLabelText('Add assignee'))
-      .getAllByRole('option')
+    pickerOptions(/^Add assignee/)
       .map((o) => o.textContent)
       .filter((t) => t !== 'Add someone…');
 
   it('offers only people the filter shows on a card of the current site', () => {
     render(<KanbanCardModal />);
-    expect(candidates()).toEqual(['Alice Anderson (books 100%)']);
+    expect(candidates()).toEqual(['Alice Anderson books 100%']);
   });
 
   it('offers everyone of the site on a card of another site', () => {
     const project = { ...seedProject(), site_id: 2 };
     useAppStore.setState({ projects: [project] });
     render(<KanbanCardModal />);
-    expect(candidates()).toEqual(['Alice Anderson (books 100%)', 'Dan Diaz (books 100%)']);
+    expect(candidates()).toEqual(['Alice Anderson books 100%', 'Dan Diaz books 100%']);
   });
 });
 
@@ -816,33 +816,51 @@ describe('KanbanCardModal: a second booking of someone already on the card', () 
     seedStore();
   });
 
-  const picker = () => screen.getByLabelText('Add assignee') as HTMLSelectElement;
-  const optionTexts = () =>
-    within(picker())
-      .getAllByRole('option')
-      .map((o) => o.textContent);
+  const optionTexts = () => pickerOptions(/^Add assignee/).map((o) => o.textContent);
 
-  it('lists an assigned person with the "already on this card" suffix', () => {
+  it('lists an assigned person with the "already on this card" note', () => {
     render(<KanbanCardModal />);
     expect(optionTexts()).toEqual([
       'Add someone…',
-      'Alice Anderson (books 100%)',
-      'Bob Brown (books 100%) — already on this card',
+      'Alice Anderson books 100%',
+      'Bob Brown books 100% — already on this card',
     ]);
+    // the note is shown but never searched
+    fireEvent.change(screen.getByRole('combobox', { name: 'Find a person' }), { target: { value: 'already' } });
+    expect(optionTexts()).toEqual(['Add someone…']);
   });
 
   it('assigns someone already on the card again (the server places the booking)', async () => {
     vi.mocked(assignCard).mockResolvedValueOnce({ success: true } as never);
     render(<KanbanCardModal />);
-    fireEvent.change(picker(), { target: { value: '4' } });
+    expect(screen.getByRole('button', { name: 'Assign' })).toBeDisabled();
+    pickOption(/^Add assignee/, 'Bob Brown');
+    expect(pickerTrigger(/^Add assignee/)).toHaveAccessibleName('Add assignee Bob Brown');
     fireEvent.click(screen.getByRole('button', { name: 'Assign' }));
     await waitFor(() => expect(assignCard).toHaveBeenCalledWith('subphase', 10, 4));
+  });
+
+  it('finds a candidate by typing and picks it with Enter', async () => {
+    vi.mocked(assignCard).mockResolvedValueOnce({ success: true } as never);
+    render(<KanbanCardModal />);
+    fireEvent.keyDown(pickerTrigger(/^Add assignee/), { key: 'a' });
+    const search = screen.getByRole('combobox', { name: 'Find a person' });
+    expect(search).toHaveValue('a');
+    fireEvent.change(search, { target: { value: 'ali' } });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(pickerTrigger(/^Add assignee/)).toHaveFocus();
+    // back to "Add someone…" clears the choice
+    pickOption(/^Add assignee/, 'Add someone…');
+    expect(screen.getByRole('button', { name: 'Assign' })).toBeDisabled();
+    pickOption(/^Add assignee/, 'Alice Anderson');
+    fireEvent.click(screen.getByRole('button', { name: 'Assign' }));
+    await waitFor(() => expect(assignCard).toHaveBeenCalledWith('subphase', 10, 7));
   });
 
   it('shows the server refusing a second booking in place', async () => {
     vi.mocked(assignCard).mockRejectedValueOnce(new Error(CARD_FULL));
     render(<KanbanCardModal />);
-    fireEvent.change(picker(), { target: { value: '4' } });
+    pickOption(/^Add assignee/, 'Bob Brown');
     fireEvent.click(screen.getByRole('button', { name: 'Assign' }));
     expect(await screen.findByText(CARD_FULL)).toBeInTheDocument();
   });
@@ -853,7 +871,7 @@ describe('KanbanCardModal: a second booking of someone already on the card', () 
     sub.end_date = sub.start_date;
     useAppStore.setState({ projects: [project] });
     render(<KanbanCardModal />);
-    expect(optionTexts()).toEqual(['Add someone…', 'Alice Anderson (books 100%)']);
+    expect(optionTexts()).toEqual(['Add someone…', 'Alice Anderson books 100%']);
   });
 
   it('renders the picker when everyone of the site is already on the card', () => {
@@ -866,8 +884,8 @@ describe('KanbanCardModal: a second booking of someone already on the card', () 
     useAppStore.setState({ projects: [project] });
     render(<KanbanCardModal />);
     expect(optionTexts().filter((t) => t !== 'Add someone…')).toEqual([
-      'Alice Anderson (books 100%) — already on this card',
-      'Bob Brown (books 100%) — already on this card',
+      'Alice Anderson books 100% — already on this card',
+      'Bob Brown books 100% — already on this card',
     ]);
   });
 });

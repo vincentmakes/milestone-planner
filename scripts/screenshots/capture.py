@@ -128,6 +128,19 @@ def right_click_row(page: Page, name: str) -> None:
     page.wait_for_timeout(400)
 
 
+def pick_in_searchable_select(page: Page, trigger_name: str, label: str) -> None:
+    """Pick `label` in a SearchableSelect of the open dialog: click its trigger
+    (a listbox button named by its label, then the chosen item), type the
+    label in the search box that opens focused, click the matching option."""
+    dialog = page.get_by_role("dialog")
+    dialog.get_by_role("button", name=re.compile(trigger_name)).and_(
+        dialog.locator('button[aria-haspopup="listbox"]')
+    ).click()
+    search = dialog.get_by_role("combobox", name=re.compile("^Find "))
+    search.fill(label)
+    dialog.get_by_role("option", name=re.compile(f"^{re.escape(label)}")).first.click()
+
+
 def open_project_modal(page: Page, project: str = "Bioprocess Scale-Up") -> None:
     """Open the Edit Project modal for a project via the context menu."""
     go_to_gantt(page)
@@ -551,10 +564,7 @@ def shot_assign_staff_modal(context: BrowserContext) -> None:
     right_click_row(page, "Catalyst Optimization")
     page.get_by_text("Assign Staff", exact=True).click()
     page.wait_for_timeout(600)
-    # The page has other <select>s (custom-column list cells) — target the
-    # modal's staff dropdown via its placeholder option.
-    staff_select = page.locator('select:has(option:text("Select staff member"))')
-    staff_select.select_option(index=1)
+    pick_in_searchable_select(page, r"^Staff Member", "Alice Anderson")
     page.wait_for_timeout(400)
     page.screenshot(path=str(OUT / "assign-staff-modal.png"))
     log("[done] assign-staff-modal.png")
@@ -959,8 +969,7 @@ def shot_equipment_assign_modal(context: BrowserContext) -> None:
     right_click_row(page, "Bioprocess Scale-Up")
     page.get_by_text("Assign Equipment", exact=True).click()
     page.wait_for_timeout(600)
-    equip_select = page.locator('select:has(option:text("Select equipment"))')
-    equip_select.select_option(index=1)
+    pick_in_searchable_select(page, r"^Equipment", "HPLC System 1")
     page.wait_for_timeout(400)
     page.screenshot(path=str(OUT / "equipment-assignment-modal.png"))
     log("[done] equipment-assignment-modal.png")

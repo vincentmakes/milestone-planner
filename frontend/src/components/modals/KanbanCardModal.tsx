@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '@/components/common/Modal';
-import { Button, Select } from '@/components/common';
+import { Button, SearchableSelect } from '@/components/common';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { AllocationSlider } from '@/components/common/AllocationSlider';
 import { useUIStore } from '@/stores/uiStore';
@@ -299,14 +299,13 @@ export function KanbanCardModal() {
   const candidateStaff = siteStaff.filter(
     (s) => (!filterByTeam || staffMatches(s)) && !(oneDayCard && onCard(s.id))
   );
-  // After the early return, so no useMemo; the empty entry stays selectable (as before).
-  const assigneeOptions = [
-    { value: '', label: 'Add someone…' },
-    ...candidateStaff.map((s) => ({
-      value: s.id,
-      label: `${s.name} (books ${s.max_capacity ?? 100}%)${onCard(s.id) ? ' — already on this card' : ''}`,
-    })),
-  ];
+  // After the early return, so no useMemo. The picker's empty row stays
+  // selectable (as before); the booking share is a note, never searched.
+  const assigneeOptions = candidateStaff.map((s) => ({
+    id: s.id,
+    label: s.name,
+    note: `books ${s.max_capacity ?? 100}%${onCard(s.id) ? ' — already on this card' : ''}`,
+  }));
 
   return (
     <Modal
@@ -459,11 +458,12 @@ export function KanbanCardModal() {
 
             {isEditor && candidateStaff.length > 0 && (
               <div className={styles.assignRow}>
-                <Select
+                <SearchableSelect
                   className={styles.assigneeSelect}
-                  value={assigneeToAdd}
-                  onChange={(e) => setAssigneeToAdd(e.target.value)}
+                  value={assigneeToAdd === '' ? null : Number(assigneeToAdd)}
+                  onChange={(id) => setAssigneeToAdd(id === null ? '' : String(id))}
                   aria-label="Add assignee"
+                  emptyLabel="Add someone…"
                   disabled={!!assignBlockedReason}
                   title={assignBlockedReason ?? undefined}
                   options={assigneeOptions}

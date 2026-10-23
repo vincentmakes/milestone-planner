@@ -10,7 +10,7 @@ import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { DateRangeField } from '@/components/common/DateRangeField';
-import { Select } from '@/components/common/Select';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore, selectCanManageOthersAbsences } from '@/stores/appStore';
 import { 
@@ -116,12 +116,10 @@ export function VacationModal() {
   const createBlockedReason = !isEditing && whatIf.blocked ? whatIf.reason('Adding absences') : null;
   // GET /staff returns one row per user-site pair: list each person once
   const staffOptions = useMemo(() => uniqueById(staff), [staff]);
-  // The empty first entry stays a real, selectable option (as before).
+  // The picker's rows (searched by name and job title); its empty first row
+  // stays a real, selectable choice (as before).
   const staffSelectOptions = useMemo(
-    () => [
-      { value: '', label: 'Select staff member...' },
-      ...staffOptions.map((s) => ({ value: s.id, label: s.name })),
-    ],
+    () => staffOptions.map((s) => ({ id: s.id, label: s.name, hint: s.role })),
     [staffOptions]
   );
   
@@ -356,11 +354,12 @@ export function VacationModal() {
         
         {/* Staff Member Display or Selector */}
         {canManageResources && !isEditing ? (
-          <Select
+          <SearchableSelect
             label="Staff Member"
-            value={staffId || ''}
-            onChange={(e) => setStaffId(e.target.value ? Number(e.target.value) : null)}
+            value={staffId}
+            onChange={setStaffId}
             options={staffSelectOptions}
+            emptyLabel="Select staff member…"
             fullWidth
           />
         ) : staffMember ? (

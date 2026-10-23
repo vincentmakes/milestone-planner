@@ -18,6 +18,7 @@ import { updateStaffAssignment, deleteStaffAssignment } from '@/api/endpoints/pr
 import { createComment, getComments, getMentionableUsers } from '@/api/endpoints/kanban';
 import { makePhase, makeProject, makeSubphase, makeUser } from '@/test/factories';
 import type { AssignmentApproval, StaffAssignment } from '@/types';
+import { pickerTrigger } from '@/test/searchableSelect';
 
 vi.mock('@/api/endpoints/projects', () => ({
   createStaffAssignment: vi.fn(),
@@ -253,7 +254,7 @@ describe('AssignmentModal at another site', () => {
     openEdit(booking());
     render(<AssignmentModal mode="staff" />);
     await settle();
-    expect(screen.getByRole('combobox', { name: 'Staff Member' })).toHaveValue(String(ME));
+    expect(pickerTrigger(/^Staff Member/)).toHaveAccessibleName('Staff Member * Bob Brown');
     await waitFor(() => expect(getMentionableUsers).toHaveBeenCalledWith(2));
   });
 });

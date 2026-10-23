@@ -11,6 +11,7 @@ import { useAppStore } from '@/stores/appStore';
 import { updateProject } from '@/api/endpoints/projects';
 import { makeStaff, makeTeam, makeUser } from '@/test/factories';
 import { dateValue, pickEnd, pickRange } from '@/test/datePicker';
+import { optionLabel, pickOption, pickerOptions, pickerTrigger } from '@/test/searchableSelect';
 import { useViewStore } from '@/stores/viewStore';
 import { tagFilterKey } from '@/utils/tags';
 import type { Project, Site } from '@/types';
@@ -86,7 +87,7 @@ describe('ProjectModal tag picker during save', () => {
 describe('ProjectModal fields', () => {
   it('labels every shared Input / Select and keeps "Select PM" selectable', async () => {
     vi.mocked(updateProject).mockResolvedValueOnce({} as never);
-    useAppStore.setState({ staff: [makeStaff({ id: 4, name: 'Bob Brown', site_id: 1 })] });
+    useAppStore.setState({ staff: [makeStaff({ id: 4, name: 'Bob Brown', role: 'Engineer', site_id: 1 })] });
     render(<ProjectModal />);
 
     expect(screen.getByLabelText('Project Name *')).toHaveValue('Bioprocess Scale-Up');
@@ -96,21 +97,46 @@ describe('ProjectModal fields', () => {
     expect(screen.getByLabelText('Sales PM')).toHaveValue('');
     expect(screen.getByLabelText('Volume')).toHaveValue(null);
 
-    const pm = screen.getByLabelText('Project Manager') as HTMLSelectElement;
-    expect(pm.value).toBe('');
-    expect(Array.from(pm.options).map((o) => [o.value, o.text, o.disabled])).toEqual([
-      ['', 'Select PM', false],
-      ['4', 'Bob Brown', false],
-    ]);
-    fireEvent.change(pm, { target: { value: '4' } });
-    expect(pm.value).toBe('4');
-    fireEvent.change(pm, { target: { value: '' } });
-    expect(pm.value).toBe('');
+    expect(pickerTrigger(/^Project Manager/)).toHaveAccessibleName('Project Manager Select PM');
+    const rows = pickerOptions(/^Project Manager/);
+    expect(rows.map(optionLabel)).toEqual(['Select PM', 'Bob Brown']);
+    expect(rows.map((o) => o.getAttribute('aria-disabled'))).toEqual([null, null]);
+    expect(rows[1]).toHaveTextContent('Bob Brown Engineer');
+    pickOption(/^Project Manager/, 'Bob Brown');
+    expect(pickerTrigger(/^Project Manager/)).toHaveAccessibleName('Project Manager Bob Brown');
+    pickOption(/^Project Manager/, 'Select PM');
+    expect(pickerTrigger(/^Project Manager/)).toHaveAccessibleName('Project Manager Select PM');
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
     });
-    expect(updateProject).toHaveBeenCalledWith(9, expect.objectContaining({ name: 'Bioprocess Scale-Up' }));
+    expect(updateProject).toHaveBeenCalledWith(
+      9,
+      expect.objectContaining({ name: 'Bioprocess Scale-Up', pm_id: null })
+    );
+  });
+
+  it('finds the project manager by name or job title and saves the pick', async () => {
+    vi.mocked(updateProject).mockResolvedValueOnce({} as never);
+    useAppStore.setState({
+      staff: [
+        makeStaff({ id: 4, name: 'Bob Brown', role: 'Engineer', site_id: 1 }),
+        makeStaff({ id: 5, name: 'Alice Martin', role: 'Chemist', site_id: 1 }),
+      ],
+    });
+    render(<ProjectModal />);
+    fireEvent.click(pickerTrigger(/^Project Manager/));
+    const search = screen.getByRole('combobox', { name: 'Find a person' });
+    expect(search).toHaveFocus();
+    fireEvent.change(search, { target: { value: 'chem' } });
+    expect(pickerOptions(/^Project Manager/).map(optionLabel)).toEqual(['Select PM', 'Alice Martin']);
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(pickerTrigger(/^Project Manager/)).toHaveAccessibleName('Project Manager Alice Martin');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    });
+    expect(updateProject).toHaveBeenCalledWith(9, expect.objectContaining({ pm_id: 5 }));
   });
 
   // The rule itself is proven in dateRangeLogic.test; this guards the form's payload wiring
@@ -195,8 +221,9 @@ describe('ProjectModal PM picker with a team filter', () => {
     act(() => useUIStore.getState().openProjectModal({ ...project, pm_id: 42 }));
     render(<ProjectModal />);
 
-    const pm = screen.getByLabelText('Project Manager') as HTMLSelectElement;
-    expect(Array.from(pm.options).map((o) => o.text)).toEqual(['Select PM', 'Pat Manager', 'Ann Teamer']);
-    expect(pm).toHaveValue('42');
+    expect(pickerTrigger(/^Project Manager/)).toHaveAccessibleName('Project Manager Pat Manager');
+    const rows = pickerOptions(/^Project Manager/);
+    expect(rows.map(optionLabel)).toEqual(['Select PM', 'Pat Manager', 'Ann Teamer']);
+    expect(rows[1]).toHaveAttribute('aria-selected', 'true');
   });
 });

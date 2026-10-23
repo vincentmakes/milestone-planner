@@ -4,7 +4,9 @@
  * - The list shows the teams of the site picked in the toolbar; superusers
  *   only get the sites they belong to (the backend refuses the others).
  * - Enter pressed twice in "New team name" creates one team.
- * - The edit form preloads the team and saves its members; Save shows busy.
+ * - The edit form preloads the team and saves its members (a searchable
+ *   dropdown plus the chosen list); Save shows busy; members the dropdown
+ *   does not list are kept; Enter in its search box never submits.
  * - Delete asks first, and the confirm comes before the submit guard.
  * - Typed input is reported to the Settings hub.
  */
@@ -18,6 +20,7 @@ import { makeStaff, makeTeam } from '@/test/factories';
 import { DEFAULT_TEAM_COLOR } from '@/utils/colorSwatches';
 import type { Site, Team, User } from '@/types';
 import { asSignedIn } from '@/test/permissionFixtures';
+import { optionLabel, pickOption, pickerOptions, pickerSearch, pickerTrigger } from '@/test/searchableSelect';
 
 const api = vi.hoisted(() => ({
   teamsApi: {
@@ -156,16 +159,21 @@ describe('TeamsPanel', () => {
     expect(screen.getByRole('switch', { name: 'Active' })).toBeChecked();
     expect(screen.getByRole('radiogroup', { name: 'Team colour' })).toBeInTheDocument();
 
-    const members = screen.getByRole('group', { name: 'Team members' });
-    const boxes = within(members).getAllByRole('checkbox');
+    expect(pickerTrigger(/^Members/)).toHaveAccessibleName('Members 1 member');
+    expect(
+      within(screen.getByRole('list', { name: 'Team members' }))
+        .getAllByRole('listitem')
+        .map((li) => li.textContent)
+    ).toEqual(['Bob Brown · Scientist']);
     // Active people of the team's site, by name; Dave (inactive, not a member)
     // and Zoe (another site) are not offered.
-    expect(boxes.map((b) => b.closest('label')!.textContent)).toEqual([
-      'Bob BrownScientist',
-      'Carol ChenTechnician',
-    ]);
-    expect(within(members).getByRole('checkbox', { name: /Bob Brown/ })).toBeChecked();
-    fireEvent.click(within(members).getByRole('checkbox', { name: /Carol Chen/ }));
+    const rows = pickerOptions(/^Members/);
+    expect(rows.map(optionLabel)).toEqual(['Bob Brown', 'Carol Chen']);
+    expect(rows.map((o) => o.getAttribute('aria-selected'))).toEqual(['true', 'false']);
+    expect(screen.getByRole('combobox', { name: 'Find a person' })).toHaveFocus();
+    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
+    pickOption(/^Members/, 'Carol Chen');
+    expect(pickerTrigger(/^Members/)).toHaveAccessibleName('Members 2 members');
 
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
     expect(screen.getByRole('button', { name: 'Save Changes' })).toHaveAttribute('aria-busy', 'true');
@@ -187,7 +195,54 @@ describe('TeamsPanel', () => {
     useAppStore.setState({ teams: [{ ...analytics, member_ids: [4, 6] }, processTeam, zurichLab] });
     render(<TeamsPanel />);
     fireEvent.click(screen.getByRole('button', { name: 'Edit Analytics' }));
-    expect(screen.getByRole('checkbox', { name: /Dave Dormant/ })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Remove Dave Dormant' })).toBeInTheDocument();
+    const dave = pickerOptions(/^Members/).find((o) => optionLabel(o) === 'Dave Dormant');
+    expect(dave).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('removes a member from the list under the dropdown and finds people by job title', async () => {
+    api.teamsApi.update.mockResolvedValue({ ...analytics, member_ids: [5] });
+    render(<TeamsPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Analytics' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Bob Brown' }));
+    expect(screen.queryByRole('list', { name: 'Team members' })).not.toBeInTheDocument();
+    expect(pickerTrigger(/^Members/)).toHaveAccessibleName('Members No members');
+
+    const search = pickerSearch(/^Members/);
+    fireEvent.change(search, { target: { value: 'techn' } });
+    expect(pickerOptions(/^Members/).map(optionLabel)).toEqual(['Carol Chen']);
+    // Enter ticks the active row and never submits the form
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(api.teamsApi.update).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Remove Carol Chen' })).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    });
+    expect(api.teamsApi.update).toHaveBeenCalledWith(1, expect.objectContaining({ member_ids: [5] }));
+  });
+
+  it('keeps member ids the dropdown does not list', async () => {
+    // 99 is not among the site's staff (e.g. someone not bookable as a resource)
+    useAppStore.setState({ teams: [{ ...analytics, member_ids: [4, 99] }, processTeam, zurichLab] });
+    api.teamsApi.update.mockResolvedValue({ ...analytics, member_ids: [4, 5, 99] });
+    render(<TeamsPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Analytics' }));
+    pickOption(/^Members/, 'Carol Chen');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    });
+    expect(api.teamsApi.update).toHaveBeenCalledWith(1, expect.objectContaining({ member_ids: [4, 5, 99] }));
+  });
+
+  it('says when the site has nobody to offer', () => {
+    useAppStore.setState({ staff: [] });
+    render(<TeamsPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Analytics' }));
+    fireEvent.click(pickerTrigger(/^Members/));
+    expect(screen.getByRole('status')).toHaveTextContent('No people on this site yet.');
   });
 
   it('shows an error instead of saving a team without a name', () => {
@@ -265,7 +320,11 @@ describe('TeamsPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit Analytics' }));
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
-    fireEvent.click(screen.getByRole('checkbox', { name: /Carol Chen/ }));
+    pickOption(/^Members/, 'Carol Chen');
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    pickOption(/^Members/, 'Carol Chen'); // unticked again: nothing to save
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    pickOption(/^Members/, 'Carol Chen');
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to teams' }));

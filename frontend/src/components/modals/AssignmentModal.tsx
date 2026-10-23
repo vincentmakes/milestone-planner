@@ -18,7 +18,7 @@ import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { DateRangeField } from '@/components/common/DateRangeField';
-import { Select } from '@/components/common/Select';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
@@ -438,24 +438,25 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
 
   const resourceLabel = isStaff ? 'Staff' : 'Equipment';
 
-  // The empty first entry stays a real, selectable option (as before).
+  // The picker's rows, searched by name and role / type; its empty first
+  // row stays a real, selectable choice (as before).
   const resourceOptions = useMemo(
-    () => [
-      { value: '', label: isStaff ? 'Select staff member' : 'Select equipment' },
-      ...(isStaff
+    () =>
+      isStaff
         ? siteResources.map((s) => {
             const maxCap = (s as typeof staff[0]).max_capacity ?? 100;
-            const capacityLabel = maxCap < 100 ? ` - ${maxCap}% capacity` : '';
             return {
-              value: s.id,
-              label: `${s.name} (${(s as typeof staff[0]).role || 'No role'})${capacityLabel}`,
+              id: s.id,
+              label: s.name,
+              hint: (s as typeof staff[0]).role || 'No role',
+              note: maxCap < 100 ? `${maxCap}% capacity` : undefined,
             };
           })
         : siteResources.map((e) => ({
-            value: e.id,
-            label: `${e.name} (${(e as typeof equipment[0]).type || 'No type'})`,
-          }))),
-    ],
+            id: e.id,
+            label: e.name,
+            hint: (e as typeof equipment[0]).type || 'No type',
+          })),
     [isStaff, siteResources]
   );
 
@@ -560,13 +561,16 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
             fullWidth
           />
         ) : (
-          <Select
+          <SearchableSelect
             label={isStaff ? 'Staff Member *' : 'Equipment *'}
-            value={resourceId}
-            onChange={(e) => handleResourceChange(e.target.value)}
+            value={resourceId === '' ? null : Number(resourceId)}
+            // Fires only on a real change: re-picking keeps the allocation.
+            onChange={(id) => handleResourceChange(id === null ? '' : String(id))}
             disabled={isEditing}
-            aria-label={isStaff ? 'Staff Member' : 'Equipment'}
             options={resourceOptions}
+            emptyLabel={isStaff ? 'Select staff member' : 'Select equipment'}
+            searchLabel={isStaff ? 'Find a person' : 'Find equipment'}
+            noMatchText={isStaff ? 'No one matches' : 'No equipment matches'}
             fullWidth
           />
         )}

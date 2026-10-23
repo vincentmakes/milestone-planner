@@ -19,6 +19,7 @@ import type { Project } from '@/types';
 import { useViewStore } from '@/stores/viewStore';
 import { tagFilterKey } from '@/utils/tags';
 import { makeTeam, makeUser } from '@/test/factories';
+import { optionLabel, pickOption, pickerOptions, pickerTrigger } from '@/test/searchableSelect';
 
 vi.mock('@/api/endpoints/projects', () => ({
   createStaffAssignment: vi.fn().mockResolvedValue({}),
@@ -93,10 +94,12 @@ describe('AssignmentModal picker', () => {
     openForProject();
     render(<AssignmentModal mode="staff" />);
 
-    const picker = screen.getByLabelText('Staff Member') as HTMLSelectElement;
-    expect(picker.tagName).toBe('SELECT');
-    expect(screen.getByRole('option', { name: /Alice Anderson/ })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /Bob Brown/ })).toBeInTheDocument();
+    expect(pickerTrigger(/^Staff Member/)).toHaveAccessibleName('Staff Member * Select staff member');
+    const rows = pickerOptions(/^Staff Member/);
+    expect(rows.map(optionLabel)).toEqual(['Select staff member', 'Alice Anderson', 'Bob Brown']);
+    // the role is a searched hint, the capacity a note under 100 %
+    expect(rows[1]).toHaveTextContent('Alice Anderson No role 60% capacity');
+    expect(rows[2]).toHaveTextContent(/^Bob Brown No role$/);
     expect(screen.getByRole('button', { name: 'Assign Staff' })).toBeInTheDocument();
   });
 
@@ -104,7 +107,35 @@ describe('AssignmentModal picker', () => {
     seed({ id: 99, role: 'superuser' });
     openForProject();
     render(<AssignmentModal mode="staff" />);
-    expect((screen.getByLabelText('Staff Member') as HTMLElement).tagName).toBe('SELECT');
+    expect(pickerTrigger(/^Staff Member/)).toBeEnabled();
+    expect(screen.queryByDisplayValue('You')).not.toBeInTheDocument();
+  });
+
+  it('sets the allocation to the capacity on a real change only, and books the pick', async () => {
+    seed({ id: 99, role: 'superuser' });
+    openForProject();
+    render(<AssignmentModal mode="staff" />);
+    const slider = () => screen.getByRole('slider');
+    expect(slider()).toHaveAttribute('aria-valuetext', '100%');
+
+    fireEvent.click(pickerTrigger(/^Staff Member/));
+    const search = screen.getByRole('combobox', { name: 'Find a person' });
+    expect(search).toHaveFocus();
+    fireEvent.change(search, { target: { value: 'ali' } });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(pickerTrigger(/^Staff Member/)).toHaveAccessibleName('Staff Member * Alice Anderson');
+    expect(slider()).toHaveAttribute('aria-valuetext', '60%');
+
+    // move the slider, then pick Alice again: the allocation stays
+    fireEvent.change(slider(), { target: { value: '40' } });
+    fireEvent.keyUp(slider());
+    expect(slider()).toHaveAttribute('aria-valuetext', '40%');
+    pickOption(/^Staff Member/, 'Alice Anderson');
+    expect(slider()).toHaveAttribute('aria-valuetext', '40%');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Staff' }));
+    await waitFor(() => expect(createStaffAssignment).toHaveBeenCalled());
+    expect(vi.mocked(createStaffAssignment).mock.calls[0][0]).toMatchObject({ staff_id: 7, allocation: 40 });
   });
 
   it('lists the site equipment with its type in equipment mode', () => {
@@ -120,12 +151,14 @@ describe('AssignmentModal picker', () => {
     useUIStore.getState().openModal('equipmentAssignment', { projectId: 1 });
     render(<AssignmentModal mode="equipment" />);
 
-    const picker = screen.getByLabelText('Equipment');
-    expect(screen.getByRole('option', { name: 'Bioreactor (Reactor)' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'Scale (No type)' })).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: /Elsewhere/ })).not.toBeInTheDocument();
-    fireEvent.change(picker, { target: { value: '11' } });
-    expect(picker).toHaveValue('11');
+    const rows = pickerOptions(/^Equipment/);
+    expect(rows.map((o) => o.textContent)).toEqual(['Select equipment', 'Bioreactor Reactor', 'Scale No type']);
+    expect(screen.getByRole('combobox', { name: 'Find equipment' })).toHaveFocus();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Find equipment' }), { target: { value: 'zz' } });
+    expect(screen.getByRole('status')).toHaveTextContent('No equipment matches');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Find equipment' }), { target: { value: 'react' } });
+    pickOption(/^Equipment/, 'Bioreactor');
+    expect(pickerTrigger(/^Equipment/)).toHaveAccessibleName('Equipment * Bioreactor');
     expect(screen.getByRole('button', { name: 'Assign Equipment' })).toBeInTheDocument();
   });
 });
@@ -296,12 +329,9 @@ describe('AssignmentModal picker with a team filter', () => {
     useUIStore.getState().openModal('staffAssignment', { projectId: 1 });
     render(<AssignmentModal mode="staff" />);
 
-    const picker = screen.getByLabelText('Staff Member') as HTMLSelectElement;
-    expect(Array.from(picker.options).map((o) => o.text)).toEqual([
-      'Select staff member',
-      'Alice Anderson (Scientist)',
-      'Bob Brown (Scientist)',
-    ]);
-    expect(picker).toHaveValue('4');
+    // Bob is outside the filter but still an option: the (read-only) picker names him
+    const picker = pickerTrigger(/^Staff Member/);
+    expect(picker).toHaveAccessibleName('Staff Member * Bob Brown');
+    expect(picker).toBeDisabled();
   });
 });

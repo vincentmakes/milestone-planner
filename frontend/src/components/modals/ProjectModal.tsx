@@ -9,7 +9,7 @@ import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { DateRangeField } from '@/components/common/DateRangeField';
-import { Select } from '@/components/common/Select';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useTeamFilter } from '@/hooks/useTeamFilter';
@@ -149,12 +149,10 @@ export function ProjectModal() {
     return map;
   }, [projectFields, tagSiteId, selectedTeamIds, siteTeams]);
 
-  // "Select PM" stays a real, selectable choice: picking it clears the manager.
+  // The picker's rows (searched by name and job title); its "Select PM" row
+  // stays a real, selectable choice: picking it clears the manager.
   const pmOptions = useMemo(
-    () => [
-      { value: '', label: 'Select PM' },
-      ...siteStaff.map((s) => ({ value: s.id, label: s.name })),
-    ],
+    () => siteStaff.map((s) => ({ id: s.id, label: s.name, hint: s.role })),
     [siteStaff]
   );
   
@@ -483,12 +481,13 @@ export function ProjectModal() {
         </div>
         
         <div className={styles.formRow}>
-          <Select
+          <SearchableSelect
             label="Project Manager"
             className={styles.field}
-            value={pmId}
-            onChange={(e) => setPmId(e.target.value)}
+            value={pmId === '' ? null : Number(pmId)}
+            onChange={(id) => setPmId(id === null ? '' : String(id))}
             options={pmOptions}
+            emptyLabel="Select PM"
           />
           {!customerHidden && (
             <Input

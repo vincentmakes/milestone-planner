@@ -14,6 +14,7 @@ import { createVacation, importVacations, getVacations } from '@/api/endpoints/v
 import type { AbsenceType } from '@/types';
 import { asSignedIn } from '@/test/permissionFixtures';
 import { dateValue, openDateField, pickEnd, pickRange, showMonth } from '@/test/datePicker';
+import { optionLabel, pickOption, pickerOptions, pickerTrigger } from '@/test/searchableSelect';
 
 vi.mock('@/api/endpoints/vacations', () => ({
   createVacation: vi.fn().mockResolvedValue({}),
@@ -184,9 +185,7 @@ describe('VacationModal', () => {
     useUIStore.getState().openVacationModal(undefined, undefined);
     render(<VacationModal />);
 
-    const options = screen.getAllByRole('option').map((o) => o.textContent);
-    expect(options.filter((name) => name === 'Bob Brown')).toHaveLength(1);
-    expect(options).toContain('Cleo Chen');
+    expect(pickerOptions(/^Staff Member/).map(optionLabel)).toEqual(['Select staff member…', 'Bob Brown', 'Cleo Chen']);
   });
 
   it('books the picked staff member for the typed dates', async () => {
@@ -200,9 +199,13 @@ describe('VacationModal', () => {
     useUIStore.getState().openVacationModal(undefined, undefined);
     render(<VacationModal />);
 
-    const picker = screen.getByLabelText('Staff Member');
-    fireEvent.change(picker, { target: { value: '5' } });
-    expect(picker).toHaveValue('5');
+    expect(pickerTrigger(/^Staff Member/)).toHaveAccessibleName('Staff Member Select staff member…');
+    fireEvent.click(pickerTrigger(/^Staff Member/));
+    const search = screen.getByRole('combobox', { name: 'Find a person' });
+    expect(search).toHaveFocus();
+    fireEvent.change(search, { target: { value: 'cle' } });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(pickerTrigger(/^Staff Member/)).toHaveAccessibleName('Staff Member Cleo Chen');
     pickRange('From', '2026-11-02', '2026-11-06');
     expect(dateValue('From')).toBe('2026-11-02');
     expect(dateValue('To')).toBe('2026-11-06');
@@ -214,6 +217,19 @@ describe('VacationModal', () => {
       start_date: '2026-11-02',
       end_date: '2026-11-06',
     });
+  });
+
+  it('clears the staff member through the empty row', () => {
+    useAppStore.setState({
+      currentUser: asSignedIn({ ...useAppStore.getState().currentUser!, role: 'admin', permissions: undefined }),
+      staff: [{ id: 4, name: 'Bob Brown', site_id: 1 }] as never,
+    });
+    useUIStore.getState().openVacationModal(undefined, undefined);
+    render(<VacationModal />);
+    pickOption(/^Staff Member/, 'Bob Brown');
+    expect(pickerTrigger(/^Staff Member/)).toHaveAccessibleName('Staff Member Bob Brown');
+    pickOption(/^Staff Member/, 'Select staff member…');
+    expect(pickerTrigger(/^Staff Member/)).toHaveAccessibleName('Staff Member Select staff member…');
   });
 
   // The rule itself is proven in dateRangeLogic.test; this guards the form's payload wiring
