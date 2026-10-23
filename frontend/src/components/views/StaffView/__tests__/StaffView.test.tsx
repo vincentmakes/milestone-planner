@@ -260,11 +260,11 @@ describe('StaffView panel', () => {
     expect(screen.queryByText('Roles')).not.toBeInTheDocument();
   });
 
-  it("starts with the admin's default skills that still exist, ignoring unknown ids; Clear works for the session", () => {
+  it("starts the Gantt panel with the admin's default skills that still exist, ignoring unknown ids; Clear works for the session", () => {
     seed();
     // 99 was deleted since
     useAppStore.setState({ instanceSettings: { staff_panel_default_skills: '[7,99]' } });
-    const { unmount } = render(<StaffView />);
+    const { unmount } = render(<StaffView embedded />);
 
     expect(screen.getByText('Alice Ames')).toBeInTheDocument();
     expect(screen.queryByText('Bob Brown')).not.toBeInTheDocument();
@@ -284,8 +284,17 @@ describe('StaffView panel', () => {
   it('starts unfiltered when none of the default skills exists any more', () => {
     seed();
     useAppStore.setState({ instanceSettings: { staff_panel_default_skills: '[99]' } });
+    render(<StaffView embedded />);
+    expect(screen.getByText('Filter')).toBeInTheDocument();
+    expect(screen.getByText('Bob Brown')).toBeInTheDocument();
+  });
+
+  it('starts the standalone view unfiltered with default skills set', () => {
+    seed();
+    useAppStore.setState({ instanceSettings: { staff_panel_default_skills: '[7]' } });
     render(<StaffView />);
     expect(screen.getByText('Filter')).toBeInTheDocument();
+    expect(screen.getByText('Alice Ames')).toBeInTheDocument();
     expect(screen.getByText('Bob Brown')).toBeInTheDocument();
   });
 

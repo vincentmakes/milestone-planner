@@ -220,7 +220,7 @@ export function DefaultsPanel({ onDirtyChange }: SettingsPanelProps) {
         <h3 className={styles.sectionTitle}>Default filters</h3>
         <OptionChecklist
           label="Staff panel skills"
-          hint="The Staff panel opens showing only people with one of these skills. None ticked shows everyone."
+          hint="The Staff panel below the Gantt opens showing only people with one of these skills. None ticked shows everyone."
           items={skillItems}
           selected={selectedSkills}
           onChange={(ids) => change('staff_panel_default_skills', idsValue(ids))}
@@ -229,7 +229,7 @@ export function DefaultsPanel({ onDirtyChange }: SettingsPanelProps) {
         />
         <OptionChecklist
           label="Equipment panel types"
-          hint="The Equipment panel opens showing only these types. None ticked shows all equipment."
+          hint="The Equipment panel below the Gantt opens showing only these types. None ticked shows all equipment."
           items={typeItems}
           selected={selectedTypes}
           onChange={(names) => change('equipment_panel_default_types', namesValue(names))}

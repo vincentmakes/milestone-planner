@@ -143,11 +143,11 @@ describe('EquipmentView panel', () => {
     expect(screen.queryByText('Select All')).not.toBeInTheDocument();
   });
 
-  it("starts with the admin's default types found at the site, ignoring unknown ones; Clear works for the session", () => {
+  it("starts the Gantt panel with the admin's default types found at the site, ignoring unknown ones; Clear works for the session", () => {
     seed();
     // Mixer exists only at another site, Gone nowhere
     useAppStore.setState({ instanceSettings: { equipment_panel_default_types: '["Analytics","Mixer","Gone"]' } });
-    const { unmount } = render(<EquipmentView />);
+    const { unmount } = render(<EquipmentView embedded />);
 
     expect(screen.getByText('HPLC Agilent')).toBeInTheDocument();
     expect(screen.queryByText('Bioreactor 50L')).not.toBeInTheDocument();
@@ -165,10 +165,10 @@ describe('EquipmentView panel', () => {
     expect(screen.queryByText('Bioreactor 50L')).not.toBeInTheDocument();
   });
 
-  it("re-seeds the filter with each site's own default types when the site changes", () => {
+  it("re-seeds the Gantt panel's filter with each site's own default types when the site changes", () => {
     seed();
     useAppStore.setState({ instanceSettings: { equipment_panel_default_types: '["Analytics","Mixer"]' } });
-    render(<EquipmentView />);
+    render(<EquipmentView embedded />);
     expect(screen.getByRole('button', { name: /Analytics/ })).toBeInTheDocument();
 
     // Mixer is the only default type at site 2
@@ -191,9 +191,21 @@ describe('EquipmentView panel', () => {
   it('starts unfiltered when no default type exists at the site', () => {
     seed();
     useAppStore.setState({ instanceSettings: { equipment_panel_default_types: '["Mixer"]' } });
+    render(<EquipmentView embedded />);
+    expect(screen.getByRole('button', { name: /All Types/ })).toBeInTheDocument();
+    expect(countBadge()).toHaveTextContent('3');
+  });
+
+  it('starts the standalone view unfiltered with default types set, also after a site change', () => {
+    seed();
+    useAppStore.setState({ instanceSettings: { equipment_panel_default_types: '["Analytics","Mixer"]' } });
     render(<EquipmentView />);
     expect(screen.getByRole('button', { name: /All Types/ })).toBeInTheDocument();
     expect(countBadge()).toHaveTextContent('3');
+    expect(screen.getByText('Bioreactor 50L')).toBeInTheDocument();
+
+    act(() => useAppStore.setState({ currentSite: makeSite({ id: 2, name: 'Zurich' }) }));
+    expect(screen.getByRole('button', { name: /All Types/ })).toBeInTheDocument();
   });
 
   it('with an active team filter, hides non-matching equipment and keeps matching ones', () => {

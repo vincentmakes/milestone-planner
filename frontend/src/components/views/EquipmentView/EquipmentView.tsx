@@ -174,20 +174,22 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
     return Array.from(types).sort((a, b) => a.localeCompare(b));
   }, [allSiteEquipment]);
 
-  // Type filter state, seeded with the admin's default types (Settings →
-  // Features & defaults) found among the site's types each time the panel
-  // mounts, and again when the site changes (each site opens with its own
-  // defaults); changes last the session.
+  // Type filter state. The Equipment panel below the Gantt (embedded) is
+  // seeded with the admin's default types (Settings → Features & defaults)
+  // found among the site's types each time it mounts, and again when the
+  // site changes (each site opens with its own defaults); the standalone
+  // Equipment view opens unfiltered (a site change clears its filter).
+  // Changes last the session.
   const defaultTypes = useAppStore((s) => s.instanceSettings?.equipment_panel_default_types);
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(() =>
-    defaultTypeSelection(defaultTypes, equipmentTypes)
+    embedded ? defaultTypeSelection(defaultTypes, equipmentTypes) : new Set()
   );
   const seededSiteId = useRef(currentSite?.id);
   useLayoutEffect(() => {
     if (seededSiteId.current === currentSite?.id) return;
     seededSiteId.current = currentSite?.id;
-    setSelectedTypes(defaultTypeSelection(defaultTypes, equipmentTypes));
-  }, [currentSite?.id, defaultTypes, equipmentTypes]);
+    setSelectedTypes(embedded ? defaultTypeSelection(defaultTypes, equipmentTypes) : new Set());
+  }, [currentSite?.id, defaultTypes, equipmentTypes, embedded]);
   
   // Filter equipment based on selected types (show all if none selected)
   const siteEquipment = useMemo(() => {

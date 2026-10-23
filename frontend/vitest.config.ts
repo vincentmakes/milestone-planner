@@ -62,12 +62,14 @@ export default defineConfig({
       // with the project fields of 2.0.0, 0.3 under the local totals (lines
       // 92.7, statements 91.61, functions 93.32, branches 83.14); with its
       // follow-up (second bookings, multi-select dropdown), the same rule on
-      // lines 92.78, statements 91.69, functions 93.35, branches 83.23.
+      // lines 92.78, statements 91.69, functions 93.35, branches 83.23;
+      // with My Work and the booking comments, the same rule on lines 92.85,
+      // statements 91.78, functions 93.42, branches 83.41 (only branches moves).
       thresholds: {
         lines: 92.5,
         statements: 91.4,
         functions: 93.1,
-        branches: 82.9,
+        branches: 83.1,
       },
     },
   },

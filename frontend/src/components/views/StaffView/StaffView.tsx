@@ -139,10 +139,13 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   
   // Filter state
   const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set());
-  // Seeded with the admin's default skills (Settings → Features & defaults)
-  // that still exist, each time the panel mounts; changes last the session.
+  // The Staff panel below the Gantt (embedded) is seeded with the admin's
+  // default skills (Settings → Features & defaults) that still exist, each
+  // time it mounts; the standalone Staff view opens unfiltered. Changes last
+  // the session.
   const defaultSkills = useAppStore((s) => s.instanceSettings?.staff_panel_default_skills);
   const [selectedSkills, setSelectedSkills] = useState<Set<number>>(() => {
+    if (!embedded) return new Set();
     const known = new Set(skills.map((skill) => skill.id));
     return new Set(parseIdList(defaultSkills).filter((id) => known.has(id)));
   });

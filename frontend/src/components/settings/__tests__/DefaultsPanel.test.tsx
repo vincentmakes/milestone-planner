@@ -91,6 +91,9 @@ describe('DefaultsPanel', () => {
     expect(screen.getByRole('switch', { name: 'Bank-holiday import (Nager)' })).toHaveAccessibleDescription(
       'Holidays already imported stay; refresh and automatic fetching stop.'
     );
+    // The defaults seed the panels below the Gantt only (the standalone views open unfiltered).
+    expect(screen.getByText(/^The Staff panel below the Gantt opens showing only people/)).toBeInTheDocument();
+    expect(screen.getByText(/^The Equipment panel below the Gantt opens showing only these types/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save Changes' })).toBeDisabled();
   });
 

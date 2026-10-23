@@ -488,8 +488,8 @@ The admin defaults and feature switches set in [Settings → Features & defaults
 | Key | Stored value | Default | Effect |
 |-----|--------------|---------|--------|
 | `gantt_default_panel` | `none`, `staff` or `equipment` | `none` | Resource panel opened with the Gantt chart |
-| `staff_panel_default_skills` | JSON array of unique positive skill ids, at most 500, stored compact (`[1,2]`) | `[]` | Initial skill filter of the Staff panel and view |
-| `equipment_panel_default_types` | JSON array of unique equipment type names, trimmed, 1–100 characters each | `[]` | Initial type filter of the Equipment panel and view |
+| `staff_panel_default_skills` | JSON array of unique positive skill ids, at most 500, stored compact (`[1,2]`) | `[]` | Initial skill filter of the Staff panel below the Gantt (the standalone view opens unfiltered) |
+| `equipment_panel_default_types` | JSON array of unique equipment type names, trimmed, 1–100 characters each | `[]` | Initial type filter of the Equipment panel below the Gantt (the standalone view opens unfiltered) |
 | `kanban_enabled` | `true` or `false` | `true` | `false` takes `views.kanban` away from everyone |
 | `nager_enabled` | `true` or `false` | `true` | `false` stops the holiday refresh (`409`) and the automatic fetch on site create/update |
 | `new_project_preselect_phases` | `true` or `false` | `true` | Whether the New Project dialog pre-selects the active predefined phases |

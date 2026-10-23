@@ -76,13 +76,13 @@ The **General** section holds the theme picker and, for roles with **Edit instan
 | Setting | What it does | Default |
 |---------|--------------|---------|
 | **Open the Gantt with** | *Nothing*, *Staff panel* or *Equipment panel*: the [resource panel](gantt-charts.md#resource-panels) docked under the Gantt chart each time someone opens it — for everyone who may see the panels (people who can edit any project, and project managers). They can close it for the rest of their visit. *Nothing* leaves each browser's own choice | Nothing |
-| **Staff panel skills** | The Staff panel and the Staff view open showing only people with one of the ticked [skills](#skills-management). None ticked shows everyone | None |
-| **Equipment panel types** | The Equipment panel and view open showing only the ticked [equipment types](#equipment-types). None ticked shows all equipment | None |
+| **Staff panel skills** | The Staff panel below the Gantt chart opens showing only people with one of the ticked [skills](#skills-management); the Staff view opens unfiltered. None ticked shows everyone | None |
+| **Equipment panel types** | The Equipment panel below the Gantt chart opens showing only the ticked [equipment types](#equipment-types); the Equipment view opens unfiltered. None ticked shows all equipment | None |
 | **Kanban board** | Turns the [Kanban board](kanban-board.md) on or off for the whole workspace | On |
 | **Bank-holiday import (Nager)** | Turns the automatic [public-holiday fetching](#automatic-fetching) on or off | On |
 | **Pre-select predefined phases in new projects** | Whether a new project starts with every active [predefined phase](#predefined-phases) selected, or with none | On |
 
-The default filters are a starting point, not a restriction: people change them as usual, and the default applies again the next time the panel opens. A skill that was deleted or an equipment type that was renamed is shown as *(no longer exists)* so you can untick it; until then it is simply ignored.
+The default filters are a starting point, not a restriction: people change them as usual, and the default applies again the next time the panel below the Gantt chart opens. The standalone Staff and Equipment views always open unfiltered. A skill that was deleted or an equipment type that was renamed is shown as *(no longer exists)* so you can untick it; until then it is simply ignored.
 
 **With the Kanban board off**, nobody sees the board or its sidebar entry, whatever their role — administrators included — and it takes effect for people already signed in without a new login. Card comments stay stored and reappear when the board is turned on again. [My Todos](my-todos.md) keeps working (its card links become plain text), and card notifications open the project on the Gantt chart instead. Turning the board off does not change any role: the [permission matrix](#the-permission-matrix) still shows the **Kanban board** permission as configured.
 
