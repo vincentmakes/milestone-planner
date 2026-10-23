@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - A newly posted comment no longer shows *(edited)*.
 - The project manager can be cleared again from the project dialog.
 
+### Security
+- Updated `vite` to 7.3.7 to close GHSA-587h-7wmj-h5pm, GHSA-r825-w8mm-5pxw, GHSA-698v-4r3x-3vcv, GHSA-rq7h-c2jc-7f22 and GHSA-9jrq-w75r-8gcw (development server only; the shipped application was not affected).
+- Updated `vitest` and `@vitest/coverage-v8` to 4.1.12 to close GHSA-qxg6-89mg-rqv8 and GHSA-xp26-3454-mjgp in `@vitest/mocker` (test tooling only).
+
 ## [1.17.0] - 2026-10-22
 
 ### Added
