@@ -110,9 +110,11 @@ export const STORAGE_KEYS = {
   // these inline in their persist config; keep this list in sync)
   ZUSTAND_APP_STORE: 'milestone-app-storage-v3',
   // The view store kept its key through 2.0.0, when the per-site
-  // `tagFilters` (tag groups) became `projectFilters` (project fields + tags):
-  // its merge drops the old entries, and `ganttGrouping` / `ganttColorBy` now
-  // hold project field ids (`'tags'` too for Colour by).
+  // `tagFilters` (tag groups) became `projectFilters` (project fields + tags)
+  // and `ganttGrouping` / `ganttColorBy` started holding project field ids
+  // (`'tags'` too for Colour by); its persist `version` went 0 → 1.
+  // 2.0.0 reset the saved Gantt filter, grouping and colour choices once;
+  // tag-group ids no longer mean anything.
   ZUSTAND_VIEW_STORE: 'milestone-view-storage-v1',
   ZUSTAND_CUSTOM_COLUMN_STORE: 'milestone-custom-columns-storage-v1',
 } as const;

@@ -189,6 +189,30 @@ function sanitizeCollapsedGanttSections(value: unknown): Record<string, string[]
   return out;
 }
 
+/**
+ * Persisted shape version of the view store (zustand persist `version`).
+ * 1 = 2.0.0: project fields replaced tag groups.
+ */
+export const VIEW_STORE_VERSION = 1;
+
+/**
+ * Bring a persisted view state from an older {@link VIEW_STORE_VERSION} up to
+ * date before `merge`. Below 1, the per-site Gantt filter, grouping, colour
+ * and collapsed-section choices hold tag-group / tag ids that mean nothing
+ * since 2.0.0 (and could collide with a project field id), so they are
+ * dropped once; every other field is kept as is.
+ */
+export function migrateViewState(persisted: unknown, version: number): unknown {
+  if (!persisted || typeof persisted !== 'object' || Array.isArray(persisted)) return persisted;
+  if (version >= 1) return persisted;
+  const rest = { ...(persisted as Record<string, unknown>) };
+  delete rest.tagFilters;
+  delete rest.ganttGrouping;
+  delete rest.ganttColorBy;
+  delete rest.collapsedGanttSections;
+  return rest;
+}
+
 // =============================================================================
 // STATE INTERFACE
 // =============================================================================
@@ -224,7 +248,8 @@ interface ViewState {
    * Project filter (field items, "(None)" per field, tags) per tenant + site,
    * keyed by `siteKey(siteId)` (`"<tenant slug>:<site id>"`). Absent = no
    * filter. A per-browser preference: deliberately not cleared by
-   * resetAllStores(). Replaced the pre-2.0 `tagFilters` (dropped on load).
+   * resetAllStores(). Replaced the pre-2.0 `tagFilters` (dropped by
+   * migrateViewState).
    */
   projectFilters: Record<string, ProjectFilter>;
   /**
@@ -769,6 +794,10 @@ export const useViewStore = create<ViewState>()(
     {
       name: 'milestone-view-storage-v1',
       storage: createJSONStorage(() => localStorage),
+      // Shape changes are migrated in place (the key stays): see
+      // migrateViewState. merge below still validates whatever survives.
+      version: VIEW_STORE_VERSION,
+      migrate: (persisted, version) => migrateViewState(persisted, version) as ViewState,
       // Only persist certain fields. Deliberately NOT the timeline scroll
       // offset or currentDate: the app always opens on today. A restored
       // pixel offset is relative to a timeline that starts months before the
@@ -829,8 +858,8 @@ export const useViewStore = create<ViewState>()(
           kanbanGroupingColumnId: (persisted?.kanbanGroupingColumnId as number | null) ?? currentState.kanbanGroupingColumnId,
           kanbanMyTodoOnly: (persisted?.kanbanMyTodoOnly as boolean) ?? currentState.kanbanMyTodoOnly,
           // Same rule for the per-site preferences (validated: it is
-          // user-editable storage). A pre-2.0 `tagFilters` entry is dropped:
-          // its tag-group shape has no project-field equivalent.
+          // user-editable storage). Pre-2.0 entries never get here:
+          // migrateViewState drops them.
           projectFilters: sanitizeProjectFilters(persisted?.projectFilters) ?? currentState.projectFilters,
           teamFilters: sanitizeTeamFilters(persisted?.teamFilters) ?? currentState.teamFilters,
           ganttGrouping: sanitizeSiteFieldIds(persisted?.ganttGrouping) ?? currentState.ganttGrouping,

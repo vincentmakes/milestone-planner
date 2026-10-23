@@ -4,7 +4,7 @@
  * the date the module was loaded on.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { useViewStore } from '../viewStore';
+import { migrateViewState, useViewStore, VIEW_STORE_VERSION } from '../viewStore';
 import { useWhatIfStore } from '../whatIfStore';
 
 describe('viewStore.navigatePeriod', () => {
@@ -108,7 +108,7 @@ describe('viewStore project filters', () => {
             'Bad Key:6': { ...empty, optionIds: [8] },
           },
         },
-        version: 0,
+        version: VIEW_STORE_VERSION,
       })
     );
     await useViewStore.persist.rehydrate();
@@ -138,7 +138,7 @@ describe('viewStore project filters', () => {
   });
 
   it('falls back to empty when the persisted value is not an object', async () => {
-    localStorage.setItem(KEY, JSON.stringify({ state: { projectFilters: [1] }, version: 0 }));
+    localStorage.setItem(KEY, JSON.stringify({ state: { projectFilters: [1] }, version: VIEW_STORE_VERSION }));
     await useViewStore.persist.rehydrate();
     expect(useViewStore.getState().projectFilters).toEqual({});
   });
@@ -217,7 +217,7 @@ describe('viewStore team filters', () => {
             'Bad Key:8': { teamIds: [8], noTeam: false },
           },
         },
-        version: 0,
+        version: VIEW_STORE_VERSION,
       })
     );
     await useViewStore.persist.rehydrate();
@@ -323,7 +323,7 @@ describe('viewStore Gantt grouping', () => {
             '4': ['none'],
           },
         },
-        version: 0,
+        version: VIEW_STORE_VERSION,
       })
     );
     await useViewStore.persist.rehydrate();
@@ -333,7 +333,7 @@ describe('viewStore Gantt grouping', () => {
 
   it('falls back to empty when the persisted values are not objects', async () => {
     useViewStore.setState({ ganttGrouping: {}, collapsedGanttSections: {} });
-    localStorage.setItem(KEY, JSON.stringify({ state: { ganttGrouping: [1], collapsedGanttSections: 'x' }, version: 0 }));
+    localStorage.setItem(KEY, JSON.stringify({ state: { ganttGrouping: [1], collapsedGanttSections: 'x' }, version: VIEW_STORE_VERSION }));
     await useViewStore.persist.rehydrate();
     expect(useViewStore.getState().ganttGrouping).toEqual({});
     expect(useViewStore.getState().collapsedGanttSections).toEqual({});
@@ -405,7 +405,7 @@ describe('viewStore Gantt colour by', () => {
             'Bad Key:7': 8,
           },
         },
-        version: 0,
+        version: VIEW_STORE_VERSION,
       })
     );
     await useViewStore.persist.rehydrate();
@@ -413,9 +413,93 @@ describe('viewStore Gantt colour by', () => {
   });
 
   it('falls back to empty when the persisted value is not an object', async () => {
-    localStorage.setItem(KEY, JSON.stringify({ state: { ganttColorBy: [1] }, version: 0 }));
+    localStorage.setItem(KEY, JSON.stringify({ state: { ganttColorBy: [1] }, version: VIEW_STORE_VERSION }));
     await useViewStore.persist.rehydrate();
     expect(useViewStore.getState().ganttColorBy).toEqual({});
+  });
+});
+
+describe('viewStore persist version 0 → 1 (2.0.0 project fields)', () => {
+  const KEY = 'milestone-view-storage-v1';
+  const preferences = {
+    tagFilters: { ':1': { tagIds: [3], noneGroupIds: [2] } },
+    ganttGrouping: { ':1': 2 },
+    ganttColorBy: { ':1': 4 },
+    collapsedGanttSections: { ':1': ['field-5', 'none'] },
+  };
+  const others = {
+    viewMode: 'month',
+    kanbanGrouping: 'assignee',
+    kanbanMyTodoOnly: true,
+    teamFilters: { ':1': { teamIds: [7], noTeam: false } },
+    expandedProjects: [1, 2],
+    expandedPhases: [3],
+    expandedSubphases: [4],
+  };
+
+  beforeEach(() => {
+    localStorage.clear();
+    useViewStore.setState({
+      ganttGrouping: {},
+      ganttColorBy: {},
+      collapsedGanttSections: {},
+      projectFilters: {},
+      teamFilters: {},
+      expandedProjects: new Set(),
+      expandedPhases: new Set(),
+      expandedSubphases: new Set(),
+      kanbanGrouping: 'none',
+      kanbanMyTodoOnly: false,
+      viewMode: 'week',
+    });
+  });
+
+  it('is version 1 and writes it', () => {
+    expect(VIEW_STORE_VERSION).toBe(1);
+    useViewStore.getState().setGanttColorBy(1, 'tags');
+    expect(JSON.parse(localStorage.getItem(KEY) as string).version).toBe(1);
+  });
+
+  it('drops the saved Gantt filter, grouping, colour and collapsed sections of a version-0 payload, keeping the rest', async () => {
+    localStorage.setItem(KEY, JSON.stringify({ state: { ...preferences, ...others }, version: 0 }));
+    await useViewStore.persist.rehydrate();
+    const state = useViewStore.getState();
+    expect(state.ganttGrouping).toEqual({});
+    expect(state.ganttColorBy).toEqual({});
+    expect(state.collapsedGanttSections).toEqual({});
+    expect(state.projectFilters).toEqual({});
+    expect('tagFilters' in state).toBe(false);
+    expect(state.viewMode).toBe('month');
+    expect(state.kanbanGrouping).toBe('assignee');
+    expect(state.kanbanMyTodoOnly).toBe(true);
+    expect(state.teamFilters).toEqual({ ':1': { teamIds: [7], noTeam: false } });
+    expect([...state.expandedProjects]).toEqual([1, 2]);
+    expect([...state.expandedPhases]).toEqual([3]);
+    expect([...state.expandedSubphases]).toEqual([4]);
+  });
+
+  it('leaves a current-version payload untouched', async () => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({ state: { ...preferences, ...others }, version: VIEW_STORE_VERSION })
+    );
+    await useViewStore.persist.rehydrate();
+    const state = useViewStore.getState();
+    expect(state.ganttGrouping).toEqual({ ':1': 2 });
+    expect(state.ganttColorBy).toEqual({ ':1': 4 });
+    expect(state.collapsedGanttSections).toEqual({ ':1': ['field-5', 'none'] });
+    expect(state.viewMode).toBe('month');
+    expect([...state.expandedProjects]).toEqual([1, 2]);
+  });
+
+  it('migrateViewState only strips the four fields below version 1 and passes odd payloads through', () => {
+    const input = { ...preferences, ...others };
+    expect(migrateViewState(input, 0)).toEqual(others);
+    expect(input).toHaveProperty('ganttGrouping');
+    expect(migrateViewState(input, 1)).toBe(input);
+    expect(migrateViewState(null, 0)).toBeNull();
+    expect(migrateViewState([1], 0)).toEqual([1]);
+    expect(migrateViewState('x', 0)).toBe('x');
   });
 });
 
