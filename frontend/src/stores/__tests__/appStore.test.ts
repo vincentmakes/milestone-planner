@@ -123,10 +123,12 @@ describe('site selection', () => {
   it('reset() clears data and undo history', () => {
     app().setProjects([makeProject()]);
     app().setTeams([makeTeam()]);
+    app().setProjectFields([makeProjectField()]);
     useUndoStore.getState().saveState([], 'edit');
     app().reset();
     expect(app().projects).toEqual([]);
     expect(app().teams).toEqual([]);
+    expect(app().projectFields).toEqual([]);
     expect(app().isAuthChecking).toBe(true);
     expect(useUndoStore.getState().canUndo).toBe(false);
   });
