@@ -78,6 +78,8 @@ export { default as LabelIcon } from '@mui/icons-material/LabelOutlined';
 export { default as ListIcon } from '@mui/icons-material/FormatListBulletedOutlined';
 /** Tags */
 export { default as HashIcon } from '@mui/icons-material/TagOutlined';
+/** Project fields */
+export { default as ProjectFieldsIcon } from '@mui/icons-material/DynamicFormOutlined';
 /** SSO, credentials */
 export { default as LockIcon } from '@mui/icons-material/LockOutlined';
 /** Toggle the Gantt overview panels */

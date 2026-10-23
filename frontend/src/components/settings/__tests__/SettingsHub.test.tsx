@@ -46,6 +46,7 @@ vi.mock('../panels/PredefinedPhasesPanel', () => ({ PredefinedPhasesPanel: () =>
 vi.mock('../panels/SSOPanel', () => ({ SSOPanel: () => <div>SSO panel</div> }));
 vi.mock('../panels/RolesPanel', () => ({ RolesPanel: () => <div>Roles panel</div> }));
 vi.mock('../panels/DefaultsPanel', () => ({ DefaultsPanel: () => <div>Defaults panel</div> }));
+vi.mock('../panels/ProjectFieldsPanel', () => ({ ProjectFieldsPanel: () => <div>Project fields panel</div> }));
 
 const ALL_SECTIONS = [
   'General',
@@ -338,6 +339,34 @@ describe('canOpenSettings / getVisibleSections', () => {
     expect(ids(['sites.manage'])).toEqual(['general', 'sites']);
     expect(ids(['sites.export'])).toEqual(['general', 'sites']);
     expect(ids(['settings.sso', 'tags.manage'])).toEqual(['general', 'tags', 'sso']);
+  });
+
+  it('lists Project fields with project_fields.manage (admins only), before Tags, and opens its panel', async () => {
+    const ids = (permissions: string[]) =>
+      getVisibleSections(makeUser({ role: 'x', permissions })).map((s) => s.id);
+    expect(ids(['project_fields.manage'])).toEqual(['general', 'project-fields']);
+    expect(ids(['project_fields.manage', 'tags.manage', 'predefined_phases.manage'])).toEqual([
+      'general',
+      'predefined-phases',
+      'project-fields',
+      'tags',
+    ]);
+    expect(getVisibleSections(makeUser({ role: 'superuser' })).map((s) => s.id)).not.toContain('project-fields');
+    const section = getVisibleSections(makeUser({ role: 'admin' })).find((s) => s.id === 'project-fields');
+    expect(section).toMatchObject({
+      group: 'Projects',
+      label: 'Project fields',
+      permission: 'project_fields.manage',
+      description: 'Fields on every project: the built-in ones, and your own dropdowns, texts, numbers and switches.',
+    });
+    expect(getVisibleSections(makeUser({ role: 'admin' })).find((s) => s.id === 'tags')?.description).toBe(
+      'Project tags, for all sites or only some.'
+    );
+
+    setRole('admin');
+    act(() => useUIStore.getState().openSettings('project-fields'));
+    render(<SettingsHub />);
+    expect(await screen.findByText('Project fields panel')).toBeInTheDocument();
   });
 
   it('lists Features & defaults with settings.general, after General, and opens the hub with it alone', async () => {

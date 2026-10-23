@@ -12,7 +12,7 @@ import { can } from '@/utils/permissions';
 import type { UserLike } from '@/utils/permissions';
 import type { PermissionKey } from '@/types/permissions';
 import type { SettingsSection, SettingsSectionId } from './types';
-import { Icon, LockIcon, HashIcon, ListIcon, LabelIcon, BriefcaseIcon, UmbrellaIcon, StarIcon, UserPlusIcon, FlagIcon, CalendarIcon, UsersIcon, MapPinIcon, ShieldIcon, TuneIcon, GearIcon } from '@/components/common/Icon';
+import { Icon, LockIcon, HashIcon, ProjectFieldsIcon, ListIcon, LabelIcon, BriefcaseIcon, UmbrellaIcon, StarIcon, UserPlusIcon, FlagIcon, CalendarIcon, UsersIcon, MapPinIcon, ShieldIcon, TuneIcon, GearIcon } from '@/components/common/Icon';
 
 const GeneralPanel = lazy(() =>
   import('./panels/GeneralPanel').then((m) => ({ default: m.GeneralPanel }))
@@ -55,6 +55,9 @@ const PredefinedPhasesPanel = lazy(() =>
 );
 const TagsPanel = lazy(() =>
   import('./panels/TagsPanel').then((m) => ({ default: m.TagsPanel }))
+);
+const ProjectFieldsPanel = lazy(() =>
+  import('./panels/ProjectFieldsPanel').then((m) => ({ default: m.ProjectFieldsPanel }))
 );
 const SSOPanel = lazy(() =>
   import('./panels/SSOPanel').then((m) => ({ default: m.SSOPanel }))
@@ -186,10 +189,19 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     group: 'Projects',
+    id: 'project-fields',
+    label: 'Project fields',
+    permission: 'project_fields.manage',
+    description: 'Fields on every project: the built-in ones, and your own dropdowns, texts, numbers and switches.',
+    Panel: ProjectFieldsPanel,
+    icon: <Icon icon={ProjectFieldsIcon} size={16} />,
+  },
+  {
+    group: 'Projects',
     id: 'tags',
     label: 'Tags',
     permission: 'tags.manage',
-    description: 'Project tags and their groups, for all sites or only some.',
+    description: 'Project tags, for all sites or only some.',
     Panel: TagsPanel,
     icon: <Icon icon={HashIcon} size={16} />,
   },
