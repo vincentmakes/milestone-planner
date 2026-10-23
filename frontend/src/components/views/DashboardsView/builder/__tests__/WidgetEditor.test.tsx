@@ -27,7 +27,7 @@ import { optionLabel, pickerOptions, pickerTrigger, pickOption } from '@/test/se
 import { dateValue, pickRange } from '@/test/datePicker';
 import type { MetricQuery, MetricResult } from '@/types';
 import type { PermissionKey } from '@/types/permissions';
-import { PREVIEW_DELAY_MS, PREVIEW_UNAVAILABLE, TITLE_REQUIRED, WidgetEditor } from '../WidgetEditor';
+import { KPI_BUCKET_REQUIRED, PREVIEW_DELAY_MS, PREVIEW_UNAVAILABLE, TITLE_REQUIRED, WidgetEditor } from '../WidgetEditor';
 import type { DraftWidget } from '../widgetDraft';
 
 vi.mock('@/api/endpoints/dashboards', () => ({
@@ -499,6 +499,32 @@ describe('WidgetEditor — options and save', () => {
     expect(preview?.total).toBe(100);
     // Back to no bucket
     fireEvent.change(bucket, { target: { value: '' } });
+  });
+
+  it('requires a bucket for a KPI share, then saves once one is chosen', async () => {
+    api.query.mockResolvedValue(
+      result(
+        [
+          { keys: [{ key: true, label: 'Confirmed' }], value: 60 },
+          { keys: [{ key: false, label: 'Not confirmed' }], value: 40 },
+        ],
+        { unit: 'percent' }
+      )
+    );
+    const { onSave } = renderEditor();
+    fireEvent.click(screen.getByRole('radio', { name: 'KPI' }));
+    pickOption(/^Dimension 1/, 'Confirmed');
+    fireEvent.change(screen.getByLabelText('Title *'), { target: { value: 'Confirmed share' } });
+    await flushPreview();
+    expect(api.query).toHaveBeenCalled();
+    fireEvent.click(saveButton());
+    expect(screen.getByRole('alert')).toHaveTextContent(KPI_BUCKET_REQUIRED);
+    expect(KPI_BUCKET_REQUIRED).toBe('A KPI share needs a bucket: choose the value whose share it shows.');
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Bucket'), { target: { value: 'true' } });
+    fireEvent.click(saveButton());
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave.mock.calls[0][0].options).toEqual({ kpi_bucket: true });
   });
 
   it('keeps a stored bucket the preview does not hold yet', () => {

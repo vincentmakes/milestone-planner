@@ -95,6 +95,7 @@ import styles from './WidgetEditor.module.css';
 export const PREVIEW_DELAY_MS = 400;
 export const PREVIEW_UNAVAILABLE = 'Preview unavailable';
 export const TITLE_REQUIRED = 'Enter a title';
+export const KPI_BUCKET_REQUIRED = 'A KPI share needs a bucket: choose the value whose share it shows.';
 const TITLE_MAX = 120;
 
 const WIDGET_KINDS: readonly { key: WidgetKind; label: string; icon: typeof BarChartIcon }[] = [
@@ -429,8 +430,12 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
     e?.preventDefault();
     const trimmed = title.trim();
     setTitleError(trimmed ? null : TITLE_REQUIRED);
-    setFormError(problem);
-    if (!trimmed || problem || preview.status === 'invalid') return;
+    // A KPI share shows one value's share: it needs that value (the preview still runs without it).
+    const noBucket =
+      kind === 'kpi' && Boolean(query.percent_of) && (options.kpi_bucket === undefined || options.kpi_bucket === null);
+    const formProblem = problem ?? (noBucket ? KPI_BUCKET_REQUIRED : null);
+    setFormError(formProblem);
+    if (!trimmed || formProblem || preview.status === 'invalid') return;
     if (!begin()) return;
     try {
       const saved: DraftWidget = {
