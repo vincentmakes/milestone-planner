@@ -7,12 +7,14 @@ site-membership checks.
 """
 
 from datetime import date, datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.models.equipment import Equipment, EquipmentBlock
 from app.models.site import Site
+from app.models.team import Team
+from app.services.team_rules import team_outside_sites_detail
 from tests.conftest import FakeUser
 
 STAMP = datetime(2026, 1, 1, 12, 0, 0)
@@ -40,7 +42,11 @@ def _pairs_result(rows):
     return result
 
 
-def _equipment(equipment_id=7, name="HPLC", sites=(SITE_A,)):
+def _team(team_id=3, site_id=1, name="Analytical Lab"):
+    return Team(id=team_id, site_id=site_id, name=name)
+
+
+def _equipment(equipment_id=7, name="HPLC", sites=(SITE_A,), teams=()):
     sites = list(sites)
     return Equipment(
         id=equipment_id,
@@ -51,6 +57,7 @@ def _equipment(equipment_id=7, name="HPLC", sites=(SITE_A,)):
         active=1,
         created_at=STAMP,
         sites=sites,
+        teams=list(teams),
     )
 
 
@@ -110,7 +117,7 @@ async def test_equipment_list_returns_one_row_per_site(authed_client, mock_db_se
 @pytest.mark.asyncio
 async def test_equipment_list_filters_through_the_junction(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(1, "user"))
+    set_user(FakeUser(1, "user", site_ids=[2]))  # site 2 must be visible
     mock_db_session.execute.return_value = _pairs_result([])
 
     response = await client.get("/api/equipment?siteId=2")
@@ -135,6 +142,46 @@ async def test_equipment_detail_reports_every_site(authed_client, mock_db_sessio
     assert (body["site_id"], body["site_name"]) == (1, "Winterthur")  # primary site
     assert body["site_ids"] == [1, 2]
     assert body["site_names"] == ["Winterthur", "Frankfurt"]
+
+
+@pytest.mark.asyncio
+async def test_equipment_detail_carries_its_teams(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "user"))
+    mock_db_session.execute.return_value = _scalar_result(
+        _equipment(7, sites=[SITE_A, SITE_B], teams=[_team(3, 1, "Analytical Lab")])
+    )
+
+    response = await client.get("/api/equipment/7")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": 7,
+        "name": "HPLC",
+        "type": "Analytical",
+        "site_id": 1,
+        "site_name": "Winterthur",
+        "site_ids": [1, 2],
+        "site_names": ["Winterthur", "Frankfurt"],
+        "team_ids": [3],
+        "team_names": ["Analytical Lab"],
+        "description": None,
+        "active": 1,
+        "created_at": "2026-01-01T12:00:00.000Z",
+    }
+
+
+@pytest.mark.asyncio
+async def test_equipment_without_teams_reports_empty_team_lists(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "user"))
+    mock_db_session.execute.return_value = _pairs_result([(_equipment(7), SITE_A)])
+
+    response = await client.get("/api/equipment")
+
+    assert response.status_code == 200
+    (row,) = response.json()
+    assert (row["team_ids"], row["team_names"]) == ([], [])
 
 
 @pytest.mark.asyncio
@@ -216,6 +263,47 @@ async def test_create_equipment_on_unknown_site_is_a_404(authed_client, mock_db_
 
 
 @pytest.mark.asyncio
+async def test_create_equipment_links_teams_at_its_sites(authed_client, db_assigns_ids):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    db = db_assigns_ids
+    db.execute.side_effect = [
+        _scalars_result([SITE_A, SITE_B]),  # the sites
+        _scalars_result([_team(3, 1)]),  # the teams
+    ]
+
+    response = await client.post(
+        "/api/equipment", json={"name": "HPLC", "site_ids": [1, 2], "team_ids": [3]}
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert (body["team_ids"], body["team_names"]) == ([3], ["Analytical Lab"])
+    (equipment,) = _added(db, Equipment)
+    assert [t.id for t in equipment.teams] == [3]
+
+
+@pytest.mark.asyncio
+async def test_create_equipment_with_a_team_outside_its_sites_is_a_400(
+    authed_client, mock_db_session
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.side_effect = [
+        _scalars_result([SITE_A]),
+        _scalars_result([_team(5, 2, "Formulation")]),
+    ]
+
+    response = await client.post(
+        "/api/equipment", json={"name": "HPLC", "site_ids": [1], "team_ids": [5]}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == team_outside_sites_detail("Formulation")
+    mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_superuser_cannot_create_equipment_on_a_foreign_site(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(FakeUser(1, "superuser"))  # member of site 1 only
@@ -274,6 +362,59 @@ async def test_update_equipment_without_sites_keeps_links(authed_client, mock_db
     assert response.json()["site_ids"] == [1]
     assert equipment.active == 0
     assert mock_db_session.execute.await_count == 1  # no site lookup
+
+
+@pytest.mark.asyncio
+async def test_update_equipment_replaces_its_teams(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    equipment = _equipment(7, sites=[SITE_A, SITE_B], teams=[_team(3, 1)])
+    mock_db_session.execute.side_effect = [
+        _scalar_result(equipment),
+        _scalars_result([_team(5, 2, "Formulation")]),
+    ]
+
+    response = await client.put("/api/equipment/7", json={"team_ids": [5]})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["team_ids"] == [5]
+    assert equipment.team_ids == [5]
+
+
+@pytest.mark.asyncio
+async def test_update_equipment_teams_are_checked_against_the_new_sites(
+    authed_client, mock_db_session
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    equipment = _equipment(7, sites=[SITE_A, SITE_B])
+    mock_db_session.execute.side_effect = [
+        _scalar_result(equipment),
+        _scalars_result([SITE_A]),  # narrowed to site 1
+        _scalars_result([_team(5, 2, "Formulation")]),
+    ]
+
+    response = await client.put("/api/equipment/7", json={"site_ids": [1], "team_ids": [5]})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == team_outside_sites_detail("Formulation")
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_narrowing_equipment_sites_prunes_their_teams(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    equipment = _equipment(
+        7, sites=[SITE_A, SITE_B], teams=[_team(3, 1), _team(5, 2, "Formulation")]
+    )
+    mock_db_session.execute.side_effect = [_scalar_result(equipment), _scalars_result([SITE_A])]
+
+    response = await client.put("/api/equipment/7", json={"site_ids": [1]})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["team_ids"] == [3]
+    assert mock_db_session.execute.await_count == 2  # no team lookup
 
 
 @pytest.mark.asyncio
@@ -346,6 +487,7 @@ async def test_site_delete_removes_only_equipment_left_without_a_site(
         _scalars_result([7, 8]),  # equipment linked to the site
         _scalars_result([]),  # the site's projects (none: no comment/value cleanup)
         _scalars_result([]),  # tags restricted to the site (none: no tag cleanup)
+        _scalars_result([]),  # project-field items restricted to the site (none)
         MagicMock(),  # delete orphaned equipment
         MagicMock(),  # re-point survivors' site_id
     ]
@@ -355,11 +497,11 @@ async def test_site_delete_removes_only_equipment_left_without_a_site(
     assert response.status_code == 200
     mock_db_session.delete.assert_awaited_once_with(SITE_A)
     statements = _statements(mock_db_session)
-    assert len(statements) == 7
-    assert statements[5].startswith("DELETE FROM equipment ")
-    assert "NOT (EXISTS" in statements[5] and "equipment_sites" in statements[5]
-    assert statements[6].startswith("UPDATE equipment SET site_id=")
-    assert "min(equipment_sites.site_id)" in statements[6]
+    assert len(statements) == 8
+    assert statements[6].startswith("DELETE FROM equipment ")
+    assert "NOT (EXISTS" in statements[6] and "equipment_sites" in statements[6]
+    assert statements[7].startswith("UPDATE equipment SET site_id=")
+    assert "min(equipment_sites.site_id)" in statements[7]
     mock_db_session.commit.assert_awaited()
 
 
@@ -375,12 +517,13 @@ async def test_site_delete_without_linked_equipment_skips_the_cleanup(
         _scalars_result([]),  # equipment
         _scalars_result([]),  # projects
         _scalars_result([]),  # tags restricted to the site
+        _scalars_result([]),  # project-field items restricted to the site
     ]
 
     response = await client.delete("/api/sites/1")
 
     assert response.status_code == 200
-    assert mock_db_session.execute.await_count == 5
+    assert mock_db_session.execute.await_count == 6
 
 
 # ---------------------------------------------------------
@@ -405,7 +548,7 @@ def _block(block_id=3, equipment=None):
 @pytest.mark.asyncio
 async def test_block_list_for_a_site_joins_through_equipment_sites(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(1, "user"))
+    set_user(FakeUser(1, "user", site_ids=[2]))  # site 2 must be visible
     mock_db_session.execute.return_value = _scalars_result(
         [_block(3, _equipment(7, sites=[SITE_A, SITE_B]))]
     )
@@ -464,3 +607,50 @@ async def test_block_edit_and_delete_need_access_to_every_site(authed_client, mo
         await client.put("/api/equipment-blocks/3", json={"description": "X"})
     ).status_code == 200
     assert (await client.delete("/api/equipment-blocks/3")).status_code == 200
+
+
+# ---------------------------------------------------------
+# Visible sites: sites.view_all widens, the live memberships narrow
+# ---------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_role_seeing_every_site_manages_shared_equipment(authed_client, mock_db_session):
+    client, set_user = authed_client
+    shared = _equipment(7, sites=[SITE_A, SITE_B])
+    mock_db_session.execute.return_value = _scalar_result(shared)
+
+    # Not an admin: a custom role holding equipment.manage and sites.view_all.
+    set_user(FakeUser(1, "regional", {"equipment.manage", "sites.view_all"}, site_ids=[]))
+
+    assert (await client.delete("/api/equipment/7")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_site_less_equipment_needs_sites_view_all(authed_client, mock_db_session):
+    client, set_user = authed_client
+    orphan = _equipment(7, sites=[])
+    mock_db_session.execute.return_value = _scalar_result(orphan)
+
+    set_user(FakeUser(1, "superuser"))
+    assert (await client.delete("/api/equipment/7")).status_code == 403
+
+    set_user(FakeUser(1, "regional", {"equipment.manage", "sites.view_all"}))
+    assert (await client.delete("/api/equipment/7")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_equipment_access_reads_the_live_site_memberships(authed_client, mock_db_session):
+    client, set_user = authed_client
+    shared = _equipment(7, sites=[SITE_A, SITE_B])
+    mock_db_session.execute.return_value = _scalar_result(shared)
+    set_user(FakeUser(1, "superuser"))
+
+    # The session snapshot would say site A only; the live rows hold both.
+    with patch(
+        "app.services.site_access._load_user_site_ids",
+        AsyncMock(return_value=frozenset({SITE_A.id, SITE_B.id})),
+    ):
+        response = await client.delete("/api/equipment/7")
+
+    assert response.status_code == 200

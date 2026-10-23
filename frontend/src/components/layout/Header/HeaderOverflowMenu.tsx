@@ -16,6 +16,7 @@
 import { useRef, useState } from 'react';
 import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import styles from './HeaderOverflowMenu.module.css';
+import { Icon, MoreIcon } from '@/components/common/Icon';
 
 interface HeaderOverflowMenuProps {
   children: React.ReactNode;
@@ -41,11 +42,7 @@ export function HeaderOverflowMenu({ children, label = 'More controls' }: Header
         aria-label={label}
         title={label}
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <circle cx="5" cy="12" r="2" />
-          <circle cx="12" cy="12" r="2" />
-          <circle cx="19" cy="12" r="2" />
-        </svg>
+        <Icon icon={MoreIcon} size={16} />
       </button>
 
       {open && (

@@ -27,6 +27,9 @@ export type { DependencyEntity, DependencyItemRef } from './dependencies';
 export { calculateRowPositions, SECTION_ROW_TOTAL_HEIGHT } from './rowPositions';
 export type { RowPosition, RowPositionsResult } from './rowPositions';
 
+export { cardStaffItems, staffRowCount, staffGroupKey, allocationRange, relinkWouldOverlap } from './staffGroups';
+export type { CardStaffItem, StaffCard, StaffGroupLevel } from './staffGroups';
+
 export {
   cascadeDependentPhases,
   cascadeDependentSubphases,
@@ -38,6 +41,7 @@ export {
   processSubphaseMove,
   moveChildrenByOffset,
   movePhasesWithProject,
+  fitCardBookings,
   cloneProject,
 } from './autoCalculation';
 export type { PendingUpdate } from './autoCalculation';
@@ -50,6 +54,9 @@ export {
 export type { CriticalPathResult } from './criticalPath';
 
 export { diffProjects } from './diffProjects';
+
+export { pixelOfDate } from './timelinePixels';
+export type { DomTimelineCell } from './timelinePixels';
 
 export {
   buildProjectSections,

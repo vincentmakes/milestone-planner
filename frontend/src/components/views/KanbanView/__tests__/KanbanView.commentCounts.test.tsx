@@ -14,6 +14,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { getCommentCounts } from '@/api/endpoints/kanban';
 import type { ChangePayload } from '@/contexts/WebSocketContext';
 import type { Project } from '@/types';
+import { makeUser } from '@/test/factories';
 
 vi.mock('@/api/endpoints/kanban', () => ({
   getCommentCounts: vi.fn().mockResolvedValue(new Map()),
@@ -73,7 +74,7 @@ beforeEach(() => {
   useAppStore.setState({
     projects: [makeProject()],
     currentSite: { id: 1, name: 'Basel' } as never,
-    currentUser: { id: 1, role: 'admin' } as never,
+    currentUser: makeUser({ id: 1, role: 'admin' }),
     staff: [],
   });
 });

@@ -8,6 +8,7 @@ covers the rest of the router. Mock-based, house style (tests/conftest.py).
 
 import json
 from datetime import datetime
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -112,7 +113,7 @@ async def test_list_columns_without_site_returns_only_global(authed_client, mock
 @pytest.mark.asyncio
 async def test_with_values_keys_values_by_column_entity(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(1, "user"))
+    set_user(FakeUser(1, "user", site_ids=[3]))
     mock_db_session.execute.side_effect = [
         scalars_result([make_column(1), make_column(2, "boolean")]),
         scalars_result(
@@ -130,12 +131,14 @@ async def test_with_values_keys_values_by_column_entity(authed_client, mock_db_s
     assert [c["id"] for c in body["columns"]] == [1, 2]
     assert body["values"] == {"1-project-10": "hello", "2-phase-11": "true"}
     assert "custom_column_values.custom_column_id IN (1, 2)" in sql(mock_db_session)
+    # Only the values of projects (and their phases/subphases) at visible sites.
+    assert "projects.site_id IN (3)" in sql(mock_db_session)
 
 
 @pytest.mark.asyncio
 async def test_with_values_skips_value_query_when_no_columns(authed_client, mock_db_session):
     client, set_user = authed_client
-    set_user(FakeUser(1, "user"))
+    set_user(FakeUser(1, "user", site_ids=[3]))
     mock_db_session.execute.side_effect = [scalars_result([])]
 
     response = await client.get("/api/custom-columns/with-values?site_id=3")
@@ -445,6 +448,7 @@ async def test_set_value_updates_existing_row(authed_client, db_assigns_ids):
     db = db_assigns_ids
     existing = make_value(1, "phase", 10, "Low", vid=60)
     db.execute.side_effect = [
+        rows_result([(10, 1)]),  # the phase's project (site visibility)
         scalar_result(make_column(1, "list", ["Low", "High"])),
         scalar_result(existing),
     ]
@@ -548,3 +552,101 @@ async def test_delete_value_404(authed_client, mock_db_session):
     assert response.status_code == 404
     assert response.json()["detail"] == "Custom column value not found"
     mock_db_session.delete.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Permission keys: custom_columns.set_values, outright or through the PM bundle
+# ---------------------------------------------------------------------------
+
+# A role denied set_values outright, but acting as PM of the projects it manages.
+PM_ONLY = {"projects.manage_as_pm"}
+
+
+def rows_result(rows):
+    result = MagicMock()
+    result.all.return_value = rows
+    return result
+
+
+@pytest.mark.asyncio
+async def test_set_value_denied_without_the_key_or_the_pm_bundle(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "viewer", set()))
+
+    response = await client.put("/api/custom-columns/values", json=_value_payload("x"))
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Permission required: custom_columns.set_values"
+    mock_db_session.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_the_pm_sets_values_on_their_project(authed_client, db_assigns_ids):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "member", PM_ONLY))
+    db = db_assigns_ids
+    db.execute.side_effect = [
+        rows_result([(10, 5)]),  # project 10, managed by 5
+        scalar_result(make_column(1)),
+        scalar_result(None),
+    ]
+
+    response = await client.put("/api/custom-columns/values", json=_value_payload("hello"))
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_a_pm_cannot_set_values_on_someone_elses_phase(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "member", PM_ONLY))
+    mock_db_session.execute.side_effect = [
+        rows_result([(12, 10)]),  # phase 12 of project 10
+        rows_result([(10, 8)]),  # project 10, managed by 8
+    ]
+
+    response = await client.delete("/api/custom-columns/values/1/phase/12")
+
+    assert response.status_code == 403
+    mock_db_session.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_pm_batch_must_stay_on_managed_projects(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "member", PM_ONLY))
+    mock_db_session.execute.side_effect = [
+        rows_result([(20, 10)]),  # subphase 20 of project 10
+        rows_result([(10, 5), (11, 8)]),  # project 11 is someone else's
+    ]
+    updates = [
+        _value_payload("a", entity_type="project", entity_id=11),
+        _value_payload("b", entity_type="subphase", entity_id=20),
+    ]
+
+    response = await client.put("/api/custom-columns/values/batch", json={"updates": updates})
+
+    assert response.status_code == 403
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_pm_write_on_a_missing_entity_is_refused(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "member", PM_ONLY))
+    mock_db_session.execute.side_effect = [rows_result([])]  # subphase 20 does not exist
+
+    response = await client.delete("/api/custom-columns/values/1/subphase/20")
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_an_empty_batch_needs_no_lookup(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "member", PM_ONLY))
+
+    response = await client.put("/api/custom-columns/values/batch", json={"updates": []})
+
+    assert response.status_code == 200
+    assert response.json() == []

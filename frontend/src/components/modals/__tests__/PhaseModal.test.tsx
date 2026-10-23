@@ -16,6 +16,7 @@ import {
 } from '@/api/endpoints/projects';
 import { makePhase, makeProject, makeUser } from '@/test/factories';
 import { stubConfirm } from '@/test/confirmDialog';
+import { dateValue, pickDate, pickEnd, pickRange } from '@/test/datePicker';
 import type { Project } from '@/types';
 
 vi.mock('@/api/endpoints/projects', () => ({
@@ -45,14 +46,12 @@ function buildProject(): Project {
   return makeProject({ id: 1, start_date: '2026-02-02', end_date: '2026-04-30', phases: [design, build] });
 }
 
-const dateInputs = () => Array.from(document.querySelectorAll<HTMLInputElement>('input[type="date"]'));
 const nameInput = () => screen.getByPlaceholderText(/Preparation, Analytics/) as HTMLInputElement;
+const rangeValues = () => [dateValue('Start Date *'), dateValue('End Date *')];
 
-function fill(name: string, start?: string, end?: string) {
+function fill(name: string, range?: [start: string, end: string]) {
   fireEvent.change(nameInput(), { target: { value: name } });
-  const [s, e] = dateInputs();
-  if (start !== undefined) fireEvent.change(s, { target: { value: start } });
-  if (end !== undefined) fireEvent.change(e, { target: { value: end } });
+  if (range) pickRange('Start Date *', ...range);
 }
 
 beforeEach(() => {
@@ -70,21 +69,27 @@ describe('PhaseModal create', () => {
   it('defaults to the project dates and validates the fields', () => {
     act(() => useUIStore.getState().openPhaseModal(undefined, 1));
     render(<PhaseModal />);
-    expect(dateInputs().map((i) => i.value)).toEqual(['2026-02-02', '2026-04-30']);
     // The shared Input links each visible label to its control
     expect(screen.getByLabelText('Phase Name *')).toHaveValue('');
-    expect(screen.getByLabelText('Start Date *')).toHaveValue('2026-02-02');
-    expect(screen.getByLabelText('End Date *')).toHaveValue('2026-04-30');
+    expect(rangeValues()).toEqual(['2026-02-02', '2026-04-30']);
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Phase' }));
     expect(screen.getByText('Please enter a phase name')).toBeInTheDocument();
-    fill('QA', '');
-    fireEvent.click(screen.getByRole('button', { name: 'Add Phase' }));
-    expect(screen.getByText('Please select a start date')).toBeInTheDocument();
-    fill('QA', '2026-03-01', '');
-    fireEvent.click(screen.getByRole('button', { name: 'Add Phase' }));
-    expect(screen.getByText('Please select an end date')).toBeInTheDocument();
     expect(createPhase).not.toHaveBeenCalled();
+  });
+
+  // The rule itself is proven in dateRangeLogic.test; this guards the form's payload wiring
+  it('never lets the end precede the start', async () => {
+    act(() => useUIStore.getState().openPhaseModal(undefined, 1));
+    render(<PhaseModal />);
+    fireEvent.change(nameInput(), { target: { value: 'Early' } });
+    // An end picked before the start becomes the new start, keeping the duration
+    pickEnd('End Date *', '2026-01-26');
+    expect(rangeValues()).toEqual(['2026-01-26', '2026-04-23']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Phase' }));
+    await waitFor(() => expect(createPhase).toHaveBeenCalled());
+    expect(vi.mocked(createPhase).mock.calls[0][1]).toMatchObject({ start_date: '2026-01-26', end_date: '2026-04-23' });
   });
 
   it('needs a project', () => {
@@ -98,7 +103,7 @@ describe('PhaseModal create', () => {
   it('creates the phase, expands the project and grows it to fit', async () => {
     act(() => useUIStore.getState().openPhaseModal(undefined, 1));
     render(<PhaseModal />);
-    fill('Transfer', '2026-01-19', '2026-05-15');
+    fill('Transfer', ['2026-01-19', '2026-05-15']);
     fireEvent.click(screen.getByRole('button', { name: 'Add Phase' }));
 
     await waitFor(() => expect(useUIStore.getState().activeModal).toBeNull());
@@ -113,7 +118,7 @@ describe('PhaseModal create', () => {
   it('leaves the project dates alone when the phase fits', async () => {
     act(() => useUIStore.getState().openPhaseModal(undefined, 1));
     render(<PhaseModal />);
-    fill('Inside', '2026-03-02', '2026-03-06');
+    fill('Inside', ['2026-03-02', '2026-03-06']);
     fireEvent.click(screen.getByRole('button', { name: 'Add Phase' }));
     await waitFor(() => expect(useUIStore.getState().activeModal).toBeNull());
     expect(updateProject).not.toHaveBeenCalled();
@@ -131,7 +136,7 @@ describe('PhaseModal create', () => {
       });
     });
     render(<PhaseModal />);
-    expect(dateInputs().map((i) => i.value)).toEqual(['2026-03-04', '2026-03-10']);
+    expect(rangeValues()).toEqual(['2026-03-04', '2026-03-10']);
     fill('Follow-up');
     fireEvent.click(screen.getByRole('button', { name: 'Add Phase' }));
     await waitFor(() => expect(createPhase).toHaveBeenCalled());
@@ -224,14 +229,17 @@ describe('PhaseModal edit and delete', () => {
     render(<PhaseModal />);
     expect(screen.queryByText('Assigned Staff')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('switch', { name: /Milestone/ }));
-    expect(screen.getByLabelText('Date *')).toHaveValue('2026-03-02');
-    expect(dateInputs()).toHaveLength(1);
+    expect(dateValue('Date *')).toBe('2026-03-02');
+    expect(screen.queryByLabelText('Start Date *')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('End Date *')).not.toBeInTheDocument();
+    pickDate('Date *', '2026-03-09');
+    expect(dateValue('Date *')).toBe('2026-03-09');
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
     await waitFor(() => expect(updatePhase).toHaveBeenCalled());
     expect(vi.mocked(updatePhase).mock.calls[0][1]).toMatchObject({
       is_milestone: true,
-      start_date: '2026-03-02',
-      end_date: '2026-03-02',
+      start_date: '2026-03-09',
+      end_date: '2026-03-09',
     });
   });
 

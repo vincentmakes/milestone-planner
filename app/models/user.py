@@ -7,15 +7,18 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
-    CheckConstraint,
+    Boolean,
     DateTime,
     ForeignKey,
     Integer,
     String,
+    select,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
 
 from app.database import Base
+from app.models.rbac import Role
+from app.services.permissions import PermissionSet
 from app.utils import utcnow_naive
 
 if TYPE_CHECKING:
@@ -27,6 +30,7 @@ if TYPE_CHECKING:
     from app.models.project import Project
     from app.models.site import Site
     from app.models.skill import Skill
+    from app.models.team import Team
     from app.models.vacation import Vacation
 
 
@@ -34,9 +38,6 @@ class User(Base):
     """User model - represents application users who can also be staff resources."""
 
     __tablename__ = "users"
-    __table_args__ = (
-        CheckConstraint("role IN ('admin', 'superuser', 'user')", name="users_role_check"),
-    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
@@ -44,13 +45,28 @@ class User(Base):
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     job_title: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    role: Mapped[str] = mapped_column(String(20), default="user", nullable=False)
+    # A role key (roles.key). The admin role is the one key "admin"; every
+    # other role's rights come from its role_permissions rows.
+    role: Mapped[str] = mapped_column(
+        String(20),
+        ForeignKey("roles.key", name="users_role_fkey", onupdate="CASCADE", ondelete="RESTRICT"),
+        default="user",
+        nullable=False,
+    )
+    # The role's display name, read in the same SELECT as the user (a
+    # correlated scalar subquery on the unique roles.key, no extra round trip).
+    # None on a user not loaded from the database.
+    role_name: Mapped[str | None] = column_property(
+        select(Role.name).where(Role.key == role).correlate_except(Role).scalar_subquery()
+    )
     max_capacity: Mapped[int] = mapped_column(
         Integer, default=100, nullable=False
     )  # Max work capacity % (e.g., 80 for part-time)
     sso_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
     sso_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     active: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    # Bookable as a resource: may be booked on projects and appears in the Staff panel
+    is_resource: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_system: Mapped[int | None] = mapped_column(
         Integer, default=0, nullable=True
     )  # Protected admin created by master panel
@@ -104,6 +120,17 @@ class User(Base):
         lazy="selectin",
     )
 
+    # Teams the user is a member of, loaded with the user (selectin) so
+    # responses never trigger a lazy load. Rows go with the team / user (ON DELETE CASCADE).
+    teams: Mapped[list["Team"]] = relationship(
+        "Team",
+        secondary="team_members",
+        back_populates="members",
+        lazy="selectin",
+        order_by="Team.id",
+        passive_deletes=True,
+    )
+
     @property
     def full_name(self) -> str:
         """Return full name combining first and last name."""
@@ -125,22 +152,32 @@ class User(Base):
         return self.role == "admin"
 
     @property
-    def is_superuser(self) -> bool:
-        """Check if user has superuser role."""
-        return self.role == "superuser"
+    def permissions(self) -> PermissionSet:
+        """
+        The user's permission set (not mapped).
+
+        ``get_current_user`` sets the live one; until then it is the set of
+        ``role`` without rows (the admin holds everything, anyone else only
+        the locked view), so an unresolved user is denied rather than trusted.
+        """
+        resolved: PermissionSet | None = getattr(self, "_permission_set", None)
+        if resolved is None or resolved.role_key != self.role:
+            return PermissionSet(self.role or "", {})
+        return resolved
+
+    @permissions.setter
+    def permissions(self, value: PermissionSet) -> None:
+        self._permission_set = value
 
     @property
     def site_ids(self) -> list[int]:
         """Get list of site IDs user has access to."""
         return [site.id for site in self.sites]
 
-    def can_modify_site(self, site_id: int) -> bool:
-        """Check if user can modify data for a specific site."""
-        if self.is_admin:
-            return True
-        if self.is_superuser:
-            return site_id in self.site_ids
-        return False
+    @property
+    def team_ids(self) -> list[int]:
+        """Ids of the teams the user is a member of, ascending."""
+        return sorted(team.id for team in self.teams)
 
     def __repr__(self) -> str:
         return f"<User {self.email} ({self.role})>"

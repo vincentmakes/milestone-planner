@@ -14,8 +14,9 @@ import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { createStaffAssignment, deletePhase, deleteSubphase } from '@/api';
 import { recoverFromPersistFailure } from '@/utils/persistFailure';
-import type { Phase, Project, Subphase, User } from '@/types';
+import type { Phase, Project, Subphase } from '@/types';
 import { stubConfirm } from '@/test/confirmDialog';
+import { makeUser } from '@/test/factories';
 
 vi.mock('@/api', () => ({
   deleteProject: vi.fn(),
@@ -91,7 +92,7 @@ const project = {
   equipmentAssignments: [],
 } as unknown as Project;
 
-const plainUser = { id: 7, role: 'user', max_capacity: 80 } as unknown as User;
+const plainUser = makeUser({ id: 7, role: 'user', max_capacity: 80 });
 
 beforeEach(() => {
   vi.mocked(createStaffAssignment).mockClear();
@@ -107,7 +108,7 @@ describe('ContextMenuContainer subphase target', () => {
     expect(screen.getByRole('menuitem', { name: /assign me/i })).toBeEnabled();
   });
 
-  it('books the nested subphase with its own dates', async () => {
+  it('books the nested subphase as a linked booking (no dates: it follows the subphase)', async () => {
     render(<ContextMenuContainer />);
 
     fireEvent.click(screen.getByRole('menuitem', { name: /assign me/i }));
@@ -117,15 +118,16 @@ describe('ContextMenuContainer subphase target', () => {
       expect.objectContaining({
         staff_id: 7,
         allocation: 80,
-        start_date: '2026-09-10',
-        end_date: '2026-09-15',
         project_id: 1,
         subphase_id: 30,
       })
     );
+    const body = vi.mocked(createStaffAssignment).mock.calls[0][0];
+    expect(body).not.toHaveProperty('start_date');
+    expect(body).not.toHaveProperty('end_date');
   });
 
-  it('shows "Assigned to me" once the user is booked on the nested subphase', () => {
+  it('offers "Assign me again" once the user is booked on the nested subphase', () => {
     const booked = makeSubphase({
       ...nested,
       staffAssignments: [{ id: 5, staff_id: 7 } as unknown as Subphase['staffAssignments'][number]],
@@ -138,7 +140,7 @@ describe('ContextMenuContainer subphase target', () => {
 
     render(<ContextMenuContainer />);
 
-    expect(screen.getByRole('menuitem', { name: /assigned to me/i })).toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: 'Assign me again' })).toBeEnabled();
   });
 });
 
@@ -148,7 +150,7 @@ describe('ContextMenuContainer subphase target', () => {
  * left as it was (F2-17).
  */
 describe('ContextMenuContainer deletes', () => {
-  const admin = { id: 1, role: 'admin', max_capacity: 100 } as unknown as User;
+  const admin = makeUser({ id: 1, role: 'admin', max_capacity: 100 });
 
   it.each([
     ['phase', 'Delete Phase', 10, deletePhase],

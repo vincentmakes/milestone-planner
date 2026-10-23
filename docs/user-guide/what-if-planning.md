@@ -1,6 +1,6 @@
 # What-If Planning
 
-**What-If Mode** lets administrators and superusers experiment with scheduling changes without affecting the live data.
+**What-If Mode** lets planners — administrators and superusers by default, or any role with the *What-If mode* permission — experiment with scheduling changes without affecting the live data.
 
 ![What-If mode active — the header shows Discard and Exit actions for the scratch session](../assets/screenshots/what-if-active.png){ loading=lazy }
 
@@ -17,12 +17,16 @@
 ## Key Behaviors
 
 - What-If is a **private sandbox**: your experimental changes stay in your browser and are *not* sent to the server or visible to other users until you apply them
-- Only administrators and superusers can enter What-If mode, and only from the Gantt chart: What-If is a planning simulation of the timeline
+- Only roles with the *What-If mode* permission (administrators and superusers by default) can enter What-If mode, and only from the Gantt chart: What-If is a planning simulation of the timeline
 - **The Gantt chart keeps the focus.** While a What-If plan is open, the other views in the sidebar, the **Settings** window and the notification links that open a Kanban card are disabled, with a short explanation on the control. Apply or discard first; nothing is lost
 - The visual appearance changes (header indicator) to remind you that you're in planning mode
 - **Colleagues' changes wait.** While you are in What-If mode, project and custom-column changes made by other people are not pulled into your view (they would overwrite the plan you are editing); they are loaded as soon as you apply or discard
 - **Undo history is cleared** when you enter What-If mode, and again when you apply or discard, so an undo can never write a discarded plan to the server. Undo and redo *inside* What-If work as usual
 - **Signing out (or an expired session) discards the sandbox** — nothing carries over to the next person using the same browser tab
+
+### Own bookings that need approval
+
+If your role books your own time [with approval](settings.md#approvals), a change or removal of your own booking made in What-If mode looks applied in the sandbox like any other edit. On **Apply** it becomes an approval request: the booking keeps its values, shows *Change pending* or *Removal requested*, and waits for an approver. Approving or rejecting requests in [My Work](my-work.md) is unavailable while a plan is open; comments in the assignment dialog still post at once (they are not part of the plan).
 
 ### What is unavailable in What-If mode
 
@@ -35,7 +39,7 @@ Imports are blocked as well:
 - Importing a Microsoft Project or CSV file — imports cannot be sandboxed, so exit What-If mode first
 - Importing `.ics` calendar files (bank holidays, company events, absences), because calendar data is not part of the What-If snapshot
 
-Kanban comments and your notification inbox are not part of the plan: comments you post in What-If mode are saved immediately. The same goes for **tags and tag groups** in Settings: they are configuration, so an admin's changes there apply straight away even while a What-If plan is open. Attaching tags to a project is part of the plan and is queued like any other edit; if an admin makes a group single-select while your queued edit still holds two of its tags, Apply stops at that edit with an explanation — discard it and redo the change.
+Comments (on Kanban cards and in the assignment dialog) and your notification inbox are not part of the plan: comments you post in What-If mode are saved immediately. The same goes for **tags and project fields** in Settings: they are configuration, so an admin's changes there apply straight away even while a What-If plan is open. Attaching tags to a project and filling in its fields are part of the plan and are queued like any other edit; if an admin meanwhile limits a tag or a dropdown item your queued edit relies on to other sites or teams, Apply stops at that edit with an explanation — discard it and redo the change.
 
 ## Applying and Discarding
 

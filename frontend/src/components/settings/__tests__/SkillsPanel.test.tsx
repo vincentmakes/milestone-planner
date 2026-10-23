@@ -15,6 +15,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { stubConfirm } from '@/test/confirmDialog';
 import type { Skill, User } from '@/types';
+import { asSignedIn } from '@/test/permissionFixtures';
 
 const getAll = vi.fn();
 const create = vi.fn();
@@ -38,6 +39,7 @@ const admin: User = {
   name: 'Ada Admin',
   role: 'admin',
   active: true,
+  is_resource: false,
   site_ids: [1],
 };
 
@@ -54,7 +56,7 @@ beforeEach(() => {
   getAll.mockReset().mockResolvedValue(skills);
   create.mockReset();
   remove.mockReset().mockResolvedValue(undefined);
-  useAppStore.setState({ currentUser: admin, skills: [] });
+  useAppStore.setState({ currentUser: asSignedIn(admin), skills: [] });
 });
 
 afterEach(() => {

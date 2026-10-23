@@ -15,7 +15,9 @@ import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { stubConfirm } from '@/test/confirmDialog';
 import type { SettingsPanelProps } from '../types';
-import type { User, UserRole } from '@/types';
+import type { UserRole } from '@/types';
+import { makeUser } from '@/test/factories';
+import { canOpenSettings, getVisibleSections } from '../sections';
 
 // Panels talk to the API; the hub only needs something to render.
 vi.mock('../panels/GeneralPanel', () => ({
@@ -32,6 +34,7 @@ vi.mock('@/hooks/useUndoRedo', () => ({
   useUndoRedo: () => ({ undo: vi.fn(), redo: vi.fn() }),
 }));
 vi.mock('../panels/SitesPanel', () => ({ SitesPanel: () => <div>Sites panel</div> }));
+vi.mock('../panels/TeamsPanel', () => ({ TeamsPanel: () => <div>Teams panel</div> }));
 vi.mock('../panels/BankHolidaysPanel', () => ({ BankHolidaysPanel: () => <div>Bank holidays panel</div> }));
 vi.mock('../panels/CompanyEventsPanel', () => ({ CompanyEventsPanel: () => <div>Company events panel</div> }));
 vi.mock('../panels/UsersPanel', () => ({ UsersPanel: () => <div>Users panel</div> }));
@@ -41,10 +44,16 @@ vi.mock('../panels/EquipmentPanel', () => ({ EquipmentPanel: () => <div>Equipmen
 vi.mock('../panels/EquipmentTypesPanel', () => ({ EquipmentTypesPanel: () => <div>Equipment types panel</div> }));
 vi.mock('../panels/PredefinedPhasesPanel', () => ({ PredefinedPhasesPanel: () => <div>Predefined phases panel</div> }));
 vi.mock('../panels/SSOPanel', () => ({ SSOPanel: () => <div>SSO panel</div> }));
+vi.mock('../panels/RolesPanel', () => ({ RolesPanel: () => <div>Roles panel</div> }));
+vi.mock('../panels/DefaultsPanel', () => ({ DefaultsPanel: () => <div>Defaults panel</div> }));
+vi.mock('../panels/ProjectFieldsPanel', () => ({ ProjectFieldsPanel: () => <div>Project fields panel</div> }));
 
 const ALL_SECTIONS = [
   'General',
+  'Features & defaults',
+  'Roles',
   'Sites',
+  'Teams',
   'Bank holidays',
   'Company events',
   'Users',
@@ -55,9 +64,10 @@ const ALL_SECTIONS = [
   'Predefined phases',
   'SSO',
 ];
-// General is open to superusers (per-browser appearance only; the panel keeps
-// the instance-wide settings for admins).
-const ADMIN_ONLY = ['Sites', 'Absence types', 'SSO'];
+// Keys only admins hold by default. General is listed for everyone who opens
+// the hub (per-browser appearance; the panel keeps the instance-wide settings
+// for settings.general), and superusers see Sites for its export control.
+const ADMIN_ONLY = ['Features & defaults', 'Absence types', 'SSO', 'Roles'];
 
 /** The hub as mounted in the app, next to the global keyboard shortcuts */
 function HubWithShortcuts() {
@@ -65,18 +75,8 @@ function HubWithShortcuts() {
   return <SettingsHub />;
 }
 
-function setRole(role: UserRole) {
-  const user: User = {
-    id: 1,
-    email: 'someone@example.com',
-    first_name: 'Some',
-    last_name: 'One',
-    name: 'Some One',
-    role,
-    active: true,
-    site_ids: [1],
-  };
-  useAppStore.setState({ currentUser: user });
+function setRole(role: UserRole, permissions?: string[]) {
+  useAppStore.setState({ currentUser: makeUser({ role, ...(permissions ? { permissions } : {}) }) });
 }
 
 const navButton = (name: string) => screen.queryByRole('button', { name });
@@ -118,6 +118,20 @@ describe('SettingsHub', () => {
       expect(navButton(label)).toBeInTheDocument();
     }
     // First visible section (General: appearance) is shown
+    expect(await screen.findByText('General panel')).toBeInTheDocument();
+  });
+
+  it('lists the sections of a custom role\'s keys, General first', async () => {
+    setRole('team_lead', ['projects.view', 'teams.manage', 'sites.export']);
+    act(() => useUIStore.getState().openSettings());
+    render(<SettingsHub />);
+
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(
+      expect.arrayContaining(['General', 'Sites', 'Teams'])
+    );
+    for (const label of ['Users', 'Bank holidays', 'Skills', 'Equipment', 'SSO']) {
+      expect(navButton(label)).not.toBeInTheDocument();
+    }
     expect(await screen.findByText('General panel')).toBeInTheDocument();
   });
 
@@ -306,5 +320,86 @@ describe('SettingsHub', () => {
       fireEvent.keyDown(document, { key: 'Escape' });
     });
     expect(useUIStore.getState().activeModal).toBeNull();
+  });
+});
+
+describe('canOpenSettings / getVisibleSections', () => {
+  it('opens only with a key that lists a section other than General', () => {
+    expect(canOpenSettings(makeUser({ role: 'admin' }))).toBe(true);
+    expect(canOpenSettings(makeUser({ role: 'superuser' }))).toBe(true);
+    expect(canOpenSettings(makeUser({ role: 'user' }))).toBe(false);
+    expect(canOpenSettings(makeUser({ role: 'x', permissions: ['settings.sso'] }))).toBe(true);
+    expect(canOpenSettings(null)).toBe(false);
+    expect(getVisibleSections(makeUser({ role: 'user' }))).toEqual([]);
+  });
+
+  it('lists Sites with either sites.manage or sites.export', () => {
+    const ids = (permissions: string[]) =>
+      getVisibleSections(makeUser({ role: 'x', permissions })).map((s) => s.id);
+    expect(ids(['sites.manage'])).toEqual(['general', 'sites']);
+    expect(ids(['sites.export'])).toEqual(['general', 'sites']);
+    expect(ids(['settings.sso', 'tags.manage'])).toEqual(['general', 'tags', 'sso']);
+  });
+
+  it('lists Project fields with project_fields.manage (admins only), before Tags, and opens its panel', async () => {
+    const ids = (permissions: string[]) =>
+      getVisibleSections(makeUser({ role: 'x', permissions })).map((s) => s.id);
+    expect(ids(['project_fields.manage'])).toEqual(['general', 'project-fields']);
+    expect(ids(['project_fields.manage', 'tags.manage', 'predefined_phases.manage'])).toEqual([
+      'general',
+      'predefined-phases',
+      'project-fields',
+      'tags',
+    ]);
+    expect(getVisibleSections(makeUser({ role: 'superuser' })).map((s) => s.id)).not.toContain('project-fields');
+    const section = getVisibleSections(makeUser({ role: 'admin' })).find((s) => s.id === 'project-fields');
+    expect(section).toMatchObject({
+      group: 'Projects',
+      label: 'Project fields',
+      permission: 'project_fields.manage',
+      description: 'Fields on every project: the built-in ones, and your own dropdowns, texts, numbers and switches.',
+    });
+    expect(getVisibleSections(makeUser({ role: 'admin' })).find((s) => s.id === 'tags')?.description).toBe(
+      'Project tags, for all sites or only some.'
+    );
+
+    setRole('admin');
+    act(() => useUIStore.getState().openSettings('project-fields'));
+    render(<SettingsHub />);
+    expect(await screen.findByText('Project fields panel')).toBeInTheDocument();
+  });
+
+  it('lists Features & defaults with settings.general, after General, and opens the hub with it alone', async () => {
+    const ids = (permissions: string[]) =>
+      getVisibleSections(makeUser({ role: 'x', permissions })).map((s) => s.id);
+    expect(ids(['settings.general'])).toEqual(['general', 'defaults']);
+    expect(canOpenSettings(makeUser({ role: 'x', permissions: ['settings.general'] }))).toBe(true);
+    expect(ids(['users.view'])).not.toContain('defaults');
+    expect(getVisibleSections(makeUser({ role: 'admin' })).map((s) => s.id).slice(0, 3)).toEqual([
+      'general',
+      'defaults',
+      'roles',
+    ]);
+    const section = getVisibleSections(makeUser({ role: 'admin' })).find((s) => s.id === 'defaults');
+    expect(section).toMatchObject({ group: 'General', label: 'Features & defaults', permission: 'settings.general' });
+
+    setRole('admin');
+    act(() => useUIStore.getState().openSettings('defaults'));
+    render(<SettingsHub />);
+    expect(await screen.findByText('Defaults panel')).toBeInTheDocument();
+  });
+
+  it('lists Roles with roles.manage, in the General group', async () => {
+    const ids = (permissions: string[]) =>
+      getVisibleSections(makeUser({ role: 'x', permissions })).map((s) => s.id);
+    expect(ids(['roles.manage'])).toEqual(['general', 'roles']);
+    expect(ids(['users.view'])).not.toContain('roles');
+    const roles = getVisibleSections(makeUser({ role: 'admin' })).find((s) => s.id === 'roles');
+    expect(roles).toMatchObject({ group: 'General', label: 'Roles', permission: 'roles.manage' });
+
+    setRole('admin');
+    act(() => useUIStore.getState().openSettings('roles'));
+    render(<SettingsHub />);
+    expect(await screen.findByText('Roles panel')).toBeInTheDocument();
   });
 });

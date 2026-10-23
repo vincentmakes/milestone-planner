@@ -25,7 +25,9 @@ app/
 │   ├── absence_types.py     # Absence types (admin-managed categories of time off)
 │   ├── admin/               # Multi-tenant admin routes
 │   ├── admin_organizations.py  # Organization CRUD
-│   ├── assignments.py       # Staff/equipment assignments
+│   ├── approval_policies.py # Who approves own bookings, per action
+│   ├── approvals.py         # Approval requests: lists, approve / reject / cancel
+│   ├── assignments.py       # Staff/equipment assignments (own bookings may answer 202)
 │   ├── auth.py              # Authentication (login, SSO, sessions)
 │   ├── custom_columns.py    # Custom data columns
 │   ├── equipment.py         # Equipment CRUD and bookings
@@ -35,6 +37,7 @@ app/
 │   ├── notes.py             # Project/phase notes
 │   ├── predefined_phases.py # Phase templates
 │   ├── projects.py          # Project CRUD
+│   ├── roles.py             # Permission catalogue + role CRUD
 │   ├── settings.py          # Instance settings
 │   ├── sites.py             # Sites, bank holidays (edit/import), multi-site company events
 │   ├── skills.py            # Skills management
@@ -58,6 +61,7 @@ app/
 │   ├── absence_type.py      # AbsenceType (counts_as_unavailable, sort_order, is_active)
 │   ├── custom_column.py     # CustomColumn, CustomColumnValue
 │   ├── tag.py               # Tag, ProjectTag
+│   ├── rbac.py              # Role, RolePermission, ApprovalPolicy(+Role), ApprovalRequest
 │   ├── note.py              # Note (tablename: staff_notes)
 │   ├── settings.py          # Settings (KV), PredefinedPhase, SSOConfig
 │   ├── session.py           # Session (express-session compatible)
@@ -70,11 +74,14 @@ app/
 │   ├── encryption.py        # AES-256-GCM credential encryption, bcrypt / PBKDF2 hashing
 │   ├── login_throttle.py    # Failed-login throttle (in-memory, per process)
 │   ├── master_db.py         # Master DB connection + auto-migrations
-│   ├── project_access.py    # Per-project rights: project-manager edits, self-assignment
+│   ├── permissions.py       # Permission catalogue + PermissionSet (per-request resolution)
+│   ├── approvals.py         # Own-booking approval workflow
+│   ├── project_access.py    # Per-project rights: PM bundle, editor-first self-booking
+│   ├── user_access.py       # Account rules: edit targets, role escalation, last admin
 │   ├── proxy.py             # Proxy service
 │   ├── response_builders.py # Shared response formatting
 │   ├── session.py           # Session management
-│   ├── site_access.py       # can_access_sites / ensure_site_access (superuser site scoping)
+│   ├── site_access.py       # Visible sites: visible_site_ids, ensure_site_visible, ensure_site_access, …
 │   ├── sso.py               # Microsoft Entra SSO + tenant client-secret encryption helpers
 │   ├── tenant_data_migrations.py # run_data_migrations(): FK rewrites + orphan cleanup
 │   ├── tenant_manager.py    # Per-tenant connection pool management + auto-migrations
@@ -105,7 +112,8 @@ frontend/src/
 ├── components/
 │   ├── admin/               # Admin portal (AdminApp, TenantList, OrgList, etc.)
 │   ├── gantt/               # Gantt chart components
-│   ├── views/               # Main views (ArchivedView, CrossSiteView, EquipmentView, StaffView)
+│   ├── views/               # Main views (ArchivedView, CrossSiteView, EquipmentView, StaffView,
+│   │                        #   KanbanView, WorkView = My Work)
 │   ├── screens/             # Full-screen pages (LoginScreen, LoadingScreen, LoadErrorScreen)
 │   ├── settings/            # Settings hub (SettingsHub, sections.tsx registry, useReportDirty, panels/)
 │   ├── modals/              # Modal dialogs
@@ -119,6 +127,7 @@ frontend/src/
 │   ├── viewStore.ts         # Current view state
 │   ├── whatIfStore.ts       # What-If mode state
 │   ├── customColumnStore.ts # Custom columns state
+│   ├── workStore.ts         # My Work: approval requests to decide and my own requests
 │   └── undoStore.ts         # Undo/redo state
 ├── types/                   # TypeScript type definitions
 │   ├── models.ts            # Data model types
@@ -145,18 +154,19 @@ A `401` from any session-bound API call fires the API client's `onUnauthorized` 
 
 ### What-If mode
 
-What-If is a Gantt-only mode: the header renders the toggle only while `currentView === 'gantt'`, and while a sandbox is open the sidebar navigation, the notification bell's card links and every entry to the Settings hub are disabled through `useWhatIfBlocked` (store guards back this up: `viewStore.setCurrentView` accepts only `gantt`, and `uiStore.openSettings` and its legacy modal aliases are no-ops while a sandbox is open). While What-If is active the API client queues every `POST`/`PUT`/`PATCH`/`DELETE` instead of sending it, except auth, settings, admin-portal, notification and Kanban-comment calls and the **configuration endpoints** (tags, tag groups, absence types, skills, equipment types, predefined phases, users, site and equipment definitions), which are not part of the sandbox. Create entry points are disabled (`useWhatIfBlocked`), including absences and equipment blocks, and so are the Delete buttons for equipment and users (their bookings are plan data) and the holiday/event deletes in the embedded Staff view rows (calendar data is not in the snapshot). Apply replays the queue in order and **stops at the first failure**: the rest stays queued, the view reloads from the server, and `whatIfApplyError` drives a header banner with Retry / Discard / Dismiss. Edits queued while the post-Apply reload runs are kept. Undo history is cleared on enter, Discard and Apply.
+What-If is a Gantt-only mode: the header renders the toggle only while `currentView === 'gantt'`, and while a sandbox is open the sidebar navigation, the notification bell's card links and every entry to the Settings hub are disabled through `useWhatIfBlocked` (store guards back this up: `viewStore.setCurrentView` accepts only `gantt`, and `uiStore.openSettings` and its legacy modal aliases are no-ops while a sandbox is open). While What-If is active the API client queues every `POST`/`PUT`/`PATCH`/`DELETE` instead of sending it, except auth, settings, admin-portal, notification and comment calls, the RBAC endpoints (roles, permissions, approval policies, approval requests) and the **configuration endpoints** (tags, project fields, teams, absence types, skills, equipment types, predefined phases, users, site and equipment definitions), which are not part of the sandbox. Own bookings stay queued: one whose key is in approval mode becomes an approval request (`202`) on Apply. Create entry points are disabled (`useWhatIfBlocked`), including absences and equipment blocks, and so are the Delete buttons for equipment and users (their bookings are plan data) and the holiday/event deletes in the embedded Staff view rows (calendar data is not in the snapshot). Apply replays the queue in order and **stops at the first failure**: the rest stays queued, the view reloads from the server, and `whatIfApplyError` drives a header banner with Retry / Discard / Dismiss. Edits queued while the post-Apply reload runs are kept. Undo history is cleared on enter, Discard and Apply.
 
 ## Permissions Model
 
-Role checks (`get_current_user`, `require_superuser`, `require_admin`) gate routes globally. Two per-project rules sit on top of them, in `app/services/project_access.py` and mirrored by `frontend/src/utils/permissions.ts`:
+A user's **role** (`users.role`, a foreign key to `roles.key`) is a permission set: one mode per key of the catalogue in `app/services/permissions.py` — `allow`, `approval` (only on the three own-booking keys) or nothing (deny). The Administrator role holds every key in code and cannot be edited; the Superuser and User system roles ship with defaults that reproduce the pre-1.13 behaviour, and administrators add custom roles in Settings → Roles. `get_current_user` resolves the live role and matrix on every request (`load_live_user`), so a role edit applies on the next request.
 
-- **Project manager** — the user in `projects.pm_id` may edit that project as a superuser would (fields, phases, subphases, staff and equipment assignments, Kanban moves) but not delete it.
-- **Own assignment** — anyone may create, change and remove staff assignments that book their own time (`staff_id == user.id`), and join or leave Kanban cards.
+- **Gates** are dependencies from `app/middleware/auth.py`: `require_permission(key)`, `require_any_permission(*keys)` and `require_project_permission(key)`. `require_admin` guards only the role and approval-policy writes (lockout-proof). Never gate on a role name.
+- **PM bundle** — a role holding `projects.manage_as_pm` gets six keys (`projects.edit_any`, `projects.archive`, `assignments.manage_others`, `equipment_bookings.manage`, `kanban.move_any`, `custom_columns.set_values`) on the projects whose `pm_id` is the user (`project_access.can_on_project`). Never delete, create, import or export.
+- **Own bookings, editor first** — `assignments.manage_others` (or the PM) books anyone without approval; otherwise a user may book only themself, in the mode of `assignments.self_create` / `self_update` / `self_remove`: `allow` writes, `approval` files a request and answers `202` (`app/services/approvals.py`), no mode is `403`.
+- **Visible sites** — every read and write is limited to the user's sites unless the role holds `sites.view_all` (`app/services/site_access.py`, a request-cached `visible_site_ids`). The `views.*` keys gate the reads behind each view.
+- **Accounts** — `app/services/user_access.py`: editing an admin needs `users.edit_admins`; roles are assignable only within the caller's own permissions (escalation guard), never one's own; the last active admin is protected.
 
-Handlers apply these after loading the entity, with a `project_id` derived server-side. Site-scoped writes on multi-site data (company events, equipment) go through `app/services/site_access.py`: admins any site, superusers only sites they belong to.
-
-**Sites scope the UI, not access.** Superusers act tenant-wide on projects, phases, subphases, assignments, vacations and notes — `project_access.py` deliberately has no site check. Site membership is enforced only for bank holidays, company events, equipment, equipment blocks and equipment types. Plain users additionally only see the absences of people who share a site with them (`GET /vacations` without `siteId`), and may write custom-column values but not definitions.
+Handlers apply the per-entity rules after loading the entity, with a `project_id` derived server-side. The frontend mirrors the rules in `frontend/src/utils/permissions.ts` (`can(user, key, project?)`) on the keys `/auth/me` returns; the key spellings are shared through `shared/permission-keys.json`.
 
 ## Dual-Database Model
 

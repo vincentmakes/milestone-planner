@@ -11,7 +11,10 @@ import type { CrossSiteRow } from '../CrossSiteView';
 import { generateTimelineCells } from '@/components/gantt/utils';
 import { resetAllStores, useAppStore, useUIStore, useViewStore } from '@/stores';
 import { formatDateISO } from '@/utils/date';
-import { makeProject, makeSite } from '@/test/factories';
+import { makeProject, makeSite, makeTeam, makeUser } from '@/test/factories';
+import { tagFilterKey } from '@/utils/tags';
+import { buildEventDateSet } from '@/api';
+import type { CompanyEvent } from '@/types';
 
 const basel = makeSite({ id: 1, name: 'Basel' });
 const zurich = makeSite({ id: 2, name: 'Zurich' });
@@ -26,6 +29,7 @@ beforeEach(() => {
   resetAllStores();
   useViewStore.setState({ viewMode: 'month', cellWidth: 30, currentDate: new Date() });
   useAppStore.setState({
+    currentUser: makeUser({ role: 'admin' }),
     sites: [basel, zurich],
     currentSite: basel,
     projects: [
@@ -56,6 +60,25 @@ describe('CrossSiteView', () => {
     expect(screen.getAllByText('***')).toHaveLength(2);
   });
 
+  it('leaves the customer out, masked or not, while the Customer field is hidden', () => {
+    useAppStore.setState({ instanceSettings: { project_fields_hidden: '["customer"]' } });
+    const { container } = render(<CrossSiteView />);
+    const panel = container.querySelector('[class*="panelBody"]')!;
+    expect(panel.textContent).toMatch(/Alpha Study.*Zeta Upgrade/);
+    expect(panel.textContent).not.toMatch(/Acme/);
+    expect(screen.queryAllByText('***')).toHaveLength(0);
+    expect(screen.getAllByText('Confidential Project')).toHaveLength(2);
+  });
+
+  it('lists only the sites the user can see', () => {
+    const bern = makeSite({ id: 3, name: 'Bern' });
+    useAppStore.setState({ sites: [basel, zurich, bern], currentUser: makeUser({ role: 'user', site_ids: [1, 3] }) });
+    render(<CrossSiteView />);
+    expect(screen.getByText('Basel')).toBeInTheDocument();
+    expect(screen.getByText('Bern')).toBeInTheDocument();
+    expect(screen.queryByText('Zurich')).not.toBeInTheDocument();
+  });
+
   it('draws bars, labelled only for the current site', () => {
     render(<CrossSiteView />);
     expect(screen.getByTitle('Zeta Upgrade')).toHaveTextContent('Zeta Upgrade');
@@ -76,6 +99,40 @@ describe('CrossSiteView', () => {
 
     act(() => useUIStore.getState().triggerScrollToToday());
     expect(scroller.scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' }));
+  });
+
+  it('with an active team filter, narrows only the current site\'s lane', () => {
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 2, name: 'Zurich lab' })],
+      projects: useAppStore.getState().projects.map((p) => ({ ...p, team_ids: p.id === 1 ? [1] : [] })),
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    render(<CrossSiteView />);
+    expect(screen.getByTitle('Zeta Upgrade')).toBeInTheDocument();
+    expect(screen.queryByText('Alpha Study')).not.toBeInTheDocument();
+    expect(screen.getByText('1 projects')).toBeInTheDocument();
+    // The other site's lane is unchanged
+    expect(screen.getByText('2 projects')).toBeInTheDocument();
+    expect(screen.getAllByText('Confidential Project')).toHaveLength(2);
+  });
+
+  it('with an active team filter, drops company events of other teams from the timeline', () => {
+    const teamEvents: CompanyEvent[] = [
+      { id: 81, site_id: 1, site_ids: [1], date: iso(2), end_date: null, name: 'Team B review', team_ids: [2] },
+      { id: 82, site_id: 1, site_ids: [1], date: iso(3), end_date: null, name: 'Site audit', team_ids: [] },
+    ];
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1, name: 'A' }), makeTeam({ id: 2, site_id: 1, name: 'B' })],
+      companyEvents: teamEvents,
+      companyEventDates: buildEventDateSet(teamEvents),
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    render(<CrossSiteView />);
+    expect(screen.getAllByTitle('Site audit').length).toBeGreaterThan(0);
+    expect(screen.queryAllByTitle('Team B review')).toHaveLength(0);
+
+    act(() => useViewStore.setState({ teamFilters: {} }));
+    expect(screen.getAllByTitle('Team B review').length).toBeGreaterThan(0);
   });
 });
 

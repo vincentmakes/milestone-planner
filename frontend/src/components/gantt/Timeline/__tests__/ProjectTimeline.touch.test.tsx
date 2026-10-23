@@ -13,8 +13,9 @@ import { generateTimelineCells } from '../../utils';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
-import type { Project, User } from '@/types';
+import type { Project } from '@/types';
 import { stubConfirm } from '@/test/confirmDialog';
+import { makeUser } from '@/test/factories';
 
 vi.mock('@/contexts/WebSocketContext', () => ({
   useWebSocketContext: () => ({ recentChanges: [] }),
@@ -79,7 +80,7 @@ function jitteryTap(el: Element, x: number) {
 }
 
 beforeEach(() => {
-  useAppStore.setState({ currentUser: { id: 1, role: 'admin' } as unknown as User });
+  useAppStore.setState({ currentUser: makeUser({ id: 1, role: 'admin' }) });
   useUIStore.setState({ isDragging: false, dragType: null, isResizing: false, resizeEdge: null });
   useViewStore.setState({ viewMode: 'month', currentView: 'gantt', showAssignments: true });
 });
@@ -149,7 +150,7 @@ describe('ProjectTimeline touch', () => {
   });
 
   it('leaves a read-only assignment bar alone', () => {
-    useAppStore.setState({ currentUser: { id: 5, role: 'user' } as unknown as User });
+    useAppStore.setState({ currentUser: makeUser({ id: 5, role: 'user' }) });
     const { container } = renderTimeline(makeProject());
     const bar = container.querySelector('[data-assignment-id="50"]') as HTMLElement;
 

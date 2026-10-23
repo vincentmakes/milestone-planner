@@ -4,6 +4,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { SiteSelector } from './SiteSelector';
+import { TeamSelector } from './TeamSelector';
 import { DateNavigation } from './DateNavigation';
 import { UserMenu } from './UserMenu';
 import { ThemeToggle } from './ThemeToggle';
@@ -20,7 +21,9 @@ import { useHeaderDensity, type HeaderDensity } from '@/hooks/useHeaderDensity';
 import { getTheme, isDarkTheme, type Theme } from '@/utils/storage';
 import { getSetting } from '@/api/endpoints/settings';
 import { canManageAnyProject } from '@/utils/permissions';
+import { useHasPermission } from '@/hooks/useCan';
 import styles from './Header.module.css';
+import { Icon, BriefcaseIcon, UsersIcon, PanelsIcon } from '@/components/common/Icon';
 
 /**
  * Which controls leave the bar for the overflow menu, per density tier.
@@ -106,7 +109,7 @@ export function Header() {
     return () => observer.disconnect();
   }, [theme]);
 
-  const canUseWhatIf = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  const canUseWhatIf = useHasPermission('whatif.use');
   // Overview panels exist to drag resources onto projects, so anyone who
   // manages at least one project gets them (same rule as GanttContainer).
   const canShowPanels = canManageAnyProject(currentUser, projects);
@@ -183,6 +186,7 @@ export function Header() {
         {(density === 'full' || density === 'compact') && <InstanceTitle />}
         <div className={styles.divider} />
         <SiteSelector />
+        <TeamSelector />
       </div>
 
       {/* CENTER: Timeline Controls */}
@@ -226,10 +230,7 @@ export function Header() {
               aria-expanded={showPanelsDropdown}
               aria-haspopup="dialog"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <line x1="3" y1="15" x2="21" y2="15" />
-              </svg>
+              <Icon icon={PanelsIcon} size={16} />
               <span>Panels</span>
               {activePanelCount > 0 && (
                 <span className={styles.panelsBadge}>{activePanelCount}</span>
@@ -247,12 +248,7 @@ export function Header() {
                       setShowPanelsDropdown(false);
                     }}
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                      <circle cx="9" cy="7" r="4" />
-                      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                    </svg>
+                    <Icon icon={UsersIcon} size={18} />
                     <span>Staff</span>
                   </button>
                   <button
@@ -262,10 +258,7 @@ export function Header() {
                       setShowPanelsDropdown(false);
                     }}
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-                      <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-                    </svg>
+                    <Icon icon={BriefcaseIcon} size={18} />
                     <span>Equipment</span>
                   </button>
                 </div>

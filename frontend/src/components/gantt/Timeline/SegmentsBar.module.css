@@ -1,0 +1,36 @@
+/* One person's bookings on a card, as read-only blocks on one timeline row
+   (SegmentsBar.tsx). No class name here may contain "row". Tokens only;
+   --segment-color is the card's colour, set inline. */
+
+.segment {
+  --segment-color: var(--accent-cyan);
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 10px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--segment-color) 70%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--segment-color) 90%, var(--text-primary));
+  overflow: hidden;
+  pointer-events: auto;
+  cursor: default;
+}
+
+/* A booking with an open approval request: hatched, dashed like .pendingBar */
+.pendingSegment {
+  opacity: 0.75;
+  outline: 1px dashed var(--text-primary);
+  outline-offset: -1px;
+}
+
+.pendingSegment::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent 0 4px,
+    color-mix(in srgb, var(--bg-primary) 35%, transparent) 4px 8px
+  );
+}

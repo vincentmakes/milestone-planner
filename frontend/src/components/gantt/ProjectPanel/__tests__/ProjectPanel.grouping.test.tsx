@@ -1,7 +1,7 @@
 /**
  * ProjectPanel with Group-by sections: one SectionRow per section (pill +
  * count, chevron with aria-expanded), project rows only for expanded
- * sections, and the Group-by trigger between the Tags trigger and the
+ * sections, and the Group-by trigger between the Filter trigger and the
  * header divider. The section header's class names must not contain "row"
  * (drag/resize hooks look rows up with [class*="row"]).
  */
@@ -13,7 +13,8 @@ import { buildGanttRows, buildProjectSections, flatGanttRows } from '../../utils
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
-import type { Project, Site, Tag, TagGroup } from '@/types';
+import type { Project, Site } from '@/types';
+import { makeProject, makeProjectField, makeProjectFieldOption, makeUser } from '@/test/factories';
 
 vi.mock('@/api', () => ({}));
 vi.mock('@/hooks', () => ({
@@ -30,14 +31,17 @@ vi.mock('../ProjectRow', () => ({
   ),
 }));
 
-const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, sort_order: 0 };
-const tags: Tag[] = [
-  { id: 1, name: 'Internal', color: '#fde047', group_id: 1, all_sites: true, site_ids: [], sort_order: 0 },
-  { id: 2, name: 'Customer', color: '#1d4ed8', group_id: 1, all_sites: true, site_ids: [], sort_order: 1 },
-];
+const TYPE = makeProjectField({
+  id: 1,
+  name: 'Project type',
+  options: [
+    makeProjectFieldOption({ id: 1, name: 'Internal', color: '#fde047' }),
+    makeProjectFieldOption({ id: 2, name: 'Customer', color: '#1d4ed8' }),
+  ],
+});
 
-function project(id: number, name: string, tagIds: number[]): Project {
-  return { id, name, site_id: 1, tags: tagIds.map((t) => ({ id: t })) } as unknown as Project;
+function project(id: number, name: string, optionIds: number[]): Project {
+  return makeProject({ id, name, site_id: 1, field_values: optionIds.length ? { 1: optionIds[0] } : {} });
 }
 const projects = [
   project(1, 'Bioprocess Scale-Up', [2]),
@@ -48,9 +52,9 @@ const projects = [
 
 /** What GanttContainer does: the hook's grouping → rows → ProjectPanel. */
 function GroupedPanel() {
-  const { group, siteTags, collapsedKeys, toggleSection } = useGanttGrouping();
-  const rows = group
-    ? buildGanttRows(buildProjectSections(projects, group, siteTags), collapsedKeys)
+  const { field, collapsedKeys, toggleSection } = useGanttGrouping();
+  const rows = field
+    ? buildGanttRows(buildProjectSections(projects, field), collapsedKeys)
     : flatGanttRows(projects);
   return (
     <ProjectPanel
@@ -58,7 +62,7 @@ function GroupedPanel() {
       rows={rows}
       onToggleSection={toggleSection}
       width={320}
-      onProjectReorder={group ? undefined : () => {}}
+      onProjectReorder={field ? undefined : () => {}}
     />
   );
 }
@@ -66,28 +70,28 @@ function GroupedPanel() {
 beforeEach(() => {
   localStorage.clear();
   useCustomColumnStore.setState({ customColumns: [], customColumnValues: {}, customColumnFilters: {} });
-  useViewStore.setState({ ganttGrouping: { ':1': 1 }, collapsedGanttSections: {}, ganttColorBy: {}, tagFilters: {} });
+  useViewStore.setState({ ganttGrouping: { ':1': 1 }, collapsedGanttSections: {}, ganttColorBy: {}, projectFilters: {} });
   useAppStore.setState({
-    tags,
-    tagGroups: [TYPE],
-    currentUser: { id: 1, name: 'Someone', role: 'superuser' } as never,
+    tags: [],
+    projectFields: [TYPE],
+    currentUser: makeUser({ id: 1, name: 'Someone', role: 'superuser' }),
     currentSite: { id: 1, name: 'Basel' } as Site,
   });
 });
 
 const rowNames = () => screen.queryAllByTestId('project-row').map((r) => r.textContent);
 
-describe('ProjectPanel grouped by a tag group', () => {
+describe('ProjectPanel grouped by a project field', () => {
   it('renders a section header per section with pill and count, projects under it', () => {
     const { container } = render(<GroupedPanel />);
     const headers = [...container.querySelectorAll('[data-section-key]')];
-    expect(headers.map((h) => h.getAttribute('data-section-key'))).toEqual(['tag-1', 'tag-2', 'none']);
+    expect(headers.map((h) => h.getAttribute('data-section-key'))).toEqual(['field-1', 'field-2', 'none']);
     expect(headers.map((h) => h.textContent)).toEqual([
       'Internal1 project',
       'Customer2 projects',
       'No Project type1 project',
     ]);
-    // Tag colour + contrasting text on the pill
+    // Item colour + contrasting text on the pill
     const pill = screen.getByText('Internal');
     expect(pill).toHaveStyle({ backgroundColor: '#fde047', color: '#111827' });
 
@@ -118,7 +122,7 @@ describe('ProjectPanel grouped by a tag group', () => {
     expect(chevron).toHaveAttribute('aria-expanded', 'true');
 
     fireEvent.click(chevron);
-    expect(useViewStore.getState().collapsedGanttSections).toEqual({ ':1': ['tag-2'] });
+    expect(useViewStore.getState().collapsedGanttSections).toEqual({ ':1': ['field-2'] });
     expect(rowNames()).toEqual(['Catalyst Optimization', 'Quality System Upgrade']);
     const expand = screen.getByRole('button', { name: 'Expand Customer' });
     expect(expand).toHaveAttribute('aria-expanded', 'false');
@@ -137,14 +141,14 @@ describe('ProjectPanel grouped by a tag group', () => {
     expect(screen.getAllByTestId('project-row').every((r) => r.dataset.reorder === 'yes')).toBe(true);
   });
 
-  it('orders the view controls Tags, Group by, Colour by, then the divider', () => {
+  it('orders the view controls Filter, Group by, Colour by, then the divider', () => {
     render(<GroupedPanel />);
-    const tagsTrigger = screen.getByRole('button', { name: 'Tags' });
+    const filterTrigger = screen.getByRole('button', { name: 'Filter' });
     const groupTrigger = screen.getByRole('button', { name: 'Grouped by Project type' });
     const colorTrigger = screen.getByRole('button', { name: 'Colour by' });
     const divider = screen.getByTestId('header-divider');
     const follows = (a: Element, b: Element) => a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING;
-    expect(follows(tagsTrigger, groupTrigger)).toBeTruthy();
+    expect(follows(filterTrigger, groupTrigger)).toBeTruthy();
     expect(follows(groupTrigger, colorTrigger)).toBeTruthy();
     expect(follows(colorTrigger, divider)).toBeTruthy();
   });

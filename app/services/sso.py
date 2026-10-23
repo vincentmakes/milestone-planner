@@ -14,11 +14,13 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.services.encryption import decrypt, encrypt
+from app.services.permissions import ADMIN_ROLE_KEY, ROLE_KEY_PATTERN, SYSTEM_ROLE_KEYS
 
 logger = logging.getLogger(__name__)
 
@@ -36,22 +38,54 @@ class OrgSSOLookupError(RuntimeError):
     """
 
 
-# Roles a tenant ``users`` row may carry (``users_role_check``).
-VALID_USER_ROLES = ("user", "superuser", "admin")
+_SSO_FALLBACK_ROLE = "user"
 
 
-def normalize_sso_default_role(role: Any) -> str:
+async def resolve_sso_default_role(db: AsyncSession, role: Any) -> str:
     """
-    Return the role to give an SSO auto-created user.
+    Return the role to give an SSO auto-created user, resolved in the tenant DB.
 
-    Falls back to ``user`` for anything that is not a valid tenant role, so a
-    bad stored default (e.g. an organization config saved before the role was
-    validated, with ``viewer``) cannot make every first SSO sign-in fail on
-    the ``users`` role CHECK constraint.
+    The stored default (tenant ``sso_config.default_role`` or the
+    organization's ``default_user_role``) is used when it is a role key that
+    exists in this tenant's ``roles`` and is not ``admin``; anything else
+    falls back to ``user``. So a bad stored default (e.g. an organization
+    config saved before the role was validated, with ``viewer``, or a custom
+    role since deleted) cannot make every first SSO sign-in fail on the
+    ``users.role`` foreign key to ``roles.key``, and an automatically created
+    account is never an administrator. The system roles always exist (no query).
     """
-    if isinstance(role, str) and role.strip().lower() in VALID_USER_ROLES:
-        return role.strip().lower()
-    return "user"
+    if not isinstance(role, str):
+        return _SSO_FALLBACK_ROLE
+    key = role.strip().lower()
+    if key == ADMIN_ROLE_KEY or not re.match(ROLE_KEY_PATTERN, key):
+        return _SSO_FALLBACK_ROLE
+    if key in SYSTEM_ROLE_KEYS:
+        return key
+
+    from app.models.rbac import Role
+
+    found = await db.execute(select(Role.key).where(Role.key == key))
+    return found.scalar_one_or_none() or _SSO_FALLBACK_ROLE
+
+
+SSO_DEFAULT_ROLE_DETAIL = "Unknown role, or a role SSO cannot assign: {role}"
+
+
+async def ensure_sso_default_role(db: AsyncSession, role: str) -> str:
+    """
+    A tenant SSO default role being saved: the key itself when
+    ``resolve_sso_default_role`` keeps it (an existing, non-admin role),
+    else 400 -- never silently stored as something sign-in would replace.
+    """
+    resolved = await resolve_sso_default_role(db, role)
+    if resolved != role:
+        raise HTTPException(status_code=400, detail=SSO_DEFAULT_ROLE_DETAIL.format(role=role))
+    return resolved
+
+
+def _stored_role(role: Any) -> str | None:
+    """A stored default role as configured (trimmed); resolved at sign-in."""
+    return role.strip() if isinstance(role, str) else None
 
 
 # ---------------------------------------------------------
@@ -217,7 +251,7 @@ class SSOService:
                 "client_secret": _clean(client_secret),
                 "redirect_uri": _clean(config.redirect_uri),
                 "auto_create_users": config.should_auto_create_users,
-                "default_role": normalize_sso_default_role(config.default_role),
+                "default_role": _stored_role(config.default_role),
                 "required_group_ids": [],
                 "group_membership_mode": "any",
             }
@@ -308,7 +342,7 @@ class SSOService:
             "client_secret": _clean(client_secret),
             "redirect_uri": _clean(config.redirect_uri),
             "auto_create_users": config.should_auto_create_users,
-            "default_role": normalize_sso_default_role(config.default_user_role),
+            "default_role": _stored_role(config.default_user_role),
             "required_group_ids": tenant.required_group_ids or [],
             "group_membership_mode": tenant.group_membership_mode or "any",
             "organization": {

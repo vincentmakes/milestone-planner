@@ -9,6 +9,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useDismissableOverlay } from '../useDismissableOverlay';
 import { useConfirmStore } from '@/stores/confirmStore';
 
@@ -39,6 +40,44 @@ function Overlay({ onClose, initiallyOpen = true }: { onClose?: () => void; init
             <button type="button">Inside</button>
           </div>
         )}
+      </div>
+      <button type="button">Outside</button>
+    </div>
+  );
+}
+
+/** The panel portaled to <body>, outside the wrapper in the DOM (AnchoredPanel's shape). */
+function PortaledOverlay({ onClose, withPanelRef = true }: { onClose?: () => void; withPanelRef?: boolean }) {
+  const [open, setOpen] = useState(true);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const { onBlur } = useDismissableOverlay({
+    open,
+    onClose: () => {
+      setOpen(false);
+      onClose?.();
+    },
+    wrapperRef,
+    triggerRef,
+    panelRef: withPanelRef ? panelRef : undefined,
+  });
+  return (
+    <div>
+      <div ref={wrapperRef} data-testid="wrapper" onBlur={onBlur}>
+        <button ref={triggerRef} type="button" onClick={() => setOpen((o) => !o)}>
+          Trigger
+        </button>
+        {open &&
+          createPortal(
+            <div ref={panelRef} role="dialog" aria-label="Panel">
+              <label>
+                Option <input type="checkbox" />
+              </label>
+              <button type="button">Inside</button>
+            </div>,
+            document.body
+          )}
       </div>
       <button type="button">Outside</button>
     </div>
@@ -161,5 +200,55 @@ describe('useDismissableOverlay', () => {
     act(() => useConfirmStore.getState().settle(id, false));
     fireEvent.mouseDown(document.body);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  describe('with a panel portaled out of the wrapper (panelRef)', () => {
+    it('stays open on a mousedown inside the portaled panel, closes outside both', () => {
+      const onClose = vi.fn();
+      render(<PortaledOverlay onClose={onClose} />);
+      const panel = screen.getByRole('dialog', { name: 'Panel' });
+      expect(screen.getByTestId('wrapper')).not.toContainElement(panel);
+
+      fireEvent.mouseDown(screen.getByRole('button', { name: 'Inside' }));
+      fireEvent.mouseDown(screen.getByText('Option'));
+      fireEvent.mouseDown(screen.getByRole('button', { name: 'Trigger' }));
+      expect(onClose).not.toHaveBeenCalled();
+
+      fireEvent.mouseDown(screen.getByRole('button', { name: 'Outside' }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('without panelRef the portaled panel counts as outside (why the option exists)', () => {
+      const onClose = vi.fn();
+      render(<PortaledOverlay onClose={onClose} withPanelRef={false} />);
+      fireEvent.mouseDown(screen.getByRole('button', { name: 'Inside' }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('sees focus moves in the panel through the wrapper (React bubbles through the portal)', () => {
+      const onClose = vi.fn();
+      render(<PortaledOverlay onClose={onClose} />);
+      const inside = screen.getByRole('button', { name: 'Inside' });
+
+      // Trigger → panel, and inside the panel: still open
+      fireEvent.blur(screen.getByRole('button', { name: 'Trigger' }), { relatedTarget: inside });
+      fireEvent.blur(screen.getByRole('checkbox'), { relatedTarget: inside });
+      fireEvent.blur(inside, { relatedTarget: null });
+      expect(onClose).not.toHaveBeenCalled();
+
+      // Tab out of the portaled panel: the blur reaches the wrapper's onBlur
+      fireEvent.blur(inside, { relatedTarget: screen.getByRole('button', { name: 'Outside' }) });
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('Escape inside the portaled panel closes it and refocuses the trigger', () => {
+      const onClose = vi.fn();
+      render(<PortaledOverlay onClose={onClose} />);
+      screen.getByRole('button', { name: 'Inside' }).focus();
+      fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Trigger' })).toHaveFocus();
+    });
   });
 });

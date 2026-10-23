@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from app.routers.kanban import SEVERAL_BOOKINGS_DETAIL
 from tests.conftest import FakeUser
 
 
@@ -42,6 +43,8 @@ def _staff_row(staff_id: int, project_id: int = 1):
     row.id = 1
     row.project_id = project_id
     row.staff_id = staff_id
+    row.approval_status = "approved"
+    row.approval_request_id = None
     return row
 
 
@@ -318,3 +321,155 @@ async def test_omitted_completion_is_left_untouched(authed_client, mock_db_sessi
 
     assert response.status_code == 200
     assert (card.completion, card.status) == (40, "blocked")
+
+
+# ---------------------------------------------------------
+# Permission keys: move_any / move_assigned, mentionable sites.view_all
+# ---------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_custom_role_with_move_any_moves_any_card(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "mover", {"kanban.move_any"}))
+    assignees_result = MagicMock()
+    assignees_result.scalars.return_value.all.return_value = []
+    # No pm lookup, no assignee lookup.
+    mock_db_session.execute.side_effect = [_scalar_result(_card()), assignees_result]
+
+    response = await client.put("/api/kanban/cards/phase/1/status", json={"status": "done"})
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_an_assignee_without_move_assigned_cannot_move(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "watcher", {"projects.manage_as_pm"}))
+    # Card load, pm lookup (not the PM) -- the assignee lookup is never made.
+    mock_db_session.execute.side_effect = [_scalar_result(_card()), _pm_result(99)]
+
+    response = await client.put("/api/kanban/cards/phase/1/status", json={"status": "done"})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "Permission required: kanban.move_any or kanban.move_assigned"
+    )
+    assert mock_db_session.execute.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_the_pm_moves_any_card_of_their_project(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "user"))
+    assignees_result = MagicMock()
+    assignees_result.scalars.return_value.all.return_value = []
+    mock_db_session.execute.side_effect = [
+        _scalar_result(_card()),
+        _pm_result(5),
+        assignees_result,
+    ]
+
+    response = await client.put("/api/kanban/cards/phase/1/status", json={"status": "done"})
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_joining_a_card_with_self_create_denied_is_403(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "watcher", {"projects.manage_as_pm"}))
+    mock_db_session.execute.side_effect = [_scalar_result(_card()), _pm_result(99)]
+
+    response = await client.post("/api/kanban/cards/phase/1/assignees", json={"staff_id": 5})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "You are not allowed to book yourself on projects"
+    mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_mentionable_users_include_roles_seeing_every_site(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "user"))
+    result = MagicMock()
+    result.scalars.return_value.unique.return_value.all.return_value = []
+    mock_db_session.execute.return_value = result
+
+    await client.get("/api/kanban/sites/1/mentionable-users")
+
+    statement = mock_db_session.execute.call_args[0][0]
+    rendered = " ".join(str(statement).split())
+    assert "role_permissions.permission" in rendered
+    assert "sites.view_all" in str(statement.compile(compile_kwargs={"literal_binds": True}))
+
+
+# ---------------------------------------------------------
+# Unassign: one booking per person, else one by one (1.17.0)
+# ---------------------------------------------------------
+
+
+def _rows_result(rows):
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = rows
+    return result
+
+
+def _segment(row_id: int, staff_id: int = 5):
+    row = _staff_row(staff_id)
+    row.id = row_id
+    row.allocation = 50
+    row.start_date = None
+    row.end_date = None
+    return row
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entity_type", ["phase", "subphase"])
+@pytest.mark.parametrize(
+    "user",
+    [FakeUser(1, "admin"), FakeUser(5, "user", {"assignments.self_remove": "approval"})],
+    ids=["editor", "self-in-approval-mode"],
+)
+async def test_unassign_of_a_person_with_several_segments_is_409(
+    authed_client, mock_db_session, entity_type, user
+):
+    client, set_user = authed_client
+    set_user(user)
+    mock_db_session.execute.side_effect = [
+        _scalar_result(_card()),
+        _rows_result([_segment(1), _segment(2)]),
+    ]
+
+    response = await client.delete(f"/api/kanban/cards/{entity_type}/1/assignees/5")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == SEVERAL_BOOKINGS_DETAIL
+    # Decided before the approval resolution: no request filed, nothing deleted.
+    assert mock_db_session.execute.await_count == 2
+    mock_db_session.add.assert_not_called()
+    mock_db_session.delete.assert_not_awaited()
+    mock_db_session.commit.assert_not_awaited()
+    lookup = mock_db_session.execute.await_args_list[1].args[0]
+    assert lookup._limit_clause.value == 2  # two rows are enough to tell
+
+
+@pytest.mark.asyncio
+async def test_unassign_of_a_person_with_one_booking_removes_it(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    row = _segment(7)
+    mock_db_session.execute.side_effect = [_scalar_result(_card()), _rows_result([row])]
+
+    response = await client.delete("/api/kanban/cards/phase/1/assignees/5")
+
+    assert response.status_code == 200
+    assert response.json() == {"success": True}
+    mock_db_session.delete.assert_awaited_once_with(row)
+    mock_db_session.commit.assert_awaited_once()
+
+
+def test_several_bookings_detail_is_plain_words():
+    assert SEVERAL_BOOKINGS_DETAIL == (
+        "This person has several bookings on this card — remove them one by one"
+    )

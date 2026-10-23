@@ -135,6 +135,12 @@
   margin-right: 0;
 }
 
+/* An assignee whose booking awaits approval: dashed ring, faded. */
+.avatar.pendingAvatar {
+  border: 1.5px dashed var(--text-secondary);
+  opacity: 0.7;
+}
+
 
 .comments {
   display: inline-flex;

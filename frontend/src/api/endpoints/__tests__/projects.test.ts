@@ -21,6 +21,7 @@ import {
   deleteSubphase,
   fetchAllProjects,
   getProject,
+  transformFieldValues,
   getProjects,
   restoreProject,
   updateEquipmentAssignment,
@@ -232,6 +233,37 @@ describe('assignments route by level', () => {
   });
 });
 
+describe('transformFieldValues', () => {
+  it('turns the JSON string keys into field ids and keeps every value shape', () => {
+    expect(transformFieldValues({ '1': 'Pilot plant', '2': 1250, '3': false, '4': 42, '5': [51, 52] })).toEqual({
+      1: 'Pilot plant',
+      2: 1250,
+      3: false,
+      4: 42,
+      5: [51, 52],
+    });
+  });
+
+  it('drops keys that are not field ids and reads anything else as no values', () => {
+    expect(transformFieldValues({ x: 1, '0': 2, '-3': 3, '1.5': 4, '7': 'ok' })).toEqual({ 7: 'ok' });
+    expect(transformFieldValues(undefined)).toEqual({});
+    expect(transformFieldValues(null)).toEqual({});
+    expect(transformFieldValues([1, 2])).toEqual({});
+    expect(transformFieldValues('nope')).toEqual({});
+  });
+
+  it('is applied by fetchAllProjects (absent = {})', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/projects?')) return { items: [{ id: 1 }, { id: 2 }], total: 2 };
+      return url.endsWith('/1')
+        ? { id: 1, name: 'A', site_id: 1, field_values: { '3': [7] } }
+        : { id: 2, name: 'B', site_id: 1 };
+    });
+    const projects = await fetchAllProjects();
+    expect(projects.map((p) => p.field_values)).toEqual([{ 3: [7] }, {}]);
+  });
+});
+
 describe('fetchAllProjects transform layer', () => {
   it('returns [] without fetching details when there are no projects', async () => {
     get.mockResolvedValueOnce({ items: [], total: 0 });
@@ -248,7 +280,26 @@ describe('fetchAllProjects transform layer', () => {
         id: 1,
         name: 'P',
         site_id: 1,
-        staff_assignments: [{ id: 1, staff_id: 4, allocation_percent: 40, start_date: 'a', end_date: 'b' }],
+        staff_assignments: [
+          { id: 1, staff_id: 4, allocation_percent: 40, start_date: 'a', end_date: 'b' },
+          {
+            id: 2,
+            staff_id: 8,
+            allocation: 60,
+            start_date: 'a',
+            end_date: 'b',
+            approval_status: 'pending',
+            approval: {
+              request_id: 31,
+              action: 'assignments.self_create',
+              requester_id: 8,
+              requested: { allocation: 60, start_date: 'a', end_date: 'b' },
+              previous: null,
+              created_at: '2026-10-20T08:00:00.000Z',
+              can_decide: true,
+            },
+          },
+        ],
         equipment_assignments: [{ id: 2, equipment_id: 9, equipment_name: 'Reactor', start_date: 'a', end_date: 'b' }],
         phases: [
           {
@@ -300,7 +351,20 @@ describe('fetchAllProjects transform layer', () => {
     expect(get).toHaveBeenCalledWith('/api/projects/1');
 
     expect(project.staffAssignments).toEqual([
-      expect.objectContaining({ id: 1, staff_id: 4, allocation: 40 }),
+      expect.objectContaining({ id: 1, staff_id: 4, allocation: 40, approval_status: 'approved', approval: null }),
+      expect.objectContaining({
+        id: 2,
+        approval_status: 'pending',
+        approval: {
+          request_id: 31,
+          action: 'assignments.self_create',
+          requester_id: 8,
+          requested: { allocation: 60, start_date: 'a', end_date: 'b' },
+          previous: null,
+          created_at: '2026-10-20T08:00:00.000Z',
+          can_decide: true,
+        },
+      }),
     ]);
     expect(project.equipmentAssignments[0]).toMatchObject({ equipment_id: 9, equipment_name: 'Reactor' });
 
@@ -340,6 +404,47 @@ describe('fetchAllProjects transform layer', () => {
       color: '#00bb00',
     });
     expect(grandchild.staffAssignments[0].allocation).toBe(10);
+  });
+
+  it('maps the booking dates and linked flag of card rows (older servers: linked, the card dates)', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/projects?')) return { items: [{ id: 1 }], total: 1 };
+      return {
+        id: 1,
+        staff_assignments: [{ id: 1, staff_id: 4, allocation: 40, start_date: '2026-03-01', end_date: '2026-03-31', linked: false }],
+        phases: [
+          {
+            id: 10,
+            start_date: '2026-03-02T00:00:00.000Z',
+            end_date: '2026-03-13T00:00:00.000Z',
+            staff_assignments: [
+              { id: 3, staff_id: 5, allocation: 50, start_date: '2026-03-03T00:00:00.000Z', end_date: '2026-03-05T00:00:00.000Z', linked: false },
+              { id: 4, staff_id: 6, allocation: 50, start_date: '2026-03-02T00:00:00.000Z', end_date: '2026-03-13T00:00:00.000Z', linked: true },
+              // A server before 1.17.0: no dates, no flag
+              { id: 5, staff_id: 7, allocation: 50 },
+            ],
+            subphases: [
+              {
+                id: 20,
+                parent_type: 'phase',
+                parent_id: 10,
+                name: 'S',
+                start_date: '2026-03-02',
+                end_date: '2026-03-06',
+                staff_assignments: [{ id: 6, staff_id: 5, allocation: 20, start_date: '2026-03-04', end_date: '2026-03-04', linked: false }],
+              },
+            ],
+          },
+        ],
+      };
+    });
+    const [project] = await fetchAllProjects();
+    expect(project.staffAssignments[0].linked).toBe(false);
+    const [segment, linked, legacy] = project.phases[0].staffAssignments;
+    expect(segment).toMatchObject({ linked: false, start_date: '2026-03-03T00:00:00.000Z', end_date: '2026-03-05T00:00:00.000Z' });
+    expect(linked.linked).toBe(true);
+    expect(legacy).toMatchObject({ linked: true, start_date: '2026-03-02T00:00:00.000Z', end_date: '2026-03-13T00:00:00.000Z' });
+    expect(project.phases[0].children[0].staffAssignments[0]).toMatchObject({ linked: false, start_date: '2026-03-04' });
   });
 
   it('uses an explicit subphase depth for its colour', async () => {

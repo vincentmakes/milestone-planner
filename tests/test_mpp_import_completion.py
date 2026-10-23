@@ -143,6 +143,7 @@ async def test_mpp_import_derives_status_and_stores_an_int(authed_client, mock_d
     with patch("app.routers.mpp_import.parse_mpp_file", return_value=project_data):
         response = await client.post(
             "/api/import/project",
+            data={"site_id": "1"},  # a visible site (site-less needs sites.view_all)
             files={"file": ("plan.mpp", b"binary", "application/octet-stream")},
         )
 
@@ -191,6 +192,7 @@ async def test_imported_dependencies_name_their_predecessor_kind(authed_client, 
     with patch("app.routers.mpp_import.parse_mpp_file", return_value=project_data):
         response = await client.post(
             "/api/import/project",
+            data={"site_id": "1"},  # a visible site (site-less needs sites.view_all)
             files={"file": ("plan.mpp", b"binary", "application/octet-stream")},
         )
 

@@ -67,6 +67,15 @@ export function formatDateDisplay(date: Date): string {
 }
 
 /**
+ * A model date (`YYYY-MM-DD`, or the midnight ISO form) in the browser locale
+ * with a short month — `22 Oct 2026` / `Oct 22, 2026`; `''` for no date.
+ * The text of the date picker fields.
+ */
+export function formatMediumDate(iso: string): string {
+  return iso ? formatDateDisplay(parseLocalDate(iso)) : '';
+}
+
+/**
  * Format a date for short display (e.g., "Jan 15" or "15 Jan")
  */
 export function formatDateShort(date: Date): string {

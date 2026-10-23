@@ -138,6 +138,55 @@ describe('autoCalculation dates in America/New_York', () => {
     expect(updates.find((u) => u.type === 'staffAssignment')).toMatchObject({ id: 7, allocation: 50 });
   });
 
+  it('tags cascaded project-level staff updates with their route level', () => {
+    const p = project([]);
+    p.staffAssignments = [
+      { id: 7, staff_id: 1, allocation: 50, start_date: '2026-03-02', end_date: '2026-03-06' },
+    ];
+    const updates: PendingUpdate[] = [];
+
+    movePhasesWithProject(p, 1, updates);
+
+    expect(updates).toEqual([expect.objectContaining({ type: 'staffAssignment', id: 7, level: 'project' })]);
+  });
+
+  // Regression (RBAC): linked phase/subphase staff rows have no dates of
+  // their own (they follow their item) and their ids are only unique per
+  // level, so a cascaded update for one used to PUT /api/assignments/{id} --
+  // the project-level row that happens to share the id. A pending row is a
+  // request awaiting approval: an editor's PUT on it is a 409. (Unlinked
+  // segments are fitted with their card: autoCalculation.cascades.test.ts.)
+  it('never writes linked phase/subphase staff rows or pending rows', () => {
+    const dated = { staff_id: 2, allocation: 40, start_date: '2026-03-02', end_date: '2026-03-04' };
+    const child = sub(2, '2026-03-02', '2026-03-04');
+    child.staffAssignments = [{ id: 7, ...dated }];
+    const ph = phase(10, '2026-03-02', '2026-03-06', [child]);
+    ph.staffAssignments = [{ id: 7, ...dated }];
+    const p = project([ph]);
+    p.staffAssignments = [
+      { id: 8, staff_id: 3, allocation: 50, start_date: '2026-03-02', end_date: '2026-03-06', approval_status: 'pending' },
+    ];
+    const updates: PendingUpdate[] = [];
+
+    movePhasesWithProject(p, 7, updates);
+
+    expect(updates.filter((u) => u.type === 'staffAssignment')).toEqual([]);
+    // Linked rows show their item's new dates locally; the pending row awaits a decision.
+    expect(ph.staffAssignments[0].start_date).toBe('2026-03-09');
+    expect(child.staffAssignments[0].start_date).toBe('2026-03-09');
+    expect(p.staffAssignments[0].start_date).toBe('2026-03-02');
+  });
+
+  it('moveChildrenByOffset leaves subphase staff rows to their subphase', () => {
+    const child = sub(2, '2026-03-02', '2026-03-04');
+    child.staffAssignments = [{ id: 7, staff_id: 2, allocation: 40, start_date: '2026-03-02', end_date: '2026-03-04' }];
+    const updates: PendingUpdate[] = [];
+
+    moveChildrenByOffset([child], 2, updates);
+
+    expect(updates.map((u) => u.type)).toEqual(['subphase']);
+  });
+
   it('cascadeParentDatesUp sets parent and project to the union of the children', () => {
     // One child Mar 1–5: the phase AND the project used to become Feb 28 – Mar 4.
     const p = project([phase(10, '2026-02-20', '2026-03-20', [sub(2, '2026-03-01', '2026-03-05')])], '2026-02-20', '2026-03-20');
@@ -205,11 +254,22 @@ describe('savePendingUpdates', () => {
 
   it('resolves when every update succeeds (allocation defaults to 100)', async () => {
     await expect(savePendingUpdates(updates)).resolves.toBeUndefined();
-    expect(projectsApi.updateStaffAssignment).toHaveBeenCalledWith(3, {
-      start_date: '2026-03-01',
-      end_date: '2026-03-02',
-      allocation: 100,
-    });
+    expect(projectsApi.updateStaffAssignment).toHaveBeenCalledWith(
+      3,
+      { start_date: '2026-03-01', end_date: '2026-03-02', allocation: 100 },
+      'project'
+    );
+  });
+
+  it('routes a staff-assignment update by its level', async () => {
+    await savePendingUpdates([
+      { type: 'staffAssignment', id: 4, level: 'subphase', start_date: '2026-03-01', end_date: '2026-03-02', allocation: 30 },
+    ]);
+    expect(projectsApi.updateStaffAssignment).toHaveBeenCalledWith(
+      4,
+      { start_date: '2026-03-01', end_date: '2026-03-02', allocation: 30 },
+      'subphase'
+    );
   });
 
   it('attempts every update and rejects with the failures when any fails', async () => {

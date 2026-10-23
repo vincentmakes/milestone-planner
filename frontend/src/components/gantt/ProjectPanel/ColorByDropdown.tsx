@@ -1,43 +1,48 @@
 /**
- * ColorByDropdown - "Colour by tag group" control of the Gantt project panel.
+ * ColorByDropdown - "Colour by" control of the Gantt project panel.
  *
- * Trigger "Colour by" / "Coloured by <group>"; options "Default" plus one per
- * tag group (group display order). The chosen group colours each project bar
- * with the project's tag from it (utils/tags.ts projectBarColor). A per-user,
- * per-site preference (useGanttColorBy), independent of Group by. Shell,
- * close rules and placement: TagGroupChoiceDropdown.
+ * Trigger "Colour by" / "Coloured by <choice>"; options "Default", one per
+ * dropdown project field applying to the site (field display order) and
+ * "Tags" while the site has tags. A field colours each project bar with the
+ * project's first item of it, "Tags" with its first tag
+ * (utils/projectFilters.ts projectBarColor). A per-user, per-site preference
+ * (useGanttColorBy), independent of Group by. Renders nothing when there is
+ * no choice. Shell, close rules and placement: FieldChoiceDropdown.
  */
 
+import { useMemo } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useGanttColorBy } from '@/hooks/useGanttColorBy';
-import { TagGroupChoiceDropdown } from './TagGroupChoiceDropdown';
+import { tagsForSite } from '@/utils/tags';
+import { FieldChoiceDropdown } from './FieldChoiceDropdown';
+import type { FieldChoice } from './FieldChoiceDropdown';
+import { Icon, PaletteIcon } from '@/components/common/Icon';
+
+const TAGS_CHOICE: FieldChoice<number | 'tags'> = Object.freeze({ id: 'tags', name: 'Tags' });
 
 export function ColorByDropdown() {
-  const tagGroups = useAppStore((s) => s.tagGroups);
-  const { siteId, group, setGroup } = useGanttColorBy();
+  const { siteId, colorBy, fields, setColorBy } = useGanttColorBy();
+  const hasSiteTags = useAppStore((s) => tagsForSite(s.tags, siteId).length > 0);
+
+  const choices = useMemo<FieldChoice<number | 'tags'>[]>(
+    () => (hasSiteTags ? [...fields, TAGS_CHOICE] : fields),
+    [fields, hasSiteTags]
+  );
+  const value = colorBy === 'tags' ? TAGS_CHOICE : colorBy;
 
   return (
-    <TagGroupChoiceDropdown
+    <FieldChoiceDropdown<number | 'tags'>
       triggerLabel="Colour by"
-      activeLabel={(g) => `Coloured by ${g.name}`}
-      idleTitle="Colour projects by tag group"
+      activeLabel={(c) => `Coloured by ${c.name}`}
+      idleTitle="Colour projects by a field or the tags"
       headerLabel="Colour by"
       dialogLabel="Colour projects"
-      radioGroupLabel="Colour projects by tag group"
+      radioGroupLabel="Colour projects by"
       noneLabel="Default"
-      icon={
-        /* Palette icon */
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.83-.44-1.12-.29-.29-.44-.65-.44-1.13a1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.55-2.5 5.55-5.55C21.97 6.01 17.46 2 12 2z" />
-          <circle cx="13.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
-          <circle cx="17.5" cy="10.5" r="1" fill="currentColor" stroke="none" />
-          <circle cx="8.5" cy="7.5" r="1" fill="currentColor" stroke="none" />
-          <circle cx="6.5" cy="12.5" r="1" fill="currentColor" stroke="none" />
-        </svg>
-      }
-      value={group}
-      groups={tagGroups}
-      onChange={setGroup}
+      icon={<Icon icon={PaletteIcon} size={14} />}
+      value={value}
+      choices={choices}
+      onChange={setColorBy}
       disabled={siteId === null}
     />
   );

@@ -13,14 +13,13 @@ import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useAppStore } from '@/stores/appStore';
 import { apiGet, apiPost, apiPut, apiDelete } from '@/api/client';
 import type { PredefinedPhase } from '@/types';
-import { CheckCircleIcon, CircleIcon, PlusIcon, TrashIcon } from './PanelIcons';
+import { Icon, CheckCircleIcon, CircleIcon, PlusIcon, TrashIcon, DragHandleIcon } from '@/components/common/Icon';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './PredefinedPhasesPanel.module.css';
+import { can } from '@/utils/permissions';
 
 export function PredefinedPhasesPanel() {
-  const currentUser = useAppStore((s) => s.currentUser);
-  
-  const canManage = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  const canManage = useAppStore((s) => can(s.currentUser, 'predefined_phases.manage'));
   
   // State
   const [phases, setPhases] = useState<PredefinedPhase[]>([]);
@@ -239,11 +238,7 @@ export function PredefinedPhasesPanel() {
               {/* Drag Handle */}
               {canManage && (
                 <div className={styles.dragHandle}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="8" y1="6" x2="16" y2="6" />
-                    <line x1="8" y1="12" x2="16" y2="12" />
-                    <line x1="8" y1="18" x2="16" y2="18" />
-                  </svg>
+                  <Icon icon={DragHandleIcon} size={16} />
                 </div>
               )}
               
@@ -285,7 +280,7 @@ export function PredefinedPhasesPanel() {
                     aria-label={`${phase.is_active ? 'Deactivate' : 'Activate'} ${phase.name}`}
                     aria-pressed={!!phase.is_active}
                   >
-                    {phase.is_active ? <CheckCircleIcon /> : <CircleIcon />}
+                    {phase.is_active ? <Icon icon={CheckCircleIcon} size={14} /> : <Icon icon={CircleIcon} size={14} />}
                   </button>
                   <button
                     className={`${styles.actionBtn} ${styles.delete}`}
@@ -293,7 +288,7 @@ export function PredefinedPhasesPanel() {
                     title="Delete"
                     aria-label={`Delete ${phase.name}`}
                   >
-                    <TrashIcon />
+                    <Icon icon={TrashIcon} size={15} />
                   </button>
                 </div>
               )}
@@ -316,7 +311,7 @@ export function PredefinedPhasesPanel() {
               if (e.key === 'Enter') handleAdd();
             }}
           />
-          <Button icon={<PlusIcon />} onClick={handleAdd} disabled={!newPhaseName.trim()} loading={isAdding}>
+          <Button icon={<Icon icon={PlusIcon} />} onClick={handleAdd} disabled={!newPhaseName.trim()} loading={isAdding}>
             Add Phase
           </Button>
         </div>

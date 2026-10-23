@@ -9,17 +9,24 @@
  * file; add a field here when the model gains a required one.
  */
 import type {
+  ApprovalRequest,
   CustomColumn,
   Equipment,
   Phase,
   Project,
+  ProjectField,
+  ProjectFieldOption,
+  Role,
   Site,
   Staff,
   Subphase,
   Tag,
+  Team,
   User,
   Vacation,
 } from '@/types';
+import { permissionsForRole, roleNameFor } from './permissionFixtures';
+import type { PermissionMatrix } from '@/types';
 
 export function makeSite(overrides: Partial<Site> = {}): Site {
   return {
@@ -33,7 +40,15 @@ export function makeSite(overrides: Partial<Site> = {}): Site {
   };
 }
 
+/**
+ * A signed-in user. `permissions` (and `role_name`, `can_see_all_sites`) are
+ * derived from `role` unless given: a system role gets its shipped defaults
+ * (test/permissionFixtures.ts), so `makeUser({ role: 'user' })` is a plain
+ * user of a fresh tenant.
+ */
 export function makeUser(overrides: Partial<User> = {}): User {
+  const role = overrides.role ?? 'admin';
+  const permissions = overrides.permissions ?? permissionsForRole(role);
   return {
     id: 1,
     email: 'ada.admin@demo.local',
@@ -41,11 +56,30 @@ export function makeUser(overrides: Partial<User> = {}): User {
     last_name: 'Admin',
     name: 'Ada Admin',
     job_title: 'Lab Manager',
-    role: 'admin',
+    role,
+    role_name: roleNameFor(role),
     max_capacity: 100,
     active: true,
+    is_resource: role !== 'admin',
     site_ids: [1],
     skills: [],
+    team_ids: [],
+    approval_required: [],
+    can_see_all_sites: permissions.includes('sites.view_all'),
+    ...overrides,
+    permissions,
+  };
+}
+
+export function makeTeam(overrides: Partial<Team> = {}): Team {
+  return {
+    id: 1,
+    site_id: 1,
+    name: 'Analytics',
+    description: null,
+    color: '#3b82f6',
+    active: true,
+    member_ids: [],
     ...overrides,
   };
 }
@@ -60,6 +94,7 @@ export function makeStaff(overrides: Partial<Staff> = {}): Staff {
     active: true,
     max_capacity: 100,
     skills: [],
+    team_ids: [],
     ...overrides,
   };
 }
@@ -72,6 +107,7 @@ export function makeEquipment(overrides: Partial<Equipment> = {}): Equipment {
     site_id: 1,
     site_ids: [1],
     active: true,
+    team_ids: [],
     ...overrides,
   };
 }
@@ -94,6 +130,8 @@ export function makeProject(overrides: Partial<Project> = {}): Project {
     staffAssignments: [],
     equipmentAssignments: [],
     tags: [],
+    team_ids: [],
+    field_values: {},
     ...overrides,
   };
 }
@@ -158,10 +196,34 @@ export function makeTag(overrides: Partial<Tag> = {}): Tag {
     id: 1,
     name: 'Customer',
     color: '#10b981',
-    group_id: null,
     all_sites: true,
     site_ids: [],
     sort_order: 0,
+    team_ids: [],
+    ...overrides,
+  };
+}
+
+export function makeProjectFieldOption(overrides: Partial<ProjectFieldOption> = {}): ProjectFieldOption {
+  return {
+    id: 1,
+    name: 'Internal',
+    color: '#6366f1',
+    sort_order: 0,
+    all_sites: true,
+    site_ids: [],
+    team_ids: [],
+    ...overrides,
+  };
+}
+
+export function makeProjectField(overrides: Partial<ProjectField> = {}): ProjectField {
+  return {
+    id: 1,
+    name: 'Project type',
+    field_type: 'select',
+    sort_order: 0,
+    options: [],
     ...overrides,
   };
 }
@@ -177,6 +239,69 @@ export function makeCustomColumn(overrides: Partial<CustomColumn> = {}): CustomC
     width: 120,
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** A custom role (Team lead) holding only the locked `projects.view`. */
+export function makeRole(overrides: Partial<Role> = {}): Role {
+  return {
+    id: 4,
+    key: 'team_lead',
+    name: 'Team lead',
+    description: null,
+    is_system: false,
+    sort_order: 3,
+    permissions: { 'projects.view': 'allow' },
+    user_count: 0,
+    ...overrides,
+  };
+}
+
+/** The allow matrix of a system role's shipped defaults. */
+function allowMatrix(role: string): PermissionMatrix {
+  return Object.fromEntries(permissionsForRole(role).map((key) => [key, 'allow' as const]));
+}
+
+/**
+ * The three system roles of a fresh tenant (ids 1-3) with their shipped
+ * matrices, as GET /api/roles returns them; `extra` roles follow.
+ */
+export function makeSystemRoles(...extra: Role[]): Role[] {
+  return [
+    makeRole({ id: 1, key: 'admin', name: 'Admin', is_system: true, sort_order: 0, permissions: allowMatrix('admin'), user_count: 1 }),
+    makeRole({ id: 2, key: 'superuser', name: 'Superuser', is_system: true, sort_order: 1, permissions: allowMatrix('superuser'), user_count: 1 }),
+    makeRole({ id: 3, key: 'user', name: 'User', is_system: true, sort_order: 2, permissions: allowMatrix('user'), user_count: 2 }),
+    ...extra,
+  ];
+}
+
+/** Bob Brown's (id 4) pending request to join phase 10 of project 1 at 40%. */
+export function makeApprovalRequest(overrides: Partial<ApprovalRequest> = {}): ApprovalRequest {
+  return {
+    id: 31,
+    action: 'assignments.self_create',
+    status: 'pending',
+    close_reason: null,
+    requester_id: 4,
+    requester_name: 'Bob Brown',
+    project_id: 1,
+    project_name: 'Bioprocess Scale-Up',
+    level: 'phase',
+    target_id: 10,
+    target_name: 'Feasibility',
+    assignment_id: 71,
+    requested: { allocation: 40 },
+    previous: null,
+    note: null,
+    decided_by: null,
+    decided_by_name: null,
+    decided_at: null,
+    decision_note: null,
+    superseded_by_id: null,
+    created_at: '2026-10-20T08:00:00.000Z',
+    updated_at: null,
+    can_decide: false,
     ...overrides,
   };
 }

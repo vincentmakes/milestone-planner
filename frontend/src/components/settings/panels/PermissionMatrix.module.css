@@ -1,0 +1,133 @@
+/* PermissionMatrix (Settings hub > Roles > role form). Tokens only. */
+
+.matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row.locked .text {
+  opacity: 0.6;
+}
+
+.text {
+  display: flex;
+  flex: 1 1 260px;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.description {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.lockedPill {
+  padding: 1px 6px;
+  font-size: var(--font-size-xs);
+  font-weight: normal;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+}
+
+/* --- Mode chips ------------------------------------------------------------ */
+
+.chips {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 0.25rem;
+}
+
+.chip {
+  height: 28px;
+  padding: 0 0.625rem;
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.chip:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--accent-blue);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
+}
+
+.chip:disabled {
+  cursor: not-allowed;
+}
+
+.chip.selected {
+  color: var(--text-on-accent);
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+}
+
+.chip.selected.approval {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent-orange) 25%, transparent);
+  border-color: var(--accent-orange);
+}
+
+.chip.selected.deny {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-muted) 25%, transparent);
+  border-color: var(--text-muted);
+}

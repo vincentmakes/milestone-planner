@@ -274,3 +274,21 @@ async def test_config_full_leaves_the_tenant_row_alone_without_org_sso(mock_db_s
     assert response["org_sso_active"] is False
     assert response["tenant_id"] == "tenant-level-id"
     assert response["client_secret_masked"] == "****cret"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stored", "shown"), [("admin", "user"), (None, "user"), ("ghost", "user")]
+)
+async def test_config_full_reports_the_role_sign_in_will_create(mock_db_session, stored, shown):
+    """An organization default sign-in would downgrade is shown as what it creates."""
+    lookup = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
+    mock_db_session.execute = AsyncMock(return_value=lookup)
+    org_sso = {"enabled": True, "default_role": stored, "organization": {"name": "Acme"}}
+
+    with patch("app.routers.auth._active_org_sso", AsyncMock(return_value=org_sso)):
+        response = await get_sso_config_full(
+            request=MagicMock(), db=mock_db_session, admin=MagicMock()
+        )
+
+    assert response["default_role"] == shown

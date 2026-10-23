@@ -1,11 +1,17 @@
 /**
- * The current site's Gantt "Colour by tag group" preference
- * (viewStore.ganttColorBy), shared by the project bars (ProjectTimeline) and
- * the ColorByDropdown (changes it). Independent of "Group by".
+ * The current site's Gantt "Colour by" preference (viewStore.ganttColorBy):
+ * a dropdown project field or the tags. Shared by the project bars
+ * (ProjectTimeline) and the ColorByDropdown (changes it). Independent of
+ * "Group by".
  *
- * Stored per tenant + site (`tagFilterKey`), like the tag filter. A stored
- * group id that no longer resolves (group deleted) reads as "default
- * colours" without writing; the next setGroup() overwrites it.
+ * The field choices are the dropdown fields with at least one item applying
+ * to the current site (`fieldsForSite`, not narrowed by the header team
+ * filter); `'tags'` is always a valid choice (the dropdown offers it only
+ * while the site has tags).
+ *
+ * Stored per tenant + site (`siteKey`), like the project filter. A stored
+ * field id that no longer resolves among the choices reads as "default
+ * colours" without writing; the next setColorBy() overwrites it.
  *
  * Selectors return primitives or stored references only, so unrelated store
  * changes (projects, scroll offset, other sites' preferences) do not
@@ -16,35 +22,41 @@
 import { useCallback, useMemo } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
-import { tagFilterKey } from '@/utils/tags';
-import type { TagGroup } from '@/types';
+import { siteKey } from '@/utils/tags';
+import { fieldsForSite } from '@/utils/projectFilters';
+import type { ColorByChoice } from '@/utils/projectFilters';
+import type { ProjectField } from '@/types';
 
 export interface GanttColorBy {
   siteId: number | null;
-  /** Tag group the project bars are coloured by; null = default colours. */
-  group: TagGroup | null;
-  setGroup: (groupId: number | null) => void;
+  /** The field (its items at the site) or `'tags'` the bars are coloured by; null = default colours. */
+  colorBy: ProjectField | 'tags' | null;
+  /** Fields the bars can be coloured by at the site, in display order. */
+  fields: ProjectField[];
+  setColorBy: (choice: ColorByChoice | null) => void;
 }
 
 export function useGanttColorBy(): GanttColorBy {
   const siteId = useAppStore((s) => s.currentSite?.id ?? null);
-  const tagGroups = useAppStore((s) => s.tagGroups);
-  const groupId = useViewStore((s) =>
-    siteId === null ? undefined : s.ganttColorBy[tagFilterKey(siteId)]
+  const projectFields = useAppStore((s) => s.projectFields);
+  const stored = useViewStore((s) =>
+    siteId === null ? undefined : s.ganttColorBy[siteKey(siteId)]
   );
   const setGanttColorBy = useViewStore((s) => s.setGanttColorBy);
 
-  const group = useMemo(
-    () => (groupId === undefined ? null : tagGroups.find((g) => g.id === groupId) ?? null),
-    [groupId, tagGroups]
-  );
+  const fields = useMemo(() => fieldsForSite(projectFields, siteId), [projectFields, siteId]);
+  const colorBy = useMemo(() => {
+    if (stored === undefined) return null;
+    if (stored === 'tags') return 'tags' as const;
+    return fields.find((f) => f.id === stored) ?? null;
+  }, [stored, fields]);
 
-  const setGroup = useCallback(
-    (id: number | null) => {
-      if (siteId !== null) setGanttColorBy(siteId, id);
+  const setColorBy = useCallback(
+    (choice: ColorByChoice | null) => {
+      if (siteId !== null) setGanttColorBy(siteId, choice);
     },
     [siteId, setGanttColorBy]
   );
 
-  return { siteId, group, setGroup };
+  return { siteId, colorBy, fields, setColorBy };
 }

@@ -1,0 +1,20 @@
+/* A dashed pill: the booking is not settled yet. Tokens only (color-mix). */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0 6px;
+  border: 1px dashed var(--status-warning);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--status-warning) 12%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.removal {
+  border-color: var(--status-error);
+  background: color-mix(in srgb, var(--status-error) 10%, transparent);
+}

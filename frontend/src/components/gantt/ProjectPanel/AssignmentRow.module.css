@@ -70,3 +70,82 @@
   border-radius: 3px;
   flex-shrink: 0;
 }
+
+/* A booking awaiting approval: dashed left rule, muted text (not counted yet). */
+.row.pending {
+  border-left: 2px dashed var(--border-color);
+  color: var(--text-muted);
+}
+
+.row.pending .name {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* The card badge of a phase / subphase booking row and of the overview row
+   (CardBadgeView.tsx): one rectangle on every row, pin or not. The tint comes
+   inline from cardBadgeStyle; the two buttons inside inherit its type. */
+.cardBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 3px;
+  box-sizing: border-box;
+  font-size: 9px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cardBadgePin,
+.cardBadgeName {
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.cardBadgePin {
+  flex-shrink: 0;
+}
+
+.cardBadgePin:hover:not(:disabled) {
+  background: color-mix(in srgb, currentColor 20%, transparent);
+}
+
+.cardBadgePin:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.cardBadgeName {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cardBadgeName:hover {
+  text-decoration: underline;
+}
+
+.cardBadgePin:focus-visible,
+.cardBadgeName:focus-visible {
+  outline: 1px solid currentColor;
+  outline-offset: 1px;
+}

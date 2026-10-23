@@ -1,0 +1,26 @@
+/* AnchoredPanel — the fixed-position shell of a dropdown panel portaled to
+   <body>. Coordinates and max-height are written inline by the component; the
+   caller's class draws the panel (background, border, shadow, widths) and
+   must not set position, inset or z-index. A column flex box, so a child with
+   its own overflow-y: auto is the part that shrinks under the measured
+   max-height. */
+
+.panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+/* Focus sentinels: reachable by Tab, invisible. */
+.sentinel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}

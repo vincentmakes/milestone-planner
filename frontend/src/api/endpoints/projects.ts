@@ -14,10 +14,14 @@ import type {
   Subphase,
   CreateSubphaseRequest,
   StaffAssignment,
+  AssignmentApproval,
+  PendingBookingResponse,
   CreateStaffAssignmentRequest,
+  UpdateStaffAssignmentRequest,
   EquipmentAssignment,
   CreateEquipmentAssignmentRequest,
   CardStatus,
+  ProjectFieldValue,
 } from '@/types';
 
 // =============================================================================
@@ -230,6 +234,21 @@ export async function deleteSubphase(subphaseId: number): Promise<void> {
 // =============================================================================
 
 /**
+ * What a staff-assignment write answers: the row (direct write), or the 202
+ * body when the caller's own booking needs approval (`isPendingResponse` in
+ * ./approvals tells them apart).
+ */
+export type StaffAssignmentWrite = StaffAssignment | PendingBookingResponse;
+
+/**
+ * What a removal answers: `{success}` (removed; `cancelled` when it withdrew
+ * one's own pending create), or the 202 body (removal sent for approval).
+ */
+export type StaffAssignmentRemoval =
+  | { success?: boolean; cancelled?: boolean }
+  | PendingBookingResponse;
+
+/**
  * Create a staff assignment
  * Can be assigned to project, phase, or subphase
  */
@@ -239,33 +258,35 @@ export async function createStaffAssignment(
     phase_id?: number; 
     subphase_id?: number; 
   }
-): Promise<StaffAssignment> {
+): Promise<StaffAssignmentWrite> {
   // Determine endpoint based on what we're assigning to
   if (data.subphase_id) {
-    return apiPost<StaffAssignment>(`/api/subphases/${data.subphase_id}/staff`, data);
+    return apiPost<StaffAssignmentWrite>(`/api/subphases/${data.subphase_id}/staff`, data);
   } else if (data.phase_id) {
-    return apiPost<StaffAssignment>(`/api/phases/${data.phase_id}/staff`, data);
+    return apiPost<StaffAssignmentWrite>(`/api/phases/${data.phase_id}/staff`, data);
   } else if (data.project_id) {
-    return apiPost<StaffAssignment>(`/api/projects/${data.project_id}/staff`, data);
+    return apiPost<StaffAssignmentWrite>(`/api/projects/${data.project_id}/staff`, data);
   }
   throw new Error('Must specify project_id, phase_id, or subphase_id');
 }
 
 /**
  * Update a staff assignment
- * Routes to correct endpoint based on assignment level
+ * Routes to correct endpoint based on assignment level. On a phase /
+ * subphase, `{start_date, end_date}` unlink the booking (dates within the
+ * card) and `{start_date: null, end_date: null}` relink it.
  */
 export async function updateStaffAssignment(
   assignmentId: number, 
-  data: Partial<CreateStaffAssignmentRequest>,
+  data: UpdateStaffAssignmentRequest,
   level: 'project' | 'phase' | 'subphase' = 'project'
-): Promise<StaffAssignment> {
+): Promise<StaffAssignmentWrite> {
   const endpoint = level === 'subphase' 
     ? `/api/subphase-staff/${assignmentId}`
     : level === 'phase'
     ? `/api/phase-staff/${assignmentId}`
     : `/api/assignments/${assignmentId}`;
-  return apiPut<StaffAssignment>(endpoint, data);
+  return apiPut<StaffAssignmentWrite>(endpoint, data);
 }
 
 /**
@@ -275,13 +296,13 @@ export async function updateStaffAssignment(
 export async function deleteStaffAssignment(
   assignmentId: number,
   level: 'project' | 'phase' | 'subphase' = 'project'
-): Promise<void> {
+): Promise<StaffAssignmentRemoval> {
   const endpoint = level === 'subphase' 
     ? `/api/subphase-staff/${assignmentId}`
     : level === 'phase'
     ? `/api/phase-staff/${assignmentId}`
     : `/api/assignments/${assignmentId}`;
-  await apiDelete(endpoint);
+  return apiDelete<StaffAssignmentRemoval>(endpoint);
 }
 
 // =============================================================================
@@ -334,6 +355,21 @@ export async function deleteEquipmentAssignment(assignmentId: number): Promise<v
 /**
  * Transform API response from snake_case to camelCase
  */
+/**
+ * `field_values` as the API sends it (a JSON object keyed by the field id as a
+ * string) → numeric keys. Non-numeric keys are dropped; a missing or
+ * malformed object becomes `{}`.
+ */
+export function transformFieldValues(raw: unknown): Record<number, ProjectFieldValue> {
+  const values: Record<number, ProjectFieldValue> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return values;
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const id = Number(key);
+    if (Number.isInteger(id) && id > 0) values[id] = value as ProjectFieldValue;
+  }
+  return values;
+}
+
 function transformProject(project: Record<string, unknown>): Project {
   const phases = (project.phases ?? []) as Record<string, unknown>[];
   const staffAssignments = (project.staff_assignments ?? project.staffAssignments ?? []) as Record<string, unknown>[];
@@ -342,8 +378,9 @@ function transformProject(project: Record<string, unknown>): Project {
     ...(project as unknown as Project),
     // Ensure arrays exist and transform nested data
     phases: phases.map(transformPhase),
-    staffAssignments: staffAssignments.map(transformStaffAssignment),
+    staffAssignments: staffAssignments.map((a) => transformStaffAssignment(a)),
     equipmentAssignments: equipmentAssignments.map(transformEquipmentAssignment),
+    field_values: transformFieldValues(project.field_values),
   };
 }
 
@@ -402,7 +439,7 @@ function transformPhase(phase: Record<string, unknown>): Phase {
     is_milestone: Boolean(phase.is_milestone),
     dependencies: (phase.dependencies ?? []) as Phase['dependencies'],
     children: children.map((s: Record<string, unknown>) => transformSubphase(s, 1)),
-    staffAssignments: staffAssignments.map(transformStaffAssignment),
+    staffAssignments: staffAssignments.map((a) => transformStaffAssignment(a, phase)),
     equipmentAssignments: equipmentAssignments.map(transformEquipmentAssignment),
   };
 }
@@ -429,12 +466,21 @@ function transformSubphase(subphase: Record<string, unknown>, depth: number = 1)
     is_milestone: Boolean(subphase.is_milestone),
     dependencies: (subphase.dependencies ?? []) as Subphase['dependencies'],
     children: children.map((s: Record<string, unknown>) => transformSubphase(s, actualDepth + 1)),
-    staffAssignments: staffAssignments.map(transformStaffAssignment),
+    staffAssignments: staffAssignments.map((a) => transformStaffAssignment(a, subphase)),
     equipmentAssignments: equipmentAssignments.map(transformEquipmentAssignment),
   };
 }
 
-function transformStaffAssignment(assignment: Record<string, unknown>): StaffAssignment {
+/**
+ * `card` = the phase / subphase the row is booked on (absent at project
+ * level). Card rows carry their effective dates and `linked` from the server;
+ * a server before 1.17.0 sent neither, so such a row reads as linked with the
+ * card's dates.
+ */
+function transformStaffAssignment(
+  assignment: Record<string, unknown>,
+  card?: Record<string, unknown>
+): StaffAssignment {
   return {
     id: assignment.id as number,
     staff_id: assignment.staff_id as number,
@@ -443,8 +489,26 @@ function transformStaffAssignment(assignment: Record<string, unknown>): StaffAss
     phase_id: assignment.phase_id as number | null | undefined,
     subphase_id: assignment.subphase_id as number | null | undefined,
     allocation: (assignment.allocation ?? assignment.allocation_percent ?? 100) as number,
-    start_date: assignment.start_date as string,
-    end_date: assignment.end_date as string,
+    start_date: (assignment.start_date ?? card?.start_date) as string,
+    end_date: (assignment.end_date ?? card?.end_date) as string,
+    linked: card ? assignment.linked == null || Boolean(assignment.linked) : false,
+    approval_status: assignment.approval_status === 'pending' ? 'pending' : 'approved',
+    approval: transformApproval(assignment.approval),
+  };
+}
+
+/** The open request on a row; null when nothing awaits a decision. */
+function transformApproval(raw: unknown): AssignmentApproval | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const a = raw as Record<string, unknown>;
+  return {
+    request_id: a.request_id as number,
+    action: a.action as string,
+    requester_id: a.requester_id as number,
+    requested: (a.requested ?? null) as AssignmentApproval['requested'],
+    previous: (a.previous ?? null) as AssignmentApproval['previous'],
+    created_at: (a.created_at ?? null) as string | null,
+    can_decide: Boolean(a.can_decide),
   };
 }
 

@@ -22,9 +22,12 @@ from app.models.custom_column import CustomColumn, CustomColumnValue
 from app.models.equipment import Equipment, EquipmentBlock
 from app.models.note import Note
 from app.models.project import Project
+from app.models.project_field import ProjectField, ProjectFieldSelection, ProjectFieldValue
+from app.models.rbac import ApprovalRequest
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.skill import Skill, UserSkill
-from app.models.tag import Tag, TagGroup
+from app.models.tag import Tag
+from app.models.team import Team
 from app.models.user import User
 from app.models.vacation import Vacation
 from app.routers.export import (
@@ -394,6 +397,7 @@ def _site_rows() -> dict:
         role="user",
         max_capacity=80,
         active=1,
+        is_resource=False,
         sso_provider=None,
         created_at=STAMP,
     )
@@ -410,7 +414,18 @@ def _site_rows() -> dict:
         dependencies=None,
         created_at=STAMP,
         status="todo",
-        staff_assignments=[ns(id=303, staff_id=7, allocation=25)],
+        # A pending self-booking (awaiting approval, request 61).
+        staff_assignments=[
+            ns(
+                id=303,
+                staff_id=7,
+                allocation=25,
+                start_date=None,  # linked: follows the subphase
+                end_date=None,
+                approval_status="pending",
+                approval_request_id=61,
+            )
+        ],
     )
     sp_parent = ns(
         id=20,
@@ -438,7 +453,19 @@ def _site_rows() -> dict:
         dependencies=None,
         created_at=STAMP,
         status="in_progress",
-        staff_assignments=[ns(id=202, staff_id=99, allocation=50)],
+        # An approved booking with a pending change (request 62).
+        staff_assignments=[
+            ns(
+                id=202,
+                staff_id=99,
+                allocation=50,
+                # An unlinked segment inside the phase.
+                start_date=date(2026, 2, 10),
+                end_date=date(2026, 2, 12),
+                approval_status="approved",
+                approval_request_id=62,
+            )
+        ],
     )
     ph_early = ns(
         id=11,
@@ -453,17 +480,99 @@ def _site_rows() -> dict:
         status="done",
         staff_assignments=[],
     )
-    group = ns(id=4, name="Program", single_select=1, sort_order=0)
+    lab = ns(
+        id=5,
+        site_id=1,
+        name="Analytical Lab",
+        description="Method development",
+        color="#0ea5e9",
+        active=True,
+        members=[ns(id=7, full_name="Alice Martin"), ns(id=8, full_name="Bob Brown")],
+        created_at=STAMP,
+    )
+    pilot = ns(
+        id=6,
+        site_id=1,
+        name="Pilot Plant",
+        description=None,
+        color=None,
+        active=False,
+        members=[],
+        created_at=STAMP,
+    )
+    basel_qc = ns(id=9, site_id=2, name="Basel QC")  # a team at another site
     tag = ns(
         id=3,
         name="Priority",
         color="#ff0000",
-        group_id=4,
         all_sites=False,
         sites=[ns(name="Winterthur Lab"), ns(name="Basel")],
+        teams=[basel_qc, lab],
         sort_order=0,
         created_at=STAMP,
     )
+    # Project fields: every type; one item limited to Basel, so it is not
+    # applicable here and stays out of the items sheet.
+    stage = ns(
+        id=40,
+        name="Stage",
+        field_type="select",
+        sort_order=0,
+        options=[
+            ns(
+                id=401,
+                name="Pilot",
+                color="#f97316",
+                all_sites=True,
+                sites=[],
+                site_ids=[],
+                teams=[basel_qc, lab],
+                sort_order=0,
+            ),
+            ns(
+                id=402,
+                name="Basel only",
+                color="#0ea5e9",
+                all_sites=False,
+                sites=[ns(name="Basel")],
+                site_ids=[2],
+                teams=[],
+                sort_order=1,
+            ),
+        ],
+    )
+    areas = ns(
+        id=41,
+        name="Areas",
+        field_type="multiselect",
+        sort_order=1,
+        options=[
+            ns(
+                id=411,
+                name="Process",
+                color="#6366f1",
+                all_sites=False,
+                sites=[ns(name="Winterthur Lab")],
+                site_ids=[1],
+                teams=[],
+                sort_order=0,
+            ),
+            ns(
+                id=412,
+                name="QA",
+                color="#10b981",
+                all_sites=True,
+                sites=[],
+                site_ids=[],
+                teams=[],
+                sort_order=1,
+            ),
+        ],
+    )
+    budget = ns(id=42, name="Budget", field_type="number", sort_order=2, options=[])
+    regulated = ns(id=43, name="Regulated", field_type="toggle", sort_order=3, options=[])
+    remark = ns(id=44, name="Remark", field_type="text", sort_order=4, options=[])
+    rate = ns(id=45, name="Rate", field_type="number", sort_order=5, options=[])
     proj = ns(
         id=1,
         name="Alpha",
@@ -487,6 +596,8 @@ def _site_rows() -> dict:
                 start_date=date(2026, 1, 5),
                 end_date=date(2026, 1, 30),
                 created_at=STAMP,
+                approval_status="approved",
+                approval_request_id=None,
             )
         ],
         equipment_assignments=[
@@ -506,6 +617,7 @@ def _site_rows() -> dict:
             ),
         ],
         tags=[tag],
+        teams=[lab, pilot],
     )
     equipment = ns(
         id=30,
@@ -514,6 +626,7 @@ def _site_rows() -> dict:
         description="Agilent",
         active=1,
         sites=[ns(name="Winterthur Lab"), ns(name="Basel")],
+        teams=[lab, pilot],
         created_at=STAMP,
     )
     column = ns(
@@ -540,6 +653,7 @@ def _site_rows() -> dict:
     return {
         Site: [site],
         User: [alice],
+        Team: [lab, pilot],
         Project: [proj],
         Equipment: [equipment],
         EquipmentBlock: [
@@ -556,7 +670,20 @@ def _site_rows() -> dict:
         Skill: [ns(id=8, name="HPLC", description=None, color="#000000", created_at=STAMP)],
         UserSkill: [ns(user_id=7, skill_id=8, proficiency=4, assigned_at=STAMP)],
         Tag: [tag],
-        TagGroup: [group],
+        ProjectField: [stage, areas, budget, regulated, remark, rate],
+        # (project_id, field_id, field_type, text, number, bool)
+        ProjectFieldValue: [
+            (1, 42, "number", None, 1250.0, None),
+            (1, 43, "toggle", None, None, False),
+            (1, 44, "text", "=1+1", None, None),
+            (1, 45, "number", None, 2.5, None),
+        ],
+        # (project_id, field_id, field_type, option_id), in item order
+        ProjectFieldSelection: [
+            (1, 40, "select", 401),
+            (1, 41, "multiselect", 411),
+            (1, 41, "multiselect", 412),
+        ],
         AbsenceType: [
             ns(
                 id=2,
@@ -604,6 +731,7 @@ def _site_rows() -> dict:
                 name="Audit",
                 color=None,
                 counts_as_unavailable=1,
+                teams=[basel_qc],  # restricted at Basel only: the whole site here
                 created_at=STAMP,
             )
         ],
@@ -617,6 +745,65 @@ def _site_rows() -> dict:
                 staff_id=7,
                 created_at=STAMP,
             )
+        ],
+        ApprovalRequest: [
+            ns(
+                id=60,
+                action="assignments.self_create",
+                status="approved",
+                close_reason=None,
+                requester_id=7,
+                project_id=1,
+                level="project",
+                target_id=1,
+                assignment_id=101,
+                requested='{"allocation": 60}',
+                previous=None,
+                note=None,
+                decided_by=7,
+                decided_at=STAMP,
+                decision_note="ok",
+                superseded_by_id=None,
+                created_at=STAMP,
+            ),
+            ns(
+                id=61,
+                action="assignments.self_create",
+                status="pending",
+                close_reason=None,
+                requester_id=7,
+                project_id=1,
+                level="subphase",
+                target_id=21,
+                assignment_id=303,
+                requested='{"allocation": 25}',
+                previous=None,
+                note=None,
+                decided_by=None,
+                decided_at=None,
+                decision_note=None,
+                superseded_by_id=None,
+                created_at=STAMP,
+            ),
+            ns(
+                id=62,
+                action="assignments.self_update",
+                status="pending",
+                close_reason=None,
+                requester_id=99,
+                project_id=1,
+                level="phase",
+                target_id=10,
+                assignment_id=202,
+                requested='{"allocation": 70}',
+                previous='{"allocation": 50}',
+                note=None,
+                decided_by=None,
+                decided_at=None,
+                decision_note=None,
+                superseded_by_id=None,
+                created_at=STAMP,
+            ),
         ],
         CardComment: [
             ns(
@@ -644,6 +831,7 @@ def _fake_site_db(rows: dict):
         result = MagicMock()
         result.scalar_one_or_none.return_value = found[0] if found else None
         result.scalars.return_value.all.return_value = list(found)
+        result.all.return_value = list(found)
         result.__iter__.return_value = iter(found)
         return result
 
@@ -669,17 +857,23 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
         "Site",
         "Projects",
         "Users",
+        "Teams",
+        "Team members",
         "Equipment",
         "Skills",
         "User skills",
         "Tags",
-        "Tag groups",
         "Project tags",
+        "Project teams",
+        "Project fields",
+        "Project field options",
+        "Project field values",
         "Absence types",
         "Vacations",
         "Project assignments",
         "Phase assignments",
         "Subphase assignments",
+        "Approval requests",
         "Equipment assignments",
         "Custom columns",
         "Custom column values",
@@ -705,19 +899,187 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
     assert projects[3][18] == '[{"id": 11}]'
     assert [r[22] for r in projects] == [None, "done", "in_progress", "in_progress", "todo"]
 
-    assert _sheet(wb, "Equipment")[0][5] == "Winterthur Lab, Basel"
+    # Users: "Bookable" (users.is_resource) right after "Active".
+    users_header = [c.value for c in wb["Users"][1]]
+    assert users_header[7:9] == ["Active", "Bookable"]
+    assert [r[7:9] for r in _sheet(wb, "Users")] == [["Yes", "No"]]
+
+    assert [c.value for c in wb["Teams"][1]] == [
+        "ID",
+        "Name",
+        "Description",
+        "Color",
+        "Active",
+        "Members",
+        "Created at",
+    ]
+    assert _sheet(wb, "Teams") == [
+        [5, "Analytical Lab", "Method development", "#0ea5e9", "Yes", 2, "2026-01-01 12:00:00"],
+        [6, "Pilot Plant", None, None, "No", 0, "2026-01-01 12:00:00"],
+    ]
+    assert [c.value for c in wb["Team members"][1]] == [
+        "Team ID",
+        "Team name",
+        "User ID",
+        "User name",
+    ]
+    assert _sheet(wb, "Team members") == [
+        [5, "Analytical Lab", 7, "Alice Martin"],
+        [5, "Analytical Lab", 8, "Bob Brown"],
+    ]
+
+    equipment = wb["Equipment"]
+    assert [c.value for c in equipment[1]][-2:] == ["Teams", "Created at"]
+    assert _sheet(wb, "Equipment")[0][5:7] == [
+        "Winterthur Lab, Basel",
+        "Analytical Lab, Pilot Plant",
+    ]
     assert _sheet(wb, "User skills") == [[7, "Alice Martin", 8, "HPLC", 4, "2026-01-01 12:00:00"]]
+    assert [c.value for c in wb["Tags"][1]][-2:] == ["Teams", "Created at"]
     tags = _sheet(wb, "Tags")
-    assert tags[0][3:6] == ["Program", False, "Winterthur Lab, Basel"]
-    assert _sheet(wb, "Project tags") == [[1, "Alpha", 3, "Priority", "#ff0000", "Program"]]
+    assert tags[0][3:5] == [False, "Winterthur Lab, Basel"]
+    assert tags[0][6] == "Analytical Lab"  # only the teams at this site
+    assert _sheet(wb, "Project tags") == [[1, "Alpha", 3, "Priority", "#ff0000"]]
+    assert [c.value for c in wb["Project teams"][1]] == [
+        "Project ID",
+        "Project name",
+        "Team ID",
+        "Team name",
+        "Team color",
+    ]
+    assert _sheet(wb, "Project teams") == [
+        [1, "Alpha", 5, "Analytical Lab", "#0ea5e9"],
+        [1, "Alpha", 6, "Pilot Plant", None],
+    ]
+    assert [c.value for c in wb["Project fields"][1]] == ["ID", "Name", "Type", "Sort order"]
+    assert _sheet(wb, "Project fields") == [
+        [40, "Stage", "select", 0],
+        [41, "Areas", "multiselect", 1],
+        [42, "Budget", "number", 2],
+        [43, "Regulated", "toggle", 3],
+        [44, "Remark", "text", 4],
+        [45, "Rate", "number", 5],
+    ]
+    assert [c.value for c in wb["Project field options"][1]] == [
+        "ID",
+        "Field",
+        "Name",
+        "Color",
+        "All sites",
+        "Sites",
+        "Teams",
+        "Sort order",
+    ]
+    # The Basel-only item is left out; teams only those at this site.
+    assert _sheet(wb, "Project field options") == [
+        [401, "Stage", "Pilot", "#f97316", True, None, "Analytical Lab", 0],
+        [411, "Areas", "Process", "#6366f1", False, "Winterthur Lab", None, 0],
+        [412, "Areas", "QA", "#10b981", True, None, None, 1],
+    ]
+    assert [c.value for c in wb["Project field values"][1]] == [
+        "Project ID",
+        "Project name",
+        "Field",
+        "Value",
+    ]
+    # Items joined, numbers as numbers, toggles Yes / No, text formula-escaped.
+    assert _sheet(wb, "Project field values") == [
+        [1, "Alpha", "Stage", "Pilot"],
+        [1, "Alpha", "Areas", "Process, QA"],
+        [1, "Alpha", "Budget", 1250],
+        [1, "Alpha", "Regulated", "No"],
+        [1, "Alpha", "Remark", "'=1+1"],
+        [1, "Alpha", "Rate", 2.5],
+    ]
     assert _sheet(wb, "Absence types")[0][3] == "Yes"
     assert _sheet(wb, "Vacations")[0][2] == "Alice Martin"
     assert _sheet(wb, "Vacations")[0][7] == "Vacation"
 
     assert _sheet(wb, "Project assignments")[0][:6] == [101, 1, "Alpha", 7, "Alice Martin", 60]
+    assert [c.value for c in wb["Project assignments"][1]][-2:] == [
+        "Approval status",
+        "Pending change",
+    ]
+    assert _sheet(wb, "Project assignments")[0][-2:] == ["approved", None]
     # Staff outside the site's user list exports with an empty name.
-    assert _sheet(wb, "Phase assignments") == [[202, 1, "Alpha", 10, "Execution", 99, None, 50]]
-    assert _sheet(wb, "Subphase assignments")[0][3:] == [21, "Child", 7, "Alice Martin", 25]
+    # Card bookings: effective Start / End and Linked after the allocation.
+    for title, kind in (
+        ("Phase assignments", "Phase type"),
+        ("Subphase assignments", "Subphase name"),
+    ):
+        assert [c.value for c in wb[title][1]][4:] == [
+            kind,
+            "Staff ID",
+            "Staff name",
+            "Allocation %",
+            "Start",
+            "End",
+            "Linked",
+            "Approval status",
+            "Pending change",
+        ]
+    assert _sheet(wb, "Phase assignments") == [
+        [
+            202,
+            1,
+            "Alpha",
+            10,
+            "Execution",
+            99,
+            None,
+            50,
+            "2026-02-10",
+            "2026-02-12",
+            "No",
+            "approved",
+            "allocation 50% → 70%",
+        ]
+    ]
+    # A linked booking exports its card's dates.
+    assert _sheet(wb, "Subphase assignments")[0][3:] == [
+        21,
+        "Child",
+        7,
+        "Alice Martin",
+        25,
+        "2026-02-03",
+        "2026-02-04",
+        "Yes",
+        "pending",
+        "awaiting approval",
+    ]
+    assert [c.value for c in wb["Approval requests"][1]] == [
+        "ID",
+        "Action",
+        "Status",
+        "Close reason",
+        "Requester ID",
+        "Requester name",
+        "Project ID",
+        "Project name",
+        "Level",
+        "Target ID",
+        "Target name",
+        "Assignment ID",
+        "Requested",
+        "Previous",
+        "Note",
+        "Decided by ID",
+        "Decided by",
+        "Decided at",
+        "Decision note",
+        "Superseded by",
+        "Created at",
+    ]
+    requests = _sheet(wb, "Approval requests")
+    assert [(r[0], r[2], r[8], r[10]) for r in requests] == [
+        (60, "approved", "project", "Alpha"),
+        (61, "pending", "subphase", "Child"),
+        (62, "pending", "phase", "Execution"),
+    ]
+    assert requests[0][15:19] == [7, "Alice Martin", "2026-01-01 12:00:00", "ok"]
+    assert requests[2][5] is None  # requester outside the site's users
+    assert requests[2][12:14] == ['{"allocation": 70}', '{"allocation": 50}']
     equipment_bookings = _sheet(wb, "Equipment assignments")
     assert [(r[0], r[4]) for r in equipment_bookings] == [(401, "HPLC"), (402, None)]
 
@@ -730,12 +1092,46 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
     ]
 
     assert _sheet(wb, "Bank holidays")[0][1:5] == ["2026-08-01", None, "National Day", 2026]
-    assert _sheet(wb, "Company events")[0][5:7] == ["Basel, Winterthur Lab", "Yes"]
+    assert [c.value for c in wb["Company events"][1]][-2:] == ["Teams", "Created at"]
+    # Restricted to a team at another site only: the whole site here.
+    assert _sheet(wb, "Company events")[0][5:8] == ["Basel, Winterthur Lab", "Yes", None]
     assert _sheet(wb, "Equipment blocks")[0][2] == "HPLC"
     assert _sheet(wb, "Staff notes")[0][5] == "Alice Martin"
     comment = _sheet(wb, "Card comments")[0]
     assert comment[2] == "Alpha"
     assert comment[6:9] == ["Alice Martin", "Looks good @Bob", "12, 13"]
+
+
+@pytest.mark.asyncio
+async def test_site_workbook_loads_the_site_teams_with_their_members():
+    pytest.importorskip("openpyxl")
+    db = _fake_site_db(_site_rows())
+
+    await build_site_export_workbook(db, 1)
+
+    def entity(stmt):
+        return stmt.column_descriptions[0].get("entity")
+
+    def loaders(stmt) -> set[str]:
+        return {
+            " -> ".join(str(attr) for attr in element.path.natural_path[1::2])
+            for option in stmt._with_options
+            for element in option.context
+        }
+
+    (team_stmt,) = (s for s in db.statements if entity(s) is Team)
+    team_sql = str(team_stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "teams.site_id = 1" in team_sql
+    assert "ORDER BY teams.name" in team_sql
+    assert "Team.members" in loaders(team_stmt)
+    (project_stmt,) = (s for s in db.statements if entity(s) is Project)
+    assert "Project.teams" in loaders(project_stmt)
+    # Field values are read by two column queries, not the selectin relationships.
+    assert {"Project.field_values", "Project.field_selections"} <= loaders(project_stmt)
+    assert [entity(s) for s in db.statements].count(ProjectFieldValue) == 1
+    assert [entity(s) for s in db.statements].count(ProjectFieldSelection) == 1
+    (event_stmt,) = (s for s in db.statements if entity(s) is CompanyEvent)
+    assert "CompanyEvent.teams" in loaders(event_stmt)
 
 
 @pytest.mark.asyncio
@@ -762,6 +1158,7 @@ async def test_site_workbook_for_empty_site_skips_dependent_queries():
     for skipped in (UserSkill, Vacation, EquipmentBlock, CustomColumnValue, CompanyEventSite):
         assert skipped not in queried, skipped
     assert CardComment not in queried
+    assert ProjectFieldValue not in queried and ProjectFieldSelection not in queried
     wb = openpyxl.load_workbook(io.BytesIO(content))
     assert _sheet(wb, "Projects") == []
     assert _sheet(wb, "Site")[0][:2] == [1, "Winterthur Lab"]

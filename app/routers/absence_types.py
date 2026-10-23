@@ -2,7 +2,7 @@
 Absence types API router.
 
 Absence types categorise vacations (Holidays, Home Office, Illness, ...). They
-are tenant-wide, so only admins manage them; every user can read them.
+are tenant-wide, so only ``absence_types.manage`` manages them; every user can read them.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_admin
+from app.middleware.auth import get_current_user, require_permission
 from app.models.absence_type import AbsenceType
 from app.models.user import User
 from app.models.vacation import Vacation
@@ -54,9 +54,9 @@ async def get_absence_types(
 async def create_absence_type(
     data: AbsenceTypeCreate,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("absence_types.manage")),
 ):
-    """Create an absence type, appended at the end of the list. Admin only."""
+    """Create an absence type, appended at the end of the list. Needs ``absence_types.manage``."""
     name = data.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Absence type name cannot be empty")
@@ -82,9 +82,9 @@ async def create_absence_type(
 async def reorder_absence_types(
     data: AbsenceTypeReorderRequest,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("absence_types.manage")),
 ):
-    """Reorder absence types. Admin only."""
+    """Reorder absence types. Needs ``absence_types.manage``."""
     if data.type_order:
         result = await db.execute(select(AbsenceType).where(AbsenceType.id.in_(data.type_order)))
         by_id = {t.id: t for t in result.scalars().all()}
@@ -101,9 +101,9 @@ async def update_absence_type(
     type_id: int,
     data: AbsenceTypeUpdate,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("absence_types.manage")),
 ):
-    """Update an absence type (partial). Admin only."""
+    """Update an absence type (partial). Needs ``absence_types.manage``."""
     absence_type = await db.get(AbsenceType, type_id)
     if not absence_type:
         raise HTTPException(status_code=404, detail="Absence type not found")
@@ -131,10 +131,10 @@ async def update_absence_type(
 async def delete_absence_type(
     type_id: int,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("absence_types.manage")),
 ):
     """
-    Delete an absence type. Admin only.
+    Delete an absence type. Needs ``absence_types.manage``.
 
     Refused with 409 while any vacation still uses the type: deleting it would
     silently turn those absences into untyped ones. Deactivate it instead.

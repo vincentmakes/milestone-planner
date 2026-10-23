@@ -13,6 +13,8 @@ import { useUndoStore } from './undoStore';
 import { apiRequest, clientConfig } from '@/api/client';
 import type { WriteMethod } from '@/api/client';
 import { fetchAllProjects } from '@/api/endpoints/projects';
+import { isPendingResponse } from '@/api/endpoints/approvals';
+import { flashSentForApproval } from '@/utils/pendingBookings';
 import type { Project } from '@/types';
 
 // =============================================================================
@@ -155,13 +157,16 @@ export const useWhatIfStore = create<WhatIfState>()((set, get) => ({
     clientConfig.isWhatIfMode = () => false;
 
     let applied = 0;
+    // Own bookings the server filed as approval requests (202) instead.
+    let sentForApproval = 0;
     let failure: unknown = null;
     try {
       for (const op of whatIfPendingOperations) {
-        await apiRequest(op.url, {
+        const res = await apiRequest(op.url, {
           method: op.method,
           body: op.body,
         });
+        if (isPendingResponse(res)) sentForApproval++;
         applied++;
       }
     } catch (error) {
@@ -188,6 +193,9 @@ export const useWhatIfStore = create<WhatIfState>()((set, get) => ({
     if (!get().whatIfMode) {
       return false;
     }
+
+    // The reload brought the pending rows in (dashed); say why they did not apply.
+    if (sentForApproval > 0) flashSentForApproval(sentForApproval);
 
     // Operations queued after Apply started (during the replay interception
     // is off, so these can only come from the reload window above).

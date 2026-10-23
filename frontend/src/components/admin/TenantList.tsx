@@ -14,7 +14,7 @@ import {
 import type { Tenant, TenantProvisionOptions } from '@/api/endpoints/admin';
 import { Button } from '@/components/common/Button';
 import { Notice } from '@/components/common/Notice';
-import { PlusIcon } from '@/components/settings/panels/PanelIcons';
+import { Icon, PlusIcon, TrashIcon, PlayIcon, PauseIcon, LockIcon, DatabaseIcon, ExternalLinkIcon, EyeIcon } from '@/components/common/Icon';
 import { confirmAction } from '@/utils/confirmDialog';
 import { ProvisionTenantModal } from './modals/ProvisionTenantModal';
 import styles from './TenantList.module.css';
@@ -170,7 +170,7 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
       <div className={styles.panel}>
         <div className={styles.panelHeader}>
           <h2>Tenants</h2>
-          <Button icon={<PlusIcon />} onClick={onCreateNew}>
+          <Button icon={<Icon icon={PlusIcon} />} onClick={onCreateNew}>
             Create Tenant
           </Button>
         </div>
@@ -259,10 +259,7 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
                               onClick={() => onViewDetails(tenant.id)}
                               title="View Details"
                             >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                                <circle cx="12" cy="12" r="3" />
-                              </svg>
+                              <Icon icon={EyeIcon} size={14} />
                             </button>
 
                             {tenant.database_status?.accessible && tenant.status === 'active' && (
@@ -273,11 +270,7 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
                                 rel="noopener noreferrer"
                                 title="Open tenant (new tab)"
                               >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                                  <polyline points="15 3 21 3 21 9" />
-                                  <line x1="10" y1="14" x2="21" y2="3" />
-                                </svg>
+                                <Icon icon={ExternalLinkIcon} size={14} />
                               </a>
                             )}
 
@@ -287,11 +280,7 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
                                 onClick={() => setProvisionTarget(tenant)}
                                 title="Provision Database"
                               >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <ellipse cx="12" cy="5" rx="9" ry="3" />
-                                  <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-                                  <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-                                </svg>
+                                <Icon icon={DatabaseIcon} size={14} />
                               </button>
                             )}
                             
@@ -301,10 +290,7 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
                                 onClick={() => handleResetPassword(tenant)}
                                 title="Reset Admin Password"
                               >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                                </svg>
+                                <Icon icon={LockIcon} size={14} />
                               </button>
                             )}
                             
@@ -314,10 +300,7 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
                                 onClick={() => handleStatusChange(tenant, 'suspended')}
                                 title="Suspend"
                               >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <rect x="6" y="4" width="4" height="16" />
-                                  <rect x="14" y="4" width="4" height="16" />
-                                </svg>
+                                <Icon icon={PauseIcon} size={14} />
                               </button>
                             )}
                             
@@ -327,9 +310,7 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
                                 onClick={() => handleStatusChange(tenant, 'active')}
                                 title="Activate"
                               >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <polygon points="5 3 19 12 5 21 5 3" />
-                                </svg>
+                                <Icon icon={PlayIcon} size={14} />
                               </button>
                             )}
                             
@@ -338,10 +319,7 @@ export function TenantList({ onCreateNew, onViewDetails, onShowCredentials, onRe
                               onClick={() => handleDelete(tenant)}
                               title="Delete Tenant"
                             >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <polyline points="3 6 5 6 21 6" />
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                              </svg>
+                              <Icon icon={TrashIcon} size={14} />
                             </button>
                           </>
                         )}

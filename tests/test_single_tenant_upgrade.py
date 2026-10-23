@@ -53,6 +53,12 @@ def test_schema_adds_card_status_to_existing_tables(schema_sql, table):
         ("tags", "group_id"),
         ("tags", "sort_order"),
         ("tags", "all_sites"),
+        ("project_assignments", "approval_status"),
+        ("project_assignments", "approval_request_id"),
+        ("phase_staff_assignments", "approval_status"),
+        ("phase_staff_assignments", "approval_request_id"),
+        ("subphase_staff_assignments", "approval_status"),
+        ("subphase_staff_assignments", "approval_request_id"),
     ],
 )
 def test_schema_upgrades_every_column_added_after_first_release(schema_sql, table, column):
@@ -81,10 +87,35 @@ def test_schema_creates_tables_added_by_auto_migrations(schema_sql):
         "absence_types",
         "company_event_sites",
         "equipment_sites",
-        "tag_groups",
         "tag_sites",
+        "teams",
+        "team_members",
+        "project_teams",
+        "tag_teams",
+        "company_event_teams",
+        "equipment_teams",
+        "roles",
+        "role_permissions",
+        "approval_policies",
+        "approval_policy_roles",
+        "approval_requests",
+        "project_fields",
+        "project_field_options",
+        "project_field_option_sites",
+        "project_field_option_teams",
+        "project_field_values",
+        "project_field_selections",
     ):
         assert f"CREATE TABLE IF NOT EXISTS {table} (" in schema_sql, table
+
+
+def test_schema_no_longer_creates_tag_groups(schema_sql):
+    """Tag groups became project fields in 2.0.0; the tags.group_id upgrade
+    block remains but only runs while a tag_groups table exists."""
+    assert "CREATE TABLE IF NOT EXISTS tag_groups" not in schema_sql
+    blocks = re.findall(r"DO \$\$(.*?)END \$\$;", schema_sql, flags=re.S)
+    (group_block,) = (b for b in blocks if "ADD COLUMN group_id" in b)
+    assert "to_regclass('public.tag_groups') IS NOT NULL" in group_block
 
 
 def test_schema_migrates_legacy_notes_table(schema_sql):

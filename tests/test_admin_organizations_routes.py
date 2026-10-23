@@ -346,7 +346,7 @@ async def test_put_sso_config_creates_and_encrypts_secret(portal_client, mock_db
                 "clientSecret": "s3cret",
                 "redirectUri": "https://app.example.com/api/auth/sso/callback",
                 "autoCreateUsers": True,
-                "defaultUserRole": "admin",
+                "defaultUserRole": "superuser",
             },
         )
 
@@ -361,9 +361,23 @@ async def test_put_sso_config_creates_and_encrypts_secret(portal_client, mock_db
     assert (body["enabled"], body["configured"], body["defaultUserRole"]) == (
         True,
         True,
-        "admin",
+        "superuser",
     )
     assert "s3cret" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_put_sso_config_refuses_the_admin_role_as_default(portal_client, mock_db_session):
+    # Sign-in never creates an administrator, so the portal does not store one.
+    mock_db_session.execute.return_value = scalar_result(make_org())
+
+    response = await portal_client.put(
+        f"/api/admin/organizations/{ORG_ID}/sso", json={"defaultUserRole": "admin"}
+    )
+
+    assert response.status_code == 422
+    mock_db_session.add.assert_not_called()
+    mock_db_session.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -4,15 +4,20 @@
  * backdrop, which is exactly what a text-selection drag ending outside does.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, within, waitFor, act } from '@testing-library/react';
 import { KanbanCardModal } from '../KanbanCardModal';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
+import { useViewStore } from '@/stores/viewStore';
+import { tagFilterKey } from '@/utils/tags';
+import { makeTeam, makeUser } from '@/test/factories';
 import { assignCard, createComment, deleteComment, getComments, getMentionableUsers, unassignCard } from '@/api/endpoints/kanban';
-import { updateStaffAssignment } from '@/api/endpoints/projects';
+import { deleteStaffAssignment, updateStaffAssignment } from '@/api/endpoints/projects';
 import type { Phase, Project, Subphase } from '@/types';
 import { stubConfirm } from '@/test/confirmDialog';
+import { formatMediumDate } from '@/utils/date';
+import { pickOption, pickerOptions, pickerTrigger } from '@/test/searchableSelect';
 
 vi.mock('@/api/endpoints/kanban', () => ({
   getComments: vi.fn().mockResolvedValue([]),
@@ -32,6 +37,7 @@ vi.mock('@/api/endpoints/kanban', () => ({
 vi.mock('@/api/endpoints/projects', () => ({
   loadAllProjects: vi.fn().mockResolvedValue([]),
   updateStaffAssignment: vi.fn().mockResolvedValue({}),
+  deleteStaffAssignment: vi.fn().mockResolvedValue({ success: true }),
 }));
 
 // The modal derives its card from appStore.projects, so an empty store renders
@@ -103,7 +109,7 @@ function seedStore() {
       { id: 7, name: 'Alice Anderson', site_id: 2, active: true, role: 'Engineer' },
       { id: 4, name: 'Bob Brown', site_id: 1, active: true, role: 'Analyst' },
     ] as never,
-    currentUser: { id: 1, role: 'admin' } as never,
+    currentUser: makeUser({ id: 1, role: 'admin' }),
   });
   useUIStore.getState().openKanbanCardModal('subphase', 10, 1);
 }
@@ -209,7 +215,7 @@ describe('KanbanCardModal @-mentions', () => {
   });
 
   it('excludes the current user, who cannot be notified anyway', () => {
-    useAppStore.setState({ currentUser: { id: 7, role: 'admin' } as never });
+    useAppStore.setState({ currentUser: makeUser({ id: 7, role: 'admin' }) });
     render(<KanbanCardModal />);
     type(composer(), '@');
     expect(mentionOptions().some((o) => o.textContent?.includes('Alice Anderson'))).toBe(false);
@@ -420,7 +426,7 @@ describe('KanbanCardModal @-mentions', () => {
   });
 
   it('shows the allocation as plain text to someone who cannot change it', () => {
-    useAppStore.setState({ currentUser: { id: 5, role: 'user' } as never });
+    useAppStore.setState({ currentUser: makeUser({ id: 5, role: 'user' }) });
     render(<KanbanCardModal />);
     expect(screen.queryByLabelText('Allocation for Bob Brown')).not.toBeInTheDocument();
     expect(screen.getByText('80%')).toBeInTheDocument();
@@ -472,24 +478,31 @@ describe('KanbanCardModal assignee permissions', () => {
   const bobSlider = () => screen.getByLabelText('Allocation for Bob Brown') as HTMLInputElement;
 
   it('offers "Join this card" to a plain user who is not assigned', async () => {
-    useAppStore.setState({ currentUser: { id: 5, role: 'user' } as never });
+    useAppStore.setState({ currentUser: makeUser({ id: 5, role: 'user' }) });
     render(<KanbanCardModal />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Join this card' }));
 
     await waitFor(() => expect(assignCard).toHaveBeenCalledWith('subphase', 10, 5));
     // No add-assignee picker: that is for the project's editors.
-    expect(screen.queryByLabelText('Add assignee')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Add assignee/ })).not.toBeInTheDocument();
+  });
+
+  it('does not offer "Join this card" to someone not bookable as a resource', () => {
+    useAppStore.setState({ currentUser: makeUser({ id: 5, role: 'user', is_resource: false }) });
+    render(<KanbanCardModal />);
+    expect(screen.queryByRole('button', { name: 'Join this card' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /request to join/i })).not.toBeInTheDocument();
   });
 
   it('does not offer "Join this card" to someone already on the card', () => {
-    useAppStore.setState({ currentUser: { id: 4, role: 'user' } as never });
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'user' }) });
     render(<KanbanCardModal />);
     expect(screen.queryByRole('button', { name: 'Join this card' })).not.toBeInTheDocument();
   });
 
   it('lets a plain user change and remove their own booking only', async () => {
-    useAppStore.setState({ currentUser: { id: 4, role: 'user' } as never });
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'user' }) });
     render(<KanbanCardModal />);
 
     expect(screen.getByLabelText('Remove Bob Brown')).toBeInTheDocument();
@@ -501,8 +514,19 @@ describe('KanbanCardModal assignee permissions', () => {
     await waitFor(() => expect(updateStaffAssignment).toHaveBeenCalledWith(1, { allocation: 40 }, 'subphase'));
   });
 
+  it('moves the card only with kanban.move_assigned when the assignee cannot move any card', () => {
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'viewer', permissions: ['projects.view'] }) });
+    const { unmount } = render(<KanbanCardModal />);
+    expect(screen.getByRole('button', { name: 'Done' })).toBeDisabled();
+    unmount();
+
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'viewer', permissions: ['kanban.move_assigned'] }) });
+    render(<KanbanCardModal />);
+    expect(screen.getByRole('button', { name: 'Done' })).toBeEnabled();
+  });
+
   it('shows a plain user no controls on someone else\'s row', () => {
-    useAppStore.setState({ currentUser: { id: 5, role: 'user' } as never });
+    useAppStore.setState({ currentUser: makeUser({ id: 5, role: 'user' }) });
     render(<KanbanCardModal />);
 
     expect(screen.queryByLabelText('Allocation for Bob Brown')).not.toBeInTheDocument();
@@ -512,13 +536,60 @@ describe('KanbanCardModal assignee permissions', () => {
   it('treats the project manager as an editor', () => {
     const project = seedProject();
     (project as { pm_id?: number }).pm_id = 5;
-    useAppStore.setState({ projects: [project], currentUser: { id: 5, role: 'user' } as never });
+    useAppStore.setState({ projects: [project], currentUser: makeUser({ id: 5, role: 'user' }) });
     render(<KanbanCardModal />);
 
     expect(bobSlider()).toBeInTheDocument();
     expect(screen.getByLabelText('Remove Bob Brown')).toBeInTheDocument();
-    expect(screen.getByLabelText('Add assignee')).toBeInTheDocument();
+    expect(pickerTrigger(/^Add assignee/)).toHaveAccessibleName('Add assignee Add someone…');
     expect(screen.queryByRole('button', { name: 'Join this card' })).not.toBeInTheDocument();
+  });
+});
+
+describe('KanbanCardModal assignee candidates under the header team filter', () => {
+  // Teams A (1) and B (2) at the current site 1, team Z (4) at site 2; the
+  // filter shows team A only.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    seedStore();
+    useAppStore.setState({
+      currentSite: { id: 1, name: 'Basel' } as never,
+      teams: [
+        makeTeam({ id: 1, site_id: 1, name: 'A' }),
+        makeTeam({ id: 2, site_id: 1, name: 'B' }),
+        makeTeam({ id: 4, site_id: 2, name: 'Z' }),
+      ],
+      staff: [
+        { id: 7, name: 'Alice Anderson', site_id: 1, active: true, team_ids: [1] },
+        { id: 8, name: 'Carol Chen', site_id: 1, active: true, team_ids: [2] },
+        { id: 4, name: 'Bob Brown', site_id: 1, active: true, team_ids: [] },
+        { id: 7, name: 'Alice Anderson', site_id: 2, active: true, team_ids: [] },
+        { id: 11, name: 'Dan Diaz', site_id: 2, active: true, team_ids: [4] },
+      ] as never,
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+  });
+
+  afterEach(() => {
+    useViewStore.setState({ teamFilters: {} });
+    useAppStore.setState({ teams: [], currentSite: null });
+  });
+
+  const candidates = () =>
+    pickerOptions(/^Add assignee/)
+      .map((o) => o.textContent)
+      .filter((t) => t !== 'Add someone…');
+
+  it('offers only people the filter shows on a card of the current site', () => {
+    render(<KanbanCardModal />);
+    expect(candidates()).toEqual(['Alice Anderson books 100%']);
+  });
+
+  it('offers everyone of the site on a card of another site', () => {
+    const project = { ...seedProject(), site_id: 2 };
+    useAppStore.setState({ projects: [project] });
+    render(<KanbanCardModal />);
+    expect(candidates()).toEqual(['Alice Anderson books 100%', 'Dan Diaz books 100%']);
   });
 });
 
@@ -546,17 +617,17 @@ describe('KanbanCardModal confirmations', () => {
         })
       )
     );
-    expect(unassignCard).not.toHaveBeenCalled();
+    expect(deleteStaffAssignment).not.toHaveBeenCalled();
   });
 
-  it('removes the assignee once confirmed', async () => {
+  it('removes the assignee once confirmed, through the row route (not the per-person Kanban route)', async () => {
     stubConfirm(true);
-    vi.mocked(unassignCard).mockResolvedValue(undefined as never);
     render(<KanbanCardModal />);
 
     fireEvent.click(screen.getByLabelText('Remove Bob Brown'));
 
-    await waitFor(() => expect(unassignCard).toHaveBeenCalledWith('subphase', 10, 4));
+    await waitFor(() => expect(deleteStaffAssignment).toHaveBeenCalledWith(1, 'subphase'));
+    expect(unassignCard).not.toHaveBeenCalled();
   });
 
   it('asks before deleting a comment', async () => {
@@ -596,6 +667,41 @@ describe('KanbanCardModal confirmations', () => {
   });
 });
 
+describe('KanbanCardModal comment moderation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    seedStore();
+  });
+
+  it('offers deleting someone else\'s comment with kanban.moderate_comments only', async () => {
+    vi.mocked(getComments).mockResolvedValue([
+      {
+        id: 35,
+        entity_type: 'subphase',
+        entity_id: 10,
+        project_id: 1,
+        author_id: 1,
+        author_name: 'Ada Admin',
+        body: 'Ready for review',
+        mentioned_user_ids: [],
+        edited: false,
+        created_at: '2026-09-02T10:00:00.000Z',
+        updated_at: '2026-09-02T10:00:00.000Z',
+      },
+    ]);
+    useAppStore.setState({ currentUser: makeUser({ id: 6, role: 'moderator', permissions: ['kanban.moderate_comments'] }) });
+    const { unmount } = render(<KanbanCardModal />);
+    expect(await screen.findByLabelText('Delete comment')).toBeInTheDocument();
+    unmount();
+
+    useAppStore.setState({ currentUser: makeUser({ id: 6, role: 'user' }) });
+    render(<KanbanCardModal />);
+    expect(await screen.findByText('Ready for review')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Delete comment')).not.toBeInTheDocument();
+    vi.mocked(getComments).mockResolvedValue([]);
+  });
+});
+
 describe('KanbanCardModal comments of deleted users', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -620,7 +726,7 @@ describe('KanbanCardModal comments of deleted users', () => {
       },
     ]);
     // A plain user without an id match must not be offered the delete button
-    useAppStore.setState({ currentUser: { id: 4, role: 'user' } as never });
+    useAppStore.setState({ currentUser: makeUser({ id: 4, role: 'user' }) });
     render(<KanbanCardModal />);
 
     expect(await screen.findByText('Deleted user')).toBeInTheDocument();
@@ -647,5 +753,139 @@ describe('KanbanCardModal comments of deleted users', () => {
     await act(async () => finish({}));
     await waitFor(() => expect(composer()).toHaveValue(''));
     expect(createComment).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('KanbanCardModal: several bookings of one person (segments)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    seedStore();
+    const project = seedProject();
+    const sub = project.phases[0].children[0];
+    sub.staffAssignments = [
+      { ...sub.staffAssignments[0], linked: false, start_date: '2026-09-01', end_date: '2026-09-03' },
+      {
+        id: 2,
+        staff_id: 4,
+        staff_name: 'Bob Brown',
+        allocation: 50,
+        start_date: '2026-09-08',
+        end_date: '2026-09-10',
+        linked: false,
+      },
+    ];
+    useAppStore.setState({ projects: [project] });
+  });
+
+  it('lists each booking on its own line with its own dates', () => {
+    render(<KanbanCardModal />);
+    expect(screen.getAllByLabelText('Remove Bob Brown')).toHaveLength(2);
+    expect(screen.getByText(`${formatMediumDate('2026-09-08')} – ${formatMediumDate('2026-09-10')}`)).toBeInTheDocument();
+  });
+
+  it('removes exactly the clicked booking through its row route', async () => {
+    const confirm = stubConfirm(true);
+    render(<KanbanCardModal />);
+
+    fireEvent.click(screen.getAllByLabelText('Remove Bob Brown')[1]);
+
+    await waitFor(() => expect(deleteStaffAssignment).toHaveBeenCalledWith(2, 'subphase'));
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: `Remove "Bob Brown" from this card from ${formatMediumDate('2026-09-08')} to ${formatMediumDate('2026-09-10')}? Their booking on it will be deleted.`,
+      })
+    );
+    expect(deleteStaffAssignment).toHaveBeenCalledTimes(1);
+    expect(unassignCard).not.toHaveBeenCalled();
+  });
+
+  it('shows a refusal in place', async () => {
+    stubConfirm(true);
+    vi.mocked(deleteStaffAssignment).mockRejectedValueOnce(new Error('Booking not found'));
+    render(<KanbanCardModal />);
+    fireEvent.click(screen.getAllByLabelText('Remove Bob Brown')[0]);
+    expect(await screen.findByText('Booking not found')).toBeInTheDocument();
+  });
+});
+
+describe('KanbanCardModal: a second booking of someone already on the card', () => {
+  const CARD_FULL = "This person's bookings already cover the whole card — shorten one of them first";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    seedStore();
+  });
+
+  const optionTexts = () => pickerOptions(/^Add assignee/).map((o) => o.textContent);
+
+  it('lists an assigned person with the "already on this card" note', () => {
+    render(<KanbanCardModal />);
+    expect(optionTexts()).toEqual([
+      'Add someone…',
+      'Alice Anderson books 100%',
+      'Bob Brown books 100% — already on this card',
+    ]);
+    // the note is shown but never searched
+    fireEvent.change(screen.getByRole('combobox', { name: 'Find a person' }), { target: { value: 'already' } });
+    expect(optionTexts()).toEqual(['Add someone…']);
+  });
+
+  it('assigns someone already on the card again (the server places the booking)', async () => {
+    vi.mocked(assignCard).mockResolvedValueOnce({ success: true } as never);
+    render(<KanbanCardModal />);
+    expect(screen.getByRole('button', { name: 'Assign' })).toBeDisabled();
+    pickOption(/^Add assignee/, 'Bob Brown');
+    expect(pickerTrigger(/^Add assignee/)).toHaveAccessibleName('Add assignee Bob Brown');
+    fireEvent.click(screen.getByRole('button', { name: 'Assign' }));
+    await waitFor(() => expect(assignCard).toHaveBeenCalledWith('subphase', 10, 4));
+  });
+
+  it('finds a candidate by typing and picks it with Enter', async () => {
+    vi.mocked(assignCard).mockResolvedValueOnce({ success: true } as never);
+    render(<KanbanCardModal />);
+    fireEvent.keyDown(pickerTrigger(/^Add assignee/), { key: 'a' });
+    const search = screen.getByRole('combobox', { name: 'Find a person' });
+    expect(search).toHaveValue('a');
+    fireEvent.change(search, { target: { value: 'ali' } });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(pickerTrigger(/^Add assignee/)).toHaveFocus();
+    // back to "Add someone…" clears the choice
+    pickOption(/^Add assignee/, 'Add someone…');
+    expect(screen.getByRole('button', { name: 'Assign' })).toBeDisabled();
+    pickOption(/^Add assignee/, 'Alice Anderson');
+    fireEvent.click(screen.getByRole('button', { name: 'Assign' }));
+    await waitFor(() => expect(assignCard).toHaveBeenCalledWith('subphase', 10, 7));
+  });
+
+  it('shows the server refusing a second booking in place', async () => {
+    vi.mocked(assignCard).mockRejectedValueOnce(new Error(CARD_FULL));
+    render(<KanbanCardModal />);
+    pickOption(/^Add assignee/, 'Bob Brown');
+    fireEvent.click(screen.getByRole('button', { name: 'Assign' }));
+    expect(await screen.findByText(CARD_FULL)).toBeInTheDocument();
+  });
+
+  it('leaves the people already on a one-day card out of the picker (no room for a second)', () => {
+    const project = seedProject();
+    const sub = project.phases[0].children[0];
+    sub.end_date = sub.start_date;
+    useAppStore.setState({ projects: [project] });
+    render(<KanbanCardModal />);
+    expect(optionTexts()).toEqual(['Add someone…', 'Alice Anderson books 100%']);
+  });
+
+  it('renders the picker when everyone of the site is already on the card', () => {
+    const project = seedProject();
+    const sub = project.phases[0].children[0];
+    sub.staffAssignments = [
+      ...sub.staffAssignments,
+      { id: 2, staff_id: 7, staff_name: 'Alice Anderson', allocation: 50, start_date: '2026-09-01', end_date: '2026-09-14' },
+    ];
+    useAppStore.setState({ projects: [project] });
+    render(<KanbanCardModal />);
+    expect(optionTexts().filter((t) => t !== 'Add someone…')).toEqual([
+      'Alice Anderson books 100% — already on this card',
+      'Bob Brown books 100% — already on this card',
+    ]);
   });
 });

@@ -84,7 +84,10 @@ describe('ActivityFeed', () => {
   it('describes a change in a project of the current site', () => {
     const view = render(<ActivityFeed />);
     push(view, change());
-    expect(toastTexts()).toEqual(['BBBob Brownupdated phase "Feasibility" in Bioprocess Scale-Up×']);
+    expect(toastTexts()).toEqual(['BBBob Brownupdated phase "Feasibility" in Bioprocess Scale-Up']);
+    // The dismiss button is the close icon, named by its label.
+    const dismiss = screen.getByRole('button', { name: 'Dismiss' });
+    expect(dismiss.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
   });
 
   it.each<[Partial<ChangePayload>, string]>([
@@ -93,6 +96,7 @@ describe('ActivityFeed', () => {
     [{ entity_type: 'tag', action: 'create', project_id: 0, summary: 'Urgent' }, 'added tag "Urgent"'],
     [{ entity_type: 'widget', action: 'move', project_id: 0, summary: undefined }, 'moved widget'],
     [{ entity_type: 'card_comment', action: 'archive' as never, project_id: 0, summary: ' ' }, 'changed comment'],
+    [{ entity_type: 'approval_request', action: 'create', project_id: 0, summary: 'Bob asks to join Design' }, 'added approval request "Bob asks to join Design"'],
   ])('words %o as "%s"', (overrides, text) => {
     const view = render(<ActivityFeed />);
     push(view, change(overrides));

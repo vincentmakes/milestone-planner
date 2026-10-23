@@ -145,6 +145,8 @@
 }
 
 .dismissButton {
+  display: inline-flex;
+  align-items: center;
   margin-left: auto;
   height: 26px;
   padding: 0 0.5rem;

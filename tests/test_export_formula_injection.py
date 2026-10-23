@@ -23,6 +23,7 @@ import pytest
 
 from app.models.site import Site
 from app.models.tag import Tag
+from app.models.team import Team
 from app.models.user import User
 from app.routers.export import _safe_cell, build_site_export_workbook, generate_csv
 
@@ -93,7 +94,9 @@ def _site_db():
         active=1,
     )
     tag = Tag(id=3, name="@SUM(A1:A9)", color="#123456")
-    rows = {Site: [site], User: [user], Tag: [tag]}
+    team = Team(id=5, site_id=1, name="=cmd|' /C calc'!A0", description="+Lab", active=True)
+    team.members = [user]
+    rows = {Site: [site], User: [user], Tag: [tag], Team: [team]}
 
     async def execute(stmt, *args, **kwargs):
         entity = stmt.column_descriptions[0].get("entity")
@@ -169,6 +172,8 @@ async def test_site_workbook_escapes_every_string_cell():
     assert user_row[3] == "Smith"
     assert user_row[6] == 80
     assert sheets["Tags"].rows[1][1] == "'@SUM(A1:A9)"
+    assert sheets["Teams"].rows[1][1:3] == ["'=cmd|' /C calc'!A0", "'+Lab"]
+    assert sheets["Team members"].rows[1][1] == "'=cmd|' /C calc'!A0"
 
     # No string cell anywhere in the workbook starts with a formula trigger.
     for sheet in sheets.values():

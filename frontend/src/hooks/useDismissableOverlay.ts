@@ -3,12 +3,14 @@
  * and menus (UI_GUIDELINES §3, "Dropdowns and popovers").
  *
  * While `open`, the overlay closes on:
- *   - a `mousedown` outside `wrapperRef` (trigger + panel);
+ *   - a `mousedown` outside `wrapperRef` (trigger + panel) and outside
+ *     `panelRef` (a panel portaled out of the wrapper, see AnchoredPanel);
  *   - Escape, caught in the capture phase and stopped there, so it wins over
  *     the app-wide shortcut handler and any enclosing dialog, and only this
  *     overlay closes; focus goes back to `triggerRef` when one is given;
- *   - focus leaving the wrapper (Tab out) — wire the returned `onBlur` to the
- *     wrapper. A null `relatedTarget` (focus dropped to the body by a
+ *   - focus leaving the wrapper and the panel (Tab out) — wire the returned
+ *     `onBlur` to the wrapper (React bubbles a portaled panel's focus events
+ *     through it). A null `relatedTarget` (focus dropped to the body by a
  *     mousedown on a label inside the panel) is left to the mousedown
  *     handler, or a click on an option's text would close the panel.
  *
@@ -35,9 +37,23 @@ interface UseDismissableOverlayOptions {
   wrapperRef: RefObject<HTMLElement | null>;
   /** Receives focus again after Escape, so keyboard users land where they were. */
   triggerRef?: RefObject<HTMLElement | null>;
+  /**
+   * The panel when it is rendered outside the wrapper in the DOM (portaled by
+   * AnchoredPanel): a mousedown or a focus move inside it keeps the overlay open.
+   */
+  panelRef?: RefObject<HTMLElement | null>;
 }
 
-export function useDismissableOverlay({ open, onClose, wrapperRef, triggerRef }: UseDismissableOverlayOptions) {
+/** Whether `node` lies inside the wrapper or the (portaled) panel. */
+function isInside(
+  node: Node,
+  wrapperRef: RefObject<HTMLElement | null>,
+  panelRef: RefObject<HTMLElement | null> | undefined
+): boolean {
+  return !!wrapperRef.current?.contains(node) || !!panelRef?.current?.contains(node);
+}
+
+export function useDismissableOverlay({ open, onClose, wrapperRef, triggerRef, panelRef }: UseDismissableOverlayOptions) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const confirmPending = useConfirmStore((s) => s.queue.length > 0);
@@ -46,7 +62,7 @@ export function useDismissableOverlay({ open, onClose, wrapperRef, triggerRef }:
     if (!open || confirmPending) return;
 
     const onPointerDown = (e: MouseEvent) => {
-      if (!wrapperRef.current?.contains(e.target as Node)) onCloseRef.current();
+      if (!isInside(e.target as Node, wrapperRef, panelRef)) onCloseRef.current();
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -61,14 +77,14 @@ export function useDismissableOverlay({ open, onClose, wrapperRef, triggerRef }:
       document.removeEventListener('mousedown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [open, confirmPending, wrapperRef, triggerRef]);
+  }, [open, confirmPending, wrapperRef, triggerRef, panelRef]);
 
   const onBlur = useCallback(
     (e: FocusEvent<HTMLElement>) => {
       const next = e.relatedTarget as Node | null;
-      if (open && !confirmPending && next && !wrapperRef.current?.contains(next)) onCloseRef.current();
+      if (open && !confirmPending && next && !isInside(next, wrapperRef, panelRef)) onCloseRef.current();
     },
-    [open, confirmPending, wrapperRef]
+    [open, confirmPending, wrapperRef, panelRef]
   );
 
   return { onBlur };

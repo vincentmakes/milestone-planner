@@ -7,7 +7,7 @@
  * the other create dialogs; editing stays allowed.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { VacationModal } from '../VacationModal';
 import { MyAbsencesModal } from '../MyAbsencesModal';
@@ -17,6 +17,10 @@ import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import type { AbsenceType, EquipmentBlock, Vacation } from '@/types';
 import { stubConfirm } from '@/test/confirmDialog';
+import { useViewStore } from '@/stores/viewStore';
+import { tagFilterKey } from '@/utils/tags';
+import { makeTeam } from '@/test/factories';
+import { dateValue, pickEnd, pickRange } from '@/test/datePicker';
 
 const vacationsApi = vi.hoisted(() => ({
   createVacation: vi.fn(),
@@ -75,6 +79,7 @@ beforeEach(() => {
       last_name: 'User',
       role: 'admin',
       active: true,
+      is_resource: false,
       site_ids: [1],
     },
     staff: [],
@@ -154,8 +159,8 @@ describe('EquipmentBlockModal in What-If mode', () => {
     expect(equipment.value).toBe('11');
     expect(Array.from(equipment.options).map((o) => o.text)).toEqual(['Select equipment…', 'HPLC 1 (Analytical Device)']);
     expect(screen.getByLabelText('Reason')).toHaveValue('maintenance');
-    expect(screen.getByLabelText('Start Date')).toHaveValue('2026-08-10');
-    expect(screen.getByLabelText('End Date')).toHaveValue('2026-08-12');
+    expect(dateValue('Start Date')).toBe('2026-08-10');
+    expect(dateValue('End Date')).toBe('2026-08-12');
     expect(screen.getByLabelText('Description')).toHaveValue('Maintenance');
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
     await waitFor(() => expect(blocksApi.updateEquipmentBlock).toHaveBeenCalledWith(4, expect.any(Object)));
@@ -189,10 +194,9 @@ describe('EquipmentBlockModal fields', () => {
     expect(screen.getByLabelText('Reason')).toHaveValue('calibration');
     expect(screen.getByLabelText('Description')).toHaveValue('Calibration');
 
-    fireEvent.change(screen.getByLabelText('Start Date'), { target: { value: '2026-09-01' } });
-    fireEvent.change(screen.getByLabelText('End Date'), { target: { value: '2026-09-03' } });
-    expect(screen.getByLabelText('Start Date')).toHaveValue('2026-09-01');
-    expect(screen.getByLabelText('End Date')).toHaveValue('2026-09-03');
+    pickRange('Start Date', '2026-09-01', '2026-09-03');
+    expect(dateValue('Start Date')).toBe('2026-09-01');
+    expect(dateValue('End Date')).toBe('2026-09-03');
     expect(screen.getByText('Equipment will be blocked for 3 days.')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Yearly check' } });
@@ -208,6 +212,54 @@ describe('EquipmentBlockModal fields', () => {
         description: 'Yearly check',
       })
     );
+  });
+
+  // The rule itself is proven in dateRangeLogic.test; this guards the form's payload wiring
+  it('never lets the end precede the start', async () => {
+    useWhatIfStore.setState({ whatIfMode: false });
+    act(() => useUIStore.getState().openEquipmentBlockModal(block, 11));
+    render(<EquipmentBlockModal />);
+
+    // An end picked before the start becomes the new start, keeping the duration
+    pickEnd('End Date', '2026-08-05');
+    expect(dateValue('Start Date')).toBe('2026-08-05');
+    expect(dateValue('End Date')).toBe('2026-08-07');
+    expect(screen.getByText('Equipment will be blocked for 3 days.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() =>
+      expect(blocksApi.updateEquipmentBlock).toHaveBeenCalledWith(
+        4,
+        expect.objectContaining({ start_date: '2026-08-05', end_date: '2026-08-07' })
+      )
+    );
+  });
+});
+
+describe('EquipmentBlockModal picker with a team filter', () => {
+  afterEach(() => {
+    useViewStore.setState({ teamFilters: {} });
+    useAppStore.setState({ teams: [] });
+  });
+
+  it('keeps the currently selected item even when it no longer matches', () => {
+    useWhatIfStore.setState({ whatIfMode: false });
+    useAppStore.setState({
+      currentSite: { id: 1, name: 'Basel' } as never,
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
+      equipment: [
+        { id: 11, name: 'HPLC 1', type: '', site_id: 1, active: true, team_ids: [2] },
+        { id: 12, name: 'Balance', type: '', site_id: 1, active: true, team_ids: [1] },
+        { id: 13, name: 'Reactor', type: '', site_id: 1, active: true, team_ids: [2] },
+      ] as never,
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    act(() => useUIStore.getState().openEquipmentBlockModal(block, 11));
+    render(<EquipmentBlockModal />);
+
+    const equipment = screen.getByLabelText('Equipment') as HTMLSelectElement;
+    expect(Array.from(equipment.options).map((o) => o.text)).toEqual(['Select equipment…', 'HPLC 1', 'Balance']);
+    expect(equipment).toHaveValue('11');
   });
 });
 

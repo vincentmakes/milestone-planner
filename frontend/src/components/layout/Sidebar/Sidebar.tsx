@@ -1,17 +1,19 @@
 import { useAppStore } from '@/stores/appStore';
+import { canOpenSettings } from '@/components/settings/sections';
 import { useViewStore } from '@/stores/viewStore';
 import { Navigation } from './Navigation';
 import { AdminSection } from './AdminSection';
 import { QuickStats } from './QuickStats';
 import styles from './Sidebar.module.css';
+import { Icon, BackIcon } from '@/components/common/Icon';
 
 export function Sidebar() {
   const sidebarCollapsed = useViewStore((s) => s.sidebarCollapsed);
   const setSidebarCollapsed = useViewStore((s) => s.setSidebarCollapsed);
   const currentUser = useAppStore((s) => s.currentUser);
 
-  const isAdminOrSuperuser =
-    currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  // Anything to configure: at least one Settings section the user's keys list
+  const showAdmin = canOpenSettings(currentUser);
 
   const toggleCollapsed = () => {
     setSidebarCollapsed(!sidebarCollapsed);
@@ -27,16 +29,7 @@ export function Sidebar() {
         title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <polyline points="15 18 9 12 15 6" />
-        </svg>
+        <Icon icon={BackIcon} size={16} />
       </button>
 
       <div className={styles.content}>
@@ -45,7 +38,7 @@ export function Sidebar() {
           <Navigation collapsed={sidebarCollapsed} />
         </div>
 
-        {isAdminOrSuperuser && (
+        {showAdmin && (
           <div className={styles.section}>
             {!sidebarCollapsed && <div className={styles.sectionTitle}>Admin</div>}
             <AdminSection collapsed={sidebarCollapsed} />

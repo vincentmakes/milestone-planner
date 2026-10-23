@@ -8,8 +8,9 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { KanbanGrouping } from '@/utils/kanbanCards';
-import { TAG_FILTER_KEY_PATTERN, tagFilterKey } from '@/utils/tags';
-import type { TagFilter } from '@/utils/tags';
+import { SITE_KEY_PATTERN, siteKey } from '@/utils/tags';
+import type { ColorByChoice, ProjectFilter } from '@/utils/projectFilters';
+import type { TeamFilter } from '@/utils/teams';
 import { navigateDate } from '@/utils/date';
 import { useWhatIfStore } from './whatIfStore';
 import type {
@@ -105,50 +106,116 @@ function numberArray(value: unknown): number[] {
 }
 
 /**
- * Rebuild persisted tag filters, dropping malformed entries and keys that are
- * not `tagFilterKey`s (legacy site-id-only keys cannot tell which tenant they
- * belong to); null if absent/invalid.
+ * Rebuild persisted project filters, dropping malformed and empty entries and
+ * keys that are not `siteKey`s (legacy site-id-only keys cannot tell which
+ * tenant they belong to); null if absent/invalid.
  */
-function sanitizeTagFilters(value: unknown): Record<string, TagFilter> | null {
+function sanitizeProjectFilters(value: unknown): Record<string, ProjectFilter> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const out: Record<string, TagFilter> = {};
+  const out: Record<string, ProjectFilter> = {};
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-    if (!TAG_FILTER_KEY_PATTERN.test(key) || !raw || typeof raw !== 'object') continue;
+    if (!SITE_KEY_PATTERN.test(key) || !raw || typeof raw !== 'object') continue;
     const entry = raw as Record<string, unknown>;
-    const filter = { tagIds: numberArray(entry.tagIds), noneGroupIds: numberArray(entry.noneGroupIds) };
-    if (filter.tagIds.length > 0 || filter.noneGroupIds.length > 0) out[key] = filter;
+    const filter = {
+      optionIds: numberArray(entry.optionIds),
+      noneFieldIds: numberArray(entry.noneFieldIds),
+      tagIds: numberArray(entry.tagIds),
+    };
+    if (filter.optionIds.length > 0 || filter.noneFieldIds.length > 0 || filter.tagIds.length > 0) {
+      out[key] = filter;
+    }
+  }
+  return out;
+}
+
+/**
+ * Rebuild persisted team filters like {@link sanitizeProjectFilters}: same key
+ * rule, malformed and empty entries dropped; null if absent/invalid.
+ */
+function sanitizeTeamFilters(value: unknown): Record<string, TeamFilter> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out: Record<string, TeamFilter> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!SITE_KEY_PATTERN.test(key) || !raw || typeof raw !== 'object') continue;
+    const entry = raw as Record<string, unknown>;
+    const filter = { teamIds: numberArray(entry.teamIds), noTeam: entry.noTeam === true };
+    if (filter.teamIds.length > 0 || filter.noTeam) out[key] = filter;
   }
   return out;
 }
 
 /** Shape of a Gantt section key (see components/gantt/utils/projectSections.ts). */
-const GANTT_SECTION_KEY_PATTERN = /^(tag-\d+|none)$/;
+const GANTT_SECTION_KEY_PATTERN = /^(field-\d+|none)$/;
 
 /**
- * Rebuild a persisted per-site tag group choice (tagFilterKey → tag group id:
- * Gantt "Group by" and "Colour by"); null if absent/invalid.
+ * Rebuild a persisted per-site field choice (siteKey → project field id: the
+ * Gantt "Group by"); null if absent/invalid.
  */
-function sanitizeSiteGroupIds(value: unknown): Record<string, number> | null {
+function sanitizeSiteFieldIds(value: unknown): Record<string, number> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const out: Record<string, number> = {};
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-    if (TAG_FILTER_KEY_PATTERN.test(key) && Number.isInteger(raw)) out[key] = raw as number;
+    if (SITE_KEY_PATTERN.test(key) && Number.isInteger(raw)) out[key] = raw as number;
   }
   return out;
 }
 
-/** Rebuild persisted collapsed Gantt sections (tagFilterKey → section keys); null if absent/invalid. */
+/**
+ * Rebuild a persisted per-site "Colour by" choice (siteKey → project field id
+ * or `'tags'`); null if absent/invalid.
+ */
+function sanitizeSiteColorBy(value: unknown): Record<string, ColorByChoice> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out: Record<string, ColorByChoice> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (SITE_KEY_PATTERN.test(key) && (Number.isInteger(raw) || raw === 'tags')) {
+      out[key] = raw as ColorByChoice;
+    }
+  }
+  return out;
+}
+
+/** Rebuild persisted collapsed Gantt sections (siteKey → section keys); null if absent/invalid. */
 function sanitizeCollapsedGanttSections(value: unknown): Record<string, string[]> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const out: Record<string, string[]> = {};
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-    if (!TAG_FILTER_KEY_PATTERN.test(key) || !Array.isArray(raw)) continue;
+    if (!SITE_KEY_PATTERN.test(key) || !Array.isArray(raw)) continue;
     const keys = [
       ...new Set(raw.filter((k): k is string => typeof k === 'string' && GANTT_SECTION_KEY_PATTERN.test(k))),
     ];
     if (keys.length > 0) out[key] = keys;
   }
   return out;
+}
+
+/**
+ * Persisted shape version of the view store (zustand persist `version`).
+ * 1 = 2.0.0: project fields replaced tag groups.
+ * 2 = 2.0.0: My Work replaced My Todos (`currentView` 'todos' → 'work').
+ */
+export const VIEW_STORE_VERSION = 2;
+
+/**
+ * Bring a persisted view state from an older {@link VIEW_STORE_VERSION} up to
+ * date before `merge`. Below 1, the per-site Gantt filter, grouping, colour
+ * and collapsed-section choices hold tag-group / tag ids that mean nothing
+ * since 2.0.0 (and could collide with a project field id), so they are
+ * dropped once. Below 2, a remembered `currentView: 'todos'` becomes
+ * `'work'` (merge copies the value as is). Every other field is kept as is.
+ */
+export function migrateViewState(persisted: unknown, version: number): unknown {
+  if (!persisted || typeof persisted !== 'object' || Array.isArray(persisted)) return persisted;
+  if (version >= VIEW_STORE_VERSION) return persisted;
+  const rest = { ...(persisted as Record<string, unknown>) };
+  if (version < 1) {
+    delete rest.tagFilters;
+    delete rest.ganttGrouping;
+    delete rest.ganttColorBy;
+    delete rest.collapsedGanttSections;
+  }
+  if (rest.currentView === 'todos') rest.currentView = 'work';
+  return rest;
 }
 
 // =============================================================================
@@ -180,34 +247,44 @@ interface ViewState {
   kanbanMyTodoOnly: boolean;
 
   // ---------------------------------------------
-  // TAG FILTER (Gantt + Kanban)
+  // PROJECT FILTER (Gantt + Kanban)
   // ---------------------------------------------
   /**
-   * Project tag filter per tenant + site, keyed by `tagFilterKey(siteId)`
-   * (`"<tenant slug>:<site id>"`). Absent = no filter. A per-browser
-   * preference: deliberately not cleared by resetAllStores().
+   * Project filter (field items, "(None)" per field, tags) per tenant + site,
+   * keyed by `siteKey(siteId)` (`"<tenant slug>:<site id>"`). Absent = no
+   * filter. A per-browser preference: deliberately not cleared by
+   * resetAllStores(). Replaced the pre-2.0 `tagFilters` (dropped by
+   * migrateViewState).
    */
-  tagFilters: Record<string, TagFilter>;
+  projectFilters: Record<string, ProjectFilter>;
+  /**
+   * Header team filter per tenant + site, keyed by `siteKey(siteId)`.
+   * Absent = "Whole site". Per-browser, like `projectFilters`.
+   */
+  teamFilters: Record<string, TeamFilter>;
 
   // ---------------------------------------------
   // GANTT GROUPING
   // ---------------------------------------------
   /**
-   * Tag group the Gantt project list is grouped by, per tenant + site
-   * (`tagFilterKey`). Absent = no grouping. Per-browser, like `tagFilters`.
+   * Dropdown project field the Gantt project list is grouped by, per tenant +
+   * site (`siteKey`). Absent = no grouping. Per-browser, like `projectFilters`.
    */
   ganttGrouping: Record<string, number>;
-  /** Collapsed Gantt sections (`tag-<id>` / `none`) per tenant + site. */
+  /** Collapsed Gantt sections (`field-<item id>` / `none`) per tenant + site. */
   collapsedGanttSections: Record<string, string[]>;
   /**
-   * Tag group the Gantt project bars are coloured by, per tenant + site
-   * (`tagFilterKey`). Absent = default colours. Per-browser, like
-   * `ganttGrouping`, and independent of it.
+   * What the Gantt project bars are coloured by, per tenant + site
+   * (`siteKey`): a dropdown project field id or `'tags'`. Absent = default
+   * colours. Per-browser, like `ganttGrouping`, and independent of it.
    */
-  ganttColorBy: Record<string, number>;
+  ganttColorBy: Record<string, ColorByChoice>;
 
   // ---------------------------------------------
   // EXPANDED STATES (for tree views)
+  // Projects, phases and subphases are persisted; the rest are session-only
+  // (left out of `partialize` and `merge` on purpose): expandedStaff,
+  // expandedEquipment, expandedBankHolidays and collapsedStaffGroups.
   // ---------------------------------------------
   expandedProjects: Set<number>;
   expandedPhases: Set<number>;
@@ -215,6 +292,13 @@ interface ViewState {
   expandedStaff: Set<number>;
   expandedEquipment: Set<number>;
   expandedBankHolidays: boolean;
+  /**
+   * Gantt per-person booking groups (a person with 2+ bookings on one card)
+   * the user collapsed, keyed `"<level>:<cardId>:<staffId>"` (`staffGroupKey`
+   * in components/gantt/utils/staffGroups.ts). Groups start expanded, so only
+   * collapsed ones are listed. Session-only.
+   */
+  collapsedStaffGroups: Set<string>;
 
   // ---------------------------------------------
   // UI LAYOUT STATE
@@ -239,20 +323,23 @@ interface ViewState {
   setKanbanGrouping: (grouping: KanbanGrouping, columnId?: number | null) => void;
   setKanbanMyTodoOnly: (only: boolean) => void;
   toggleKanbanMyTodoOnly: () => void;
-  /** Set a site's tag filter (current tenant); an empty filter removes the entry. */
-  setTagFilter: (siteId: number, filter: TagFilter) => void;
-  clearTagFilter: (siteId: number) => void;
+  /** Set a site's project filter (current tenant); an empty filter removes the entry. */
+  setProjectFilter: (siteId: number, filter: ProjectFilter) => void;
+  clearProjectFilter: (siteId: number) => void;
+  /** Set a site's team filter (current tenant); an empty filter removes the entry (Whole site). */
+  setTeamFilter: (siteId: number, filter: TeamFilter) => void;
+  clearTeamFilter: (siteId: number) => void;
   /**
-   * Group a site's Gantt by a tag group; null removes the grouping and that
-   * site's collapsed sections. Switching to another group also clears them
-   * (section keys belong to the previous group's tags).
+   * Group a site's Gantt by a dropdown project field; null removes the
+   * grouping and that site's collapsed sections. Switching to another field
+   * also clears them (section keys belong to the previous field's items).
    */
-  setGanttGrouping: (siteId: number, groupId: number | null) => void;
+  setGanttGrouping: (siteId: number, fieldId: number | null) => void;
   toggleGanttSection: (siteId: number, key: string) => void;
   /** Replace a site's collapsed sections (collapse all / expand all = []). */
   setGanttSectionsCollapsed: (siteId: number, keys: string[]) => void;
-  /** Colour a site's Gantt project bars by a tag group; null = default colours. */
-  setGanttColorBy: (siteId: number, groupId: number | null) => void;
+  /** Colour a site's Gantt project bars by a project field or the tags; null = default colours. */
+  setGanttColorBy: (siteId: number, choice: ColorByChoice | null) => void;
   setShowStaffOverview: (show: boolean) => void;
   toggleShowStaffOverview: () => void;
   setShowEquipmentOverview: (show: boolean) => void;
@@ -267,6 +354,7 @@ interface ViewState {
   toggleStaffExpanded: (staffId: number) => void;
   toggleEquipmentExpanded: (equipmentId: number) => void;
   toggleBankHolidaysExpanded: () => void;
+  toggleStaffGroup: (key: string) => void;
   ensureProjectExpanded: (projectId: number) => void;
   ensurePhaseExpanded: (phaseId: number) => void;
   ensureSubphaseExpanded: (subphaseId: number) => void;
@@ -315,15 +403,16 @@ const initialViewState = {
   kanbanGroupingColumnId: null as number | null,
   kanbanMyTodoOnly: false,
 
-  // Tag filter
-  tagFilters: {} as Record<string, TagFilter>,
+  // Project filter + team filter
+  projectFilters: {} as Record<string, ProjectFilter>,
+  teamFilters: {} as Record<string, TeamFilter>,
 
   // Gantt grouping
   ganttGrouping: {} as Record<string, number>,
   collapsedGanttSections: {} as Record<string, string[]>,
 
   // Gantt colour by
-  ganttColorBy: {} as Record<string, number>,
+  ganttColorBy: {} as Record<string, ColorByChoice>,
 
   // Expanded states
   expandedProjects: new Set<number>(),
@@ -332,6 +421,7 @@ const initialViewState = {
   expandedStaff: new Set<number>(),
   expandedEquipment: new Set<number>(),
   expandedBankHolidays: false,
+  collapsedStaffGroups: new Set<string>(),
 
   // UI layout
   sidebarCollapsed: false,
@@ -394,48 +484,73 @@ export const useViewStore = create<ViewState>()(
       })),
 
       // ---------------------------------------------
-      // Tag filter
+      // Project filter
       // ---------------------------------------------
-      setTagFilter: (siteId, filter) => set((state) => {
-        const key = tagFilterKey(siteId);
-        const next = { ...state.tagFilters };
+      setProjectFilter: (siteId, filter) => set((state) => {
+        const key = siteKey(siteId);
+        const next = { ...state.projectFilters };
+        const optionIds = [...new Set(filter.optionIds)];
+        const noneFieldIds = [...new Set(filter.noneFieldIds)];
         const tagIds = [...new Set(filter.tagIds)];
-        const noneGroupIds = [...new Set(filter.noneGroupIds)];
-        if (tagIds.length === 0 && noneGroupIds.length === 0) {
+        if (optionIds.length === 0 && noneFieldIds.length === 0 && tagIds.length === 0) {
           delete next[key];
         } else {
-          next[key] = { tagIds, noneGroupIds };
+          next[key] = { optionIds, noneFieldIds, tagIds };
         }
-        return { tagFilters: next };
+        return { projectFilters: next };
       }),
 
-      clearTagFilter: (siteId) => set((state) => {
-        const key = tagFilterKey(siteId);
-        if (!(key in state.tagFilters)) return state;
-        const next = { ...state.tagFilters };
+      clearProjectFilter: (siteId) => set((state) => {
+        const key = siteKey(siteId);
+        if (!(key in state.projectFilters)) return state;
+        const next = { ...state.projectFilters };
         delete next[key];
-        return { tagFilters: next };
+        return { projectFilters: next };
+      }),
+
+      // ---------------------------------------------
+      // Team filter
+      // ---------------------------------------------
+      setTeamFilter: (siteId, filter) => set((state) => {
+        const key = siteKey(siteId);
+        const next = { ...state.teamFilters };
+        const teamIds = [...new Set(filter.teamIds)];
+        const noTeam = filter.noTeam === true;
+        if (teamIds.length === 0 && !noTeam) {
+          delete next[key];
+        } else {
+          next[key] = { teamIds, noTeam };
+        }
+        return { teamFilters: next };
+      }),
+
+      clearTeamFilter: (siteId) => set((state) => {
+        const key = siteKey(siteId);
+        if (!(key in state.teamFilters)) return state;
+        const next = { ...state.teamFilters };
+        delete next[key];
+        return { teamFilters: next };
       }),
 
       // ---------------------------------------------
       // Gantt grouping
       // ---------------------------------------------
-      setGanttGrouping: (siteId, groupId) => set((state) => {
-        const key = tagFilterKey(siteId);
-        if (groupId !== null && state.ganttGrouping[key] === groupId) return state;
-        if (groupId === null && !(key in state.ganttGrouping) && !(key in state.collapsedGanttSections)) {
+      setGanttGrouping: (siteId, fieldId) => set((state) => {
+        const key = siteKey(siteId);
+        if (fieldId !== null && state.ganttGrouping[key] === fieldId) return state;
+        if (fieldId === null && !(key in state.ganttGrouping) && !(key in state.collapsedGanttSections)) {
           return state;
         }
         const grouping = { ...state.ganttGrouping };
-        if (groupId === null) delete grouping[key];
-        else grouping[key] = groupId;
+        if (fieldId === null) delete grouping[key];
+        else grouping[key] = fieldId;
         const collapsed = { ...state.collapsedGanttSections };
         delete collapsed[key];
         return { ganttGrouping: grouping, collapsedGanttSections: collapsed };
       }),
 
       toggleGanttSection: (siteId, sectionKey) => set((state) => {
-        const key = tagFilterKey(siteId);
+        const key = siteKey(siteId);
         const current = state.collapsedGanttSections[key] ?? [];
         const keys = current.includes(sectionKey)
           ? current.filter((k) => k !== sectionKey)
@@ -447,7 +562,7 @@ export const useViewStore = create<ViewState>()(
       }),
 
       setGanttSectionsCollapsed: (siteId, sectionKeys) => set((state) => {
-        const key = tagFilterKey(siteId);
+        const key = siteKey(siteId);
         const keys = [...new Set(sectionKeys)];
         if (keys.length === 0 && !(key in state.collapsedGanttSections)) return state;
         const collapsed = { ...state.collapsedGanttSections };
@@ -456,14 +571,14 @@ export const useViewStore = create<ViewState>()(
         return { collapsedGanttSections: collapsed };
       }),
 
-      setGanttColorBy: (siteId, groupId) => set((state) => {
-        const key = tagFilterKey(siteId);
-        if (groupId === null ? !(key in state.ganttColorBy) : state.ganttColorBy[key] === groupId) {
+      setGanttColorBy: (siteId, choice) => set((state) => {
+        const key = siteKey(siteId);
+        if (choice === null ? !(key in state.ganttColorBy) : state.ganttColorBy[key] === choice) {
           return state;
         }
         const colorBy = { ...state.ganttColorBy };
-        if (groupId === null) delete colorBy[key];
-        else colorBy[key] = groupId;
+        if (choice === null) delete colorBy[key];
+        else colorBy[key] = choice;
         return { ganttColorBy: colorBy };
       }),
 
@@ -555,6 +670,16 @@ export const useViewStore = create<ViewState>()(
         expandedBankHolidays: !state.expandedBankHolidays,
       })),
 
+      toggleStaffGroup: (key) => set((state) => {
+        const collapsed = new Set(state.collapsedStaffGroups);
+        if (collapsed.has(key)) {
+          collapsed.delete(key);
+        } else {
+          collapsed.add(key);
+        }
+        return { collapsedStaffGroups: collapsed };
+      }),
+
       // Ensure expanded (only add, never remove)
       ensureProjectExpanded: (projectId) => set((state) => {
         if (state.expandedProjects.has(projectId)) return state;
@@ -587,6 +712,8 @@ export const useViewStore = create<ViewState>()(
         expandedSubphases: new Set(),
         expandedStaff: new Set(),
         expandedEquipment: new Set(),
+        // Booking groups reopen expanded with their card
+        collapsedStaffGroups: new Set(),
       }),
 
       expandAll: (projects: Project[]) => {
@@ -612,6 +739,8 @@ export const useViewStore = create<ViewState>()(
           expandedProjects: projectIds,
           expandedPhases: phaseIds,
           expandedSubphases: subphaseIds,
+          // "Expand all" opens the per-person booking groups too
+          collapsedStaffGroups: new Set(),
         });
       },
 
@@ -670,6 +799,10 @@ export const useViewStore = create<ViewState>()(
     {
       name: 'milestone-view-storage-v1',
       storage: createJSONStorage(() => localStorage),
+      // Shape changes are migrated in place (the key stays): see
+      // migrateViewState. merge below still validates whatever survives.
+      version: VIEW_STORE_VERSION,
+      migrate: (persisted, version) => migrateViewState(persisted, version) as ViewState,
       // Only persist certain fields. Deliberately NOT the timeline scroll
       // offset or currentDate: the app always opens on today. A restored
       // pixel offset is relative to a timeline that starts months before the
@@ -688,7 +821,8 @@ export const useViewStore = create<ViewState>()(
         kanbanGrouping: state.kanbanGrouping,
         kanbanGroupingColumnId: state.kanbanGroupingColumnId,
         kanbanMyTodoOnly: state.kanbanMyTodoOnly,
-        tagFilters: state.tagFilters,
+        projectFilters: state.projectFilters,
+        teamFilters: state.teamFilters,
         ganttGrouping: state.ganttGrouping,
         collapsedGanttSections: state.collapsedGanttSections,
         ganttColorBy: state.ganttColorBy,
@@ -719,19 +853,24 @@ export const useViewStore = create<ViewState>()(
           resourcePanelCollapsed: (persisted?.resourcePanelCollapsed as boolean) ?? currentState.resourcePanelCollapsed,
           showStaffOverview: (persisted?.showStaffOverview as boolean) ?? currentState.showStaffOverview,
           showEquipmentOverview: (persisted?.showEquipmentOverview as boolean) ?? currentState.showEquipmentOverview,
-          // Kanban: every field added to partialize above MUST also be listed
-          // here -- this merge is field-by-field, not a spread of `persisted`,
-          // so an omission silently resets the value on every reload.
+          // Every field added to partialize above MUST also be listed here
+          // -- this merge is field-by-field, not a spread of `persisted`, so
+          // an omission silently resets the value on every reload. The
+          // session-only Sets (expandedStaff / expandedEquipment /
+          // expandedBankHolidays / collapsedStaffGroups) are in neither.
           kanbanProjectId: (persisted?.kanbanProjectId as number | null) ?? currentState.kanbanProjectId,
           kanbanGrouping: (persisted?.kanbanGrouping as KanbanGrouping) ?? currentState.kanbanGrouping,
           kanbanGroupingColumnId: (persisted?.kanbanGroupingColumnId as number | null) ?? currentState.kanbanGroupingColumnId,
           kanbanMyTodoOnly: (persisted?.kanbanMyTodoOnly as boolean) ?? currentState.kanbanMyTodoOnly,
-          // Same rule for the tag filter (validated: it is user-editable storage).
-          tagFilters: sanitizeTagFilters(persisted?.tagFilters) ?? currentState.tagFilters,
-          ganttGrouping: sanitizeSiteGroupIds(persisted?.ganttGrouping) ?? currentState.ganttGrouping,
+          // Same rule for the per-site preferences (validated: it is
+          // user-editable storage). Pre-2.0 entries never get here:
+          // migrateViewState drops them.
+          projectFilters: sanitizeProjectFilters(persisted?.projectFilters) ?? currentState.projectFilters,
+          teamFilters: sanitizeTeamFilters(persisted?.teamFilters) ?? currentState.teamFilters,
+          ganttGrouping: sanitizeSiteFieldIds(persisted?.ganttGrouping) ?? currentState.ganttGrouping,
           collapsedGanttSections:
             sanitizeCollapsedGanttSections(persisted?.collapsedGanttSections) ?? currentState.collapsedGanttSections,
-          ganttColorBy: sanitizeSiteGroupIds(persisted?.ganttColorBy) ?? currentState.ganttColorBy,
+          ganttColorBy: sanitizeSiteColorBy(persisted?.ganttColorBy) ?? currentState.ganttColorBy,
           // Convert Arrays back to Sets
           expandedProjects: Array.isArray(persisted?.expandedProjects)
             ? new Set(persisted.expandedProjects as number[])

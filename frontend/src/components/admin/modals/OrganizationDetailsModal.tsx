@@ -17,14 +17,29 @@ import {
   addTenantToOrganization,
   updateTenantGroupAccess,
 } from '@/api';
-import type { OrganizationDetail, OrganizationSSOTestResult, TenantSummary } from '@/api/endpoints/admin';
+import type {
+  OrganizationDetail,
+  OrganizationSSOTestCheck,
+  OrganizationSSOTestResult,
+  TenantSummary,
+} from '@/api/endpoints/admin';
 import { useEscapeKey } from '@/hooks';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './AdminModal.module.css';
+import { Icon, CloseIcon, CheckCircleIcon, CancelIcon, WarningIcon, HelpIcon } from '@/components/common/Icon';
+import type { IconComponent } from '@/components/common/Icon';
 
 /** Roles a tenant `users.role` CHECK accepts -- the only valid SSO default roles */
+/** The mark in front of each SSO test check (manual checks: a question mark). */
+const SSO_CHECK_ICONS: Record<OrganizationSSOTestCheck['status'], IconComponent> = {
+  pass: CheckCircleIcon,
+  fail: CancelIcon,
+  warn: WarningIcon,
+  manual: HelpIcon,
+};
+
 const SSO_DEFAULT_ROLES = ['user', 'superuser', 'admin'] as const;
 type SsoDefaultRole = (typeof SSO_DEFAULT_ROLES)[number];
 
@@ -328,10 +343,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
             {organization?.name || 'Organization Details'}
           </h2>
           <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Close dialog">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
+            <Icon icon={CloseIcon} size={20} />
           </button>
         </div>
 
@@ -601,9 +613,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                                 : 'var(--text-muted)',
                             }}
                           >
-                            {check.status === 'pass' ? '✓'
-                              : check.status === 'fail' ? '✕'
-                              : check.status === 'warn' ? '!' : '?'}
+                            <Icon icon={SSO_CHECK_ICONS[check.status] ?? HelpIcon} size={16} />
                           </span>
                           <div>
                             <div style={{ fontWeight: 500 }}>

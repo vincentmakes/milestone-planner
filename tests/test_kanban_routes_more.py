@@ -9,7 +9,7 @@ Mock-based, house style; ``broadcast_change``, ``send_notification`` and
 what each write announces and to whom.
 """
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,16 +19,34 @@ from app.models.assignment import PhaseStaffAssignment, SubphaseStaffAssignment
 from app.models.card_comment import CardComment
 from app.models.notification import Notification
 from app.models.user import User
+from app.services.approvals import ALREADY_PENDING_DETAIL, CARD_FULL_DETAIL
 from tests.conftest import FakeUser
-from tests.support import scalar_result, scalars_result
+from tests.support import card_lock_result, card_target_result, scalar_result, scalars_result
 
 STAMP = datetime(2026, 1, 1, 12, 0, 0)
 
 
+CARD_START, CARD_END = date(2026, 3, 2), date(2026, 3, 13)
+
+
 def make_card(project_id=3, status="todo", completion=None, name=None, type_="Design"):
     return SimpleNamespace(
-        id=10, project_id=project_id, status=status, completion=completion, name=name, type=type_
+        id=10,
+        project_id=project_id,
+        status=status,
+        completion=completion,
+        name=name,
+        type=type_,
+        start_date=CARD_START,
+        end_date=CARD_END,
     )
+
+
+def placement(*rows):
+    """Result of ``approvals.plan_placement``: the person's rows on the card with its dates."""
+    result = MagicMock()
+    result.all.return_value = [(CARD_START, CARD_END, row) for row in rows]
+    return result
 
 
 def make_comment(comment_id=50, author_id=5, mentions=None, edited=False):
@@ -134,12 +152,15 @@ async def test_comment_counts_require_authentication(app_client):
 async def test_comment_thread_with_deleted_author(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(FakeUser(5, "user"))
-    mock_db_session.execute.return_value = rows_result(
-        [
-            (make_comment(50, 5, mentions=[7], edited=True), "Ada", "Lovelace"),
-            (make_comment(51, None), None, None),
-        ]
-    )
+    mock_db_session.execute.side_effect = [
+        card_target_result(make_card()),
+        rows_result(
+            [
+                (make_comment(50, 5, mentions=[7], edited=True), "Ada", "Lovelace"),
+                (make_comment(51, None), None, None),
+            ]
+        ),
+    ]
 
     response = await client.get("/api/kanban/cards/phase/10/comments")
 
@@ -168,7 +189,7 @@ async def test_post_comment_notifies_mentions_and_assignees_once(
     db = db_stamps_comments
     assignees.return_value = [7, 8, 5]  # 7 also mentioned; 5 is the author
     db.execute.side_effect = [
-        scalar_result(make_card()),  # the card
+        card_target_result(make_card()),  # the card
         scalars_result([7]),  # mentioned ids that exist (9 does not)
     ]
 
@@ -204,7 +225,7 @@ async def test_post_comment_without_mentions_skips_user_lookup(
     client, set_user = authed_client
     set_user(FakeUser(5, "user"))
     _, push, _ = wires
-    db_stamps_comments.execute.side_effect = [scalar_result(make_card(name="Sub A"))]
+    db_stamps_comments.execute.side_effect = [card_target_result(make_card(name="Sub A"))]
 
     response = await client.post(
         "/api/kanban/cards/subphase/10/comments", json={"body": "plain text"}
@@ -224,7 +245,7 @@ async def test_post_comment_survives_a_failed_push(authed_client, db_stamps_comm
     _, push, assignees = wires
     assignees.return_value = [8]
     push.side_effect = RuntimeError("socket gone")
-    db_stamps_comments.execute.side_effect = [scalar_result(make_card())]
+    db_stamps_comments.execute.side_effect = [card_target_result(make_card())]
 
     response = await client.post("/api/kanban/cards/phase/10/comments", json={"body": "hi"})
 
@@ -234,11 +255,36 @@ async def test_post_comment_survives_a_failed_push(authed_client, db_stamps_comm
 
 
 @pytest.mark.asyncio
+async def test_a_new_comment_is_not_edited(authed_client, mock_db_session, wires):
+    # Regression: created_at and updated_at came from two clock reads, so
+    # every new comment answered "edited": true.
+    client, set_user = authed_client
+    set_user(FakeUser(5, "user"))
+    mock_db_session.execute.side_effect = [card_target_result(make_card())]
+
+    async def refresh(obj):  # the database keeps the stamps the route set
+        obj.id = 62
+
+    mock_db_session.refresh.side_effect = refresh
+
+    response = await client.post("/api/kanban/cards/phase/10/comments", json={"body": "hi"})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["edited"] is False
+    assert body["created_at"] == body["updated_at"]
+    added = [c.args[0] for c in mock_db_session.add.call_args_list]
+    comment = next(obj for obj in added if isinstance(obj, CardComment))
+    assert comment.created_at == comment.updated_at
+    assert comment.is_edited is False
+
+
+@pytest.mark.asyncio
 async def test_post_comment_on_missing_card_404(authed_client, mock_db_session, wires):
     client, set_user = authed_client
     set_user(FakeUser(5, "user"))
     broadcast, _, _ = wires
-    mock_db_session.execute.side_effect = [scalar_result(None)]
+    mock_db_session.execute.side_effect = [card_target_result(None)]
 
     response = await client.post("/api/kanban/cards/subphase/10/comments", json={"body": "hi"})
 
@@ -420,7 +466,8 @@ async def test_assign_books_at_max_capacity(
     mock_db_session.execute.side_effect = [
         scalar_result(make_card()),
         scalar_result(assignee),
-        scalar_result(None),  # not yet assigned
+        card_lock_result(),
+        placement(),  # not on the card yet
     ]
 
     async def refresh(obj):
@@ -439,10 +486,15 @@ async def test_assign_books_at_max_capacity(
         "staff_id": 7,
         "staff_name": "Bob B",
         "allocation": 60,
+        "start_date": "2026-03-02T00:00:00.000Z",
+        "end_date": "2026-03-13T00:00:00.000Z",
+        "linked": True,
+        "adjusted": [],
     }
     (assignment,) = (c.args[0] for c in mock_db_session.add.call_args_list)
     assert isinstance(assignment, model)
     assert assignment.project_id == 3
+    assert (assignment.start_date, assignment.end_date) == (None, None)
     (row,) = notifications(mock_db_session)
     assert (row.user_id, row.type, row.body) == (
         7,
@@ -453,20 +505,148 @@ async def test_assign_books_at_max_capacity(
     push.assert_awaited_once()
 
 
+def _booking(entity_type, **fields):
+    values = {
+        "id": 1,
+        "project_id": 3,
+        "staff_id": 7,
+        "allocation": 50,
+        "approval_status": "approved",
+        "approval_request_id": None,
+        "start_date": None,
+        "end_date": None,
+        **fields,
+    }
+    if entity_type == "phase":
+        return PhaseStaffAssignment(phase_id=10, **values)
+    return SubphaseStaffAssignment(subphase_id=10, **values)
+
+
 @pytest.mark.asyncio
-async def test_assign_duplicate_is_409(authed_client, mock_db_session, wires):
+@pytest.mark.parametrize("entity_type", ["phase", "subphase"])
+async def test_assign_someone_already_on_the_card_splits_their_booking(
+    authed_client, mock_db_session, wires, change_intents, entity_type
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    broadcast, _, _ = wires
+    full_span = _booking(entity_type)
+    mock_db_session.execute.side_effect = [
+        scalar_result(make_card()),
+        scalar_result(User(id=7, first_name="Bob", last_name="B", max_capacity=60)),
+        card_lock_result(),
+        placement(full_span),
+    ]
+    mock_db_session.refresh.side_effect = lambda obj: setattr(obj, "id", 300)
+
+    with patch("app.services.approvals.broadcast_change", new_callable=AsyncMock) as shortened:
+        response = await client.post(
+            f"/api/kanban/cards/{entity_type}/10/assignees", json={"staff_id": 7}
+        )
+
+    assert response.status_code == 201, response.text
+    assert response.json() == {
+        "success": True,
+        "id": 300,
+        "staff_id": 7,
+        "staff_name": "Bob B",
+        "allocation": 60,
+        "start_date": "2026-03-08T00:00:00.000Z",
+        "end_date": "2026-03-13T00:00:00.000Z",
+        "linked": False,
+        "adjusted": [
+            {
+                "id": 1,
+                "start_date": "2026-03-02T00:00:00.000Z",
+                "end_date": "2026-03-07T00:00:00.000Z",
+                "linked": False,
+            }
+        ],
+    }
+    assert (full_span.start_date, full_span.end_date) == (date(2026, 3, 2), date(2026, 3, 7))
+    (assignment,) = (c.args[0] for c in mock_db_session.add.call_args_list)
+    assert (assignment.start_date, assignment.end_date) == (date(2026, 3, 8), date(2026, 3, 13))
+    mock_db_session.commit.assert_awaited_once()
+    (row,) = notifications(mock_db_session)
+    assert row.body == (
+        "Booked at 60% from 2026-03-08 to 2026-03-13. "
+        "Your booking 2026-03-02–2026-03-13 was shortened to 2026-03-02–2026-03-07."
+    )
+    # The new row (router) and the shortened one (approvals.publish).
+    assert broadcast.await_args.kwargs["action"] == "create"
+    assert (
+        shortened.await_args.kwargs["entity_id"],
+        shortened.await_args.kwargs["action"],
+    ) == (1, "update")
+    # The person is told by ``assigned``; the PM gets both changes.
+    ((_, intents, already),) = change_intents
+    assert already == {7}
+    assert [(i.recipient, i.body) for i in intents] == [
+        ("person", "at 60% from 2026-03-08 to 2026-03-13"),
+        ("pm", "at 60% from 2026-03-08 to 2026-03-13"),
+        ("person", "dates follow the card → 2026-03-02–2026-03-07"),
+        ("pm", "dates follow the card → 2026-03-02–2026-03-07"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_assign_takes_the_free_stretch_of_the_card(authed_client, mock_db_session, wires):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+    first = _booking("phase", start_date=date(2026, 3, 2), end_date=date(2026, 3, 4))
+    mock_db_session.execute.side_effect = [
+        scalar_result(make_card()),
+        scalar_result(User(id=7, first_name="Bob", last_name="B", max_capacity=60)),
+        card_lock_result(),
+        placement(first),
+    ]
+    mock_db_session.refresh.side_effect = lambda obj: setattr(obj, "id", 300)
+
+    response = await client.post("/api/kanban/cards/phase/10/assignees", json={"staff_id": 7})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert (body["start_date"], body["end_date"], body["linked"], body["adjusted"]) == (
+        "2026-03-05T00:00:00.000Z",
+        "2026-03-13T00:00:00.000Z",
+        False,
+        [],
+    )
+    (row,) = notifications(mock_db_session)
+    assert row.body == "Booked at 60% from 2026-03-05 to 2026-03-13."
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("rows", "detail"),
+    [
+        (
+            [
+                {"id": 1, "start_date": date(2026, 3, 2), "end_date": date(2026, 3, 7)},
+                {"id": 2, "start_date": date(2026, 3, 8), "end_date": date(2026, 3, 13)},
+            ],
+            CARD_FULL_DETAIL,
+        ),
+        ([{"id": 1, "approval_status": "pending"}], ALREADY_PENDING_DETAIL),
+    ],
+    ids=["card-covered", "pending-booking"],
+)
+async def test_assign_without_room_is_409(authed_client, mock_db_session, wires, rows, detail):
     client, set_user = authed_client
     set_user(FakeUser(1, "superuser"))
     mock_db_session.execute.side_effect = [
         scalar_result(make_card()),
         scalar_result(User(id=7, first_name="Bob", last_name="B")),
-        scalar_result(PhaseStaffAssignment(id=1, staff_id=7)),
+        card_lock_result(),
+        placement(*(_booking("phase", **fields) for fields in rows)),
     ]
 
     response = await client.post("/api/kanban/cards/phase/10/assignees", json={"staff_id": 7})
 
     assert response.status_code == 409
+    assert response.json()["detail"] == detail
     mock_db_session.add.assert_not_called()
+    mock_db_session.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -483,12 +663,23 @@ async def test_assign_unknown_staff_is_404(authed_client, mock_db_session, wires
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("entity_type", ["phase", "subphase"])
-async def test_user_leaves_a_card(authed_client, mock_db_session, wires, entity_type):
+async def test_user_leaves_a_card(
+    authed_client, mock_db_session, wires, entity_type, change_intents
+):
     client, set_user = authed_client
     set_user(FakeUser(7, "user"))  # removing themself needs no editor rights
     broadcast, _, _ = wires
-    row = SimpleNamespace(id=300)
-    mock_db_session.execute.side_effect = [scalar_result(make_card()), scalar_result(row)]
+    row = SimpleNamespace(
+        id=300,
+        project_id=1,
+        staff_id=7,
+        allocation=60,
+        start_date=None,  # linked: follows the card
+        end_date=None,
+        approval_status="approved",
+        approval_request_id=None,
+    )
+    mock_db_session.execute.side_effect = [scalar_result(make_card()), scalars_result([row])]
 
     response = await client.delete(f"/api/kanban/cards/{entity_type}/10/assignees/7")
 
@@ -497,16 +688,81 @@ async def test_user_leaves_a_card(authed_client, mock_db_session, wires, entity_
     mock_db_session.delete.assert_awaited_once_with(row)
     assert broadcast.await_args.kwargs["entity_id"] == 300
     assert broadcast.await_args.kwargs["summary"] == "unassigned from Design"
+    # The person left themself: only the PM is told (the actor is dropped at delivery).
+    ((actor_id, intents, already),) = change_intents
+    assert (actor_id, already) == (7, set())
+    by = {i.recipient: i for i in intents}
+    assert by["pm"].title == "Test User7 removed themself from Design"
+    assert by["pm"].body == "Was at 60%"
+    assert (by["pm"].entity_type, by["pm"].entity_id) == (entity_type, 10)
 
 
 @pytest.mark.asyncio
 async def test_unassign_missing_assignment_404(authed_client, mock_db_session, wires):
     client, set_user = authed_client
     set_user(FakeUser(1, "admin"))
-    mock_db_session.execute.side_effect = [scalar_result(make_card()), scalar_result(None)]
+    mock_db_session.execute.side_effect = [scalar_result(make_card()), scalars_result([])]
 
     response = await client.delete("/api/kanban/cards/phase/10/assignees/7")
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Assignment not found"
     mock_db_session.delete.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Permission keys: kanban.comment / kanban.moderate_comments
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_moderator_role_deletes_someone_elses_comment(
+    authed_client, mock_db_session, wires
+):
+    client, set_user = authed_client
+    set_user(FakeUser(9, "moderator", {"kanban.moderate_comments"}))
+    mock_db_session.execute.side_effect = [scalar_result(make_comment(50, 5)), MagicMock()]
+
+    response = await client.delete("/api/kanban/comments/50")
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_a_superuser_without_moderation_cannot_delete_others_comments(
+    authed_client, mock_db_session, wires
+):
+    client, set_user = authed_client
+    set_user(FakeUser(9, "superuser", {"kanban.comment"}))
+    mock_db_session.execute.side_effect = [scalar_result(make_comment(50, 5))]
+
+    response = await client.delete("/api/kanban/comments/50")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "You can only delete your own comments"
+
+
+@pytest.mark.asyncio
+async def test_an_author_whose_role_cannot_comment_cannot_delete(
+    authed_client, mock_db_session, wires
+):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "mute", set()))
+    mock_db_session.execute.side_effect = [scalar_result(make_comment(50, 5))]
+
+    response = await client.delete("/api/kanban/comments/50")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Permission required: kanban.comment"
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_editing_a_comment_needs_kanban_comment(authed_client, mock_db_session, wires):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "mute", set()))
+
+    response = await client.put("/api/kanban/comments/50", json={"body": "x"})
+
+    assert response.status_code == 403
+    mock_db_session.execute.assert_not_awaited()

@@ -132,6 +132,13 @@
   background: var(--bg-hover);
 }
 
+/* In the 44 px phone row (global.css) the text sits centred, not on top */
+@media (max-width: 640px) {
+  .option {
+    align-items: center;
+  }
+}
+
 .optionName {
   flex: 1;
   overflow: hidden;

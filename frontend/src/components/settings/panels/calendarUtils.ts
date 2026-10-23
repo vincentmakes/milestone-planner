@@ -2,7 +2,6 @@
  * Helpers shared by the Bank holidays and Company events panels.
  */
 
-import { useMemo } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import {
   getBankHolidays,
@@ -11,20 +10,6 @@ import {
   buildEventDateSet,
 } from '@/api';
 import type { Site } from '@/types';
-
-/**
- * Sites whose holidays and events the current user may change: every site for
- * admins, the user's own sites for superusers (the backend answers 403 otherwise).
- */
-export function useManageableSites(): Site[] {
-  const sites = useAppStore((s) => s.sites);
-  const currentUser = useAppStore((s) => s.currentUser);
-  return useMemo(() => {
-    if (currentUser?.role === 'admin') return sites;
-    const own = new Set(currentUser?.site_ids ?? []);
-    return sites.filter((site) => own.has(site.id));
-  }, [sites, currentUser]);
-}
 
 /** The site a calendar panel starts on: the current site when manageable. */
 export function pickDefaultSiteId(

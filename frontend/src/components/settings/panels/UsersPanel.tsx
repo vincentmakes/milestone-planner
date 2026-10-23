@@ -25,21 +25,27 @@ import { Input } from '@/components/common/Input';
 import { Select } from '@/components/common/Select';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { PanelToolbar } from '../PanelToolbar';
-import { BackIcon, CheckIcon, CloseIcon, EditIcon, GearIcon, PlusIcon } from './PanelIcons';
+import { Icon, BackIcon, CheckIcon, CloseIcon, EditIcon, GearIcon, PlusIcon, ChevronDownIcon, FilterIcon } from '@/components/common/Icon';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useDataLoader } from '@/hooks/useDataLoader';
 import { getUsers, createUser, updateUser, deleteUser } from '@/api/endpoints/users';
-import type { User, UserRole, CreateUserRequest, UpdateUserRequest, Skill } from '@/types';
+import type { User, UserRole, CreateUserRequest, UpdateUserRequest, Skill, Role } from '@/types';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './UsersPanel.module.css';
+import { can } from '@/utils/permissions';
+import { roleWithin } from '@/utils/roles';
+import { useRoles } from '@/hooks/useRoles';
+import { ADMIN_ROLE_KEY, DISABLEABLE_KEYS } from '@/types/permissions';
+import { isSettingOn } from '@/utils/instanceSettings';
 
-// Role display configuration
-const ROLE_CONFIG: Record<UserRole, { label: string; color: string }> = {
+// Badge colours of the system roles; a custom role gets a neutral badge.
+// The label is the role's current name (Settings → Roles can rename it).
+const ROLE_CONFIG: Record<string, { label: string; color: string }> = {
   admin: { label: 'Admin', color: '#ef4444' },
   superuser: { label: 'SuperUser', color: '#f97316' },
   user: { label: 'User', color: '#3b82f6' },
@@ -49,7 +55,10 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const openSettings = useUIStore((s) => s.openSettings);
   const sites = useAppStore((s) => s.sites);
   const skills = useAppStore((s) => s.skills);
+  const teams = useAppStore((s) => s.teams);
   const currentUser = useAppStore((s) => s.currentUser);
+  const roles = useRoles();
+  const roleNames = useMemo(() => new Map(roles.map((r) => [r.key, r.name])), [roles]);
   const { refreshStaff } = useDataLoader();
   
   // State
@@ -68,9 +77,8 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
   const filterRef = useRef<HTMLDivElement>(null);
   
   // Permission checks
-  const isAdmin = currentUser?.role === 'admin';
-  const isSuperUser = currentUser?.role === 'superuser';
-  const canManageUsers = isAdmin || isSuperUser;
+  const canManageSkills = can(currentUser, 'skills.manage');
+  const canCreateUsers = can(currentUser, 'users.create');
   
   // Load users when modal opens
   const loadUsers = useCallback(async () => {
@@ -161,8 +169,16 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
     return siteIds.map(id => sites.find(s => s.id === id)?.name).filter(Boolean).join(', ');
   };
   
-  // Superusers cannot edit admin accounts (backend 403)
-  const canEditUser = (user: User) => isAdmin || (isSuperUser && user.role !== 'admin');
+  // Read-only here: membership is edited in Settings → Teams
+  const getTeamNames = (teamIds: number[] | undefined) => {
+    const names = (teamIds ?? []).map((id) => teams.find((t) => t.id === id)?.name).filter(Boolean);
+    return names.length > 0 ? names.join(', ') : '—';
+  };
+  
+  // users.edit, and users.edit_admins for an administrator account (else 403)
+  const canEditUser = (user: User) =>
+    can(currentUser, 'users.edit') &&
+    (user.role !== ADMIN_ROLE_KEY || can(currentUser, 'users.edit_admins'));
   const handleEdit = (user: User) => { setEditingUser(user); setIsCreating(false); };
   const handleCreate = () => { setEditingUser(null); setIsCreating(true); };
   const handleCloseForm = () => { setEditingUser(null); setIsCreating(false); };
@@ -178,6 +194,7 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
           sites={sites}
           skills={skills}
           currentUser={currentUser}
+          roles={roles}
           jobTitleSuggestions={jobTitles}
           onSave={handleSave}
           onDelete={handleDelete}
@@ -195,13 +212,9 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                     className={`${styles.filterTrigger} ${activeFilterCount > 0 ? styles.hasFilters : ''}`}
                     onClick={() => setIsFilterOpen(!isFilterOpen)}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-                    </svg>
+                    <Icon icon={FilterIcon} size={14} />
                     <span>{activeFilterCount > 0 ? `${activeFilterCount} filter${activeFilterCount > 1 ? 's' : ''}` : 'Filter'}</span>
-                    <svg className={`${styles.chevron} ${isFilterOpen ? styles.open : ''}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
+                    <Icon icon={ChevronDownIcon} size={12} className={`${styles.chevron} ${isFilterOpen ? styles.open : ''}`} />
                   </button>
                 
                   {isFilterOpen && (
@@ -228,9 +241,7 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                           className={styles.filterField}
                           options={[
                             { value: 'all', label: 'All Roles' },
-                            { value: 'admin', label: 'Admin' },
-                            { value: 'superuser', label: 'SuperUser' },
-                            { value: 'user', label: 'User' },
+                            ...roles.map((r) => ({ value: r.key, label: r.name })),
                           ]}
                           value={filterRole}
                           onChange={(e) => setFilterRole(e.target.value)}
@@ -267,13 +278,15 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
               </>
             }
             right={
-              canManageUsers && (
+              (canManageSkills || canCreateUsers) && (
                 <>
-                  <Button variant="secondary" icon={<GearIcon />} onClick={() => openSettings('skills')}>
-                    Manage Skills
-                  </Button>
-                  {isAdmin && (
-                    <Button icon={<PlusIcon />} onClick={handleCreate}>
+                  {canManageSkills && (
+                    <Button variant="secondary" icon={<Icon icon={GearIcon} />} onClick={() => openSettings('skills')}>
+                      Manage Skills
+                    </Button>
+                  )}
+                  {canCreateUsers && (
+                    <Button icon={<Icon icon={PlusIcon} />} onClick={handleCreate}>
                       Add User
                     </Button>
                   )}
@@ -299,6 +312,7 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                     <th>Role</th>
                     <th>Skills</th>
                     <th>Sites</th>
+                    <th>Teams</th>
                     <th style={{ width: 60 }}></th>
                   </tr>
                 </thead>
@@ -312,14 +326,24 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                             <span className={styles.userEmail}>{user.email}</span>
                           </div>
                           {!user.active && <span className={styles.disabledBadge}>Disabled</span>}
+                          {user.is_resource === false && (
+                            <span className={styles.notBookableBadge}>Not bookable</span>
+                          )}
                         </div>
                       </td>
                       <td className={styles.jobTitleCell}>
                         {user.job_title || <span className={styles.noValue}>—</span>}
                       </td>
                       <td>
-                        <span className={styles.roleBadge} style={{ backgroundColor: `${ROLE_CONFIG[user.role].color}20`, color: ROLE_CONFIG[user.role].color }}>
-                          {ROLE_CONFIG[user.role].label}
+                        <span
+                          className={styles.roleBadge}
+                          style={
+                            ROLE_CONFIG[user.role]
+                              ? { backgroundColor: `${ROLE_CONFIG[user.role].color}20`, color: ROLE_CONFIG[user.role].color }
+                              : undefined
+                          }
+                        >
+                          {roleNames.get(user.role) ?? user.role_name ?? ROLE_CONFIG[user.role]?.label ?? user.role}
                         </span>
                       </td>
                       <td>
@@ -339,6 +363,7 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                         </div>
                       </td>
                       <td className={styles.sitesCell} title={getSiteNames(user.site_ids)}>{getSiteNames(user.site_ids)}</td>
+                      <td className={styles.sitesCell} title={getTeamNames(user.team_ids)}>{getTeamNames(user.team_ids)}</td>
                       <td>
                         {canEditUser(user) && (
                           <button
@@ -348,7 +373,7 @@ export function UsersPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                             title="Edit user"
                             aria-label={`Edit ${user.first_name} ${user.last_name}`}
                           >
-                            <EditIcon />
+                            <Icon icon={EditIcon} size={15} />
                           </button>
                         )}
                       </td>
@@ -493,7 +518,7 @@ function JobTitleAutocomplete({ value, onChange, suggestions }: JobTitleAutocomp
               onMouseDown={(e) => { e.preventDefault(); select(s); }}
               onMouseEnter={() => setHighlightIndex(i)}
             >
-              {s}
+              <span className={styles.autocompleteText}>{s}</span>
             </li>
           ))}
         </ul>
@@ -511,6 +536,8 @@ interface UserFormProps {
   sites: { id: number; name: string }[];
   skills: Skill[];
   currentUser: User | null;
+  /** Every role (useRoles); empty while loading */
+  roles: Role[];
   jobTitleSuggestions: string[];
   onSave: () => void;
   onDelete: () => void;
@@ -526,11 +553,16 @@ function sameIds(a: number[], b: number[]): boolean {
   return a.length === b.length && a.every((id) => b.includes(id));
 }
 
-function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSave, onDelete, onCancel, onDirtyChange }: UserFormProps) {
+/** No permission key switched off (a stable reference for the memo below) */
+const NO_DISABLED_KEYS: readonly string[] = [];
+
+function UserForm({ user, sites, skills, currentUser, roles, jobTitleSuggestions, onSave, onDelete, onCancel, onDirtyChange }: UserFormProps) {
+  // views.kanban is missing from /auth/me while the Kanban board is off; the
+  // escalation guard then skips it, like the backend.
+  const kanbanOn = useAppStore((s) => isSettingOn(s.instanceSettings, 'kanban_enabled'));
+  const disabledKeys = kanbanOn ? NO_DISABLED_KEYS : DISABLEABLE_KEYS;
 
   const isEditing = !!user;
-  const isAdmin = currentUser?.role === 'admin';
-  const isSuperUser = currentUser?.role === 'superuser';
   
   const [firstName, setFirstName] = useState(user?.first_name || '');
   const [lastName, setLastName] = useState(user?.last_name || '');
@@ -540,6 +572,12 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
   const [role, setRole] = useState<UserRole>(user?.role || 'user');
   const [maxCapacity, setMaxCapacity] = useState(user?.max_capacity ?? 100);
   const [active, setActive] = useState(user?.active ?? true);
+  // Bookable as a resource. A new account follows its role (the administrator
+  // role is not bookable, the others are, like the backend default) until the
+  // switch is used; then it keeps the choice.
+  const initialIsResource = user?.is_resource ?? (user?.role || 'user') !== ADMIN_ROLE_KEY;
+  const [isResourceChoice, setIsResourceChoice] = useState<boolean | null>(isEditing ? initialIsResource : null);
+  const isResource = isResourceChoice ?? role !== ADMIN_ROLE_KEY;
   const [selectedSiteIds, setSelectedSiteIds] = useState<number[]>(user?.site_ids || []);
   // Whether the site picker was used: superusers only send site_ids then
   const [sitesTouched, setSitesTouched] = useState(false);
@@ -571,24 +609,59 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
       role !== (user?.role || 'user') ||
       maxCapacity !== (user?.max_capacity ?? 100) ||
       active !== (user?.active ?? true) ||
+      isResource !== initialIsResource ||
       !sameIds(selectedSiteIds, user?.site_ids || []) ||
       !sameIds(selectedSkillIds, user?.skills?.map((s) => s.id) || [])
   );
   
-  // Role, active status and deletion are admin-only on the backend (a
-  // superuser sending role/active gets a 403), so superusers can't touch them.
-  const canAssignAdmin = isAdmin;
-  const canAssignSuperUser = isAdmin || isSuperUser;
-  // An admin cannot change their own role or delete their own account either
+  // Role, active status and deletion each need their key on the backend
+  // (users.change_role, users.toggle_active, users.delete; a request without
+  // it gets a 403). The escalation guard (app/services/user_access.py,
+  // mirrored by roleWithin) lets an editor give only roles whose permissions
+  // they hold, and change the role only of someone whose current role they
+  // could have given; the administrator role is the administrators' alone
+  // (roles.manage is locked to that role).
+  const canAssignAdmin = can(currentUser, 'roles.manage');
+  const mayChangeRoles = can(currentUser, 'users.change_role');
+  // Nobody changes their own role or deletes/deactivates their own account
   // (the backend answers 400), so those controls are disabled on their own row.
   const isOwnAccount = isEditing && !!user && !!currentUser && user.id === currentUser.id;
-  const canChangeRole = isAdmin && !isOwnAccount;
-  const canDelete = isAdmin;
-  const canToggleActive = isEditing && isAdmin && !isOwnAccount;
-  // Email and password of other people are admin-only on the backend; a
-  // superuser keeps them for their own account only.
+  const initialRole = user?.role || 'user';
+  const initialRoleDef = roles.find((r) => r.key === initialRole);
+  const targetWithinMine =
+    !isEditing ||
+    (initialRoleDef ? roleWithin(initialRoleDef, currentUser, disabledKeys) : initialRole !== ADMIN_ROLE_KEY || canAssignAdmin);
+  const canChangeRole = mayChangeRoles && !isOwnAccount && targetWithinMine;
+  const roleOptions = useMemo(() => {
+    const options = roles.map((r) => {
+      const assignable = roleWithin(r, currentUser, disabledKeys);
+      const suffix = assignable ? '' : r.key === ADMIN_ROLE_KEY ? ' (admin only)' : ' (more than your role)';
+      return { value: r.key, label: `${r.name}${suffix}`, disabled: !assignable };
+    });
+    // Roles not loaded (yet): still show the account's own role.
+    if (!options.some((o) => o.value === initialRole)) {
+      options.unshift({ value: initialRole, label: user?.role_name ?? initialRole, disabled: false });
+    }
+    return options;
+  }, [roles, currentUser, disabledKeys, initialRole, user?.role_name]);
+  const roleHint = canChangeRole
+    ? roleOptions.some((o) => o.disabled)
+      ? "Roles granting permissions you don't hold can't be assigned"
+      : undefined
+    : !mayChangeRoles
+      ? 'Your role cannot change roles'
+      : isOwnAccount
+        ? "You can't change your own role"
+        : 'You can only change the role of users whose role grants no more than yours';
+  const canDelete = can(currentUser, 'users.delete');
+  const canToggleActive = isEditing && can(currentUser, 'users.toggle_active') && !isOwnAccount;
+  // Other people's email and password need users.edit_credentials; everyone
+  // keeps them for their own account.
   const isSelfEdit = isOwnAccount;
-  const canEditCredentials = !isEditing || isAdmin || isSelfEdit;
+  const canEditCredentials = !isEditing || can(currentUser, 'users.edit_credentials') || isSelfEdit;
+  // With sites.view_all the picker shows every site, so sending its state
+  // never drops a link the editor cannot see.
+  const canSeeAllSites = currentUser?.can_see_all_sites ?? false;
   
   const toggleSite = (siteId: number) => {
     setSitesTouched(true);
@@ -670,21 +743,20 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
           last_name: lastName.trim(),
           job_title: jobTitle.trim() || undefined,
           max_capacity: maxCapacity,
+          is_resource: isResource,
           skill_ids: selectedSkillIds,
         };
         if (canEditCredentials) {
           data.email = email.trim();
           if (password) data.password = password;
         }
-        // Superusers send site_ids only when they used the picker, so an
-        // unrelated edit never touches site links they cannot see.
-        if (isAdmin || sitesTouched) {
+        // Without sites.view_all, site_ids go only when the picker was used,
+        // so an unrelated edit never touches site links the editor cannot see.
+        if (canSeeAllSites || sitesTouched) {
           data.site_ids = buildSiteIdsPayload();
         }
-        if (canChangeRole) {
-          data.role = role;
-          data.active = active;
-        }
+        if (canChangeRole) data.role = role;
+        if (canToggleActive) data.active = active;
         await updateUser(user.id, data);
       } else {
         const data: CreateUserRequest = {
@@ -695,6 +767,7 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
           job_title: jobTitle.trim() || undefined,
           role,
           max_capacity: maxCapacity,
+          is_resource: isResource,
           site_ids: selectedSiteIds,
           skill_ids: selectedSkillIds,
         };
@@ -734,7 +807,7 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
     <form onSubmit={handleSubmit} className={styles.form}>
       <div className={styles.formHeader}>
         <h3>{isEditing ? 'Edit User' : 'Add User'}</h3>
-        <Button type="button" variant="ghost" icon={<BackIcon />} onClick={onCancel}>
+        <Button type="button" variant="ghost" icon={<Icon icon={BackIcon} />} onClick={onCancel}>
           Back to list
         </Button>
       </div>
@@ -795,21 +868,11 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
           label="Role *"
           fullWidth
           id="role"
-          options={[
-            { value: 'user', label: 'User' },
-            { value: 'superuser', label: 'SuperUser', disabled: !canAssignSuperUser },
-            { value: 'admin', label: canAssignAdmin ? 'Admin' : 'Admin (admin only)', disabled: !canAssignAdmin },
-          ]}
+          options={roleOptions}
           value={role}
           onChange={(e) => setRole(e.target.value as UserRole)}
           disabled={!canChangeRole}
-          hint={
-            canChangeRole
-              ? undefined
-              : isAdmin
-                ? "You can't change your own role"
-                : 'Only admins can change roles'
-          }
+          hint={roleHint}
         />
         {isEditing && (
           <div className={styles.field}>
@@ -821,9 +884,22 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
               disabled={!canToggleActive}
               label="Active"
             />
-            {!canToggleActive && <span className={styles.hint}>{!isAdmin ? 'Only admins can enable or disable users' : user?.id === currentUser?.id ? "Can't disable yourself" : 'Insufficient permissions'}</span>}
+            {!canToggleActive && <span className={styles.hint}>{!can(currentUser, 'users.toggle_active') ? 'Your role cannot enable or disable users' : user?.id === currentUser?.id ? "Can't disable yourself" : 'Insufficient permissions'}</span>}
           </div>
         )}
+        <div className={styles.field}>
+          <label>Resource</label>
+          <ToggleSwitch
+            className={styles.toggleLabel}
+            checked={isResource}
+            onChange={setIsResourceChoice}
+            label="Bookable as a resource"
+            aria-describedby="isResourceHint"
+          />
+          <span id="isResourceHint" className={styles.hint}>
+            Appears in the Staff panel and can be booked on projects. Add the person to a site to list them there.
+          </span>
+        </div>
       </div>
       
       {/* Site Assignments - Button Style */}
@@ -887,10 +963,10 @@ function UserForm({ user, sites, skills, currentUser, jobTitleSuggestions, onSav
                 }}
               />
               <button type="button" className={styles.confirmBtn} onClick={confirmNewSkill} disabled={isCreatingSkill} aria-label="Add skill" title="Add skill">
-                <CheckIcon />
+                <Icon icon={CheckIcon} size={14} />
               </button>
               <button type="button" className={styles.cancelBtn} onClick={cancelNewSkill} disabled={isCreatingSkill} aria-label="Cancel adding a skill" title="Cancel">
-                <CloseIcon />
+                <Icon icon={CloseIcon} size={14} />
               </button>
             </div>
           ) : (

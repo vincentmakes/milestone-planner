@@ -6,6 +6,8 @@ phases, subphases, and their staff assignments.
 
 import json
 import logging
+from datetime import date
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import and_, delete, func, or_, select, update
@@ -13,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload, selectinload
 
 from app.database import get_db, get_db_readonly
-from app.middleware.auth import get_current_user, require_superuser
+from app.middleware.auth import get_current_user, require_permission
 from app.models.assignment import (
     PhaseStaffAssignment,
     ProjectAssignment,
@@ -25,6 +27,7 @@ from app.models.equipment import Equipment, EquipmentAssignment
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.site import Site
 from app.models.tag import Tag
+from app.models.team import Team
 from app.models.user import User
 from app.schemas.base import PaginationParams
 from app.schemas.project import (
@@ -38,15 +41,42 @@ from app.schemas.project import (
     SubphaseReorderRequest,
     SubphaseUpdate,
 )
+from app.services import approvals, change_notifications
+from app.services.booking_segments import effective_dates
 from app.services.card_status import apply_completion, apply_status
 from app.services.date_range import ensure_date_order
+from app.services.permissions import permission_required_detail
 from app.services.project_access import (
     check_project_editor,
     project_id_for_phase,
     project_id_for_subphase,
     require_project_editor,
+    user_can,
+)
+from app.services.project_field_rules import (
+    apply_field_values,
+    current_selection_ids,
+    load_project_field_values,
+    validate_field_values,
+)
+from app.services.site_access import (
+    EXTERNAL_PROJECT_NAME,
+    PROJECT_NOT_VISIBLE_DETAIL,
+    SITE_NOT_VISIBLE_DETAIL,
+    ensure_project_visible,
+    ensure_site_visible,
+    site_is_visible,
+    visible_site_ids,
+    visible_sites_clause,
 )
 from app.services.tag_rules import validate_project_tags
+from app.services.team_rules import (
+    SITE_LESS_PROJECT_TEAMS_DETAIL,
+    ensure_teams_within_sites,
+    load_teams,
+    team_ids_of,
+    team_outside_project_site_detail,
+)
 from app.websocket.broadcast import broadcast_change
 
 logger = logging.getLogger(__name__)
@@ -57,6 +87,17 @@ router = APIRouter()
 # ---------------------------------------------------------
 # Helper Functions
 # ---------------------------------------------------------
+
+
+def _segment_fields(booking: Any, card_start: date, card_end: date) -> dict[str, Any]:
+    """A phase / subphase booking's effective dates and ``linked`` flag."""
+    start, end, linked = effective_dates(
+        getattr(booking, "start_date", None),
+        getattr(booking, "end_date", None),
+        card_start,
+        card_end,
+    )
+    return {"start_date": start, "end_date": end, "linked": linked}
 
 
 def build_subphase_tree_optimized(
@@ -106,8 +147,11 @@ def build_subphase_tree_optimized(
                 "project_id": ssa.project_id,
                 "staff_id": ssa.staff_id,
                 "allocation": ssa.allocation,
+                **_segment_fields(ssa, sp.start_date, sp.end_date),
                 "staff_name": ssa.staff_name if hasattr(ssa, "staff_name") else None,
                 "staff_role": ssa.staff_role if hasattr(ssa, "staff_role") else None,
+                "approval_status": ssa.approval_status,
+                "approval": getattr(ssa, "approval", None),
             }
             for ssa in staff_list
         ]
@@ -272,19 +316,37 @@ async def _require_user_exists(db: AsyncSession, user_id: int, detail: str) -> N
         raise HTTPException(status_code=404, detail=detail)
 
 
-# Responses embed {id, name, color, group_id} only: skip the tags' site links
-# (Tag.sites is selectin-loaded by default -- one more query per request).
+# Responses embed {id, name, color} only: skip the tags' site and
+# team links (Tag.sites / Tag.teams are selectin-loaded by default -- one more
+# query each per request).
 # NEVER combine this loader with validate_project_tags() in the same session:
-# noload sets Tag.sites to an empty list on every tag it loads, and a later
-# query (even validate_project_tags' own selectinload) does not refresh an
-# object already in the identity map -- a site-restricted tag would then
-# wrongly fail the site check.
-_PROJECT_TAGS_FOR_RESPONSE = selectinload(Project.tags).options(noload(Tag.sites))
+# noload sets Tag.sites and Tag.teams to empty lists on every tag it loads, and
+# a later query (even validate_project_tags' own selectinload) does not refresh
+# an object already in the identity map -- a site- or team-restricted tag would
+# then wrongly pass or fail the site and team checks.
+_PROJECT_TAGS_FOR_RESPONSE = selectinload(Project.tags).options(
+    noload(Tag.sites), noload(Tag.teams)
+)
+
+# Project.field_values / field_selections are selectin by default (two more
+# queries, plus the items' sites and teams). Responses read the values with
+# load_project_field_values() (two column queries for the whole list), and the
+# paths that never touch them skip them.
+_FIELD_VALUES_NOT_LOADED = (noload(Project.field_values), noload(Project.field_selections))
 
 
 def _tag_dict(tag: Tag) -> dict:
     """A tag as embedded in a project response."""
-    return {"id": tag.id, "name": tag.name, "color": tag.color, "group_id": tag.group_id}
+    return {"id": tag.id, "name": tag.name, "color": tag.color}
+
+
+def _ensure_project_teams(teams: list[Team], site_id: int | None) -> None:
+    """400 when a site-less project gets teams or a team is not at the project's site."""
+    if not teams:
+        return
+    if site_id is None:
+        raise HTTPException(status_code=400, detail=SITE_LESS_PROJECT_TEAMS_DETAIL)
+    ensure_teams_within_sites(teams, [site_id], team_outside_project_site_detail)
 
 
 async def _require_site_exists(db: AsyncSession, site_id: int) -> None:
@@ -300,6 +362,7 @@ async def _require_site_exists(db: AsyncSession, site_id: int) -> None:
 
 @router.get("/projects")
 async def get_projects(
+    request: Request,
     siteId: int | None = Query(None),
     includeOtherSites: str | None = Query(None),
     archived: str | None = Query(None),
@@ -308,29 +371,46 @@ async def get_projects(
     user: User = Depends(get_current_user),
 ):
     """
-    Get list of projects with pagination.
+    Get list of projects with pagination, at the user's visible sites only.
 
     Query params:
-    - siteId: Filter by site
-    - includeOtherSites: If 'true', show all sites but mask external project details
-    - archived: 'true' for archived only, 'all' for all, default is non-archived
+    - siteId: Filter by site (a site outside the visible ones: 403)
+    - includeOtherSites: If 'true', show every visible site but mask the
+      projects of the other sites (needs ``views.crosssite``)
+    - archived: 'true' for archived only (needs ``views.archived``), 'all'
+      for all (archived ones only with ``views.archived``), default is
+      non-archived
     - offset: Number of items to skip (default 0)
     - limit: Max items to return (default 50, max 200)
 
     Matches: GET /api/projects
     """
-    # Build base filter query
-    base_filter = select(Project.id)
+    permissions = user.permissions
+    cross_site = includeOtherSites == "true"
+    if cross_site and not permissions.has("views.crosssite"):
+        raise HTTPException(status_code=403, detail=permission_required_detail("views.crosssite"))
+    if archived == "true" and not permissions.has("views.archived"):
+        raise HTTPException(status_code=403, detail=permission_required_detail("views.archived"))
+    # 'all' without views.archived quietly leaves the archived projects out.
+    with_archived = archived == "all" and permissions.has("views.archived")
 
-    # Filter by archived status
+    visible = await visible_site_ids(request, db, user)
+    if siteId and not site_is_visible(visible, siteId):
+        raise HTTPException(status_code=403, detail=SITE_NOT_VISIBLE_DETAIL)
+
+    filters = []
     if archived == "true":
-        base_filter = base_filter.where(Project.archived == 1)
-    elif archived != "all":
-        base_filter = base_filter.where(or_(Project.archived == 0, Project.archived.is_(None)))
+        filters.append(Project.archived == 1)
+    elif not with_archived:
+        filters.append(or_(Project.archived == 0, Project.archived.is_(None)))
+    if siteId and not cross_site:
+        filters.append(Project.site_id == int(siteId))
+    else:
+        in_visible = visible_sites_clause(Project.site_id, visible)
+        if in_visible is not None:
+            filters.append(in_visible)
 
-    # Filter by site
-    if siteId and includeOtherSites != "true":
-        base_filter = base_filter.where(Project.site_id == int(siteId))
+    base_filter = select(Project.id).where(*filters)
 
     # Get total count
     count_result = await db.execute(select(func.count()).select_from(base_filter.subquery()))
@@ -345,16 +425,10 @@ async def get_projects(
         )
         .outerjoin(Site, Project.site_id == Site.id)
         .outerjoin(User, Project.pm_id == User.id)
-        .options(_PROJECT_TAGS_FOR_RESPONSE)
+        .options(_PROJECT_TAGS_FOR_RESPONSE, *_FIELD_VALUES_NOT_LOADED)
     )
 
-    if archived == "true":
-        query = query.where(Project.archived == 1)
-    elif archived != "all":
-        query = query.where(or_(Project.archived == 0, Project.archived.is_(None)))
-
-    if siteId and includeOtherSites != "true":
-        query = query.where(Project.site_id == int(siteId))
+    query = query.where(*filters)
 
     # id breaks start_date ties so the order (and page boundaries) is deterministic.
     query = (
@@ -366,6 +440,15 @@ async def get_projects(
     result = await db.execute(query)
     rows = result.all()
 
+    def masked(project: Project) -> bool:
+        """An external project in the cross-site view: its details are hidden."""
+        return bool(cross_site and siteId and project.site_id != int(siteId))
+
+    # Field values of the shown projects: two queries for the whole page.
+    field_values = await load_project_field_values(
+        db, [row[0].id for row in rows if not masked(row[0])]
+    )
+
     projects = []
     for row in rows:
         project = row[0]
@@ -373,11 +456,11 @@ async def get_projects(
         pm_name = row[2]
 
         # Mask external project details if viewing cross-site
-        if includeOtherSites == "true" and siteId and project.site_id != int(siteId):
+        if masked(project):
             projects.append(
                 {
                     "id": project.id,
-                    "name": "[External Project]",
+                    "name": EXTERNAL_PROJECT_NAME,
                     "site_id": project.site_id,
                     "site_name": site_name,
                     "customer": "[Hidden]",
@@ -393,6 +476,8 @@ async def get_projects(
                     "created_at": project.created_at,
                     "updated_at": project.updated_at,
                     "tags": [],
+                    "team_ids": [],
+                    "field_values": {},
                 }
             )
         else:
@@ -415,6 +500,8 @@ async def get_projects(
                     "created_at": project.created_at,
                     "updated_at": project.updated_at,
                     "tags": [_tag_dict(t) for t in project.tags],
+                    "team_ids": project.team_ids,
+                    "field_values": field_values[project.id],
                 }
             )
 
@@ -429,11 +516,15 @@ async def get_projects(
 @router.get("/projects/{project_id}", response_model=ProjectDetailResponse)
 async def get_project(
     project_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db_readonly),
     user: User = Depends(get_current_user),
 ):
     """
     Get single project with all nested data (phases, subphases, assignments).
+
+    403 outside the user's visible sites, and for an archived project without
+    ``views.archived``.
 
     Matches: GET /api/projects/:id
     """
@@ -453,7 +544,7 @@ async def get_project(
             )
             .outerjoin(Site, Project.site_id == Site.id)
             .outerjoin(User, Project.pm_id == User.id)
-            .options(_PROJECT_TAGS_FOR_RESPONSE)
+            .options(_PROJECT_TAGS_FOR_RESPONSE, *_FIELD_VALUES_NOT_LOADED)
             .where(Project.id == project_id)
         )
 
@@ -531,6 +622,11 @@ async def get_project(
     site_name = row[1]
     pm_name = row[2]
 
+    if not site_is_visible(await visible_site_ids(request, db, user), project.site_id):
+        raise HTTPException(status_code=403, detail=PROJECT_NOT_VISIBLE_DETAIL)
+    if project.archived and not user.permissions.has("views.archived"):
+        raise HTTPException(status_code=403, detail=permission_required_detail("views.archived"))
+
     phases_result = await query_phases()
     t2 = time.perf_counter()
     phases_raw = phases_result.scalars().all()
@@ -569,20 +665,37 @@ async def get_project(
         int((t7 - t0) * 1000),
     )
 
+    # Open approval requests, keyed (level, assignment id): one more query
+    # (plus the policies when any is pending).
+    approval_index = await approvals.project_approval_index(
+        db, user, project_id=project_id, pm_id=project.pm_id
+    )
+    # Its project-field values: two more queries.
+    field_values = (await load_project_field_values(db, [project_id]))[project_id]
+
     # Convert to list with attributes
     class StaffAssignmentWithName:
-        def __init__(self, assignment, staff_name, staff_role):
+        def __init__(self, assignment, staff_name, staff_role, level):
             self.id = assignment.id
             self.phase_id = getattr(assignment, "phase_id", None)
             self.subphase_id = getattr(assignment, "subphase_id", None)
             self.project_id = assignment.project_id
             self.staff_id = assignment.staff_id
             self.allocation = assignment.allocation
+            # Own dates of an unlinked segment (None = linked, follows the card).
+            self.start_date = assignment.start_date
+            self.end_date = assignment.end_date
             self.staff_name = staff_name
             self.staff_role = staff_role
+            # 'pending' = a self-booking awaiting approval; `approval` = the
+            # open request on the row (pending create, change or removal).
+            self.approval_status = assignment.approval_status
+            self.approval = approval_index.get((level, assignment.id))
 
-    phase_staff = [StaffAssignmentWithName(r[0], r[1], r[2]) for r in phase_staff_rows]
-    subphase_staff = [StaffAssignmentWithName(r[0], r[1], r[2]) for r in subphase_staff_rows]
+    phase_staff = [StaffAssignmentWithName(r[0], r[1], r[2], "phase") for r in phase_staff_rows]
+    subphase_staff = [
+        StaffAssignmentWithName(r[0], r[1], r[2], "subphase") for r in subphase_staff_rows
+    ]
 
     # Build phases with nested data
     phases = []
@@ -595,8 +708,11 @@ async def get_project(
                 "project_id": psa.project_id,
                 "staff_id": psa.staff_id,
                 "allocation": psa.allocation,
+                **_segment_fields(psa, p.start_date, p.end_date),
                 "staff_name": psa.staff_name,
                 "staff_role": psa.staff_role,
+                "approval_status": psa.approval_status,
+                "approval": psa.approval,
             }
             for psa in phase_staff
             if psa.phase_id == p.id
@@ -637,8 +753,11 @@ async def get_project(
             "allocation": r[0].allocation,
             "start_date": r[0].start_date,
             "end_date": r[0].end_date,
+            "linked": False,
             "staff_name": r[1],
             "staff_role": r[2],
+            "approval_status": r[0].approval_status,
+            "approval": approval_index.get(("project", r[0].id)),
         }
         for r in project_staff_rows
     ]
@@ -689,6 +808,8 @@ async def get_project(
         "staffAssignments": staff_assignments,
         "equipmentAssignments": equipment_assignments,
         "tags": [_tag_dict(t) for t in project.tags],
+        "team_ids": project.team_ids,
+        "field_values": field_values,
     }
 
 
@@ -697,21 +818,31 @@ async def create_project(
     data: ProjectCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("projects.create")),
 ):
     """
     Create a new project.
 
     Matches: POST /api/projects
     """
-    # Unknown references are a 404, not an FK violation (500).
+    # At a visible site (a site-less project needs sites.view_all), then
+    # unknown references are a 404, not an FK violation (500).
+    await ensure_site_visible(request, db, user, data.site_id)
     if data.site_id is not None:
         await _require_site_exists(db, data.site_id)
     if data.pm_id is not None:
         await _require_user_exists(db, data.pm_id, "Project manager not found")
 
-    # Site applicability + single-select groups (400); unknown ids dropped.
-    tag_objs = await validate_project_tags(db, data.site_id, data.tag_ids or [])
+    # Teams at the project's site (400); unknown ids dropped (What-If replays).
+    teams = await load_teams(db, data.team_ids or [], strict=False)
+    _ensure_project_teams(teams, data.site_id)
+
+    # Site and team applicability + single-select groups (400); unknown ids dropped.
+    tag_objs = await validate_project_tags(db, data.site_id, data.tag_ids or [], team_ids_of(teams))
+    # Project-field values: types, items of their field, site / team scope (400 / 422).
+    field_values = await validate_field_values(
+        db, data.site_id, team_ids_of(teams), data.field_values or {}
+    )
 
     project = Project(
         name=data.name,
@@ -725,7 +856,11 @@ async def create_project(
         end_date=data.end_date,
         notes=data.notes,
         tags=tag_objs,
+        teams=teams,
+        field_values=[],
+        field_selections=[],
     )
+    apply_field_values(project, field_values)
 
     db.add(project)
     await db.flush()  # Get the project ID
@@ -754,6 +889,18 @@ async def create_project(
         action="create",
         summary=project.name,
     )
+    # A project created for someone else: its manager is told. Creating one's
+    # own project (the common case) or one without a manager tells nobody, so
+    # no delivery runs at all.
+    if data.pm_id is not None and data.pm_id != user.id:
+        await change_notifications.deliver(
+            db,
+            request,
+            user.id,
+            change_notifications.manager_intents(
+                user, project_id=project.id, project_name=project.name, pm_id=data.pm_id
+            ),
+        )
 
     return {"id": project.id, "success": True}
 
@@ -769,20 +916,42 @@ async def update_project(
     """
     Update a project.
 
-    Superusers/admins, or the project's manager (who may change every field,
-    including handing the project over via `pm_id`).
+    ``projects.edit_any``, or the project's manager through the PM bundle (who
+    may change every field, including handing the project over via `pm_id`;
+    an explicit ``null`` clears it, an omitted one leaves it).
+    Changing ``archived`` needs ``projects.archive`` (also in the bundle); a
+    request that only archives or restores needs nothing else.
 
     Matches: PUT /api/projects/:id
     """
+    # The field values are needed only when they are written or re-checked.
+    touches_fields = data.field_values is not None or data.team_ids is not None
     result = await db.execute(
-        select(Project).options(selectinload(Project.tags)).where(Project.id == project_id)
+        select(Project)
+        .options(
+            selectinload(Project.tags),
+            selectinload(Project.teams),
+            *(() if touches_fields else _FIELD_VALUES_NOT_LOADED),
+        )
+        .where(Project.id == project_id)
     )
     project = result.scalar_one_or_none()
 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    await ensure_site_visible(request, db, user, project.site_id, PROJECT_NOT_VISIBLE_DETAIL)
 
-    check_project_editor(user, project.pm_id)
+    sent = {field for field in data.model_fields_set if getattr(data, field) is not None}
+    # An explicit null clears the manager: an edit like any other.
+    clearing_pm = "pm_id" in data.model_fields_set and data.pm_id is None
+    if clearing_pm and project.pm_id is not None:
+        sent.add("pm_id")
+    archiving = "archived" in sent and bool(data.archived) != bool(project.archived)
+    if sent - {"archived"} or not archiving:
+        check_project_editor(user, project.pm_id)
+    if archiving and not user_can(user, "projects.archive", project.pm_id):
+        raise HTTPException(status_code=403, detail=permission_required_detail("projects.archive"))
+    before = {name: getattr(project, name) for name in change_notifications.PROJECT_FIELDS}
 
     # Update fields if provided
     if data.name is not None:
@@ -793,6 +962,8 @@ async def update_project(
         if data.pm_id != project.pm_id:
             await _require_user_exists(db, data.pm_id, "Project manager not found")
         project.pm_id = data.pm_id
+    elif clearing_pm:
+        project.pm_id = None
     if data.sales_pm is not None:
         project.sales_pm = data.sales_pm
     if data.confirmed is not None:
@@ -810,10 +981,35 @@ async def update_project(
     if data.archived is not None:
         project.archived = 1 if data.archived else 0
 
-    # Replace tag assignments if provided (None = no change, [] = clear all)
-    # Checked against the project's own site (ProjectUpdate cannot move it).
-    if data.tag_ids is not None:
-        project.tags = await validate_project_tags(db, project.site_id, data.tag_ids)
+    # Replace team / tag assignments if provided (None = no change, [] = clear
+    # all), checked against the project's own site (ProjectUpdate cannot move
+    # it). Unknown team ids are dropped (What-If replays). A team change
+    # re-validates the current tags: a project never keeps a tag its new teams
+    # exclude.
+    if data.team_ids is not None:
+        teams = await load_teams(db, data.team_ids, strict=False)
+        _ensure_project_teams(teams, project.site_id)
+        project.teams = teams
+    if data.tag_ids is not None or data.team_ids is not None:
+        tag_ids = data.tag_ids if data.tag_ids is not None else [t.id for t in project.tags]
+        project.tags = await validate_project_tags(db, project.site_id, tag_ids, project.team_ids)
+    # Field values given are written; a team change re-checks the items the
+    # project already holds too (an item limited to teams it left: 400).
+    if touches_fields:
+        wanted: dict[int, Any] = {}
+        if data.team_ids is not None:
+            wanted.update(current_selection_ids(project))
+        wanted.update(data.field_values or {})
+        apply_field_values(
+            project, await validate_field_values(db, project.site_id, project.team_ids, wanted)
+        )
+    intents = change_notifications.project_update_intents(
+        user,
+        project_id=project_id,
+        project_name=project.name,
+        before=before,
+        after={name: getattr(project, name) for name in change_notifications.PROJECT_FIELDS},
+    )
 
     await db.commit()
 
@@ -826,6 +1022,7 @@ async def update_project(
         action="update",
         summary=project.name,
     )
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 
@@ -835,20 +1032,37 @@ async def delete_project(
     project_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("projects.delete")),
 ):
     """
-    Delete a project and all related data.
+    Delete a project and all related data (``projects.delete``; never through
+    the PM bundle).
 
     Matches: DELETE /api/projects/:id
     """
-    result = await db.execute(select(Project).where(Project.id == project_id))
+    # Value rows and selections go with the project (ON DELETE CASCADE).
+    result = await db.execute(
+        select(Project).options(*_FIELD_VALUES_NOT_LOADED).where(Project.id == project_id)
+    )
     project = result.scalar_one_or_none()
 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    await ensure_site_visible(request, db, user, project.site_id, PROJECT_NOT_VISIBLE_DETAIL)
 
     project_name = project.name
+
+    # Its approval requests cascade with the project; close them first so the
+    # requesters and approvers are told their items are gone.
+    effects = await approvals.cancel_for_entity(db, user, project_id=project_id, whole_project=True)
+    # Who to tell, resolved before anything is deleted (the notifications
+    # carry no project_id: the FK cascade would remove them).
+    intents = change_notifications.project_deleted_intents(
+        user,
+        project_name=project_name,
+        pm_id=project.pm_id,
+        bookers=await change_notifications.approved_bookers(db, project_id=project_id),
+    )
 
     # Polymorphic rows first (comments, custom-column values, the subphase
     # subtree with its assignments) -- nothing cascades to them.
@@ -875,6 +1089,8 @@ async def delete_project(
         action="delete",
         summary=project_name,
     )
+    await approvals.publish(request, user, effects)
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 
@@ -897,7 +1113,8 @@ async def create_phase(
 
     Matches: POST /api/projects/:id/phases
     """
-    # 404 if the project does not exist, 403 unless editor (superuser or PM)
+    # 404 if the project does not exist, 403 unless editor (edit_any or the PM)
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
 
     # Determine sort_order
@@ -943,6 +1160,20 @@ async def create_phase(
         action="create",
         summary=phase.type,
     )
+    await change_notifications.deliver(
+        db,
+        request,
+        user.id,
+        change_notifications.card_added_intents(
+            user,
+            project_id=project_id,
+            entity_type="phase",
+            entity_id=phase.id,
+            name=phase.type,
+            start=phase.start_date,
+            end=phase.end_date,
+        ),
+    )
 
     return {"id": phase.id, "success": True}
 
@@ -967,10 +1198,12 @@ async def update_phase(
         raise HTTPException(status_code=404, detail="Phase not found")
 
     project_id = phase.project_id
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
 
     if data.type is not None:
         phase.type = data.type
+    old_dates = (phase.start_date, phase.end_date)
     if data.start_date is not None:
         phase.start_date = data.start_date
     if data.end_date is not None:
@@ -989,6 +1222,27 @@ async def update_phase(
         apply_completion(phase, data.completion if data.completion is not None else 0)
     if data.status is not None:
         apply_status(phase, data.status)
+    # Only a move of the start or end notifies (not a rename, dependency,
+    # status, completion or milestone change).
+    new_dates = (phase.start_date, phase.end_date)
+    intents = (
+        change_notifications.card_moved_intents(
+            user,
+            project_id=project_id,
+            entity_type="phase",
+            entity_id=phase_id,
+            name=phase.type,
+            old=old_dates,
+            new=new_dates,
+            bookers=await change_notifications.card_bookings(db, "phase", phase_id),
+        )
+        if new_dates != old_dates
+        else []
+    )
+    # Unlinked segments follow the card: translated on a move, clamped on a
+    # shrink (fit_segments_to_card), in this transaction.
+    if new_dates != old_dates:
+        await approvals.fit_card_bookings(db, "phase", phase_id, old_dates, new_dates)
 
     await db.commit()
 
@@ -1001,6 +1255,7 @@ async def update_phase(
         project_id=project_id,
         action="update",
     )
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 
@@ -1024,6 +1279,7 @@ async def delete_phase(
         raise HTTPException(status_code=404, detail="Phase not found")
 
     project_id = phase.project_id
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
     phase_type = phase.type
 
@@ -1031,6 +1287,19 @@ async def delete_phase(
     # FK, so the whole subtree (and its assignments, comments and column
     # values) must be removed explicitly or it is orphaned.
     subphase_ids = await collect_descendant_subphase_ids(db, phase_id, "phase")
+    # Pending approval requests on the phase or its subtree expire
+    # (target_deleted) before their rows go with it.
+    effects = await approvals.cancel_for_entity(
+        db, user, project_id=project_id, phase_ids=[phase_id], subphase_ids=subphase_ids
+    )
+    intents = change_notifications.card_deleted_intents(
+        user,
+        project_id=project_id,
+        name=phase_type,
+        bookers=await change_notifications.approved_bookers(
+            db, phase_ids=[phase_id], subphase_ids=subphase_ids
+        ),
+    )
     await delete_subphases_and_dependents(db, subphase_ids)
 
     # card_comments / custom_column_values are polymorphic and carry no FK
@@ -1061,6 +1330,8 @@ async def delete_phase(
         action="delete",
         summary=phase_type,
     )
+    await approvals.publish(request, user, effects)
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 
@@ -1078,6 +1349,7 @@ async def reorder_phases(
 
     Matches: PUT /api/projects/:id/phases/reorder
     """
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
 
     for index, phase_id in enumerate(data.phase_order):
@@ -1129,6 +1401,7 @@ async def create_subphase_under_phase(
     # The subphase belongs to the phase's project; `data.project_id` is ignored
     # (a client could otherwise file it under a project it cannot edit).
     project_id = phase.project_id
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
 
     # Determine sort_order
@@ -1181,6 +1454,20 @@ async def create_subphase_under_phase(
         action="create",
         summary=subphase.name,
     )
+    await change_notifications.deliver(
+        db,
+        request,
+        user.id,
+        change_notifications.card_added_intents(
+            user,
+            project_id=project_id,
+            entity_type="subphase",
+            entity_id=subphase.id,
+            name=subphase.name,
+            start=subphase.start_date,
+            end=subphase.end_date,
+        ),
+    )
 
     return {
         "id": subphase.id,
@@ -1223,6 +1510,7 @@ async def create_child_subphase(
 
     # The child belongs to the parent's project; `data.project_id` is ignored.
     project_id = parent.project_id
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
 
     # Check max depth
@@ -1283,6 +1571,20 @@ async def create_child_subphase(
         action="create",
         summary=subphase.name,
     )
+    await change_notifications.deliver(
+        db,
+        request,
+        user.id,
+        change_notifications.card_added_intents(
+            user,
+            project_id=project_id,
+            entity_type="subphase",
+            entity_id=subphase.id,
+            name=subphase.name,
+            start=subphase.start_date,
+            end=subphase.end_date,
+        ),
+    )
 
     return {
         "id": subphase.id,
@@ -1323,10 +1625,12 @@ async def update_subphase(
         raise HTTPException(status_code=404, detail="Subphase not found")
 
     project_id = subphase.project_id
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
 
     if data.name is not None:
         subphase.name = data.name
+    old_dates = (subphase.start_date, subphase.end_date)
     if data.start_date is not None:
         subphase.start_date = data.start_date
     if data.end_date is not None:
@@ -1345,6 +1649,27 @@ async def update_subphase(
         apply_completion(subphase, data.completion if data.completion is not None else 0)
     if data.status is not None:
         apply_status(subphase, data.status)
+    # Only a move of the start or end notifies (not a rename, dependency,
+    # status, completion or milestone change).
+    new_dates = (subphase.start_date, subphase.end_date)
+    intents = (
+        change_notifications.card_moved_intents(
+            user,
+            project_id=project_id,
+            entity_type="subphase",
+            entity_id=subphase_id,
+            name=subphase.name,
+            old=old_dates,
+            new=new_dates,
+            bookers=await change_notifications.card_bookings(db, "subphase", subphase_id),
+        )
+        if new_dates != old_dates
+        else []
+    )
+    # Unlinked segments follow the card: translated on a move, clamped on a
+    # shrink (fit_segments_to_card), in this transaction.
+    if new_dates != old_dates:
+        await approvals.fit_card_bookings(db, "subphase", subphase_id, old_dates, new_dates)
 
     await db.commit()
 
@@ -1357,6 +1682,7 @@ async def update_subphase(
         project_id=project_id,
         action="update",
     )
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 
@@ -1381,9 +1707,19 @@ async def delete_subphase(
 
     project_id = target.project_id
     sp_name = target.name
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
 
     all_ids = [subphase_id] + await collect_descendant_subphase_ids(db, subphase_id, "subphase")
+    effects = await approvals.cancel_for_entity(
+        db, user, project_id=project_id, subphase_ids=all_ids
+    )
+    intents = change_notifications.card_deleted_intents(
+        user,
+        project_id=project_id,
+        name=sp_name,
+        bookers=await change_notifications.approved_bookers(db, subphase_ids=all_ids),
+    )
     await delete_subphases_and_dependents(db, all_ids)
 
     await db.commit()
@@ -1397,6 +1733,8 @@ async def delete_subphase(
         action="delete",
         summary=sp_name,
     )
+    await approvals.publish(request, user, effects)
+    await change_notifications.deliver(db, request, user.id, intents)
 
     return {"success": True}
 
@@ -1420,6 +1758,7 @@ async def reorder_subphases(
         project_id = await project_id_for_phase(db, parent_id)
     else:
         project_id = await project_id_for_subphase(db, parent_id)
+    await ensure_project_visible(request, db, user, project_id)
     await require_project_editor(db, user, project_id)
 
     for index, subphase_id in enumerate(data.subphase_order):

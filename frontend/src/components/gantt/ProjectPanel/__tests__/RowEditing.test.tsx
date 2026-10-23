@@ -18,6 +18,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import type { CustomColumn, Phase, Project, Subphase } from '@/types';
+import { makeUser } from '@/test/factories';
 
 const { updatePhase, updateSubphase, setCustomColumnValue } = vi.hoisted(() => ({
   // The update routes answer {success: true}: no status is echoed
@@ -147,7 +148,7 @@ beforeEach(() => {
 describe('completion slider keeps status in step', () => {
   it('moves a phase to done when it is set to 100%', async () => {
     const phase = makePhase();
-    useAppStore.setState({ projects: [makeProject([phase])], currentUser: { id: 1, role: 'admin' } as never });
+    useAppStore.setState({ projects: [makeProject([phase])], currentUser: makeUser({ id: 1, role: 'admin' }) });
     renderPhase(phase);
 
     await setCompletion('50%', '100%');
@@ -161,7 +162,7 @@ describe('completion slider keeps status in step', () => {
     const sub = makeSubphase();
     useAppStore.setState({
       projects: [makeProject([makePhase({ children: [sub] })])],
-      currentUser: { id: 1, role: 'admin' } as never,
+      currentUser: makeUser({ id: 1, role: 'admin' }),
     });
     const { unmount } = renderSubphase(sub);
 
@@ -182,7 +183,7 @@ describe('completion slider keeps status in step', () => {
   it('prefers a status echoed by the server', async () => {
     updatePhase.mockResolvedValueOnce({ status: 'blocked' });
     const phase = makePhase();
-    useAppStore.setState({ projects: [makeProject([phase])], currentUser: { id: 1, role: 'admin' } as never });
+    useAppStore.setState({ projects: [makeProject([phase])], currentUser: makeUser({ id: 1, role: 'admin' }) });
     renderPhase(phase);
 
     await setCompletion('50%', '75%');
@@ -194,7 +195,7 @@ describe('completion slider keeps status in step', () => {
 describe('custom-column values for a plain user', () => {
   it('can be edited by a user who cannot edit the project', async () => {
     const phase = makePhase();
-    useAppStore.setState({ projects: [makeProject([phase])], currentUser: { id: 43, role: 'user' } as never });
+    useAppStore.setState({ projects: [makeProject([phase])], currentUser: makeUser({ id: 43, role: 'user' }) });
     const { container } = renderPhase(phase, [column]);
 
     // The project itself stays read-only for this user

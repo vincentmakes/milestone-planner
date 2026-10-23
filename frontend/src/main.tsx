@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { IconStyles } from './components/common/Icon/IconStyles';
 import { initTheme } from './utils/storage';
 import { configureApiClient } from './api/client';
 import { useWhatIfStore } from './stores/whatIfStore';
@@ -21,6 +22,8 @@ configureApiClient({
 // Render the app
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <IconStyles>
+      <App />
+    </IconStyles>
   </StrictMode>
 );

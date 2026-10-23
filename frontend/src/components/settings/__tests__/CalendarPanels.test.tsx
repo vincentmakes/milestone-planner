@@ -16,7 +16,9 @@ import { CompanyEventsPanel } from '../panels/CompanyEventsPanel';
 import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { stubConfirm } from '@/test/confirmDialog';
+import { dateValue, dayButton, openDateField, pickDate, pickEnd, showMonth } from '@/test/datePicker';
 import type { BankHoliday, CompanyEvent, Site, User } from '@/types';
+import { makeTeam } from '@/test/factories';
 
 const api = vi.hoisted(() => ({
   getBankHolidays: vi.fn(),
@@ -47,6 +49,7 @@ const admin: User = {
   name: 'Ada Admin',
   role: 'admin',
   active: true,
+  is_resource: false,
   site_ids: [1, 2],
 };
 
@@ -94,7 +97,7 @@ beforeEach(() => {
   api.buildEventDateSet.mockReturnValue(new Set());
   api.getBankHolidays.mockResolvedValue([holiday]);
   api.getCompanyEvents.mockImplementation(async (siteId: number) => (siteId === 1 ? [audit] : []));
-  useAppStore.setState({ currentUser: admin, sites: [siteA, siteB], currentSite: null });
+  useAppStore.setState({ currentUser: admin, sites: [siteA, siteB], currentSite: null, teams: [] });
   useWhatIfStore.setState({ whatIfMode: false });
 });
 
@@ -239,16 +242,46 @@ describe('Calendar delete confirmations', () => {
   });
 });
 
-describe('CompanyEventsPanel date validation', () => {
-  it('shows its own message for an end date before the start (no browser min-date block)', async () => {
+describe('CompanyEventsPanel dates', () => {
+  it("does not mark the header site's holidays and closures in its calendar", async () => {
     render(<CompanyEventsPanel />);
     fireEvent.click(await screen.findByRole('button', { name: 'Edit ISO Audit' }));
-    fireEvent.change(screen.getByLabelText('End date (optional)'), { target: { value: '2026-05-01' } });
+    act(() =>
+      useAppStore.setState({
+        bankHolidays: [holiday],
+        bankHolidayDates: new Set(['2026-05-12', '2026-05-14']),
+        closureIndex: new Map([['2026-05-15', [audit]]]),
+      })
+    );
+    const panel = openDateField('Start date');
+    showMonth(panel, '2026-05-01');
+    expect(dayButton(panel, '2026-05-12')).toBeInTheDocument();
+    expect(panel.querySelector('[class*="holiday"], [class*="closure"]')).toBeNull();
+  });
+
+  // The rule itself is proven in dateRangeLogic.test; this guards the form's payload wiring
+  it('never lets the end precede the start', async () => {
+    api.updateCompanyEvent.mockResolvedValue({});
+    render(<CompanyEventsPanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit ISO Audit' }));
+    expect(dateValue('Start date')).toBe('2026-05-12');
+    expect(dateValue('End date (optional)')).toBe('');
+
+    // An end picked before the start becomes the new start; the end is still to pick
+    pickEnd('End date (optional)', '2026-05-01');
+    expect(dateValue('Start date')).toBe('2026-05-01');
+    expect(dateValue('End date (optional)')).toBe('');
+    pickEnd('End date (optional)', '2026-05-03');
+    expect(dateValue('End date (optional)')).toBe('2026-05-03');
 
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
-
-    expect(screen.getByRole('alert')).toHaveTextContent('End date must be on or after the start date');
-    expect(api.updateCompanyEvent).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(api.updateCompanyEvent).toHaveBeenCalledWith(
+        5,
+        expect.objectContaining({ date: '2026-05-01', end_date: '2026-05-03' })
+      )
+    );
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
 
@@ -275,7 +308,7 @@ describe('Calendar forms report unsaved input', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Add holiday/ }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Founders Day' } });
-    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-06-01' } });
+    pickDate('Date', '2026-06-01');
     const form = screen.getByLabelText('Name').closest('form')!;
     fireEvent.submit(form);
     fireEvent.submit(form);
@@ -329,10 +362,75 @@ describe('CompanyEventsPanel filters and form fields', () => {
     expect(year).toHaveValue('all');
 
     fireEvent.click(screen.getByRole('button', { name: /Add event/ }));
-    const end = screen.getByLabelText('End date (optional)');
-    expect(end).not.toHaveAttribute('min');
-    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-07-01' } });
-    expect(screen.getByLabelText('Start date')).toHaveValue('2026-07-01');
-    expect(end).toHaveAttribute('min', '2026-07-01');
+    expect(screen.getByLabelText('End date (optional)')).toHaveAttribute('placeholder', 'Same day');
+    pickDate('Start date', '2026-07-01');
+    expect(dateValue('Start date')).toBe('2026-07-01');
+    pickEnd('End date (optional)', '2026-06-29');
+    expect(dateValue('Start date')).toBe('2026-06-29');
+    expect(dateValue('End date (optional)')).toBe('');
+  });
+
+  it('sends the teams a closure is limited to and explains who is unavailable', async () => {
+    api.createCompanyEventMultiSite.mockResolvedValue({});
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1, name: 'Analytics' }), makeTeam({ id: 3, site_id: 2, name: 'Line B' })],
+    });
+    render(<CompanyEventsPanel />);
+    await screen.findByText('ISO Audit');
+    fireEvent.click(screen.getByRole('button', { name: /Add event/ }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Team offsite' } });
+    pickDate('Start date', '2026-07-01');
+    fireEvent.click(screen.getByRole('switch', { name: /Site closure/ }));
+
+    const hint = 'Only members of the ticked teams are unavailable.';
+    fireEvent.click(screen.getByRole('switch', { name: 'Whole site' }));
+    expect(screen.queryByText(hint)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Analytics' }));
+    expect(screen.getByText(hint)).toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByLabelText('Name').closest('form')!).getByRole('button', { name: 'Add event' }));
+    await waitFor(() =>
+      expect(api.createCompanyEventMultiSite).toHaveBeenCalledWith(
+        expect.objectContaining({ site_ids: [1], counts_as_unavailable: true, team_ids: [1] })
+      )
+    );
+  });
+});
+
+describe('CompanyEventsPanel teams column', () => {
+  it('shows the teams an event is limited to, and "Whole site" for the others', async () => {
+    const offsite = {
+      ...audit,
+      id: 6,
+      name: 'Formulation offsite',
+      site_id: 2,
+      site_ids: [2],
+      team_ids: [7],
+    } as CompanyEvent;
+    api.getCompanyEvents.mockImplementation(async (siteId: number) => (siteId === 1 ? [audit] : [offsite]));
+    useAppStore.setState({
+      teams: [makeTeam({ id: 7, site_id: 2, name: 'Formulation', color: '#10b981' })],
+    });
+    render(<CompanyEventsPanel />);
+
+    expect(await screen.findByRole('columnheader', { name: 'Teams' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Site'), { target: { value: 'all' } });
+    const offsiteRow = (await screen.findByText('Formulation offsite')).closest('tr')!;
+    const chip = within(offsiteRow).getByText('Formulation');
+    expect(chip.closest('[title]')).toHaveAttribute('title', 'Formulation · Zurich');
+    expect(within(offsiteRow).queryByText('Whole site')).not.toBeInTheDocument();
+
+    const auditRow = screen.getByText('ISO Audit').closest('tr')!;
+    expect(within(auditRow).getByText('Whole site')).toBeInTheDocument();
+  });
+
+  it('counts the teams when none of them is loaded', async () => {
+    api.getCompanyEvents.mockImplementation(async (siteId: number) =>
+      siteId === 1 ? [{ ...audit, team_ids: [40, 41] } as CompanyEvent] : []
+    );
+    render(<CompanyEventsPanel />);
+    const row = (await screen.findByText('ISO Audit')).closest('tr')!;
+    expect(within(row).getByText('2 teams')).toBeInTheDocument();
+    expect(within(row).queryByText('Whole site')).not.toBeInTheDocument();
   });
 });

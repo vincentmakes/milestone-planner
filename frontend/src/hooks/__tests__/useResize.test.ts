@@ -28,6 +28,7 @@ import {
 } from '@/api/endpoints/projects';
 import { makePhase, makeProject, makeSubphase, makeUser } from '@/test/factories';
 import type { Project } from '@/types';
+import { USER_DEFAULTS } from '@/test/permissionFixtures';
 
 function buildProject(): Project {
   return makeProject({
@@ -267,13 +268,40 @@ describe('useResize: bookings', () => {
     move(240);
     up();
     await waitFor(() =>
-      expect(updateStaffAssignment).toHaveBeenCalledWith(50, {
-        start_date: '2026-03-02',
-        end_date: '2026-03-08',
-        allocation: 40,
-      })
+      expect(updateStaffAssignment).toHaveBeenCalledWith(
+        50,
+        { start_date: '2026-03-02', end_date: '2026-03-08', allocation: 40 },
+        'project'
+      )
     );
     expect(useAppStore.getState().projects[0].staffAssignments[0].end_date).toBe('2026-03-08');
+  });
+
+  it('brings the server state back when the own resize was sent for approval (202)', async () => {
+    marchCells();
+    useAppStore.setState({
+      currentUser: makeUser({
+        id: 4,
+        role: 'user',
+        permissions: USER_DEFAULTS.filter((k) => k !== 'assignments.self_update'),
+        approval_required: ['assignments.self_update'],
+      }),
+    });
+    const server = buildProject();
+    vi.mocked(updateStaffAssignment).mockResolvedValueOnce({ success: true, pending: true, request_id: 31, id: 50 });
+    vi.mocked(loadAllProjects).mockResolvedValueOnce([server]);
+    const bar = makeBar({ assignmentId: '50' }, 30, 150);
+    const { result } = renderHook(() => useResize());
+    act(() =>
+      result.current.startStaffAssignmentResize(mouseDown(bar, 180), 50, 1, 'right', '2026-03-02', '2026-03-06', bar, 4)
+    );
+    move(240);
+    up();
+    await waitFor(() => expect(useUIStore.getState().flashNotice?.message).toBe('Sent for approval'));
+    expect(useAppStore.getState().projects).toEqual([server]);
+    expect(useAppStore.getState().projects[0].staffAssignments[0].end_date).toBe('2026-03-06');
+    expect(useUndoStore.getState().undoStack).toEqual([]);
+    await waitFor(() => expect(useUIStore.getState().isResizing).toBe(false));
   });
 
   it('resizes an equipment booking from the left', async () => {
@@ -312,6 +340,19 @@ describe('useResize: bookings', () => {
 });
 
 describe('useResize: guards and failures', () => {
+  it('resizes an equipment booking with equipment_bookings.manage, not with projects.edit_any', () => {
+    const bar = makeBar({ phaseId: '10' }, 30, 150);
+    useAppStore.setState({ currentUser: makeUser({ id: 31, role: 'editor', permissions: ['projects.view', 'projects.edit_any'] }) });
+    const { result, rerender } = renderHook(() => useResize());
+    act(() => result.current.startEquipmentAssignmentResize(mouseDown(bar, 0), 60, 1, 'left', '2026-03-02', '2026-03-04', bar));
+    expect(useUIStore.getState().isResizing).toBe(false);
+
+    act(() => useAppStore.setState({ currentUser: makeUser({ id: 30, role: 'booker', permissions: ['projects.view', 'equipment_bookings.manage'] }) }));
+    rerender();
+    act(() => result.current.startEquipmentAssignmentResize(mouseDown(bar, 0), 60, 1, 'left', '2026-03-02', '2026-03-04', bar));
+    expect(useUIStore.getState().isResizing).toBe(true);
+  });
+
   it('does not start without edit rights or in the read-only views', () => {
     const bar = makeBar({ phaseId: '10' }, 30, 150);
     const { result } = renderHook(() => useResize());
@@ -429,6 +470,132 @@ describe('useResize: touch', () => {
     touchEnd();
     expect(bar.style.width).toBe('150px');
     await Promise.resolve();
+    expect(updateStaffAssignment).not.toHaveBeenCalled();
+  });
+});
+
+describe('useResize: unlinked card bookings', () => {
+  /** Phase 10 (Mar 2-6): segment 70 (Mar 3-4) and linked row 71; subphase 20 (Mar 2-4): its own row 70. */
+  function withSegments(): Project {
+    const project = buildProject();
+    project.phases[0].staffAssignments = [
+      { id: 70, staff_id: 4, allocation: 50, start_date: '2026-03-03', end_date: '2026-03-04', linked: false },
+      { id: 71, staff_id: 5, allocation: 30, start_date: '2026-03-02', end_date: '2026-03-06', linked: true },
+    ];
+    project.phases[0].children[0].staffAssignments = [
+      { id: 70, staff_id: 4, allocation: 20, start_date: '2026-03-04', end_date: '2026-03-04', linked: false },
+    ];
+    return project;
+  }
+  const phaseBooking = { level: 'phase' as const, bounds: { start: '2026-03-02', end: '2026-03-06' } };
+
+  beforeEach(() => {
+    useAppStore.setState({ projects: [withSegments()] });
+  });
+
+  it('stops the right edge at the card end and PUTs to the phase route', async () => {
+    marchCells();
+    const bar = makeBar({ assignmentId: '70' }, 60, 60); // Mar 3 .. Mar 4
+    const { result } = renderHook(() => useResize());
+    act(() =>
+      result.current.startStaffAssignmentResize(mouseDown(bar, 120), 70, 1, 'right', '2026-03-03', '2026-03-04', bar, 4, phaseBooking)
+    );
+    move(520);
+    expect(bar.style.width).toBe('120px'); // up to the end of Mar 6
+    up();
+    await waitFor(() =>
+      expect(updateStaffAssignment).toHaveBeenCalledWith(
+        70,
+        { start_date: '2026-03-03', end_date: '2026-03-06', allocation: 50 },
+        'phase'
+      )
+    );
+    expect(useAppStore.getState().projects[0].phases[0].staffAssignments[0].end_date).toBe('2026-03-06');
+    // Same id, other level: untouched
+    expect(useAppStore.getState().projects[0].phases[0].children[0].staffAssignments[0].end_date).toBe('2026-03-04');
+  });
+
+  it('stops the left edge at the card start', async () => {
+    marchCells();
+    const bar = makeBar({ assignmentId: '70' }, 60, 60);
+    const { result } = renderHook(() => useResize());
+    act(() =>
+      result.current.startStaffAssignmentResize(mouseDown(bar, 60), 70, 1, 'left', '2026-03-03', '2026-03-04', bar, 4, phaseBooking)
+    );
+    move(-200);
+    expect(bar.style.left).toBe('30px'); // Mar 2
+    expect(bar.style.width).toBe('90px');
+    up();
+    await waitFor(() =>
+      expect(updateStaffAssignment).toHaveBeenCalledWith(
+        70,
+        { start_date: '2026-03-02', end_date: '2026-03-04', allocation: 50 },
+        'phase'
+      )
+    );
+  });
+
+  it('clamps the commit to the card without the header cells too', async () => {
+    const bar = makeBar({ assignmentId: '70' }, 60, 60);
+    const { result } = renderHook(() => useResize());
+    act(() =>
+      result.current.startStaffAssignmentResize(mouseDown(bar, 120), 70, 1, 'right', '2026-03-03', '2026-03-04', bar, 4, phaseBooking)
+    );
+    move(420); // +10 days
+    up();
+    await waitFor(() =>
+      expect(updateStaffAssignment).toHaveBeenCalledWith(
+        70,
+        { start_date: '2026-03-03', end_date: '2026-03-06', allocation: 50 },
+        'phase'
+      )
+    );
+  });
+
+  it('says why a refused segment resize failed', async () => {
+    marchCells();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(updateStaffAssignment).mockRejectedValueOnce(new Error('Booking dates must lie within the phase'));
+    const bar = makeBar({ assignmentId: '70' }, 60, 60);
+    const { result } = renderHook(() => useResize());
+    act(() =>
+      result.current.startStaffAssignmentResize(mouseDown(bar, 120), 70, 1, 'right', '2026-03-03', '2026-03-04', bar, 4, phaseBooking)
+    );
+    move(150);
+    up();
+    await waitFor(() => expect(useUIStore.getState().flashNotice?.message).toBe('Booking dates must lie within the phase'));
+    await waitFor(() => expect(loadAllProjects).toHaveBeenCalled());
+  });
+
+  it('shortening a phase clamps its unlinked segments locally, without writing them', async () => {
+    marchCells();
+    const bar = makeBar({ phaseId: '10' }, 30, 150);
+    const { result } = renderHook(() => useResize());
+    act(() => result.current.startPhaseResize(mouseDown(bar, 180), 10, 1, 'right', '2026-03-02', '2026-03-06', bar));
+    move(90); // end Mar 3
+    up();
+    await waitFor(() => expect(updatePhase).toHaveBeenCalledWith(10, { start_date: '2026-03-02', end_date: '2026-03-03' }));
+    await waitFor(() => expect(useUIStore.getState().isResizing).toBe(false));
+    const phase = useAppStore.getState().projects[0].phases[0];
+    // The server clamps them itself in the phase PUT: no segment write
+    expect(phase.staffAssignments[0]).toMatchObject({ start_date: '2026-03-03', end_date: '2026-03-03' });
+    expect(phase.staffAssignments[1].end_date).toBe('2026-03-03'); // the linked row follows locally
+    expect(updateStaffAssignment).not.toHaveBeenCalled();
+  });
+
+  it('shortening a subphase clamps its segments locally too', async () => {
+    marchCells();
+    const bar = makeBar({ subphaseId: '20' }, 30, 90); // Mar 2 .. Mar 4
+    const { result } = renderHook(() => useResize());
+    act(() => result.current.startSubphaseResize(mouseDown(bar, 120), 20, 1, 'right', '2026-03-02', '2026-03-04', bar));
+    move(90); // end Mar 3
+    up();
+    await waitFor(() => expect(updateSubphase).toHaveBeenCalledWith(20, { start_date: '2026-03-02', end_date: '2026-03-03' }));
+    await waitFor(() => expect(useUIStore.getState().isResizing).toBe(false));
+    expect(useAppStore.getState().projects[0].phases[0].children[0].staffAssignments[0]).toMatchObject({
+      start_date: '2026-03-03',
+      end_date: '2026-03-03',
+    });
     expect(updateStaffAssignment).not.toHaveBeenCalled();
   });
 });

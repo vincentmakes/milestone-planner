@@ -49,12 +49,29 @@ export default defineConfig({
       // Floors just under the measured totals, raised in any PR that lifts
       // the number and never lowered. `vitest run --coverage` fails below
       // them. Set from the CI totals (Node 24, 2026-10-16: lines 88.4,
-      // statements 87.16, functions 87.8, branches 76.59), not a local run.
+      // statements 87.16, functions 87.8, branches 76.59). Raised with 1.13.0
+      // from a local Node 25 run (lines 91.38, statements 90.27, functions
+      // 91.84, branches 81.28), with room for Node 24 and the merged CI shards.
+      // Raised with the date picker by its lift on the same local run (lines
+      // 91.51, statements 90.4, functions 91.98, branches 81.55), then with
+      // 1.14.0 to 0.3 under the local totals (lines 91.6, statements 90.48,
+      // functions 91.97, branches 81.59), rounded down; with the admin
+      // defaults likewise (lines 91.78, statements 90.67, functions 92.2,
+      // branches 81.88); with the per-person booking rows of 1.17.0 (local
+      // lines 92.2, statements 91.08, functions 92.44, branches 82.64);
+      // with the project fields of 2.0.0, 0.3 under the local totals (lines
+      // 92.7, statements 91.61, functions 93.32, branches 83.14); with its
+      // follow-up (second bookings, multi-select dropdown), the same rule on
+      // lines 92.78, statements 91.69, functions 93.35, branches 83.23;
+      // with My Work and the booking comments, the same rule on lines 92.85,
+      // statements 91.78, functions 93.42, branches 83.41 (only branches moves);
+      // with the searchable people pickers, the same rule on lines 92.9,
+      // statements 91.83, functions 93.48, branches 83.66.
       thresholds: {
-        lines: 89.8,
-        statements: 88.6,
-        functions: 90.1,
-        branches: 78.6,
+        lines: 92.6,
+        statements: 91.5,
+        functions: 93.1,
+        branches: 83.3,
       },
     },
   },

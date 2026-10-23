@@ -2,7 +2,8 @@
 Route tests for /api/skills — skill CRUD and per-user skill assignment.
 
 Mock-based, house style (tests/conftest.py): reads are open to any
-authenticated user, writes need superuser/admin (require_superuser).
+authenticated user; definitions need ``skills.manage``, per-user assignment
+``skills.assign`` on a user the caller may edit.
 """
 
 from datetime import datetime
@@ -520,3 +521,92 @@ async def test_remove_user_skill_forbidden_for_plain_user(authed_client, mock_db
 
     assert (await client.delete("/api/skills/user/9/4")).status_code == 403
     mock_db_session.execute.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# skills.assign: only on users the caller may edit
+# ---------------------------------------------------------------------------
+
+
+def make_admin(user_id: int = 2) -> User:
+    user = make_user(user_id)
+    user.role = "admin"
+    return user
+
+
+@pytest.mark.asyncio
+async def test_superuser_cannot_set_an_admins_skills(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "superuser"))
+    mock_db_session.execute.side_effect = [scalar_result(make_admin())]
+
+    response = await client.put("/api/skills/user/2", json={"skill_ids": [1]})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Permission required: users.edit_admins"
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_superuser_cannot_add_a_skill_to_an_admin(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "superuser"))
+    mock_db_session.execute.side_effect = [scalar_result(make_admin())]
+
+    response = await client.post("/api/skills/user/2/4")
+
+    assert response.status_code == 403
+    mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_superuser_cannot_remove_an_admins_skill(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "superuser"))
+    mock_db_session.execute.side_effect = [scalar_result("admin")]  # the target's role
+
+    response = await client.delete("/api/skills/user/2/4")
+
+    assert response.status_code == 403
+    assert mock_db_session.execute.await_count == 1  # the DELETE never ran
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_superuser_removes_a_plain_users_skill(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "superuser"))
+    mock_db_session.execute.side_effect = [
+        scalar_result("user"),  # the target's role
+        rowcount_result(1),
+        scalar_result(make_user(9)),
+        rows_result([]),
+    ]
+
+    response = await client.delete("/api/skills/user/9/4")
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_removing_a_skill_of_an_unknown_user_is_404(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "superuser"))
+    mock_db_session.execute.side_effect = [scalar_result(None)]
+
+    response = await client.delete("/api/skills/user/9/4")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "User not found"
+
+
+@pytest.mark.asyncio
+async def test_skills_assign_without_users_edit_is_refused(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "skills_clerk", {"skills.assign"}))
+    mock_db_session.execute.side_effect = [scalar_result(make_user(9))]
+
+    response = await client.put("/api/skills/user/9", json={"skill_ids": [1]})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Permission required: users.edit"

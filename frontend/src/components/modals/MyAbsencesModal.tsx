@@ -11,7 +11,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
-import { BackIcon, PlusIcon, UploadIcon } from '@/components/settings/panels/PanelIcons';
+import { Icon, BackIcon, PlusIcon, UploadIcon } from '@/components/common/Icon';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore, selectAbsenceTypesById } from '@/stores/appStore';
 import { deleteVacation, getVacations } from '@/api/endpoints/vacations';
@@ -192,7 +192,7 @@ export function MyAbsencesModal() {
           <Button
             type="button"
             variant="primary"
-            icon={<PlusIcon />}
+            icon={<Icon icon={PlusIcon} />}
             onClick={handleAdd}
             disabled={!!addBlockedReason}
             title={addBlockedReason ?? undefined}
@@ -202,7 +202,7 @@ export function MyAbsencesModal() {
           <Button
             type="button"
             variant="secondary"
-            icon={showImport ? <BackIcon /> : <UploadIcon />}
+            icon={showImport ? <Icon icon={BackIcon} size={14} /> : <Icon icon={UploadIcon} size={14} />}
             onClick={() => setShowImport((v) => !v)}
             aria-pressed={showImport}
           >

@@ -6,16 +6,21 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useDataLoader } from '../useDataLoader';
+import { selectSite, useDataLoader } from '../useDataLoader';
+import { ApiError } from '@/api/client';
+import { mentionableUsersFor } from '@/api/endpoints/mentionableCache';
 import { resetAllStores, useAppStore, useCustomColumnStore } from '@/stores';
 import * as api from '@/api';
 import {
   makeCustomColumn,
   makeEquipment,
   makeProject,
+  makeProjectField,
   makeSite,
   makeStaff,
   makeTag,
+  makeTeam,
+  makeUser,
   makeVacation,
 } from '@/test/factories';
 
@@ -33,7 +38,8 @@ vi.mock('@/api', async (importOriginal) => ({
   getCustomColumnsWithValues: vi.fn(),
   skillsApi: { getAll: vi.fn() },
   tagsApi: { getAll: vi.fn() },
-  tagGroupsApi: { getAll: vi.fn() },
+  projectFieldsApi: { getAll: vi.fn() },
+  teamsApi: { getAll: vi.fn() },
   absenceTypesApi: { getAll: vi.fn() },
 }));
 
@@ -66,14 +72,15 @@ function happyPath() {
   } as never);
   vi.mocked(m.skillsApi.getAll).mockResolvedValue([{ id: 1, name: 'HPLC', color: '#000' }]);
   vi.mocked(m.tagsApi.getAll).mockResolvedValue([makeTag()]);
-  vi.mocked(m.tagGroupsApi.getAll).mockResolvedValue([]);
+  vi.mocked(m.projectFieldsApi.getAll).mockResolvedValue([makeProjectField()]);
+  vi.mocked(m.teamsApi.getAll).mockResolvedValue([makeTeam()]);
   vi.mocked(m.absenceTypesApi.getAll).mockResolvedValue([absenceType]);
 }
 
 beforeEach(() => {
   resetAllStores();
   vi.clearAllMocks();
-  useAppStore.setState({ _persistedSiteId: null });
+  useAppStore.setState({ _persistedSiteId: null, currentUser: makeUser() });
   happyPath();
 });
 
@@ -91,6 +98,9 @@ describe('useDataLoader.loadAllData', () => {
     expect(s.vacations).toHaveLength(1);
     expect(s.skills).toHaveLength(1);
     expect(s.tags).toHaveLength(1);
+    expect(s.projectFields).toEqual([makeProjectField()]);
+    expect(m.teamsApi.getAll).toHaveBeenCalledWith();
+    expect(s.teams).toEqual([makeTeam()]);
     expect(s.absenceTypes).toEqual([absenceType]);
     expect(s.instanceSettings).toEqual({ instance_title: 'Lab' });
     expect(s.currentSite?.id).toBe(1);
@@ -118,15 +128,54 @@ describe('useDataLoader.loadAllData', () => {
     expect(useAppStore.getState().currentSite?.id).toBe(1);
   });
 
+  it('opens a site the user can see, never a persisted one outside', async () => {
+    useAppStore.setState({ _persistedSiteId: 1, currentUser: makeUser({ role: 'superuser', site_ids: [3] }) });
+    const { result } = renderHook(() => useDataLoader());
+    await act(() => result.current.loadAllData());
+    expect(useAppStore.getState().currentSite?.id).toBe(3);
+    expect(m.getBankHolidays).toHaveBeenCalledWith(3);
+  });
+
+  it('does not ask for equipment without views.equipment', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ role: 'viewer', permissions: ['projects.view'], can_see_all_sites: true }),
+      equipment: [makeEquipment()],
+    });
+    const { result } = renderHook(() => useDataLoader());
+    await act(() => result.current.loadAllData());
+    expect(result.current.error).toBeNull();
+    expect(m.getEquipment).not.toHaveBeenCalled();
+    expect(m.getEquipmentBlocks).not.toHaveBeenCalled();
+    expect(useAppStore.getState().equipment).toEqual([]);
+    expect(useAppStore.getState().equipmentBlocks).toEqual([]);
+  });
+
+  it('treats a 403 on equipment as an empty slice, other failures as a load error', async () => {
+    m.getEquipment.mockRejectedValue(new ApiError('Permission required: views.equipment', 403));
+    const { result } = renderHook(() => useDataLoader());
+    await act(() => result.current.loadAllData());
+    expect(result.current.error).toBeNull();
+    expect(useAppStore.getState().equipment).toEqual([]);
+
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    m.getEquipment.mockRejectedValue(new ApiError('Server error', 500));
+    await act(() => result.current.loadAllData());
+    expect(result.current.error).toBe('Server error');
+    err.mockRestore();
+  });
+
   it('tolerates optional endpoints failing', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     m.getEquipmentBlocks.mockRejectedValue(new Error('x'));
     m.getInstanceSettings.mockRejectedValue(new Error('x'));
     vi.mocked(m.skillsApi.getAll).mockRejectedValue(new Error('x'));
     vi.mocked(m.tagsApi.getAll).mockRejectedValue(new Error('x'));
-    vi.mocked(m.tagGroupsApi.getAll).mockRejectedValue(new Error('x'));
+    vi.mocked(m.projectFieldsApi.getAll).mockRejectedValue(new Error('x'));
+    vi.mocked(m.teamsApi.getAll).mockRejectedValue(new Error('x'));
     vi.mocked(m.absenceTypesApi.getAll).mockRejectedValue(new Error('x'));
     m.getCustomColumnsWithValues.mockRejectedValue(new Error('no columns'));
+    // Seeded so `teams` ending up empty proves the failed load was caught and cleared.
+    useAppStore.setState({ teams: [makeTeam()] });
 
     const { result } = renderHook(() => useDataLoader());
     await act(() => result.current.loadAllData());
@@ -135,6 +184,7 @@ describe('useDataLoader.loadAllData', () => {
     const s = useAppStore.getState();
     expect(s.equipmentBlocks).toEqual([]);
     expect(s.skills).toEqual([]);
+    expect(s.teams).toEqual([]);
     expect(s.instanceSettings).toBeNull();
     expect(s.projects).toHaveLength(1);
     expect(warn).toHaveBeenCalledWith('[DataLoader] Failed to load custom columns:', expect.any(Error));
@@ -175,6 +225,7 @@ describe('useDataLoader refreshers', () => {
       await result.current.refreshStaff();
       await result.current.refreshEquipmentBlocks();
       await result.current.refreshAbsenceTypes();
+      await result.current.refreshTeams();
     });
     const s = useAppStore.getState();
     expect(s.projects).toHaveLength(1);
@@ -186,17 +237,43 @@ describe('useDataLoader refreshers', () => {
     expect(s.staff).toHaveLength(1);
     expect(m.getEquipmentBlocks).toHaveBeenCalled();
     expect(s.absenceTypes).toEqual([absenceType]);
+    expect(s.teams).toEqual([makeTeam()]);
+  });
+
+  it('refreshStaff clears the cached @-mention lists', async () => {
+    const load = vi.fn().mockResolvedValue([]);
+    await mentionableUsersFor(1, load);
+    const { result } = renderHook(() => useDataLoader());
+    await act(() => result.current.refreshStaff());
+    await mentionableUsersFor(1, load);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it('empties the equipment blocks without views.equipment, without a request', async () => {
+    useAppStore.setState({
+      currentUser: makeUser({ role: 'viewer', permissions: ['projects.view'] }),
+      equipmentBlocks: [{ id: 1 } as never],
+    });
+    const { result } = renderHook(() => useDataLoader());
+    await act(() => result.current.refreshEquipmentBlocks());
+    expect(m.getEquipmentBlocks).not.toHaveBeenCalled();
+    expect(useAppStore.getState().equipmentBlocks).toEqual([]);
   });
 
   it('log and keep the current data when a refresh fails', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    useAppStore.setState({ projects: [makeProject({ id: 9 })], staff: [makeStaff({ id: 9 })] });
+    useAppStore.setState({
+      projects: [makeProject({ id: 9 })],
+      staff: [makeStaff({ id: 9 })],
+      teams: [makeTeam({ id: 9 })],
+    });
     m.loadAllProjects.mockRejectedValue(new Error('x'));
     m.getBankHolidays.mockRejectedValue(new Error('x'));
     m.getCustomColumnsWithValues.mockRejectedValue(new Error('x'));
     m.getStaff.mockRejectedValue(new Error('x'));
     m.getEquipmentBlocks.mockRejectedValue(new Error('x'));
     vi.mocked(m.absenceTypesApi.getAll).mockRejectedValue(new Error('x'));
+    vi.mocked(m.teamsApi.getAll).mockRejectedValue(new Error('x'));
 
     const { result } = renderHook(() => useDataLoader());
     await act(async () => {
@@ -206,10 +283,43 @@ describe('useDataLoader refreshers', () => {
       await result.current.refreshStaff();
       await result.current.refreshEquipmentBlocks();
       await result.current.refreshAbsenceTypes();
+      await result.current.refreshTeams();
     });
     expect(useAppStore.getState().projects.map((p) => p.id)).toEqual([9]);
     expect(useAppStore.getState().staff.map((p) => p.id)).toEqual([9]);
-    expect(err).toHaveBeenCalledTimes(6);
+    expect(useAppStore.getState().teams.map((t) => t.id)).toEqual([9]);
+    expect(err).toHaveBeenCalledTimes(7);
+    err.mockRestore();
+  });
+});
+
+describe('selectSite', () => {
+  it('switches site, clears the column filters and loads the site\'s calendar and columns', async () => {
+    useCustomColumnStore.setState({ customColumnFilters: { 1: ['High'] } });
+    const { result } = renderHook(() => useDataLoader());
+    expect(result.current.selectSite).toBe(selectSite);
+
+    await act(() => selectSite(sites[0]));
+
+    const s = useAppStore.getState();
+    expect(s.currentSite?.id).toBe(3);
+    expect(useCustomColumnStore.getState().customColumnFilters).toEqual({});
+    expect(m.getBankHolidays).toHaveBeenCalledWith(3);
+    expect(m.getCompanyEvents).toHaveBeenCalledWith(3);
+    expect(s.bankHolidayDates.has('2026-08-01')).toBe(true);
+    expect(m.getCustomColumnsWithValues).toHaveBeenCalledWith(3);
+    expect(useCustomColumnStore.getState().customColumnValues).toEqual({ '1-project-1': 'High' });
+  });
+
+  it('keeps going when one of the reloads fails', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    m.getBankHolidays.mockRejectedValue(new Error('h'));
+    m.getCompanyEvents.mockRejectedValue(new Error('e'));
+    m.getCustomColumnsWithValues.mockRejectedValue(new Error('c'));
+    await act(() => selectSite(sites[1]));
+    expect(useAppStore.getState().currentSite?.id).toBe(1);
+    expect(err).toHaveBeenCalledTimes(3);
+    expect(err).toHaveBeenCalledWith('[DataLoader] Failed to load custom columns:', expect.any(Error));
     err.mockRestore();
   });
 });

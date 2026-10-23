@@ -12,6 +12,7 @@ import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useReorder } from '@/contexts/ReorderContext';
 import { AssignmentRow } from './AssignmentRow';
+import { CardStaffRows } from './CardStaffRows';
 import { PhantomRow } from './PhantomRow';
 import { usePhantomSibling } from '@/hooks';
 import { CompletionSlider } from '@/components/gantt/CompletionSlider';
@@ -22,6 +23,7 @@ import { formatShortDateRange, formatSingleDate, daysBetweenDateStrings } from '
 import { canEditProject } from '@/utils/permissions';
 import type { Subphase, CustomColumn, CustomColumnEntityType } from '@/types';
 import styles from './SubphaseRow.module.css';
+import { Icon, ChevronRightIcon, DragDotsIcon } from '@/components/common/Icon';
 
 // Child entity info for cascading values
 interface ChildEntity {
@@ -119,7 +121,6 @@ export const SubphaseRow = memo(function SubphaseRow({
 }: SubphaseRowProps) {
   const expandedSubphases = useViewStore((s) => s.expandedSubphases);
   const toggleSubphaseExpanded = useViewStore((s) => s.toggleSubphaseExpanded);
-  const staff = useAppStore((s) => s.staff);
   const equipment = useAppStore((s) => s.equipment);
   const currentUser = useAppStore((s) => s.currentUser);
   const showAssignments = useViewStore((s) => s.showAssignments);
@@ -294,14 +295,7 @@ export const SubphaseRow = memo(function SubphaseRow({
               onDragEnd={handleDragEnd}
               title="Drag to reorder"
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="9" cy="6" r="2" />
-                <circle cx="15" cy="6" r="2" />
-                <circle cx="9" cy="12" r="2" />
-                <circle cx="15" cy="12" r="2" />
-                <circle cx="9" cy="18" r="2" />
-                <circle cx="15" cy="18" r="2" />
-              </svg>
+              <Icon icon={DragDotsIcon} size={12} />
             </div>
           )}
           {/* Expand button */}
@@ -311,16 +305,7 @@ export const SubphaseRow = memo(function SubphaseRow({
             disabled={!hasChildren}
           >
             {hasChildren && (
-              <svg
-                width="10"
-                height="10"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
+              <Icon icon={ChevronRightIcon} size={12} />
             )}
           </button>
 
@@ -420,27 +405,16 @@ export const SubphaseRow = memo(function SubphaseRow({
             criticalPathItems={criticalPathItems}
           />
 
-          {/* Subphase-level staff assignments - filtered by showAssignments */}
-          {showAssignments && (subphase.staffAssignments ?? []).map((assignment) => {
-            const staffMember = staff.find((s) => s.id === assignment.staff_id);
-            return (
-              <AssignmentRow
-                key={`staff-${assignment.id}`}
-                type="subphase-staff"
-                assignmentId={assignment.id}
-                projectId={projectId}
-                phaseId={phaseId}
-                subphaseId={subphase.id}
-                staffId={assignment.staff_id}
-                name={staffMember?.name || assignment.staff_name || 'Unknown'}
-                role={staffMember?.role}
-                allocation={assignment.allocation}
-                phaseType={subphase.name}
-                phaseColor={subphase.color}
-                depth={depth + 1}
-              />
-            );
-          })}
+          {/* Subphase-level staff bookings (a person with 2+ grouped) - filtered by showAssignments */}
+          {showAssignments && (
+            <CardStaffRows
+              level="subphase"
+              card={subphase}
+              projectId={projectId}
+              phaseId={phaseId}
+              depth={depth + 1}
+            />
+          )}
 
           {/* Subphase-level equipment assignments - filtered by showAssignments */}
           {showAssignments && (subphase.equipmentAssignments ?? []).map((assignment) => {

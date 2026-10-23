@@ -69,7 +69,7 @@ new tenant with the same data set as the Codespaces demo tenant and the document
 screenshots: two sites (Winterthur and Frankfurt), nine people with skills and part-time
 capacity, four projects with phases, nested subphases and dependencies, staff and equipment
 bookings, equipment blocks, Swiss and German bank holidays, a site closure, absences of every
-type, tag groups, custom columns, Kanban comments with mentions and notifications. Dates are
+type, project fields, tags, custom columns, Kanban comments with mentions and notifications. Dates are
 relative to the day you provision.
 
 - The tenant's admin e-mail becomes the demo's system administrator and signs in with the
@@ -248,6 +248,6 @@ The `TenantManager` service manages database connection pools for each active te
 | **Credential storage** | AES-256-GCM encryption for tenant DB credentials and for SSO client secrets (organization and tenant level) |
 | **Authentication** | Session-based with secure cookies; per-tenant user stores; failed-login throttle (10 per 15 min per IP + e-mail); deactivating, deleting or demoting a user ends their sessions and live connections at once |
 | **Error messages** | Health checks and tenant errors never reveal database hosts, users or SQL — details go to the server log |
-| **Authorization** | Role-based (Admin, Superuser, User) within each tenant |
+| **Authorization** | Roles with editable permissions within each tenant (Administrator, Superuser, User and custom roles), limited to each user's sites; own bookings can require approval |
 | **SSO** | Microsoft Entra ID configured per organization, shared across org's tenants |
 | **Admin access** | Separate admin user store in master database |

@@ -17,6 +17,7 @@ import { parseICS, readICSFile } from '@/utils/ics';
 import type { ParsedICSEvent, SkippedICSEvent } from '@/utils/ics';
 import type { CalendarImportResult } from '@/types';
 import styles from './ICSImportPanel.module.css';
+import { Icon, UploadIcon } from '@/components/common/Icon';
 
 /** Message for callers to pass as `disabledReason` while What-If mode is active. */
 export const ICS_IMPORT_WHAT_IF_MESSAGE =
@@ -328,11 +329,7 @@ export function ICSImportPanel<TExtra = undefined>({
             // The programmatic click bubbles to the drop zone; don't re-open.
             onClick={(e) => e.stopPropagation()}
           />
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="17 8 12 3 7 8" />
-            <line x1="12" y1="3" x2="12" y2="15" />
-          </svg>
+          <Icon icon={UploadIcon} size={24} />
           <span className={styles.dropZoneText}>Drop an .ics file here or click to browse</span>
           {hint && <span className={styles.dropZoneHint}>{hint}</span>}
         </div>

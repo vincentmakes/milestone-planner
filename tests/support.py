@@ -12,14 +12,31 @@ to queue on ``mock_db_session.execute.side_effect``::
     ]
 
 ``fake_websocket()`` gives a Starlette-shaped WebSocket double for the
-``app/websocket`` layer. Prefer these over redefining the helpers per file
+``app/websocket`` layer; ``ApprovalFakeDB`` (answers keyed by what a query
+selects -- ``"card_lock"`` then ``"placement"`` for ``approvals.plan_placement``) and its builders (``approval_request``,
+``pending_phase_row``, ``approvable_db``, ...) a statement-dispatching session
+for app/services/approvals.py. Prefer these over redefining the helpers per file
 (tests/test_domain_routes_misc.py keeps its own private copies).
 """
 
+from datetime import date
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+from sqlalchemy.sql.dml import Update
 from starlette.websockets import WebSocket, WebSocketState
+
+from app.models.assignment import (
+    PhaseStaffAssignment,
+    ProjectAssignment,
+    SubphaseStaffAssignment,
+)
+from app.models.notification import Notification
+from app.models.project import Project, ProjectPhase, ProjectSubphase
+from app.models.rbac import ApprovalPolicy, ApprovalRequest, RolePermission
+from app.models.user import User, UserSite
+from app.services.approvals import ACTION_CREATE
+from tests.conftest import FakeUser
 
 
 class _ScalarList(list):
@@ -45,6 +62,15 @@ def scalar_result(value: Any) -> MagicMock:
     result.scalar_one_or_none.return_value = value
     result.scalar.return_value = value
     result.scalar_one.return_value = value
+    return result
+
+
+def card_target_result(card: Any, archived: bool = False) -> MagicMock:
+    """Result of a comment thread's card lookup (the card joined to its project's
+    ``archived`` flag): ``one_or_none()`` returns ``(card, archived)``, or ``None``
+    for a missing card."""
+    result = MagicMock()
+    result.one_or_none.return_value = None if card is None else (card, archived)
     return result
 
 
@@ -92,3 +118,168 @@ def fake_websocket(
     ws.scope = {"type": "websocket", "path": "/ws", "state": {}, **(scope or {})}
     ws.client = MagicMock(host="127.0.0.1", port=50000)
     return ws
+
+
+# ---------------------------------------------------------------------------
+# Approval workflow fakes (tests/test_approvals_service.py,
+# tests/test_approvals_followups.py)
+# ---------------------------------------------------------------------------
+
+ADMIN_ID = 1
+REQUESTER_ID = 3
+PM_ID = 7
+
+
+def approval_admin(user_id: int = ADMIN_ID) -> FakeUser:
+    return FakeUser(user_id, "admin")
+
+
+def card_lock_result() -> MagicMock:
+    """Result of ``approvals.plan_placement``'s first statement: the card row
+    locked ``FOR UPDATE`` (never read), queued before the placement rows."""
+    return MagicMock()
+
+
+def dispatch_result(values: list) -> MagicMock:
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = values[0] if values else None
+    result.scalars.return_value.all.return_value = list(values)
+    result.first.return_value = values[0] if values else None
+    result.all.return_value = list(values)
+    return result
+
+
+_APPROVAL_ASSIGNMENT_MODELS = (ProjectAssignment, PhaseStaffAssignment, SubphaseStaffAssignment)
+
+
+class ApprovalFakeDB:
+    """Answers each SELECT by what it selects; records writes."""
+
+    def __init__(self, **answers):
+        self.answers: dict[str, list] = {key: list(value) for key, value in answers.items()}
+        self.added: list = []
+        self.deleted: list = []
+        self.updates: list = []
+        self.statements: list = []
+        self.commit = AsyncMock()
+        self._next_id = 100
+
+    def add(self, obj) -> None:
+        self.added.append(obj)
+
+    def add_all(self, objs) -> None:
+        self.added.extend(objs)
+
+    async def delete(self, obj) -> None:
+        self.deleted.append(obj)
+
+    async def flush(self) -> None:
+        for obj in self.added:
+            if getattr(obj, "id", None) is None:
+                obj.id = self._next_id
+                self._next_id += 1
+
+    @staticmethod
+    def key(stmt) -> str:
+        first = stmt.column_descriptions[0]
+        entity, name = first.get("entity"), first.get("name")
+        if entity is ApprovalRequest:
+            return "request"
+        if entity is Project:
+            return "context"
+        if entity is ApprovalPolicy:
+            return "policy"
+        if entity is User:
+            return "approvers" if name == "id" else "requester"
+        if entity is UserSite:
+            return "member"
+        if entity is RolePermission:
+            return "perms"
+        if entity in (ProjectPhase, ProjectSubphase) and name == "id":
+            # plan_placement: the card row locked FOR UPDATE on its own first.
+            return "card_lock"
+        if entity in (ProjectPhase, ProjectSubphase):
+            # plan_placement: the card's dates with the person's rows on it
+            # (locked FOR UPDATE), answered as (card_start, card_end, row) tuples.
+            return "placement"
+        if entity in _APPROVAL_ASSIGNMENT_MODELS:
+            return "row" if stmt._for_update_arg is not None else "duplicate"
+        raise AssertionError(f"unexpected query: {stmt}")
+
+    async def execute(self, stmt):
+        self.statements.append(stmt)
+        if isinstance(stmt, Update):
+            self.updates.append(stmt)
+            return MagicMock()
+        return dispatch_result(self.answers.get(self.key(stmt), []))
+
+    def queried(self, key: str) -> int:
+        return sum(1 for s in self.statements if not isinstance(s, Update) and self.key(s) == key)
+
+    @property
+    def notifications(self) -> list[Notification]:
+        return [obj for obj in self.added if isinstance(obj, Notification)]
+
+
+CARD_START = date(2026, 3, 2)
+CARD_END = date(2026, 3, 13)
+
+
+def approval_context(
+    *, pm_id=PM_ID, site_id=1, target=True, name="Design", start=CARD_START, end=CARD_END
+):
+    """A ``load_context`` row: project name, PM, site, target id / name and dates."""
+    return (
+        "Alpha",
+        pm_id,
+        site_id,
+        11 if target else None,
+        name if target else None,
+        start if target else None,
+        end if target else None,
+    )
+
+
+def approval_request(**fields) -> ApprovalRequest:
+    values = {
+        "id": 50,
+        "requester_id": REQUESTER_ID,
+        "action": ACTION_CREATE,
+        "project_id": 1,
+        "level": "phase",
+        "target_id": 11,
+        "assignment_id": 70,
+        "requested": '{"allocation": 80}',
+        "previous": None,
+        "status": "pending",
+    }
+    values.update(fields)
+    return ApprovalRequest(**values)
+
+
+def pending_phase_row(**fields) -> PhaseStaffAssignment:
+    values = {
+        "id": 70,
+        "project_id": 1,
+        "phase_id": 11,
+        "staff_id": REQUESTER_ID,
+        "allocation": 80,
+        "approval_status": "pending",
+        "approval_request_id": 50,
+    }
+    values.update(fields)
+    return PhaseStaffAssignment(**values)
+
+
+def approvable_db(pending, assignment, /, **extra):
+    answers = {
+        "request": [pending],
+        "context": [approval_context()],
+        "requester": [(1, "user", True)],
+        "perms": [(pending.action, "approval")],
+        "member": [(REQUESTER_ID,)],
+        "row": [assignment] if assignment is not None else [],
+        "approvers": [ADMIN_ID, PM_ID],
+    }
+    answers.update(extra)
+    return ApprovalFakeDB(**answers)

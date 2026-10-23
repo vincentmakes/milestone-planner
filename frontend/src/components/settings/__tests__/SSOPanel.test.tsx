@@ -8,12 +8,16 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { SSOPanel } from '../panels/SSOPanel';
 import { resetAllStores, useAppStore } from '@/stores';
 import { apiGet, apiPut } from '@/api/client';
-import { makeUser } from '@/test/factories';
+import { makeRole, makeSystemRoles, makeUser } from '@/test/factories';
 
 vi.mock('@/api/client', () => ({
   apiGet: vi.fn(),
   apiPut: vi.fn(),
 }));
+const rolesApi = vi.hoisted(() => ({ getAll: vi.fn() }));
+vi.mock('@/api/endpoints/roles', () => ({ rolesApi }));
+
+const ROLES = makeSystemRoles(makeRole({ name: 'Team lead' }));
 
 const fullConfig = {
   enabled: 1,
@@ -32,7 +36,8 @@ let errorSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   resetAllStores();
-  useAppStore.setState({ currentUser: makeUser({ role: 'admin' }) });
+  useAppStore.setState({ currentUser: makeUser({ role: 'admin' }), roles: ROLES });
+  rolesApi.getAll.mockReset().mockResolvedValue(ROLES);
   vi.mocked(apiGet).mockReset().mockResolvedValue(fullConfig);
   vi.mocked(apiPut).mockReset().mockResolvedValue({});
   errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -45,6 +50,38 @@ describe('SSOPanel', () => {
     const { container } = render(<SSOPanel />);
     expect(container).toBeEmptyDOMElement();
     expect(apiGet).not.toHaveBeenCalled();
+  });
+
+  it('offers every role but admin as the default role, custom ones included', async () => {
+    render(<SSOPanel />);
+    await screen.findByDisplayValue('tenant-guid');
+    const options = Array.from(field(/Default role/).querySelectorAll('option')).map((o) => [o.value, o.textContent]);
+    expect(options).toEqual([
+      ['superuser', 'Superuser'],
+      ['user', 'User'],
+      ['team_lead', 'Team lead'],
+    ]);
+    fireEvent.click(screen.getByRole('switch', { name: /Auto-create users/ }));
+    fireEvent.change(field(/Default role/), { target: { value: 'team_lead' } });
+    fireEvent.click(save());
+    await waitFor(() => expect(apiPut).toHaveBeenCalled());
+    expect(vi.mocked(apiPut).mock.calls[0][1]).toMatchObject({ default_role: 'team_lead' });
+  });
+
+  it('loads the roles when the store has none, keeping the saved default meanwhile', async () => {
+    useAppStore.setState({ roles: [] });
+    let release!: (roles: typeof ROLES) => void;
+    rolesApi.getAll.mockImplementation(() => new Promise((r) => (release = r)));
+    vi.mocked(apiGet).mockResolvedValue({ ...fullConfig, default_role: 'team_lead' });
+    render(<SSOPanel />);
+    await screen.findByDisplayValue('tenant-guid');
+    expect(field(/Default role/)).toHaveValue('team_lead');
+    expect(Array.from(field(/Default role/).querySelectorAll('option')).map((o) => o.textContent)).toEqual(['team_lead']);
+
+    await act(async () => release(ROLES));
+    expect(field(/Default role/)).toHaveValue('team_lead');
+    expect(screen.getByRole('option', { name: 'Team lead' })).toBeInTheDocument();
+    expect(rolesApi.getAll).toHaveBeenCalledTimes(1);
   });
 
   it('loads the configuration with the masked secret as placeholder', async () => {

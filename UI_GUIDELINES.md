@@ -22,7 +22,7 @@ The structure follows the one used for Turbo EA's guidelines; the content is Mil
 4. **Accessibility first.** Visible focus ring on everything, an accessible name on every icon-only
    control, `role="switch"` for toggles, 44 px touch targets on phones.
 5. **Don't reinvent.** If a pattern exists (`Button`, `PanelToolbar`, `Modal`, `ToggleSwitch`,
-   `Input`, `Select`, `AllocationSlider`, `TagFilterDropdown`, `ContextMenu`), use it.
+   `Input`, `Select`, `AllocationSlider`, `ProjectFilterDropdown`, `ContextMenu`), use it.
 
 ---
 
@@ -281,6 +281,7 @@ underline.
 | `--z-dropdown` | 100 | Dropdowns, popovers, context menus |
 | `--z-sticky` | 200 | Sticky headers inside scroll areas |
 | `--z-header` | 500 | App header |
+| `--z-popover` | 600 | `AnchoredPanel` (portaled dropdown panels): above the app header, below a modal backdrop |
 | `--z-modal-backdrop` / `--z-modal` | 1000 / 1001 | Modal layer |
 | `--z-tooltip` | 2000 | Tooltips, the Shift-hover date tooltip |
 | `--z-what-if-border` / `--z-what-if-banner` | 9999 / 10000 | What-If frame and banner, above everything |
@@ -346,9 +347,9 @@ actions: option chips, tabs, colour swatches, clickable list rows, and the compa
 
 ```tsx
 import { Button } from '@/components/common/Button';
-import { PlusIcon } from '@/components/settings/panels/PanelIcons';
+import { Icon, PlusIcon } from '@/components/common/Icon';
 
-<Button icon={<PlusIcon />} onClick={handleCreate}>
+<Button icon={<Icon icon={PlusIcon} />} onClick={handleCreate}>
   Add holiday
 </Button>
 ```
@@ -375,8 +376,9 @@ Don't use `sm` in a toolbar. A small primary button next to medium ones was the 
 guide was written to stop.
 
 **Icons.** Pass icons through the `icon` prop (`iconPosition="right"` puts it after the label).
-The button sizes the svg — 14 px in `md`, 12 px in `sm`, 20 px in `lg` — and the icon inherits the text colour
-through `currentColor`. Don't put an inline `<svg>` with a hand-tuned margin in the children.
+The button sizes the svg — 14 px in `md`, 12 px in `sm`, 20 px in `lg`, whatever `size` the `Icon`
+was given — and the icon inherits the text colour through `currentColor`. Don't put an icon with a
+hand-tuned margin in the children.
 
 **States.** `disabled` dims to 50 % opacity (the global `button:disabled` rule). `loading` is
 **the** way to show an in-flight write: `<Button loading={isSubmitting}>Save Changes</Button>`
@@ -390,7 +392,11 @@ types add rows do; Enter in the input then submits.
 Writes from a dialog or a Settings panel are guarded with `useSubmitGuard`
 (`components/common/useSubmitGuard.ts`, 30 files) so Enter-twice or a double click cannot create
 duplicates; its `isSubmitting` is what feeds `loading`. One guard per dialog: `KanbanCardModal`
-shares it between moves, assignments and comments, so no two writes on a card overlap. The test
+shares it between moves and assignments, so no two writes on a card overlap; its comment thread is
+`CardComments`, which carries its own guard and error `Notice`. The booking dialog renders the same
+thread after its `<form>`, never inside it: the shared `Button` has no default `type`, so a Comment
+click inside a form would submit and close the dialog (every button in `CardComments` is
+`type="button"` as well). The test
 for a guard fires both clicks inside one `act()` (React batches the first click's state update,
 so the button is still enabled for the second) and asserts one API call.
 
@@ -434,7 +440,7 @@ arrow or a styled link.
 
 **Row actions.** Edit, delete and similar actions repeated on every row are compact **28 px**
 icon-only buttons (`.iconBtn` / `.actionBtn` / `.editBtn` in the panel's module) with
-`PanelIcons` at their default size, each with an `aria-label` that names the row (`Delete ISO
+the §3.14 icon at its row size, each with an `aria-label` that names the row (`Delete ISO
 Audit`) and usually a `title`. They stay compact so a long list remains scannable. The inline
 confirm/cancel pairs (`UsersPanel`, `EquipmentPanel` inline type/skill add) are 28 px too, named
 **Add type** / **Cancel adding a type**. Debt: *My absences* uses text `ghost sm` buttons. None
@@ -450,14 +456,62 @@ decision, not an oversight.
   same way).
 - **Two fields side by side** (a start/end date pair): a grid of `minmax(0, 1fr) minmax(0, 1fr)`
   (or a flex row whose items have `min-width: 0`), never `1fr 1fr`. A `1fr` track cannot shrink
-  below its content and iOS Safari gives a date input a wide intrinsic width, so the two fields
-  overlapped on iPad; `global.css` also lets `input[type="date"]` shrink. The token test rejects
-  a bare `1fr` track in a module stylesheet.
+  below its content, so a wide field overflows its neighbour on a narrow dialog. The token test
+  rejects a bare `1fr` track in a module stylesheet.
+- **`DateRangeField`** / **`DateField`** (`components/common/DateRangeField`): every model date
+  is entered through them — never a raw `type="date"` input. `DateRangeField` is a start and an
+  end on one two-month calendar (one month at ≤ 640 px): two read-only `Input`s with
+  `role="combobox"` (`startLabel` / `endLabel`, `start` / `end` as `YYYY-MM-DD` or `''`) that open
+  the panel on a click or on Enter / Space / ArrowDown — plain focus never does, so Tab passes
+  through a form. The first click sets the start, the next the end; a start after the end moves
+  the end and keeps the duration, an end before the start becomes the new start, so the end can
+  never precede it. `onChange({ start, end })` fires once per click. `endOptional` +
+  `endPlaceholder` (*Same day*) make the end clearable (*Clear end date*, Backspace) for bank
+  holidays and company events; `separator` sits between the fields, `fieldClassName` is each
+  field's grid-item class (the wrapper is `display: contents`, so the fields stay items of the
+  consumer's `.formRow`). `DateField` is the single date (milestone date):
+  `value`, `onChange`, `label`, `fullWidth`. Both share `disabled`,
+  `highlightWeekdays` (the recurring absence's days) and `markSiteCalendar` (default true): weeks
+  start on Monday, weekends are muted and the header site's bank holidays and closures carry a dot,
+  a tooltip and a note in the day's accessible name, all from `appStore`; the Settings holiday and
+  event forms pass `markSiteCalendar={false}` because they may edit another site. The field text
+  is `formatMediumDate` (`22 Oct 2026`, browser locale); tests read the ISO value from
+  `data-value` through the helpers in `src/test/datePicker.ts`. The calendar is
+  `react-day-picker`, themed by **setting** its `--rdp-*` properties from app tokens in
+  `DateRangeField.module.css` (never read one: the token test would misread the name).
 - **`Select`** (`components/common/Select`): `options: {value, label, disabled?}[]`,
   `groups: {label, options}[]` (labelled `<optgroup>`s after the flat options — the site
   form's countries by region), `placeholder` (rendered as a *disabled* empty option, so only
   for a choice the user must replace; a selectable "none" is a normal `options` entry),
   `icon`, `label`, `error`, `hint`, `fullWidth`. 36 px.
+- **`MultiSelectDropdown`** (`components/common/MultiSelectDropdown`): several items of a short
+  coloured list in a box that looks like `Select` (the project dialog's multi-select project
+  fields). `label`, `options: {id, name, color?}[]`, `selectedIds`, `onChange(ids in item order)`,
+  `disabled`, `placeholder` (*None*), `emptyText`. The trigger is a `<button>`
+  (`aria-haspopup="listbox"`, named by the label and the chosen names); the panel is a
+  `role="listbox"` `aria-multiselectable` of `role="option"` rows (checkbox glyph, colour dot,
+  name) that stays open while items are ticked, with a **Clear** row, and closes through
+  `useDismissableOverlay`. `searchable` adds the search box of `SearchableSelect` above the rows
+  (focused on open and after Clear; the rows filter on `name` and an optional per-item `hint`;
+  Enter ticks the active row and keeps the panel open; Space types), `summary(chosen)` replaces
+  the joined names in the trigger (*5 members*) and `allowClear={false}` drops the Clear row —
+  the team member list in Settings → Teams uses all three, with the chosen members listed under
+  it, each with a × button. Tags keep their pills (`TagPicker` over `OptionPicker`).
+- **`SearchableSelect`** (`components/common/SearchableSelect`): pick one item of **any list of
+  people, or any list longer than a handful** (project manager, booking dialog staff or
+  equipment, Kanban *Add someone…*, absence staff); `Select` stays for short fixed choices.
+  `label` (or `aria-label` for a hidden one), `options: {id, label, hint?, note?, disabled?}[]`,
+  `value: number | null`, `onChange(id)` (only on a real change, like a native select),
+  `emptyLabel` (a first row that picks `null`), `placeholder`, `disabled`, `title`, `className`
+  (on the wrapper). The trigger looks like the `Select` box; the panel opens under it with a
+  focused search `Input` (`role="combobox"`, `aria-activedescendant` on it) over a
+  `role="listbox"` whose rows show the label, a muted `hint` (searched: job title, equipment
+  type) and a muted `note` (not searched: *80% capacity*). Filtering starts at the first
+  character; a printable key on the closed trigger opens it with that character typed; Enter
+  picks the active row and never submits a host form; Escape, Tab out and an outside mousedown
+  close it through `useDismissableOverlay`. The list is 14 rem tall and the panel scrolls itself
+  into view on open. Tests use the helpers in `src/test/searchableSelect.ts` (`pickOption`,
+  `pickerOptions`, `pickerSearch`).
 - **`ToggleSwitch`** (`components/common/ToggleSwitch`): every on/off flag, in Settings and in
   dialogs alike. A visually hidden checkbox with `role="switch"`, so keyboard, screen-reader and
   label behaviour come for free; pass `label` for visible text (a `ReactNode`, so an icon may sit
@@ -467,8 +521,14 @@ decision, not an oversight.
   entity flags in dialogs (Project *Confirmed* / *Archived*, phase and subphase *Milestone*,
   *Global column*, *Recurring Absence*) and the organization SSO flags in the admin portal. A
   raw checkbox is right only for **picking several items from a list**: the tag, type, role and
-  skill filters, column visibility, the `.ics` import rows, `SiteChecklist` and the equipment
-  site picker. Tests reach a switch with `getByRole('switch', { name })`.
+  skill filters, column visibility, the `.ics` import rows, `SiteChecklist`, the equipment
+  site picker, the header team filter (`TeamSelector`), `TeamChecklist` (project teams and the
+  teams a tag, piece of equipment or company event is limited to). A "limit to teams" choice per site is a *Whole site* switch over a
+  `TeamChecklist` (`TeamScope`). Tests reach a switch with `getByRole('switch', { name })`.
+- **`RoleChecklist`** (`components/common/RoleChecklist`): the roles that may approve a request
+  (Settings → Roles → Approvals). Same shape as `TeamChecklist` without colours: a labelled
+  `role="group"` of label-wrapped checkboxes. The Administrator role is always ticked, disabled
+  and suffixed *(always)*, and never appears in `onChange`'s output.
 - **`Notice`** (`components/common/Notice`): the one inline message box. `tone` = `error` |
   `warning` | `info` | `success` (accent token text and border on its alpha tint, `0.75rem 1rem`,
   `--radius-md`); `role` defaults to `alert` for errors and `status` otherwise; `onDismiss` adds a
@@ -482,7 +542,8 @@ decision, not an oversight.
   their colour (`EVENT_COLOR_SWATCHES` by default, `swatches` for another palette such as
   `SKILL_COLOR_SWATCHES`), with `allowCustom` for a native colour input behind a dashed "+".
   On touch devices it grows to 40 × 40 so the swatches stay round under the global 40 px
-  touch rule. Used by Tags, Absence types, Company events and Skills. Never hand-roll a row of
+  touch rule. Used by Tags, Absence types, Company events, Skills and Teams
+  (`TEAM_COLOR_SWATCHES`). Never hand-roll a row of
   coloured buttons: the Skills panel had its own copy, which the touch rule stretched into
   ovals on iPad because only the height was raised.
 - **`AllocationSlider`** (`components/common/AllocationSlider`): the one control for a staff
@@ -509,10 +570,9 @@ decision, not an oversight.
   text-like `<input>`s and `<select>`s per component against `rawFormControlsAllowlist.json`, a
   count may only go down, and the allowlist must not name a file that no longer needs it.
   Checkboxes, radios, ranges, file and colour inputs are native and not Input's job.
-- **Native pickers follow the theme.** `color-scheme` is set once per theme block in
-  `styles/variables.css` / `themes.css` (`dark` or `light`), so a date input's calendar popup
-  and the scrollbars match the theme everywhere. Never set `color-scheme` or invert a
-  `::-webkit-calendar-picker-indicator` in a component stylesheet.
+- **Native controls follow the theme.** `color-scheme` is set once per theme block in
+  `styles/variables.css` / `themes.css` (`dark` or `light`), so the scrollbars and the remaining
+  native controls match the theme everywhere. Never set `color-scheme` in a component stylesheet.
 
 ### 3.5 Modals and dialogs
 
@@ -566,16 +626,30 @@ A new non-modal overlay (dropdown, filter panel, popover, context menu) closes:
 - on Escape — listened for in the capture phase with propagation stopped, so the key closes only
   this panel and never reaches the app-wide shortcuts — after which focus returns to the trigger.
 
-All three come from one hook, `useDismissableOverlay({ open, onClose, wrapperRef, triggerRef? })`
-(`src/hooks/useDismissableOverlay.ts`), which returns the `onBlur` to put on the wrapper. While a
+All three come from one hook, `useDismissableOverlay({ open, onClose, wrapperRef, triggerRef?, panelRef? })`
+(`src/hooks/useDismissableOverlay.ts`), which returns the `onBlur` to put on the wrapper; pass
+`panelRef` when the panel is portaled out of the wrapper (see `AnchoredPanel` below). While a
 confirmation (§3.12) is pending the hook is inert: the confirm owns Escape and the overlay that
 asked (e.g. the dependency popover) stays open until the answer. Never
-hand-roll a click-outside effect. `TagFilterDropdown` and `TagGroupChoiceDropdown` are the
-reference users; the header overflow menu, `UserMenu`, the Panels dropdown, `NotificationBell`
+hand-roll a click-outside effect. `ProjectFilterDropdown` and `FieldChoiceDropdown` are the
+reference users; the header overflow menu, `UserMenu`, the Panels dropdown, the header `TeamSelector`, `NotificationBell`
 (which also `aria-controls` its panel), the `ProjectPanel` column-visibility dropdown,
 `CustomColumnHeader` filters, the Staff and Equipment view filters, `DependencyPopup` and
 `ContextMenu` all use it. A panel with checkboxes or radios is a non-modal `role="dialog"` (not
 a `menu`) with an `aria-label`; its trigger carries `aria-expanded` and `aria-haspopup="dialog"`.
+A dropdown panel outside a Modal that a clipping pane could cut off (the Gantt header's Filter,
+Group by, Colour by and column menus while an overview panel is open, the Staff / Equipment
+overview filters) is an `AnchoredPanel` (`components/common/AnchoredPanel`): portaled to `<body>`,
+`position: fixed` under the trigger (or above it when the room below is short), `align`
+`start` / `end`, its `max-height` the measured room minus 16 px so the panel's own list scrolls,
+`z-index: var(--z-popover)` (above the app header, so a panel flipped up to the viewport top is
+not hidden under it; below a modal backdrop). Only the panel moves — the trigger keeps its place and its
+`aria-expanded` / `aria-haspopup`, Tab from the trigger enters the panel and Tab from its end goes
+on to the element after the trigger. Its caller passes the panel's ref as `panelRef`; its class
+draws the panel and never sets position, inset or z-index. A popover that must escape a scrolling
+Modal body (the date picker panel) is `position: fixed` but rendered inside its trigger's wrapper,
+never in a portal: staying in the Modal's DOM subtree keeps the Tab trap, `aria-modal` and
+`useDismissableOverlay`'s `wrapperRef.contains` working.
 
 `ContextMenu` (`components/common/ContextMenu`) is the right-click menu: a `role="menu"` of
 `role="menuitem"` buttons (tests select them by that role); items take `danger`, `divider`,
@@ -598,6 +672,27 @@ a pill stays readable on light colours. Don't hard-code `color: white` on a colo
 Resolve a tag's colour and group through `appStore.tags` / `tagGroups` by id (`indexTags`), never
 from the inline `project.tags[].color`, which is stale during What-If.
 
+### 3.7a Permission chips and tabs
+
+- **Permission mode chips** (`PermissionModeChips` in `settings/panels/PermissionMatrix.tsx`):
+  one row per permission — label, muted description, a *Locked* pill where it applies — and a
+  `role="radiogroup"` (named by the label, described by the description) of 28 px chip buttons
+  **Allow** / **Needs approval** (only the approvable own-booking keys) / **Deny**. One chip is
+  selected: Allow fills with `--accent-blue`, Needs approval with an `--accent-orange` tint, Deny
+  with a `--text-muted` tint (`color-mix`). Roving `tabindex` with the arrow keys (wrapping);
+  locked rows and a read-only matrix disable the chips. Deny removes the key from the matrix.
+  Use the chips for any three-way choice per row; a two-way flag is a `ToggleSwitch`.
+- **Tabs** (Settings → Roles: *Roles* / *Approvals*; My Work: *My Approvals* / *My Assignments* /
+  *My Requests*): a `role="tablist"` with an `aria-label`, raw `<button role="tab">`s with
+  `aria-selected` and `aria-controls`, and one `role="tabpanel"` `aria-labelledby` the active tab.
+  My Work's tabs are the reference: roving `tabindex` with Arrow keys, Home and End, the active
+  tab tinted `--accent-blue-alpha` with `--accent-blue` text, a count pill per tab that goes into
+  the tab's accessible name (`aria-label="My Approvals, 1 item"`) while the visible number is
+  `aria-hidden`. Known drift: the Settings → Roles tabs are a segmented control (active tab on
+  `--bg-primary` with `--shadow-sm`) without arrow-key movement. Leaving a tab with unsaved input
+  asks first (`confirmAction`). Tabs are for sibling lists of one panel or view — not for
+  navigation between views (sidebar) or Settings sections (hub list).
+
 ### 3.8 Status representation
 
 | Thing | How it reads |
@@ -608,6 +703,8 @@ from the inline `project.tags[].color`, which is stale during What-If.
 | Absence | The absence type's colour (`absence_types.color`, picked from the swatches) on the Staff heatmap and in *My absences*; an absence that doesn't reduce capacity (Home Office) is shown but the person stays plannable. |
 | Site closure / holiday / weekend | Timeline cell backgrounds: `--bg-weekend`, the event's colour via `--event-color` (set inline per cell), closures mark the person unavailable. |
 | Equipment today | `blocked` > `booked` > available (`useEquipmentTodayStatus`); double bookings show `OverlapWarningIcon` (a red `role="img"` triangle). |
+| Pending booking | `PendingBadge` (`components/common/PendingBadge`): a dashed pill — *Pending approval*, *Change pending* or *Removal requested* — on a `--status-warning` tint (`--status-error` for a removal), its `title` naming the approvers (`useApproverSummary`). A pending create's Gantt row is dashed with a muted italic name, its bar hatched (`::after` + `color-mix`, so the inline phase colour survives) and non-interactive; a requested change reads `40% → 60%`. Kanban avatars of pending assignees get a dashed ring and reduced opacity. Pending bookings never count in capacity. |
+| Approval decision | `ApprovalActions` (`components/common/ApprovalActions`): inline **Approve** (secondary) / **Reject** (ghost) `sm` buttons under one `useSubmitGuard`; Reject opens `RejectRequestDialog` (shared `Modal`, `Input` *Reason (optional)*, Enter submits, error `Notice`). A `409` (already decided or expired) still calls `onDecided` so the caller reloads. Disabled during What-If. Used by My Work and the Kanban card; the Gantt context menu offers the same two actions as menu items. |
 | Live changes | `ActivityFeed` toasts (6 s, at most 4, merged within 2.5 s) and the `recentChanges` list; `SyncStatus` shows an **Offline** badge when the socket is down. |
 
 ### 3.9 Gantt timeline
@@ -637,6 +734,15 @@ from the inline `project.tags[].color`, which is stale during What-If.
   assignment.
 - Timeline cells and headers are generated by `gantt/utils/timeline.ts`; week numbers are ISO
   8601; the current month is highlighted; weekends can be hidden (then week separators appear).
+- **Card badge** (`ProjectPanel/CardBadgeView.tsx`, helpers in `cardBadge.ts`): the phase /
+  subphase name on a booking row and on the per-person overview row is one rectangle — the
+  `cardBadge` class (16 px high, 9 px uppercase semibold, 0.5 px letter-spacing, 3 px radius)
+  tinted by `cardBadgeStyle` — whatever it holds. Inside, two buttons that inherit its type:
+  the **pin** (booking rows only; `PinIcon` linked / `PinOffIcon` own dates, 12 px,
+  `aria-pressed` = own dates; disabled and muted, never removed, where the user may not change
+  the booking or it is pending) and the **name** (scrolls the timeline to the booking, the
+  overview row to the person's first booking). Both stop the click; the row keeps its context
+  menu. Never restyle the badge per row.
 
 ### 3.10 Kanban board
 
@@ -648,7 +754,7 @@ from the inline `project.tags[].color`, which is stale during What-If.
 - Drag is `KanbanDragContext` (HTML5 drag events, like `ReorderContext` and
   `useResourceDragDrop`; no library). The move is optimistic; a failure goes through
   `recoverFromPersistFailure` and then tells the user.
-- The filter toolbar (`KanbanToolbar`) is a single compact row — project picker, tag filter,
+- The filter toolbar (`KanbanToolbar`) is a single compact row — project picker, project filter,
   grouping, the **My Todo** toggle with `aria-pressed`, card count — and is a documented
   exception to `PanelToolbar`: it holds filters, not actions.
 
@@ -671,7 +777,9 @@ allowed in `Header.module.css` / `WhatIfToggle.module.css` are the ≤ 640 px mo
 - **Empty**: centred `--text-muted` text that distinguishes *nothing yet* (`No tags yet. Add one
   below.`) from *nothing matches* (`No cards match the current filter.`).
 - **Errors**: `<Notice tone="error">` in the dialog or panel (§3.2), next to what it is about;
-  an action without a form reports through `uiStore.showFlash()`. There is no `alert()` left in
+  an action without a form reports through `uiStore.showFlash()` (`layout/FlashNotice`: the
+  `Notice` sits on an opaque `--bg-secondary` slot, because its tint is translucent and would
+  let the Staff heatmap or the bars show through). There is no `alert()` left in
   the app — don't add one. What-If "blocked" notices use the dialogs' `.error` box with
   `role="status"` (debt: those dialog boxes still predate `Notice`; move them when you touch a
   dialog). A failed initial load shows `LoadErrorScreen` with **Retry**.
@@ -698,30 +806,69 @@ allowed in `Header.module.css` / `WhatIfToggle.module.css` are the ≤ 640 px mo
 - `OnlineUsers`, `ActivityFeed` and the Kanban card assignees colour a person with
   `avatarColorFor(id)` (`utils/avatarColor.ts`, one eight-colour palette keyed by id); the header
   tier caps how many avatars render.
-- `NotificationBell` is a popover with an unread count, relative times (`5m ago`) and the derived
-  due reminders merged in; it dismisses through `useDismissableOverlay` (§3.6).
+- `NotificationBell` is a popover with an unread count, relative times (`5m ago`,
+  `utils/relativeTime.ts`, shared with My Work) and the derived due reminders merged in; it
+  dismisses through `useDismissableOverlay` (§3.6). Approval notifications open My Work
+  on the matching tab (and filter) instead of a card.
+- The sidebar's **My Work** entry carries a count badge (`workStore.openCount`, the approvals to
+  decide, capped at `99+`); the count is part of the button's accessible name ("My Work, 1
+  approval to decide") and the badge is `aria-hidden`.
 - `ActivityFeed` is a polite live region (`role="status" aria-live="polite"`) of bottom-right
   toasts.
 
 ### 3.14 Icons
 
-Take icons from `components/settings/panels/PanelIcons.tsx` and add a new one there rather than
-inlining an svg. Every icon is `aria-hidden`, so a button's accessible name is its label alone
-and tests select buttons by role and exact name.
+Every icon is a **Material icon** from `@mui/icons-material`, drawn through
+`components/common/Icon`: `icons.ts` binds each app name to its Material component, and
+`Icon` renders one at a size in px in the current text colour.
 
-| Action | Icon | Default size |
+```tsx
+import { Icon, EditIcon, PlusIcon } from '@/components/common/Icon';
+
+<Icon icon={EditIcon} size={15} />                    // a row action
+<Button icon={<Icon icon={PlusIcon} />}>Add type</Button>  // the button sizes it
+```
+
+- **Outlined by default** (`EditOutlined`, `DeleteOutlined`, …). A filled glyph only where
+  Material has a single variant (`Add`, `Close`, `Check`, the chevrons, `Refresh`) or the
+  meaning needs it (`PushPin` = pinned vs `PushPinOutlined` = own dates).
+- **Decorative.** `Icon` is `aria-hidden` unless it gets a `title` (then `role="img"` with that
+  name), so a button's accessible name is its label alone and tests select buttons by role
+  and exact name. A test that needs to tell icons apart reads the Material `data-testid`
+  (`CheckCircleOutlinedIcon`).
+- **Sized by `size`** (px, default 16), which is the svg's font size — Material icons are 1em
+  square. A stylesheet that sets the svg's `width` / `height` (the `Button` icon slot, a row's
+  `.chevron`) wins, and rotations by CSS keep working on the svg element.
+- **Colour** is `currentColor`: colour the parent, or give the `Icon` a `className`.
+- **No inline `<svg>`.** `components/__tests__/noInlineIcons.test.ts` fails on any `<svg>`
+  outside `noInlineIconsAllowlist.json` (the Gantt dependency arrows and the Microsoft logo on
+  the SSO button, each with its reason). No MUI component other than the icons, no theme
+  provider, no `sx` — the one Emotion setting is `IconStyles` in `main.tsx`, which puts the icons'
+  base rules first so CSS Modules win a tie.
+
+**Adding an icon.** Pick the Material icon (outlined variant first), add one line to
+`icons.ts` — `export { default as FooIcon } from '@mui/icons-material/FooOutlined';`, deep path
+so the build keeps only the icons in use — with a short comment saying what it stands for, then
+render it with `Icon`. Reuse an existing name when the meaning is the same.
+
+| Meaning | Icon | Size |
 | --- | --- | --- |
-| Add / create | `PlusIcon` | 14 px |
-| Edit | `EditIcon` | 15 px |
-| Delete | `TrashIcon` | 15 px |
-| Remove a link (e.g. *Remove from my sites*) | `UnlinkIcon` | 15 px |
-| Open a related management section (**Manage Skills**, **Manage Types**) | `GearIcon` | 14 px |
-| Import a file | `UploadIcon` | 14 px |
-| Export / download | `DownloadIcon` | 14 px |
+| Add / create | `PlusIcon` (`Add`) | 14 px |
+| Edit | `EditIcon` (`EditOutlined`) | 15 px in Settings rows, 14 px in menus |
+| Delete | `TrashIcon` (`DeleteOutlined`) | 15 px in Settings rows, 14 px in menus |
+| Remove a link (e.g. *Remove from my sites*) | `UnlinkIcon` (`LinkOffOutlined`) | 15 px |
+| Open a related management section (**Manage Skills**, **Manage Types**), Settings | `GearIcon` (`SettingsOutlined`) | 14 px |
+| Import a file | `UploadIcon` (`UploadOutlined`) | 14 px; 24–48 px in drop zones |
+| Export / download | `DownloadIcon` (`DownloadOutlined`) | 14 px |
 | Refresh from a source | `RefreshIcon` | 14 px |
-| Back | `BackIcon` | 14 px |
-| Log out | `LogoutIcon` | 14 px |
-| Drag handle | `DragHandleIcon` | 16 px |
+| Back, previous | `BackIcon` (`ChevronLeft`) | 14 px; 16 px in the header |
+| Expand (rotated by CSS) / dropdown | `ChevronRightIcon` / `ChevronDownIcon` (`ExpandMore`) | 12 px |
+| Log out | `LogoutIcon` | 14 px; 16 px in the account menu |
+| Drag a list row / a Gantt or resource row | `DragHandleIcon` / `DragDotsIcon` (`DragIndicator`) | 16 px / 12 px |
+| Close, dismiss, cancel | `CloseIcon` | 18 px in `Modal`, 20 px in admin dialogs, 12–14 px inline |
+| A checked option | `CheckIcon` | 12 px in a 16 px checkbox |
+| Warning, conflict | `WarningIcon` (`WarningAmberOutlined`) | 14–16 px |
+| Settings sections, sidebar views | one icon each (`sections.tsx`, `Navigation.tsx`) | 16 px / 18 px |
 
 Row actions in the Settings panels are 28 px buttons rendering these icons (`CheckIcon`,
 `CloseIcon` for an inline confirm/cancel pair, `CheckCircleIcon` / `CircleIcon` for an
@@ -729,7 +876,7 @@ activate toggle), each with an `aria-label` naming the row (`Edit Bob Brown`, `D
 next to its `title`.
 
 **Documented exception — the Gantt header.** The project panel's header actions (staff and
-equipment toggle, tag filter, group by, colour by, column visibility, custom-column manager,
+equipment toggle, project filter, group by, colour by, column visibility, custom-column manager,
 import, new project) are compact 28 px buttons, mostly icon-only, because the header sits above
 a dense timeline where 36 px labelled buttons would take too much room. Keep them compact, give
 each a `title` *and* an `aria-label`, mark svgs `aria-hidden`, give on/off toggles
@@ -749,7 +896,9 @@ has no fixed height).
   `Jan 15`, by locale) and `formatShortDateRange` (`15 Jan - 28 Feb`), both from `utils/date.ts`.
   Timeline headers use `formatWeekNumber` (ISO week), `formatMonthYear` and `formatQuarter`.
   Notifications use relative times (`5m ago`). Debt: about 15 ad-hoc `toLocaleDateString` calls
-  and two full numeric formats (`SiteForm`, `KanbanCardModal`); `formatDateDisplay` is unused.
+  and two full numeric formats (`SiteForm`, `KanbanCardModal`).
+- A date field shows `formatMediumDate` (`22 Oct 2026` or `Oct 22, 2026`, by locale; `''` for no
+  date), the `YYYY-MM-DD` wrapper over `formatDateDisplay`.
 - Allocations are whole percentages from 1 to 100 (the slider steps by 5); capacity is a
   percentage too. Counts in toolbars read `12 users`, `3 of 8 cards`.
 
@@ -772,7 +921,7 @@ has no fixed height).
 ## 6. Accessibility
 
 - Every icon-only control has an `aria-label` that names its target (`Delete ISO Audit`), and
-  its svg is `aria-hidden`.
+  its `Icon` is `aria-hidden` (§3.14).
 - Toggles are `role="switch"` (`ToggleSwitch`) or carry `aria-pressed` (view modes, **My Todo**,
   *My absences* filters).
 - Dropdown triggers carry `aria-expanded` and `aria-haspopup="dialog"`; a checkbox/radio panel
@@ -807,6 +956,10 @@ has no fixed height).
   gets the `min-height`), which toggles the box anyway. Put a checkbox inside its label, not
   next to it, or the phone gets no touch target for it.
   `src/styles/__tests__/mobileTouchTargets.test.ts` pins the exclusion.
+- **Listbox rows are touch targets too**: at ≤ 640 px every `[role="option"]` row gets a 44 px
+  `min-height` (rows are full width, so only the height grows) — the `SearchableSelect` and
+  `MultiSelectDropdown` rows, the tag and `@` suggestions and the job-title autocomplete alike.
+  Pinned by the same test.
 - `@media (hover: none) and (pointer: coarse)` (touch devices at any width) raises buttons to a
   40 px `min-height`, keeps the completion/type badges and `wbsLevel` chips at their own size,
   shows drag handles at 60 % opacity, disables hover transitions and enables touch scrolling on
@@ -863,8 +1016,8 @@ plus an entry in `THEMES` and, if it is a new family, `THEME_FAMILIES` in `utils
 | `frontend/src/styles/themes/themes.css` | S-Theme dark and light |
 | `frontend/src/styles/global.css` | Resets, native controls, focus ring, What-If frame, scrollbar, print, mobile and touch rules |
 | `frontend/src/styles/__tests__/cssTokens.test.ts` | Guard: every `var(--x)` read is defined |
-| `frontend/src/components/common/` | `Button`, `Input`, `Select`, `ToggleSwitch`, `Modal`, `ContextMenu`, `AllocationSlider`, `MentionTextarea`, `TagFilterDropdown`, `NotificationBell`, `OnlineUsers`, `ActivityFeed`, `ICSImportPanel`, `OverlapWarningIcon`, `useSubmitGuard` |
-| `frontend/src/components/settings/PanelToolbar.tsx`, `panels/PanelIcons.tsx` | Toolbar layout and the icon set |
+| `frontend/src/components/common/` | `Icon` (the icon set, §3.14), `Button`, `Input`, `Select`, `ToggleSwitch`, `Modal`, `ContextMenu`, `AllocationSlider`, `MentionTextarea`, `ProjectFilterDropdown`, `NotificationBell`, `OnlineUsers`, `ActivityFeed`, `ICSImportPanel`, `OverlapWarningIcon`, `RoleChecklist`, `PendingBadge`, `ApprovalActions`, `CardComments`, `useSubmitGuard` |
+| `frontend/src/components/settings/PanelToolbar.tsx` | Toolbar layout |
 | `frontend/src/components/common/Modal/Modal.test.tsx`, `components/admin/modals/CredentialsModal.test.tsx`, `components/common/Button/Button.test.tsx` | Executable guards of the modal and button rules |
 | `frontend/src/utils/themeColors.ts`, `utils/colorSwatches.ts`, `utils/tags.ts` | Theme reads in JS, user-pickable colours, `barTextColor` |
 | `frontend/src/hooks/useHeaderDensity.ts`, `utils/touchEvents.ts`, `hooks/useKeyboardShortcuts.ts` | Header tiers, touch mapping, global shortcuts |

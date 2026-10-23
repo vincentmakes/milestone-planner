@@ -9,6 +9,7 @@ import { getTenant, getTenantAuditLog } from '@/api';
 import type { Tenant, AuditLogEntry } from '@/api/endpoints/admin';
 import { useEscapeKey } from '@/hooks';
 import styles from './AdminModal.module.css';
+import { Icon, ExternalLinkIcon, CloseIcon } from '@/components/common/Icon';
 
 interface TenantDetailsModalProps {
   tenantId: string;
@@ -80,10 +81,7 @@ export function TenantDetailsModal({ tenantId, onClose }: TenantDetailsModalProp
         <div className={styles.header}>
           <h2 id={titleId} className={styles.title}>Tenant Details</h2>
           <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Close dialog">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
+            <Icon icon={CloseIcon} size={20} />
           </button>
         </div>
 
@@ -196,11 +194,7 @@ export function TenantDetailsModal({ tenantId, onClose }: TenantDetailsModalProp
                 title={`Open ${tenant.name} (opens in a new tab)`}
               >
                 <span>{window.location.origin}/t/{tenant.slug}/</span>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                  <polyline points="15 3 21 3 21 9" />
-                  <line x1="10" y1="14" x2="21" y2="3" />
-                </svg>
+                <Icon icon={ExternalLinkIcon} size={14} />
               </a>
 
               {/* Audit Log */}

@@ -36,7 +36,7 @@ export interface TimelineCell {
   isCompanyEvent: boolean;
   companyEventName?: string;
   companyEventColor?: string | null;
-  /** A company event flagged as a site closure covers this day */
+  /** A whole-site closure (one not limited to teams) covers this day */
   isSiteClosure: boolean;
   dayOfWeek: number;
   isFirstOfWeek: boolean;
@@ -51,7 +51,7 @@ interface EventInfo {
   name?: string;
   isEvent: boolean;
   color?: string | null;
-  /** The covering event is flagged as a site closure */
+  /** A covering event is a whole-site closure (not limited to teams) */
   isClosure: boolean;
 }
 
@@ -91,7 +91,7 @@ export function generateTimelineCells(
   bankHolidayDates: Set<string>,
   bankHolidays: Array<{ date: string; end_date?: string | null; name: string; is_custom?: boolean }>,
   companyEventDates: Set<string> = new Set(),
-  companyEvents: Array<{ date: string; end_date?: string | null; name: string; color?: string | null; counts_as_unavailable?: boolean }> = [],
+  companyEvents: Array<{ date: string; end_date?: string | null; name: string; color?: string | null; counts_as_unavailable?: boolean; team_ids?: number[] }> = [],
   showWeekends: boolean = true
 ): TimelineCell[] {
   const today = new Date();
@@ -116,19 +116,22 @@ export function generateTimelineCells(
   
   const getEventInfo = (date: Date): EventInfo => {
     const dateStr = format(date, 'yyyy-MM-dd');
-    // Find events that include this date (handles multi-day events); a site
-    // closure wins over a plain event on the same day
+    // Find events that include this date (handles multi-day events); a
+    // whole-site closure wins over a plain event on the same day. A closure
+    // limited to teams stays a plain event here: the header cell is per day
+    // for the whole site, so it must not shade it as closed.
     const covering = companyEvents.filter((e) => {
       const startDate = normalizeDate(e.date);
       const endDate = normalizeDate(e.end_date || e.date);
       return dateStr >= startDate && dateStr <= endDate;
     });
-    const event = covering.find((e) => e.counts_as_unavailable) ?? covering[0];
+    const siteClosure = covering.find((e) => e.counts_as_unavailable && !e.team_ids?.length);
+    const event = siteClosure ?? covering[0];
     return {
       name: event?.name,
       isEvent: companyEventDates.has(dateStr),
       color: event?.color,
-      isClosure: !!event?.counts_as_unavailable,
+      isClosure: !!siteClosure,
     };
   };
 

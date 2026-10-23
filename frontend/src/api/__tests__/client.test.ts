@@ -68,6 +68,7 @@ describe('apiRequest', () => {
       ['PUT', '/api/kanban/comments/5'],
       ['POST', '/api/kanban/cards/phase/12/comments'],
       ['POST', '/api/kanban/cards/subphase/7/comments'],
+      ['POST', '/api/kanban/cards/project/3/comments'],
     ] as const)('lets exempt write %s %s through', async (method, url) => {
       whatIf = true;
       await apiRequest(url, { method, body: {} });
@@ -86,21 +87,25 @@ describe('apiRequest', () => {
       ]);
     });
 
-    it('lets tag and tag-group writes through while a project write is still queued', async () => {
+    it('lets tag and project-field writes through while a project write is still queued', async () => {
       whatIf = true;
       fetchMock.mockImplementation(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
       await apiRequest('/api/tags', { method: 'POST', body: { name: 'Pilot' } });
       await apiRequest('/api/tags/3', { method: 'PUT', body: { color: '#ff0000' } });
       await apiRequest('/api/tags/reorder', { method: 'PUT', body: { tag_order: [3, 1] } });
-      await apiRequest('/api/tag-groups', { method: 'POST', body: { name: 'Type' } });
-      await apiRequest('/api/tag-groups/2', { method: 'DELETE' });
-      await apiRequest('/api/tag-groups/reorder', { method: 'PUT', body: { group_order: [2] } });
-      expect(fetchMock).toHaveBeenCalledTimes(6);
+      await apiRequest('/api/project-fields', { method: 'POST', body: { name: 'Type', field_type: 'select' } });
+      await apiRequest('/api/project-fields/2', { method: 'DELETE' });
+      await apiRequest('/api/project-fields/reorder', { method: 'PUT', body: { field_order: [2] } });
+      await apiRequest('/api/project-fields/2/options', { method: 'POST', body: { name: 'QA' } });
+      await apiRequest('/api/project-fields/options/51', { method: 'PUT', body: { color: '#ff0000' } });
+      expect(fetchMock).toHaveBeenCalledTimes(8);
       expect(queued).toEqual([]);
 
-      await apiRequest('/api/projects/7', { method: 'PUT', body: { tag_ids: [3] } });
-      expect(fetchMock).toHaveBeenCalledTimes(6);
-      expect(queued).toEqual([{ method: 'PUT', url: '/api/projects/7', body: { tag_ids: [3] } }]);
+      // A project's tags and field values are plan data: queued
+      const body = { tag_ids: [3], field_values: { 2: [51] } };
+      await apiRequest('/api/projects/7', { method: 'PUT', body });
+      expect(fetchMock).toHaveBeenCalledTimes(8);
+      expect(queued).toEqual([{ method: 'PUT', url: '/api/projects/7', body }]);
     });
 
     const CONFIGURATION_URLS = [
@@ -121,11 +126,24 @@ describe('apiRequest', () => {
       '/api/users/8/toggle-active',
       '/api/tags',
       '/api/tags/3',
-      '/api/tag-groups/2',
+      '/api/project-fields',
+      '/api/project-fields/2',
+      '/api/project-fields/2/usage',
+      '/api/project-fields/options/51',
+      '/api/teams',
+      '/api/teams/3',
       '/api/sites',
       '/api/sites/1',
       '/api/equipment',
       '/api/equipment/6',
+      // RBAC: configuration, and decisions addressed to a person
+      '/api/roles',
+      '/api/roles/4',
+      '/api/permissions',
+      '/api/approval-policies/assignments.self_create',
+      '/api/approval-requests/5/approve',
+      '/api/approval-requests/5/reject',
+      '/api/approval-requests/5/cancel',
     ];
     const WRITE_CASES = ['POST', 'PUT', 'DELETE'] as const;
 
@@ -156,6 +174,10 @@ describe('apiRequest', () => {
       '/api/projects/7/equipment',
       '/api/vacations',
       '/api/custom-columns/values',
+      // Own bookings stay plan operations (a 202 on Apply becomes a request)
+      '/api/projects/7/staff',
+      '/api/phases/3/staff',
+      '/api/subphase-staff/9',
     ];
 
     it.each(QUEUED_SIBLINGS.flatMap((url) => WRITE_CASES.map((method) => [method, url] as const)))(
@@ -188,6 +210,10 @@ describe('apiRequest', () => {
       expect(isWhatIfExempt('api/sites/3')).toBe(true);
       expect(isWhatIfExempt('/t/acme/api/sites/3/events')).toBe(false);
       expect(isWhatIfExempt('/api/equipmentx')).toBe(false);
+      expect(isWhatIfExempt('/api/rolesx')).toBe(false);
+      // Personal todos are gone: nothing exempts them any more.
+      expect(isWhatIfExempt('/api/todos')).toBe(false);
+      expect(isWhatIfExempt('/api/kanban/cards/card/3/comments')).toBe(false);
     });
 
     it('sends every write for real outside What-If (PATCH included)', async () => {

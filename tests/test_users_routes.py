@@ -329,3 +329,218 @@ async def test_delete_user_destroys_sessions(authed_client, mock_db_session, des
     assert resp.status_code == 200
     destroy_sessions.assert_awaited_once_with(7, commit=False)
     mock_db_session.delete.assert_awaited_once_with(target)
+
+
+# ---------------------------------------------------------------------------
+# A deactivated or deleted requester's approval requests expire
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def requester_expiry(mock_db_session):
+    """expire_for_requester / publish of the users router, with the order of
+    the commit and the publish recorded."""
+    from app.routers import users as users_router
+    from app.services.approvals import ApprovalEffects
+
+    calls: list[str] = []
+    effects = ApprovalEffects()
+    mock_db_session.commit = AsyncMock(side_effect=lambda: calls.append("commit"))
+    with (
+        patch.object(
+            users_router.approvals, "expire_for_requester", AsyncMock(return_value=effects)
+        ) as expire,
+        patch.object(
+            users_router.approvals,
+            "publish",
+            AsyncMock(side_effect=lambda *a, **k: calls.append("publish")),
+        ) as publish,
+    ):
+        yield MagicMock(expire=expire, publish=publish, effects=effects, calls=calls)
+
+
+@pytest.mark.asyncio
+async def test_deactivating_via_put_expires_the_requests(
+    authed_client, mock_db_session, destroy_sessions, requester_expiry
+):
+    client, set_user = authed_client
+    admin = FakeUser(1, "admin")
+    set_user(admin)
+    route_db(mock_db_session, make_user(7, "user"))
+
+    resp = await client.put("/api/users/7", json={"active": 0})
+
+    assert resp.status_code == 200
+    requester_expiry.expire.assert_awaited_once_with(mock_db_session, admin, 7)
+    assert requester_expiry.publish.await_args.args[1:] == (admin, requester_expiry.effects)
+    assert requester_expiry.calls == ["commit", "publish"]
+
+
+@pytest.mark.asyncio
+async def test_other_user_edits_leave_the_requests_alone(
+    authed_client, mock_db_session, destroy_sessions, requester_expiry
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    route_db(mock_db_session, make_user(7, "user"))
+
+    resp = await client.put("/api/users/7", json={"last_name": "New", "active": 1})
+
+    assert resp.status_code == 200
+    requester_expiry.expire.assert_not_awaited()
+    requester_expiry.publish.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_toggling_off_expires_the_requests_and_on_does_not(
+    authed_client, mock_db_session, destroy_sessions, requester_expiry
+):
+    client, set_user = authed_client
+    admin = FakeUser(1, "admin")
+    set_user(admin)
+    target = make_user(7, "user", active=1)
+    lookup_db(mock_db_session, target)
+    mock_db_session.commit = AsyncMock(side_effect=lambda: requester_expiry.calls.append("commit"))
+
+    assert (await client.put("/api/users/7/toggle-active")).status_code == 200
+    requester_expiry.expire.assert_awaited_once_with(mock_db_session, admin, 7)
+    assert requester_expiry.calls == ["commit", "publish"]
+
+    assert (await client.put("/api/users/7/toggle-active")).status_code == 200  # back on
+    assert target.active == 1
+    requester_expiry.expire.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_user_expires_their_requests_without_notifying_them(
+    authed_client, mock_db_session, destroy_sessions, requester_expiry
+):
+    client, set_user = authed_client
+    admin = FakeUser(1, "admin")
+    set_user(admin)
+    lookup_db(mock_db_session, make_user(7, "user"))
+    mock_db_session.commit = AsyncMock(side_effect=lambda: requester_expiry.calls.append("commit"))
+
+    resp = await client.delete("/api/users/7")
+
+    assert resp.status_code == 200
+    requester_expiry.expire.assert_awaited_once_with(mock_db_session, admin, 7, deleted=True)
+    assert requester_expiry.calls == ["commit", "publish"]
+
+
+# ---------------------------------------------------------------------------
+# Bookable as a resource (users.is_resource): a profile field
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_users_edit_turns_bookable_off(authed_client, mock_db_session, destroy_sessions):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "superuser"))
+    target = make_user(7, "user")
+    target.is_resource = True
+    route_db(mock_db_session, target)
+
+    resp = await client.put("/api/users/7", json={"is_resource": False})
+
+    assert resp.status_code == 200
+    assert resp.json()["is_resource"] is False
+    assert target.is_resource is False
+    mock_db_session.commit.assert_awaited()
+    # Not a privilege change: the target keeps their sessions.
+    destroy_sessions.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_bookable_flag_needs_users_edit(authed_client, mock_db_session, destroy_sessions):
+    client, set_user = authed_client
+    # Passes the route gate (toggle_active) but lacks users.edit.
+    set_user(FakeUser(5, "superuser", {"users.view", "users.toggle_active"}))
+    target = make_user(7, "user")
+    target.is_resource = True
+    route_db(mock_db_session, target)
+
+    resp = await client.put("/api/users/7", json={"is_resource": False})
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Permission required: users.edit"
+    assert target.is_resource is True
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_bookable_flag_of_an_admin_needs_users_edit_admins(
+    authed_client, mock_db_session, destroy_sessions
+):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "superuser"))  # users.edit, not users.edit_admins
+    admin = make_user(1, "admin")
+    admin.is_resource = False
+    route_db(mock_db_session, admin)
+
+    resp = await client.put("/api/users/1", json={"is_resource": True})
+
+    assert resp.status_code == 403
+    assert admin.is_resource is False
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_an_admin_makes_themself_bookable(authed_client, mock_db_session, destroy_sessions):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    me = make_user(1, "admin", is_system=1)
+    me.is_resource = False
+    route_db(mock_db_session, me)
+
+    resp = await client.put("/api/users/1", json={"is_resource": True})
+
+    assert resp.status_code == 200
+    assert resp.json()["is_resource"] is True
+    assert me.is_resource is True
+
+
+@pytest.mark.asyncio
+async def test_one_may_make_oneself_not_bookable(authed_client, mock_db_session, destroy_sessions):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "superuser"))
+    me = make_user(5, "superuser")
+    me.is_resource = True
+    route_db(mock_db_session, me)
+
+    resp = await client.put("/api/users/5", json={"is_resource": False})
+
+    assert resp.status_code == 200
+    assert me.is_resource is False
+
+
+@pytest.mark.asyncio
+async def test_omitted_bookable_flag_is_left_alone(
+    authed_client, mock_db_session, destroy_sessions
+):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "superuser"))
+    target = make_user(7, "user")
+    target.is_resource = False
+    route_db(mock_db_session, target)
+
+    resp = await client.put("/api/users/7", json={"first_name": "Renamed"})
+
+    assert resp.status_code == 200
+    assert target.is_resource is False
+    assert resp.json()["is_resource"] is False
+
+
+@pytest.mark.asyncio
+async def test_bookable_flag_rejects_a_non_boolean(
+    authed_client, mock_db_session, destroy_sessions
+):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "superuser"))
+    target = make_user(7, "user")
+    route_db(mock_db_session, target)
+
+    resp = await client.put("/api/users/7", json={"is_resource": "sometimes"})
+
+    assert resp.status_code == 422
+    mock_db_session.commit.assert_not_awaited()

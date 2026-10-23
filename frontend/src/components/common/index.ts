@@ -7,6 +7,9 @@ export type { InputProps } from './Input';
 export { Select } from './Select';
 export type { SelectProps, SelectOption } from './Select';
 
+export { SearchableSelect } from './SearchableSelect';
+export type { SearchableSelectProps, SearchableOption } from './SearchableSelect';
+
 export { Modal } from './Modal';
 export type { ModalProps } from './Modal';
 
@@ -28,7 +31,16 @@ export type { ICSImportPanelProps, ICSImportRow } from './ICSImportPanel';
 export { useSubmitGuard } from './useSubmitGuard';
 export type { SubmitGuard } from './useSubmitGuard';
 
-export { TagFilterDropdown } from './TagFilterDropdown';
-export type { TagFilterDropdownProps } from './TagFilterDropdown';
+export { AnchoredPanel } from './AnchoredPanel';
+export type { AnchoredPanelProps } from './AnchoredPanel';
+
+export { ProjectFilterDropdown } from './ProjectFilterDropdown';
+export type { ProjectFilterDropdownProps } from './ProjectFilterDropdown';
+
+export { TeamChecklist } from './TeamChecklist';
+export type { TeamChecklistProps } from './TeamChecklist';
+
+export { RoleChecklist } from './RoleChecklist';
+export type { RoleChecklistProps } from './RoleChecklist';
 
 export { ConfirmDialog } from './ConfirmDialog';

@@ -290,8 +290,8 @@ def create_staff(session: Session, site_ids: List[int], skill_ids: List[int],
             # Create user
             result = session.execute(
                 text("""
-                    INSERT INTO users (email, password, first_name, last_name, job_title, role, active, created_at, updated_at)
-                    VALUES (:email, :password, :first_name, :last_name, :job_title, :role, 1, NOW(), NOW())
+                    INSERT INTO users (email, password, first_name, last_name, job_title, role, active, is_resource, created_at, updated_at)
+                    VALUES (:email, :password, :first_name, :last_name, :job_title, :role, 1, :is_resource, NOW(), NOW())
                     RETURNING id
                 """),
                 {
@@ -301,6 +301,7 @@ def create_staff(session: Session, site_ids: List[int], skill_ids: List[int],
                     "last_name": last_name,
                     "job_title": job_title,
                     "role": role,
+                    "is_resource": role != "admin",
                 }
             )
             user_id = result.fetchone()[0]

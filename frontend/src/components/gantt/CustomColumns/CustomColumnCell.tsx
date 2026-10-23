@@ -10,6 +10,7 @@ import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { setCustomColumnValue as setCustomColumnValueApi, setCustomColumnValuesBatch, getValueKey } from '@/api';
 import type { CustomColumn, CustomColumnEntityType } from '@/types';
 import styles from './CustomColumnCell.module.css';
+import { Icon, ChevronDownIcon, CheckIcon } from '@/components/common/Icon';
 
 // Child entity info for cascading values
 interface ChildEntity {
@@ -231,9 +232,7 @@ function BooleanCell({ value, onChange, readOnly }: BooleanCellProps) {
     >
       <div className={`${styles.checkbox} ${isChecked ? styles.checked : ''}`}>
         {isChecked && (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
+          <Icon icon={CheckIcon} size={12} />
         )}
       </div>
     </div>
@@ -294,17 +293,7 @@ function ListCell({ value, options, onChange, readOnly }: ListCellProps) {
       >
         <span>{value || '—'}</span>
         {!readOnly && (
-          <svg 
-            className={`${styles.chevron} ${isOpen ? styles.open : ''}`}
-            width="12" 
-            height="12" 
-            viewBox="0 0 24 24" 
-            fill="none" 
-            stroke="currentColor" 
-            strokeWidth="2"
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+          <Icon icon={ChevronDownIcon} size={12} className={`${styles.chevron} ${isOpen ? styles.open : ''}`} />
         )}
       </div>
       

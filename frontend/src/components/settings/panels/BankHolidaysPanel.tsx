@@ -2,7 +2,8 @@
  * BankHolidaysPanel (Settings hub > Bank holidays)
  *
  * Holidays of one site at a time: add, edit and delete them, refresh them from
- * the Nager holiday API, export them as .ics, or import an .ics file into one or
+ * the Nager holiday API (unless the admin turned the import off in Settings →
+ * Features & defaults), export them as .ics, or import an .ics file into one or
  * more sites. Editing a Nager holiday turns it into a custom one, which then
  * takes precedence over Nager for that date. Superusers only see their sites.
  */
@@ -11,6 +12,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
+import { DateRangeField } from '@/components/common/DateRangeField';
 import { Select } from '@/components/common/Select';
 import { PanelToolbar } from '../PanelToolbar';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -31,7 +33,6 @@ import { buildICS, downloadICS, clampText } from '@/utils/ics';
 import type { ParsedICSEvent } from '@/utils/ics';
 import type { BankHoliday, CalendarImportResult } from '@/types';
 import {
-  useManageableSites,
   pickDefaultSiteId,
   refreshCurrentSiteHolidays,
   formatCalendarDate,
@@ -40,19 +41,13 @@ import {
   nameKey,
 } from './calendarUtils';
 import { SiteChecklist } from './SiteChecklist';
-import {
-  EditIcon,
-  TrashIcon,
-  PlusIcon,
-  DownloadIcon,
-  UploadIcon,
-  RefreshIcon,
-  BackIcon,
-} from './PanelIcons';
+import { Icon, EditIcon, TrashIcon, PlusIcon, DownloadIcon, UploadIcon, RefreshIcon, BackIcon } from '@/components/common/Icon';
 import type { SettingsPanelProps } from '../types';
 import { useReportDirty } from '../useReportDirty';
 import { confirmAction } from '@/utils/confirmDialog';
+import { isSettingOn } from '@/utils/instanceSettings';
 import styles from './CalendarPanel.module.css';
+import { useVisibleSites } from '@/hooks/useVisibleSites';
 
 /** Key of a holiday for duplicate checks: same first day and name */
 function holidayKey(date: string, name: string): string {
@@ -67,8 +62,9 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
   const settingsIntent = useUIStore((s) => s.settingsIntent);
   const clearSettingsIntent = useUIStore((s) => s.clearSettingsIntent);
   const currentSite = useAppStore((s) => s.currentSite);
+  const nagerOn = useAppStore((s) => isSettingOn(s.instanceSettings, 'nager_enabled'));
   const whatIfMode = useWhatIfStore((s) => s.whatIfMode);
-  const manageableSites = useManageableSites();
+  const manageableSites = useVisibleSites();
 
   const [siteId, setSiteId] = useState<number | null>(() =>
     pickDefaultSiteId(manageableSites, currentSite?.id, settingsIntent?.siteId)
@@ -190,7 +186,9 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
 
   const handleDelete = async (holiday: BankHoliday) => {
     if (siteId === null) return;
-    const message = holiday.is_custom
+    // A Nager holiday returns on the next refresh, which cannot happen while
+    // the import is off.
+    const message = holiday.is_custom || !nagerOn
       ? `Delete the holiday "${holiday.name}"?`
       : `Delete the holiday "${holiday.name}"?\n\nIt comes from Nager, so it will return on the next refresh from Nager.`;
     // A second click while the first DELETE runs would 404 and show an error
@@ -332,7 +330,7 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
     return (
       <div className={styles.container}>
         <div className={styles.importHeader}>
-          <Button variant="ghost" icon={<BackIcon />} onClick={() => setView('list')}>
+          <Button variant="ghost" icon={<Icon icon={BackIcon} />} onClick={() => setView('list')}>
             Back to holidays
           </Button>
         </div>
@@ -393,27 +391,29 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
         }
         right={
           <>
+            {nagerOn && (
+              <Button
+                variant="secondary"
+                icon={<Icon icon={RefreshIcon} />}
+                onClick={handleRefresh}
+                disabled={isRefreshing || !site?.country_code}
+                title={site?.country_code ? 'Fetch public holidays from the Nager API' : "Set the site's country in Sites first"}
+              >
+                {isRefreshing ? 'Refreshing...' : 'Refresh from Nager'}
+              </Button>
+            )}
             <Button
               variant="secondary"
-              icon={<RefreshIcon />}
-              onClick={handleRefresh}
-              disabled={isRefreshing || !site?.country_code}
-              title={site?.country_code ? 'Fetch public holidays from the Nager API' : "Set the site's country in Sites first"}
-            >
-              {isRefreshing ? 'Refreshing...' : 'Refresh from Nager'}
-            </Button>
-            <Button
-              variant="secondary"
-              icon={<DownloadIcon />}
+              icon={<Icon icon={DownloadIcon} />}
               onClick={handleExport}
               disabled={visibleHolidays.length === 0}
             >
               Export .ics
             </Button>
-            <Button variant="secondary" icon={<UploadIcon />} onClick={openImport}>
+            <Button variant="secondary" icon={<Icon icon={UploadIcon} />} onClick={openImport}>
               Import .ics
             </Button>
-            <Button icon={<PlusIcon />} onClick={() => setForm({ mode: 'add' })}>
+            <Button icon={<Icon icon={PlusIcon} />} onClick={() => setForm({ mode: 'add' })}>
               Add holiday
             </Button>
           </>
@@ -450,7 +450,9 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
         ) : visibleHolidays.length === 0 ? (
           <div className={styles.empty}>
             {holidays.length === 0
-              ? 'No holidays for this site yet. Add one, import an .ics file or refresh from Nager.'
+              ? nagerOn
+                ? 'No holidays for this site yet. Add one, import an .ics file or refresh from Nager.'
+                : 'No holidays for this site yet. Add one or import an .ics file.'
               : 'No holidays in this year.'}
           </div>
         ) : (
@@ -488,7 +490,7 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
                         title="Edit holiday"
                         aria-label={`Edit ${holiday.name}`}
                       >
-                        <EditIcon />
+                        <Icon icon={EditIcon} size={15} />
                       </button>
                       <button
                         type="button"
@@ -498,7 +500,7 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
                         title="Delete holiday"
                         aria-label={`Delete ${holiday.name}`}
                       >
-                        <TrashIcon />
+                        <Icon icon={TrashIcon} size={15} />
                       </button>
                     </td>
                   </tr>
@@ -510,9 +512,9 @@ export function BankHolidaysPanel({ onDirtyChange }: Partial<SettingsPanelProps>
       </div>
 
       <p className={styles.help}>
-        Holidays are non-working days in every plan of the site. Nager holidays are fetched from
-        the public holiday API; editing one turns it into a custom holiday, which then wins over
-        Nager for that date on later refreshes.
+        {nagerOn
+          ? 'Holidays are non-working days in every plan of the site. Nager holidays are fetched from the public holiday API; editing one turns it into a custom holiday, which then wins over Nager for that date on later refreshes.'
+          : 'Holidays are non-working days in every plan of the site. Fetching holidays from Nager is turned off; the holidays already imported stay.'}
       </p>
     </div>
   );
@@ -559,10 +561,6 @@ function HolidayForm({ siteId, siteName, holiday, onCancel, onSaved, onDirtyChan
       setError('Please select a date');
       return;
     }
-    if (endDate && endDate < date) {
-      setError('End date must be on or after the start date');
-      return;
-    }
     if (!beginSave()) return;
     setError(null);
     try {
@@ -603,22 +601,22 @@ function HolidayForm({ siteId, siteName, holiday, onCancel, onSaved, onDirtyChan
           placeholder="e.g., Company Day"
           autoFocus
         />
-        <Input
-          label="Date"
-          className={styles.field}
-          id="holiday-date"
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-        />
-        <Input
-          label="End date (optional)"
-          className={styles.field}
-          id="holiday-end-date"
-          type="date"
-          value={endDate}
-          min={date || undefined}
-          onChange={(e) => setEndDate(e.target.value)}
+        <DateRangeField
+          startLabel="Date"
+          endLabel="End date (optional)"
+          startId="holiday-date"
+          endId="holiday-end-date"
+          // This form defines the calendar: no hints from the header site's holidays and closures
+          markSiteCalendar={false}
+          fieldClassName={styles.field}
+          start={date}
+          end={endDate}
+          endOptional
+          endPlaceholder="Same day"
+          onChange={({ start, end }) => {
+            setDate(start);
+            setEndDate(end);
+          }}
         />
       </div>
       {holiday && !holiday.is_custom && (

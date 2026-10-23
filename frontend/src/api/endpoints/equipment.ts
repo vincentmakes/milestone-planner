@@ -19,6 +19,23 @@ export async function getEquipment(includeAllSites = false): Promise<Equipment[]
 }
 
 /**
+ * Every equipment item for the Settings panels: one row each, inactive ones
+ * included, `site_ids` listing its sites. Gated on `equipment.manage`, unlike
+ * getEquipment (`views.equipment`).
+ */
+export async function getAllEquipment(): Promise<Equipment[]> {
+  return apiGet<Equipment[]>('/api/equipment/all');
+}
+
+/**
+ * The distinct equipment type names of the tenant (any signed-in user; not
+ * site-scoped), sorted by the server.
+ */
+export async function getEquipmentTypes(): Promise<string[]> {
+  return apiGet<string[]>('/api/equipment-types');
+}
+
+/**
  * Get a single equipment item
  */
 export async function getEquipmentItem(id: number): Promise<Equipment> {

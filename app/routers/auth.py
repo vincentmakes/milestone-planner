@@ -5,10 +5,10 @@ Handles login, logout, session management, and SSO.
 Matches the Node.js API at /api/auth exactly.
 """
 
-import hashlib
 import logging
+import re
 from contextlib import asynccontextmanager
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -22,7 +22,7 @@ from app.database import get_db
 from app.middleware.auth import (
     get_current_user,
     get_session_id,
-    require_admin,
+    require_permission,
 )
 from app.models.settings import SSOConfig
 from app.models.user import User
@@ -48,11 +48,19 @@ from app.services.login_throttle import (
     record_login_failure,
     record_login_success,
 )
+from app.services.permissions import (
+    PermissionSet,
+    effective_permission_set,
+    role_display_name,
+)
+from app.services.response_builders import get_is_resource
 from app.services.session import SessionService
 from app.services.sso import (
     apply_secret_update,
+    ensure_sso_default_role,
     mask_secret,
     read_tenant_client_secret,
+    resolve_sso_default_role,
     tenant_sso_is_configured,
 )
 from app.services.sso_errors import parse_entra_token_error
@@ -63,8 +71,14 @@ router = APIRouter()
 settings = get_settings()
 
 
-def build_user_session_info(user: User) -> UserSessionInfo:
-    """Build user session info from User model matching Node.js format."""
+def build_user_session_info(user: User, permissions: PermissionSet) -> UserSessionInfo:
+    """
+    Build user session info from User model matching Node.js format.
+
+    ``permissions`` is the user's live set (``effective_permission_set``: the
+    role's matrix with the feature switches applied): its allow keys, approval
+    keys and ``sites.view_all`` go out with the user.
+    """
     sites = user.sites if user.sites else []
 
     return UserSessionInfo(
@@ -75,6 +89,11 @@ def build_user_session_info(user: User) -> UserSessionInfo:
         name=f"{user.first_name} {user.last_name}".strip(),
         jobTitle=user.job_title,
         role=user.role,
+        roleName=role_display_name(user.role, user.role_name),
+        permissions=permissions.allow_keys(),
+        approvalRequired=permissions.approval_keys(),
+        canSeeAllSites=permissions.has("sites.view_all"),
+        isResource=get_is_resource(user),
         siteIds=[s.id for s in sites],
         sites=[
             UserSiteInfo(
@@ -175,7 +194,7 @@ async def login(
 
     return LoginResponse(
         success=True,
-        user=build_user_session_info(user),
+        user=build_user_session_info(user, await effective_permission_set(db, user.role)),
     )
 
 
@@ -258,7 +277,9 @@ async def get_current_session(
     if not user or not user.is_active:
         return AuthMeResponse(user=None)
 
-    return AuthMeResponse(user=build_user_session_info(user))
+    return AuthMeResponse(
+        user=build_user_session_info(user, await effective_permission_set(db, user.role))
+    )
 
 
 @router.post("/auth/change-password")
@@ -421,12 +442,12 @@ async def get_sso_config_public(
 async def get_sso_config_full(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("settings.sso")),
 ):
     """
     Get full SSO configuration (client secret masked only).
 
-    Requires admin authentication.
+    Requires ``settings.sso``.
     Matches: GET /api/sso/config/full
 
     Also reports whether organization-level SSO is active for this tenant
@@ -481,7 +502,9 @@ async def get_sso_config_full(
                 "client_id": org_sso.get("client_id"),
                 "redirect_uri": org_sso.get("redirect_uri"),
                 "auto_create_users": 1 if org_sso.get("auto_create_users") else 0,
-                "default_role": org_sso.get("default_role") or "user",
+                # What an SSO sign-in creates (an unknown or admin default
+                # falls back to ``user``), not the raw stored value.
+                "default_role": await resolve_sso_default_role(db, org_sso.get("default_role")),
             }
         )
         response.pop("client_secret", None)
@@ -495,12 +518,12 @@ async def update_sso_config_new(
     data: SSOConfigUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("settings.sso")),
 ):
     """
     Update SSO configuration.
 
-    Requires admin authentication.
+    Requires ``settings.sso``.
     Matches: PUT /api/sso/config
     """
     # Never log the model itself: it carries the Entra client secret.
@@ -537,7 +560,7 @@ async def update_sso_config_new(
     if data.auto_create_users is not None:
         config.auto_create_users = 1 if data.auto_create_users else 0
     if data.default_role is not None:
-        config.default_role = data.default_role or "user"
+        config.default_role = await ensure_sso_default_role(db, data.default_role)
 
     await db.commit()
 
@@ -590,12 +613,12 @@ async def update_sso_config(
     data: SSOConfigUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_permission("settings.sso")),
 ):
     """
     Update SSO configuration.
 
-    Requires admin authentication.
+    Requires ``settings.sso``.
     Matches: PUT /api/auth/sso/config
     """
     _reject_if_org_sso_active(data, await _active_org_sso(request, db, strict=True))
@@ -622,7 +645,7 @@ async def update_sso_config(
     if data.auto_create_users is not None:
         config.auto_create_users = 1 if data.auto_create_users else 0
     if data.default_role is not None:
-        config.default_role = data.default_role
+        config.default_role = await ensure_sso_default_role(db, data.default_role)
 
     await db.commit()
     await db.refresh(config)
@@ -764,8 +787,46 @@ def _sso_error_redirect(tenant_slug: str | None, message: str) -> RedirectRespon
     signed state has given us the slug we send the user back to their own tenant
     login screen instead, with the reason attached.
     """
-    base = f"/t/{tenant_slug}/" if tenant_slug else "/"
-    return RedirectResponse(url=f"{base}?sso_error={quote_plus(message)}", status_code=302)
+    return RedirectResponse(
+        url=f"{_tenant_home(tenant_slug)}?sso_error={quote_plus(message)}", status_code=302
+    )
+
+
+# The slugs TenantMiddleware resolves (``/t/{slug}/``); nothing else is a tenant.
+_TENANT_SLUG_RE = re.compile(r"[a-z0-9]|[a-z0-9][a-z0-9-]*[a-z0-9]")
+
+
+def _tenant_home(tenant_slug: str | None) -> str:
+    """
+    The local path of a tenant's workspace, ``/`` without a valid slug.
+
+    The slug comes from the HMAC-signed state, so it is one we minted; checking
+    its shape as well keeps every SSO redirect a same-origin path even if a
+    signing key leaked or a future caller passed something else.
+    """
+    if tenant_slug and _TENANT_SLUG_RE.fullmatch(tenant_slug):
+        return _local_redirect_path(f"/t/{tenant_slug}/")
+    return "/"
+
+
+def _local_redirect_path(path: str) -> str:
+    """
+    ``path`` when it is a same-origin absolute path, else ``/``.
+
+    Refuses scheme-relative (``//host``) and backslash forms (``/\\host``),
+    which browsers follow to another origin, and anything with a scheme or host.
+    """
+    # Browsers read a backslash as a slash, so "/\\host" is "//host" to them.
+    candidate = path.replace("\\", "")
+    if (
+        candidate == path
+        and candidate.startswith("/")
+        and not candidate.startswith("//")
+        and not urlparse(candidate).netloc
+        and not urlparse(candidate).scheme
+    ):
+        return candidate
+    return "/"
 
 
 def _config_fingerprint(config: dict, source: str) -> str:
@@ -776,15 +837,14 @@ def _config_fingerprint(config: dict, source: str) -> str:
     independently, and a redemption that quietly used a *different* config than
     the sign-in is the hardest SSO failure to see from the outside — Entra just
     reports a redirect-URI mismatch. Logging this on both hops makes the two
-    directly comparable. The secret is reduced to a short digest, which proves
-    both hops used the same credential without disclosing it.
+    directly comparable. Of the secret only its presence is logged: nothing
+    derived from it (not even a digest) goes to the log.
     """
-    secret = config.get("client_secret") or ""
-    secret_fp = hashlib.sha256(secret.encode()).hexdigest()[:8] if secret else "none"
+    configured = "set" if (config.get("client_secret") or "").strip() else "missing"
     return (
         f"source={source} client_id={config.get('client_id')} "
         f"entra_tenant={config.get('tenant_id')} redirect_uri={config.get('redirect_uri')} "
-        f"secret_fp={secret_fp}"
+        f"secret={configured}"
     )
 
 
@@ -1030,7 +1090,7 @@ async def _sso_callback(
 
     Matches: GET /api/auth/sso/callback
     """
-    from app.services.sso import OrgSSOLookupError, SSOService, normalize_sso_default_role
+    from app.services.sso import OrgSSOLookupError, SSOService
 
     # Verify the HMAC-signed state and recover the tenant slug it carries. The
     # slug is only ever used to pick a redirect target, so recovering it up front
@@ -1231,7 +1291,7 @@ async def _sso_callback(
                 first_name=user_info.get("givenName", ""),
                 last_name=user_info.get("surname", ""),
                 job_title=user_info.get("jobTitle"),
-                role=normalize_sso_default_role(config.get("default_role")),
+                role=await resolve_sso_default_role(active_db, config.get("default_role")),
                 sso_provider="microsoft",
                 sso_id=user_info.get("id"),
                 active=1,
@@ -1260,19 +1320,17 @@ async def _sso_callback(
 
         # Determine redirect URL - land back inside the tenant workspace.
         if tenant_slug:
-            redirect_url = f"/t/{tenant_slug}/"
+            redirect_url = _tenant_home(tenant_slug)
         else:
             # Single-tenant / legacy state: derive from the callback path as before.
             redirect_url = "/"
             if config.get("redirect_uri"):
-                from urllib.parse import urlparse
-
                 parsed = urlparse(config["redirect_uri"])
                 path = parsed.path
                 if "/api/auth/sso/callback" in path:
                     tenant_path = path.replace("/api/auth/sso/callback", "")
                     if tenant_path:
-                        redirect_url = (
+                        redirect_url = _local_redirect_path(
                             tenant_path if tenant_path.endswith("/") else tenant_path + "/"
                         )
 

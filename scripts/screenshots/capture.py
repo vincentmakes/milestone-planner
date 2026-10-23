@@ -5,12 +5,10 @@ Outputs PNGs at 1440x900 to docs/assets/screenshots/.
 
 Prerequisites
 -------------
-1. Demo instance running at http://localhost:8486/t/demo/ — see scripts/screenshots/README.md.
+1. Demo instance running at http://localhost:8486/t/demo/, seeded with
+   `python -m app.scripts.seed_demo` — see scripts/screenshots/README.md.
    Set SCREENSHOT_BASE_URL (e.g. http://localhost:8487) to capture from another instance.
-2. seed_extras.sql applied so custom columns, vacations, and bank holidays are populated:
-       docker exec -i milestone-fresh-db psql -U milestone_demo -d milestone_demo \\
-         < scripts/screenshots/seed_extras.sql
-3. Playwright Python in a venv:
+2. Playwright Python in a venv:
        python3 -m venv /tmp/pw-venv
        /tmp/pw-venv/bin/pip install playwright
        /tmp/pw-venv/bin/playwright install chromium
@@ -130,6 +128,19 @@ def right_click_row(page: Page, name: str) -> None:
     page.wait_for_timeout(400)
 
 
+def pick_in_searchable_select(page: Page, trigger_name: str, label: str) -> None:
+    """Pick `label` in a SearchableSelect of the open dialog: click its trigger
+    (a listbox button named by its label, then the chosen item), type the
+    label in the search box that opens focused, click the matching option."""
+    dialog = page.get_by_role("dialog")
+    dialog.get_by_role("button", name=re.compile(trigger_name)).and_(
+        dialog.locator('button[aria-haspopup="listbox"]')
+    ).click()
+    search = dialog.get_by_role("combobox", name=re.compile("^Find "))
+    search.fill(label)
+    dialog.get_by_role("option", name=re.compile(f"^{re.escape(label)}")).first.click()
+
+
 def open_project_modal(page: Page, project: str = "Bioprocess Scale-Up") -> None:
     """Open the Edit Project modal for a project via the context menu."""
     go_to_gantt(page)
@@ -143,8 +154,9 @@ def open_project_modal(page: Page, project: str = "Bioprocess Scale-Up") -> None
 def open_color_by(page: Page) -> None:
     """Open the project panel's Colour by dropdown (ColorByDropdown.tsx).
 
-    The trigger's accessible name is "Colour by", or "Coloured by <group>"
-    once a group is chosen; its panel is the dialog "Colour projects".
+    The trigger's accessible name is "Colour by", or "Coloured by <choice>"
+    once a project field (or "Tags") is chosen; its panel is the dialog
+    "Colour projects".
     """
     page.get_by_role("button", name=re.compile(r"^Colou?r(ed)? by")).first.click()
     page.get_by_role("dialog", name="Colour projects").wait_for()
@@ -161,11 +173,11 @@ def _pick_color_by(page: Page, option: str) -> None:
     page.wait_for_timeout(400)
 
 
-def set_color_by(page: Page, group_name: str) -> None:
-    """Colour the Gantt project bars by a tag group (per-site browser
-    preference in localStorage, so it carries over to the later shots of the
-    shared context)."""
-    _pick_color_by(page, group_name)
+def set_color_by(page: Page, choice: str) -> None:
+    """Colour the Gantt project bars by a dropdown project field or "Tags"
+    (per-site browser preference in localStorage, so it carries over to the
+    later shots of the shared context)."""
+    _pick_color_by(page, choice)
 
 
 def clear_color_by(page: Page) -> None:
@@ -318,15 +330,17 @@ def shot_project_modal(context: BrowserContext) -> None:
 
 
 def shot_project_tags(context: BrowserContext) -> None:
-    """Tag picker inside the project modal, with the grouped dropdown open."""
+    """Tag picker inside the project modal, with its tag list open."""
     page = context.new_page()
     login(page)
     open_project_modal(page)
-    # Placeholder = TAG_PICKER_PLACEHOLDER in frontend/src/components/modals/TagPicker.tsx
+    # Placeholder = TAG_PICKER_PLACEHOLDER in frontend/src/components/modals/TagPicker.tsx.
+    # The picker (common/OptionPicker) opens on a click, typing or the down
+    # arrow — not on focus alone.
     page.click('input[placeholder="Find a tag..."]')
     page.wait_for_timeout(400)
-    # The grouped list opens below the field; bring it fully into the modal's
-    # scroll view so the "pick one" group heading and its options are visible.
+    # The flat tag list (tag order) opens below the field; bring it fully into
+    # the modal's scroll view.
     try:
         page.locator('[role="listbox"]').first.scroll_into_view_if_needed()
         page.wait_for_timeout(300)
@@ -338,12 +352,204 @@ def shot_project_tags(context: BrowserContext) -> None:
 
 
 def shot_settings_tags(context: BrowserContext) -> None:
-    """Settings -> Tags: tag groups and the per-group tag lists (admin only)."""
+    """Settings -> Tags: the flat tag list with colours and site limits (admin only)."""
     page = context.new_page()
     login(page)
     open_settings_section(page, "Tags")
     page.screenshot(path=str(OUT / "settings-tags.png"))
     log("[done] settings-tags.png")
+    page.close()
+
+
+def shot_project_fields_settings(context: BrowserContext) -> None:
+    """Settings -> Project fields: the built-in fields (labels, Shown switches)
+    and the custom fields, the "Project type" dropdown open on its items
+    (admin only; the demo's former tag groups after the 2.0.0 conversion)."""
+    page = context.new_page()
+    login(page)
+    open_settings_section(page, "Project fields")
+    # ProjectFieldsPanel: a dropdown field's items toggle is labelled "Items of <field>".
+    page.get_by_role("button", name="Items of Project type", exact=True).click()
+    page.wait_for_timeout(600)
+    # The items open under the field, below the built-in block; the add-field
+    # row sits after the list (ProjectFieldsPanel): scroll the panel so the
+    # custom fields, the open items and that row share the frame.
+    page.get_by_label("New field name", exact=True).evaluate(
+        "el => (el.closest('form') || el).scrollIntoView({block: 'end'})"
+    )
+    page.wait_for_timeout(300)
+    page.screenshot(path=str(OUT / "project-fields-settings.png"))
+    log("[done] project-fields-settings.png")
+    page.close()
+
+
+def shot_teams_settings(context: BrowserContext) -> None:
+    """Settings -> Teams: the current site's teams with colour, description and
+    member count (admins, and superusers for their sites)."""
+    _settings_section_shot(context, "Teams", "settings-teams.png")
+
+
+def shot_team_filter(context: BrowserContext) -> None:
+    """Header team filter, open, on the Gantt chart (Winterthur's teams).
+
+    The trigger's aria-label is "Team filter: <current choice>"; it only renders
+    when the current site has active teams. Nothing is ticked, so the stored
+    filter (per browser) is left as it was.
+    """
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    page.locator('button[aria-label^="Team filter"]').first.click()
+    page.wait_for_timeout(400)
+    page.screenshot(path=str(OUT / "team-filter.png"))
+    log("[done] team-filter.png")
+    page.close()
+
+
+def _login_as(context: BrowserContext, email: str) -> tuple[BrowserContext, Page]:
+    """Sign in as another demo user in a fresh context (own cookies), light theme.
+
+    The shared context stays signed in as the admin. Every demo person has the
+    password 'demo1234' (seed_demo); the caller closes the returned context.
+    """
+    fresh = context.browser.new_context(viewport={"width": 1440, "height": 900}, locale="en-US")
+    page = fresh.new_page()
+    page.goto(URL)
+    page.wait_for_load_state("networkidle")
+    if page.locator('input[type="email"]').count() > 0:
+        page.fill('input[type="email"]', email)
+        page.fill('input[type="password"]', PASSWORD)
+        page.get_by_role("button", name="Sign In", exact=True).click()
+        page.wait_for_load_state("networkidle")
+    try:
+        page.click('button[aria-label="Switch to light mode"]', timeout=2000)
+    except Exception:
+        pass
+    page.wait_for_timeout(1500)
+    return fresh, page
+
+
+def shot_roles_settings(context: BrowserContext) -> None:
+    """Settings -> Roles, the User role open on its permission matrix.
+
+    The demo seed puts the User role's three own-booking permissions in
+    'Needs approval'; the matrix shows them near the top (Staff assignments).
+    """
+    page = context.new_page()
+    login(page)
+    open_settings_section(page, "Roles")
+    # RolesPanel: each row's edit button is labelled "Edit <role name>".
+    page.get_by_role("button", name="Edit User", exact=True).click()
+    page.wait_for_timeout(800)
+    page.get_by_role("radiogroup", name="Book myself").scroll_into_view_if_needed()
+    page.wait_for_timeout(300)
+    page.screenshot(path=str(OUT / "roles-settings.png"))
+    log("[done] roles-settings.png")
+    page.close()
+
+
+def shot_approvals_settings(context: BrowserContext) -> None:
+    """Settings -> Roles -> Approvals: one card per own-booking action; the
+    demo's 'Book myself' policy names the project manager and Team Lead."""
+    page = context.new_page()
+    login(page)
+    open_settings_section(page, "Roles")
+    page.get_by_role("tab", name="Approvals", exact=True).click()
+    page.wait_for_timeout(1000)
+    page.screenshot(path=str(OUT / "approvals-settings.png"))
+    log("[done] approvals-settings.png")
+    page.close()
+
+
+def shot_defaults_settings(context: BrowserContext) -> None:
+    """Settings -> Features & defaults: the Gantt panel, the default filters
+    and the three switches, as the demo ships them (nothing saved)."""
+    page = context.new_page()
+    login(page)
+    open_settings_section(page, "Features & defaults")
+    page.get_by_role("group", name="Staff panel skills").wait_for()
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(OUT / "defaults-settings.png"))
+    log("[done] defaults-settings.png")
+    page.close()
+
+
+def _open_my_work(page: Page) -> None:
+    """Open My Work from the sidebar; its accessible name carries the badge
+    ("My Work, 1 approval to decide")."""
+    page.locator("aside, nav").first.get_by_role("button", name=re.compile(r"^My Work")).click()
+    page.wait_for_timeout(800)
+
+
+def shot_my_work(context: BrowserContext) -> None:
+    """My Work as Bob (PM of Bioprocess Scale-Up), on the My Approvals tab with
+    Diana's request to join Analytics."""
+    fresh, page = _login_as(context, "bob.brown@demo.local")
+    _open_my_work(page)
+    # The tab's accessible name carries its count ("My Approvals, 1 item").
+    page.get_by_role("tab", name=re.compile(r"^My Approvals")).click()
+    page.wait_for_timeout(800)
+    page.screenshot(path=str(OUT / "my-work.png"))
+    log("[done] my-work.png")
+    fresh.close()
+
+
+def shot_my_assignments(context: BrowserContext) -> None:
+    """My Work as Bob, on the My Assignments tab: his current and upcoming
+    bookings, soonest first."""
+    fresh, page = _login_as(context, "bob.brown@demo.local")
+    _open_my_work(page)
+    page.get_by_role("tab", name=re.compile(r"^My Assignments")).click()
+    page.wait_for_timeout(800)
+    page.screenshot(path=str(OUT / "my-assignments.png"))
+    log("[done] my-assignments.png")
+    fresh.close()
+
+
+def shot_pending_assignment(context: BrowserContext) -> None:
+    """Gantt on Bioprocess Scale-Up with Diana's dashed pending row under the
+    Analytics phase (admin view; the badge reads 'Pending approval')."""
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    expand_all_projects(page)
+    click_today(page)
+    page.get_by_text("Pending approval", exact=True).first.scroll_into_view_if_needed()
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(OUT / "pending-assignment.png"))
+    log("[done] pending-assignment.png")
+    page.close()
+
+
+def shot_assignment_overview(context: BrowserContext) -> None:
+    """Gantt on Bioprocess Scale-Up with Charlie Clark's overview row under
+    the Analytics phase: his two unlinked bookings drawn as blocks on the
+    group row, the two booking rows (outlined pin, own dates) below it."""
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    # An instance-wide default panel (Settings → Features & defaults) would
+    # take half the height: close it for this shot.
+    if page.get_by_text("Equipment Overview", exact=True).count() > 0:
+        open_panel(page, "Equipment")
+    # (the sidebar's "Staff Overview" view entry is one match already)
+    if page.get_by_text("Staff Overview", exact=True).count() > 1:
+        open_panel(page, "Staff")
+    expand_all_projects(page)
+    click_today(page)
+    group = page.get_by_role("button", name="Collapse Charlie Clark's bookings")
+    group.first.scroll_into_view_if_needed()
+    # The Analytics phase starts a few weeks after today: bring it into view.
+    scroll_timeline_right(page, 350)
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(OUT / "assignment-overview-row.png"))
+    log("[done] assignment-overview-row.png")
     page.close()
 
 
@@ -358,13 +564,51 @@ def shot_assign_staff_modal(context: BrowserContext) -> None:
     right_click_row(page, "Catalyst Optimization")
     page.get_by_text("Assign Staff", exact=True).click()
     page.wait_for_timeout(600)
-    # The page has other <select>s (custom-column list cells) — target the
-    # modal's staff dropdown via its placeholder option.
-    staff_select = page.locator('select:has(option:text("Select staff member"))')
-    staff_select.select_option(index=1)
+    pick_in_searchable_select(page, r"^Staff Member", "Alice Anderson")
     page.wait_for_timeout(400)
     page.screenshot(path=str(OUT / "assign-staff-modal.png"))
     log("[done] assign-staff-modal.png")
+    page.close()
+
+
+def shot_date_picker(context: BrowserContext) -> None:
+    """Edit Phase dialog of Bioprocess Scale-Up's Trial phase with the two-month
+    date range calendar open from its Start Date field (range highlighted,
+    weekends muted, the site's bank holidays dotted)."""
+    page = context.new_page()
+    login(page)
+    go_to_gantt(page)
+    use_quarter_view(page)
+    click_today(page)
+    expand_all_projects(page)
+    # Phase names repeat across projects: take the first "Trial" phase row
+    # that follows the Bioprocess Scale-Up project row in the project panel.
+    phase_id = page.evaluate(
+        """() => {
+            const project = [...document.querySelectorAll('[data-project-id]')]
+                .find((row) => row.textContent.includes('Bioprocess Scale-Up'));
+            if (!project) return null;
+            const phase = [...document.querySelectorAll('[data-phase-id]')].find(
+                (row) =>
+                    project.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING &&
+                    row.textContent.trim().startsWith('Trial')
+            );
+            return phase ? phase.getAttribute('data-phase-id') : null;
+        }"""
+    )
+    if phase_id is None:
+        raise RuntimeError("Trial phase of Bioprocess Scale-Up not found")
+    row = page.locator(f'[data-phase-id="{phase_id}"]').first
+    row.scroll_into_view_if_needed()
+    row.click(button="right")
+    page.wait_for_timeout(400)
+    page.get_by_role("menuitem", name="Edit Phase").click()
+    page.wait_for_timeout(800)
+    page.get_by_role("dialog", name="Edit Phase").get_by_label("Start Date *", exact=True).click()
+    page.get_by_role("dialog", name="Choose dates").wait_for()
+    page.wait_for_timeout(400)
+    page.screenshot(path=str(OUT / "date-range-picker.png"))
+    log("[done] date-range-picker.png")
     page.close()
 
 
@@ -624,24 +868,32 @@ def shot_site_modal(context: BrowserContext) -> None:
     page.close()
 
 
-def shot_tag_filter(context: BrowserContext) -> None:
-    """Tag filter dropdown in the Gantt project panel, open."""
+def shot_project_filter(context: BrowserContext) -> None:
+    """Project Filter in the Gantt project panel, open: one section per
+    dropdown project field, then Tags."""
     page = context.new_page()
     login(page)
     go_to_gantt(page)
     use_quarter_view(page)
     click_today(page)
     # The compact trigger in the project panel (the Kanban toolbar's twin is
-    # not rendered on the Gantt). aria-label is "Tags" or "Tags (n selected)".
-    page.locator('button[aria-label^="Tags"]').first.click()
+    # not rendered on the Gantt). ProjectFilterDropdown's aria-label is
+    # "Filter" or "Filter (n selected)" — the custom-column filters are
+    # "Filter <column>", hence the anchored pattern.
+    page.get_by_role("button", name=re.compile(r"^Filter( \(\d+ selected\))?$")).first.click()
+    panel = page.get_by_role("dialog", name="Filter projects")
+    panel.wait_for()
+    # The panel is capped to the viewport and scrolls inside; at 1440x900 the
+    # demo's two fields and the tags fit, so the shot starts at the first
+    # field heading (Project type).
     page.wait_for_timeout(400)
-    page.screenshot(path=str(OUT / "tag-filter-dropdown.png"))
-    log("[done] tag-filter-dropdown.png")
+    page.screenshot(path=str(OUT / "project-filter.png"))
+    log("[done] project-filter.png")
     page.close()
 
 
 def shot_gantt_grouped(context: BrowserContext) -> None:
-    """Gantt project list grouped by the "Project type" tag group."""
+    """Gantt project list grouped by the "Project type" project field."""
     page = context.new_page()
     login(page)
     go_to_gantt(page)
@@ -649,7 +901,7 @@ def shot_gantt_grouped(context: BrowserContext) -> None:
     click_today(page)
 
     def open_group_by() -> None:
-        # aria-label is "Group by" or "Grouped by <group>" (GroupByDropdown.tsx)
+        # aria-label is "Group by" or "Grouped by <field>" (GroupByDropdown.tsx)
         page.locator('button[aria-label^="Group"][aria-haspopup="dialog"]').first.click()
         page.wait_for_timeout(300)
 
@@ -717,8 +969,7 @@ def shot_equipment_assign_modal(context: BrowserContext) -> None:
     right_click_row(page, "Bioprocess Scale-Up")
     page.get_by_text("Assign Equipment", exact=True).click()
     page.wait_for_timeout(600)
-    equip_select = page.locator('select:has(option:text("Select equipment"))')
-    equip_select.select_option(index=1)
+    pick_in_searchable_select(page, r"^Equipment", "HPLC System 1")
     page.wait_for_timeout(400)
     page.screenshot(path=str(OUT / "equipment-assignment-modal.png"))
     log("[done] equipment-assignment-modal.png")
@@ -769,7 +1020,17 @@ TARGETS = {
     "project-modal": shot_project_modal,
     "tags": shot_project_tags,
     "settings-tags": shot_settings_tags,
+    "project-fields": shot_project_fields_settings,
+    "settings-teams": shot_teams_settings,
+    "roles": shot_roles_settings,
+    "approvals": shot_approvals_settings,
+    "defaults-settings": shot_defaults_settings,
+    "my-work": shot_my_work,
+    "my-assignments": shot_my_assignments,
+    "pending": shot_pending_assignment,
+    "assignment-overview-row": shot_assignment_overview,
     "assign-staff": shot_assign_staff_modal,
+    "date-picker": shot_date_picker,
     "settings": shot_settings_modal,
     "sites": shot_manage_sites,
     "users": shot_manage_users,
@@ -792,7 +1053,8 @@ TARGETS = {
     "archived": shot_archived_view,
     "site-modal": shot_site_modal,
     "equipment-assign": shot_equipment_assign_modal,
-    "tag-filter": shot_tag_filter,
+    "project-filter": shot_project_filter,
+    "team-filter": shot_team_filter,
     "grouped": shot_gantt_grouped,
     "color-by": shot_gantt_color_by,
     "kanban": shot_kanban,

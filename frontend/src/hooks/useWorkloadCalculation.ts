@@ -15,6 +15,7 @@ import type { CompanyEvent, Vacation } from '@/types';
 import { getAbsenceOn, absenceTypeName, absenceColor, cleanVacationDescription } from '@/utils/recurringVacation';
 import type { AbsenceTypesById } from '@/utils/recurringVacation';
 import { DEFAULT_EVENT_COLOR } from '@/utils/colorSwatches';
+import { isPendingAssignment } from '@/utils/kanbanCards';
 
 /**
  * Site closures affecting the row's person: a day → event map, or a lookup
@@ -32,6 +33,8 @@ interface AssignmentWithDates {
   end_date: string;
   projectName?: string;
   phaseName?: string;
+  /** 'pending' = a booking awaiting approval: shown elsewhere, never counted */
+  approval_status?: 'approved' | 'pending';
 }
 
 export interface WorkloadCell {
@@ -91,8 +94,10 @@ export function calculateWorkloadCells(
     const closure = closureOn(cellDateStr);
     const isOnVacation = !!absence?.unavailable || closure !== null;
 
-    // Find all assignments active on this date (extract date part for comparison)
+    // Find all assignments active on this date (extract date part for comparison).
+    // A booking awaiting approval books no capacity until it is approved.
     const activeAssignments = assignments.filter((a) => {
+      if (isPendingAssignment(a)) return false;
       const aStart = a.start_date.split('T')[0];
       const aEnd = a.end_date.split('T')[0];
       return cellDateStr >= aStart && cellDateStr <= aEnd;

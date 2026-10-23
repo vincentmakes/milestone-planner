@@ -10,7 +10,7 @@ import { Notice } from '@/components/common/Notice';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { PanelToolbar } from '../PanelToolbar';
-import { BackIcon, EditIcon, PlusIcon, TrashIcon } from './PanelIcons';
+import { Icon, BackIcon, EditIcon, PlusIcon, TrashIcon } from '@/components/common/Icon';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useAppStore } from '@/stores/appStore';
 import { skillsApi } from '@/api/endpoints/skills';
@@ -113,7 +113,7 @@ export function SkillsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
           <PanelToolbar
             left={<span className={styles.count}>{skills.length} skills</span>}
             right={
-              <Button icon={<PlusIcon />} onClick={handleCreate}>
+              <Button icon={<Icon icon={PlusIcon} />} onClick={handleCreate}>
                 Add Skill
               </Button>
             }
@@ -155,7 +155,7 @@ export function SkillsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                         title="Edit skill"
                         aria-label={`Edit ${skill.name}`}
                       >
-                        <EditIcon />
+                        <Icon icon={EditIcon} size={15} />
                       </button>
                       <button 
                         className={`${styles.actionBtn} ${styles.deleteBtn}`}
@@ -163,7 +163,7 @@ export function SkillsPanel({ onDirtyChange }: Partial<SettingsPanelProps>) {
                         title="Delete skill"
                         aria-label={`Delete ${skill.name}`}
                       >
-                        <TrashIcon />
+                        <Icon icon={TrashIcon} size={15} />
                       </button>
                     </div>
                   </div>
@@ -249,7 +249,7 @@ function SkillForm({ skill, onSave, onCancel, onDirtyChange }: SkillFormProps) {
     <form onSubmit={handleSubmit} className={styles.form}>
       <div className={styles.formHeader}>
         <h3>{isEditing ? 'Edit Skill' : 'Add Skill'}</h3>
-        <Button type="button" variant="ghost" icon={<BackIcon />} onClick={onCancel}>
+        <Button type="button" variant="ghost" icon={<Icon icon={BackIcon} />} onClick={onCancel}>
           Back to list
         </Button>
       </div>

@@ -4,7 +4,7 @@
 
 import type { ComponentType, LazyExoticComponent, ReactNode } from 'react';
 import type { SettingsSectionId } from '@/stores/uiStore';
-import type { UserRole } from '@/types';
+import type { PermissionKey } from '@/types/permissions';
 
 export type { SettingsSectionId };
 
@@ -22,8 +22,12 @@ export interface SettingsSection {
   id: SettingsSectionId;
   label: string;
   icon: ReactNode;
-  /** Lowest tenant role that may open the section (admin > superuser) */
-  minRole: Exclude<UserRole, 'user'>;
+  /**
+   * Key(s) that list the section, any one suffices; null = listed whenever
+   * the hub opens (General: per-browser appearance for everyone who has
+   * another section; its instance form needs `settings.general`).
+   */
+  permission: PermissionKey | readonly PermissionKey[] | null;
   /** One line shown under the section title */
   description?: string;
   Panel: SettingsPanelComponent;

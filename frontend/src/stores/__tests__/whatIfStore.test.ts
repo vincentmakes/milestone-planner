@@ -16,6 +16,7 @@ vi.mock('@/api/endpoints/projects', () => ({
 import { useWhatIfStore } from '../whatIfStore';
 import { useUndoStore } from '../undoStore';
 import { useAppStore } from '../appStore';
+import { useUIStore } from '../uiStore';
 import { apiRequest, clientConfig } from '@/api/client';
 import { fetchAllProjects } from '@/api/endpoints/projects';
 
@@ -120,6 +121,51 @@ describe('whatIfStore', () => {
     // Interception check restored afterwards.
     useWhatIfStore.setState({ whatIfMode: true });
     expect(clientConfig.isWhatIfMode?.()).toBe(true);
+  });
+
+  it('Apply counts replayed writes sent for approval (202) and flashes once after the reload', async () => {
+    seedSandboxWithUndo();
+    useUIStore.setState({ flashNotice: null });
+    const order: string[] = [];
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ pending: true, request_id: 11 })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ pending: true, request_id: 12 });
+    vi.mocked(fetchAllProjects).mockImplementation(async () => {
+      order.push(`reload (flash: ${useUIStore.getState().flashNotice?.message ?? 'none'})`);
+      return [SERVER];
+    });
+
+    const ok = await useWhatIfStore.getState().exitWhatIfMode(true);
+
+    expect(ok).toBe(true);
+    expect(order).toEqual(['reload (flash: none)']);
+    expect(useUIStore.getState().flashNotice).toMatchObject({
+      message: '2 bookings sent for approval',
+      tone: 'info',
+    });
+  });
+
+  it('Apply flashes nothing when no replayed write was sent for approval', async () => {
+    seedSandboxWithUndo();
+    useUIStore.setState({ flashNotice: null });
+
+    await useWhatIfStore.getState().exitWhatIfMode(true);
+
+    expect(useUIStore.getState().flashNotice).toBeNull();
+  });
+
+  it('a failed Apply still reports the writes that were sent for approval before it', async () => {
+    seedSandboxWithUndo();
+    useUIStore.setState({ flashNotice: null });
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ pending: true, request_id: 11 })
+      .mockRejectedValueOnce(new Error('boom'));
+
+    await useWhatIfStore.getState().exitWhatIfMode(true);
+
+    expect(useWhatIfStore.getState().whatIfApplyError).toMatchObject({ applied: 1 });
+    expect(useUIStore.getState().flashNotice?.message).toBe('Sent for approval');
   });
 
   it('a failed Apply stops, keeps the failed + remaining ops, stays in What-If, reloads and records the error', async () => {
@@ -255,5 +301,20 @@ describe('whatIfStore', () => {
     expect(state.whatIfMode).toBe(false);
     expect(state.whatIfPendingOperations).toEqual([]);
     expect(state.whatIfApplyError).toBeNull();
+  });
+
+  it('flashes nothing when the stores were reset during Apply, even after a 202', async () => {
+    seedSandboxWithUndo();
+    useUIStore.setState({ flashNotice: null });
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ pending: true, request_id: 11 })
+      .mockImplementationOnce(async () => {
+        useWhatIfStore.getState().reset();
+        throw new Error('Not authenticated');
+      });
+
+    await useWhatIfStore.getState().exitWhatIfMode(true);
+
+    expect(useUIStore.getState().flashNotice).toBeNull();
   });
 });

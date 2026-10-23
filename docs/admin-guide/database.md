@@ -62,7 +62,13 @@ DDL:
       Kanban comments, shown as *Deleted user*);
     - removal of orphaned `custom_column_values` and `card_comments` whose project, phase or
       subphase no longer exists (these rows have no foreign key; older releases left them
-      behind when projects or sites were deleted).
+      behind when projects or sites were deleted);
+    - the roles seed of `add_rbac` (1.13.0): the three system roles with their default
+      permissions and one approval policy per own-booking action, then `users.role` moves from
+      a CHECK constraint to a foreign key on `roles.key`;
+    - expiry of approval requests whose phase, subphase or booking is gone, removal of pending
+      bookings whose request is closed, and clearing of stale request pointers on approved
+      bookings.
 
     The foreign-key rewrites only run when the current constraint differs, and the cleanup
     logs how many rows it removed. The same SQL is available as the
@@ -106,7 +112,7 @@ same reason; use `run_migration.py` instead.
 | `add_company_event_color` | Tenant | Color column for company events |
 | `add_equipment_blocks` | Tenant | Equipment maintenance blocks |
 | `add_tags_tables` | Tenant | Project tags |
-| `add_tag_groups_and_sites` | Tenant | Tag groups, per-site tags (`tag_sites`) and the `group_id` / `all_sites` / `sort_order` tag columns |
+| `add_tag_groups_and_sites` | Tenant | Tag groups, per-site tags (`tag_sites`) and the `group_id` / `all_sites` / `sort_order` tag columns (the groups are converted into project fields by `add_project_fields` since 2.0.0; the automatic upgrade no longer creates `tag_groups`) |
 | `add_project_presence` | Tenant | Real-time presence tracking |
 | `add_is_system_column` | Tenant | System column flag |
 | `add_staff_notes` | Tenant | Staff notes table (migrates and drops the legacy `notes` table) |
@@ -116,6 +122,13 @@ same reason; use `run_migration.py` instead.
 | `projects_site_fk_cascade` | Tenant | `projects.site_id` FK → `ON DELETE CASCADE` (1.5.0, also automatic) |
 | `card_comments_author_set_null` | Tenant | `card_comments.author_id` nullable, FK `ON DELETE SET NULL` (1.5.0, also automatic) |
 | `cleanup_orphaned_values` | Tenant | Delete orphaned custom-column values and card comments (1.5.0, also automatic) |
+| `add_teams` | Tenant | Teams per site, team membership and team scoping of projects, tags, equipment and company events (1.12.0, also applied automatically on startup) |
+| `add_rbac` | Tenant | Roles and permissions, approval policies and requests for own bookings (1.13.0, also applied automatically on startup) — see below |
+| `add_change_notifications` | Tenant | Widens the notification types with `assignment_changed` and `project_changed` (1.15.0, also applied automatically on startup) — see below |
+| `add_user_is_resource` | Tenant | Adds `users.is_resource`, the "Bookable as a resource" flag (1.16.0, also applied automatically on startup) — see below |
+| `add_booking_segments` | Tenant | Adds optional own dates to phase and subphase bookings (1.17.0, also applied automatically on startup) — see below |
+| `add_project_fields` | Tenant | Project fields and their values; converts the tag groups into dropdown fields and drops `tag_groups` and `tags.group_id` (2.0.0, also applied automatically on startup; requires `add_teams`) — see below |
+| `add_project_comments` | Tenant | Lets a project carry its own comment thread: the `card_comments` entity-type CHECK gains `project` (2.0.0, also applied automatically on startup) — see below |
 | `upgrade_to_v90` | Tenant | Major version upgrade |
 
 ### Absence Types and Multi-Site Events (1.5.0)
@@ -146,6 +159,88 @@ python migrations/run_migration.py add_equipment_sites_and_site_closures
 ```
 
 After the upgrade, deleting a site only deletes equipment that is left without any site; equipment shared with another site is kept.
+
+### Teams (1.12.0)
+
+`add_teams` is idempotent and, like the migrations above, also runs **automatically** (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)); `setup_databases.sql` and the tenant provisioner create the same schema for fresh installs. It creates:
+
+- `teams` — a named group of people at **one** site (`site_id`, name unique per site, description, colour, `active`)
+- `team_members` — which users belong to a team; a member must also belong to the team's site
+- `project_teams`, `tag_teams`, `company_event_teams` and `equipment_teams` — the links that scope projects, tags, company events and equipment to teams. For tags, events and equipment the rule is per site: a site with none of the item's teams keeps the whole site
+
+Every foreign key is `ON DELETE CASCADE`: deleting a site removes its teams, and deleting a team removes its memberships and links. Existing data is not touched — every project, tag, event and piece of equipment stays whole-site until someone assigns teams in [Settings → Teams](../user-guide/settings.md#teams).
+
+```bash
+python migrations/run_migration.py add_teams
+```
+
+### Roles and Approvals (1.13.0)
+
+`add_rbac` is idempotent and also runs **automatically** (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)); `setup_databases.sql` and the tenant provisioner create the same schema for fresh installs. It:
+
+- Creates `roles` (key, name, description, `is_system`, sort order) and `role_permissions` (one row per permission a role holds, mode `allow` or `approval`; no row means deny). The three system roles — Administrator, Superuser and User — are seeded with their default permissions, which reproduce what each role could do before 1.13.0. The defaults are written only when the role row is created, so permissions an admin has edited are never re-seeded
+- Creates `approval_policies` and `approval_policy_roles` (who approves each own-booking action; seeded with "the project's manager approves" for all three) and `approval_requests` (one row per request, with its status and outcome)
+- Adds `approval_status` and `approval_request_id` to the three staff assignment tables; every existing booking is `approved`
+- Widens the notification types with `approval_requested` and `approval_decided`, and drops the default-role CHECK of the tenant SSO configuration (a custom role can be the SSO default)
+- Replaces the `users.role` CHECK constraint with a foreign key to `roles.key` (`ON UPDATE CASCADE`, `ON DELETE RESTRICT`). A user whose role is not a known role key is reset to `user` first
+
+Nobody's access changes on upgrade: existing admins, superusers and users keep the same rights through the seeded defaults, except that superusers now manage only the data of the sites they belong to (see [Roles & permissions](../user-guide/settings.md#roles-permissions)).
+
+```bash
+python migrations/run_migration.py add_rbac
+```
+
+### Change Notifications (1.15.0)
+
+`add_change_notifications` widens the CHECK constraint on `notifications.type` with `assignment_changed` (someone else changed your booking) and `project_changed` (someone else changed a project you manage). It replaces the constraint only when `project_changed` is missing, so a second run changes nothing. The same step runs **automatically** every time a tenant's connection pool is created (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)) — including on tenants already upgraded to 1.13 or 1.14 — so running it by hand is optional. No data changes, and the new instance settings of 1.15.0 need no migration: a setting without a stored value reads as its default.
+
+```bash
+python migrations/run_migration.py add_change_notifications
+```
+
+### Bookable Users (1.16.0)
+
+`add_user_is_resource` adds `users.is_resource` (`BOOLEAN NOT NULL DEFAULT TRUE`), the **Bookable as a resource** flag: only bookable people are listed in the Staff view and panel and can receive new bookings (see [Settings → Users](../user-guide/settings.md#bookable-as-a-resource)). When it adds the column it back-fills existing administrators as **not bookable** and leaves everyone else bookable, so the upgrade changes nobody's bookability. It does nothing when the column already exists, so a second run never resets a choice made since. The same step runs **automatically** every time a tenant's connection pool is created (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)), so running it by hand is optional.
+
+```bash
+python migrations/run_migration.py add_user_is_resource
+```
+
+### Booking Segments (1.17.0)
+
+`add_booking_segments` adds `start_date` and `end_date` (`DATE`, nullable) to `phase_staff_assignments` and `subphase_staff_assignments`, with a CHECK (`<table>_segment_dates_check`) that both are empty or both set. Both empty is a **linked** booking that follows its phase or subphase — every existing booking stays that way, so the upgrade changes nobody's plan. Both set is an **unlinked** booking with its own dates inside the phase (see [Bookings on Phases and Subphases](../user-guide/gantt-charts.md#bookings-on-phases-and-subphases)). Each column and the CHECK are added only when missing. The same statements run **automatically** every time a tenant's connection pool is created (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)), so running it by hand is optional.
+
+```bash
+python migrations/run_migration.py add_booking_segments
+```
+
+### Project Fields (2.0.0)
+
+`add_project_fields` creates the project-field tables — `project_fields` (name unique, `field_type` one of `text` / `number` / `toggle` / `select` / `multiselect`, `sort_order`), `project_field_options` (the dropdown items: name unique per field, colour, `all_sites`, `sort_order`), `project_field_option_sites` and `project_field_option_teams` (the items' site and team limits, shaped like `tag_sites` / `tag_teams`), `project_field_values` (one row per project and text, number or switch field) and `project_field_selections` (the items chosen per project, shaped like `project_tags`); every foreign key cascades. It needs the `teams` table (`add_teams`).
+
+Then, **only while `tag_groups` exists**, one `DO` block converts the tag groups:
+
+- each group becomes a field — `select` for a single-select group, `multiselect` otherwise — with the group's order; a name already used by a field gets ` (tags)` appended (then ` (tags 2)`, …);
+- each grouped tag becomes an item of that field with its name, colour, `all_sites` and order, and its `tag_sites` / `tag_teams` rows become the item's site and team limits;
+- every project carrying such a tag gets the item as a selection;
+- the grouped tags are deleted (with their project, site and team links), the remaining tags are renumbered `0..n-1` by their order and name, and `idx_tags_group`, `tags.group_id` and `tag_groups` are dropped.
+
+Ungrouped tags stay tags. **This is a breaking change** (hence 2.0.0): the `/api/tag-groups` routes are gone. Take a backup first; the conversion cannot be undone by a later migration. The same statements run **automatically** when a tenant's connection pool is created and a project-field table is missing or `tag_groups` still exists (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)), so running it by hand is optional, and a second run does nothing.
+
+```bash
+python migrations/run_migration.py add_project_fields
+```
+
+### Project Comment Threads (2.0.0)
+
+`add_project_comments` widens the CHECK constraint on `card_comments.entity_type` (`card_comments_entity_type_check`) from `phase` / `subphase` to `phase` / `subphase` / `project`, so a project can carry its own comment thread — the thread shown in the dialog of its project-level bookings (see [Comments on a Booking](../user-guide/my-work.md#comments-on-a-booking)). A project thread's comments have `entity_type = 'project'` and `entity_id` = the project's id, and are deleted with the project through the `project_id` foreign key. It replaces the constraint only when `project` is missing, so a second run changes nothing. The same step runs **automatically** every time a tenant's connection pool is created (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)), so running it by hand is optional.
+
+```bash
+python migrations/run_migration.py add_project_comments
+```
+
+!!! note "Pre-release databases"
+    Personal tasks (My Todos) were removed before 2.0.0 shipped, so `add_rbac` no longer creates a `todos` table and no migration names a `todo_assigned` notification type. A database upgraded from a pre-release 2.0.0 build keeps its unused `todos` table and the wider notification CHECK; nothing writes either any more.
 
 ### Writing New Migrations
 

@@ -1,0 +1,79 @@
+/* One person's bookings on a card (left pane). Same height as an assignment
+   row: --detail-row-height + 1px border, content-box. No class name here may
+   contain "row" (see StaffGroupRow.tsx). Tokens only. */
+
+.staffGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: var(--detail-row-height);
+  padding-right: 0.75rem;
+  box-sizing: content-box;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+/* Chevron + its gap take exactly 20 px (16 + 8 - 4), so the card badge
+   starts 20 px after the row's edge and the grouped booking rows below
+   (two levels deeper, AssignmentRow: depth * 16 + 28) start 12 px right of it. */
+.collapseBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+  margin-right: -4px;
+  padding: 0;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.collapseBtn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.collapseBtn:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
+}
+
+.chevron {
+  transition: transform var(--transition-fast);
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.count {
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.allocation {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 3px;
+}

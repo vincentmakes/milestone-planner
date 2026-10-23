@@ -39,9 +39,19 @@ class RecordingConn:
         self.ids: dict[tuple, int] = {}
         self.closed = False
 
+    # The command status asyncpg returns: every guarded INSERT inserts here
+    # (a fresh database); ``existing`` names tables whose rows are already there.
+    existing: frozenset[str] = frozenset()
+
     async def execute(self, sql, *args):
         self.executed.append((sql, args))
-        return "OK"
+        m = re.match(r"\s*INSERT INTO (\w+)", sql)
+        if m:
+            return "INSERT 0 0" if m.group(1) in self.existing else "INSERT 0 1"
+        return "UPDATE 1" if sql.lstrip().startswith("UPDATE") else "OK"
+
+    def updates(self, table: str) -> list[tuple[str, tuple]]:
+        return [(s, a) for s, a in self.executed if re.match(rf"\s*UPDATE {table}\b", s)]
 
     async def fetchval(self, sql, *args):
         if sql.startswith("SELECT id FROM absence_types"):
@@ -75,14 +85,34 @@ async def loaded():
 
 async def test_every_insert_is_idempotent(loaded):
     conn, _, _ = loaded
+    for table in (
+        "teams",
+        "team_members",
+        "project_teams",
+        "tag_teams",
+        "equipment_teams",
+        "company_event_teams",
+    ):
+        assert conn.inserts(table), table  # the team rows are covered below
     unguarded = [
         s
         for s, _ in conn.executed
         if s.lstrip().startswith("INSERT") and "NOT EXISTS" not in s and "ON CONFLICT" not in s
     ]
     assert unguarded == []
+    # A guarded insert never overwrites what is there.
+    assert not [s for s, _ in conn.executed if "DO UPDATE" in s]
     updates = [s for s, _ in conn.executed if s.lstrip().startswith("UPDATE")]
-    assert updates and all("dependencies IS NULL OR dependencies IN" in s for s in updates)
+    assert updates
+    for sql in updates:
+        # Only empty columns are filled (dependencies, a request's row link),
+        # plus the demo's role / policy settings, which a re-run never repeats
+        # (test_a_rerun_leaves_role_and_policy_settings_alone).
+        assert (
+            "dependencies IS NULL OR dependencies IN" in sql
+            or "AND assignment_id IS NULL" in sql
+            or re.match(r"\s*UPDATE (role_permissions|approval_policies) SET", sql)
+        ), sql
 
 
 async def test_rows_come_in_foreign_key_order(loaded):
@@ -90,14 +120,20 @@ async def test_rows_come_in_foreign_key_order(loaded):
     order = [
         "sites",
         "skills",
+        "roles",
+        "role_permissions",
+        "approval_policy_roles",
         "users",
+        "teams",
         "equipment",
-        "tag_groups",
+        "project_fields",
+        "project_field_options",
         "tags",
         "projects",
         "project_phases",
         "project_subphases",
         "phase_staff_assignments",
+        "approval_requests",
         "equipment_assignments",
         "company_events",
         "vacations",
@@ -113,10 +149,19 @@ async def test_rows_come_in_foreign_key_order(loaded):
     assert conn.first_insert_index("user_sites") > conn.first_insert_index("users")
     assert conn.first_insert_index("equipment_sites") > conn.first_insert_index("equipment")
     assert conn.first_insert_index("project_tags") > conn.first_insert_index("projects")
+    assert conn.first_insert_index("project_field_selections") > conn.first_insert_index("projects")
     assert conn.first_insert_index("company_event_sites") > conn.first_insert_index(
         "company_events"
     )
     assert conn.first_insert_index("tag_sites") > conn.first_insert_index("tags")
+    assert conn.first_insert_index("teams") > conn.first_insert_index("user_sites")
+    assert conn.first_insert_index("team_members") > conn.first_insert_index("teams")
+    assert conn.first_insert_index("equipment_teams") > conn.first_insert_index("equipment")
+    assert conn.first_insert_index("tag_teams") > conn.first_insert_index("tags")
+    assert conn.first_insert_index("project_teams") > conn.first_insert_index("projects")
+    assert conn.first_insert_index("company_event_teams") > conn.first_insert_index(
+        "company_events"
+    )
 
 
 async def test_counts_match_the_data_set(loaded):
@@ -125,6 +170,23 @@ async def test_counts_match_the_data_set(loaded):
     assert counts["phases"] == len(demo.phases)
     assert counts["subphases"] == len(demo.subphases)
     assert counts["bank_holidays"] == len(demo.bank_holidays)
+    assert counts["teams"] == len(demo.teams)
+    assert len(conn.inserts("teams")) == len(demo.teams)
+    assert len(conn.inserts("team_members")) == sum(len(t["members"]) for t in demo.teams)
+    assert len(conn.inserts("project_teams")) == sum(len(p["teams"]) for p in demo.projects)
+    assert len(conn.inserts("tag_teams")) == sum(len(t["teams"]) for t in demo.tags)
+    assert counts["project_fields"] == len(demo.project_fields)
+    assert len(conn.inserts("project_fields")) == len(demo.project_fields)
+    assert len(conn.inserts("project_field_options")) == sum(
+        len(f["options"]) for f in demo.project_fields
+    )
+    assert len(conn.inserts("project_field_selections")) == sum(
+        len(items) for p in demo.projects for items in p["fields"].values()
+    )
+    assert len(conn.inserts("equipment_teams")) == sum(len(e["teams"]) for e in demo.equipment)
+    assert len(conn.inserts("company_event_teams")) == sum(
+        len(ev["teams"]) for ev in demo.company_events
+    )
     assert len(conn.inserts("projects")) == len(demo.projects)
     assert len(conn.inserts("project_subphases")) == len(demo.subphases)
     assert len(conn.inserts("vacations")) == len(demo.vacations)
@@ -153,9 +215,93 @@ async def test_names_resolve_to_the_handed_out_ids(loaded):
     assert users["admin@demo.local"][8] == 1
 
 
+async def test_team_links_resolve_to_the_handed_out_ids(loaded):
+    conn, _, _ = loaded
+
+    def site(name):
+        return conn.ids[("sites", (name,))]
+
+    def team(site_name, name):
+        return conn.ids[("teams", (site(site_name), name))]
+
+    def project(name, site_name):
+        return conn.ids[("projects", (name, site(site_name)))]
+
+    def links(table):
+        return {args for _, args in conn.inserts(table)}
+
+    lab, qa = team("Winterthur", "Analytical Lab"), team("Frankfurt", "QA & Compliance")
+    teams = {args[1]: args for _, args in conn.inserts("teams")}  # name → row
+    assert teams["Analytical Lab"][0] == site("Winterthur")
+    assert teams["Formulation"][0] == site("Frankfurt")
+    alice = conn.ids[("users", ("alice.anderson@demo.local",))]
+    assert (lab, alice) in links("team_members")
+    assert (project("Catalyst Optimization", "Winterthur"), lab) in links("project_teams")
+    assert (project("Quality System Upgrade", "Frankfurt"), qa) in links("project_teams")
+    assert (conn.ids[("tags", ("GMP",))], qa) in links("tag_teams")
+    spectrometer = conn.ids[("equipment", ("Mass Spectrometer",))]
+    assert links("equipment_teams") >= {(spectrometer, lab)}
+    assert all("ON CONFLICT DO NOTHING" in s for s, _ in conn.inserts("team_members"))
+
+
+async def test_project_field_rows_resolve_to_the_handed_out_ids(loaded):
+    conn, _, _ = loaded
+
+    def field(name):
+        return conn.ids[("project_fields", (name,))]
+
+    def item(field_name, name):
+        return conn.ids[("project_field_options", (field(field_name), name))]
+
+    fields = {args[0]: args for _, args in conn.inserts("project_fields")}
+    assert fields["Project type"][:3] == ("Project type", "select", 0)
+    assert fields["Area"][:3] == ("Area", "multiselect", 1)
+    options = {args[1]: args for _, args in conn.inserts("project_field_options")}
+    # field_id, name, color, all_sites, sort_order
+    assert options["Customer"][:5] == (field("Project type"), "Customer", "#0ea5e9", True, 1)
+    assert options["QA"][0] == field("Area")
+    site = conn.ids[("sites", ("Winterthur",))]
+    bioprocess = conn.ids[("projects", ("Bioprocess Scale-Up", site))]
+    analytical = conn.ids[("projects", ("Analytical Method Transfer", site))]
+    selections = {args for _, args in conn.inserts("project_field_selections")}
+    assert (bioprocess, item("Project type", "Customer")) in selections
+    assert (bioprocess, item("Area", "Process")) in selections
+    assert {(analytical, item("Area", "Analytics")), (analytical, item("Area", "QA"))} <= selections
+    assert all("ON CONFLICT DO NOTHING" in s for s, _ in conn.inserts("project_field_selections"))
+    # Tags no longer carry a group.
+    assert all("group_id" not in s for s, _ in conn.inserts("tags"))
+
+
+async def test_restricted_field_items_get_their_site_and_team_links():
+    conn = RecordingConn()
+    demo = build_demo(date(2026, 10, 17))
+    qa = next(o for o in demo.project_fields[1]["options"] if o["name"] == "QA")
+    qa["sites"] = ["Frankfurt"]
+    qa["teams"] = [("Frankfurt", "QA & Compliance")]
+    for p in demo.projects:  # keep the data consistent: QA only on the Frankfurt project
+        if p["site"] != "Frankfurt" and "QA" in p["fields"].get("Area", []):
+            p["fields"]["Area"].remove("QA")
+
+    await demo_seed.insert_demo_data(conn, demo)
+
+    frankfurt = conn.ids[("sites", ("Frankfurt",))]
+    team = conn.ids[("teams", (frankfurt, "QA & Compliance"))]
+    option = conn.ids[("project_field_options", (conn.ids[("project_fields", ("Area",))], "QA"))]
+    assert [args for _, args in conn.inserts("project_field_option_sites")] == [(option, frankfurt)]
+    assert [args for _, args in conn.inserts("project_field_option_teams")] == [(option, team)]
+    assert next(a for _, a in conn.inserts("project_field_options") if a[1] == "QA")[3] is False
+    for table in ("project_field_option_sites", "project_field_option_teams"):
+        assert all("ON CONFLICT DO NOTHING" in s for s, _ in conn.inserts(table))
+        assert conn.first_insert_index(table) > conn.first_insert_index("project_field_options")
+
+
 async def test_dependency_json_uses_resolved_ids_and_names_the_kind(loaded):
     conn, demo, _ = loaded
-    updates = [(s, a) for s, a in conn.executed if s.lstrip().startswith("UPDATE")]
+    updates = [
+        (s, a)
+        for s, a in conn.executed
+        if s.lstrip().startswith("UPDATE") and "SET dependencies" in s
+    ]
     assert len(updates) == len({d["successor"] for d in demo.dependencies})
     sampling_id = conn.ids[
         (
@@ -293,3 +439,122 @@ async def test_apply_schema_seeds_an_empty_database(capsys):
     assert insert.await_args.args[1].admin_email == "admin@demo.local"
     assert "sites: 2" in capsys.readouterr().out
     assert conn.closed
+
+
+# ---------------------------------------------------------------------------
+# Roles and approvals
+# ---------------------------------------------------------------------------
+
+
+def _user(conn, email):
+    return conn.ids[("users", (email,))]
+
+
+async def test_team_lead_role_and_its_permissions(loaded):
+    conn, demo, _ = loaded
+    (lead,) = demo.roles
+    lead_id = conn.ids[("roles", ("team_lead",))]
+    (role_row,) = (args for _, args in conn.inserts("roles"))
+    assert role_row[:4] == ("team_lead", "Team Lead", lead["description"], False)
+    rows = [args for sql, args in conn.inserts("role_permissions") if args[0] == lead_id]
+    assert {(key, mode) for _, key, mode in rows} == set(lead["permissions"].items())
+    users = {args[0]: args for _, args in conn.inserts("users")}
+    assert users["fiona.fischer@demo.local"][5] == "team_lead"
+
+
+async def test_user_role_switches_to_approval_mode(loaded):
+    conn, demo, _ = loaded
+    user_role = conn.ids[("roles", ("user",))]
+    # The schema seeded the role's allow rows; the first seed switches them.
+    rows = [a for _, a in conn.updates("role_permissions")]
+    assert {(permission, mode) for mode, role, permission in rows} == set(
+        demo.role_modes["user"].items()
+    )
+    assert {role for _, role, _ in rows} == {user_role}
+    assert not [a for _, a in conn.inserts("role_permissions") if a[0] == user_role]
+
+
+async def test_policy_names_the_team_lead(loaded):
+    conn, _, _ = loaded
+    ((sql, policy),) = conn.inserts("approval_policies")
+    assert policy == ("assignments.self_create", True) and "DO NOTHING" in sql
+    ((_, update),) = conn.updates("approval_policies")
+    assert update == (True, "assignments.self_create")
+    (link,) = (args for _, args in conn.inserts("approval_policy_roles"))
+    assert link == ("assignments.self_create", conn.ids[("roles", ("team_lead",))])
+
+
+async def test_pending_row_and_request_point_at_each_other(loaded):
+    conn, demo, _ = loaded
+    diana = _user(conn, "diana.davis@demo.local")
+    (request_sql, request_args) = conn.inserts("approval_requests")[0]
+    phase_id = request_args[4]
+    request_id = conn.ids[
+        ("approval_requests", (diana, "assignments.self_create", "phase", phase_id))
+    ]
+    assert request_args[:4] == (diana, "assignments.self_create", request_args[2], "phase")
+    assert json.loads(request_args[5]) == {"allocation": 50}
+    assert request_args[7] == "pending"
+
+    pending = [(s, a) for s, a in conn.inserts("phase_staff_assignments") if "'pending'" in s]
+    ((row_sql, row_args),) = pending
+    assert row_args[1:5] == (phase_id, diana, 50, request_id)
+    # Inserted only while the request is pending, never as a duplicate booking.
+    assert "AND status = 'pending'" in row_sql and "NOT EXISTS" in row_sql
+    (link_sql, link_args) = next(
+        (s, a) for s, a in conn.executed if s.lstrip().startswith("UPDATE approval_requests")
+    )
+    assert link_args == (phase_id, diana, request_id, request_id)
+    # The request goes in after the regular bookings, its row right after it.
+    executed = [s for s, _ in conn.executed]
+    assert executed.index(request_sql) < executed.index(row_sql) < executed.index(link_sql)
+    assert conn.first_insert_index("approval_requests") > conn.first_insert_index(
+        "subphase_staff_assignments"
+    )
+
+
+async def test_approval_notification_names_the_request(loaded):
+    conn, _, _ = loaded
+    rows = [a for _, a in conn.inserts("notifications") if a[1] == "approval_requested"]
+    ((user_id, _, actor, entity_type, entity_id, *_rest),) = rows
+    assert user_id == _user(conn, "bob.brown@demo.local")
+    assert actor == _user(conn, "diana.davis@demo.local")
+    assert entity_type == "approval_request"
+    assert entity_id == next(v for k, v in conn.ids.items() if k[0] == "approval_requests")
+
+
+async def test_no_todos_are_seeded(loaded):
+    conn, _, counts = loaded
+    assert conn.inserts("todos") == []
+    assert "todos" not in counts
+
+
+async def test_a_missing_system_role_stops_the_seed():
+    class NoUserRole(RecordingConn):
+        async def fetchval(self, sql, *args):
+            if sql.startswith("SELECT id FROM roles WHERE key = $1"):
+                return None
+            return await super().fetchval(sql, *args)
+
+    with pytest.raises(RuntimeError, match="system role 'user' missing"):
+        await demo_seed.insert_demo_data(NoUserRole(), build_demo(date(2026, 10, 17)))
+
+
+async def test_a_rerun_leaves_role_and_policy_settings_alone():
+    """Re-provisioning with demo data (the portal route has no already-
+    provisioned guard) finds the team_lead role already there: an admin's
+    edits since -- the user role back to allow, pm_approves off, a role
+    removed from a policy, team_lead's matrix -- are never reverted."""
+
+    class Seeded(RecordingConn):
+        existing = frozenset({"roles"})
+
+    conn = Seeded()
+    await demo_seed.insert_demo_data(conn, build_demo(date(2026, 10, 17)))
+
+    assert conn.inserts("roles")  # still guarded, inserts nothing
+    assert not conn.inserts("role_permissions")
+    assert not conn.updates("role_permissions")
+    assert not conn.updates("approval_policies")
+    assert not conn.inserts("approval_policy_roles")
+    assert conn.inserts("users")  # the rest of the seed still completes

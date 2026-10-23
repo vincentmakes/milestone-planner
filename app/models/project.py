@@ -29,8 +29,10 @@ if TYPE_CHECKING:
         SubphaseStaffAssignment,
     )
     from app.models.equipment import EquipmentAssignment
+    from app.models.project_field import ProjectFieldOption, ProjectFieldValue
     from app.models.site import Site
     from app.models.tag import Tag
+    from app.models.team import Team
     from app.models.user import User
 
 
@@ -106,6 +108,40 @@ class Project(Base):
         back_populates="projects",
         lazy="selectin",
     )
+
+    # Teams the project is linked to, loaded with it (selectin) so responses
+    # never trigger a lazy load. Rows go with the team / project (ON DELETE CASCADE).
+    teams: Mapped[list["Team"]] = relationship(
+        "Team",
+        secondary="project_teams",
+        lazy="selectin",
+        order_by="Team.id",
+        passive_deletes=True,
+    )
+
+    # Project fields (2.0.0): the text / number / toggle values and the items
+    # chosen for dropdown fields, loaded with the project (selectin) so
+    # responses never trigger a lazy load. Rows go with the project, the
+    # field and the item (ON DELETE CASCADE).
+    field_values: Mapped[list["ProjectFieldValue"]] = relationship(
+        "ProjectFieldValue",
+        lazy="selectin",
+        order_by="ProjectFieldValue.field_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    field_selections: Mapped[list["ProjectFieldOption"]] = relationship(
+        "ProjectFieldOption",
+        secondary="project_field_selections",
+        lazy="selectin",
+        order_by="ProjectFieldOption.field_id, ProjectFieldOption.sort_order, ProjectFieldOption.id",
+        passive_deletes=True,
+    )
+
+    @property
+    def team_ids(self) -> list[int]:
+        """Ids of the teams the project is linked to, ascending."""
+        return sorted(team.id for team in self.teams)
 
     @property
     def is_confirmed(self) -> bool:

@@ -7,9 +7,11 @@
 
 import { useMemo, useRef, useEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { isBuiltInFieldHidden } from '@/utils/instanceSettings';
 import { useViewStore } from '@/stores/viewStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useScrollSync, useCtrlScrollZoom } from '@/hooks';
+import { useTeamFilter, useTeamFilteredCompanyEvents } from '@/hooks/useTeamFilter';
 import { generateTimelineCells, generateTimelineHeaders, calculateTodayScrollLeft, calculateTodayCenterScrollLeft } from '@/components/gantt/utils/timeline';
 import { TimelineHeader } from '@/components/gantt/Timeline/TimelineHeader';
 import { CrossSiteTimelineBody } from './CrossSiteTimelineBody';
@@ -20,19 +22,24 @@ export function CrossSiteView() {
   const timelineBodyRef = useRef<HTMLDivElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
 
-  const sites = useAppStore((s) => s.sites);
+  // The sites this user may see (the server scopes the projects the same way)
+  const sites = useVisibleSites();
   const projects = useAppStore((s) => s.projects);
   const currentSite = useAppStore((s) => s.currentSite);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
   const bankHolidays = useAppStore((s) => s.bankHolidays);
-  const companyEventDates = useAppStore((s) => s.companyEventDates);
-  const companyEvents = useAppStore((s) => s.companyEvents);
+  // Company events narrowed by the header team filter
+  const { events: companyEvents, eventDates: companyEventDates } = useTeamFilteredCompanyEvents();
   const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
+  // A hidden Customer field (Settings → Project fields) is left out, masked or not
+  const customerHidden = useAppStore((s) => isBuiltInFieldHidden(s.instanceSettings, 'customer'));
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
   const cellWidth = useViewStore((s) => s.cellWidth);
   
   const scrollToTodayTrigger = useUIStore((s) => s.scrollToTodayTrigger);
+  // The header team filter belongs to the current site: it narrows that lane only.
+  const { projectMatches } = useTeamFilter();
   
   // Enable Ctrl+Scroll zoom
   useCtrlScrollZoom({ containerRef: timelineScrollRef, cellWidth });
@@ -85,6 +92,7 @@ export function CrossSiteView() {
     
     projects.forEach((project) => {
       if (project.archived) return;
+      if (project.site_id === currentSite?.id && !projectMatches(project)) return;
       const siteProjects = grouped.get(project.site_id) || [];
       siteProjects.push(project);
       grouped.set(project.site_id, siteProjects);
@@ -96,7 +104,7 @@ export function CrossSiteView() {
     });
     
     return grouped;
-  }, [sites, projects]);
+  }, [sites, projects, currentSite?.id, projectMatches]);
   
   // Build flat list of rows for rendering
   const rows = useMemo(() => {
@@ -123,13 +131,13 @@ export function CrossSiteView() {
           isCurrentSite,
           // Mask details for other sites
           displayName: isCurrentSite ? project.name : 'Confidential Project',
-          displayCustomer: isCurrentSite ? (project.customer || '') : '***',
+          displayCustomer: customerHidden ? '' : isCurrentSite ? (project.customer || '') : '***',
         });
       });
     });
     
     return result;
-  }, [sites, projectsBySite, currentSite]);
+  }, [sites, projectsBySite, currentSite, customerHidden]);
   
   return (
     <div className={styles.container}>
@@ -201,6 +209,7 @@ export function CrossSiteView() {
 
 // Types
 import type { Site, Project } from '@/types';
+import { useVisibleSites } from '@/hooks/useVisibleSites';
 
 interface CrossSiteSiteRow {
   type: 'site';

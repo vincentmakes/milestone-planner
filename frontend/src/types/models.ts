@@ -19,6 +19,19 @@ export interface Site {
   created_at?: string;
 }
 
+export interface Team {
+  id: number;
+  site_id: number;
+  name: string;
+  description?: string | null;
+  color: string | null;
+  active: boolean;
+  /** User ids; every member belongs to the team's site */
+  member_ids: number[];
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface Project {
   id: number;
   name: string;
@@ -43,38 +56,70 @@ export interface Project {
    * appStore.tags by id (utils/tags.ts), never from these fields.
    */
   tags?: ProjectTagRef[];
+  /** Teams of the project's site the project belongs to */
+  team_ids?: number[];
+  /**
+   * Values of the project fields, keyed by field id (transformProject turns
+   * the JSON string keys into numbers). A field without a value is absent.
+   * Item ids, like tag ids, are resolved through appStore.projectFields.
+   */
+  field_values?: Record<number, ProjectFieldValue>;
 }
 
 /** Shape of `project.tags[]` in project responses. */
-export type ProjectTagRef = Pick<Tag, 'id' | 'name' | 'color' | 'group_id'>;
+export type ProjectTagRef = Pick<Tag, 'id' | 'name' | 'color'>;
 
 /**
  * Project tag. Tags are tenant-wide but may be limited to some sites
- * (`all_sites: false` + `site_ids`); an optional group makes them a category
- * (see TagGroup). Snake_case straight from the API, like Equipment.
+ * (`all_sites: false` + `site_ids`) and, per site, to some teams.
+ * Snake_case straight from the API, like Equipment.
  */
 export interface Tag {
   id: number;
   name: string;
   color: string;
-  group_id: number | null;
   all_sites: boolean;
   site_ids: number[];
   sort_order: number;
+  /** Teams the tag is restricted to (flat across sites; empty = no restriction) */
+  team_ids?: number[];
+}
+
+/** Kinds of project field. `select` / `multiselect` are the dropdown fields with items. */
+export type ProjectFieldType = 'text' | 'number' | 'toggle' | 'select' | 'multiselect';
+
+/**
+ * An item of a dropdown project field. Scoped like a tag: `all_sites`, or
+ * the sites in `site_ids`; per site optionally limited to some teams.
+ */
+export interface ProjectFieldOption {
+  id: number;
+  name: string;
+  color: string;
+  sort_order: number;
+  all_sites: boolean;
+  site_ids: number[];
+  /** Teams the item is restricted to (flat across sites; empty = no restriction) */
+  team_ids: number[];
+}
+
+/** A project field defined in Settings → Project fields (instance-wide). */
+export interface ProjectField {
+  id: number;
+  name: string;
+  /** Fixed at creation */
+  field_type: ProjectFieldType;
+  sort_order: number;
+  /** Items in display order; empty for text, number and toggle fields */
+  options: ProjectFieldOption[];
 }
 
 /**
- * A category of tags (e.g. "Project type": Internal / Customer). A
- * single-select group allows one of its tags per project. Any group can
- * colour the Gantt project bars — a per-user choice ("Colour by",
- * viewStore.ganttColorBy), not a property of the group.
+ * A project's value for one field, as the API carries it: text = string,
+ * number = number, toggle = boolean, select = item id, multiselect = item
+ * ids in item order. `null` (or `""` / `[]`) clears a field on a write.
  */
-export interface TagGroup {
-  id: number;
-  name: string;
-  single_select: boolean;
-  sort_order: number;
-}
+export type ProjectFieldValue = string | number | boolean | number[] | null;
 
 /**
  * Kanban column. Kept in sync with `completion` by utils/kanbanCards.ts,
@@ -166,6 +211,8 @@ export interface Staff {
   active: boolean;
   max_capacity?: number;  // Max work capacity % (e.g., 80 for part-time), defaults to 100
   skills?: Skill[];  // Staff skills
+  /** Teams of this user on this row's site */
+  team_ids?: number[];
 }
 
 export interface Equipment {
@@ -179,6 +226,10 @@ export interface Equipment {
   /** Names of site_ids, same order (sent by /equipment/all) */
   site_names?: string[];
   active: boolean;
+  /** Teams the equipment is restricted to, flat across the equipment's sites */
+  team_ids?: number[];
+  /** Names of team_ids, same order */
+  team_names?: string[];
 }
 
 // =============================================================================
@@ -193,9 +244,112 @@ export interface StaffAssignment {
   phase_id?: number | null;
   subphase_id?: number | null;
   allocation: number;
+  /**
+   * Effective dates: project-level rows hold their own; a phase / subphase
+   * row holds its own when unlinked, else (linked) the card's dates.
+   */
   start_date: string;
   end_date: string;
+  /**
+   * Phase / subphase rows: true = follows the card's dates (no dates of its
+   * own), false = an unlinked segment with its own dates inside the card
+   * (`utils/bookingSegments.ts`). Project-level rows: false. Rows built
+   * locally may omit it (read as linked on a card).
+   */
+  linked?: boolean;
+  /**
+   * 'pending' = an own booking awaiting approval (a real row, excluded from
+   * capacity until approved); absent on older servers = approved.
+   */
+  approval_status?: 'approved' | 'pending';
+  /**
+   * The open approval request on the row: its pending create, or a pending
+   * change / removal of an approved row (the row keeps its current values
+   * until the request is decided). null when nothing awaits a decision.
+   */
+  approval?: AssignmentApproval | null;
 }
+
+/** The booking values a request asks for, or the row held when it was filed. */
+export interface BookingValues {
+  allocation?: number;
+  /**
+   * `YYYY-MM-DD`: project-level rows, and unlinked phase / subphase segments;
+   * both `null` = a relink (the booking follows its card again).
+   */
+  start_date?: string | null;
+  end_date?: string | null;
+}
+
+/** The open approval request on a staff assignment (its `approval` field). */
+export interface AssignmentApproval {
+  request_id: number;
+  /** The own-booking key: assignments.self_create | self_update | self_remove */
+  action: string;
+  requester_id: number;
+  requested: BookingValues | null;
+  previous: BookingValues | null;
+  created_at: string | null;
+  /** Whether the signed-in user may approve or reject it */
+  can_decide: boolean;
+}
+
+export type ApprovalRequestStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'cancelled'
+  | 'superseded'
+  | 'expired';
+
+/** One approval request (GET /api/approval-requests). */
+export interface ApprovalRequest {
+  id: number;
+  action: string;
+  status: ApprovalRequestStatus;
+  close_reason: string | null;
+  requester_id: number;
+  requester_name: string | null;
+  project_id: number;
+  project_name: string | null;
+  level: StaffAssignmentLevel;
+  target_id: number;
+  target_name: string | null;
+  assignment_id: number | null;
+  requested: BookingValues | null;
+  previous: BookingValues | null;
+  note: string | null;
+  decided_by: number | null;
+  decided_by_name: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  superseded_by_id: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+  can_decide: boolean;
+}
+
+/** The outcome of approve / reject / cancel. */
+export interface ApprovalDecisionResult {
+  success: boolean;
+  id: number;
+  status: ApprovalRequestStatus;
+}
+
+/**
+ * The 202 body of a self-booking write that needs approval: a request was
+ * filed instead (`id` = the pending row for a create, the existing row
+ * otherwise).
+ */
+export interface PendingBookingResponse {
+  success: boolean;
+  pending: true;
+  request_id: number;
+  id: number;
+}
+
+/** The route family of a staff assignment: ids are unique per level only. */
+export type StaffAssignmentLevel = 'project' | 'phase' | 'subphase';
 
 export interface EquipmentAssignment {
   id: number;
@@ -219,14 +373,117 @@ export interface User {
   last_name: string;
   name: string; // Computed: first_name + last_name
   job_title?: string;  // Job role/title
-  role: UserRole;  // System role (admin/superuser/user)
+  /** The role's key (system roles admin/superuser/user, or a custom role) */
+  role: UserRole;
+  /** The role's display name */
+  role_name?: string;
   max_capacity?: number;  // Max work capacity % (e.g., 80 for part-time), defaults to 100
   active: boolean;
+  /**
+   * Bookable as a resource: listed in the Staff panel and bookable on
+   * projects. Off = new bookings of the person are refused (400); existing
+   * ones stay.
+   */
+  is_resource: boolean;
   site_ids: number[];
   skills?: Skill[];  // User's skills
+  /** Teams the user belongs to, across all their sites */
+  team_ids?: number[];
+  /** Names of team_ids, same order */
+  team_names?: string[];
+  /**
+   * The signed-in user only (/auth/me), absent on user-list rows: the keys the
+   * role allows outright (the admin role: every key). Gate with
+   * `can()` / `useHasPermission()` from utils/permissions and hooks/useCan,
+   * never with the role key.
+   */
+  permissions?: string[];
+  /** The signed-in user only: own-booking keys the role holds in approval mode */
+  approval_required?: string[];
+  /** The signed-in user only: `sites.view_all` (every active site is visible) */
+  can_see_all_sites?: boolean;
 }
 
-export type UserRole = 'admin' | 'superuser' | 'user';
+/** A role key: one of SYSTEM_ROLE_KEYS or a custom role's key */
+export type UserRole = string;
+
+/** The system roles, never deletable; `admin` always holds every permission. */
+export const SYSTEM_ROLE_KEYS = ['admin', 'superuser', 'user'] as const;
+
+/** How a role holds a permission; a key missing from a matrix is denied. */
+export type PermissionMode = 'allow' | 'approval';
+
+/** A role's matrix: permission key → mode (keys left out are denied). */
+export type PermissionMatrix = Record<string, PermissionMode>;
+
+/** A role (GET /api/roles): system (admin/superuser/user) or custom. */
+export interface Role {
+  id: number;
+  /** Immutable key, stored on users.role */
+  key: UserRole;
+  name: string;
+  description?: string | null;
+  /** System roles cannot be deleted; the admin role cannot be edited at all */
+  is_system: boolean;
+  sort_order: number;
+  /** Effective modes: the admin role lists every key as allow */
+  permissions: PermissionMatrix;
+  /** Users (active or not) holding the role */
+  user_count: number;
+}
+
+export interface CreateRoleRequest {
+  key: string;
+  name: string;
+  description?: string | null;
+  permissions: PermissionMatrix;
+}
+
+export interface UpdateRoleRequest {
+  name?: string;
+  /** An explicit null clears the description */
+  description?: string | null;
+  /** Replaces the whole matrix */
+  permissions?: PermissionMatrix;
+}
+
+/** One catalogue entry (GET /api/permissions), as the role matrix shows it. */
+export interface PermissionInfo {
+  key: string;
+  label: string;
+  description: string;
+  /** May be held in approval mode (the own-booking keys) */
+  approvable: boolean;
+  /** Fixed for every role (projects.view always allow, roles.manage admin only) */
+  locked: boolean;
+  /** Shipped mode per editable system role (null = deny) */
+  defaults: Record<string, PermissionMode | null>;
+}
+
+export interface PermissionGroup {
+  name: string;
+  permissions: PermissionInfo[];
+}
+
+export interface PermissionCatalogue {
+  groups: PermissionGroup[];
+  pm_bundle: string[];
+}
+
+/** Who approves one approvable action (admins always may). */
+export interface ApprovalPolicy {
+  action: string;
+  label: string;
+  /** The project's manager may approve */
+  pm_approves: boolean;
+  /** Holders of these roles may approve */
+  role_ids: number[];
+}
+
+export interface UpdateApprovalPolicyRequest {
+  pm_approves: boolean;
+  role_ids: number[];
+}
 
 export interface AuthResponse {
   user: User;
@@ -288,6 +545,8 @@ export interface CompanyEvent {
   color?: string | null;
   /** Site closure: staff on the event's sites are unavailable for its dates */
   counts_as_unavailable?: boolean;
+  /** Teams the event is restricted to (flat across sites; empty = whole sites) */
+  team_ids?: number[];
 }
 
 export interface EquipmentBlock {
@@ -319,8 +578,32 @@ export interface SSOConfig {
   redirect_uri?: string;
 }
 
+/**
+ * Instance settings (GET /api/settings, written with settings.general).
+ * The admin defaults and feature switches always arrive (the backend fills a
+ * missing row with its default); the readers in utils/instanceSettings.ts
+ * parse them.
+ */
 export interface InstanceSettings {
   instance_title?: string;
+  instance_name?: string;
+  show_weekends?: string;
+  /** `none` / `staff` / `equipment`: the overview panel the Gantt opens with */
+  gantt_default_panel?: string;
+  /** Compact JSON array of skill ids: the Staff panel's initial skill filter */
+  staff_panel_default_skills?: string;
+  /** Compact JSON array of type names: the Equipment panel's initial type filter */
+  equipment_panel_default_types?: string;
+  /** `false` turns the Kanban board off for everyone */
+  kanban_enabled?: string;
+  /** `false` turns the Nager bank-holiday import off */
+  nager_enabled?: string;
+  /** `false`: a new project starts with no predefined phase selected */
+  new_project_preselect_phases?: string;
+  /** Compact JSON object: custom labels of the built-in project fields (customer, sales_pm, volume, confirmed) */
+  project_field_labels?: string;
+  /** Compact JSON array of the hidden built-in project fields (customer, sales_pm, volume) */
+  project_fields_hidden?: string;
   [key: string]: string | undefined;
 }
 
@@ -330,7 +613,14 @@ export interface InstanceSettings {
 
 export type ViewMode = 'week' | 'month' | 'quarter' | 'year';
 
-export type CurrentView = 'gantt' | 'kanban' | 'staff' | 'equipment' | 'crosssite' | 'archived';
+export type CurrentView =
+  | 'gantt'
+  | 'kanban'
+  | 'work'
+  | 'staff'
+  | 'equipment'
+  | 'crosssite'
+  | 'archived';
 
 export type ResourceTab = 'staff' | 'equipment';
 
@@ -416,11 +706,26 @@ export interface CreateProjectRequest {
   start_date?: string | null;
   end_date?: string | null;
   tag_ids?: number[];
+  team_ids?: number[];
+  /** Only the fields given change; `null` / `[]` clears one */
+  field_values?: Record<number, ProjectFieldValue>;
 }
 
 export interface UpdateProjectRequest extends Partial<CreateProjectRequest> {
   archived?: boolean;
 }
+
+export interface CreateTeamRequest {
+  site_id: number;
+  name: string;
+  description?: string | null;
+  color?: string | null;
+  active?: boolean;
+  member_ids?: number[];
+}
+
+/** A team cannot move to another site. */
+export type UpdateTeamRequest = Partial<Omit<CreateTeamRequest, 'site_id'>>;
 
 export interface CreatePhaseRequest {
   name: string;
@@ -457,8 +762,24 @@ export interface CreateStaffAssignmentRequest {
   phase_id?: number | null;
   subphase_id?: number | null;
   allocation: number;
-  start_date: string;
-  end_date: string;
+  /**
+   * Required at project level. On a phase / subphase, both dates make an
+   * unlinked segment (within the card); leave both out for a linked booking.
+   */
+  start_date?: string;
+  end_date?: string;
+}
+
+/**
+ * PUT body of a staff assignment. Project level: allocation and dates. Phase /
+ * subphase level: `allocation` alone keeps the dates; both dates (within the
+ * card) make or move a segment; both `null` relink it (dates left out =
+ * unchanged, one date alone = 422).
+ */
+export interface UpdateStaffAssignmentRequest {
+  allocation?: number;
+  start_date?: string | null;
+  end_date?: string | null;
 }
 
 export interface CreateEquipmentAssignmentRequest {
@@ -501,6 +822,8 @@ export interface CreateUserRequest {
   job_title?: string;
   role: UserRole;
   max_capacity?: number;  // Max work capacity % (default 100)
+  /** Bookable as a resource; omitted = every role but admin */
+  is_resource?: boolean;
   site_ids: number[];
   skill_ids?: number[];
 }
@@ -514,6 +837,8 @@ export interface UpdateUserRequest {
   role?: UserRole;
   max_capacity?: number;  // Max work capacity %
   active?: boolean;
+  /** Bookable as a resource */
+  is_resource?: boolean;
   site_ids?: number[];
   skill_ids?: number[];
 }
@@ -556,6 +881,17 @@ export type NotificationType =
   | 'comment'
   | 'mention'
   | 'status_change'
+  /** A booking request the user may decide (entity: the approval request) */
+  | 'approval_requested'
+  /** The user's own request was approved, rejected or expired */
+  | 'approval_decided'
+  /**
+   * Someone else added, changed or removed the user's booking (entity: the
+   * card or the project; none, and no project, when the project was deleted)
+   */
+  | 'assignment_changed'
+  /** Someone else changed a project the user manages (same entities) */
+  | 'project_changed'
   /** Derived in the browser from card end dates; never stored server-side. */
   | 'due_soon'
   | 'overdue';
@@ -565,7 +901,7 @@ export interface AppNotification {
   type: NotificationType;
   actor_id?: number | null;
   actor_name?: string | null;
-  entity_type?: 'phase' | 'subphase' | null;
+  entity_type?: 'phase' | 'subphase' | 'project' | 'approval_request' | null;
   entity_id?: number | null;
   project_id?: number | null;
   title: string;

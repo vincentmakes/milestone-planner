@@ -16,7 +16,8 @@ import { generateTimelineCells } from '../../utils';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
-import type { Phase, Project, Site, Subphase, Tag, TagGroup, User } from '@/types';
+import type { Phase, Project, Site, Subphase, User } from '@/types';
+import { makeProjectField, makeProjectFieldOption, makeTag, makeUser } from '@/test/factories';
 
 vi.mock('@/contexts/WebSocketContext', () => ({
   useWebSocketContext: () => ({ recentChanges: [] }),
@@ -110,7 +111,7 @@ function clickBar(container: HTMLElement, selector: string) {
 }
 
 function asUser(id: number, role: User['role']) {
-  useAppStore.setState({ currentUser: { id, role } as unknown as User });
+  useAppStore.setState({ currentUser: makeUser({ id, role }) });
 }
 
 beforeEach(() => {
@@ -208,36 +209,47 @@ describe('ProjectTimeline subscriptions', () => {
 });
 
 
-/** "Colour by": the bar takes the store colour of the project's tag in the chosen group. */
+/** "Colour by": the bar takes the store colour of the project's item of the chosen field, or of its tag. */
 describe('ProjectTimeline colour by', () => {
-  const TYPE: TagGroup = { id: 1, name: 'Project type', single_select: true, sort_order: 0 };
-  const AREA: TagGroup = { id: 2, name: 'Area', single_select: false, sort_order: 1 };
-  const internal: Tag = {
-    id: 10, name: 'Internal', color: '#f59e0b', group_id: 1, all_sites: true, site_ids: [], sort_order: 0,
-  };
+  const TYPE = makeProjectField({
+    id: 1,
+    name: 'Project type',
+    options: [makeProjectFieldOption({ id: 10, name: 'Internal', color: '#f59e0b' })],
+  });
+  const AREA = makeProjectField({
+    id: 2,
+    name: 'Area',
+    field_type: 'multiselect',
+    options: [makeProjectFieldOption({ id: 20, name: 'Bio', color: '#22c55e' })],
+  });
+  const pilot = makeTag({ id: 30, name: 'Pilot', color: '#a855f7' });
 
   beforeEach(() => {
     localStorage.clear();
     asUser(PM, 'user');
     useAppStore.setState({
-      tags: [internal],
-      tagGroups: [TYPE, AREA],
+      tags: [pilot],
+      projectFields: [TYPE, AREA],
       currentSite: { id: 1, name: 'Basel' } as Site,
     });
     useViewStore.setState({ ganttColorBy: {} });
   });
 
   function taggedProject(): Project {
-    // Inline colour is stale on purpose: the store's tag colour wins.
-    return { ...makeProject(PM), tags: [{ id: 10, name: 'Internal', color: '#000000', group_id: 1 }] };
+    // Inline tag colour is stale on purpose: the store's colour wins.
+    return {
+      ...makeProject(PM),
+      field_values: { 1: 10 },
+      tags: [{ id: 30, name: 'Pilot', color: '#000000' }],
+    };
   }
 
-  it('has no tag colour while Colour by is unset', () => {
+  it('has no bar colour while Colour by is unset', () => {
     const { container } = renderTimeline(taggedProject());
     expect(container.querySelector('[data-tag-color]')).toBeNull();
   });
 
-  it('uses the colour of the project tag in the chosen group', () => {
+  it("uses the colour of the project's item of the chosen field", () => {
     useViewStore.setState({ ganttColorBy: { ':1': 1 } });
     const { container } = renderTimeline(taggedProject());
     const bar = container.querySelector('[data-tag-color]');
@@ -246,9 +258,44 @@ describe('ProjectTimeline colour by', () => {
     expect(bar).toHaveStyle({ background: '#f59e0b' });
   });
 
-  it('keeps the default colour when the project has no tag in the chosen group', () => {
+  it("uses the colour of the project's tag for Tags", () => {
+    useViewStore.setState({ ganttColorBy: { ':1': 'tags' } });
+    const { container } = renderTimeline(taggedProject());
+    expect(container.querySelector('[data-tag-color]')).toHaveAttribute('data-tag-color', '#a855f7');
+  });
+
+  it('keeps the default colour when the project has no item of the chosen field', () => {
     useViewStore.setState({ ganttColorBy: { ':1': 2 } });
     const { container } = renderTimeline(taggedProject());
     expect(container.querySelector('[data-tag-color]')).toBeNull();
+  });
+});
+
+describe('ProjectTimeline equipment bars', () => {
+  function renderWithBooking() {
+    useViewStore.setState({ showAssignments: true });
+    const project = {
+      ...makeProject(PM),
+      equipmentAssignments: [
+        { id: 60, equipment_id: 1, equipment_name: 'Bioreactor', start_date: '2026-09-02', end_date: '2026-09-04' },
+      ],
+    };
+    return renderTimeline(project);
+  }
+  const handles = (container: HTMLElement) =>
+    container.querySelectorAll('[data-assignment-id="60"] .resize-handle').length;
+
+  it('are interactive with equipment_bookings.manage, without projects.edit_any', () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 30, role: 'booker', permissions: ['projects.view', 'equipment_bookings.manage'] }),
+    });
+    expect(handles(renderWithBooking().container)).toBe(2);
+  });
+
+  it('are read-only with projects.edit_any alone', () => {
+    useAppStore.setState({
+      currentUser: makeUser({ id: 31, role: 'editor', permissions: ['projects.view', 'projects.edit_any'] }),
+    });
+    expect(handles(renderWithBooking().container)).toBe(0);
   });
 });

@@ -9,6 +9,7 @@ import { Modal } from '@/components/common/Modal';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
+import { DateField, DateRangeField } from '@/components/common/DateRangeField';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
@@ -402,16 +403,6 @@ export function SubphaseModal() {
       return;
     }
     
-    if (!startDate) {
-      setError('Please select a start date');
-      return;
-    }
-    
-    if (!isMilestone && !endDate) {
-      setError('Please select an end date');
-      return;
-    }
-    
     if (!phaseId) {
       setError('No parent phase selected');
       return;
@@ -663,20 +654,19 @@ export function SubphaseModal() {
         </div>
         
         <div className={styles.formRow}>
-          <Input
-            label={isMilestone ? 'Date *' : 'Start Date *'}
-            type="date"
-            className={styles.field}
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-          />
-          {!isMilestone && (
-            <Input
-              label="End Date *"
-              type="date"
-              className={styles.field}
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+          {isMilestone ? (
+            <DateField label="Date *" fieldClassName={styles.field} value={startDate} onChange={setStartDate} />
+          ) : (
+            <DateRangeField
+              startLabel="Start Date *"
+              endLabel="End Date *"
+              fieldClassName={styles.field}
+              start={startDate}
+              end={endDate}
+              onChange={({ start, end }) => {
+                setStartDate(start);
+                setEndDate(end);
+              }}
             />
           )}
         </div>

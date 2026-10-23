@@ -5,12 +5,19 @@ import { useEquipmentOverlaps, useEquipmentTodayStatus } from '@/hooks/useEquipm
 import { OverlapWarningIcon } from '@/components/common/OverlapWarningIcon';
 import { isUnavailableOn } from '@/utils/recurringVacation';
 import type { AbsenceTypesById } from '@/utils/recurringVacation';
-import { getClosureOn } from '@/utils/siteClosure';
+import { EMPTY_TEAM_SET, getClosureOn } from '@/utils/siteClosure';
 import type { ClosureIndex } from '@/utils/siteClosure';
-import { selectStaffSiteIds, selectAbsenceTypesById } from '@/stores/appStore';
+import {
+  selectStaffSiteIds,
+  selectStaffTeamIds,
+  selectTeamSiteById,
+  selectAbsenceTypesById,
+} from '@/stores/appStore';
 import { formatDateISO, parseLocalDate } from '@/utils/date';
-import { canManageAnyProject, isSelf } from '@/utils/permissions';
+import { canBookSelf, canManageAnyProject } from '@/utils/permissions';
+import { isPendingAssignment } from '@/utils/kanbanCards';
 import styles from './ResourceCard.module.css';
+import { bookingSpan } from '@/utils/bookingSegments';
 
 interface ResourceCardProps {
   resource: Staff | Equipment;
@@ -28,14 +35,17 @@ function isActiveToday(startDate: string, endDate: string, today: Date): boolean
   return start <= today && end >= today;
 }
 
-// Helper to calculate staff allocation for TODAY from projects
+// Helper to calculate staff allocation for TODAY from projects (bookings
+// awaiting approval book nothing yet)
 function calculateStaffAllocationToday(
   projects: Project[],
   staffId: number,
   vacations: Vacation[],
   absenceTypesById: AbsenceTypesById,
   staffSiteIds: ReadonlySet<number>,
-  closureIndex: ClosureIndex
+  closureIndex: ClosureIndex,
+  staffTeamIds: ReadonlySet<number>,
+  teamSiteById: ReadonlyMap<number, number>
 ): number {
   const today = new Date();
   today.setHours(12, 0, 0, 0); // Noon to avoid timezone issues
@@ -46,8 +56,9 @@ function calculateStaffAllocationToday(
   if (isUnavailableOn(staffId, todayStr, vacations, absenceTypesById)) {
     return 100; // Fully allocated (no availability) during the absence
   }
-  // A company event closing one of their sites today also takes them off
-  if (getClosureOn(staffSiteIds, todayStr, closureIndex)) {
+  // A company event closing one of their sites today (for everyone there, or
+  // for one of their teams) also takes them off
+  if (getClosureOn(staffSiteIds, todayStr, closureIndex, staffTeamIds, teamSiteById)) {
     return 100;
   }
   
@@ -56,17 +67,18 @@ function calculateStaffAllocationToday(
   for (const project of projects) {
     // Project-level assignments - check if assignment dates contain today
     for (const assignment of project.staffAssignments || []) {
-      if (assignment.staff_id === staffId && 
+      if (assignment.staff_id === staffId && !isPendingAssignment(assignment) &&
           isActiveToday(assignment.start_date, assignment.end_date, today)) {
         total += assignment.allocation || 0;
       }
     }
     
-    // Phase-level assignments - check if phase dates contain today
+    // Phase-level assignments - check if the booking's effective dates (own
+    // when unlinked, else the phase's) contain today
     for (const phase of project.phases || []) {
       for (const assignment of phase.staffAssignments || []) {
-        if (assignment.staff_id === staffId &&
-            isActiveToday(phase.start_date, phase.end_date, today)) {
+        if (assignment.staff_id === staffId && !isPendingAssignment(assignment) &&
+            isActiveToday(bookingSpan(assignment, phase).start, bookingSpan(assignment, phase).end, today)) {
           total += assignment.allocation || 0;
         }
       }
@@ -75,8 +87,8 @@ function calculateStaffAllocationToday(
       const processSubphases = (subphases: typeof phase.children) => {
         for (const subphase of subphases || []) {
           for (const assignment of subphase.staffAssignments || []) {
-            if (assignment.staff_id === staffId &&
-                isActiveToday(subphase.start_date, subphase.end_date, today)) {
+            if (assignment.staff_id === staffId && !isPendingAssignment(assignment) &&
+                isActiveToday(bookingSpan(assignment, subphase).start, bookingSpan(assignment, subphase).end, today)) {
               total += assignment.allocation || 0;
             }
           }
@@ -98,6 +110,8 @@ export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
   const absenceTypesById = useAppStore(selectAbsenceTypesById);
   const closureIndex = useAppStore((s) => s.closureIndex);
   const staffSiteIds = useAppStore(selectStaffSiteIds);
+  const staffTeamIds = useAppStore(selectStaffTeamIds);
+  const teamSiteById = useAppStore(selectTeamSiteById);
   const currentUser = useAppStore((s) => s.currentUser);
   const { handleDragStart, handleDragEnd } = useResourceDragDrop();
   const overlapMap = useEquipmentOverlaps();
@@ -115,7 +129,9 @@ export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
         vacations,
         absenceTypesById,
         staffSiteIds.get(resource.id) ?? new Set([resource.site_id]),
-        closureIndex
+        closureIndex,
+        staffTeamIds.get(resource.id) ?? EMPTY_TEAM_SET,
+        teamSiteById
       )
     : todayStatusMap.get(resource.id) ? 100 : 0;
   
@@ -131,7 +147,7 @@ export function ResourceCard({ resource, type, projects }: ResourceCardProps) {
   // Anyone who manages a project here may drag resources onto it; everyone
   // may drag their own card to book themselves.
   const canDrag =
-    canManageAnyProject(currentUser, projects) || (isStaff && isSelf(currentUser, resource.id));
+    canManageAnyProject(currentUser, projects) || (isStaff && canBookSelf(currentUser, resource.id));
 
   // Color based on allocation vs max capacity:
   // - Below capacity: green

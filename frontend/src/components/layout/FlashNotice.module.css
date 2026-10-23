@@ -1,10 +1,13 @@
-/* Bottom-right slot, above the activity feed (which starts at 1.25rem). */
+/* Bottom-right slot, above the activity feed (which starts at 1.25rem).
+   Opaque surface (the shared Modal's, --bg-secondary): the Notice's tint is
+   translucent and would show the Staff heatmap or the bars through it. */
 .slot {
   position: fixed;
   right: 1.25rem;
   bottom: 5rem;
   z-index: 10000;
   width: min(380px, calc(100vw - 2rem));
+  background: var(--bg-secondary);
   box-shadow: var(--shadow-lg);
   border-radius: var(--radius-md);
 }

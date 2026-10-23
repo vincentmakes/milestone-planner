@@ -7,8 +7,15 @@
  */
 
 import { forwardRef, useMemo } from 'react';
-import { useAppStore, selectStaffSiteIds, selectAbsenceTypesById } from '@/stores/appStore';
+import {
+  useAppStore,
+  selectStaffSiteIds,
+  selectStaffTeamIds,
+  selectTeamSiteById,
+  selectAbsenceTypesById,
+} from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
+import { useTeamFilteredCompanyEvents } from '@/hooks/useTeamFilter';
 import { calculateBarPosition, calculateTodayPosition } from '@/components/gantt/utils';
 import { TodayLine } from '@/components/gantt/Timeline/TodayLine';
 import { useWorkloadCalculation, getWorkloadTooltip, getWorkloadBackground } from '@/hooks';
@@ -28,6 +35,8 @@ import type { TimelineCell } from '@/components/gantt/utils';
 import type { Staff, Vacation, ViewMode } from '@/types';
 import type { StaffAssignmentWithContext } from './StaffView';
 import styles from './StaffTimelineBody.module.css';
+import { can, canManageAbsencesOf } from '@/utils/permissions';
+import { isPendingAssignment } from '@/utils/kanbanCards';
 
 interface StaffTimelineBodyProps {
   staff: Staff[];
@@ -59,13 +68,17 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
   }, ref) {
     
     const bankHolidays = useAppStore((s) => s.bankHolidays);
-    const companyEvents = useAppStore((s) => s.companyEvents);
+    // Company events narrowed by the header team filter
+    const { events: companyEvents } = useTeamFilteredCompanyEvents();
     const currentUser = useAppStore((s) => s.currentUser);
     const absenceTypesById = useAppStore(selectAbsenceTypesById);
     const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
-    // Site closures: staff whose sites intersect a closing event's sites are off
+    // Site closures: staff whose sites intersect a closing event's sites are
+    // off (only its teams' members there, when the event names teams)
     const closureIndex = useAppStore((s) => s.closureIndex);
     const staffSiteIds = useAppStore(selectStaffSiteIds);
+    const staffTeamIds = useAppStore(selectStaffTeamIds);
+    const teamSiteById = useAppStore(selectTeamSiteById);
 
     const showHighlighting = viewMode === 'week' || viewMode === 'month';
     const renderWeekendMarkers = showHighlighting && showWeekends;
@@ -78,11 +91,7 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
     );
     
     // Check if user can add vacations for a staff member
-    const canManageVacation = (staffId: number) => {
-      if (!currentUser) return false;
-      if (currentUser.role === 'admin' || currentUser.role === 'superuser') return true;
-      return currentUser.id === staffId;
-    };
+    const canManageVacation = (staffId: number) => canManageAbsencesOf(currentUser, staffId);
     
     return (
       <div ref={ref} className={styles.body}>
@@ -162,6 +171,8 @@ export const StaffTimelineBody = forwardRef<HTMLDivElement, StaffTimelineBodyPro
                     absenceTypesById={absenceTypesById}
                     closureIndex={closureIndex}
                     siteIds={staffSiteIds.get(staffMember.id)}
+                    teamIds={staffTeamIds.get(staffMember.id)}
+                    teamSiteById={teamSiteById}
                     rowHeight={rowHeights.get(staffMember.id) || 44}
                     cells={cells}
                     cellWidth={cellWidth}
@@ -280,6 +291,10 @@ interface StaffRowProps {
   closureIndex: ClosureIndex;
   /** Every site of this person; falls back to the row's site when unknown */
   siteIds?: ReadonlySet<number>;
+  /** Every team of this person; falls back to the row's teams when unknown */
+  teamIds?: ReadonlySet<number>;
+  /** Team id → site id (from the store), to place a closure's teams on a site */
+  teamSiteById: ReadonlyMap<number, number>;
   rowHeight: number;
   cells: TimelineCell[];
   cellWidth: number;
@@ -292,7 +307,7 @@ interface StaffRowProps {
   canManage: boolean;
 }
 
-function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closureIndex, siteIds, rowHeight, cells, cellWidth, viewMode, canManage }: StaffRowProps) {
+function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closureIndex, siteIds, teamIds, teamSiteById, rowHeight, cells, cellWidth, viewMode, canManage }: StaffRowProps) {
   const { openVacationModal } = useUIStore();
 
   // Get max capacity for this staff member
@@ -302,8 +317,9 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
   const closures = useMemo(() => {
     if (closureIndex.size === 0) return undefined;
     const sites = siteIds ?? new Set([staffMember.site_id]);
-    return (dateStr: string) => getClosureOn(sites, dateStr, closureIndex);
-  }, [closureIndex, siteIds, staffMember.site_id]);
+    const teams = teamIds ?? new Set(staffMember.team_ids ?? []);
+    return (dateStr: string) => getClosureOn(sites, dateStr, closureIndex, teams, teamSiteById);
+  }, [closureIndex, siteIds, teamIds, teamSiteById, staffMember.site_id, staffMember.team_ids]);
 
   // Calculate workload per cell
   const workloadCells = useWorkloadCalculation(assignments, vacations, cells, maxCapacity, absenceTypesById, closures);
@@ -324,6 +340,8 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
       /** Vacations only: inline --absence-color and whether it blocks capacity */
       absenceStyle?: React.CSSProperties;
       available?: boolean;
+      /** Assignments only: a booking awaiting approval */
+      pending?: boolean;
       data: StaffAssignmentWithContext | Vacation;
     }> = [];
     
@@ -334,6 +352,9 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
         label += ` - ${assignment.phaseName}`;
       }
       label += ` (${assignment.allocation}%)`;
+      // Shown dashed, but not counted until approved.
+      const pending = isPendingAssignment(assignment);
+      if (pending) label += ' — pending approval';
       
       allItems.push({
         type: 'assignment',
@@ -342,6 +363,7 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
         endDate: assignment.end_date,
         label,
         allocation: assignment.allocation,
+        pending,
         data: assignment,
       });
     });
@@ -405,6 +427,7 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
       allocation?: number;
       absenceStyle?: React.CSSProperties;
       available?: boolean;
+      pending?: boolean;
       data: StaffAssignmentWithContext | Vacation;
     }> = [];
     
@@ -422,6 +445,7 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
             allocation: item.allocation,
             absenceStyle: item.absenceStyle,
             available: item.available,
+            pending: item.pending,
             data: item.data,
           });
         }
@@ -480,7 +504,7 @@ function StaffRow({ staffMember, assignments, vacations, absenceTypesById, closu
       {stackedBars.map((bar, index) => (
         <div
           key={`${bar.type}-${bar.id}-${index}`}
-          className={`${styles.bar} ${bar.type === 'vacation' ? styles.vacationBar : styles.assignmentBar} ${bar.available ? styles.availableAbsenceBar : ''}`}
+          className={`${styles.bar} ${bar.type === 'vacation' ? styles.vacationBar : styles.assignmentBar} ${bar.available ? styles.availableAbsenceBar : ''} ${bar.pending ? styles.pendingBar : ''}`}
           style={{ 
             ...bar.absenceStyle,
             left: bar.left, 
@@ -581,8 +605,7 @@ interface BankHolidaysTimelineRowProps {
 
 function BankHolidaysTimelineRow({ isExpanded, holidays, cells, cellWidth, viewMode }: BankHolidaysTimelineRowProps) {
   const BASE_HEIGHT = 44;
-  const currentUser = useAppStore((s) => s.currentUser);
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  const canEdit = useAppStore((s) => can(s.currentUser, 'bank_holidays.manage'));
   
   return (
     <div className={styles.bankHolidaysWrapper}>
@@ -639,8 +662,7 @@ interface CompanyEventsTimelineRowProps {
 
 function CompanyEventsTimelineRow({ isExpanded, events, cells, cellWidth, viewMode }: CompanyEventsTimelineRowProps) {
   const BASE_HEIGHT = 44;
-  const currentUser = useAppStore((s) => s.currentUser);
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  const canEdit = useAppStore((s) => can(s.currentUser, 'company_events.manage'));
 
   return (
     <div className={styles.companyEventsWrapper}>

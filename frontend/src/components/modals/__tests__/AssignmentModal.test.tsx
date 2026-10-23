@@ -7,14 +7,20 @@
  * can be removed.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { AssignmentModal } from '../AssignmentModal';
 import { useUIStore } from '@/stores/uiStore';
 import { useAppStore } from '@/stores/appStore';
 import { createStaffAssignment, deleteStaffAssignment } from '@/api/endpoints/projects';
 import { stubConfirm } from '@/test/confirmDialog';
+import { dateValue, pickDate, pickEnd } from '@/test/datePicker';
 import type { Project } from '@/types';
+import { useViewStore } from '@/stores/viewStore';
+import { tagFilterKey } from '@/utils/tags';
+import { makeTeam, makeUser } from '@/test/factories';
+import { optionLabel, pickOption, pickerOptions, pickerTrigger } from '@/test/searchableSelect';
+import styles from '../AssignmentModal.module.css';
 
 vi.mock('@/api/endpoints/projects', () => ({
   createStaffAssignment: vi.fn().mockResolvedValue({}),
@@ -48,7 +54,7 @@ function seed(user: { id: number; role: 'admin' | 'superuser' | 'user'; name?: s
       { id: 7, name: 'Alice Anderson', site_id: 1, active: true, max_capacity: 60 },
       { id: 4, name: 'Bob Brown', site_id: 1, active: true },
     ] as never,
-    currentUser: { name: 'Someone', ...user } as never,
+    currentUser: makeUser({ name: 'Someone', ...user }),
   });
 }
 
@@ -89,10 +95,12 @@ describe('AssignmentModal picker', () => {
     openForProject();
     render(<AssignmentModal mode="staff" />);
 
-    const picker = screen.getByLabelText('Staff Member') as HTMLSelectElement;
-    expect(picker.tagName).toBe('SELECT');
-    expect(screen.getByRole('option', { name: /Alice Anderson/ })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /Bob Brown/ })).toBeInTheDocument();
+    expect(pickerTrigger(/^Staff Member/)).toHaveAccessibleName('Staff Member * Select staff member');
+    const rows = pickerOptions(/^Staff Member/);
+    expect(rows.map(optionLabel)).toEqual(['Select staff member', 'Alice Anderson', 'Bob Brown']);
+    // the role is a searched hint, the capacity a note under 100 %
+    expect(rows[1]).toHaveTextContent('Alice Anderson No role 60% capacity');
+    expect(rows[2]).toHaveTextContent(/^Bob Brown No role$/);
     expect(screen.getByRole('button', { name: 'Assign Staff' })).toBeInTheDocument();
   });
 
@@ -100,7 +108,35 @@ describe('AssignmentModal picker', () => {
     seed({ id: 99, role: 'superuser' });
     openForProject();
     render(<AssignmentModal mode="staff" />);
-    expect((screen.getByLabelText('Staff Member') as HTMLElement).tagName).toBe('SELECT');
+    expect(pickerTrigger(/^Staff Member/)).toBeEnabled();
+    expect(screen.queryByDisplayValue('You')).not.toBeInTheDocument();
+  });
+
+  it('sets the allocation to the capacity on a real change only, and books the pick', async () => {
+    seed({ id: 99, role: 'superuser' });
+    openForProject();
+    render(<AssignmentModal mode="staff" />);
+    const slider = () => screen.getByRole('slider');
+    expect(slider()).toHaveAttribute('aria-valuetext', '100%');
+
+    fireEvent.click(pickerTrigger(/^Staff Member/));
+    const search = screen.getByRole('combobox', { name: 'Find a person' });
+    expect(search).toHaveFocus();
+    fireEvent.change(search, { target: { value: 'ali' } });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(pickerTrigger(/^Staff Member/)).toHaveAccessibleName('Staff Member * Alice Anderson');
+    expect(slider()).toHaveAttribute('aria-valuetext', '60%');
+
+    // move the slider, then pick Alice again: the allocation stays
+    fireEvent.change(slider(), { target: { value: '40' } });
+    fireEvent.keyUp(slider());
+    expect(slider()).toHaveAttribute('aria-valuetext', '40%');
+    pickOption(/^Staff Member/, 'Alice Anderson');
+    expect(slider()).toHaveAttribute('aria-valuetext', '40%');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Assign Staff' }));
+    await waitFor(() => expect(createStaffAssignment).toHaveBeenCalled());
+    expect(vi.mocked(createStaffAssignment).mock.calls[0][0]).toMatchObject({ staff_id: 7, allocation: 40 });
   });
 
   it('lists the site equipment with its type in equipment mode', () => {
@@ -116,13 +152,62 @@ describe('AssignmentModal picker', () => {
     useUIStore.getState().openModal('equipmentAssignment', { projectId: 1 });
     render(<AssignmentModal mode="equipment" />);
 
-    const picker = screen.getByLabelText('Equipment');
-    expect(screen.getByRole('option', { name: 'Bioreactor (Reactor)' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'Scale (No type)' })).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: /Elsewhere/ })).not.toBeInTheDocument();
-    fireEvent.change(picker, { target: { value: '11' } });
-    expect(picker).toHaveValue('11');
+    const rows = pickerOptions(/^Equipment/);
+    expect(rows.map((o) => o.textContent)).toEqual(['Select equipment', 'Bioreactor Reactor', 'Scale No type']);
+    expect(screen.getByRole('combobox', { name: 'Find equipment' })).toHaveFocus();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Find equipment' }), { target: { value: 'zz' } });
+    expect(screen.getByRole('status')).toHaveTextContent('No equipment matches');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Find equipment' }), { target: { value: 'react' } });
+    pickOption(/^Equipment/, 'Bioreactor');
+    expect(pickerTrigger(/^Equipment/)).toHaveAccessibleName('Equipment * Bioreactor');
     expect(screen.getByRole('button', { name: 'Assign Equipment' })).toBeInTheDocument();
+  });
+});
+
+describe('AssignmentModal height', () => {
+  // The open picker panel must fit under its trigger without scrolling the body.
+  function form(): HTMLFormElement {
+    const el = document.querySelector('form');
+    if (!el) throw new Error('no form');
+    return el;
+  }
+
+  it('makes room for the open staff picker when creating', () => {
+    seed({ id: 99, role: 'superuser' });
+    openForProject();
+    render(<AssignmentModal mode="staff" />);
+    fireEvent.click(pickerTrigger(/^Staff Member/));
+    expect(screen.getByRole('combobox', { name: 'Find a person' })).toHaveFocus();
+    expect(form()).toHaveClass(styles.form, styles.formTall);
+  });
+
+  it('makes room for the open equipment picker when creating', () => {
+    seed({ id: 99, role: 'superuser' });
+    useAppStore.setState({ equipment: [{ id: 11, name: 'Bioreactor', type: 'Reactor', site_id: 1 }] as never });
+    useUIStore.setState({ editingEquipmentAssignment: null });
+    useUIStore.getState().openModal('equipmentAssignment', { projectId: 1 });
+    render(<AssignmentModal mode="equipment" />);
+    fireEvent.click(pickerTrigger(/^Equipment/));
+    expect(form()).toHaveClass(styles.formTall);
+  });
+
+  it('keeps an edit dialog at its content height', () => {
+    seed({ id: 99, role: 'superuser' });
+    useUIStore.getState().setEditingStaffAssignment({
+      id: 11,
+      project_id: 1,
+      phase_id: null,
+      subphase_id: null,
+      staff_id: 4,
+      staff_name: 'Bob Brown',
+      allocation: 50,
+      start_date: '2026-09-01',
+      end_date: '2026-09-14',
+    });
+    useUIStore.getState().openModal('staffAssignment', { projectId: 1 });
+    render(<AssignmentModal mode="staff" />);
+    expect(form()).toHaveClass(styles.form);
+    expect(form()).not.toHaveClass(styles.formTall);
   });
 });
 
@@ -193,18 +278,13 @@ describe('AssignmentModal remove button', () => {
 });
 
 describe('AssignmentModal initialisation', () => {
-  // The dialog renders in a portal, outside the render container
-  const dateInputs = () =>
-    Array.from(document.body.querySelectorAll<HTMLInputElement>('input[type="date"]'));
-
   it('keeps what the user typed when staff is refetched while open', () => {
     seed({ id: 7, role: 'user', name: 'Alice Anderson' });
     openForProject();
     render(<AssignmentModal mode="staff" />);
 
-    const [start] = dateInputs();
-    expect(start).toHaveValue('2026-09-01');
-    fireEvent.change(start, { target: { value: '2026-10-05' } });
+    expect(dateValue('Start Date *')).toBe('2026-09-01');
+    pickDate('Start Date *', '2026-10-05');
 
     // A WebSocket refetch replaces the staff list (new array, new capacity)
     act(() => {
@@ -217,7 +297,7 @@ describe('AssignmentModal initialisation', () => {
       });
     });
 
-    expect(dateInputs()[0]).toHaveValue('2026-10-05');
+    expect(dateValue('Start Date *')).toBe('2026-10-05');
     // The allocation is not reset to the refetched capacity either
     expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', '60%');
   });
@@ -226,11 +306,80 @@ describe('AssignmentModal initialisation', () => {
     seed({ id: 7, role: 'user', name: 'Alice Anderson' });
     openForProject();
     render(<AssignmentModal mode="staff" />);
-    fireEvent.change(dateInputs()[0], { target: { value: '2026-10-05' } });
+    pickDate('Start Date *', '2026-10-05');
 
     act(() => useUIStore.getState().closeModal());
     act(() => openForProject());
 
-    expect(dateInputs()[0]).toHaveValue('2026-09-01');
+    expect(dateValue('Start Date *')).toBe('2026-09-01');
+  });
+
+  it('refuses an allocation below 5 %', () => {
+    seed({ id: 7, role: 'user', name: 'Alice Anderson' });
+    // A person at 0 % capacity starts at 0 %
+    useAppStore.setState({ staff: [{ id: 7, name: 'Alice Anderson', site_id: 1, active: true, max_capacity: 0 }] as never });
+    openForProject();
+    render(<AssignmentModal mode="staff" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Assign me' }));
+    expect(screen.getByText('Allocation must be at least 5%')).toBeInTheDocument();
+    expect(createStaffAssignment).not.toHaveBeenCalled();
+  });
+
+  // The rule itself is proven in dateRangeLogic.test; this guards the form's payload wiring
+  it('never lets the end precede the start', async () => {
+    seed({ id: 7, role: 'user', name: 'Alice Anderson' });
+    openForProject();
+    render(<AssignmentModal mode="staff" />);
+
+    // An end picked before the start becomes the new start, keeping the duration
+    pickEnd('End Date *', '2026-08-25');
+    expect(dateValue('Start Date *')).toBe('2026-08-25');
+    expect(dateValue('End Date *')).toBe('2026-12-24');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Assign me' }));
+    await waitFor(() => expect(createStaffAssignment).toHaveBeenCalled());
+    expect(vi.mocked(createStaffAssignment).mock.calls[0][0]).toMatchObject({
+      start_date: '2026-08-25',
+      end_date: '2026-12-24',
+    });
+  });
+});
+
+describe('AssignmentModal picker with a team filter', () => {
+  afterEach(() => {
+    useViewStore.setState({ teamFilters: {} });
+    useAppStore.setState({ teams: [] });
+  });
+
+  it('keeps the currently selected item even when it no longer matches', () => {
+    seed({ id: 1, role: 'admin' });
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
+      staff: [
+        { id: 7, name: 'Alice Anderson', role: 'Scientist', site_id: 1, active: true, team_ids: [1] },
+        { id: 4, name: 'Bob Brown', role: 'Scientist', site_id: 1, active: true, team_ids: [2] },
+        { id: 5, name: 'Carol White', role: 'Scientist', site_id: 1, active: true, team_ids: [2] },
+      ] as never,
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    useUIStore.getState().setEditingStaffAssignment({
+      id: 11,
+      project_id: 1,
+      phase_id: null,
+      subphase_id: null,
+      staff_id: 4,
+      staff_name: 'Bob Brown',
+      allocation: 50,
+      start_date: '2026-09-01',
+      end_date: '2026-09-14',
+    });
+    useUIStore.getState().openModal('staffAssignment', { projectId: 1 });
+    render(<AssignmentModal mode="staff" />);
+
+    // Bob is outside the filter but still an option: the (read-only) picker names him
+    const picker = pickerTrigger(/^Staff Member/);
+    expect(picker).toHaveAccessibleName('Staff Member * Bob Brown');
+    expect(picker).toBeDisabled();
   });
 });

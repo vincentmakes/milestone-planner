@@ -6,12 +6,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { EquipmentView } from '../EquipmentView';
-import { resetAllStores, useAppStore, useUIStore } from '@/stores';
+import { resetAllStores, useAppStore, useUIStore, useViewStore } from '@/stores';
+import { tagFilterKey } from '@/utils/tags';
 import { deleteEquipmentBlock } from '@/api';
 import { formatDateISO } from '@/utils/date';
-import { makeEquipment, makePhase, makeProject, makeSite, makeUser } from '@/test/factories';
+import { makeEquipment, makePhase, makeProject, makeSite, makeTeam, makeUser } from '@/test/factories';
 import { stubConfirm } from '@/test/confirmDialog';
-import type { EquipmentBlock } from '@/types';
+import { buildEventDateSet } from '@/api';
+import type { CompanyEvent, EquipmentBlock } from '@/types';
 
 const refreshEquipmentBlocks = vi.fn();
 
@@ -140,6 +142,109 @@ describe('EquipmentView panel', () => {
     fireEvent.mouseDown(document.body);
     expect(screen.queryByText('Select All')).not.toBeInTheDocument();
   });
+
+  it("starts the Gantt panel with the admin's default types found at the site, ignoring unknown ones; Clear works for the session", () => {
+    seed();
+    // Mixer exists only at another site, Gone nowhere
+    useAppStore.setState({ instanceSettings: { equipment_panel_default_types: '["Analytics","Mixer","Gone"]' } });
+    const { unmount } = render(<EquipmentView embedded />);
+
+    expect(screen.getByText('HPLC Agilent')).toBeInTheDocument();
+    expect(screen.queryByText('Bioreactor 50L')).not.toBeInTheDocument();
+    expect(countBadge()).toHaveTextContent('1');
+
+    fireEvent.click(screen.getByRole('button', { name: /Analytics/ }));
+    expect(screen.getByRole('checkbox', { name: 'Analytics' })).toBeChecked();
+    fireEvent.click(screen.getByText('Clear'));
+    expect(screen.getByText('Bioreactor 50L')).toBeInTheDocument();
+    expect(countBadge()).toHaveTextContent('3');
+
+    // The next opening applies the default again
+    unmount();
+    render(<EquipmentView embedded />);
+    expect(screen.queryByText('Bioreactor 50L')).not.toBeInTheDocument();
+  });
+
+  it("re-seeds the Gantt panel's filter with each site's own default types when the site changes", () => {
+    seed();
+    useAppStore.setState({ instanceSettings: { equipment_panel_default_types: '["Analytics","Mixer"]' } });
+    render(<EquipmentView embedded />);
+    expect(screen.getByRole('button', { name: /Analytics/ })).toBeInTheDocument();
+
+    // Mixer is the only default type at site 2
+    act(() => useAppStore.setState({ currentSite: makeSite({ id: 2, name: 'Zurich' }) }));
+    expect(screen.getByRole('button', { name: /Mixer/ })).toBeInTheDocument();
+    expect(screen.getByText('Remote mixer')).toBeInTheDocument();
+    expect(countBadge()).toHaveTextContent('1');
+
+    // A site without any default type opens unfiltered
+    act(() =>
+      useAppStore.setState({
+        currentSite: makeSite({ id: 3, name: 'Lyon' }),
+        equipment: [...useAppStore.getState().equipment, makeEquipment({ id: 5, name: 'Lyon oven', type: 'Oven', site_id: 3 })],
+      })
+    );
+    expect(screen.getByRole('button', { name: /All Types/ })).toBeInTheDocument();
+    expect(screen.getByText('Lyon oven')).toBeInTheDocument();
+  });
+
+  it('starts unfiltered when no default type exists at the site', () => {
+    seed();
+    useAppStore.setState({ instanceSettings: { equipment_panel_default_types: '["Mixer"]' } });
+    render(<EquipmentView embedded />);
+    expect(screen.getByRole('button', { name: /All Types/ })).toBeInTheDocument();
+    expect(countBadge()).toHaveTextContent('3');
+  });
+
+  it('starts the standalone view unfiltered with default types set, also after a site change', () => {
+    seed();
+    useAppStore.setState({ instanceSettings: { equipment_panel_default_types: '["Analytics","Mixer"]' } });
+    render(<EquipmentView />);
+    expect(screen.getByRole('button', { name: /All Types/ })).toBeInTheDocument();
+    expect(countBadge()).toHaveTextContent('3');
+    expect(screen.getByText('Bioreactor 50L')).toBeInTheDocument();
+
+    act(() => useAppStore.setState({ currentSite: makeSite({ id: 2, name: 'Zurich' }) }));
+    expect(screen.getByRole('button', { name: /All Types/ })).toBeInTheDocument();
+  });
+
+  it('with an active team filter, hides non-matching equipment and keeps matching ones', () => {
+    seed();
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1 }), makeTeam({ id: 2, site_id: 1, name: 'Process' })],
+      equipment: [{ ...hplc, team_ids: [1] }, { ...reactor, team_ids: [2] }, { ...spare, team_ids: [] }],
+    });
+    useViewStore.setState({ teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } } });
+    render(<EquipmentView />);
+    expect(screen.getByText('HPLC Agilent')).toBeInTheDocument();
+    // Open to the whole site, so it stays
+    expect(screen.getByText('Spare centrifuge')).toBeInTheDocument();
+    expect(screen.queryByText('Bioreactor 50L')).not.toBeInTheDocument();
+  });
+
+  it('with an active team filter, drops company events of other teams from the timeline', () => {
+    seed();
+    const teamEvents: CompanyEvent[] = [
+      { id: 81, site_id: 1, site_ids: [1], date: isoOffset(2), end_date: null, name: 'Team B review', team_ids: [2] },
+      { id: 82, site_id: 1, site_ids: [1], date: isoOffset(3), end_date: null, name: 'Site audit', team_ids: [] },
+    ];
+    useAppStore.setState({
+      teams: [makeTeam({ id: 1, site_id: 1, name: 'A' }), makeTeam({ id: 2, site_id: 1, name: 'B' })],
+      companyEvents: teamEvents,
+      companyEventDates: buildEventDateSet(teamEvents),
+    });
+    useViewStore.setState({
+      viewMode: 'month',
+      currentDate: new Date(),
+      teamFilters: { [tagFilterKey(1)]: { teamIds: [1], noTeam: false } },
+    });
+    render(<EquipmentView />);
+    expect(screen.getAllByTitle('Site audit').length).toBeGreaterThan(0);
+    expect(screen.queryAllByTitle('Team B review')).toHaveLength(0);
+
+    act(() => useViewStore.setState({ teamFilters: {} }));
+    expect(screen.getAllByTitle('Team B review').length).toBeGreaterThan(0);
+  });
 });
 
 describe('EquipmentView expanded rows', () => {
@@ -153,6 +258,18 @@ describe('EquipmentView expanded rows', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: 'Filter equipment' })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
+  });
+
+  it('portals the type filter out of the header, right-aligned; a mousedown in it keeps it open', () => {
+    seed();
+    render(<EquipmentView />);
+    const trigger = screen.getByRole('button', { name: /All Types/ });
+    fireEvent.click(trigger);
+    const panel = screen.getByRole('dialog', { name: 'Filter equipment' });
+    expect(trigger.parentElement).not.toContainElement(panel);
+    expect(panel).toHaveAttribute('data-align', 'end');
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Select All' }));
+    expect(screen.getByRole('dialog', { name: 'Filter equipment' })).toBeInTheDocument();
   });
 
   it('lists bookings with their level and the project/phase names', () => {

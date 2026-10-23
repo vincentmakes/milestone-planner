@@ -2,7 +2,9 @@
 Pydantic schemas for Authentication.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.services.permissions import ADMIN_ROLE_KEY, ROLE_KEY_PATTERN
 
 # Minimum length for new or changed tenant passwords (login is unaffected, so
 # existing shorter passwords keep working until they are changed).
@@ -44,9 +46,17 @@ class UserSessionInfo(BaseModel):
     lastName: str
     name: str  # computed: firstName + ' ' + lastName
     jobTitle: str | None = None
-    role: str
+    role: str  # the role key
+    roleName: str | None = None  # the role's display name
     siteIds: list[int] = []  # camelCase
     sites: list[UserSiteInfo] = []  # Full site objects
+    # The live role's matrix: the keys allowed outright (the admin: every
+    # key), the keys in approval mode, and whether every site is visible.
+    permissions: list[str] = []
+    approvalRequired: list[str] = []
+    canSeeAllSites: bool = False
+    # Bookable as a resource (users.is_resource).
+    isResource: bool = True
 
     class Config:
         from_attributes = True
@@ -112,4 +122,13 @@ class SSOConfigUpdate(BaseModel):
     client_secret: str | None = Field(None, max_length=200)
     redirect_uri: str | None = None
     auto_create_users: bool | None = None
-    default_role: str | None = Field(None, pattern="^(superuser|user)$")
+    # A role key (custom roles included); the route checks it exists (400).
+    # Never the admin role: an SSO sign-in never creates an administrator.
+    default_role: str | None = Field(None, pattern=ROLE_KEY_PATTERN)
+
+    @field_validator("default_role")
+    @classmethod
+    def _not_admin(cls, value: str | None) -> str | None:
+        if value == ADMIN_ROLE_KEY:
+            raise ValueError("The administrator role cannot be the SSO default role")
+        return value

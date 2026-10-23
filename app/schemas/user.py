@@ -5,6 +5,8 @@ Pydantic schemas for Users and Staff.
 from pydantic import BaseModel, EmailStr, Field
 
 from app.schemas.base import DateTimeJS
+from app.schemas.team import TeamIds
+from app.services.permissions import ROLE_KEY_PATTERN
 
 # Minimum length of a new or changed tenant password (B1-22). Login never
 # checks it, so accounts with an older, shorter password keep working.
@@ -51,6 +53,7 @@ class StaffResponse(BaseModel):
     site_id: int | None = None  # Singular site ID
     site_name: str | None = None  # Singular site name
     skills: list[SkillInfo] = []  # User's skills
+    team_ids: list[int] = []  # The user's teams at this row's site
 
     class Config:
         from_attributes = True
@@ -68,6 +71,7 @@ class StaffDetailResponse(BaseModel):
     active: int = 1
     created_at: DateTimeJS
     sites: list[UserSiteResponse] = []
+    team_ids: list[int] = []  # All of the user's teams
 
     class Config:
         from_attributes = True
@@ -82,10 +86,14 @@ class StaffCreate(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
     job_title: str | None = Field(None, max_length=100)
-    role: str = Field(default="user", pattern="^(admin|superuser|user)$")
+    # A role key; the router checks it exists in ``roles`` (404 otherwise).
+    role: str = Field(default="user", pattern=ROLE_KEY_PATTERN)
     max_capacity: int = Field(default=100, ge=1, le=100)  # Max work capacity %
+    # Bookable as a resource; omitted = bookable unless the role is admin.
+    is_resource: bool | None = None
     site_ids: list[int] = []
     skill_ids: list[int] = []
+    team_ids: TeamIds = []
 
 
 class StaffUpdate(BaseModel):
@@ -96,11 +104,14 @@ class StaffUpdate(BaseModel):
     first_name: str | None = Field(None, min_length=1, max_length=100)
     last_name: str | None = Field(None, min_length=1, max_length=100)
     job_title: str | None = Field(None, max_length=100)
-    role: str | None = Field(None, pattern="^(admin|superuser|user)$")
+    # A role key; the router checks it exists in ``roles`` (404 otherwise).
+    role: str | None = Field(None, pattern=ROLE_KEY_PATTERN)
     max_capacity: int | None = Field(None, ge=1, le=100)  # Max work capacity %
     active: int | None = None
+    is_resource: bool | None = None  # Bookable as a resource
     site_ids: list[int] | None = None
     skill_ids: list[int] | None = None
+    team_ids: TeamIds | None = None
 
 
 class UserResponse(BaseModel):
@@ -115,12 +126,16 @@ class UserResponse(BaseModel):
     last_name: str
     job_title: str | None = None
     role: str
+    role_name: str | None = None  # the role's display name
     max_capacity: int = 100  # Max work capacity %
     active: int
+    is_resource: bool = True  # Bookable as a resource
     created_at: DateTimeJS
     site_ids: list[int] = []
     site_names: list[str] = []
     skills: list[SkillInfo] = []
+    team_ids: list[int] = []
+    team_names: list[str] = []
 
     class Config:
         from_attributes = True
@@ -138,12 +153,16 @@ class UserDetailResponse(BaseModel):
     last_name: str
     job_title: str | None = None
     role: str
+    role_name: str | None = None  # the role's display name
     max_capacity: int = 100  # Max work capacity %
     active: int
+    is_resource: bool = True  # Bookable as a resource
     created_at: DateTimeJS
     site_ids: list[int] = []
     sites: list[UserSiteResponse] = []
     skills: list[SkillInfo] = []
+    team_ids: list[int] = []
+    team_names: list[str] = []
 
     class Config:
         from_attributes = True

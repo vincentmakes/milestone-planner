@@ -8,14 +8,16 @@ site-membership checks.
 
 from datetime import date, datetime
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite
+from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
+from app.models.team import Team
 from app.routers.sites import _validate_range
+from app.services.team_rules import team_outside_sites_detail
 from tests.conftest import FakeUser
 
 STAMP = datetime(2026, 1, 1, 12, 0, 0)
@@ -61,7 +63,19 @@ def _holiday(holiday_id=5, site_id=1, day=date(2026, 8, 1), name="Swiss National
     )
 
 
-def _event(event_id=5, site_id=1, day=date(2026, 3, 10), name="ISO audit", end=None, closure=False):
+def _team(team_id=3, site_id=1, name="Analytical Lab"):
+    return Team(id=team_id, site_id=site_id, name=name)
+
+
+def _event(
+    event_id=5,
+    site_id=1,
+    day=date(2026, 3, 10),
+    name="ISO audit",
+    end=None,
+    closure=False,
+    teams=(),
+):
     return CompanyEvent(
         id=event_id,
         site_id=site_id,
@@ -71,6 +85,7 @@ def _event(event_id=5, site_id=1, day=date(2026, 3, 10), name="ISO audit", end=N
         color="#f97316",
         counts_as_unavailable=closure,
         created_at=STAMP,
+        teams=list(teams),
     )
 
 
@@ -357,6 +372,46 @@ async def test_create_event_on_several_sites(authed_client, db_assigns_ids):
 
 
 @pytest.mark.asyncio
+async def test_create_event_links_teams_at_its_sites(authed_client, db_assigns_ids):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    db = db_assigns_ids
+    db.execute.side_effect = [
+        _scalars_result([1, 2]),  # both sites exist
+        _scalars_result([_team(3, 1), _team(4, 2, "Formulation")]),  # the teams
+    ]
+
+    response = await client.post(
+        "/api/events",
+        json={"date": "2026-03-10", "name": "Lab day", "site_ids": [1, 2], "team_ids": [3, 4]},
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["team_ids"] == [3, 4]
+    (event,) = _added(db, CompanyEvent)
+    assert event.team_ids == [3, 4]
+
+
+@pytest.mark.asyncio
+async def test_create_event_with_a_team_outside_its_sites_is_a_400(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.side_effect = [
+        _scalars_result([1]),
+        _scalars_result([_team(4, 2, "Formulation")]),  # a team at site 2
+    ]
+
+    response = await client.post(
+        "/api/events",
+        json={"date": "2026-03-10", "name": "Lab day", "site_ids": [1], "team_ids": [4]},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == team_outside_sites_detail("Formulation")
+    mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_create_event_as_a_site_closure(authed_client, db_assigns_ids):
     client, set_user = authed_client
     set_user(FakeUser(1, "admin"))
@@ -449,6 +504,28 @@ async def test_create_event_rejects_a_span_over_366_days(authed_client, mock_db_
     assert response.status_code == 400
     assert response.json()["detail"] == "End date makes the range longer than 366 days"
     mock_db_session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_event_checks_the_range_before_loading_teams(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.side_effect = [_scalars_result([1])]  # the sites only
+
+    response = await client.post(
+        "/api/events",
+        json={
+            "date": "2026-03-10",
+            "end_date": "2026-03-09",
+            "name": "X",
+            "site_ids": [1],
+            "team_ids": [3],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "End date cannot be before the start date"
+    assert mock_db_session.execute.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -546,6 +623,61 @@ async def test_update_event_replaces_site_links(authed_client, db_assigns_ids):
     assert response.json()["site_ids"] == [2]
     assert event.site_id == 2
     assert db.execute.await_count == 3  # the third call removes the site-1 link
+
+
+@pytest.mark.asyncio
+async def test_update_event_replaces_its_teams(authed_client, db_assigns_ids):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    db = db_assigns_ids
+    event = _event(5, site_id=1, teams=[_team(3, 1)])
+    db.get.return_value = event
+    db.execute.side_effect = [_links_result([(5, 1), (5, 2)]), _scalars_result([_team(4, 2)])]
+
+    response = await client.put("/api/events/5", json={"team_ids": [4]})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["team_ids"] == [4]
+    assert event.team_ids == [4]
+
+
+@pytest.mark.asyncio
+async def test_update_event_teams_are_checked_against_the_new_sites(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    event = _event(5, site_id=1)
+    mock_db_session.get.return_value = event
+    mock_db_session.execute.side_effect = [
+        _links_result([(5, 1), (5, 2)]),
+        _scalars_result([1]),  # narrowed to site 1
+        _scalars_result([_team(4, 2, "Formulation")]),
+    ]
+
+    response = await client.put("/api/events/5", json={"site_ids": [1], "team_ids": [4]})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == team_outside_sites_detail("Formulation")
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_narrowing_event_sites_prunes_their_teams(authed_client, db_assigns_ids):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    db = db_assigns_ids
+    event = _event(5, site_id=1, teams=[_team(3, 1), _team(4, 2, "Formulation")])
+    db.get.return_value = event
+    db.execute.side_effect = [
+        _links_result([(5, 1), (5, 2)]),
+        _scalars_result([1]),
+        MagicMock(),  # removes the site-2 link
+    ]
+
+    response = await client.put("/api/events/5", json={"site_ids": [1]})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["team_ids"] == [3]
+    assert db.execute.await_count == 3  # no team lookup
 
 
 @pytest.mark.asyncio
@@ -678,7 +810,10 @@ async def test_site_events_list_reports_every_linked_site(authed_client, mock_db
     set_user(FakeUser(1, "user"))
     mock_db_session.execute.side_effect = [
         _scalars_result(
-            [_event(5, site_id=2), _event(6, site_id=1, name="Shutdown", closure=True)]
+            [
+                _event(5, site_id=2),
+                _event(6, site_id=1, name="Shutdown", closure=True, teams=[_team(3, 1)]),
+            ]
         ),
         _links_result([(5, 2), (5, 1), (6, 1)]),
     ]
@@ -692,6 +827,7 @@ async def test_site_events_list_reports_every_linked_site(authed_client, mock_db
         (5, 1, [1, 2], False),
         (6, 1, [1], True),
     ]
+    assert [e["team_ids"] for e in response.json()] == [[], [3]]
 
 
 # ---------------------------------------------------------
@@ -858,3 +994,155 @@ async def test_superuser_import_skips_an_event_already_shown_on_the_target(
     assert response.status_code == 200
     assert response.json() == {"created": 0, "linked": 0, "skipped": 1}
     mock_db_session.commit.assert_not_awaited()
+
+
+# ---------------------------------------------------------
+# The Nager switch (nager_enabled)
+# ---------------------------------------------------------
+
+
+def _site(country_code="CH"):
+    return Site(
+        id=1,
+        name="Winterthur",
+        country_code=country_code,
+        region_code=None,
+        timezone="Europe/Zurich",
+        active=1,
+        created_at=STAMP,
+    )
+
+
+@pytest.fixture
+def nager():
+    with patch("app.routers.sites.fetch_and_store_bank_holidays", new_callable=AsyncMock) as fetch:
+        fetch.return_value = 0
+        yield fetch
+
+
+@pytest.fixture
+def site_refresh(mock_db_session):
+    async def refresh(obj):
+        if getattr(obj, "id", None) is None:
+            obj.id = 9
+        if getattr(obj, "created_at", None) is None:
+            obj.created_at = STAMP
+
+    mock_db_session.refresh.side_effect = refresh
+    return mock_db_session
+
+
+def _flag_sql(db, call_index=0) -> str:
+    return _sql(db.execute.await_args_list[call_index].args[0])
+
+
+@pytest.mark.asyncio
+async def test_refresh_is_409_while_nager_is_off(authed_client, mock_db_session, nager):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.side_effect = [_scalar_result("false")]
+
+    response = await client.post("/api/sites/1/holidays/refresh")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Holiday refresh from Nager is turned off"
+    # Only the switch was read: no site lookup, so nothing leaks about the site.
+    mock_db_session.execute.assert_awaited_once()
+    assert "settings.key = 'nager_enabled'" in _flag_sql(mock_db_session)
+    nager.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_refresh_without_the_key_is_403_before_the_switch(
+    authed_client, mock_db_session, nager
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "user"))
+    mock_db_session.execute.side_effect = [_scalar_result("false")]
+
+    response = await client.post("/api/sites/1/holidays/refresh")
+
+    assert response.status_code == 403
+    mock_db_session.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stored", [None, "true"])
+async def test_refresh_calls_nager_while_it_is_on(authed_client, mock_db_session, nager, stored):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    site = _site()
+    mock_db_session.execute.side_effect = [
+        _scalar_result(stored),
+        _scalar_result(site),
+        _scalars_result([_holiday()]),
+    ]
+
+    response = await client.post("/api/sites/1/holidays/refresh")
+
+    assert response.status_code == 200
+    assert [h["name"] for h in response.json()] == ["Swiss National Day"]
+    nager.assert_awaited_once()
+    assert nager.await_args.args[1] is site
+    assert nager.await_args.kwargs == {"replace_existing": True}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("stored", "fetched"), [(None, True), ("true", True), ("false", False)])
+async def test_create_site_fetches_holidays_only_while_nager_is_on(
+    authed_client, site_refresh, nager, stored, fetched
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    site_refresh.execute.side_effect = [_scalar_result(stored)]
+
+    response = await client.post("/api/sites", json={"name": "Basel", "country_code": "CH"})
+
+    assert response.status_code == 201, response.text
+    assert nager.await_count == (1 if fetched else 0)
+    assert "settings.key = 'nager_enabled'" in _flag_sql(site_refresh)
+
+
+@pytest.mark.asyncio
+async def test_create_site_without_a_country_does_not_read_the_switch(
+    authed_client, site_refresh, nager
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+
+    response = await client.post("/api/sites", json={"name": "Basel"})
+
+    assert response.status_code == 201, response.text
+    site_refresh.execute.assert_not_awaited()
+    nager.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("stored", "fetched"), [(None, True), ("true", True), ("false", False)])
+async def test_a_country_change_fetches_holidays_only_while_nager_is_on(
+    authed_client, mock_db_session, nager, stored, fetched
+):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    site = _site("CH")
+    mock_db_session.execute.side_effect = [_scalar_result(site), _scalar_result(stored)]
+
+    response = await client.put("/api/sites/1", json={"country_code": "DE"})
+
+    assert response.status_code == 200, response.text
+    assert site.country_code == "DE"
+    assert nager.await_count == (1 if fetched else 0)
+    assert "settings.key = 'nager_enabled'" in _flag_sql(mock_db_session, 1)
+
+
+@pytest.mark.asyncio
+async def test_an_unchanged_country_does_not_read_the_switch(authed_client, mock_db_session, nager):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.side_effect = [_scalar_result(_site("CH"))]
+
+    response = await client.put("/api/sites/1", json={"country_code": "CH", "name": "Winti"})
+
+    assert response.status_code == 200, response.text
+    mock_db_session.execute.assert_awaited_once()
+    nager.assert_not_awaited()

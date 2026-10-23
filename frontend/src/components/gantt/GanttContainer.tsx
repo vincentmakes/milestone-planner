@@ -4,14 +4,15 @@
  * Optionally shows Staff or Equipment Overview panel below when toggled
  */
 
-import { useRef, useMemo, useState, useCallback } from 'react';
+import { useRef, useMemo, useState, useCallback, useLayoutEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { ProjectPanel } from './ProjectPanel';
 import { Timeline } from './Timeline';
-import { useScrollSync, useTagFilteredProjects } from '@/hooks';
+import { useScrollSync, useFilteredProjects } from '@/hooks';
 import { useGanttGrouping } from '@/hooks/useGanttGrouping';
+import { useTeamFilteredCompanyEvents, useTeamFilteredProjects } from '@/hooks/useTeamFilter';
 import { generateTimelineCells, generateTimelineHeaders } from './utils';
 import { buildGanttRows, buildProjectSections, flatGanttRows } from './utils/projectSections';
 import { TimelineScrollProvider } from '@/contexts/TimelineScrollContext';
@@ -19,6 +20,7 @@ import { StaffView } from '@/components/views/StaffView/StaffView';
 import { EquipmentView } from '@/components/views/EquipmentView/EquipmentView';
 import { orderSiteProjects, setProjectOrder, moveProjectInOrder } from '@/utils/storage';
 import { canManageAnyProject } from '@/utils/permissions';
+import { ganttDefaultPanel } from '@/utils/instanceSettings';
 import styles from './GanttContainer.module.css';
 
 export function GanttContainer() {
@@ -31,8 +33,8 @@ export function GanttContainer() {
   const currentSite = useAppStore((s) => s.currentSite);
   const bankHolidayDates = useAppStore((s) => s.bankHolidayDates);
   const bankHolidays = useAppStore((s) => s.bankHolidays);
-  const companyEventDates = useAppStore((s) => s.companyEventDates);
-  const companyEvents = useAppStore((s) => s.companyEvents);
+  // Company events narrowed by the header team filter
+  const { events: companyEvents, eventDates: companyEventDates } = useTeamFilteredCompanyEvents();
   const currentUser = useAppStore((s) => s.currentUser);
   const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
   const viewMode = useViewStore((s) => s.viewMode);
@@ -47,6 +49,24 @@ export function GanttContainer() {
   // Overview panels exist to drag resources onto projects, so anyone who
   // manages at least one project gets them (same rule as the Header dropdown).
   const canShowOverview = canManageAnyProject(currentUser, projects);
+
+  // The admin's default overview panel (Settings → Features & defaults),
+  // opened once per mount — every time the Gantt is opened — for those who
+  // get the panels. Waits for the settings to load; afterwards a settings
+  // refetch must not reopen a panel the user closed. `none` leaves the
+  // per-browser choice alone.
+  const settingsLoaded = useAppStore((s) => s.instanceSettings !== null);
+  const defaultPanel = useAppStore((s) => ganttDefaultPanel(s.instanceSettings));
+  const setShowStaffOverview = useViewStore((s) => s.setShowStaffOverview);
+  const setShowEquipmentOverview = useViewStore((s) => s.setShowEquipmentOverview);
+  const defaultPanelApplied = useRef(false);
+  // Before paint, so the panel does not appear a frame late.
+  useLayoutEffect(() => {
+    if (defaultPanelApplied.current || !settingsLoaded || !canShowOverview) return;
+    defaultPanelApplied.current = true;
+    if (defaultPanel === 'staff') setShowStaffOverview(true);
+    else if (defaultPanel === 'equipment') setShowEquipmentOverview(true);
+  }, [settingsLoaded, defaultPanel, canShowOverview, setShowStaffOverview, setShowEquipmentOverview]);
   
   // Track project order changes to trigger re-sorting
   const [projectOrderVersion, setProjectOrderVersion] = useState(0);
@@ -64,19 +84,21 @@ export function GanttContainer() {
   );
 
   // Projects shown in the tree and on the timeline: the site's projects
-  // narrowed by the per-site tag filter (same filter as the Kanban board).
-  // Reordering still works on the full list so hidden projects keep their place.
-  const visibleProjects = useTagFilteredProjects(filteredProjects);
+  // narrowed by the per-site project and team filters (same filters as the Kanban
+  // board). Reordering still works on the full list so hidden projects keep
+  // their place.
+  const visibleProjects = useTeamFilteredProjects(useFilteredProjects(filteredProjects));
 
-  // "Group by tag group": the (tag-filtered) projects split into sections.
-  // Both panes render the same flat row list, so they stack identically.
-  const { group, siteTags, collapsedKeys, toggleSection } = useGanttGrouping();
+  // "Group by" a project field: the (filtered) projects split into one
+  // section per item. Both panes render the same flat row list, so they
+  // stack identically.
+  const { field: groupField, collapsedKeys, toggleSection } = useGanttGrouping();
   const ganttRows = useMemo(
     () =>
-      group
-        ? buildGanttRows(buildProjectSections(visibleProjects, group, siteTags), collapsedKeys)
+      groupField
+        ? buildGanttRows(buildProjectSections(visibleProjects, groupField), collapsedKeys)
         : flatGanttRows(visibleProjects),
-    [visibleProjects, group, siteTags, collapsedKeys]
+    [visibleProjects, groupField, collapsedKeys]
   );
   
   // Handler to reorder projects (called from ProjectPanel)
@@ -201,7 +223,7 @@ export function GanttContainer() {
           onToggleSection={toggleSection}
           width={panelWidth}
           // Sections reorder nothing: the order is per site, not per section.
-          onProjectReorder={group ? undefined : handleProjectReorder}
+          onProjectReorder={groupField ? undefined : handleProjectReorder}
         />
         
         <div

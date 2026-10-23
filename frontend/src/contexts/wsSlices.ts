@@ -15,6 +15,12 @@ export type Slice =
   | 'sites'
   | 'skills'
   | 'tags'
+  /** Project field definitions with their items — appStore.projectFields */
+  | 'projectFields'
+  /** Teams of every site — appStore.teams */
+  | 'teams'
+  /** Roles with their matrices and user counts — appStore.roles */
+  | 'roles'
   | 'absenceTypes'
   /** Bank holidays + company events of the site currently being viewed */
   | 'siteCalendar'
@@ -24,14 +30,19 @@ export type Slice =
   | 'settings'
   /**
    * The signed-in user's own record (role, sites, name) — appStore.currentUser.
-   * An admin editing or disabling this user takes effect without a reload.
+   * An admin editing or disabling this user takes effect without a reload,
+   * and so does a role edit (permissions, approval modes, visible sites).
    */
-  | 'currentUser';
+  | 'currentUser'
+  /** Approval requests (own and to decide) — the My Work view (workStore) */
+  | 'approvals'
+  /** Who approves each own-booking action — appStore.approvalPolicies (pending badges) */
+  | 'approvalPolicies';
 
 export const ALL_SLICES: Slice[] = [
   'projects', 'staff', 'equipment', 'equipmentBlocks', 'vacations',
-  'sites', 'skills', 'tags', 'absenceTypes', 'siteCalendar', 'customColumns',
-  'settings', 'currentUser',
+  'sites', 'skills', 'tags', 'projectFields', 'teams', 'roles', 'absenceTypes', 'siteCalendar', 'customColumns',
+  'settings', 'currentUser', 'approvals', 'approvalPolicies',
 ];
 
 /**
@@ -61,7 +72,9 @@ export function slicesForEntity(entityType: string): Slice[] {
       // write fell through to ALL_SLICES / the N+1 project reload.
       return [];
     case 'settings':
-      return ['settings'];
+      // The Kanban switch takes views.kanban away from everyone, so the
+      // signed-in user's resolved permissions (/auth/me) move with it.
+      return ['settings', 'currentUser'];
     case 'custom_column':
     case 'custom_column_value':
       // Definitions and values live in customColumnStore, not the project tree.
@@ -81,8 +94,10 @@ export function slicesForEntity(entityType: string): Slice[] {
       return ['staff', 'projects'];
     case 'user':
       // Staff are users; assignments carry their names. The user may also be
-      // the one signed in here (role/site changes, deactivation).
-      return ['staff', 'currentUser', 'projects'];
+      // the one signed in here (role/site changes, deactivation). A deleted
+      // user also leaves their teams' member_ids, and a role change moves the
+      // roles' user counts (Settings → Roles).
+      return ['staff', 'currentUser', 'projects', 'teams', 'roles'];
     case 'equipment':
       return ['equipment', 'projects'];
     case 'equipment_block':
@@ -93,18 +108,37 @@ export function slicesForEntity(entityType: string): Slice[] {
       // Site writes include holiday refreshes and site-scoped event links, so
       // the current site's calendar (holidays/events) is refetched as well.
       // Site writes are rare admin actions, and a delete cascades on the
-      // server to the site's projects (FK CASCADE), site-only tags and
-      // site-only equipment, which other clients would otherwise keep
-      // showing — so those slices reload too.
-      return ['sites', 'siteCalendar', 'projects', 'tags', 'equipment'];
+      // server to the site's projects (FK CASCADE), site-only tags, site-only
+      // project field items and site-only equipment, which other clients
+      // would otherwise keep showing — so those slices reload too, and so do
+      // the site's teams.
+      return ['sites', 'siteCalendar', 'projects', 'tags', 'projectFields', 'equipment', 'teams'];
     case 'skill':
       return ['skills', 'staff'];
     case 'tag':
       return ['tags', 'projects'];
-    case 'tag_group':
-      // Groups live in the same slice as tags (both reloaded together); the
-      // project tree does not change when a group is edited.
-      return ['tags'];
+    case 'project_field':
+      // Every /api/project-fields write (fields and items). Deleting a field
+      // or an item removes project values server-side, so the tree reloads.
+      return ['projectFields', 'projects'];
+    case 'team':
+      // Membership changes staff rows' team_ids. A team delete cascades on
+      // the server to its project, tag, field item, equipment and
+      // company-event links; like 'site', a rare admin action, so those
+      // slices reload too.
+      return ['teams', 'staff', 'projects', 'tags', 'projectFields', 'equipment', 'siteCalendar'];
+    case 'role':
+      // The signed-in user's resolved permissions (/auth/me) and the role
+      // list (Settings → Roles, the role pickers).
+      return ['currentUser', 'roles'];
+    case 'approval_policy':
+      // Who may approve changes the approver names on pending badges and the
+      // requests the user may decide. approval_required (/auth/me) comes from
+      // the role's modes, so a role edit (change:role) refreshes that.
+      return ['approvalPolicies', 'approvals'];
+    case 'approval_request':
+      // Approve/reject/cancel flip or remove pending assignment rows.
+      return ['projects', 'approvals'];
     case 'card_comment':
       // Comment threads and counts have their own fetches. Without this case
       // every comment anyone posts would refetch every slice -- including

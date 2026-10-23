@@ -13,7 +13,9 @@ import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { createStaffAssignment, createEquipmentAssignment, loadAllProjects } from '@/api/endpoints/projects';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
-import { canEditProject, canEditAssignment } from '@/utils/permissions';
+import { canBookEquipment, canEditAssignment } from '@/utils/permissions';
+import { isPendingResponse } from '@/api/endpoints/approvals';
+import { flashSentForApproval } from '@/utils/pendingBookings';
 import type { TimelineCell } from '../utils';
 import { calculateBarPosition, centredDayRangeAtX } from '../utils/timeline';
 import type { Project } from '@/types';
@@ -95,13 +97,14 @@ export function ResourceDropOverlay({
     [cells, cellWidth, viewMode]
   );
 
-  // Whether the dragged resource may land on this project: equipment follows
-  // the project's editors, a person may also be dropped by themselves.
+  // Whether the dragged resource may land on this project: equipment needs
+  // equipment_bookings.manage there, a person may also be dropped by themselves when
+  // their role may book itself (assignments.self_create, allow or approval).
   const canDropOn = useCallback((project: Project): boolean => {
     if (resourceDrag.type === 'staff') {
-      return canEditAssignment(currentUser, project, resourceDrag.resourceId);
+      return canEditAssignment(currentUser, project, resourceDrag.resourceId, 'assignments.self_create');
     }
-    return canEditProject(currentUser, project);
+    return canBookEquipment(currentUser, project);
   }, [currentUser, resourceDrag.type, resourceDrag.resourceId]);
 
   // Find target row from Y position. Projects the user may not drop on are
@@ -222,20 +225,27 @@ export function ResourceDropOverlay({
     const isPhaseLevel = hoveredTarget.phaseId && !hoveredTarget.subphaseId;
     const isSubphaseLevel = !!hoveredTarget.subphaseId;
 
+    let sentForApproval = false;
     try {
       if (resourceDrag.type === 'staff') {
         // Use staff's max_capacity as default allocation
         const allocation = getStaffDefaultAllocation(resourceDrag.resourceId);
-        await createStaffAssignment({
+        // An own booking may need approval: the server then files a request
+        // (202) and the pending row arrives with the reload below.
+        // On a phase / subphase the booking is linked (it follows the card,
+        // no dates sent -- dates would make an unlinked segment); the user
+        // unlinks it with the pin. At project level it gets the dropped days.
+        const onCard = Boolean(isPhaseLevel || isSubphaseLevel);
+        const res = await createStaffAssignment({
           staff_id: resourceDrag.resourceId,
           allocation,
-          start_date: startDate,
-          end_date: endDate,
+          ...(onCard ? {} : { start_date: startDate, end_date: endDate }),
           // Always pass project_id for all levels
           project_id: hoveredTarget.projectId,
           phase_id: isPhaseLevel ? hoveredTarget.phaseId! : undefined,
           subphase_id: isSubphaseLevel ? hoveredTarget.subphaseId! : undefined,
         });
+        sentForApproval = isPendingResponse(res);
       } else if (resourceDrag.type === 'equipment') {
         await createEquipmentAssignment({
           equipment_id: resourceDrag.resourceId,
@@ -263,8 +273,12 @@ export function ResourceDropOverlay({
       // Reload projects
       const updatedProjects = await loadAllProjects();
       setProjects(updatedProjects);
+      if (sentForApproval) flashSentForApproval();
     } catch (error) {
       console.error('Failed to create assignment:', error);
+      useUIStore
+        .getState()
+        .showFlash(`Could not create the assignment: ${error instanceof Error ? error.message : 'unknown error'}`);
     } finally {
       endResourceDrag();
       document.body.classList.remove('resource-dragging');

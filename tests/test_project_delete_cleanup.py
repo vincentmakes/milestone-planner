@@ -37,6 +37,7 @@ def _sql(mock_db_session) -> list[str]:
 def _project():
     project = MagicMock()
     project.id = 1
+    project.site_id = 1  # the caller's site
     project.name = "Bioprocess"
     return project
 
@@ -49,11 +50,17 @@ def _find(statements: list[str], *needles: str) -> str:
 
 
 @pytest.mark.asyncio
-async def test_delete_project_removes_values_and_comments(authed_client, mock_db_session):
+async def test_delete_project_removes_values_and_comments(
+    authed_client, mock_db_session, change_intents
+):
     client, set_user = authed_client
     set_user(FakeUser(9, "superuser"))
+    project = _project()
+    project.pm_id = 7
     mock_db_session.execute.side_effect = [
-        _scalar_result(_project()),  # project load
+        _scalar_result(project),  # project load
+        _scalars_result([]),  # its pending approval requests: none
+        _scalars_result([3, 4]),  # its approved bookers (any level)
         _scalars_result([10, 11]),  # the project's subphases
         *[MagicMock() for _ in range(4)],  # subphase subtree cleanup
         MagicMock(),  # custom-column values of project + phases
@@ -75,6 +82,21 @@ async def test_delete_project_removes_values_and_comments(authed_client, mock_db
     _find(sql, "DELETE FROM project_phases", "project_id = 1")
     mock_db_session.delete.assert_awaited_once()
     mock_db_session.commit.assert_awaited()
+    # Bookers and the PM are resolved before the delete; the notifications
+    # carry no project (the FK cascade would take them) and never coalesce.
+    bookers = _find(sql, "UNION", "approval_status = 'approved'")
+    assert sql.index(bookers) < sql.index(_find(sql, "DELETE FROM project_phases"))
+    ((actor_id, intents, _),) = change_intents
+    assert actor_id == 9
+    assert [(i.recipient, i.user_id) for i in intents] == [("person", 3), ("person", 4), ("pm", 7)]
+    for i in intents:
+        assert i.title == "Test User9 deleted Bioprocess"
+        assert (i.project_id, i.project_name, i.entity_type, i.coalesce) == (
+            None,
+            "Bioprocess",
+            None,
+            False,
+        )
 
 
 @pytest.mark.asyncio
@@ -83,6 +105,8 @@ async def test_delete_project_without_subphases_still_cleans_values(authed_clien
     set_user(FakeUser(9, "superuser"))
     mock_db_session.execute.side_effect = [
         _scalar_result(_project()),
+        _scalars_result([]),  # no pending approval requests
+        _scalars_result([]),  # no approved bookers
         _scalars_result([]),  # no subphases: no subtree statements
         MagicMock(),  # values
         MagicMock(),  # comments
@@ -111,6 +135,7 @@ async def test_delete_site_cleans_up_after_its_projects(authed_client, mock_db_s
         MagicMock(),  # values
         MagicMock(),  # comments
         _scalars_result([]),  # tags restricted to the site
+        _scalars_result([]),  # project-field items restricted to the site
     ]
 
     response = await client.delete("/api/sites/3")

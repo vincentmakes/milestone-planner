@@ -1,8 +1,9 @@
 /**
  * SiteForm (Settings hub > Sites > edit)
  * Edits site settings (name, city, country, region, active status).
- * Bank holidays can be refreshed from here via the Nager holiday API;
- * individual holidays are managed in the Bank holidays section.
+ * Bank holidays can be refreshed from here via the Nager holiday API, unless
+ * the admin turned the import off (Settings → Features & defaults); individual
+ * holidays are managed in the Bank holidays section.
  */
 
 import { useState, useEffect } from 'react';
@@ -17,9 +18,10 @@ import type { SelectOption } from '@/components/common/Select';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { useReportDirty } from '../useReportDirty';
-import { BackIcon, RefreshIcon } from './PanelIcons';
+import { Icon, BackIcon, RefreshIcon, CheckIcon, WarningIcon } from '@/components/common/Icon';
 import type { Site } from '@/types';
 import { confirmAction } from '@/utils/confirmDialog';
+import { isSettingOn } from '@/utils/instanceSettings';
 import styles from './SiteForm.module.css';
 
 // Country list organized by region
@@ -115,6 +117,7 @@ export function SiteForm({ site, onBack, onDirtyChange }: SiteFormProps) {
   const setCurrentSite = useAppStore((s) => s.setCurrentSite);
   const sites = useAppStore((s) => s.sites);
   const setSites = useAppStore((s) => s.setSites);
+  const nagerOn = useAppStore((s) => isSettingOn(s.instanceSettings, 'nager_enabled'));
   
   // Form state
   const [name, setName] = useState(site.name || '');
@@ -237,7 +240,7 @@ export function SiteForm({ site, onBack, onDirtyChange }: SiteFormProps) {
   
   return (
     <div className={styles.container}>
-      <Button type="button" variant="ghost" icon={<BackIcon />} className={styles.backLink} onClick={onBack}>
+      <Button type="button" variant="ghost" icon={<Icon icon={BackIcon} />} className={styles.backLink} onClick={onBack}>
         All sites
       </Button>
       <h4 className={styles.formTitle}>Edit site: {site.name}</h4>
@@ -305,41 +308,42 @@ export function SiteForm({ site, onBack, onDirtyChange }: SiteFormProps) {
       <div className={styles.section}>
         <h3 className={styles.sectionTitle}>Bank Holidays</h3>
         
-        {!countryCode ? (
+        {nagerOn && !countryCode ? (
           <div className={styles.warning}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-              <line x1="12" y1="9" x2="12" y2="13" />
-              <line x1="12" y1="17" x2="12.01" y2="17" />
-            </svg>
+            <Icon icon={WarningIcon} size={16} />
             Set a country code above to enable automatic bank holiday fetching
           </div>
         ) : (
           <div className={styles.holidayStatusBox}>
             <div className={styles.holidayInfo}>
               <span className={styles.holidayCount}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
+                <Icon icon={CheckIcon} size={14} />
                 {siteHolidayCount === null ? 'Bank holidays' : `${siteHolidayCount} bank holidays`}
               </span>
-              <span className={styles.lastFetch}>
-                Last updated: {lastFetchDate}
-              </span>
+              {nagerOn && (
+                <span className={styles.lastFetch}>
+                  Last updated: {lastFetchDate}
+                </span>
+              )}
             </div>
-            <Button
-              variant="secondary"
-              icon={<RefreshIcon />}
-              onClick={handleRefreshHolidays}
-              disabled={isRefreshing}
-            >
-              {isRefreshing ? 'Refreshing...' : 'Refresh'}
-            </Button>
+            {nagerOn && (
+              <Button
+                variant="secondary"
+                icon={<Icon icon={RefreshIcon} />}
+                onClick={handleRefreshHolidays}
+                disabled={isRefreshing}
+              >
+                {isRefreshing ? 'Refreshing...' : 'Refresh'}
+              </Button>
+            )}
           </div>
         )}
         
         <p className={styles.help}>
-          Bank holidays are fetched from the Nager public holiday API, and their names are in English. Custom holidays, edits and .ics imports are managed in{' '}
+          {nagerOn
+            ? 'Bank holidays are fetched from the Nager public holiday API, and their names are in English.'
+            : 'Fetching bank holidays from the Nager public holiday API is turned off; the holidays already imported stay.'}{' '}
+          Custom holidays, edits and .ics imports are managed in{' '}
           <button
             type="button"
             className={styles.inlineLink}

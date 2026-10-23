@@ -26,6 +26,8 @@ import {
 } from '@/utils/storage';
 import type { SettingsPanelProps } from '../types';
 import styles from './GeneralPanel.module.css';
+import { can } from '@/utils/permissions';
+import { Icon, CloseIcon, UploadIcon } from '@/components/common/Icon';
 
 interface SettingsData {
   instance_title: string;
@@ -60,14 +62,14 @@ const WEEK_START_OPTIONS = [
 ];
 
 export function GeneralPanel({ onDirtyChange }: SettingsPanelProps) {
-  const isAdmin = useAppStore((s) => s.currentUser?.role === 'admin');
+  const canEditInstance = useAppStore((s) => can(s.currentUser, 'settings.general'));
 
-  if (!isAdmin) {
+  if (!canEditInstance) {
     return (
       <div className={styles.container}>
         <AppearanceSection />
         <p className={styles.hint}>
-          Instance-wide settings (title, branding, display defaults) are managed by admins.
+          Instance-wide settings (title, branding, display defaults) are managed by administrators.
         </p>
       </div>
     );
@@ -509,11 +511,7 @@ function LogoUploader({ value, onChange, onError, theme }: LogoUploaderProps) {
           className={styles.logoImage}
         />
         <div className={styles.logoOverlay}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="17 8 12 3 7 8" />
-            <line x1="12" y1="3" x2="12" y2="15" />
-          </svg>
+          <Icon icon={UploadIcon} size={20} />
           <span>Upload</span>
         </div>
       </div>
@@ -536,10 +534,7 @@ function LogoUploader({ value, onChange, onError, theme }: LogoUploaderProps) {
           }}
           title="Remove custom logo"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
+          <Icon icon={CloseIcon} size={14} />
           Remove
         </button>
       )}

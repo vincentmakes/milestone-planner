@@ -6,16 +6,20 @@
  * - Export to ICS
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { Notice } from '@/components/common/Notice';
 import { useUIStore } from '@/stores/uiStore';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
+import { useTeamFilteredCompanyEvents } from '@/hooks/useTeamFilter';
 import { deleteCompanyEvent, getCompanyEvents, buildEventDateSet } from '@/api';
 import { buildICS, downloadICS } from '@/utils/ics';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './StaffView.module.css';
 import { parseLocalDate } from '@/utils/date';
+import { teamsForSite, teamIdsOnSite } from '@/utils/teams';
+import { can } from '@/utils/permissions';
+import { Icon, PlusIcon, CloseIcon, DownloadIcon, ChevronRightIcon } from '@/components/common/Icon';
 
 interface CompanyEventsRowProps {
   isExpanded: boolean;
@@ -26,11 +30,13 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
   const [error, setError] = useState<string | null>(null);
   const currentSite = useAppStore((s) => s.currentSite);
   const currentUser = useAppStore((s) => s.currentUser);
-  const companyEvents = useAppStore((s) => s.companyEvents);
+  // Narrowed by the header team filter; a refetch still writes the store
+  const { events: companyEvents } = useTeamFilteredCompanyEvents();
+  const teams = useAppStore((s) => s.teams);
   const setCompanyEvents = useAppStore((s) => s.setCompanyEvents);
   const openSettings = useUIStore((s) => s.openSettings);
   
-  const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'superuser';
+  const canEdit = can(currentUser, 'company_events.manage');
   // Events are managed in the Settings hub, which cannot open during
   // What-If (this row also shows in the Gantt's embedded staff overview).
   // Deleting is blocked too: events are not in the What-If snapshot, so a
@@ -43,6 +49,20 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
   const deleteBlockedReason = whatIf.blocked ? whatIf.reason('Deleting company events') : null;
   const canOpenEditor = canEdit && !editBlockedReason;
   
+  // This site's teams, inactive included. `team_ids` is a flat cross-site
+  // list; an event with no team here concerns the whole site, like the filter.
+  const siteTeams = useMemo(() => teamsForSite(teams, currentSite?.id), [teams, currentSite?.id]);
+  const teamNamesHere = (teamIds: number[] | undefined): string[] =>
+    teamIdsOnSite(teamIds, siteTeams).flatMap((id) => siteTeams.find((t) => t.id === id)?.name ?? []);
+
+  // Tooltip of the Closure badge: a team-limited closure names its teams,
+  // since only their members are out
+  const closureTitle = (teamIds: number[] | undefined): string => {
+    const names = teamNamesHere(teamIds);
+    if (names.length === 0) return 'Site closure: staff on this site are unavailable';
+    return `Closure for ${names.join(', ')}: only their members are unavailable`;
+  };
+
   // Group events by year
   const eventsByYear = companyEvents.reduce((acc, e) => {
     const year = parseLocalDate(e.date).getFullYear();
@@ -134,9 +154,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
       >
         {onToggle && (
           <div className={`${styles.expandIcon} ${isExpanded ? styles.expanded : ''}`}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
+            <Icon icon={ChevronRightIcon} size={12} />
           </div>
         )}
         <div className={`${styles.status} ${styles.companyEventStatus}`} />
@@ -154,11 +172,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
             onClick={exportToICS}
             title="Export to Outlook"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
+            <Icon icon={DownloadIcon} size={14} />
           </button>
           {canEdit && (
             <button 
@@ -168,10 +182,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
               title={addBlockedReason ?? 'Add company event'}
               aria-label="Add company event"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
+              <Icon icon={PlusIcon} size={14} />
             </button>
           )}
         </div>
@@ -185,6 +196,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
               const dateDisplay = event.end_date && event.end_date !== event.date
                 ? `${formatEventDate(event.date)} - ${formatEventDate(event.end_date)}`
                 : formatEventDate(event.date);
+              const teamNames = teamNamesHere(event.team_ids);
               
               return (
                 <div 
@@ -195,11 +207,16 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
                 >
                   <span
                     className={`${styles.detailType} ${styles.companyEvent}`}
-                    title={event.counts_as_unavailable ? 'Site closure: staff on this site are unavailable' : undefined}
+                    title={event.counts_as_unavailable ? closureTitle(event.team_ids) : undefined}
                   >
                     {event.counts_as_unavailable ? 'Closure' : 'Event'}
                   </span>
-                  <span className={styles.detailName}>{event.name}</span>
+                  <span className={styles.detailName}>
+                    {event.name}
+                    {teamNames.length > 0 && (
+                      <span className={styles.detailTeams}>{`· ${teamNames.join(', ')}`}</span>
+                    )}
+                  </span>
                   <span className={styles.dateBadge}>{dateDisplay}</span>
                   {canEdit && (
                     <button
@@ -211,10 +228,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
                       disabled={deleteBlockedReason !== null}
                       title={deleteBlockedReason ?? ((event.site_ids?.length ?? 1) > 1 ? 'Remove from this site' : 'Delete company event')}
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
+                      <Icon icon={CloseIcon} size={14} />
                     </button>
                   )}
                 </div>
@@ -237,10 +251,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
               title={addBlockedReason ?? undefined}
             >
               <span className={styles.addIcon}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
+                <Icon icon={PlusIcon} size={12} />
               </span>
               <span className={styles.addText}>Add company event</span>
             </div>

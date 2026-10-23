@@ -63,6 +63,8 @@ export const TimelineBody = memo(forwardRef<HTMLDivElement, TimelineBodyProps>(
     const expandedProjects = useViewStore((s) => s.expandedProjects);
     const expandedPhases = useViewStore((s) => s.expandedPhases);
     const expandedSubphases = useViewStore((s) => s.expandedSubphases);
+    // Per-person booking groups the user collapsed (session-only)
+    const collapsedStaffGroups = useViewStore((s) => s.collapsedStaffGroups);
     const showAssignments = useViewStore((s) => s.showAssignments);
     const customColumnFilters = useCustomColumnStore((s) => s.customColumnFilters);
     const customColumnValues = useCustomColumnStore((s) => s.customColumnValues);
@@ -165,9 +167,10 @@ export const TimelineBody = memo(forwardRef<HTMLDivElement, TimelineBodyProps>(
         phantomConfig,
         showAssignments,
         hasActiveFilters ? entityPassesFilters : undefined,
-        hasActiveFilters ? anyDescendantMatches : undefined
+        hasActiveFilters ? anyDescendantMatches : undefined,
+        collapsedStaffGroups
       ),
-      [visibleRows, expandedProjects, expandedPhases, expandedSubphases, phantomConfig, showAssignments, hasActiveFilters, entityPassesFilters, anyDescendantMatches]
+      [visibleRows, expandedProjects, expandedPhases, expandedSubphases, phantomConfig, showAssignments, hasActiveFilters, entityPassesFilters, anyDescendantMatches, collapsedStaffGroups]
     );
 
     // Only show weekend/holiday highlighting for week and month views

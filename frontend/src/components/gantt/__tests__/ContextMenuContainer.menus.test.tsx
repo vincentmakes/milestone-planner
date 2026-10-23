@@ -150,7 +150,7 @@ describe('project menu', () => {
     expect(body.start_date).toBe(body.end_date);
   });
 
-  it('logs a failed self-assignment', async () => {
+  it('logs a failed self-assignment and reports it in the flash notice', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.mocked(createStaffAssignment).mockRejectedValueOnce(new Error('409'));
     seed(makeUser({ id: 5, role: 'user' }));
@@ -158,13 +158,67 @@ describe('project menu', () => {
     render(<ContextMenuContainer />);
     fireEvent.click(item('Assign me'));
     await waitFor(() => expect(err).toHaveBeenCalledWith('Failed to self-assign:', expect.any(Error)));
+    expect(useUIStore.getState().flashNotice?.message).toBe('Could not assign you: 409');
     expect(refreshProjects).not.toHaveBeenCalled();
     err.mockRestore();
   });
 
-  it('shows "Assigned to me" once booked', () => {
+  it('hides "Assign me" from a user who is not bookable as a resource', () => {
+    seed(makeUser({ id: 5, role: 'user', is_resource: false }));
+    useUIStore.getState().showContextMenu('project', 1, 0, 0);
+    render(<ContextMenuContainer />);
+    expect(item('Edit Project')).toBeDisabled();
+    expect(screen.queryByRole('menuitem', { name: /assign me/i })).not.toBeInTheDocument();
+  });
+
+  it('offers "Assign me again" once booked on a phase, and books a dateless second booking', async () => {
+    seed(makeUser({ id: 4, role: 'user', max_capacity: 100 }));
+    useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
+    render(<ContextMenuContainer />);
+    expect(item('Assign me again')).toBeEnabled();
+    expect(screen.queryByRole('menuitem', { name: 'Assigned to me' })).not.toBeInTheDocument();
+    fireEvent.click(item('Assign me again'));
+    await waitFor(() => expect(refreshProjects).toHaveBeenCalled());
+    const body = vi.mocked(createStaffAssignment).mock.calls[0][0];
+    // no dates: the server places it (halves the booking or fills a gap)
+    expect(body).toMatchObject({ staff_id: 4, project_id: 1, phase_id: 10 });
+    expect(body).not.toHaveProperty('start_date');
+  });
+
+  it('reports the server refusing a second booking on a full card', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(createStaffAssignment).mockRejectedValueOnce(
+      new Error("This person's bookings already cover the whole card — shorten one of them first")
+    );
     seed(makeUser({ id: 4, role: 'user' }));
     useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
+    render(<ContextMenuContainer />);
+    fireEvent.click(item('Assign me again'));
+    await waitFor(() =>
+      expect(useUIStore.getState().flashNotice?.message).toBe(
+        "Could not assign you: This person's bookings already cover the whole card — shorten one of them first"
+      )
+    );
+    err.mockRestore();
+  });
+
+  it('keeps "Assigned to me" disabled on a one-day phase already booked (no room for a second)', () => {
+    seed(makeUser({ id: 4, role: 'user' }));
+    useAppStore.setState((state) => ({
+      projects: state.projects.map((p) => ({
+        ...p,
+        phases: p.phases.map((ph) => (ph.id === 10 ? { ...ph, end_date: ph.start_date } : ph)),
+      })),
+    }));
+    useUIStore.getState().showContextMenu('phase', 10, 0, 0, 1);
+    render(<ContextMenuContainer />);
+    expect(item('Assigned to me')).toBeDisabled();
+    expect(screen.queryByRole('menuitem', { name: 'Assign me again' })).not.toBeInTheDocument();
+  });
+
+  it('keeps "Assigned to me" disabled on a project already booked (project bookings carry dates)', () => {
+    seed(makeUser({ id: 4, role: 'user' }));
+    useUIStore.getState().showContextMenu('project', 1, 0, 0);
     render(<ContextMenuContainer />);
     expect(item('Assigned to me')).toBeDisabled();
   });
@@ -256,6 +310,26 @@ describe('assignment menus', () => {
     });
   });
 
+  it('edits a phase booking with its effective dates and whether it follows the phase', () => {
+    useUIStore.getState().showContextMenu('staffAssignment', 71, 0, 0, 1, 10, undefined, {
+      staffId: 4,
+      name: 'Bob Brown',
+      allocation: 30,
+      startDate: '2026-01-07',
+      endDate: '2026-01-08',
+      linked: false,
+    });
+    render(<ContextMenuContainer />);
+    fireEvent.click(item('Edit Assignment'));
+    expect(useUIStore.getState().editingStaffAssignment).toMatchObject({
+      id: 71,
+      phase_id: 10,
+      start_date: '2026-01-07',
+      end_date: '2026-01-08',
+      linked: false,
+    });
+  });
+
   it('deletes a phase-level staff booking through the phase route', async () => {
     const confirm = stubConfirm(true);
     useUIStore.getState().showContextMenu('staffAssignment', 71, 0, 0, 1, 10, undefined, { staffId: 4, name: 'Bob Brown' });
@@ -300,6 +374,30 @@ describe('assignment menus', () => {
     expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ message: 'Remove Equipment Assignment from this assignment?', destructive: true }));
     await waitFor(() => expect(deleteEquipmentAssignment).toHaveBeenCalledWith(60));
     expect(useAppStore.getState().projects[0].equipmentAssignments).toEqual([]);
+  });
+
+  it('gates the equipment entries on equipment_bookings.manage, independently of project editing', () => {
+    seed(makeUser({ id: 30, role: 'booker', permissions: ['projects.view', 'equipment_bookings.manage'] }));
+    useUIStore.getState().showContextMenu('project', 1, 30, 40);
+    const { rerender, unmount } = render(<ContextMenuContainer />);
+    expect(item('Assign Equipment')).not.toHaveAttribute('aria-disabled', 'true');
+    expect(item('Assign Equipment')).toBeEnabled();
+    expect(item('Edit Project')).toBeDisabled();
+    useUIStore.getState().showContextMenu('equipmentAssignment', 60, 0, 0, 1);
+    rerender(<ContextMenuContainer />);
+    expect(item('Edit Assignment')).toBeEnabled();
+    expect(item('Delete Assignment')).toBeEnabled();
+    unmount();
+
+    seed(makeUser({ id: 31, role: 'editor', permissions: ['projects.view', 'projects.edit_any'] }));
+    useUIStore.getState().showContextMenu('project', 1, 30, 40);
+    const second = render(<ContextMenuContainer />);
+    expect(item('Assign Equipment')).toBeDisabled();
+    expect(item('Edit Project')).toBeEnabled();
+    useUIStore.getState().showContextMenu('equipmentAssignment', 60, 0, 0, 1);
+    second.rerender(<ContextMenuContainer />);
+    expect(item('Edit Assignment')).toBeDisabled();
+    expect(item('Delete Assignment')).toBeDisabled();
   });
 
   it('renders nothing while hidden', () => {

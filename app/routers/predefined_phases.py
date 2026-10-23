@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_superuser
+from app.middleware.auth import get_current_user, require_permission
 from app.models.settings import PredefinedPhase
 from app.models.user import User
 from app.schemas.predefined_phases import (
@@ -50,12 +50,12 @@ async def get_active_predefined_phases(
 @router.get("/predefined-phases/all", response_model=list[PredefinedPhaseResponse])
 async def get_all_predefined_phases(
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("predefined_phases.manage")),
 ):
     """
     Get all predefined phases including inactive ones.
 
-    Requires admin or superuser authentication.
+    Requires ``predefined_phases.manage``.
     Matches: GET /api/predefined-phases/all
     """
     result = await db.execute(select(PredefinedPhase).order_by(PredefinedPhase.sort_order))
@@ -67,12 +67,12 @@ async def get_all_predefined_phases(
 async def create_predefined_phase(
     data: PredefinedPhaseCreate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("predefined_phases.manage")),
 ):
     """
     Create a new predefined phase.
 
-    Requires admin or superuser authentication.
+    Requires ``predefined_phases.manage``.
     Matches: POST /api/predefined-phases
     """
     # Get max sort_order
@@ -108,12 +108,12 @@ async def create_predefined_phase(
 async def reorder_predefined_phases(
     data: PhaseReorderRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("predefined_phases.manage")),
 ):
     """
     Reorder predefined phases.
 
-    Requires admin or superuser authentication.
+    Requires ``predefined_phases.manage``.
     Matches: PUT /api/predefined-phases/reorder
     """
     for index, phase_id in enumerate(data.phase_order):
@@ -131,12 +131,12 @@ async def update_predefined_phase(
     phase_id: int,
     data: PredefinedPhaseUpdate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("predefined_phases.manage")),
 ):
     """
     Update a predefined phase.
 
-    Requires admin or superuser authentication.
+    Requires ``predefined_phases.manage``.
     Matches: PUT /api/predefined-phases/:id
     """
     result = await db.execute(select(PredefinedPhase).where(PredefinedPhase.id == phase_id))
@@ -174,12 +174,12 @@ async def update_predefined_phase(
 async def delete_predefined_phase(
     phase_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_superuser),
+    user: User = Depends(require_permission("predefined_phases.manage")),
 ):
     """
     Delete a predefined phase.
 
-    Requires admin or superuser authentication.
+    Requires ``predefined_phases.manage``.
     Matches: DELETE /api/predefined-phases/:id
     """
     result = await db.execute(select(PredefinedPhase).where(PredefinedPhase.id == phase_id))

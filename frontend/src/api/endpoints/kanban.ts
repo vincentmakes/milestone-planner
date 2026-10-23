@@ -3,14 +3,19 @@
  *
  * The board itself needs no endpoint - it derives from the project tree that
  * GET /projects/{id} already returns. These calls cover the things the tree
- * does not carry: comment counts, status moves, assignees and comments.
+ * does not carry: comment counts, status moves, assignees and comments
+ * (a card's thread, or a project's — the booking dialog of a project-level
+ * booking).
  */
 
 import { apiGet, apiPut, apiPost, apiDelete } from '../client';
 import { cardKey } from '@/utils/kanbanCards';
-import type { CardStatus } from '@/types';
+import type { CardStatus, PendingBookingResponse } from '@/types';
 
 export type CardEntityType = 'phase' | 'subphase';
+
+/** Whose comment thread: a card's, or a project's (`entityId` = the project id). */
+export type CommentEntityType = CardEntityType | 'project';
 
 /** Raw shape of GET /kanban/projects/{id}/comment-counts. */
 interface CommentCountsResponse {
@@ -64,7 +69,8 @@ export interface MentionableUser {
 
 /**
  * Everyone at a site who can be @-mentioned.
- * Not the staff list: that excludes administrators.
+ * Not the staff list: that excludes administrators. Cached per site by
+ * `mentionableUsersFor` (`mentionableCache.ts`) where a thread shows.
  */
 export function getMentionableUsers(siteId: number): Promise<MentionableUser[]> {
   return apiGet(`/api/kanban/sites/${siteId}/mentionable-users`);
@@ -91,7 +97,7 @@ export function assignCard(
   entityId: number,
   staffId: number,
   allocation?: number
-): Promise<{ success: boolean; id: number; allocation: number }> {
+): Promise<{ success: boolean; id: number; allocation: number } | PendingBookingResponse> {
   return apiPost(`/api/kanban/cards/${entityType}/${entityId}/assignees`, {
     staff_id: staffId,
     allocation: allocation ?? null,
@@ -103,13 +109,13 @@ export function unassignCard(
   entityType: CardEntityType,
   entityId: number,
   staffId: number
-): Promise<{ success: boolean }> {
+): Promise<{ success: boolean; cancelled?: boolean } | PendingBookingResponse> {
   return apiDelete(`/api/kanban/cards/${entityType}/${entityId}/assignees/${staffId}`);
 }
 
 export interface CardComment {
   id: number;
-  entity_type: CardEntityType;
+  entity_type: CommentEntityType;
   entity_id: number;
   project_id: number;
   author_id: number | null;
@@ -122,14 +128,14 @@ export interface CardComment {
 }
 
 export function getComments(
-  entityType: CardEntityType,
+  entityType: CommentEntityType,
   entityId: number
 ): Promise<CardComment[]> {
   return apiGet(`/api/kanban/cards/${entityType}/${entityId}/comments`);
 }
 
 export function createComment(
-  entityType: CardEntityType,
+  entityType: CommentEntityType,
   entityId: number,
   body: string,
   mentionedUserIds: number[] = []

@@ -6,6 +6,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
+  ApiError,
+  isForbidden,
   apiDelete,
   apiGet,
   apiPatch,
@@ -122,6 +124,19 @@ describe('apiRequest', () => {
     await expect(apiPatch('/api/x', {})).rejects.toThrow('Not found');
     respond(409, { other: true });
     await expect(apiGet('/api/x')).rejects.toThrow('HTTP 409');
+  });
+
+  it('carries the HTTP status on the error, so callers can tell a 403 apart', async () => {
+    respond(403, { detail: 'Permission required: views.equipment' });
+    const err = await apiGet('/api/equipment').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 403, message: 'Permission required: views.equipment' });
+    expect(isForbidden(err)).toBe(true);
+    respondText(500, '');
+    expect(isForbidden(await apiGet('/api/x').catch((e: unknown) => e))).toBe(false);
+    respondText(403, '<html>Forbidden</html>');
+    expect(isForbidden(await apiGet('/api/x').catch((e: unknown) => e))).toBe(true);
+    expect(isForbidden(new Error('HTTP 403'))).toBe(false);
   });
 
   it('wraps a non-Error rejection from fetch', async () => {

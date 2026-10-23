@@ -10,7 +10,7 @@ import { useAdminStore } from '@/stores/adminStore';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
-import { BackIcon } from '@/components/settings/panels/PanelIcons';
+import { Icon, BackIcon } from '@/components/common/Icon';
 import { getTheme, isDarkTheme, type Theme } from '@/utils/storage';
 import styles from './AdminLogin.module.css';
 
@@ -272,7 +272,7 @@ export function AdminLoginScreen() {
           <Button
             type="button"
             variant="ghost"
-            icon={<BackIcon />}
+            icon={<Icon icon={BackIcon} />}
             onClick={() => window.location.assign('/')}
           >
             Back to Application

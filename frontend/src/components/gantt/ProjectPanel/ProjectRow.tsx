@@ -5,6 +5,7 @@
 
 import { memo, useMemo, useCallback, Fragment, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { isBuiltInFieldHidden } from '@/utils/instanceSettings';
 import { useViewStore } from '@/stores/viewStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -17,6 +18,7 @@ import type { Project, Phase, Subphase, CustomColumn } from '@/types';
 import styles from './ProjectRow.module.css';
 import { daysBetweenDateStrings } from '@/utils/date';
 import { getProjectLevelItems, expansionLevelOf } from '@/utils/projectLevels';
+import { Icon, BoltIcon, PlusIcon, MinusIcon, DragDotsIcon } from '@/components/common/Icon';
 
 interface ProjectRowProps {
   project: Project;
@@ -118,6 +120,7 @@ export const ProjectRow = memo(function ProjectRow({
   const isCriticalPathEnabled = useAppStore((s) => s.isCriticalPathEnabled);
   const criticalPathItems = useAppStore((s) => s.criticalPathItems);
   const projects = useAppStore((s) => s.projects);
+  const customerHidden = useAppStore((s) => isBuiltInFieldHidden(s.instanceSettings, 'customer'));
   const openProjectModal = useUIStore((s) => s.openProjectModal);
 
   const isExpanded = expandedProjects.has(project.id);
@@ -253,14 +256,7 @@ export const ProjectRow = memo(function ProjectRow({
               onDoubleClick={(e) => e.stopPropagation()}
               title="Drag to reorder"
             >
-              <svg width="8" height="12" viewBox="0 0 8 12" fill="currentColor">
-                <circle cx="2" cy="2" r="1.2" />
-                <circle cx="6" cy="2" r="1.2" />
-                <circle cx="2" cy="6" r="1.2" />
-                <circle cx="6" cy="6" r="1.2" />
-                <circle cx="2" cy="10" r="1.2" />
-                <circle cx="6" cy="10" r="1.2" />
-              </svg>
+              <Icon icon={DragDotsIcon} size={12} />
             </div>
           )}
           
@@ -277,9 +273,7 @@ export const ProjectRow = memo(function ProjectRow({
               disabled={currentLevel === 0}
               title="Collapse one level"
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
+              <Icon icon={MinusIcon} size={12} />
             </button>
             <button
               className={styles.levelBtn}
@@ -288,10 +282,7 @@ export const ProjectRow = memo(function ProjectRow({
               disabled={currentLevel >= maxLevel}
               title="Expand one level"
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
+              <Icon icon={PlusIcon} size={12} />
             </button>
           </div>
 
@@ -302,9 +293,7 @@ export const ProjectRow = memo(function ProjectRow({
             onDoubleClick={(e) => e.stopPropagation()}
             title={isCriticalPathEnabled(project.id) ? 'Hide Critical Path' : 'Show Critical Path'}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-            </svg>
+            <Icon icon={BoltIcon} size={14} />
           </button>
 
           {/* Status indicator */}
@@ -333,7 +322,7 @@ export const ProjectRow = memo(function ProjectRow({
               {project.pm_name && (
                 <span className={styles.pm}>{project.pm_name}</span>
               )}
-              {project.customer && (
+              {project.customer && !customerHidden && (
                 <span className={styles.customer}> · {project.customer}</span>
               )}
             </span>
@@ -383,6 +372,8 @@ export const ProjectRow = memo(function ProjectRow({
                 startDate={assignment.start_date}
                 endDate={assignment.end_date}
                 depth={1}
+                approvalStatus={assignment.approval_status}
+                approval={assignment.approval}
               />
             );
           })}
