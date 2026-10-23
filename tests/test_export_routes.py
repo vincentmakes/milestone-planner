@@ -22,6 +22,7 @@ from app.models.custom_column import CustomColumn, CustomColumnValue
 from app.models.equipment import Equipment, EquipmentBlock
 from app.models.note import Note
 from app.models.project import Project
+from app.models.project_field import ProjectField, ProjectFieldSelection, ProjectFieldValue
 from app.models.rbac import ApprovalRequest
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.skill import Skill, UserSkill
@@ -510,6 +511,68 @@ def _site_rows() -> dict:
         sort_order=0,
         created_at=STAMP,
     )
+    # Project fields: every type; one item limited to Basel, so it is not
+    # applicable here and stays out of the items sheet.
+    stage = ns(
+        id=40,
+        name="Stage",
+        field_type="select",
+        sort_order=0,
+        options=[
+            ns(
+                id=401,
+                name="Pilot",
+                color="#f97316",
+                all_sites=True,
+                sites=[],
+                site_ids=[],
+                teams=[basel_qc, lab],
+                sort_order=0,
+            ),
+            ns(
+                id=402,
+                name="Basel only",
+                color="#0ea5e9",
+                all_sites=False,
+                sites=[ns(name="Basel")],
+                site_ids=[2],
+                teams=[],
+                sort_order=1,
+            ),
+        ],
+    )
+    areas = ns(
+        id=41,
+        name="Areas",
+        field_type="multiselect",
+        sort_order=1,
+        options=[
+            ns(
+                id=411,
+                name="Process",
+                color="#6366f1",
+                all_sites=False,
+                sites=[ns(name="Winterthur Lab")],
+                site_ids=[1],
+                teams=[],
+                sort_order=0,
+            ),
+            ns(
+                id=412,
+                name="QA",
+                color="#10b981",
+                all_sites=True,
+                sites=[],
+                site_ids=[],
+                teams=[],
+                sort_order=1,
+            ),
+        ],
+    )
+    budget = ns(id=42, name="Budget", field_type="number", sort_order=2, options=[])
+    regulated = ns(id=43, name="Regulated", field_type="toggle", sort_order=3, options=[])
+    remark = ns(id=44, name="Remark", field_type="text", sort_order=4, options=[])
+    rate = ns(id=45, name="Rate", field_type="number", sort_order=5, options=[])
     proj = ns(
         id=1,
         name="Alpha",
@@ -607,6 +670,20 @@ def _site_rows() -> dict:
         Skill: [ns(id=8, name="HPLC", description=None, color="#000000", created_at=STAMP)],
         UserSkill: [ns(user_id=7, skill_id=8, proficiency=4, assigned_at=STAMP)],
         Tag: [tag],
+        ProjectField: [stage, areas, budget, regulated, remark, rate],
+        # (project_id, field_id, field_type, text, number, bool)
+        ProjectFieldValue: [
+            (1, 42, "number", None, 1250.0, None),
+            (1, 43, "toggle", None, None, False),
+            (1, 44, "text", "=1+1", None, None),
+            (1, 45, "number", None, 2.5, None),
+        ],
+        # (project_id, field_id, field_type, option_id), in item order
+        ProjectFieldSelection: [
+            (1, 40, "select", 401),
+            (1, 41, "multiselect", 411),
+            (1, 41, "multiselect", 412),
+        ],
         AbsenceType: [
             ns(
                 id=2,
@@ -754,6 +831,7 @@ def _fake_site_db(rows: dict):
         result = MagicMock()
         result.scalar_one_or_none.return_value = found[0] if found else None
         result.scalars.return_value.all.return_value = list(found)
+        result.all.return_value = list(found)
         result.__iter__.return_value = iter(found)
         return result
 
@@ -787,6 +865,9 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
         "Tags",
         "Project tags",
         "Project teams",
+        "Project fields",
+        "Project field options",
+        "Project field values",
         "Absence types",
         "Vacations",
         "Project assignments",
@@ -869,6 +950,46 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
     assert _sheet(wb, "Project teams") == [
         [1, "Alpha", 5, "Analytical Lab", "#0ea5e9"],
         [1, "Alpha", 6, "Pilot Plant", None],
+    ]
+    assert [c.value for c in wb["Project fields"][1]] == ["ID", "Name", "Type", "Sort order"]
+    assert _sheet(wb, "Project fields") == [
+        [40, "Stage", "select", 0],
+        [41, "Areas", "multiselect", 1],
+        [42, "Budget", "number", 2],
+        [43, "Regulated", "toggle", 3],
+        [44, "Remark", "text", 4],
+        [45, "Rate", "number", 5],
+    ]
+    assert [c.value for c in wb["Project field options"][1]] == [
+        "ID",
+        "Field",
+        "Name",
+        "Color",
+        "All sites",
+        "Sites",
+        "Teams",
+        "Sort order",
+    ]
+    # The Basel-only item is left out; teams only those at this site.
+    assert _sheet(wb, "Project field options") == [
+        [401, "Stage", "Pilot", "#f97316", True, None, "Analytical Lab", 0],
+        [411, "Areas", "Process", "#6366f1", False, "Winterthur Lab", None, 0],
+        [412, "Areas", "QA", "#10b981", True, None, None, 1],
+    ]
+    assert [c.value for c in wb["Project field values"][1]] == [
+        "Project ID",
+        "Project name",
+        "Field",
+        "Value",
+    ]
+    # Items joined, numbers as numbers, toggles Yes / No, text formula-escaped.
+    assert _sheet(wb, "Project field values") == [
+        [1, "Alpha", "Stage", "Pilot"],
+        [1, "Alpha", "Areas", "Process, QA"],
+        [1, "Alpha", "Budget", 1250],
+        [1, "Alpha", "Regulated", "No"],
+        [1, "Alpha", "Remark", "'=1+1"],
+        [1, "Alpha", "Rate", 2.5],
     ]
     assert _sheet(wb, "Absence types")[0][3] == "Yes"
     assert _sheet(wb, "Vacations")[0][2] == "Alice Martin"
@@ -1005,6 +1126,10 @@ async def test_site_workbook_loads_the_site_teams_with_their_members():
     assert "Team.members" in loaders(team_stmt)
     (project_stmt,) = (s for s in db.statements if entity(s) is Project)
     assert "Project.teams" in loaders(project_stmt)
+    # Field values are read by two column queries, not the selectin relationships.
+    assert {"Project.field_values", "Project.field_selections"} <= loaders(project_stmt)
+    assert [entity(s) for s in db.statements].count(ProjectFieldValue) == 1
+    assert [entity(s) for s in db.statements].count(ProjectFieldSelection) == 1
     (event_stmt,) = (s for s in db.statements if entity(s) is CompanyEvent)
     assert "CompanyEvent.teams" in loaders(event_stmt)
 
@@ -1033,6 +1158,7 @@ async def test_site_workbook_for_empty_site_skips_dependent_queries():
     for skipped in (UserSkill, Vacation, EquipmentBlock, CustomColumnValue, CompanyEventSite):
         assert skipped not in queried, skipped
     assert CardComment not in queried
+    assert ProjectFieldValue not in queried and ProjectFieldSelection not in queried
     wb = openpyxl.load_workbook(io.BytesIO(content))
     assert _sheet(wb, "Projects") == []
     assert _sheet(wb, "Site")[0][:2] == [1, "Winterthur Lab"]

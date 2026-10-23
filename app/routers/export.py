@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import noload, selectinload
 
 from app.database import get_db
 from app.middleware.auth import require_permission
@@ -29,6 +29,7 @@ from app.models.custom_column import CustomColumn, CustomColumnValue
 from app.models.equipment import Equipment, EquipmentBlock, EquipmentSite
 from app.models.note import Note
 from app.models.project import Project, ProjectPhase, ProjectSubphase
+from app.models.project_field import ProjectField
 from app.models.rbac import ApprovalRequest
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.skill import Skill, UserSkill
@@ -38,6 +39,7 @@ from app.models.user import User, UserSite
 from app.models.vacation import Vacation
 from app.services.approvals import pending_change_text
 from app.services.booking_segments import effective_dates
+from app.services.project_field_rules import load_project_field_values
 from app.services.site_access import ensure_project_visible, ensure_site_access
 from app.utils import utcnow_naive
 
@@ -537,6 +539,9 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                     selectinload(Project.equipment_assignments),
                     selectinload(Project.tags),
                     selectinload(Project.teams),
+                    # Field values come from load_project_field_values below.
+                    noload(Project.field_values),
+                    noload(Project.field_selections),
                 )
                 .order_by(Project.name)
             )
@@ -545,6 +550,14 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         .all()
     )
     project_ids = [p.id for p in project_rows]
+
+    # Project fields (instance-wide) with their items, and the projects' values
+    field_rows = (
+        (await db.execute(select(ProjectField).order_by(ProjectField.sort_order, ProjectField.id)))
+        .scalars()
+        .all()
+    )
+    project_field_values = await load_project_field_values(db, project_ids)
 
     # Equipment linked to this site (equipment can be shared by several sites)
     equipment_rows = (
@@ -1066,6 +1079,56 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         "Project teams",
         ["Project ID", "Project name", "Team ID", "Team name", "Team color"],
         [[p.id, p.name, t.id, t.name, t.color] for p in project_rows for t in p.teams],
+    )
+
+    # Project fields (global), the items applicable to the site, and the values
+    add_sheet(
+        "Project fields",
+        ["ID", "Name", "Type", "Sort order"],
+        [[f.id, f.name, f.field_type, f.sort_order] for f in field_rows],
+    )
+    add_sheet(
+        "Project field options",
+        ["ID", "Field", "Name", "Color", "All sites", "Sites", "Teams", "Sort order"],
+        [
+            [
+                o.id,
+                f.name,
+                o.name,
+                o.color,
+                bool(o.all_sites),
+                "" if o.all_sites else ", ".join(s.name for s in o.sites),
+                teams_here(o.teams),
+                o.sort_order,
+            ]
+            for f in field_rows
+            for o in f.options
+            if o.all_sites or site_id in o.site_ids
+        ],
+    )
+    option_names = {o.id: o.name for f in field_rows for o in f.options}
+
+    def field_value_cell(field: ProjectField, value: Any) -> Any:
+        """A value as written in the sheet: numbers as numbers, toggles Yes / No."""
+        if field.field_type == "toggle":
+            return _yes_no(value)
+        if field.field_type == "number":
+            return int(value) if float(value).is_integer() else value
+        if field.field_type == "select":
+            return option_names.get(value, "")
+        if field.field_type == "multiselect":
+            return ", ".join(option_names.get(i, "") for i in value)
+        return value
+
+    add_sheet(
+        "Project field values",
+        ["Project ID", "Project name", "Field", "Value"],
+        [
+            [p.id, p.name, f.name, field_value_cell(f, project_field_values[p.id][f.id])]
+            for p in project_rows
+            for f in field_rows
+            if f.id in project_field_values[p.id]
+        ],
     )
 
     # Absence types (global)
