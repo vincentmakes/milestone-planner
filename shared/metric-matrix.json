@@ -1,0 +1,160 @@
+{
+  "measures": {
+    "booked_days": {
+      "unit": "days",
+      "dimensions": [
+        "confirmed",
+        "customer",
+        "field",
+        "period",
+        "person",
+        "phase_type",
+        "project",
+        "project_manager",
+        "project_team",
+        "site",
+        "tag",
+        "team"
+      ]
+    },
+    "booked_weeks": {
+      "unit": "weeks",
+      "dimensions": [
+        "confirmed",
+        "customer",
+        "field",
+        "period",
+        "person",
+        "phase_type",
+        "project",
+        "project_manager",
+        "project_team",
+        "site",
+        "tag",
+        "team"
+      ]
+    },
+    "booking_count": {
+      "unit": "count",
+      "dimensions": [
+        "confirmed",
+        "customer",
+        "field",
+        "period",
+        "person",
+        "phase_type",
+        "project",
+        "project_manager",
+        "project_team",
+        "site",
+        "tag",
+        "team"
+      ]
+    },
+    "people_booked": {
+      "unit": "people",
+      "dimensions": [
+        "confirmed",
+        "customer",
+        "field",
+        "person",
+        "phase_type",
+        "project",
+        "project_manager",
+        "project_team",
+        "site",
+        "tag",
+        "team"
+      ]
+    },
+    "project_count": {
+      "unit": "projects",
+      "dimensions": [
+        "confirmed",
+        "customer",
+        "field",
+        "period",
+        "project",
+        "project_manager",
+        "project_team",
+        "site",
+        "tag"
+      ]
+    },
+    "project_weeks": {
+      "unit": "weeks",
+      "dimensions": [
+        "confirmed",
+        "customer",
+        "field",
+        "period",
+        "project",
+        "project_manager",
+        "project_team",
+        "site",
+        "tag"
+      ]
+    },
+    "project_volume": {
+      "unit": "volume",
+      "dimensions": [
+        "confirmed",
+        "customer",
+        "field",
+        "project",
+        "project_manager",
+        "project_team",
+        "site",
+        "tag"
+      ]
+    },
+    "phase_count": {
+      "unit": "phases",
+      "dimensions": [
+        "confirmed",
+        "customer",
+        "field",
+        "period",
+        "phase_type",
+        "project",
+        "project_manager",
+        "project_team",
+        "site",
+        "tag"
+      ]
+    },
+    "phase_weeks": {
+      "unit": "weeks",
+      "dimensions": [
+        "confirmed",
+        "customer",
+        "field",
+        "period",
+        "phase_type",
+        "project",
+        "project_manager",
+        "project_team",
+        "site",
+        "tag"
+      ]
+    }
+  },
+  "needs": {
+    "person": "views.staff",
+    "archived": "views.archived"
+  },
+  "relative_periods": [
+    "this_year",
+    "last_year",
+    "this_quarter",
+    "last_quarter",
+    "last_12_months",
+    "all"
+  ],
+  "grains": [
+    "year",
+    "quarter",
+    "month",
+    "week"
+  ]
+}
