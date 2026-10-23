@@ -62,7 +62,7 @@ All tenant routes are prefixed with `/t/{slug}/api/`.
 
 ### Access levels
 
-Every route is gated on a **permission key** from the catalogue in `app/services/permissions.py` (58 keys; `GET /api/permissions` lists them). A role holds each key as `allow`, as `approval` (only the three own-booking keys) or not at all. The Administrator role holds every key. A missing key returns `403` with `detail` `Permission required: <key>` (several alternatives: `… <a> or <b>`).
+Every route is gated on a **permission key** from the catalogue in `app/services/permissions.py` (60 keys; `GET /api/permissions` lists them). A role holds each key as `allow`, as `approval` (only the three own-booking keys) or not at all. The Administrator role holds every key. A missing key returns `403` with `detail` `Permission required: <key>` (several alternatives: `… <a> or <b>`).
 
 The **Auth** column used below names the key; the label says who holds it with the shipped roles:
 
@@ -449,6 +449,31 @@ Never to the person who made the change, never to an inactive user, and never br
 Every endpoint is implicitly scoped to the session user; there is no user id to pass. Requesting another user's notification returns `404`, not `403`, so the endpoint cannot be used to probe for their existence.
 
 Due-soon and overdue reminders are **not** served here — they are derived in the browser from loaded project data.
+
+### Dashboards
+
+Dashboards (2.1.0) are instance-wide pages of widgets; every query is cut to the caller's visible sites, so a shared dashboard shows each viewer their own numbers. The reads need `views.dashboards`; building needs `dashboards.manage`.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/t/{slug}/api/dashboards` | The dashboards the caller may open (own, `everyone`, `roles` holding the caller's role; administrators: all), default first, then by name: `{id, name, description, visibility, role_ids, owner_id, owner_name, is_default, widget_count, can_edit, updated_at}` |
+| `GET` | `/t/{slug}/api/dashboards/{id}` | One dashboard with its `widgets` (`{id, kind, title, query, options, layout, sort_order}`, the last three as JSON objects); `404` unless the caller may open it |
+| `POST` | `/t/{slug}/api/dashboards` | Create (`dashboards.manage`): `{name, description?, visibility: private \| roles \| everyone, role_ids?, widgets?, source_id?}` → `201`. `source_id` copies the widgets of a dashboard the caller may open (`widgets` in the body win); `roles` needs at least one role (`400`), an unknown role is `404`; an invalid widget is `422` naming the widget by its title. The caller owns it; `is_default` is never set |
+| `PUT` | `/t/{slug}/api/dashboards/{id}` | The owner holding `dashboards.manage`, or an administrator (`404` if the caller may not open it, `403` if they may only view it): replaces name, description, visibility, roles and — when `widgets` is given — every widget (new ids). Without `widgets` the widgets are kept |
+| `DELETE` | `/t/{slug}/api/dashboards/{id}` | Same rule; the default dashboard only by an administrator (`403`) → `204` |
+| `POST` | `/t/{slug}/api/dashboards/query` | Answer one metric query (the builder's live preview) |
+| `POST` | `/t/{slug}/api/dashboards/{id}/data` | Every widget's result, `{"<widget id>": result \| {error}}`; the facts are loaded once for all widgets. A widget that cannot be answered (a deleted project field, a permission the viewer lacks, an invalid query) carries its own `error` |
+
+A **metric query** is `{measure, dimensions, filters, percent_of, top_n}`:
+
+- `measure`: `booked_days`, `booked_weeks`, `booking_count`, `people_booked`, `project_count`, `project_weeks`, `project_volume`, `phase_count`, `phase_weeks`
+- `dimensions` (0–2): `{kind}` with `site`, `team` (the booked person's teams at the project's site), `project_team`, `person` (needs `views.staff`), `project`, `project_manager`, `customer`, `confirmed`, `tag`, `phase_type`, `{kind: "field", field_id}` (select, multiselect or toggle field) or `{kind: "period", grain: year | quarter | month | week}`. Which dimensions a measure accepts is the matrix in `shared/metric-matrix.json`
+- `filters`: `site_ids`, `team_ids` (person's teams), `project_team_ids`, `person_ids`, `project_ids`, `project_manager_ids`, `tag_ids`, `confirmed`, `field_options: {field_id: [item ids]}`, `archived: exclude | include | only` (the last two need `views.archived`), `period: {relative: this_year | last_year | this_quarter | last_quarter | last_12_months | all}` or `{from, to}` (at most five years)
+- `percent_of`: `null`, `total` or `first_dimension` (needs two dimensions); `top_n`: 1–50, not with a `period` first dimension
+
+A result is `{unit, dimensions: [{kind, label}], rows: [{keys: [{key, label, color?}], value}], total, truncated, warnings, note?, period: {from, to}}`. Rows follow the dimension order (periods chronological, field items in item order, *Other* last, key `"__other__"`; an empty bucket has the key `null`). Invalid queries, a missing permission, a period over five years or more than 200 000 booking rows (*Narrow the filters*) are `422` with a plain-words `detail`. Stale ids in a stored query (a deleted team, person, project, tag or item) are dropped and listed in `warnings`.
+
+Booked time is planned time: approved bookings only, each clipped to its card, allocation × working days (Monday–Friday minus the bank holidays of the project's site) inside the period; absences and closures do not subtract. Writes broadcast `change:dashboard`; `/query` and `/{id}/data` never broadcast. The routes are What-If-exempt.
 
 ### Real-Time Collaboration
 

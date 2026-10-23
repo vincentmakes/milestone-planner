@@ -134,6 +134,7 @@ same reason; use `run_migration.py` instead.
 | `add_project_comments` | Tenant | Lets a project carry its own comment thread: the `card_comments` entity-type CHECK gains `project` (2.0.0, also applied automatically on startup) — see below |
 | `add_project_field_decimals` | Tenant | Adds `project_fields.decimals`, the decimals of a number project field (2.1.0, also applied automatically on startup) — see below |
 | `add_equipment_assignment_note` | Tenant | Adds `equipment_assignments.note`, the optional note of an equipment booking (2.0.0, also applied automatically on startup) — see below |
+| `add_dashboards` | Tenant | Dashboards: `dashboards`, `dashboard_roles` and `dashboard_widgets` (2.1.0, also applied automatically on startup, which also creates the *Overview* dashboard and grants the two dashboard permissions; requires `add_rbac`) — see below, and **let the application upgrade the tenant rather than running it first** |
 | `upgrade_to_v90` | Tenant | Major version upgrade |
 
 ### Absence Types and Multi-Site Events (1.5.0)
@@ -260,6 +261,30 @@ python migrations/run_migration.py add_project_field_decimals
 
 ```bash
 python migrations/run_migration.py add_equipment_assignment_note
+```
+
+### Dashboards (2.1.0)
+
+`add_dashboards` creates the three dashboard tables:
+
+| Table | Holds |
+|-------|-------|
+| `dashboards` | Name, description, owner (`owner_id`, set to NULL when the owner is deleted — their *private* dashboards are deleted with them), visibility `private` / `roles` / `everyone` (CHECK `dashboards_visibility_check`) and `is_default` (at most one default: partial unique index `dashboards_one_default`) |
+| `dashboard_roles` | The roles a dashboard is shared with (both foreign keys cascade: deleting a role or a dashboard removes the link) |
+| `dashboard_widgets` | One row per widget: kind `kpi` / `bar` / `line` / `pie` / `table` (CHECK `dashboard_widgets_kind_check`), title, the metric query, display options and grid layout as JSON text, order; deleted with their dashboard |
+
+Dashboards are instance-wide (no site column), so the [site export](../user-guide/import-export.md#site-excel-export) has no dashboards sheet. The file also grants the tables and their sequences to the tenant's database user. The same statements run **automatically** when a tenant's connection pool is created (single-tenant: at start-up) and a dashboard table is missing (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)); in that same run, and only then, the application:
+
+- creates the default **Overview** dashboard, shared with everyone;
+- allows **Dashboards** (`views.dashboards`) for the Superuser and User roles and **Manage dashboards** (`dashboards.manage`) for the Superuser role, unless an administrator already set those permissions.
+
+A later start never repeats this, so an Overview an administrator deleted, or a permission they removed, stays that way. Custom roles get neither permission: allow them in **Settings → Roles** where wanted. Newly provisioned tenants and fresh installs get the Overview and the default permissions from their own seed.
+
+!!! warning "Run it by hand only after the application"
+    Running `add_dashboards` **by hand before 2.1.0 first starts** on a tenant creates the tables, so the automatic upgrade finds them and adds neither the Overview nor the two permissions. Let the application upgrade the tenant; running the file afterwards changes nothing. If it already happened, an administrator can allow the permissions in Settings → Roles and build a dashboard by hand.
+
+```bash
+python migrations/run_migration.py add_dashboards
 ```
 
 !!! note "Pre-release databases"

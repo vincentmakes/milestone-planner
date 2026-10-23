@@ -16,7 +16,7 @@ When you navigate to the application URL, you are presented with the login scree
 
 The application is organized into several areas:
 
-- **Sidebar** (far left) — Switch between the main views: Gantt Chart, Kanban Board, My Work, Staff Overview, Equipment, Cross-Site, and Archived
+- **Sidebar** (far left) — Switch between the main views: Gantt Chart, Kanban Board, My Work, Dashboards, Staff Overview, Equipment, Cross-Site, and Archived
 - **Header** (top) — Branding, site selector, date navigation, zoom controls, theme toggle, and user menu
 - **Project Panel** (left-center) — Hierarchical list of projects, phases, and subphases
 - **Timeline** (right) — Visual Gantt bars aligned to a calendar
@@ -30,6 +30,7 @@ The application is organized into several areas:
 | Gantt | **Gantt Chart** | Project timeline with phases and resource assignments (default) |
 | Kanban | **Kanban Board** | The same work as cards moving through To Do, In Progress, Blocked and Done |
 | Work | **My Work** | Requests waiting for your decision, your bookings and your own requests, with a badge counting the requests to decide — see [My Work](my-work.md) |
+| Dashboard | **Dashboards** | KPIs and charts over the plan — booked weeks, confirmed shares, projects per site — shared with your role or with everyone — see [Dashboards](dashboards.md) |
 | Staff | **Staff Overview** | Staff members with assignments and availability |
 | Equipment | **Equipment** | Equipment items with booking timelines |
 | Cross-Site | **Cross-Site** | Overview of projects across the sites you can see (listed only with at least two) |
@@ -75,7 +76,7 @@ Your **role** decides what you can do. Milestone ships with three roles, and an 
 | Role | Default permissions |
 |------|---------------------|
 | **Administrator** | Everything, at every site: users, roles, sites, settings, projects, assignments |
-| **Superuser** | Manage projects, assignments, equipment, calendars and teams at their own sites, use What-If mode; cannot manage roles, user accounts or settings |
+| **Superuser** | Manage projects, assignments, equipment, calendars and teams at their own sites, use What-If mode, build and share dashboards; cannot manage roles, user accounts or settings |
 | **User** | View projects and timelines at their sites; book their own absences; add themselves to projects and Kanban cards and manage their own assignments. The **project manager** of a project can also edit that project, its phases, assignments, equipment bookings and cards (but not delete it) |
 
 Your role's name is shown in the user menu. Depending on the role, booking your own time may need [approval](settings.md#approvals) — the buttons then read *Request to assign me* or *Request to join*, and your booking waits in a dashed row until someone approves it.

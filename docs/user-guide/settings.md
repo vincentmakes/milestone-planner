@@ -106,7 +106,7 @@ The **Roles** tab lists every role with its description and how many users hold 
 | Role | What it can do by default |
 |------|---------------------------|
 | **Administrator** | Everything, at every site. Its permissions cannot be edited and it cannot be deleted, so there is always someone who can manage roles |
-| **Superuser** | Plans projects, people and equipment at the sites they belong to: creates, edits, archives, deletes, imports and exports projects, assigns anyone, books equipment, manages colleagues' absences, staff notes, equipment, bank holidays, company events, teams, skills and phase templates, views and edits non-admin users, exports the site, uses What-If |
+| **Superuser** | Plans projects, people and equipment at the sites they belong to: creates, edits, archives, deletes, imports and exports projects, assigns anyone, books equipment, manages colleagues' absences, staff notes, equipment, bank holidays, company events, teams, skills and phase templates, views and edits non-admin users, exports the site, uses What-If, builds and shares dashboards |
 | **User** | Sees the plan at their sites, books their own time, manages their own absences, comments on Kanban cards and bookings and moves the cards they are assigned to |
 
 Both the Superuser and the User role can **act as project manager**: on a project where they are the *Project Manager*, they edit the project, archive it, assign people, book equipment, move cards and set column values — but never delete, create, import or export projects.
@@ -124,7 +124,7 @@ Click the **edit icon** to change a role, then **Save Changes**. Custom roles ca
 
 ### The Permission Matrix
 
-Permissions are grouped by topic: *Projects*, *Staff assignments*, *Equipment bookings*, *Kanban*, *Custom columns*, *Absences*, *Staff notes*, *Equipment*, *Calendar*, *Sites*, *Teams*, *Users*, *Skills*, *Project configuration*, *Instance settings*, *Roles and approvals* and *Views and tools*. Each row shows what the permission allows and three choices:
+Permissions are grouped by topic: *Projects*, *Staff assignments*, *Equipment bookings*, *Kanban*, *Custom columns*, *Absences*, *Staff notes*, *Equipment*, *Calendar*, *Sites*, *Teams*, *Users*, *Skills*, *Project configuration*, *Instance settings*, *Roles and approvals*, *Views and tools* and *Dashboards*. Each row shows what the permission allows and three choices:
 
 - **Allow** — the role may do it
 - **Needs approval** — only on the three own-booking permissions (*Book myself*, *Change my allocation / dates*, *Remove my booking*): people with the role can ask, and the booking waits for an approver (see [Approvals](#approvals))
@@ -143,7 +143,8 @@ Some permissions worth knowing:
 | **Assign and manage anyone** | Book, change and remove anyone's assignments. People with it (and project managers on their projects) never need approval for their own bookings |
 | **See colleagues' absences** | See the absences of people at your sites; without it, only your own |
 | **Change user roles** | Give people a role — but only a role whose permissions you hold yourself |
-| **Kanban board**, **Staff overview**, **Equipment view**, **Cross-site view**, **Archived projects** | Show the matching view in the sidebar; without them it is hidden |
+| **Kanban board**, **Dashboards**, **Staff overview**, **Equipment view**, **Cross-site view**, **Archived projects** | Show the matching view in the sidebar; without them it is hidden. **Dashboards** (Superuser and User by default) opens the [Dashboards](dashboards.md) view with the dashboards shared with the role or with everyone |
+| **Manage dashboards** | Create, edit, share and delete your own [dashboards](dashboards.md#building-a-dashboard). Superuser by default; administrators may change or delete any dashboard |
 | **What-If mode** | Show the What-If toggle on the Gantt chart |
 
 ### Who Sees Which Sites
@@ -504,6 +505,8 @@ What each role may do is set in [Settings → Roles](#roles-permissions). With t
 | Manage staff assignments | Yes | Yes | Project manager of that project; anyone for their own time ("Assign me…"), with [approval](#approvals) where the role needs it |
 | Manage equipment assignments | Yes | Yes | Project manager of that project |
 | Enter What-If mode (from the Gantt chart) | Yes | Yes | No |
+| Open the [Dashboards](dashboards.md) shared with them | Yes | Yes | Yes |
+| Build, share and delete their own dashboards | Yes (any dashboard) | Yes | No |
 | Manage bank holidays & company events (own sites) | Yes | Yes | No |
 | Manage teams (own sites) | Yes | Yes | No |
 | Edit users, skills, equipment, equipment types, predefined phases | Yes | Yes | No |
