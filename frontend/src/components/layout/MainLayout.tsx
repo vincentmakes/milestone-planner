@@ -3,7 +3,7 @@
  * The primary application layout after authentication
  */
 
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { useViewStore } from '@/stores/viewStore';
 import { useAppStore } from '@/stores/appStore';
 import { useKeyboardShortcuts } from '@/hooks';
@@ -16,7 +16,16 @@ import { GanttContainer } from '@/components/gantt';
 import { ShiftTooltip } from '@/components/gantt/ShiftTooltip';
 import { FlashNotice } from './FlashNotice';
 import { KanbanView, WorkView, StaffView, EquipmentView, CrossSiteView, ArchivedView } from '@/components/views';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
+import { LoadingScreen } from '@/components/screens/LoadingScreen';
 import styles from './MainLayout.module.css';
+
+// The app's first lazy view: ECharts and the grid stay in the Dashboards
+// chunk. Deliberately not in the components/views barrel, which the main
+// chunk imports.
+const DashboardsView = lazy(() =>
+  import('@/components/views/DashboardsView').then((m) => ({ default: m.DashboardsView }))
+);
 
 export function MainLayout() {
   const currentView = useViewStore((s) => s.currentView);
@@ -58,6 +67,14 @@ export function MainLayout() {
         return <KanbanView />;
       case 'work':
         return <WorkView />;
+      case 'dashboards':
+        return (
+          <ErrorBoundary>
+            <Suspense fallback={<LoadingScreen compact message="Loading dashboards…" />}>
+              <DashboardsView />
+            </Suspense>
+          </ErrorBoundary>
+        );
       case 'staff':
         return <StaffView />;
       case 'equipment':

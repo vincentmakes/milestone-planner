@@ -1,0 +1,33 @@
+.container {
+  width: 100%;
+  min-width: 0;
+}
+
+.item {
+  min-width: 0;
+}
+
+/* The library's items and drop placeholder, restyled with app tokens. */
+.container :global(.react-grid-item) {
+  border-radius: var(--radius-md);
+}
+
+.container :global(.react-grid-item.react-draggable-dragging) {
+  box-shadow: var(--shadow-md);
+}
+
+.container :global(.react-grid-item.react-grid-placeholder) {
+  background: color-mix(in srgb, var(--accent-blue) 25%, transparent);
+  border: 1px dashed var(--accent-blue);
+  border-radius: var(--radius-md);
+  opacity: 1;
+}
+
+.container :global(.react-grid-item > .react-resizable-handle::after) {
+  border-right-color: var(--text-muted);
+  border-bottom-color: var(--text-muted);
+}
+
+.editing :global(.react-grid-item) {
+  box-shadow: var(--shadow-sm);
+}

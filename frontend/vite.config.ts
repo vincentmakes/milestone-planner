@@ -51,6 +51,17 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     sourcemap: !!process.env.VITE_SOURCEMAP,
+    rollupOptions: {
+      output: {
+        // A lazy chunk whose entry is a directory's index (the Dashboards
+        // view: `import('@/components/views/DashboardsView')`) is named
+        // after the directory, not "index" like the main chunk.
+        chunkFileNames: (chunk) => {
+          const dir = /\/([^/]+)\/index\.[jt]sx?$/.exec(chunk.facadeModuleId ?? '');
+          return dir ? `assets/${dir[1]}-[hash].js` : 'assets/[name]-[hash].js';
+        },
+      },
+    },
   },
   server: {
     port: 3333,
