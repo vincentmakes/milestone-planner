@@ -8,11 +8,12 @@ Matches the Node.js API at /api/equipment exactly.
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import noload, selectinload
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_permission
 from app.models.equipment import Equipment, EquipmentAssignment, EquipmentBlock, EquipmentSite
+from app.models.project import Project
 from app.models.site import Site
 from app.models.user import User
 from app.schemas.equipment import (
@@ -49,6 +50,12 @@ from app.services.team_rules import (
 from app.websocket.broadcast import broadcast_change
 
 router = APIRouter()
+
+# A booking's project is read for its name and site only: skip its project-field
+# values and selections (selectin by default, two more queries per load).
+_BOOKING_PROJECT = selectinload(EquipmentAssignment.project).options(
+    noload(Project.field_values), noload(Project.field_selections)
+)
 
 EQUIPMENT_SITE_ACCESS_DETAIL = "You can only manage equipment for sites you're assigned to"
 
@@ -488,7 +495,7 @@ async def get_equipment_assignments(
         .where(EquipmentAssignment.equipment_id == equipment_id)
         .options(
             selectinload(EquipmentAssignment.equipment),
-            selectinload(EquipmentAssignment.project),
+            _BOOKING_PROJECT,
         )
         .order_by(EquipmentAssignment.start_date)
     )
@@ -531,7 +538,7 @@ async def update_equipment_assignment(
         .where(EquipmentAssignment.id == assignment_id)
         .options(
             selectinload(EquipmentAssignment.equipment),
-            selectinload(EquipmentAssignment.project),
+            _BOOKING_PROJECT,
         )
     )
     assignment = result.scalar_one_or_none()
@@ -595,7 +602,7 @@ async def update_equipment_assignment(
     result = await db.execute(
         select(EquipmentAssignment)
         .where(EquipmentAssignment.id == assignment_id)
-        .options(selectinload(EquipmentAssignment.project))
+        .options(_BOOKING_PROJECT)
     )
     assignment = result.scalar_one()
 

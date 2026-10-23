@@ -81,6 +81,8 @@ async def test_list_projects_for_site(authed_client, mock_db_session):
     mock_db_session.execute.side_effect = [
         scalar_result(1),
         rows_result([(make_project(1), "Winterthur", "Alice Martin")]),
+        rows_result([]),  # project-field values
+        rows_result([]),  # project-field selections
     ]
 
     response = await client.get("/api/projects?siteId=1&limit=10")
@@ -115,6 +117,8 @@ async def test_list_projects_masks_other_sites_in_cross_site_view(authed_client,
                 (make_project(2, site_id=2), "Basel", "Bob"),
             ]
         ),
+        rows_result([]),  # project-field values
+        rows_result([]),  # project-field selections
     ]
 
     response = await client.get("/api/projects?siteId=1&includeOtherSites=true")
@@ -268,6 +272,8 @@ async def test_project_detail_builds_the_tree(authed_client, mock_db_session):
             ]
         ),
         scalars_result([]),  # no pending approval requests
+        rows_result([]),  # project-field values
+        rows_result([]),  # project-field selections
     ]
 
     response = await client.get("/api/projects/1")
@@ -291,8 +297,8 @@ async def test_project_detail_builds_the_tree(authed_client, mock_db_session):
     assert (equipment["equipment_name"], equipment["equipment_type"]) == ("HPLC", "Analytical")
     assert body["tags"][0]["name"] == "Priority"
     # The 8th query: the project's pending approval requests (none here, so
-    # no policy lookup).
-    assert mock_db_session.execute.await_count == 8
+    # no policy lookup); then the two project-field queries.
+    assert mock_db_session.execute.await_count == 10
     assert first["staffAssignments"][0]["approval_status"] == "approved"
     assert first["staffAssignments"][0]["approval"] is None
     assert body["staffAssignments"][0]["approval"] is None
@@ -380,6 +386,8 @@ async def test_project_detail_serialises_pending_bookings_and_requests(
         rows_result([]),
         scalars_result([pending_create, pending_update]),
         scalars_result([]),  # policies: the defaults (the PM approves)
+        rows_result([]),  # project-field values
+        rows_result([]),  # project-field selections
     ]
 
     response = await client.get("/api/projects/1")

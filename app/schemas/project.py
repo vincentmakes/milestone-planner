@@ -3,7 +3,7 @@ Pydantic schemas for Projects, Phases, and Subphases.
 """
 
 from datetime import date
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field
 
@@ -12,6 +12,12 @@ from app.schemas.base import DateAsDateTimeJS, DateRangeOrdered, DateTimeJS
 from app.schemas.tag import ProjectTagResponse
 from app.schemas.team import TeamIds
 from app.services.card_status import CardStatus
+
+# A project's custom field values, {field_id: value} (2.0.0): text a string,
+# number a finite number, toggle a boolean, select an item id (or null),
+# multiselect a list of item ids. Checked by
+# app/services/project_field_rules.validate_field_values.
+ProjectFieldValues = Annotated[dict[int, Any], Field(max_length=500)]
 
 # ---------------------------------------------------------
 # Staff Assignment Schemas (for nested responses)
@@ -214,6 +220,8 @@ class ProjectListResponse(BaseModel):
     updated_at: DateTimeJS | None = None
     tags: list[ProjectTagResponse] = []
     team_ids: list[int] = []
+    # {field_id: value}: see ProjectFieldValues (fields without a value left out).
+    field_values: dict[int, Any] = {}
 
     class Config:
         from_attributes = True
@@ -243,6 +251,8 @@ class ProjectDetailResponse(BaseModel):
     equipmentAssignments: list[EquipmentAssignmentInProject] = []
     tags: list[ProjectTagResponse] = []
     team_ids: list[int] = []
+    # {field_id: value}: see ProjectFieldValues (fields without a value left out).
+    field_values: dict[int, Any] = {}
 
     class Config:
         from_attributes = True
@@ -264,6 +274,7 @@ class ProjectCreate(DateRangeOrdered):
     phases: list[PhaseCreate] | None = None
     tag_ids: list[int] | None = None
     team_ids: TeamIds | None = None
+    field_values: ProjectFieldValues | None = None
 
 
 class ProjectUpdate(DateRangeOrdered):
@@ -281,6 +292,8 @@ class ProjectUpdate(DateRangeOrdered):
     archived: bool | None = None
     tag_ids: list[int] | None = None
     team_ids: TeamIds | None = None
+    # Only the fields given change; a value of null, "" or [] clears one.
+    field_values: ProjectFieldValues | None = None
 
 
 class SubphaseReorderRequest(BaseModel):

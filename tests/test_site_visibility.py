@@ -286,7 +286,7 @@ async def test_view_all_reads_any_project(authed_client, mock_db_session):
     set_user(admin())
     mock_db_session.execute.side_effect = [first_result((_project(2), "Basel", None))] + [
         empty_result()
-        for _ in range(7)  # the tree, assignments, bookings, requests
+        for _ in range(9)  # the tree, assignments, bookings, requests, field values
     ]
 
     response = await client.get("/api/projects/1")

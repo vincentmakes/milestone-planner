@@ -790,6 +790,8 @@ async def test_project_detail_marks_unlinked_bookings(authed_client, mock_db_ses
         rows_result([]),
         rows_result([]),
         scalars_result([]),
+        rows_result([]),  # project-field values
+        rows_result([]),  # project-field selections
     ]
 
     response = await client.get("/api/projects/1")

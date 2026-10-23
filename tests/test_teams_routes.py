@@ -440,6 +440,29 @@ async def test_delete_team_stranding_tagged_projects_is_a_409(
 
 
 @pytest.mark.asyncio
+async def test_delete_team_stranding_a_project_by_a_field_item_is_a_409(
+    authed_client, mock_db_session
+):
+    # A project holding a dropdown item limited to this team and another one at
+    # the site, while not in that other team, would be stranded like a tag.
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    mock_db_session.execute.side_effect = [scalar_result(make_team(3, 1)), scalar_result(1)]
+
+    response = await client.delete("/api/teams/3")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "1 project would keep a tag or field item limited to other teams; "
+        "move it to another of those teams or widen the tag or item first"
+    )
+    strand_sql = compiled(mock_db_session, 1)
+    assert "project_field_selections" in strand_sql
+    assert "project_field_option_teams.team_id = 3" in strand_sql
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_delete_unknown_team_is_a_404(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(FakeUser(1, "admin"))

@@ -111,6 +111,8 @@ async def test_list_rows_carry_team_ids_and_masked_rows_carry_none(authed_client
     mock_db_session.execute.side_effect = [
         scalar_result(2),
         rows_result([(own, "Winterthur", None), (external, "Basel", None)]),
+        rows_result([]),  # project-field values
+        rows_result([]),  # project-field selections
     ]
 
     response = await client.get("/api/projects?siteId=1&includeOtherSites=true")
@@ -149,6 +151,8 @@ async def test_detail_carries_team_ids(authed_client, mock_db_session):
         rows_result([]),
         rows_result([]),
         scalars_result([]),  # pending approval requests
+        rows_result([]),  # project-field values
+        rows_result([]),  # project-field selections
     ]
 
     response = await client.get("/api/projects/1")

@@ -53,6 +53,12 @@ from app.services.project_access import (
     require_project_editor,
     user_can,
 )
+from app.services.project_field_rules import (
+    apply_field_values,
+    current_selection_ids,
+    load_project_field_values,
+    validate_field_values,
+)
 from app.services.site_access import (
     EXTERNAL_PROJECT_NAME,
     PROJECT_NOT_VISIBLE_DETAIL,
@@ -322,6 +328,12 @@ _PROJECT_TAGS_FOR_RESPONSE = selectinload(Project.tags).options(
     noload(Tag.sites), noload(Tag.teams)
 )
 
+# Project.field_values / field_selections are selectin by default (two more
+# queries, plus the items' sites and teams). Responses read the values with
+# load_project_field_values() (two column queries for the whole list), and the
+# paths that never touch them skip them.
+_FIELD_VALUES_NOT_LOADED = (noload(Project.field_values), noload(Project.field_selections))
+
 
 def _tag_dict(tag: Tag) -> dict:
     """A tag as embedded in a project response."""
@@ -413,7 +425,7 @@ async def get_projects(
         )
         .outerjoin(Site, Project.site_id == Site.id)
         .outerjoin(User, Project.pm_id == User.id)
-        .options(_PROJECT_TAGS_FOR_RESPONSE)
+        .options(_PROJECT_TAGS_FOR_RESPONSE, *_FIELD_VALUES_NOT_LOADED)
     )
 
     query = query.where(*filters)
@@ -428,6 +440,15 @@ async def get_projects(
     result = await db.execute(query)
     rows = result.all()
 
+    def masked(project: Project) -> bool:
+        """An external project in the cross-site view: its details are hidden."""
+        return bool(cross_site and siteId and project.site_id != int(siteId))
+
+    # Field values of the shown projects: two queries for the whole page.
+    field_values = await load_project_field_values(
+        db, [row[0].id for row in rows if not masked(row[0])]
+    )
+
     projects = []
     for row in rows:
         project = row[0]
@@ -435,7 +456,7 @@ async def get_projects(
         pm_name = row[2]
 
         # Mask external project details if viewing cross-site
-        if cross_site and siteId and project.site_id != int(siteId):
+        if masked(project):
             projects.append(
                 {
                     "id": project.id,
@@ -456,6 +477,7 @@ async def get_projects(
                     "updated_at": project.updated_at,
                     "tags": [],
                     "team_ids": [],
+                    "field_values": {},
                 }
             )
         else:
@@ -479,6 +501,7 @@ async def get_projects(
                     "updated_at": project.updated_at,
                     "tags": [_tag_dict(t) for t in project.tags],
                     "team_ids": project.team_ids,
+                    "field_values": field_values[project.id],
                 }
             )
 
@@ -521,7 +544,7 @@ async def get_project(
             )
             .outerjoin(Site, Project.site_id == Site.id)
             .outerjoin(User, Project.pm_id == User.id)
-            .options(_PROJECT_TAGS_FOR_RESPONSE)
+            .options(_PROJECT_TAGS_FOR_RESPONSE, *_FIELD_VALUES_NOT_LOADED)
             .where(Project.id == project_id)
         )
 
@@ -647,6 +670,8 @@ async def get_project(
     approval_index = await approvals.project_approval_index(
         db, user, project_id=project_id, pm_id=project.pm_id
     )
+    # Its project-field values: two more queries.
+    field_values = (await load_project_field_values(db, [project_id]))[project_id]
 
     # Convert to list with attributes
     class StaffAssignmentWithName:
@@ -784,6 +809,7 @@ async def get_project(
         "equipmentAssignments": equipment_assignments,
         "tags": [_tag_dict(t) for t in project.tags],
         "team_ids": project.team_ids,
+        "field_values": field_values,
     }
 
 
@@ -813,6 +839,10 @@ async def create_project(
 
     # Site and team applicability + single-select groups (400); unknown ids dropped.
     tag_objs = await validate_project_tags(db, data.site_id, data.tag_ids or [], team_ids_of(teams))
+    # Project-field values: types, items of their field, site / team scope (400 / 422).
+    field_values = await validate_field_values(
+        db, data.site_id, team_ids_of(teams), data.field_values or {}
+    )
 
     project = Project(
         name=data.name,
@@ -827,7 +857,10 @@ async def create_project(
         notes=data.notes,
         tags=tag_objs,
         teams=teams,
+        field_values=[],
+        field_selections=[],
     )
+    apply_field_values(project, field_values)
 
     db.add(project)
     await db.flush()  # Get the project ID
@@ -890,9 +923,15 @@ async def update_project(
 
     Matches: PUT /api/projects/:id
     """
+    # The field values are needed only when they are written or re-checked.
+    touches_fields = data.field_values is not None or data.team_ids is not None
     result = await db.execute(
         select(Project)
-        .options(selectinload(Project.tags), selectinload(Project.teams))
+        .options(
+            selectinload(Project.tags),
+            selectinload(Project.teams),
+            *(() if touches_fields else _FIELD_VALUES_NOT_LOADED),
+        )
         .where(Project.id == project_id)
     )
     project = result.scalar_one_or_none()
@@ -947,6 +986,16 @@ async def update_project(
     if data.tag_ids is not None or data.team_ids is not None:
         tag_ids = data.tag_ids if data.tag_ids is not None else [t.id for t in project.tags]
         project.tags = await validate_project_tags(db, project.site_id, tag_ids, project.team_ids)
+    # Field values given are written; a team change re-checks the items the
+    # project already holds too (an item limited to teams it left: 400).
+    if touches_fields:
+        wanted: dict[int, Any] = {}
+        if data.team_ids is not None:
+            wanted.update(current_selection_ids(project))
+        wanted.update(data.field_values or {})
+        apply_field_values(
+            project, await validate_field_values(db, project.site_id, project.team_ids, wanted)
+        )
     intents = change_notifications.project_update_intents(
         user,
         project_id=project_id,
@@ -984,7 +1033,10 @@ async def delete_project(
 
     Matches: DELETE /api/projects/:id
     """
-    result = await db.execute(select(Project).where(Project.id == project_id))
+    # Value rows and selections go with the project (ON DELETE CASCADE).
+    result = await db.execute(
+        select(Project).options(*_FIELD_VALUES_NOT_LOADED).where(Project.id == project_id)
+    )
     project = result.scalar_one_or_none()
 
     if not project:
