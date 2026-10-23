@@ -9,6 +9,7 @@
 
 import { useRef, useState, useCallback, useMemo } from 'react';
 import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
+import { AnchoredPanel } from '@/components/common/AnchoredPanel';
 import { updateCustomColumn } from '@/api';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { useAppStore } from '@/stores/appStore';
@@ -30,6 +31,7 @@ export function CustomColumnHeader({
 }: CustomColumnHeaderProps) {
   const headerRef = useRef<HTMLDivElement>(null);
   const filterTriggerRef = useRef<HTMLButtonElement>(null);
+  const filterPanelRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
   // Global gate: custom-column definitions are admin-only
@@ -55,12 +57,14 @@ export function CustomColumnHeader({
     return Array.from(values).sort();
   }, [column.id, customColumnValues]);
   
-  // The header wraps the filter button and its panel, so it is the dismiss boundary
+  // The header wraps the filter button, so it is the dismiss boundary; the
+  // panel is portaled (AnchoredPanel) and counts as inside through panelRef.
   const { onBlur: onFilterBlur } = useDismissableOverlay({
     open: showFilter,
     onClose: () => setShowFilter(false),
     wrapperRef: headerRef,
     triggerRef: filterTriggerRef,
+    panelRef: filterPanelRef,
   });
   
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -176,60 +180,66 @@ export function CustomColumnHeader({
         <Icon icon={FilterIcon} size={12} />
       </button>
       
-      {/* Filter dropdown */}
-      {showFilter && (
-        <div className={styles.filterDropdown} role="dialog" aria-label={`Filter ${column.name}`}>
-          <div className={styles.filterHeader}>
-            <span>Filter by value</span>
-            {hasActiveFilter && (
-              <button className={styles.clearFilterBtn} onClick={handleClearFilter}>
-                Clear
-              </button>
-            )}
-          </div>
-          
-          {uniqueValues.length === 0 ? (
-            <div className={styles.filterEmpty}>No values</div>
-          ) : (
-            <>
-              <div className={styles.filterActions}>
-                <button onClick={handleSelectAll}>Select All</button>
-                <button onClick={handleClearFilter}>Clear All</button>
-              </div>
-              <div className={styles.filterOptions}>
-                {/* Empty/null option */}
-                <label className={styles.filterOption}>
-                  <input
-                    type="checkbox"
-                    checked={activeFilter.includes('__empty__')}
-                    onChange={() => handleFilterToggle('__empty__')}
-                  />
-                  <span className={styles.filterValueEmpty}>(Empty)</span>
-                </label>
-                {uniqueValues.map(value => (
-                  <label key={value} className={styles.filterOption}>
-                    <input
-                      type="checkbox"
-                      checked={activeFilter.includes(value)}
-                      onChange={() => handleFilterToggle(value)}
-                    />
-                    <span className={styles.filterValue}>
-                      {column.column_type === 'boolean' ? (
-                        <span className={styles.booleanValue}>
-                          <Icon icon={value === 'true' ? CheckIcon : CloseIcon} size={12} />
-                          {value === 'true' ? 'Yes' : 'No'}
-                        </span>
-                      ) : (
-                        value
-                      )}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </>
+      {/* Filter dropdown (portaled: the Gantt pane cannot clip it) */}
+      <AnchoredPanel
+        ref={filterPanelRef}
+        open={showFilter}
+        triggerRef={filterTriggerRef}
+        align="start"
+        className={styles.filterDropdown}
+        role="dialog"
+        aria-label={`Filter ${column.name}`}
+      >
+        <div className={styles.filterHeader}>
+          <span>Filter by value</span>
+          {hasActiveFilter && (
+            <button className={styles.clearFilterBtn} onClick={handleClearFilter}>
+              Clear
+            </button>
           )}
         </div>
-      )}
+        
+        {uniqueValues.length === 0 ? (
+          <div className={styles.filterEmpty}>No values</div>
+        ) : (
+          <>
+            <div className={styles.filterActions}>
+              <button onClick={handleSelectAll}>Select All</button>
+              <button onClick={handleClearFilter}>Clear All</button>
+            </div>
+            <div className={styles.filterOptions}>
+              {/* Empty/null option */}
+              <label className={styles.filterOption}>
+                <input
+                  type="checkbox"
+                  checked={activeFilter.includes('__empty__')}
+                  onChange={() => handleFilterToggle('__empty__')}
+                />
+                <span className={styles.filterValueEmpty}>(Empty)</span>
+              </label>
+              {uniqueValues.map(value => (
+                <label key={value} className={styles.filterOption}>
+                  <input
+                    type="checkbox"
+                    checked={activeFilter.includes(value)}
+                    onChange={() => handleFilterToggle(value)}
+                  />
+                  <span className={styles.filterValue}>
+                    {column.column_type === 'boolean' ? (
+                      <span className={styles.booleanValue}>
+                        <Icon icon={value === 'true' ? CheckIcon : CloseIcon} size={12} />
+                        {value === 'true' ? 'Yes' : 'No'}
+                      </span>
+                    ) : (
+                      value
+                    )}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </>
+        )}
+      </AnchoredPanel>
       
       {canManageColumns && (
         <div 

@@ -134,6 +134,23 @@ describe('ProjectPanel column visibility dropdown', () => {
   });
 });
 
+describe('ProjectPanel column visibility dropdown portal', () => {
+  it('portals the panel out of the header; a mousedown in it keeps it open', () => {
+    seedUser('admin');
+    useCustomColumnStore.setState({ customColumns: [column] });
+    render(<ProjectPanel projects={[]} width={320} />);
+    const trigger = screen.getByRole('button', { name: 'Column visibility' });
+    fireEvent.click(trigger);
+    const panel = screen.getByRole('dialog', { name: 'Column visibility' });
+    expect(panel.parentElement).toBe(document.body);
+    expect(panel).toHaveAttribute('data-align', 'end');
+    fireEvent.mouseDown(screen.getByText('Show All Columns'));
+    expect(screen.getByRole('dialog', { name: 'Column visibility' })).toBeInTheDocument();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('dialog', { name: 'Column visibility' })).not.toBeInTheDocument();
+  });
+});
+
 describe('ProjectPanel header grouping', () => {
   it('separates the view controls from the actions with a divider for admins', () => {
     seedUser('admin');
@@ -180,6 +197,19 @@ describe('CustomColumnHeader definition controls', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: 'Filter Priority' })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
+  });
+
+  it('portals the value filter out of the header; a mousedown in it keeps it open', () => {
+    seedUser('user');
+    const { header } = renderHeader();
+    fireEvent.click(screen.getByRole('button', { name: 'Filter Priority' }));
+    const panel = screen.getByRole('dialog', { name: 'Filter Priority' });
+    expect(header).not.toContainElement(panel);
+    expect(panel.parentElement).toBe(document.body);
+    fireEvent.mouseDown(screen.getByText('Filter by value'));
+    expect(screen.getByRole('dialog', { name: 'Filter Priority' })).toBeInTheDocument();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('dialog', { name: 'Filter Priority' })).not.toBeInTheDocument();
   });
 
   it('opens the editor on double-click and offers resizing for admins', () => {

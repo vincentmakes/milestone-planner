@@ -21,6 +21,7 @@ import { ReorderProvider } from '@/contexts/ReorderContext';
 import { CustomColumnModal, CustomColumnsManagerModal } from '@/components/modals';
 import { CustomColumnHeader } from '@/components/gantt/CustomColumns';
 import { ProjectFilterDropdown } from '@/components/common/ProjectFilterDropdown';
+import { AnchoredPanel } from '@/components/common/AnchoredPanel';
 import type { Project, CustomColumn } from '@/types';
 import styles from './ProjectPanel.module.css';
 import { Icon, PlusIcon, UploadIcon, ColumnsIcon, CheckIcon, UsersIcon, EyeIcon, EyeOffIcon } from '@/components/common/Icon';
@@ -67,11 +68,13 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
     const [editingColumn, setEditingColumn] = useState<CustomColumn | null>(null);
     const visibilityDropdownRef = useRef<HTMLDivElement>(null);
     const visibilityTriggerRef = useRef<HTMLButtonElement>(null);
+    const visibilityPanelRef = useRef<HTMLDivElement>(null);
     const { onBlur: onVisibilityBlur } = useDismissableOverlay({
       open: showVisibilityDropdown,
       onClose: () => setShowVisibilityDropdown(false),
       wrapperRef: visibilityDropdownRef,
       triggerRef: visibilityTriggerRef,
+      panelRef: visibilityPanelRef,
     });
     
     const canCreate = can(currentUser, 'projects.create');
@@ -156,7 +159,7 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                   </button>
                 
                   {/* Project filter: fields and tags (shared with the Kanban board, per site) */}
-                  <ProjectFilterDropdown compact align="right" anchor="container" />
+                  <ProjectFilterDropdown compact align="right" />
 
                   {/* Group the project list by a project field (only when one applies) */}
                   <GroupByDropdown />
@@ -180,47 +183,53 @@ export const ProjectPanel = forwardRef<HTMLDivElement, ProjectPanelProps>(
                         <Icon icon={showAllCustomColumns && hiddenCount === 0 ? EyeIcon : EyeOffIcon} size={14} />
                       </button>
                     
-                      {showVisibilityDropdown && (
-                        <div className={styles.visibilityDropdown} role="dialog" aria-label="Column visibility">
-                          <div className={styles.visibilityHeader}>
-                            <span>Column Visibility</span>
-                          </div>
-                        
-                          {/* Master toggle */}
-                          <label className={`${styles.visibilityOption} ${styles.masterToggle}`}>
-                            <input
-                              type="checkbox"
-                              checked={showAllCustomColumns}
-                              onChange={handleToggleAll}
-                            />
-                            <span className={styles.visibilityCheckbox}>
-                              <Icon icon={CheckIcon} size={12} className={styles.visibilityCheckIcon} />
-                            </span>
-                            <span>Show All Columns</span>
-                          </label>
-                        
-                          {showAllCustomColumns && customColumns.length > 0 && (
-                            <>
-                              <div className={styles.visibilityDivider} />
-                              <div className={styles.visibilityList}>
-                                {customColumns.map(col => (
-                                  <label key={col.id} className={styles.visibilityOption}>
-                                    <input
-                                      type="checkbox"
-                                      checked={!hiddenCustomColumns.has(col.id)}
-                                      onChange={() => toggleCustomColumnVisibility(col.id)}
-                                    />
-                                    <span className={styles.visibilityCheckbox}>
-                                      <Icon icon={CheckIcon} size={12} className={styles.visibilityCheckIcon} />
-                                    </span>
-                                    <span>{col.name}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            </>
-                          )}
+                      <AnchoredPanel
+                        ref={visibilityPanelRef}
+                        open={showVisibilityDropdown}
+                        triggerRef={visibilityTriggerRef}
+                        align="end"
+                        className={styles.visibilityDropdown}
+                        role="dialog"
+                        aria-label="Column visibility"
+                      >
+                        <div className={styles.visibilityHeader}>
+                          <span>Column Visibility</span>
                         </div>
-                      )}
+                      
+                        {/* Master toggle */}
+                        <label className={`${styles.visibilityOption} ${styles.masterToggle}`}>
+                          <input
+                            type="checkbox"
+                            checked={showAllCustomColumns}
+                            onChange={handleToggleAll}
+                          />
+                          <span className={styles.visibilityCheckbox}>
+                            <Icon icon={CheckIcon} size={12} className={styles.visibilityCheckIcon} />
+                          </span>
+                          <span>Show All Columns</span>
+                        </label>
+                      
+                        {showAllCustomColumns && customColumns.length > 0 && (
+                          <>
+                            <div className={styles.visibilityDivider} />
+                            <div className={styles.visibilityList}>
+                              {customColumns.map(col => (
+                                <label key={col.id} className={styles.visibilityOption}>
+                                  <input
+                                    type="checkbox"
+                                    checked={!hiddenCustomColumns.has(col.id)}
+                                    onChange={() => toggleCustomColumnVisibility(col.id)}
+                                  />
+                                  <span className={styles.visibilityCheckbox}>
+                                    <Icon icon={CheckIcon} size={12} className={styles.visibilityCheckIcon} />
+                                  </span>
+                                  <span>{col.name}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </AnchoredPanel>
                     </div>
                   )}
                 </div>

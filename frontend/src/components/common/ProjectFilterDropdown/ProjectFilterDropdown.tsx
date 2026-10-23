@@ -13,12 +13,15 @@
  * The panel is a non-modal dialog of checkboxes (not a menu). It closes on an
  * outside mousedown, when focus moves to an element outside the wrapper (Tab
  * out), and on Escape; Escape is captured and stopped so it never reaches the
- * app-wide keyboard shortcuts. Its height is capped to the viewport; the
- * header (title + Clear) stays fixed and the sections scroll below it.
+ * app-wide keyboard shortcuts. The panel is an AnchoredPanel (portaled,
+ * fixed, flipped above when the room below is short) so no clipping pane cuts
+ * it off; its height is the measured room, the header (title + Clear) stays
+ * fixed and the sections scroll below it.
  */
 
 import { useId, useMemo, useRef, useState } from 'react';
 import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
+import { AnchoredPanel } from '@/components/common/AnchoredPanel';
 import { useViewStore } from '@/stores/viewStore';
 import { useSiteProjectFilter } from '@/hooks/useProjectFilter';
 import { sortTags } from '@/utils/tags';
@@ -29,14 +32,8 @@ import { Icon, CheckIcon, FilterIcon } from '@/components/common/Icon';
 export interface ProjectFilterDropdownProps {
   /** Icon-only trigger (the label stays as the accessible name). */
   compact?: boolean;
-  /** Which edge of the trigger (or of the anchoring container) the panel aligns to. */
+  /** Which edge of the trigger the panel aligns to. */
   align?: 'left' | 'right';
-  /**
-   * `container`: position the panel against the nearest positioned ancestor
-   * instead of the trigger, inset by its `--dropdown-inset` (default 0) and
-   * never wider than it — for a toolbar near a clipping edge (Gantt header).
-   */
-  anchor?: 'trigger' | 'container';
 }
 
 /** `list` with `id` toggled. */
@@ -44,7 +41,7 @@ function toggled(list: number[], id: number): number[] {
   return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
 }
 
-export function ProjectFilterDropdown({ compact = false, align = 'left', anchor = 'trigger' }: ProjectFilterDropdownProps) {
+export function ProjectFilterDropdown({ compact = false, align = 'left' }: ProjectFilterDropdownProps) {
   const { siteId, siteFields, siteTags, filter, activeCount } = useSiteProjectFilter();
   const setProjectFilter = useViewStore((s) => s.setProjectFilter);
   const clearProjectFilter = useViewStore((s) => s.clearProjectFilter);
@@ -52,10 +49,11 @@ export function ProjectFilterDropdown({ compact = false, align = 'left', anchor 
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
 
   const close = () => setOpen(false);
-  const { onBlur: handleBlur } = useDismissableOverlay({ open, onClose: close, wrapperRef, triggerRef });
+  const { onBlur: handleBlur } = useDismissableOverlay({ open, onClose: close, wrapperRef, triggerRef, panelRef });
 
   const tags = useMemo(() => sortTags(siteTags), [siteTags]);
 
@@ -74,11 +72,7 @@ export function ProjectFilterDropdown({ compact = false, align = 'left', anchor 
   const empty = siteFields.length === 0 && tags.length === 0;
 
   return (
-    <div
-      ref={wrapperRef}
-      className={`${styles.wrapper} ${anchor === 'container' ? styles.containerAnchored : ''}`}
-      onBlur={handleBlur}
-    >
+    <div ref={wrapperRef} className={styles.wrapper} onBlur={handleBlur}>
       <button
         ref={triggerRef}
         type="button"
@@ -96,82 +90,84 @@ export function ProjectFilterDropdown({ compact = false, align = 'left', anchor 
         {active && <span className={styles.badge} aria-hidden="true">{activeCount}</span>}
       </button>
 
-      {open && (
-        <div
-          id={panelId}
-          role="dialog"
-          aria-label="Filter projects"
-          className={`${styles.dropdown} ${align === 'right' ? styles.alignRight : ''} ${anchor === 'container' ? styles.anchored : ''}`}
-        >
-          <div className={styles.header}>
-            <span>Filter projects</span>
-            {active && (
-              <button type="button" className={styles.clearBtn} onClick={() => siteId !== null && clearProjectFilter(siteId)}>
-                Clear
-              </button>
-            )}
-          </div>
+      <AnchoredPanel
+        ref={panelRef}
+        open={open}
+        triggerRef={triggerRef}
+        align={align === 'right' ? 'end' : 'start'}
+        id={panelId}
+        role="dialog"
+        aria-label="Filter projects"
+        className={styles.dropdown}
+      >
+        <div className={styles.header}>
+          <span>Filter projects</span>
+          {active && (
+            <button type="button" className={styles.clearBtn} onClick={() => siteId !== null && clearProjectFilter(siteId)}>
+              Clear
+            </button>
+          )}
+        </div>
 
-          {empty ? (
-            <div className={styles.empty}>No fields or tags for this site</div>
-          ) : (
-            <div className={styles.scrollBody}>
-              {siteFields.map((field, i) => (
-                <div key={field.id} role="group" aria-label={field.name}>
-                  {i > 0 && <div className={styles.divider} />}
-                  <div className={styles.sectionHeading}>{field.name}</div>
-                  <label className={styles.option}>
+        {empty ? (
+          <div className={styles.empty}>No fields or tags for this site</div>
+        ) : (
+          <div className={styles.scrollBody}>
+            {siteFields.map((field, i) => (
+              <div key={field.id} role="group" aria-label={field.name}>
+                {i > 0 && <div className={styles.divider} />}
+                <div className={styles.sectionHeading}>{field.name}</div>
+                <label className={styles.option}>
+                  <input
+                    type="checkbox"
+                    checked={noneFieldIds.has(field.id)}
+                    onChange={() => write({ noneFieldIds: toggled(filter.noneFieldIds, field.id) })}
+                    aria-label={`(None) in ${field.name}`}
+                  />
+                  <span className={styles.checkbox}>
+                    <Tick />
+                  </span>
+                  <span className={styles.noneLabel}>(None)</span>
+                </label>
+                {field.options.map((option) => (
+                  <label key={option.id} className={styles.option}>
                     <input
                       type="checkbox"
-                      checked={noneFieldIds.has(field.id)}
-                      onChange={() => write({ noneFieldIds: toggled(filter.noneFieldIds, field.id) })}
-                      aria-label={`(None) in ${field.name}`}
+                      checked={selectedOptionIds.has(option.id)}
+                      onChange={() => write({ optionIds: toggled(filter.optionIds, option.id) })}
                     />
                     <span className={styles.checkbox}>
                       <Tick />
                     </span>
-                    <span className={styles.noneLabel}>(None)</span>
+                    <span className={styles.dot} style={{ backgroundColor: option.color }} aria-hidden="true" />
+                    <span className={styles.name}>{option.name}</span>
                   </label>
-                  {field.options.map((option) => (
-                    <label key={option.id} className={styles.option}>
-                      <input
-                        type="checkbox"
-                        checked={selectedOptionIds.has(option.id)}
-                        onChange={() => write({ optionIds: toggled(filter.optionIds, option.id) })}
-                      />
-                      <span className={styles.checkbox}>
-                        <Tick />
-                      </span>
-                      <span className={styles.dot} style={{ backgroundColor: option.color }} aria-hidden="true" />
-                      <span className={styles.name}>{option.name}</span>
-                    </label>
-                  ))}
-                </div>
-              ))}
-              {tags.length > 0 && (
-                <div role="group" aria-label="Tags">
-                  {siteFields.length > 0 && <div className={styles.divider} />}
-                  <div className={styles.sectionHeading}>Tags</div>
-                  {tags.map((tag) => (
-                    <label key={tag.id} className={styles.option}>
-                      <input
-                        type="checkbox"
-                        checked={selectedTagIds.has(tag.id)}
-                        onChange={() => write({ tagIds: toggled(filter.tagIds, tag.id) })}
-                      />
-                      <span className={styles.checkbox}>
-                        <Tick />
-                      </span>
-                      <span className={styles.dot} style={{ backgroundColor: tag.color }} aria-hidden="true" />
-                      <span className={styles.name}>{tag.name}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+                ))}
+              </div>
+            ))}
+            {tags.length > 0 && (
+              <div role="group" aria-label="Tags">
+                {siteFields.length > 0 && <div className={styles.divider} />}
+                <div className={styles.sectionHeading}>Tags</div>
+                {tags.map((tag) => (
+                  <label key={tag.id} className={styles.option}>
+                    <input
+                      type="checkbox"
+                      checked={selectedTagIds.has(tag.id)}
+                      onChange={() => write({ tagIds: toggled(filter.tagIds, tag.id) })}
+                    />
+                    <span className={styles.checkbox}>
+                      <Tick />
+                    </span>
+                    <span className={styles.dot} style={{ backgroundColor: tag.color }} aria-hidden="true" />
+                    <span className={styles.name}>{tag.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </AnchoredPanel>
     </div>
   );
 }

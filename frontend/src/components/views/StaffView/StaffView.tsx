@@ -10,6 +10,7 @@
 
 import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
+import { AnchoredPanel } from '@/components/common/AnchoredPanel';
 
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
@@ -72,6 +73,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
   const timelineBodyRef = useRef<HTMLDivElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
+  const filterPanelRef = useRef<HTMLDivElement>(null);
   const filterTriggerRef = useRef<HTMLButtonElement>(null);
   
   // Refs for measuring actual row heights (keyed by staff ID)
@@ -145,30 +147,6 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
     return new Set(parseIdList(defaultSkills).filter((id) => known.has(id)));
   });
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [filterDropdownStyle, setFilterDropdownStyle] = useState<React.CSSProperties>({});
-
-  // Position the position:fixed filter dropdown anchored below the trigger.
-  useLayoutEffect(() => {
-    if (!isFilterOpen || !filterRef.current) return;
-    const update = () => {
-      const rect = filterRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const top = rect.bottom + 6;
-      const available = Math.max(160, window.innerHeight - top - 12);
-      setFilterDropdownStyle({
-        top,
-        left: Math.max(8, Math.min(rect.left, window.innerWidth - 458)),
-        maxHeight: available,
-      });
-    };
-    update();
-    window.addEventListener('resize', update);
-    window.addEventListener('scroll', update, true);
-    return () => {
-      window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', update, true);
-    };
-  }, [isFilterOpen]);
   
   // Sync vertical scroll between panel and timeline body
   useScrollSync(panelRef, timelineBodyRef);
@@ -214,6 +192,7 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
     onClose: () => setIsFilterOpen(false),
     wrapperRef: filterRef,
     triggerRef: filterTriggerRef,
+    panelRef: filterPanelRef,
   });
   
   // Toggle role selection
@@ -648,79 +627,85 @@ export function StaffView({ embedded = false, panelWidth, onPanelWidthChange, he
               <Icon icon={ChevronDownIcon} size={12} className={`${styles.chevron} ${isFilterOpen ? styles.open : ''}`} />
             </button>
             
-            {isFilterOpen && (
-              <div className={styles.filterDropdown} style={filterDropdownStyle} role="dialog" aria-label="Filter staff">
-                {/* Clear all button */}
-                {hasActiveFilters && (
-                  <div className={styles.filterActions}>
-                    <button className={styles.filterActionBtn} onClick={clearAllFilters}>
-                      Clear all filters
-                    </button>
+            <AnchoredPanel
+              ref={filterPanelRef}
+              open={isFilterOpen}
+              triggerRef={filterTriggerRef}
+              align="start"
+              className={styles.filterDropdown}
+              role="dialog"
+              aria-label="Filter staff"
+            >
+              {/* Clear all button */}
+              {hasActiveFilters && (
+                <div className={styles.filterActions}>
+                  <button className={styles.filterActionBtn} onClick={clearAllFilters}>
+                    Clear all filters
+                  </button>
+                </div>
+              )}
+              
+              <div className={styles.filterColumns}>
+                {/* Role filters column */}
+                <div className={styles.filterColumn}>
+                  <div className={styles.filterSectionTitle}>Roles</div>
+                  <div className={styles.filterOptions}>
+                    {staffRoles.length > 0 ? (
+                      staffRoles.map((role) => (
+                        <label key={role} className={styles.filterOption}>
+                          <input
+                            type="checkbox"
+                            className={styles.filterCheckboxInput}
+                            checked={selectedRoles.has(role)}
+                            onChange={() => toggleRole(role)}
+                          />
+                          <span className={styles.filterCheckbox}>
+                            <Icon icon={CheckIcon} size={12} className={styles.checkIcon} />
+                          </span>
+                          <span className={styles.filterOptionText}>{role}</span>
+                        </label>
+                      ))
+                    ) : (
+                      <div className={styles.filterEmptyColumn}>No roles defined</div>
+                    )}
                   </div>
-                )}
+                </div>
                 
-                <div className={styles.filterColumns}>
-                  {/* Role filters column */}
-                  <div className={styles.filterColumn}>
-                    <div className={styles.filterSectionTitle}>Roles</div>
-                    <div className={styles.filterOptions}>
-                      {staffRoles.length > 0 ? (
-                        staffRoles.map((role) => (
-                          <label key={role} className={styles.filterOption}>
-                            <input
-                              type="checkbox"
-                              className={styles.filterCheckboxInput}
-                              checked={selectedRoles.has(role)}
-                              onChange={() => toggleRole(role)}
-                            />
-                            <span className={styles.filterCheckbox}>
-                              <Icon icon={CheckIcon} size={12} className={styles.checkIcon} />
-                            </span>
-                            <span className={styles.filterOptionText}>{role}</span>
-                          </label>
-                        ))
-                      ) : (
-                        <div className={styles.filterEmptyColumn}>No roles defined</div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* Skills filters column */}
-                  <div className={styles.filterColumn}>
-                    <div className={styles.filterSectionTitle}>Skills</div>
-                    <div className={styles.filterOptions}>
-                      {skills.length > 0 ? (
-                        skills.map((skill) => (
-                          <label key={skill.id} className={styles.filterOption}>
-                            <input
-                              type="checkbox"
-                              className={styles.filterCheckboxInput}
-                              checked={selectedSkills.has(skill.id)}
-                              onChange={() => toggleSkill(skill.id)}
-                            />
-                            <span className={styles.filterCheckbox}>
-                              <Icon icon={CheckIcon} size={12} className={styles.checkIcon} />
-                            </span>
+                {/* Skills filters column */}
+                <div className={styles.filterColumn}>
+                  <div className={styles.filterSectionTitle}>Skills</div>
+                  <div className={styles.filterOptions}>
+                    {skills.length > 0 ? (
+                      skills.map((skill) => (
+                        <label key={skill.id} className={styles.filterOption}>
+                          <input
+                            type="checkbox"
+                            className={styles.filterCheckboxInput}
+                            checked={selectedSkills.has(skill.id)}
+                            onChange={() => toggleSkill(skill.id)}
+                          />
+                          <span className={styles.filterCheckbox}>
+                            <Icon icon={CheckIcon} size={12} className={styles.checkIcon} />
+                          </span>
+                          <span 
+                            className={styles.filterOptionText}
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                          >
                             <span 
-                              className={styles.filterOptionText}
-                              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                            >
-                              <span 
-                                className={styles.skillDot} 
-                                style={{ backgroundColor: skill.color }}
-                              />
-                              {skill.name}
-                            </span>
-                          </label>
-                        ))
-                      ) : (
-                        <div className={styles.filterEmptyColumn}>No skills defined</div>
-                      )}
-                    </div>
+                              className={styles.skillDot} 
+                              style={{ backgroundColor: skill.color }}
+                            />
+                            {skill.name}
+                          </span>
+                        </label>
+                      ))
+                    ) : (
+                      <div className={styles.filterEmptyColumn}>No skills defined</div>
+                    )}
                   </div>
                 </div>
               </div>
-            )}
+            </AnchoredPanel>
           </div>
         </div>
         <div className={styles.panelBody} ref={panelRef}>

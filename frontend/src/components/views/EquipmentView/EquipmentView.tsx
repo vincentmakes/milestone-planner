@@ -7,6 +7,7 @@
 
 import { useCallback, useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
+import { AnchoredPanel } from '@/components/common/AnchoredPanel';
 
 import { useAppStore } from '@/stores/appStore';
 import { useViewStore } from '@/stores/viewStore';
@@ -57,6 +58,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   const timelineBodyRef = useRef<HTMLDivElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
+  const filterPanelRef = useRef<HTMLDivElement>(null);
   const filterTriggerRef = useRef<HTMLButtonElement>(null);
   
   // Local panel width state for standalone mode only
@@ -151,32 +153,6 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
   );
   
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [filterDropdownStyle, setFilterDropdownStyle] = useState<React.CSSProperties>({});
-
-  // Position the position:fixed filter dropdown anchored below the trigger.
-  // The dropdown opens to the right edge of the wrapper, max-width 240.
-  useLayoutEffect(() => {
-    if (!isFilterOpen || !filterRef.current) return;
-    const update = () => {
-      const rect = filterRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const top = rect.bottom + 6;
-      const available = Math.max(160, window.innerHeight - top - 12);
-      const dropdownWidth = 240;
-      setFilterDropdownStyle({
-        top,
-        left: Math.max(8, Math.min(rect.right - dropdownWidth, window.innerWidth - dropdownWidth - 8)),
-        maxHeight: available,
-      });
-    };
-    update();
-    window.addEventListener('resize', update);
-    window.addEventListener('scroll', update, true);
-    return () => {
-      window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', update, true);
-    };
-  }, [isFilterOpen]);
   
   // Sync vertical scroll between panel and timeline body
   useScrollSync(panelRef, timelineBodyRef);
@@ -224,6 +200,7 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
     onClose: () => setIsFilterOpen(false),
     wrapperRef: filterRef,
     triggerRef: filterTriggerRef,
+    panelRef: filterPanelRef,
   });
   
   // Toggle a type selection
@@ -433,41 +410,47 @@ export function EquipmentView({ embedded = false, panelWidth, onPanelWidthChange
                 <Icon icon={ChevronDownIcon} size={12} className={`${styles.chevron} ${isFilterOpen ? styles.open : ''}`} />
               </button>
               
-              {isFilterOpen && (
-                <div className={styles.filterDropdown} style={filterDropdownStyle} role="dialog" aria-label="Filter equipment">
-                  <div className={styles.filterActions}>
-                    <button 
-                      className={styles.filterActionBtn}
-                      onClick={selectAllTypes}
-                    >
-                      Select All
-                    </button>
-                    <button 
-                      className={styles.filterActionBtn}
-                      onClick={clearAllTypes}
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  <div className={styles.filterDivider} />
-                  <div className={styles.filterOptions}>
-                    {equipmentTypes.map((type) => (
-                      <label key={type} className={styles.filterOption}>
-                        <input
-                          type="checkbox"
-                          checked={selectedTypes.has(type)}
-                          onChange={() => toggleType(type)}
-                          className={styles.filterCheckboxInput}
-                        />
-                        <span className={styles.filterCheckbox}>
-                          <Icon icon={CheckIcon} size={12} className={styles.checkIcon} />
-                        </span>
-                        <span className={styles.filterOptionText}>{type}</span>
-                      </label>
-                    ))}
-                  </div>
+              <AnchoredPanel
+                ref={filterPanelRef}
+                open={isFilterOpen}
+                triggerRef={filterTriggerRef}
+                align="end"
+                className={styles.filterDropdown}
+                role="dialog"
+                aria-label="Filter equipment"
+              >
+                <div className={styles.filterActions}>
+                  <button 
+                    className={styles.filterActionBtn}
+                    onClick={selectAllTypes}
+                  >
+                    Select All
+                  </button>
+                  <button 
+                    className={styles.filterActionBtn}
+                    onClick={clearAllTypes}
+                  >
+                    Clear
+                  </button>
                 </div>
-              )}
+                <div className={styles.filterDivider} />
+                <div className={styles.filterOptions}>
+                  {equipmentTypes.map((type) => (
+                    <label key={type} className={styles.filterOption}>
+                      <input
+                        type="checkbox"
+                        checked={selectedTypes.has(type)}
+                        onChange={() => toggleType(type)}
+                        className={styles.filterCheckboxInput}
+                      />
+                      <span className={styles.filterCheckbox}>
+                        <Icon icon={CheckIcon} size={12} className={styles.checkIcon} />
+                      </span>
+                      <span className={styles.filterOptionText}>{type}</span>
+                    </label>
+                  ))}
+                </div>
+              </AnchoredPanel>
             </div>
           )}
         </div>

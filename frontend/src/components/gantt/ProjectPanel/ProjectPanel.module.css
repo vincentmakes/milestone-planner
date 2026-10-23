@@ -3,8 +3,8 @@
   flex-direction: column;
   height: 100%;
   /* Never wider than the Gantt area, so the right-aligned header actions stay
-     reachable with many custom columns. clip (not hidden) keeps the header
-     dropdowns visible below the header. */
+     reachable with many custom columns. clip, not hidden: no scroll container
+     (the header dropdowns are portaled AnchoredPanels and escape it anyway). */
   max-width: 100%;
   overflow-x: clip;
   background: var(--bg-secondary);
@@ -23,10 +23,8 @@
 
 .headerContent {
   /* Spans the name column and the custom columns: the actions sit at the
-     right edge of the whole panel. Positioned: the header dropdowns hang from
-     it (right-aligned, inset, capped to its width). */
-  position: relative;
-  --dropdown-inset: 1rem;
+     right edge of the whole panel. The header dropdowns are AnchoredPanels
+     (portaled, fixed), so nothing here positions them. */
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -241,11 +239,9 @@
   margin-top: 0.5rem !important;
 }
 
-/* Column Visibility Dropdown */
+/* Column Visibility Dropdown (an AnchoredPanel, right-aligned to its trigger) */
 .visibilityWrapper {
-  /* Static: the dropdown hangs from .headerContent like the other header
-     dropdowns (right-aligned, never past the Gantt area's left edge). */
-  position: static;
+  display: inline-flex;
 }
 
 .toggleBtn.hasHidden {
@@ -259,16 +255,12 @@
 }
 
 .visibilityDropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: var(--dropdown-inset, 0px);
-  min-width: min(200px, calc(100% - 2 * var(--dropdown-inset, 0px)));
-  max-width: min(300px, calc(100% - 2 * var(--dropdown-inset, 0px)));
+  min-width: 200px;
+  max-width: 300px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  z-index: var(--z-dropdown);
   overflow: hidden;
 }
 

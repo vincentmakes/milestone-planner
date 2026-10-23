@@ -274,19 +274,15 @@
 }
 
 .filterDropdown {
-  /* position:fixed so the dropdown escapes ancestor overflow:hidden when the
-     embedded equipment panel is short. Coordinates and max-height set inline. */
-  position: fixed;
+  /* Portaled by AnchoredPanel (fixed under or above the trigger, measured
+     max-height), so a short embedded equipment panel never clips it. */
   min-width: 180px;
   max-width: 240px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
-  z-index: var(--z-dropdown);
   animation: slideIn var(--transition-fast) ease-out;
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
 }
 

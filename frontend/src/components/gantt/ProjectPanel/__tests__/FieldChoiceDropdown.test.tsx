@@ -136,6 +136,15 @@ describe('FieldChoiceDropdown', () => {
     expect(screen.getByRole('button', { name: 'Pick' })).toHaveFocus();
   });
 
+  it('portals the panel right-aligned to the trigger; a mousedown in it keeps it open', () => {
+    renderShell();
+    const dialog = open();
+    expect(dialog.parentElement).toBe(document.body);
+    expect(dialog).toHaveAttribute('data-align', 'end');
+    fireEvent.mouseDown(within(dialog).getByRole('radio', { name: 'Alpha' }));
+    expect(screen.getByRole('dialog', { name: 'Pick dialog' })).toBeInTheDocument();
+  });
+
   it('closes when focus leaves it, and on an outside mousedown', () => {
     renderShell();
     const dialog = open();

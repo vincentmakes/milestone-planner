@@ -14,14 +14,15 @@
  * stopped so it never reaches the app-wide shortcuts, focus back on the
  * trigger). Picking an option keeps it open.
  *
- * The panel hangs from the nearest positioned ancestor (ProjectPanel's
- * header), right-aligned and capped to its width, like the other header
- * dropdowns.
+ * The panel is an AnchoredPanel right-aligned to the trigger: portaled and
+ * fixed, so the Gantt pane (overflow hidden while an overview panel is open)
+ * never clips it.
  */
 
 import { useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
+import { AnchoredPanel } from '@/components/common/AnchoredPanel';
 import styles from './FieldChoiceDropdown.module.css';
 
 /** One option of the dropdown: a project field, or a pseudo-choice like "Tags". */
@@ -72,11 +73,12 @@ export function FieldChoiceDropdown<Id extends number | string = number>({
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
   const radioName = useId();
 
   const close = () => setOpen(false);
-  const { onBlur: handleBlur } = useDismissableOverlay({ open, onClose: close, wrapperRef, triggerRef });
+  const { onBlur: handleBlur } = useDismissableOverlay({ open, onClose: close, wrapperRef, triggerRef, panelRef });
 
   if (choices.length === 0) return null;
 
@@ -99,38 +101,45 @@ export function FieldChoiceDropdown<Id extends number | string = number>({
         {icon}
       </button>
 
-      {open && (
-        <div id={panelId} role="dialog" aria-label={dialogLabel} className={styles.dropdown}>
-          <div className={styles.header}>
-            <span>{headerLabel}</span>
-          </div>
-          <div role="radiogroup" aria-label={radioGroupLabel} className={styles.list}>
-            <label className={styles.option}>
+      <AnchoredPanel
+        ref={panelRef}
+        open={open}
+        triggerRef={triggerRef}
+        align="end"
+        id={panelId}
+        role="dialog"
+        aria-label={dialogLabel}
+        className={styles.dropdown}
+      >
+        <div className={styles.header}>
+          <span>{headerLabel}</span>
+        </div>
+        <div role="radiogroup" aria-label={radioGroupLabel} className={styles.list}>
+          <label className={styles.option}>
+            <input
+              type="radio"
+              name={radioName}
+              checked={value === null}
+              onChange={() => onChange(null)}
+            />
+            <span className={styles.radio} aria-hidden="true" />
+            <span className={styles.noneLabel}>{noneLabel}</span>
+          </label>
+          {choices.map((c) => (
+            <label key={c.id} className={styles.option}>
               <input
                 type="radio"
                 name={radioName}
-                checked={value === null}
-                onChange={() => onChange(null)}
+                checked={value?.id === c.id}
+                onChange={() => onChange(c.id)}
               />
               <span className={styles.radio} aria-hidden="true" />
-              <span className={styles.noneLabel}>{noneLabel}</span>
+              <span className={styles.name}>{c.name}</span>
             </label>
-            {choices.map((c) => (
-              <label key={c.id} className={styles.option}>
-                <input
-                  type="radio"
-                  name={radioName}
-                  checked={value?.id === c.id}
-                  onChange={() => onChange(c.id)}
-                />
-                <span className={styles.radio} aria-hidden="true" />
-                <span className={styles.name}>{c.name}</span>
-              </label>
-            ))}
-          </div>
-          {footer}
+          ))}
         </div>
-      )}
+        {footer}
+      </AnchoredPanel>
     </div>
   );
 }

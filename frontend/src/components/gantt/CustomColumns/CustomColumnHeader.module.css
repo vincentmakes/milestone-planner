@@ -85,18 +85,27 @@
   color: var(--accent-blue);
 }
 
-/* Filter dropdown */
+/* The open panel is portaled out of the header, so hovering it no longer
+   hovers the header: keep its trigger shown while it is open. */
+.filterBtn[aria-expanded="true"] {
+  opacity: 1;
+}
+
+/* Filter dropdown — portaled by AnchoredPanel (fixed, measured max-height):
+   .filterOptions is the part that scrolls when room is short. Out of the
+   header in the DOM, so it sets the text the header used to pass down. */
 .filterDropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
   min-width: 180px;
   max-width: 280px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  user-select: none;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  z-index: var(--z-dropdown);
+  overflow: hidden;
   animation: slideIn var(--transition-fast) ease-out;
 }
 

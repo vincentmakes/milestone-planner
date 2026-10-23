@@ -70,45 +70,16 @@
 }
 
 .dropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
+  /* Portaled by AnchoredPanel (fixed, measured max-height, flipped above when
+     short of room below): the header / Clear row stays put and the sections
+     scroll inside .scrollBody. */
   min-width: 220px;
   max-width: 300px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  z-index: var(--z-dropdown);
   overflow: hidden;
-  /* Never taller than the room below a header trigger: the header / Clear row
-     stays put and the sections scroll inside .scrollBody. */
-  display: flex;
-  flex-direction: column;
-  max-height: min(70vh, calc(100vh - 160px));
-}
-
-.dropdown.alignRight {
-  left: auto;
-  right: 0;
-}
-
-/* anchor="container": the panel hangs from the nearest positioned ancestor
-   (the wrapper is static), inset by --dropdown-inset and capped to its width,
-   so it can never spill past that container's edges. */
-.wrapper.containerAnchored {
-  position: static;
-}
-
-.dropdown.anchored {
-  left: var(--dropdown-inset, 0px);
-  min-width: min(220px, calc(100% - 2 * var(--dropdown-inset, 0px)));
-  max-width: min(300px, calc(100% - 2 * var(--dropdown-inset, 0px)));
-}
-
-.dropdown.anchored.alignRight {
-  left: auto;
-  right: var(--dropdown-inset, 0px);
 }
 
 .header {

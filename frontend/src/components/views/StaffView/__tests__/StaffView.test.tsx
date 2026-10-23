@@ -301,6 +301,18 @@ describe('StaffView panel', () => {
     expect(trigger).toHaveFocus();
   });
 
+  it('portals the filter panel out of the header; a mousedown in it keeps it open', () => {
+    seed();
+    render(<StaffView />);
+    const trigger = screen.getByRole('button', { name: /Filter/ });
+    fireEvent.click(trigger);
+    const panel = screen.getByRole('dialog', { name: 'Filter staff' });
+    expect(trigger.parentElement).not.toContainElement(panel);
+    expect(panel).toHaveAttribute('data-align', 'start');
+    fireEvent.mouseDown(screen.getByText('Roles'));
+    expect(screen.getByRole('dialog', { name: 'Filter staff' })).toBeInTheDocument();
+  });
+
   it('shows placeholders when no roles or skills exist', () => {
     useAppStore.setState({
       currentSite: site,

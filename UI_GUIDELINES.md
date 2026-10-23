@@ -602,8 +602,9 @@ A new non-modal overlay (dropdown, filter panel, popover, context menu) closes:
 - on Escape — listened for in the capture phase with propagation stopped, so the key closes only
   this panel and never reaches the app-wide shortcuts — after which focus returns to the trigger.
 
-All three come from one hook, `useDismissableOverlay({ open, onClose, wrapperRef, triggerRef? })`
-(`src/hooks/useDismissableOverlay.ts`), which returns the `onBlur` to put on the wrapper. While a
+All three come from one hook, `useDismissableOverlay({ open, onClose, wrapperRef, triggerRef?, panelRef? })`
+(`src/hooks/useDismissableOverlay.ts`), which returns the `onBlur` to put on the wrapper; pass
+`panelRef` when the panel is portaled out of the wrapper (see `AnchoredPanel` below). While a
 confirmation (§3.12) is pending the hook is inert: the confirm owns Escape and the overlay that
 asked (e.g. the dependency popover) stays open until the answer. Never
 hand-roll a click-outside effect. `ProjectFilterDropdown` and `FieldChoiceDropdown` are the
@@ -612,9 +613,18 @@ reference users; the header overflow menu, `UserMenu`, the Panels dropdown, the 
 `CustomColumnHeader` filters, the Staff and Equipment view filters, `DependencyPopup` and
 `ContextMenu` all use it. A panel with checkboxes or radios is a non-modal `role="dialog"` (not
 a `menu`) with an `aria-label`; its trigger carries `aria-expanded` and `aria-haspopup="dialog"`.
-A popover that must escape a scrolling Modal body (the date picker panel) is `position: fixed`
-but rendered inside its trigger's wrapper, never in a portal: staying in the Modal's DOM subtree
-keeps the Tab trap, `aria-modal` and `useDismissableOverlay`'s `wrapperRef.contains` working.
+A dropdown panel outside a Modal that a clipping pane could cut off (the Gantt header's Filter,
+Group by, Colour by and column menus while an overview panel is open, the Staff / Equipment
+overview filters) is an `AnchoredPanel` (`components/common/AnchoredPanel`): portaled to `<body>`,
+`position: fixed` under the trigger (or above it when the room below is short), `align`
+`start` / `end`, its `max-height` the measured room minus 16 px so the panel's own list scrolls,
+`z-index: var(--z-dropdown)`. Only the panel moves — the trigger keeps its place and its
+`aria-expanded` / `aria-haspopup`, Tab from the trigger enters the panel and Tab from its end goes
+on to the element after the trigger. Its caller passes the panel's ref as `panelRef`; its class
+draws the panel and never sets position, inset or z-index. A popover that must escape a scrolling
+Modal body (the date picker panel) is `position: fixed` but rendered inside its trigger's wrapper,
+never in a portal: staying in the Modal's DOM subtree keeps the Tab trap, `aria-modal` and
+`useDismissableOverlay`'s `wrapperRef.contains` working.
 
 `ContextMenu` (`components/common/ContextMenu`) is the right-click menu: a `role="menu"` of
 `role="menuitem"` buttons (tests select them by that role); items take `danger`, `divider`,

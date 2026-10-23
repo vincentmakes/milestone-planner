@@ -248,6 +248,18 @@ describe('EquipmentView expanded rows', () => {
     expect(trigger).toHaveFocus();
   });
 
+  it('portals the type filter out of the header, right-aligned; a mousedown in it keeps it open', () => {
+    seed();
+    render(<EquipmentView />);
+    const trigger = screen.getByRole('button', { name: /All Types/ });
+    fireEvent.click(trigger);
+    const panel = screen.getByRole('dialog', { name: 'Filter equipment' });
+    expect(trigger.parentElement).not.toContainElement(panel);
+    expect(panel).toHaveAttribute('data-align', 'end');
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Select All' }));
+    expect(screen.getByRole('dialog', { name: 'Filter equipment' })).toBeInTheDocument();
+  });
+
   it('lists bookings with their level and the project/phase names', () => {
     seed();
     render(<EquipmentView />);

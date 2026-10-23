@@ -193,6 +193,18 @@ describe('ProjectFilterDropdown', () => {
     document.removeEventListener('keydown', outer);
   });
 
+  it('portals the panel out of its wrapper, where a mousedown keeps it open', () => {
+    render(<ProjectFilterDropdown />);
+    openDropdown();
+    const panel = screen.getByRole('dialog', { name: 'Filter projects' });
+    const wrapper = screen.getByRole('button', { name: 'Filter' }).parentElement as HTMLElement;
+    expect(wrapper).not.toContainElement(panel);
+    expect(panel.parentElement).toBe(document.body);
+    fireEvent.mouseDown(screen.getByLabelText('Pilot'));
+    fireEvent.mouseDown(panel);
+    expect(screen.getByRole('dialog', { name: 'Filter projects' })).toBeInTheDocument();
+  });
+
   it('closes on an outside mousedown', () => {
     render(
       <div>
@@ -251,12 +263,12 @@ describe('ProjectFilterDropdown', () => {
   });
 
   it('compact mode hides the visible label but keeps the accessible name', () => {
-    render(<ProjectFilterDropdown compact align="right" anchor="container" />);
+    render(<ProjectFilterDropdown compact align="right" />);
     const trigger = screen.getByRole('button', { name: 'Filter' });
     expect(trigger.textContent).toBe('');
     openDropdown();
-    expect(screen.getByRole('dialog').className).toMatch(/alignRight/);
-    expect(screen.getByRole('dialog').className).toMatch(/anchored/);
+    // Right edge on the trigger's right edge (AnchoredPanel align="end")
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-align', 'end');
   });
 
   it('scrolls the sections inside a body below the fixed header', () => {

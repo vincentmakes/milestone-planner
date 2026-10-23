@@ -28,6 +28,9 @@ export type { ICSImportPanelProps, ICSImportRow } from './ICSImportPanel';
 export { useSubmitGuard } from './useSubmitGuard';
 export type { SubmitGuard } from './useSubmitGuard';
 
+export { AnchoredPanel } from './AnchoredPanel';
+export type { AnchoredPanelProps } from './AnchoredPanel';
+
 export { ProjectFilterDropdown } from './ProjectFilterDropdown';
 export type { ProjectFilterDropdownProps } from './ProjectFilterDropdown';
 
