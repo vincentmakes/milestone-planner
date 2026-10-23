@@ -141,8 +141,9 @@ def open_project_modal(page: Page, project: str = "Bioprocess Scale-Up") -> None
 def open_color_by(page: Page) -> None:
     """Open the project panel's Colour by dropdown (ColorByDropdown.tsx).
 
-    The trigger's accessible name is "Colour by", or "Coloured by <group>"
-    once a group is chosen; its panel is the dialog "Colour projects".
+    The trigger's accessible name is "Colour by", or "Coloured by <choice>"
+    once a project field (or "Tags") is chosen; its panel is the dialog
+    "Colour projects".
     """
     page.get_by_role("button", name=re.compile(r"^Colou?r(ed)? by")).first.click()
     page.get_by_role("dialog", name="Colour projects").wait_for()
@@ -159,11 +160,11 @@ def _pick_color_by(page: Page, option: str) -> None:
     page.wait_for_timeout(400)
 
 
-def set_color_by(page: Page, group_name: str) -> None:
-    """Colour the Gantt project bars by a tag group (per-site browser
-    preference in localStorage, so it carries over to the later shots of the
-    shared context)."""
-    _pick_color_by(page, group_name)
+def set_color_by(page: Page, choice: str) -> None:
+    """Colour the Gantt project bars by a dropdown project field or "Tags"
+    (per-site browser preference in localStorage, so it carries over to the
+    later shots of the shared context)."""
+    _pick_color_by(page, choice)
 
 
 def clear_color_by(page: Page) -> None:
@@ -316,15 +317,17 @@ def shot_project_modal(context: BrowserContext) -> None:
 
 
 def shot_project_tags(context: BrowserContext) -> None:
-    """Tag picker inside the project modal, with the grouped dropdown open."""
+    """Tag picker inside the project modal, with its tag list open."""
     page = context.new_page()
     login(page)
     open_project_modal(page)
-    # Placeholder = TAG_PICKER_PLACEHOLDER in frontend/src/components/modals/TagPicker.tsx
+    # Placeholder = TAG_PICKER_PLACEHOLDER in frontend/src/components/modals/TagPicker.tsx.
+    # The picker (common/OptionPicker) opens on a click, typing or the down
+    # arrow — not on focus alone.
     page.click('input[placeholder="Find a tag..."]')
     page.wait_for_timeout(400)
-    # The grouped list opens below the field; bring it fully into the modal's
-    # scroll view so the "pick one" group heading and its options are visible.
+    # The flat tag list (tag order) opens below the field; bring it fully into
+    # the modal's scroll view.
     try:
         page.locator('[role="listbox"]').first.scroll_into_view_if_needed()
         page.wait_for_timeout(300)
@@ -336,12 +339,34 @@ def shot_project_tags(context: BrowserContext) -> None:
 
 
 def shot_settings_tags(context: BrowserContext) -> None:
-    """Settings -> Tags: tag groups and the per-group tag lists (admin only)."""
+    """Settings -> Tags: the flat tag list with colours and site limits (admin only)."""
     page = context.new_page()
     login(page)
     open_settings_section(page, "Tags")
     page.screenshot(path=str(OUT / "settings-tags.png"))
     log("[done] settings-tags.png")
+    page.close()
+
+
+def shot_project_fields_settings(context: BrowserContext) -> None:
+    """Settings -> Project fields: the built-in fields (labels, Shown switches)
+    and the custom fields, the "Project type" dropdown open on its items
+    (admin only; the demo's former tag groups after the 2.0.0 conversion)."""
+    page = context.new_page()
+    login(page)
+    open_settings_section(page, "Project fields")
+    # ProjectFieldsPanel: a dropdown field's items toggle is labelled "Items of <field>".
+    page.get_by_role("button", name="Items of Project type", exact=True).click()
+    page.wait_for_timeout(600)
+    # The items open under the field, below the built-in block: scroll the
+    # panel so the Confirmed row, the custom fields and the open items share
+    # the frame.
+    page.get_by_role("group", name="Items of Project type").evaluate(
+        "el => el.scrollIntoView({block: 'end'})"
+    )
+    page.wait_for_timeout(300)
+    page.screenshot(path=str(OUT / "project-fields-settings.png"))
+    log("[done] project-fields-settings.png")
     page.close()
 
 
@@ -815,24 +840,32 @@ def shot_site_modal(context: BrowserContext) -> None:
     page.close()
 
 
-def shot_tag_filter(context: BrowserContext) -> None:
-    """Tag filter dropdown in the Gantt project panel, open."""
+def shot_project_filter(context: BrowserContext) -> None:
+    """Project Filter in the Gantt project panel, open: one section per
+    dropdown project field, then Tags."""
     page = context.new_page()
     login(page)
     go_to_gantt(page)
     use_quarter_view(page)
     click_today(page)
     # The compact trigger in the project panel (the Kanban toolbar's twin is
-    # not rendered on the Gantt). aria-label is "Tags" or "Tags (n selected)".
-    page.locator('button[aria-label^="Tags"]').first.click()
+    # not rendered on the Gantt). ProjectFilterDropdown's aria-label is
+    # "Filter" or "Filter (n selected)" — the custom-column filters are
+    # "Filter <column>", hence the anchored pattern.
+    page.get_by_role("button", name=re.compile(r"^Filter( \(\d+ selected\))?$")).first.click()
+    panel = page.get_by_role("dialog", name="Filter projects")
+    panel.wait_for()
+    # The panel scrolls past a few sections: bring the Tags section (last)
+    # into view, so the shot shows the end of the field sections and the tags.
+    panel.get_by_role("group", name="Tags").evaluate("el => el.scrollIntoView({block: 'end'})")
     page.wait_for_timeout(400)
-    page.screenshot(path=str(OUT / "tag-filter-dropdown.png"))
-    log("[done] tag-filter-dropdown.png")
+    page.screenshot(path=str(OUT / "project-filter.png"))
+    log("[done] project-filter.png")
     page.close()
 
 
 def shot_gantt_grouped(context: BrowserContext) -> None:
-    """Gantt project list grouped by the "Project type" tag group."""
+    """Gantt project list grouped by the "Project type" project field."""
     page = context.new_page()
     login(page)
     go_to_gantt(page)
@@ -840,7 +873,7 @@ def shot_gantt_grouped(context: BrowserContext) -> None:
     click_today(page)
 
     def open_group_by() -> None:
-        # aria-label is "Group by" or "Grouped by <group>" (GroupByDropdown.tsx)
+        # aria-label is "Group by" or "Grouped by <field>" (GroupByDropdown.tsx)
         page.locator('button[aria-label^="Group"][aria-haspopup="dialog"]').first.click()
         page.wait_for_timeout(300)
 
@@ -960,6 +993,7 @@ TARGETS = {
     "project-modal": shot_project_modal,
     "tags": shot_project_tags,
     "settings-tags": shot_settings_tags,
+    "project-fields": shot_project_fields_settings,
     "settings-teams": shot_teams_settings,
     "roles": shot_roles_settings,
     "approvals": shot_approvals_settings,
@@ -991,7 +1025,7 @@ TARGETS = {
     "archived": shot_archived_view,
     "site-modal": shot_site_modal,
     "equipment-assign": shot_equipment_assign_modal,
-    "tag-filter": shot_tag_filter,
+    "project-filter": shot_project_filter,
     "team-filter": shot_team_filter,
     "grouped": shot_gantt_grouped,
     "color-by": shot_gantt_color_by,

@@ -22,7 +22,7 @@ docker compose -f docker-compose.fresh.yml up -d --build
 # 3. Seed the canonical demo tenant (Demo Company / slug "demo" with
 #    Bioprocess Scale-Up, Catalyst Optimization, Analytical Method Transfer,
 #    Quality System Upgrade — admin@demo.local / demo1234). The one seed holds
-#    everything the screenshots need: tag groups, subphases, dependencies,
+#    everything the screenshots need: project fields, tags, subphases, dependencies,
 #    bookings, blocks, holidays for both sites, a site closure, every absence
 #    type, custom columns, Kanban comments and notifications
 #    (app/scripts/demo_data.py; dates are relative to the day you run it).
@@ -142,7 +142,7 @@ to list them), e.g.:
 /tmp/pw-venv/bin/python scripts/screenshots/capture.py main tags block-modal
 ```
 
-Administration shots (`settings-tags`, `settings-teams`, `roles`, `approvals`, `sites`, `users`,
+Administration shots (`settings-tags`, `project-fields`, `settings-teams`, `roles`, `approvals`, `sites`, `users`,
 `equipment-mgmt`, `phases`, `skills`, `site-modal`) open the sidebar's single **Settings** entry
 and switch to a hub section by its label (`open_settings_section(page,
 "<label>")`, labels from `SETTINGS_SECTIONS` in
@@ -151,7 +151,10 @@ the default General section.
 
 | Key | Output | Shows |
 |-----|--------|-------|
-| `tag-filter` | `tag-filter-dropdown.png` | The project panel's Tags filter dropdown, open, on the Gantt chart |
+| `project-filter` | `project-filter.png` | The project panel's **Filter**, open, on the Gantt chart, scrolled to the end of the *Area* field and the Tags section |
+| `project-fields` | `project-fields-settings.png` | Settings → Project fields: the built-in fields and the *Project type* dropdown open on its items |
+| `tags` | `project-tags.png` | The Edit Project dialog of Bioprocess Scale-Up with its project fields and the tag picker's list open |
+| `settings-tags` | `settings-tags.png` | Settings → Tags (tags only) |
 | `team-filter` | `team-filter.png` | The header team filter, open, on the Gantt chart (Winterthur's teams) |
 | `settings-teams` | `settings-teams.png` | Settings → Teams for the current site |
 | `roles` | `roles-settings.png` | Settings → Roles with the *User* role open on its permission matrix (own bookings in *Needs approval*) |
@@ -160,7 +163,7 @@ the default General section.
 | `pending` | `pending-assignment.png` | The Gantt chart with Diana's dashed *Pending approval* row on Bioprocess Scale-Up |
 | `assignment-overview-row` | `assignment-overview-row.png` | The Gantt chart with Charlie Clark's overview row under Bioprocess Scale-Up's *Analytics* phase (his two own-date bookings as blocks); closes a default panel and scrolls the timeline to the phase |
 | `kanban` | `kanban-board.png` | The Kanban board view |
-| `grouped` | `gantt-grouped.png` | The Gantt chart grouped by the *Project type* tag group (collapsible pill sections) |
+| `grouped` | `gantt-grouped.png` | The Gantt chart grouped by the *Project type* project field (collapsible pill sections) |
 | `color-by` | `gantt-color-by.png` | The Gantt chart's *Colour by* dropdown, open, with *Project type* selected |
 | `date-picker` | `date-range-picker.png` | The Edit Phase dialog of Bioprocess Scale-Up's *Trial* phase with the two-month date calendar open from *Start Date* |
 
