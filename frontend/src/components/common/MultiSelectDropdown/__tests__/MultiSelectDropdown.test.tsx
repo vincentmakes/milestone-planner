@@ -172,6 +172,36 @@ describe('MultiSelectDropdown', () => {
     expect(trigger()).toBeDisabled();
   });
 
+  it('puts the active row back on the list when the options shrink while open', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<Harness onChange={onChange} />);
+    fireEvent.click(trigger());
+    fireEvent.keyDown(listbox(), { key: 'End' }); // QA, row 2
+    rerender(<Harness onChange={onChange} options={[ITEMS[1]]} />);
+    expect(listbox()).toHaveAttribute('aria-activedescendant', option('Analytics').id);
+    fireEvent.keyDown(listbox(), { key: ' ' });
+    expect(onChange).toHaveBeenLastCalledWith([2]);
+  });
+
+  it('reveals the open panel when it ends below the visible area', () => {
+    const original = Element.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const rect = vi
+      .spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ top: 0, bottom: window.innerHeight + 40 } as DOMRect);
+    try {
+      render(<Harness searchable />);
+      fireEvent.click(trigger());
+      const reveal = scrollIntoView.mock.calls.findIndex(([arg]) => arg?.block === 'end');
+      expect(scrollIntoView.mock.calls[reveal]).toEqual([{ block: 'end', inline: 'nearest' }]);
+      expect(scrollIntoView.mock.contexts[reveal]).toBe(listbox().parentElement);
+    } finally {
+      rect.mockRestore();
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   describe('searchable', () => {
     const PEOPLE: MultiSelectDropdownItem[] = [
       { id: 1, name: 'Alice Martin', hint: 'Chemist' },
@@ -271,7 +301,8 @@ describe('MultiSelectDropdown', () => {
         </form>
       );
       fireEvent.click(trigger());
-      fireEvent.keyDown(search(), { key: 'Enter' });
+      // jsdom never submits on a keyDown: the prevented default is the proof
+      expect(fireEvent.keyDown(search(), { key: 'Enter' })).toBe(false);
       expect(onSubmit).not.toHaveBeenCalled();
     });
 

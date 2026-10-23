@@ -518,7 +518,7 @@ function JobTitleAutocomplete({ value, onChange, suggestions }: JobTitleAutocomp
               onMouseDown={(e) => { e.preventDefault(); select(s); }}
               onMouseEnter={() => setHighlightIndex(i)}
             >
-              {s}
+              <span className={styles.autocompleteText}>{s}</span>
             </li>
           ))}
         </ul>

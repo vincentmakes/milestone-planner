@@ -1,7 +1,7 @@
 /**
  * Shared pieces of the listbox dropdowns (`SearchableSelect`,
- * `MultiSelectDropdown`): the search filter and the active-row keyboard
- * navigation. The look is shared through `dropdownShell.module.css`; what
+ * `MultiSelectDropdown`): the search filter, the active-row keyboard
+ * navigation and revealing the open panel. The look is shared through `dropdownShell.module.css`; what
  * Enter / Space do stays with each component.
  */
 
@@ -73,6 +73,10 @@ export function useListboxNav({
   if (seenKey !== resetKey) {
     setSeenKey(resetKey);
     setActive(resetTo === -1 ? -1 : firstEnabled(resetTo ?? 0));
+  } else if (active >= count) {
+    // The list shrank under the active row (a refresh while open): back to
+    // the first enabled row, or the arrows would have nowhere to step from.
+    setActive(firstEnabled(0));
   }
 
   // Keyboard moves keep the active row in view (the list scrolls).
@@ -116,4 +120,32 @@ export function useListboxNav({
   };
 
   return { active, setActive, firstEnabled, onNavKey };
+}
+
+/** The nearest ancestor that scrolls vertically (the dialog body), if any. */
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const { overflowY } = getComputedStyle(p);
+    if (overflowY === 'auto' || overflowY === 'scroll') return p;
+  }
+  return null;
+}
+
+/**
+ * Scrolls the open panel's bottom into view when it ends below the visible
+ * bottom of its scroll container (the dialog body clips it; `nearest` stops
+ * short when the panel is taller than what is left). A panel that already
+ * fits does not move.
+ */
+export function revealPanel(panel: HTMLElement | null): void {
+  if (!panel) return;
+  const container = scrollParent(panel);
+  let visibleBottom = window.innerHeight;
+  if (container) {
+    const box = container.getBoundingClientRect();
+    visibleBottom = Math.min(visibleBottom, box.top + container.clientTop + container.clientHeight);
+  }
+  if (panel.getBoundingClientRect().bottom > visibleBottom) {
+    panel.scrollIntoView?.({ block: 'end', inline: 'nearest' });
+  }
 }

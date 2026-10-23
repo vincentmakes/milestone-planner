@@ -9,7 +9,7 @@
  * absent from GET /staff) is kept as is.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { teamsApi } from '@/api';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
@@ -85,12 +85,28 @@ export function TeamForm({ team, onBack, onSaved, onDirtyChange }: TeamFormProps
       return new Set([...[...prev].filter((id) => !listed.has(id)), ...ids]);
     });
 
-  const removeMember = (id: number) =>
+  // The × unmounts with its row: focus moves to the × now at that place (the
+  // previous one when the last row went), or to the Members trigger.
+  const membersFieldRef = useRef<HTMLDivElement>(null);
+  const memberListRef = useRef<HTMLUListElement>(null);
+  const focusAfterRemove = useRef<number | null>(null);
+  useEffect(() => {
+    const index = focusAfterRemove.current;
+    if (index === null) return;
+    focusAfterRemove.current = null;
+    const removeButtons = memberListRef.current?.querySelectorAll<HTMLButtonElement>('button') ?? [];
+    if (removeButtons.length > 0) removeButtons[Math.min(index, removeButtons.length - 1)].focus();
+    else membersFieldRef.current?.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]')?.focus();
+  }, [chosenPeople]);
+
+  const removeMember = (id: number, index: number) => {
+    focusAfterRemove.current = index;
     setMemberIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
       return next;
     });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,7 +174,7 @@ export function TeamForm({ team, onBack, onSaved, onDirtyChange }: TeamFormProps
 
       <ToggleSwitch checked={active} onChange={setActive} label="Active" />
 
-      <div className={styles.field}>
+      <div ref={membersFieldRef} className={styles.field}>
         <MultiSelectDropdown
           label="Members"
           searchable
@@ -171,8 +187,8 @@ export function TeamForm({ team, onBack, onSaved, onDirtyChange }: TeamFormProps
           summary={(chosen) => (chosen.length === 1 ? '1 member' : `${chosen.length} members`)}
         />
         {chosenPeople.length > 0 && (
-          <ul aria-label="Team members" className={styles.memberList}>
-            {chosenPeople.map((person) => (
+          <ul ref={memberListRef} aria-label="Team members" className={styles.memberList}>
+            {chosenPeople.map((person, index) => (
               <li key={person.id} className={styles.member}>
                 <span className={styles.memberName}>{person.name}</span>
                 {person.role && (
@@ -184,7 +200,7 @@ export function TeamForm({ team, onBack, onSaved, onDirtyChange }: TeamFormProps
                 <button
                   type="button"
                   className={styles.memberRemove}
-                  onClick={() => removeMember(person.id)}
+                  onClick={() => removeMember(person.id, index)}
                   aria-label={`Remove ${person.name}`}
                   title={`Remove ${person.name}`}
                 >

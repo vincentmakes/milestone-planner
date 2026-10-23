@@ -212,8 +212,9 @@ describe('TeamsPanel', () => {
     const search = pickerSearch(/^Members/);
     fireEvent.change(search, { target: { value: 'techn' } });
     expect(pickerOptions(/^Members/).map(optionLabel)).toEqual(['Carol Chen']);
-    // Enter ticks the active row and never submits the form
-    fireEvent.keyDown(search, { key: 'Enter' });
+    // Enter ticks the active row and never submits the form (jsdom never
+    // submits on a keyDown: the prevented default is the proof)
+    expect(fireEvent.keyDown(search, { key: 'Enter' })).toBe(false);
     expect(api.teamsApi.update).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Remove Carol Chen' })).toBeInTheDocument();
 
@@ -221,6 +222,25 @@ describe('TeamsPanel', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
     });
     expect(api.teamsApi.update).toHaveBeenCalledWith(1, expect.objectContaining({ member_ids: [5] }));
+  });
+
+  it('moves focus to the next ×, the previous one, then the Members trigger as members are removed', () => {
+    useAppStore.setState({
+      teams: [{ ...analytics, member_ids: [4, 5, 8] }, processTeam, zurichLab],
+      staff: [...staff, makeStaff({ id: 8, name: 'Eve Evans', role: 'Chemist', site_id: 1 })],
+    });
+    render(<TeamsPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Analytics' }));
+
+    // Bob, Carol, Eve: removing Carol (middle) focuses Eve's ×
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Carol Chen' }));
+    expect(screen.getByRole('button', { name: 'Remove Eve Evans' })).toHaveFocus();
+    // Removing Eve (last) focuses Bob's ×
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Eve Evans' }));
+    expect(screen.getByRole('button', { name: 'Remove Bob Brown' })).toHaveFocus();
+    // Removing Bob empties the list: the Members trigger
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Bob Brown' }));
+    expect(pickerTrigger(/^Members/)).toHaveFocus();
   });
 
   it('keeps member ids the dropdown does not list', async () => {

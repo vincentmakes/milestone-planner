@@ -370,10 +370,18 @@
   font-size: 0.875rem;
 }
 
+/* Flex, so the text sits centred in the 44 px phone row (global.css) */
 .autocompleteOption {
+  display: flex;
+  align-items: center;
   padding: 6px 12px;
   cursor: pointer;
   color: var(--text-primary);
+}
+
+/* A flex container cannot ellipsise its own text: the span does */
+.autocompleteText {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

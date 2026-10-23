@@ -33,7 +33,7 @@ import type { KeyboardEvent } from 'react';
 import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import { Input } from '@/components/common/Input';
 import { Icon, CheckBoxBlankIcon, CheckBoxIcon, ChevronDownIcon, SearchIcon } from '@/components/common/Icon';
-import { filterOptions, useListboxNav } from '../dropdownShell';
+import { filterOptions, revealPanel, useListboxNav } from '../dropdownShell';
 import shell from '../dropdownShell.module.css';
 import styles from './MultiSelectDropdown.module.css';
 
@@ -95,6 +95,7 @@ export function MultiSelectDropdown({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const baseId = useId();
   const labelId = `${baseId}-label`;
   const valueId = `${baseId}-value`;
@@ -125,11 +126,13 @@ export function MultiSelectDropdown({
   const names = chosen.map((o) => o.name).join(', ');
   const triggerText = chosen.length === 0 ? '' : summary ? summary(chosen) : names;
 
-  // Opening moves focus into the search box (searchable) or the list.
+  // Opening moves focus into the search box (searchable) or the list, and
+  // reveals the panel (the dialog body is the scroll container and clips it).
   useEffect(() => {
     if (!open) return;
     if (searchable) searchRef.current?.focus();
     else listRef.current?.focus();
+    revealPanel(panelRef.current);
   }, [open, searchable]);
 
   const openPanel = () => {
@@ -216,7 +219,7 @@ export function MultiSelectDropdown({
         </button>
 
         {open && (
-          <div className={shell.panel}>
+          <div ref={panelRef} className={shell.panel}>
             {searchable && options.length > 0 && (
               <Input
                 ref={searchRef}

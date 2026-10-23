@@ -32,7 +32,7 @@ import type { KeyboardEvent } from 'react';
 import { useDismissableOverlay } from '@/hooks/useDismissableOverlay';
 import { Input } from '@/components/common/Input';
 import { Icon, CheckIcon, ChevronDownIcon, SearchIcon } from '@/components/common/Icon';
-import { filterOptions, useListboxNav } from '../dropdownShell';
+import { filterOptions, revealPanel, useListboxNav } from '../dropdownShell';
 import shell from '../dropdownShell.module.css';
 import styles from './SearchableSelect.module.css';
 
@@ -154,7 +154,7 @@ export function SearchableSelect({
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
     }
-    panelRef.current?.scrollIntoView?.({ block: 'nearest' });
+    revealPanel(panelRef.current);
   }, [open]);
 
   const openPanel = (seed = '') => {

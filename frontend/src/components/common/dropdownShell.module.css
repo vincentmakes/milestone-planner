@@ -146,6 +146,9 @@
 }
 
 .name {
+  /* The name stays readable first: the hint and the note give way before it */
+  flex-shrink: 0;
+  max-width: 65%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -155,7 +158,10 @@
 /* The searched hint (job title, equipment type) and the unsearched note */
 .hint,
 .note {
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--font-size-xs);
   color: var(--text-muted);
   white-space: nowrap;

@@ -340,4 +340,39 @@ describe('SearchableSelect', () => {
       'Diana Prince',
     ]);
   });
+
+  it('puts the active row back on the list when the options shrink while open', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<Harness onChange={onChange} />);
+    fireEvent.click(trigger());
+    fireEvent.keyDown(search(), { key: 'End' }); // Charlie, row 3
+    // A staff refresh while the panel is open leaves two rows
+    rerender(<Harness onChange={onChange} options={[PEOPLE[1]]} />);
+    expect(labels()).toEqual(['Select staff member', 'Bob Brown']);
+    expect(search()).toHaveAttribute('aria-activedescendant', option('Select staff member').id);
+    fireEvent.keyDown(search(), { key: 'ArrowDown' });
+    expect(search()).toHaveAttribute('aria-activedescendant', option('Bob Brown').id);
+    fireEvent.keyDown(search(), { key: 'Enter' });
+    expect(onChange).toHaveBeenCalledWith(2);
+  });
+
+  it('reveals the open panel when it ends below the visible area', () => {
+    const original = Element.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const rect = vi
+      .spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ top: 0, bottom: window.innerHeight + 40 } as DOMRect);
+    try {
+      render(<Harness />);
+      fireEvent.click(trigger());
+      const panel = listbox().parentElement;
+      const reveal = scrollIntoView.mock.calls.findIndex(([arg]) => arg?.block === 'end');
+      expect(scrollIntoView.mock.calls[reveal]).toEqual([{ block: 'end', inline: 'nearest' }]);
+      expect(scrollIntoView.mock.contexts[reveal]).toBe(panel);
+    } finally {
+      rect.mockRestore();
+      Element.prototype.scrollIntoView = original;
+    }
+  });
 });
