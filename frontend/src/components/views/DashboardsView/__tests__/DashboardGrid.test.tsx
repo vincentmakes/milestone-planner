@@ -6,7 +6,7 @@
  * between widget layouts and the library's.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { DashboardGrid } from '../DashboardGrid';
 import { fromGridLayouts, GRID_BREAKPOINTS, GRID_COLS, GRID_MARGIN, GRID_ROW_HEIGHT, toGridLayouts } from '../gridLayouts';
 import type { DashboardWidget, MetricResult } from '@/types';
@@ -102,6 +102,23 @@ describe('DashboardGrid', () => {
     expect(root.querySelectorAll('.react-resizable-handle-se')).toHaveLength(3);
     expect(root.querySelectorAll('.react-resizable-handle')).toHaveLength(3);
     expect(root.querySelectorAll('.widgetHeader [data-testid="DragIndicatorIcon"]')).toHaveLength(3);
+  });
+
+  it('hands the widget headers’ Edit and Remove to the builder while editing, by widget id', () => {
+    const onEditWidget = vi.fn();
+    const onRemoveWidget = vi.fn();
+    render(
+      <DashboardGrid widgets={widgets} data={data} editing onEditWidget={onEditWidget} onRemoveWidget={onRemoveWidget} />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Edit KPI 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove KPI 3' }));
+    expect(onEditWidget).toHaveBeenCalledWith(2);
+    expect(onRemoveWidget).toHaveBeenCalledWith(3);
+  });
+
+  it('shows no Edit or Remove button without the builder’s handlers', () => {
+    render(<DashboardGrid widgets={widgets} data={data} editing />);
+    expect(screen.queryByRole('button', { name: /^Edit KPI/ })).not.toBeInTheDocument();
   });
 
   it('renders nothing until the container is measured', () => {

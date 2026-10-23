@@ -8,13 +8,16 @@
  * in a `Notice` (the server's words, verbatim); dropped filter ids
  * (`warnings`), a multi-value `note` and a cut "all time" period show as one
  * muted line. Until the first data arrives the body says it is loading.
+ * In the builder's edit mode the header also holds compact 28 px Edit and
+ * Remove buttons (the Gantt-header exception of UI_GUIDELINES §3.14: the
+ * header is small and doubles as the drag handle).
  */
 
 import { useMemo } from 'react';
 import type { DashboardWidget, MetricError, MetricResult } from '@/types';
 import { useAppStore } from '@/stores/appStore';
 import { Notice } from '@/components/common/Notice';
-import { Icon, DragDotsIcon } from '@/components/common/Icon';
+import { Icon, CloseIcon, DragDotsIcon, EditIcon } from '@/components/common/Icon';
 import { dimensionLabel, queryUnit, resolvedPeriodLabel, UNIT_LABELS } from '@/utils/metrics';
 import { EChart } from './charts/EChart';
 import { KpiTile } from './charts/KpiTile';
@@ -31,12 +34,16 @@ export interface WidgetCardProps {
   loading?: boolean;
   /** Edit mode: the header is the drag handle */
   editing?: boolean;
+  /** Edit mode: open the widget editor on this widget */
+  onEdit?: () => void;
+  /** Edit mode: take the widget off the draft */
+  onRemove?: () => void;
 }
 
 const isError = (value: MetricResult | MetricError | undefined): value is MetricError =>
   value !== undefined && 'error' in value;
 
-export function WidgetCard({ widget, result, loading = false, editing = false }: WidgetCardProps) {
+export function WidgetCard({ widget, result, loading = false, editing = false, onEdit, onRemove }: WidgetCardProps) {
   const fields = useAppStore((s) => s.projectFields);
   const settings = useAppStore((s) => s.instanceSettings);
   const dimensionLabels = useMemo(
@@ -87,6 +94,29 @@ export function WidgetCard({ widget, result, loading = false, editing = false }:
           {metric?.period && <p className={styles.period}>{resolvedPeriodLabel(metric.period)}</p>}
         </div>
         {widget.kind !== 'kpi' && <span className={styles.unit}>{unitText}</span>}
+        {editing && onEdit && (
+          // `widgetAction` keeps a press on the button from starting a drag.
+          <button
+            type="button"
+            className={`widgetAction ${styles.action}`}
+            onClick={onEdit}
+            aria-label={`Edit ${widget.title}`}
+            title="Edit widget"
+          >
+            <Icon icon={EditIcon} size={14} />
+          </button>
+        )}
+        {editing && onRemove && (
+          <button
+            type="button"
+            className={`widgetAction ${styles.action}`}
+            onClick={onRemove}
+            aria-label={`Remove ${widget.title}`}
+            title="Remove widget"
+          >
+            <Icon icon={CloseIcon} size={14} />
+          </button>
+        )}
       </header>
       <div className={styles.body}>{body}</div>
       {notes.length > 0 && (

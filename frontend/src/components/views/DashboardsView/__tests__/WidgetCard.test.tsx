@@ -5,7 +5,7 @@
  * data.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { WidgetCard, TRUNCATED_TEXT } from '../WidgetCard';
 import { useAppStore } from '@/stores/appStore';
 import { resetAllStores } from '@/stores';
@@ -136,5 +136,22 @@ describe('WidgetCard', () => {
     expect(header.querySelector('[data-testid="DragIndicatorIcon"]')).toBeNull();
     rerender(<WidgetCard widget={widget()} result={result()} editing />);
     expect(container.querySelector('.widgetHeader [data-testid="DragIndicatorIcon"]')).not.toBeNull();
+  });
+
+  it('carries Edit and Remove buttons in the header while editing, never drag starts', () => {
+    const onEdit = vi.fn();
+    const onRemove = vi.fn();
+    const { rerender } = render(<WidgetCard widget={widget()} result={result()} onEdit={onEdit} onRemove={onRemove} />);
+    expect(screen.queryByRole('button', { name: 'Edit Booked weeks per project' })).not.toBeInTheDocument();
+    rerender(<WidgetCard widget={widget()} result={result()} editing onEdit={onEdit} onRemove={onRemove} />);
+    const edit = screen.getByRole('button', { name: 'Edit Booked weeks per project' });
+    const remove = screen.getByRole('button', { name: 'Remove Booked weeks per project' });
+    expect(edit).toHaveClass('widgetAction');
+    expect(remove).toHaveClass('widgetAction');
+    expect(edit.closest('.widgetHeader')).not.toBeNull();
+    fireEvent.click(edit);
+    fireEvent.click(remove);
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(onRemove).toHaveBeenCalledTimes(1);
   });
 });

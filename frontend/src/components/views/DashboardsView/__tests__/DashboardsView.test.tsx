@@ -59,7 +59,7 @@ const summary = (id: number, name: string, extra: Partial<DashboardSummary> = {}
 });
 
 const LIST = [
-  summary(5, 'Team plan', { visibility: 'roles', owner_id: 2, owner_name: 'Bob Brown' }),
+  summary(5, 'Team plan', { visibility: 'roles', role_ids: [2], owner_id: 2, owner_name: 'Bob Brown' }),
   summary(4, 'Zeta', { visibility: 'everyone', owner_id: 2, owner_name: 'Bob Brown' }),
   summary(3, 'My own', { visibility: 'private', owner_id: 1, owner_name: 'Ada Admin' }),
   summary(1, 'Overview', { is_default: true, description: 'The planning at a glance' }),
@@ -140,7 +140,7 @@ describe('DashboardsView', () => {
     expect(options.map((o) => o.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
       'Overview Default',
       'My own Mine',
-      'Orphan Shared with me',
+      'Orphan Shared with no role',
       'Team plan Shared by Bob Brown',
       'Zeta Everyone',
     ]);

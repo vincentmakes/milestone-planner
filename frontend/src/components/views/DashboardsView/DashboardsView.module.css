@@ -41,7 +41,15 @@
 .builderActions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+/* "Editing" beside the picker while the builder holds a draft */
+.editing {
+  flex-shrink: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
 }
 
 .builderActions:empty {
@@ -70,4 +78,17 @@
   text-align: center;
   font-size: var(--font-size-sm);
   color: var(--text-muted);
+}
+
+/* An empty draft: the call to add its first widget */
+.firstWidget {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 2rem 0;
+}
+
+.firstWidget > .empty {
+  padding: 0;
 }

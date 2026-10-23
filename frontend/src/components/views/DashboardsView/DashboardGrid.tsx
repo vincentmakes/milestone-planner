@@ -8,8 +8,10 @@
  * `useContainerWidth` measures the container first; the grid renders once
  * it has a width. In view mode (the default) nothing drags or resizes;
  * `editing` turns on dragging by the widget header (`.widgetHeader`) and
- * resizing from the bottom-right corner, and `onLayoutChange` reports every
- * widget's `{lg, md, sm}` after a change (the builder's job).
+ * resizing from the bottom-right corner (a press on a header button —
+ * `.widgetAction`, Edit / Remove — never starts a drag), and
+ * `onLayoutChange` reports every widget's `{lg, md, sm}` after a change (the
+ * builder's job; the library also reports on mount and after a compaction).
  *
  * The library's stylesheets are imported here, so they land in the
  * Dashboards chunk; `DashboardGrid.module.css` restyles the items and the
@@ -43,9 +45,21 @@ export interface DashboardGridProps {
   editing?: boolean;
   /** Every widget's layout (widget id → `{lg, md, sm}`) after a change */
   onLayoutChange?: (layouts: Record<number, WidgetLayout>) => void;
+  /** Edit mode: a widget header's Edit button */
+  onEditWidget?: (id: number) => void;
+  /** Edit mode: a widget header's Remove button */
+  onRemoveWidget?: (id: number) => void;
 }
 
-export function DashboardGrid({ widgets, data, dataLoading = false, editing = false, onLayoutChange }: DashboardGridProps) {
+export function DashboardGrid({
+  widgets,
+  data,
+  dataLoading = false,
+  editing = false,
+  onLayoutChange,
+  onEditWidget,
+  onRemoveWidget,
+}: DashboardGridProps) {
   const { width, containerRef, mounted } = useContainerWidth({ measureBeforeMount: true });
   const layouts = useMemo(() => toGridLayouts(widgets), [widgets]);
 
@@ -70,13 +84,20 @@ export function DashboardGrid({ widgets, data, dataLoading = false, editing = fa
           cols={GRID_COLS}
           rowHeight={GRID_ROW_HEIGHT}
           margin={GRID_MARGIN}
-          dragConfig={{ enabled: editing, handle: '.widgetHeader' }}
+          dragConfig={{ enabled: editing, handle: '.widgetHeader', cancel: '.widgetAction' }}
           resizeConfig={{ enabled: editing, handles: ['se'] }}
           onLayoutChange={handleLayoutChange}
         >
           {widgets.map((widget) => (
             <div key={String(widget.id)} className={styles.item} data-widget-id={widget.id}>
-              <WidgetCard widget={widget} result={data[widget.id]} loading={dataLoading} editing={editing} />
+              <WidgetCard
+                widget={widget}
+                result={data[widget.id]}
+                loading={dataLoading}
+                editing={editing}
+                onEdit={onEditWidget ? () => onEditWidget(widget.id) : undefined}
+                onRemove={onRemoveWidget ? () => onRemoveWidget(widget.id) : undefined}
+              />
             </div>
           ))}
         </Responsive>

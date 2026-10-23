@@ -118,6 +118,8 @@ export function useDashboardEditor(current: Dashboard | null): DashboardEditor {
   useEffect(() => () => useDashboardStore.getState().setEditing(false), []);
 
   const discard = useCallback(() => {
+    // At once, so the view may open another dashboard right after.
+    useDashboardStore.getState().setEditing(false);
     setDraft(null);
     setBaseline(null);
     setPreviews({});
