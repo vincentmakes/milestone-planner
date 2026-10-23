@@ -401,18 +401,23 @@ VACATIONS_ABSENCE_TYPE_COLUMN_SQL = """
 """
 
 
-def _add_column_if_missing(table: str, column: str, definition: str, backfill: str = "") -> str:
+def _add_column_if_missing(
+    table: str, column: str, definition: str, backfill: str = "", requires: str | None = None
+) -> str:
     """
     Idempotent ``ADD COLUMN`` for upgrading a database created by an older
     release, as a guarded DO block (an already-migrated database does not take
     the ALTER TABLE lock again). ``backfill`` runs once, in the same branch,
-    right after the column is created -- never on a fresh database. Only ever
-    called with literal identifiers from this module.
+    right after the column is created -- never on a fresh database.
+    ``requires`` names a table the column's definition references: without it
+    the block does nothing. Only ever called with literal identifiers from this
+    module.
     """
+    required = f"to_regclass('public.{requires}') IS NOT NULL AND " if requires else ""
     return f"""
     DO $$
     BEGIN
-        IF to_regclass('public.{table}') IS NOT NULL AND NOT EXISTS (
+        IF to_regclass('public.{table}') IS NOT NULL AND {required}NOT EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_schema = 'public' AND table_name = '{table}'
               AND column_name = '{column}'
@@ -574,19 +579,10 @@ CUSTOM_COLUMNS_UPGRADE_SQL = (
 )
 
 
-# Tag groups and site-scoped tags (add_tag_groups_and_sites.sql). The tables
-# are created by the schema / auto-migration; these upgrade a pre-existing
-# tags table in place (tag_groups must exist first: group_id references it).
-TAG_GROUPS_TABLE_SQL = """
-    CREATE TABLE IF NOT EXISTS tag_groups (
-      id SERIAL PRIMARY KEY,
-      name VARCHAR(100) NOT NULL UNIQUE,
-      single_select BOOLEAN NOT NULL DEFAULT FALSE,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )"""
-
+# Site-scoped tags (add_tag_groups_and_sites.sql, 1.6.0). The table is created
+# by the schema / auto-migration; TAGS_UPGRADE_STATEMENTS upgrade a
+# pre-existing tags table in place. The tag groups of that release became
+# project fields in 2.0.0 (PROJECT_FIELDS_MIGRATION_SQL converts and drops them).
 TAG_SITES_TABLE_SQL = """
     CREATE TABLE IF NOT EXISTS tag_sites (
       tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
@@ -678,26 +674,229 @@ TEAM_TABLES: tuple[str, ...] = (
 
 TEAMS_SCHEMA_SQL = ";\n".join(TEAMS_SCHEMA_STATEMENTS) + ";"
 
-TAGS_GROUP_INDEX_SQL = "CREATE INDEX IF NOT EXISTS idx_tags_group ON tags(group_id)"
+# --- Project fields (add_project_fields.sql, 2.0.0) -------------------------
+# Instance-wide custom fields on projects: text, number, toggle, select and
+# multiselect. Dropdown items carry the tag scoping rules (all_sites + sites,
+# teams per site). project_field_option_teams references teams, so the block
+# follows the teams tables in every DDL source. Every FK cascades. One
+# statement per constant: the auto-migration executes them one at a time
+# (asyncpg runs a single statement per call); setup_databases.sql, the template
+# and migrations/add_project_fields.sql carry the same text
+# (tests/test_project_fields_schema.py).
+PROJECT_FIELDS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS project_fields (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(100) NOT NULL UNIQUE,
+      field_type VARCHAR(20) NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT project_fields_type_check
+        CHECK (field_type IN ('text', 'number', 'toggle', 'select', 'multiselect'))
+    )"""
+
+PROJECT_FIELD_OPTIONS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS project_field_options (
+      id SERIAL PRIMARY KEY,
+      field_id INTEGER NOT NULL REFERENCES project_fields(id) ON DELETE CASCADE,
+      name VARCHAR(100) NOT NULL,
+      color VARCHAR(7) NOT NULL DEFAULT '#6366f1',
+      all_sites BOOLEAN NOT NULL DEFAULT TRUE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT project_field_options_field_name_unique UNIQUE (field_id, name)
+    )"""
+
+PROJECT_FIELD_OPTION_SITES_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS project_field_option_sites (
+      option_id INTEGER NOT NULL REFERENCES project_field_options(id) ON DELETE CASCADE,
+      site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      PRIMARY KEY (option_id, site_id)
+    )"""
+
+PROJECT_FIELD_OPTION_TEAMS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS project_field_option_teams (
+      option_id INTEGER NOT NULL REFERENCES project_field_options(id) ON DELETE CASCADE,
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      PRIMARY KEY (option_id, team_id)
+    )"""
+
+PROJECT_FIELD_VALUES_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS project_field_values (
+      id SERIAL PRIMARY KEY,
+      field_id INTEGER NOT NULL REFERENCES project_fields(id) ON DELETE CASCADE,
+      project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      value_text TEXT,
+      value_number DOUBLE PRECISION,
+      value_bool BOOLEAN,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT project_field_values_field_project_unique UNIQUE (field_id, project_id)
+    )"""
+
+PROJECT_FIELD_SELECTIONS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS project_field_selections (
+      project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      option_id INTEGER NOT NULL REFERENCES project_field_options(id) ON DELETE CASCADE,
+      assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (project_id, option_id)
+    )"""
+
+PROJECT_FIELDS_INDEX_STATEMENTS: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_project_field_option_sites_site "
+    "ON project_field_option_sites(site_id)",
+    "CREATE INDEX IF NOT EXISTS idx_project_field_option_teams_team "
+    "ON project_field_option_teams(team_id)",
+    "CREATE INDEX IF NOT EXISTS idx_project_field_values_project "
+    "ON project_field_values(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_project_field_selections_option "
+    "ON project_field_selections(option_id)",
+)
+
+PROJECT_FIELDS_SCHEMA_STATEMENTS: tuple[str, ...] = (
+    PROJECT_FIELDS_TABLE_SQL,
+    PROJECT_FIELD_OPTIONS_TABLE_SQL,
+    PROJECT_FIELD_OPTION_SITES_TABLE_SQL,
+    PROJECT_FIELD_OPTION_TEAMS_TABLE_SQL,
+    PROJECT_FIELD_VALUES_TABLE_SQL,
+    PROJECT_FIELD_SELECTIONS_TABLE_SQL,
+    *PROJECT_FIELDS_INDEX_STATEMENTS,
+)
+
+PROJECT_FIELD_TABLES: tuple[str, ...] = (
+    "project_fields",
+    "project_field_options",
+    "project_field_option_sites",
+    "project_field_option_teams",
+    "project_field_values",
+    "project_field_selections",
+)
+
+PROJECT_FIELDS_SCHEMA_SQL = ";\n".join(PROJECT_FIELDS_SCHEMA_STATEMENTS) + ";"
+
+# The one-off conversion of tag groups into dropdown fields (2.0.0), after the
+# tables above exist. Its own gate: it works only while tag_groups exists, so
+# it is a no-op on a fresh 2.0.0 database and on a converted one. Per group
+# (in group order): a field ('select' for a single-select group, else
+# 'multiselect', same sort_order; " (tags)" appended while the name clashes
+# with an existing field, case-insensitively), an item per tag of the group
+# (name, colour, sort_order, all_sites) with the tag's site and team links,
+# and a selection per project carrying the tag. Then the grouped tags are
+# deleted (their project_tags / tag_sites / tag_teams rows cascade), the
+# remaining tags renumbered 0..n-1 by (sort_order, name), and tags.group_id
+# and tag_groups dropped. One transaction: a failure leaves the database as it
+# was. No ':name' tokens (SQLAlchemy text() would read them as binds).
+PROJECT_FIELDS_MIGRATION_SQL = """
+    DO $$
+    DECLARE
+        grp RECORD;
+        grouped_tag RECORD;
+        new_field_id INTEGER;
+        new_option_id INTEGER;
+        candidate TEXT;
+        suffix TEXT;
+        attempt INTEGER;
+    BEGIN
+        IF to_regclass('public.tag_groups') IS NOT NULL THEN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'tags'
+                  AND column_name = 'group_id'
+            ) THEN
+                FOR grp IN
+                    SELECT id, name, single_select, sort_order FROM tag_groups
+                    ORDER BY sort_order, id
+                LOOP
+                    candidate := grp.name;
+                    attempt := 1;
+                    WHILE EXISTS (
+                        SELECT 1 FROM project_fields WHERE lower(name) = lower(candidate)
+                    ) LOOP
+                        suffix := CASE WHEN attempt = 1 THEN ' (tags)'
+                                       ELSE ' (tags ' || attempt || ')' END;
+                        candidate := left(grp.name, 100 - length(suffix)) || suffix;
+                        attempt := attempt + 1;
+                    END LOOP;
+
+                    INSERT INTO project_fields (name, field_type, sort_order)
+                    VALUES (
+                        candidate,
+                        CASE WHEN grp.single_select THEN 'select' ELSE 'multiselect' END,
+                        grp.sort_order
+                    )
+                    RETURNING id INTO new_field_id;
+
+                    FOR grouped_tag IN
+                        SELECT id, name, color, all_sites, sort_order FROM tags
+                        WHERE group_id = grp.id
+                        ORDER BY sort_order, name
+                    LOOP
+                        INSERT INTO project_field_options
+                            (field_id, name, color, all_sites, sort_order)
+                        VALUES (
+                            new_field_id, grouped_tag.name, grouped_tag.color,
+                            grouped_tag.all_sites, grouped_tag.sort_order
+                        )
+                        RETURNING id INTO new_option_id;
+
+                        INSERT INTO project_field_option_sites (option_id, site_id)
+                        SELECT new_option_id, site_id FROM tag_sites
+                        WHERE tag_id = grouped_tag.id;
+
+                        INSERT INTO project_field_option_teams (option_id, team_id)
+                        SELECT new_option_id, team_id FROM tag_teams
+                        WHERE tag_id = grouped_tag.id;
+
+                        INSERT INTO project_field_selections (project_id, option_id, assigned_at)
+                        SELECT project_id, new_option_id, COALESCE(assigned_at, CURRENT_TIMESTAMP)
+                        FROM project_tags
+                        WHERE tag_id = grouped_tag.id;
+                    END LOOP;
+                END LOOP;
+
+                DELETE FROM tags WHERE group_id IS NOT NULL;
+
+                UPDATE tags SET sort_order = ranked.position
+                FROM (
+                    SELECT id, row_number() OVER (ORDER BY sort_order, name) - 1 AS position
+                    FROM tags
+                ) AS ranked
+                WHERE tags.id = ranked.id AND tags.sort_order <> ranked.position;
+
+                DROP INDEX IF EXISTS idx_tags_group;
+                ALTER TABLE tags DROP COLUMN IF EXISTS group_id;
+            END IF;
+
+            DROP TABLE tag_groups;
+        END IF;
+    END $$"""
+
+# Probe of the project-fields auto-migration step: the step runs while a
+# table is missing or tag_groups still exists.
+PROJECT_FIELDS_PROBE_SQL = (
+    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' "
+    "AND table_name IN (" + ", ".join(f"'{t}'" for t in (*PROJECT_FIELD_TABLES, "tag_groups")) + ")"
+)
+
 TAG_SITES_SITE_INDEX_SQL = "CREATE INDEX IF NOT EXISTS idx_tag_sites_site ON tag_sites(site_id)"
 
 # One guarded DO block per column (the auto-migration runs them one at a time:
-# asyncpg executes a single statement per call).
+# asyncpg executes a single statement per call). The group_id block is kept for
+# a database that still has tag_groups (it runs only while that table exists,
+# so never on a fresh 2.0.0 schema); the project-fields migration converts the
+# groups and drops the column right after.
 TAGS_UPGRADE_STATEMENTS: tuple[str, ...] = (
     _add_column_if_missing(
-        "tags", "group_id", "INTEGER REFERENCES tag_groups(id) ON DELETE SET NULL"
+        "tags",
+        "group_id",
+        "INTEGER REFERENCES tag_groups(id) ON DELETE SET NULL",
+        requires="tag_groups",
     ),
     _add_column_if_missing("tags", "all_sites", "BOOLEAN NOT NULL DEFAULT TRUE"),
     _add_column_if_missing("tags", "sort_order", "INTEGER NOT NULL DEFAULT 0"),
 )
 TAGS_UPGRADE_SQL = "".join(TAGS_UPGRADE_STATEMENTS)
-
-# Pre-release 1.6.0 builds had a tag_groups.colors_projects flag (one group coloured the
-# project bars); colouring is now a per-user Gantt preference. Idempotent drop.
-TAG_GROUPS_DROP_COLORS_STATEMENTS: tuple[str, ...] = (
-    "DROP INDEX IF EXISTS idx_tag_groups_colors_projects",
-    "ALTER TABLE tag_groups DROP COLUMN IF EXISTS colors_projects",
-)
 
 # --- RBAC: roles, permissions, approvals, todos (add_rbac.sql, 1.13.0) -----
 # users.role holds a role key and references roles.key, so `roles` (with its
@@ -1619,25 +1818,19 @@ def get_tenant_schema_sql() -> str:
       PRIMARY KEY (user_id, skill_id)
     );
 
-    -- Tag groups (a single-select group allows one of its tags per project)
-    """
-        + TAG_GROUPS_TABLE_SQL
-        + """;
-
     -- Tags (tenant-wide, assignable to projects; all_sites = false restricts a
     -- tag to the sites in tag_sites)
     CREATE TABLE IF NOT EXISTS tags (
       id SERIAL PRIMARY KEY,
       name VARCHAR(100) NOT NULL UNIQUE,
       color VARCHAR(7) NOT NULL DEFAULT '#6366f1',
-      group_id INTEGER REFERENCES tag_groups(id) ON DELETE SET NULL,
       all_sites BOOLEAN NOT NULL DEFAULT TRUE,
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Upgrade of a tags table from before tag groups / site-scoped tags.
+    -- Upgrade of a tags table from before site-scoped tags.
     """
         + TAGS_UPGRADE_SQL
         + """
@@ -1659,6 +1852,13 @@ def get_tenant_schema_sql() -> str:
     -- events and equipment, with their indexes
     """
         + TEAMS_SCHEMA_SQL
+        + """
+
+    -- Project fields (custom fields on projects), their dropdown items with
+    -- the items' site and team links, the values and the chosen items, with
+    -- their indexes
+    """
+        + PROJECT_FIELDS_SCHEMA_SQL
         + """
 
     -- Approval policies (seeded: the project manager approves), approval
@@ -1730,7 +1930,6 @@ def get_tenant_schema_sql() -> str:
     CREATE INDEX IF NOT EXISTS idx_user_skills_skill ON user_skills(skill_id);
     CREATE INDEX IF NOT EXISTS idx_project_tags_project ON project_tags(project_id);
     CREATE INDEX IF NOT EXISTS idx_project_tags_tag ON project_tags(tag_id);
-    CREATE INDEX IF NOT EXISTS idx_tags_group ON tags(group_id);
     CREATE INDEX IF NOT EXISTS idx_tag_sites_site ON tag_sites(site_id);
     CREATE INDEX IF NOT EXISTS idx_project_presence_project ON project_presence(project_id);
     CREATE INDEX IF NOT EXISTS idx_project_presence_user ON project_presence(user_id);

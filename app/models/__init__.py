@@ -13,6 +13,14 @@ from app.models.notification import Notification
 from app.models.organization import Organization, OrganizationSSOConfig
 from app.models.presence import ProjectPresence
 from app.models.project import Project, ProjectPhase, ProjectSubphase
+from app.models.project_field import (
+    ProjectField,
+    ProjectFieldOption,
+    ProjectFieldOptionSite,
+    ProjectFieldOptionTeam,
+    ProjectFieldSelection,
+    ProjectFieldValue,
+)
 from app.models.rbac import (
     ApprovalPolicy,
     ApprovalPolicyRole,
@@ -24,7 +32,7 @@ from app.models.session import Session
 from app.models.settings import PredefinedPhase, Settings, SSOConfig
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.skill import Skill, UserSkill
-from app.models.tag import ProjectTag, Tag, TagGroup, TagSite
+from app.models.tag import ProjectTag, Tag, TagSite
 from app.models.team import (
     CompanyEventTeam,
     EquipmentTeam,
@@ -56,6 +64,12 @@ __all__ = [
     "Project",
     "ProjectPhase",
     "ProjectSubphase",
+    "ProjectField",
+    "ProjectFieldOption",
+    "ProjectFieldOptionSite",
+    "ProjectFieldOptionTeam",
+    "ProjectFieldValue",
+    "ProjectFieldSelection",
     "Equipment",
     "EquipmentSite",
     "EquipmentAssignment",
@@ -75,7 +89,6 @@ __all__ = [
     "Skill",
     "UserSkill",
     "Tag",
-    "TagGroup",
     "TagSite",
     "ProjectTag",
     "Team",

@@ -37,7 +37,6 @@ def make_tag(tag_id: int = 4, name: str = "Priority", teams: list[Team] | None =
         id=tag_id,
         name=name,
         color="#ff0000",
-        group_id=None,
         all_sites=True,
         sort_order=0,
         sites=[],

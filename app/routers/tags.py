@@ -1,23 +1,23 @@
 """
 Tags API endpoints.
 
-Tags are tenant-wide labels assignable to projects. A tag may belong to a tag
-group, may be restricted to some sites (``all_sites = false`` + the
-``tag_sites`` links) and may be limited to teams (``tag_teams``; a site with
-no linked team keeps the whole site). Every user can read them; only ``tags.manage``
-manages them.
+Tags are tenant-wide labels assignable to projects. A tag may be restricted
+to some sites (``all_sites = false`` + the ``tag_sites`` links) and may be
+limited to teams (``tag_teams``; a site with no linked team keeps the whole
+site). Every user can read them; only ``tags.manage`` manages them. The tag
+groups of earlier releases became dropdown project fields in 2.0.0
+(``/api/project-fields``).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import contains_eager
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_permission
 from app.models.site import Site
-from app.models.tag import Tag, TagGroup
+from app.models.tag import Tag
 from app.models.user import User
 from app.schemas.tag import (
     TagCreate,
@@ -29,8 +29,6 @@ from app.schemas.tag import (
 from app.services.tag_rules import (
     count_projects_outside_sites,
     count_projects_outside_teams,
-    count_projects_with_group_peer,
-    group_peer_conflict_detail,
     other_sites_conflict_detail,
     other_teams_conflict_detail,
 )
@@ -47,7 +45,6 @@ router = APIRouter(prefix="/tags", tags=["tags"])
 DUPLICATE_NAME_DETAIL = "A tag with this name already exists"
 EMPTY_NAME_DETAIL = "Tag name cannot be empty"
 NO_SITE_DETAIL = "Select at least one site or make the tag available at all sites"
-GROUP_NOT_FOUND_DETAIL = "Tag group not found"
 
 
 async def _name_taken(db: AsyncSession, name: str, exclude_id: int | None = None) -> bool:
@@ -56,13 +53,6 @@ async def _name_taken(db: AsyncSession, name: str, exclude_id: int | None = None
         query = query.where(Tag.id != exclude_id)
     result = await db.execute(query)
     return result.scalar_one_or_none() is not None
-
-
-async def _load_group(db: AsyncSession, group_id: int) -> TagGroup:
-    group = (await db.execute(select(TagGroup).where(TagGroup.id == group_id))).scalar_one_or_none()
-    if group is None:
-        raise HTTPException(status_code=404, detail=GROUP_NOT_FOUND_DETAIL)
-    return group
 
 
 async def _load_sites(db: AsyncSession, site_ids: list[int]) -> list[Site]:
@@ -99,14 +89,9 @@ async def _commit_tag(db: AsyncSession) -> None:
         ) from e
 
 
-async def _next_sort_order(db: AsyncSession, group_id: int | None) -> int:
-    """Append position within a group (or among the ungrouped tags)."""
-    query = select(func.max(Tag.sort_order))
-    if group_id is None:
-        query = query.where(Tag.group_id.is_(None))
-    else:
-        query = query.where(Tag.group_id == group_id)
-    max_order = (await db.execute(query)).scalar()
+async def _next_sort_order(db: AsyncSession) -> int:
+    """Append position: after the last tag."""
+    max_order = (await db.execute(select(func.max(Tag.sort_order)))).scalar()
     return (max_order + 1) if max_order is not None else 0
 
 
@@ -115,25 +100,8 @@ async def get_tags(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Get all tags (every authenticated user).
-
-    Ordered by group (group order, ungrouped tags last), then the tag order
-    within its group, then name.
-    """
-    # contains_eager: Tag.group is lazy="joined", so without it the explicit
-    # outer join (needed for the ordering) would be joined a second time.
-    result = await db.execute(
-        select(Tag)
-        .outerjoin(TagGroup, TagGroup.id == Tag.group_id)
-        .options(contains_eager(Tag.group))
-        .order_by(
-            TagGroup.sort_order.asc().nulls_last(),
-            TagGroup.id.asc().nulls_last(),
-            Tag.sort_order,
-            Tag.name,
-        )
-    )
+    """Get all tags (every authenticated user), in tag order then by name."""
+    result = await db.execute(select(Tag).order_by(Tag.sort_order, Tag.name))
     return result.scalars().all()
 
 
@@ -143,15 +111,12 @@ async def create_tag(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("tags.manage")),
 ):
-    """Create a tag (``tags.manage``), appended at the end of its group."""
+    """Create a tag (``tags.manage``), appended at the end."""
     name = tag_data.name.strip()
     if not name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=EMPTY_NAME_DETAIL)
     if await _name_taken(db, name):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=DUPLICATE_NAME_DETAIL)
-
-    if tag_data.group_id is not None:
-        await _load_group(db, tag_data.group_id)
 
     # all_sites omitted + a non-empty site list = restricted to those sites.
     all_sites = tag_data.all_sites
@@ -172,9 +137,8 @@ async def create_tag(
     tag = Tag(
         name=name,
         color=tag_data.color,
-        group_id=tag_data.group_id,
         all_sites=all_sites,
-        sort_order=await _next_sort_order(db, tag_data.group_id),
+        sort_order=await _next_sort_order(db),
         sites=sites,
         teams=teams,
     )
@@ -215,10 +179,9 @@ async def update_tag(
     Update a tag (``tags.manage``, partial).
 
     Refused with 409 when the change would break projects that already use the
-    tag: moving it into a single-select group where a project also holds
-    another tag of that group, restricting it away from a site (or from
-    site-less projects) where projects use it, or limiting it to teams that
-    projects using it at those teams' sites are not part of.
+    tag: restricting it away from a site (or from site-less projects) where
+    projects use it, or limiting it to teams that projects using it at those
+    teams' sites are not part of.
 
     ``team_ids`` replaces the tag's teams (each must be at one of its sites
     unless it is available at every site); narrowing only the sites drops the
@@ -227,8 +190,6 @@ async def update_tag(
     tag = (await db.execute(select(Tag).where(Tag.id == tag_id))).scalar_one_or_none()
     if not tag:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
-
-    fields = tag_data.model_fields_set
 
     name: str | None = None
     if tag_data.name is not None:
@@ -239,19 +200,6 @@ async def update_tag(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail=DUPLICATE_NAME_DETAIL
             )
-
-    # Group: an explicit null ungroups the tag, an omitted field keeps it.
-    group_changes = "group_id" in fields and tag_data.group_id != tag.group_id
-    new_group_id = tag_data.group_id if group_changes else tag.group_id
-    if group_changes and new_group_id is not None:
-        group = await _load_group(db, new_group_id)
-        if group.single_select:
-            peers = await count_projects_with_group_peer(db, tag_id, new_group_id)
-            if peers:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=group_peer_conflict_detail(peers),
-                )
 
     # Sites, on the merged state (all_sites=true clears the site list; an
     # omitted all_sites with a non-empty site_ids restricts the tag).
@@ -302,9 +250,6 @@ async def update_tag(
         tag.name = name
     if tag_data.color is not None:
         tag.color = tag_data.color
-    if group_changes:
-        tag.sort_order = await _next_sort_order(db, new_group_id)
-        tag.group_id = new_group_id
     if sites_change:
         tag.all_sites = new_all_sites
         tag.sites = new_sites

@@ -322,8 +322,9 @@ async def test_auto_migration_skips_an_up_to_date_tenant():
 
     await _run_auto_migrations(conn)
 
-    # Nothing between the probe and the notification-types step's commit.
-    assert log[log.index(TEAMS_CHECK) :] == [TEAMS_CHECK, WIDEN, "COMMIT"]
+    # Nothing between the probe and the notification-types step's commit but
+    # the rollback of the project-fields step (which this fake fails).
+    assert log[log.index(TEAMS_CHECK) :] == [TEAMS_CHECK, "ROLLBACK", WIDEN, "COMMIT"]
     assert not any(s in TEAMS_SCHEMA_STATEMENTS for s in log)
 
 

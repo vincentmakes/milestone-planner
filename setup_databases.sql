@@ -513,44 +513,22 @@ CREATE TABLE IF NOT EXISTS sessions (
     expired BIGINT NOT NULL
 );
 
--- Tag groups (a single-select group allows one of its tags per project)
-CREATE TABLE IF NOT EXISTS tag_groups (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL UNIQUE,
-    single_select BOOLEAN NOT NULL DEFAULT FALSE,
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
 -- Tags (tenant-wide, assignable to projects; all_sites = false restricts a tag
 -- to the sites in tag_sites)
 CREATE TABLE IF NOT EXISTS tags (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL UNIQUE,
     color VARCHAR(7) NOT NULL DEFAULT '#6366f1',
-    group_id INTEGER REFERENCES tag_groups(id) ON DELETE SET NULL,
     all_sites BOOLEAN NOT NULL DEFAULT TRUE,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Upgrade of a tags table from before tag groups / site-scoped tags (no-ops on
--- a fresh install). Same SQL as tenant_provisioner.TAGS_UPGRADE_SQL and
--- migrations/add_tag_groups_and_sites.sql.
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'tags'
-          AND column_name = 'group_id'
-    ) THEN
-        ALTER TABLE tags ADD COLUMN group_id INTEGER
-            REFERENCES tag_groups(id) ON DELETE SET NULL;
-    END IF;
-END $$;
-
+-- Upgrade of a tags table from before site-scoped tags (no-ops on a fresh
+-- install). Same columns as tenant_provisioner.TAGS_UPGRADE_SQL and
+-- migrations/add_tag_groups_and_sites.sql (tag groups became project fields in
+-- 2.0.0, see migrations/add_project_fields.sql).
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -659,6 +637,69 @@ CREATE TABLE IF NOT EXISTS equipment_teams (
     equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
     team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
     PRIMARY KEY (equipment_id, team_id)
+);
+
+-- Project fields (custom fields on projects: text, number, toggle, select,
+-- multiselect). Same DDL as tenant_provisioner.PROJECT_FIELDS_SCHEMA_STATEMENTS
+-- and migrations/add_project_fields.sql.
+CREATE TABLE IF NOT EXISTS project_fields (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    field_type VARCHAR(20) NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT project_fields_type_check
+        CHECK (field_type IN ('text', 'number', 'toggle', 'select', 'multiselect'))
+);
+
+-- Items of the dropdown fields (all_sites = false: only at the sites in
+-- project_field_option_sites; per site, team rows limit the item to those teams)
+CREATE TABLE IF NOT EXISTS project_field_options (
+    id SERIAL PRIMARY KEY,
+    field_id INTEGER NOT NULL REFERENCES project_fields(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    color VARCHAR(7) NOT NULL DEFAULT '#6366f1',
+    all_sites BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT project_field_options_field_name_unique UNIQUE (field_id, name)
+);
+
+-- Item <-> site links (consulted only when all_sites is false)
+CREATE TABLE IF NOT EXISTS project_field_option_sites (
+    option_id INTEGER NOT NULL REFERENCES project_field_options(id) ON DELETE CASCADE,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    PRIMARY KEY (option_id, site_id)
+);
+
+-- Item <-> team links (many-to-many)
+CREATE TABLE IF NOT EXISTS project_field_option_teams (
+    option_id INTEGER NOT NULL REFERENCES project_field_options(id) ON DELETE CASCADE,
+    team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    PRIMARY KEY (option_id, team_id)
+);
+
+-- Text / number / toggle values of a project (absent = empty)
+CREATE TABLE IF NOT EXISTS project_field_values (
+    id SERIAL PRIMARY KEY,
+    field_id INTEGER NOT NULL REFERENCES project_fields(id) ON DELETE CASCADE,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    value_text TEXT,
+    value_number DOUBLE PRECISION,
+    value_bool BOOLEAN,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT project_field_values_field_project_unique UNIQUE (field_id, project_id)
+);
+
+-- Items chosen for a project's dropdown fields (many-to-many)
+CREATE TABLE IF NOT EXISTS project_field_selections (
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    option_id INTEGER NOT NULL REFERENCES project_field_options(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (project_id, option_id)
 );
 
 -- Approval policies (per approvable action: does the project manager approve,
@@ -1234,7 +1275,6 @@ CREATE INDEX IF NOT EXISTS idx_bank_holidays_site_id ON bank_holidays(site_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired);
 CREATE INDEX IF NOT EXISTS idx_project_tags_project ON project_tags(project_id);
 CREATE INDEX IF NOT EXISTS idx_project_tags_tag ON project_tags(tag_id);
-CREATE INDEX IF NOT EXISTS idx_tags_group ON tags(group_id);
 CREATE INDEX IF NOT EXISTS idx_tag_sites_site ON tag_sites(site_id);
 CREATE INDEX IF NOT EXISTS idx_company_events_site_date ON company_events(site_id, date);
 CREATE INDEX IF NOT EXISTS idx_company_event_sites_site ON company_event_sites(site_id);
@@ -1244,6 +1284,10 @@ CREATE INDEX IF NOT EXISTS idx_project_teams_team ON project_teams(team_id);
 CREATE INDEX IF NOT EXISTS idx_tag_teams_team ON tag_teams(team_id);
 CREATE INDEX IF NOT EXISTS idx_company_event_teams_team ON company_event_teams(team_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_teams_team ON equipment_teams(team_id);
+CREATE INDEX IF NOT EXISTS idx_project_field_option_sites_site ON project_field_option_sites(site_id);
+CREATE INDEX IF NOT EXISTS idx_project_field_option_teams_team ON project_field_option_teams(team_id);
+CREATE INDEX IF NOT EXISTS idx_project_field_values_project ON project_field_values(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_field_selections_option ON project_field_selections(option_id);
 CREATE INDEX IF NOT EXISTS idx_approval_policy_roles_role ON approval_policy_roles(role_id);
 CREATE INDEX IF NOT EXISTS idx_approval_requests_project_status ON approval_requests(project_id, status);
 CREATE INDEX IF NOT EXISTS idx_approval_requests_requester_status ON approval_requests(requester_id, status);

@@ -56,9 +56,6 @@ def test_existing_entity_paths_still_resolve():
         ("/api/sites/2/holidays/9", "bank_holiday"),
         ("/api/sites/2/holidays/import", "bank_holiday"),
         ("/api/vacations/import", "vacation"),
-        ("/api/tag-groups", "tag_group"),
-        ("/api/tag-groups/reorder", "tag_group"),
-        ("/api/tag-groups/4", "tag_group"),
         ("/api/tags/reorder", "tag"),
         ("/api/teams", "team"),
         ("/api/teams/3", "team"),
@@ -67,6 +64,12 @@ def test_existing_entity_paths_still_resolve():
 def test_calendar_paths_broadcast_their_entity(path, entity):
     """Calendar writes have no rich broadcast, so the middleware must cover them."""
     assert _resolve_entity_type(path) == entity
+
+
+def test_tag_groups_no_longer_broadcast():
+    """/api/tag-groups was removed in 2.0.0 (tag groups became project fields)."""
+    assert _resolve_entity_type("/api/tag-groups") is None
+    assert _resolve_entity_type("/api/tag-groups/4") is None
 
 
 def test_events_pattern_does_not_shadow_sites():

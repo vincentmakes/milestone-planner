@@ -54,13 +54,11 @@ def _tag(tag_id: int, name: str, site_ids=None, teams=None) -> Tag:
         id=tag_id,
         name=name,
         color="#6366f1",
-        group_id=None,
         all_sites=site_ids is None,
         sort_order=0,
         sites=[Site(id=sid, name=f"Site {sid}") for sid in (site_ids or [])],
         teams=list(teams or []),
     )
-    tag.group = None
     return tag
 
 

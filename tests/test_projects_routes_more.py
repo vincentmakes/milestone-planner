@@ -95,7 +95,7 @@ async def test_list_projects_for_site(authed_client, mock_db_session):
         "Alice Martin",
         "ACME",
     )
-    assert item["tags"] == [{"id": 4, "name": "Priority", "color": "#ff0000", "group_id": None}]
+    assert item["tags"] == [{"id": 4, "name": "Priority", "color": "#ff0000"}]
     count_sql, list_sql = sql(mock_db_session, 0), sql(mock_db_session, 1)
     assert "projects.archived = 0 OR projects.archived IS NULL" in count_sql
     assert "projects.site_id = 1" in count_sql

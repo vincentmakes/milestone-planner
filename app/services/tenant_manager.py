@@ -32,13 +32,14 @@ from app.services.tenant_provisioner import (
     EQUIPMENT_SITE_FK_SQL,
     EQUIPMENT_SITES_BACKFILL_SQL,
     NOTIFICATIONS_TYPE_CHECK_SQL,
+    PROJECT_FIELD_TABLES,
+    PROJECT_FIELDS_MIGRATION_SQL,
+    PROJECT_FIELDS_PROBE_SQL,
+    PROJECT_FIELDS_SCHEMA_STATEMENTS,
     RBAC_NEEDS_MIGRATION_SQL,
     RBAC_SCHEMA_STATEMENTS,
-    TAG_GROUPS_DROP_COLORS_STATEMENTS,
-    TAG_GROUPS_TABLE_SQL,
     TAG_SITES_SITE_INDEX_SQL,
     TAG_SITES_TABLE_SQL,
-    TAGS_GROUP_INDEX_SQL,
     TAGS_UPGRADE_STATEMENTS,
     TEAM_TABLES,
     TEAMS_SCHEMA_STATEMENTS,
@@ -247,14 +248,18 @@ class TenantConnectionManager:
         except Exception as e:
             logger.warning("Auto-migration (tags) warning for %s: %s", slug, e)
 
-        # Tag groups + site-scoped tags: tag_groups / tag_sites tables and the
-        # tags.group_id / all_sites / sort_order columns. Every statement is
+        # Site-scoped tags (add_tag_groups_and_sites.sql, 1.6.0): the tag_sites
+        # table and the tags.all_sites / sort_order columns. Every statement is
         # idempotent (guarded inside the SQL), so this converges on any state.
+        # Tag groups became project fields in 2.0.0 (the project-fields step
+        # below converts and drops them): this step no longer creates
+        # tag_groups, and the group_id block of TAGS_UPGRADE_STATEMENTS only
+        # runs while tag_groups exists.
         try:
             tables_check = await conn.execute(
                 text("""
                 SELECT table_name FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_name IN ('tag_groups', 'tag_sites')
+                WHERE table_schema = 'public' AND table_name IN ('tag_sites')
             """)
             )
             existing = {row[0] for row in tables_check.fetchall()}
@@ -262,44 +267,20 @@ class TenantConnectionManager:
                 text("""
                 SELECT column_name FROM information_schema.columns
                 WHERE table_schema = 'public' AND table_name = 'tags'
-                  AND column_name IN ('group_id', 'all_sites', 'sort_order')
+                  AND column_name IN ('all_sites', 'sort_order')
             """)
             )
             columns = {row[0] for row in columns_check.fetchall()}
-            if len(existing) < 2 or len(columns) < 3:
-                logger.info("Auto-migration: Adding tag groups / tag sites on tenant %s...", slug)
-                await conn.execute(text(TAG_GROUPS_TABLE_SQL))
+            if not existing or len(columns) < 2:
+                logger.info("Auto-migration: Adding tag sites on tenant %s...", slug)
                 for statement in TAGS_UPGRADE_STATEMENTS:
                     await conn.execute(text(statement))
                 await conn.execute(text(TAG_SITES_TABLE_SQL))
-                await conn.execute(text(TAGS_GROUP_INDEX_SQL))
                 await conn.execute(text(TAG_SITES_SITE_INDEX_SQL))
                 await conn.commit()
-                logger.info("Auto-migration: Added tag groups / tag sites on tenant %s", slug)
+                logger.info("Auto-migration: Added tag sites on tenant %s", slug)
         except Exception as e:
-            logger.warning("Auto-migration (tag groups) warning for %s: %s", slug, e)
-            await _rollback_quietly(conn)
-
-        # Pre-release 1.6.0 builds carried tag_groups.colors_projects; colouring is now a
-        # per-user Gantt preference, so drop the column and its partial index if present.
-        try:
-            colors_check = await conn.execute(
-                text("""
-                SELECT column_name FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = 'tag_groups'
-                  AND column_name = 'colors_projects'
-            """)
-            )
-            if colors_check.fetchone() is not None:
-                logger.info(
-                    "Auto-migration: Dropping tag_groups.colors_projects on tenant %s...", slug
-                )
-                for statement in TAG_GROUPS_DROP_COLORS_STATEMENTS:
-                    await conn.execute(text(statement))
-                await conn.commit()
-                logger.info("Auto-migration: Dropped tag_groups.colors_projects on tenant %s", slug)
-        except Exception as e:
-            logger.warning("Auto-migration (tag group colours) warning for %s: %s", slug, e)
+            logger.warning("Auto-migration (tag sites) warning for %s: %s", slug, e)
             await _rollback_quietly(conn)
 
         # equipment_blocks table (added in the equipment maintenance feature).
@@ -794,6 +775,26 @@ class TenantConnectionManager:
                 logger.info("Auto-migration: Created teams tables on tenant %s", slug)
         except Exception as e:
             logger.warning("Auto-migration (teams) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+
+        # Project fields (add_project_fields.sql, 2.0.0): the six tables and
+        # their indexes, then the one-off conversion of tag groups into
+        # dropdown fields (the DO block is its own gate: it works only while
+        # tag_groups exists). After the teams step: project_field_option_teams
+        # references teams, and the conversion copies tag_teams. Skipped once
+        # every table exists and tag_groups is gone. One statement per execute.
+        try:
+            tables_check = await conn.execute(text(PROJECT_FIELDS_PROBE_SQL))
+            existing = {row[0] for row in tables_check.fetchall()}
+            if not existing.issuperset(PROJECT_FIELD_TABLES) or "tag_groups" in existing:
+                logger.info("Auto-migration: Adding project fields on tenant %s...", slug)
+                for statement in PROJECT_FIELDS_SCHEMA_STATEMENTS:
+                    await conn.execute(text(statement))
+                await conn.execute(text(PROJECT_FIELDS_MIGRATION_SQL))
+                await conn.commit()
+                logger.info("Auto-migration: Added project fields on tenant %s", slug)
+        except Exception as e:
+            logger.warning("Auto-migration (project fields) warning for %s: %s", slug, e)
             await _rollback_quietly(conn)
 
         # RBAC (1.13.0): roles, role_permissions, approval policies / requests,

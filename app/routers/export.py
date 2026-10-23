@@ -32,7 +32,7 @@ from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.rbac import ApprovalRequest
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.skill import Skill, UserSkill
-from app.models.tag import Tag, TagGroup, TagSite
+from app.models.tag import Tag, TagSite
 from app.models.team import Team
 from app.models.user import User, UserSite
 from app.models.vacation import Vacation
@@ -606,13 +606,6 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         .scalars()
         .all()
     )
-    tag_group_rows = (
-        (await db.execute(select(TagGroup).order_by(TagGroup.sort_order, TagGroup.id)))
-        .scalars()
-        .all()
-    )
-    tag_group_names = {g.id: g.name for g in tag_group_rows}
-
     # Absence types are global - include all of them (vacations reference them)
     absence_type_rows = (
         (await db.execute(select(AbsenceType).order_by(AbsenceType.sort_order, AbsenceType.id)))
@@ -1037,14 +1030,13 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         ],
     )
 
-    # Tags applicable to the site, tag groups, and per-project tag assignments
+    # Tags applicable to the site and per-project tag assignments
     add_sheet(
         "Tags",
         [
             "ID",
             "Name",
             "Color",
-            "Group",
             "All sites",
             "Sites",
             "Sort order",
@@ -1056,7 +1048,6 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
                 t.id,
                 t.name,
                 t.color,
-                tag_group_names.get(t.group_id, "") if t.group_id is not None else "",
                 bool(t.all_sites),
                 "" if t.all_sites else ", ".join(s.name for s in t.sites),
                 t.sort_order,
@@ -1067,26 +1058,9 @@ async def build_site_export_workbook(db: AsyncSession, site_id: int) -> tuple[by
         ],
     )
     add_sheet(
-        "Tag groups",
-        ["ID", "Name", "Single select", "Sort order"],
-        [[g.id, g.name, bool(g.single_select), g.sort_order] for g in tag_group_rows],
-    )
-    project_tag_rows = [
-        [
-            p.id,
-            p.name,
-            t.id,
-            t.name,
-            t.color,
-            tag_group_names.get(t.group_id, "") if t.group_id is not None else "",
-        ]
-        for p in project_rows
-        for t in p.tags
-    ]
-    add_sheet(
         "Project tags",
-        ["Project ID", "Project name", "Tag ID", "Tag name", "Tag color", "Group"],
-        project_tag_rows,
+        ["Project ID", "Project name", "Tag ID", "Tag name", "Tag color"],
+        [[p.id, p.name, t.id, t.name, t.color] for p in project_rows for t in p.tags],
     )
     add_sheet(
         "Project teams",

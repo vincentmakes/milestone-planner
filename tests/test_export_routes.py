@@ -25,7 +25,7 @@ from app.models.project import Project
 from app.models.rbac import ApprovalRequest
 from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.skill import Skill, UserSkill
-from app.models.tag import Tag, TagGroup
+from app.models.tag import Tag
 from app.models.team import Team
 from app.models.user import User
 from app.models.vacation import Vacation
@@ -500,12 +500,10 @@ def _site_rows() -> dict:
         created_at=STAMP,
     )
     basel_qc = ns(id=9, site_id=2, name="Basel QC")  # a team at another site
-    group = ns(id=4, name="Program", single_select=1, sort_order=0)
     tag = ns(
         id=3,
         name="Priority",
         color="#ff0000",
-        group_id=4,
         all_sites=False,
         sites=[ns(name="Winterthur Lab"), ns(name="Basel")],
         teams=[basel_qc, lab],
@@ -609,7 +607,6 @@ def _site_rows() -> dict:
         Skill: [ns(id=8, name="HPLC", description=None, color="#000000", created_at=STAMP)],
         UserSkill: [ns(user_id=7, skill_id=8, proficiency=4, assigned_at=STAMP)],
         Tag: [tag],
-        TagGroup: [group],
         AbsenceType: [
             ns(
                 id=2,
@@ -788,7 +785,6 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
         "Skills",
         "User skills",
         "Tags",
-        "Tag groups",
         "Project tags",
         "Project teams",
         "Absence types",
@@ -860,9 +856,9 @@ async def test_site_workbook_contains_every_site_scoped_sheet():
     assert _sheet(wb, "User skills") == [[7, "Alice Martin", 8, "HPLC", 4, "2026-01-01 12:00:00"]]
     assert [c.value for c in wb["Tags"][1]][-2:] == ["Teams", "Created at"]
     tags = _sheet(wb, "Tags")
-    assert tags[0][3:6] == ["Program", False, "Winterthur Lab, Basel"]
-    assert tags[0][7] == "Analytical Lab"  # only the teams at this site
-    assert _sheet(wb, "Project tags") == [[1, "Alpha", 3, "Priority", "#ff0000", "Program"]]
+    assert tags[0][3:5] == [False, "Winterthur Lab, Basel"]
+    assert tags[0][6] == "Analytical Lab"  # only the teams at this site
+    assert _sheet(wb, "Project tags") == [[1, "Alpha", 3, "Priority", "#ff0000"]]
     assert [c.value for c in wb["Project teams"][1]] == [
         "Project ID",
         "Project name",

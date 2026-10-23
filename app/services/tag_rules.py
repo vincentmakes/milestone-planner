@@ -7,11 +7,15 @@ Project-tag rules shared by the project and tag routers.
 - A tag linked to teams at a site applies to a project at that site only when
   the project shares one of those teams (a team-less project does not
   qualify). Team rows at other sites do not restrict it there.
-- A single-select tag group allows at most one of its tags per project.
 
-``validate_project_tags`` enforces all three when a project's tags are written. The
-count helpers back the 409s that keep existing data consistent when a group or
-tag definition changes underneath projects that already use it.
+``validate_project_tags`` enforces both when a project's tags are written. The
+count helpers back the 409s that keep existing data consistent when a tag
+definition changes underneath projects that already use it; their generic
+forms (``count_linked_projects_outside_*``) serve the project-field items too
+(``project_field_rules``), with the same detail texts.
+
+Tag groups became project fields in 2.0.0 (their single-select rule is the
+``select`` field type).
 
 Error details are plain strings (the frontend renders ``detail`` as text).
 """
@@ -21,7 +25,7 @@ from collections.abc import Iterable
 from fastapi import HTTPException
 from sqlalchemy import and_, exists, func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased, selectinload
+from sqlalchemy.orm import InstrumentedAttribute, selectinload
 
 from app.models.project import Project
 from app.models.tag import ProjectTag, Tag
@@ -40,28 +44,14 @@ def tag_not_applicable_to_teams_detail(tag_name: str) -> str:
     return f'The tag "{tag_name}" is limited to teams this project is not part of'
 
 
-def single_select_detail(group_name: str) -> str:
-    return f'Only one tag from the group "{group_name}" can be assigned to a project'
-
-
-def multiple_tags_conflict_detail(count: int) -> str:
-    verb = "has" if count == 1 else "have"
-    return f"{_projects(count)} {verb} more than one tag from this group"
-
-
-def group_peer_conflict_detail(count: int) -> str:
-    verb = "has" if count == 1 else "have"
-    return f"{_projects(count)} already {verb} another tag from this group"
-
-
-def other_sites_conflict_detail(count: int) -> str:
+def other_sites_conflict_detail(count: int, noun: str = "tag") -> str:
     where = "at another site uses" if count == 1 else "at other sites use"
-    return f"{_projects(count)} {where} this tag"
+    return f"{_projects(count)} {where} this {noun}"
 
 
-def other_teams_conflict_detail(count: int) -> str:
+def other_teams_conflict_detail(count: int, noun: str = "tag") -> str:
     verb = "uses" if count == 1 else "use"
-    return f"{_projects(count)} outside these teams {verb} this tag"
+    return f"{_projects(count)} outside these teams {verb} this {noun}"
 
 
 def tag_applies_to_site(tag: Tag, site_id: int | None) -> bool:
@@ -90,8 +80,8 @@ async def validate_project_tags(
 
     Unknown ids are dropped silently (deliberate: a What-If replay may carry
     the id of a tag deleted in the meantime). Raises 400 when a tag is not
-    available at the project's site, is limited to teams the project is not
-    part of, or two tags share a single-select group.
+    available at the project's site or is limited to teams the project is not
+    part of.
     """
     if not tag_ids:
         return []
@@ -116,72 +106,50 @@ async def validate_project_tags(
                 status_code=400, detail=tag_not_applicable_to_teams_detail(tag.name)
             )
 
-    seen_groups: set[int] = set()
-    for tag in tags:
-        group = tag.group
-        if group is None or not group.single_select:
-            continue
-        if group.id in seen_groups:
-            raise HTTPException(status_code=400, detail=single_select_detail(group.name))
-        seen_groups.add(group.id)
-
     return tags
 
 
-async def count_projects_with_multiple_group_tags(db: AsyncSession, group_id: int) -> int:
-    """Projects holding two or more tags of ``group_id``."""
-    per_project = (
-        select(ProjectTag.project_id)
-        .join(Tag, Tag.id == ProjectTag.tag_id)
-        .where(Tag.group_id == group_id)
-        .group_by(ProjectTag.project_id)
-        .having(func.count() > 1)
-        .subquery()
-    )
-    result = await db.execute(select(func.count()).select_from(per_project))
-    return int(result.scalar() or 0)
+async def count_linked_projects_outside_sites(
+    db: AsyncSession,
+    link_project: InstrumentedAttribute[int],
+    link_entity: InstrumentedAttribute[int],
+    entity_id: int,
+    site_ids: list[int],
+) -> int:
+    """
+    Projects linked to ``entity_id`` that are not at one of ``site_ids`` (incl. site-less ones).
 
-
-async def count_projects_with_group_peer(db: AsyncSession, tag_id: int, group_id: int) -> int:
-    """Projects holding ``tag_id`` together with another tag of ``group_id``."""
-    peer_link = aliased(ProjectTag)
-    peer_tag = aliased(Tag)
-    query = (
-        select(func.count(func.distinct(ProjectTag.project_id)))
-        .select_from(ProjectTag)
-        .join(peer_link, peer_link.project_id == ProjectTag.project_id)
-        .join(peer_tag, peer_tag.id == peer_link.tag_id)
-        .where(
-            ProjectTag.tag_id == tag_id,
-            peer_tag.group_id == group_id,
-            peer_tag.id != tag_id,
-        )
-    )
-    result = await db.execute(query)
-    return int(result.scalar() or 0)
-
-
-async def count_projects_outside_sites(db: AsyncSession, tag_id: int, site_ids: list[int]) -> int:
-    """Projects using ``tag_id`` that are not at one of ``site_ids`` (incl. site-less ones)."""
+    ``link_project`` / ``link_entity`` are the two columns of the junction
+    (``project_tags``, ``project_field_selections``).
+    """
     outside = Project.site_id.is_(None)
     if site_ids:
         outside = or_(outside, Project.site_id.not_in(site_ids))
     query = (
         select(func.count(func.distinct(Project.id)))
         .select_from(Project)
-        .join(ProjectTag, and_(ProjectTag.project_id == Project.id, ProjectTag.tag_id == tag_id))
+        .join(
+            link_project.class_,
+            and_(link_project == Project.id, link_entity == entity_id),
+        )
         .where(outside)
     )
     result = await db.execute(query)
     return int(result.scalar() or 0)
 
 
-async def count_projects_outside_teams(db: AsyncSession, tag_id: int, teams: list[Team]) -> int:
+async def count_linked_projects_outside_teams(
+    db: AsyncSession,
+    link_project: InstrumentedAttribute[int],
+    link_entity: InstrumentedAttribute[int],
+    entity_id: int,
+    teams: list[Team],
+) -> int:
     """
-    Projects using ``tag_id`` at a site of ``teams`` that share none of ``teams``.
+    Projects linked to ``entity_id`` at a site of ``teams`` that share none of ``teams``.
 
-    These are the projects a team restriction of the tag would leave holding a
-    tag they no longer qualify for. No query for no teams.
+    These are the projects a team restriction of the tag / item would leave
+    holding something they no longer qualify for. No query for no teams.
     """
     if not teams:
         return 0
@@ -193,8 +161,30 @@ async def count_projects_outside_teams(db: AsyncSession, tag_id: int, teams: lis
     query = (
         select(func.count(func.distinct(Project.id)))
         .select_from(Project)
-        .join(ProjectTag, and_(ProjectTag.project_id == Project.id, ProjectTag.tag_id == tag_id))
+        .join(
+            link_project.class_,
+            and_(link_project == Project.id, link_entity == entity_id),
+        )
         .where(Project.site_id.in_(site_ids), not_(shares_a_team))
     )
     result = await db.execute(query)
     return int(result.scalar() or 0)
+
+
+async def count_projects_outside_sites(db: AsyncSession, tag_id: int, site_ids: list[int]) -> int:
+    """Projects using ``tag_id`` that are not at one of ``site_ids`` (incl. site-less ones)."""
+    return await count_linked_projects_outside_sites(
+        db, ProjectTag.project_id, ProjectTag.tag_id, tag_id, site_ids
+    )
+
+
+async def count_projects_outside_teams(db: AsyncSession, tag_id: int, teams: list[Team]) -> int:
+    """
+    Projects using ``tag_id`` at a site of ``teams`` that share none of ``teams``.
+
+    These are the projects a team restriction of the tag would leave holding a
+    tag they no longer qualify for. No query for no teams.
+    """
+    return await count_linked_projects_outside_teams(
+        db, ProjectTag.project_id, ProjectTag.tag_id, tag_id, teams
+    )

@@ -310,7 +310,7 @@ async def _require_user_exists(db: AsyncSession, user_id: int, detail: str) -> N
         raise HTTPException(status_code=404, detail=detail)
 
 
-# Responses embed {id, name, color, group_id} only: skip the tags' site and
+# Responses embed {id, name, color} only: skip the tags' site and
 # team links (Tag.sites / Tag.teams are selectin-loaded by default -- one more
 # query each per request).
 # NEVER combine this loader with validate_project_tags() in the same session:
@@ -325,7 +325,7 @@ _PROJECT_TAGS_FOR_RESPONSE = selectinload(Project.tags).options(
 
 def _tag_dict(tag: Tag) -> dict:
     """A tag as embedded in a project response."""
-    return {"id": tag.id, "name": tag.name, "color": tag.color, "group_id": tag.group_id}
+    return {"id": tag.id, "name": tag.name, "color": tag.color}
 
 
 def _ensure_project_teams(teams: list[Team], site_id: int | None) -> None:

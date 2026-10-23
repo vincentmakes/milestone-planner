@@ -257,15 +257,14 @@ async def test_close_all_without_a_cleanup_task(mgr):
 ALL_KNOWN_NAMES = [
     "tags",
     "project_tags",
-    "tag_groups",
     "tag_sites",
-    "group_id",
     "all_sites",
     "sort_order",
     "staff_notes",
     "project_phases",
     "project_subphases",
     *tp.TEAM_TABLES,
+    *tp.PROJECT_FIELD_TABLES,
 ]
 
 
@@ -293,9 +292,7 @@ class ScriptedConn:
         result.fetchone.return_value = None if legacy else (1,)
         result.fetchall.return_value = [] if legacy else [(n,) for n in ALL_KNOWN_NAMES]
 
-        if "column_name = 'colors_projects'" in sql:
-            result.fetchone.return_value = ("colors_projects",) if legacy else None
-        elif "'staff_notes', 'notes'" in sql and legacy:
+        if "'staff_notes', 'notes'" in sql and legacy:
             result.fetchall.return_value = [("notes",)]
         elif "table_name = 'notes' AND column_name = 'type'" in sql:
             result.fetchone.return_value = (1,) if self.notes_has_type else None
@@ -327,9 +324,8 @@ LEGACY_CHANGES = [
     "CREATE TABLE IF NOT EXISTS tags",
     "CREATE TABLE IF NOT EXISTS project_tags",
     "idx_project_tags_tag",
-    tp.TAG_GROUPS_TABLE_SQL,
+    *tp.TAGS_UPGRADE_STATEMENTS,
     tp.TAG_SITES_TABLE_SQL,
-    *tp.TAG_GROUPS_DROP_COLORS_STATEMENTS,
     "CREATE TABLE IF NOT EXISTS equipment_blocks",
     "idx_equipment_blocks_dates",
     "ALTER TABLE company_events ADD COLUMN IF NOT EXISTS color",
@@ -350,6 +346,8 @@ LEGACY_CHANGES = [
     "CREATE TABLE IF NOT EXISTS equipment_sites",
     tp.COMPANY_EVENTS_CLOSURE_COLUMN_SQL,
     *tp.TEAMS_SCHEMA_STATEMENTS,
+    *tp.PROJECT_FIELDS_SCHEMA_STATEMENTS,
+    tp.PROJECT_FIELDS_MIGRATION_SQL,
     # The notification-types widening runs on every pool creation (own gate).
     *(s for s in tp.RBAC_SCHEMA_STATEMENTS if s != tp.NOTIFICATIONS_TYPE_CHECK_SQL),
 ]
@@ -370,6 +368,12 @@ async def test_legacy_tenant_gets_every_step():
     assert conn.ran(tp.USERS_IS_RESOURCE_SQL)
     for statement in tp.BOOKING_SEGMENT_COLUMN_STATEMENTS:
         assert conn.ran(statement)
+    # Tag groups are never created any more (2.0.0: they are project fields);
+    # the project-fields step runs its schema before the conversion.
+    assert not conn.ran("CREATE TABLE IF NOT EXISTS tag_groups")
+    assert conn.log.index(tp.PROJECT_FIELDS_MIGRATION_SQL) > max(
+        conn.log.index(s) for s in tp.PROJECT_FIELDS_SCHEMA_STATEMENTS
+    )
     # One commit per step (card status: one per table), 22 in all.
     assert conn.log.count("COMMIT") == 22
 
