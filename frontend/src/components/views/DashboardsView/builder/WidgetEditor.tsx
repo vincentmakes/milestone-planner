@@ -1,0 +1,792 @@
+/**
+ * WidgetEditor — add or edit one dashboard widget (2.1.0), with a live
+ * preview.
+ *
+ * The form, in order: the kind (a radio group of five), the title, the
+ * measure, up to two dimensions (only the kinds the measure accepts — the
+ * matrix of `utils/metrics.ts`; *Person* only with `views.staff`; a project
+ * field kind becomes one choice per dropdown or toggle field; a period
+ * carries its grain), the filters (a collapsible section, closed when none
+ * is set), the period (relative, or custom dates), *Percent of* and *Top N*,
+ * and the display options of the kind. The kind rules (`widgetDraft.ts`): a
+ * KPI has at most one dimension and then shows a share of the total (its
+ * *Bucket* is one of the preview's values), a pie exactly one, the others up
+ * to two; changing the measure drops a dimension it refuses.
+ *
+ * The preview asks the server (`/dashboards/query`) 400 ms after the last
+ * change; a newer request supersedes an older one (answers are matched by a
+ * sequence number) and an answer after the dialog closed is dropped. A
+ * refusal (422) shows the server's words in the preview and disables Save; a
+ * network failure says "Preview unavailable" and leaves Save enabled. Save
+ * checks the title and the kind rules, then hands the widget (a new one
+ * placed at the bottom of the grid) and its preview to the builder.
+ */
+
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { FormEvent, KeyboardEvent, ReactNode } from 'react';
+import { Modal } from '@/components/common/Modal';
+import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
+import { Select } from '@/components/common/Select';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
+import type { SearchableOption } from '@/components/common/SearchableSelect';
+import { MultiSelectDropdown } from '@/components/common/MultiSelectDropdown';
+import type { MultiSelectDropdownItem } from '@/components/common/MultiSelectDropdown';
+import { ToggleSwitch } from '@/components/common/ToggleSwitch';
+import { DateRangeField } from '@/components/common/DateRangeField';
+import { Notice } from '@/components/common/Notice';
+import { useSubmitGuard } from '@/components/common/useSubmitGuard';
+import {
+  Icon,
+  BarChartIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  KpiIcon,
+  LineChartIcon,
+  PieChartIcon,
+  TableIcon,
+} from '@/components/common/Icon';
+import { ApiError } from '@/api/client';
+import { dashboardsApi } from '@/api/endpoints/dashboards';
+import { useAppStore } from '@/stores/appStore';
+import { useHasPermission } from '@/hooks/useCan';
+import { useVisibleSites } from '@/hooks/useVisibleSites';
+import { uniqueById } from '@/utils/uniqueById';
+import {
+  DIMENSION_KINDS,
+  dimensionLabel,
+  GRAINS,
+  isDimensionHidden,
+  MATRIX,
+  MEASURES,
+  OTHER_KEY,
+  RELATIVE_PERIODS,
+} from '@/utils/metrics';
+import type {
+  DimensionKind,
+  Grain,
+  MetricDimension,
+  MetricFilters,
+  MetricQuery,
+  MetricResult,
+  RelativePeriod,
+  WidgetKind,
+  WidgetOptions,
+} from '@/types';
+import { WidgetCard } from '../WidgetCard';
+import { plainError } from './useDashboardEditor';
+import {
+  activeFilterCount,
+  changeMeasure,
+  cleanOptions,
+  cleanQuery,
+  defaultQuery,
+  MAX_DIMENSIONS,
+  newClientId,
+  normaliseQuery,
+  placeNewWidget,
+  queryProblem,
+  stableKey,
+} from './widgetDraft';
+import type { DraftWidget } from './widgetDraft';
+import styles from './WidgetEditor.module.css';
+
+/** The preview waits this long after the last change. */
+export const PREVIEW_DELAY_MS = 400;
+export const PREVIEW_UNAVAILABLE = 'Preview unavailable';
+export const TITLE_REQUIRED = 'Enter a title';
+const TITLE_MAX = 120;
+
+const WIDGET_KINDS: readonly { key: WidgetKind; label: string; icon: typeof BarChartIcon }[] = [
+  { key: 'kpi', label: 'KPI', icon: KpiIcon },
+  { key: 'bar', label: 'Bar', icon: BarChartIcon },
+  { key: 'line', label: 'Line', icon: LineChartIcon },
+  { key: 'pie', label: 'Pie', icon: PieChartIcon },
+  { key: 'table', label: 'Table', icon: TableIcon },
+];
+
+/** Measures whose numbers count working days (the hint names the holiday rule). */
+const WORKING_DAY_MEASURES = new Set(['booked_days', 'booked_weeks', 'project_weeks', 'phase_weeks']);
+const WORKING_DAYS_HINT =
+  'Working days: Monday to Friday, without the bank holidays loaded for the project’s site.';
+
+/** Picker ids of the dimension choices: a kind by its position, a project field by its id. */
+const FIELD_ID_BASE = 1000;
+const kindId = (kind: DimensionKind): number => DIMENSION_KINDS.findIndex((d) => d.key === kind) + 1;
+const dimensionId = (d: MetricDimension): number => (d.kind === 'field' ? FIELD_ID_BASE + d.field_id : kindId(d.kind));
+
+interface DimensionChoice extends SearchableOption {
+  dimension: MetricDimension;
+}
+
+type PreviewState =
+  | { status: 'idle' }
+  | { status: 'loading'; result: MetricResult | null; key: string | null }
+  | { status: 'ok'; result: MetricResult; key: string }
+  | { status: 'invalid'; message: string }
+  | { status: 'unavailable' };
+
+export interface WidgetEditorProps {
+  /** The widget to edit; null adds one */
+  widget: DraftWidget | null;
+  /** The dashboard's widgets (a new one lands under them) */
+  widgets: readonly DraftWidget[];
+  onClose: () => void;
+  /** The finished widget and its preview (null when none matches it) */
+  onSave: (widget: DraftWidget, preview: MetricResult | null) => void;
+}
+
+const LIST_FILTER_LABELS = {
+  site_ids: 'Sites',
+  team_ids: 'Teams',
+  project_team_ids: 'Project teams',
+  person_ids: 'People',
+  project_ids: 'Projects',
+  tag_ids: 'Tags',
+} as const;
+type ListFilter = keyof typeof LIST_FILTER_LABELS;
+
+const bucketValue = (key: unknown): string => JSON.stringify(key);
+
+export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorProps) {
+  const [kind, setKind] = useState<WidgetKind>(widget?.kind ?? 'bar');
+  const [title, setTitle] = useState(widget?.title ?? '');
+  const [query, setQuery] = useState<MetricQuery>(() =>
+    normaliseQuery(widget?.kind ?? 'bar', {
+      ...defaultQuery(),
+      ...(widget?.query ?? {}),
+      filters: { ...defaultQuery().filters, ...(widget?.query.filters ?? {}) },
+    })
+  );
+  const [options, setOptions] = useState<WidgetOptions>(widget?.options ?? {});
+  const [topNText, setTopNText] = useState(widget?.query.top_n ? String(widget.query.top_n) : '');
+  const [filtersOpen, setFiltersOpen] = useState(() => activeFilterCount(widget?.query.filters) > 0);
+  const [titleError, setTitleError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<PreviewState>({ status: 'idle' });
+  const { isSubmitting, begin, end } = useSubmitGuard();
+  const filtersId = useId();
+
+  const canStaff = useHasPermission('views.staff');
+  const canArchived = useHasPermission('views.archived');
+  const fields = useAppStore((s) => s.projectFields);
+  const settings = useAppStore((s) => s.instanceSettings);
+  const teams = useAppStore((s) => s.teams);
+  const staff = useAppStore((s) => s.staff);
+  const projects = useAppStore((s) => s.projects);
+  const tags = useAppStore((s) => s.tags);
+  const sites = useVisibleSites();
+
+  const dimensions = useMemo(() => query.dimensions ?? [], [query.dimensions]);
+  const filters = useMemo<MetricFilters>(() => query.filters ?? {}, [query.filters]);
+  const problem = queryProblem(kind, query);
+  const clean = useMemo(() => cleanQuery(query), [query]);
+  const previewKey = problem ? null : stableKey(clean);
+
+  // --- The live preview ------------------------------------------------------
+  const seqRef = useRef(0);
+  const cleanRef = useRef(clean);
+  cleanRef.current = clean;
+  useEffect(() => {
+    const seq = ++seqRef.current;
+    if (previewKey === null) {
+      setPreview({ status: 'idle' });
+      return;
+    }
+    setPreview((prev) => ({
+      status: 'loading',
+      result: prev.status === 'ok' || prev.status === 'loading' ? prev.result : null,
+      key: prev.status === 'ok' || prev.status === 'loading' ? prev.key : null,
+    }));
+    const timer = window.setTimeout(() => {
+      dashboardsApi.query(cleanRef.current).then(
+        (result) => {
+          if (seq === seqRef.current) setPreview({ status: 'ok', result, key: previewKey });
+        },
+        (err: unknown) => {
+          if (seq !== seqRef.current) return;
+          if (err instanceof ApiError && err.status === 422) {
+            setPreview({ status: 'invalid', message: plainError(err, 'This widget cannot be shown.') });
+          } else {
+            setPreview({ status: 'unavailable' });
+          }
+        }
+      );
+    }, PREVIEW_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [previewKey]);
+  // An answer landing after the dialog closed is dropped.
+  useEffect(
+    () => () => {
+      seqRef.current += 1;
+    },
+    []
+  );
+
+  const previewResult = preview.status === 'ok' || preview.status === 'loading' ? preview.result : null;
+
+  // --- Changes -----------------------------------------------------------------
+  const update = (nextKind: WidgetKind, next: MetricQuery) => {
+    const normalised = normaliseQuery(nextKind, next);
+    setQuery(normalised);
+    if (!normalised.top_n) setTopNText('');
+  };
+
+  const changeKind = (nextKind: WidgetKind) => {
+    setKind(nextKind);
+    let next = query;
+    // A KPI with a dimension shows a share; a pie needs its one dimension.
+    if (nextKind === 'kpi' && dimensions.length > 0) next = { ...next, percent_of: 'total' };
+    update(nextKind, next);
+  };
+
+  const setDimension = (index: 0 | 1, choice: MetricDimension | null) => {
+    const next = [...dimensions];
+    if (choice === null) next.splice(index, 1);
+    else next[index] = choice;
+    const extra: Partial<MetricQuery> = kind === 'kpi' && next.length > 0 ? { percent_of: 'total' } : {};
+    update(kind, { ...query, ...extra, dimensions: next });
+  };
+
+  const setPercentOf = (value: string) => {
+    const percentOf = value === 'total' || value === 'first_dimension' ? value : null;
+    // A KPI without a share has no dimension.
+    const nextDimensions = kind === 'kpi' && percentOf === null ? [] : dimensions;
+    update(kind, { ...query, percent_of: percentOf, dimensions: nextDimensions });
+  };
+
+  const setFilters = (patch: Partial<MetricFilters>) => {
+    setQuery((prev) => ({ ...prev, filters: { ...(prev.filters ?? {}), ...patch } }));
+  };
+
+  const setTopN = (text: string) => {
+    setTopNText(text);
+    const n = Number.parseInt(text, 10);
+    const topN = Number.isFinite(n) ? Math.min(50, Math.max(1, n)) : null;
+    setQuery((prev) => ({ ...prev, top_n: topN }));
+  };
+
+  const setOption = (patch: Partial<WidgetOptions>) => setOptions((prev) => ({ ...prev, ...patch }));
+
+  // --- Dimension choices -------------------------------------------------------
+  const allChoices = useMemo<DimensionChoice[]>(() => {
+    const out: DimensionChoice[] = [];
+    for (const { key, label } of DIMENSION_KINDS) {
+      if (!MATRIX[query.measure].includes(key)) continue;
+      if (key === 'person' && !canStaff) continue;
+      if (isDimensionHidden(key, settings)) continue;
+      if (key === 'field') {
+        for (const field of fields) {
+          if (field.field_type !== 'select' && field.field_type !== 'multiselect' && field.field_type !== 'toggle') {
+            continue;
+          }
+          out.push({
+            id: FIELD_ID_BASE + field.id,
+            label: field.name,
+            hint: 'Project field',
+            dimension: { kind: 'field', field_id: field.id },
+          });
+        }
+        continue;
+      }
+      const dimension: MetricDimension = key === 'period' ? { kind: 'period', grain: 'month' } : { kind: key };
+      // Built-in fields under their instance labels (Customer, Confirmed); a period by its name.
+      out.push({ id: kindId(key), label: key === 'period' ? label : dimensionLabel(dimension, fields, settings), dimension });
+    }
+    return out;
+  }, [query.measure, canStaff, settings, fields]);
+
+  const choicesFor = (index: 0 | 1): DimensionChoice[] => {
+    const other = dimensions[index === 0 ? 1 : 0];
+    return allChoices.filter((c) => !other || c.dimension.kind !== other.kind);
+  };
+
+  const pickDimension = (index: 0 | 1, id: number | null) => {
+    if (id === null) {
+      setDimension(index, null);
+      return;
+    }
+    const choice = allChoices.find((c) => c.id === id);
+    if (choice) setDimension(index, { ...choice.dimension });
+  };
+
+  const setGrain = (index: 0 | 1, grain: Grain) => {
+    const next = [...dimensions];
+    next[index] = { kind: 'period', grain };
+    update(kind, { ...query, dimensions: next });
+  };
+
+  const dimensionField = (index: 0 | 1) => {
+    const dimension = dimensions[index];
+    const label = `Dimension ${index + 1}`;
+    return (
+      <div className={styles.dimensionRow}>
+        <SearchableSelect
+          label={label}
+          className={styles.grow}
+          fullWidth
+          options={choicesFor(index)}
+          value={dimension ? dimensionId(dimension) : null}
+          onChange={(id) => pickDimension(index, id)}
+          emptyLabel="None"
+          placeholder="None"
+          searchLabel={`Find a dimension for ${label}`}
+          searchPlaceholder="Type to find a dimension…"
+          noMatchText="No dimension matches"
+          emptyText="No dimension for this measure"
+        />
+        {dimension?.kind === 'period' && (
+          <Select
+            label={`Grain of dimension ${index + 1}`}
+            className={styles.grain}
+            value={dimension.grain}
+            onChange={(e) => setGrain(index, e.target.value as Grain)}
+            options={GRAINS.map((g) => ({ value: g.key, label: g.label }))}
+          />
+        )}
+      </div>
+    );
+  };
+
+  // --- Filter choices ----------------------------------------------------------
+  const allSites = useAppStore((s) => s.sites);
+  const siteName = useMemo(() => new Map(allSites.map((s) => [s.id, s.name])), [allSites]);
+  const filterOptions = useMemo<Record<ListFilter, MultiSelectDropdownItem[]>>(() => {
+    const teamItems = teams.map((t) => ({
+      id: t.id,
+      name: t.name,
+      color: t.color ?? undefined,
+      hint: siteName.get(t.site_id),
+    }));
+    const archived = filters.archived ?? 'exclude';
+    const projectItems = projects
+      .filter((p) => (archived === 'exclude' ? !p.archived : archived === 'only' ? p.archived : true))
+      .map((p) => ({ id: p.id, name: p.name, hint: siteName.get(p.site_id) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return {
+      site_ids: sites.map((s) => ({ id: s.id, name: s.name })),
+      team_ids: teamItems,
+      project_team_ids: teamItems,
+      person_ids: uniqueById(staff)
+        .map((s) => ({ id: s.id, name: s.name, hint: s.role || undefined }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+      project_ids: projectItems,
+      tag_ids: tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
+    };
+  }, [teams, projects, staff, tags, sites, siteName, filters.archived]);
+
+  const listFilter = (key: ListFilter, searchable = false) => (
+    <MultiSelectDropdown
+      key={key}
+      label={LIST_FILTER_LABELS[key]}
+      options={filterOptions[key]}
+      selectedIds={new Set(filters[key] ?? [])}
+      onChange={(ids) => setFilters({ [key]: ids })}
+      placeholder="Any"
+      emptyText="Nothing to choose"
+      searchable={searchable}
+      searchLabel={`Find ${LIST_FILTER_LABELS[key].toLowerCase()}`}
+    />
+  );
+
+  const dropdownFields = fields.filter((f) => f.field_type === 'select' || f.field_type === 'multiselect');
+
+  // --- Period ----------------------------------------------------------------------
+  const period = filters.period ?? { relative: 'this_year' as RelativePeriod };
+  const periodMode = 'relative' in period ? period.relative : 'custom';
+  const setPeriodMode = (value: string) => {
+    if (value === 'custom') {
+      setFilters({ period: 'from' in period ? period : { from: '', to: '' } });
+    } else {
+      setFilters({ period: { relative: value as RelativePeriod } });
+    }
+  };
+
+  // --- Percent of / Top N ---------------------------------------------------------------
+  const percentOptions = [{ value: '', label: 'None' }];
+  if (dimensions.length > 0) percentOptions.push({ value: 'total', label: 'Total' });
+  if (dimensions.length === 2) percentOptions.push({ value: 'first_dimension', label: 'First dimension' });
+  const topNDisabled = dimensions.length === 0 || dimensions[0].kind === 'period';
+
+  // --- KPI bucket (from the preview) ----------------------------------------------------
+  const bucketOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const row of previewResult?.rows ?? []) {
+      const key = row.keys[0];
+      if (!key || key.key === null || key.key === OTHER_KEY) continue;
+      const value = bucketValue(key.key);
+      if (!seen.has(value)) seen.set(value, key.label);
+    }
+    const stored = options.kpi_bucket;
+    if (stored !== undefined && stored !== null && !seen.has(bucketValue(stored))) {
+      seen.set(bucketValue(stored), String(stored));
+    }
+    return [...seen.entries()].map(([value, label]) => ({ value, label }));
+  }, [previewResult, options.kpi_bucket]);
+
+  // --- Save --------------------------------------------------------------------------------
+  const handleSave = (e?: FormEvent) => {
+    e?.preventDefault();
+    const trimmed = title.trim();
+    setTitleError(trimmed ? null : TITLE_REQUIRED);
+    setFormError(problem);
+    if (!trimmed || problem || preview.status === 'invalid') return;
+    if (!begin()) return;
+    try {
+      const saved: DraftWidget = {
+        ...(widget?.id !== undefined ? { id: widget.id } : {}),
+        clientId: widget?.clientId ?? newClientId(),
+        kind,
+        title: trimmed,
+        query: clean,
+        options: cleanOptions(kind, query, options),
+        layout: widget?.layout ?? placeNewWidget(kind, widgets),
+      };
+      const matching = preview.status === 'ok' && preview.key === previewKey ? preview.result : null;
+      onSave(saved, matching);
+    } finally {
+      end();
+    }
+  };
+
+  const footer = (
+    <div className={styles.footer}>
+      <Button type="button" variant="secondary" onClick={onClose} disabled={isSubmitting}>
+        Cancel
+      </Button>
+      <Button
+        type="button"
+        onClick={() => handleSave()}
+        loading={isSubmitting}
+        disabled={preview.status === 'invalid'}
+        title={preview.status === 'invalid' ? 'The server refuses this widget: see the preview' : undefined}
+      >
+        {widget ? 'Save Changes' : 'Add widget'}
+      </Button>
+    </div>
+  );
+
+  const filterCount = activeFilterCount(filters);
+
+  return (
+    <Modal isOpen onClose={onClose} title={widget ? 'Edit widget' : 'Add widget'} size="lg" footer={footer}>
+      <form className={styles.form} onSubmit={handleSave} noValidate>
+        <div className={styles.columns}>
+          <div className={styles.fields}>
+            {formError && <Notice tone="error">{formError}</Notice>}
+
+            <KindPicker value={kind} onChange={changeKind} />
+
+            <Input
+              label="Title *"
+              fullWidth
+              value={title}
+              maxLength={TITLE_MAX}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                if (titleError) setTitleError(null);
+              }}
+              error={titleError ?? undefined}
+            />
+
+            <Select
+              label="Measure"
+              fullWidth
+              value={query.measure}
+              onChange={(e) => update(kind, changeMeasure(kind, query, e.target.value as MetricQuery['measure']))}
+              options={MEASURES.map((m) => ({ value: m.key, label: m.label }))}
+              hint={WORKING_DAY_MEASURES.has(query.measure) ? WORKING_DAYS_HINT : undefined}
+            />
+
+            {dimensionField(0)}
+            {MAX_DIMENSIONS[kind] > 1 && dimensions.length > 0 && dimensionField(1)}
+
+            <section className={styles.section}>
+              <Button
+                type="button"
+                variant="ghost"
+                className={styles.disclosure}
+                aria-expanded={filtersOpen}
+                aria-controls={filtersId}
+                icon={<Icon icon={filtersOpen ? ChevronDownIcon : ChevronRightIcon} />}
+                onClick={() => setFiltersOpen((open) => !open)}
+              >
+                {filterCount > 0 ? `Filters (${filterCount})` : 'Filters'}
+              </Button>
+              {filtersOpen && (
+                <div id={filtersId} className={styles.filters}>
+                  {listFilter('site_ids')}
+                  {listFilter('team_ids', true)}
+                  {listFilter('project_team_ids', true)}
+                  {canStaff && listFilter('person_ids', true)}
+                  {listFilter('project_ids', true)}
+                  {listFilter('tag_ids')}
+                  {dropdownFields.map((field) => (
+                    <MultiSelectDropdown
+                      key={`field-${field.id}`}
+                      label={field.name}
+                      options={field.options.map((o) => ({ id: o.id, name: o.name, color: o.color ?? undefined }))}
+                      selectedIds={new Set(filters.field_options?.[String(field.id)] ?? [])}
+                      onChange={(ids) =>
+                        setFilters({ field_options: { ...(filters.field_options ?? {}), [String(field.id)]: ids } })
+                      }
+                      placeholder="Any"
+                      emptyText="No item"
+                    />
+                  ))}
+                  <Select
+                    label="Confirmed"
+                    fullWidth
+                    value={typeof filters.confirmed === 'boolean' ? String(filters.confirmed) : 'any'}
+                    onChange={(e) =>
+                      setFilters({ confirmed: e.target.value === 'any' ? null : e.target.value === 'true' })
+                    }
+                    options={[
+                      { value: 'any', label: 'Any' },
+                      { value: 'true', label: 'Confirmed' },
+                      { value: 'false', label: 'Not confirmed' },
+                    ]}
+                  />
+                  <Select
+                    label="Archived projects"
+                    fullWidth
+                    value={filters.archived ?? 'exclude'}
+                    onChange={(e) => setFilters({ archived: e.target.value as MetricFilters['archived'] })}
+                    options={[
+                      { value: 'exclude', label: 'Exclude' },
+                      ...(canArchived || filters.archived === 'include'
+                        ? [{ value: 'include', label: 'Include' }]
+                        : []),
+                      ...(canArchived || filters.archived === 'only' ? [{ value: 'only', label: 'Only' }] : []),
+                    ]}
+                  />
+                </div>
+              )}
+            </section>
+
+            <Select
+              label="Period"
+              fullWidth
+              value={periodMode}
+              onChange={(e) => setPeriodMode(e.target.value)}
+              options={[
+                ...RELATIVE_PERIODS.map((p) => ({ value: p.key, label: p.label })),
+                { value: 'custom', label: 'Custom…' },
+              ]}
+            />
+            {'from' in period && (
+              <div className={styles.row}>
+                <DateRangeField
+                  start={period.from}
+                  end={period.to}
+                  onChange={({ start, end: to }) => setFilters({ period: { from: start, to } })}
+                  startLabel="From"
+                  endLabel="To"
+                  fieldClassName={styles.cell}
+                  markSiteCalendar={false}
+                />
+              </div>
+            )}
+
+            <div className={styles.row}>
+              <Select
+                label="Percent of"
+                fullWidth
+                value={query.percent_of ?? ''}
+                onChange={(e) => setPercentOf(e.target.value)}
+                options={kind === 'kpi' ? percentOptions.slice(0, 2) : percentOptions}
+                disabled={dimensions.length === 0}
+              />
+              <Input
+                label="Top N"
+                type="number"
+                fullWidth
+                min={1}
+                max={50}
+                step={1}
+                value={topNDisabled ? '' : topNText}
+                onChange={(e) => setTopN(e.target.value)}
+                disabled={topNDisabled}
+                hint={topNDisabled ? undefined : 'The largest values; the rest as Other'}
+              />
+            </div>
+
+            <KindOptions
+              kind={kind}
+              options={options}
+              share={Boolean(query.percent_of)}
+              bucketOptions={bucketOptions}
+              onChange={setOption}
+            />
+          </div>
+
+          <aside className={styles.preview} aria-label="Preview">
+            <p className={styles.previewLabel}>Preview</p>
+            <div className={styles.previewBody}>{renderPreview()}</div>
+          </aside>
+        </div>
+      </form>
+    </Modal>
+  );
+
+  function renderPreview(): ReactNode {
+    if (problem) return <p className={styles.previewNote}>{problem}</p>;
+    if (preview.status === 'invalid') return <Notice tone="error">{preview.message}</Notice>;
+    if (preview.status === 'unavailable') {
+      return (
+        <p className={styles.previewNote} role="status">
+          {PREVIEW_UNAVAILABLE}
+        </p>
+      );
+    }
+    return (
+      <WidgetCard
+        widget={{
+          id: 0,
+          kind,
+          title: title.trim() || 'Untitled widget',
+          query: clean,
+          options: cleanOptions(kind, query, options),
+          layout: placeNewWidget(kind, []),
+          sort_order: 0,
+        }}
+        result={previewResult ?? undefined}
+        loading={preview.status === 'loading'}
+      />
+    );
+  }
+}
+
+interface KindPickerProps {
+  value: WidgetKind;
+  onChange: (kind: WidgetKind) => void;
+}
+
+/** The five kinds as a radio group: arrows move and choose, one tab stop. */
+function KindPicker({ value, onChange }: KindPickerProps) {
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const labelId = useId();
+  const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const last = WIDGET_KINDS.length - 1;
+    let next: number | null = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = index === last ? 0 : index + 1;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = index === 0 ? last : index - 1;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = last;
+    if (next === null) return;
+    e.preventDefault();
+    onChange(WIDGET_KINDS[next].key);
+    refs.current[next]?.focus();
+  };
+  return (
+    <div className={styles.kindGroup}>
+      <span className={styles.label} id={labelId}>
+        Kind
+      </span>
+      <div role="radiogroup" aria-labelledby={labelId} className={styles.kinds}>
+        {WIDGET_KINDS.map((k, index) => {
+          const checked = k.key === value;
+          return (
+            <button
+              key={k.key}
+              ref={(el) => {
+                refs.current[index] = el;
+              }}
+              type="button"
+              role="radio"
+              aria-checked={checked}
+              tabIndex={checked ? 0 : -1}
+              className={`${styles.kind}${checked ? ` ${styles.kindChecked}` : ''}`}
+              onClick={() => onChange(k.key)}
+              onKeyDown={(e) => onKeyDown(e, index)}
+            >
+              <Icon icon={k.icon} size={16} />
+              <span>{k.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+interface KindOptionsProps {
+  kind: WidgetKind;
+  options: WidgetOptions;
+  /** The query asks a percentage (a KPI then shows one bucket) */
+  share: boolean;
+  bucketOptions: { value: string; label: string }[];
+  onChange: (patch: Partial<WidgetOptions>) => void;
+}
+
+/** The display options of a kind, and the number format of every kind. */
+function KindOptions({ kind, options, share, bucketOptions, onChange }: KindOptionsProps) {
+  return (
+    <div className={styles.options}>
+      {kind === 'bar' && (
+        <>
+          <ToggleSwitch
+            label="Stacked"
+            checked={Boolean(options.stacked || options.percent)}
+            disabled={Boolean(options.percent)}
+            onChange={(stacked) => onChange({ stacked })}
+          />
+          <ToggleSwitch
+            label="100 %"
+            checked={Boolean(options.percent)}
+            onChange={(percent) => onChange(percent ? { percent, stacked: true } : { percent })}
+          />
+          <Select
+            label="Orientation"
+            fullWidth
+            value={options.orientation ?? 'vertical'}
+            onChange={(e) => onChange({ orientation: e.target.value as WidgetOptions['orientation'] })}
+            options={[
+              { value: 'vertical', label: 'Vertical' },
+              { value: 'horizontal', label: 'Horizontal' },
+            ]}
+          />
+        </>
+      )}
+      {kind === 'line' && (
+        <ToggleSwitch
+          label="Show legend"
+          checked={options.show_legend !== false}
+          onChange={(show) => onChange({ show_legend: show })}
+        />
+      )}
+      {kind === 'pie' && (
+        <ToggleSwitch
+          label="Show legend"
+          checked={options.show_legend === true}
+          onChange={(show) => onChange({ show_legend: show })}
+        />
+      )}
+      {kind === 'kpi' && share && (
+        <Select
+          label="Bucket"
+          fullWidth
+          value={options.kpi_bucket === undefined || options.kpi_bucket === null ? '' : bucketValue(options.kpi_bucket)}
+          onChange={(e) => onChange({ kpi_bucket: e.target.value ? (JSON.parse(e.target.value) as WidgetOptions['kpi_bucket']) : null })}
+          options={bucketOptions}
+          placeholder={bucketOptions.length > 0 ? 'Choose a value' : 'Waiting for the preview'}
+          hint="The value whose share the KPI shows"
+        />
+      )}
+      <Select
+        label="Number format"
+        fullWidth
+        value={options.number_format ?? ''}
+        onChange={(e) =>
+          onChange({ number_format: (e.target.value || null) as WidgetOptions['number_format'] })
+        }
+        options={[
+          { value: '', label: 'Auto' },
+          { value: 'integer', label: 'Integer' },
+          { value: 'decimal', label: 'Decimal' },
+          { value: 'percent', label: 'Percent' },
+        ]}
+      />
+    </div>
+  );
+}

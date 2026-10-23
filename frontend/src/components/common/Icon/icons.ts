@@ -160,6 +160,14 @@ export { default as DashboardIcon } from '@mui/icons-material/DashboardOutlined'
 export { default as PieChartIcon } from '@mui/icons-material/PieChartOutlined';
 /** A line chart widget */
 export { default as LineChartIcon } from '@mui/icons-material/ShowChartOutlined';
+/** A table widget */
+export { default as TableIcon } from '@mui/icons-material/TableChartOutlined';
+/** A KPI widget: one number */
+export { default as KpiIcon } from '@mui/icons-material/NumbersOutlined';
+/** Duplicate (a dashboard) */
+export { default as CopyIcon } from '@mui/icons-material/ContentCopyOutlined';
+/** Share (a dashboard with roles or everyone) */
+export { default as ShareIcon } from '@mui/icons-material/ShareOutlined';
 /** Disable */
 export { default as BanIcon } from '@mui/icons-material/BlockOutlined';
 /** Open in a new tab */

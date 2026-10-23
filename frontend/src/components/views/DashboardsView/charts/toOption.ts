@@ -17,7 +17,9 @@
  * - Colours: a value's own colour (team, tag, field item), else the palette
  *   by position; "Other" in the muted text colour.
  * - The legend shows the series of a second dimension unless
- *   `show_legend === false`; the tooltip formats values with `formatMetric`.
+ *   `show_legend === false`; a pie shows its slices in a legend only when
+ *   `show_legend === true` (its labels name them already). The tooltip
+ *   formats values with `formatMetric`.
  */
 
 import type { MetricKey, MetricResult, MetricUnit, WidgetKind, WidgetOptions } from '@/types';
@@ -80,7 +82,7 @@ export function toOption(
         trigger: 'item',
         valueFormatter: (value: number) => formatMetric(value, unit, opts),
       },
-      legend: { show: false },
+      legend: opts.show_legend === true ? { show: true, type: 'scroll', top: 0 } : { show: false },
       series: [
         {
           type: 'pie',

@@ -106,12 +106,26 @@ export function changeMeasure(kind: WidgetKind, query: MetricQuery, measure: Mea
   return normaliseQuery(kind, { ...query, measure });
 }
 
-/** The options made consistent with the kind: 100 % implies stacked; a KPI bucket only on a KPI share. */
-export function normaliseOptions(kind: WidgetKind, query: MetricQuery, options: WidgetOptions): WidgetOptions {
-  const next: WidgetOptions = { ...options };
-  if (kind === 'bar' && next.percent) next.stacked = true;
-  if (kind !== 'kpi' || !query.percent_of) delete next.kpi_bucket;
-  return next;
+/**
+ * The options a widget stores: only those its kind uses, and only when they
+ * differ from the renderer's default (bar: stacked, 100 % — which implies
+ * stacked —, horizontal; line: legend off; pie: legend on; KPI share: the
+ * bucket), plus the number format.
+ */
+export function cleanOptions(kind: WidgetKind, query: MetricQuery, options: WidgetOptions): WidgetOptions {
+  const clean: WidgetOptions = {};
+  if (kind === 'bar') {
+    if (options.percent) clean.percent = true;
+    if (options.stacked || options.percent) clean.stacked = true;
+    if (options.orientation === 'horizontal') clean.orientation = 'horizontal';
+  }
+  if (kind === 'line' && options.show_legend === false) clean.show_legend = false;
+  if (kind === 'pie' && options.show_legend === true) clean.show_legend = true;
+  if (kind === 'kpi' && query.percent_of && options.kpi_bucket !== undefined && options.kpi_bucket !== null) {
+    clean.kpi_bucket = options.kpi_bucket;
+  }
+  if (options.number_format) clean.number_format = options.number_format;
+  return clean;
 }
 
 /** Why a query cannot be previewed or saved yet (client-side), or null. */

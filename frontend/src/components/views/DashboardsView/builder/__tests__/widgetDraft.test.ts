@@ -9,6 +9,7 @@ import type { MetricQuery } from '@/types';
 import {
   activeFilterCount,
   changeMeasure,
+  cleanOptions,
   cleanQuery,
   comparableDraft,
   defaultQuery,
@@ -16,7 +17,6 @@ import {
   gridIdOf,
   MAX_DIMENSIONS,
   newClientId,
-  normaliseOptions,
   normaliseQuery,
   placeNewWidget,
   queryProblem,
@@ -65,12 +65,24 @@ describe('kind rules', () => {
     expect(changeMeasure('bar', q, 'booked_days').measure).toBe('booked_days');
   });
 
-  it('keeps options consistent with the kind', () => {
-    expect(normaliseOptions('bar', query(), { percent: true })).toEqual({ percent: true, stacked: true });
-    expect(normaliseOptions('line', query(), { percent: true })).toEqual({ percent: true });
-    expect(normaliseOptions('kpi', query({ percent_of: 'total' }), { kpi_bucket: true })).toEqual({ kpi_bucket: true });
-    expect(normaliseOptions('kpi', query(), { kpi_bucket: true })).toEqual({});
-    expect(normaliseOptions('bar', query({ percent_of: 'total' }), { kpi_bucket: 3 })).toEqual({});
+  it('keeps the options a kind uses, when they differ from the default', () => {
+    expect(cleanOptions('bar', query(), { percent: true, orientation: 'horizontal', show_legend: false })).toEqual({
+      percent: true,
+      stacked: true,
+      orientation: 'horizontal',
+    });
+    expect(cleanOptions('bar', query(), { stacked: true, orientation: 'vertical', percent: false })).toEqual({ stacked: true });
+    expect(cleanOptions('line', query(), { percent: true, show_legend: false })).toEqual({ show_legend: false });
+    expect(cleanOptions('line', query(), { show_legend: true })).toEqual({});
+    expect(cleanOptions('pie', query(), { show_legend: true, number_format: 'integer' })).toEqual({
+      show_legend: true,
+      number_format: 'integer',
+    });
+    expect(cleanOptions('pie', query(), { show_legend: false })).toEqual({});
+    expect(cleanOptions('kpi', query({ percent_of: 'total' }), { kpi_bucket: false })).toEqual({ kpi_bucket: false });
+    expect(cleanOptions('kpi', query({ percent_of: 'total' }), { kpi_bucket: null })).toEqual({});
+    expect(cleanOptions('kpi', query(), { kpi_bucket: true })).toEqual({});
+    expect(cleanOptions('table', query({ percent_of: 'total' }), { kpi_bucket: 3, stacked: true })).toEqual({});
   });
 
   it('names what blocks a query client-side', () => {

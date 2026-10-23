@@ -199,6 +199,16 @@ describe('toOption — pie', () => {
     expect(option.series[0].data.map((d: AnyOption) => d.value)).toEqual([3, 3]);
   });
 
+  it('names the slices in a legend only when asked', () => {
+    const rows = [row([A], 1), row([B], 2)];
+    expect((toOption('pie', result(rows, 1), { show_legend: true }, theme) as AnyOption).legend).toEqual({
+      show: true,
+      type: 'scroll',
+      top: 0,
+    });
+    expect((toOption('pie', result(rows, 1), { show_legend: false }, theme) as AnyOption).legend).toEqual({ show: false });
+  });
+
   it('shows a dimensionless result as one "Total" slice', () => {
     const option = toOption('pie', result([row([], 7)], 0), undefined, theme) as AnyOption;
     expect(option.series[0].data).toEqual([{ name: 'Total', value: 7, itemStyle: { color: 'p0' } }]);
