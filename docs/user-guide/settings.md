@@ -686,7 +686,7 @@ Project fields are what a project holds besides its name, dates, manager and tea
 
 **Customer**, **Sales PM**, **Volume** and **Confirmed** are part of every project. For each:
 
-- **Label** — Type another name (for example *Client* instead of *Customer*); leave the box empty to keep the default. The new name is used for the whole workspace: in the project dialog, the Gantt chart, the Cross-Site and Archived views.
+- **Label** — Type another name (for example *Client* instead of *Customer*); leave the box empty to keep the default. The new name replaces the default everywhere the field is named, for the whole workspace: in the project dialog, the Gantt chart's Shift-hover tooltip and the Archived view (*No Client*). The defaults shown here are the names used everywhere else too.
 - **Shown** — Switch Customer, Sales PM or Volume off to hide it from the project dialog and the views. Hiding keeps the values stored; switching the field back on shows them again.
 
 **Confirmed** can be renamed but not hidden: it drives the project status, the striped look of unconfirmed projects, the default project order and the sidebar counts.

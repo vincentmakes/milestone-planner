@@ -216,6 +216,16 @@ describe('ProjectModal project fields', () => {
 });
 
 describe('ProjectModal built-in field labels and hidden fields', () => {
+  it('names the built-in fields with the defaults Settings shows', () => {
+    act(() => useUIStore.getState().openProjectModal(project));
+    render(<ProjectModal />);
+    expect(screen.getByLabelText('Customer')).toHaveValue('Acme');
+    expect(screen.getByLabelText('Sales PM')).toHaveValue('Sam');
+    expect(screen.getByLabelText('Volume')).toHaveValue(1000);
+    expect(screen.getByRole('switch', { name: 'Confirmed' })).not.toBeChecked();
+    expect(screen.queryByText(/Project Volume|Project Confirmed/)).not.toBeInTheDocument();
+  });
+
   it('labels the built-in fields with the custom labels', () => {
     useAppStore.setState({
       instanceSettings: { project_field_labels: '{"customer":"Client","sales_pm":"Account","volume":"Budget (EUR)","confirmed":"Won"}' },
@@ -226,7 +236,11 @@ describe('ProjectModal built-in field labels and hidden fields', () => {
     expect(screen.getByLabelText('Account')).toHaveValue('Sam');
     expect(screen.getByLabelText('Budget (EUR)')).toHaveValue(1000);
     expect(screen.getByRole('switch', { name: 'Won' })).not.toBeChecked();
+    // a custom label replaces the default name entirely
     expect(screen.queryByLabelText('Customer')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Sales PM')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Volume')).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch', { name: 'Confirmed' })).not.toBeInTheDocument();
   });
 
   it('neither shows nor sends a hidden built-in field, and keeps its value', async () => {
@@ -235,9 +249,9 @@ describe('ProjectModal built-in field labels and hidden fields', () => {
     render(<ProjectModal />);
     expect(screen.queryByLabelText('Customer')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Sales PM')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Project Volume (CHF)')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Volume')).not.toBeInTheDocument();
     // Confirmed cannot be hidden
-    expect(screen.getByRole('switch', { name: 'Project Confirmed' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Confirmed' })).toBeInTheDocument();
 
     await save();
     const data = sent(updateProject);
@@ -253,7 +267,7 @@ describe('ProjectModal built-in field labels and hidden fields', () => {
     act(() => useUIStore.getState().openProjectModal(project));
     render(<ProjectModal />);
     expect(screen.queryByLabelText('Sales PM')).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Project Volume (CHF)'), { target: { value: '2000' } });
+    fireEvent.change(screen.getByLabelText('Volume'), { target: { value: '2000' } });
     await save();
     expect(sent(updateProject)).toMatchObject({ customer: 'Acme', volume: 2000 });
     expect(sent(updateProject)).not.toHaveProperty('sales_pm');

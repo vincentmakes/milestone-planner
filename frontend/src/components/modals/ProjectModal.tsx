@@ -492,12 +492,11 @@ export function ProjectModal() {
           />
           {!customerHidden && (
             <Input
-              label={builtInFieldLabel(instanceSettings, 'customer', 'Customer')}
+              label={builtInFieldLabel(instanceSettings, 'customer')}
               type="text"
               className={styles.field}
               value={customer}
               onChange={(e) => setCustomer(e.target.value)}
-              placeholder="Customer name"
             />
           )}
         </div>
@@ -506,7 +505,7 @@ export function ProjectModal() {
           <div className={styles.formRow}>
             {!salesPmHidden && (
               <Input
-                label={builtInFieldLabel(instanceSettings, 'sales_pm', 'Sales PM')}
+                label={builtInFieldLabel(instanceSettings, 'sales_pm')}
                 type="text"
                 className={styles.field}
                 value={salesPm}
@@ -516,7 +515,7 @@ export function ProjectModal() {
             )}
             {!volumeHidden && (
               <Input
-                label={builtInFieldLabel(instanceSettings, 'volume', 'Project Volume (CHF)')}
+                label={builtInFieldLabel(instanceSettings, 'volume')}
                 type="number"
                 className={styles.field}
                 value={volume}
@@ -584,7 +583,7 @@ export function ProjectModal() {
             <ToggleSwitch
               checked={confirmed}
               onChange={setConfirmed}
-              label={builtInFieldLabel(instanceSettings, 'confirmed', 'Project Confirmed')}
+              label={builtInFieldLabel(instanceSettings, 'confirmed')}
             />
           </div>
           {isEditing && (

@@ -77,7 +77,7 @@ describe('ArchivedView edit button', () => {
 describe('ArchivedView customer', () => {
   afterEach(() => useAppStore.setState({ instanceSettings: null }));
 
-  it('shows the customer, or "No customer" named with the custom label', () => {
+  it('shows the customer, or "No Customer" named with the field label as given', () => {
     seed({ id: 1, role: 'admin' });
     const { unmount } = render(<ArchivedView />);
     expect(screen.getByText('Acme')).toBeInTheDocument();
@@ -93,7 +93,7 @@ describe('ArchivedView customer', () => {
 
     useAppStore.setState({ instanceSettings: null });
     render(<ArchivedView />);
-    expect(screen.getByText('No customer')).toBeInTheDocument();
+    expect(screen.getByText('No Customer')).toBeInTheDocument();
   });
 
   it('leaves the customer out while the Customer field is hidden', () => {

@@ -4,6 +4,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  BUILT_IN_FIELD_DEFAULTS,
   BUILT_IN_PROJECT_FIELDS,
   builtInFieldLabel,
   fieldLabelsValue,
@@ -94,11 +95,22 @@ describe('built-in project fields', () => {
     expect(parseHiddenFields('{"customer":true}')).toEqual([]);
   });
 
-  it('labels a field with its custom label, else the caller default', () => {
+  it('labels a field with its custom label, else its one default name', () => {
     const settings = { project_field_labels: '{"customer":"Client"}' };
-    expect(builtInFieldLabel(settings, 'customer', 'Customer')).toBe('Client');
-    expect(builtInFieldLabel(settings, 'volume', 'Project Volume (CHF)')).toBe('Project Volume (CHF)');
-    expect(builtInFieldLabel(null, 'customer', 'Customer')).toBe('Customer');
+    expect(builtInFieldLabel(settings, 'customer')).toBe('Client');
+    expect(builtInFieldLabel(settings, 'volume')).toBe('Volume');
+    expect(builtInFieldLabel(null, 'customer')).toBe('Customer');
+  });
+
+  it.each([
+    ['customer', 'Customer'],
+    ['sales_pm', 'Sales PM'],
+    ['volume', 'Volume'],
+    ['confirmed', 'Confirmed'],
+  ] as const)('defaults %s to "%s", the name Settings shows', (key, label) => {
+    expect(BUILT_IN_FIELD_DEFAULTS[key]).toBe(label);
+    expect(builtInFieldLabel(undefined, key)).toBe(label);
+    expect(BUILT_IN_PROJECT_FIELDS.find((f) => f.key === key)?.label).toBe(label);
   });
 
   it('hides only the listed hideable fields; Confirmed never', () => {

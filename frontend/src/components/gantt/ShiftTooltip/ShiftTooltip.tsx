@@ -494,7 +494,7 @@ export function ShiftTooltip() {
         <>
           {tooltipData.customer && !isBuiltInFieldHidden(instanceSettings, 'customer') && (
             <div className={styles.row}>
-              <span className={styles.label}>{builtInFieldLabel(instanceSettings, 'customer', 'Customer')}:</span>
+              <span className={styles.label}>{builtInFieldLabel(instanceSettings, 'customer')}:</span>
               <span>{tooltipData.customer}</span>
             </div>
           )}

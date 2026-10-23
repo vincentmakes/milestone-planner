@@ -68,11 +68,11 @@ Creating a project needs the *Create projects* permission (admins and superusers
 
 1. Click **+ New Project** in the panel header
 2. Fill in required fields: **Project Name**, **Start Date**, **End Date**
-3. Optionally set: Project Manager, Customer, Sales PM, Project Volume (an administrator may have [renamed or hidden](settings.md#project-fields) these)
+3. Optionally set: Project Manager, Customer, Sales PM, Volume (an administrator may have [renamed or hidden](settings.md#project-fields) these)
 4. If the site has [teams](settings.md#teams), tick the **Teams** the project belongs to — the teams of the active [team filter](settings.md#team-filter) are ticked already, so the new project shows in the view you are on
 5. Fill in any [project fields](#project-fields) and tags
 6. Select which **predefined phases** to include (all active phases are pre-selected, unless an administrator [turned that off](settings.md#features-defaults) — then none is, and you pick them)
-7. Check **Project Confirmed** if the project is approved
+7. Switch **Confirmed** on if the project is approved
 8. Click **Create Project**
 
 ## Editing Projects, Phases & Subphases
@@ -94,7 +94,7 @@ Every date in Milestone is picked on the same calendar. Click the **Start Date**
 
 ## Project Fields
 
-Besides its name, dates and manager, a project carries **fields**. Four are built in — **Customer**, **Sales PM**, **Project Volume** and **Project Confirmed** — and an administrator can rename them, hide the first three, and add fields of the workspace's own in **Settings → Project fields** (see [Project fields in Settings](settings.md#project-fields)). The project dialog shows the added fields after **Teams**, in the order set there:
+Besides its name, dates and manager, a project carries **fields**. Four are built in — **Customer**, **Sales PM**, **Volume** and **Confirmed** — and an administrator can rename them (the new name then replaces the default wherever the field is named), hide the first three, and add fields of the workspace's own in **Settings → Project fields** (see [Project fields in Settings](settings.md#project-fields)). The project dialog shows the added fields after **Teams**, in the order set there:
 
 - **Dropdown** — pick one item (for example *Project type* → Internal / Customer), or several items in a multi-select dropdown such as *Area*: type to find an item, click it (or press Enter on a unique match) and it appears as a coloured pill; click the **×** on a pill to remove it
 - **Text** — up to 2,000 characters

@@ -94,7 +94,7 @@ describe('ProjectModal fields', () => {
     expect(dateValue('End Date *')).toBe('2026-10-01');
     expect(screen.getByLabelText('Customer')).toHaveValue('');
     expect(screen.getByLabelText('Sales PM')).toHaveValue('');
-    expect(screen.getByLabelText('Project Volume (CHF)')).toHaveValue(null);
+    expect(screen.getByLabelText('Volume')).toHaveValue(null);
 
     const pm = screen.getByLabelText('Project Manager') as HTMLSelectElement;
     expect(pm.value).toBe('');
@@ -145,8 +145,8 @@ describe('ProjectModal fields', () => {
       fireEvent.change(screen.getByLabelText(label), { target: { value } });
       expect(screen.getByLabelText(label)).toHaveValue(value);
     }
-    fireEvent.change(screen.getByLabelText('Project Volume (CHF)'), { target: { value: '250000' } });
-    expect(screen.getByLabelText('Project Volume (CHF)')).toHaveValue(250000);
+    fireEvent.change(screen.getByLabelText('Volume'), { target: { value: '250000' } });
+    expect(screen.getByLabelText('Volume')).toHaveValue(250000);
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
@@ -165,7 +165,7 @@ describe('ProjectModal fields', () => {
     vi.mocked(updateProject).mockResolvedValueOnce({} as never);
     render(<ProjectModal />);
 
-    const confirmed = screen.getByRole('switch', { name: 'Project Confirmed' });
+    const confirmed = screen.getByRole('switch', { name: 'Confirmed' });
     const archived = screen.getByRole('switch', { name: 'Archived' });
     expect(confirmed).not.toBeChecked();
     expect(archived).not.toBeChecked();

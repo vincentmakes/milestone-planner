@@ -89,6 +89,11 @@ export const BUILT_IN_PROJECT_FIELDS: readonly { key: BuiltInFieldKey; label: st
 
 const BUILT_IN_KEYS = BUILT_IN_PROJECT_FIELDS.map((f) => f.key);
 
+/** The default name of each built-in field — the one name used wherever the field is named. */
+export const BUILT_IN_FIELD_DEFAULTS = Object.fromEntries(
+  BUILT_IN_PROJECT_FIELDS.map((f) => [f.key, f.label])
+) as Readonly<Record<BuiltInFieldKey, string>>;
+
 /** The longest label the backend accepts (`MAX_FIELD_LABEL_LENGTH`). */
 export const MAX_FIELD_LABEL_LENGTH = 60;
 
@@ -124,13 +129,16 @@ export function parseHiddenFields(value: string | null | undefined): HideableBui
   );
 }
 
-/** The label a built-in field shows: the admin's custom label, else `fallback`. */
+/**
+ * The name a built-in field shows everywhere it is named: the admin's custom
+ * label, else its default (`BUILT_IN_FIELD_DEFAULTS`). A custom label replaces
+ * the name entirely — callers never add their own wording around it.
+ */
 export function builtInFieldLabel(
   settings: InstanceSettings | null | undefined,
-  key: BuiltInFieldKey,
-  fallback: string
+  key: BuiltInFieldKey
 ): string {
-  return parseFieldLabels(settings?.project_field_labels)[key] ?? fallback;
+  return parseFieldLabels(settings?.project_field_labels)[key] ?? BUILT_IN_FIELD_DEFAULTS[key];
 }
 
 /** Whether a built-in field is hidden instance-wide. Confirmed never is. */

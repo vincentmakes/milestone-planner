@@ -32,7 +32,7 @@ export function ArchivedView() {
   const showWeekends = useAppStore((s) => (s.instanceSettings?.show_weekends ?? 'true') !== 'false');
   // The Customer field may be renamed or hidden (Settings → Project fields)
   const customerHidden = useAppStore((s) => isBuiltInFieldHidden(s.instanceSettings, 'customer'));
-  const customerLabel = useAppStore((s) => builtInFieldLabel(s.instanceSettings, 'customer', 'customer'));
+  const customerLabel = useAppStore((s) => builtInFieldLabel(s.instanceSettings, 'customer'));
   const viewMode = useViewStore((s) => s.viewMode);
   const currentDate = useViewStore((s) => s.currentDate);
   const cellWidth = useViewStore((s) => s.cellWidth);
