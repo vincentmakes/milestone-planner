@@ -7,6 +7,7 @@ demo's two field widgets only for the fields that exist.
 
 import json
 from itertools import combinations
+from pathlib import Path
 
 import pytest
 
@@ -201,7 +202,7 @@ def test_the_demo_extras_with_their_field_ids():
     assert (share["kind"], share["title"]) == ("bar", "Share of time by Project type per team")
     assert json.loads(share["query"]) == {
         "measure": "booked_weeks",
-        "dimensions": [{"kind": "field", "field_id": 41}, {"kind": "team"}],
+        "dimensions": [{"kind": "team"}, {"kind": "field", "field_id": 41}],
         "filters": {"archived": "exclude", "period": {"relative": "this_year"}},
         "percent_of": "first_dimension",
         "top_n": None,
@@ -227,12 +228,15 @@ def test_the_templates_are_never_mutated():
     _rows(FIELDS)
     _rows({"Area": 1})
     assert json.dumps([BASE_DASHBOARD, DEMO_EXTRA_WIDGETS], sort_keys=True) == before
-    for _, extra in DEMO_EXTRA_WIDGETS:
-        fields = [d for d in extra["query"]["dimensions"] if d["kind"] == "field"]
-        assert fields == [{"kind": "field", "field_id": None}]
+    # The field dimension keeps its placeholder id (filled per call only).
+    dimensions = {title: extra["query"]["dimensions"] for title, extra in DEMO_EXTRA_WIDGETS}
+    assert dimensions == {
+        "Project type": [{"kind": "team"}, {"kind": "field", "field_id": None}],
+        "Area": [{"kind": "field", "field_id": None}],
+    }
 
 
 def test_the_module_is_import_light():
-    source = open(dashboard_seed.__file__).read()
+    source = Path(dashboard_seed.__file__).read_text()
     assert "sqlalchemy" not in source
     assert "app.models" not in source

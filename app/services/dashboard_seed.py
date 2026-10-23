@@ -161,7 +161,7 @@ DEMO_EXTRA_WIDGETS: tuple[tuple[str, dict[str, Any]], ...] = (
             "title": "Share of time by Project type per team",
             "query": _query(
                 "booked_weeks",
-                [{"kind": "field", "field_id": None}, {"kind": "team"}],
+                [{"kind": "team"}, {"kind": "field", "field_id": None}],
                 percent_of="first_dimension",
             ),
             "options": {"stacked": True, "percent": True},

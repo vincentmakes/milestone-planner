@@ -591,7 +591,8 @@ async def test_the_base_dashboard_with_the_demo_field_widgets(loaded):
         assert "{" not in sql  # JSON goes in as parameters, never SQL text
     titles = [args[2] for _, args in widgets]
     assert titles[-2:] == ["Share of time by Project type per team", "Booked weeks by Area"]
-    assert json.loads(widgets[8][1][3])["dimensions"][0] == {
+    assert json.loads(widgets[8][1][3])["dimensions"][0] == {"kind": "team"}
+    assert json.loads(widgets[8][1][3])["dimensions"][1] == {
         "kind": "field",
         "field_id": fields["Project type"],
     }

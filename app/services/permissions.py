@@ -554,7 +554,8 @@ PERMISSIONS: tuple[Permission, ...] = (
         "WebSocket debug",
         "Use the WebSocket diagnostics endpoints.",
         _NONE,
-    ),  # --- Dashboards -------------------------------------------------------
+    ),
+    # --- Dashboards -------------------------------------------------------
     _p(
         "Dashboards",
         "dashboards.manage",
