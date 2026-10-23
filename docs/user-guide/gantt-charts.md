@@ -133,7 +133,7 @@ The **Filter** button in the project panel header (and in the Kanban toolbar) op
 
 ![The Filter panel of the project panel, open: the Area field with its (None) option and items, then the Tags section](../assets/screenshots/project-filter.png){ loading=lazy }
 
-The button shows how many choices are ticked, and the panel header shows *x of y* projects while a filter is active. The selection is remembered per site, so switching site or reloading brings it back. Items and tags that are deleted later are simply ignored. With a [team filter](settings.md#team-filter) active, the panel only lists the items and tags available to the selected teams.
+The panel opens under its button, or above it when there is more room there, and is never cut off by an open [Staff or Equipment Overview](#resource-panels). The button shows how many choices are ticked, and the panel header shows *x of y* projects while a filter is active. The selection is remembered per site, so switching site or reloading brings it back. Items and tags that are deleted later are simply ignored. With a [team filter](settings.md#team-filter) active, the panel only lists the items and tags available to the selected teams.
 
 !!! note "Upgrading to 2.0.0"
     A filter, grouping or colour choice saved in your browser before version 2.0.0 is reset once, because tag groups became project fields — pick it again.
@@ -204,6 +204,14 @@ An unlinked booking's bar can be moved and resized on the timeline like any othe
 Click the **phase name** in the badge to scroll the timeline to the booking: to its own start date when it is unlinked, to the phase's start when it follows the phase.
 
 A person can hold **several bookings on the same phase**, as long as their dates do not overlap (adjacent days are fine). Booking someone for days that overlap one of their bookings on that phase is refused with *This person is already booked on this card for overlapping dates*.
+
+Booking someone **again** without choosing dates — **Assign Staff** with *Follow the phase dates* on, **Assign me again**, a drag from the resource panel or the Kanban card dialog — places the new booking for you:
+
+- If their one booking covers the **whole phase**, it is split in half: the existing booking keeps the first half (the longer one when the phase has an odd number of days) and the new booking gets the second half. Both get their own dates.
+- If their bookings leave **free days**, the new booking takes the **largest free stretch** (the earliest one on a tie).
+- If their bookings already **cover the whole phase**, the booking is refused with *This person's bookings already cover the whole card — shorten one of them first*.
+
+When your own booking [needs approval](staff-management.md#booking-yourself-when-approval-is-required), the request is sent with the planned dates and your existing booking is left alone until an approver approves it; the split or the free stretch is then worked out again and applied.
 
 When the phase itself changes:
 
@@ -386,7 +394,7 @@ Right-click on any item for context-appropriate actions:
 | Staff Assignment | Edit Assignment, Remove Assignment |
 | Equipment Assignment | Edit Assignment, Remove Assignment |
 
-Actions you are not allowed to perform on that project are shown disabled. **Assign me** only appears for people who can't edit the project: it books your own time on the item at your maximum capacity (see [Adding Yourself to a Project](staff-management.md#adding-yourself-to-a-project)) and reads **Assigned to me** once you are on it. On your own staff assignment, **Edit Assignment** and **Remove Assignment** are available to you on any project.
+Actions you are not allowed to perform on that project are shown disabled. **Assign me** only appears for people who can't edit the project: it books your own time on the item at your maximum capacity (see [Adding Yourself to a Project](staff-management.md#adding-yourself-to-a-project)). Once you are booked on a phase or subphase it reads **Assign me again** and [places a second booking](#bookings-on-phases-and-subphases); on a project it reads **Assigned to me**, and while a request of yours on the item awaits approval, **Assignment requested** (both greyed out). On your own staff assignment, **Edit Assignment** and **Remove Assignment** are available to you on any project.
 
 ## Archived Projects
 
