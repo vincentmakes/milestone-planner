@@ -18,15 +18,15 @@ import pytest
 from app.models.card_comment import CardComment
 from app.models.notification import Notification
 from app.services.notifications import card_assignee_ids
-from app.services.permissions import default_modes
+from app.services.permissions import default_modes, permission_required_detail
 from tests.conftest import FakeUser
-from tests.support import scalar_result, scalars_result
+from tests.support import card_target_result, scalar_result, scalars_result
 
 STAMP = datetime(2026, 1, 1, 12, 0, 0)
 
 
-def make_project(project_id=3, name="Bioprocess Scale-Up"):
-    return SimpleNamespace(id=project_id, name=name, site_id=1)
+def make_project(project_id=3, name="Bioprocess Scale-Up", archived=False):
+    return SimpleNamespace(id=project_id, name=name, site_id=1, archived=archived)
 
 
 def make_card(project_id=3):
@@ -127,7 +127,7 @@ async def test_card_thread_always_loads_its_card(authed_client, mock_db_session)
     # Even with sites.view_all (no visibility query), an unknown card is a 404.
     client, set_user = authed_client
     set_user(FakeUser(1, "admin"))
-    mock_db_session.execute.side_effect = [scalar_result(None)]
+    mock_db_session.execute.side_effect = [card_target_result(None)]
 
     response = await client.get("/api/kanban/cards/phase/99/comments")
 
@@ -147,6 +147,50 @@ async def test_project_thread_outside_the_visible_sites_is_403(
 
     assert response.status_code == 403
     assert mock_db_session.execute.await_count == 1  # never reads the thread
+
+
+def without_archived_view(user_id=5) -> FakeUser:
+    modes = {k: m for k, m in default_modes("user").items() if k != "views.archived"}
+    return FakeUser(user_id, "user", modes, site_ids=[1])
+
+
+async def test_an_archived_project_thread_needs_views_archived(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(without_archived_view())
+    mock_db_session.execute.side_effect = [scalar_result(make_project(archived=True))]
+
+    response = await client.get("/api/kanban/cards/project/3/comments")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == permission_required_detail("views.archived")
+    assert mock_db_session.execute.await_count == 1  # never reads the thread
+
+
+async def test_an_archived_card_thread_needs_views_archived(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(without_archived_view())
+    mock_db_session.execute.side_effect = [card_target_result(make_card(), archived=True)]
+
+    response = await client.get("/api/kanban/cards/phase/10/comments")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == permission_required_detail("views.archived")
+    target_sql = str(mock_db_session.execute.await_args_list[0].args[0])
+    assert "JOIN projects" in target_sql and "projects.archived" in target_sql
+
+
+async def test_an_archived_thread_reads_with_views_archived(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "user", site_ids=[1]))  # the shipped user role holds views.archived
+    mock_db_session.execute.side_effect = [
+        card_target_result(make_card(), archived=True),
+        rows_result([]),
+    ]
+
+    response = await client.get("/api/kanban/cards/phase/10/comments")
+
+    assert response.status_code == 200
+    assert response.json() == []
 
 
 @pytest.mark.parametrize("entity_type", ["task", "todo", "projects"])

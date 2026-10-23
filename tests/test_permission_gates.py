@@ -23,6 +23,7 @@ def empty_result() -> MagicMock:
     result = MagicMock()
     result.first.return_value = (8,)
     result.scalar_one_or_none.return_value = None
+    result.one_or_none.return_value = None
     result.unique.return_value.scalar_one_or_none.return_value = None
     result.scalars.return_value.all.return_value = []
     result.scalars.return_value.unique.return_value.all.return_value = []

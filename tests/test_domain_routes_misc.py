@@ -18,6 +18,7 @@ Mock-based, house style (tests/conftest.py).
 """
 
 from datetime import date, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -26,6 +27,7 @@ from app.models.custom_column import CustomColumn, CustomColumnValue
 from app.models.equipment import Equipment
 from app.models.site import Site
 from tests.conftest import FakeUser
+from tests.support import card_target_result
 
 STAMP = datetime(2026, 1, 1, 12, 0, 0)
 
@@ -491,7 +493,8 @@ async def test_comment_of_a_deleted_author_has_null_author(authed_client, mock_d
     )
     rows = MagicMock()
     rows.all.return_value = [(orphan, None, None)]
-    mock_db_session.execute.return_value = rows
+    card = SimpleNamespace(id=1, project_id=1, name=None, type="Design")
+    mock_db_session.execute.side_effect = [card_target_result(card), rows]
 
     response = await client.get("/api/kanban/cards/phase/1/comments")
 

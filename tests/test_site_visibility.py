@@ -554,7 +554,17 @@ def _card(project_id: int = 1) -> MagicMock:
     card.id = 1
     card.project_id = project_id
     card.status = "todo"
+    card.archived = False  # read as a project too (the project thread's lookup)
     return card
+
+
+def _card_lookup(card: MagicMock) -> MagicMock:
+    """A card lookup for every route: ``scalar_one_or_none()`` (status,
+    assignees, project threads) and the comment thread's joined
+    ``one_or_none()`` (card, project archived)."""
+    result = scalar_result(card)
+    result.one_or_none.return_value = (card, False)
+    return result
 
 
 @pytest.mark.parametrize(
@@ -571,7 +581,7 @@ async def test_kanban_card_writes_outside_are_403(
 ):
     client, set_user = authed_client
     set_user(superuser())
-    mock_db_session.execute.return_value = scalar_result(_card())
+    mock_db_session.execute.return_value = _card_lookup(_card())
 
     kwargs = {"json": body} if body is not None else {}
     response = await getattr(client, method)(path, **kwargs)
@@ -1185,7 +1195,9 @@ async def test_comment_reads_need_no_kanban_key(authed_client, mock_db_session, 
     set_user(without("user", "views.kanban"))
     site_links.projects[1] = 1
     result = empty_result()
-    result.scalar_one_or_none.return_value = _card()
+    card = _card()
+    result.scalar_one_or_none.return_value = card
+    result.one_or_none.return_value = (card, False)
     mock_db_session.execute.return_value = result
 
     response = await client.get(path)
@@ -1209,7 +1221,7 @@ async def test_kanban_reads_outside_are_403(
 ):
     client, set_user = authed_client
     set_user(superuser())
-    mock_db_session.execute.return_value = scalar_result(_card())
+    mock_db_session.execute.return_value = _card_lookup(_card())
 
     response = await client.get(path)
 

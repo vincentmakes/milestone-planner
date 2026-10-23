@@ -21,7 +21,7 @@ from app.models.notification import Notification
 from app.models.user import User
 from app.services.approvals import ALREADY_PENDING_DETAIL, CARD_FULL_DETAIL
 from tests.conftest import FakeUser
-from tests.support import card_lock_result, scalar_result, scalars_result
+from tests.support import card_lock_result, card_target_result, scalar_result, scalars_result
 
 STAMP = datetime(2026, 1, 1, 12, 0, 0)
 
@@ -152,12 +152,15 @@ async def test_comment_counts_require_authentication(app_client):
 async def test_comment_thread_with_deleted_author(authed_client, mock_db_session):
     client, set_user = authed_client
     set_user(FakeUser(5, "user"))
-    mock_db_session.execute.return_value = rows_result(
-        [
-            (make_comment(50, 5, mentions=[7], edited=True), "Ada", "Lovelace"),
-            (make_comment(51, None), None, None),
-        ]
-    )
+    mock_db_session.execute.side_effect = [
+        card_target_result(make_card()),
+        rows_result(
+            [
+                (make_comment(50, 5, mentions=[7], edited=True), "Ada", "Lovelace"),
+                (make_comment(51, None), None, None),
+            ]
+        ),
+    ]
 
     response = await client.get("/api/kanban/cards/phase/10/comments")
 
@@ -186,7 +189,7 @@ async def test_post_comment_notifies_mentions_and_assignees_once(
     db = db_stamps_comments
     assignees.return_value = [7, 8, 5]  # 7 also mentioned; 5 is the author
     db.execute.side_effect = [
-        scalar_result(make_card()),  # the card
+        card_target_result(make_card()),  # the card
         scalars_result([7]),  # mentioned ids that exist (9 does not)
     ]
 
@@ -222,7 +225,7 @@ async def test_post_comment_without_mentions_skips_user_lookup(
     client, set_user = authed_client
     set_user(FakeUser(5, "user"))
     _, push, _ = wires
-    db_stamps_comments.execute.side_effect = [scalar_result(make_card(name="Sub A"))]
+    db_stamps_comments.execute.side_effect = [card_target_result(make_card(name="Sub A"))]
 
     response = await client.post(
         "/api/kanban/cards/subphase/10/comments", json={"body": "plain text"}
@@ -242,7 +245,7 @@ async def test_post_comment_survives_a_failed_push(authed_client, db_stamps_comm
     _, push, assignees = wires
     assignees.return_value = [8]
     push.side_effect = RuntimeError("socket gone")
-    db_stamps_comments.execute.side_effect = [scalar_result(make_card())]
+    db_stamps_comments.execute.side_effect = [card_target_result(make_card())]
 
     response = await client.post("/api/kanban/cards/phase/10/comments", json={"body": "hi"})
 
@@ -252,11 +255,36 @@ async def test_post_comment_survives_a_failed_push(authed_client, db_stamps_comm
 
 
 @pytest.mark.asyncio
+async def test_a_new_comment_is_not_edited(authed_client, mock_db_session, wires):
+    # Regression: created_at and updated_at came from two clock reads, so
+    # every new comment answered "edited": true.
+    client, set_user = authed_client
+    set_user(FakeUser(5, "user"))
+    mock_db_session.execute.side_effect = [card_target_result(make_card())]
+
+    async def refresh(obj):  # the database keeps the stamps the route set
+        obj.id = 62
+
+    mock_db_session.refresh.side_effect = refresh
+
+    response = await client.post("/api/kanban/cards/phase/10/comments", json={"body": "hi"})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["edited"] is False
+    assert body["created_at"] == body["updated_at"]
+    added = [c.args[0] for c in mock_db_session.add.call_args_list]
+    comment = next(obj for obj in added if isinstance(obj, CardComment))
+    assert comment.created_at == comment.updated_at
+    assert comment.is_edited is False
+
+
+@pytest.mark.asyncio
 async def test_post_comment_on_missing_card_404(authed_client, mock_db_session, wires):
     client, set_user = authed_client
     set_user(FakeUser(5, "user"))
     broadcast, _, _ = wires
-    mock_db_session.execute.side_effect = [scalar_result(None)]
+    mock_db_session.execute.side_effect = [card_target_result(None)]
 
     response = await client.post("/api/kanban/cards/subphase/10/comments", json={"body": "hi"})
 

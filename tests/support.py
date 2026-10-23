@@ -65,6 +65,15 @@ def scalar_result(value: Any) -> MagicMock:
     return result
 
 
+def card_target_result(card: Any, archived: bool = False) -> MagicMock:
+    """Result of a comment thread's card lookup (the card joined to its project's
+    ``archived`` flag): ``one_or_none()`` returns ``(card, archived)``, or ``None``
+    for a missing card."""
+    result = MagicMock()
+    result.one_or_none.return_value = None if card is None else (card, archived)
+    return result
+
+
 def scalars_result(values: list[Any]) -> MagicMock:
     """Result whose ``scalars()`` yields ``values`` (``.all()``, ``.first()``, ``.unique().all()``)."""
     result = MagicMock()

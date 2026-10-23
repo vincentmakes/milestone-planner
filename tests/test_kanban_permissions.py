@@ -26,7 +26,7 @@ from app.services.card_access import (
 )
 from app.services.permissions import PermissionSet, default_modes
 from tests.conftest import FakeUser
-from tests.support import card_lock_result, scalar_result, scalars_result
+from tests.support import card_lock_result, card_target_result, scalar_result, scalars_result
 from tests.test_project_access_routes import CARD_END, CARD_START, _placement
 
 
@@ -244,7 +244,7 @@ async def test_a_card_thread_reads_with_the_board_off(authed_client, mock_db_ses
     set_user(board_off(5, "user"))
     comments = MagicMock()
     comments.all.return_value = []
-    mock_db_session.execute.side_effect = [scalar_result(_card()), comments]
+    mock_db_session.execute.side_effect = [card_target_result(_card()), comments]
 
     response = await client.get("/api/kanban/cards/phase/10/comments")
 
@@ -339,7 +339,7 @@ async def test_a_user_leaves_a_card_with_the_board_off(authed_client, mock_db_se
 async def test_a_user_comments_with_the_board_off(authed_client, mock_db_session, wires):
     client, set_user = authed_client
     set_user(board_off(5, "user"))
-    mock_db_session.execute.side_effect = [scalar_result(_card())]
+    mock_db_session.execute.side_effect = [card_target_result(_card())]
 
     async def refresh(obj):
         obj.id = 61

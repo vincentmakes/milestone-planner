@@ -120,11 +120,12 @@ def _card_name(card: ProjectPhase | ProjectSubphase) -> str:
 
 async def _load_comment_target(
     db: AsyncSession, entity_type: CommentEntityType, entity_id: int
-) -> tuple[int, str]:
-    """``(project_id, name)`` of a thread's target, or 404.
+) -> tuple[int, str, bool]:
+    """``(project_id, name, archived)`` of a thread's target, or 404.
 
-    A project thread's ``entity_id`` is the project id. One branch per type,
-    no fallback.
+    A project thread's ``entity_id`` is the project id; a card's row comes with
+    its project's ``archived`` flag in the same query. One branch per type, no
+    fallback.
     """
     if entity_type == "project":
         project = (
@@ -132,9 +133,19 @@ async def _load_comment_target(
         ).scalar_one_or_none()
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
-        return project.id, project.name or "project"
-    card = await _load_card(db, entity_type, entity_id)
-    return card.project_id, _card_name(card)
+        return project.id, project.name or "project", bool(project.archived)
+    model = _CARD_MODELS[entity_type]
+    row = (
+        await db.execute(
+            select(model, Project.archived)
+            .join(Project, Project.id == model.project_id)
+            .where(model.id == entity_id)
+        )
+    ).one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"{entity_type.capitalize()} not found")
+    card, archived = row
+    return card.project_id, _card_name(card), bool(archived)
 
 
 def _comment_response(comment: CardComment, author_name: str | None) -> dict:
@@ -628,9 +639,12 @@ async def get_card_comments(
     """Comment thread of a card or a project, oldest first.
 
     No key: seeing the project is enough (403 outside the visible sites, 404
-    for an unknown target)."""
-    project_id, _ = await _load_comment_target(db, entity_type, entity_id)
+    for an unknown target); an archived project's threads need
+    ``views.archived``, like ``GET /projects/{id}``."""
+    project_id, _, archived = await _load_comment_target(db, entity_type, entity_id)
     await ensure_project_visible(request, db, user, project_id)
+    if archived and not user.permissions.has("views.archived"):
+        raise HTTPException(status_code=403, detail=permission_required_detail("views.archived"))
     result = await db.execute(
         select(CardComment, User.first_name, User.last_name)
         .outerjoin(User, CardComment.author_id == User.id)
@@ -664,19 +678,25 @@ async def create_card_comment(
     assignees -- the card's, or for a project thread the project-level
     bookings' (``comment``); the notifications carry the thread's entity
     (``project`` / project id for a project thread)."""
-    project_id, card_name = await _load_comment_target(db, entity_type, entity_id)
+    project_id, card_name, _ = await _load_comment_target(db, entity_type, entity_id)
     await ensure_project_visible(request, db, user, project_id)
 
     mentioned = await _validate_mention_ids(db, data.body)
     # Strip before truncating, or a preview can end mid-token as "@[Alice And".
     preview = strip_mention_tokens(data.body)[:200]
 
+    # One instant for both stamps: separate column defaults would read two
+    # clocks, and ``is_edited`` (updated_at > created_at) would flag every new
+    # comment as edited.
+    now = utcnow_naive()
     comment = CardComment(
         entity_type=entity_type,
         entity_id=entity_id,
         project_id=project_id,
         author_id=user.id,
         body=data.body,
+        created_at=now,
+        updated_at=now,
     )
     comment.set_mentions(mentioned)
     db.add(comment)
