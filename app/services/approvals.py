@@ -442,12 +442,27 @@ async def plan_placement(
     Plan a **dateless** booking of `staff_id` on a phase / subphase. Never
     raises (``require_placement`` turns a refusal into the 409).
 
-    One query: the card's dates (NOT NULL columns) with every row of the
-    person on the card, the rows locked ``FOR UPDATE`` so two concurrent
-    dateless creates cannot both halve the same row. `exclude_id` leaves out
-    the pending row being approved; `approved_only` counts only approved rows
+    Two queries. First the card row is locked ``FOR UPDATE`` on its own, so
+    every placement on a card is serialised: a second one waits for the
+    first to commit and then reads its rows. That closes the two races a
+    row lock alone leaves open under READ COMMITTED -- two dateless creates
+    both landing in the same free stretch (or the half freed by a split,
+    since the waiting one cannot see the other's new row), and two first
+    bookings both landing linked. An unknown card locks nothing and falls
+    through to the rows query (the routes 404 before reaching here). Then
+    the card's dates (NOT NULL columns) with every row of the person on the
+    card, those rows locked ``FOR UPDATE`` too. `exclude_id` leaves out the
+    pending row being approved; `approved_only` counts only approved rows
     (at approve time pending rows of other requests do not hold space; at
     submit and on a direct create every row does).
+
+    Lock order: a placement locks card -> rows -> the split row's open
+    request (``apply_shrink`` -> ``expire_overtaken``); an approval locks
+    request -> its row (``_load_row``) -> card -> rows (the re-plan of an
+    auto-placed create). A concurrent pair on the same person and card can
+    therefore deadlock (e.g. a placement splitting the full-span row while
+    that row's update request is approved); PostgreSQL aborts one of them
+    with an error the client reloads from. Rare enough to be left as is.
 
     No row -> linked (None / None). Otherwise ``place_booking`` on the rows'
     effective dates: the largest free stretch, else the halving of the one
@@ -458,6 +473,7 @@ async def plan_placement(
     model: Any = assignment_model(level)
     card: Any = ProjectPhase if level == "phase" else ProjectSubphase
     on_card = model.phase_id if level == "phase" else model.subphase_id
+    await db.execute(select(card.id).where(card.id == target_id).with_for_update())
     query = (
         select(card.start_date, card.end_date, model)
         .select_from(card)

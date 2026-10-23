@@ -17,7 +17,7 @@ from app.models.equipment import Equipment
 from app.models.site import Site
 from app.services.project_access import EDITOR_REQUIRED_DETAIL, OWN_ASSIGNMENT_DETAIL
 from tests.conftest import FakeUser
-from tests.support import scalars_result
+from tests.support import card_lock_result, scalars_result
 
 PM = 7  # id of the project manager of project 1
 OTHER = 99
@@ -571,6 +571,7 @@ async def test_level_assignment_uses_the_servers_project_id(authed_client, mock_
     mock_db_session.execute.side_effect = [
         resolved,
         _scalar_result(True),
+        card_lock_result(),
         _placement(),  # no booking of the person on the card yet
         _detail_row(5),
     ]
@@ -861,6 +862,7 @@ async def test_user_can_join_a_card(authed_client, mock_db_session):
     mock_db_session.execute.side_effect = [
         _scalar_result(_card()),
         _scalar_result(me),
+        card_lock_result(),
         _placement(),
     ]
 
@@ -1182,6 +1184,7 @@ SELF_ROUTES = [
             "allow": lambda: [
                 _resolved(),
                 _scalar_result(True),
+                card_lock_result(),
                 _placement(),
                 _detail_row(),
             ],
@@ -1189,6 +1192,7 @@ SELF_ROUTES = [
                 _resolved(),
                 _pm_result(PM),
                 _scalar_result(True),
+                card_lock_result(),
                 _placement(),
             ],
             "deny": lambda: [_resolved(), _pm_result(PM)],
@@ -1231,6 +1235,7 @@ SELF_ROUTES = [
             "allow": lambda: [
                 _resolved(),
                 _scalar_result(True),
+                card_lock_result(),
                 _placement(),
                 _detail_row(),
             ],
@@ -1238,6 +1243,7 @@ SELF_ROUTES = [
                 _resolved(),
                 _pm_result(PM),
                 _scalar_result(True),
+                card_lock_result(),
                 _placement(),
             ],
             "deny": lambda: [_resolved(), _pm_result(PM)],
@@ -1277,11 +1283,17 @@ SELF_ROUTES = [
         "assignments.self_create",
         "phase",
         {
-            "allow": lambda: [_scalar_result(_card()), _scalar_result(ME), _placement()],
+            "allow": lambda: [
+                _scalar_result(_card()),
+                _scalar_result(ME),
+                card_lock_result(),
+                _placement(),
+            ],
             "approval": lambda: [
                 _scalar_result(_card()),
                 _pm_result(PM),
                 _scalar_result(ME),
+                card_lock_result(),
                 _placement(),
             ],
             "deny": lambda: [_scalar_result(_card()), _pm_result(PM)],
@@ -1443,6 +1455,7 @@ async def test_self_booking_in_approval_mode_answers_202_with_the_documented_bod
         _resolved(),
         _pm_result(PM),
         _scalar_result(True),
+        card_lock_result(),
         _placement(),
     ]
     with (
@@ -1533,6 +1546,7 @@ async def test_pending_booking_counts_as_a_duplicate(authed_client, mock_db_sess
         _resolved(),
         _pm_result(PM),
         _scalar_result(True),
+        card_lock_result(),
         _placement(pending),
     ]
 

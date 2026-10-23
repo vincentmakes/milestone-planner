@@ -21,7 +21,7 @@ from app.models.notification import Notification
 from app.models.user import User
 from app.services.approvals import ALREADY_PENDING_DETAIL, CARD_FULL_DETAIL
 from tests.conftest import FakeUser
-from tests.support import scalar_result, scalars_result
+from tests.support import card_lock_result, scalar_result, scalars_result
 
 STAMP = datetime(2026, 1, 1, 12, 0, 0)
 
@@ -438,6 +438,7 @@ async def test_assign_books_at_max_capacity(
     mock_db_session.execute.side_effect = [
         scalar_result(make_card()),
         scalar_result(assignee),
+        card_lock_result(),
         placement(),  # not on the card yet
     ]
 
@@ -505,6 +506,7 @@ async def test_assign_someone_already_on_the_card_splits_their_booking(
     mock_db_session.execute.side_effect = [
         scalar_result(make_card()),
         scalar_result(User(id=7, first_name="Bob", last_name="B", max_capacity=60)),
+        card_lock_result(),
         placement(full_span),
     ]
     mock_db_session.refresh.side_effect = lambda obj: setattr(obj, "id", 300)
@@ -567,6 +569,7 @@ async def test_assign_takes_the_free_stretch_of_the_card(authed_client, mock_db_
     mock_db_session.execute.side_effect = [
         scalar_result(make_card()),
         scalar_result(User(id=7, first_name="Bob", last_name="B", max_capacity=60)),
+        card_lock_result(),
         placement(first),
     ]
     mock_db_session.refresh.side_effect = lambda obj: setattr(obj, "id", 300)
@@ -606,6 +609,7 @@ async def test_assign_without_room_is_409(authed_client, mock_db_session, wires,
     mock_db_session.execute.side_effect = [
         scalar_result(make_card()),
         scalar_result(User(id=7, first_name="Bob", last_name="B")),
+        card_lock_result(),
         placement(*(_booking("phase", **fields) for fields in rows)),
     ]
 

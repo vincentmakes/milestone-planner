@@ -35,11 +35,14 @@ from app.services.approvals import (
 )
 from app.services.project_access import SEGMENT_OUTSIDE_CARD_DETAIL
 from tests.conftest import FakeUser
+from tests.support import card_lock_result
 from tests.test_project_access_routes import (
     CARD_END,
     CARD_START,
+    ME,
     PM,
     SELF_MODES,
+    _card,
     _detail_row,
     _placement,
     _pm_result,
@@ -370,6 +373,7 @@ async def test_create_without_dates_is_linked_with_the_cards_dates(
     mock_db_session.execute.side_effect = [
         _resolved(),
         _scalar_result(True),
+        card_lock_result(),
         _placement(),  # the person holds no booking on the card
         _detail_row(STAFF),
     ]
@@ -857,6 +861,7 @@ async def test_second_booking_splits_a_full_span_booking(
     mock_db_session.execute.side_effect = [
         _resolved(),
         _scalar_result(True),
+        card_lock_result(),
         _placement(linked),
         _detail_row(STAFF, start_date=date(2026, 3, 8), end_date=date(2026, 3, 13)),
     ]
@@ -911,6 +916,7 @@ async def test_second_booking_splits_an_unlinked_full_span_booking(
     mock_db_session.execute.side_effect = [
         _resolved(),
         _scalar_result(True),
+        card_lock_result(),
         _placement(whole),
         _detail_row(STAFF, start_date=date(2026, 3, 8), end_date=date(2026, 3, 13)),
     ]
@@ -949,6 +955,7 @@ async def test_second_booking_fills_the_largest_free_stretch(
     mock_db_session.execute.side_effect = [
         _resolved(),
         _scalar_result(True),
+        card_lock_result(),
         _placement(*rows),
         _detail_row(STAFF, start_date=expected[0], end_date=expected[1]),
     ]
@@ -992,6 +999,7 @@ async def test_second_booking_without_room_is_409(
     mock_db_session.execute.side_effect = [
         _resolved(),
         _scalar_result(True),
+        card_lock_result(),
         _placement(*existing),
     ]
 
@@ -1018,6 +1026,7 @@ async def test_second_booking_overtakes_an_open_request_on_the_split_booking(
     mock_db_session.execute.side_effect = [
         _resolved(),
         _scalar_result(True),
+        card_lock_result(),
         _placement(linked),
         _detail_row(STAFF, start_date=date(2026, 3, 8), end_date=date(2026, 3, 13)),
     ]
@@ -1067,6 +1076,7 @@ async def test_second_booking_in_approval_mode_files_the_planned_dates(
         _resolved(),
         _pm_result(PM),
         _scalar_result(True),
+        card_lock_result(),
         _placement(*rows),
     ]
 
@@ -1076,6 +1086,46 @@ async def test_second_booking_in_approval_mode_files_the_planned_dates(
     assert submit.await_args.kwargs["values"] == values
     for row in rows:
         assert (row.start_date, row.end_date) == (None, None)
+    mock_db_session.add.assert_not_called()
+    mock_db_session.commit.assert_not_awaited()
+    assert change_intents == []
+
+
+@pytest.mark.parametrize("level", LEVELS)
+async def test_kanban_join_again_in_approval_mode_files_the_planned_half(
+    authed_client, mock_db_session, submit, change_intents, level
+):
+    # Joining a card again where one approved booking of the person covers it:
+    # the request carries the planned second half, the booking is not touched.
+    client, set_user = authed_client
+    set_user(SELF_MODES["approval"])
+    full_span = _row(level, id=7)
+    mock_db_session.execute.side_effect = [
+        _scalar_result(_card()),
+        _pm_result(PM),
+        _scalar_result(ME),
+        card_lock_result(),
+        _placement(full_span),
+    ]
+
+    response = await client.post(
+        f"/api/kanban/cards/{level}/1/assignees", json={"staff_id": STAFF, "allocation": 40}
+    )
+
+    assert response.status_code == 202, response.text
+    kwargs = submit.await_args.kwargs
+    assert (kwargs["action"], kwargs["level"], kwargs["target_id"]) == (
+        "assignments.self_create",
+        level,
+        1,
+    )
+    assert kwargs["values"] == {
+        "allocation": 40,
+        "start_date": "2026-03-08",
+        "end_date": "2026-03-13",
+        "placement": "auto",
+    }
+    assert (full_span.start_date, full_span.end_date) == (None, None)
     mock_db_session.add.assert_not_called()
     mock_db_session.commit.assert_not_awaited()
     assert change_intents == []

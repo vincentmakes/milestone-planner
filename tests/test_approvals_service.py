@@ -1517,6 +1517,22 @@ async def test_plan_placement_splits_the_one_full_span_row(level):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("level", ["phase", "subphase"])
+async def test_plan_placement_locks_the_card_first(level):
+    # Every placement on a card is serialised: the card row is locked on its
+    # own before the person's rows are read (even when they hold none yet).
+    db = ApprovalFakeDB()
+
+    await approvals.plan_placement(db, level, 11, REQ)
+
+    lock, rows = db.statements
+    assert (db.key(lock), db.key(rows)) == ("card_lock", "placement")
+    table = "project_phases" if level == "phase" else "project_subphases"
+    sql = str(lock.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    assert " ".join(sql.split()) == f"SELECT {table}.id FROM {table} WHERE {table}.id = 11 FOR UPDATE"
+
+
+@pytest.mark.asyncio
 async def test_plan_placement_takes_the_largest_gap_without_touching_rows():
     first = _booking("phase", start_date=date(2026, 3, 2), end_date=date(2026, 3, 4))
     db = ApprovalFakeDB(placement=_placement(first))

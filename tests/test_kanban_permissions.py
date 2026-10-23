@@ -26,7 +26,7 @@ from app.services.card_access import (
 )
 from app.services.permissions import PermissionSet, default_modes
 from tests.conftest import FakeUser
-from tests.support import scalar_result, scalars_result
+from tests.support import card_lock_result, scalar_result, scalars_result
 from tests.test_project_access_routes import CARD_END, CARD_START, _placement
 
 
@@ -302,6 +302,7 @@ async def test_an_admin_assigns_a_card_with_the_board_off(authed_client, mock_db
     mock_db_session.execute.side_effect = [
         scalar_result(_card()),
         scalar_result(assignee),
+        card_lock_result(),
         _placement(),
     ]
 

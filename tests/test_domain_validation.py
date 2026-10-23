@@ -21,6 +21,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from tests.conftest import FakeUser
+from tests.support import card_lock_result
 from tests.test_project_access_routes import _placement
 
 
@@ -128,6 +129,7 @@ async def test_phase_assignment_without_allocation_still_defaults_to_100(
     mock_db_session.execute.side_effect = [
         resolved,
         _scalar_result(True),
+        card_lock_result(),
         _placement(),  # no booking of the person on the phase yet
         detail,
     ]

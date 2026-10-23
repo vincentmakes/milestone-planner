@@ -38,6 +38,7 @@ from tests.support import (
     approvable_db,
     approval_admin,
     approval_request,
+    card_lock_result,
     pending_phase_row,
     scalar_result,
 )
@@ -139,21 +140,21 @@ CREATES = [
         "/api/phases/1/staff",
         {"staff_id": STAFF, "project_id": 1, "allocation": 40},
         lambda: [_resolved()],
-        lambda: [_placement(), _detail_row(STAFF)],
+        lambda: [card_lock_result(), _placement(), _detail_row(STAFF)],
     ),
     (
         "subphase",
         "/api/subphases/1/staff",
         {"staff_id": STAFF, "project_id": 1, "allocation": 40},
         lambda: [_resolved()],
-        lambda: [_placement(), _detail_row(STAFF)],
+        lambda: [card_lock_result(), _placement(), _detail_row(STAFF)],
     ),
     (
         "kanban",
         "/api/kanban/cards/phase/1/assignees",
         {"staff_id": STAFF},
         lambda: [scalar_result(_card())],
-        lambda: [_placement()],
+        lambda: [card_lock_result(), _placement()],
     ),
 ]
 _IDS = [c[0] for c in CREATES]
