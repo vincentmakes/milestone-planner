@@ -22,7 +22,11 @@ What the three actions store:
 
 A second request on the same row by the same requester supersedes the open
 one (``superseded`` + ``superseded_by_id``); a create on a target already
-booked (pending or approved) is a 409; an update of the requester's own
+booked (pending or approved) is a 409 -- except a **dateless** create on a
+phase / subphase, which is placed automatically (``plan_placement``: the
+largest free stretch of the card, else the halving of the one booking
+covering it, else 409 ``CARD_FULL_DETAIL``) and carries
+``placement: "auto"`` in its values; an update of the requester's own
 pending create edits it in place, and its removal cancels it.
 
 Statuses: ``pending`` -> ``approved`` | ``rejected`` | ``cancelled`` |
@@ -35,7 +39,10 @@ stored: the admins always; the project's manager when the action's policy has
 ``pm_approves``; holders of the policy's roles -- active users who can see the
 project's site, never the requester. ``approve`` re-validates inside its
 transaction and closes the request ``expired(<reason>)`` (409 to the caller)
-when the booking can no longer be applied.
+when the booking can no longer be applied; an auto-placed create is
+**re-planned** there (the person's approved bookings only) and the split or
+the gap is applied then -- the full-span booking is left alone until the
+decision.
 
 Every transition broadcasts ``change:approval_request`` (approve / reject also
 ``change:staff_assignment``), notifies the requester or the approvers, and
@@ -65,7 +72,14 @@ from app.models.notification import Notification
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.rbac import ApprovalPolicy, ApprovalRequest, Role, RolePermission
 from app.models.user import User, UserSite
-from app.services.booking_segments import fit_segments_to_card
+from app.schemas.base import serialize_date_as_datetime_js
+from app.services.booking_segments import (
+    Segment,
+    effective_dates,
+    fit_segments_to_card,
+    place_booking,
+    segments_overlap,
+)
 from app.services.notifications import build_notifications, notification_payload
 from app.services.permissions import (
     ADMIN_ROLE_KEY,
@@ -102,6 +116,11 @@ OWN_REQUEST_DETAIL = "You cannot approve your own request"
 NOT_DECIDER_DETAIL = "You are not an approver of this request"
 CANCEL_FORBIDDEN_DETAIL = "Only the requester or an administrator can cancel this request"
 INVALID_VALUES_DETAIL = "The requested values are not valid — reject the request instead"
+CARD_FULL_DETAIL = "This person's bookings already cover the whole card — shorten one of them first"
+
+# Marker of a dateless create placed by the server (``plan_placement``), kept
+# in the request's ``requested`` so ``approve`` re-plans it.
+AUTO_PLACEMENT = "auto"
 
 # Why a request expired, in words (409 detail and the requester's notification).
 CLOSE_REASON_DETAILS: dict[str, str] = {
@@ -157,18 +176,28 @@ def booking_dict(
     end_date: date | str | None = None,
     *,
     clear_dates: bool = False,
+    placement: str | None = None,
 ) -> dict[str, Any]:
     """
     Booking values as stored in a request: dates as ``YYYY-MM-DD``, present
     when given (project level, or an unlinked phase / subphase segment).
     ``clear_dates`` emits ``"start_date": null, "end_date": null`` -- a
     segment relinked to its card -- where "no dates" would mean "unchanged".
+    ``placement`` (``AUTO_PLACEMENT``) marks a dateless create the server
+    placed; every reader of the values ignores the key but ``approve``.
     """
     values: dict[str, Any] = {"allocation": allocation}
     if start_date is not None or end_date is not None or clear_dates:
         values["start_date"] = _iso(start_date)
         values["end_date"] = _iso(end_date)
+    if placement is not None:
+        values["placement"] = placement
     return values
+
+
+def is_auto_placed(values: dict[str, Any] | None) -> bool:
+    """Whether stored request values carry the ``placement: "auto"`` marker."""
+    return values is not None and values.get("placement") == AUTO_PLACEMENT
 
 
 def booking_values(row: AssignmentRow, level: str) -> dict[str, Any]:
@@ -372,6 +401,140 @@ async def ensure_no_duplicate(
     if detail is None:
         detail = ALREADY_BOOKED_DETAIL if level == "project" else ALREADY_BOOKED_OVERLAP_DETAIL
     raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+
+# ---------------------------------------------------------
+# Automatic placement of a dateless phase / subphase booking
+# ---------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PlannedBooking:
+    """
+    Where a new phase / subphase booking goes: its own dates (None / None =
+    linked, the person has no row on the card) and, for a split, the
+    full-span row to shorten (``shrink``) with its new dates (``shrink_to``)
+    and its effective dates before (``shrink_from``, for the texts).
+    """
+
+    start_date: date | None
+    end_date: date | None
+    shrink: AssignmentRow | None = None
+    shrink_to: Segment | None = None
+    shrink_from: Segment | None = None
+
+
+# Why there is no room: the person's bookings cover the card, or the one
+# full-span booking to split is itself awaiting approval.
+PlacementRefusal = Literal["card_full", "pending_row"]
+
+
+async def plan_placement(
+    db: AsyncSession,
+    level: str,
+    target_id: int,
+    staff_id: int,
+    *,
+    exclude_id: int | None = None,
+    approved_only: bool = False,
+) -> PlannedBooking | PlacementRefusal:
+    """
+    Plan a **dateless** booking of `staff_id` on a phase / subphase. Never
+    raises (``require_placement`` turns a refusal into the 409).
+
+    One query: the card's dates (NOT NULL columns) with every row of the
+    person on the card, the rows locked ``FOR UPDATE`` so two concurrent
+    dateless creates cannot both halve the same row. `exclude_id` leaves out
+    the pending row being approved; `approved_only` counts only approved rows
+    (at approve time pending rows of other requests do not hold space; at
+    submit and on a direct create every row does).
+
+    No row -> linked (None / None). Otherwise ``place_booking`` on the rows'
+    effective dates: the largest free stretch, else the halving of the one
+    row covering the card (``shrink``) -- refused ``"pending_row"`` when that
+    row awaits approval (nobody rewrites a requested booking) -- else
+    ``"card_full"``.
+    """
+    model: Any = assignment_model(level)
+    card: Any = ProjectPhase if level == "phase" else ProjectSubphase
+    on_card = model.phase_id if level == "phase" else model.subphase_id
+    query = (
+        select(card.start_date, card.end_date, model)
+        .select_from(card)
+        .join(model, on_card == card.id)
+        .where(card.id == target_id, model.staff_id == staff_id)
+    )
+    if exclude_id is not None:
+        query = query.where(model.id != exclude_id)
+    if approved_only:
+        query = query.where(model.approval_status == "approved")
+    found = (await db.execute(query.order_by(model.id).with_for_update(of=model))).all()
+    if not found:
+        return PlannedBooking(None, None)
+
+    card_start, card_end = found[0][0], found[0][1]
+    spans: list[tuple[AssignmentRow, date, date]] = []
+    for _start, _end, row in found:
+        start, end, _linked = effective_dates(row.start_date, row.end_date, card_start, card_end)
+        spans.append((row, start, end))
+    placed = place_booking(card_start, card_end, [(start, end) for _, start, end in spans])
+    if placed is None:
+        return "card_full"
+    new_start, new_end, shrink_to = placed
+    if shrink_to is None:
+        return PlannedBooking(new_start, new_end)
+    # A split: exactly one row lies on the card (place_booking's rule).
+    row, start, end = next(
+        span for span in spans if segments_overlap(span[1], span[2], card_start, card_end)
+    )
+    if row.approval_status == "pending":
+        return "pending_row"
+    return PlannedBooking(
+        new_start, new_end, shrink=row, shrink_to=shrink_to, shrink_from=(start, end)
+    )
+
+
+def require_placement(plan: PlannedBooking | PlacementRefusal) -> PlannedBooking:
+    """
+    The routes' side of ``plan_placement``: 409 ``CARD_FULL_DETAIL`` when the
+    person's bookings cover the card, 409 ``ALREADY_PENDING_DETAIL`` when the
+    booking to split awaits approval.
+    """
+    if plan == "card_full":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=CARD_FULL_DETAIL)
+    if plan == "pending_row":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=ALREADY_PENDING_DETAIL)
+    assert not isinstance(plan, str)
+    return plan
+
+
+def placement_body(allocation: int, plan: PlannedBooking) -> str:
+    """
+    The booked person's text for a placed booking: the dates that landed
+    (or the card's, linked) and, after a split, their shortened booking.
+    """
+    if plan.start_date is None or plan.end_date is None:
+        text = f"Booked at {allocation}% over the card's dates."
+    else:
+        text = f"Booked at {allocation}% from {plan.start_date} to {plan.end_date}."
+    if plan.shrink_from is not None and plan.shrink_to is not None:
+        before, after = plan.shrink_from, plan.shrink_to
+        text += f" Your booking {before[0]}–{before[1]} was shortened to {after[0]}–{after[1]}."
+    return text
+
+
+def adjusted_rows(plan: PlannedBooking) -> list[dict[str, Any]]:
+    """The rows a placement shortened, as the create routes answer them."""
+    if plan.shrink is None or plan.shrink_to is None:
+        return []
+    return [
+        {
+            "id": plan.shrink.id,
+            "start_date": serialize_date_as_datetime_js(plan.shrink_to[0]),
+            "end_date": serialize_date_as_datetime_js(plan.shrink_to[1]),
+            "linked": False,
+        }
+    ]
 
 
 # ---------------------------------------------------------
@@ -1039,6 +1202,12 @@ async def _amend_pending_create(
 
     if values is None:
         raise ValueError("An update needs values")
+    if is_auto_placed(parse_values(request.requested)) and _date_pair(values) == _date_pair(
+        booking_values(row, level)
+    ):
+        # An edit leaving the dates alone (allocation only) stays auto-placed,
+        # so approve re-plans it; dates chosen by the requester drop the marker.
+        values = {**values, "placement": AUTO_PLACEMENT}
     _write_values(row, level, values)
     request.requested = _dump(values)
     request.updated_at = utcnow_naive()
@@ -1260,6 +1429,55 @@ async def expire_overtaken(
     await _mark_requests_read(db, [request.id])
     effects.events.append(_event(request, "update", summary, approvers))
     return effects
+
+
+async def apply_shrink(
+    db: AsyncSession,
+    user: Any,
+    *,
+    level: str,
+    plan: PlannedBooking,
+    effects: ApprovalEffects,
+) -> list["ChangeIntent"]:
+    """
+    Shorten the full-span row of a split placement (``plan.shrink`` to
+    ``plan.shrink_to``) the way a direct date change through PUT
+    ``/phase-staff/{id}`` would: an open update / removal request on it
+    closes (``expire_overtaken``: ``cancelled`` when `user` is its requester,
+    else ``expired(overtaken)``), its notifications and events appended to
+    `effects`; the row's ``update`` change goes to ``effects.assignment_changes``
+    (broadcast by ``publish``). Returns the change intents of the update (the
+    person and the PM; old values captured before the mutation). Staged
+    only: the caller commits in the same transaction as the new row.
+    """
+    row, shrink_to = plan.shrink, plan.shrink_to
+    if row is None or shrink_to is None:
+        return []
+    # Imported here: change_notifications imports this module.
+    from app.services.change_notifications import booking_intents
+
+    overtaken = await expire_overtaken(db, user, level=level, row=row)
+    effects.notifications.extend(overtaken.notifications)
+    effects.events.extend(overtaken.events)
+    effects.assignment_changes.extend(overtaken.assignment_changes)
+    start, end = shrink_to
+    intents = booking_intents(
+        user,
+        kind="update",
+        level=level,
+        project_id=row.project_id,
+        target_id=row_target_id(row, level),
+        staff_id=row.staff_id,
+        values=booking_dict(row.allocation, start, end),
+        previous=booking_values(row, level),
+    )
+    row.start_date, row.end_date = start, end  # type: ignore[assignment]
+    effects.assignment_changes.append(
+        AssignmentChange(
+            row.id, row.project_id, "update", f"booking shortened to {start}–{end} to make room"
+        )
+    )
+    return intents
 
 
 async def cancel_for_entity(
@@ -1500,17 +1718,35 @@ async def _requester_problem(
 
 async def _revalidate(
     db: AsyncSession, request: ApprovalRequest, context: RequestContext | None
-) -> tuple[str | None, AssignmentRow | None]:
-    """The close reason when the request can no longer be applied (and the row)."""
+) -> tuple[str | None, AssignmentRow | None, PlannedBooking | None]:
+    """
+    The close reason when the request can no longer be applied (and the row),
+    plus, for an auto-placed create, its re-planned placement.
+    """
     if context is None or not context.target_exists:
-        return "target_deleted", await _load_row(db, request.level, request.assignment_id)
+        return "target_deleted", await _load_row(db, request.level, request.assignment_id), None
     problem = await _requester_problem(db, request, context)
     row = await _load_row(db, request.level, request.assignment_id)
     if problem is not None:
-        return problem, row
+        return problem, row, None
     if request.action == ACTION_CREATE:
         if row is None or row.approval_status != "pending":
-            return "overtaken", row
+            return "overtaken", row, None
+        if request.level != "project" and is_auto_placed(parse_values(request.requested)):
+            # A dateless create: placed again against the person's approved
+            # bookings as they are now (the filed dates may be stale); no room
+            # left is a duplicate, as for any create.
+            plan = await plan_placement(
+                db,
+                request.level,
+                request.target_id,
+                row.staff_id,
+                exclude_id=row.id,
+                approved_only=True,
+            )
+            if isinstance(plan, str):
+                return "duplicate", row, None
+            return None, row, plan
         # The row's own dates (None = linked, the whole card): an approved
         # booking of the person overlapping them, filed meanwhile, wins.
         duplicate = await find_duplicate(
@@ -1523,7 +1759,7 @@ async def _revalidate(
             exclude_id=row.id,
             approved_only=True,
         )
-        return ("duplicate" if duplicate is not None else None), row
+        return ("duplicate" if duplicate is not None else None), row, None
     previous = parse_values(request.previous)
     if (
         row is None
@@ -1531,7 +1767,7 @@ async def _revalidate(
         or row.approval_request_id != request.id
         or booking_values(row, request.level) != previous
     ):
-        return "overtaken", row
+        return "overtaken", row, None
     requested = parse_values(request.requested) or {}
     if (
         request.action == ACTION_UPDATE
@@ -1543,7 +1779,7 @@ async def _revalidate(
         try:
             start, end = _day(requested.get("start_date")), _day(requested.get("end_date"))
         except (TypeError, ValueError):
-            return None, row  # malformed: _values_valid answers INVALID_VALUES
+            return None, row, None  # malformed: _values_valid answers INVALID_VALUES
         duplicate = await find_duplicate(
             db,
             request.level,
@@ -1555,8 +1791,8 @@ async def _revalidate(
             approved_only=True,
         )
         if duplicate is not None:
-            return "duplicate", row
-    return None, row
+            return "duplicate", row, None
+    return None, row, None
 
 
 def _date_pair(values: dict[str, Any]) -> tuple[Any, Any]:
@@ -1577,6 +1813,14 @@ async def approve(
     (``RequestClosedError``), re-validate, apply, notify the requester,
     commit. A re-validation failure closes the request ``expired(<reason>)``
     instead and returns the 409 body in ``conflict``.
+
+    An auto-placed create (``placement: "auto"``) is re-planned by
+    ``_revalidate`` and applied here, before the commit: the full-span row
+    shortened (``apply_shrink``) on a split, the pending row given the
+    re-planned dates (None / None = linked when the person's other bookings
+    are gone), ``requested`` rewritten to them with the marker kept. The
+    requester's ``approval_decided`` names the dates that landed and the
+    shortened booking.
     """
     request = await _lock_request(db, request_id)
     context = await load_context(
@@ -1586,7 +1830,7 @@ async def approve(
     _ensure_decider(user, request, policy, context, visible)
     _ensure_pending(request)
 
-    problem, row = await _revalidate(db, request, context)
+    problem, row, plan = await _revalidate(db, request, context)
     if (
         problem is None
         and request.action != ACTION_REMOVE
@@ -1633,7 +1877,22 @@ async def approve(
 
     assert row is not None  # _revalidate returns a row when there is no problem
     row_id = row.id
+    shrink_intents: list[ChangeIntent] = []
+    decided_body = note
     if request.action == ACTION_CREATE:
+        if plan is not None:
+            shrink_intents = await apply_shrink(
+                db, user, level=request.level, plan=plan, effects=effects
+            )
+            row.start_date, row.end_date = plan.start_date, plan.end_date  # type: ignore[assignment]
+            request.requested = _dump(
+                booking_dict(
+                    row.allocation, plan.start_date, plan.end_date, placement=AUTO_PLACEMENT
+                )
+            )
+            decided_body = " ".join(
+                part for part in (placement_body(row.allocation, plan), note) if part
+            )
         row.approval_status = "approved"
         row.approval_request_id = None
         change_action = "create"
@@ -1646,28 +1905,34 @@ async def approve(
         change_action = "delete"
 
     _close(request, "approved", by=user.id, note=note)
-    effects.notifications = _decided_notifications(
-        request, target=target, outcome="approved", actor=user, note=note
+    decided = _decided_notifications(
+        request, target=target, outcome="approved", actor=user, note=decided_body
     )
-    db.add_all(effects.notifications)
+    # Extend, never assign: apply_shrink may have staged the overtaken
+    # request's notification already.
+    effects.notifications.extend(decided)
+    db.add_all(decided)
     await _mark_requests_read(db, [request.id])
     await db.commit()
 
     # Imported here: change_notifications imports this module.
     from app.services.change_notifications import approval_intents
 
-    effects.change_intents = approval_intents(
-        user,
-        project_id=request.project_id,
-        level=request.level,
-        target_id=request.target_id,
-        target_name=target,
-        pm_id=context.pm_id if context else None,
-        requester_id=request.requester_id,
-        action=request.action,
-        requested=parse_values(request.requested),
-        previous=parse_values(request.previous),
+    effects.change_intents.extend(
+        approval_intents(
+            user,
+            project_id=request.project_id,
+            level=request.level,
+            target_id=request.target_id,
+            target_name=target,
+            pm_id=context.pm_id if context else None,
+            requester_id=request.requester_id,
+            action=request.action,
+            requested=parse_values(request.requested),
+            previous=parse_values(request.previous),
+        )
     )
+    effects.change_intents.extend(shrink_intents)
 
     summary = f"{target}: booking approved"
     effects.assignment_changes.append(

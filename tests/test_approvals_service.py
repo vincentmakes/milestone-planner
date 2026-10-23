@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.dialects import postgresql
 
 from app.models.assignment import (
     PhaseStaffAssignment,
@@ -231,7 +232,7 @@ def test_can_decide(user, policy, pm_id, expected):
 
 def _compiled_where(db: ApprovalFakeDB) -> str:
     (stmt,) = (s for s in db.statements if ApprovalFakeDB.key(s) == "approvers")
-    return str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    return str(stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
 
 
 @pytest.mark.asyncio
@@ -1435,3 +1436,467 @@ def test_relink_wording_in_titles_and_the_export():
     assert approvals._request_title("Ann", update, "Sub") == (
         "Ann asks to change their booking on Sub: follows the subphase dates again"
     )
+
+
+# ---------------------------------------------------------
+# Automatic placement of a dateless second booking (2.0.0)
+# ---------------------------------------------------------
+
+CARD = (date(2026, 3, 2), date(2026, 3, 13))
+AUTO_SPLIT_JSON = {
+    "allocation": 80,
+    "start_date": "2026-03-08",
+    "end_date": "2026-03-13",
+    "placement": "auto",
+}
+SPLIT_BODY = (
+    "Booked at 80% from 2026-03-08 to 2026-03-13. "
+    "Your booking 2026-03-02–2026-03-13 was shortened to 2026-03-02–2026-03-07."
+)
+
+
+def _booking(level: str, **fields):
+    """A phase / subphase row of the requester on card 11 (approved, linked by default)."""
+    values = {
+        "id": 99,
+        "project_id": 1,
+        "staff_id": REQ,
+        "allocation": 50,
+        "approval_status": "approved",
+        "approval_request_id": None,
+        "start_date": None,
+        "end_date": None,
+        **fields,
+    }
+    if level == "phase":
+        return PhaseStaffAssignment(phase_id=11, **values)
+    return SubphaseStaffAssignment(subphase_id=11, **values)
+
+
+def _placement(*rows, card=CARD):
+    """The plan_placement answer: (card_start, card_end, row) per row of the person."""
+    return [(card[0], card[1], row) for row in rows]
+
+
+def _placement_sql(db: ApprovalFakeDB) -> str:
+    (stmt,) = [
+        s for s in db.statements if getattr(s, "is_select", False) and db.key(s) == "placement"
+    ]
+    return str(stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("level", ["phase", "subphase"])
+async def test_plan_placement_without_a_row_is_linked(level):
+    db = ApprovalFakeDB()
+
+    plan = await approvals.plan_placement(db, level, 11, REQ)
+
+    assert plan == approvals.PlannedBooking(None, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("level", ["phase", "subphase"])
+async def test_plan_placement_splits_the_one_full_span_row(level):
+    linked = _booking(level)
+    db = ApprovalFakeDB(placement=_placement(linked))
+
+    plan = await approvals.plan_placement(db, level, 11, REQ)
+
+    assert (plan.start_date, plan.end_date) == (date(2026, 3, 8), date(2026, 3, 13))
+    assert plan.shrink is linked
+    assert plan.shrink_to == (date(2026, 3, 2), date(2026, 3, 7))
+    assert plan.shrink_from == CARD
+    sql = _placement_sql(db)
+    # The person's rows on the card, locked, with the card's dates.
+    assert "FOR UPDATE" in sql
+    table = "phase_staff_assignments" if level == "phase" else "subphase_staff_assignments"
+    assert f"OF {table}" in sql
+    assert f"{table}.staff_id = {REQ}" in sql
+    assert "approval_status = " not in sql  # every row counts at submit time
+
+
+@pytest.mark.asyncio
+async def test_plan_placement_takes_the_largest_gap_without_touching_rows():
+    first = _booking("phase", start_date=date(2026, 3, 2), end_date=date(2026, 3, 4))
+    db = ApprovalFakeDB(placement=_placement(first))
+
+    plan = await approvals.plan_placement(db, "phase", 11, REQ)
+
+    assert plan == approvals.PlannedBooking(date(2026, 3, 5), date(2026, 3, 13))
+
+
+@pytest.mark.asyncio
+async def test_plan_placement_refuses_a_covered_card():
+    rows = (
+        _booking("phase", id=98, start_date=date(2026, 3, 2), end_date=date(2026, 3, 7)),
+        _booking("phase", start_date=date(2026, 3, 8), end_date=date(2026, 3, 13)),
+    )
+    db = ApprovalFakeDB(placement=_placement(*rows))
+
+    assert await approvals.plan_placement(db, "phase", 11, REQ) == "card_full"
+
+
+@pytest.mark.asyncio
+async def test_plan_placement_never_splits_a_pending_row():
+    db = ApprovalFakeDB(placement=_placement(_booking("phase", approval_status="pending")))
+
+    assert await approvals.plan_placement(db, "phase", 11, REQ) == "pending_row"
+
+
+@pytest.mark.asyncio
+async def test_plan_placement_at_approve_time_counts_other_approved_rows_only():
+    db = ApprovalFakeDB()
+
+    await approvals.plan_placement(db, "subphase", 11, REQ, exclude_id=70, approved_only=True)
+
+    sql = _placement_sql(db)
+    assert "subphase_staff_assignments.id != 70" in sql
+    assert "subphase_staff_assignments.approval_status = 'approved'" in sql
+
+
+def test_require_placement_answers_the_409s():
+    plan = approvals.PlannedBooking(None, None)
+    assert approvals.require_placement(plan) is plan
+    with pytest.raises(HTTPException) as exc:
+        approvals.require_placement("card_full")
+    assert (exc.value.status_code, exc.value.detail) == (409, approvals.CARD_FULL_DETAIL)
+    with pytest.raises(HTTPException) as exc:
+        approvals.require_placement("pending_row")
+    assert (exc.value.status_code, exc.value.detail) == (409, ALREADY_PENDING_DETAIL)
+
+
+def test_the_placement_texts():
+    assert approvals.CARD_FULL_DETAIL == (
+        "This person's bookings already cover the whole card — shorten one of them first"
+    )
+    linked = approvals.PlannedBooking(None, None)
+    assert approvals.placement_body(60, linked) == "Booked at 60% over the card's dates."
+    gap = approvals.PlannedBooking(date(2026, 3, 5), date(2026, 3, 13))
+    assert approvals.placement_body(60, gap) == "Booked at 60% from 2026-03-05 to 2026-03-13."
+    split = approvals.PlannedBooking(
+        date(2026, 3, 8),
+        date(2026, 3, 13),
+        shrink=_booking("phase"),
+        shrink_to=(date(2026, 3, 2), date(2026, 3, 7)),
+        shrink_from=CARD,
+    )
+    assert approvals.placement_body(80, split) == SPLIT_BODY
+    assert approvals.adjusted_rows(gap) == []
+    assert approvals.adjusted_rows(split) == [
+        {
+            "id": 99,
+            "start_date": "2026-03-02T00:00:00.000Z",
+            "end_date": "2026-03-07T00:00:00.000Z",
+            "linked": False,
+        }
+    ]
+
+
+def test_the_marker_is_kept_by_the_value_helpers():
+    values = approvals.booking_dict(80, SEG_START, SEG_END, placement="auto")
+    assert values == {"allocation": 80, **SEG_JSON, "placement": "auto"}
+    assert approvals.is_auto_placed(values)
+    assert not approvals.is_auto_placed({"allocation": 80})
+    assert not approvals.is_auto_placed(None)
+    assert approvals._values_valid("phase", values, _card_context()) is True
+    assert approvals._values_valid("phase", {"allocation": 80, "placement": "auto"}) is True
+    assert approvals.describe_change(ACTION_CREATE, values, None) == (
+        "at 80% from 2026-03-03 to 2026-03-05"
+    )
+    row = pending_phase_row()
+    approvals._write_values(row, "phase", values)
+    assert (row.start_date, row.end_date, row.allocation) == (SEG_START, SEG_END, 80)
+
+
+def _split_plan(level: str, row) -> approvals.PlannedBooking:
+    return approvals.PlannedBooking(
+        date(2026, 3, 8),
+        date(2026, 3, 13),
+        shrink=row,
+        shrink_to=(date(2026, 3, 2), date(2026, 3, 7)),
+        shrink_from=CARD,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("level", ["phase", "subphase"])
+async def test_apply_shrink_shortens_the_row_like_a_direct_date_change(level):
+    row = _booking(level)
+    effects = approvals.ApprovalEffects()
+    db = ApprovalFakeDB()
+
+    intents = await approvals.apply_shrink(
+        db, approval_admin(), level=level, plan=_split_plan(level, row), effects=effects
+    )
+
+    assert (row.start_date, row.end_date) == (date(2026, 3, 2), date(2026, 3, 7))
+    assert [(i.recipient, i.user_id, i.body) for i in intents] == [
+        ("person", REQ, "dates follow the card → 2026-03-02–2026-03-07"),
+        ("pm", None, "dates follow the card → 2026-03-02–2026-03-07"),
+    ]
+    assert intents[0].entity_type == level and intents[0].entity_id == 11
+    (change,) = effects.assignment_changes
+    assert (change.assignment_id, change.action) == (99, "update")
+    assert db.statements == []  # no open request: nothing to expire
+
+
+@pytest.mark.asyncio
+async def test_apply_shrink_without_a_shrink_does_nothing():
+    effects = approvals.ApprovalEffects()
+    plan = approvals.PlannedBooking(date(2026, 3, 5), date(2026, 3, 13))
+
+    assert (
+        await approvals.apply_shrink(
+            ApprovalFakeDB(), approval_admin(), level="phase", plan=plan, effects=effects
+        )
+        == []
+    )
+    assert effects == approvals.ApprovalEffects()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("writer", "status", "notified"),
+    [(approval_admin(), "expired", True), (requester(), "cancelled", False)],
+    ids=["editor-expires-it", "requester-cancels-their-own"],
+)
+async def test_apply_shrink_closes_an_open_request_on_the_row(writer, status, notified):
+    open_change = approval_request(
+        id=60,
+        action=ACTION_UPDATE,
+        assignment_id=99,
+        requested=_dumped({"allocation": 30}),
+        previous=_dumped({"allocation": 50}),
+    )
+    row = _booking("phase", approval_request_id=60)
+    effects = approvals.ApprovalEffects(notifications=[Notification(user_id=OTHER)])
+    db = ApprovalFakeDB(request=[open_change], context=[approval_context()], approvers=[ADMIN, PM])
+
+    await approvals.apply_shrink(
+        db, writer, level="phase", plan=_split_plan("phase", row), effects=effects
+    )
+
+    assert open_change.status == status
+    assert row.approval_request_id is None
+    # Appended to the caller's effects, never replacing them.
+    assert effects.notifications[0].user_id == OTHER
+    assert [n.user_id for n in effects.notifications[1:]] == ([REQ] if notified else [])
+    assert [e.request_id for e in effects.events] == [60]
+    assert [c.action for c in effects.assignment_changes] == ["update"]
+
+
+def _auto_create(level: str = "phase", requested: dict | None = None):
+    request = approval_request(level=level, requested=_dumped(requested or AUTO_SPLIT_JSON))
+    fields = {"start_date": date(2026, 3, 8), "end_date": date(2026, 3, 13)}
+    if level == "phase":
+        row = pending_phase_row(**fields)
+    else:
+        row = SubphaseStaffAssignment(
+            id=70,
+            project_id=1,
+            subphase_id=11,
+            staff_id=REQ,
+            allocation=80,
+            approval_status="pending",
+            approval_request_id=50,
+            **fields,
+        )
+    return request, row
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("level", ["phase", "subphase"])
+async def test_approve_auto_placed_create_replans_and_splits(level):
+    request, row = _auto_create(level)
+    full_span = _booking(level)
+    db = approvable_db(request, row, placement=_placement(full_span))
+
+    result = await approvals.approve(db, approval_admin(), 50, visible=None)
+
+    assert result.conflict is None
+    assert row.approval_status == "approved" and row.approval_request_id is None
+    assert (row.start_date, row.end_date) == (date(2026, 3, 8), date(2026, 3, 13))
+    assert (full_span.start_date, full_span.end_date) == (date(2026, 3, 2), date(2026, 3, 7))
+    assert approvals.parse_values(request.requested) == AUTO_SPLIT_JSON
+    # Re-planned against the other approved rows, never the row itself.
+    sql = _placement_sql(db)
+    assert ".id != 70" in sql and "approval_status = 'approved'" in sql
+    assert db.queried("duplicate") == 0
+    (decided,) = [n for n in db.notifications if n.type == "approval_decided"]
+    assert decided.body == SPLIT_BODY
+    # The PM's approval intent, then the shrink's (person + PM).
+    assert [(i.recipient, i.body) for i in result.effects.change_intents] == [
+        ("pm", "at 80% from 2026-03-08 to 2026-03-13"),
+        ("person", "dates follow the card → 2026-03-02–2026-03-07"),
+        ("pm", "dates follow the card → 2026-03-02–2026-03-07"),
+    ]
+    assert [(c.assignment_id, c.action) for c in result.effects.assignment_changes] == [
+        (99, "update"),
+        (70, "create"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_approve_keeps_the_effects_of_an_overtaken_request_on_the_split_row():
+    request, row = _auto_create()
+    full_span = _booking("phase", approval_request_id=60)
+    overtaken = approvals.ApprovalEffects(
+        notifications=[Notification(user_id=OTHER, type="approval_decided")],
+        events=[approvals.RequestEvent(60, 1, "expired", "update", "s", frozenset({REQ}))],
+    )
+    db = approvable_db(request, row, placement=_placement(full_span))
+
+    with patch.object(approvals, "expire_overtaken", AsyncMock(return_value=overtaken)):
+        result = await approvals.approve(db, approval_admin(), 50, visible=None, note="Welcome")
+
+    assert [n.user_id for n in result.effects.notifications] == [OTHER, REQ]
+    assert result.effects.notifications[1].body == f"{SPLIT_BODY} Welcome"
+    assert [e.request_id for e in result.effects.events] == [60, 50]
+    assert len(result.effects.change_intents) == 3
+
+
+@pytest.mark.asyncio
+async def test_approve_auto_placed_create_without_room_expires_as_duplicate():
+    request, row = _auto_create()
+    covering = (
+        _booking("phase", id=98, start_date=date(2026, 3, 2), end_date=date(2026, 3, 7)),
+        _booking("phase", start_date=date(2026, 3, 8), end_date=date(2026, 3, 13)),
+    )
+    db = approvable_db(request, row, placement=_placement(*covering))
+
+    result = await approvals.approve(db, approval_admin(), 50, visible=None)
+
+    assert request.status == "expired" and request.close_reason == "duplicate"
+    assert result.conflict == {
+        "detail": "Request expired: the requester is already booked there",
+        "status": "expired",
+        "close_reason": "duplicate",
+    }
+    assert db.deleted == [row]
+    assert (covering[1].start_date, covering[1].end_date) == (date(2026, 3, 8), date(2026, 3, 13))
+
+
+@pytest.mark.asyncio
+async def test_approve_auto_placed_create_lands_in_the_gap_found_now():
+    # Filed as the second half of a split; meanwhile the full-span booking was
+    # shortened by hand: the new booking takes the largest gap instead.
+    request, row = _auto_create()
+    shortened = _booking("phase", start_date=date(2026, 3, 2), end_date=date(2026, 3, 4))
+    db = approvable_db(request, row, placement=_placement(shortened))
+
+    result = await approvals.approve(db, approval_admin(), 50, visible=None)
+
+    assert result.conflict is None
+    assert (row.start_date, row.end_date) == (date(2026, 3, 5), date(2026, 3, 13))
+    assert (shortened.start_date, shortened.end_date) == (date(2026, 3, 2), date(2026, 3, 4))
+    assert approvals.parse_values(request.requested) == {
+        "allocation": 80,
+        "start_date": "2026-03-05",
+        "end_date": "2026-03-13",
+        "placement": "auto",
+    }
+    (decided,) = [n for n in db.notifications if n.type == "approval_decided"]
+    assert decided.body == "Booked at 80% from 2026-03-05 to 2026-03-13."
+    assert [c.assignment_id for c in result.effects.assignment_changes] == [70]
+
+
+@pytest.mark.asyncio
+async def test_approve_auto_placed_create_relinks_when_the_other_rows_are_gone():
+    request, row = _auto_create()
+    db = approvable_db(request, row, placement=[])
+
+    result = await approvals.approve(db, approval_admin(), 50, visible=None)
+
+    assert result.conflict is None
+    assert (row.start_date, row.end_date) == (None, None)
+    assert approvals.parse_values(request.requested) == {"allocation": 80, "placement": "auto"}
+    (decided,) = [n for n in db.notifications if n.type == "approval_decided"]
+    assert decided.body == "Booked at 80% over the card's dates."
+
+
+@pytest.mark.asyncio
+async def test_approve_auto_placed_create_after_a_card_move():
+    # The card moved a week later; fit_card_bookings shifted the filed dates
+    # with it, so the stored values are still inside the card.
+    moved = (date(2026, 3, 9), date(2026, 3, 20))
+    filed = {**AUTO_SPLIT_JSON, "start_date": "2026-03-15", "end_date": "2026-03-20"}
+    request, row = _auto_create(requested=filed)
+    full_span = _booking("phase")
+    db = approvable_db(
+        request,
+        row,
+        context=[approval_context(start=moved[0], end=moved[1])],
+        placement=_placement(full_span, card=moved),
+    )
+
+    result = await approvals.approve(db, approval_admin(), 50, visible=None)
+
+    assert result.conflict is None
+    assert (row.start_date, row.end_date) == (date(2026, 3, 15), date(2026, 3, 20))
+    assert (full_span.start_date, full_span.end_date) == (date(2026, 3, 9), date(2026, 3, 14))
+
+
+@pytest.mark.asyncio
+async def test_approve_unmarked_create_keeps_the_overlap_rule():
+    request, row = approval_request(), pending_phase_row()
+    db = approvable_db(request, row)
+
+    result = await approvals.approve(db, approval_admin(), 50, visible=None)
+
+    assert result.conflict is None
+    assert db.queried("placement") == 0 and db.queried("duplicate") == 1
+    assert approvals.parse_values(request.requested) == {"allocation": 80}
+    (decided,) = [n for n in db.notifications if n.type == "approval_decided"]
+    assert decided.body is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("values", "kept"),
+    [
+        # Allocation only: the dates stay, the marker too.
+        (approvals.booking_dict(60, date(2026, 3, 8), date(2026, 3, 13)), True),
+        # Dates chosen by the requester: no longer auto-placed.
+        (approvals.booking_dict(60, date(2026, 3, 9), date(2026, 3, 13)), False),
+    ],
+    ids=["allocation-only", "explicit-dates"],
+)
+async def test_amending_an_auto_placed_create(pushes, values, kept):
+    request, row = _auto_create()
+    db = ApprovalFakeDB(request=[request], context=[approval_context()], approvers=[PM])
+
+    await approvals.submit_request(
+        db,
+        _http(),
+        requester(),
+        action=ACTION_UPDATE,
+        level="phase",
+        project_id=1,
+        row=row,
+        values=values,
+    )
+
+    stored = approvals.parse_values(request.requested)
+    assert stored == ({**values, "placement": "auto"} if kept else values)
+    assert row.allocation == 60
+
+
+@pytest.mark.asyncio
+async def test_amending_a_linked_auto_placed_create_keeps_the_marker(pushes):
+    request, row = _auto_create(requested={"allocation": 80, "placement": "auto"})
+    row.start_date = row.end_date = None
+    db = ApprovalFakeDB(request=[request], context=[approval_context()], approvers=[PM])
+
+    await approvals.submit_request(
+        db,
+        _http(),
+        requester(),
+        action=ACTION_UPDATE,
+        level="phase",
+        project_id=1,
+        row=row,
+        values=approvals.booking_dict(40),
+    )
+
+    assert approvals.parse_values(request.requested) == {"allocation": 40, "placement": "auto"}

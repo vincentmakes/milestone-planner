@@ -12,7 +12,8 @@ to queue on ``mock_db_session.execute.side_effect``::
     ]
 
 ``fake_websocket()`` gives a Starlette-shaped WebSocket double for the
-``app/websocket`` layer; ``ApprovalFakeDB`` and its builders (``approval_request``,
+``app/websocket`` layer; ``ApprovalFakeDB`` (answers keyed by what a query
+selects -- ``"placement"`` for ``approvals.plan_placement``) and its builders (``approval_request``,
 ``pending_phase_row``, ``approvable_db``, ...) a statement-dispatching session
 for app/services/approvals.py. Prefer these over redefining the helpers per file
 (tests/test_domain_routes_misc.py keeps its own private copies).
@@ -31,7 +32,7 @@ from app.models.assignment import (
     SubphaseStaffAssignment,
 )
 from app.models.notification import Notification
-from app.models.project import Project
+from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.rbac import ApprovalPolicy, ApprovalRequest, RolePermission
 from app.models.user import User, UserSite
 from app.services.approvals import ACTION_CREATE
@@ -179,6 +180,10 @@ class ApprovalFakeDB:
             return "member"
         if entity is RolePermission:
             return "perms"
+        if entity in (ProjectPhase, ProjectSubphase):
+            # plan_placement: the card's dates with the person's rows on it
+            # (locked FOR UPDATE), answered as (card_start, card_end, row) tuples.
+            return "placement"
         if entity in _APPROVAL_ASSIGNMENT_MODELS:
             return "row" if stmt._for_update_arg is not None else "duplicate"
         raise AssertionError(f"unexpected query: {stmt}")
