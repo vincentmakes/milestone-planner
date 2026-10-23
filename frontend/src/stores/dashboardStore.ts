@@ -153,10 +153,13 @@ export const useDashboardStore = create<DashboardState>((set, get) => {
     if (!dashboard) return;
     const started = generation;
     const seq = ++dataSeq;
+    // Another dashboard opened since: this answer (even a 404) is not its.
+    const opened = openSeq;
+    const stale = () => started !== generation || seq !== dataSeq || opened !== openSeq;
     set({ dataLoading: true });
     try {
       const result = await dashboardsApi.data(dashboard.id);
-      if (started !== generation || seq !== dataSeq || get().current?.id !== dashboard.id) return;
+      if (stale() || get().current?.id !== dashboard.id) return;
       const data: Record<number, MetricResult | MetricError> = {};
       for (const [id, value] of Object.entries(result.widgets ?? {})) data[Number(id)] = value;
       set({
@@ -166,7 +169,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => {
         loadError: get().loadError === DATA_ERROR ? null : get().loadError,
       });
     } catch (err) {
-      if (started !== generation || seq !== dataSeq) return;
+      if (stale()) return;
       if (isNotFound(err)) {
         noLongerShared();
         return;

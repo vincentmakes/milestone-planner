@@ -258,6 +258,30 @@ describe('open', () => {
     expect(useDashboardStore.getState().current?.id).toBe(2);
     expect(useDashboardStore.getState().data[11]).toEqual(result(5));
   });
+
+  it('never labels the newly opened dashboard "no longer shared" for the previous one’s 404', async () => {
+    await useDashboardStore.getState().open(1);
+    let rejectData!: (err: unknown) => void;
+    api.data.mockReturnValueOnce(
+      new Promise<DashboardData>((_, reject) => {
+        rejectData = reject;
+      })
+    );
+    const reload = useDashboardStore.getState().reloadData(true);
+    // B opens while A's data is in flight; B's own read is still pending.
+    const slowB = deferred<Dashboard>();
+    api.get.mockReturnValueOnce(slowB.promise);
+    const openB = useDashboardStore.getState().open(2);
+    rejectData(notFound());
+    await reload;
+    expect(useDashboardStore.getState().loadError).toBeNull();
+    slowB.resolve(detail(2));
+    await openB;
+    const state = useDashboardStore.getState();
+    expect(state.current?.id).toBe(2);
+    expect(state.loadError).toBeNull();
+    expect(api.list).toHaveBeenCalledTimes(0);
+  });
 });
 
 describe('reloadData', () => {

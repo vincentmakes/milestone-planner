@@ -97,6 +97,30 @@ describe('toOption — bar and line, one dimension', () => {
     expect(option.tooltip.valueFormatter(37.5)).toBe('37.5 %');
   });
 
+  it('normalises a single series against the server’s distinct total, not the sum of its rows', () => {
+    // A project tagged Alpha and Beta counts in both: rows 3 + 5, distinct total 6.
+    const multi = result([row([A], 3), row([B], 5)], 1, { total: 6, note: 'counted in each tag' });
+    expect((toOption('bar', multi, { percent: true }, theme) as AnyOption).series[0].data).toEqual([50, 83.33]);
+  });
+
+  it('shows every category label and tilts them past six on a vertical chart', () => {
+    const few = toOption('bar', single, {}, theme) as AnyOption;
+    expect(few.xAxis.axisLabel.interval).toBe(0);
+    expect(few.xAxis.axisLabel.rotate).toBeUndefined();
+    expect(few.xAxis.axisLabel.hideOverlap).toBeUndefined();
+    const seven = result(
+      Array.from({ length: 7 }, (_, i) => row([k(i, `Project ${i}`)], i + 1)),
+      1
+    );
+    const many = toOption('bar', seven, {}, theme) as AnyOption;
+    expect(many.xAxis.axisLabel).toMatchObject({ interval: 0, rotate: 30 });
+    expect((toOption('line', seven, {}, theme) as AnyOption).xAxis.axisLabel.rotate).toBe(30);
+    // Horizontal bars keep their labels level.
+    const horizontal = toOption('bar', seven, { orientation: 'horizontal' }, theme) as AnyOption;
+    expect(horizontal.yAxis.axisLabel.interval).toBe(0);
+    expect(horizontal.yAxis.axisLabel.rotate).toBeUndefined();
+  });
+
   it('keeps an all-zero series at 0 when normalising', () => {
     const zero = result([row([A], 0), row([B], 0)], 1);
     expect((toOption('bar', zero, { percent: true }, theme) as AnyOption).series[0].data).toEqual([0, 0]);
@@ -137,6 +161,11 @@ describe('toOption — two dimensions', () => {
     expect(option.series[0].data).toEqual([80, 100]);
     expect(option.series[1].data).toEqual([20, 0]);
     expect(option.yAxis.max).toBe(100);
+  });
+
+  it('lets a 100 % stack exceed 100 when a fact counted in several values', () => {
+    const noted = result([row([A, yes], 4), row([A, no], 1)], 2, { unit: 'percent', note: 'counted twice' });
+    expect((toOption('bar', noted, { stacked: true }, theme) as AnyOption).yAxis.max).toBeUndefined();
   });
 
   it('takes the server’s percentages as they are', () => {
@@ -188,7 +217,7 @@ describe('toOption — pie', () => {
       { name: 'Other', value: 1, itemStyle: { color: 'muted' } },
     ]);
     expect(option.tooltip).toMatchObject({ trigger: 'item' });
-    expect(option.tooltip.valueFormatter(4)).toBe('4');
+    expect(option.tooltip.valueFormatter(4)).toBe('4 projects');
     expect(option.legend).toEqual({ show: false });
     expect(option.aria).toEqual({ show: true, decal: { show: true } });
   });
@@ -207,6 +236,15 @@ describe('toOption — pie', () => {
       top: 0,
     });
     expect((toOption('pie', result(rows, 1), { show_legend: false }, theme) as AnyOption).legend).toEqual({ show: false });
+  });
+
+  it('gives the tooltip the unit word, never after a percentage', () => {
+    const rows = [row([A], 3), row([B], 2)];
+    expect((toOption('pie', result(rows, 1), {}, theme) as AnyOption).tooltip.valueFormatter(3)).toBe('3.0 weeks');
+    const shares = result(rows, 1, { unit: 'percent' });
+    expect((toOption('pie', shares, {}, theme) as AnyOption).tooltip.valueFormatter(60)).toMatch(/^60\s%$/);
+    const asPercent = toOption('pie', result(rows, 1), { number_format: 'percent' }, theme) as AnyOption;
+    expect(asPercent.tooltip.valueFormatter(60)).toMatch(/^60\s%$/);
   });
 
   it('shows a dimensionless result as one "Total" slice', () => {

@@ -53,6 +53,7 @@ import { useHasPermission } from '@/hooks/useCan';
 import { useVisibleSites } from '@/hooks/useVisibleSites';
 import { uniqueById } from '@/utils/uniqueById';
 import {
+  BOOKING_MEASURES,
   DIMENSION_KINDS,
   dimensionLabel,
   GRAINS,
@@ -60,6 +61,7 @@ import {
   MATRIX,
   MEASURES,
   OTHER_KEY,
+  queryUnit,
   RELATIVE_PERIODS,
 } from '@/utils/metrics';
 import type {
@@ -81,6 +83,7 @@ import {
   cleanOptions,
   cleanQuery,
   defaultQuery,
+  dimensionKey,
   MAX_DIMENSIONS,
   newClientId,
   normaliseQuery,
@@ -180,6 +183,8 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
 
   const dimensions = useMemo(() => query.dimensions ?? [], [query.dimensions]);
   const filters = useMemo<MetricFilters>(() => query.filters ?? {}, [query.filters]);
+  // The Teams (the person's teams) and People filters exist only on a booking.
+  const bookingMeasure = BOOKING_MEASURES.has(query.measure);
   const problem = queryProblem(kind, query);
   const clean = useMemo(() => cleanQuery(query), [query]);
   const previewKey = problem ? null : stableKey(clean);
@@ -297,9 +302,10 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
     return out;
   }, [query.measure, canStaff, settings, fields]);
 
+  // Only the exact same choice is excluded: two different project fields cross.
   const choicesFor = (index: 0 | 1): DimensionChoice[] => {
     const other = dimensions[index === 0 ? 1 : 0];
-    return allChoices.filter((c) => !other || c.dimension.kind !== other.kind);
+    return allChoices.filter((c) => !other || dimensionKey(c.dimension) !== dimensionKey(other));
   };
 
   const pickDimension = (index: 0 | 1, id: number | null) => {
@@ -521,9 +527,9 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
               {filtersOpen && (
                 <div id={filtersId} className={styles.filters}>
                   {listFilter('site_ids')}
-                  {listFilter('team_ids', true)}
+                  {bookingMeasure && listFilter('team_ids', true)}
                   {listFilter('project_team_ids', true)}
-                  {canStaff && listFilter('person_ids', true)}
+                  {bookingMeasure && canStaff && listFilter('person_ids', true)}
                   {listFilter('project_ids', true)}
                   {listFilter('tag_ids')}
                   {dropdownFields.map((field) => (
@@ -620,6 +626,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
               kind={kind}
               options={options}
               share={Boolean(query.percent_of)}
+              percentUnit={queryUnit(query) === 'percent'}
               bucketOptions={bucketOptions}
               onChange={setOption}
             />
@@ -720,12 +727,15 @@ interface KindOptionsProps {
   options: WidgetOptions;
   /** The query asks a percentage (a KPI then shows one bucket) */
   share: boolean;
+  /** The result comes in percent: only then is the *Percent* number format offered */
+  percentUnit: boolean;
   bucketOptions: { value: string; label: string }[];
   onChange: (patch: Partial<WidgetOptions>) => void;
 }
 
 /** The display options of a kind, and the number format of every kind. */
-function KindOptions({ kind, options, share, bucketOptions, onChange }: KindOptionsProps) {
+function KindOptions({ kind, options, share, percentUnit, bucketOptions, onChange }: KindOptionsProps) {
+  const numberFormat = options.number_format === 'percent' && !percentUnit ? '' : options.number_format ?? '';
   return (
     <div className={styles.options}>
       {kind === 'bar' && (
@@ -781,7 +791,7 @@ function KindOptions({ kind, options, share, bucketOptions, onChange }: KindOpti
       <Select
         label="Number format"
         fullWidth
-        value={options.number_format ?? ''}
+        value={numberFormat}
         onChange={(e) =>
           onChange({ number_format: (e.target.value || null) as WidgetOptions['number_format'] })
         }
@@ -789,7 +799,7 @@ function KindOptions({ kind, options, share, bucketOptions, onChange }: KindOpti
           { value: '', label: 'Auto' },
           { value: 'integer', label: 'Integer' },
           { value: 'decimal', label: 'Decimal' },
-          { value: 'percent', label: 'Percent' },
+          ...(percentUnit ? [{ value: 'percent', label: 'Percent' }] : []),
         ]}
       />
     </div>

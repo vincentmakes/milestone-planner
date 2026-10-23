@@ -361,6 +361,18 @@ describe('useDashboardEditor', () => {
 
   it('words an unknown failure plainly', () => {
     expect(plainError(new Error('a, body: b'), 'x')).toBe('a, b');
+    expect(plainError(new Error('absolute: A period can cover at most five years'), 'x')).toBe(
+      'A period can cover at most five years'
+    );
+    expect(plainError(new Error('body.filters.period.absolute: A period cannot end before it starts'), 'x')).toBe(
+      'A period cannot end before it starts'
+    );
+    expect(plainError(new Error('body: absolute: Too long'), 'x')).toBe('Too long');
+    expect(plainError(new Error('The dashboard could not be saved.'), 'x')).toBe('The dashboard could not be saved.');
+    expect(plainError(new Error('"Per week": People booked cannot be broken down by period'), 'x')).toBe(
+      '"Per week": People booked cannot be broken down by period'
+    );
+    expect(plainError(new Error('Widget 2: Top N needs a dimension'), 'x')).toBe('Widget 2: Top N needs a dimension');
     expect(plainError('nope', 'Fallback')).toBe('Fallback');
   });
 });

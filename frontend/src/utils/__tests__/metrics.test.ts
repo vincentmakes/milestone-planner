@@ -10,6 +10,7 @@ import matrix from '../../../../shared/metric-matrix.json';
 import {
   ARCHIVED_NEEDS,
   archivedNeeds,
+  BOOKING_MEASURES,
   DIMENSION_KINDS,
   dimensionLabel,
   dimensionNeeds,
@@ -60,6 +61,14 @@ describe('metric matrix mirror', () => {
     for (const { key } of DIMENSION_KINDS) {
       if (key !== 'person') expect(dimensionNeeds(key)).toBeNull();
     }
+  });
+
+  it('counts as booking measures exactly those the server breaks down by person', () => {
+    const byPerson = Object.entries(matrix.measures)
+      .filter(([, spec]) => spec.dimensions.includes('person'))
+      .map(([key]) => key)
+      .sort();
+    expect([...BOOKING_MEASURES].sort()).toEqual(byPerson);
   });
 
   it('offers the same relative periods and grains, in order', () => {

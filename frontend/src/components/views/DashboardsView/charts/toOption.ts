@@ -11,15 +11,20 @@
  *   only when the period is the single dimension).
  * - `stacked` stacks the series; 100 % when `percent` is set or the server
  *   already answered percentages (`unit: 'percent'`): the value axis ends at
- *   100 and, when the server did not compute them, each category is
- *   normalised to 100 here.
+ *   100 (unless the result has a `note`: a fact counted in several values can
+ *   take a stack past 100) and, when the server did not compute them, each
+ *   category is normalised to 100 here — a single dimension against the
+ *   server's distinct `total`, never the sum of its rows.
+ * - Every category label is shown (`interval: 0`); a vertical bar or line
+ *   chart with more than six categories tilts them by 30°.
  * - `orientation: 'horizontal'` puts the categories on the vertical axis.
  * - Colours: a value's own colour (team, tag, field item), else the palette
  *   by position; "Other" in the muted text colour.
  * - The legend shows the series of a second dimension unless
  *   `show_legend === false`; a pie shows its slices in a legend only when
  *   `show_legend === true` (its labels name them already). The tooltip
- *   formats values with `formatMetric`.
+ *   formats values with `formatMetric`; the pie's adds the unit word
+ *   ("3 weeks"), which the axis charts carry in their series name.
  */
 
 import type { MetricKey, MetricResult, MetricUnit, WidgetKind, WidgetOptions } from '@/types';
@@ -53,6 +58,9 @@ function distinctKeys(result: MetricResult, index: number): MetricKey[] {
 
 const round = (value: number): number => Math.round(value * 100) / 100;
 
+/** Categories above which a vertical chart tilts its labels. */
+export const ROTATE_ABOVE = 6;
+
 /** Axis tick labels: up to one decimal, `%` on a percentage axis. */
 const axisLabel = (percent: boolean) => (value: number) =>
   formatMetric(value, percent ? 'percent' : 'days', { number_format: Number.isInteger(value) ? 'integer' : null });
@@ -76,11 +84,15 @@ export function toOption(
       valueOf.set(id, (valueOf.get(id) ?? 0) + row.value);
     }
     const unit = result.unit;
+    const unitWord = unit !== 'percent' && opts.number_format !== 'percent' ? UNIT_LABELS[unit] : '';
     return {
       aria,
       tooltip: {
         trigger: 'item',
-        valueFormatter: (value: number) => formatMetric(value, unit, opts),
+        valueFormatter: (value: number) => {
+          const text = formatMetric(value, unit, opts);
+          return unitWord ? `${text} ${unitWord}` : text;
+        },
       },
       legend: opts.show_legend === true ? { show: true, type: 'scroll', top: 0 } : { show: false },
       series: [
@@ -124,8 +136,10 @@ export function toOption(
         });
       });
     } else {
-      const sum = values[0].reduce((acc, v) => acc + v, 0);
-      values[0] = values[0].map((v) => (sum > 0 ? round((v / sum) * 100) : 0));
+      // The server's distinct total: a multi-valued dimension's rows add up
+      // to more than it, and their sum would understate every share.
+      const total = result.total;
+      values[0] = values[0].map((v) => (total > 0 ? round((v / total) * 100) : 0));
     }
   }
 
@@ -158,11 +172,18 @@ export function toOption(
     data: categories.map((key) => key.label),
     ...(kind === 'line' ? { boundaryGap: false } : {}),
     ...(horizontal ? { inverse: true } : {}),
-    axisLabel: { hideOverlap: true, overflow: 'truncate', width: horizontal ? 120 : 96 },
+    axisLabel: horizontal
+      ? { interval: 0, hideOverlap: true, overflow: 'truncate', width: 120 }
+      : {
+          interval: 0,
+          overflow: 'truncate',
+          width: 96,
+          ...(categories.length > ROTATE_ABOVE ? { rotate: 30 } : {}),
+        },
   };
   const valueAxis = {
     type: 'value',
-    ...(stacked && percentMode ? { max: 100 } : {}),
+    ...(stacked && percentMode && !result.note ? { max: 100 } : {}),
     axisLabel: { formatter: axisLabel(percentMode) },
   };
 

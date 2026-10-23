@@ -105,6 +105,34 @@ describe('TableWidget', () => {
     expect(within(rows[2]).getByRole('cell')).toHaveAttribute('colspan', '2');
   });
 
+  it('leaves the row and column sums out when a fact counted in several values', () => {
+    // One 100 % booking Mon–Fri on project P tagged A and B: both cells hold
+    // it, the distinct total is 1 week — a row sum would say 2.
+    const P = k(7, 'Project P');
+    const result: MetricResult = {
+      ...base,
+      unit: 'weeks',
+      dimensions: [
+        { kind: 'project', label: 'Project' },
+        { kind: 'tag', label: 'Tag' },
+      ],
+      rows: [
+        { keys: [P, k(1, 'Tag A')], value: 1 },
+        { keys: [P, k(2, 'Tag B')], value: 1 },
+      ],
+      total: 1,
+      note: 'A booking counts in each of its tags',
+    };
+    const query: MetricQuery = { measure: 'booked_weeks', dimensions: [{ kind: 'project' }, { kind: 'tag' }] };
+    render(<TableWidget result={result} query={query} />);
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Project', 'Tag A', 'Tag B']);
+    const rows = screen.getAllByRole('row');
+    expect(cells(rows[1])).toEqual(['1.0', '1.0']);
+    expect(cells(rows[2])).toEqual(['1.0']);
+    expect(within(rows[2]).getByRole('cell')).toHaveAttribute('colspan', '2');
+    expect(screen.queryByText('2.0')).not.toBeInTheDocument();
+  });
+
   it('puts empty buckets and "Other" last', () => {
     const result: MetricResult = {
       ...base,

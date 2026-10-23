@@ -5,8 +5,10 @@
  * Cells are formatted with `formatMetric`; a missing (row × column) point is
  * empty. Row and column sums are shown only for additive measures (booked,
  * project and phase weeks / days) in their own unit — summing distinct
- * counts or percentages would double count — while the grand total is
- * always the server's (recomputed over distinct facts).
+ * counts or percentages would double count — and only when no fact counted
+ * in several values (the result's `note`: a booking on a project tagged A and
+ * B sits in both cells), while the grand total is always the server's
+ * (recomputed over distinct facts).
  */
 
 import type { MetricKey, MetricQuery, MetricResult, WidgetOptions } from '@/types';
@@ -42,7 +44,7 @@ function distinct(result: MetricResult, index: number): MetricKey[] {
 export function TableWidget({ result, query, options, dimensionLabels }: TableWidgetProps) {
   const fmt = (value: number) => formatMetric(value, result.unit, options);
   const labels = dimensionLabels ?? result.dimensions.map((d) => d.label);
-  const sums = ADDITIVE.has(query.measure) && result.unit !== 'percent';
+  const sums = ADDITIVE.has(query.measure) && result.unit !== 'percent' && !result.note;
   const valueHeader = UNIT_LABELS[result.unit] || '%';
 
   if (result.dimensions.length === 0) {

@@ -65,6 +65,26 @@ describe('kind rules', () => {
     expect(changeMeasure('bar', q, 'booked_days').measure).toBe('booked_days');
   });
 
+  it('drops the Teams and People filters off a booking measure', () => {
+    const filters = { team_ids: [5], person_ids: [8], tag_ids: [40], period: { relative: 'this_year' as const } };
+    const q = query({ filters });
+    expect(changeMeasure('bar', q, 'project_weeks').filters).toEqual({ tag_ids: [40], period: { relative: 'this_year' } });
+    expect(normaliseQuery('kpi', { ...q, measure: 'phase_count' }).filters).not.toHaveProperty('team_ids');
+    expect(changeMeasure('bar', q, 'people_booked').filters).toEqual(filters);
+    // Nothing to drop: the filters are kept as they are.
+    const plain = query({ measure: 'project_count' });
+    expect(normaliseQuery('bar', plain).filters).toBe(plain.filters);
+  });
+
+  it('keeps the Percent number format only on a percentage', () => {
+    expect(cleanOptions('kpi', query(), { number_format: 'percent' })).toEqual({});
+    expect(cleanOptions('bar', query(), { number_format: 'percent' })).toEqual({});
+    expect(cleanOptions('bar', query({ dimensions: [{ kind: 'site' }], percent_of: 'total' }), { number_format: 'percent' })).toEqual({
+      number_format: 'percent',
+    });
+    expect(cleanOptions('table', query(), { number_format: 'integer' })).toEqual({ number_format: 'integer' });
+  });
+
   it('keeps the options a kind uses, when they differ from the default', () => {
     expect(cleanOptions('bar', query(), { percent: true, orientation: 'horizontal', show_legend: false })).toEqual({
       percent: true,

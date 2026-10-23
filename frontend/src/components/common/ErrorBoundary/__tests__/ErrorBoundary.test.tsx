@@ -4,8 +4,10 @@
  * the error is logged, never shown.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { Suspense, useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { ErrorBoundary, ERROR_BOUNDARY_MESSAGE } from '../ErrorBoundary';
+import { retryableLazy } from '../retryableLazy';
 
 const state = { fail: true, mounts: 0 };
 
@@ -116,5 +118,51 @@ describe('ErrorBoundary', () => {
     throwNow = false;
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(screen.getByText('Mount 1')).toBeInTheDocument();
+  });
+});
+
+describe('retryableLazy', () => {
+  const Loaded = () => <p>Chunk loaded</p>;
+
+  function mountUnderBoundary(getView: ReturnType<typeof retryableLazy>) {
+    function LazyView() {
+      const [View] = useState(getView);
+      return (
+        <Suspense fallback={<p>Loading</p>}>
+          <View />
+        </Suspense>
+      );
+    }
+    return render(
+      <ErrorBoundary>
+        <LazyView />
+      </ErrorBoundary>
+    );
+  }
+
+  it('lets Retry recover a chunk that failed to load once', async () => {
+    const load = vi
+      .fn<() => Promise<{ default: typeof Loaded }>>()
+      .mockRejectedValueOnce(new Error('Failed to fetch dynamically imported module'))
+      .mockResolvedValue({ default: Loaded });
+    mountUnderBoundary(retryableLazy(load));
+    expect(await screen.findByText(ERROR_BOUNDARY_MESSAGE)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Chunk loaded')).toBeInTheDocument();
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it('hands out the same lazy component while its import has not failed', async () => {
+    const load = vi.fn(async () => ({ default: Loaded }));
+    const getView = retryableLazy(load);
+    expect(getView()).toBe(getView());
+    const { unmount } = mountUnderBoundary(getView);
+    expect(await screen.findByText('Chunk loaded')).toBeInTheDocument();
+    unmount();
+    // Mounted again: no new import, and no Suspense fallback.
+    mountUnderBoundary(getView);
+    expect(screen.getByText('Chunk loaded')).toBeInTheDocument();
+    expect(load).toHaveBeenCalledTimes(1);
   });
 });

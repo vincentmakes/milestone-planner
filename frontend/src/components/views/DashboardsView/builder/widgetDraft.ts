@@ -23,7 +23,7 @@ import type {
   WidgetLayout,
   WidgetOptions,
 } from '@/types';
-import { MATRIX } from '@/utils/metrics';
+import { BOOKING_MEASURES, MATRIX, queryUnit } from '@/utils/metrics';
 
 /** A widget of the draft: `id` only for a widget the server already holds. */
 export type DraftWidget = Omit<DashboardWidget, 'id' | 'sort_order'> & {
@@ -83,11 +83,22 @@ export function defaultQuery(): MetricQuery {
   };
 }
 
+/** The filters a measure takes: the Teams and People filters only on a booking measure. */
+function filtersFor(measure: Measure, filters: MetricFilters | undefined): MetricFilters | undefined {
+  if (!filters || BOOKING_MEASURES.has(measure)) return filters;
+  if (filters.team_ids === undefined && filters.person_ids === undefined) return filters;
+  const rest = { ...filters };
+  delete rest.team_ids;
+  delete rest.person_ids;
+  return rest;
+}
+
 /**
  * The query made consistent with the widget kind and the measure: extra
- * dimensions and refused ones dropped, a KPI with a dimension shows a share
- * of the total, a percentage needs its dimensions, Top N needs a first
- * dimension that is not a period.
+ * dimensions and refused ones dropped, the Teams and People filters dropped
+ * off a booking measure, a KPI with a dimension shows a share of the total,
+ * a percentage needs its dimensions, Top N needs a first dimension that is
+ * not a period.
  */
 export function normaliseQuery(kind: WidgetKind, query: MetricQuery): MetricQuery {
   const dimensions = (query.dimensions ?? [])
@@ -98,7 +109,8 @@ export function normaliseQuery(kind: WidgetKind, query: MetricQuery): MetricQuer
   else if (kind === 'kpi') percentOf = 'total';
   else if (percentOf === 'first_dimension' && dimensions.length < 2) percentOf = null;
   const topN = dimensions.length === 0 || dimensions[0].kind === 'period' ? null : query.top_n ?? null;
-  return { ...query, dimensions, percent_of: percentOf, top_n: topN };
+  const filters = filtersFor(query.measure, query.filters);
+  return { ...query, ...(filters ? { filters } : {}), dimensions, percent_of: percentOf, top_n: topN };
 }
 
 /** The query after a change of measure: dimensions the new measure refuses are dropped. */
@@ -110,7 +122,7 @@ export function changeMeasure(kind: WidgetKind, query: MetricQuery, measure: Mea
  * The options a widget stores: only those its kind uses, and only when they
  * differ from the renderer's default (bar: stacked, 100 % — which implies
  * stacked —, horizontal; line: legend off; pie: legend on; KPI share: the
- * bucket), plus the number format.
+ * bucket), plus the number format (*Percent* only on a percentage).
  */
 export function cleanOptions(kind: WidgetKind, query: MetricQuery, options: WidgetOptions): WidgetOptions {
   const clean: WidgetOptions = {};
@@ -124,7 +136,10 @@ export function cleanOptions(kind: WidgetKind, query: MetricQuery, options: Widg
   if (kind === 'kpi' && query.percent_of && options.kpi_bucket !== undefined && options.kpi_bucket !== null) {
     clean.kpi_bucket = options.kpi_bucket;
   }
-  if (options.number_format) clean.number_format = options.number_format;
+  // "Percent" only formats a percentage: on weeks it would read "12.5 %".
+  if (options.number_format && (options.number_format !== 'percent' || queryUnit(query) === 'percent')) {
+    clean.number_format = options.number_format;
+  }
   return clean;
 }
 

@@ -1,7 +1,7 @@
 /**
  * KpiTile: the total with its unit, or with `percent_of` the bucket named by
  * `kpi_bucket` — matched on the row key (booleans, ids, numeric strings),
- * never the label — falling back to the total with "bucket not found".
+ * never the label — an absent bucket is a share of 0 with "none in this period".
  */
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -46,11 +46,20 @@ describe('KpiTile', () => {
     expect(container).not.toHaveTextContent(BUCKET_NOT_FOUND);
   });
 
-  it('falls back to the total when the bucket is missing, and says so', () => {
+  it('shows 0 % when the bucket is missing (the server never zero-fills it), and says so', () => {
     render(<KpiTile result={share} query={shareQuery} options={{ kpi_bucket: 'nope' }} />);
-    expect(screen.getByText(/^100\s%$/)).toBeInTheDocument();
+    expect(screen.getByText(/^0\s%$/)).toBeInTheDocument();
+    expect(screen.queryByText(/^100\s%$/)).not.toBeInTheDocument();
     expect(screen.getByText(BUCKET_NOT_FOUND)).toBeInTheDocument();
-    expect(BUCKET_NOT_FOUND).toBe('bucket not found');
+    expect(BUCKET_NOT_FOUND).toBe('none in this period');
+  });
+
+  it('shows 0 % for Confirmed when every project is unconfirmed', () => {
+    const noneConfirmed: MetricResult = {
+      ...share,
+      rows: [{ keys: [{ key: false, label: 'Not confirmed' }], value: 100 }],
+    };
+    expect(kpiValue(noneConfirmed, shareQuery, { kpi_bucket: true })).toEqual({ value: 0, label: null, missing: true });
   });
 
   it('hides the unit word when the number is formatted as a percentage', () => {

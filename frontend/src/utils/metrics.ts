@@ -92,6 +92,18 @@ export const MATRIX: Readonly<Record<Measure, readonly DimensionKind[]>> = {
   phase_weeks: [...PROJECT_KINDS, 'phase_type'],
 };
 
+/**
+ * The measures that count bookings (`BOOKING_MEASURES` on the server): only
+ * they know the booked person, so only they take the Teams (the person's
+ * teams) and People filters — the server refuses those on any other measure.
+ */
+export const BOOKING_MEASURES: ReadonlySet<Measure> = new Set<Measure>([
+  'booked_days',
+  'booked_weeks',
+  'booking_count',
+  'people_booked',
+]);
+
 /** Whether `measure` can be broken down by `kind`. */
 export function isValidDimension(measure: Measure, kind: DimensionKind): boolean {
   return MATRIX[measure].includes(kind);

@@ -212,7 +212,9 @@ describe('WidgetEditor — form', () => {
     fireEvent.change(screen.getByLabelText('Grain of dimension 1'), { target: { value: 'quarter' } });
     expect(dimensionLabels(2)).not.toContain('Period');
     pickOption(/^Dimension 2/, 'Project type');
-    expect(dimensionLabels(1)).not.toContain('Lab work');
+    // Only the exact same choice is excluded: another project field still crosses.
+    expect(dimensionLabels(1)).not.toContain('Project type');
+    expect(dimensionLabels(1)).toContain('Lab work');
     await flushPreview();
     expect(lastQuery().dimensions).toEqual([
       { kind: 'period', grain: 'quarter' },
@@ -222,6 +224,20 @@ describe('WidgetEditor — form', () => {
     pickOption(/^Dimension 1/, 'None');
     await flushPreview();
     expect(lastQuery().dimensions).toEqual([{ kind: 'field', field_id: 3 }]);
+  });
+
+  it('crosses two different project fields, never the same one twice', async () => {
+    renderEditor();
+    pickOption(/^Dimension 1/, 'Project type');
+    const second = dimensionLabels(2);
+    expect(second).toContain('Lab work');
+    expect(second).not.toContain('Project type');
+    pickOption(/^Dimension 2/, 'Lab work');
+    await flushPreview();
+    expect(lastQuery().dimensions).toEqual([
+      { kind: 'field', field_id: 3 },
+      { kind: 'field', field_id: 4 },
+    ]);
   });
 
   it('drops a dimension the new measure refuses', async () => {
@@ -339,6 +355,44 @@ describe('WidgetEditor — filters and period', () => {
     fireEvent.change(screen.getByLabelText('Confirmed'), { target: { value: 'any' } });
     await flushPreview();
     expect(lastQuery().filters?.confirmed).toBeUndefined();
+  });
+
+  it('offers the Teams and People filters on booked time only, and drops them off it', async () => {
+    renderEditor();
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    pickOption(/^Teams/, 'Analytics');
+    pickOption(/^People/, 'Bob Brown');
+    pickOption(/^Tags/, 'Urgent');
+    await flushPreview();
+    expect(lastQuery().filters).toMatchObject({ team_ids: [5], person_ids: [8] });
+
+    fireEvent.change(screen.getByLabelText('Measure'), { target: { value: 'project_count' } });
+    expect(screen.queryByRole('button', { name: /^Teams/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^People/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Project teams/ })).toBeInTheDocument();
+    await flushPreview();
+    expect(lastQuery().filters).toEqual({ tag_ids: [40], period: { relative: 'this_year' } });
+    expect(screen.getByRole('button', { name: 'Filters (1)' })).toBeInTheDocument();
+  });
+
+  it('drops the Teams and People filters a stored project widget still carries', async () => {
+    const { onSave } = renderEditor({
+      widget: {
+        clientId: 'w4',
+        id: 4,
+        kind: 'kpi',
+        title: 'Projects',
+        query: { measure: 'phase_count', filters: { team_ids: [5], person_ids: [8] } },
+        options: {},
+        layout: { lg: { x: 0, y: 0, w: 3, h: 2 }, md: { x: 0, y: 0, w: 4, h: 2 }, sm: { x: 0, y: 0, w: 4, h: 2 } },
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect(screen.queryByRole('button', { name: /^Teams/ })).not.toBeInTheDocument();
+    await flushPreview();
+    expect(lastQuery().filters).toEqual({ period: { relative: 'this_year' } });
+    fireEvent.click(saveButton('Save Changes'));
+    expect(onSave.mock.calls[0][0].query.filters).toEqual({ period: { relative: 'this_year' } });
   });
 
   it('offers archived projects only with views.archived', () => {
@@ -587,6 +641,18 @@ describe('WidgetEditor — options and save', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Table' }));
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Number format')).toBeInTheDocument();
+  });
+
+  it('offers the Percent number format only on a percentage', () => {
+    renderEditor();
+    const formats = () =>
+      within(screen.getByLabelText('Number format'))
+        .getAllByRole('option')
+        .map((o) => o.textContent);
+    expect(formats()).toEqual(['Auto', 'Integer', 'Decimal']);
+    pickOption(/^Dimension 1/, 'Site');
+    fireEvent.change(screen.getByLabelText('Percent of'), { target: { value: 'total' } });
+    expect(formats()).toEqual(['Auto', 'Integer', 'Decimal', 'Percent']);
   });
 
   it('requires a title', () => {

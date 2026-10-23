@@ -49,10 +49,15 @@ export const DISCARD_CONFIRM = {
 
 const SAVE_ERROR = 'The dashboard could not be saved.';
 
-/** A save error in plain words (FastAPI's model-level 422 is prefixed with "body: "). */
+/**
+ * A save or preview error in plain words: the API client flattens a FastAPI
+ * 422 into `<location>: <message>` (`body: `, `absolute: `, or a dotted path
+ * such as `body.filters.period.absolute: `); every such leading location is
+ * dropped, the message itself is kept as it is.
+ */
 export function plainError(err: unknown, fallback: string): string {
   const message = err instanceof Error && err.message ? err.message : fallback;
-  return message.replace(/(^|, )body: /g, '$1');
+  return message.replace(/(^|, )(?:[\w.]+: )+/g, '$1');
 }
 
 function draftOf(dashboard: Dashboard): EditorDraft {

@@ -6,7 +6,8 @@
  * dimension value's **key** (`true` for Confirmed, an item or site id),
  * never its label; keys and the bucket are compared after `normaliseKey`, so
  * a bucket stored as `"3"` or `3` matches either. A bucket the result does
- * not hold falls back to the total, with a muted "bucket not found".
+ * not hold is a share of 0 (the server never zero-fills one), with a muted
+ * "none in this period".
  */
 
 import type { MetricQuery, MetricResult, WidgetOptions } from '@/types';
