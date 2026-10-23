@@ -35,6 +35,7 @@ import {
   useDerivedDueNotifications,
 } from '@/hooks/useDerivedDueNotifications';
 import { cardKey } from '@/utils/kanbanCards';
+import { findSubphaseById } from '@/utils/subphaseUtils';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { useVisibleSites } from '@/hooks/useVisibleSites';
 import { selectSite } from '@/hooks/useDataLoader';
@@ -79,6 +80,23 @@ function cardOf(n: AppNotification): CardRef | null {
   return { entityType: n.entity_type, entityId: n.entity_id, projectId: n.project_id };
 }
 
+/**
+ * Whether the card names a parent phase or subphase of a loaded project: a
+ * Kanban card is a leaf, so a thread or a booking on a parent has no card to
+ * open (it opens on the Gantt instead). Unknown entities keep the card path.
+ */
+function isParentEntity(card: CardRef, projects: readonly Project[]): boolean {
+  const project = projects.find((p) => p.id === card.projectId);
+  if (!project) return false;
+  const phases = project.phases ?? [];
+  if (card.entityType === 'phase') {
+    const phase = phases.find((ph) => ph.id === card.entityId);
+    return (phase?.children ?? []).length > 0;
+  }
+  const sub = findSubphaseById(phases, card.entityId);
+  return (sub?.children ?? []).length > 0;
+}
+
 interface WorkTarget {
   tab: WorkTab;
   /** The Open/Done filter of My Requests that shows the item (none on My Approvals) */
@@ -118,10 +136,11 @@ function targetFor(
   visibleSites: readonly Site[]
 ): NotificationTarget {
   const card = cardOf(n);
-  if (card && canOpenCards) return { kind: 'card', card };
+  if (card && canOpenCards && !isParentEntity(card, projects)) return { kind: 'card', card };
   const work = workTargetFor(n);
   if (work) return { kind: 'work', work };
-  // A card the board cannot open (all types), or the project itself.
+  // A card the board cannot open (all types; a parent phase or subphase is
+  // no card), or the project itself.
   if (!n.project_id || !(card || n.entity_type === 'project')) return { kind: 'none' };
   const project = projects.find((p) => p.id === n.project_id && !p.archived);
   const site = project && visibleSites.find((s) => s.id === project.site_id);

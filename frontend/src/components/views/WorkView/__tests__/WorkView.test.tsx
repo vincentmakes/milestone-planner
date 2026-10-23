@@ -9,6 +9,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { WorkView } from '../WorkView';
+import { MyAssignmentRow } from '../MyAssignmentRow';
 import { approvalsApi } from '@/api/endpoints/approvals';
 import { useAppStore } from '@/stores/appStore';
 import { useWorkStore } from '@/stores/workStore';
@@ -293,9 +294,32 @@ describe('My Assignments', () => {
     const items = within(screen.getByRole('tabpanel')).getAllByRole('listitem');
     expect(items).toHaveLength(3);
     expect(items[0]).toHaveTextContent('Feasibility');
+    // Feasibility has a subphase: a parent is no Kanban card, so no link.
+    expect(within(items[0]).queryByRole('button', { name: /Open card/ })).not.toBeInTheDocument();
     expect(within(items[0]).getByRole('img', { name: 'Follows the phase dates' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Upcoming' }));
     expect(within(screen.getByRole('tabpanel')).getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('links a card that comes without a children list (a leaf)', () => {
+    const card = { ...makePhase({ id: 11, name: 'Scale-up' }), children: undefined } as never;
+    render(
+      <ul>
+        <MyAssignmentRow
+          row={{
+            assignment: booking({ id: 300, phase_id: 11 }),
+            project: makeProject({ id: 1 }),
+            card,
+            level: 'phase',
+            start: inDays(1),
+            end: inDays(5),
+            linked: true,
+          } as never}
+          siteName={null}
+        />
+      </ul>
+    );
+    expect(screen.getByRole('button', { name: 'Open card Scale-up' })).toBeInTheDocument();
   });
 
   it('opens the booking dialog of a card booking with its context', async () => {

@@ -124,7 +124,7 @@ export interface DatePickerPopoverProps {
   onDayClick: (day: IsoDate) => void;
   /** The fields scrolled out of view: close. */
   onAnchorHidden: () => void;
-  /** Footer action ("Clear end date" / "Clear date"); no footer without it. */
+  /** Footer action (DateRangeField's "Clear end date"); no footer without it. */
   clear?: { label: string; disabled: boolean; onClick: () => void };
   highlightWeekdays?: readonly number[];
   markSiteCalendar: boolean;

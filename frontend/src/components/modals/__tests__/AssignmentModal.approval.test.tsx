@@ -179,4 +179,20 @@ describe('AssignmentModal self booking needing approval', () => {
     expect(screen.queryByRole('button', { name: 'Save Changes' })).not.toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('You cannot change your own booking on this project.');
   });
+
+  it('still removes my own booking when own changes are denied but removals allowed', async () => {
+    seed('deny', 'assignments.self_update');
+    stubConfirm(true);
+    vi.mocked(deleteStaffAssignment).mockResolvedValue({ success: true } as never);
+    vi.mocked(loadAllProjects).mockImplementation(async () => useAppStore.getState().projects);
+    openEdit();
+    render(<AssignmentModal mode="staff" />);
+    expect(screen.queryByRole('button', { name: 'Save Changes' })).not.toBeInTheDocument();
+    const remove = screen.getByRole('button', { name: 'Remove Assignment' });
+    expect(remove).toBeEnabled();
+    fireEvent.click(remove);
+    await waitFor(() => expect(deleteStaffAssignment).toHaveBeenCalledWith(11, 'phase'));
+    await waitFor(() => expect(useUIStore.getState().activeModal).toBeNull());
+    expect(useAppStore.getState().projects[0].phases[0].staffAssignments).toHaveLength(0);
+  });
 });

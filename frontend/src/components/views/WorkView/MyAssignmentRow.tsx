@@ -1,6 +1,7 @@
 /**
  * One of my bookings (My Work → My Assignments): the project and its site,
- * the card it books (a link to the Kanban card) or "Whole project", the
+ * the card it books (a link to the Kanban card; plain text on a parent phase
+ * or subphase, which has no card) or "Whole project", the
  * effective dates, the allocation, a pin when it follows its card's dates,
  * and Open — the Gantt's edit path: the booking dialog for that row, which
  * carries the comment thread and says when the booking cannot be changed.
@@ -55,8 +56,11 @@ export function MyAssignmentRow({ row, siteName }: MyAssignmentRowProps) {
           {siteName && <span className={styles.siteName}> · {siteName}</span>}
         </span>
         <span className={styles.itemMeta}>
-          {card ? (
+          {card && (card.children ?? []).length === 0 ? (
             <CardLink entityType={level} entityId={card.id} projectId={project.id} label={card.name} />
+          ) : card ? (
+            // A parent phase or subphase: the board shows leaves only, so no card to open.
+            <span className={styles.cardName}>{card.name}</span>
           ) : (
             <span className={styles.cardName}>Whole project</span>
           )}

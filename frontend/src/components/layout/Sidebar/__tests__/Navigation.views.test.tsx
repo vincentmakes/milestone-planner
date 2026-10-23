@@ -88,7 +88,7 @@ describe('Navigation views', () => {
     render(<Navigation />);
     const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'));
     expect(labels.slice(0, 3)).toEqual(['Gantt Chart', 'Kanban Board', 'My Work']);
-    expect(button('My Work')!.querySelector('[data-testid="WorkOutlineIcon"]')).not.toBeNull();
+    expect(button('My Work')!.querySelector('[data-testid="AssignmentIndOutlinedIcon"]')).not.toBeNull();
   });
 
   it('badges My Work with the approvals to decide, in its accessible name', () => {

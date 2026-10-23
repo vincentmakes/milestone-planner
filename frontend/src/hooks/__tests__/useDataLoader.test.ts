@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { selectSite, useDataLoader } from '../useDataLoader';
 import { ApiError } from '@/api/client';
+import { mentionableUsersFor } from '@/api/endpoints/mentionableCache';
 import { resetAllStores, useAppStore, useCustomColumnStore } from '@/stores';
 import * as api from '@/api';
 import {
@@ -237,6 +238,15 @@ describe('useDataLoader refreshers', () => {
     expect(m.getEquipmentBlocks).toHaveBeenCalled();
     expect(s.absenceTypes).toEqual([absenceType]);
     expect(s.teams).toEqual([makeTeam()]);
+  });
+
+  it('refreshStaff clears the cached @-mention lists', async () => {
+    const load = vi.fn().mockResolvedValue([]);
+    await mentionableUsersFor(1, load);
+    const { result } = renderHook(() => useDataLoader());
+    await act(() => result.current.refreshStaff());
+    await mentionableUsersFor(1, load);
+    expect(load).toHaveBeenCalledTimes(2);
   });
 
   it('empties the equipment blocks without views.equipment, without a request', async () => {

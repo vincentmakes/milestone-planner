@@ -4,8 +4,10 @@
  * A comment thread shows in dialogs that unmount on close (the booking
  * dialog), so the list is cached here rather than in component state: one
  * request per site until the cache is cleared. `resetAllStores` clears it
- * (sign-out), and so does the WebSocket refresh of the staff or roles slices
- * (someone joined, left or changed role). A failed load is not cached.
+ * (sign-out), and so do the WebSocket refresh of the staff or roles slices
+ * (someone joined, left or changed role) and the local `refreshStaff` /
+ * `refreshRoles` after the user's own writes (the broadcast excludes the
+ * sender). A failed load is not cached.
  *
  * Deliberately free of imports: the loader is passed in, so a test that
  * mocks the kanban endpoints still drives it, and the store reset can clear

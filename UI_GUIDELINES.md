@@ -470,7 +470,7 @@ decision, not an oversight.
   holidays and company events; `separator` sits between the fields, `fieldClassName` is each
   field's grid-item class (the wrapper is `display: contents`, so the fields stay items of the
   consumer's `.formRow`). `DateField` is the single date (milestone date):
-  `value`, `onChange`, `label`, `clearable` (*Clear date*), `fullWidth`. Both share `disabled`,
+  `value`, `onChange`, `label`, `fullWidth`. Both share `disabled`,
   `highlightWeekdays` (the recurring absence's days) and `markSiteCalendar` (default true): weeks
   start on Monday, weekends are muted and the header site's bank holidays and closures carry a dot,
   a tooltip and a note in the day's accessible name, all from `appStore`; the Settings holiday and

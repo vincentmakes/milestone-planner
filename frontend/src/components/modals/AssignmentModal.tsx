@@ -255,6 +255,9 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       ? assignmentLock(liveStaffRow ?? editingStaffAssignment, currentUser, dialogProject)
       : null;
   const locked = lock !== null;
+  // Remove follows the context menu's rule: only the pending locks stop it
+  // (a role may hold assignments.self_remove without self_update).
+  const removeLocked = lock === 'request-open' || lock === 'pending-other';
   const isPhaseOrSubphase = assignmentLevel !== 'project';
   // A card booking with its own dates: the date fields show, bounded by the card.
   const ownCardDates = isStaff && isPhaseOrSubphase && !followCard;
@@ -384,7 +387,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   };
 
   const handleDelete = async () => {
-    if (!isEditing || !editingAssignment || locked) return;
+    if (!isEditing || !editingAssignment || removeLocked) return;
 
     const confirmMsg = !isStaff
       ? 'Are you sure you want to remove this equipment assignment?'
@@ -472,7 +475,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
         <Button
           variant="danger"
           onClick={handleDelete}
-          disabled={isSubmitting || locked}
+          disabled={isSubmitting || removeLocked}
           className={styles.deleteBtn}
         >
           {removalNeedsApproval ? 'Request removal' : 'Remove Assignment'}

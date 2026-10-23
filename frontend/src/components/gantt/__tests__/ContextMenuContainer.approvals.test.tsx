@@ -330,5 +330,6 @@ describe('own removal', () => {
     openRowMenu();
     render(<ContextMenuContainer />);
     expect(item('Edit Assignment')).toBeDisabled();
+    expect(item('Delete Assignment')).toBeEnabled();
   });
 });

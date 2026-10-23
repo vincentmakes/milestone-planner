@@ -24,7 +24,7 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { resetAllStores } from '@/stores';
 import { useWorkStore } from '@/stores/workStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
-import { makeProject, makeSite, makeUser } from '@/test/factories';
+import { makePhase, makeProject, makeSite, makeSubphase, makeUser } from '@/test/factories';
 import type { AppNotification } from '@/types';
 
 vi.mock('@/api/endpoints/notifications', () => ({
@@ -241,6 +241,40 @@ describe('NotificationBell', () => {
     expect(useViewStore.getState().expandedProjects.has(1)).toBe(true);
     expect(useUIStore.getState().activeModal).toBeNull();
     expect(markNotificationRead).toHaveBeenCalledWith(5);
+  });
+
+  it('opens a thread on a parent phase or subphase on the Gantt: a card is a leaf', async () => {
+    const leaf = makeSubphase({ id: 30, children: [] });
+    const parentSub = makeSubphase({ id: 20, children: [leaf] });
+    useAppStore.setState({
+      sites: [BASEL],
+      currentSite: BASEL,
+      projects: [makeProject({ id: 1, site_id: 1, phases: [makePhase({ id: 10, children: [parentSub] })] })],
+    });
+    useViewStore.getState().setCurrentView('work');
+    vi.mocked(getNotifications).mockResolvedValue([
+      note({ id: 6, type: 'comment', entity_type: 'phase', entity_id: 10, title: 'Bob commented on Feasibility' }),
+      note({ id: 7, type: 'mention', entity_type: 'subphase', entity_id: 20, title: 'Bob mentioned you on Review' }),
+      note({ id: 8, type: 'comment', entity_type: 'subphase', entity_id: 30, title: 'Bob commented on Leaf' }),
+    ]);
+    await renderBell();
+    for (const name of [/Bob commented on Feasibility/, /Bob mentioned you on Review/]) {
+      useViewStore.getState().setCurrentView('work');
+      fireEvent.click(bell());
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name }));
+      });
+      expect(useViewStore.getState().currentView).toBe('gantt');
+      expect(useViewStore.getState().expandedProjects.has(1)).toBe(true);
+      expect(useUIStore.getState().activeModal).not.toBe('kanbanCard');
+    }
+    // A leaf subphase is still a card.
+    fireEvent.click(bell());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Bob commented on Leaf/ }));
+    });
+    expect(useViewStore.getState().currentView).toBe('kanban');
+    expect(useUIStore.getState().activeModal).toBe('kanbanCard');
   });
 
   it('switches to the project\'s site when it sits on another visible one', async () => {

@@ -9,6 +9,7 @@ import { refreshRoles, useRoles } from '../useRoles';
 import { useAppStore } from '@/stores/appStore';
 import { rolesApi } from '@/api/endpoints/roles';
 import { makeRole, makeSystemRoles } from '@/test/factories';
+import { mentionableUsersFor } from '@/api/endpoints/mentionableCache';
 
 vi.mock('@/api/endpoints/roles', () => ({ rolesApi: { getAll: vi.fn() } }));
 
@@ -55,5 +56,14 @@ describe('useRoles', () => {
     getAll.mockResolvedValue(makeSystemRoles(makeRole()));
     await refreshRoles();
     expect(useAppStore.getState().roles.map((r) => r.key)).toContain('team_lead');
+  });
+
+  it('refreshRoles clears the cached @-mention lists', async () => {
+    const load = vi.fn().mockResolvedValue([]);
+    await mentionableUsersFor(1, load);
+    getAll.mockResolvedValue(makeSystemRoles());
+    await refreshRoles();
+    await mentionableUsersFor(1, load);
+    expect(load).toHaveBeenCalledTimes(2);
   });
 });

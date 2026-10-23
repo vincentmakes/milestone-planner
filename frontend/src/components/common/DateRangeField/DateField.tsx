@@ -10,12 +10,11 @@ import type { CommonDateFieldProps } from './DateRangeField';
 import styles from './DateRangeField.module.css';
 
 /**
- * DateField — one date on the same calendar as `DateRangeField` (a todo's due
- * date, a milestone's date): a read-only `Input` (`role="combobox"`, ISO value
- * in `data-value`) that opens the calendar on a click or Enter / Space /
+ * DateField — one date on the same calendar as `DateRangeField` (a
+ * milestone's date): a read-only `Input` (`role="combobox"`, ISO value in
+ * `data-value`) that opens the calendar on a click or Enter / Space /
  * ArrowDown; one click on a day selects it, closes the panel and returns focus
- * to the field. `clearable` adds "Clear date" (and Backspace) for an optional
- * date.
+ * to the field.
  */
 
 export interface DateFieldProps extends CommonDateFieldProps {
@@ -23,7 +22,6 @@ export interface DateFieldProps extends CommonDateFieldProps {
   onChange: (next: IsoDate) => void;
   label: string;
   id?: string;
-  clearable?: boolean;
   placeholder?: string;
   fullWidth?: boolean;
 }
@@ -33,7 +31,6 @@ export function DateField({
   onChange,
   label,
   id,
-  clearable = false,
   placeholder = DATE_PLACEHOLDER,
   fullWidth = false,
   disabled = false,
@@ -74,9 +71,6 @@ export function DateField({
       // Never submit the enclosing form, never scroll the page
       e.preventDefault();
       openPanel(true);
-    } else if (e.key === 'Backspace' && clearable && value) {
-      e.preventDefault();
-      onChange('');
     }
   };
 
@@ -116,18 +110,6 @@ export function DateField({
           focusRequest={focusRequest}
           onDayClick={handleDayClick}
           onAnchorHidden={close}
-          clear={
-            clearable
-              ? {
-                  label: 'Clear date',
-                  disabled: !value,
-                  onClick: () => {
-                    onChange('');
-                    finish();
-                  },
-                }
-              : undefined
-          }
           highlightWeekdays={highlightWeekdays}
           markSiteCalendar={markSiteCalendar}
           minDate={minDate}

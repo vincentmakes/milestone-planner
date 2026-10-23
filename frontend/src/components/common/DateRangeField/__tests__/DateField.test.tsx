@@ -131,31 +131,13 @@ describe('DateField', () => {
     expect(queryPanel()).not.toBeInTheDocument();
   });
 
-  it('clears an optional date with the footer button or Backspace', () => {
+  it('offers no clearing: no footer button, Backspace does nothing', () => {
     const spy = vi.fn();
-    render(<Harness clearable spy={spy} />);
-    fireEvent.click(field());
-    fireEvent.click(screen.getByRole('button', { name: 'Clear date' }));
-    expect(spy).toHaveBeenCalledWith('');
-    expect(queryPanel()).not.toBeInTheDocument();
-    expect(field()).toHaveFocus();
-
-    fireEvent.click(field());
-    expect(screen.getByRole('button', { name: 'Clear date' })).toBeDisabled();
-  });
-
-  it('clears with Backspace only when clearable', () => {
-    const spy = vi.fn();
-    const { unmount } = render(<Harness spy={spy} />);
+    render(<Harness spy={spy} />);
     fireEvent.keyDown(field(), { key: 'Backspace' });
     expect(spy).not.toHaveBeenCalled();
     fireEvent.click(field());
-    expect(screen.queryByRole('button', { name: 'Clear date' })).not.toBeInTheDocument();
-    unmount();
-
-    render(<Harness clearable spy={spy} />);
-    fireEvent.keyDown(field(), { key: 'Backspace' });
-    expect(spy).toHaveBeenCalledWith('');
+    expect(screen.queryByRole('button', { name: /Clear/ })).not.toBeInTheDocument();
   });
 
   it('does not open while disabled', () => {

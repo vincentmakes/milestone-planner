@@ -8,6 +8,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '@/stores/appStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { isForbidden } from '@/api/client';
+import { clearMentionableUsersCache } from '@/api/endpoints/mentionableCache';
 import { can } from '@/utils/permissions';
 import { visibleSitesFor } from './useVisibleSites';
 import type { Site } from '@/types';
@@ -300,6 +301,9 @@ export function useDataLoader(): UseDataLoaderReturn {
    * Refresh staff data (including their skills)
    */
   const refreshStaff = useCallback(async () => {
+    // People changed (often by this user, whom the broadcast excludes): the
+    // @-mention lists are stale too.
+    clearMentionableUsersCache();
     try {
       const staff = await getStaff(true);
       setStaff(staff);

@@ -13,6 +13,7 @@
 
 import { useEffect } from 'react';
 import { rolesApi } from '@/api/endpoints/roles';
+import { clearMentionableUsersCache } from '@/api/endpoints/mentionableCache';
 import { useAppStore } from '@/stores/appStore';
 import type { Role } from '@/types';
 
@@ -48,5 +49,8 @@ export function useRoles(): Role[] {
 
 /** Refetch the roles into the store (after a role or user write). Throws on failure. */
 export async function refreshRoles(): Promise<void> {
+  // A role edit can change who sees every site, so who can be @-mentioned
+  // (the broadcast excludes this user, so the WS refresh never clears it here).
+  clearMentionableUsersCache();
   useAppStore.getState().setRoles(await rolesApi.getAll());
 }

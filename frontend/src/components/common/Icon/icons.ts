@@ -103,7 +103,7 @@ export { default as GanttIcon } from '@mui/icons-material/ViewTimelineOutlined';
 /** Kanban view */
 export { default as KanbanIcon } from '@mui/icons-material/ViewKanbanOutlined';
 /** My Work view */
-export { default as WorkIcon } from '@mui/icons-material/WorkOutline';
+export { default as WorkIcon } from '@mui/icons-material/AssignmentIndOutlined';
 /** A boolean column; a ticked box (multi-select dropdown rows) */
 export { default as CheckBoxIcon } from '@mui/icons-material/CheckBoxOutlined';
 /** An unticked box (multi-select dropdown rows) */

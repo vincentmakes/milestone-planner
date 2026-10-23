@@ -122,6 +122,22 @@ describe('CardComments', () => {
     expect(options.map((o) => o.textContent).join(' ')).not.toContain('Bob Brown');
   });
 
+  it('heads the target\'s people "On this card", or "On this project" on a project thread', async () => {
+    const { unmount } = renderThread();
+    await waitFor(() => expect(getMentionableUsers).toHaveBeenCalledWith(1));
+    await settle();
+    type(composer(), '@');
+    expect(within(screen.getByRole('listbox')).getByText('On this card')).toBeInTheDocument();
+    unmount();
+
+    renderThread({ entityType: 'project', entityId: 1 });
+    await settle();
+    type(composer(), '@');
+    const list = screen.getByRole('listbox');
+    expect(within(list).getByText('On this project')).toBeInTheDocument();
+    expect(within(list).queryByText('On this card')).not.toBeInTheDocument();
+  });
+
   it('loads the site list once for two threads of one site', async () => {
     const first = renderThread();
     await settle();

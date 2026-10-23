@@ -216,6 +216,7 @@ export function CardComments({
           rows={3}
           disabled={busy}
           aria-label="Comment"
+          targetGroupLabel={entityType === 'project' ? 'On this project' : 'On this card'}
           placeholder="Add a comment. Type @ to notify someone."
         />
         <Button type="button" onClick={() => void handleComment()} disabled={busy || !draft.trim()}>
