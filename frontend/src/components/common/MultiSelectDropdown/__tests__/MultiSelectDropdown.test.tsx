@@ -2,13 +2,14 @@
  * MultiSelectDropdown: a Select-looking box listing the chosen names, over a
  * multi-select listbox — click / Space / Enter toggle and keep it open,
  * arrows move, Clear empties, Escape closes back to the trigger, an outside
- * mousedown or Tab out closes it.
+ * mousedown or Tab out closes it. With `searchable`, a focused search box
+ * filters the rows; Enter toggles and keeps it open, Space types.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { useState } from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MultiSelectDropdown } from '../MultiSelectDropdown';
-import type { MultiSelectDropdownItem } from '../MultiSelectDropdown';
+import type { MultiSelectDropdownItem, MultiSelectDropdownProps } from '../MultiSelectDropdown';
 
 const ITEMS: MultiSelectDropdownItem[] = [
   { id: 1, name: 'Process', color: '#2563eb' },
@@ -20,25 +21,23 @@ function Harness({
   initial = [],
   options = ITEMS,
   onChange = () => {},
-  disabled,
-}: {
+  ...props
+}: Partial<MultiSelectDropdownProps> & {
   initial?: number[];
   options?: MultiSelectDropdownItem[];
-  onChange?: (next: number[]) => void;
-  disabled?: boolean;
 }) {
   const [ids, setIds] = useState(initial);
   return (
     <>
       <MultiSelectDropdown
         label="Area"
+        {...props}
         options={options}
         selectedIds={new Set(ids)}
         onChange={(next) => {
           onChange(next);
           setIds(next);
         }}
-        disabled={disabled}
       />
       <button type="button">Outside</button>
     </>
@@ -171,5 +170,136 @@ describe('MultiSelectDropdown', () => {
   it('cannot be opened while disabled', () => {
     render(<Harness disabled />);
     expect(trigger()).toBeDisabled();
+  });
+
+  describe('searchable', () => {
+    const PEOPLE: MultiSelectDropdownItem[] = [
+      { id: 1, name: 'Alice Martin', hint: 'Chemist' },
+      { id: 2, name: 'Bob Brown', hint: 'Lab technician' },
+      { id: 3, name: 'Charlie Day' },
+    ];
+    const search = () => screen.getByRole('combobox', { name: 'Find a person' });
+    const names = () => within(listbox()).queryAllByRole('option').map((o) => o.textContent);
+
+    it('focuses the search box on open, the combobox wiring on it, not the list', () => {
+      render(<Harness options={PEOPLE} searchable initial={[2]} />);
+      fireEvent.click(trigger());
+      expect(search()).toHaveFocus();
+      expect(search()).toHaveAttribute('placeholder', 'Type to find…');
+      expect(search()).toHaveAttribute('aria-controls', listbox().id);
+      expect(search()).toHaveAttribute('aria-autocomplete', 'list');
+      expect(search()).toHaveAttribute('aria-activedescendant', option('Bob Brown Lab technician').id);
+      expect(listbox()).not.toHaveAttribute('tabindex');
+      expect(listbox()).not.toHaveAttribute('aria-activedescendant');
+      expect(names()).toEqual(['Alice Martin Chemist', 'Bob Brown Lab technician', 'Charlie Day']);
+    });
+
+    it('filters by name and hint from the first character, and says when nothing matches', () => {
+      render(<Harness options={PEOPLE} searchable noMatchText="Nobody here" />);
+      fireEvent.click(trigger());
+      fireEvent.change(search(), { target: { value: 'c' } });
+      expect(names()).toEqual(['Alice Martin Chemist', 'Bob Brown Lab technician', 'Charlie Day']);
+      fireEvent.change(search(), { target: { value: 'TECH' } });
+      expect(names()).toEqual(['Bob Brown Lab technician']);
+      expect(search()).toHaveAttribute('aria-activedescendant', option('Bob Brown Lab technician').id);
+      fireEvent.change(search(), { target: { value: 'zzz' } });
+      expect(names()).toEqual([]);
+      expect(screen.getByRole('status')).toHaveTextContent('Nobody here');
+      expect(search()).not.toHaveAttribute('aria-activedescendant');
+      expect(fireEvent.keyDown(search(), { key: 'Enter' })).toBe(false); // nothing to toggle
+    });
+
+    it('moves with the arrows, Enter toggles the active row and keeps the panel open', () => {
+      const onChange = vi.fn();
+      render(<Harness options={PEOPLE} searchable onChange={onChange} />);
+      fireEvent.click(trigger());
+      fireEvent.keyDown(search(), { key: 'ArrowDown' });
+      expect(fireEvent.keyDown(search(), { key: 'Enter' })).toBe(false);
+      expect(onChange).toHaveBeenLastCalledWith([2]);
+      expect(listbox()).toBeInTheDocument();
+      expect(search()).toHaveFocus();
+      fireEvent.keyDown(search(), { key: 'End' });
+      fireEvent.keyDown(search(), { key: 'Enter' });
+      expect(onChange).toHaveBeenLastCalledWith([2, 3]);
+      // Space is text in the search box: it filters, it never toggles
+      expect(fireEvent.keyDown(search(), { key: ' ' })).toBe(true);
+      fireEvent.change(search(), { target: { value: 'bob ' } });
+      expect(onChange).toHaveBeenCalledTimes(2);
+      expect(names()).toEqual(['Bob Brown Lab technician']);
+    });
+
+    it('keeps a chosen item hidden by the query when another is toggled', () => {
+      const onChange = vi.fn();
+      render(<Harness options={PEOPLE} searchable initial={[1, 3]} onChange={onChange} />);
+      fireEvent.click(trigger());
+      fireEvent.change(search(), { target: { value: 'bob' } });
+      fireEvent.click(option('Bob Brown Lab technician'));
+      expect(onChange).toHaveBeenLastCalledWith([1, 2, 3]);
+      fireEvent.keyDown(search(), { key: 'Enter' }); // the active row: Bob again
+      expect(onChange).toHaveBeenLastCalledWith([1, 3]);
+    });
+
+    it('focuses the search box again after Clear', () => {
+      const onChange = vi.fn();
+      render(<Harness options={PEOPLE} searchable initial={[1]} onChange={onChange} />);
+      fireEvent.click(trigger());
+      fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+      expect(onChange).toHaveBeenLastCalledWith([]);
+      expect(search()).toHaveFocus();
+    });
+
+    it('starts afresh after closing, and Tab out closes it', () => {
+      render(<Harness options={PEOPLE} searchable />);
+      fireEvent.click(trigger());
+      fireEvent.change(search(), { target: { value: 'ali' } });
+      fireEvent.keyDown(search(), { key: 'Escape' });
+      expect(trigger()).toHaveFocus();
+      fireEvent.click(trigger());
+      expect(search()).toHaveValue('');
+      expect(names()).toHaveLength(3);
+      fireEvent.blur(search(), { relatedTarget: trigger() }); // Shift+Tab: stays
+      expect(listbox()).toBeInTheDocument();
+      fireEvent.blur(search(), { relatedTarget: screen.getByRole('button', { name: 'Outside' }) });
+      expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    });
+
+    it('never submits a host form on Enter', () => {
+      const onSubmit = vi.fn((e: React.FormEvent) => e.preventDefault());
+      render(
+        <form onSubmit={onSubmit}>
+          <Harness options={PEOPLE} searchable />
+        </form>
+      );
+      fireEvent.click(trigger());
+      fireEvent.keyDown(search(), { key: 'Enter' });
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it('hides Clear with allowClear={false} and shows the summary on the trigger', () => {
+      render(
+        <Harness
+          options={PEOPLE}
+          searchable
+          allowClear={false}
+          initial={[1, 2]}
+          placeholder="No members"
+          summary={(chosen) => `${chosen.length} members`}
+        />
+      );
+      expect(trigger()).toHaveAccessibleName('Area 2 members');
+      expect(screen.getByText('2 members')).toHaveAttribute('title', 'Alice Martin, Bob Brown');
+      fireEvent.click(trigger());
+      expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
+      fireEvent.click(option('Alice Martin Chemist'));
+      fireEvent.click(option('Bob Brown Lab technician'));
+      expect(trigger()).toHaveAccessibleName('Area No members');
+    });
+
+    it('shows no search box when there is no item', () => {
+      render(<Harness options={[]} searchable />);
+      fireEvent.click(trigger());
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent('No items for this site');
+    });
   });
 });
