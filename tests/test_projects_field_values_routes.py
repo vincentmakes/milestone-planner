@@ -352,6 +352,19 @@ async def test_create_project_field_values_must_be_keyed_by_field_id(
 
 
 @pytest.mark.asyncio
+async def test_update_project_field_values_are_capped_at_500_fields(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(1, "superuser"))
+
+    response = await client.put(
+        "/api/projects/1", json={"field_values": {str(i): None for i in range(1, 502)}}
+    )
+
+    assert response.status_code == 422
+    mock_db_session.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_create_project_with_field_values_needs_projects_create(
     authed_client, mock_db_session
 ):
