@@ -15,6 +15,7 @@ import asyncpg
 from app.config import get_settings
 from app.models.card_comment import COMMENT_ENTITY_TYPES
 from app.scripts.demo_data import build_demo
+from app.services.dashboard_seed import base_dashboard_rows
 from app.services.demo_seed import insert_demo_data
 from app.services.encryption import generate_password, hash_user_password
 from app.services.permissions import (
@@ -23,6 +24,7 @@ from app.services.permissions import (
     SYSTEM_ROLES,
     build_default_role_permissions_sql,
 )
+from app.utils import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -1369,6 +1371,117 @@ DASHBOARDS_PROBE_SQL = (
     "AND table_name IN (" + ", ".join(f"'{t}'" for t in DASHBOARD_TABLES) + ")"
 )
 
+# The base dashboard (app/services/dashboard_seed.py) and its widgets, written
+# in the step that creates the tables, with bound parameters: SQLAlchemy
+# text() binds (:name) for the tenant auto-migration, asyncpg placeholders
+# ($n) for the provisioner and init_db. ON CONFLICT names the partial unique
+# index dashboards_one_default, so a concurrent creation inserts one default;
+# no id back = the default exists, and no widget is written.
+DASHBOARD_SEED_COLUMNS: tuple[str, ...] = (
+    "name",
+    "description",
+    "visibility",
+    "is_default",
+    "created_at",
+    "updated_at",
+)
+DASHBOARD_WIDGET_SEED_COLUMNS: tuple[str, ...] = (
+    "dashboard_id",
+    "kind",
+    "title",
+    "query",
+    "options",
+    "layout",
+    "sort_order",
+)
+
+
+def _seed_insert_sql(table: str, columns: tuple[str, ...], placeholders: list[str]) -> str:
+    return f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
+
+
+_DEFAULT_CONFLICT = " ON CONFLICT (is_default) WHERE is_default DO NOTHING RETURNING id"
+
+DASHBOARD_SEED_SQL = (
+    _seed_insert_sql(
+        "dashboards", DASHBOARD_SEED_COLUMNS, [f":{c}" for c in DASHBOARD_SEED_COLUMNS]
+    )
+    + _DEFAULT_CONFLICT
+)
+DASHBOARD_SEED_PG_SQL = (
+    _seed_insert_sql(
+        "dashboards",
+        DASHBOARD_SEED_COLUMNS,
+        [f"${i}" for i in range(1, len(DASHBOARD_SEED_COLUMNS) + 1)],
+    )
+    + _DEFAULT_CONFLICT
+)
+DASHBOARD_WIDGET_SEED_SQL = _seed_insert_sql(
+    "dashboard_widgets",
+    DASHBOARD_WIDGET_SEED_COLUMNS,
+    [f":{c}" for c in DASHBOARD_WIDGET_SEED_COLUMNS],
+)
+DASHBOARD_WIDGET_SEED_PG_SQL = _seed_insert_sql(
+    "dashboard_widgets",
+    DASHBOARD_WIDGET_SEED_COLUMNS,
+    [f"${i}" for i in range(1, len(DASHBOARD_WIDGET_SEED_COLUMNS) + 1)],
+)
+
+# The one-shot grant of the dashboard keys to the system roles of an existing
+# tenant, in the same step: (role key, permission) pairs, inserted only where
+# the role row exists and holds no row for that key (an admin's later removal
+# is never undone: the step runs only while it creates the tables). New
+# tenants get the keys from the catalogue defaults (RBAC_SEED_ROLES_SQL).
+DASHBOARD_PERMISSION_BACKFILL: tuple[tuple[str, str], ...] = (
+    ("superuser", "views.dashboards"),
+    ("user", "views.dashboards"),
+    ("superuser", "dashboards.manage"),
+)
+DASHBOARD_PERMISSION_BACKFILL_SQL = (
+    "INSERT INTO role_permissions (role_id, permission, mode) "
+    "SELECT r.id, :permission, 'allow' FROM roles r "
+    "WHERE r.key = :role AND NOT EXISTS ("
+    "SELECT 1 FROM role_permissions rp "
+    "WHERE rp.role_id = r.id AND rp.permission = :existing_permission)"
+)
+# asyncpg: each placeholder once (PostgreSQL deduces one type per parameter).
+DASHBOARD_PERMISSION_BACKFILL_PG_SQL = (
+    DASHBOARD_PERMISSION_BACKFILL_SQL.replace(":permission", "$1")
+    .replace(":role", "$2")
+    .replace(":existing_permission", "$3")
+)
+
+
+def dashboard_seed_params(
+    field_ids: dict[str, int] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """The base dashboard's insert parameters (with its timestamps) and its widgets'."""
+    dashboard, widgets = base_dashboard_rows(field_ids)
+    now = utcnow_naive()
+    return {**dashboard, "created_at": now, "updated_at": now}, widgets
+
+
+async def seed_base_dashboard(conn: asyncpg.Connection) -> int | None:
+    """
+    Insert the base dashboard with its widgets and grant the dashboard keys
+    (asyncpg; the provisioner and init_db). The id of the new dashboard, or
+    None when a default dashboard already existed (then no widget is written).
+    """
+    dashboard, widgets = dashboard_seed_params()
+    dashboard_id = await conn.fetchval(
+        DASHBOARD_SEED_PG_SQL, *(dashboard[c] for c in DASHBOARD_SEED_COLUMNS)
+    )
+    if dashboard_id is not None:
+        for widget in widgets:
+            await conn.execute(
+                DASHBOARD_WIDGET_SEED_PG_SQL,
+                dashboard_id,
+                *(widget[c] for c in DASHBOARD_WIDGET_SEED_COLUMNS[1:]),
+            )
+    for role, permission in DASHBOARD_PERMISSION_BACKFILL:
+        await conn.execute(DASHBOARD_PERMISSION_BACKFILL_PG_SQL, permission, role, permission)
+    return dashboard_id
+
 
 def _sql_block(*statements: str) -> str:
     """Statements joined for a multi-statement script (each terminated by ';')."""
@@ -2057,8 +2170,20 @@ def get_tenant_schema_sql() -> str:
     )
 
 
-async def run_seed_data(conn: asyncpg.Connection, admin_email: str, admin_password_hash: str):
-    """Seed initial data for a new tenant using parameterized queries."""
+async def run_seed_data(
+    conn: asyncpg.Connection,
+    admin_email: str,
+    admin_password_hash: str,
+    *,
+    seed_dashboards: bool = True,
+):
+    """Seed initial data for a new tenant using parameterized queries.
+
+    ``seed_dashboards``: also write the base dashboard and the dashboard key
+    grants (seed_base_dashboard()). The provisioner always does (a new database);
+    init_db only in the run that creates the dashboards tables, so a later
+    start never brings back a dashboard an admin deleted.
+    """
     # Static seed data (no user input)
     await conn.execute("""
     INSERT INTO sso_config (id, enabled) VALUES (1, 0) ON CONFLICT (id) DO NOTHING;
@@ -2092,6 +2217,9 @@ async def run_seed_data(conn: asyncpg.Connection, admin_email: str, admin_passwo
     # keeps its (possibly edited) permissions.
     for statement in (RBAC_SEED_ROLES_SQL, RBAC_SEED_POLICIES_SQL):
         await conn.execute(statement)
+    # The base dashboard and the dashboard key grants, after the roles.
+    if seed_dashboards:
+        await seed_base_dashboard(conn)
     # User input - use parameterized queries
     await conn.execute(
         "INSERT INTO users "

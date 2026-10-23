@@ -10,6 +10,7 @@ declares the same columns, checks, indexes and delete rules. Repo-root files
 are skipped when the test tree is run outside the repository.
 """
 
+import json
 import re
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -30,9 +31,17 @@ from app.models.dashboard import (
 from app.models.rbac import Role
 from app.models.user import User
 from app.services import tenant_provisioner as tp
+from app.services.dashboard_seed import WIDGET_KEYS, base_dashboard_rows
 from app.services.tenant_provisioner import (
+    DASHBOARD_PERMISSION_BACKFILL,
+    DASHBOARD_PERMISSION_BACKFILL_PG_SQL,
+    DASHBOARD_PERMISSION_BACKFILL_SQL,
     DASHBOARD_ROLES_TABLE_SQL,
+    DASHBOARD_SEED_PG_SQL,
+    DASHBOARD_SEED_SQL,
     DASHBOARD_TABLES,
+    DASHBOARD_WIDGET_SEED_PG_SQL,
+    DASHBOARD_WIDGET_SEED_SQL,
     DASHBOARD_WIDGETS_TABLE_SQL,
     DASHBOARDS_INDEX_STATEMENTS,
     DASHBOARDS_PROBE_SQL,
@@ -42,8 +51,10 @@ from app.services.tenant_provisioner import (
     NOTIFICATIONS_TYPE_CHECK_SQL,
     PROJECT_FIELDS_PROBE_SQL,
     RBAC_NEEDS_MIGRATION_SQL,
+    dashboard_seed_params,
     get_tenant_schema_sql,
 )
+from app.utils import utcnow_naive
 from migrations.run_migration_master import split_sql_statements
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -317,16 +328,23 @@ PROBE = "CHECK dashboard tables"
 FIELDS_PROBE = "CHECK project field tables"
 RBAC_PROBE = "CHECK rbac"
 WIDEN = "widen notification types"
+SEED = "INSERT dashboard"
+WIDGET = "INSERT widget"
+GRANT = "INSERT role permission"
+NEW_ID = 77
 
 
-def _conn(tables=(), fail_on: str | None = None):
+def _conn(tables=(), fail_on: str | None = None, dashboard_id: int | None = NEW_ID):
     """
     A connection on which the project-fields and RBAC probes answer "up to
     date" and the dashboards step's own SQL succeeds; every other
     auto-migration step fails (and is contained by its own try/except).
-    ``log`` records the statements interleaved with COMMIT / ROLLBACK.
+    ``log`` records the statements interleaved with COMMIT / ROLLBACK, the
+    seed inserts as SEED / WIDGET / GRANT; ``params`` their bound values.
+    ``dashboard_id`` is what the dashboard insert returns (None = conflict).
     """
     log: list[str] = []
+    params: dict[str, list[dict]] = {SEED: [], WIDGET: [], GRANT: []}
 
     def rows(values):
         result = MagicMock()
@@ -349,6 +367,20 @@ def _conn(tables=(), fail_on: str | None = None):
         if sql == NOTIFICATIONS_TYPE_CHECK_SQL:
             log.append(WIDEN)
             return MagicMock()
+        seeds = {
+            DASHBOARD_SEED_SQL: SEED,
+            DASHBOARD_WIDGET_SEED_SQL: WIDGET,
+            DASHBOARD_PERMISSION_BACKFILL_SQL: GRANT,
+        }
+        if sql in seeds:
+            label = seeds[sql]
+            log.append(label)
+            params[label].append(clause.compile().params)
+            if label == fail_on:
+                raise RuntimeError("seed failed")
+            result = MagicMock()
+            result.scalar.return_value = dashboard_id
+            return result
         if sql in DASHBOARDS_SCHEMA_STATEMENTS:
             log.append(sql)
             if sql == fail_on:
@@ -360,6 +392,7 @@ def _conn(tables=(), fail_on: str | None = None):
     conn.execute = AsyncMock(side_effect=execute)
     conn.commit = AsyncMock(side_effect=lambda: log.append("COMMIT"))
     conn.rollback = AsyncMock(side_effect=lambda: log.append("ROLLBACK"))
+    conn.params = params
     return conn, log
 
 
@@ -381,19 +414,66 @@ def _step(log: list[str]) -> list[str]:
     return log[start:]
 
 
+BASE_WIDGETS = base_dashboard_rows()[1]
+FULL_STEP = [
+    PROBE,
+    *DASHBOARDS_SCHEMA_STATEMENTS,
+    SEED,
+    *[WIDGET] * len(BASE_WIDGETS),
+    *[GRANT] * 3,
+    "COMMIT",
+]
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "tables", [(), DASHBOARD_TABLES[:-1], DASHBOARD_TABLES[1:]], ids=["2.0", "partial", "partial2"]
 )
-async def test_auto_migration_creates_the_schema(tables):
+async def test_auto_migration_creates_the_schema_then_seeds(tables):
     conn, log = _conn(tables=tables)
 
     await _run_auto_migrations(conn)
 
-    assert _step(log) == [PROBE, *DASHBOARDS_SCHEMA_STATEMENTS, "COMMIT"]
+    # Schema (the one-default index before the seed), the Overview with its
+    # eight widgets, the three grants, one commit.
+    assert _step(log) == FULL_STEP
     # After the project-fields and RBAC steps (dashboard_roles references
     # roles), before the notification-types step.
     assert log.index(FIELDS_PROBE) < log.index(RBAC_PROBE) < log.index(PROBE) < log.index(WIDEN)
+
+
+@pytest.mark.asyncio
+async def test_auto_migration_seed_binds_the_base_dashboard():
+    conn, _ = _conn()
+
+    before = utcnow_naive()
+    await _run_auto_migrations(conn)
+
+    (dashboard,) = conn.params[SEED]
+    assert {k: dashboard[k] for k in ("name", "description", "visibility", "is_default")} == (
+        base_dashboard_rows()[0]
+    )
+    assert dashboard["created_at"] == dashboard["updated_at"]
+    assert dashboard["created_at"].tzinfo is None and dashboard["created_at"] >= before
+    # Every widget of the base dashboard, on the new id, JSON as text binds.
+    assert conn.params[WIDGET] == [{"dashboard_id": NEW_ID, **w} for w in BASE_WIDGETS]
+    # The one-shot grants: superuser + user see dashboards, superuser manages.
+    assert [(g["role"], g["permission"]) for g in conn.params[GRANT]] == [
+        ("superuser", "views.dashboards"),
+        ("user", "views.dashboards"),
+        ("superuser", "dashboards.manage"),
+    ]
+    assert all(g["existing_permission"] == g["permission"] for g in conn.params[GRANT])
+
+
+@pytest.mark.asyncio
+async def test_auto_migration_writes_no_widget_when_a_default_exists():
+    """ON CONFLICT ... DO NOTHING returned no id: a concurrent creation won."""
+    conn, log = _conn(dashboard_id=None)
+
+    await _run_auto_migrations(conn)
+
+    assert _step(log) == [PROBE, *DASHBOARDS_SCHEMA_STATEMENTS, SEED, *[GRANT] * 3, "COMMIT"]
 
 
 @pytest.mark.asyncio
@@ -402,21 +482,67 @@ async def test_auto_migration_skips_an_up_to_date_tenant():
 
     await _run_auto_migrations(conn)
 
-    # Nothing between the probe and the next step.
+    # Nothing between the probe and the next step: no schema, no seed, no
+    # grant (an admin's later removal of the Overview or a key stays).
     assert log[log.index(PROBE) :] == [PROBE, WIDEN, "COMMIT"]
     assert not any(s in DASHBOARDS_SCHEMA_STATEMENTS for s in log)
+    assert conn.params == {SEED: [], WIDGET: [], GRANT: []}
 
 
 @pytest.mark.asyncio
-async def test_auto_migration_failure_rolls_back_and_never_raises():
-    failing = DASHBOARD_WIDGETS_TABLE_SQL
+@pytest.mark.parametrize(
+    ("failing", "ran"),
+    [
+        (DASHBOARD_WIDGETS_TABLE_SQL, [*DASHBOARDS_SCHEMA_STATEMENTS[:3]]),
+        (SEED, [*DASHBOARDS_SCHEMA_STATEMENTS, SEED]),
+        (GRANT, [*DASHBOARDS_SCHEMA_STATEMENTS, SEED, *[WIDGET] * 8, GRANT]),
+    ],
+    ids=["schema", "seed", "grant"],
+)
+async def test_auto_migration_failure_rolls_back_and_never_raises(failing, ran):
     conn, log = _conn(fail_on=failing)
 
     await _run_auto_migrations(conn)  # never raises
 
-    upto = DASHBOARDS_SCHEMA_STATEMENTS.index(failing) + 1
-    assert _step(log) == [PROBE, *DASHBOARDS_SCHEMA_STATEMENTS[:upto], "ROLLBACK"]
+    assert _step(log) == [PROBE, *ran, "ROLLBACK"]
     assert log[-2:] == [WIDEN, "COMMIT"]  # the later steps still ran
+
+
+def test_seed_sql_binds_every_column():
+    assert text(DASHBOARD_SEED_SQL).compile().params.keys() == {
+        "name",
+        "description",
+        "visibility",
+        "is_default",
+        "created_at",
+        "updated_at",
+    }
+    assert DASHBOARD_SEED_SQL.endswith(
+        "ON CONFLICT (is_default) WHERE is_default DO NOTHING RETURNING id"
+    )
+    assert set(text(DASHBOARD_WIDGET_SEED_SQL).compile().params) == {
+        "dashboard_id",
+        *WIDGET_KEYS,
+    }
+    assert set(text(DASHBOARD_PERMISSION_BACKFILL_SQL).compile().params) == {
+        "permission",
+        "role",
+        "existing_permission",
+    }
+
+
+def test_asyncpg_seed_sql_uses_each_placeholder_once():
+    for sql, count in (
+        (DASHBOARD_SEED_PG_SQL, 6),
+        (DASHBOARD_WIDGET_SEED_PG_SQL, 7),
+        (DASHBOARD_PERMISSION_BACKFILL_PG_SQL, 3),
+    ):
+        used = re.findall(r"\$(\d+)", sql)
+        assert sorted(used, key=int) == [str(i) for i in range(1, count + 1)], sql
+        assert ":" not in sql.replace("::", ""), sql
+    assert DASHBOARD_SEED_PG_SQL.endswith(
+        "ON CONFLICT (is_default) WHERE is_default DO NOTHING RETURNING id"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -543,7 +669,11 @@ def sqlite_session():
             if "~" in str(constraint.sqltext):
                 copy.constraints.discard(constraint)
     metadata.create_all(
-        engine, tables=[metadata.tables[name] for name in ("roles", "users", *DASHBOARD_TABLES)]
+        engine,
+        tables=[
+            metadata.tables[name]
+            for name in ("roles", "role_permissions", "users", *DASHBOARD_TABLES)
+        ],
     )
     with Session(engine) as session:
         session.add_all(
@@ -615,3 +745,63 @@ def test_widgets_and_role_links_go_with_their_dashboard_and_role(sqlite_session)
     sqlite_session.commit()
     for table in ("dashboard_widgets", "dashboard_roles"):
         assert sqlite_session.execute(text(f"SELECT count(*) FROM {table}")).scalar() == 0
+
+
+def test_the_seed_sql_runs_once_on_sqlite(sqlite_session):
+    """The auto-migration's SQLAlchemy seed text, executed for real: the
+    first insert returns the new id, a second one hits dashboards_one_default
+    and returns nothing."""
+    dashboard, widgets = dashboard_seed_params()
+    first = sqlite_session.execute(text(DASHBOARD_SEED_SQL).bindparams(**dashboard)).scalar()
+    assert first is not None
+    for widget in widgets:
+        sqlite_session.execute(
+            text(DASHBOARD_WIDGET_SEED_SQL).bindparams(dashboard_id=first, **widget)
+        )
+    sqlite_session.commit()
+    again = sqlite_session.execute(text(DASHBOARD_SEED_SQL).bindparams(**dashboard)).scalar()
+    assert again is None
+
+    loaded = sqlite_session.get(Dashboard, first)
+    assert (loaded.name, loaded.visibility, loaded.is_default, loaded.owner_id) == (
+        "Overview",
+        "everyone",
+        True,
+        None,
+    )
+    assert [w.title for w in loaded.widgets] == [w["title"] for w in widgets]
+    assert json.loads(loaded.widgets[1].options) == {"kpi_bucket": True}
+
+
+def test_the_backfill_sql_grants_only_what_is_missing_on_sqlite(sqlite_session):
+    sqlite_session.add(Role(id=3, key="superuser", name="Superuser"))
+    # The user role already holds views.dashboards (say, in approval mode by a
+    # hand edit): left alone. No admin row: nothing for admin.
+    sqlite_session.execute(
+        text(
+            "INSERT INTO role_permissions (role_id, permission, mode) "
+            "VALUES (1, 'views.dashboards', 'approval')"
+        )
+    )
+    sqlite_session.commit()
+
+    def grant():
+        for role, permission in DASHBOARD_PERMISSION_BACKFILL:
+            sqlite_session.execute(
+                text(DASHBOARD_PERMISSION_BACKFILL_SQL).bindparams(
+                    permission=permission, role=role, existing_permission=permission
+                )
+            )
+        sqlite_session.commit()
+
+    grant()
+    grant()  # idempotent
+
+    rows = sqlite_session.execute(
+        text("SELECT role_id, permission, mode FROM role_permissions ORDER BY role_id, permission")
+    ).all()
+    assert rows == [
+        (1, "views.dashboards", "approval"),
+        (3, "dashboards.manage", "allow"),
+        (3, "views.dashboards", "allow"),
+    ]

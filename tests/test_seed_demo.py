@@ -128,6 +128,8 @@ async def test_rows_come_in_foreign_key_order(loaded):
         "equipment",
         "project_fields",
         "project_field_options",
+        "dashboards",
+        "dashboard_widgets",
         "tags",
         "projects",
         "project_phases",
@@ -558,3 +560,60 @@ async def test_a_rerun_leaves_role_and_policy_settings_alone():
     assert not conn.updates("approval_policies")
     assert not conn.inserts("approval_policy_roles")
     assert conn.inserts("users")  # the rest of the seed still completes
+
+
+async def test_the_base_dashboard_with_the_demo_field_widgets(loaded):
+    """Overview (dashboard_seed.BASE_DASHBOARD) plus the two widgets over the
+    demo's "Project type" and "Area" fields, on the ids the fake handed out."""
+    from app.services.dashboard_seed import base_dashboard_rows
+
+    conn, _, counts = loaded
+    ((sql, args),) = conn.inserts("dashboards")
+    assert "WHERE NOT EXISTS (SELECT 1 FROM dashboards WHERE is_default IS NOT DISTINCT FROM" in sql
+    columns = sql.split("(", 1)[1].split(")", 1)[0].split(", ")
+    row = dict(zip(columns, args, strict=False))
+    assert (row["name"], row["visibility"], row["is_default"]) == ("Overview", "everyone", True)
+    assert row["created_at"] == row["updated_at"] and row["created_at"].tzinfo is None
+    assert args[-1] is True  # the natural key: the one default dashboard
+
+    dashboard_id = conn.ids[("dashboards", (True,))]
+    fields = {name: conn.ids[("project_fields", (name,))] for name in ("Project type", "Area")}
+    _, expected = base_dashboard_rows(fields)
+    widgets = conn.inserts("dashboard_widgets")
+    assert len(widgets) == len(expected) == 10
+    for (sql, args), widget in zip(widgets, expected, strict=True):
+        assert args == (
+            dashboard_id,
+            *widget.values(),
+            dashboard_id,
+            widget["sort_order"],
+        )
+        assert "{" not in sql  # JSON goes in as parameters, never SQL text
+    titles = [args[2] for _, args in widgets]
+    assert titles[-2:] == ["Share of time by Project type per team", "Booked weeks by Area"]
+    assert json.loads(widgets[8][1][3])["dimensions"][0] == {
+        "kind": "field",
+        "field_id": fields["Project type"],
+    }
+    assert json.loads(widgets[9][1][3])["dimensions"] == [
+        {"kind": "field", "field_id": fields["Area"]}
+    ]
+    assert counts["dashboards"] == 1
+    assert counts["dashboard_widgets"] == 10
+
+
+async def test_a_rerun_leaves_an_existing_overview_alone():
+    """Re-provisioning with demo data finds the default dashboard already
+    there: no widget is written (an admin's edits to it, deleted widgets
+    included, are kept)."""
+
+    class Seeded(RecordingConn):
+        existing = frozenset({"dashboards"})
+
+    conn = Seeded()
+    await demo_seed.insert_demo_data(conn, build_demo(date(2026, 10, 17)))
+
+    assert conn.inserts("dashboards")  # still guarded, inserts nothing
+    assert not conn.inserts("dashboard_widgets")
+    assert not any(table == "dashboards" for table, _ in conn.ids)  # no id looked up
+    assert conn.inserts("projects")  # the rest of the seed still completes

@@ -329,3 +329,120 @@ async def test_seed_data_seeds_roles_and_policies_before_the_admin_user():
     assert executed.index(RBAC_SEED_ROLES_SQL) < admin
     assert executed.index(RBAC_SEED_POLICIES_SQL) < admin
     assert conn.execute.await_args_list[admin].args[1:] == ("admin@acme.com", "$2b$12$hash")
+
+
+class _SeedConn:
+    """asyncpg stand-in recording execute / fetchval in one ordered list."""
+
+    def __init__(self, dashboard_id):
+        self.dashboard_id = dashboard_id
+        self.calls: list[tuple[str, tuple]] = []
+
+    async def execute(self, sql, *args):
+        self.calls.append((sql, args))
+        return "OK"
+
+    async def fetchval(self, sql, *args):
+        self.calls.append((sql, args))
+        return self.dashboard_id
+
+    def sql(self) -> list[str]:
+        return [sql for sql, _ in self.calls]
+
+    def args_of(self, sql: str) -> list[tuple]:
+        return [args for s, args in self.calls if s == sql]
+
+
+async def test_seed_data_seeds_the_base_dashboard_after_the_roles():
+    """A new tenant gets the Overview (bound parameters, no JSON in the SQL)
+    right after the RBAC seeds, then the (here no-op) dashboard grants."""
+    from app.services.dashboard_seed import base_dashboard_rows
+    from app.services.tenant_provisioner import (
+        DASHBOARD_PERMISSION_BACKFILL_PG_SQL,
+        DASHBOARD_SEED_PG_SQL,
+        DASHBOARD_WIDGET_SEED_PG_SQL,
+        RBAC_SEED_POLICIES_SQL,
+        RBAC_SEED_ROLES_SQL,
+        run_seed_data,
+    )
+
+    conn = _SeedConn(dashboard_id=5)
+    await run_seed_data(conn, "admin@acme.com", "$2b$12$hash")
+
+    sql = conn.sql()
+    dashboard_at = sql.index(DASHBOARD_SEED_PG_SQL)
+    assert sql.index(RBAC_SEED_ROLES_SQL) < dashboard_at
+    assert sql.index(RBAC_SEED_POLICIES_SQL) < dashboard_at
+    dashboard, widgets = base_dashboard_rows()
+    ((name, description, visibility, is_default, created, updated),) = conn.args_of(
+        DASHBOARD_SEED_PG_SQL
+    )
+    assert (name, description, visibility, is_default) == tuple(dashboard.values())
+    assert created == updated and created.tzinfo is None
+    assert conn.args_of(DASHBOARD_WIDGET_SEED_PG_SQL) == [
+        (5, w["kind"], w["title"], w["query"], w["options"], w["layout"], w["sort_order"])
+        for w in widgets
+    ]
+    assert conn.args_of(DASHBOARD_PERMISSION_BACKFILL_PG_SQL) == [
+        ("views.dashboards", "superuser", "views.dashboards"),
+        ("views.dashboards", "user", "views.dashboards"),
+        ("dashboards.manage", "superuser", "dashboards.manage"),
+    ]
+    # Widgets after their dashboard, grants after the widgets.
+    assert sql.index(DASHBOARD_WIDGET_SEED_PG_SQL) > dashboard_at
+    assert sql.index(DASHBOARD_PERMISSION_BACKFILL_PG_SQL) > max(
+        i for i, s in enumerate(sql) if s == DASHBOARD_WIDGET_SEED_PG_SQL
+    )
+    # No JSON literal inside any statement text.
+    for statement in sql:
+        assert '{"' not in statement
+
+
+async def test_seed_data_skips_the_widgets_when_a_default_dashboard_exists():
+    from app.services.tenant_provisioner import (
+        DASHBOARD_PERMISSION_BACKFILL_PG_SQL,
+        DASHBOARD_SEED_PG_SQL,
+        DASHBOARD_WIDGET_SEED_PG_SQL,
+        run_seed_data,
+    )
+
+    conn = _SeedConn(dashboard_id=None)  # ON CONFLICT DO NOTHING: no id back
+    await run_seed_data(conn, "admin@acme.com", "$2b$12$hash")
+
+    assert len(conn.args_of(DASHBOARD_SEED_PG_SQL)) == 1
+    assert conn.args_of(DASHBOARD_WIDGET_SEED_PG_SQL) == []
+    assert len(conn.args_of(DASHBOARD_PERMISSION_BACKFILL_PG_SQL)) == 3
+
+
+async def test_seed_data_without_dashboards_writes_none():
+    """init_db on a database that already has the dashboards tables."""
+    from app.services.tenant_provisioner import (
+        DASHBOARD_PERMISSION_BACKFILL_PG_SQL,
+        DASHBOARD_SEED_PG_SQL,
+        DASHBOARD_WIDGET_SEED_PG_SQL,
+        run_seed_data,
+    )
+
+    conn = _SeedConn(dashboard_id=5)
+    await run_seed_data(conn, "admin@acme.com", "$2b$12$hash", seed_dashboards=False)
+
+    for sql in (
+        DASHBOARD_SEED_PG_SQL,
+        DASHBOARD_WIDGET_SEED_PG_SQL,
+        DASHBOARD_PERMISSION_BACKFILL_PG_SQL,
+    ):
+        assert sql not in conn.sql()
+    assert any(s.startswith("INSERT INTO users") for s in conn.sql())
+
+
+async def test_provisioning_runs_the_default_seed_with_its_dashboards(seed_capture):
+    """A new tenant without demo data goes through run_seed_data (which seeds
+    the Overview); with demo data, insert_demo_data seeds it instead."""
+    await provision_tenant_database(
+        tenant_id="t-9",
+        database_name="milestone_acme",
+        database_user="milestone_acme_user",
+        database_password="db-secret",
+        admin_email="admin@acme.com",
+    )
+    assert "default" in seed_capture and "demo" not in seed_capture

@@ -350,6 +350,8 @@ LEGACY_CHANGES = [
     *tp.PROJECT_FIELDS_SCHEMA_STATEMENTS,
     tp.PROJECT_FIELDS_MIGRATION_SQL,
     *tp.DASHBOARDS_SCHEMA_STATEMENTS,
+    tp.DASHBOARD_SEED_SQL,
+    tp.DASHBOARD_PERMISSION_BACKFILL_SQL,
     # The notification-types widening runs on every pool creation (own gate).
     *(s for s in tp.RBAC_SCHEMA_STATEMENTS if s != tp.NOTIFICATIONS_TYPE_CHECK_SQL),
 ]

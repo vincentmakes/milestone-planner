@@ -198,6 +198,7 @@ def test_orm_column_defaults_to_true():
 async def test_provisioned_admin_is_not_bookable():
     conn = MagicMock()
     conn.execute = AsyncMock()
+    conn.fetchval = AsyncMock(return_value=None)  # the base dashboard insert
 
     await tenant_provisioner.run_seed_data(conn, "admin@acme.test", "hash")
 

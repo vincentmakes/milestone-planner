@@ -15,8 +15,10 @@ import re
 from typing import Any
 
 from app.scripts.demo_data import DEMO_PASSWORD, DemoData
+from app.services.dashboard_seed import base_dashboard_rows
 from app.services.encryption import generate_password, hash_user_password
 from app.services.mentions import parse_mention_ids
+from app.utils import utcnow_naive
 
 # ---------------------------------------------------------------------------
 # Loader: names → ids, every insert guarded so a partially seeded database
@@ -294,8 +296,9 @@ async def insert_demo_data(
     # Project fields and their dropdown items (natural keys: the field's name,
     # the item's name within its field), with the items' site / team limits.
     option_id: dict[tuple[str, str], int] = {}
+    field_id: dict[str, int] = {}
     for f in demo.project_fields:
-        fid = await _insert_id(
+        fid = field_id[f["name"]] = await _insert_id(
             conn,
             "project_fields",
             {"name": f["name"], "field_type": f["field_type"], "sort_order": f["sort_order"]},
@@ -330,6 +333,27 @@ async def insert_demo_data(
                     team_id[team],
                 )
     counts["project_fields"] = len(demo.project_fields)
+
+    # The base dashboard "Overview" (app/services/dashboard_seed.py) with the
+    # two widgets over the demo's "Project type" and "Area" fields. Its
+    # widgets are written only in the run that creates it, so re-seeding never
+    # reverts an admin's edits (or an Overview they deleted widgets from).
+    dashboard, widgets = base_dashboard_rows(field_id)
+    now = utcnow_naive()
+    default_key = {"is_default": True}
+    if await _insert_once(
+        conn, "dashboards", {**dashboard, "created_at": now, "updated_at": now}, default_key
+    ):
+        dashboard_id = await _row_id(conn, "dashboards", default_key)
+        for w in widgets:
+            await _insert_once(
+                conn,
+                "dashboard_widgets",
+                {"dashboard_id": dashboard_id, **w},
+                {"dashboard_id": dashboard_id, "sort_order": w["sort_order"]},
+            )
+    counts["dashboards"] = 1
+    counts["dashboard_widgets"] = len(widgets)
 
     tag_id: dict[str, int] = {}
     for t in demo.tags:
