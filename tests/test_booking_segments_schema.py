@@ -147,7 +147,7 @@ def test_migration_documents_how_to_run_it():
     assert "python migrations/run_migration.py add_booking_segments" in sql
     readme = _root_file("migrations/README.md")
     assert "| `add_booking_segments` | tenant |" in readme
-    assert "`add_user_is_resource` and `add_booking_segments` via" in readme
+    assert "`add_user_is_resource`, `add_booking_segments` and `add_project_comments` via" in readme
 
 
 # ---------------------------------------------------------------------------

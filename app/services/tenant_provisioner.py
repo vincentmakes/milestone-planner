@@ -13,6 +13,7 @@ from typing import Any
 import asyncpg
 
 from app.config import get_settings
+from app.models.card_comment import COMMENT_ENTITY_TYPES
 from app.scripts.demo_data import build_demo
 from app.services.demo_seed import insert_demo_data
 from app.services.encryption import generate_password, hash_user_password
@@ -303,6 +304,34 @@ CARD_COMMENTS_AUTHOR_FK_SQL = """
         END IF;
     END $$;
 """
+
+# What a comment thread hangs on (COMMENT_ENTITY_TYPES, app/models/card_comment.py;
+# 2.0.0 adds 'project': a thread for the project-level bookings of a project).
+# The ORM, the four CREATE TABLE card_comments sources and the widening below
+# spell the same CHECK.
+CARD_COMMENTS_ENTITY_TYPE_CHECK = (
+    "entity_type IN (" + ", ".join(f"'{t}'" for t in COMMENT_ENTITY_TYPES) + ")"
+)
+
+# Widen card_comments_entity_type_check on an existing table
+# (add_project_comments.sql, 2.0.0). Skipped when the constraint already allows
+# 'project' (the newest type, which no other part of the definition contains),
+# so it can run on every pool creation and on every re-applied schema. One
+# statement, no trailing ';'.
+PROJECT_COMMENTS_CHECK_SQL = f"""
+    DO $$
+    BEGIN
+        IF to_regclass('public.card_comments') IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.card_comments')
+              AND conname = 'card_comments_entity_type_check'
+              AND strpos(pg_get_constraintdef(oid), '{COMMENT_ENTITY_TYPES[-1]}') > 0
+        ) THEN
+            ALTER TABLE card_comments DROP CONSTRAINT IF EXISTS card_comments_entity_type_check;
+            ALTER TABLE card_comments ADD CONSTRAINT card_comments_entity_type_check
+                CHECK ({CARD_COMMENTS_ENTITY_TYPE_CHECK});
+        END IF;
+    END $$"""
 
 # Whether CARD_COMMENTS_AUTHOR_FK_SQL has anything to do (logging only).
 CARD_COMMENTS_AUTHOR_FK_NEEDS_FIX_SQL = """
@@ -1736,10 +1765,13 @@ def get_tenant_schema_sql() -> str:
         + CUSTOM_COLUMNS_UPGRADE_SQL
         + """
 
-    -- Kanban card comments (a card is a leaf phase/subphase)
+    -- Comment threads: a Kanban card (a leaf phase/subphase) or a project
+    -- (its project-level bookings)
     CREATE TABLE IF NOT EXISTS card_comments (
       id SERIAL PRIMARY KEY,
-      entity_type VARCHAR(20) NOT NULL CHECK(entity_type IN ('phase', 'subphase')),
+      entity_type VARCHAR(20) NOT NULL CHECK("""
+        + CARD_COMMENTS_ENTITY_TYPE_CHECK
+        + """),
       entity_id INTEGER NOT NULL,
       project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
       author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -1749,6 +1781,11 @@ def get_tenant_schema_sql() -> str:
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
     );
 
+    -- Upgrade of card_comments from before project threads (the entity-type
+    -- CHECK gains 'project'; no-op once it has it)
+    """
+        + _sql_block(PROJECT_COMMENTS_CHECK_SQL)
+        + """
     -- Upgrade of card_comments from before comments outlived their author
     -- (author_id nullable, ON DELETE SET NULL), then removal of comments and
     -- custom-column values left behind by deleted projects/phases/subphases.

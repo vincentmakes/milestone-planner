@@ -32,6 +32,7 @@ from app.services.tenant_provisioner import (
     EQUIPMENT_SITE_FK_SQL,
     EQUIPMENT_SITES_BACKFILL_SQL,
     NOTIFICATIONS_TYPE_CHECK_SQL,
+    PROJECT_COMMENTS_CHECK_SQL,
     PROJECT_FIELD_TABLES,
     PROJECT_FIELDS_MIGRATION_SQL,
     PROJECT_FIELDS_PROBE_SQL,
@@ -484,7 +485,7 @@ class TenantConnectionManager:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
                         CONSTRAINT card_comments_entity_type_check
-                            CHECK (entity_type IN ('phase', 'subphase'))
+                            CHECK (entity_type IN ('phase', 'subphase', 'project'))
                     )
                 """)
                 )
@@ -504,6 +505,17 @@ class TenantConnectionManager:
                 logger.info("Auto-migration: Created card_comments on tenant %s", slug)
         except Exception as e:
             logger.warning("Auto-migration (card_comments) warning for %s: %s", slug, e)
+
+        # Project comment threads (add_project_comments.sql, 2.0.0): the
+        # card_comments entity-type CHECK gains 'project'. The DO block is its
+        # own gate (a no-op once the constraint has it), so this runs on every
+        # pool creation. A failure is rolled back so the later steps still run.
+        try:
+            await conn.execute(text(PROJECT_COMMENTS_CHECK_SQL))
+            await conn.commit()
+        except Exception as e:
+            logger.warning("Auto-migration (project comments) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
 
         # In-app notifications table.
         try:

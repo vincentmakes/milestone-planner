@@ -776,7 +776,8 @@ CREATE TABLE IF NOT EXISTS custom_column_values (
     UNIQUE(custom_column_id, entity_type, entity_id)
 );
 
--- Kanban card comments (a card is a leaf phase/subphase)
+-- Comment threads: a Kanban card (a leaf phase/subphase) or a project (its
+-- project-level bookings)
 CREATE TABLE IF NOT EXISTS card_comments (
     id SERIAL PRIMARY KEY,
     entity_type VARCHAR(20) NOT NULL,
@@ -787,7 +788,7 @@ CREATE TABLE IF NOT EXISTS card_comments (
     mentioned_user_ids TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT card_comments_entity_type_check CHECK (entity_type IN ('phase', 'subphase'))
+    CONSTRAINT card_comments_entity_type_check CHECK (entity_type IN ('phase', 'subphase', 'project'))
 );
 
 -- In-app notifications (one row per recipient)
@@ -1044,6 +1045,24 @@ BEGIN
           AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = card_comments.author_id);
         ALTER TABLE card_comments ADD CONSTRAINT card_comments_author_id_fkey
             FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+-- Project comment threads (pre-existing databases; no-op on a fresh install):
+-- the card_comments entity-type CHECK gains 'project'. Same SQL as
+-- tenant_provisioner.PROJECT_COMMENTS_CHECK_SQL and
+-- migrations/add_project_comments.sql.
+DO $$
+BEGIN
+    IF to_regclass('public.card_comments') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = to_regclass('public.card_comments')
+          AND conname = 'card_comments_entity_type_check'
+          AND strpos(pg_get_constraintdef(oid), 'project') > 0
+    ) THEN
+        ALTER TABLE card_comments DROP CONSTRAINT IF EXISTS card_comments_entity_type_check;
+        ALTER TABLE card_comments ADD CONSTRAINT card_comments_entity_type_check
+            CHECK (entity_type IN ('phase', 'subphase', 'project'));
     END IF;
 END $$;
 
