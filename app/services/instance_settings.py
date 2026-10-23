@@ -154,6 +154,12 @@ KNOWN_SETTINGS: dict[str, SettingSpec] = {
     "project_fields_hidden": SettingSpec(_hidden_fields, "[]"),
 }
 
+# The settings Settings -> Project fields saves: writable with
+# project_fields.manage as well as settings.general (PUT /settings/{key}).
+PROJECT_FIELD_SETTING_KEYS: frozenset[str] = frozenset(
+    {"project_field_labels", "project_fields_hidden"}
+)
+
 # The permission keys a switch turned off disables for everyone.
 FLAG_DISABLES: dict[str, frozenset[str]] = {"kanban_enabled": frozenset({"views.kanban"})}
 

@@ -8,12 +8,12 @@ It matches the Node.js API at /api/settings exactly.
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import require_permission
+from app.middleware.auth import get_current_user, require_permission
 from app.models.settings import Settings, SSOConfig
 from app.models.user import User
 from app.routers.auth import _active_org_sso, _reject_if_org_sso_active
@@ -21,10 +21,12 @@ from app.schemas.auth import SSOConfigResponse, SSOConfigUpdate
 from app.schemas.settings import SettingsResponse, SettingUpdate
 from app.services.instance_settings import (
     KNOWN_SETTINGS,
+    PROJECT_FIELD_SETTING_KEYS,
     canonicalise,
     default_for,
     with_defaults,
 )
+from app.services.permissions import permission_required_detail
 from app.services.sso import apply_secret_update, ensure_sso_default_role
 
 logger = logging.getLogger(__name__)
@@ -172,17 +174,28 @@ async def update_setting(
     key: str,
     data: SettingUpdate,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_permission("settings.general")),
+    user: User = Depends(get_current_user),
 ):
     """
     Update a setting (create if not exists).
 
-    Requires ``settings.general``. A known key (``KNOWN_SETTINGS``) stores its
+    Requires ``settings.general``; the project-field keys
+    (``PROJECT_FIELD_SETTING_KEYS``, saved by Settings -> Project fields) also
+    accept ``project_fields.manage``. A known key (``KNOWN_SETTINGS``) stores its
     canonical form (422 ``Invalid value for <key>`` otherwise), and ``null``
     deletes its row so the default applies again (answered as the value).
     Any other key stores the value as given.
     Matches: PUT /api/settings/:key
     """
+    allowed = user.permissions.has("settings.general") or (
+        key in PROJECT_FIELD_SETTING_KEYS and user.permissions.has("project_fields.manage")
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=permission_required_detail("settings.general"),
+        )
+
     known = key in KNOWN_SETTINGS
     value = data.value
     if known and value is not None:

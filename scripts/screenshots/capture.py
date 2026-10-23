@@ -855,9 +855,9 @@ def shot_project_filter(context: BrowserContext) -> None:
     page.get_by_role("button", name=re.compile(r"^Filter( \(\d+ selected\))?$")).first.click()
     panel = page.get_by_role("dialog", name="Filter projects")
     panel.wait_for()
-    # The panel scrolls past a few sections: bring the Tags section (last)
-    # into view, so the shot shows the end of the field sections and the tags.
-    panel.get_by_role("group", name="Tags").evaluate("el => el.scrollIntoView({block: 'end'})")
+    # The panel is capped to the viewport and scrolls inside; at 1440x900 the
+    # demo's two fields and the tags fit, so the shot starts at the first
+    # field heading (Project type).
     page.wait_for_timeout(400)
     page.screenshot(path=str(OUT / "project-filter.png"))
     log("[done] project-filter.png")

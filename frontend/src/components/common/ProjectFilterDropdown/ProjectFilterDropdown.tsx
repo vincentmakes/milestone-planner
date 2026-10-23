@@ -13,7 +13,8 @@
  * The panel is a non-modal dialog of checkboxes (not a menu). It closes on an
  * outside mousedown, when focus moves to an element outside the wrapper (Tab
  * out), and on Escape; Escape is captured and stopped so it never reaches the
- * app-wide keyboard shortcuts.
+ * app-wide keyboard shortcuts. Its height is capped to the viewport; the
+ * header (title + Clear) stays fixed and the sections scroll below it.
  */
 
 import { useId, useMemo, useRef, useState } from 'react';
@@ -114,7 +115,7 @@ export function ProjectFilterDropdown({ compact = false, align = 'left', anchor 
           {empty ? (
             <div className={styles.empty}>No fields or tags for this site</div>
           ) : (
-            <div className={styles.list}>
+            <div className={styles.scrollBody}>
               {siteFields.map((field, i) => (
                 <div key={field.id} role="group" aria-label={field.name}>
                   {i > 0 && <div className={styles.divider} />}

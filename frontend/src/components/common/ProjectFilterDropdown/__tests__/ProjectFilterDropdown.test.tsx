@@ -258,4 +258,21 @@ describe('ProjectFilterDropdown', () => {
     expect(screen.getByRole('dialog').className).toMatch(/alignRight/);
     expect(screen.getByRole('dialog').className).toMatch(/anchored/);
   });
+
+  it('scrolls the sections inside a body below the fixed header', () => {
+    useViewStore.setState({ projectFilters: { ':1': { ...empty, tagIds: [30] } } });
+    render(<ProjectFilterDropdown />);
+    openDropdown();
+    const dialog = screen.getByRole('dialog', { name: 'Filter projects' });
+    const body = screen.getByRole('group', { name: 'Project type' }).parentElement as HTMLElement;
+    // The body is a direct child of the panel and holds every section
+    expect(body.parentElement).toBe(dialog);
+    expect(body.className).toMatch(/scrollBody/);
+    expect(within(body).getByRole('group', { name: 'Tags' })).toBeInTheDocument();
+    // The title and Clear stay outside the scrolling body
+    const clear = screen.getByRole('button', { name: 'Clear' });
+    expect(body).not.toContainElement(clear);
+    expect(body).not.toContainElement(screen.getByText('Filter projects'));
+    expect(dialog).toContainElement(clear);
+  });
 });

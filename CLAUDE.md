@@ -1067,7 +1067,7 @@ Booleans accept `true/false/1/0/yes/no/on/off` (case-insensitive) and store `tru
 | GET | `/predefined-phases/all` | superuser (`predefined_phases.manage`) | All templates |
 | POST / PUT / DELETE | `/predefined-phases`, `…/reorder`, `…/{id}` | superuser (`predefined_phases.manage`) | Template CRUD + reorder |
 | GET | `/settings`, `/settings/{key}` | ⚠ none | Instance settings (no auth dependency — do not store secrets in `settings`). Known keys without a row read as their default (merged into `GET /settings`; nothing written) |
-| PUT | `/settings/{key}` | admin (`settings.general`) | Update setting. A known key stores its canonical form (422 `Invalid value for <key>` otherwise) and `value: null` deletes its row (answered with the default); any other key is stored as given |
+| PUT | `/settings/{key}` | admin (`settings.general`; `project_field_labels` / `project_fields_hidden` also `project_fields.manage`) | Update setting. A known key stores its canonical form (422 `Invalid value for <key>` otherwise) and `value: null` deletes its row (answered with the default); any other key is stored as given |
 | GET / PUT | `/settings/sso` | none / admin (`settings.sso`) | Tenant SSO settings (read / write) |
 
 ### Import & export (`mpp_import.py`, `export.py`)

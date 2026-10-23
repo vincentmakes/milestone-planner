@@ -366,6 +366,53 @@ async def test_known_keys_follow_the_settings_general_permission(authed_client, 
     assert response.json()["value"] == "false"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("project_field_labels", '{"customer":"Client"}'),
+        ("project_fields_hidden", '["sales_pm"]'),
+    ],
+)
+async def test_project_field_keys_accept_project_fields_manage(
+    authed_client, mock_db_session, key, value
+):
+    """Settings -> Project fields is gated on project_fields.manage and saves these two keys."""
+    client, set_user = authed_client
+    set_user(FakeUser(5, "fields", {"project_fields.manage"}))
+    mock_db_session.execute.return_value = scalar_result(None)
+
+    response = await client.put(f"/api/settings/{key}", json={"value": value})
+
+    assert response.status_code == 200
+    assert response.json() == {"key": key, "value": value}
+
+
+@pytest.mark.asyncio
+async def test_project_fields_manage_does_not_open_other_keys(authed_client, mock_db_session):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "fields", {"project_fields.manage"}))
+
+    for key in ("instance_title", "kanban_enabled"):
+        response = await client.put(f"/api/settings/{key}", json={"value": "false"})
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Permission required: settings.general"
+    mock_db_session.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key", ["project_field_labels", "project_fields_hidden"])
+async def test_project_field_keys_need_one_of_the_two_keys(authed_client, mock_db_session, key):
+    client, set_user = authed_client
+    set_user(FakeUser(6, "plain", set()))
+
+    response = await client.put(f"/api/settings/{key}", json={"value": "[]"})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Permission required: settings.general"
+    mock_db_session.execute.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # Tenant SSO settings
 # ---------------------------------------------------------------------------

@@ -81,6 +81,11 @@
   box-shadow: var(--shadow-lg);
   z-index: var(--z-dropdown);
   overflow: hidden;
+  /* Never taller than the room below a header trigger: the header / Clear row
+     stays put and the sections scroll inside .scrollBody. */
+  display: flex;
+  flex-direction: column;
+  max-height: min(70vh, calc(100vh - 160px));
 }
 
 .dropdown.alignRight {
@@ -119,6 +124,7 @@
   letter-spacing: 0.5px;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
 .clearBtn {
@@ -150,17 +156,18 @@
   color: var(--text-muted);
 }
 
-.list {
-  max-height: 320px;
+.scrollBody {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   padding-bottom: 0.25rem;
 }
 
-.list::-webkit-scrollbar {
+.scrollBody::-webkit-scrollbar {
   width: 4px;
 }
 
-.list::-webkit-scrollbar-thumb {
+.scrollBody::-webkit-scrollbar-thumb {
   background: var(--border-color);
   border-radius: 2px;
 }

@@ -13,6 +13,7 @@ import pytest
 from app.services.instance_settings import (
     FLAG_DISABLES,
     KNOWN_SETTINGS,
+    PROJECT_FIELD_SETTING_KEYS,
     canonicalise,
     default_for,
     disabled_permission_keys,
@@ -319,3 +320,9 @@ async def test_is_enabled_defaults_to_on(stored, enabled):
     db.execute.return_value = scalar_result(stored)
 
     assert await is_enabled(db, "nager_enabled") is enabled
+
+
+def test_project_field_setting_keys_are_the_two_known_field_settings():
+    """The keys PUT /settings/{key} also opens to project_fields.manage."""
+    assert PROJECT_FIELD_SETTING_KEYS == {"project_field_labels", "project_fields_hidden"}
+    assert PROJECT_FIELD_SETTING_KEYS <= KNOWN_SETTINGS.keys()
