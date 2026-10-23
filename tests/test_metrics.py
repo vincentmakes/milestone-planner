@@ -147,7 +147,7 @@ def facts(
         },
         sites={1: "Site 1", 2: "Site 2"},
         today=TODAY,
-        extent=extent,
+        extents={"exclude": extent},
     )
 
 
@@ -514,7 +514,7 @@ FACT_CASES: list[tuple[str, Facts, MetricQuery, dict[str, Any]]] = [
         {"rows": [((), 1)], "truncated": False, "period": ("2026-01-05", "2026-02-27")},
     ),
     (
-        "all: cut to the five years ending today",
+        "all: cut to the five years ending with the extent's end",
         facts(extent=(d("2015-01-01"), d("2026-12-31"))),
         MetricQuery.model_validate(
             {"measure": "project_count", "filters": {"period": {"relative": "all"}}}
@@ -522,7 +522,7 @@ FACT_CASES: list[tuple[str, Facts, MetricQuery, dict[str, Any]]] = [
         {
             "rows": [((), 1)],
             "truncated": True,
-            "period": ((TODAY - timedelta(days=1825)).isoformat(), TODAY.isoformat()),
+            "period": ((d("2026-12-31") - timedelta(days=1825)).isoformat(), "2026-12-31"),
         },
     ),
     (
@@ -950,15 +950,37 @@ def test_resolve_all(today):
         {"measure": "booked_days", "filters": {"period": {"relative": "all"}}}
     ).filters.period
     now = d(today)
+    five_years = timedelta(days=1825)
+    year_ahead = now + timedelta(days=365)
+    # No project: today.
     assert resolve_period(spec, now) == (now, now, False)
+    # A short extent is kept as it is.
     assert resolve_period(spec, now, (d("2023-01-01"), d("2027-06-30"))) == (
         d("2023-01-01"),
         d("2027-06-30"),
         False,
     )
+    # Long and past-heavy: the five years ending a year from now...
+    high = min(d("2027-06-30"), year_ahead)
     assert resolve_period(spec, now, (d("2010-01-01"), d("2027-06-30"))) == (
-        now - timedelta(days=1825),
-        now,
+        high - five_years,
+        high,
+        True,
+    )
+    # ... or at the extent's end when that comes sooner.
+    soon = now + timedelta(days=30)
+    assert resolve_period(spec, now, (d("2010-01-01"), soon)) == (soon - five_years, soon, True)
+    # Long and future-heavy: the end is cut a year from now, the start five years before.
+    assert resolve_period(spec, now, (d("2020-01-01"), d("2040-12-31"))) == (
+        year_ahead - five_years,
+        year_ahead,
+        True,
+    )
+    # Every project more than a year ahead: the first five years of the extent.
+    start = now + timedelta(days=400)
+    assert resolve_period(spec, now, (start, start + timedelta(days=3000))) == (
+        start,
+        start + five_years,
         True,
     )
 
@@ -1154,3 +1176,25 @@ def test_dashboard_body_names_the_failing_widget():
     with pytest.raises(ValidationError) as caught:
         DashboardIn.model_validate({"name": "D", "widgets": "nope"})
     assert caught.value.errors()[0]["msg"].startswith("A widget: ")
+
+
+def test_all_uses_the_extent_of_the_query_archived_mode():
+    both = facts(projects=[project(1), project(2, archived=True, start=d("2024-01-01"))])
+    both.extents = {
+        "exclude": (d("2026-01-01"), d("2026-12-31")),
+        "include": (d("2024-01-01"), d("2026-12-31")),
+    }
+
+    def period_of(archived: str) -> dict[str, str]:
+        query = MetricQuery.model_validate(
+            {
+                "measure": "project_count",
+                "filters": {"archived": archived, "period": {"relative": "all"}},
+            }
+        )
+        return aggregate(both, query, viewer=FULL).to_dict()["period"]
+
+    assert period_of("exclude") == {"from": "2026-01-01", "to": "2026-12-31"}
+    assert period_of("include") == {"from": "2024-01-01", "to": "2026-12-31"}
+    # A mode without an extent (no project in scope): today.
+    assert period_of("only") == {"from": TODAY.isoformat(), "to": TODAY.isoformat()}

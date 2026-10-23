@@ -747,3 +747,56 @@ async def test_data_too_many_facts_errors_every_valid_widget(authed_client, monk
     assert list(body["widgets"].values()) == [
         {"error": "Narrow the filters: this query covers too many bookings"}
     ]
+
+
+async def test_data_resolves_all_per_archived_mode(authed_client, sqlite):
+    """An archived project is the oldest: only the include widget reaches back to it."""
+    sqlite.add(
+        Project(
+            id=3,
+            name="Old",
+            site_id=1,
+            archived=1,
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 6, 30),
+        )
+    )
+    all_time = {"measure": "project_count", "filters": {"period": {"relative": "all"}}}
+    sqlite.add(
+        Dashboard(
+            id=8,
+            name="All time",
+            visibility="everyone",
+            owner_id=SUE,
+            widgets=[
+                widget_row("Exclude", all_time, 0),
+                widget_row(
+                    "Include",
+                    {**all_time, "filters": {**all_time["filters"], "archived": "include"}},
+                    1,
+                ),
+            ],
+        )
+    )
+    sqlite.commit()
+    client, set_user = authed_client
+    set_user(admin())
+    detail = (await client.get("/api/dashboards/8")).json()
+    with (
+        patch.object(dashboards_router, "load_facts", wraps=dashboards_router.load_facts) as loader,
+        patch.object(
+            dashboards_router, "load_extent", wraps=dashboards_router.load_extent
+        ) as extent,
+    ):
+        results = (await client.post("/api/dashboards/8/data")).json()["widgets"]
+    widgets = {w["title"]: results[str(w["id"])] for w in detail["widgets"]}
+    assert widgets["Exclude"]["period"] == {"from": "2026-01-01", "to": "2026-12-31"}
+    assert widgets["Exclude"]["rows"] == [{"keys": [], "value": 2}]
+    assert widgets["Include"]["period"] == {"from": "2024-01-01", "to": "2026-12-31"}
+    assert widgets["Include"]["rows"] == [{"keys": [], "value": 3}]
+    assert loader.await_count == 1
+    assert sorted(call.kwargs["archived"] for call in extent.await_args_list) == [
+        "exclude",
+        "include",
+    ]
+    assert loader.await_args.kwargs["period"] == (date(2024, 1, 1), date(2026, 12, 31))

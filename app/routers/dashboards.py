@@ -378,17 +378,28 @@ async def _load_for(
 ) -> Facts:
     """The facts every query needs: one load over the union of their periods."""
     archived = _widest_archived(queries)
-    extent = None
-    if any(getattr(query.filters.period, "relative", None) == "all" for query in queries):
-        extent = await load_extent(db, visible_site_ids=visible, archived=archived)
-    periods = [resolve_period(query.filters.period, today, extent) for query in queries]
+    # ``all`` spans the projects of the query's own archived mode: one extent
+    # per distinct mode among those queries (three at most).
+    extents: dict[str, tuple[date, date] | None] = {}
+    for mode in sorted(
+        {
+            query.filters.archived
+            for query in queries
+            if getattr(query.filters.period, "relative", None) == "all"
+        }
+    ):
+        extents[mode] = await load_extent(db, visible_site_ids=visible, archived=mode)
+    periods = [
+        resolve_period(query.filters.period, today, extents.get(query.filters.archived))
+        for query in queries
+    ]
     return await load_facts(
         db,
         period=(min(p[0] for p in periods), max(p[1] for p in periods)),
         visible_site_ids=visible,
         archived=archived,
         today=today,
-        extent=extent,
+        extents=extents,
     )
 
 

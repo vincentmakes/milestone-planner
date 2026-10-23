@@ -362,8 +362,9 @@ class Facts:
     today: date
     # Every existing project id (stale-id warnings); None = those in ``projects``.
     project_ids: frozenset[int] | None = None
-    # (min start, max end) of the projects in scope, for the ``all`` period.
-    extent: tuple[date, date] | None = None
+    # (min start, max end) of the projects in scope per archived mode, for
+    # the ``all`` period (a mode absent or None: no project).
+    extents: dict[str, tuple[date, date] | None] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -443,8 +444,10 @@ def resolve_period(
     Relative: ``this_year`` / ``last_year`` (calendar years), ``this_quarter``
     / ``last_quarter``, ``last_12_months`` (the 12 whole calendar months
     ending with the current one), ``all`` (``extent``, the min..max of the
-    facts; longer than five years -> the five years ending today,
-    ``truncated``; no facts -> today). Absolute: ``{from, to}``.
+    projects in scope; no projects -> today). An ``all`` extent longer than
+    five years is cut, ``truncated``: its end to at most a year after today
+    (planned work stays in), its start to five years before that end.
+    Absolute: ``{from, to}``.
     """
     relative = getattr(spec, "relative", None)
     if relative is None:
@@ -471,9 +474,15 @@ def resolve_period(
         if extent is None:
             return today, today, False
         low, high = extent
-        if (high - low).days + 1 > MAX_PERIOD_DAYS:
-            return today - timedelta(days=MAX_PERIOD_DAYS - 1), today, True
-        return low, high, False
+        if (high - low).days + 1 <= MAX_PERIOD_DAYS:
+            return low, high, False
+        span = timedelta(days=MAX_PERIOD_DAYS - 1)
+        cut_high = min(high, today + timedelta(days=365))
+        if cut_high < low:
+            # Every project starts more than a year ahead: the first five years.
+            cut_high = low + span
+        cut_low = max(low, cut_high - span)
+        return cut_low, cut_high, (cut_low, cut_high) != (low, high)
     raise MetricError(f"Unknown period: {relative}")
 
 
@@ -921,7 +930,9 @@ def aggregate(facts: Facts, query: Any, *, viewer: Viewer) -> MetricResult:
     if needed is not None:
         raise MetricError(permission_message(needed))
 
-    start, end, truncated = resolve_period(query.filters.period, facts.today, facts.extent)
+    start, end, truncated = resolve_period(
+        query.filters.period, facts.today, facts.extents.get(query.filters.archived)
+    )
     warnings: list[str] = []
     flt = _resolve_filters(facts, query.filters, warnings)
     dimensions = [_resolve_dimension(facts, spec) for spec in query.dimensions]
@@ -1169,13 +1180,15 @@ async def load_facts(
     visible_site_ids: frozenset[int] | None,
     archived: str,
     today: date,
-    extent: tuple[date, date] | None = None,
+    extents: dict[str, tuple[date, date] | None] | None = None,
 ) -> Facts:
     """
     The facts for ``period`` at the visible sites (None = every site).
 
     ``archived`` is the widest mode the request needs (each widget applies
-    its own). Raises ``TooManyFacts`` above ``MAX_FACT_ROWS`` booking rows.
+    its own). ``extents`` (archived mode -> ``load_extent``) is kept on the
+    facts for the ``all`` period. Raises ``TooManyFacts`` above
+    ``MAX_FACT_ROWS`` booking rows.
     """
     from sqlalchemy import func, or_, select
 
@@ -1437,5 +1450,5 @@ async def load_facts(
         sites=sites,
         today=today,
         project_ids=all_project_ids,
-        extent=extent,
+        extents=dict(extents or {}),
     )
