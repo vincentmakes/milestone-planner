@@ -612,6 +612,47 @@ def shot_date_picker(context: BrowserContext) -> None:
     page.close()
 
 
+def _open_dashboards(page: Page) -> None:
+    """Open the Dashboards view (a lazy chunk) and wait for the charts to draw."""
+    open_sidebar_item(page, "Dashboards")
+    page.locator("canvas").first.wait_for()
+    # ECharts animates its first draw; let it settle.
+    page.wait_for_timeout(2000)
+
+
+def shot_dashboards(context: BrowserContext) -> None:
+    """The Overview dashboard as Bob (superuser): four KPI tiles, then the
+    bar charts of booked weeks per project and per team by Confirmed."""
+    fresh, page = _login_as(context, "bob.brown@demo.local")
+    _open_dashboards(page)
+    page.screenshot(path=str(OUT / "dashboards.png"))
+    log("[done] dashboards.png")
+    fresh.close()
+
+
+def shot_dashboard_builder(context: BrowserContext) -> None:
+    """The widget editor as Bob, on a new (unsaved) dashboard: a bar chart of
+    booked weeks by person this year, with the live preview beside the form.
+    Nothing is saved: the widget and the draft are cancelled afterwards."""
+    fresh, page = _login_as(context, "bob.brown@demo.local")
+    _open_dashboards(page)
+    page.get_by_role("button", name="New", exact=True).click()
+    dialog = page.get_by_role("dialog")
+    dialog.get_by_label("Name").first.fill("Team workload")
+    dialog.get_by_role("button", name="Create dashboard", exact=True).click()
+    page.wait_for_timeout(600)
+    page.get_by_role("button", name="Add widget").first.click()
+    dialog = page.get_by_role("dialog")
+    dialog.get_by_label("Title *").fill("Booked weeks by person")
+    pick_in_searchable_select(page, "Dimension 1", "Person")
+    # The preview queries 400 ms after the last change, then draws.
+    dialog.locator("canvas").first.wait_for()
+    page.wait_for_timeout(2000)
+    page.screenshot(path=str(OUT / "dashboard-builder.png"))
+    log("[done] dashboard-builder.png")
+    fresh.close()
+
+
 def _sidebar_modal_shot(context: BrowserContext, label: str, outfile: str) -> None:
     page = context.new_page()
     login(page)
@@ -1027,6 +1068,8 @@ TARGETS = {
     "defaults-settings": shot_defaults_settings,
     "my-work": shot_my_work,
     "my-assignments": shot_my_assignments,
+    "dashboards": shot_dashboards,
+    "dashboard-builder": shot_dashboard_builder,
     "pending": shot_pending_assignment,
     "assignment-overview-row": shot_assignment_overview,
     "assign-staff": shot_assign_staff_modal,
