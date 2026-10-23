@@ -5,7 +5,7 @@
  * outside must never discard an in-progress comment.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Button, Select } from '@/components/common';
 import { useSubmitGuard } from '@/components/common/useSubmitGuard';
@@ -15,16 +15,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { useTeamFilter } from '@/hooks/useTeamFilter';
 import { deleteStaffAssignment, loadAllProjects, updateStaffAssignment } from '@/api/endpoints/projects';
-import {
-  assignCard,
-  createComment,
-  deleteComment,
-  getComments,
-  getMentionableUsers,
-  moveCard,
-  type CardComment,
-  type MentionableUser,
-} from '@/api/endpoints/kanban';
+import { assignCard, moveCard } from '@/api/endpoints/kanban';
 import {
   CARD_STATUSES,
   STATUS_LABELS,
@@ -34,13 +25,7 @@ import {
   requestedAllocation,
   type KanbanCard,
 } from '@/utils/kanbanCards';
-import {
-  buildMentionCandidates,
-  mentionedUserIds,
-  serializeMentions,
-  type MentionAnchor,
-} from '@/utils/mentions';
-import { MentionText, MentionTextarea } from '@/components/common/MentionTextarea';
+import { CardComments } from '@/components/common/CardComments';
 import { formatDateShort, formatMediumDate, parseDateISO, toDateOnly } from '@/utils/date';
 import { isUnlinkedBooking } from '@/utils/bookingSegments';
 import { can, canBookSelf, canEditAssignment, isSelf, needsApproval } from '@/utils/permissions';
@@ -78,17 +63,11 @@ export function KanbanCardModal() {
   // Approval decisions are real writes outside the sandbox.
   const decideBlockedReason = whatIfMode ? whatIfUnavailableMessage('Approval decisions') : null;
 
-  const [comments, setComments] = useState<CardComment[]>([]);
-  const [draft, setDraft] = useState('');
-  const [anchors, setAnchors] = useState<MentionAnchor[]>([]);
+  // One write at a time on the card (status, assignees); the comment thread
+  // has its own guard and error (CardComments).
   const { isSubmitting: busy, begin: begin, end: end } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
   const [assigneeToAdd, setAssigneeToAdd] = useState<string>('');
-  // Mentionable people are fetched per site rather than taken from the staff
-  // slice, which excludes administrators.
-  const [mentionable, setMentionable] = useState<{ siteId: number; users: MentionableUser[] } | null>(
-    null
-  );
 
   const isOpen = activeModal === 'kanbanCard';
   const { cardEntityType, cardEntityId, cardProjectId } = modalContext;
@@ -109,8 +88,6 @@ export function KanbanCardModal() {
     );
   }, [isOpen, cardEntityType, cardEntityId, project]);
 
-  // Deleting someone else's comment (editing stays with the author).
-  const canModerate = can(currentUser, 'kanban.moderate_comments');
   // Whoever manages others' bookings on the project (the key, or its manager)
   // adds and removes assignees; everyone else joins or leaves themself.
   const isEditor = can(currentUser, 'assignments.manage_others', project);
@@ -148,58 +125,13 @@ export function KanbanCardModal() {
     return byId;
   }, [siteStaff]);
 
-  const mentionCandidates = useMemo(
-    () =>
-      buildMentionCandidates(
-        card?.assignments ?? [],
-        (mentionable?.users ?? []).map((u) => ({
-          id: u.id,
-          name: u.name,
-          role: u.job_title ?? undefined,
-        })),
-        // Mentioning yourself would render a pill that notifies nobody.
-        currentUser?.id
-      ),
-    [card?.assignments, mentionable, currentUser?.id]
-  );
-
-  const reloadComments = useCallback(async () => {
-    if (!cardEntityType || !cardEntityId) return;
-    try {
-      setComments(await getComments(cardEntityType, cardEntityId));
-    } catch (err) {
-      console.error('[Kanban] Failed to load comments:', err);
-    }
-  }, [cardEntityType, cardEntityId]);
-
-  // One request per site per session: the component stays mounted between
-  // card opens, so reopening cards in the same site reuses the list.
+  // Closing forgets the card's error and the half-picked assignee (the
+  // comment draft goes with the thread, which unmounts).
   useEffect(() => {
-    const siteId = project?.site_id;
-    if (!isOpen || siteId === undefined || siteId === null) return;
-    if (mentionable?.siteId === siteId) return;
-    let cancelled = false;
-    getMentionableUsers(siteId)
-      .then((users) => {
-        if (!cancelled) setMentionable({ siteId, users });
-      })
-      .catch((err) => console.error('[Kanban] Failed to load mentionable users:', err));
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, project?.site_id, mentionable?.siteId]);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setComments([]);
-      setDraft('');
-      setAnchors([]);
-      setError(null);
-      setAssigneeToAdd('');
-      return;
-    }
-    void reloadComments();
-  }, [isOpen, reloadComments]);
+    if (isOpen) return;
+    setError(null);
+    setAssigneeToAdd('');
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -349,47 +281,6 @@ export function KanbanCardModal() {
       setProjects(await loadAllProjects());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not reload the projects');
-    }
-  };
-
-  const handleComment = async () => {
-    if (!card || !draft.trim()) return;
-    if (!begin()) return; // another write on this card is still running
-    setError(null);
-    try {
-      // Serialize first, then trim: trimming the draft would shift every anchor
-      // offset. Only picked mentions carry an anchor, so a hand-typed "@Alice"
-      // stays plain text and notifies nobody.
-      const body = serializeMentions(draft, anchors).trim();
-      await createComment(card.entityType, card.entityId, body, mentionedUserIds(draft, anchors));
-      setDraft('');
-      setAnchors([]);
-      // Only the thread changed -- do NOT reload every project for a comment.
-      await reloadComments();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not post the comment');
-    } finally {
-      end();
-    }
-  };
-
-  const handleDeleteComment = async (commentId: number) => {
-    if (
-      !(await confirmAction({
-        title: 'Delete comment',
-        message: 'Delete this comment? This cannot be undone.',
-        destructive: true,
-      }))
-    )
-      return;
-    if (!begin()) return; // another write on this card is still running
-    try {
-      await deleteComment(commentId);
-      await reloadComments();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not delete the comment');
-    } finally {
-      end();
     }
   };
 
@@ -588,59 +479,15 @@ export function KanbanCardModal() {
             )}
           </section>
 
-          <section className={styles.section}>
-            <h3 className={styles.heading}>Comments</h3>
-            <ul className={styles.comments}>
-              {comments.map((c) => (
-                <li key={c.id} className={styles.comment}>
-                  <div className={styles.commentHead}>
-                    {/* author_id/author_name are null once the author's account is deleted */}
-                    <span className={`${styles.author} ${c.author_name == null ? styles.deletedAuthor : ''}`}>
-                      {c.author_name ?? 'Deleted user'}
-                    </span>
-                    <span className={styles.commentDate}>
-                      {new Date(c.created_at).toLocaleString()}
-                      {c.edited && ' (edited)'}
-                    </span>
-                    {((c.author_id != null && c.author_id === currentUser?.id) || canModerate) && (
-                      <button
-                        type="button"
-                        className={styles.removeBtn}
-                        onClick={() => handleDeleteComment(c.id)}
-                        disabled={busy}
-                        aria-label="Delete comment"
-                      >
-                        <Icon icon={CloseIcon} size={14} />
-                      </button>
-                    )}
-                  </div>
-                  <p className={styles.commentBody}>
-                    <MentionText body={c.body} meUserId={currentUser?.id} />
-                  </p>
-                </li>
-              ))}
-              {comments.length === 0 && <li className={styles.none}>No comments yet</li>}
-            </ul>
-
-            <div className={styles.composer}>
-              <MentionTextarea
-                value={draft}
-                anchors={anchors}
-                onChange={(text, next) => {
-                  setDraft(text);
-                  setAnchors(next);
-                }}
-                candidates={mentionCandidates}
-                rows={3}
-                disabled={busy}
-                aria-label="Comment"
-                placeholder="Add a comment. Type @ to notify someone."
-              />
-              <Button onClick={handleComment} disabled={busy || !draft.trim()}>
-                Comment
-              </Button>
-            </div>
-          </section>
+          <CardComments
+            key={`${card.entityType}:${card.entityId}`}
+            entityType={card.entityType}
+            entityId={card.entityId}
+            projectId={card.projectId}
+            siteId={project?.site_id}
+            participants={card.assignments}
+            meUserId={currentUser?.id}
+          />
         </div>
       )}
     </Modal>

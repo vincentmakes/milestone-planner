@@ -77,6 +77,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useCustomColumnStore } from '@/stores/customColumnStore';
 import { resetAllStores } from '@/stores';
 import { useWorkStore } from '@/stores/workStore';
+import { mentionableUsersFor } from '@/api/endpoints/mentionableCache';
 import {
   makeCustomColumn,
   makeEquipment,
@@ -288,6 +289,19 @@ describe('WebSocketProvider slice refresh', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     await receive('approval_request');
     expect(error).toHaveBeenCalledWith('[WS] approvals refresh failed', expect.any(Error));
+  });
+
+  it.each([
+    ['user', 2],
+    ['role', 2],
+    ['tag', 1],
+  ] as const)('on change:%s the @-mention lists load again: %i loads', async (entity, loads) => {
+    const load = vi.fn().mockResolvedValue([]);
+    render(<WebSocketProvider><div /></WebSocketProvider>);
+    await mentionableUsersFor(1, load);
+    await receive(entity);
+    await mentionableUsersFor(1, load);
+    expect(load).toHaveBeenCalledTimes(loads);
   });
 
   it('refreshes the work store on the per-user approval:changed push, debounced', async () => {

@@ -86,8 +86,7 @@
   font-weight: var(--font-weight-medium);
 }
 
-.assignees,
-.comments {
+.assignees {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -176,62 +175,6 @@
 .assigneeSelect {
   flex: 1;
   min-width: 0;
-}
-
-.comment {
-  padding: 8px 10px;
-  background: var(--bg-secondary);
-  border-radius: 5px;
-}
-
-.commentHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 3px;
-}
-
-.author {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-}
-
-.deletedAuthor {
-  font-style: italic;
-  color: var(--text-muted);
-}
-
-.commentDate {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  margin-right: auto;
-}
-
-.commentBody {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.composer {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: flex-end;
-}
-
-.textarea {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--input-border);
-  border-radius: 5px;
-  background: var(--input-bg);
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: var(--font-size-sm);
-  resize: vertical;
 }
 
 .missing {

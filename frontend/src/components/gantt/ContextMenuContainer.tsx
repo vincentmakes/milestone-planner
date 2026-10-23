@@ -15,7 +15,7 @@ import { approvalsApi, isPendingResponse } from '@/api/endpoints/approvals';
 import { ApiError } from '@/api/client';
 import { RejectRequestDialog } from '@/components/common/ApprovalActions';
 import { isPendingAssignment } from '@/utils/kanbanCards';
-import { flashSentForApproval, markRequestPendingLocally } from '@/utils/pendingBookings';
+import { assignmentLock, flashSentForApproval, markRequestPendingLocally } from '@/utils/pendingBookings';
 import { findSubphaseById } from '@/utils/subphaseUtils';
 import { formatDateISO } from '@/utils/date';
 import {
@@ -407,15 +407,17 @@ export function ContextMenuContainer() {
       const row = findStaffAssignment(menuProject, assignmentLevel, targetId);
       const request = row?.approval ?? null;
       const isRequester = Boolean(request && currentUser && request.requester_id === currentUser.id);
-      // The rule KanbanCardModal applies too: a row with an open request from
-      // me offers me only Cancel request; a pending create is locked for
-      // everyone (deciders approve / reject, the requester cancels); editors
-      // keep their controls on an approved row carrying someone else's change
-      // request (their write expires it server-side).
-      const lockedPending = Boolean(row && (isPendingAssignment(row) || isRequester));
-      // Whoever manages others' bookings changes anyone's; everyone else their
-      // own, when their role holds the matching own-booking key.
-      const canEditThis = canEditAssignment(currentUser, menuProject, staffId) && !lockedPending;
+      // The one lock rule (assignmentLock, shared with the booking dialog and
+      // like KanbanCardModal's): a row with an open request from me offers me
+      // only Cancel request; a pending create is locked for everyone (deciders
+      // approve / reject, the requester cancels); editors keep their controls
+      // on an approved row carrying someone else's change request (their write
+      // expires it server-side). Whoever manages others' bookings changes
+      // anyone's; everyone else their own, when their role holds the matching
+      // own-booking key.
+      const lock = assignmentLock(row ?? { staff_id: staffId }, currentUser, menuProject);
+      const lockedPending = lock === 'request-open' || lock === 'pending-other';
+      const canEditThis = lock === null;
       const canRemoveThis =
         canEditAssignment(currentUser, menuProject, staffId, 'assignments.self_remove') && !lockedPending;
       const isEditor = can(currentUser, 'assignments.manage_others', menuProject);

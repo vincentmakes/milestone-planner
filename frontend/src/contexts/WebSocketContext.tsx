@@ -12,6 +12,7 @@ import { useWebSocket, ConnectionState } from '@/hooks/useWebSocket';
 import type { PresenceUser, ChangePayload } from '@/hooks/useWebSocket';
 import type { AppNotification } from '@/types';
 import { loadAllProjects } from '@/api/endpoints/projects';
+import { clearMentionableUsersCache } from '@/api/endpoints/mentionableCache';
 import { getStaff } from '@/api/endpoints/staff';
 import { getEquipment, getEquipmentBlocks } from '@/api/endpoints/equipment';
 import { loadGated } from '@/hooks/useDataLoader';
@@ -125,6 +126,9 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     }
 
     const tasks: Array<Promise<unknown>> = [];
+    // Who may be @-mentioned follows people (staff) and roles (who sees
+    // every site): the next thread opened reloads its site's list.
+    if (batch.includes('staff') || batch.includes('roles')) clearMentionableUsersCache();
     for (const slice of batch) {
       switch (slice) {
         case 'projects':

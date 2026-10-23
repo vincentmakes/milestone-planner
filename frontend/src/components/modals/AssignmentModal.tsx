@@ -2,6 +2,14 @@
  * AssignmentModal - Generic modal for assigning Staff or Equipment to Projects/Phases/Subphases
  * Supports both staff (with percentage-based allocation and max capacity awareness)
  * and equipment assignment modes.
+ *
+ * Editing a staff booking also shows its comment thread (`CardComments`): the
+ * card's — shared with the Kanban card dialog — or, for a project-level
+ * booking, the project's. The thread renders OUTSIDE the `<form>` so that
+ * posting a comment never submits (and closes) the booking. A booking the
+ * user may not change (`assignmentLock`: someone else's pending join, an open
+ * request of mine, no right) opens read-only with a Notice saying why — My
+ * Work's Open always lands here — while its comments stay usable.
  */
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -28,6 +36,7 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { toInputDateFormat, formatDateISO, toDateOnly } from '@/utils/date';
 import type { UpdateStaffAssignmentRequest } from '@/types';
 import {
+  findStaffAssignment,
   patchEquipmentAssignmentLocally,
   patchStaffAssignmentLocally,
   removeEquipmentAssignmentLocally,
@@ -38,7 +47,13 @@ import { findSubphaseById } from '@/utils/subphaseUtils';
 import { can, canBookEquipment, canSelf, isBookable, isSelf, needsApproval } from '@/utils/permissions';
 import { Notice } from '@/components/common/Notice';
 import { isPendingResponse } from '@/api/endpoints/approvals';
-import { flashSentForApproval, markRequestPendingLocally } from '@/utils/pendingBookings';
+import {
+  ASSIGNMENT_LOCK_MESSAGES,
+  assignmentLock,
+  flashSentForApproval,
+  markRequestPendingLocally,
+} from '@/utils/pendingBookings';
+import { CardComments } from '@/components/common/CardComments';
 import { AllocationSlider, snapToStep } from '@/components/common/AllocationSlider';
 import styles from './AssignmentModal.module.css';
 import { confirmAction } from '@/utils/confirmDialog';
@@ -126,15 +141,21 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   );
 
   // Resources of the current site, narrowed by the header team filter; the
-  // edited booking's resource stays listed so an edit never drops it.
+  // edited booking's resource stays listed so an edit never drops it — even
+  // a booking at another site (opened from My Work).
   const editingStaffId = editingStaffAssignment?.staff_id;
   const editingEquipmentId = editingEquipmentAssignment?.equipment_id;
   const siteResources = useMemo(() => {
     if (!currentSite) return [];
     if (isStaff) {
-      return staff.filter(
+      const listed = staff.filter(
         (s) => s.site_id === currentSite.id && (staffMatches(s) || s.id === editingStaffId)
       );
+      const edited =
+        editingStaffId !== undefined && !listed.some((s) => s.id === editingStaffId)
+          ? staff.find((s) => s.id === editingStaffId)
+          : undefined;
+      return edited ? [...listed, edited] : listed;
     }
     return equipment.filter(
       (e) => e.site_id === currentSite.id && (equipmentMatches(e) || e.id === editingEquipmentId)
@@ -221,6 +242,19 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
 
   // Determine assignment level for API calls
   const assignmentLevel: 'project' | 'phase' | 'subphase' = subphaseId ? 'subphase' : (phaseId ? 'phase' : 'project');
+
+  // The Gantt's lock rule, on the live row (its pending state and open
+  // request; the edited copy may not carry them): a locked booking shows
+  // read-only, its comments stay usable.
+  const liveStaffRow =
+    isStaff && editingStaffAssignment
+      ? findStaffAssignment(dialogProject, assignmentLevel, editingStaffAssignment.id)
+      : undefined;
+  const lock =
+    isStaff && editingStaffAssignment
+      ? assignmentLock(liveStaffRow ?? editingStaffAssignment, currentUser, dialogProject)
+      : null;
+  const locked = lock !== null;
   const isPhaseOrSubphase = assignmentLevel !== 'project';
   // A card booking with its own dates: the date fields show, bounded by the card.
   const ownCardDates = isStaff && isPhaseOrSubphase && !followCard;
@@ -258,7 +292,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
       return;
     }
 
-    if (selfDenied) return;
+    if (selfDenied || locked) return;
     if (!beginSubmit()) return;
     setError(null);
 
@@ -350,7 +384,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
   };
 
   const handleDelete = async () => {
-    if (!isEditing || !editingAssignment) return;
+    if (!isEditing || !editingAssignment || locked) return;
 
     const confirmMsg = !isStaff
       ? 'Are you sure you want to remove this equipment assignment?'
@@ -438,7 +472,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
         <Button
           variant="danger"
           onClick={handleDelete}
-          disabled={isSubmitting}
+          disabled={isSubmitting || locked}
           className={styles.deleteBtn}
         >
           {removalNeedsApproval ? 'Request removal' : 'Remove Assignment'}
@@ -452,7 +486,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
           <Button
             variant="primary"
             onClick={handleSubmit}
-            disabled={isSubmitting || !!createBlockedReason}
+            disabled={isSubmitting || !!createBlockedReason || locked}
             title={createBlockedReason ?? undefined}
             loading={isSubmitting}
           >
@@ -467,12 +501,16 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
     ? `Edit ${resourceLabel} Assignment`
     : `Assign ${resourceLabel}`;
 
+  // The thread of the edited staff booking: its card's, or its project's.
+  const commentEntityId = assignmentLevel === 'project' ? projectId : subphaseId || phaseId;
+  const showComments = isStaff && isEditing && Boolean(projectId) && Boolean(commentEntityId);
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={closeModal}
       title={modalTitle}
-      size="md"
+      size={showComments ? 'lg' : 'md'}
       footer={footer}
     >
       <form onSubmit={handleSubmit} className={styles.form}>
@@ -480,7 +518,11 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
           <div className={styles.error} role="status">{createBlockedReason}</div>
         )}
         {error && error !== createBlockedReason && <Notice tone="error">{error}</Notice>}
-        {selfDenied && (
+        {/* Own changes denied by the role: the more precise notice below says so */}
+        {lock && !(lock === 'no-right' && selfDenied) && (
+          <Notice tone="info">{ASSIGNMENT_LOCK_MESSAGES[lock]}</Notice>
+        )}
+        {selfDenied && (lock === null || lock === 'no-right') && (
           <Notice tone="info">
             {isEditing
               ? 'You cannot change your own booking on this project.'
@@ -489,7 +531,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
                 : 'You cannot book your own time on this project.'}
           </Notice>
         )}
-        {selfNeedsApproval && !selfDenied && (
+        {selfNeedsApproval && !selfDenied && !locked && (
           <Notice tone="info">
             {isEditing
               ? 'Changes to your booking are sent for approval.'
@@ -533,6 +575,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
               value={allocation}
               onChange={setAllocation}
               maxCapacity={selectedStaffMaxCapacity}
+              disabled={locked}
               aria-label="Allocation"
             />
           </div>
@@ -543,6 +586,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
           <ToggleSwitch
             checked={followCard}
             onChange={handleFollowCardChange}
+            disabled={locked}
             label={`Follow the ${assignmentLevelLabel.toLowerCase()} dates`}
           />
         )}
@@ -568,6 +612,7 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
               end={endDate}
               minDate={ownCardDates ? cardStart : undefined}
               maxDate={ownCardDates ? cardEnd : undefined}
+              disabled={locked}
               onChange={({ start, end }) => {
                 setStartDate(start);
                 setEndDate(end);
@@ -576,6 +621,21 @@ export function AssignmentModal({ mode }: AssignmentModalProps) {
           </div>
         )}
       </form>
+
+      {/* Outside the form: a Comment click must never submit the booking. */}
+      {showComments && commentEntityId && projectId && (
+        <div className={styles.comments}>
+          <CardComments
+            key={`${assignmentLevel}:${commentEntityId}`}
+            entityType={assignmentLevel}
+            entityId={commentEntityId}
+            projectId={projectId}
+            siteId={dialogProject?.site_id}
+            participants={targetItem?.staffAssignments ?? []}
+            meUserId={currentUser?.id}
+          />
+        </div>
+      )}
     </Modal>
   );
 }

@@ -19,14 +19,51 @@ import { useAppStore } from '@/stores/appStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { findStaffAssignment, patchStaffAssignmentLocally, type AssignmentLevel } from './localProjectTree';
+import { isPendingAssignment } from './kanbanCards';
+import { canEditAssignment, type ProjectLike, type UserLike } from './permissions';
 import type { ApprovableKey } from '@/types/permissions';
 import type {
   ApprovalPolicy,
   BookingValues,
   PendingBookingResponse,
   Role,
+  StaffAssignment,
 } from '@/types';
 import { ADMIN_ROLE_KEY } from '@/types/permissions';
+
+/**
+ * Why a booking cannot be changed by this user, or null when it can — the
+ * one rule behind the Gantt context menu's Edit and the booking dialog's
+ * read-only state (the dialog reached from My Work too):
+ * - `'request-open'`: the row carries an open request of mine (my pending
+ *   join, change or removal) — only Cancel request is offered;
+ * - `'pending-other'`: someone else's pending join — locked for everyone,
+ *   deciders approve or reject it;
+ * - `'no-right'`: neither managing others' bookings on the project nor my
+ *   own row with `assignments.self_update` (allow or approval).
+ * An approved row carrying someone else's change request stays editable for
+ * whoever may change it (their write expires the request server-side).
+ */
+export type AssignmentLock = 'request-open' | 'pending-other' | 'no-right';
+
+export function assignmentLock(
+  row: Pick<StaffAssignment, 'approval_status' | 'approval'> & { staff_id: number | null | undefined },
+  user: UserLike | null | undefined,
+  project: ProjectLike | null | undefined
+): AssignmentLock | null {
+  const request = row.approval ?? null;
+  if (request && user && request.requester_id === user.id) return 'request-open';
+  if (isPendingAssignment(row)) return 'pending-other';
+  if (!canEditAssignment(user, project, row.staff_id)) return 'no-right';
+  return null;
+}
+
+/** What the booking dialog says when `assignmentLock` holds it read-only. */
+export const ASSIGNMENT_LOCK_MESSAGES: Record<AssignmentLock, string> = {
+  'request-open': 'Your change request on this booking is open',
+  'pending-other': 'This booking awaits approval',
+  'no-right': 'You cannot change this booking',
+};
 
 /**
  * The info flash after a write that filed a request instead; `count` > 1
