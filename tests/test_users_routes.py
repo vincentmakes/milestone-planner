@@ -331,6 +331,44 @@ async def test_delete_user_destroys_sessions(authed_client, mock_db_session, des
     mock_db_session.delete.assert_awaited_once_with(target)
 
 
+@pytest.mark.asyncio
+async def test_delete_user_drops_private_dashboards_and_frees_shared_ones(
+    authed_client, mock_db_session, destroy_sessions
+):
+    """Before the user row goes: their private dashboards are deleted, the
+    owner of their shared ones is cleared (administrators manage them)."""
+    from sqlalchemy.sql.dml import Delete, Update
+
+    client, set_user = authed_client
+    set_user(FakeUser(1, "admin"))
+    target = make_user(7, "user")
+    lookup_db(mock_db_session, target)
+    order: list[str] = []
+    execute = mock_db_session.execute
+
+    async def record(statement, *args, **kwargs):
+        table = getattr(getattr(statement, "table", None), "name", None)
+        if table == "dashboards":
+            order.append(type(statement).__name__)
+            sql = str(statement.compile(compile_kwargs={"literal_binds": True}))
+            if isinstance(statement, Delete):
+                assert "owner_id = 7" in sql and "visibility = 'private'" in sql
+            else:
+                assert isinstance(statement, Update) and "owner_id=NULL" in sql.replace(" ", "")
+        return await execute(statement, *args, **kwargs)
+
+    async def delete(obj):
+        order.append("delete user")
+
+    mock_db_session.execute = AsyncMock(side_effect=record)
+    mock_db_session.delete = AsyncMock(side_effect=delete)
+
+    resp = await client.delete("/api/users/7")
+
+    assert resp.status_code == 200
+    assert order == ["Delete", "Update", "delete user"]
+
+
 # ---------------------------------------------------------------------------
 # A deactivated or deleted requester's approval requests expire
 # ---------------------------------------------------------------------------

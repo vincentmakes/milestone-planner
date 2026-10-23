@@ -212,6 +212,8 @@ class WidgetLayout(_Strict):
 
 
 class WidgetIn(_Strict):
+    # Accepted and ignored: a save replaces the widgets and assigns new ids.
+    id: int | None = None
     kind: WidgetKind
     title: str = Field(min_length=1, max_length=120)
     query: MetricQuery
@@ -228,7 +230,11 @@ class WidgetIn(_Strict):
         return value
 
 
-class DashboardIn(_Strict):
+class DashboardIn(BaseModel):
+    # Unknown keys are ignored: ``is_default`` (never settable), or the id and
+    # read-only fields of a dashboard sent back as it was received.
+    model_config = ConfigDict(extra="ignore")
+
     name: str = Field(min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=2000)
     visibility: Visibility = "private"
