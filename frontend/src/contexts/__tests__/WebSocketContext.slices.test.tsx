@@ -443,7 +443,17 @@ describe('WebSocketProvider slice refresh', () => {
       expect(error).toHaveBeenCalledWith('[WS] dashboards refresh failed', expect.any(Error));
     });
 
-    it.each(['project', 'staff', 'team', 'project_field'])(
+    it.each([
+      'project',
+      'staff',
+      'team',
+      'project_field',
+      'vacation',
+      'bank_holiday',
+      'company_event',
+      'equipment',
+      'equipment_block',
+    ])(
       'asks the store for a debounced data reload on change:%s while the view is shown',
       async (entity) => {
         useViewStore.setState({ currentView: 'dashboards' });
@@ -462,10 +472,10 @@ describe('WebSocketProvider slice refresh', () => {
       expect(reloadData).not.toHaveBeenCalled();
     });
 
-    it('does not reload dashboard data for a change outside the plan', async () => {
+    it('does not reload dashboard data for a change outside the plan, capacity and equipment', async () => {
       useViewStore.setState({ currentView: 'dashboards' });
       render(<WebSocketProvider><div /></WebSocketProvider>);
-      await receive('vacation');
+      await receive('settings');
       expect(reloadData).not.toHaveBeenCalled();
     });
   });

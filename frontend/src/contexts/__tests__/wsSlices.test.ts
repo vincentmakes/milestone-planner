@@ -64,8 +64,22 @@ describe('slicesForEntity', () => {
     expect(ALL_SLICES).not.toContain('todos');
   });
 
-  it('reloads the open dashboard data for the plan slices only', () => {
-    expect([...DASHBOARD_DATA_SLICES].sort()).toEqual(['projectFields', 'projects', 'staff', 'teams']);
+  it('reloads the open dashboard data for the plan, capacity and equipment slices only', () => {
+    expect([...DASHBOARD_DATA_SLICES].sort()).toEqual([
+      'equipment',
+      'equipmentBlocks',
+      'projectFields',
+      'projects',
+      'siteCalendar',
+      'staff',
+      'teams',
+      'vacations',
+    ]);
+    // An absence, a holiday or closure and an equipment block each move a dashboard number.
+    for (const entity of ['vacation', 'bank_holiday', 'company_event', 'equipment_block', 'equipment']) {
+      expect(slicesForEntity(entity).some((slice) => DASHBOARD_DATA_SLICES.has(slice))).toBe(true);
+    }
+    expect(DASHBOARD_DATA_SLICES.has('settings')).toBe(false);
   });
 
   it('sandboxes only the What-If plan slices', () => {

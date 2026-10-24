@@ -54,13 +54,19 @@ export const ALL_SLICES: Slice[] = [
 /**
  * Slices whose data the open dashboard's widgets compute from: a refresh of
  * one of them also reloads the dashboard's data, through dashboardStore's
- * 2 s debounce, while the Dashboards view is shown.
+ * 2 s debounce, while the Dashboards view is shown. Capacity moves with
+ * absences and the site calendar (holidays, closures), equipment
+ * utilisation with the equipment and its blocks.
  */
 export const DASHBOARD_DATA_SLICES: ReadonlySet<Slice> = new Set<Slice>([
   'projects',
   'staff',
   'teams',
   'projectFields',
+  'vacations',
+  'siteCalendar',
+  'equipment',
+  'equipmentBlocks',
 ]);
 
 /**
