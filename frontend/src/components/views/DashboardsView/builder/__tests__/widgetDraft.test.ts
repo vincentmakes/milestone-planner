@@ -2,10 +2,12 @@
  * The builder's pure rules: kind rules on dimensions, percentages and Top N,
  * a measure change dropping refused dimensions, options per kind, the
  * client-side problems, the cleaned query, the filter count, the placement
- * of a new widget, grid ids and the key-order-free comparison.
+ * of a new widget, grid ids and the key-order-free comparison. The gauge,
+ * heatmap, treemap and sankey rules: dimension counts, the period dropped off
+ * a treemap or sankey, the ratio refusal, the gauge target and size.
  */
 import { describe, it, expect } from 'vitest';
-import type { MetricQuery } from '@/types';
+import type { MetricQuery, WidgetKind } from '@/types';
 import {
   activeFilterCount,
   changeMeasure,
@@ -18,11 +20,16 @@ import {
   gridIdOf,
   kpiWithoutDimension,
   MAX_DIMENSIONS,
+  MIN_DIMENSIONS,
   NEGATIVE_PIE_PROBLEM,
+  NEW_GAUGE_SIZE,
   newClientId,
+  noDimensionKind,
   normaliseQuery,
   placeNewWidget,
   queryProblem,
+  RATIO_HIERARCHY_PROBLEM,
+  SUMMED_KINDS,
   sameLayout,
   savedTargets,
   stableKey,
@@ -235,6 +242,128 @@ describe('kind rules', () => {
     expect(NEGATIVE_PIE_PROBLEM).toBe('Available days can be negative; choose a bar, line, table or KPI');
     expect(queryProblem('bar', query({ measure: 'available_days', dimensions: [{ kind: 'team' }] }))).toBeNull();
     expect(queryProblem('pie', query({ measure: 'utilisation', dimensions: [{ kind: 'team' }] }))).toBeNull();
+  });
+});
+
+describe('gauge, heatmap, treemap and sankey rules', () => {
+  const RATIOS = ['utilisation', 'available_days', 'people_over_capacity', 'equipment_utilisation'] as const;
+  const month = { kind: 'period' as const, grain: 'month' as const };
+
+  it('sets the fewest and the most dimensions per kind', () => {
+    expect(MIN_DIMENSIONS).toEqual({
+      kpi: 0,
+      pie: 0,
+      bar: 0,
+      line: 0,
+      table: 0,
+      gauge: 0,
+      heatmap: 2,
+      treemap: 1,
+      sankey: 2,
+    });
+    for (const kind of Object.keys(MAX_DIMENSIONS) as WidgetKind[]) {
+      expect(MIN_DIMENSIONS[kind]).toBeLessThanOrEqual(MAX_DIMENSIONS[kind]);
+    }
+    expect([...SUMMED_KINDS].sort()).toEqual(['sankey', 'treemap']);
+  });
+
+  it('gives a gauge no dimension, whatever the measure, and a KPI none only on a ratio', () => {
+    expect(noDimensionKind('gauge', 'booked_weeks')).toBe(true);
+    expect(noDimensionKind('gauge', 'utilisation')).toBe(true);
+    expect(noDimensionKind('kpi', 'utilisation')).toBe(true);
+    expect(noDimensionKind('kpi', 'booked_weeks')).toBe(false);
+    for (const kind of ['bar', 'line', 'pie', 'table', 'heatmap', 'treemap', 'sankey'] as const) {
+      expect(noDimensionKind(kind, 'utilisation')).toBe(false);
+    }
+    // The former name is the same rule.
+    expect(kpiWithoutDimension).toBe(noDimensionKind);
+  });
+
+  it('drops every dimension, the percentage and Top N on a gauge; a switch back keeps them dropped', () => {
+    const two = query({ dimensions: [{ kind: 'project' }, { kind: 'team' }], percent_of: 'first_dimension', top_n: 5 });
+    const gauge = normaliseQuery('gauge', two);
+    expect(gauge).toMatchObject({ dimensions: [], percent_of: null, top_n: null });
+    expect(normaliseQuery('bar', gauge).dimensions).toEqual([]);
+    expect(normaliseQuery('gauge', query({ measure: 'utilisation', dimensions: [{ kind: 'team' }] })).dimensions).toEqual([]);
+  });
+
+  it('drops a period dimension on a treemap or a sankey, and keeps it on a heatmap', () => {
+    const q = query({ dimensions: [month, { kind: 'team' }] });
+    expect(normaliseQuery('treemap', q).dimensions).toEqual([{ kind: 'team' }]);
+    expect(normaliseQuery('sankey', q).dimensions).toEqual([{ kind: 'team' }]);
+    expect(normaliseQuery('sankey', query({ dimensions: [{ kind: 'team' }, month] })).dimensions).toEqual([{ kind: 'team' }]);
+    expect(normaliseQuery('heatmap', q).dimensions).toEqual([month, { kind: 'team' }]);
+    expect(normaliseQuery('bar', q).dimensions).toEqual([month, { kind: 'team' }]);
+    // A percentage of the first dimension needs the second one still there.
+    expect(normaliseQuery('treemap', { ...q, percent_of: 'first_dimension' }).percent_of).toBeNull();
+    expect(
+      normaliseQuery('treemap', query({ dimensions: [{ kind: 'site' }, { kind: 'project' }], percent_of: 'first_dimension', top_n: 3 }))
+    ).toMatchObject({ percent_of: 'first_dimension', top_n: 3 });
+  });
+
+  it('refuses a treemap or a sankey of a ratio measure before counting its dimensions', () => {
+    expect(RATIO_HIERARCHY_PROBLEM).toBe(
+      'Utilisation, available days and people over capacity cannot be added up into boxes or flows; choose a bar, line, heatmap, table or KPI'
+    );
+    for (const measure of RATIOS) {
+      expect(queryProblem('treemap', query({ measure }))).toBe(RATIO_HIERARCHY_PROBLEM);
+      expect(queryProblem('sankey', query({ measure, dimensions: [{ kind: 'site' }, { kind: 'team' }] }))).toBe(
+        RATIO_HIERARCHY_PROBLEM
+      );
+      // A heatmap and a gauge of a ratio are fine.
+      expect(queryProblem('heatmap', query({ measure, dimensions: [{ kind: 'site' }, month] }))).toBeNull();
+      expect(queryProblem('gauge', query({ measure }))).toBeNull();
+    }
+  });
+
+  it('names the dimensions a heatmap, a sankey and a treemap still need', () => {
+    expect(queryProblem('heatmap', query())).toBe('A heatmap needs two dimensions.');
+    expect(queryProblem('heatmap', query({ dimensions: [{ kind: 'team' }] }))).toBe('A heatmap needs two dimensions.');
+    expect(queryProblem('heatmap', query({ dimensions: [{ kind: 'team' }, month] }))).toBeNull();
+    expect(queryProblem('sankey', query({ dimensions: [{ kind: 'team' }] }))).toBe('A sankey needs two dimensions.');
+    expect(queryProblem('sankey', query({ dimensions: [{ kind: 'team' }, { kind: 'project' }] }))).toBeNull();
+    expect(queryProblem('treemap', { measure: 'booked_days' })).toBe('A treemap needs one or two dimensions.');
+    expect(queryProblem('treemap', query({ dimensions: [{ kind: 'site' }] }))).toBeNull();
+    expect(queryProblem('treemap', query({ dimensions: [{ kind: 'site' }, { kind: 'project' }] }))).toBeNull();
+    expect(queryProblem('gauge', query())).toBeNull();
+    // The dimensions come before the period's ends; the pie rules stay first.
+    expect(queryProblem('heatmap', query({ filters: { period: { from: '', to: '' } } }))).toBe('A heatmap needs two dimensions.');
+    expect(queryProblem('pie', query({ measure: 'available_days' }))).toBe(NEGATIVE_PIE_PROBLEM);
+    expect(queryProblem('pie', query())).toBe('A pie chart needs one dimension.');
+  });
+
+  it('keeps a gauge target that is finite and not negative, and only on a gauge', () => {
+    expect(cleanOptions('gauge', query(), { target: 85 })).toEqual({ target: 85 });
+    expect(cleanOptions('gauge', query(), { target: 0 })).toEqual({ target: 0 });
+    expect(cleanOptions('gauge', query(), { target: 12.5, number_format: 'decimal' })).toEqual({
+      target: 12.5,
+      number_format: 'decimal',
+    });
+    for (const target of [-5, Number.NaN, Number.POSITIVE_INFINITY, null, undefined]) {
+      expect(cleanOptions('gauge', query(), { target })).toEqual({});
+    }
+    expect(cleanOptions('gauge', query(), { target: '85' as unknown as number })).toEqual({});
+    for (const kind of ['kpi', 'bar', 'line', 'pie', 'table', 'heatmap', 'treemap', 'sankey'] as const) {
+      expect(cleanOptions(kind, query(), { target: 85 })).not.toHaveProperty('target');
+    }
+    // A gauge takes no bar, line or pie option.
+    expect(cleanOptions('gauge', query(), { stacked: true, percent: true, orientation: 'horizontal', show_legend: true })).toEqual(
+      {}
+    );
+    expect(cleanOptions('heatmap', query(), { number_format: 'integer', stacked: true })).toEqual({ number_format: 'integer' });
+  });
+
+  it('places a new gauge at 3 × 4 / 4 × 4 / 4 × 4, the other new kinds at the chart size', () => {
+    expect(NEW_GAUGE_SIZE).toEqual({ lg: { w: 3, h: 4 }, md: { w: 4, h: 4 }, sm: { w: 4, h: 4 } });
+    const above = { layout: { lg: { x: 0, y: 0, w: 6, h: 2 }, md: { x: 0, y: 0, w: 4, h: 3 }, sm: { x: 0, y: 0, w: 4, h: 4 } } };
+    expect(placeNewWidget('gauge', [above])).toEqual({
+      lg: { x: 0, y: 2, w: 3, h: 4 },
+      md: { x: 0, y: 3, w: 4, h: 4 },
+      sm: { x: 0, y: 4, w: 4, h: 4 },
+    });
+    for (const kind of ['heatmap', 'treemap', 'sankey'] as const) {
+      expect(placeNewWidget(kind, [])).toEqual(placeNewWidget('bar', []));
+    }
   });
 });
 

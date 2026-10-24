@@ -12,6 +12,14 @@
  * measure → dimension and → filter matrices (`utils/metrics.ts`) decide which
  * dimensions and filters a measure accepts. The server stays the judge: a
  * query it refuses is a 422 in plain words, shown by the editor's preview.
+ *
+ * The four kinds of round 4: a gauge has no dimension (it shows the total
+ * against an optional `options.target`, finite and ≥ 0); a heatmap exactly
+ * two (a period allowed, it becomes the x axis); a treemap one or two and a
+ * sankey exactly two, neither of them with a period (`normaliseQuery` drops
+ * it) nor of a ratio measure (`NO_PERCENT_MEASURES`: its values cannot be
+ * added up into boxes or flows — `RATIO_HIERARCHY_PROBLEM`). The server
+ * enforces none of the dimension counts; the builder refuses them.
  */
 
 import type {
@@ -36,6 +44,7 @@ import {
 } from '@/utils/metrics';
 import type { FilterKey } from '@/utils/metrics';
 import type { PermissionKey } from '@/types/permissions';
+import { gaugeTarget } from '../charts/toOption';
 
 /** A widget of the draft: `id` only for a widget the server already holds. */
 export type DraftWidget = Omit<DashboardWidget, 'id' | 'sort_order'> & {
@@ -103,6 +112,26 @@ export const MAX_DIMENSIONS: Readonly<Record<WidgetKind, number>> = {
   sankey: 2,
 };
 
+/** The fewest dimensions per widget kind (the builder's rule; the server takes fewer). */
+export const MIN_DIMENSIONS: Readonly<Record<WidgetKind, number>> = {
+  kpi: 0,
+  pie: 0,
+  bar: 0,
+  line: 0,
+  table: 0,
+  gauge: 0,
+  heatmap: 2,
+  treemap: 1,
+  sankey: 2,
+};
+
+/**
+ * The kinds that add their values up into boxes (treemap) or flows (sankey):
+ * no period dimension (a hierarchy or a flow of periods means nothing) and no
+ * ratio measure (`RATIO_HIERARCHY_PROBLEM`).
+ */
+export const SUMMED_KINDS: ReadonlySet<WidgetKind> = new Set<WidgetKind>(['treemap', 'sankey']);
+
 let lastClientId = 0;
 
 /** A client id for a new widget. */
@@ -143,24 +172,32 @@ function filtersFor(measure: Measure, filters: MetricFilters | undefined): Metri
   return rest;
 }
 
-/** Whether a KPI of `measure` has no dimension: the measure takes no percentage, so a KPI shows its total. */
-export function kpiWithoutDimension(kind: WidgetKind, measure: Measure): boolean {
-  return kind === 'kpi' && NO_PERCENT_MEASURES.has(measure);
+/**
+ * Whether a widget of `kind` on `measure` has no dimension: a gauge never
+ * has one, and a KPI of a measure that takes no percentage shows its total.
+ */
+export function noDimensionKind(kind: WidgetKind, measure: Measure): boolean {
+  return MAX_DIMENSIONS[kind] === 0 || (kind === 'kpi' && NO_PERCENT_MEASURES.has(measure));
 }
+
+/** The former name of `noDimensionKind` (a KPI was the only kind without a dimension). */
+export const kpiWithoutDimension = noDimensionKind;
 
 /**
  * The query made consistent with the widget kind and the measure: extra
- * dimensions and refused ones dropped, the filters the measure does not take
- * dropped (a measure of another family), a KPI with a dimension shows a share
- * of the total — a KPI of a measure that takes no percentage has no
- * dimension —, a percentage needs its dimensions and a measure that takes
- * one, Top N needs a first dimension that is not a period.
+ * dimensions and refused ones dropped (a period too on a treemap or a
+ * sankey), the filters the measure does not take dropped (a measure of
+ * another family), a KPI with a dimension shows a share of the total — a
+ * gauge, and a KPI of a measure that takes no percentage, have no dimension
+ * —, a percentage needs its dimensions and a measure that takes one, Top N
+ * needs a first dimension that is not a period.
  */
 export function normaliseQuery(kind: WidgetKind, query: MetricQuery): MetricQuery {
   const noPercent = NO_PERCENT_MEASURES.has(query.measure);
   const dimensions = (query.dimensions ?? [])
     .filter((d) => isValidDimension(query.measure, d.kind))
-    .slice(0, kpiWithoutDimension(kind, query.measure) ? 0 : MAX_DIMENSIONS[kind]);
+    .filter((d) => !(SUMMED_KINDS.has(kind) && d.kind === 'period'))
+    .slice(0, noDimensionKind(kind, query.measure) ? 0 : MAX_DIMENSIONS[kind]);
   let percentOf = query.percent_of ?? null;
   if (dimensions.length === 0 || noPercent) percentOf = null;
   else if (kind === 'kpi') percentOf = 'total';
@@ -198,7 +235,8 @@ export function dropUnheld(query: MetricQuery, holds: (key: PermissionKey | null
  * bucket), plus the number format (*Percent* only on a percentage). A bar
  * of a measure that takes no percentage (`NO_PERCENT_MEASURES`: a ratio, a
  * signed number, a per-bucket count) is never stacked nor 100 %: adding
- * percentages up, or sharing out negative days, means nothing.
+ * percentages up, or sharing out negative days, means nothing. A gauge keeps
+ * its target when it is one (finite, ≥ 0: `gaugeTarget`, the renderer's rule).
  */
 export function cleanOptions(kind: WidgetKind, query: MetricQuery, options: WidgetOptions): WidgetOptions {
   const clean: WidgetOptions = {};
@@ -207,6 +245,10 @@ export function cleanOptions(kind: WidgetKind, query: MetricQuery, options: Widg
     if (stackable && options.percent) clean.percent = true;
     if (stackable && (options.stacked || options.percent)) clean.stacked = true;
     if (options.orientation === 'horizontal') clean.orientation = 'horizontal';
+  }
+  if (kind === 'gauge') {
+    const target = gaugeTarget(options.target);
+    if (target !== null) clean.target = target;
   }
   if (kind === 'line' && options.show_legend === false) clean.show_legend = false;
   if (kind === 'pie' && options.show_legend === true) clean.show_legend = true;
@@ -223,10 +265,23 @@ export function cleanOptions(kind: WidgetKind, query: MetricQuery, options: Widg
 /** Why a pie of available days is refused: its values can be negative. */
 export const NEGATIVE_PIE_PROBLEM = 'Available days can be negative; choose a bar, line, table or KPI';
 
+/** Why a treemap or a sankey of a ratio measure is refused: its values do not add up. */
+export const RATIO_HIERARCHY_PROBLEM =
+  'Utilisation, available days and people over capacity cannot be added up into boxes or flows; choose a bar, line, heatmap, table or KPI';
+
+/** What a kind with too few dimensions says. */
+const TOO_FEW_DIMENSIONS: Partial<Record<WidgetKind, string>> = {
+  heatmap: 'A heatmap needs two dimensions.',
+  sankey: 'A sankey needs two dimensions.',
+  treemap: 'A treemap needs one or two dimensions.',
+};
+
 /** Why a query cannot be previewed or saved yet (client-side), or null. */
 export function queryProblem(kind: WidgetKind, query: MetricQuery): string | null {
   const dimensions = query.dimensions ?? [];
   if (kind === 'pie' && query.measure === 'available_days') return NEGATIVE_PIE_PROBLEM;
+  if (SUMMED_KINDS.has(kind) && NO_PERCENT_MEASURES.has(query.measure)) return RATIO_HIERARCHY_PROBLEM;
+  if (dimensions.length < MIN_DIMENSIONS[kind]) return TOO_FEW_DIMENSIONS[kind] ?? null;
   if (kind === 'pie' && dimensions.length !== 1) return 'A pie chart needs one dimension.';
   if (kind === 'kpi' && dimensions.length > 0 && query.percent_of !== 'total') {
     return 'A KPI with a dimension shows a share: set Percent of to Total.';
@@ -296,11 +351,18 @@ export const NEW_KPI_SIZE: Readonly<Record<keyof WidgetLayout, Size>> = {
   sm: { w: 4, h: 2 },
 };
 
+/** A new gauge's size per breakpoint. */
+export const NEW_GAUGE_SIZE: Readonly<Record<keyof WidgetLayout, Size>> = {
+  lg: { w: 3, h: 4 },
+  md: { w: 4, h: 4 },
+  sm: { w: 4, h: 4 },
+};
+
 const BREAKPOINTS: readonly (keyof WidgetLayout)[] = ['lg', 'md', 'sm'];
 
 /** Where a new widget lands: at the left, under every other widget, at the default size of its kind. */
 export function placeNewWidget(kind: WidgetKind, widgets: readonly Pick<DraftWidget, 'layout'>[]): WidgetLayout {
-  const size = kind === 'kpi' ? NEW_KPI_SIZE : NEW_WIDGET_SIZE;
+  const size = kind === 'kpi' ? NEW_KPI_SIZE : kind === 'gauge' ? NEW_GAUGE_SIZE : NEW_WIDGET_SIZE;
   const layout = {} as WidgetLayout;
   for (const bp of BREAKPOINTS) {
     const y = widgets.reduce((max, w) => Math.max(max, w.layout[bp].y + w.layout[bp].h), 0);
