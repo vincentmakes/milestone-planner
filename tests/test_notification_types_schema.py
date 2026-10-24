@@ -25,6 +25,7 @@ from app.services.tenant_provisioner import (
     DASHBOARD_SHARING_TABLES,
     DASHBOARD_TABLES,
     DASHBOARD_VISIBILITY_CHECK_SQL,
+    DASHBOARD_WIDGET_KIND_CHECK_SQL,
     DASHBOARDS_PROBE_SQL,
     NOTIFICATION_TYPES,
     NOTIFICATIONS_TYPE_CHECK,
@@ -198,6 +199,9 @@ def _conn(rbac_needed: bool, fail_widening: bool = False):
         if sql == DASHBOARD_VISIBILITY_CHECK_SQL:  # self-gated, runs every time
             log.append("VISIBILITY")
             return MagicMock()
+        if sql == DASHBOARD_WIDGET_KIND_CHECK_SQL:  # self-gated, runs every time
+            log.append("KINDS")
+            return MagicMock()
         if sql == NOTIFICATIONS_TYPE_CHECK_SQL:
             log.append("WIDEN")
             if fail_widening:
@@ -239,6 +243,8 @@ async def test_auto_migration_widens_an_up_to_date_rbac_tenant():
         "COMMIT",
         "VISIBILITY",
         "COMMIT",
+        "KINDS",
+        "COMMIT",
         "WIDEN",
         "COMMIT",
     ]
@@ -267,6 +273,8 @@ async def test_auto_migration_widening_failure_rolls_back_and_never_raises(caplo
         "SHARING probe",
         "COMMIT",
         "VISIBILITY",
+        "COMMIT",
+        "KINDS",
         "COMMIT",
         "WIDEN",
         "ROLLBACK",

@@ -754,7 +754,7 @@ CREATE TABLE IF NOT EXISTS dashboard_widgets (
     layout TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
     CONSTRAINT dashboard_widgets_kind_check
-        CHECK (kind IN ('kpi', 'bar', 'line', 'pie', 'table'))
+        CHECK (kind IN ('kpi', 'bar', 'line', 'pie', 'table', 'gauge', 'heatmap', 'treemap', 'sankey'))
 );
 
 -- Sites, teams and people a 'shared' dashboard is shared with (many-to-many;

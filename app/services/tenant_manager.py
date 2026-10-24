@@ -36,6 +36,7 @@ from app.services.tenant_provisioner import (
     DASHBOARD_SHARING_TABLES,
     DASHBOARD_TABLES,
     DASHBOARD_VISIBILITY_CHECK_SQL,
+    DASHBOARD_WIDGET_KIND_CHECK_SQL,
     DASHBOARD_WIDGET_SEED_SQL,
     DASHBOARDS_PROBE_SQL,
     DASHBOARDS_SCHEMA_STATEMENTS,
@@ -925,6 +926,23 @@ class TenantConnectionManager:
             await conn.commit()
         except Exception as e:
             logger.warning("Auto-migration (dashboard visibility) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+        # The widget-kind CHECK of a pre-release 2.1.0 database (gauge,
+        # heatmap, treemap, sankey). Every pool creation, self-gated; its own
+        # transaction, like the visibility block.
+        try:
+            await conn.execute(text(DASHBOARD_WIDGET_KIND_CHECK_SQL))
+            await conn.commit()
+        except Exception as e:
+            # An error, not a warning: without the widened CHECK a saved
+            # gauge, heatmap, treemap or sankey widget fails on insert.
+            logger.error(
+                "Auto-migration (dashboard widget kinds) failed for %s: %s -- gauge, "
+                "heatmap, treemap and sankey widgets cannot be saved until "
+                "migrations/add_dashboard_widget_kinds.sql is applied",
+                slug,
+                e,
+            )
             await _rollback_quietly(conn)
 
         # Notification types (add_change_notifications.sql). Runs on every pool

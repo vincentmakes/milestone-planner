@@ -33,6 +33,7 @@ from app.services.tenant_provisioner import (
     DASHBOARD_SHARING_TABLES,
     DASHBOARD_TABLES,
     DASHBOARD_VISIBILITY_CHECK_SQL,
+    DASHBOARD_WIDGET_KIND_CHECK_SQL,
     DASHBOARDS_PROBE_SQL,
     EQUIPMENT_TEAMS_TABLE_SQL,
     NOTIFICATIONS_TYPE_CHECK_SQL,
@@ -289,6 +290,8 @@ def _teams_conn(tables=(), fail_on: str | None = None):
             return result
         if sql == DASHBOARD_VISIBILITY_CHECK_SQL:  # its self-gated block, committed
             return MagicMock()
+        if sql == DASHBOARD_WIDGET_KIND_CHECK_SQL:  # the widget-kinds block, committed
+            return MagicMock()
         if sql == NOTIFICATIONS_TYPE_CHECK_SQL:  # the later step that always runs
             log.append(WIDEN)
             return MagicMock()
@@ -345,12 +348,14 @@ async def test_auto_migration_skips_an_up_to_date_tenant():
 
     # Nothing between the probe and the notification-types step's commit but
     # the rollback of the project-fields step (which this fake fails), the
-    # decimals column step (its own gate, always run) and the dashboard-sharing
-    # step's two commits (its tables, its visibility block).
+    # decimals column step (its own gate, always run), the
+    # dashboard-sharing step's two commits (its tables, its visibility block)
+    # and the widget-kinds block's commit.
     assert log[log.index(TEAMS_CHECK) :] == [
         TEAMS_CHECK,
         "ROLLBACK",
         DECIMALS,
+        "COMMIT",
         "COMMIT",
         "COMMIT",
         "COMMIT",

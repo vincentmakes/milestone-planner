@@ -387,11 +387,17 @@ async def test_legacy_tenant_gets_every_step():
     assert conn.log.index(tp.PROJECT_FIELDS_MIGRATION_SQL) > max(
         conn.log.index(s) for s in tp.PROJECT_FIELDS_SCHEMA_STATEMENTS
     )
-    # The dashboard visibility block gates itself: it runs on every tenant.
+    # The dashboard visibility and widget-kinds blocks gate themselves: they
+    # run on every tenant, after one another.
     assert conn.ran(tp.DASHBOARD_VISIBILITY_CHECK_SQL)
+    assert conn.ran(tp.DASHBOARD_WIDGET_KIND_CHECK_SQL)
+    assert conn.log.index(tp.DASHBOARD_VISIBILITY_CHECK_SQL) < conn.log.index(
+        tp.DASHBOARD_WIDGET_KIND_CHECK_SQL
+    )
     # One commit per step (card status: one per table; dashboard sharing: its
-    # tables, then its visibility block), 28 in all.
-    assert conn.log.count("COMMIT") == 28
+    # tables, then its visibility block; the widget-kinds block its own), 29
+    # in all.
+    assert conn.log.count("COMMIT") == 29
 
 
 @pytest.mark.asyncio
@@ -428,12 +434,14 @@ async def test_current_tenant_only_probes_and_runs_the_idempotent_backfills():
     assert conn.ran(tp.EQUIPMENT_ASSIGNMENTS_NOTE_SQL)
     assert conn.ran(tp.PROJECT_FIELD_DECIMALS_SQL)
     assert conn.ran(tp.DASHBOARD_VISIBILITY_CHECK_SQL)
+    assert conn.ran(tp.DASHBOARD_WIDGET_KIND_CHECK_SQL)
     assert "ROLLBACK" not in conn.log
     # Only the two always-run back-fill steps, the users.is_resource step, the
     # booking-segments step, the equipment-note step, the project-field
     # decimals step, the project-comments step, the dashboard-sharing step (its
-    # probe, then its visibility block) and the notification-types step.
-    assert conn.log.count("COMMIT") == 10
+    # probe, then its visibility block), the widget-kinds block (its own
+    # commit, +1 in 2.1.0) and the notification-types step.
+    assert conn.log.count("COMMIT") == 11
 
 
 @pytest.mark.asyncio

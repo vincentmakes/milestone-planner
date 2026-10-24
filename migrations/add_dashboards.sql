@@ -3,8 +3,9 @@
 -- data: name, description, owner (NULL = admin-owned), visibility private /
 -- shared / everyone, at most one default -- partial unique index
 -- dashboards_one_default), dashboard_roles (the roles a dashboard is shared
--- with) and dashboard_widgets (kind kpi / bar / line / pie / table, title, the
--- metric query, display options and grid layout as JSON texts, sort order).
+-- with) and dashboard_widgets (kind kpi / bar / line / pie / table / gauge /
+-- heatmap / treemap / sankey, title, the metric query, display options and
+-- grid layout as JSON texts, sort order).
 -- Widgets and role links go with their dashboard; a role link also goes with
 -- its role; a dashboard whose owner is deleted keeps existing (owner_id SET
 -- NULL). Requires users and roles (add_rbac) (2.1.0). The sites, teams and
@@ -58,7 +59,7 @@ CREATE TABLE IF NOT EXISTS dashboard_widgets (
     layout TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
     CONSTRAINT dashboard_widgets_kind_check
-        CHECK (kind IN ('kpi', 'bar', 'line', 'pie', 'table'))
+        CHECK (kind IN ('kpi', 'bar', 'line', 'pie', 'table', 'gauge', 'heatmap', 'treemap', 'sankey'))
 );
 
 -- Indexes (at most one default dashboard; faster lookups)

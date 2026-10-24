@@ -45,6 +45,7 @@ from app.services.tenant_provisioner import (
     DASHBOARD_TEAMS_TABLE_SQL,
     DASHBOARD_USERS_TABLE_SQL,
     DASHBOARD_VISIBILITY_CHECK_SQL,
+    DASHBOARD_WIDGET_KIND_CHECK_SQL,
     DASHBOARDS_PROBE_SQL,
     NOTIFICATIONS_TYPE_CHECK_SQL,
     PROJECT_FIELDS_PROBE_SQL,
@@ -333,6 +334,7 @@ def test_tenant_auto_migration_executes_the_constants():
 DASHBOARDS_PROBE = "CHECK dashboard tables"
 PROBE = "CHECK dashboard sharing tables"
 VISIBILITY = "dashboard visibility check"
+KINDS = "dashboard widget kinds check"
 WIDEN = "widen notification types"
 
 
@@ -373,6 +375,9 @@ def _conn(tables=(), fail_on: str | None = None):
             if fail_on == VISIBILITY:
                 raise RuntimeError("check violated")
             return MagicMock()
+        if sql == DASHBOARD_WIDGET_KIND_CHECK_SQL:  # the next self-gated block
+            log.append(KINDS)
+            return MagicMock()
         if sql in DASHBOARD_SHARING_SCHEMA_STATEMENTS:
             log.append(sql)
             if sql == fail_on:
@@ -398,8 +403,13 @@ async def _run_auto_migrations(conn) -> None:
 
 
 def _step(log: list[str]) -> list[str]:
-    """The sharing step's log: from its probe up to the notification types."""
-    return log[log.index(PROBE) : log.index(WIDEN)]
+    """The sharing step's log: from its probe up to the widget-kinds block."""
+    return log[log.index(PROBE) : log.index(KINDS)]
+
+
+# What follows the sharing step: the widget-kinds block in its own
+# transaction, then the notification types.
+AFTER_SHARING = [KINDS, "COMMIT", WIDEN, "COMMIT"]
 
 
 @pytest.mark.asyncio
@@ -423,9 +433,9 @@ async def test_auto_migration_creates_the_tables_then_fixes_the_check(tables):
         "COMMIT",
     ]
     # Right after the dashboards step (the links reference dashboards),
-    # before the notification-types step.
-    assert log.index(DASHBOARDS_PROBE) < log.index(PROBE) < log.index(WIDEN)
-    assert log[log.index(WIDEN) :] == [WIDEN, "COMMIT"]
+    # before the widget-kinds block and the notification-types step.
+    assert log.index(DASHBOARDS_PROBE) < log.index(PROBE) < log.index(KINDS) < log.index(WIDEN)
+    assert log[log.index(KINDS) :] == AFTER_SHARING
 
 
 @pytest.mark.asyncio
@@ -434,7 +444,7 @@ async def test_auto_migration_runs_only_the_check_on_an_up_to_date_tenant():
 
     await _run_auto_migrations(conn)
 
-    assert log[log.index(PROBE) :] == [PROBE, "COMMIT", VISIBILITY, "COMMIT", WIDEN, "COMMIT"]
+    assert log[log.index(PROBE) :] == [PROBE, "COMMIT", VISIBILITY, "COMMIT", *AFTER_SHARING]
     assert not any(s in DASHBOARD_SHARING_SCHEMA_STATEMENTS for s in log)
 
 
@@ -452,7 +462,7 @@ async def test_a_failing_table_rolls_back_and_the_check_still_runs(caplog):
         VISIBILITY,
         "COMMIT",
     ]
-    assert log[-2:] == [WIDEN, "COMMIT"]  # the later steps still ran
+    assert log[-4:] == AFTER_SHARING  # the later steps still ran
     assert any(
         "Auto-migration (dashboard sharing) warning for acme" in r.getMessage()
         for r in caplog.records
@@ -476,7 +486,7 @@ async def test_a_failing_check_keeps_the_committed_tables(caplog):
     ]
     step = _step(log)
     assert step.count("ROLLBACK") == 1 and step[-1] == "ROLLBACK"
-    assert log[-2:] == [WIDEN, "COMMIT"]
+    assert log[-4:] == AFTER_SHARING
     messages = [r.getMessage() for r in caplog.records]
     assert any("Auto-migration (dashboard visibility) warning for acme" in m for m in messages)
     assert not any("Auto-migration (dashboard sharing) warning" in m for m in messages)

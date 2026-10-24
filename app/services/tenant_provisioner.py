@@ -14,6 +14,7 @@ import asyncpg
 
 from app.config import get_settings
 from app.models.card_comment import COMMENT_ENTITY_TYPES
+from app.models.dashboard import DASHBOARD_WIDGET_KINDS
 from app.scripts.demo_data import build_demo
 from app.services.dashboard_seed import base_dashboard_rows
 from app.services.demo_seed import insert_demo_data
@@ -1332,18 +1333,25 @@ DASHBOARD_ROLES_TABLE_SQL = """
       PRIMARY KEY (dashboard_id, role_id)
     )"""
 
-DASHBOARD_WIDGETS_TABLE_SQL = """
+# The widget kinds (DASHBOARD_WIDGET_KINDS, app/models/dashboard.py). The ORM,
+# the four CREATE TABLE dashboard_widgets sources and the widening below
+# (DASHBOARD_WIDGET_KIND_CHECK_SQL) spell the same CHECK.
+DASHBOARD_WIDGET_KIND_CHECK = (
+    "kind IN (" + ", ".join(f"'{k}'" for k in DASHBOARD_WIDGET_KINDS) + ")"
+)
+
+DASHBOARD_WIDGETS_TABLE_SQL = f"""
     CREATE TABLE IF NOT EXISTS dashboard_widgets (
       id SERIAL PRIMARY KEY,
       dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
       kind VARCHAR(12) NOT NULL,
       title VARCHAR(120) NOT NULL,
       query TEXT NOT NULL,
-      options TEXT NOT NULL DEFAULT '{}',
+      options TEXT NOT NULL DEFAULT '{{}}',
       layout TEXT NOT NULL,
       sort_order INTEGER NOT NULL DEFAULT 0,
       CONSTRAINT dashboard_widgets_kind_check
-        CHECK (kind IN ('kpi', 'bar', 'line', 'pie', 'table'))
+        CHECK ({DASHBOARD_WIDGET_KIND_CHECK})
     )"""
 
 DASHBOARDS_INDEX_STATEMENTS: tuple[str, ...] = (
@@ -1531,6 +1539,29 @@ DASHBOARD_VISIBILITY_CHECK_SQL = """
             UPDATE dashboards SET visibility = 'shared' WHERE visibility = 'roles';
             ALTER TABLE dashboards ADD CONSTRAINT dashboards_visibility_check
                 CHECK (visibility IN ('private', 'shared', 'everyone'));
+        END IF;
+    END $$"""
+
+# The gauge, heatmap, treemap and sankey kinds came before 2.1.0 was
+# released: a database created from a pre-release build carries the
+# five-kind CHECK. Self-gated (a no-op once the constraint allows the newest
+# kind, DASHBOARD_WIDGET_KINDS[-1], or without a dashboard_widgets table), so
+# it runs on every pool creation; no row changes (every old kind stays
+# valid). Only in the auto-migration step and
+# migrations/add_dashboard_widget_kinds.sql -- the fresh sources create the
+# new CHECK directly. One statement, no trailing ';'.
+DASHBOARD_WIDGET_KIND_CHECK_SQL = f"""
+    DO $$
+    BEGIN
+        IF to_regclass('public.dashboard_widgets') IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.dashboard_widgets')
+              AND conname = 'dashboard_widgets_kind_check'
+              AND strpos(pg_get_constraintdef(oid), '{DASHBOARD_WIDGET_KINDS[-1]}') > 0
+        ) THEN
+            ALTER TABLE dashboard_widgets DROP CONSTRAINT IF EXISTS dashboard_widgets_kind_check;
+            ALTER TABLE dashboard_widgets ADD CONSTRAINT dashboard_widgets_kind_check
+                CHECK ({DASHBOARD_WIDGET_KIND_CHECK});
         END IF;
     END $$"""
 

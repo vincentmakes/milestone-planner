@@ -10,7 +10,8 @@ team in ``dashboard_teams`` -- its members -- or a person in
 ``dashboard_users``) or ``everyone`` (everyone who may open the view). At most
 one dashboard is the default (``is_default``; partial unique index
 ``dashboards_one_default``). A ``DashboardWidget`` is one tile: its ``kind``
-(``kpi``, ``bar``, ``line``, ``pie``, ``table``), a title, and three JSON
+(``kpi``, ``bar``, ``line``, ``pie``, ``table``, ``gauge``, ``heatmap``,
+``treemap``, ``sankey``), a title, and three JSON
 texts -- the metric ``query``, the display ``options`` and the grid ``layout``
 per breakpoint. Widgets and target links go with their dashboard (ON DELETE
 CASCADE); a target link also goes with its role, site, team or person.
@@ -41,7 +42,20 @@ from app.database import Base
 from app.utils import utcnow_naive
 
 DASHBOARD_VISIBILITIES: tuple[str, ...] = ("private", "shared", "everyone")
-DASHBOARD_WIDGET_KINDS: tuple[str, ...] = ("kpi", "bar", "line", "pie", "table")
+# The widget kinds. The newest kind goes last: the self-gated block that
+# widens the CHECK of an existing table (tenant_provisioner
+# .DASHBOARD_WIDGET_KIND_CHECK_SQL) looks for the last entry.
+DASHBOARD_WIDGET_KINDS: tuple[str, ...] = (
+    "kpi",
+    "bar",
+    "line",
+    "pie",
+    "table",
+    "gauge",
+    "heatmap",
+    "treemap",
+    "sankey",
+)
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:

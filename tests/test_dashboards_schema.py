@@ -43,6 +43,7 @@ from app.services.tenant_provisioner import (
     DASHBOARD_SHARING_TABLES,
     DASHBOARD_TABLES,
     DASHBOARD_VISIBILITY_CHECK_SQL,
+    DASHBOARD_WIDGET_KIND_CHECK_SQL,
     DASHBOARD_WIDGET_SEED_PG_SQL,
     DASHBOARD_WIDGET_SEED_SQL,
     DASHBOARD_WIDGETS_TABLE_SQL,
@@ -201,13 +202,24 @@ def test_the_columns_and_checks():
     }
     assert (
         "CONSTRAINT dashboard_widgets_kind_check "
-        "CHECK (kind IN ('kpi', 'bar', 'line', 'pie', 'table'))"
+        "CHECK (kind IN ('kpi', 'bar', 'line', 'pie', 'table', "
+        "'gauge', 'heatmap', 'treemap', 'sankey'))"
     ) in _norm(DASHBOARD_WIDGETS_TABLE_SQL)
 
 
 def test_the_model_constants_match_the_checks():
     assert DASHBOARD_VISIBILITIES == ("private", "shared", "everyone")
-    assert DASHBOARD_WIDGET_KINDS == ("kpi", "bar", "line", "pie", "table")
+    assert DASHBOARD_WIDGET_KINDS == (
+        "kpi",
+        "bar",
+        "line",
+        "pie",
+        "table",
+        "gauge",
+        "heatmap",
+        "treemap",
+        "sankey",
+    )
 
 
 def test_statements_have_no_bind_parameters():
@@ -333,6 +345,7 @@ RBAC_PROBE = "CHECK rbac"
 WIDEN = "widen notification types"
 SHARING_PROBE = "CHECK dashboard sharing tables"
 VISIBILITY = "dashboard visibility check"
+KINDS = "dashboard widget kinds check"
 SEED = "INSERT dashboard"
 WIDGET = "INSERT widget"
 GRANT = "INSERT role permission"
@@ -375,6 +388,9 @@ def _conn(tables=(), fail_on: str | None = None, dashboard_id: int | None = NEW_
             return rows(DASHBOARD_SHARING_TABLES)
         if sql == DASHBOARD_VISIBILITY_CHECK_SQL:
             log.append(VISIBILITY)
+            return MagicMock()
+        if sql == DASHBOARD_WIDGET_KIND_CHECK_SQL:
+            log.append(KINDS)
             return MagicMock()
         if sql == NOTIFICATIONS_TYPE_CHECK_SQL:
             log.append(WIDEN)
@@ -427,8 +443,9 @@ def _step(log: list[str]) -> list[str]:
 
 
 # The dashboard-sharing step on an up-to-date tenant: the probe and its
-# commit, then the self-gated visibility block and its own commit.
-SHARING_STEP_UP_TO_DATE = [SHARING_PROBE, "COMMIT", VISIBILITY, "COMMIT"]
+# commit, then the self-gated visibility block and its own commit, then the
+# self-gated widget-kinds block and its own commit.
+SHARING_STEP_UP_TO_DATE = [SHARING_PROBE, "COMMIT", VISIBILITY, "COMMIT", KINDS, "COMMIT"]
 BASE_WIDGETS = base_dashboard_rows()[1]
 FULL_STEP = [
     PROBE,
@@ -527,7 +544,8 @@ async def test_auto_migration_failure_rolls_back_and_never_raises(failing, ran):
 
     assert _step(log) == [PROBE, *ran, "ROLLBACK"]
     # The later steps still ran.
-    assert log[-6:] == [*SHARING_STEP_UP_TO_DATE, WIDEN, "COMMIT"]
+    tail = [*SHARING_STEP_UP_TO_DATE, WIDEN, "COMMIT"]
+    assert log[-len(tail) :] == tail
 
 
 def test_seed_sql_binds_every_column():
@@ -648,7 +666,7 @@ def test_widget_model_matches_the_ddl():
     assert _fk(table.c.dashboard_id).target_fullname == "dashboards.id"
     checks = {c.name: str(c.sqltext) for c in table.constraints if c.name}
     assert checks["dashboard_widgets_kind_check"] == (
-        "kind IN ('kpi', 'bar', 'line', 'pie', 'table')"
+        "kind IN ('kpi', 'bar', 'line', 'pie', 'table', 'gauge', 'heatmap', 'treemap', 'sankey')"
     )
     assert {i.name for i in table.indexes} == {"idx_dashboard_widgets_dashboard"}
     assert table.c.options.server_default.arg == "{}"
@@ -730,10 +748,19 @@ def test_the_checks_hold_on_sqlite(sqlite_session):
         sqlite_session.commit()
     sqlite_session.rollback()
     dashboard = Dashboard(name="Ok", visibility="private")
-    dashboard.widgets = [DashboardWidget(kind="gauge", title="X", query="{}", layout="{}")]
+    dashboard.widgets = [DashboardWidget(kind="radar", title="X", query="{}", layout="{}")]
     sqlite_session.add(dashboard)
     with pytest.raises(IntegrityError):
         sqlite_session.commit()
+    sqlite_session.rollback()
+    # Every kind of the tuple passes, the four 2.1.0 chart kinds included.
+    dashboard = Dashboard(name="Every kind", visibility="private")
+    dashboard.widgets = [
+        DashboardWidget(kind=kind, title=kind, query="{}", layout="{}", sort_order=i)
+        for i, kind in enumerate(DASHBOARD_WIDGET_KINDS)
+    ]
+    sqlite_session.add(dashboard)
+    sqlite_session.commit()
 
 
 def test_only_one_default_dashboard(sqlite_session):

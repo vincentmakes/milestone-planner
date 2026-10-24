@@ -135,6 +135,7 @@ same reason; use `run_migration.py` instead.
 | `add_project_field_decimals` | Tenant | Adds `project_fields.decimals`, the decimals of a number project field (2.1.0, also applied automatically on startup) — see below |
 | `add_equipment_assignment_note` | Tenant | Adds `equipment_assignments.note`, the optional note of an equipment booking (2.0.0, also applied automatically on startup) — see below |
 | `add_dashboard_sharing` | Tenant | Dashboard sharing by site, team and person: `dashboard_sites`, `dashboard_teams` and `dashboard_users`, and the visibility value `roles` renamed `shared` (2.1.0, also applied automatically on startup; requires `add_dashboards` and `add_teams`) — see below |
+| `add_dashboard_widget_kinds` | Tenant | The widget kinds `gauge`, `heatmap`, `treemap` and `sankey` added to `dashboard_widgets_kind_check` — only for databases created from a pre-release 2.1.0 build (2.1.0, also applied automatically on startup; requires `add_dashboards`) — see below |
 | `add_dashboards` | Tenant | Dashboards: `dashboards`, `dashboard_roles` and `dashboard_widgets` (2.1.0, also applied automatically on startup, which also creates the *Overview* dashboard and grants the two dashboard permissions; requires `add_rbac`) — see below, and **let the application upgrade the tenant rather than running it first** |
 | `upgrade_to_v90` | Tenant | Major version upgrade |
 
@@ -272,7 +273,7 @@ python migrations/run_migration.py add_equipment_assignment_note
 |-------|-------|
 | `dashboards` | Name, description, owner (`owner_id`, set to NULL when the owner is deleted — their *private* dashboards are deleted with them), visibility `private` / `shared` / `everyone` (CHECK `dashboards_visibility_check`) and `is_default` (at most one default: partial unique index `dashboards_one_default`) |
 | `dashboard_roles` | The roles a dashboard is shared with (both foreign keys cascade: deleting a role or a dashboard removes the link) |
-| `dashboard_widgets` | One row per widget: kind `kpi` / `bar` / `line` / `pie` / `table` (CHECK `dashboard_widgets_kind_check`), title, the metric query, display options and grid layout as JSON text, order; deleted with their dashboard |
+| `dashboard_widgets` | One row per widget: kind `kpi` / `bar` / `line` / `pie` / `table` / `gauge` / `heatmap` / `treemap` / `sankey` (CHECK `dashboard_widgets_kind_check`), title, the metric query, display options and grid layout as JSON text, order; deleted with their dashboard |
 
 Dashboards are instance-wide (no site column), so the [site export](../user-guide/import-export.md#site-excel-export) has no dashboards sheet. The file also grants the tables and their sequences to the tenant's database user. The same statements run **automatically** when a tenant's connection pool is created (single-tenant: at start-up) and a dashboard table is missing (see [Automatic Tenant Upgrades](#automatic-tenant-upgrades)); in that same run, and only then, the application:
 
@@ -311,6 +312,16 @@ The same statements run **automatically** when a tenant's connection pool is cre
 
 ```bash
 python migrations/run_migration.py add_dashboard_sharing
+```
+
+#### Widget Kinds
+
+`add_dashboard_widget_kinds` holds one self-gated block for databases created from a **pre-release 2.1.0 build**, whose `dashboard_widgets_kind_check` allows only `kpi` / `bar` / `line` / `pie` / `table`: while the constraint does not allow `sankey`, it drops it and adds it back with the nine kinds (`gauge`, `heatmap`, `treemap` and `sankey` added). No row changes. On any other database — and on every fresh install, whose schema has the nine kinds from the start — it does nothing.
+
+The application runs the same block **automatically** on every tenant pool creation (single-tenant: at start-up), in its own step right after the visibility block. If that step fails (typically: the pool's database user does not own `dashboard_widgets`), the log shows an error naming this file, and saving a gauge, heatmap, treemap or sankey widget fails until it is applied:
+
+```bash
+python migrations/run_migration.py add_dashboard_widget_kinds
 ```
 
 ### Writing New Migrations
