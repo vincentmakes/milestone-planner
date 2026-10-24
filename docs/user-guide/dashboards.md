@@ -1,6 +1,6 @@
 # Dashboards
 
-**Dashboards** turn the plan into numbers and charts: how many weeks people are booked on each project, how a team's time splits between confirmed and unconfirmed work, how full each team and each instrument is, which phases are late, how many projects run at each site. A dashboard is a page of **widgets** — KPI tiles, bar, line and pie charts and tables — that anyone allowed can open, and that people who build dashboards can arrange, duplicate and share.
+**Dashboards** turn the plan into numbers and charts: how many weeks people are booked on each project, how a team's time splits between confirmed and unconfirmed work, how full each team and each instrument is, which phases are late, how many projects run at each site. A dashboard is a page of **widgets** — KPI tiles, gauges, bar, line and pie charts, heatmaps, treemaps, sankey diagrams and tables: nine kinds, see [Chart Kinds](#chart-kinds) — that anyone allowed can open, and that people who build dashboards can arrange, duplicate and share.
 
 Open it from **Dashboards** in the sidebar, just below My Work. The entry needs the **Dashboards** permission (Superuser and User by default, see [Roles & Permissions](settings.md#roles-permissions)).
 
@@ -44,6 +44,38 @@ Every Milestone instance starts with the **Overview**, shared with everyone:
 | **Projects by site** | This year's projects per site |
 
 People who build dashboards can **Duplicate** it and adapt the copy. Only an administrator can change or delete the Overview itself; once deleted, it does not come back.
+
+The **demo tenant** also comes with a second dashboard, **Capacity and flows**, shared with everyone, which shows the four larger chart kinds on the demo data (other tenants do not get it):
+
+| Widget | What it shows |
+|--------|---------------|
+| **Utilisation this quarter** | A gauge of the quarter's utilisation, with a target of 85 % |
+| **Booked weeks per team and month** | A heatmap: one row per team, one column per month of the last 12 months |
+| **Booked weeks by site and project** | A treemap: one box per site, split into its projects, this year |
+| **Project to team flows** | A sankey: the eight projects with the most booked weeks (the rest as *Other*) flowing to the teams that work on them |
+
+The gauge's utilisation needs the **Staff overview** permission (the User and Superuser roles hold it by default); a role without it sees the permission message on that tile and the other three widgets as usual.
+
+## Chart Kinds
+
+A widget is one of nine kinds. Each takes one measure and up to two **dimensions** (how the measure is broken down, see [The Widget Editor](#the-widget-editor)); the editor offers only the dimensions a kind can draw and says in the preview when something is missing.
+
+| Kind | What it shows | Dimensions | Refused measures | Options |
+|------|---------------|------------|------------------|---------|
+| **KPI** | One figure in large type, or the share of one value (a **Bucket**) | At most one, to show a share | — | Number format; the bucket for a share |
+| **Gauge** | One figure on a dial, against a target | None | — | **Target** and the number format |
+| **Bar** | One bar per value of the first dimension, split by the second | Up to two | — | Stacked or 100 % bars, horizontal or vertical, number format |
+| **Line** | One line per value of the second dimension, along the first (usually a period) | Up to two | — | Legend, number format |
+| **Pie** | Slices of the whole | Exactly one | Available days | Legend, number format |
+| **Heatmap** | A grid of coloured cells: rows by one dimension, columns by the other | Exactly two | — | Number format |
+| **Treemap** | Boxes sized by the measure: one per value of the first dimension, split by the second | One or two, no period | Utilisation, equipment utilisation, available days, people over capacity | Number format |
+| **Sankey** | Flows from the values of the first dimension to those of the second, as wide as the measure | Exactly two, no period | Utilisation, equipment utilisation, available days, people over capacity | Number format |
+| **Table** | The figures as rows and columns | Up to two | — | Number format |
+
+- **Gauge**: the dial runs from 0 (lower when the value is negative, as available days can be) to a little past the value and the target. With a **Target**, the scale is **green** up to the target, **amber** from the target up to 100 % (for a percentage) or up to 15 % above the target (for days, weeks or counts), and **red** beyond; the bar showing the value takes the colour of its band, and *Target 85 %* is written under the figure. A target of 100 % or more leaves no amber band. Without a target the dial has one colour
+- **Heatmap**: when one of the two dimensions is a **Period**, the periods are the columns; otherwise the first dimension gives the rows and the second the columns. A colour scale under the grid gives the values; each cell shows its figure when the cells are wide and tall enough. An **empty cell** means no data for that pair (a utilisation with no capacity there), not zero
+- **Treemap** and **Sankey** add their values up, so they refuse the four measures that cannot be added (two percentages, available days, which can be negative, and people over capacity), and the **Period** dimension is not offered. With **Top N**, the values beyond the N largest of the first dimension become one *Other* box or node
+- A chart with nothing to draw for its period reads *Nothing to show for this period*
 
 ## What the Numbers Mean
 
@@ -167,17 +199,17 @@ On a phone (640 px wide or less) dashboards are view-only.
 
 ![The widget editor: a bar chart of booked weeks by person this year, with the live preview beside the form](../assets/screenshots/dashboard-builder.png){ loading=lazy }
 
-1. **Kind** — KPI, Bar, Line, Pie or Table
+1. **Kind** — KPI, Gauge, Bar, Line, Pie, Heatmap, Treemap, Sankey or Table (see [Chart Kinds](#chart-kinds)). A gauge has no dimensions; a heatmap and a sankey need two, and the second dimension field opens once the first is chosen
 2. **Title**
 3. **Measure** — grouped by family: Bookings, Projects, Phases, Capacity and Equipment (see [Measures](#measures)). The capacity measures are listed only with the **Staff overview** permission, the equipment measures only with the **Equipment view** permission. A hint under the list says how the measure counts its days
-4. **Dimension 1** and **Dimension 2** — how to break the measure down: Site, Team, Project team, Person, Project, Project manager, Customer, Confirmed, Tag, Phase, Status, Equipment, Equipment type, any dropdown or toggle **project field**, or Period (by year, quarter, month or week). Only the dimensions that make sense for the measure are offered; a pie takes one dimension, a KPI at most one
+4. **Dimension 1** and **Dimension 2** — how to break the measure down: Site, Team, Project team, Person, Project, Project manager, Customer, Confirmed, Tag, Phase, Status, Equipment, Equipment type, any dropdown or toggle **project field**, or Period (by year, quarter, month or week). Only the dimensions that make sense for the measure are offered; a pie takes one dimension, a KPI at most one, a heatmap and a sankey two, a treemap one or two (no Period for treemaps and sankeys), a gauge none
 5. **Filters** — only those of the measure's family: sites, teams, project teams, people, projects, tags, field items, confirmed or unconfirmed projects, archived projects for bookings; the same without teams and people for projects, plus **Milestones** for phases; **Sites**, **Teams** and **People** (the person's) for capacity; the project filters plus **Equipment** and **Equipment types** for the equipment measures (Sites, Equipment and Equipment types only for equipment utilisation). Changing the measure drops the filters the new one does not take
 6. **Period** — one of the [twelve periods](#periods) or a custom range
-7. **Percent of** — show shares instead of amounts: of the **total**, or within each value of the **first dimension** (each bar adds up to 100 %). Not offered for **Utilisation**, **Equipment utilisation** (already percentages), **Available days** (which can be negative) and **People over capacity** (counted again in each bar, so the bars are not parts of the total); a KPI of these four shows its figure for the whole period, with no dimension
-8. **Top N** — keep the largest values and group the rest as *Other*
-9. **Options** — stacked or 100 % bars and their orientation (no stacked or 100 % bars of the four measures without a percentage: a stack of percentages or of negative days adds up to nothing), a legend for lines and pies, the number format. A KPI showing a share needs a **Bucket**: the value whose share it shows (for example *Confirmed*)
+7. **Percent of** — show shares instead of amounts: of the **total**, or within each value of the **first dimension** (each bar adds up to 100 %). Not offered for **Utilisation**, **Equipment utilisation** (already percentages), **Available days** (which can be negative) and **People over capacity** (counted again in each bar, so the bars are not parts of the total); a KPI of these four shows its figure for the whole period, with no dimension. A gauge, which has no dimension, offers neither Percent of nor Top N
+8. **Top N** — keep the largest values and group the rest as *Other* (on a heatmap, treemap or sankey, *Other* is a row, a box or a node)
+9. **Options** — stacked or 100 % bars and their orientation (no stacked or 100 % bars of the four measures without a percentage: a stack of percentages or of negative days adds up to nothing), a legend for lines and pies, the number format. A KPI showing a share needs a **Bucket**: the value whose share it shows (for example *Confirmed*). A gauge takes a **Target** in the measure's unit (the hint under the field says which: *In %*, *In weeks*, …); leave it empty for no target. Only a number of 0 or more is kept
 
-A pie of **Available days** is refused (negative days cannot be slices). If the combination cannot be answered, the preview says why in plain words, and **Add widget** / **Save Changes** waits until you fix it. A new widget is placed below the others; arrange it on the grid afterwards.
+A pie of **Available days** is refused (negative days cannot be slices), and so is a treemap or sankey of the four measures that cannot be added up. If the combination cannot be answered, the preview says why in plain words, and **Add widget** / **Save Changes** waits until you fix it. A new widget is placed below the others; arrange it on the grid afterwards.
 
 ### Sharing
 
@@ -219,6 +251,7 @@ When two people edit the same dashboard at once, the last one to save wins.
 - Bookings waiting for approval are never counted
 - "Today" and "this year" follow the server's date (UTC)
 - The **People** filter lists the people of the site selected in the header, although a dashboard covers every site you can see
+- A gauge has no dimensions, a heatmap and a sankey exactly two, a treemap one or two; widgets built through the API outside these rules are still drawn (a one-dimension heatmap as a single column, for example)
 
 ## What-If Mode
 
