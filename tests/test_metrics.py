@@ -136,6 +136,7 @@ def facts(
     capacity: list[CapacityFact] | None = None,
     equipment_bookings: list[EquipmentBookingFact] | None = None,
     availability: list[EquipmentAvailabilityFact] | None = None,
+    milestones: list[PhaseFact] | None = None,
 ) -> Facts:
     return Facts(
         projects={p.id: p for p in (projects if projects is not None else [project()])},
@@ -171,6 +172,7 @@ def facts(
         equipment=dict(EQUIPMENT),
         equipment_bookings=equipment_bookings or [],
         equipment_availability=availability or [],
+        milestones=milestones or [],
     )
 
 
@@ -841,6 +843,76 @@ FACT_CASES: list[tuple[str, Facts, MetricQuery, dict[str, Any]]] = [
         ),
         q("phases_due", filters={"milestones": "only"}),
         {"rows": [((), 1)], "total": 1},
+    ),
+    (
+        "a milestone below a phase is due on its date, in its month (ids apart from phases')",
+        facts(
+            phases=[PhaseFact(1, 1, "Design", d("2026-02-02"), d("2026-03-13"))],
+            # Subphase 1: the same id as phase 1, counted on its own.
+            milestones=[PhaseFact(1, 1, "Design", d("2026-04-10"), d("2026-04-10"), True)],
+        ),
+        q(
+            "phases_due",
+            [{"kind": "period", "grain": "month"}],
+            {"from": "2026-02-01", "to": "2026-04-30"},
+        ),
+        {"rows": [(("Feb 2026",), 0), (("Mar 2026",), 1), (("Apr 2026",), 1)], "total": 2},
+    ),
+    (
+        "a late milestone below a phase is overdue unless done; by its top phase's type",
+        facts(
+            phases=[PhaseFact(1, 1, "Design", d("2026-03-02"), d("2026-03-13"), False, "done")],
+            milestones=[
+                PhaseFact(5, 1, "Design", d("2026-06-01"), d("2026-06-01"), True, "blocked"),
+                PhaseFact(6, 1, "Build", d("2026-06-02"), d("2026-06-02"), True, "done"),
+                PhaseFact(7, 1, "Build", d("2026-11-02"), d("2026-11-02"), True),
+            ],
+        ),
+        q(
+            "phases_overdue",
+            [{"kind": "phase_type"}, {"kind": "status"}],
+            {"from": "2026-01-01", "to": "2026-12-31"},
+        ),
+        {"rows": [(("Design", "Blocked"), 1)], "total": 1},
+    ),
+    (
+        "milestones: only, on phases due, counts the milestones below a phase too",
+        facts(
+            phases=[
+                PhaseFact(1, 1, "Design", d("2026-03-02"), d("2026-03-13")),
+                PhaseFact(2, 1, "Gate", d("2026-03-20"), d("2026-03-20"), is_milestone=True),
+            ],
+            milestones=[PhaseFact(3, 1, "Design", d("2026-03-25"), d("2026-03-25"), True)],
+        ),
+        q("phases_due", filters={"milestones": "only"}),
+        {"rows": [((), 2)], "total": 2},
+    ),
+    (
+        "milestones: exclude, on phases due, leaves the milestones below a phase out",
+        facts(
+            phases=[PhaseFact(1, 1, "Design", d("2026-03-02"), d("2026-03-13"))],
+            milestones=[PhaseFact(3, 1, "Design", d("2026-03-25"), d("2026-03-25"), True)],
+        ),
+        q("phases_due", filters={"milestones": "exclude"}),
+        {"rows": [((), 1)], "total": 1},
+    ),
+    (
+        "Phases count top-level phases only, milestones: only included",
+        facts(
+            phases=[
+                PhaseFact(1, 1, "Design", d("2026-03-02"), d("2026-03-13")),
+                PhaseFact(2, 1, "Gate", d("2026-03-20"), d("2026-03-20"), is_milestone=True),
+            ],
+            milestones=[PhaseFact(3, 1, "Design", d("2026-03-25"), d("2026-03-25"), True)],
+        ),
+        q("phase_count", filters={"milestones": "only"}),
+        {"rows": [((), 1)], "total": 1},
+    ),
+    (
+        "Phases and Phase weeks never read the milestones below a phase",
+        facts(milestones=[PhaseFact(3, 1, "Design", d("2026-03-25"), d("2026-03-25"), True)]),
+        q("phase_weeks"),
+        {"rows": [((), 0)], "total": 0},
     ),
     (
         "an unknown stored status sorts after Done",

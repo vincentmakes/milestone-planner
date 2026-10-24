@@ -105,12 +105,12 @@ Needs the **Staff overview** permission. A breakdown by **Person** and the **Peo
 |---------|----------------|
 | **Phases** | Phases whose dates touch the period |
 | **Phase weeks** | The working weeks a phase lasts inside the period |
-| **Phases due** | Phases whose **end date** lies in the period (a milestone: its date), each filed once, in the month, quarter or year it is due |
-| **Phases overdue** | Phases due **before today** that are not **Done**, filed by their end date |
+| **Phases due** | Phases whose **end date** lies in the period (a milestone: its date), each filed once, in the month, quarter or year it is due — and the **milestones below a phase**, at any depth |
+| **Phases overdue** | Phases and milestones due **before today** that are not **Done**, filed by their end date |
 
-- The phase measures count the phases of a project, not their subphases
+- **Phases** and **Phase weeks** count top-level phases; **Phases due** and **Phases overdue** also count milestones below a phase (a milestone subphase of any depth, on its date, under the type of the phase it sits in)
 - Break them down by **Status** (To do, In progress, Blocked, Done — the Kanban columns) or by **Phase**
-- The **Milestones** filter includes milestones (the default), shows **only** milestones, or leaves them out
+- The **Milestones** filter includes milestones (the default), shows **only** milestones, or leaves them out. On Phases due and Phases overdue, *only* counts the milestones at every level; on Phases and Phase weeks, the milestone phases
 
 ### Equipment
 

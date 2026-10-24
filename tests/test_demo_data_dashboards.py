@@ -357,6 +357,20 @@ def build_facts(demo: DemoData) -> metrics.Facts:
         )
         for i, p in enumerate(demo.phases, start=1)
     ]
+    # The milestones below a phase (any depth): their date, the top phase's type.
+    milestones = [
+        metrics.PhaseFact(
+            i,
+            project_id[s["project"]],
+            s["phase"],
+            s["start_date"],
+            s["start_date"],
+            is_milestone=True,
+            status=s["status"],
+        )
+        for i, s in enumerate(demo.subphases, start=1)
+        if s["is_milestone"]
+    ]
     phase_of_subphase = {(s["project"], s["name"]): s["phase"] for s in demo.subphases}
     bookings: list[metrics.BookingFact] = []
 
@@ -483,6 +497,7 @@ def build_facts(demo: DemoData) -> metrics.Facts:
     return metrics.Facts(
         projects=projects,
         phases=phases,
+        milestones=milestones,
         bookings=bookings,
         holidays=holidays,
         persons=persons,
@@ -781,6 +796,19 @@ def test_phases_are_due_every_month_and_one_is_late(demo: DemoData, facts: metri
         viewer=VIEWER,
     )
     assert sum(1 for row in due.rows if row["value"]) >= 3
+    # The demo's milestones sit below phases: Phases due counts them.
+    milestones = metrics.aggregate(
+        facts,
+        MetricQuery.model_validate(
+            {
+                "measure": "phases_due",
+                "dimensions": [{"kind": "period", "grain": "month"}],
+                "filters": {"milestones": "only", "period": {"relative": "next_12_months"}},
+            }
+        ),
+        viewer=VIEWER,
+    )
+    assert sum(1 for row in milestones.rows if row["value"]) >= 1
     statuses = metrics.aggregate(
         facts, _query("phase_count", [{"kind": "status"}], "all"), viewer=VIEWER
     )

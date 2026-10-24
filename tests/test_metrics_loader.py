@@ -335,6 +335,91 @@ async def test_load_facts_accepts_the_families(db):
     assert facts.equipment_bookings == [] and facts.equipment_availability == []
 
 
+async def test_milestones_below_a_phase_load_at_any_depth(db):
+    db.add_all(
+        [
+            # Under subphase 201 (itself under 200, under phase 100 "Design").
+            ProjectSubphase(
+                id=210,
+                parent_id=201,
+                parent_type="subphase",
+                project_id=1,
+                name="Sign-off",
+                start_date=d("2026-03-11"),
+                end_date=d("2026-03-12"),
+                is_milestone=1,
+                status="blocked",
+                depth=3,
+            ),
+            # Directly under a phase.
+            ProjectSubphase(
+                id=211,
+                parent_id=101,
+                parent_type="phase",
+                project_id=1,
+                name="Review",
+                start_date=d("2026-03-23"),
+                end_date=d("2026-03-23"),
+                is_milestone=1,
+            ),
+            # A broken parent chain: its own name stands in for the phase type.
+            ProjectSubphase(
+                id=212,
+                parent_id=999,
+                parent_type="subphase",
+                project_id=1,
+                name="Orphan gate",
+                start_date=d("2026-03-25"),
+                end_date=d("2026-03-25"),
+                is_milestone=1,
+            ),
+            # After the period.
+            ProjectSubphase(
+                id=213,
+                parent_id=100,
+                parent_type="phase",
+                project_id=1,
+                name="Late gate",
+                start_date=d("2026-04-15"),
+                end_date=d("2026-04-15"),
+                is_milestone=1,
+            ),
+        ]
+    )
+    await db.flush()
+    facts = await _load(db)
+    assert [
+        (m.id, m.project_id, m.type, m.start, m.end, m.is_milestone, m.status)
+        for m in facts.milestones
+    ] == [
+        (210, 1, "Design", d("2026-03-11"), d("2026-03-11"), True, "blocked"),
+        (211, 1, "Gate", d("2026-03-23"), d("2026-03-23"), True, "todo"),
+        (212, 1, "Orphan gate", d("2026-03-25"), d("2026-03-25"), True, "todo"),
+    ]
+    # Not phases: Phases counts the two top-level phases of March only.
+    assert [p.id for p in facts.phases] == [100, 101]
+    viewer = Viewer(frozenset())
+
+    def ask(measure, **filters):
+        query = MetricQuery.model_validate(
+            {
+                "measure": measure,
+                "filters": {"period": {"from": "2026-03-01", "to": "2026-03-31"}, **filters},
+            }
+        )
+        return aggregate(facts, query, viewer=viewer).to_dict()["total"]
+
+    # Due in March: phase 100 (13 March), milestone 101 (20 March) and the three below.
+    assert ask("phases_due") == 5
+    assert ask("phases_due", milestones="only") == 4
+    assert ask("phases_due", milestones="exclude") == 1
+    assert ask("phase_count") == 2
+    assert ask("phase_count", milestones="only") == 1
+    # Outside the visible sites: none.
+    hidden = await _load(db, visible=frozenset({2}))
+    assert hidden.milestones == []
+
+
 async def test_load_extent(db):
     assert await load_extent(db, visible_site_ids=None, archived="exclude") == (
         d("2026-03-01"),

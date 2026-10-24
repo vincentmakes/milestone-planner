@@ -109,7 +109,8 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 # Measure families: which facts a measure counts. ``booking`` = approved
-# staff bookings, ``project`` = projects, ``phase`` = top-level phases,
+# staff bookings, ``project`` = projects, ``phase`` = top-level phases (and,
+# for Phases due / overdue, the milestones below them),
 # ``capacity`` = bookable people's capacity (round 3, Task 2), ``equipment`` =
 # equipment bookings and availability (round 3, Task 3).
 FAMILIES: tuple[str, ...] = ("booking", "project", "phase", "capacity", "equipment")
@@ -857,6 +858,10 @@ class Facts:
     equipment: dict[int, EquipmentInfo] = field(default_factory=dict)
     equipment_bookings: list[EquipmentBookingFact] = field(default_factory=list)
     equipment_availability: list[EquipmentAvailabilityFact] = field(default_factory=list)
+    # The milestones below a phase (subphase rows with ``is_milestone``, any
+    # depth) inside the period: ``start = end`` = their date, ``type`` = the
+    # top phase's type. Read by Phases due / Phases overdue only.
+    milestones: list[PhaseFact] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -1471,23 +1476,33 @@ def _items(
             if _project_passes(project, flt):
                 yield _Item("project", project.id, project, project.start, project.end)
     elif kind == "phase":
-        for phase in facts.phases:
-            if flt.milestones == "only" and not phase.is_milestone:
-                continue
-            if flt.milestones == "exclude" and phase.is_milestone:
-                continue
-            project = facts.projects.get(phase.project_id)
-            if project is None or not _project_passes(project, flt):
-                continue
-            # A milestone is one day (the loader already sets its end to it).
-            end = phase.start if phase.is_milestone else phase.end
-            if measure in ("phases_due", "phases_overdue"):
-                # Filed on its due date (its end), once.
-                if measure == "phases_overdue" and (end >= facts.today or phase.status == "done"):
+        # Phases and Phase weeks count top-level phases; Phases due and
+        # Phases overdue also count the milestones below a phase (at any
+        # depth, ``facts.milestones``), told apart by their item kind.
+        due = measure in ("phases_due", "phases_overdue")
+        sources: list[tuple[str, list[PhaseFact]]] = [("phase", facts.phases)]
+        if due:
+            sources.append(("subphase_milestone", facts.milestones))
+        for item_kind, phases in sources:
+            for phase in phases:
+                if flt.milestones == "only" and not phase.is_milestone:
                     continue
-                yield _Item("phase", phase.id, project, end, end, phase=phase)
-            else:
-                yield _Item("phase", phase.id, project, phase.start, end, phase=phase)
+                if flt.milestones == "exclude" and phase.is_milestone:
+                    continue
+                project = facts.projects.get(phase.project_id)
+                if project is None or not _project_passes(project, flt):
+                    continue
+                # A milestone is one day (the loader already sets its end to it).
+                end = phase.start if phase.is_milestone else phase.end
+                if due:
+                    # Filed on its due date (its end), once.
+                    if measure == "phases_overdue" and (
+                        end >= facts.today or phase.status == "done"
+                    ):
+                        continue
+                    yield _Item(item_kind, phase.id, project, end, end, phase=phase)
+                else:
+                    yield _Item(item_kind, phase.id, project, phase.start, end, phase=phase)
     elif kind == "capacity":
         # Every day of the period (the piece loop clips to it and its buckets).
         for fact in facts.capacity.values():
@@ -2378,6 +2393,7 @@ async def load_facts(
     field_values: dict[int, dict[int, Any]] = {}
     phase_info: dict[int, tuple[str, PhaseFact]] = {}
     subphase_parents: dict[int, tuple[int, str]] = {}
+    milestone_rows: list[Any] = []
     if project_ids:
         for project_id, team_id in (
             await db.execute(
@@ -2422,12 +2438,36 @@ async def load_facts(
                     row.status or "todo",
                 ),
             )
-        if subphase_rows:
+        # The milestones below a phase, at any depth (Phases due / overdue).
+        milestone_rows = list(
+            (
+                await db.execute(
+                    select(
+                        ProjectSubphase.id,
+                        ProjectSubphase.project_id,
+                        ProjectSubphase.name,
+                        ProjectSubphase.start_date,
+                        ProjectSubphase.status,
+                    )
+                    .where(
+                        ProjectSubphase.project_id.in_(project_ids),
+                        ProjectSubphase.is_milestone != 0,
+                        ProjectSubphase.start_date >= start,
+                        ProjectSubphase.start_date <= end,
+                    )
+                    .order_by(ProjectSubphase.id)
+                )
+            ).all()
+        )
+        # The subphase tree of the projects whose subphase bookings or
+        # milestones need their top phase (bounded to the loaded projects).
+        walk_projects = sorted({r[1] for r in subphase_rows} | {r[1] for r in milestone_rows})
+        if walk_projects:
             for row in (
                 await db.execute(
                     select(
                         ProjectSubphase.id, ProjectSubphase.parent_id, ProjectSubphase.parent_type
-                    ).where(ProjectSubphase.project_id.in_(sorted({r[1] for r in subphase_rows})))
+                    ).where(ProjectSubphase.project_id.in_(walk_projects))
                 )
             ).all():
                 subphase_parents[row.id] = (row.parent_id, row.parent_type)
@@ -2454,6 +2494,22 @@ async def load_facts(
 
     phases = [fact for _, fact in phase_info.values() if fact.start <= end and fact.end >= start]
     phases.sort(key=lambda fact: fact.id)
+    milestones: list[PhaseFact] = []
+    for row in milestone_rows:
+        top = _top_phase(row[0], subphase_parents)
+        top_info = phase_info.get(top) if top is not None else None
+        # The top phase's type; the milestone's own name when the walk fails.
+        milestones.append(
+            PhaseFact(
+                row[0],
+                row[1],
+                top_info[0] if top_info else row[2],
+                row[3],
+                row[3],
+                True,
+                row[4] or "todo",
+            )
+        )
 
     # The teams of the booked people at each site.
     person_ids = sorted({row[2] for row in (*project_rows, *phase_rows, *subphase_rows)})
@@ -2716,6 +2772,7 @@ async def load_facts(
     return Facts(
         projects=projects,
         phases=phases,
+        milestones=milestones,
         bookings=bookings,
         holidays=holidays,
         persons=persons,
