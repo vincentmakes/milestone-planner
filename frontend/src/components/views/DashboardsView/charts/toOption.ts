@@ -16,7 +16,9 @@
  *   category is normalised to 100 here — a single dimension against the
  *   server's distinct `total`, never the sum of its rows.
  * - Every category label is shown (`interval: 0`); a vertical bar or line
- *   chart with more than six categories tilts them by 30°.
+ *   chart with more than six categories, or a narrow one (`layout.narrow`:
+ *   less than 90 px per category, measured by `EChart`), tilts them by 30°,
+ *   and a narrow one truncates them at 72 px instead of 96.
  * - `orientation: 'horizontal'` puts the categories on the vertical axis.
  * - Colours: a value's own colour (team, tag, field item), else the palette
  *   by position; "Other" in the muted text colour.
@@ -63,6 +65,26 @@ const round = (value: number): number => Math.round(value * 100) / 100;
 /** Categories above which a vertical chart tilts its labels. */
 export const ROTATE_ABOVE = 6;
 
+/** Below this many pixels per category a chart is narrow (`isNarrow`). */
+export const NARROW_CATEGORY_PX = 90;
+
+/** A category label's width: truncated past it. */
+export const LABEL_WIDTH = 96;
+export const NARROW_LABEL_WIDTH = 72;
+
+/** How the chart is laid out on screen (measured by `EChart`). */
+export interface ChartLayout {
+  /** Less than `NARROW_CATEGORY_PX` per category */
+  narrow?: boolean;
+}
+
+/** The number of categories the chart draws (the first dimension's distinct values). */
+export const categoryCount = (result: MetricResult): number => distinctKeys(result, 0).length;
+
+/** Whether a chart `width` px wide is narrow for `categories` categories (an unmeasured width never is). */
+export const isNarrow = (width: number, categories: number): boolean =>
+  width > 0 && categories > 0 && width / categories < NARROW_CATEGORY_PX;
+
 /** Axis tick labels: up to one decimal, `%` on a percentage axis. */
 const axisLabel = (percent: boolean) => (value: number) =>
   formatMetric(value, percent ? 'percent' : 'days', { number_format: Number.isInteger(value) ? 'integer' : null });
@@ -73,7 +95,8 @@ export function toOption(
   options: WidgetOptions | null | undefined,
   theme: ChartTheme,
   /** The measure's name, for a single series ("Booked weeks") */
-  measureLabel?: string
+  measureLabel?: string,
+  layout: ChartLayout = {}
 ): ChartOption {
   const opts = options ?? {};
   /** A value with its unit word ("70.1 weeks"); nothing after a percentage. */
@@ -183,8 +206,8 @@ export function toOption(
       : {
           interval: 0,
           overflow: 'truncate',
-          width: 96,
-          ...(categories.length > ROTATE_ABOVE ? { rotate: 30 } : {}),
+          width: layout.narrow ? NARROW_LABEL_WIDTH : LABEL_WIDTH,
+          ...(layout.narrow || categories.length > ROTATE_ABOVE ? { rotate: 30 } : {}),
         },
   };
   const valueAxis = {

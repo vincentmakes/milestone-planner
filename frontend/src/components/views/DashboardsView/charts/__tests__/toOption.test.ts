@@ -5,7 +5,7 @@
  * slices, colours (own, palette, "Other" muted), legend and tooltip values.
  */
 import { describe, it, expect } from 'vitest';
-import { toOption } from '../toOption';
+import { categoryCount, isNarrow, LABEL_WIDTH, NARROW_LABEL_WIDTH, toOption } from '../toOption';
 import type { ChartTheme } from '../echartsTheme';
 import type { MetricKey, MetricResult, MetricRow } from '@/types';
 
@@ -130,6 +130,26 @@ describe('toOption — bar and line, one dimension', () => {
     const horizontal = toOption('bar', seven, { orientation: 'horizontal' }, theme) as AnyOption;
     expect(horizontal.yAxis.axisLabel.interval).toBe(0);
     expect(horizontal.yAxis.axisLabel.rotate).toBeUndefined();
+  });
+
+  it('tilts and shortens the labels of a narrow vertical chart, never a horizontal one', () => {
+    const level = toOption('bar', single, {}, theme) as AnyOption;
+    expect(level.xAxis.axisLabel.width).toBe(LABEL_WIDTH);
+    const narrow = toOption('bar', single, {}, theme, undefined, { narrow: true }) as AnyOption;
+    expect(narrow.xAxis.axisLabel).toMatchObject({ interval: 0, rotate: 30, width: NARROW_LABEL_WIDTH });
+    expect(NARROW_LABEL_WIDTH).toBe(72);
+    expect((toOption('line', single, null, theme, 'W', { narrow: true }) as AnyOption).xAxis.axisLabel.rotate).toBe(30);
+    const horizontal = toOption('bar', single, { orientation: 'horizontal' }, theme, undefined, { narrow: true }) as AnyOption;
+    expect(horizontal.yAxis.axisLabel.rotate).toBeUndefined();
+    expect(horizontal.yAxis.axisLabel.width).toBe(120);
+  });
+
+  it('is narrow below 90 px per category, never unmeasured', () => {
+    expect(categoryCount(single)).toBe(single.rows.length);
+    expect(isNarrow(300, 4)).toBe(true);
+    expect(isNarrow(360, 4)).toBe(false);
+    expect(isNarrow(0, 4)).toBe(false);
+    expect(isNarrow(50, 0)).toBe(false);
   });
 
   it('keeps an all-zero series at 0 when normalising', () => {

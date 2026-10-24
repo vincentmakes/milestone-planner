@@ -262,10 +262,15 @@ describe('DashboardGrid', () => {
         return this.parentElement;
       });
     const header = root.querySelector('[data-widget-id="2"] .widgetHeader')!;
+    const grid = root.firstElementChild!;
+    expect(grid).not.toHaveAttribute('data-gesture');
     fireEvent.mouseDown(header, { button: 0, clientX: 700, clientY: 20 });
     fireEvent.mouseMove(document, { button: 0, buttons: 1, clientX: 600, clientY: 300 });
+    // Text selection is off in the grid while the drag lasts
+    expect(grid).toHaveAttribute('data-gesture');
     fireEvent.mouseMove(document, { button: 0, buttons: 1, clientX: 500, clientY: 400 });
     fireEvent.mouseUp(document, { button: 0, clientX: 500, clientY: 400 });
+    expect(grid).not.toHaveAttribute('data-gesture');
     expect(onLayoutChange).toHaveBeenCalled();
     expect(onLayoutChange.mock.calls[0][1]).toBe('gesture');
     await Promise.resolve();
@@ -334,6 +339,19 @@ describe('DashboardGrid', () => {
     // The row below and the other breakpoints are untouched
     expect(reported[3].lg).toEqual(row[2].layout.lg);
     expect(reported[2].md).toEqual(row[1].layout.md);
+  });
+
+  it('marks the grid as in a gesture from the resize’s start to its stop only', () => {
+    const { container: root } = renderRow(vi.fn());
+    const grid = root.firstElementChild!;
+    expect(grid).toHaveAttribute('class', expect.stringContaining('editing'));
+    expect(grid).not.toHaveAttribute('data-gesture');
+    press(root.querySelector('[data-widget-id="1"] > .react-resizable-handle-se')!);
+    expect(grid).toHaveAttribute('data-gesture');
+    moveTo(1198);
+    expect(grid).toHaveAttribute('data-gesture');
+    release(1198);
+    expect(grid).not.toHaveAttribute('data-gesture');
   });
 
   it('widens the right neighbour while a widget shrinks, and gives it back within the gesture', () => {

@@ -32,13 +32,18 @@
  * with (the stop compacts the last move's layout) carries them: one undo
  * step. Height keeps the library's push-down.
  *
+ * While a drag or resize is in progress the container carries `data-gesture`
+ * (set on the DOM node, no re-render mid-gesture), and the stylesheet turns
+ * off text selection inside the grid for that time only, so the pointer
+ * sweeping over the widgets' titles never highlights them.
+ *
  * The library's stylesheets are imported here, so they land in the
  * Dashboards chunk; `DashboardGrid.module.css` restyles the items and the
  * drop placeholder with app tokens.
  */
 
 import { useCallback, useMemo, useRef } from 'react';
-import type { RefObject } from 'react';
+import type { MutableRefObject } from 'react';
 import { getBreakpointFromWidth, Responsive, useContainerWidth } from 'react-grid-layout';
 import type { Layout, LayoutItem, ResponsiveLayouts } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
@@ -83,14 +88,32 @@ export function DashboardGrid({
   const { width, containerRef, mounted } = useContainerWidth({ measureBeforeMount: true });
   const layouts = useMemo(() => toGridLayouts(widgets), [widgets]);
 
+  // The container node, shared with the library's width measurement.
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const setRoot = useCallback(
+    (node: HTMLDivElement | null) => {
+      rootRef.current = node;
+      // The library types the ref for React 19 (`RefObject<T | null>`).
+      (containerRef as MutableRefObject<HTMLDivElement | null>).current = node;
+    },
+    [containerRef]
+  );
+  // `data-gesture` on the container while a drag or resize is in progress.
+  const markGesture = useCallback((on: boolean) => {
+    if (on) rootRef.current?.setAttribute('data-gesture', '');
+    else rootRef.current?.removeAttribute('data-gesture');
+  }, []);
+  const startDrag = useCallback(() => markGesture(true), [markGesture]);
+
   // Set between the end of a drag / resize and the report it makes.
   const gestureRef = useRef(false);
   const endGesture = useCallback(() => {
+    markGesture(false);
     gestureRef.current = true;
     queueMicrotask(() => {
       gestureRef.current = false;
     });
-  }, []);
+  }, [markGesture]);
 
   // The columns of the breakpoint the library picks for this width.
   const cols = GRID_COLS[getBreakpointFromWidth(GRID_BREAKPOINTS, width) as GridBreakpoint];
@@ -100,7 +123,8 @@ export function DashboardGrid({
   const resizeStartRef = useRef<Layout | null>(null);
   const startResize = useCallback((layout: Layout) => {
     resizeStartRef.current = layout.map((entry) => ({ ...entry }));
-  }, []);
+    markGesture(true);
+  }, [markGesture]);
   const resizeFluidly = useCallback(
     (layout: Layout, _old: LayoutItem | null, item: LayoutItem | null, placeholder: LayoutItem | null) => {
       const start = resizeStartRef.current;
@@ -134,9 +158,8 @@ export function DashboardGrid({
   );
 
   return (
-    // The library types the ref for React 19 (`RefObject<T | null>`).
     <div
-      ref={containerRef as RefObject<HTMLDivElement>}
+      ref={setRoot}
       className={`${styles.container}${editing ? ` ${styles.editing}` : ''}`}
     >
       {mounted && width > 0 && (
@@ -150,6 +173,7 @@ export function DashboardGrid({
           dragConfig={{ enabled: editing, handle: '.widgetHeader', cancel: '.widgetAction' }}
           resizeConfig={{ enabled: editing, handles: ['se'] }}
           onLayoutChange={handleLayoutChange}
+          onDragStart={startDrag}
           onDragStop={endGesture}
           onResizeStart={startResize}
           onResize={resizeFluidly}

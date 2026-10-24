@@ -119,6 +119,43 @@ describe('EChart', () => {
     expect(fake.instance.resize).toHaveBeenCalledTimes(1);
   });
 
+  it('tilts and shortens the labels when its container is narrow for its categories', () => {
+    const three: MetricResult = {
+      ...result(3),
+      rows: [1, 2, 3].map((key) => ({ keys: [{ key, label: `Team ${key}` }], value: key })),
+    };
+    const { rerender } = render(<EChart kind="bar" result={result(3)} label="W" />);
+    const [observer] = FakeResizeObserver.instances;
+    const resizeTo = (width: number) =>
+      act(() => observer.callback([{ contentRect: { width } } as ResizeObserverEntry], observer as unknown as ResizeObserver));
+    expect(fake.instance.setOption.mock.calls[0][0].xAxis.axisLabel.rotate).toBeUndefined();
+    // One category in 60 px: narrow → the option is set again with tilted, shorter labels
+    resizeTo(60);
+    expect(fake.instance.resize).toHaveBeenCalledTimes(1);
+    expect(fake.instance.setOption).toHaveBeenCalledTimes(2);
+    expect(fake.instance.setOption.mock.calls[1][0].xAxis.axisLabel).toMatchObject({ rotate: 30, width: 72 });
+    // Wide again: level labels; a resize that stays wide sets nothing new
+    resizeTo(400);
+    expect(fake.instance.setOption.mock.calls[2][0].xAxis.axisLabel.rotate).toBeUndefined();
+    resizeTo(420);
+    expect(fake.instance.setOption).toHaveBeenCalledTimes(3);
+    // Three categories in the same 420 px: 140 px each, still level…
+    rerender(<EChart kind="bar" result={three} label="W" />);
+    expect(fake.instance.setOption.mock.calls[3][0].xAxis.axisLabel.rotate).toBeUndefined();
+    // …but in 240 px they are (80 px each)
+    resizeTo(240);
+    expect(fake.instance.setOption.mock.calls[4][0].xAxis.axisLabel.rotate).toBe(30);
+  });
+
+  it('measures the container when the observer gives no entry', () => {
+    render(<EChart kind="bar" result={result(3)} label="W" />);
+    const [observer] = FakeResizeObserver.instances;
+    const node = screen.getByRole('img', { name: 'W' });
+    Object.defineProperty(node, 'clientWidth', { configurable: true, value: 50 });
+    act(() => observer.callback([], observer as unknown as ResizeObserver));
+    expect(fake.instance.setOption.mock.calls[1][0].xAxis.axisLabel.rotate).toBe(30);
+  });
+
   it('disposes the chart and stops observing on unmount', () => {
     const { unmount } = render(<EChart kind="pie" result={result(3)} label="W" />);
     unmount();

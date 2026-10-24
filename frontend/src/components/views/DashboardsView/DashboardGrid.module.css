@@ -27,6 +27,13 @@
   box-shadow: var(--shadow-sm);
 }
 
+/* While a widget is dragged or resized (`data-gesture`, set by DashboardGrid):
+   no text selection as the pointer sweeps over the widgets. */
+.editing[data-gesture] {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 /* The resize corner (edit mode only: the library does not render it in view
    mode): clearly visible but quiet, its mark inside the card's rounded corner. */
 .editing :global(.react-grid-item > .react-resizable-handle.react-resizable-handle-se) {
