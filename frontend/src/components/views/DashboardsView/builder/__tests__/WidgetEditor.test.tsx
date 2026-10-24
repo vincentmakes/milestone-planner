@@ -612,6 +612,20 @@ describe('WidgetEditor — measure families', () => {
     expect(screen.getByLabelText('Percent of')).toBeInTheDocument();
   });
 
+  it('gives people over capacity no percentage, and a KPI of it no dimension', async () => {
+    signIn(ALL);
+    renderEditor();
+    setMeasure('people_over_capacity');
+    pickOption(/^Dimension 1/, 'Team');
+    // Counted again in each bucket: the buckets are not parts of the total.
+    expect(screen.queryByLabelText('Percent of')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: 'KPI' }));
+    expect(screen.queryByRole('button', { name: /^Dimension 1/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Bucket')).not.toBeInTheDocument();
+    await flushPreview();
+    expect(lastQuery()).toEqual({ measure: 'people_over_capacity', filters: { period: { relative: 'this_year' } } });
+  });
+
   it('gives a KPI of utilisation no dimension controls, its total in the preview body', async () => {
     signIn(ALL);
     renderEditor();

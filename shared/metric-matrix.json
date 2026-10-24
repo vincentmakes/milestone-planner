@@ -557,6 +557,7 @@
   "no_percent": [
     "available_days",
     "equipment_utilisation",
+    "people_over_capacity",
     "utilisation"
   ],
   "relative_periods": [

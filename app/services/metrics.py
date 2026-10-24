@@ -265,12 +265,16 @@ COMPOSITES: dict[str, tuple[str, str]] = {
 EQUIPMENT_SIDE_MEASURES: frozenset[str] = frozenset({"equipment_utilisation"})
 # Measures that are already a percentage (or cannot be one): ``percent_of``
 # on them is refused (``percent_error``).
+# People over capacity is counted in each bucket on its own, so a bucket's
+# people are not a part of the whole period's count: its shares would not
+# add up.
 NO_PERCENT_MEASURES: frozenset[str] = frozenset(
-    {"utilisation", "equipment_utilisation", "available_days"}
+    {"utilisation", "equipment_utilisation", "available_days", "people_over_capacity"}
 )
 # The refusal of ``percent_of`` per measure when the default wording does not fit.
 NO_PERCENT_MESSAGES: dict[str, str] = {
     "available_days": "Available days can be negative and cannot be a percentage",
+    "people_over_capacity": "People over capacity cannot be a percentage",
 }
 # Non-additive measures that keep two decimals (ratios) instead of an int.
 FLOAT_MEASURES: frozenset[str] = frozenset(

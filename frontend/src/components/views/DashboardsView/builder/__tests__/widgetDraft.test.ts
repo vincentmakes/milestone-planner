@@ -128,7 +128,7 @@ describe('kind rules', () => {
   });
 
   it('gives a KPI of a measure that takes no percentage no dimension, and no percentage at all', () => {
-    for (const measure of ['utilisation', 'available_days', 'equipment_utilisation'] as const) {
+    for (const measure of ['utilisation', 'available_days', 'people_over_capacity', 'equipment_utilisation'] as const) {
       const q = normaliseQuery('kpi', query({ measure, dimensions: [{ kind: 'site' }], percent_of: 'total' }));
       expect(q).toMatchObject({ measure, dimensions: [], percent_of: null, top_n: null });
       expect(kpiWithoutDimension('kpi', measure)).toBe(true);
@@ -136,7 +136,7 @@ describe('kind rules', () => {
     }
     // Other measures keep the share of the total.
     expect(normaliseQuery('kpi', query({ measure: 'capacity_days', dimensions: [{ kind: 'team' }] })).percent_of).toBe('total');
-    expect(kpiWithoutDimension('kpi', 'people_over_capacity')).toBe(false);
+    expect(kpiWithoutDimension('kpi', 'capacity_days')).toBe(false);
     // A chart of one keeps its dimensions, never a percentage.
     const bar = normaliseQuery(
       'bar',

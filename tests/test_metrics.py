@@ -2456,12 +2456,31 @@ def test_capacity_measures_accept_their_filters_and_a_share():
             "measure": "people_over_capacity",
             "dimensions": [{"kind": "team"}, {"kind": "period", "grain": "month"}],
             "filters": {"site_ids": [1], "team_ids": [10], "person_ids": [1]},
-            "percent_of": "first_dimension",
         }
     )
     assert query.filters.team_ids == [10]
     MetricQuery.model_validate(
         {"measure": "capacity_days", "dimensions": [{"kind": "site"}], "percent_of": "total"}
+    )
+
+
+@pytest.mark.parametrize("percent_of", ["total", "first_dimension"])
+def test_people_over_capacity_refuses_a_percentage(percent_of):
+    from pydantic import ValidationError
+
+    # A bucket counts the people over capacity in the bucket, the total over
+    # the whole period: a bucket is not a part of the total.
+    with pytest.raises(ValidationError) as caught:
+        MetricQuery.model_validate(
+            {
+                "measure": "people_over_capacity",
+                "dimensions": [{"kind": "team"}, {"kind": "period", "grain": "week"}],
+                "percent_of": percent_of,
+            }
+        )
+    assert caught.value.errors()[0]["msg"] == "People over capacity cannot be a percentage"
+    assert metrics.percent_error("people_over_capacity") == (
+        "People over capacity cannot be a percentage"
     )
 
 

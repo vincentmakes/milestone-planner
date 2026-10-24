@@ -213,7 +213,12 @@ def test_equipment_measure_kinds():
     assert "equipment_utilisation" in COMPOSITE_RULES
     assert EQUIPMENT_SIDE_MEASURES == {"equipment_utilisation"}
     assert "equipment_utilisation" in NO_PERCENT_MEASURES & FLOAT_MEASURES
-    assert NO_PERCENT_MEASURES == {"utilisation", "equipment_utilisation", "available_days"}
+    assert NO_PERCENT_MEASURES == {
+        "utilisation",
+        "equipment_utilisation",
+        "available_days",
+        "people_over_capacity",
+    }
     assert percent_error("equipment_utilisation") == "Equipment utilisation is already a percentage"
     assert percent_error("equipment_booked_days") is None
     assert [UNITS[m] for m in EQUIPMENT] == ["days", "count", "equipment", "percent"]
@@ -246,7 +251,9 @@ def test_capacity_measure_kinds():
         assert measure in COMPOSITE_RULES
     assert {"utilisation", "available_days"} <= NO_PERCENT_MEASURES
     assert {"utilisation", "available_days"} <= FLOAT_MEASURES
-    assert "people_over_capacity" not in FLOAT_MEASURES | NO_PERCENT_MEASURES
+    # A count, so no decimals; counted per bucket, so no percentage.
+    assert "people_over_capacity" not in FLOAT_MEASURES
+    assert "people_over_capacity" in NO_PERCENT_MEASURES
     assert percent_error("utilisation") == "Utilisation is already a percentage"
     assert percent_error("available_days") == NO_PERCENT_MESSAGES["available_days"]
     assert percent_error("capacity_days") is None

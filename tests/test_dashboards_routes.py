@@ -1385,6 +1385,10 @@ async def test_capacity_query_refusals(authed_client):
     )
     assert resp.status_code == 422
     assert _detail(resp) == "Utilisation is already a percentage"
+    over = {**UTILISATION_BY_PERSON, "measure": "people_over_capacity", "percent_of": "total"}
+    resp = await client.post("/api/dashboards/query", json=over)
+    assert resp.status_code == 422
+    assert _detail(resp) == "People over capacity cannot be a percentage"
     by_project = {**BY_SITE, "measure": "capacity_days", "dimensions": [{"kind": "project"}]}
     resp = await client.post("/api/dashboards/query", json=by_project)
     assert resp.status_code == 422
