@@ -12,6 +12,7 @@ from datetime import date
 
 import pytest
 
+from app.models.absence_type import AbsenceType
 from app.models.assignment import (
     PhaseStaffAssignment,
     ProjectAssignment,
@@ -20,10 +21,11 @@ from app.models.assignment import (
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.project_field import ProjectField, ProjectFieldOption, ProjectFieldSelection
 from app.models.rbac import Role
-from app.models.site import BankHoliday, Site
+from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
 from app.models.tag import ProjectTag, Tag
-from app.models.team import ProjectTeam, Team, TeamMember
-from app.models.user import User
+from app.models.team import CompanyEventTeam, ProjectTeam, Team, TeamMember
+from app.models.user import User, UserSite
+from app.models.vacation import Vacation
 from app.schemas.dashboard import MetricQuery
 from app.services import metrics
 from app.services.metrics import TooManyFacts, Viewer, aggregate, load_extent, load_facts
@@ -342,3 +344,221 @@ async def test_load_extent(db):
         d("2026-03-31"),
     )
     assert await load_extent(db, visible_site_ids=frozenset({2}), archived="only") is None
+
+
+# --- The capacity family ---------------------------------------------------------
+# Ann (sites 1 and 2, teams Alpha and Gamma), Bob (site 1, team Beta, 50 %),
+# an inactive Cid, a non-bookable Dee, Eve at a third site and a site-less
+# Fin. March 2026: a bank holiday per site, Ann's unavailable week and Home
+# Office week, Bob's untyped day and recurring Monday/Wednesday course, a
+# whole-site closure at Frankfurt, a closure at Winterthur limited to Beta,
+# a legacy single-site closure and an event that closes nothing.
+
+
+@pytest.fixture
+def capacity_db():
+    with sqlite_session() as session:
+        session.add_all(
+            [
+                Role(id=1, key="user", name="User"),
+                Site(id=1, name="Winterthur"),
+                Site(id=2, name="Frankfurt"),
+                Site(id=3, name="Basel"),
+                AbsenceType(id=1, name="Holidays", counts_as_unavailable=True),
+                AbsenceType(id=2, name="Home Office", counts_as_unavailable=False),
+                *(
+                    User(
+                        id=user_id,
+                        email=f"{first.lower()}@x",
+                        password="x",
+                        first_name=first,
+                        last_name="T",
+                        max_capacity=capacity,
+                        active=active,
+                        is_resource=resource,
+                    )
+                    for user_id, first, capacity, active, resource in (
+                        (1, "Ann", 100, 1, True),
+                        (2, "Bob", 50, 1, True),
+                        (3, "Cid", 100, 0, True),
+                        (4, "Dee", 100, 1, False),
+                        (5, "Eve", 80, 1, True),
+                        (6, "Fin", 100, 1, True),
+                    )
+                ),
+            ]
+        )
+        session.flush()
+        session.add_all(
+            [
+                *(
+                    UserSite(user_id=user_id, site_id=site_id)
+                    for user_id, site_id in ((1, 1), (1, 2), (2, 1), (3, 1), (4, 1), (5, 3))
+                ),
+                Team(id=10, site_id=1, name="Alpha"),
+                Team(id=11, site_id=1, name="Beta"),
+                Team(id=12, site_id=2, name="Gamma"),
+                BankHoliday(site_id=1, date=d("2026-03-05"), name="One", year=2026),
+                BankHoliday(site_id=2, date=d("2026-03-04"), name="Two", year=2026),
+                BankHoliday(site_id=3, date=d("2026-03-06"), name="Three", year=2026),
+                Vacation(
+                    staff_id=1,
+                    start_date=d("2026-03-09"),
+                    end_date=d("2026-03-13"),
+                    absence_type_id=1,
+                ),
+                Vacation(
+                    staff_id=1,
+                    start_date=d("2026-03-16"),
+                    end_date=d("2026-03-20"),
+                    absence_type_id=2,
+                ),
+                # Before the period: not loaded.
+                Vacation(
+                    staff_id=1,
+                    start_date=d("2026-02-02"),
+                    end_date=d("2026-02-06"),
+                    absence_type_id=1,
+                ),
+                Vacation(staff_id=2, start_date=d("2026-03-23"), end_date=d("2026-03-23")),
+                Vacation(
+                    staff_id=2,
+                    start_date=d("2026-02-01"),
+                    end_date=d("2026-04-30"),
+                    description="[R:1,3] Course",
+                    absence_type_id=1,
+                ),
+                # Inactive and non-bookable people's absences never count.
+                Vacation(staff_id=3, start_date=d("2026-03-02"), end_date=d("2026-03-31")),
+                CompanyEvent(
+                    id=1,
+                    site_id=2,
+                    date=d("2026-03-25"),
+                    end_date=d("2026-03-27"),
+                    name="Frankfurt closed",
+                    counts_as_unavailable=True,
+                ),
+                CompanyEvent(
+                    id=2,
+                    site_id=1,
+                    date=d("2026-03-30"),
+                    end_date=d("2026-03-31"),
+                    name="Beta offsite",
+                    counts_as_unavailable=True,
+                ),
+                # Legacy: no company_event_sites row, the site_id stands in.
+                CompanyEvent(
+                    id=3, site_id=1, date=d("2026-03-02"), name="Legacy", counts_as_unavailable=True
+                ),
+                CompanyEvent(id=4, site_id=1, date=d("2026-03-03"), name="Audit"),
+            ]
+        )
+        session.flush()
+        session.add_all(
+            [
+                TeamMember(team_id=10, user_id=1),
+                TeamMember(team_id=12, user_id=1),
+                TeamMember(team_id=11, user_id=2),
+                CompanyEventSite(event_id=1, site_id=2),
+                CompanyEventSite(event_id=2, site_id=1),
+                CompanyEventSite(event_id=4, site_id=1),
+                CompanyEventTeam(event_id=2, team_id=11),
+            ]
+        )
+        session.commit()
+        yield AsyncSessionFacade(session)
+
+
+ANN_OFF = ["02", "04", "05", "09", "10", "11", "12", "13", "25", "26", "27"]
+BOB_OFF = ["02", "04", "05", "09", "11", "16", "18", "23", "25", "30", "31"]
+
+
+def march(days: list[str]) -> tuple[date, ...]:
+    return tuple(d(f"2026-03-{day}") for day in days)
+
+
+async def _load_capacity(db, visible=None, period=MARCH):
+    return await load_facts(
+        db,
+        period=period,
+        visible_site_ids=visible,
+        archived="exclude",
+        today=TODAY,
+        families=frozenset({"capacity", "booking"}),
+    )
+
+
+async def test_capacity_facts(capacity_db):
+    facts = await _load_capacity(capacity_db, visible=frozenset({1, 2}))
+    assert sorted(facts.capacity) == [1, 2]  # Cid inactive, Dee not bookable, Eve elsewhere
+    ann, bob = facts.capacity[1], facts.capacity[2]
+    assert (ann.person_name, ann.site_ids, ann.team_ids, ann.max_capacity) == (
+        "Ann T",
+        (1, 2),
+        (10, 12),
+        100,
+    )
+    # A holiday at each of her sites, the unavailable week (not Home Office),
+    # the Frankfurt closure and the legacy Winterthur one (not Beta's).
+    assert ann.off_days == march(ANN_OFF)
+    # The Winterthur holiday, the untyped day, the course's Mondays and
+    # Wednesdays, Beta's closure and the legacy one.
+    assert (bob.site_ids, bob.team_ids, bob.max_capacity) == ((1,), (11,), 50)
+    assert bob.off_days == march(BOB_OFF)
+    # The capacity people's sites bring their holidays.
+    assert set(facts.holidays) == {1, 2}
+
+
+async def test_capacity_without_a_site_cut_includes_everyone_bookable(capacity_db):
+    facts = await _load_capacity(capacity_db)
+    assert sorted(facts.capacity) == [1, 2, 5, 6]
+    assert facts.capacity[5].off_days == march(["06"])  # Basel's holiday
+    assert facts.capacity[6].site_ids == () and facts.capacity[6].off_days == ()
+    assert facts.capacity[1].off_days == march(ANN_OFF)
+
+
+async def test_capacity_site_cut_keeps_the_persons_other_sites(capacity_db):
+    facts = await _load_capacity(capacity_db, visible=frozenset({2}))
+    assert sorted(facts.capacity) == [1]
+    # Seen through Frankfurt, Ann keeps Winterthur's holiday and closures.
+    assert facts.capacity[1].site_ids == (1, 2)
+    assert facts.capacity[1].off_days == march(ANN_OFF)
+    assert (await _load_capacity(capacity_db, visible=frozenset())).capacity == {}
+
+
+async def test_capacity_off_days_stay_inside_the_period(capacity_db):
+    facts = await _load_capacity(capacity_db, period=(d("2026-03-23"), d("2026-04-08")))
+    # Bob's untyped day, the course (March and April) and Beta's closure.
+    assert facts.capacity[2].off_days == tuple(
+        d(day)
+        for day in (
+            "2026-03-23",
+            "2026-03-25",
+            "2026-03-30",
+            "2026-03-31",
+            "2026-04-01",
+            "2026-04-06",
+            "2026-04-08",
+        )
+    )
+
+
+async def test_capacity_loads_only_when_its_family_is_named(capacity_db):
+    facts = await load_facts(
+        capacity_db,
+        period=MARCH,
+        visible_site_ids=None,
+        archived="exclude",
+        today=TODAY,
+        families=frozenset({"booking"}),
+    )
+    assert facts.capacity == {} and facts.holidays == {}
+
+
+async def test_absences_count_toward_the_row_cap(capacity_db, monkeypatch):
+    # Ann's two March absences, Bob's two (the inactive Cid's is out).
+    monkeypatch.setattr(metrics, "MAX_FACT_ROWS", 3)
+    with pytest.raises(TooManyFacts):
+        await _load_capacity(capacity_db, visible=frozenset({1, 2}))
+    monkeypatch.setattr(metrics, "MAX_FACT_ROWS", 4)
+    assert len((await _load_capacity(capacity_db, visible=frozenset({1, 2}))).capacity) == 2

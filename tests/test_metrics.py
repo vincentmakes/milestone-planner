@@ -1668,3 +1668,52 @@ def test_all_uses_the_extent_of_the_query_archived_mode():
     assert period_of("include") == {"from": "2024-01-01", "to": "2026-12-31"}
     # A mode without an extent (no project in scope): today.
     assert period_of("only") == {"from": TODAY.isoformat(), "to": TODAY.isoformat()}
+
+
+# --- Capacity calendar (round 3, Task 2) -----------------------------------------
+
+TEAM_SITES = {10: 1, 11: 1, 12: 2, 13: None}
+# (event sites, event teams, person sites, person teams, applies): the rule of
+# ``getClosureOn`` in frontend/src/utils/siteClosure.ts.
+CLOSURE_CASES = [
+    ((1,), (), (1,), (), True),  # whole site
+    ((1,), (), (2,), (), False),  # another site
+    ((1,), (), (), (), False),  # a site-less person
+    ((1, 2), (), (2, 3), (), True),  # one shared site is enough
+    ((1,), (11,), (1,), (11,), True),  # a member of the event's team
+    ((1,), (11,), (1,), (10,), False),  # not a member
+    ((1, 2), (11,), (2,), (), True),  # its team is not at the shared site
+    # The teams at *any* shared site limit it (a member of neither stays in).
+    ((1, 2), (11,), (1, 2), (12,), False),
+    ((1,), (99,), (1,), (), True),  # an unknown team is ignored
+    ((1,), (13,), (1,), (), True),  # a team without a site is ignored
+]
+
+
+@pytest.mark.parametrize(
+    ("event_sites", "event_teams", "person_sites", "person_teams", "applies"), CLOSURE_CASES
+)
+def test_closure_applies(event_sites, event_teams, person_sites, person_teams, applies):
+    assert (
+        metrics.closure_applies(event_sites, event_teams, person_sites, person_teams, TEAM_SITES)
+        is applies
+    )
+
+
+def test_off_days_within_keeps_weekdays_of_the_period_once():
+    days = metrics.off_days_within(
+        (d("2026-03-02"), d("2026-03-08")),
+        [d("2026-03-04"), d("2026-03-01")],  # before the period
+        [d("2026-03-04"), d("2026-03-07")],  # a Saturday
+        (d(f"2026-03-0{day}") for day in (2, 3)),
+    )
+    assert days == (d("2026-03-02"), d("2026-03-03"), d("2026-03-04"))
+    assert metrics.off_days_within((d("2026-03-02"), d("2026-03-08"))) == ()
+
+
+def test_capacity_days_are_weekdays_less_off_days_at_the_persons_rate():
+    off = (d("2026-03-04"), d("2026-03-11"))
+    assert metrics.capacity_days(d("2026-03-01"), d("2026-03-31"), off, 100) == 20
+    assert metrics.capacity_days(d("2026-03-01"), d("2026-03-31"), off, 50) == 10
+    assert metrics.capacity_days(d("2026-03-05"), d("2026-03-10"), off, 80) == 3.2
+    assert metrics.capacity_days(d("2026-03-10"), d("2026-03-05"), off, 100) == 0

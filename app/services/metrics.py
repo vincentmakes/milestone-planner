@@ -71,6 +71,7 @@ from datetime import date, timedelta
 from itertools import product
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+from app.services.absence_patterns import absence_weekdays, parse_recurring_days
 from app.services.booking_segments import effective_dates
 from app.services.card_status import CARD_STATUSES
 
@@ -573,6 +574,28 @@ class BookingFact:
 
 
 @dataclass(frozen=True)
+class CapacityFact:
+    """
+    A bookable person's capacity (the capacity family): an active user flagged
+    *Bookable as a resource*, at their ``max_capacity`` %.
+
+    ``site_ids`` are their live ``user_sites`` (not cut to the visible sites:
+    the visible sites only decide who is loaded), ``team_ids`` every team they
+    are in. ``off_days`` are the sorted weekdays of the loaded period they
+    cannot work: a bank holiday at any of their sites, an unavailable absence
+    (recurring ones on their pattern days only) or a site closure that
+    applies to them (``closure_applies``).
+    """
+
+    person_id: int
+    person_name: str
+    site_ids: tuple[int, ...]
+    team_ids: tuple[int, ...]
+    max_capacity: int
+    off_days: tuple[date, ...]
+
+
+@dataclass(frozen=True)
 class TeamInfo:
     id: int
     name: str
@@ -624,9 +647,9 @@ class Facts:
     # (min start, max end) of the projects in scope per archived mode, for
     # the ``all`` period (a mode absent or None: no project).
     extents: dict[str, tuple[date, date] | None] = field(default_factory=dict)
-    # Loaded only for the families a request needs (``load_facts(families=)``);
-    # Tasks 2 / 3 give them their fact classes. person id -> capacity fact.
-    capacity: dict[int, Any] = field(default_factory=dict)
+    # Loaded only for the families a request needs (``load_facts(families=)``).
+    # person id -> capacity fact (the bookable people in scope).
+    capacity: dict[int, CapacityFact] = field(default_factory=dict)
     # equipment id -> equipment info (labels, stale-id warnings).
     equipment: dict[int, Any] = field(default_factory=dict)
     equipment_bookings: list[Any] = field(default_factory=list)
@@ -654,6 +677,46 @@ def working_days(a: date, b: date, holidays_sorted: Sequence[date]) -> int:
         return 0
     inside = bisect_right(holidays_sorted, b) - bisect_left(holidays_sorted, a)
     return weekday_count(a, b) - inside
+
+
+def capacity_days(a: date, b: date, off_days: Sequence[date], max_capacity: int) -> float:
+    """
+    The days of ``[a, b]`` a person can work, at ``max_capacity`` %: weekdays
+    minus their off days in it (sorted, unique, weekdays only), by ``bisect``.
+    """
+    return working_days(a, b, off_days) * max_capacity / 100
+
+
+def off_days_within(period: tuple[date, date], *day_sets: Iterable[date]) -> tuple[date, ...]:
+    """The sorted, unique weekdays of ``period`` found in any of ``day_sets``."""
+    start, end = period
+    return tuple(
+        sorted(
+            {day for days in day_sets for day in days if start <= day <= end and day.weekday() < 5}
+        )
+    )
+
+
+def closure_applies(
+    event_site_ids: Iterable[int],
+    event_team_ids: Iterable[int],
+    person_site_ids: Iterable[int],
+    person_team_ids: Iterable[int],
+    team_sites: Mapping[int, int | None],
+) -> bool:
+    """
+    Whether a site closure takes a person out: ``getClosureOn`` in
+    ``frontend/src/utils/siteClosure.ts``. The event must share a site with
+    the person; its teams at those shared sites (``team_sites``: team id ->
+    site id; an unknown team is ignored) limit it to their members, and with
+    none of its teams at a shared site it closes the whole site.
+    """
+    person_sites = set(person_site_ids)
+    shared = {site_id for site_id in event_site_ids if site_id in person_sites}
+    if not shared:
+        return False
+    restricted = [team_id for team_id in event_team_ids if team_sites.get(team_id) in shared]
+    return not restricted or bool(set(restricted).intersection(person_team_ids))
 
 
 class WorkingCalendar:
@@ -1588,6 +1651,48 @@ def _booking_statements(scope: list[Any], start: date, end: date) -> list[Any]:
     return statements
 
 
+def _capacity_population(visible_site_ids: frozenset[int] | None) -> Any:
+    """
+    The ids of the people with a capacity: active users flagged *Bookable as
+    a resource* who are members of a visible site (every one, site-less
+    included, when every site is visible).
+    """
+    from sqlalchemy import select
+
+    from app.models.user import User, UserSite
+    from app.services.site_access import visible_sites_clause
+
+    statement = select(User.id).where(User.active == 1, User.is_resource.is_(True))
+    clause = visible_sites_clause(UserSite.site_id, visible_site_ids)
+    if clause is not None:
+        statement = statement.where(User.id.in_(select(UserSite.user_id).where(clause)))
+    return statement
+
+
+def _absence_statement(population: Any, start: date, end: date) -> Any:
+    """The absences of ``population`` overlapping ``[start, end]``, with their type's flag."""
+    from sqlalchemy import select
+
+    from app.models.absence_type import AbsenceType
+    from app.models.vacation import Vacation
+
+    return (
+        select(
+            Vacation.staff_id,
+            Vacation.start_date,
+            Vacation.end_date,
+            Vacation.description,
+            AbsenceType.counts_as_unavailable,
+        )
+        .outerjoin(AbsenceType, AbsenceType.id == Vacation.absence_type_id)
+        .where(
+            Vacation.staff_id.in_(population),
+            Vacation.start_date <= end,
+            Vacation.end_date >= start,
+        )
+    )
+
+
 def clip_to_card(
     own_start: date | None,
     own_end: date | None,
@@ -1633,26 +1738,33 @@ async def load_facts(
     its own). ``extents`` (archived mode -> ``load_extent``) is kept on the
     facts for the ``all`` period. ``families`` names the measure families the
     request's widgets read (``measure_families``): the booking, project and
-    phase facts always load; the capacity (Task 2) and equipment (Task 3)
-    facts only when their family is named. Raises ``TooManyFacts`` above
-    ``MAX_FACT_ROWS`` booking rows.
+    phase facts always load; the capacity facts (``CapacityFact``: the
+    bookable people of the visible sites with their off days) and the
+    equipment facts (Task 3) only when their family is named. Raises
+    ``TooManyFacts`` above ``MAX_FACT_ROWS`` booking rows (absence rows
+    included when the capacity family loads).
     """
     from sqlalchemy import func, or_, select
 
     from app.models.project import Project, ProjectPhase, ProjectSubphase
     from app.models.project_field import ProjectField, ProjectFieldOption
-    from app.models.site import BankHoliday, Site
+    from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
     from app.models.tag import ProjectTag, Tag
-    from app.models.team import ProjectTeam, Team, TeamMember
-    from app.models.user import User
+    from app.models.team import CompanyEventTeam, ProjectTeam, Team, TeamMember
+    from app.models.user import User, UserSite
     from app.services.project_field_rules import load_project_field_values
 
     start, end = period
     scope = _project_scope(visible_site_ids, archived)
     statements = _booking_statements(scope, start, end)
 
+    with_capacity = "capacity" in families
+    population = _capacity_population(visible_site_ids) if with_capacity else None
+    counted = list(statements)
+    if population is not None:
+        counted.append(_absence_statement(population, start, end))
     count = 0
-    for statement in statements:
+    for statement in counted:
         result = await db.execute(select(func.count()).select_from(statement.subquery()))
         count += int(result.scalar_one())
     if count > MAX_FACT_ROWS:
@@ -1872,7 +1984,97 @@ async def load_facts(
             phase[0] if phase else None,
         )
 
-    holiday_sites = sorted({p.site_id for p in projects.values() if p.site_id is not None})
+    # The capacity family: the bookable people, their sites, teams, absences
+    # and the site closures of the period.
+    capacity_ids: list[tuple[int, int]] = []
+    sites_of: dict[int, list[int]] = {}
+    teams_of: dict[int, list[int]] = {}
+    absences: list[Any] = []
+    closures: list[tuple[date, date, tuple[int, ...], tuple[int, ...]]] = []
+    if population is not None:
+        capacity_ids = [
+            (row.id, row.max_capacity)
+            for row in (
+                await db.execute(
+                    select(User.id, User.max_capacity)
+                    .where(User.id.in_(population))
+                    .order_by(User.id)
+                )
+            ).all()
+        ]
+        people = [person_id for person_id, _ in capacity_ids]
+        if people:
+            for user_id, site_id in (
+                await db.execute(
+                    select(UserSite.user_id, UserSite.site_id)
+                    .where(UserSite.user_id.in_(people))
+                    .order_by(UserSite.user_id, UserSite.site_id)
+                )
+            ).all():
+                sites_of.setdefault(user_id, []).append(site_id)
+            for user_id, team_id in (
+                await db.execute(
+                    select(TeamMember.user_id, TeamMember.team_id)
+                    .where(TeamMember.user_id.in_(people))
+                    .order_by(TeamMember.user_id, TeamMember.team_id)
+                )
+            ).all():
+                teams_of.setdefault(user_id, []).append(team_id)
+            absences = (await db.execute(_absence_statement(population, start, end))).all()
+            event_rows = (
+                await db.execute(
+                    select(
+                        CompanyEvent.id,
+                        CompanyEvent.site_id,
+                        CompanyEvent.date,
+                        CompanyEvent.end_date,
+                    ).where(
+                        CompanyEvent.counts_as_unavailable.is_(True),
+                        CompanyEvent.date <= end,
+                        func.coalesce(CompanyEvent.end_date, CompanyEvent.date) >= start,
+                    )
+                )
+            ).all()
+            event_ids = [row.id for row in event_rows]
+            event_sites: dict[int, list[int]] = {}
+            event_teams: dict[int, list[int]] = {}
+            if event_ids:
+                for event_id, site_id in (
+                    await db.execute(
+                        select(CompanyEventSite.event_id, CompanyEventSite.site_id).where(
+                            CompanyEventSite.event_id.in_(event_ids)
+                        )
+                    )
+                ).all():
+                    event_sites.setdefault(event_id, []).append(site_id)
+                for event_id, team_id in (
+                    await db.execute(
+                        select(CompanyEventTeam.event_id, CompanyEventTeam.team_id).where(
+                            CompanyEventTeam.event_id.in_(event_ids)
+                        )
+                    )
+                ).all():
+                    event_teams.setdefault(event_id, []).append(team_id)
+            for row in event_rows:
+                # The linked sites, else the legacy site (``closureSiteIds``).
+                linked = event_sites.get(row.id) or (
+                    [row.site_id] if row.site_id is not None else []
+                )
+                closures.append(
+                    (
+                        row.date,
+                        row.end_date or row.date,
+                        tuple(sorted(linked)),
+                        tuple(sorted(event_teams.get(row.id, ()))),
+                    )
+                )
+
+    # Bank holidays of the projects' sites (booked days) and of the capacity
+    # people's sites (their off days).
+    holiday_sites = sorted(
+        {p.site_id for p in projects.values() if p.site_id is not None}
+        | {site_id for site_ids in sites_of.values() for site_id in site_ids}
+    )
     holidays: dict[int, list[date]] = {}
     if holiday_sites:
         holiday_rows = (
@@ -1885,6 +2087,40 @@ async def load_facts(
             )
         ).all()
         holidays = expand_holidays(((row[0], row[1], row[2]) for row in holiday_rows), (start, end))
+
+    capacity: dict[int, CapacityFact] = {}
+    if capacity_ids:
+        team_sites = {team.id: team.site_id for team in teams.values()}
+        absence_days: dict[int, list[Iterable[date]]] = {}
+        for row in absences:
+            # An untyped absence (or one of a type gone) is unavailable.
+            if row.counts_as_unavailable is not None and not row.counts_as_unavailable:
+                continue
+            absence_days.setdefault(row.staff_id, []).append(
+                absence_weekdays(
+                    max(row.start_date, start),
+                    min(row.end_date, end),
+                    parse_recurring_days(row.description),
+                )
+            )
+        for person_id, max_capacity in capacity_ids:
+            person_sites = sites_of.get(person_id, [])
+            person_teams = teams_of.get(person_id, [])
+            day_sets: list[Iterable[date]] = [holidays.get(site_id, ()) for site_id in person_sites]
+            day_sets.extend(absence_days.get(person_id, ()))
+            for first, last, event_sites_of, event_teams_of in closures:
+                if closure_applies(
+                    event_sites_of, event_teams_of, person_sites, person_teams, team_sites
+                ):
+                    day_sets.append(absence_weekdays(max(first, start), min(last, end), None))
+            capacity[person_id] = CapacityFact(
+                person_id=person_id,
+                person_name=persons.get(person_id, f"Person {person_id}"),
+                site_ids=tuple(person_sites),
+                team_ids=tuple(person_teams),
+                max_capacity=max_capacity,
+                off_days=off_days_within((start, end), *day_sets),
+            )
 
     return Facts(
         projects=projects,
@@ -1900,4 +2136,5 @@ async def load_facts(
         today=today,
         project_ids=all_project_ids,
         extents=dict(extents or {}),
+        capacity=capacity,
     )
