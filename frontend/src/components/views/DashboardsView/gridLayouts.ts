@@ -4,7 +4,7 @@
  * per-breakpoint layouts (items keyed by the widget id as a string).
  */
 
-import type { Layout, ResponsiveLayouts } from 'react-grid-layout';
+import type { Layout, LayoutItem, ResponsiveLayouts } from 'react-grid-layout';
 import type { DashboardWidget, WidgetLayout } from '@/types';
 
 export type GridBreakpoint = keyof WidgetLayout;
@@ -42,6 +42,78 @@ export function toGridLayouts(widgets: readonly DashboardWidget[]): ResponsiveLa
     });
   }
   return layouts;
+}
+
+/** The narrowest a widget gets while its row trades width (a stored narrower one keeps its width). */
+export const MIN_COLS = 2;
+
+/** Whether two items share rows: their `[y, y + h)` ranges intersect. */
+const sharesRows = (a: LayoutItem, b: LayoutItem) => a.y < b.y + b.h && b.y < a.y + a.h;
+
+/**
+ * The item's right column: among the items sharing its rows (its row band)
+ * that start at or right of its right edge, those at the smallest `x` (several
+ * items stacked beside a tall widget move together). Empty at the grid's edge.
+ */
+export function rightColumn(layout: Layout, item: LayoutItem): LayoutItem[] {
+  const edge = item.x + item.w;
+  const right = layout.filter((other) => other.i !== item.i && other.x >= edge && sharesRows(other, item));
+  if (right.length === 0) return [];
+  const colX = Math.min(...right.map((other) => other.x));
+  return right.filter((other) => other.x === colX);
+}
+
+/**
+ * The widest an item may be resized to (`maxW`).
+ *
+ * Without a right column: the columns from its `x` to the grid's edge, `cols − x`
+ * (at least its own width, for a stored layout the library moves back inside).
+ * With one: its width plus what the column can give while every item of it
+ * keeps `MIN_COLS` — `w + min(column w) − 2`. The column's items shrink together,
+ * so for a column touching the item that is `columnRightEdge − x − 2`, the
+ * column's right edge being the leftmost right edge of its items. Never below `w`.
+ */
+export function fluidMaxW(layout: Layout, item: LayoutItem, cols: number): number {
+  const column = rightColumn(layout, item);
+  if (column.length === 0) return Math.max(cols - item.x, item.w);
+  return item.w + Math.max(0, Math.min(...column.map((other) => other.w)) - MIN_COLS);
+}
+
+/**
+ * A row-fluid resize: the item `itemId` takes the width `nextW` (it keeps its
+ * `x` — the handle is the bottom-right corner) and its right column absorbs the
+ * change so the row stays full.
+ *
+ * - Grow: each item of the right column moves right and narrows by the same
+ *   amount, never below `MIN_COLS` (the narrowest item of the column decides
+ *   how much the item may grow); with no right column the grid's edge limits it.
+ * - Shrink: the right column moves left and widens into the freed space; with
+ *   no right column the space stays empty. The item never gets narrower than
+ *   `MIN_COLS` (or its own width, if stored narrower).
+ *
+ * Items left of the item, further right than its right column, or outside its
+ * rows are untouched, and so is every height (the library pushes rows down).
+ * Returns a new array in the same order; changed items are new objects.
+ */
+export function fluidResize(layout: Layout, itemId: string, nextW: number, cols: number): Layout {
+  const item = layout.find((entry) => entry.i === itemId);
+  if (!item) return [...layout];
+  const column = rightColumn(layout, item);
+  let delta = nextW - item.w;
+  if (delta > 0) {
+    const room =
+      column.length === 0 ? cols - item.x - item.w : Math.min(...column.map((other) => other.w)) - MIN_COLS;
+    delta = Math.max(0, Math.min(delta, room));
+  } else if (delta < 0) {
+    delta = Math.max(nextW, Math.min(MIN_COLS, item.w)) - item.w;
+  }
+  if (delta === 0) return [...layout];
+  const moving = new Set(column.map((other) => other.i));
+  return layout.map((entry) => {
+    if (entry.i === itemId) return { ...entry, w: entry.w + delta };
+    if (moving.has(entry.i)) return { ...entry, x: entry.x + delta, w: entry.w - delta };
+    return entry;
+  });
 }
 
 /** The library's layouts back into each widget's `{lg, md, sm}` (a breakpoint it did not report keeps its position). */
