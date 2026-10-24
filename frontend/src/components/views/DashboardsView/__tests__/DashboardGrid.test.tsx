@@ -155,6 +155,66 @@ describe('DashboardGrid', () => {
     expect(last[2].lg).toEqual(widgets[1].layout.lg);
   });
 
+  // A pixel resize of the bottom-right corner: press at (x, y), one move by
+  // (dx, dy) per step, release. jsdom measures every box as 0, so the
+  // library reads the pointer as client coordinates.
+  const resizeCorner = (handle: Element, steps: Array<[number, number]>) => {
+    let x = 1000;
+    let y = 500;
+    fireEvent.mouseDown(handle, { button: 0, clientX: x, clientY: y });
+    for (const [dx, dy] of steps) {
+      x += dx;
+      y += dy;
+      fireEvent.mouseMove(document, { button: 0, buttons: 1, clientX: x, clientY: y });
+    }
+    fireEvent.mouseUp(document, { button: 0, clientX: x, clientY: y });
+  };
+  const rightPair = [widget(1, [0, 0, 6, 2], [0, 0, 4, 2]), widget(2, [6, 0, 4, 2], [4, 0, 4, 2])];
+  const lastLg = (spy: ReturnType<typeof vi.fn>, id: number) =>
+    spy.mock.calls[spy.mock.calls.length - 1][0][id].lg;
+
+  it('grows a widget to the right edge when the pointer passes the edge in one move', () => {
+    // 12 columns over 1200 px: 87 px per column, the widget at x = 6 starts
+    // at 606 px, 4 columns = 384 px. One move of 400 px goes past the grid's
+    // right edge: the widget takes the 6 columns left, it is not refused.
+    const onLayoutChange = vi.fn();
+    const { container: root } = render(
+      <DashboardGrid widgets={rightPair} data={data} editing onLayoutChange={onLayoutChange} />
+    );
+    onLayoutChange.mockClear();
+    const handle = root.querySelector('[data-widget-id="2"] > .react-resizable-handle-se')!;
+    resizeCorner(handle, [[400, 0]]);
+    expect(onLayoutChange).toHaveBeenCalled();
+    expect(lastLg(onLayoutChange, 2)).toEqual({ x: 6, y: 0, w: 6, h: 2 });
+  });
+
+  it('grows back after a shrink, also past the edge, and in height', () => {
+    const onLayoutChange = vi.fn();
+    const { container: root, rerender } = render(
+      <DashboardGrid widgets={rightPair} data={data} editing onLayoutChange={onLayoutChange} />
+    );
+    const handle = () => root.querySelector('[data-widget-id="2"] > .react-resizable-handle-se')!;
+    // Shrink by two columns and a row, as the builder stores it
+    resizeCorner(handle(), [[-99, -46], [-99, -46]]);
+    const shrunk = lastLg(onLayoutChange, 2);
+    expect(shrunk).toEqual({ x: 6, y: 0, w: 2, h: 1 });
+    const stored = rightPair.map((w) => (w.id === 2 ? { ...w, layout: { ...w.layout, lg: shrunk } } : w));
+    rerender(<DashboardGrid widgets={stored} data={data} editing onLayoutChange={onLayoutChange} />);
+    // Then back out in two coarse moves, the last one past the right edge
+    resizeCorner(handle(), [[150, 60], [300, 60]]);
+    expect(lastLg(onLayoutChange, 2)).toEqual({ x: 6, y: 0, w: 6, h: 2 });
+  });
+
+  it('bounds every item’s width by the columns right of it', () => {
+    const layouts = toGridLayouts(rightPair);
+    expect(layouts.lg!.map((l) => l.maxW)).toEqual([12, 6]);
+    expect(layouts.md!.map((l) => l.maxW)).toEqual([8, 4]);
+    expect(layouts.sm!.map((l) => l.maxW)).toEqual([4, 4]);
+    // A stored layout past the edge (the library moves it left) keeps its width
+    const past = toGridLayouts([widget(1, [10, 0, 4, 2], [0, 0, 4, 2])]);
+    expect(past.lg![0].maxW).toBe(4);
+  });
+
   it('lays out without a change listener', () => {
     const { rerender } = render(<DashboardGrid widgets={widgets.slice(0, 1)} data={data} />);
     rerender(<DashboardGrid widgets={widgets} data={data} />);
@@ -166,8 +226,8 @@ describe('grid layout conversions', () => {
   it('turns widget layouts into the library’s, per breakpoint, keyed by widget id', () => {
     const layouts = toGridLayouts(widgets);
     expect(Object.keys(layouts)).toEqual(['lg', 'md', 'sm']);
-    expect(layouts.lg![1]).toEqual({ i: '2', x: 3, y: 0, w: 3, h: 2 });
-    expect(layouts.md![2]).toEqual({ i: '3', x: 0, y: 2, w: 8, h: 5 });
+    expect(layouts.lg![1]).toEqual({ i: '2', x: 3, y: 0, w: 3, h: 2, maxW: 9 });
+    expect(layouts.md![2]).toEqual({ i: '3', x: 0, y: 2, w: 8, h: 5, maxW: 8 });
   });
 
   it('reads them back, keeping a breakpoint the library did not report', () => {
