@@ -856,6 +856,45 @@ async def test_equipment_site_cut_keeps_the_equipments_other_sites(equipment_db)
     assert len(empty.equipment) == 5
 
 
+async def test_equipment_utilisation_counts_only_bookings_of_projects_at_visible_sites(
+    equipment_db,
+):
+    # The mass spectrometer (Winterthur and Frankfurt) booked by a Winterthur
+    # project: seen from Frankfurt only, that booking is not in the numerator
+    # (bookings are cut to the projects of the visible sites, like capacity).
+    equipment_db.add(
+        EquipmentAssignment(
+            id=7,
+            project_id=1,
+            equipment_id=2,
+            start_date=d("2026-03-16"),
+            end_date=d("2026-03-20"),
+        )
+    )
+    await equipment_db.flush()
+    query = MetricQuery.model_validate(
+        {
+            "measure": "equipment_utilisation",
+            "dimensions": [{"kind": "equipment"}],
+            "filters": {"period": {"from": "2026-03-01", "to": "2026-03-31"}},
+        }
+    )
+    viewer = Viewer(frozenset({"views.equipment"}))
+
+    def mass_spec(facts):
+        rows = aggregate(facts, query, viewer=viewer).to_dict()["rows"]
+        return {r["keys"][0]["label"]: r["value"] for r in rows}["Mass spec"]
+
+    frankfurt = await _load_equipment(equipment_db, visible=frozenset({2}))
+    assert 7 not in {b.id for b in frankfurt.equipment_bookings}
+    # 5 + 4 booked days over 22 - 4: booking 7 left out.
+    assert mass_spec(frankfurt) == 50.0
+    both = await _load_equipment(equipment_db, visible=frozenset({1, 2}))
+    assert 7 in {b.id for b in both.equipment_bookings}
+    # Its 5 Winterthur days counted: 14 / 18.
+    assert mass_spec(both) == 77.78
+
+
 async def test_equipment_archived_bookings_follow_the_mode(equipment_db):
     facts = await _load_equipment(equipment_db, visible=frozenset({1}), archived="only")
     assert _equipment_bookings(facts) == [(3, 3, 1, d("2026-03-02"), d("2026-03-06"))]

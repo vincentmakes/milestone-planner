@@ -128,6 +128,7 @@ Needs the **Equipment view** permission.
 - Equipment utilisation is broken down by Equipment, Equipment type, Site (the **equipment's** sites, like its Sites filter) or Period; the other equipment measures take the project breakdowns and filters as well
 - Booked days follow the project's site and availability the equipment's: a booking from a site with other bank holidays can read slightly over or under 100 %
 - Inactive equipment counts in booked days and bookings, not in utilisation
+- **Booked time is counted only on projects at your sites**, like capacity: an instrument at your site that a project at a site you cannot see has booked reads lower utilisation for you than for someone who sees both sites
 
 ### Periods
 

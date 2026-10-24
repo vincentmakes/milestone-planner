@@ -1352,6 +1352,17 @@ EQUIPMENT_CASES: list[tuple[str, Facts, MetricQuery, dict[str, Any]]] = [
         {"rows": [((), 110.0)], "total": 110.0},  # 22 / 20
     ),
     (
+        "a booking by a project outside the visible sites is not in the numerator",
+        facts(
+            # Project 9 is not in scope (the loader cuts bookings to the
+            # projects of the visible sites): only booking 1 counts.
+            equipment_bookings=[FIRST_WEEK, used(2, "2026-03-09", "2026-03-13", project_id=9)],
+            availability=[available()],
+        ),
+        q("equipment_utilisation"),
+        {"rows": [((), 22.73)], "total": 22.73},  # 5 / 22
+    ),
+    (
         "a block of two weekdays leaves 20 available days",
         facts(
             equipment_bookings=[FIRST_WEEK],
