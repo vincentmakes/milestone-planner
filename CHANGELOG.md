@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [2.3.0] - 2026-10-30
 
 ### Added
-- Dashboards: build KPI and chart dashboards over projects, phases and bookings, keep them private or share them with roles, sites, teams or individual people; an Overview dashboard ships for everyone, and the demo tenant adds a *Capacity and flows* dashboard showing a gauge, a heatmap, a treemap and a sankey diagram.
+- Dashboards: build KPI and chart dashboards over projects, phases and bookings, keep them private or share them with roles, sites, teams or individual people; an Overview dashboard ships for everyone, and tenants seeded with the demo data add a *Capacity and flows* dashboard showing a gauge, a heatmap, a treemap and a sankey diagram.
 - Dashboard numbers count approved bookings as allocation-weighted working days of the project's site, bank holidays excluded; pending bookings are left out.
 - Dashboard measures beyond bookings: capacity, available days, utilisation and people over capacity per person, team or site (absences, closures and bank holidays taken off); equipment booked days, bookings and utilisation, where double bookings show over 100 %; phases due and overdue by month, by Kanban status or milestones only — over this, last or next year, quarter or month, or the last or next 12 months.
 - A Dashboards view in the sidebar shows the dashboards shared with you — KPI tiles, gauges, bar, line and pie charts, heatmaps, treemaps, sankey diagrams and tables that resize with the window and follow the theme.

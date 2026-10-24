@@ -479,10 +479,10 @@ A **widget** is `{kind, title, query, options, layout, sort_order?}` (at most 50
 
 - `kind`: `kpi`, `gauge`, `bar`, `line`, `pie`, `heatmap`, `treemap`, `sankey` or `table` (CHECK `dashboard_widgets_kind_check`; another value is `422`). The server checks the query, not how a kind draws it: the builder keeps a gauge without dimensions, a heatmap and a sankey at exactly two, a treemap at one or two, no `period` dimension and none of the `no_percent` measures on a treemap or sankey, and a pie at one — a widget sent through the API outside these rules is stored and drawn with a fallback
 - `title`: 1–120 characters, trimmed
-- `options` (all optional, unknown keys `422`): `stacked`, `percent`, `show_legend` (booleans), `orientation` (`horizontal` / `vertical`), `number_format` (`integer` / `decimal` / `percent`), `kpi_bucket` (the key of the value a KPI share shows) and `target` — the gauge's target in the measure's unit, a finite number from 0 to 1 000 000 000 (`NaN`, infinities, negatives and strings are `422`); accepted on any kind, used by the gauge only
+- `options` (all optional, unknown keys `422`): `stacked`, `percent`, `show_legend` (booleans), `orientation` (`horizontal` / `vertical`), `number_format` (`integer` / `decimal` / `percent`), `kpi_bucket` (the key of the value a KPI share shows) and `target` — the gauge's target in the measure's unit, a number from 0 to 1 000 000 000 (`NaN`, infinities, negatives and text that is not a number are `422`; a numeric string such as `"85"` is read as that number, like any number field); accepted on any kind, used by the gauge only
 - `layout`: `{lg, md, sm}`, each `{x, y, w, h}` within the 12 / 8 / 4 columns of its breakpoint
 
-Databases created from a pre-release 2.1.0 build allow only the first five kinds until `migrations/add_dashboard_widget_kinds.sql` widens the CHECK; the application applies it itself on every tenant pool creation (see [Database Management](../admin-guide/database.md#widget-kinds)).
+Databases created from a pre-release 2.1.0 build allow only the kinds that existed before (`kpi`, `bar`, `line`, `pie` and `table`) until `migrations/add_dashboard_widget_kinds.sql` widens the CHECK; the application applies it itself on every tenant pool creation (see [Database Management](../admin-guide/database.md#widget-kinds)).
 
 A **metric query** is `{measure, dimensions, filters, percent_of, top_n}`:
 
