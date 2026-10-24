@@ -200,21 +200,23 @@ describe('EChart', () => {
     const last = () => fake.instance.setOption.mock.calls[fake.instance.setOption.mock.calls.length - 1][0];
     // Unmeasured: no values in the cells
     expect(last().series[0].label.show).toBe(false);
-    // 2 × 2 cells in 200 × 100 px: 100 px wide, 50 px high each
-    resizeTo(200, 100);
+    // 2 × 2 cells in 300 × 200 px: 78 px wide, 56 px high each beside the labels and the scale
+    resizeTo(300, 200);
     expect(fake.instance.setOption).toHaveBeenCalledTimes(2);
     expect(last().series[0].label.show).toBe(true);
     expect(last().xAxis.axisLabel.rotate).toBeUndefined();
     // A resize that keeps them fitting sets nothing new
-    resizeTo(210, 110);
+    resizeTo(310, 210);
     expect(fake.instance.setOption).toHaveBeenCalledTimes(2);
-    // 15 px high rows: no room
-    resizeTo(210, 30);
+    // 16 px high rows: no room
+    resizeTo(310, 120);
     expect(fake.instance.setOption).toHaveBeenCalledTimes(3);
     expect(last().series[0].label.show).toBe(false);
-    // 60 px columns: narrow (tilted labels), values still fit
-    resizeTo(120, 100);
+    // Values back, then 85 px columns: narrow (tilted labels), and no room for values
+    resizeTo(300, 200);
     expect(last().series[0].label.show).toBe(true);
+    resizeTo(170, 200);
+    expect(last().series[0].label.show).toBe(false);
     expect(last().xAxis.axisLabel.rotate).toBe(30);
     // No entry: the container's own size
     const node = screen.getByRole('img', { name: 'H' });

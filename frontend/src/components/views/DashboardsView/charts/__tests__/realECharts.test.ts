@@ -113,6 +113,53 @@ describe('the newer kinds through the real ECharts', () => {
     expect(texts).toEqual(expect.arrayContaining(['Basel', 'Zurich', 'Other', 'Apollo', 'Cygnus']));
   });
 
+  it('keeps a treemap on its canvas after a resize', () => {
+    // Regression: sized `width: '100%'` and centred, the boxes kept the first
+    // size's centring offset after a resize and were cut on the right and below.
+    const chart = echarts.init(null, CHART_THEME_NAME, { renderer: 'svg', ssr: true, width: 500, height: 280 });
+    const option = toOption('treemap', siteProject, {}, theme, 'Booked weeks', {});
+    chart.setOption(option as echarts.EChartsOption, { notMerge: true });
+    chart.resize({ width: 600, height: 400 });
+    chart.setOption(option as echarts.EChartsOption, { notMerge: true });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the laid-out box is internal
+    const layout = (chart as any).getModel().getSeriesByIndex(0).layoutInfo;
+    chart.dispose();
+    expect(layout).toMatchObject({ x: 0, y: 0, width: 600, height: 400 });
+  });
+
+  it("leaves a sankey's right-hand labels on the canvas", () => {
+    const projectTeam: MetricResult = {
+      ...base,
+      unit: 'weeks',
+      dimensions: [
+        { kind: 'project', label: 'Project' },
+        { kind: 'team', label: 'Team' },
+      ],
+      rows: [
+        { keys: [k(11, 'Apollo'), k(1, 'Process Development')], value: 3 },
+        { keys: [k(12, 'Borealis'), k(2, 'Analytical Lab')], value: 2 },
+      ],
+      total: 5,
+    };
+    const chart = echarts.init(null, CHART_THEME_NAME, { renderer: 'svg', ssr: true, width: 600, height: 400 });
+    chart.setOption(toOption('sankey', projectTeam, {}, theme, 'Booked weeks', {}) as echarts.EChartsOption, {
+      notMerge: true,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the node layout is internal
+    const series = (chart as any).getModel().getSeriesByIndex(0);
+    const data = series.getData();
+    const rightmost = Math.max(
+      ...Array.from({ length: data.count() }, (_, i) => {
+        // Node positions are inside the series box; the label follows the
+        // node (5 px away), at most 120 px wide
+        const node = data.getItemLayout(i);
+        return series.layoutInfo.x + node.x + node.dx + 5 + Math.min(120, data.getName(i).length * 7);
+      })
+    );
+    chart.dispose();
+    expect(rightmost).toBeLessThanOrEqual(600);
+  });
+
   it('names the nodes of a sankey, never by their ids', () => {
     const { texts, logged } = render('sankey', siteProject);
     expect(logged).toEqual([]);

@@ -267,9 +267,23 @@ export const HEATMAP_LABEL_MIN_WIDTH = 44;
 /** …and this many high. */
 export const HEATMAP_LABEL_MIN_HEIGHT = 20;
 
-/** Whether every cell of an `xCount` × `yCount` heatmap in a `width` × `height` px chart has room for its value. */
+/**
+ * What the chart keeps beside and below the cells: the grid's 8 + 16 px and
+ * the row labels (up to 120 px) across; the grid's 8 px, the colour scale's
+ * 56 px and the column labels (about 24 px) down.
+ */
+export const HEATMAP_RESERVED_WIDTH = 144;
+export const HEATMAP_RESERVED_HEIGHT = 88;
+
+/**
+ * Whether every cell of an `xCount` × `yCount` heatmap in a `width` × `height`
+ * px chart has room for its value: the cells share what the axis labels and
+ * the colour scale leave (measured on the whole chart, a value such as
+ * "116.7 %" overflowed its cell just above the threshold).
+ */
 export const heatmapLabelsFit = (width: number, height: number, xCount: number, yCount: number): boolean =>
-  width / Math.max(1, xCount) >= HEATMAP_LABEL_MIN_WIDTH && height / Math.max(1, yCount) >= HEATMAP_LABEL_MIN_HEIGHT;
+  (width - HEATMAP_RESERVED_WIDTH) / Math.max(1, xCount) >= HEATMAP_LABEL_MIN_WIDTH &&
+  (height - HEATMAP_RESERVED_HEIGHT) / Math.max(1, yCount) >= HEATMAP_LABEL_MIN_HEIGHT;
 
 /** The one column of a one-dimension heatmap (an API-only shape): the measure. */
 const MEASURE_KEY_ID = '__measure__';
@@ -630,8 +644,13 @@ function treemapOption(result: MetricResult, opts: WidgetOptions, theme: ChartTh
     series: [
       {
         type: 'treemap',
-        width: '100%',
-        height: '100%',
+        // Edges, not `width: '100%'`: ECharts centres a sized treemap and, on a
+        // resize, keeps the offset of the first size — the boxes then slide
+        // down and right, cut by the canvas.
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
         roam: false,
         nodeClick: false,
         breadcrumb: { show: false },
@@ -658,6 +677,9 @@ function treemapOption(result: MetricResult, opts: WidgetOptions, theme: ChartTh
 // ---------------------------------------------------------------------------
 // Sankey
 // ---------------------------------------------------------------------------
+
+/** The widest a sankey node's label is drawn (truncated beyond). */
+const SANKEY_LABEL_WIDTH = 120;
 
 /**
  * Flows from the first dimension's values (left) to the second's (right),
@@ -746,10 +768,13 @@ function sankeyOption(
         emphasis: { focus: 'adjacency' },
         lineStyle: { color: 'gradient', opacity: 0.4 },
         layoutIterations: 32,
+        // The second column's labels sit right of its nodes: leave them their
+        // width (ECharts' default 20 % cuts them on a narrow card).
+        right: SANKEY_LABEL_WIDTH + 8,
         // A node with an `id` is named by it in ECharts' own label: name it here.
         label: {
           overflow: 'truncate',
-          width: 120,
+          width: SANKEY_LABEL_WIDTH,
           color: theme.textPrimary,
           formatter: (params: SankeyTooltipParams) => nameOf.get(params.data?.id ?? '') ?? '',
         },

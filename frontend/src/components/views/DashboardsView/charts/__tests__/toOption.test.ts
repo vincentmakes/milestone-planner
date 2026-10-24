@@ -748,12 +748,17 @@ describe('toOption — heatmap', () => {
     expect(heatmapCounts(result([row([A], 1), row([B], 1)], 1))).toEqual({ x: 1, y: 2 });
   });
 
-  it('fits a value in a cell from 44 px wide and 20 px high', () => {
-    expect(heatmapLabelsFit(88, 40, 2, 2)).toBe(true);
-    expect(heatmapLabelsFit(87.9, 40, 2, 2)).toBe(false);
-    expect(heatmapLabelsFit(88, 39.9, 2, 2)).toBe(false);
-    expect(heatmapLabelsFit(44, 20, 0, 0)).toBe(true);
+  it('fits a value in a cell from 44 px wide and 20 px high, beside the labels and the scale', () => {
+    // 144 px across for the row labels and the grid, 88 px down for the scale and the column labels
+    expect(heatmapLabelsFit(144 + 88, 88 + 40, 2, 2)).toBe(true);
+    expect(heatmapLabelsFit(144 + 87.9, 88 + 40, 2, 2)).toBe(false);
+    expect(heatmapLabelsFit(144 + 88, 88 + 39.9, 2, 2)).toBe(false);
+    expect(heatmapLabelsFit(144 + 44, 88 + 20, 0, 0)).toBe(true);
     expect(heatmapLabelsFit(0, 0, 1, 1)).toBe(false);
+    // Regression: 14 weekly columns on a 640 px card left 35 px cells — "116.7 %" overflowed
+    expect(heatmapLabelsFit(640, 400, 14, 7)).toBe(false);
+    // The demo's 12 months × 4 teams at 1440 px still show their values
+    expect(heatmapLabelsFit(839, 265, 12, 4)).toBe(true);
   });
 });
 
@@ -781,6 +786,10 @@ describe('toOption — treemap', () => {
     expect(option.aria).toEqual(QUIET_ARIA);
     const [series] = option.series;
     expect(series).toMatchObject({ type: 'treemap', roam: false, nodeClick: false, breadcrumb: { show: false } });
+    // Pinned to the edges, never sized and centred (a resize would shift it)
+    expect(series).toMatchObject({ left: 0, top: 0, right: 0, bottom: 0 });
+    expect(series.width).toBeUndefined();
+    expect(series.height).toBeUndefined();
     expect(series.data).toEqual([
       {
         name: 'Basel',
@@ -875,6 +884,8 @@ describe('toOption — sankey', () => {
       lineStyle: { color: 'gradient', opacity: 0.4 },
       layoutIterations: 32,
       label: { overflow: 'truncate', width: 120, color: 'primary' },
+      // Room for the second column's labels, right of its nodes
+      right: 128,
     });
     expect(series.data).toEqual([
       { id: '1:11', name: 'Apollo', itemStyle: { color: 'p0' } },
