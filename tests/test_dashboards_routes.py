@@ -1079,7 +1079,7 @@ async def test_query_permission_refusals(authed_client, permissions, body, messa
 
 def test_viewer_holds_the_users_view_keys():
     assert dashboards_router._viewer(admin()).keys == frozenset(
-        {"views.staff", "views.equipment", "views.archived"}
+        {"views.staff", "views.equipment", "views.archived", "absences.view_others"}
     )
     partial = uma(permissions={"views.dashboards", "views.equipment", "views.kanban"})
     assert dashboards_router._viewer(partial).keys == frozenset({"views.equipment"})
@@ -1440,6 +1440,40 @@ async def test_data_without_the_staff_view_errors_the_capacity_widget(
     # Only the booking widget's family: no capacity facts load.
     assert loader.await_args.kwargs["families"] == frozenset({"booking"})
     assert capacity_loads == []
+
+
+async def test_capacity_by_person_needs_the_absences_permission(authed_client):
+    # A capacity per person shows the person's unavailable absence days: the
+    # Staff view alone (no absences.view_others) gets the team breakdown only.
+    client, set_user = authed_client
+    set_user(uma(site_ids=(1,), permissions={"views.dashboards", "views.staff"}))
+    resp = await client.post("/api/dashboards/query", json=UTILISATION_BY_PERSON)
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "This widget needs the Absences permission"
+    one_person = {
+        **BY_SITE,
+        "measure": "capacity_days",
+        "filters": {**BY_SITE["filters"], "person_ids": [UMA]},
+    }
+    resp = await client.post("/api/dashboards/query", json=one_person)
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "This widget needs the Absences permission"
+    by_team = {**UTILISATION_BY_PERSON, "dimensions": [{"kind": "team"}]}
+    assert (await client.post("/api/dashboards/query", json=by_team)).status_code == 200
+    # A booking measure by person needs the Staff view only.
+    by_person = {**BY_SITE, "dimensions": [{"kind": "person"}]}
+    assert (await client.post("/api/dashboards/query", json=by_person)).status_code == 200
+
+
+async def test_data_without_the_absences_permission_errors_the_capacity_by_person_widget(
+    authed_client, capacity_board
+):
+    client, set_user = authed_client
+    set_user(uma(site_ids=(1,), permissions={"views.dashboards", "views.staff"}))
+    results = (await client.post(f"/api/dashboards/{capacity_board}/data")).json()["widgets"]
+    widgets = {w["title"]: results[str(w["id"])] for w in await _widgets(client, capacity_board)}
+    assert widgets["Utilisation"] == {"error": "This widget needs the Absences permission"}
+    assert "rows" in widgets["Booked"]
 
 
 async def test_data_loads_capacity_facts_only_for_a_capacity_widget(

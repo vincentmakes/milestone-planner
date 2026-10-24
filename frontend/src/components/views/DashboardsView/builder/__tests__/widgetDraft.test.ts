@@ -14,6 +14,7 @@ import {
   comparableDraft,
   defaultQuery,
   dimensionKey,
+  dropUnheld,
   gridIdOf,
   kpiWithoutDimension,
   MAX_DIMENSIONS,
@@ -146,6 +147,27 @@ describe('kind rules', () => {
     const kpi = normaliseQuery('kpi', query({ dimensions: [{ kind: 'site' }] }));
     expect(kpi.percent_of).toBe('total');
     expect(changeMeasure('kpi', kpi, 'utilisation')).toMatchObject({ dimensions: [], percent_of: null });
+  });
+
+  it('drops the dimensions and filters the user may not use on the measure', () => {
+    const staffOnly = (key: string | null) => key === null || key === 'views.staff';
+    const byPerson = query({
+      measure: 'utilisation',
+      dimensions: [{ kind: 'team' }, { kind: 'person' }],
+      filters: { person_ids: [8], team_ids: [5], period: { relative: 'this_year' } },
+    });
+    // Capacity per person needs absences.view_others.
+    expect(dropUnheld(byPerson, staffOnly)).toMatchObject({
+      dimensions: [{ kind: 'team' }],
+      filters: { team_ids: [5], period: { relative: 'this_year' } },
+    });
+    expect(dropUnheld(byPerson, staffOnly).filters).not.toHaveProperty('person_ids');
+    // Nothing to drop: the same query back.
+    const all = () => true;
+    expect(dropUnheld(byPerson, all)).toBe(byPerson);
+    const booking = query({ dimensions: [{ kind: 'person' }], filters: { person_ids: [8] } });
+    expect(dropUnheld(booking, staffOnly)).toBe(booking);
+    expect(dropUnheld(query({ dimensions: undefined, filters: undefined }), staffOnly)).toMatchObject({ measure: 'booked_weeks' });
   });
 
   it('keeps the Percent number format only on a percentage', () => {

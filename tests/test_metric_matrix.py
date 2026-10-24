@@ -17,8 +17,11 @@ from app.services.metrics import (
     ARCHIVED_NEEDS,
     COMPOSITES,
     DIMENSION_KINDS,
+    DIMENSION_LABELS,
     FAMILIES,
     FAMILY,
+    FAMILY_DIMENSION_NEEDS,
+    FAMILY_FILTER_NEEDS,
     FILTER_KEYS,
     FILTER_LABELS,
     FILTER_NEEDS,
@@ -267,12 +270,30 @@ def test_needs_name_catalogue_keys():
         "equipment_ids": "views.equipment",
         "equipment_types": "views.equipment",
     }
-    keys = {*NEEDS.values(), *MEASURE_NEEDS.values(), *FILTER_NEEDS.values(), ARCHIVED_NEEDS}
+    # A capacity per person shows the person's absence days.
+    assert FAMILY_DIMENSION_NEEDS == {("capacity", "person"): "absences.view_others"}
+    assert FAMILY_FILTER_NEEDS == {("capacity", "person_ids"): "absences.view_others"}
+    keys = {
+        *NEEDS.values(),
+        *MEASURE_NEEDS.values(),
+        *FILTER_NEEDS.values(),
+        *FAMILY_DIMENSION_NEEDS.values(),
+        *FAMILY_FILTER_NEEDS.values(),
+        ARCHIVED_NEEDS,
+    }
     assert keys <= PERMISSION_KEYS
     assert keys == set(VIEWER_KEYS) == set(PERMISSION_NAMES)
     assert set(MEASURE_NEEDS) <= set(FAMILIES)
     assert set(NEEDS) <= set(DIMENSION_KINDS)
     assert set(FILTER_NEEDS) <= set(FILTER_KEYS)
+    for family, kind in FAMILY_DIMENSION_NEEDS:
+        assert family in FAMILIES and kind in DIMENSION_KINDS
+        # The common need of the kind is the family's own measure need (the
+        # client asks the family-specific key in place of the common one).
+        assert NEEDS.get(kind) in (None, MEASURE_NEEDS.get(family))
+    for family, key in FAMILY_FILTER_NEEDS:
+        assert family in FAMILIES and key in FILTER_KEYS
+        assert FILTER_NEEDS.get(key) in (None, MEASURE_NEEDS.get(family))
 
 
 def test_the_json_carries_needs_filters_and_periods():
@@ -282,6 +303,25 @@ def test_the_json_carries_needs_filters_and_periods():
         assert entry["needs"] == MEASURE_NEEDS.get(FAMILY[measure])
         assert entry["filters"] == sorted(MEASURE_FILTERS[measure])
         assert entry["unit"] == UNITS[measure]
+        family = FAMILY[measure]
+        expected_dimensions = {
+            kind: key for (fam, kind), key in FAMILY_DIMENSION_NEEDS.items() if fam == family
+        }
+        expected_filters = {
+            name: key for (fam, name), key in FAMILY_FILTER_NEEDS.items() if fam == family
+        }
+        assert entry["dimension_needs"] == expected_dimensions
+        assert entry["filter_needs"] == expected_filters
+    assert data["measures"]["utilisation"]["dimension_needs"] == {"person": "absences.view_others"}
+    assert data["measures"]["utilisation"]["filter_needs"] == {"person_ids": "absences.view_others"}
+    assert data["measures"]["booked_days"]["dimension_needs"] == {}
+    # The names the frontend's lists must spell, in the server's order.
+    assert data["measure_labels"] == {m: MEASURE_LABELS[m] for m in MEASURES}
+    assert list(data["measure_labels"]) == list(MEASURES)
+    assert data["dimension_labels"] == {k: DIMENSION_LABELS[k] for k in DIMENSION_KINDS}
+    assert data["filter_labels"] == {k: FILTER_LABELS[k] for k in FILTER_KEYS}
+    assert data["period_labels"] == {p: PERIOD_LABELS[p] for p in RELATIVE_PERIODS}
+    assert list(data["period_labels"]) == list(RELATIVE_PERIODS)
     assert data["needs"] == {**NEEDS, **FILTER_NEEDS, "archived": ARCHIVED_NEEDS}
     assert data["no_percent"] == sorted(NO_PERCENT_MEASURES)
     assert data["relative_periods"] == list(RELATIVE_PERIODS)

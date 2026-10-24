@@ -29,7 +29,9 @@
         "site_ids",
         "tag_ids",
         "team_ids"
-      ]
+      ],
+      "dimension_needs": {},
+      "filter_needs": {}
     },
     "booked_weeks": {
       "unit": "weeks",
@@ -60,7 +62,9 @@
         "site_ids",
         "tag_ids",
         "team_ids"
-      ]
+      ],
+      "dimension_needs": {},
+      "filter_needs": {}
     },
     "booking_count": {
       "unit": "count",
@@ -91,7 +95,9 @@
         "site_ids",
         "tag_ids",
         "team_ids"
-      ]
+      ],
+      "dimension_needs": {},
+      "filter_needs": {}
     },
     "people_booked": {
       "unit": "people",
@@ -121,7 +127,9 @@
         "site_ids",
         "tag_ids",
         "team_ids"
-      ]
+      ],
+      "dimension_needs": {},
+      "filter_needs": {}
     },
     "project_count": {
       "unit": "projects",
@@ -147,7 +155,9 @@
         "project_team_ids",
         "site_ids",
         "tag_ids"
-      ]
+      ],
+      "dimension_needs": {},
+      "filter_needs": {}
     },
     "project_weeks": {
       "unit": "weeks",
@@ -173,7 +183,9 @@
         "project_team_ids",
         "site_ids",
         "tag_ids"
-      ]
+      ],
+      "dimension_needs": {},
+      "filter_needs": {}
     },
     "project_volume": {
       "unit": "volume",
@@ -198,7 +210,9 @@
         "project_team_ids",
         "site_ids",
         "tag_ids"
-      ]
+      ],
+      "dimension_needs": {},
+      "filter_needs": {}
     },
     "phase_count": {
       "unit": "phases",
@@ -227,7 +241,9 @@
         "project_team_ids",
         "site_ids",
         "tag_ids"
-      ]
+      ],
+      "dimension_needs": {},
+      "filter_needs": {}
     },
     "phase_weeks": {
       "unit": "weeks",
@@ -256,7 +272,9 @@
         "project_team_ids",
         "site_ids",
         "tag_ids"
-      ]
+      ],
+      "dimension_needs": {},
+      "filter_needs": {}
     },
     "phases_due": {
       "unit": "phases",
@@ -285,7 +303,9 @@
         "project_team_ids",
         "site_ids",
         "tag_ids"
-      ]
+      ],
+      "dimension_needs": {},
+      "filter_needs": {}
     },
     "phases_overdue": {
       "unit": "phases",
@@ -314,7 +334,9 @@
         "project_team_ids",
         "site_ids",
         "tag_ids"
-      ]
+      ],
+      "dimension_needs": {},
+      "filter_needs": {}
     },
     "capacity_days": {
       "unit": "days",
@@ -331,7 +353,13 @@
         "person_ids",
         "site_ids",
         "team_ids"
-      ]
+      ],
+      "dimension_needs": {
+        "person": "absences.view_others"
+      },
+      "filter_needs": {
+        "person_ids": "absences.view_others"
+      }
     },
     "available_days": {
       "unit": "days",
@@ -348,7 +376,13 @@
         "person_ids",
         "site_ids",
         "team_ids"
-      ]
+      ],
+      "dimension_needs": {
+        "person": "absences.view_others"
+      },
+      "filter_needs": {
+        "person_ids": "absences.view_others"
+      }
     },
     "utilisation": {
       "unit": "percent",
@@ -365,7 +399,13 @@
         "person_ids",
         "site_ids",
         "team_ids"
-      ]
+      ],
+      "dimension_needs": {
+        "person": "absences.view_others"
+      },
+      "filter_needs": {
+        "person_ids": "absences.view_others"
+      }
     },
     "people_over_capacity": {
       "unit": "people",
@@ -382,7 +422,13 @@
         "person_ids",
         "site_ids",
         "team_ids"
-      ]
+      ],
+      "dimension_needs": {
+        "person": "absences.view_others"
+      },
+      "filter_needs": {
+        "person_ids": "absences.view_others"
+      }
     },
     "equipment_booked_days": {
       "unit": "days",
@@ -412,7 +458,9 @@
         "project_team_ids",
         "site_ids",
         "tag_ids"
-      ]
+      ],
+      "dimension_needs": {},
+      "filter_needs": {}
     },
     "equipment_booking_count": {
       "unit": "count",
@@ -442,7 +490,9 @@
         "project_team_ids",
         "site_ids",
         "tag_ids"
-      ]
+      ],
+      "dimension_needs": {},
+      "filter_needs": {}
     },
     "equipment_booked": {
       "unit": "equipment",
@@ -471,7 +521,9 @@
         "project_team_ids",
         "site_ids",
         "tag_ids"
-      ]
+      ],
+      "dimension_needs": {},
+      "filter_needs": {}
     },
     "equipment_utilisation": {
       "unit": "percent",
@@ -488,7 +540,9 @@
         "equipment_types",
         "period",
         "site_ids"
-      ]
+      ],
+      "dimension_needs": {},
+      "filter_needs": {}
     }
   },
   "needs": {
@@ -524,5 +578,73 @@
     "quarter",
     "month",
     "week"
-  ]
+  ],
+  "measure_labels": {
+    "booked_days": "Booked days",
+    "booked_weeks": "Booked weeks",
+    "booking_count": "Bookings",
+    "people_booked": "People booked",
+    "project_count": "Projects",
+    "project_weeks": "Project weeks",
+    "project_volume": "Project volume",
+    "phase_count": "Phases",
+    "phase_weeks": "Phase weeks",
+    "phases_due": "Phases due",
+    "phases_overdue": "Phases overdue",
+    "capacity_days": "Capacity (days)",
+    "available_days": "Available days",
+    "utilisation": "Utilisation",
+    "people_over_capacity": "People over capacity",
+    "equipment_booked_days": "Equipment booked days",
+    "equipment_booking_count": "Equipment bookings",
+    "equipment_booked": "Equipment booked",
+    "equipment_utilisation": "Equipment utilisation"
+  },
+  "dimension_labels": {
+    "site": "Site",
+    "team": "Team",
+    "project_team": "Project team",
+    "person": "Person",
+    "project": "Project",
+    "project_manager": "Project manager",
+    "customer": "Customer",
+    "confirmed": "Confirmed",
+    "tag": "Tag",
+    "phase_type": "Phase",
+    "status": "Status",
+    "equipment": "Equipment",
+    "equipment_type": "Equipment type",
+    "field": "Project field",
+    "period": "Period"
+  },
+  "filter_labels": {
+    "site_ids": "Sites",
+    "team_ids": "Teams",
+    "project_team_ids": "Project teams",
+    "person_ids": "People",
+    "project_ids": "Projects",
+    "project_manager_ids": "Project managers",
+    "tag_ids": "Tags",
+    "confirmed": "Confirmed",
+    "field_options": "Project fields",
+    "archived": "Archived",
+    "period": "Period",
+    "equipment_ids": "Equipment",
+    "equipment_types": "Equipment types",
+    "milestones": "Milestones"
+  },
+  "period_labels": {
+    "this_year": "This year",
+    "last_year": "Last year",
+    "next_year": "Next year",
+    "this_quarter": "This quarter",
+    "last_quarter": "Last quarter",
+    "next_quarter": "Next quarter",
+    "this_month": "This month",
+    "last_month": "Last month",
+    "next_month": "Next month",
+    "last_12_months": "Last 12 months",
+    "next_12_months": "Next 12 months",
+    "all": "All time"
+  }
 }

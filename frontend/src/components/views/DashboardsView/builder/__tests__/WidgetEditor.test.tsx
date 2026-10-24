@@ -234,6 +234,25 @@ describe('WidgetEditor — form', () => {
     expect(screen.queryByRole('button', { name: /^People/ })).not.toBeInTheDocument();
   });
 
+  it('leaves Person and People out of a capacity measure without absences.view_others, and drops them on the switch', async () => {
+    signIn([...BASE, 'views.staff']);
+    renderEditor();
+    pickOption(/^Dimension 1/, 'Person');
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    pickOption(/^People/, 'Bob Brown');
+    setMeasure('utilisation');
+    // Per person, a capacity shows the person's absence days: aggregates only.
+    expect(dimensionLabels(1)).toEqual(['None', 'Site', 'Team', 'Period']);
+    expect(dimension1()).toHaveTextContent('None');
+    expect(filterButtons()).toEqual(['Sites', 'Teams']);
+    await flushPreview();
+    expect(lastQuery()).toEqual({ measure: 'utilisation', filters: { period: { relative: 'this_year' } } });
+    // A booking measure by person needs views.staff only.
+    setMeasure('booked_days');
+    expect(dimensionLabels(1)).toContain('Person');
+    expect(filterButtons()).toContain('People');
+  });
+
   it('names built-in dimensions by their instance labels and hides a hidden Customer', () => {
     useAppStore.setState({
       instanceSettings: { project_field_labels: '{"confirmed":"Signed"}', project_fields_hidden: '["customer"]' },
@@ -477,7 +496,14 @@ describe('WidgetEditor — filters and period', () => {
 });
 
 describe('WidgetEditor — measure families', () => {
-  const ALL = [...BASE, 'views.staff', 'views.equipment', 'views.archived', 'sites.view_all'] as PermissionKey[];
+  const ALL = [
+    ...BASE,
+    'views.staff',
+    'views.equipment',
+    'views.archived',
+    'absences.view_others',
+    'sites.view_all',
+  ] as PermissionKey[];
 
   it('groups the measures by family, in the server order', () => {
     signIn(ALL);
@@ -641,7 +667,14 @@ describe('WidgetEditor — measure families', () => {
 });
 
 describe('WidgetEditor — filters per family', () => {
-  const ALL = [...BASE, 'views.staff', 'views.equipment', 'views.archived', 'sites.view_all'] as PermissionKey[];
+  const ALL = [
+    ...BASE,
+    'views.staff',
+    'views.equipment',
+    'views.archived',
+    'absences.view_others',
+    'sites.view_all',
+  ] as PermissionKey[];
 
   beforeEach(() => {
     signIn(ALL);

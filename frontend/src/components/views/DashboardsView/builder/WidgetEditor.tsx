@@ -7,7 +7,8 @@
  * the equipment ones only with `views.equipment` — a stored measure stays
  * listed, the preview then shows the server's refusal), up to two
  * dimensions (only the kinds the measure accepts — the matrix of
- * `utils/metrics.ts`; *Person* only with `views.staff`, *Equipment* and
+ * `utils/metrics.ts`; *Person* only with `views.staff` — on a capacity
+ * measure also `absences.view_others`, like the *People* filter —, *Equipment* and
  * *Equipment type* only with `views.equipment`; a project field kind becomes
  * one choice per dropdown or toggle field; a period carries its grain), the
  * filters (a collapsible section, closed when none is set, holding only the
@@ -62,6 +63,7 @@ import {
   DIMENSION_KINDS,
   dimensionLabel,
   dimensionNeeds,
+  FILTER_LABELS,
   filterNeeds,
   GRAINS,
   isDimensionHidden,
@@ -97,6 +99,7 @@ import {
   cleanQuery,
   defaultQuery,
   dimensionKey,
+  dropUnheld,
   kpiWithoutDimension,
   MAX_DIMENSIONS,
   newClientId,
@@ -179,16 +182,7 @@ export interface WidgetEditorProps {
   onSave: (widget: DraftWidget, preview: MetricResult | null) => void;
 }
 
-const LIST_FILTER_LABELS = {
-  site_ids: 'Sites',
-  team_ids: 'Teams',
-  project_team_ids: 'Project teams',
-  person_ids: 'People',
-  project_ids: 'Projects',
-  tag_ids: 'Tags',
-  equipment_ids: 'Equipment',
-} as const;
-type ListFilter = keyof typeof LIST_FILTER_LABELS;
+type ListFilter = 'site_ids' | 'team_ids' | 'project_team_ids' | 'person_ids' | 'project_ids' | 'tag_ids' | 'equipment_ids';
 
 const bucketValue = (key: unknown): string => JSON.stringify(key);
 
@@ -214,14 +208,16 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
   const canStaff = useHasPermission('views.staff');
   const canEquipment = useHasPermission('views.equipment');
   const canArchived = useHasPermission('views.archived');
+  const canAbsences = useHasPermission('absences.view_others');
   // The keys a measure, a dimension or a filter may need, as held by the user.
   const heldKeys = useMemo(() => {
     const held = new Set<PermissionKey>();
     if (canStaff) held.add('views.staff');
     if (canEquipment) held.add('views.equipment');
     if (canArchived) held.add('views.archived');
+    if (canAbsences) held.add('absences.view_others');
     return held;
-  }, [canStaff, canEquipment, canArchived]);
+  }, [canStaff, canEquipment, canArchived, canAbsences]);
   const holds = (key: PermissionKey | null): boolean => key === null || heldKeys.has(key);
   const fields = useAppStore((s) => s.projectFields);
   const settings = useAppStore((s) => s.instanceSettings);
@@ -234,8 +230,10 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
 
   const dimensions = useMemo(() => query.dimensions ?? [], [query.dimensions]);
   const filters = useMemo<MetricFilters>(() => query.filters ?? {}, [query.filters]);
-  // The filters the measure takes, and the user may use (People: views.staff; Equipment: views.equipment).
-  const showsFilter = (key: FilterKey): boolean => takesFilter(query.measure, key) && holds(filterNeeds(key));
+  // The filters the measure takes, and the user may use (People: views.staff, and on a
+  // capacity measure absences.view_others; Equipment: views.equipment).
+  const showsFilter = (key: FilterKey): boolean =>
+    takesFilter(query.measure, key) && holds(filterNeeds(key)) && holds(filterNeeds(key, query.measure));
   const noPercent = NO_PERCENT_MEASURES.has(query.measure);
   const noDimension = kpiWithoutDimension(kind, query.measure);
   const problem = queryProblem(kind, query);
@@ -332,8 +330,9 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
     const out: DimensionChoice[] = [];
     for (const { key, label } of DIMENSION_KINDS) {
       if (!isValidDimension(query.measure, key)) continue;
-      const need = dimensionNeeds(key);
-      if (need !== null && !heldKeys.has(need)) continue;
+      // The common need (Person: views.staff) and the measure family's (capacity by person: absences).
+      const needs = [dimensionNeeds(key), dimensionNeeds(key, query.measure)];
+      if (needs.some((need) => need !== null && !heldKeys.has(need))) continue;
       if (isDimensionHidden(key, settings)) continue;
       if (key === 'field') {
         for (const field of fields) {
@@ -460,14 +459,14 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
   const listFilter = (key: ListFilter, searchable = false) => (
     <MultiSelectDropdown
       key={key}
-      label={LIST_FILTER_LABELS[key]}
+      label={FILTER_LABELS[key]}
       options={filterOptions[key]}
       selectedIds={new Set(filters[key] ?? [])}
       onChange={(ids) => setFilters({ [key]: ids })}
       placeholder="Any"
       emptyText="Nothing to choose"
       searchable={searchable}
-      searchLabel={`Find ${LIST_FILTER_LABELS[key].toLowerCase()}`}
+      searchLabel={`Find ${FILTER_LABELS[key].toLowerCase()}`}
     />
   );
 
@@ -583,7 +582,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
               label="Measure"
               fullWidth
               value={query.measure}
-              onChange={(e) => update(kind, changeMeasure(kind, query, e.target.value as Measure))}
+              onChange={(e) => update(kind, dropUnheld(changeMeasure(kind, query, e.target.value as Measure), holds))}
               options={[]}
               groups={measureGroups}
               hint={measureHint(query.measure)}
@@ -616,7 +615,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
                   {showsFilter('equipment_ids') && listFilter('equipment_ids', true)}
                   {showsFilter('equipment_types') && (
                     <MultiSelectDropdown
-                      label="Equipment types"
+                      label={FILTER_LABELS.equipment_types}
                       options={equipmentTypes.map((name, i) => ({ id: i + 1, name }))}
                       selectedIds={
                         new Set((filters.equipment_types ?? []).map((name) => equipmentTypes.indexOf(name) + 1))
@@ -641,7 +640,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
                   ))}
                   {showsFilter('milestones') && (
                     <Select
-                      label="Milestones"
+                      label={FILTER_LABELS.milestones}
                       fullWidth
                       value={filters.milestones ?? 'include'}
                       onChange={(e) => setFilters({ milestones: e.target.value as MetricFilters['milestones'] })}
@@ -650,7 +649,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
                   )}
                   {showsFilter('confirmed') && (
                     <Select
-                      label="Confirmed"
+                      label={FILTER_LABELS.confirmed}
                       fullWidth
                       value={typeof filters.confirmed === 'boolean' ? String(filters.confirmed) : 'any'}
                       onChange={(e) =>

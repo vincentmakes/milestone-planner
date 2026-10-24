@@ -45,7 +45,9 @@ from app.services.metrics import (
 )
 
 TODAY = date(2026, 10, 23)
-FULL = Viewer(frozenset({"views.staff", "views.equipment", "views.archived"}))
+FULL = Viewer(
+    frozenset({"views.staff", "views.equipment", "views.archived", "absences.view_others"})
+)
 MARCH = {"from": "2026-03-01", "to": "2026-03-31"}
 
 
@@ -2052,6 +2054,56 @@ def test_missing_permission_for_a_measure_family_and_an_equipment_filter(monkeyp
     monkeypatch.delitem(metrics.MEASURE_NEEDS, "booking")
     sited = MetricQuery.model_validate({"measure": "project_count", "filters": {"site_ids": [1]}})
     assert metrics.missing_permission(sited, Viewer(frozenset())) == "views.equipment"
+
+
+@pytest.mark.parametrize(
+    ("query", "needed"),
+    [
+        # Per person, a capacity shows the person's absence days.
+        ({"measure": "utilisation", "dimensions": [{"kind": "person"}]}, "absences.view_others"),
+        (
+            {
+                "measure": "capacity_days",
+                "dimensions": [{"kind": "period", "grain": "week"}, {"kind": "person"}],
+            },
+            "absences.view_others",
+        ),
+        ({"measure": "available_days", "filters": {"person_ids": [1]}}, "absences.view_others"),
+        ({"measure": "people_over_capacity", "filters": {"person_ids": []}}, None),
+        # The aggregates need the Staff view alone.
+        ({"measure": "utilisation", "dimensions": [{"kind": "team"}]}, None),
+        ({"measure": "capacity_days", "dimensions": [{"kind": "site"}]}, None),
+        ({"measure": "utilisation", "dimensions": [{"kind": "period", "grain": "month"}]}, None),
+        # Other families: the person dimension and filter need the Staff view only.
+        ({"measure": "booked_days", "dimensions": [{"kind": "person"}]}, None),
+        ({"measure": "booked_days", "filters": {"person_ids": [1]}}, None),
+    ],
+)
+def test_capacity_per_person_needs_the_absences_permission(query, needed):
+    viewer = Viewer(frozenset({"views.staff"}))
+    parsed = MetricQuery.model_validate(query)
+    assert metrics.missing_permission(parsed, viewer) == needed
+    full = Viewer(frozenset({"views.staff", "absences.view_others"}))
+    assert metrics.missing_permission(parsed, full) is None
+
+
+def test_the_absences_refusal_names_the_permission():
+    query = MetricQuery.model_validate(
+        {"measure": "utilisation", "dimensions": [{"kind": "person"}]}
+    )
+    with pytest.raises(MetricError) as caught:
+        aggregate(
+            facts(capacity=[person_capacity()]), query, viewer=Viewer(frozenset({"views.staff"}))
+        )
+    assert caught.value.message == "This widget needs the Absences permission"
+    # Without the Staff view, the family's own need is asked first.
+    assert (
+        metrics.missing_permission(query, Viewer(frozenset({"absences.view_others"})))
+        == "views.staff"
+    )
+    assert (
+        metrics.permission_message("views.staff") == "This widget needs the Staff view permission"
+    )
 
 
 def test_viewer_has_its_keys():

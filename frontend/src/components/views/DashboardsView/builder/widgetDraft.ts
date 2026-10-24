@@ -26,8 +26,16 @@ import type {
   WidgetLayout,
   WidgetOptions,
 } from '@/types';
-import { isValidDimension, NO_PERCENT_MEASURES, queryUnit, takesFilter } from '@/utils/metrics';
+import {
+  dimensionNeeds,
+  filterNeeds,
+  isValidDimension,
+  NO_PERCENT_MEASURES,
+  queryUnit,
+  takesFilter,
+} from '@/utils/metrics';
 import type { FilterKey } from '@/utils/metrics';
+import type { PermissionKey } from '@/types/permissions';
 
 /** A widget of the draft: `id` only for a widget the server already holds. */
 export type DraftWidget = Omit<DashboardWidget, 'id' | 'sort_order'> & {
@@ -155,6 +163,22 @@ export function normaliseQuery(kind: WidgetKind, query: MetricQuery): MetricQuer
 /** The query after a change of measure: dimensions and filters the new measure refuses are dropped. */
 export function changeMeasure(kind: WidgetKind, query: MetricQuery, measure: Measure): MetricQuery {
   return normaliseQuery(kind, { ...query, measure });
+}
+
+/**
+ * The query without the dimensions and filters its measure lets the user
+ * not use (`dimensionNeeds` / `filterNeeds` with the measure): after a
+ * switch to a capacity measure, Person and People go without
+ * `absences.view_others` (the editor no longer shows them).
+ */
+export function dropUnheld(query: MetricQuery, holds: (key: PermissionKey | null) => boolean): MetricQuery {
+  const dimensions = (query.dimensions ?? []).filter((d) => holds(dimensionNeeds(d.kind, query.measure)));
+  const source = query.filters ?? {};
+  const refused = (Object.keys(source) as FilterKey[]).filter((key) => !holds(filterNeeds(key, query.measure)));
+  if (refused.length === 0 && dimensions.length === (query.dimensions ?? []).length) return query;
+  const filters = { ...source };
+  for (const key of refused) delete filters[key];
+  return { ...query, dimensions, filters };
 }
 
 /**

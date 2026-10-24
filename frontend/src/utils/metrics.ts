@@ -7,8 +7,10 @@
  *
  * The matrix mirrors `app/services/metrics.py` (`MEASURES` with their
  * `FAMILY`, `UNITS`, `MATRIX`, `MEASURE_FILTERS`, `MEASURE_NEEDS`, `NEEDS` /
- * `FILTER_NEEDS` / `ARCHIVED_NEEDS`, `NO_PERCENT_MEASURES`,
- * `RELATIVE_PERIODS`, `GRAINS`); the backend writes it to
+ * `FILTER_NEEDS` / `ARCHIVED_NEEDS`, `FAMILY_DIMENSION_NEEDS` /
+ * `FAMILY_FILTER_NEEDS`, `NO_PERCENT_MEASURES`, `RELATIVE_PERIODS`,
+ * `GRAINS`, and the measure / dimension / filter / period labels); the
+ * backend writes it to
  * `shared/metric-matrix.json` and `utils/__tests__/metrics.test.ts` fails when
  * this file drifts from it. The server stays the judge (a refused query is a
  * 422 in plain words); the builder uses the matrix to offer only valid
@@ -195,6 +197,24 @@ export const FILTER_KEYS: readonly FilterKey[] = [
   'milestones',
 ];
 
+/** A filter's name (`FILTER_LABELS` on the server; the builder's filter fields). */
+export const FILTER_LABELS: Readonly<Record<FilterKey, string>> = {
+  site_ids: 'Sites',
+  team_ids: 'Teams',
+  project_team_ids: 'Project teams',
+  person_ids: 'People',
+  project_ids: 'Projects',
+  project_manager_ids: 'Project managers',
+  tag_ids: 'Tags',
+  confirmed: 'Confirmed',
+  field_options: 'Project fields',
+  archived: 'Archived',
+  period: 'Period',
+  equipment_ids: 'Equipment',
+  equipment_types: 'Equipment types',
+  milestones: 'Milestones',
+};
+
 const filterSet = (...keys: FilterKey[]): readonly FilterKey[] => FILTER_KEYS.filter((key) => keys.includes(key));
 
 const PROJECT_FILTERS: FilterKey[] = [
@@ -279,14 +299,46 @@ export const NEEDS: Readonly<Partial<Record<DimensionKind | FilterKey, Permissio
   archived: ARCHIVED_NEEDS,
 };
 
-/** The key a dimension needs on top of `views.dashboards` (per-person and equipment loads are gated). */
-export function dimensionNeeds(kind: DimensionKind): PermissionKey | null {
-  return NEEDS[kind] ?? null;
+/**
+ * The keys a dimension kind needs in one family only, on top of `NEEDS`
+ * (`FAMILY_DIMENSION_NEEDS` on the server; `dimension_needs` per measure in
+ * the JSON): a capacity per person shows that person's absence days, which
+ * need `absences.view_others`. Team, site and period stay aggregates.
+ */
+export const FAMILY_DIMENSION_NEEDS: Readonly<
+  Partial<Record<MeasureFamily, Readonly<Partial<Record<DimensionKind, PermissionKey>>>>>
+> = {
+  capacity: { person: 'absences.view_others' },
+};
+
+/** The keys a given filter needs in one family only, on top of `NEEDS` (`FAMILY_FILTER_NEEDS`; `filter_needs`). */
+export const FAMILY_FILTER_NEEDS: Readonly<
+  Partial<Record<MeasureFamily, Readonly<Partial<Record<FilterKey, PermissionKey>>>>>
+> = {
+  capacity: { person_ids: 'absences.view_others' },
+};
+
+/**
+ * The key a dimension needs on top of `views.dashboards` (per-person and
+ * equipment loads are gated). With a `measure`, its family's own need wins
+ * when there is one (Person on a capacity measure: `absences.view_others`);
+ * the common one (`views.staff`) is then the measure's own need, so asking
+ * both with and without the measure covers every key.
+ */
+export function dimensionNeeds(kind: DimensionKind, measure?: Measure): PermissionKey | null {
+  const own = measure ? FAMILY_DIMENSION_NEEDS[measureFamily(measure)]?.[kind] : undefined;
+  return own ?? NEEDS[kind] ?? null;
 }
 
-/** The key a filter needs (People: `views.staff`; Equipment and Equipment types: `views.equipment`); archived see `archivedNeeds`. */
-export function filterNeeds(key: FilterKey): PermissionKey | null {
-  return key === 'archived' ? null : NEEDS[key] ?? null;
+/**
+ * The key a filter needs (People: `views.staff`; Equipment and Equipment
+ * types: `views.equipment`; with a capacity `measure`, People:
+ * `absences.view_others`); archived see `archivedNeeds`.
+ */
+export function filterNeeds(key: FilterKey, measure?: Measure): PermissionKey | null {
+  if (key === 'archived') return null;
+  const own = measure ? FAMILY_FILTER_NEEDS[measureFamily(measure)]?.[key] : undefined;
+  return own ?? NEEDS[key] ?? null;
 }
 
 /** The key an archived mode needs (`exclude`, the default, needs none). */

@@ -529,15 +529,46 @@ FILTER_NEEDS: dict[str, str] = {
     "equipment_ids": "views.equipment",
     "equipment_types": "views.equipment",
 }
+# The permission a dimension or a given filter needs in one family only, on
+# top of ``NEEDS`` / ``FILTER_NEEDS`` (keyed by (family, kind or filter key)):
+# a capacity per person shows that person's unavailable absence days, which
+# ``GET /vacations`` hides without ``absences.view_others``. The team, site
+# and period breakdowns are aggregates and need ``views.staff`` alone.
+FAMILY_DIMENSION_NEEDS: dict[tuple[str, str], str] = {
+    ("capacity", "person"): "absences.view_others",
+}
+FAMILY_FILTER_NEEDS: dict[tuple[str, str], str] = {
+    ("capacity", "person_ids"): "absences.view_others",
+}
 # ``archived: include | only`` needs this key.
 ARCHIVED_NEEDS = "views.archived"
 PERMISSION_NAMES: dict[str, str] = {
     "views.staff": "Staff",
     "views.equipment": "Equipment",
     "views.archived": "Archived",
+    "absences.view_others": "Absences",
 }
+# The keys whose refusal does not read "... view permission" (not a ``views.*`` key).
+_NON_VIEW_KEYS: frozenset[str] = frozenset({"absences.view_others"})
 # The keys ``missing_permission`` may ask for (the router builds ``Viewer`` from them).
-VIEWER_KEYS: tuple[str, ...] = ("views.staff", "views.equipment", "views.archived")
+VIEWER_KEYS: tuple[str, ...] = (
+    "views.staff",
+    "views.equipment",
+    "views.archived",
+    "absences.view_others",
+)
+
+
+def dimension_needs(measure: str) -> dict[str, str]:
+    """The family-specific needs of ``measure``'s dimensions (kind -> key)."""
+    family = FAMILY[measure]
+    return {kind: key for (fam, kind), key in FAMILY_DIMENSION_NEEDS.items() if fam == family}
+
+
+def filter_needs(measure: str) -> dict[str, str]:
+    """The family-specific needs of ``measure``'s given filters (filter key -> key)."""
+    family = FAMILY[measure]
+    return {name: key for (fam, name), key in FAMILY_FILTER_NEEDS.items() if fam == family}
 
 
 def matrix_error(measure: str, kind: str) -> str | None:
@@ -552,11 +583,14 @@ def metric_matrix_json() -> str:
     The content of the committed ``shared/metric-matrix.json`` (frontend mirror).
 
     Per measure: its unit, the dimensions it accepts, the key its family needs
-    (``null`` when none) and the filters it accepts. ``needs`` merges the keys
-    dimensions need (``NEEDS``) and given filters need (``FILTER_NEEDS``, plus
-    ``archived`` for ``include`` / ``only``) in one map, kind or filter key ->
-    permission key: the two vocabularies share no name. ``no_percent`` lists
-    the measures ``percent_of`` is refused on.
+    (``null`` when none), the filters it accepts, and the keys its family's
+    dimensions and given filters need on top of the common ones
+    (``dimension_needs`` / ``filter_needs``, ``{}`` when none). ``needs``
+    merges the keys dimensions need (``NEEDS``) and given filters need
+    (``FILTER_NEEDS``, plus ``archived`` for ``include`` / ``only``) in one
+    map, kind or filter key -> permission key: the two vocabularies share no
+    name. ``no_percent`` lists the measures ``percent_of`` is refused on; the
+    ``*_labels`` maps are the names the frontend's lists must spell.
     """
     data: dict[str, Any] = {
         "measures": {
@@ -565,6 +599,8 @@ def metric_matrix_json() -> str:
                 "dimensions": sorted(MATRIX[measure]),
                 "needs": MEASURE_NEEDS.get(FAMILY[measure]),
                 "filters": sorted(MEASURE_FILTERS[measure]),
+                "dimension_needs": dimension_needs(measure),
+                "filter_needs": filter_needs(measure),
             }
             for measure in MEASURES
         },
@@ -572,6 +608,10 @@ def metric_matrix_json() -> str:
         "no_percent": sorted(NO_PERCENT_MEASURES),
         "relative_periods": list(RELATIVE_PERIODS),
         "grains": list(GRAINS),
+        "measure_labels": {measure: MEASURE_LABELS[measure] for measure in MEASURES},
+        "dimension_labels": {kind: DIMENSION_LABELS[kind] for kind in DIMENSION_KINDS},
+        "filter_labels": {key: FILTER_LABELS[key] for key in FILTER_KEYS},
+        "period_labels": {period: PERIOD_LABELS[period] for period in RELATIVE_PERIODS},
     }
     return json.dumps(data, indent=2) + "\n"
 
@@ -602,6 +642,8 @@ class Viewer:
 
 
 def permission_message(key: str) -> str:
+    if key in _NON_VIEW_KEYS:
+        return f"This widget needs the {PERMISSION_NAMES[key]} permission"
     return f"This widget needs the {PERMISSION_NAMES[key]} view permission"
 
 
@@ -610,20 +652,28 @@ def missing_permission(query: Any, viewer: Viewer) -> str | None:
     The key ``query`` needs and ``viewer`` lacks, or None.
 
     Checked in order: the measure's families (``MEASURE_NEEDS``), each
-    dimension (``NEEDS``), each given filter (``FILTER_NEEDS``), then the
-    archived mode.
+    dimension (``NEEDS``, then the asked measure's family need
+    ``FAMILY_DIMENSION_NEEDS``), each given filter (``FILTER_NEEDS``, then
+    ``FAMILY_FILTER_NEEDS``), then the archived mode.
     """
-    for family in measure_families(query.measure):
-        needed = MEASURE_NEEDS.get(family)
+    family = FAMILY[query.measure]
+    for measure_family in measure_families(query.measure):
+        needed = MEASURE_NEEDS.get(measure_family)
         if needed is not None and not viewer.has(needed):
             return needed
     for dimension in query.dimensions:
-        needed = NEEDS.get(dimension.kind)
-        if needed is not None and not viewer.has(needed):
-            return needed
-    for key, needed in FILTER_NEEDS.items():
-        if filter_given(query.filters, key) and not viewer.has(needed):
-            return needed
+        for needed in (
+            NEEDS.get(dimension.kind),
+            FAMILY_DIMENSION_NEEDS.get((family, dimension.kind)),
+        ):
+            if needed is not None and not viewer.has(needed):
+                return needed
+    for key in FILTER_KEYS:
+        if not filter_given(query.filters, key):
+            continue
+        for needed in (FILTER_NEEDS.get(key), FAMILY_FILTER_NEEDS.get((family, key))):
+            if needed is not None and not viewer.has(needed):
+                return needed
     if query.filters.archived != "exclude" and not viewer.has(ARCHIVED_NEEDS):
         return ARCHIVED_NEEDS
     return None

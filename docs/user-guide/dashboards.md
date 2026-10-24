@@ -26,7 +26,7 @@ Type in the picker's search box to find one by name. Milestone remembers the las
 
 A dashboard is a set of questions, not a copy of the answers. Each viewer gets the answers for the **sites they can see**: a colleague who works only at Frankfurt sees Frankfurt figures on the same Overview where an administrator sees every site. Archived projects are left out unless a widget asks for them.
 
-A widget can need a permission you do not hold — the **capacity** measures, a breakdown by **person** and the **People** filter need the **Staff overview** permission; the **equipment** measures, a breakdown by **equipment** or **equipment type** and the **Equipment** filters need the **Equipment view** permission; a widget that includes **archived projects** needs **Archived projects**. Such a widget shows *This widget needs the Staff view permission* (or *the Equipment view permission*, *the Archived view permission*) in place of its chart; the rest of the dashboard works as usual.
+A widget can need a permission you do not hold — the **capacity** measures, a breakdown by **person** and the **People** filter need the **Staff overview** permission — a capacity measure broken down by **person** or filtered to **People** also needs **See colleagues' absences**, since its days off are their absences; the **equipment** measures, a breakdown by **equipment** or **equipment type** and the **Equipment** filters need the **Equipment view** permission; a widget that includes **archived projects** needs **Archived projects**. Such a widget shows *This widget needs the Staff view permission* (or *the Equipment view permission*, *the Archived view permission*, *the Absences permission*) in place of its chart; the rest of the dashboard works as usual.
 
 ## The Overview
 
@@ -73,7 +73,7 @@ The **Measure** list of the widget editor is grouped by family. Each family has 
 
 ### Capacity
 
-Needs the **Staff overview** permission.
+Needs the **Staff overview** permission. A breakdown by **Person** and the **People** filter also need **See colleagues' absences** (a person's capacity shows the days they are absent); by site, team or period the figures add people up and need the Staff overview alone.
 
 | Measure | What it counts |
 |---------|----------------|

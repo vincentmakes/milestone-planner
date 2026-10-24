@@ -580,7 +580,7 @@ async def test_loaded_capacity_aggregates(capacity_db):
     )
     await capacity_db.commit()
     facts = await _load_capacity(capacity_db, visible=frozenset({1, 2}))
-    viewer = Viewer(frozenset({"views.staff"}))
+    viewer = Viewer(frozenset({"views.staff", "absences.view_others"}))
 
     def ask(measure):
         query = MetricQuery.model_validate(

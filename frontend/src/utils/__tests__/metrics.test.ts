@@ -15,8 +15,11 @@ import {
   dimensionNeeds,
   FALLBACK_PALETTE,
   FAMILIES,
+  FAMILY_DIMENSION_NEEDS,
+  FAMILY_FILTER_NEEDS,
   FAMILY_LABELS,
   FILTER_KEYS,
+  FILTER_LABELS,
   filterNeeds,
   formatMetric,
   GRAINS,
@@ -81,6 +84,15 @@ describe('metric matrix mirror', () => {
     });
   });
 
+  it('spells the server’s measure, dimension, filter and period names (the JSON labels)', () => {
+    expect(Object.fromEntries(MEASURES.map((m) => [m.key, m.label]))).toEqual(matrix.measure_labels);
+    expect(Object.fromEntries(DIMENSION_KINDS.map((d) => [d.key, d.label]))).toEqual(matrix.dimension_labels);
+    expect(DIMENSION_KINDS.map((d) => d.key)).toEqual(Object.keys(matrix.dimension_labels));
+    expect(FILTER_LABELS).toEqual(matrix.filter_labels);
+    expect(Object.keys(FILTER_LABELS)).toEqual([...FILTER_KEYS]);
+    expect(Object.fromEntries(RELATIVE_PERIODS.map((p) => [p.key, p.label]))).toEqual(matrix.period_labels);
+  });
+
   it('keeps each family contiguous, in the server family order', () => {
     const runs = MEASURES.map((m) => m.family).filter((family, i, all) => i === 0 || all[i - 1] !== family);
     expect(runs).toEqual([...FAMILIES]);
@@ -134,6 +146,31 @@ describe('metric matrix mirror', () => {
       const expected = key === 'archived' ? null : (matrix.needs as Record<string, string>)[key] ?? null;
       expect([key, filterNeeds(key)]).toEqual([key, expected]);
     }
+  });
+
+  it('asks for the same family-specific keys per measure (capacity by person: absences.view_others)', () => {
+    for (const [measure, s] of Object.entries(matrix.measures)) {
+      const family = measureFamily(measure as Measure);
+      expect([measure, FAMILY_DIMENSION_NEEDS[family] ?? {}]).toEqual([measure, s.dimension_needs]);
+      expect([measure, FAMILY_FILTER_NEEDS[family] ?? {}]).toEqual([measure, s.filter_needs]);
+      const dims = s.dimension_needs as Record<string, string>;
+      const flts = s.filter_needs as Record<string, string>;
+      const common = matrix.needs as Record<string, string>;
+      for (const { key } of DIMENSION_KINDS) {
+        const expected = dims[key] ?? common[key] ?? null;
+        expect([measure, key, dimensionNeeds(key, measure as Measure)]).toEqual([measure, key, expected]);
+      }
+      for (const key of FILTER_KEYS) {
+        const expected = key === 'archived' ? null : flts[key] ?? common[key] ?? null;
+        expect([measure, key, filterNeeds(key, measure as Measure)]).toEqual([measure, key, expected]);
+      }
+    }
+    expect(dimensionNeeds('person', 'utilisation')).toBe('absences.view_others');
+    expect(dimensionNeeds('team', 'utilisation')).toBeNull();
+    expect(dimensionNeeds('person', 'booked_days')).toBe('views.staff');
+    expect(dimensionNeeds('person')).toBe('views.staff');
+    expect(filterNeeds('person_ids', 'capacity_days')).toBe('absences.view_others');
+    expect(filterNeeds('person_ids')).toBe('views.staff');
   });
 
   it('refuses a percentage on the same measures', () => {
