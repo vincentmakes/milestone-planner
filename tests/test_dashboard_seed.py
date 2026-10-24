@@ -2,7 +2,9 @@
 The base dashboard "Overview" (app/services/dashboard_seed.py): eight widgets
 in the shape the dashboard_widgets columns hold, metric queries in the spec's
 shape, layouts inside the grid of every breakpoint without overlaps, and the
-demo's two field widgets only for the fields that exist.
+demo's two field widgets only for the fields that exist. Then the demo-only
+"Capacity and flows" (DEMO_DASHBOARD): one widget of each 2.1.0 chart kind,
+under the same rules.
 """
 
 import json
@@ -12,13 +14,16 @@ from pathlib import Path
 import pytest
 
 from app.models.dashboard import DASHBOARD_VISIBILITIES, DASHBOARD_WIDGET_KINDS
-from app.services import dashboard_seed
+from app.schemas.dashboard import MetricQuery, WidgetIn
+from app.services import dashboard_seed, metrics
 from app.services.dashboard_seed import (
     BASE_DASHBOARD,
+    DEMO_DASHBOARD,
     DEMO_EXTRA_WIDGETS,
     GRID_COLUMNS,
     WIDGET_KEYS,
     base_dashboard_rows,
+    demo_dashboard_rows,
 )
 
 FIELDS = {"Project type": 41, "Area": 42}
@@ -240,3 +245,135 @@ def test_the_module_is_import_light():
     source = Path(dashboard_seed.__file__).read_text()
     assert "sqlalchemy" not in source
     assert "app.models" not in source
+
+
+# ---------------------------------------------------------------------------
+# The demo's second dashboard, "Capacity and flows"
+# ---------------------------------------------------------------------------
+
+
+def _demo_rows():
+    return demo_dashboard_rows()[1]
+
+
+def test_the_demo_dashboard():
+    dashboard, _ = demo_dashboard_rows()
+    assert dashboard == {
+        "name": "Capacity and flows",
+        "description": (
+            "Utilisation against target, booked time per team and month, where each site's "
+            "time goes and which teams work on which projects."
+        ),
+        "visibility": "everyone",
+        "is_default": False,
+    }
+    assert dashboard == DEMO_DASHBOARD
+    assert dashboard["visibility"] in DASHBOARD_VISIBILITIES
+    assert dashboard["name"] != BASE_DASHBOARD["name"]
+
+
+def test_the_four_demo_widgets_in_order():
+    rows = _demo_rows()
+    assert [(r["kind"], r["title"]) for r in rows] == [
+        ("gauge", "Utilisation this quarter"),
+        ("heatmap", "Booked weeks per team and month"),
+        ("treemap", "Booked weeks by site and project"),
+        ("sankey", "Project to team flows"),
+    ]
+    assert all(r["kind"] in DASHBOARD_WIDGET_KINDS for r in rows)
+    assert [r["sort_order"] for r in rows] == [0, 1, 2, 3]
+
+
+def test_every_demo_row_has_the_column_shape_and_validates():
+    for row in _demo_rows():
+        assert tuple(row) == WIDGET_KEYS
+        for column in ("query", "options", "layout"):
+            assert row[column] == json.dumps(
+                json.loads(row[column]), separators=(",", ":"), sort_keys=True
+            )
+        assert set(json.loads(row["query"])) == QUERY_KEYS
+        widget = WidgetIn.model_validate(
+            {**row, **{c: json.loads(row[c]) for c in ("query", "options", "layout")}}
+        )
+        query = MetricQuery.model_validate(json.loads(row["query"]))
+        for dimension in query.dimensions:
+            assert metrics.matrix_error(query.measure, dimension.kind) is None, row["title"]
+        assert widget.query == query
+
+
+def test_the_demo_queries_and_options():
+    rows = {r["title"]: r for r in _demo_rows()}
+    queries = {title: json.loads(r["query"]) for title, r in rows.items()}
+    options = {title: json.loads(r["options"]) for title, r in rows.items()}
+
+    def query(measure, dimensions, period="this_year", top_n=None):
+        return {
+            "measure": measure,
+            "dimensions": dimensions,
+            "filters": {"archived": "exclude", "period": {"relative": period}},
+            "percent_of": None,
+            "top_n": top_n,
+        }
+
+    assert queries == {
+        "Utilisation this quarter": query("utilisation", [], "this_quarter"),
+        "Booked weeks per team and month": query(
+            "booked_weeks",
+            [{"kind": "team"}, {"kind": "period", "grain": "month"}],
+            "last_12_months",
+        ),
+        "Booked weeks by site and project": query(
+            "booked_weeks", [{"kind": "site"}, {"kind": "project"}]
+        ),
+        "Project to team flows": query(
+            "booked_weeks", [{"kind": "project"}, {"kind": "team"}], top_n=8
+        ),
+    }
+    assert options == {
+        "Utilisation this quarter": {"target": 85},
+        "Booked weeks per team and month": {},
+        "Booked weeks by site and project": {},
+        "Project to team flows": {},
+    }
+
+
+def test_the_demo_layouts():
+    layouts = [json.loads(r["layout"]) for r in _demo_rows()]
+    assert layouts == [
+        {
+            "lg": {"x": 0, "y": 0, "w": 3, "h": 4},
+            "md": {"x": 0, "y": 0, "w": 4, "h": 4},
+            "sm": {"x": 0, "y": 0, "w": 4, "h": 4},
+        },
+        {
+            "lg": {"x": 3, "y": 0, "w": 9, "h": 4},
+            "md": {"x": 4, "y": 0, "w": 4, "h": 4},
+            "sm": {"x": 0, "y": 4, "w": 4, "h": 5},
+        },
+        {
+            "lg": {"x": 0, "y": 4, "w": 6, "h": 5},
+            "md": {"x": 0, "y": 4, "w": 8, "h": 5},
+            "sm": {"x": 0, "y": 9, "w": 4, "h": 5},
+        },
+        {
+            "lg": {"x": 6, "y": 4, "w": 6, "h": 5},
+            "md": {"x": 0, "y": 9, "w": 8, "h": 5},
+            "sm": {"x": 0, "y": 14, "w": 4, "h": 5},
+        },
+    ]
+    for breakpoint, cols in GRID_COLUMNS.items():
+        boxes = [layout[breakpoint] for layout in layouts]
+        for box in boxes:
+            assert box["x"] >= 0 and box["y"] >= 0 and box["w"] > 0 and box["h"] > 0
+            assert box["x"] + box["w"] <= cols, (breakpoint, box)
+        for a, b in combinations(boxes, 2):
+            assert not _overlap(a, b), (breakpoint, a, b)
+
+
+def test_the_demo_rows_never_touch_the_overview():
+    before = json.dumps([BASE_DASHBOARD, DEMO_DASHBOARD], sort_keys=True)
+    demo_dashboard_rows()
+    demo_dashboard_rows()[1][0]["kind"] = "kpi"  # a caller's change stays its own
+    assert json.dumps([BASE_DASHBOARD, DEMO_DASHBOARD], sort_keys=True) == before
+    assert demo_dashboard_rows()[1][0]["kind"] == "gauge"
+    assert all(r["kind"] in ("kpi", "bar", "line", "pie") for r in _rows({"Area": 1}))

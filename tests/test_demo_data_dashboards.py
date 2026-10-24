@@ -1,7 +1,8 @@
 """
 The demo data set is rich enough for the dashboards (2.1.0): the Overview's
-widgets and the two demo extras, run through the real metric engine
-(app/services/metrics.aggregate) over facts built from the `DemoData` rows,
+widgets, the two demo extras and the "Capacity and flows" widgets, run
+through the real metric engine (app/services/metrics.aggregate) over facts
+built from the `DemoData` rows,
 each show a real shape, whatever day the demo is seeded on. Plus the rules
 every row (old and new) keeps, and the guarantee that the extra projects only
 *added* rows: everything the demo held before (the docs name it) is still
@@ -37,7 +38,7 @@ from app.scripts.demo_data import (
 )
 from app.services import metrics
 from app.services.booking_segments import segments_overlap
-from app.services.dashboard_seed import base_dashboard_rows
+from app.services.dashboard_seed import base_dashboard_rows, demo_dashboard_rows
 
 SNAPSHOT_DAY = date(2026, 10, 17)
 SNAPSHOT = Path(__file__).with_name("demo_data_snapshot.json")
@@ -589,6 +590,58 @@ def test_every_overview_widget_has_a_shape(facts: metrics.Facts):
     assert set(_labels(results["Booked weeks by Area"])) == {"Process", "Analytics", "QA"}
 
     assert results["People booked"].total >= 7
+
+
+def _capacity_and_flows(facts: metrics.Facts) -> dict[str, metrics.MetricResult]:
+    """Every widget of the demo's second dashboard, by title."""
+    _, widgets = demo_dashboard_rows()
+    assert len(widgets) == 4
+    return {
+        w["title"]: metrics.aggregate(
+            facts, MetricQuery.model_validate(json.loads(w["query"])), viewer=VIEWER
+        )
+        for w in widgets
+    }
+
+
+def test_every_widget_of_both_dashboards_has_rows(facts: metrics.Facts):
+    for title, result in {**_overview(facts), **_capacity_and_flows(facts)}.items():
+        assert result.rows, title
+        assert not result.warnings, title
+
+
+def test_the_capacity_and_flows_widgets_have_a_shape(facts: metrics.Facts):
+    results = _capacity_and_flows(facts)
+
+    # The gauge: one number, a plausible utilisation.
+    gauge = results["Utilisation this quarter"]
+    assert gauge.unit == "percent"
+    assert gauge.total is not None
+    assert 0 <= gauge.total <= 150, gauge.total
+
+    # The heatmap: several teams over several months.
+    heatmap = results["Booked weeks per team and month"]
+    cells = [row for row in heatmap.rows if row["value"]]
+    assert len({row["keys"][0]["label"] for row in cells}) >= 3
+    assert len({row["keys"][1]["label"] for row in cells}) >= 6
+
+    # The treemap: both sites, each with projects under it.
+    treemap = results["Booked weeks by site and project"]
+    by_site: dict[str, set[str]] = {}
+    for row in treemap.rows:
+        if row["value"]:
+            by_site.setdefault(row["keys"][0]["label"], set()).add(row["keys"][1]["label"])
+    assert set(by_site) == {"Winterthur", "Frankfurt"}
+    assert all(len(projects) >= 2 for projects in by_site.values()), by_site
+
+    # The sankey: the eight busiest projects and Other, flowing to teams.
+    sankey = results["Project to team flows"]
+    flows = [row for row in sankey.rows if row["value"]]
+    projects = {row["keys"][0]["label"] for row in flows}
+    assert len(projects - {"Other"}) >= 2
+    assert "Other" in projects
+    assert len(projects - {"Other"}) <= 8
+    assert len({row["keys"][1]["label"] for row in flows}) >= 2
 
 
 def test_last_year_and_all_time_have_data(facts: metrics.Facts):

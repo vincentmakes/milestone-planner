@@ -1,5 +1,6 @@
 """
-The base dashboard "Overview" (2.1.0), as plain Python.
+The base dashboard "Overview" and the demo's "Capacity and flows" (2.1.0), as
+plain Python.
 
 Seeded once, in the step that creates the dashboards tables: the provisioner
 (``tenant_provisioner.run_seed_data``, new tenants), the tenant auto-migration
@@ -7,6 +8,12 @@ Seeded once, in the step that creates the dashboards tables: the provisioner
 it creates the tables, and the demo seed (``demo_seed.insert_demo_data``,
 which adds the two widgets over the demo's "Project type" and "Area" fields).
 An admin may delete or edit it afterwards; nothing brings it back.
+
+"Capacity and flows" (``DEMO_DASHBOARD``, ``demo_dashboard_rows``) is the
+demo-only second dashboard showing the gauge, heatmap, treemap and sankey
+kinds. Only the demo seed writes it (``demo_seed.insert_demo_dashboards``):
+never the provisioner's bare defaults, the tenant auto-migration or
+``init_db``.
 
 Each widget is ``{kind, title, query, options, layout, sort_order}``: the
 metric ``query`` follows the metric-query spec (measure, dimensions, filters,
@@ -179,8 +186,88 @@ DEMO_EXTRA_WIDGETS: tuple[tuple[str, dict[str, Any]], ...] = (
 )
 
 
+# The demo-only second dashboard (seeded by demo_seed alone): one widget of
+# each 2.1.0 chart kind, every one over the booking data, so it needs no
+# project field. Explicit layouts per breakpoint.
+DEMO_DASHBOARD: dict[str, Any] = {
+    "name": "Capacity and flows",
+    "description": (
+        "Utilisation against target, booked time per team and month, where each site's "
+        "time goes and which teams work on which projects."
+    ),
+    "visibility": "everyone",
+    "is_default": False,
+}
+
+_DEMO_DASHBOARD_WIDGETS: tuple[dict[str, Any], ...] = (
+    _widget(
+        "gauge",
+        "Utilisation this quarter",
+        _query("utilisation", period="this_quarter"),
+        {
+            "lg": {"x": 0, "y": 0, "w": 3, "h": 4},
+            "md": {"x": 0, "y": 0, "w": 4, "h": 4},
+            "sm": {"x": 0, "y": 0, "w": 4, "h": 4},
+        },
+        0,
+        {"target": 85},
+    ),
+    _widget(
+        "heatmap",
+        "Booked weeks per team and month",
+        _query(
+            "booked_weeks",
+            [{"kind": "team"}, {"kind": "period", "grain": "month"}],
+            period="last_12_months",
+        ),
+        {
+            "lg": {"x": 3, "y": 0, "w": 9, "h": 4},
+            "md": {"x": 4, "y": 0, "w": 4, "h": 4},
+            "sm": {"x": 0, "y": 4, "w": 4, "h": 5},
+        },
+        1,
+    ),
+    _widget(
+        "treemap",
+        "Booked weeks by site and project",
+        _query("booked_weeks", [{"kind": "site"}, {"kind": "project"}]),
+        {
+            "lg": {"x": 0, "y": 4, "w": 6, "h": 5},
+            "md": {"x": 0, "y": 4, "w": 8, "h": 5},
+            "sm": {"x": 0, "y": 9, "w": 4, "h": 5},
+        },
+        2,
+    ),
+    _widget(
+        "sankey",
+        "Project to team flows",
+        # top_n ranks the first dimension: the eight busiest projects (and
+        # Other) flow to the teams.
+        _query("booked_weeks", [{"kind": "project"}, {"kind": "team"}], top_n=8),
+        {
+            "lg": {"x": 6, "y": 4, "w": 6, "h": 5},
+            "md": {"x": 0, "y": 9, "w": 8, "h": 5},
+            "sm": {"x": 0, "y": 14, "w": 4, "h": 5},
+        },
+        3,
+    ),
+)
+
+
 def _json(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), sort_keys=True)
+
+
+def _widget_row(widget: dict[str, Any]) -> dict[str, Any]:
+    """One widget as the ``dashboard_widgets`` columns hold it (JSON as text)."""
+    return {
+        "kind": widget["kind"],
+        "title": widget["title"],
+        "query": _json(widget["query"]),
+        "options": _json(widget["options"]),
+        "layout": _json(widget["layout"]),
+        "sort_order": widget["sort_order"],
+    }
 
 
 def _with_field(query: dict[str, Any], field_id: int) -> dict[str, Any]:
@@ -223,15 +310,15 @@ def base_dashboard_rows(
         )
         charts += 1
 
-    rows = [
-        {
-            "kind": w["kind"],
-            "title": w["title"],
-            "query": _json(w["query"]),
-            "options": _json(w["options"]),
-            "layout": _json(w["layout"]),
-            "sort_order": w["sort_order"],
-        }
-        for w in widgets
-    ]
-    return dashboard, rows
+    return dashboard, [_widget_row(w) for w in widgets]
+
+
+def demo_dashboard_rows() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """
+    The insert parameters of the demo's "Capacity and flows" dashboard and of
+    its four widgets, in the shapes ``base_dashboard_rows`` returns.
+    """
+    dashboard = {
+        key: DEMO_DASHBOARD[key] for key in ("name", "description", "visibility", "is_default")
+    }
+    return dashboard, [_widget_row(w) for w in _DEMO_DASHBOARD_WIDGETS]
