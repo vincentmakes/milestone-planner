@@ -16,7 +16,7 @@ import { resetAllStores } from '@/stores';
 import { makeRole, makeSite, makeSystemRoles, makeTeam, makeUser } from '@/test/factories';
 import { openPicker, optionLabel, pickOption, pickerOptions, pickerTrigger } from '@/test/searchableSelect';
 import type { Dashboard, ShareableUser, SharedWith } from '@/types';
-import { DashboardDialog, NAME_REQUIRED, PEOPLE_FAILED, PEOPLE_LOADING, TARGET_REQUIRED } from '../DashboardDialog';
+import { DashboardDialog, KEPT_HINT, NAME_REQUIRED, PEOPLE_FAILED, PEOPLE_LOADING, TARGET_REQUIRED } from '../DashboardDialog';
 import type { DashboardMeta } from '../widgetDraft';
 
 vi.mock('@/api/endpoints/dashboards', () => ({
@@ -300,6 +300,42 @@ describe('DashboardDialog — the targets', () => {
     pickOption(/^Sites/, 'Winterthur');
     await save();
     expect(api.update).toHaveBeenCalledWith(7, expect.objectContaining({ site_ids: [1, 3], team_ids: [12], user_ids: [9] }));
+  });
+
+  it('marks the kept targets, a kept team the app knows with its colour and inactive mark', async () => {
+    useAppStore.setState({ currentUser: makeUser({ id: 1, role: 'superuser', site_ids: [1] }) });
+    const kept: SharedWith = {
+      roles: [],
+      sites: [{ id: 2, name: 'Frankfurt' }],
+      teams: [
+        { id: 11, name: 'Lab', site_name: 'Frankfurt' },
+        { id: 99, name: 'Deleted team', site_name: 'Basel' },
+      ],
+      users: [
+        { id: 5, name: 'Charlie Chen' },
+        { id: 9, name: 'Edward Gone' },
+      ],
+    };
+    await share({ visibility: 'shared', site_ids: [2], team_ids: [11, 99], user_ids: [5, 9] }, kept);
+    const sites = pickerOptions(/^Sites/);
+    expect(sites.map(optionLabel)).toEqual(['Winterthur', 'Frankfurt']);
+    expect(sites[0]).not.toHaveTextContent(KEPT_HINT);
+    expect(sites[1]).toHaveTextContent(KEPT_HINT);
+    expect(KEPT_HINT).toBe('No longer among your choices');
+    const teams = pickerOptions(/^Teams/);
+    expect(teams.map(optionLabel)).toEqual(['QA & Compliance', 'Lab', 'Deleted team']);
+    // Lab is still in appStore.teams: its colour, its site and "(inactive)"
+    expect(teams[1]).toHaveTextContent(`Frankfurt (inactive) · ${KEPT_HINT}`);
+    expect(teams[1].querySelector('span[style*="background"]')).toHaveStyle({ backgroundColor: '#3b82f6' });
+    // A team the app no longer knows: the name and site the server sent
+    expect(teams[2]).toHaveTextContent(`Basel · ${KEPT_HINT}`);
+    expect(teams[2].querySelector('span[style*="background"]')).toBeNull();
+    const people = pickerOptions(/^People/);
+    expect(people.map(optionLabel)).toEqual(['Charlie Chen', 'Diana Doe', 'Ivy Admin', 'Edward Gone']);
+    // Charlie is pickable: his own hint, not the kept one
+    expect(people[0]).toHaveTextContent('Chemist · Winterthur');
+    expect(people[0]).not.toHaveTextContent(KEPT_HINT);
+    expect(people[3]).toHaveTextContent(KEPT_HINT);
   });
 });
 

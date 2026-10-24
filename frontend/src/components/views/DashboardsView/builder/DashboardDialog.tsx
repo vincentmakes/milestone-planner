@@ -10,8 +10,10 @@
  * sites), Teams (the teams at those sites, inactive ones marked) and People
  * (`GET /dashboards/shareable-users`, loaded when the dialog opens), each a
  * searchable `MultiSelectDropdown`. A target already on the dashboard that
- * the user could not pick now (a site they left) stays listed, so a save
- * keeps it.
+ * the user could not pick now (a site they left, a team at another site, a
+ * person deactivated) stays listed with the hint *No longer among your
+ * choices*, so a save keeps it; a kept team still known to the app keeps its
+ * colour, its site and its "(inactive)" mark.
  *
  * Two uses:
  * - **New** (name, description, sharing): the values go back to the view,
@@ -52,6 +54,8 @@ export const NAME_REQUIRED = 'Enter a name';
 export const TARGET_REQUIRED = 'Choose at least one role, site, team or person';
 export const PEOPLE_LOADING = 'Loading people…';
 export const PEOPLE_FAILED = 'People could not be loaded';
+/** The hint of a target kept on the dashboard that the user could not pick now */
+export const KEPT_HINT = 'No longer among your choices';
 const NAME_MAX = 100;
 const DESCRIPTION_MAX = 2000;
 
@@ -74,6 +78,9 @@ function withKept(items: MultiSelectDropdownItem[], extra: MultiSelectDropdownIt
   const ids = new Set(items.map((i) => i.id));
   return [...items, ...extra.filter((i) => !ids.has(i.id))];
 }
+
+/** A kept target's hint: its own (a team's site), then `KEPT_HINT`. */
+const keptHint = (hint?: string): string => [hint, KEPT_HINT].filter(Boolean).join(' · ');
 
 const byName = <T extends { name: string; id: number }>(items: T[]): T[] =>
   [...items].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.id - b.id);
@@ -142,7 +149,7 @@ export function DashboardDialog({ mode, initial, sharedWith, dashboardId, onClos
     () =>
       withKept(
         sites.map((s) => ({ id: s.id, name: s.name })),
-        (sharedWith?.sites ?? []).map((s) => ({ id: s.id, name: s.name }))
+        (sharedWith?.sites ?? []).map((s) => ({ id: s.id, name: s.name, hint: KEPT_HINT }))
       ),
     [sites, sharedWith]
   );
@@ -150,16 +157,30 @@ export function DashboardDialog({ mode, initial, sharedWith, dashboardId, onClos
   const teamItems = useMemo(() => {
     const visible = new Set(sites.map((s) => s.id));
     const siteName = new Map(allSites.map((s) => [s.id, s.name]));
+    const known = new Map(teams.map((t) => [t.id, t]));
+    // The team's site, and whether it is inactive
+    const teamHint = (site: string | undefined, active: boolean | undefined) =>
+      [site, active === false ? '(inactive)' : null].filter(Boolean).join(' ') || undefined;
     const pickable = teams
       .filter((t) => visible.has(t.site_id))
       .map((t) => ({
         id: t.id,
         name: t.name,
         color: t.color ?? undefined,
-        // The team's site, and whether it is inactive
-        hint: [siteName.get(t.site_id), t.active === false ? '(inactive)' : null].filter(Boolean).join(' ') || undefined,
+        hint: teamHint(siteName.get(t.site_id), t.active),
       }));
-    const kept = (sharedWith?.teams ?? []).map((t) => ({ id: t.id, name: t.name, hint: t.site_name || undefined }));
+    // A kept team the app still knows (another site's) keeps its colour and mark.
+    const kept = (sharedWith?.teams ?? []).map((t) => {
+      const team = known.get(t.id);
+      return team
+        ? {
+            id: t.id,
+            name: team.name,
+            color: team.color ?? undefined,
+            hint: keptHint(teamHint(siteName.get(team.site_id) ?? t.site_name, team.active)),
+          }
+        : { id: t.id, name: t.name, hint: keptHint(t.site_name || undefined) };
+    });
     return withKept(pickable, kept);
   }, [teams, sites, allSites, sharedWith]);
 
@@ -178,7 +199,12 @@ export function DashboardDialog({ mode, initial, sharedWith, dashboardId, onClos
         people.status === 'loaded'
           ? people.users.map((u) => ({ id: u.id, name: u.name, hint: personHint(u) }))
           : [],
-        (sharedWith?.users ?? []).map((u) => ({ id: u.id, name: u.name }))
+        // Until the list is in, nothing tells a kept person from a pickable one.
+        (sharedWith?.users ?? []).map((u) => ({
+          id: u.id,
+          name: u.name,
+          hint: people.status === 'loaded' ? KEPT_HINT : undefined,
+        }))
       ),
     [people, sharedWith]
   );
