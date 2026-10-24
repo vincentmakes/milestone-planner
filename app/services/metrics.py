@@ -637,6 +637,45 @@ class CapacityFact:
 
 
 @dataclass(frozen=True)
+class EquipmentInfo:
+    """An equipment row (reference data: labels, types, stale-id warnings)."""
+
+    id: int
+    name: str
+    type: str | None
+    site_ids: tuple[int, ...]  # every linked site (``equipment_sites``), ascending
+    active: bool
+
+
+@dataclass(frozen=True)
+class EquipmentBookingFact:
+    """An equipment booking of a project in scope, overlapping the loaded period."""
+
+    id: int
+    project_id: int
+    equipment_id: int
+    start: date
+    end: date
+
+
+@dataclass(frozen=True)
+class EquipmentAvailabilityFact:
+    """
+    The working days of an active equipment linked to a visible site (any
+    active equipment, site-less included, when every site is visible).
+
+    ``site_ids`` are all its sites (the visible sites only decide which
+    equipment is loaded); ``off_days`` the sorted weekdays of the loaded
+    period it is not available: a bank holiday at any of its sites, or a day
+    inside one of its blocks (``equipment_off_days``).
+    """
+
+    equipment_id: int
+    site_ids: tuple[int, ...]
+    off_days: tuple[date, ...]
+
+
+@dataclass(frozen=True)
 class TeamInfo:
     id: int
     name: str
@@ -691,10 +730,10 @@ class Facts:
     # Loaded only for the families a request needs (``load_facts(families=)``).
     # person id -> capacity fact (the bookable people in scope).
     capacity: dict[int, CapacityFact] = field(default_factory=dict)
-    # equipment id -> equipment info (labels, stale-id warnings).
-    equipment: dict[int, Any] = field(default_factory=dict)
-    equipment_bookings: list[Any] = field(default_factory=list)
-    equipment_availability: list[Any] = field(default_factory=list)
+    # equipment id -> equipment info (every row: labels, stale-id warnings).
+    equipment: dict[int, EquipmentInfo] = field(default_factory=dict)
+    equipment_bookings: list[EquipmentBookingFact] = field(default_factory=list)
+    equipment_availability: list[EquipmentAvailabilityFact] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -805,6 +844,24 @@ def person_off_days(
             day_sets.append(
                 absence_weekdays(max(closure.start, start), min(closure.end, end), None)
             )
+    return off_days_within(period, *day_sets)
+
+
+def equipment_off_days(
+    period: tuple[date, date],
+    site_ids: Sequence[int],
+    holidays: Mapping[int, Sequence[date]],
+    blocks: Iterable[tuple[date, date]],
+) -> tuple[date, ...]:
+    """
+    An equipment's off days in ``period`` (``EquipmentAvailabilityFact.off_days``):
+    the bank holidays of any of its sites and the weekdays of its blocks
+    (``(start, end)`` pairs).
+    """
+    start, end = period
+    day_sets: list[Iterable[date]] = [holidays.get(site_id, ()) for site_id in site_ids]
+    for first, last in blocks:
+        day_sets.append(absence_weekdays(max(first, start), min(last, end), None))
     return off_days_within(period, *day_sets)
 
 
@@ -1865,6 +1922,31 @@ def _absence_statement(population: Any, start: date, end: date) -> Any:
     )
 
 
+def _equipment_booking_statement(scope: list[Any], start: date, end: date) -> Any:
+    """The equipment bookings of the projects in scope overlapping ``[start, end]``."""
+    from sqlalchemy import select
+
+    from app.models.equipment import EquipmentAssignment
+    from app.models.project import Project
+
+    return (
+        select(
+            EquipmentAssignment.id,
+            EquipmentAssignment.project_id,
+            EquipmentAssignment.equipment_id,
+            EquipmentAssignment.start_date,
+            EquipmentAssignment.end_date,
+        )
+        .join(Project, Project.id == EquipmentAssignment.project_id)
+        .where(
+            *scope,
+            EquipmentAssignment.start_date <= end,
+            EquipmentAssignment.end_date >= start,
+        )
+        .order_by(EquipmentAssignment.id)
+    )
+
+
 def clip_to_card(
     own_start: date | None,
     own_end: date | None,
@@ -1912,12 +1994,15 @@ async def load_facts(
     request's widgets read (``measure_families``): the booking, project and
     phase facts always load; the capacity facts (``CapacityFact``: the
     bookable people of the visible sites with their off days) and the
-    equipment facts (Task 3) only when their family is named. Raises
-    ``TooManyFacts`` above ``MAX_FACT_ROWS`` booking rows (absence rows
-    included when the capacity family loads).
+    equipment facts (every ``EquipmentInfo``, the equipment bookings of the
+    projects in scope, an ``EquipmentAvailabilityFact`` per active equipment
+    of the visible sites) only when their family is named. Raises
+    ``TooManyFacts`` above ``MAX_FACT_ROWS`` booking rows (absence and
+    equipment-booking rows included when their family loads).
     """
     from sqlalchemy import func, or_, select
 
+    from app.models.equipment import Equipment, EquipmentBlock, EquipmentSite
     from app.models.project import Project, ProjectPhase, ProjectSubphase
     from app.models.project_field import ProjectField, ProjectFieldOption
     from app.models.site import BankHoliday, CompanyEvent, CompanyEventSite, Site
@@ -1932,9 +2017,14 @@ async def load_facts(
 
     with_capacity = "capacity" in families
     population = _capacity_population(visible_site_ids) if with_capacity else None
+    equipment_statement = (
+        _equipment_booking_statement(scope, start, end) if "equipment" in families else None
+    )
     counted = list(statements)
     if population is not None:
         counted.append(_absence_statement(population, start, end))
+    if equipment_statement is not None:
+        counted.append(equipment_statement)
     count = 0
     for statement in counted:
         result = await db.execute(select(func.count()).select_from(statement.subquery()))
@@ -1989,7 +2079,12 @@ async def load_facts(
     project_rows = (await db.execute(statements[0])).all()
     phase_rows = (await db.execute(statements[1])).all()
     subphase_rows = (await db.execute(statements[2])).all()
-    booked_project_ids = {row[1] for row in (*project_rows, *phase_rows, *subphase_rows)}
+    equipment_rows = (
+        (await db.execute(equipment_statement)).all() if equipment_statement is not None else []
+    )
+    booked_project_ids = {
+        row[1] for row in (*project_rows, *phase_rows, *subphase_rows, *equipment_rows)
+    }
 
     # Projects touching the period, and those of the loaded bookings.
     project_result = await db.execute(
@@ -2246,11 +2341,70 @@ async def load_facts(
                     )
                 )
 
-    # Bank holidays of the projects' sites (booked days) and of the capacity
-    # people's sites (their off days).
+    # The equipment family: every equipment (reference data), the bookings
+    # of the projects loaded, the active equipment of the visible sites
+    # (their availability) and their blocks.
+    equipment: dict[int, EquipmentInfo] = {}
+    equipment_bookings: list[EquipmentBookingFact] = []
+    available: list[EquipmentInfo] = []
+    blocks_of: dict[int, list[tuple[date, date]]] = {}
+    if equipment_statement is not None:
+        equipment_sites: dict[int, list[int]] = {}
+        for equipment_id, site_id in (
+            await db.execute(
+                select(EquipmentSite.equipment_id, EquipmentSite.site_id).order_by(
+                    EquipmentSite.equipment_id, EquipmentSite.site_id
+                )
+            )
+        ).all():
+            equipment_sites.setdefault(equipment_id, []).append(site_id)
+        for row in (
+            await db.execute(
+                select(Equipment.id, Equipment.name, Equipment.type, Equipment.active).order_by(
+                    Equipment.id
+                )
+            )
+        ).all():
+            equipment[row.id] = EquipmentInfo(
+                id=row.id,
+                name=row.name,
+                type=row.type,
+                site_ids=tuple(equipment_sites.get(row.id, ())),
+                active=bool(row.active),
+            )
+        equipment_bookings = [
+            EquipmentBookingFact(row[0], row[1], row[2], row[3], row[4])
+            for row in equipment_rows
+            if row[1] in projects and row[3] <= row[4]
+        ]
+        available = [
+            info
+            for info in equipment.values()
+            if info.active
+            and (visible_site_ids is None or visible_site_ids.intersection(info.site_ids))
+        ]
+        if available:
+            for equipment_id, first, last in (
+                await db.execute(
+                    select(
+                        EquipmentBlock.equipment_id,
+                        EquipmentBlock.start_date,
+                        EquipmentBlock.end_date,
+                    ).where(
+                        EquipmentBlock.equipment_id.in_([info.id for info in available]),
+                        EquipmentBlock.start_date <= end,
+                        EquipmentBlock.end_date >= start,
+                    )
+                )
+            ).all():
+                blocks_of.setdefault(equipment_id, []).append((first, last))
+
+    # Bank holidays of the projects' sites (booked days), of the capacity
+    # people's sites (their off days) and of the available equipment's sites.
     holiday_sites = sorted(
         {p.site_id for p in projects.values() if p.site_id is not None}
         | {site_id for site_ids in sites_of.values() for site_id in site_ids}
+        | {site_id for info in available for site_id in info.site_ids}
     )
     holidays: dict[int, list[date]] = {}
     if holiday_sites:
@@ -2288,6 +2442,17 @@ async def load_facts(
                 ),
             )
 
+    equipment_availability = [
+        EquipmentAvailabilityFact(
+            equipment_id=info.id,
+            site_ids=info.site_ids,
+            off_days=equipment_off_days(
+                (start, end), info.site_ids, holidays, blocks_of.get(info.id, ())
+            ),
+        )
+        for info in available
+    ]
+
     return Facts(
         projects=projects,
         phases=phases,
@@ -2303,4 +2468,7 @@ async def load_facts(
         project_ids=all_project_ids,
         extents=dict(extents or {}),
         capacity=capacity,
+        equipment=equipment,
+        equipment_bookings=equipment_bookings,
+        equipment_availability=equipment_availability,
     )

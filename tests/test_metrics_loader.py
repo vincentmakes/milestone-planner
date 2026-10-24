@@ -18,6 +18,7 @@ from app.models.assignment import (
     ProjectAssignment,
     SubphaseStaffAssignment,
 )
+from app.models.equipment import Equipment, EquipmentAssignment, EquipmentBlock, EquipmentSite
 from app.models.project import Project, ProjectPhase, ProjectSubphase
 from app.models.project_field import ProjectField, ProjectFieldOption, ProjectFieldSelection
 from app.models.rbac import Role
@@ -597,3 +598,210 @@ async def test_loaded_capacity_aggregates(capacity_db):
     # Bob's booking: 2-6 March less Winterthur's holiday on the 5th = 4 days.
     assert ask("utilisation") == ([("Ann T", 0.0), ("Bob T", 72.73)], 24.24)
     assert ask("people_over_capacity") == ([("Ann T", 0), ("Bob T", 0)], 0)
+
+
+# --- The equipment family (round 3, Task 3) ------------------------------------
+# Three sites with a holiday each; an HPLC at Winterthur with a two-day block
+# (and one in February), a mass spectrometer at both sites blocked over a
+# weekend into March's last two weekdays, an inactive oven, a site-less rig
+# with a blank type and an NMR in Basel. Bookings: two in March, one of an
+# archived project, one of the inactive oven, one in April, and one of a
+# Frankfurt project that ends before March.
+
+
+@pytest.fixture
+def equipment_db():
+    with sqlite_session() as session:
+        session.add_all(
+            [
+                Site(id=1, name="Winterthur"),
+                Site(id=2, name="Frankfurt"),
+                Site(id=3, name="Basel"),
+                Equipment(id=1, name="HPLC A", type="HPLC", site_id=1),
+                Equipment(id=2, name="Mass spec", type="MS", site_id=1),
+                Equipment(id=3, name="Old oven", type=None, site_id=1, active=0),
+                Equipment(id=4, name="Mobile rig", type=""),
+                Equipment(id=5, name="Basel NMR", type="NMR", site_id=3),
+            ]
+        )
+        session.flush()
+        session.add_all(
+            [
+                *(
+                    EquipmentSite(equipment_id=equipment_id, site_id=site_id)
+                    for equipment_id, site_id in ((1, 1), (2, 1), (2, 2), (3, 1), (5, 3))
+                ),
+                _project(1, 1, "2026-03-01", "2026-03-31"),
+                _project(2, 2, "2026-03-01", "2026-03-31"),
+                _project(3, 1, "2026-03-01", "2026-03-31", archived=1),
+                _project(5, 2, "2026-01-05", "2026-02-27"),
+                BankHoliday(site_id=1, date=d("2026-03-05"), name="One", year=2026),
+                BankHoliday(site_id=2, date=d("2026-03-04"), name="Two", year=2026),
+                BankHoliday(site_id=3, date=d("2026-03-06"), name="Three", year=2026),
+                EquipmentBlock(
+                    equipment_id=1, start_date=d("2026-03-16"), end_date=d("2026-03-17")
+                ),
+                EquipmentBlock(
+                    equipment_id=1, start_date=d("2026-02-02"), end_date=d("2026-02-06")
+                ),
+                EquipmentBlock(
+                    equipment_id=2, start_date=d("2026-03-28"), end_date=d("2026-04-02")
+                ),
+            ]
+        )
+        session.flush()
+        session.add_all(
+            [
+                EquipmentAssignment(
+                    id=1,
+                    project_id=1,
+                    equipment_id=1,
+                    start_date=d("2026-03-02"),
+                    end_date=d("2026-03-13"),
+                ),
+                EquipmentAssignment(
+                    id=2,
+                    project_id=2,
+                    equipment_id=2,
+                    start_date=d("2026-03-09"),
+                    end_date=d("2026-03-13"),
+                ),
+                EquipmentAssignment(
+                    id=3,
+                    project_id=3,
+                    equipment_id=1,
+                    start_date=d("2026-03-02"),
+                    end_date=d("2026-03-06"),
+                ),
+                EquipmentAssignment(
+                    id=4,
+                    project_id=1,
+                    equipment_id=3,
+                    start_date=d("2026-03-02"),
+                    end_date=d("2026-03-03"),
+                ),
+                EquipmentAssignment(
+                    id=5,
+                    project_id=1,
+                    equipment_id=1,
+                    start_date=d("2026-04-06"),
+                    end_date=d("2026-04-10"),
+                ),
+                # Booked outside its project's dates: the project still loads.
+                EquipmentAssignment(
+                    id=6,
+                    project_id=5,
+                    equipment_id=2,
+                    start_date=d("2026-03-02"),
+                    end_date=d("2026-03-06"),
+                ),
+            ]
+        )
+        session.commit()
+        yield AsyncSessionFacade(session)
+
+
+async def _load_equipment(db, visible=None, archived="exclude", period=MARCH):
+    return await load_facts(
+        db,
+        period=period,
+        visible_site_ids=visible,
+        archived=archived,
+        today=TODAY,
+        families=frozenset({"equipment"}),
+    )
+
+
+def _equipment_bookings(facts):
+    return [(b.id, b.project_id, b.equipment_id, b.start, b.end) for b in facts.equipment_bookings]
+
+
+def _availability(facts):
+    return {a.equipment_id: (a.site_ids, a.off_days) for a in facts.equipment_availability}
+
+
+async def test_equipment_facts(equipment_db):
+    facts = await _load_equipment(equipment_db, visible=frozenset({1, 2}))
+    # Every equipment row, whatever its site or state.
+    assert [(e.id, e.name, e.type, e.site_ids, e.active) for e in facts.equipment.values()] == [
+        (1, "HPLC A", "HPLC", (1,), True),
+        (2, "Mass spec", "MS", (1, 2), True),
+        (3, "Old oven", None, (1,), False),
+        (4, "Mobile rig", "", (), True),
+        (5, "Basel NMR", "NMR", (3,), True),
+    ]
+    # Not the archived project's (3) nor April's (5).
+    assert _equipment_bookings(facts) == [
+        (1, 1, 1, d("2026-03-02"), d("2026-03-13")),
+        (2, 2, 2, d("2026-03-09"), d("2026-03-13")),
+        (4, 1, 3, d("2026-03-02"), d("2026-03-03")),
+        (6, 5, 2, d("2026-03-02"), d("2026-03-06")),
+    ]
+    assert sorted(facts.projects) == [1, 2, 5]
+    # The active equipment of the visible sites: holidays at any of its sites
+    # and the weekdays of its blocks inside the period.
+    assert _availability(facts) == {
+        1: ((1,), (d("2026-03-05"), d("2026-03-16"), d("2026-03-17"))),
+        2: ((1, 2), (d("2026-03-04"), d("2026-03-05"), d("2026-03-30"), d("2026-03-31"))),
+    }
+
+
+async def test_equipment_without_a_site_cut_includes_site_less_equipment(equipment_db):
+    facts = await _load_equipment(equipment_db)
+    availability = _availability(facts)
+    assert sorted(availability) == [1, 2, 4, 5]  # the oven is inactive
+    assert availability[4] == ((), ())
+    assert availability[5] == ((3,), (d("2026-03-06"),))  # Basel's holiday
+    assert set(facts.holidays) == {1, 2, 3}
+
+
+async def test_equipment_site_cut_keeps_the_equipments_other_sites(equipment_db):
+    facts = await _load_equipment(equipment_db, visible=frozenset({2}))
+    assert _equipment_bookings(facts) == [
+        (2, 2, 2, d("2026-03-09"), d("2026-03-13")),
+        (6, 5, 2, d("2026-03-02"), d("2026-03-06")),
+    ]
+    # Seen through Frankfurt, the mass spectrometer keeps Winterthur's holiday.
+    assert _availability(facts) == {
+        2: ((1, 2), (d("2026-03-04"), d("2026-03-05"), d("2026-03-30"), d("2026-03-31"))),
+    }
+    assert set(facts.holidays) == {1, 2}
+    empty = await _load_equipment(equipment_db, visible=frozenset())
+    assert empty.equipment_bookings == [] and empty.equipment_availability == []
+    assert len(empty.equipment) == 5
+
+
+async def test_equipment_archived_bookings_follow_the_mode(equipment_db):
+    facts = await _load_equipment(equipment_db, visible=frozenset({1}), archived="only")
+    assert _equipment_bookings(facts) == [(3, 3, 1, d("2026-03-02"), d("2026-03-06"))]
+
+
+async def test_equipment_off_days_stay_inside_the_period(equipment_db):
+    facts = await _load_equipment(equipment_db, period=(d("2026-03-30"), d("2026-04-08")))
+    assert _availability(facts)[2][1] == tuple(
+        d(day) for day in ("2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02")
+    )
+    assert _equipment_bookings(facts) == [(5, 1, 1, d("2026-04-06"), d("2026-04-10"))]
+
+
+async def test_equipment_loads_only_when_its_family_is_named(equipment_db):
+    facts = await load_facts(
+        equipment_db,
+        period=MARCH,
+        visible_site_ids=None,
+        archived="exclude",
+        today=TODAY,
+        families=frozenset({"booking", "capacity"}),
+    )
+    assert facts.equipment == {} and facts.equipment_bookings == []
+    assert facts.equipment_availability == []
+    assert sorted(facts.projects) == [1, 2]  # no booking pulls project 5 in
+
+
+async def test_equipment_bookings_count_toward_the_row_cap(equipment_db, monkeypatch):
+    # Bookings 1, 2, 4 and 6 (no staff booking in this database).
+    monkeypatch.setattr(metrics, "MAX_FACT_ROWS", 3)
+    with pytest.raises(TooManyFacts):
+        await _load_equipment(equipment_db)
+    monkeypatch.setattr(metrics, "MAX_FACT_ROWS", 4)
+    assert len((await _load_equipment(equipment_db)).equipment_bookings) == 4
