@@ -426,9 +426,9 @@ def _step(log: list[str]) -> list[str]:
     return log[start:]
 
 
-# The dashboard-sharing step on an up-to-date tenant: the probe, the
-# self-gated visibility block, its commit.
-SHARING_STEP_UP_TO_DATE = [SHARING_PROBE, VISIBILITY, "COMMIT"]
+# The dashboard-sharing step on an up-to-date tenant: the probe and its
+# commit, then the self-gated visibility block and its own commit.
+SHARING_STEP_UP_TO_DATE = [SHARING_PROBE, "COMMIT", VISIBILITY, "COMMIT"]
 BASE_WIDGETS = base_dashboard_rows()[1]
 FULL_STEP = [
     PROBE,
@@ -527,7 +527,7 @@ async def test_auto_migration_failure_rolls_back_and_never_raises(failing, ran):
 
     assert _step(log) == [PROBE, *ran, "ROLLBACK"]
     # The later steps still ran.
-    assert log[-5:] == [*SHARING_STEP_UP_TO_DATE, WIDEN, "COMMIT"]
+    assert log[-6:] == [*SHARING_STEP_UP_TO_DATE, WIDEN, "COMMIT"]
 
 
 def test_seed_sql_binds_every_column():

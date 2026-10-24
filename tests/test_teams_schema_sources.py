@@ -346,11 +346,12 @@ async def test_auto_migration_skips_an_up_to_date_tenant():
     # Nothing between the probe and the notification-types step's commit but
     # the rollback of the project-fields step (which this fake fails), the
     # decimals column step (its own gate, always run) and the dashboard-sharing
-    # step's commit.
+    # step's two commits (its tables, its visibility block).
     assert log[log.index(TEAMS_CHECK) :] == [
         TEAMS_CHECK,
         "ROLLBACK",
         DECIMALS,
+        "COMMIT",
         "COMMIT",
         "COMMIT",
         WIDEN,

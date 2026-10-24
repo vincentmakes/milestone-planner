@@ -468,8 +468,17 @@ async def test_auto_migration_skips_a_converted_tenant():
     await _run_auto_migrations(conn)
 
     # Then only the decimals column step (its own gate), the dashboard-sharing
-    # step's commit and the notification types.
-    assert log[log.index(PROBE) :] == [PROBE, DECIMALS, "COMMIT", "COMMIT", WIDEN, "COMMIT"]
+    # step's two commits (its tables, its visibility block) and the
+    # notification types.
+    assert log[log.index(PROBE) :] == [
+        PROBE,
+        DECIMALS,
+        "COMMIT",
+        "COMMIT",
+        "COMMIT",
+        WIDEN,
+        "COMMIT",
+    ]
     assert PROJECT_FIELDS_MIGRATION_SQL not in log
 
 
@@ -486,7 +495,7 @@ async def test_auto_migration_failure_rolls_back_and_never_raises():
         "ROLLBACK",
     ]
     # The later steps still ran (decimals, dashboard sharing, notification types).
-    assert log[-5:] == [DECIMALS, "COMMIT", "COMMIT", WIDEN, "COMMIT"]
+    assert log[-6:] == [DECIMALS, "COMMIT", "COMMIT", "COMMIT", WIDEN, "COMMIT"]
 
 
 # ---------------------------------------------------------------------------

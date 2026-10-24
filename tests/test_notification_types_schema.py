@@ -236,6 +236,7 @@ async def test_auto_migration_widens_an_up_to_date_rbac_tenant():
     assert log[start:] == [
         "RBAC probe",
         "SHARING probe",
+        "COMMIT",
         "VISIBILITY",
         "COMMIT",
         "WIDEN",
@@ -264,6 +265,7 @@ async def test_auto_migration_widening_failure_rolls_back_and_never_raises(caplo
     assert log[log.index("RBAC probe") :] == [
         "RBAC probe",
         "SHARING probe",
+        "COMMIT",
         "VISIBILITY",
         "COMMIT",
         "WIDEN",

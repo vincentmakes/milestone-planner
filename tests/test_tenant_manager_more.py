@@ -389,8 +389,9 @@ async def test_legacy_tenant_gets_every_step():
     )
     # The dashboard visibility block gates itself: it runs on every tenant.
     assert conn.ran(tp.DASHBOARD_VISIBILITY_CHECK_SQL)
-    # One commit per step (card status: one per table), 27 in all.
-    assert conn.log.count("COMMIT") == 27
+    # One commit per step (card status: one per table; dashboard sharing: its
+    # tables, then its visibility block), 28 in all.
+    assert conn.log.count("COMMIT") == 28
 
 
 @pytest.mark.asyncio
@@ -431,8 +432,8 @@ async def test_current_tenant_only_probes_and_runs_the_idempotent_backfills():
     # Only the two always-run back-fill steps, the users.is_resource step, the
     # booking-segments step, the equipment-note step, the project-field
     # decimals step, the project-comments step, the dashboard-sharing step (its
-    # visibility block) and the notification-types step.
-    assert conn.log.count("COMMIT") == 9
+    # probe, then its visibility block) and the notification-types step.
+    assert conn.log.count("COMMIT") == 10
 
 
 @pytest.mark.asyncio

@@ -905,7 +905,10 @@ class TenantConnectionManager:
         # seed), then -- on every pool creation, it gates itself -- the
         # visibility CHECK of a pre-release database ('roles' -> 'shared',
         # rows included). After the dashboards step: the links reference
-        # dashboards. One statement per execute.
+        # dashboards. One statement per execute. The tables are committed
+        # before the visibility block, in its own transaction: a failing ALTER
+        # (the pool's user not owning ``dashboards``) must not roll back the
+        # link tables every dashboard read loads.
         try:
             tables_check = await conn.execute(text(DASHBOARD_SHARING_PROBE_SQL))
             existing = {row[0] for row in tables_check.fetchall()}
@@ -913,10 +916,15 @@ class TenantConnectionManager:
                 logger.info("Auto-migration: Adding dashboard sharing on tenant %s...", slug)
                 for statement in DASHBOARD_SHARING_SCHEMA_STATEMENTS:
                     await conn.execute(text(statement))
-            await conn.execute(text(DASHBOARD_VISIBILITY_CHECK_SQL))
             await conn.commit()
         except Exception as e:
             logger.warning("Auto-migration (dashboard sharing) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+        try:
+            await conn.execute(text(DASHBOARD_VISIBILITY_CHECK_SQL))
+            await conn.commit()
+        except Exception as e:
+            logger.warning("Auto-migration (dashboard visibility) warning for %s: %s", slug, e)
             await _rollback_quietly(conn)
 
         # Notification types (add_change_notifications.sql). Runs on every pool

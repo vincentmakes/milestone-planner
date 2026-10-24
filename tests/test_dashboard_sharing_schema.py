@@ -398,11 +398,8 @@ async def _run_auto_migrations(conn) -> None:
 
 
 def _step(log: list[str]) -> list[str]:
-    start = log.index(PROBE)
-    for end in range(start, len(log)):
-        if log[end] in ("COMMIT", "ROLLBACK"):
-            return log[start : end + 1]
-    return log[start:]
+    """The sharing step's log: from its probe up to the notification types."""
+    return log[log.index(PROBE) : log.index(WIDEN)]
 
 
 @pytest.mark.asyncio
@@ -416,12 +413,19 @@ async def test_auto_migration_creates_the_tables_then_fixes_the_check(tables):
 
     await _run_auto_migrations(conn)
 
-    # The tables and indexes, the visibility block, one commit -- no seed.
-    assert _step(log) == [PROBE, *DASHBOARD_SHARING_SCHEMA_STATEMENTS, VISIBILITY, "COMMIT"]
+    # The tables and indexes committed, then the visibility block in its own
+    # transaction -- no seed.
+    assert _step(log) == [
+        PROBE,
+        *DASHBOARD_SHARING_SCHEMA_STATEMENTS,
+        "COMMIT",
+        VISIBILITY,
+        "COMMIT",
+    ]
     # Right after the dashboards step (the links reference dashboards),
     # before the notification-types step.
     assert log.index(DASHBOARDS_PROBE) < log.index(PROBE) < log.index(WIDEN)
-    assert log[log.index("COMMIT") + 1 :] == [WIDEN, "COMMIT"]
+    assert log[log.index(WIDEN) :] == [WIDEN, "COMMIT"]
 
 
 @pytest.mark.asyncio
@@ -430,30 +434,52 @@ async def test_auto_migration_runs_only_the_check_on_an_up_to_date_tenant():
 
     await _run_auto_migrations(conn)
 
-    assert log[log.index(PROBE) :] == [PROBE, VISIBILITY, "COMMIT", WIDEN, "COMMIT"]
+    assert log[log.index(PROBE) :] == [PROBE, "COMMIT", VISIBILITY, "COMMIT", WIDEN, "COMMIT"]
     assert not any(s in DASHBOARD_SHARING_SCHEMA_STATEMENTS for s in log)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("failing", "ran"),
-    [
-        (DASHBOARD_TEAMS_TABLE_SQL, [DASHBOARD_SITES_TABLE_SQL, DASHBOARD_TEAMS_TABLE_SQL]),
-        (VISIBILITY, [*DASHBOARD_SHARING_SCHEMA_STATEMENTS, VISIBILITY]),
-    ],
-    ids=["schema", "visibility"],
-)
-async def test_auto_migration_failure_rolls_back_and_never_raises(failing, ran, caplog):
-    conn, log = _conn(fail_on=failing)
+async def test_a_failing_table_rolls_back_and_the_check_still_runs(caplog):
+    conn, log = _conn(fail_on=DASHBOARD_TEAMS_TABLE_SQL)
 
     await _run_auto_migrations(conn)  # never raises
 
-    assert _step(log) == [PROBE, *ran, "ROLLBACK"]
+    assert _step(log) == [
+        PROBE,
+        DASHBOARD_SITES_TABLE_SQL,
+        DASHBOARD_TEAMS_TABLE_SQL,
+        "ROLLBACK",
+        VISIBILITY,
+        "COMMIT",
+    ]
     assert log[-2:] == [WIDEN, "COMMIT"]  # the later steps still ran
     assert any(
         "Auto-migration (dashboard sharing) warning for acme" in r.getMessage()
         for r in caplog.records
     )
+
+
+@pytest.mark.asyncio
+async def test_a_failing_check_keeps_the_committed_tables(caplog):
+    """The visibility ALTER fails (the pool's user does not own dashboards):
+    the link tables are already committed, only the block is rolled back."""
+    conn, log = _conn(fail_on=VISIBILITY)
+
+    await _run_auto_migrations(conn)  # never raises
+
+    assert _step(log) == [
+        PROBE,
+        *DASHBOARD_SHARING_SCHEMA_STATEMENTS,
+        "COMMIT",
+        VISIBILITY,
+        "ROLLBACK",
+    ]
+    step = _step(log)
+    assert step.count("ROLLBACK") == 1 and step[-1] == "ROLLBACK"
+    assert log[-2:] == [WIDEN, "COMMIT"]
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("Auto-migration (dashboard visibility) warning for acme" in m for m in messages)
+    assert not any("Auto-migration (dashboard sharing) warning" in m for m in messages)
 
 
 # ---------------------------------------------------------------------------
