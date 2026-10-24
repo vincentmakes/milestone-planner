@@ -4,7 +4,10 @@ Dashboards API (app/routers/dashboards.py) through ``authed_client``, on SQLite.
 The module overrides ``mock_db_session`` with an ``AsyncSession`` facade over
 an in-memory SQLite database (tests/sqlite_support.py), so the visibility
 clause, the widget replace and the metric loader run real SQL. The callers
-are FakeUsers whose ids and role keys match the seeded users and roles.
+are FakeUsers whose ids and role keys match the seeded users and roles. A
+caller's own sites are its FakeUser ``site_ids`` (authed_client patches the
+membership loader); everyone else's ``user_sites`` and every team membership
+are real rows of the fixture.
 """
 
 import json
@@ -12,21 +15,34 @@ from datetime import date
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy import text
 
 from app.models.assignment import ProjectAssignment
-from app.models.dashboard import Dashboard, DashboardRole, DashboardWidget
+from app.models.dashboard import (
+    Dashboard,
+    DashboardRole,
+    DashboardSite,
+    DashboardTeam,
+    DashboardUser,
+    DashboardWidget,
+)
 from app.models.project import Project
 from app.models.project_field import ProjectField
-from app.models.rbac import Role
+from app.models.rbac import Role, RolePermission
 from app.models.site import Site
-from app.models.user import User
+from app.models.team import Team, TeamMember
+from app.models.user import User, UserSite
 from app.routers import dashboards as dashboards_router
 from app.services import metrics
 from tests.conftest import FakeUser
 from tests.sqlite_support import AsyncSessionFacade, sqlite_session
 
 TODAY = date(2026, 10, 23)
-ADMIN, SUE, UMA, LEO, SAM = 1, 2, 3, 4, 5
+ADMIN, SUE, UMA, LEO, SAM, FAY, ED, IVY = 1, 2, 3, 4, 5, 6, 7, 8
+WINTERTHUR, FRANKFURT = 1, 2
+QA_TEAM, LAB_TEAM = 1, 2
+# The sharing dashboards (ids clear of the ones tests add themselves).
+FRANKFURT_BOARD, QA_BOARD, FOR_LEO, TWO_WAYS = 20, 21, 22, 23
 LAYOUT = {
     "lg": {"x": 0, "y": 0, "w": 6, "h": 4},
     "md": {"x": 0, "y": 0, "w": 8, "h": 4},
@@ -81,17 +97,24 @@ def sqlite():
                 Role(id=2, key="superuser", name="Superuser", is_system=True),
                 Role(id=3, key="user", name="User", is_system=True),
                 Role(id=4, key="lead", name="Team Lead"),
-                Site(id=1, name="Winterthur"),
-                Site(id=2, name="Frankfurt"),
+                # A custom role seeing every site: its holders are shareable
+                # from any site.
+                Role(id=5, key="auditor", name="Auditor"),
+                Site(id=WINTERTHUR, name="Winterthur"),
+                Site(id=FRANKFURT, name="Frankfurt"),
             ]
         )
         session.flush()
-        for user_id, role, first in (
-            (ADMIN, "admin", "Ada"),
-            (SUE, "superuser", "Sue"),
-            (UMA, "user", "Uma"),
-            (LEO, "lead", "Leo"),
-            (SAM, "superuser", "Sam"),
+        session.add(RolePermission(role_id=5, permission="sites.view_all", mode="allow"))
+        for user_id, role, first, active in (
+            (ADMIN, "admin", "Ada", 1),
+            (SUE, "superuser", "Sue", 1),
+            (UMA, "user", "Uma", 1),
+            (LEO, "lead", "Leo", 1),
+            (SAM, "superuser", "Sam", 1),
+            (FAY, "user", "Fay", 1),
+            (ED, "user", "Ed", 0),
+            (IVY, "auditor", "Ivy", 1),
         ):
             session.add(
                 User(
@@ -101,8 +124,39 @@ def sqlite():
                     first_name=first,
                     last_name="Test",
                     role=role,
+                    active=active,
+                    job_title="Chemist" if user_id == LEO else None,
                 )
             )
+        session.flush()
+        # Everyone's live user_sites rows (a caller's own come from its
+        # FakeUser) and the teams: QA at Winterthur (Uma), Lab at Frankfurt
+        # (Fay; inactive).
+        session.add_all(
+            [
+                *(
+                    UserSite(user_id=user_id, site_id=site_id)
+                    for user_id, site_id in (
+                        (SUE, WINTERTHUR),
+                        (UMA, WINTERTHUR),
+                        (LEO, WINTERTHUR),
+                        (LEO, FRANKFURT),
+                        (SAM, FRANKFURT),
+                        (FAY, FRANKFURT),
+                        (ED, WINTERTHUR),
+                    )
+                ),
+                Team(id=QA_TEAM, site_id=WINTERTHUR, name="QA & Compliance"),
+                Team(id=LAB_TEAM, site_id=FRANKFURT, name="Lab", active=False),
+            ]
+        )
+        session.flush()
+        session.add_all(
+            [
+                TeamMember(team_id=QA_TEAM, user_id=UMA),
+                TeamMember(team_id=LAB_TEAM, user_id=FAY),
+            ]
+        )
         session.flush()
         session.add_all(
             [
@@ -156,18 +210,47 @@ def sqlite():
             Dashboard(
                 id=3,
                 name="Lead board",
-                visibility="roles",
+                visibility="shared",
                 owner_id=SUE,
                 roles=[DashboardRole(role_id=4)],
             ),
             Dashboard(
                 id=4,
                 name="Users board",
-                visibility="roles",
+                visibility="shared",
                 owner_id=SUE,
                 roles=[DashboardRole(role_id=3)],
             ),
-            Dashboard(id=5, name="orphan roles", visibility="roles", owner_id=SUE),
+            Dashboard(id=5, name="orphan shared", visibility="shared", owner_id=SUE),
+            Dashboard(
+                id=FRANKFURT_BOARD,
+                name="Frankfurt board",
+                visibility="shared",
+                owner_id=SUE,
+                sites=[DashboardSite(site_id=FRANKFURT)],
+            ),
+            Dashboard(
+                id=QA_BOARD,
+                name="QA board",
+                visibility="shared",
+                owner_id=SUE,
+                teams=[DashboardTeam(team_id=QA_TEAM)],
+            ),
+            Dashboard(
+                id=FOR_LEO,
+                name="For Leo",
+                visibility="shared",
+                owner_id=SUE,
+                users=[DashboardUser(user_id=LEO)],
+            ),
+            Dashboard(
+                id=TWO_WAYS,
+                name="Two ways",
+                visibility="shared",
+                owner_id=SUE,
+                sites=[DashboardSite(site_id=FRANKFURT)],
+                users=[DashboardUser(user_id=FAY)],
+            ),
             Dashboard(id=6, name="Everyone by Sue", visibility="everyone", owner_id=SUE),
             Dashboard(
                 id=7,
@@ -244,16 +327,34 @@ def leo() -> FakeUser:
     return user(LEO, "lead", {"views.dashboards"})
 
 
+def fay() -> FakeUser:
+    """A Frankfurt member: matches by site (and is named on Two ways)."""
+    return user(FAY, "user", site_ids=(FRANKFURT,))
+
+
+def frank() -> FakeUser:
+    """A Frankfurt member with a role that matches nothing (no role row)."""
+    return user(SAM, "nobody", {"views.dashboards"}, site_ids=(FRANKFURT,))
+
+
+def roaming() -> FakeUser:
+    """Sees every site, but is a member of Winterthur only: no Frankfurt match."""
+    return user(SAM, "nobody", {"views.dashboards", "sites.view_all"}, site_ids=(WINTERTHUR,))
+
+
 # --- List and visibility -------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     ("caller", "expected"),
     [
-        (admin, [1, 6, 3, 7, 5, 2, 4]),
-        (sue, [1, 6, 3, 7, 5, 2, 4]),
-        (uma, [1, 6, 7, 4]),
-        (leo, [1, 6, 3, 7]),
+        (admin, [1, 6, 22, 20, 3, 7, 5, 21, 2, 23, 4]),
+        (sue, [1, 6, 22, 20, 3, 7, 5, 21, 2, 23, 4]),
+        (uma, [1, 6, 7, 21, 4]),  # role user, team QA
+        (leo, [1, 6, 22, 3, 7]),  # role lead, named on For Leo
+        (frank, [1, 6, 20, 7, 23]),  # Frankfurt member
+        (fay, [1, 6, 20, 7, 23, 4]),  # by site and by name: Two ways once
+        (roaming, [1, 6, 7]),  # sites.view_all is not membership
     ],
 )
 async def test_list_shows_what_the_caller_may_open(authed_client, caller, expected):
@@ -273,8 +374,30 @@ async def test_list_row_shape(authed_client):
     assert rows[1]["widget_count"] == 1
     assert rows[3]["role_ids"] == [4] and rows[3]["owner_name"] == "Sue Test"
     assert rows[3]["can_edit"] is True
-    # A roles dashboard with no role left: its owner sees it, shared with none.
-    assert rows[5]["role_ids"] == [] and rows[5]["visibility"] == "roles"
+    assert rows[3]["shared_with"] == {
+        "roles": [{"id": 4, "name": "Team Lead"}],
+        "sites": [],
+        "teams": [],
+        "users": [],
+    }
+    # A shared dashboard with no target left: its owner sees it, shared with none.
+    assert rows[5]["visibility"] == "shared"
+    assert [rows[5][k] for k in ("role_ids", "site_ids", "team_ids", "user_ids")] == [[]] * 4
+    assert rows[5]["shared_with"] == {"roles": [], "sites": [], "teams": [], "users": []}
+    assert rows[TWO_WAYS]["site_ids"] == [FRANKFURT]
+    assert rows[TWO_WAYS]["user_ids"] == [FAY]
+    assert rows[TWO_WAYS]["shared_with"] == {
+        "roles": [],
+        "sites": [{"id": FRANKFURT, "name": "Frankfurt"}],
+        "teams": [],
+        "users": [{"id": FAY, "name": "Fay Test"}],
+    }
+    assert rows[QA_BOARD]["team_ids"] == [QA_TEAM]
+    assert rows[QA_BOARD]["shared_with"]["teams"] == [
+        {"id": QA_TEAM, "name": "QA & Compliance", "site_name": "Winterthur"}
+    ]
+    # Everyone's dashboards list no target.
+    assert rows[1]["shared_with"] == {"roles": [], "sites": [], "teams": [], "users": []}
     assert rows[7]["widget_count"] == 9
     assert rows[1]["updated_at"].endswith("Z")
 
@@ -300,12 +423,22 @@ async def test_admin_may_edit_everything(authed_client):
         (sue, 2, 200),  # owner, private
         (uma, 2, 404),  # someone else's private
         (admin, 2, 200),
-        (leo, 3, 200),  # roles with my role
-        (uma, 3, 404),  # roles without my role
+        (leo, 3, 200),  # shared with my role
+        (uma, 3, 404),  # shared without my role
         (uma, 4, 200),
-        (uma, 5, 404),  # roles with no role left
+        (uma, 5, 404),  # shared with nothing left
         (sue, 5, 200),
+        (admin, 5, 200),
         (uma, 6, 200),  # everyone
+        (frank, FRANKFURT_BOARD, 200),  # member of the site
+        (uma, FRANKFURT_BOARD, 404),
+        (roaming, FRANKFURT_BOARD, 404),  # sees the site, is not a member
+        (uma, QA_BOARD, 200),  # member of the team
+        (leo, QA_BOARD, 404),
+        (fay, QA_BOARD, 404),
+        (leo, FOR_LEO, 200),  # named
+        (uma, FOR_LEO, 404),
+        (fay, TWO_WAYS, 200),  # two ways at once
         (uma, 99, 404),
     ],
 )
@@ -414,25 +547,128 @@ async def test_create_shared_with_roles(authed_client):
     client, set_user = authed_client
     set_user(sue())
     resp = await client.post(
-        "/api/dashboards", json={"name": "Leads", "visibility": "roles", "role_ids": [4, 3, 4]}
+        "/api/dashboards", json={"name": "Leads", "visibility": "shared", "role_ids": [4, 3, 4]}
     )
     assert resp.status_code == 201 and resp.json()["role_ids"] == [3, 4]
-    # Roles are dropped for any other visibility.
+    # Targets are dropped for any other visibility.
     resp = await client.post(
-        "/api/dashboards", json={"name": "All", "visibility": "everyone", "role_ids": [4]}
+        "/api/dashboards",
+        json={
+            "name": "All",
+            "visibility": "everyone",
+            "role_ids": [4],
+            "site_ids": [WINTERTHUR],
+            "team_ids": [QA_TEAM],
+            "user_ids": [UMA],
+        },
     )
-    assert resp.json()["role_ids"] == []
+    body = resp.json()
+    assert [body[k] for k in ("role_ids", "site_ids", "team_ids", "user_ids")] == [[]] * 4
 
 
-async def test_create_roles_needs_a_role(authed_client):
+async def test_create_shared_with_every_kind(authed_client, sqlite):
     client, set_user = authed_client
     set_user(sue())
-    resp = await client.post("/api/dashboards", json={"name": "Leads", "visibility": "roles"})
-    assert resp.status_code == 400 and resp.json()["detail"] == "Choose at least one role"
     resp = await client.post(
-        "/api/dashboards", json={"name": "Leads", "visibility": "roles", "role_ids": [4, 77]}
+        "/api/dashboards",
+        json={
+            "name": "Shared",
+            "visibility": "shared",
+            "role_ids": [3],
+            "site_ids": [WINTERTHUR, WINTERTHUR],
+            "team_ids": [QA_TEAM],
+            # An admin and a role seeing every site are shareable from anywhere.
+            "user_ids": [UMA, ADMIN, IVY],
+        },
     )
-    assert resp.status_code == 404 and resp.json()["detail"] == "Role not found"
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["visibility"] == "shared"
+    assert body["role_ids"] == [3] and body["site_ids"] == [WINTERTHUR]
+    assert body["team_ids"] == [QA_TEAM] and body["user_ids"] == [ADMIN, UMA, IVY]
+    assert body["shared_with"] == {
+        "roles": [{"id": 3, "name": "User"}],
+        "sites": [{"id": WINTERTHUR, "name": "Winterthur"}],
+        "teams": [{"id": QA_TEAM, "name": "QA & Compliance", "site_name": "Winterthur"}],
+        "users": [
+            {"id": ADMIN, "name": "Ada Test"},
+            {"id": IVY, "name": "Ivy Test"},
+            {"id": UMA, "name": "Uma Test"},
+        ],
+    }
+    stored = sqlite.get(Dashboard, body["id"])
+    assert (stored.site_ids, stored.team_ids, stored.user_ids) == (
+        [WINTERTHUR],
+        [QA_TEAM],
+        [ADMIN, UMA, IVY],
+    )
+
+
+async def test_an_admin_picks_any_site_team_and_person(authed_client):
+    client, set_user = authed_client
+    set_user(admin())
+    resp = await client.post(
+        "/api/dashboards",
+        json={
+            "name": "Everywhere",
+            "visibility": "shared",
+            "site_ids": [FRANKFURT],
+            "team_ids": [LAB_TEAM],  # inactive teams may be picked
+            "user_ids": [FAY],
+        },
+    )
+    assert resp.status_code == 201
+    assert resp.json()["shared_with"]["teams"] == [
+        {"id": LAB_TEAM, "name": "Lab", "site_name": "Frankfurt"}
+    ]
+
+
+async def test_create_shared_needs_a_target(authed_client):
+    client, set_user = authed_client
+    set_user(sue())
+    resp = await client.post("/api/dashboards", json={"name": "Leads", "visibility": "shared"})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Choose at least one role, site, team or person"
+    # One target of any kind is enough.
+    resp = await client.post(
+        "/api/dashboards", json={"name": "Me", "visibility": "shared", "user_ids": [UMA]}
+    )
+    assert resp.status_code == 201
+
+
+@pytest.mark.parametrize(
+    ("targets", "detail"),
+    [
+        ({"role_ids": [4, 77]}, "Role not found"),
+        ({"site_ids": [99]}, "Site not found"),
+        ({"site_ids": [WINTERTHUR, FRANKFURT]}, "Site not found"),  # not a visible site
+        ({"team_ids": [99]}, "Team not found"),
+        ({"team_ids": [LAB_TEAM]}, "Team not found"),  # at a site Sue cannot see
+        ({"user_ids": [99]}, "Person not found"),
+        ({"user_ids": [FAY]}, "Person not found"),  # Frankfurt only
+        ({"user_ids": [ED]}, "Person not found"),  # inactive
+        # The first kind that fails answers.
+        ({"role_ids": [77], "site_ids": [99]}, "Role not found"),
+    ],
+)
+async def test_create_refuses_a_target_out_of_reach(authed_client, targets, detail):
+    client, set_user = authed_client
+    set_user(sue())
+    resp = await client.post(
+        "/api/dashboards", json={"name": "Bad", "visibility": "shared", **targets}
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == detail
+
+
+async def test_targets_are_capped_per_kind(authed_client):
+    client, set_user = authed_client
+    set_user(sue())
+    resp = await client.post(
+        "/api/dashboards",
+        json={"name": "Many", "visibility": "shared", "user_ids": list(range(1, 202))},
+    )
+    assert resp.status_code == 422
 
 
 @pytest.mark.parametrize(
@@ -475,7 +711,7 @@ async def test_owner_replaces_fields_and_widgets(authed_client, sqlite):
         json={
             "name": "Mixed v2",
             "description": "  ",
-            "visibility": "roles",
+            "visibility": "shared",
             "role_ids": [4],
             "is_default": True,
             "owner_id": UMA,
@@ -484,7 +720,7 @@ async def test_owner_replaces_fields_and_widgets(authed_client, sqlite):
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert (body["name"], body["description"], body["visibility"]) == ("Mixed v2", None, "roles")
+    assert (body["name"], body["description"], body["visibility"]) == ("Mixed v2", None, "shared")
     assert body["role_ids"] == [4] and body["is_default"] is False and body["owner_id"] == SUE
     assert [w["title"] for w in body["widgets"]] == ["Only"]
     assert body["widgets"][0]["id"] != 999
@@ -496,15 +732,72 @@ async def test_update_keeps_widgets_when_not_given_and_swaps_roles(authed_client
     client, set_user = authed_client
     set_user(sue())
     resp = await client.put(
-        "/api/dashboards/3", json={"name": "Lead board", "visibility": "roles", "role_ids": [3, 4]}
+        "/api/dashboards/3", json={"name": "Lead board", "visibility": "shared", "role_ids": [3, 4]}
     )
     assert resp.json()["role_ids"] == [3, 4]
     resp = await client.put(
-        "/api/dashboards/3", json={"name": "Lead board", "visibility": "roles", "role_ids": [3]}
+        "/api/dashboards/3", json={"name": "Lead board", "visibility": "shared", "role_ids": [3]}
     )
     assert resp.json()["role_ids"] == [3]
     resp = await client.put("/api/dashboards/7", json={"name": "Mixed", "visibility": "everyone"})
     assert len(resp.json()["widgets"]) == 9
+
+
+async def test_update_swaps_every_kind_keeping_the_rows_that_stay(authed_client, sqlite):
+    client, set_user = authed_client
+    set_user(sue())
+    shared = {"name": "QA board", "visibility": "shared"}
+    resp = await client.put(
+        f"/api/dashboards/{QA_BOARD}",
+        json={**shared, "site_ids": [WINTERTHUR], "team_ids": [QA_TEAM], "user_ids": [UMA, LEO]},
+    )
+    assert resp.status_code == 200
+    kept_team = sqlite.get(Dashboard, QA_BOARD).teams[0]
+    resp = await client.put(
+        f"/api/dashboards/{QA_BOARD}",
+        json={**shared, "team_ids": [QA_TEAM], "user_ids": [LEO]},
+    )
+    body = resp.json()
+    assert (body["site_ids"], body["team_ids"], body["user_ids"]) == ([], [QA_TEAM], [LEO])
+    # The link that stayed is the same row (no delete + insert).
+    assert sqlite.get(Dashboard, QA_BOARD).teams[0] is kept_team
+    # Back to private: every link goes.
+    resp = await client.put(f"/api/dashboards/{QA_BOARD}", json={**shared, "visibility": "private"})
+    body = resp.json()
+    assert [body[k] for k in ("role_ids", "site_ids", "team_ids", "user_ids")] == [[]] * 4
+    assert sqlite.query(DashboardTeam).filter_by(dashboard_id=QA_BOARD).count() == 0
+
+
+async def test_update_keeps_targets_the_editor_could_not_pick_now(authed_client):
+    """Two ways is shared with Frankfurt and Fay, neither in Sue's reach: a
+    save that keeps them passes, one that adds a new target out of reach does
+    not."""
+    client, set_user = authed_client
+    set_user(sue())
+    body = {
+        "name": "Two ways",
+        "visibility": "shared",
+        "site_ids": [FRANKFURT],
+        "user_ids": [FAY],
+        "widgets": [widget_body("New widget")],
+    }
+    resp = await client.put(f"/api/dashboards/{TWO_WAYS}", json=body)
+    assert resp.status_code == 200
+    assert (resp.json()["site_ids"], resp.json()["user_ids"]) == ([FRANKFURT], [FAY])
+    resp = await client.put(f"/api/dashboards/{TWO_WAYS}", json={**body, "team_ids": [LAB_TEAM]})
+    assert resp.status_code == 404 and resp.json()["detail"] == "Team not found"
+    resp = await client.put(f"/api/dashboards/{TWO_WAYS}", json={**body, "user_ids": [FAY, SAM]})
+    assert resp.status_code == 404 and resp.json()["detail"] == "Person not found"
+
+
+async def test_a_viewer_by_sharing_may_not_edit(authed_client):
+    client, set_user = authed_client
+    set_user(user(LEO, "lead", {"views.dashboards", "dashboards.manage"}))
+    resp = await client.put(
+        f"/api/dashboards/{FOR_LEO}", json={"name": "Mine now", "visibility": "everyone"}
+    )
+    assert resp.status_code == 403
+    assert (await client.delete(f"/api/dashboards/{FOR_LEO}")).status_code == 403
 
 
 async def test_admin_edits_the_default_which_stays_default(authed_client):
@@ -539,9 +832,18 @@ async def test_update_roles_without_role_is_400(authed_client):
     client, set_user = authed_client
     set_user(sue())
     resp = await client.put(
-        "/api/dashboards/6", json={"name": "X", "visibility": "roles", "role_ids": []}
+        "/api/dashboards/6",
+        json={
+            "name": "X",
+            "visibility": "shared",
+            "role_ids": [],
+            "site_ids": [],
+            "team_ids": [],
+            "user_ids": [],
+        },
     )
     assert resp.status_code == 400
+    assert resp.json()["detail"] == "Choose at least one role, site, team or person"
 
 
 # --- Delete --------------------------------------------------------------------
@@ -826,3 +1128,103 @@ async def test_data_resolves_all_per_archived_mode(authed_client, sqlite):
         "include",
     ]
     assert loader.await_args.kwargs["period"] == (date(2024, 1, 1), date(2026, 12, 31))
+
+
+# --- Sharing: copies, deletes, the people picker ---------------------------------
+
+
+async def test_a_copy_takes_the_widgets_not_the_sharing(authed_client):
+    client, set_user = authed_client
+    set_user(sue())
+    resp = await client.post(
+        "/api/dashboards",
+        json={"name": "Copy of Two ways", "visibility": "private", "source_id": TWO_WAYS},
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["visibility"] == "private"
+    assert [body[k] for k in ("role_ids", "site_ids", "team_ids", "user_ids")] == [[]] * 4
+    assert body["shared_with"] == {"roles": [], "sites": [], "teams": [], "users": []}
+
+
+async def test_a_deleted_owner_leaves_the_dashboard_and_its_links(authed_client, sqlite):
+    sqlite.execute(text(f"DELETE FROM users WHERE id = {SUE}"))
+    sqlite.commit()
+    client, set_user = authed_client
+    set_user(fay())
+    body = (await client.get(f"/api/dashboards/{TWO_WAYS}")).json()
+    assert body["owner_id"] is None and body["owner_name"] is None
+    assert body["can_edit"] is False
+    assert body["shared_with"]["sites"] == [{"id": FRANKFURT, "name": "Frankfurt"}]
+    assert body["shared_with"]["users"] == [{"id": FAY, "name": "Fay Test"}]
+    set_user(admin())
+    assert (await client.get(f"/api/dashboards/{TWO_WAYS}")).json()["can_edit"] is True
+
+
+async def test_a_deleted_target_drops_its_link(authed_client, sqlite):
+    sqlite.execute(text(f"DELETE FROM users WHERE id = {FAY}"))
+    sqlite.execute(text(f"DELETE FROM teams WHERE id = {QA_TEAM}"))
+    sqlite.commit()
+    client, set_user = authed_client
+    set_user(sue())
+    rows = {row["id"]: row for row in (await client.get("/api/dashboards")).json()}
+    assert rows[TWO_WAYS]["user_ids"] == [] and rows[TWO_WAYS]["site_ids"] == [FRANKFURT]
+    assert rows[TWO_WAYS]["shared_with"]["users"] == []
+    # QA board is shared with nothing left: Uma no longer sees it.
+    assert rows[QA_BOARD]["team_ids"] == [] and rows[QA_BOARD]["shared_with"]["teams"] == []
+    set_user(uma())
+    assert (await client.get(f"/api/dashboards/{QA_BOARD}")).status_code == 404
+
+
+def _people(resp) -> list[tuple[int, str, str | None, list[str]]]:
+    return [(p["id"], p["name"], p["job_title"], p["site_names"]) for p in resp.json()]
+
+
+async def test_shareable_users_of_a_site_member(authed_client):
+    client, set_user = authed_client
+    set_user(sue())
+    resp = await client.get("/api/dashboards/shareable-users")
+    assert resp.status_code == 200
+    # Winterthur's active members, the admin and the all-sites auditor; by
+    # name; site names among Sue's visible sites only. Not Ed (inactive), not
+    # Fay or Sam (Frankfurt only).
+    assert _people(resp) == [
+        (ADMIN, "Ada Test", None, []),
+        (IVY, "Ivy Test", None, []),
+        (LEO, "Leo Test", "Chemist", ["Winterthur"]),
+        (SUE, "Sue Test", None, ["Winterthur"]),
+        (UMA, "Uma Test", None, ["Winterthur"]),
+    ]
+
+
+async def test_shareable_users_over_two_sites_lists_each_person_once(authed_client):
+    client, set_user = authed_client
+    set_user(sue(site_ids=(WINTERTHUR, FRANKFURT)))
+    people = _people(await client.get("/api/dashboards/shareable-users"))
+    assert [p[0] for p in people] == [ADMIN, FAY, IVY, LEO, SAM, SUE, UMA]
+    assert dict((p[0], p[3]) for p in people)[LEO] == ["Frankfurt", "Winterthur"]
+
+
+async def test_shareable_users_of_an_admin_are_every_active_user(authed_client):
+    client, set_user = authed_client
+    set_user(admin())
+    people = _people(await client.get("/api/dashboards/shareable-users"))
+    assert [p[0] for p in people] == [ADMIN, FAY, IVY, LEO, SAM, SUE, UMA]
+    assert dict((p[0], p[3]) for p in people)[SAM] == ["Frankfurt"]
+
+
+async def test_shareable_users_needs_the_manage_key(authed_client):
+    client, set_user = authed_client
+    set_user(uma())
+    resp = await client.get("/api/dashboards/shareable-users")
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Permission required: dashboards.manage"
+
+
+async def test_an_empty_list(authed_client, sqlite):
+    sqlite.execute(text("DELETE FROM dashboards"))
+    sqlite.commit()
+    client, set_user = authed_client
+    set_user(uma())
+    resp = await client.get("/api/dashboards")
+    assert resp.status_code == 200 and resp.json() == []

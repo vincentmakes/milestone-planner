@@ -2,19 +2,28 @@
 Dashboards API (2.1.0): KPI and chart dashboards over the planning data.
 
 - ``GET /dashboards`` (``views.dashboards``) -- the dashboards the caller may
-  open (own, ``everyone``, ``roles`` holding the caller's role; admins: all),
-  default first, then by name, with ``widget_count``, ``owner_name`` and
-  ``can_edit``.
+  open (own, ``everyone``, ``shared`` with one of the caller's role, member
+  sites, teams or the caller; admins: all), default first, then by name,
+  with ``widget_count``, ``owner_name``, ``can_edit``, the target id lists
+  and ``shared_with`` (the targets by name).
+- ``GET /dashboards/shareable-users`` (``dashboards.manage``) -- the people
+  the caller may share with: active members of the caller's visible sites and
+  every active user whose role sees all sites (``people_lists``).
 - ``GET /dashboards/{id}`` -- one dashboard with its widgets (404 unless the
   caller may open it).
 - ``POST /dashboards`` (``dashboards.manage``) -- create; ``source_id`` copies
-  a dashboard the caller may open (``widgets`` in the body win); ``roles``
-  needs at least one role (400), an unknown role is a 404; ``is_default`` is
-  never set here; the caller owns it. 201 with the dashboard.
+  the widgets of a dashboard the caller may open (``widgets`` in the body
+  win; its sharing is never copied); ``shared`` needs at least one role,
+  site, team or person (400) and each must be one the caller may pick (any
+  role, a visible site, a team at one, a shareable person -- else 404 per
+  kind); ``is_default`` is never set here; the caller owns it. 201 with the
+  dashboard.
 - ``PUT /dashboards/{id}`` -- the owner holding ``dashboards.manage``, or an
   admin (404 for those who may not open it, 403 for viewers): replaces the
-  name, description, visibility, roles and -- when given -- the widgets (new
-  ids). ``is_default`` and the owner never change.
+  name, description, visibility, targets and -- when given -- the widgets
+  (new ids). Targets already on the dashboard stay accepted even when the
+  editor could not pick them any more. ``is_default`` and the owner never
+  change.
 - ``DELETE /dashboards/{id}`` -- same rule; the default dashboard only by an
   admin (403). 204.
 - ``POST /dashboards/query`` (``views.dashboards``) -- answer one metric query
@@ -35,6 +44,7 @@ routes are What-If-exempt on the client (reports, never plan data).
 """
 
 import json
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -45,17 +55,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, get_db_readonly
 from app.middleware.auth import get_current_user, require_permission
-from app.models.dashboard import Dashboard, DashboardRole, DashboardWidget
+from app.models.dashboard import (
+    Dashboard,
+    DashboardRole,
+    DashboardSite,
+    DashboardTeam,
+    DashboardUser,
+    DashboardWidget,
+)
 from app.models.rbac import Role
-from app.models.user import User
+from app.models.site import Site
+from app.models.team import Team
+from app.models.user import User, UserSite
 from app.schemas.base import serialize_datetime_js
 from app.schemas.dashboard import DashboardIn, MetricQuery, WidgetIn
 from app.services.dashboard_access import (
     MANAGE_KEY,
     VIEW_KEY,
+    ViewerScope,
     can_edit,
     can_view,
-    role_id_for_key,
+    load_viewer_scope,
     visible_dashboards_clause,
 )
 from app.services.metrics import (
@@ -70,6 +90,7 @@ from app.services.metrics import (
     permission_message,
     resolve_period,
 )
+from app.services.people_lists import shareable_users_statement
 from app.services.site_access import visible_site_ids
 from app.utils import utcnow_naive
 
@@ -78,8 +99,11 @@ router = APIRouter(prefix="/dashboards", tags=["dashboards"])
 DASHBOARD_NOT_FOUND_DETAIL = "Dashboard not found"
 CANNOT_EDIT_DETAIL = "You cannot edit this dashboard"
 DEFAULT_DELETE_DETAIL = "Only an administrator can delete the default dashboard"
-ROLES_REQUIRED_DETAIL = "Choose at least one role"
+TARGET_REQUIRED_DETAIL = "Choose at least one role, site, team or person"
 ROLE_NOT_FOUND_DETAIL = "Role not found"
+SITE_NOT_FOUND_DETAIL = "Site not found"
+TEAM_NOT_FOUND_DETAIL = "Team not found"
+PERSON_NOT_FOUND_DETAIL = "Person not found"
 UNREADABLE_QUERY_DETAIL = "This widget's query cannot be read"
 
 
@@ -153,10 +177,10 @@ async def _get_dashboard(db: AsyncSession, dashboard_id: int) -> Dashboard | Non
     return dashboard
 
 
-async def _visible_dashboard(db: AsyncSession, user: User, dashboard_id: int) -> Dashboard:
+async def _visible_dashboard(db: AsyncSession, scope: ViewerScope, dashboard_id: int) -> Dashboard:
     """The dashboard if the caller may open it, else 404 (its existence stays hidden)."""
     dashboard = await _get_dashboard(db, dashboard_id)
-    if dashboard is None or not can_view(user, dashboard, await role_id_for_key(db, user.role)):
+    if dashboard is None or not can_view(scope, dashboard):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=DASHBOARD_NOT_FOUND_DETAIL
         )
@@ -171,14 +195,83 @@ async def _owner_name(db: AsyncSession, owner_id: int | None) -> str | None:
     return _full_name(row[0], row[1]) if row else None
 
 
+def _empty_sharing() -> dict[str, Any]:
+    return {
+        "role_ids": [],
+        "site_ids": [],
+        "team_ids": [],
+        "user_ids": [],
+        "shared_with": {"roles": [], "sites": [], "teams": [], "users": []},
+    }
+
+
+async def _sharing(db: AsyncSession, dashboard_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """
+    Per dashboard: the four target id lists (ascending) and ``shared_with``,
+    the targets by name (case-insensitive name order; teams with their site).
+    One query per kind over every given dashboard.
+    """
+    sharing = {dashboard_id: _empty_sharing() for dashboard_id in dashboard_ids}
+    if not dashboard_ids:
+        return sharing
+
+    def add(dashboard_id: int, kind: str, ids_key: str, entry: dict[str, Any]) -> None:
+        sharing[dashboard_id][ids_key].append(entry["id"])
+        sharing[dashboard_id]["shared_with"][kind].append(entry)
+
+    roles = await db.execute(
+        select(DashboardRole.dashboard_id, Role.id, Role.name)
+        .join(Role, Role.id == DashboardRole.role_id)
+        .where(DashboardRole.dashboard_id.in_(dashboard_ids))
+        .order_by(func.lower(Role.name), Role.id)
+    )
+    for dashboard_id, role_id, name in roles.all():
+        add(dashboard_id, "roles", "role_ids", {"id": role_id, "name": name})
+    sites = await db.execute(
+        select(DashboardSite.dashboard_id, Site.id, Site.name)
+        .join(Site, Site.id == DashboardSite.site_id)
+        .where(DashboardSite.dashboard_id.in_(dashboard_ids))
+        .order_by(func.lower(Site.name), Site.id)
+    )
+    for dashboard_id, site_id, name in sites.all():
+        add(dashboard_id, "sites", "site_ids", {"id": site_id, "name": name})
+    teams = await db.execute(
+        select(DashboardTeam.dashboard_id, Team.id, Team.name, Site.name)
+        .join(Team, Team.id == DashboardTeam.team_id)
+        .join(Site, Site.id == Team.site_id)
+        .where(DashboardTeam.dashboard_id.in_(dashboard_ids))
+        .order_by(func.lower(Team.name), func.lower(Site.name), Team.id)
+    )
+    for dashboard_id, team_id, name, site_name in teams.all():
+        add(
+            dashboard_id,
+            "teams",
+            "team_ids",
+            {"id": team_id, "name": name, "site_name": site_name},
+        )
+    users = await db.execute(
+        select(DashboardUser.dashboard_id, User.id, User.first_name, User.last_name)
+        .join(User, User.id == DashboardUser.user_id)
+        .where(DashboardUser.dashboard_id.in_(dashboard_ids))
+        .order_by(func.lower(User.first_name), func.lower(User.last_name), User.id)
+    )
+    for dashboard_id, user_id, first, last in users.all():
+        add(dashboard_id, "users", "user_ids", {"id": user_id, "name": _full_name(first, last)})
+    for entry in sharing.values():
+        for ids_key in ("role_ids", "site_ids", "team_ids", "user_ids"):
+            entry[ids_key].sort()
+    return sharing
+
+
 async def _dashboard_out(db: AsyncSession, user: User, dashboard: Dashboard) -> dict[str, Any]:
     widgets = [_widget_out(widget) for widget in dashboard.widgets]
+    sharing = (await _sharing(db, [dashboard.id]))[dashboard.id]
     return {
         "id": dashboard.id,
         "name": dashboard.name,
         "description": dashboard.description,
         "visibility": dashboard.visibility,
-        "role_ids": dashboard.role_ids,
+        **sharing,
         "owner_id": dashboard.owner_id,
         "owner_name": await _owner_name(db, dashboard.owner_id),
         "is_default": dashboard.is_default,
@@ -189,17 +282,100 @@ async def _dashboard_out(db: AsyncSession, user: User, dashboard: Dashboard) -> 
     }
 
 
-async def _checked_role_ids(db: AsyncSession, body: DashboardIn) -> list[int]:
-    """The roles a ``roles`` dashboard is shared with: at least one (400), all known (404)."""
-    if body.visibility != "roles":
-        return []
-    role_ids = sorted(set(body.role_ids))
-    if not role_ids:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=ROLES_REQUIRED_DETAIL)
-    result = await db.execute(select(Role.id).where(Role.id.in_(role_ids)))
-    if set(result.scalars().all()) != set(role_ids):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ROLE_NOT_FOUND_DETAIL)
-    return role_ids
+@dataclass
+class _Targets:
+    """The targets a dashboard is stored with (all empty unless ``shared``)."""
+
+    role_ids: list[int] = field(default_factory=list)
+    site_ids: list[int] = field(default_factory=list)
+    team_ids: list[int] = field(default_factory=list)
+    user_ids: list[int] = field(default_factory=list)
+
+
+def _not_found(detail: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+
+
+async def _checked_targets(
+    db: AsyncSession,
+    request: Request,
+    user: User,
+    body: DashboardIn,
+    current: Dashboard | None = None,
+) -> _Targets:
+    """
+    The targets of a ``shared`` dashboard: at least one of any kind (400), each
+    one the caller may pick (else 404 per kind): any existing role, a visible
+    site, a team at a visible site (inactive ones too), a shareable person.
+    Targets ``current`` already holds pass as they are (they were checked when
+    added; a person deactivated or a site left since must not block a save).
+    Other visibilities store no target.
+    """
+    if body.visibility != "shared":
+        return _Targets()
+    targets = _Targets(
+        role_ids=body.role_ids,
+        site_ids=body.site_ids,
+        team_ids=body.team_ids,
+        user_ids=body.user_ids,
+    )
+    if not (targets.role_ids or targets.site_ids or targets.team_ids or targets.user_ids):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=TARGET_REQUIRED_DETAIL)
+
+    def new(ids: list[int], kept: list[int]) -> list[int]:
+        return sorted(set(ids) - set(kept))
+
+    roles = new(targets.role_ids, current.role_ids if current else [])
+    sites = new(targets.site_ids, current.site_ids if current else [])
+    teams = new(targets.team_ids, current.team_ids if current else [])
+    people = new(targets.user_ids, current.user_ids if current else [])
+    visible = await visible_site_ids(request, db, user) if (sites or teams or people) else None
+
+    if roles:
+        found = await db.execute(select(Role.id).where(Role.id.in_(roles)))
+        if set(found.scalars().all()) != set(roles):
+            raise _not_found(ROLE_NOT_FOUND_DETAIL)
+    if sites:
+        site_query = select(Site.id).where(Site.id.in_(sites))
+        if visible is not None:
+            site_query = site_query.where(Site.id.in_(sorted(visible)))
+        found = await db.execute(site_query)
+        if set(found.scalars().all()) != set(sites):
+            raise _not_found(SITE_NOT_FOUND_DETAIL)
+    if teams:
+        team_query = select(Team.id).where(Team.id.in_(teams))
+        if visible is not None:
+            team_query = team_query.where(Team.site_id.in_(sorted(visible)))
+        found = await db.execute(team_query)
+        if set(found.scalars().all()) != set(teams):
+            raise _not_found(TEAM_NOT_FOUND_DETAIL)
+    if people:
+        found = await db.execute(
+            shareable_users_statement(visible).where(User.id.in_(people)).with_only_columns(User.id)
+        )
+        if set(found.scalars().all()) != set(people):
+            raise _not_found(PERSON_NOT_FOUND_DETAIL)
+    return targets
+
+
+def _apply_targets(dashboard: Dashboard, targets: _Targets) -> None:
+    """Store the targets, keeping the link rows that stay (no delete + insert)."""
+    kept_roles = {link.role_id: link for link in dashboard.roles}
+    dashboard.roles = [
+        kept_roles.get(role_id) or DashboardRole(role_id=role_id) for role_id in targets.role_ids
+    ]
+    kept_sites = {link.site_id: link for link in dashboard.sites}
+    dashboard.sites = [
+        kept_sites.get(site_id) or DashboardSite(site_id=site_id) for site_id in targets.site_ids
+    ]
+    kept_teams = {link.team_id: link for link in dashboard.teams}
+    dashboard.teams = [
+        kept_teams.get(team_id) or DashboardTeam(team_id=team_id) for team_id in targets.team_ids
+    ]
+    kept_users = {link.user_id: link for link in dashboard.users}
+    dashboard.users = [
+        kept_users.get(user_id) or DashboardUser(user_id=user_id) for user_id in targets.user_ids
+    ]
 
 
 def _description(text: str | None) -> str | None:
@@ -213,7 +389,7 @@ async def list_dashboards(
     user: User = Depends(require_permission(VIEW_KEY)),
 ) -> list[dict[str, Any]]:
     """The dashboards the caller may open, the default first, then by name."""
-    role_id = await role_id_for_key(db, user.role)
+    scope = await load_viewer_scope(db, user)
     widget_count = (
         select(func.count(DashboardWidget.id))
         .where(DashboardWidget.dashboard_id == Dashboard.id)
@@ -234,26 +410,18 @@ async def list_dashboards(
             widget_count.label("widget_count"),
         )
         .outerjoin(User, User.id == Dashboard.owner_id)
-        .where(visible_dashboards_clause(user.id, role_id, user.is_admin))
+        .where(visible_dashboards_clause(scope))
         .order_by(Dashboard.is_default.desc(), func.lower(Dashboard.name), Dashboard.id)
     )
     rows = result.all()
-    roles: dict[int, list[int]] = {}
-    if rows:
-        links = await db.execute(
-            select(DashboardRole.dashboard_id, DashboardRole.role_id)
-            .where(DashboardRole.dashboard_id.in_([row.id for row in rows]))
-            .order_by(DashboardRole.dashboard_id, DashboardRole.role_id)
-        )
-        for dashboard_id, linked_role in links.all():
-            roles.setdefault(dashboard_id, []).append(linked_role)
+    sharing = await _sharing(db, [row.id for row in rows])
     return [
         {
             "id": row.id,
             "name": row.name,
             "description": row.description,
             "visibility": row.visibility,
-            "role_ids": roles.get(row.id, []),
+            **sharing[row.id],
             "owner_id": row.owner_id,
             "owner_name": _full_name(row.first_name, row.last_name),
             "is_default": bool(row.is_default),
@@ -265,6 +433,48 @@ async def list_dashboards(
     ]
 
 
+@router.get("/shareable-users", response_model=None)
+async def shareable_users(
+    request: Request,
+    db: AsyncSession = Depends(get_db_readonly),
+    user: User = Depends(require_permission(MANAGE_KEY)),
+) -> list[dict[str, Any]]:
+    """
+    The people the caller may share a dashboard with, by name: active members
+    of the caller's visible sites and every active user whose role sees all
+    sites. ``site_names`` lists each person's sites among the caller's visible
+    ones (every site with ``sites.view_all``), by name.
+    """
+    visible = await visible_site_ids(request, db, user)
+    result = await db.execute(
+        shareable_users_statement(visible)
+        .with_only_columns(User.id, User.first_name, User.last_name, User.job_title)
+        .order_by(func.lower(User.first_name), func.lower(User.last_name), User.id)
+    )
+    people = result.all()
+    site_names: dict[int, list[str]] = {}
+    if people:
+        sites_query = (
+            select(UserSite.user_id, Site.name)
+            .join(Site, Site.id == UserSite.site_id)
+            .where(UserSite.user_id.in_([person.id for person in people]))
+            .order_by(func.lower(Site.name), Site.id)
+        )
+        if visible is not None:
+            sites_query = sites_query.where(Site.id.in_(sorted(visible)))
+        for user_id, site_name in (await db.execute(sites_query)).all():
+            site_names.setdefault(user_id, []).append(site_name)
+    return [
+        {
+            "id": person.id,
+            "name": _full_name(person.first_name, person.last_name),
+            "job_title": person.job_title,
+            "site_names": site_names.get(person.id, []),
+        }
+        for person in people
+    ]
+
+
 @router.get("/{dashboard_id}", response_model=None)
 async def get_dashboard(
     dashboard_id: int,
@@ -272,20 +482,25 @@ async def get_dashboard(
     user: User = Depends(require_permission(VIEW_KEY)),
 ) -> dict[str, Any]:
     """One dashboard with its widgets."""
-    dashboard = await _visible_dashboard(db, user, dashboard_id)
+    dashboard = await _visible_dashboard(db, await load_viewer_scope(db, user), dashboard_id)
     return await _dashboard_out(db, user, dashboard)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=None)
 async def create_dashboard(
     body: DashboardIn,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission(MANAGE_KEY)),
 ) -> dict[str, Any]:
-    """Create a dashboard owned by the caller, optionally copying another one's widgets."""
+    """
+    Create a dashboard owned by the caller, optionally copying another one's
+    widgets (only the widgets: the copy takes the body's sharing).
+    """
     widgets = _widget_rows(body.widgets)
     if body.source_id is not None:
-        source = await _visible_dashboard(db, user, body.source_id)
+        scope = await load_viewer_scope(db, user)
+        source = await _visible_dashboard(db, scope, body.source_id)
         if "widgets" not in body.model_fields_set:
             widgets = [
                 DashboardWidget(
@@ -298,7 +513,7 @@ async def create_dashboard(
                 )
                 for widget in source.widgets
             ]
-    role_ids = await _checked_role_ids(db, body)
+    targets = await _checked_targets(db, request, user, body)
 
     dashboard = Dashboard(
         name=body.name,
@@ -307,7 +522,7 @@ async def create_dashboard(
         visibility=body.visibility,
         is_default=False,
     )
-    dashboard.roles = [DashboardRole(role_id=role_id) for role_id in role_ids]
+    _apply_targets(dashboard, targets)
     dashboard.widgets = widgets
     db.add(dashboard)
     await db.commit()
@@ -321,20 +536,20 @@ async def create_dashboard(
 async def update_dashboard(
     dashboard_id: int,
     body: DashboardIn,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Replace a dashboard's fields, sharing and (when given) widgets."""
-    dashboard = await _visible_dashboard(db, user, dashboard_id)
+    dashboard = await _visible_dashboard(db, await load_viewer_scope(db, user), dashboard_id)
     if not can_edit(user, dashboard):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=CANNOT_EDIT_DETAIL)
-    role_ids = await _checked_role_ids(db, body)
+    targets = await _checked_targets(db, request, user, body, current=dashboard)
 
     dashboard.name = body.name
     dashboard.description = _description(body.description)
     dashboard.visibility = body.visibility
-    kept = {link.role_id: link for link in dashboard.roles}
-    dashboard.roles = [kept.get(role_id) or DashboardRole(role_id=role_id) for role_id in role_ids]
+    _apply_targets(dashboard, targets)
     if "widgets" in body.model_fields_set:
         dashboard.widgets = _widget_rows(body.widgets)
     dashboard.updated_at = utcnow_naive()
@@ -352,7 +567,7 @@ async def delete_dashboard(
     user: User = Depends(get_current_user),
 ) -> Response:
     """Delete a dashboard (the default one: administrators only)."""
-    dashboard = await _visible_dashboard(db, user, dashboard_id)
+    dashboard = await _visible_dashboard(db, await load_viewer_scope(db, user), dashboard_id)
     if dashboard.is_default and not user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=DEFAULT_DELETE_DETAIL)
     if not can_edit(user, dashboard):
@@ -443,7 +658,7 @@ async def dashboard_data(
     user: User = Depends(require_permission(VIEW_KEY)),
 ) -> dict[str, Any]:
     """Every widget's result (or its error), from one load of the facts."""
-    dashboard = await _visible_dashboard(db, user, dashboard_id)
+    dashboard = await _visible_dashboard(db, await load_viewer_scope(db, user), dashboard_id)
     viewer = _viewer(user)
     parsed = {widget.id: _parse_widget_query(widget, viewer) for widget in dashboard.widgets}
     queries = [query for query in parsed.values() if isinstance(query, MetricQuery)]

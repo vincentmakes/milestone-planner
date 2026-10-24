@@ -29,7 +29,7 @@ import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, get_db_readonly
@@ -37,8 +37,7 @@ from app.middleware.auth import get_current_user, require_permission
 from app.models.assignment import PhaseStaffAssignment, SubphaseStaffAssignment
 from app.models.card_comment import CardComment
 from app.models.project import Project, ProjectPhase, ProjectSubphase
-from app.models.rbac import Role, RolePermission
-from app.models.user import User, UserSite
+from app.models.user import User
 from app.schemas.base import serialize_date_as_datetime_js
 from app.schemas.kanban import (
     CardAssigneeCreate,
@@ -64,7 +63,8 @@ from app.services.notifications import (
     card_assignee_ids,
     notification_payload,
 )
-from app.services.permissions import ADMIN_ROLE_KEY, permission_required_detail
+from app.services.people_lists import shareable_users_statement
+from app.services.permissions import permission_required_detail
 from app.services.project_access import (
     NOT_BOOKABLE_DETAIL,
     STAFF_NOT_FOUND_DETAIL,
@@ -257,28 +257,14 @@ async def get_mentionable_users(
         row only, so joining on membership alone would hide them on every
         other site.
 
-    Needs a visible site (403), no key: the picker serves every comment thread
-    (the Kanban card dialog and the booking dialog alike). Only the fields a
-    mention picker needs are returned.
+    The statement is ``people_lists.shareable_users_statement`` (shared with
+    the dashboard people picker). Needs a visible site (403), no key: the
+    picker serves every comment thread (the Kanban card dialog and the booking
+    dialog alike). Only the fields a mention picker needs are returned.
     """
     await ensure_site_visible(request, db, user, site_id)
-    site_member_ids = select(UserSite.user_id).where(UserSite.site_id == site_id)
-    all_sites_roles = (
-        select(Role.key)
-        .join(RolePermission, RolePermission.role_id == Role.id)
-        .where(RolePermission.permission == "sites.view_all", RolePermission.mode == "allow")
-    )
     result = await db.execute(
-        select(User)
-        .where(
-            User.active == 1,
-            or_(
-                User.id.in_(site_member_ids),
-                User.role == ADMIN_ROLE_KEY,
-                User.role.in_(all_sites_roles),
-            ),
-        )
-        .order_by(User.first_name, User.last_name)
+        shareable_users_statement([site_id]).order_by(User.first_name, User.last_name)
     )
 
     return [

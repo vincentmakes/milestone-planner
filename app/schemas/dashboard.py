@@ -74,6 +74,8 @@ Visibility = Literal["private", "shared", "everyone"]
 # Ids per filter list and widgets per dashboard (bounds on one request).
 MAX_FILTER_IDS = 500
 MAX_WIDGETS = 50
+# At most this many roles, sites, teams or people per kind on one dashboard.
+MAX_TARGETS = 200
 # Bounds on the stored widget JSON (a huge row or height would freeze every
 # viewer's grid): the grid row and height, and the KPI bucket key.
 MAX_GRID_Y = 10000
@@ -254,7 +256,12 @@ class DashboardIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=2000)
     visibility: Visibility = "private"
-    role_ids: list[int] = Field(default_factory=list, max_length=200)
+    # The targets of a ``shared`` dashboard (any match opens it); stored only
+    # for ``shared``, each list de-duplicated and sorted.
+    role_ids: list[int] = Field(default_factory=list, max_length=MAX_TARGETS)
+    site_ids: list[int] = Field(default_factory=list, max_length=MAX_TARGETS)
+    team_ids: list[int] = Field(default_factory=list, max_length=MAX_TARGETS)
+    user_ids: list[int] = Field(default_factory=list, max_length=MAX_TARGETS)
     widgets: list[WidgetIn] = Field(default_factory=list, max_length=MAX_WIDGETS)
     # POST only: copy the widgets of this dashboard (``widgets`` in the body win).
     source_id: int | None = None
@@ -266,6 +273,11 @@ class DashboardIn(BaseModel):
         if not value:
             raise _error("A dashboard needs a name")
         return value
+
+    @field_validator("role_ids", "site_ids", "team_ids", "user_ids")
+    @classmethod
+    def _unique_ids(cls, value: list[int]) -> list[int]:
+        return sorted(set(value))
 
     @field_validator("widgets", mode="wrap")
     @classmethod
@@ -301,12 +313,43 @@ class DashboardWidgetOut(BaseModel):
     sort_order: int
 
 
+class SharedTarget(BaseModel):
+    id: int
+    name: str
+
+
+class SharedTeam(SharedTarget):
+    site_name: str
+
+
+class SharedWith(BaseModel):
+    """Whom a ``shared`` dashboard is shared with, by name (empty lists otherwise)."""
+
+    roles: list[SharedTarget]
+    sites: list[SharedTarget]
+    teams: list[SharedTeam]
+    users: list[SharedTarget]
+
+
+class ShareableUser(BaseModel):
+    """One person the dashboard builder may share with."""
+
+    id: int
+    name: str
+    job_title: str | None
+    site_names: list[str]
+
+
 class DashboardSummary(BaseModel):
     id: int
     name: str
     description: str | None
     visibility: str
     role_ids: list[int]
+    site_ids: list[int]
+    team_ids: list[int]
+    user_ids: list[int]
+    shared_with: SharedWith
     owner_id: int | None
     owner_name: str | None
     is_default: bool
