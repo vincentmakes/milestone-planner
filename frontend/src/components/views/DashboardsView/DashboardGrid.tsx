@@ -12,13 +12,20 @@
  * `.widgetAction`, Edit / Remove — never starts a drag), and
  * `onLayoutChange` reports every widget's `{lg, md, sm}` after a change (the
  * builder's job; the library also reports on mount and after a compaction).
+ * A report says where it came from: `'gesture'` for the one a drag or resize
+ * ends with, `'settle'` for the library's own (mount, compaction after a
+ * widget came or went, new layouts handed in) — so the builder's undo history
+ * gets one entry per gesture. react-grid-layout 2.3.0 reports a gesture's
+ * layout synchronously right after `onDragStop` / `onResizeStop`, so those
+ * mark the gesture and a microtask unmarks it (a gesture that moved nothing
+ * reports nothing).
  *
  * The library's stylesheets are imported here, so they land in the
  * Dashboards chunk; `DashboardGrid.module.css` restyles the items and the
  * drop placeholder with app tokens.
  */
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import type { RefObject } from 'react';
 import { Responsive, useContainerWidth } from 'react-grid-layout';
 import type { Layout, ResponsiveLayouts } from 'react-grid-layout';
@@ -34,7 +41,7 @@ import {
   GRID_ROW_HEIGHT,
   toGridLayouts,
 } from './gridLayouts';
-import type { GridBreakpoint } from './gridLayouts';
+import type { GridBreakpoint, LayoutSource } from './gridLayouts';
 import styles from './DashboardGrid.module.css';
 
 export interface DashboardGridProps {
@@ -43,8 +50,8 @@ export interface DashboardGridProps {
   dataLoading?: boolean;
   /** Edit mode: widgets drag by their header and resize from a corner */
   editing?: boolean;
-  /** Every widget's layout (widget id → `{lg, md, sm}`) after a change */
-  onLayoutChange?: (layouts: Record<number, WidgetLayout>) => void;
+  /** Every widget's layout (widget id → `{lg, md, sm}`) after a change, and who made it */
+  onLayoutChange?: (layouts: Record<number, WidgetLayout>, source: LayoutSource) => void;
   /** Edit mode: a widget header's Edit button */
   onEditWidget?: (id: number) => void;
   /** Edit mode: a widget header's Remove button */
@@ -63,9 +70,18 @@ export function DashboardGrid({
   const { width, containerRef, mounted } = useContainerWidth({ measureBeforeMount: true });
   const layouts = useMemo(() => toGridLayouts(widgets), [widgets]);
 
+  // Set between the end of a drag / resize and the report it makes.
+  const gestureRef = useRef(false);
+  const endGesture = useCallback(() => {
+    gestureRef.current = true;
+    queueMicrotask(() => {
+      gestureRef.current = false;
+    });
+  }, []);
+
   const handleLayoutChange = useCallback(
     (_current: Layout, all: ResponsiveLayouts<GridBreakpoint>) => {
-      onLayoutChange?.(fromGridLayouts(widgets, all));
+      onLayoutChange?.(fromGridLayouts(widgets, all), gestureRef.current ? 'gesture' : 'settle');
     },
     [onLayoutChange, widgets]
   );
@@ -87,6 +103,8 @@ export function DashboardGrid({
           dragConfig={{ enabled: editing, handle: '.widgetHeader', cancel: '.widgetAction' }}
           resizeConfig={{ enabled: editing, handles: ['se'] }}
           onLayoutChange={handleLayoutChange}
+          onDragStop={endGesture}
+          onResizeStop={endGesture}
         >
           {widgets.map((widget) => (
             <div key={String(widget.id)} className={styles.item} data-widget-id={widget.id}>

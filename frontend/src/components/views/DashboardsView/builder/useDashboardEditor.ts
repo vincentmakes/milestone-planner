@@ -12,10 +12,14 @@
  *
  * - `dirty`: a new dashboard always; else the draft differs from what was
  *   opened (key order ignored).
- * - `setLayouts(layouts)`: the grid's layouts (grid id → `{lg, md, sm}`) back
- *   onto the widgets. react-grid-layout reports on mount and after a
+ * - `setLayouts(layouts, source)`: the grid's layouts (grid id → `{lg, md, sm}`)
+ *   back onto the widgets. react-grid-layout reports on mount and after a
  *   compaction too, so a call that changes no position is ignored (no
- *   re-render, not dirty).
+ *   re-render, not dirty). `source` says whether a drag or resize made the
+ *   change (`'gesture'`, the default: one undo entry) or the library settled
+ *   the grid after another change (`'settle'`: a widget removed, an undo —
+ *   applied to the current state without an entry of its own, so it never
+ *   clears the redo stack and one action stays one undo step).
  * - `cancel()` asks `Discard the changes to this dashboard?` when dirty;
  *   `confirmDiscard()` asks the same without leaving (switching dashboards,
  *   and the view's leave guard, registered while editing).
@@ -30,6 +34,18 @@
  *   meanwhile, a target deleted since). The POST of a new dashboard carries
  *   the sharing chosen in the New dialog (the lists empty unless `shared`).
  *   The draft keeps the sharing for the "Shared with" line and `dirty`.
+ *
+ * **Undo / redo** (`undo`, `redo`, `canUndo`, `canRedo`): every change of the
+ * draft (`setLayouts` from a gesture, `upsertWidget`, `removeWidget`,
+ * `setMeta`) pushes the state before it — the draft with the widgets'
+ * previews, so an undone widget shows its preview again — onto the undo stack
+ * (at most `HISTORY_LIMIT`, the oldest dropped) and clears the redo stack.
+ * Typing coalesces: `setMeta` calls on the same field within
+ * `COALESCE_MS` of the previous one extend the entry on top instead of
+ * pushing, so one undo restores the text from before the burst; any other
+ * action (or an undo) ends the run. `startEdit`, `startNew`, `discard` and a
+ * successful save clear both stacks. `dirty` still compares with what was
+ * opened, so undoing back to it makes the draft clean again.
  *
  * While editing, `dashboardStore.editing` is set, so a live "dashboard
  * changed" reload never replaces the open dashboard under the draft.
@@ -51,6 +67,49 @@ import {
   toDraftWidget,
 } from './widgetDraft';
 import type { DashboardMeta, DraftWidget, EditorDraft } from './widgetDraft';
+import type { LayoutSource } from '../gridLayouts';
+
+/** The undo stack's depth: older entries are dropped. */
+export const HISTORY_LIMIT = 50;
+/** Typing in one field within this long after the last keystroke is one undo step. */
+export const COALESCE_MS = 1000;
+
+/** A state of the draft the undo / redo stacks hold. */
+interface Snapshot {
+  draft: EditorDraft;
+  previews: Record<string, MetricResult | null>;
+}
+
+interface EditorState {
+  draft: EditorDraft | null;
+  // A widget the widget editor saved: its last preview (null = none yet).
+  previews: Record<string, MetricResult | null>;
+  past: Snapshot[];
+  future: Snapshot[];
+  // The typing run `setMeta` may extend: the field(s) and the last keystroke.
+  run: { key: string; at: number } | null;
+}
+
+const IDLE: EditorState = { draft: null, previews: {}, past: [], future: [], run: null };
+
+const fresh = (draft: EditorDraft | null): EditorState => ({ ...IDLE, draft });
+
+/** `prev` changed to `draft` / `previews` by a user action: one undo entry. */
+function record(
+  prev: EditorState,
+  draft: EditorDraft,
+  previews: Record<string, MetricResult | null> = prev.previews,
+  run: EditorState['run'] = null
+): EditorState {
+  const past = prev.draft ? [...prev.past, { draft: prev.draft, previews: prev.previews }] : prev.past;
+  return {
+    draft,
+    previews,
+    past: past.length > HISTORY_LIMIT ? past.slice(past.length - HISTORY_LIMIT) : past,
+    future: [],
+    run,
+  };
+}
 
 export const DISCARD_CONFIRM = {
   message: 'Discard the changes to this dashboard?',
@@ -102,20 +161,26 @@ export interface DashboardEditor {
   discard: () => void;
   /** Change part of the name, description or sharing */
   setMeta: (meta: Partial<DashboardMeta>) => void;
-  setLayouts: (layouts: Record<number, WidgetLayout>) => void;
+  /** The grid's layouts; a `'settle'` report adds no undo entry */
+  setLayouts: (layouts: Record<number, WidgetLayout>, source?: LayoutSource) => void;
   upsertWidget: (widget: DraftWidget, preview?: MetricResult | null) => void;
   removeWidget: (clientId: string) => void;
   /** The draft widget behind a grid id */
   widgetByGridId: (gridId: number) => DraftWidget | undefined;
   save: () => Promise<Dashboard | null>;
   clearError: () => void;
+  /** Back to the draft before the last change */
+  undo: () => void;
+  /** Replay the last undone change */
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 export function useDashboardEditor(current: Dashboard | null): DashboardEditor {
-  const [draft, setDraft] = useState<EditorDraft | null>(null);
+  const [state, setState] = useState<EditorState>(IDLE);
+  const { draft, previews } = state;
   const [baseline, setBaseline] = useState<string | null>(null);
-  // A widget the widget editor saved: its last preview (null = none yet).
-  const [previews, setPreviews] = useState<Record<string, MetricResult | null>>({});
   const [error, setError] = useState<string | null>(null);
   const { isSubmitting, begin, end } = useSubmitGuard();
   const data = useDashboardStore((s) => s.data);
@@ -137,9 +202,8 @@ export function useDashboardEditor(current: Dashboard | null): DashboardEditor {
   const discard = useCallback(() => {
     // At once, so the view may open another dashboard right after.
     useDashboardStore.getState().setEditing(false);
-    setDraft(null);
+    setState(IDLE);
     setBaseline(null);
-    setPreviews({});
     setError(null);
   }, []);
 
@@ -152,9 +216,8 @@ export function useDashboardEditor(current: Dashboard | null): DashboardEditor {
   useEffect(() => (editing ? setViewLeaveGuard(confirmDiscard) : undefined), [editing, confirmDiscard]);
 
   const startNew = useCallback((meta: DashboardMeta) => {
-    setDraft({ ...meta, ...copyTargets(meta), widgets: [] });
+    setState(fresh({ ...meta, ...copyTargets(meta), widgets: [] }));
     setBaseline(null);
-    setPreviews({});
     setError(null);
   }, []);
 
@@ -163,9 +226,8 @@ export function useDashboardEditor(current: Dashboard | null): DashboardEditor {
       const source = dashboard ?? current;
       if (!source) return;
       const next = draftOf(source);
-      setDraft(next);
+      setState(fresh(next));
       setBaseline(stableKey(comparableDraft(next)));
-      setPreviews({});
       setError(null);
     },
     [current]
@@ -178,42 +240,88 @@ export function useDashboardEditor(current: Dashboard | null): DashboardEditor {
   }, [confirmDiscard, discard]);
 
   const setMeta = useCallback((meta: Partial<DashboardMeta>) => {
-    setDraft((prev) => {
-      if (!prev) return prev;
-      const next = { ...prev, ...meta };
-      return { ...next, ...copyTargets(next) };
+    const key = Object.keys(meta).sort().join(',');
+    const now = Date.now();
+    setState((prev) => {
+      if (!prev.draft) return prev;
+      const merged = { ...prev.draft, ...meta };
+      const next = { ...merged, ...copyTargets(merged) };
+      const draft = prev.draft;
+      const same = (Object.keys(meta) as (keyof DashboardMeta)[]).every(
+        (k) => stableKey(next[k] ?? null) === stableKey(draft[k] ?? null)
+      );
+      // Nothing changed (the same text again): no entry, no re-render.
+      if (same) return prev;
+      const run = { key, at: now };
+      // Still typing in the same field: the entry on top keeps the text from before.
+      if (prev.run && prev.run.key === key && now - prev.run.at <= COALESCE_MS && prev.past.length > 0) {
+        return { ...prev, draft: next, future: [], run };
+      }
+      return record(prev, next, prev.previews, run);
     });
   }, []);
 
-  const setLayouts = useCallback((layouts: Record<number, WidgetLayout>) => {
-    setDraft((prev) => {
-      if (!prev) return prev;
+  const setLayouts = useCallback((layouts: Record<number, WidgetLayout>, source: LayoutSource = 'gesture') => {
+    setState((prev) => {
+      if (!prev.draft) return prev;
       let changed = false;
-      const widgets = prev.widgets.map((widget) => {
+      const widgets = prev.draft.widgets.map((widget) => {
         const next = layouts[gridIdOf(widget)];
         if (!next || sameLayout(next, widget.layout)) return widget;
         changed = true;
         return { ...widget, layout: next };
       });
       // A report that moves nothing (mount, compaction) keeps the same state.
-      return changed ? { ...prev, widgets } : prev;
+      if (!changed) return prev;
+      const draft = { ...prev.draft, widgets };
+      // The grid settling after another change belongs to that change.
+      return source === 'settle' ? { ...prev, draft } : record(prev, draft);
     });
   }, []);
 
   const upsertWidget = useCallback((widget: DraftWidget, preview?: MetricResult | null) => {
-    setDraft((prev) => {
-      if (!prev) return prev;
-      const index = prev.widgets.findIndex((w) => w.clientId === widget.clientId);
+    setState((prev) => {
+      if (!prev.draft) return prev;
+      const index = prev.draft.widgets.findIndex((w) => w.clientId === widget.clientId);
       const widgets =
-        index === -1 ? [...prev.widgets, widget] : prev.widgets.map((w, i) => (i === index ? widget : w));
-      return { ...prev, widgets };
+        index === -1 ? [...prev.draft.widgets, widget] : prev.draft.widgets.map((w, i) => (i === index ? widget : w));
+      // The stored result no longer matches the widget: its preview, or nothing.
+      return record(prev, { ...prev.draft, widgets }, { ...prev.previews, [widget.clientId]: preview ?? null });
     });
-    // The stored result no longer matches the widget: its preview, or nothing.
-    setPreviews((prev) => ({ ...prev, [widget.clientId]: preview ?? null }));
   }, []);
 
   const removeWidget = useCallback((clientId: string) => {
-    setDraft((prev) => (prev ? { ...prev, widgets: prev.widgets.filter((w) => w.clientId !== clientId) } : prev));
+    setState((prev) => {
+      if (!prev.draft || !prev.draft.widgets.some((w) => w.clientId === clientId)) return prev;
+      // Its preview stays, for an undo.
+      return record(prev, { ...prev.draft, widgets: prev.draft.widgets.filter((w) => w.clientId !== clientId) });
+    });
+  }, []);
+
+  const undo = useCallback(() => {
+    setState((prev) => {
+      const target = prev.past[prev.past.length - 1];
+      if (!prev.draft || !target) return prev;
+      return {
+        ...target,
+        past: prev.past.slice(0, -1),
+        future: [...prev.future, { draft: prev.draft, previews: prev.previews }],
+        run: null,
+      };
+    });
+  }, []);
+
+  const redo = useCallback(() => {
+    setState((prev) => {
+      const target = prev.future[prev.future.length - 1];
+      if (!prev.draft || !target) return prev;
+      return {
+        ...target,
+        past: [...prev.past, { draft: prev.draft, previews: prev.previews }],
+        future: prev.future.slice(0, -1),
+        run: null,
+      };
+    });
   }, []);
 
   const gridWidgets = useMemo<DashboardWidget[]>(
@@ -301,5 +409,9 @@ export function useDashboardEditor(current: Dashboard | null): DashboardEditor {
     widgetByGridId,
     save,
     clearError,
+    undo,
+    redo,
+    canUndo: state.past.length > 0,
+    canRedo: state.future.length > 0,
   };
 }

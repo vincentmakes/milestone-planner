@@ -2,8 +2,9 @@
  * DashboardGrid with react-grid-layout mounted in jsdom (the container width
  * is given through a mocked useContainerWidth, jsdom measures 0): one grid
  * item per widget at its stored position for the breakpoint of the
- * container width; nothing drags or resizes in view mode; the conversions
- * between widget layouts and the library's.
+ * container width; nothing drags or resizes in view mode; a drag's or a
+ * resize's report tagged as a gesture, the library's own as settling; the
+ * conversions between widget layouts and the library's.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
@@ -203,6 +204,64 @@ describe('DashboardGrid', () => {
     // Then back out in two coarse moves, the last one past the right edge
     resizeCorner(handle(), [[150, 60], [300, 60]]);
     expect(lastLg(onLayoutChange, 2)).toEqual({ x: 6, y: 0, w: 6, h: 2 });
+  });
+
+  // Every source the change listener was given since the last clear.
+  const sources = (spy: ReturnType<typeof vi.fn>) => spy.mock.calls.map((call) => call[1]);
+
+  it('tags the report a resize ends with as a gesture, and the library’s own as settling', async () => {
+    const onLayoutChange = vi.fn();
+    const { container: root, rerender } = render(
+      <DashboardGrid widgets={rightPair} data={data} editing onLayoutChange={onLayoutChange} />
+    );
+    expect(sources(onLayoutChange).every((source) => source === 'settle')).toBe(true);
+    onLayoutChange.mockClear();
+
+    const handle = root.querySelector('[data-widget-id="2"] > .react-resizable-handle-se')!;
+    resizeCorner(handle, [[-99, 0]]);
+    expect(onLayoutChange.mock.calls[0][1]).toBe('gesture');
+    expect(onLayoutChange.mock.calls[0][0][2].lg).toEqual({ x: 6, y: 0, w: 3, h: 2 });
+    await Promise.resolve();
+
+    // A widget taken off afterwards: the compaction is the library's
+    onLayoutChange.mockClear();
+    const below = [rightPair[0], widget(3, [0, 4, 6, 2], [0, 4, 4, 2])];
+    rerender(<DashboardGrid widgets={below} data={data} editing onLayoutChange={onLayoutChange} />);
+    expect(onLayoutChange).toHaveBeenCalled();
+    expect(sources(onLayoutChange).every((source) => source === 'settle')).toBe(true);
+    expect(lastLg(onLayoutChange, 3).y).toBe(2);
+  });
+
+  it('tags the report a drag by the header ends with as a gesture', async () => {
+    const onLayoutChange = vi.fn();
+    const { container: root, rerender } = render(
+      <DashboardGrid widgets={rightPair} data={data} editing onLayoutChange={onLayoutChange} />
+    );
+    onLayoutChange.mockClear();
+    // jsdom has no offsetParent, which the library needs to start a drag
+    const offsetParent = vi
+      .spyOn(HTMLElement.prototype, 'offsetParent', 'get')
+      .mockImplementation(function (this: HTMLElement) {
+        return this.parentElement;
+      });
+    const header = root.querySelector('[data-widget-id="2"] .widgetHeader')!;
+    fireEvent.mouseDown(header, { button: 0, clientX: 700, clientY: 20 });
+    fireEvent.mouseMove(document, { button: 0, buttons: 1, clientX: 600, clientY: 300 });
+    fireEvent.mouseMove(document, { button: 0, buttons: 1, clientX: 500, clientY: 400 });
+    fireEvent.mouseUp(document, { button: 0, clientX: 500, clientY: 400 });
+    expect(onLayoutChange).toHaveBeenCalled();
+    expect(onLayoutChange.mock.calls[0][1]).toBe('gesture');
+    await Promise.resolve();
+
+    // A gesture that moves nothing reports nothing, and leaves no mark behind
+    onLayoutChange.mockClear();
+    fireEvent.mouseDown(header, { button: 0, clientX: 700, clientY: 20 });
+    fireEvent.mouseUp(document, { button: 0, clientX: 700, clientY: 20 });
+    await Promise.resolve();
+    rerender(<DashboardGrid widgets={rightPair.slice(1)} data={data} editing onLayoutChange={onLayoutChange} />);
+    expect(onLayoutChange).toHaveBeenCalled();
+    expect(sources(onLayoutChange).every((source) => source === 'settle')).toBe(true);
+    offsetParent.mockRestore();
   });
 
   it('bounds every item’s width by the columns right of it', () => {

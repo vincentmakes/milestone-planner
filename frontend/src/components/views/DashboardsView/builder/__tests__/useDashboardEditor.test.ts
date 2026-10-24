@@ -5,9 +5,12 @@
  * nothing is ignored), widgets added / replaced / removed with their
  * previews, the inline meta (`setMeta` takes a part), a widget save that
  * sends no sharing (the New POST does), the discard confirm, save success and failure, the
- * store's editing flag and the view's leave guard.
+ * store's editing flag and the view's leave guard; the undo / redo history
+ * (one entry per change, typing coalesced, the grid settling folded into
+ * the change before it, capped, cleared by a new change and on start /
+ * discard / save).
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { ApiError } from '@/api/client';
 import { dashboardsApi } from '@/api/endpoints/dashboards';
@@ -15,7 +18,7 @@ import { useDashboardStore } from '@/stores/dashboardStore';
 import { stubConfirm } from '@/test/confirmDialog';
 import { viewLeaveGuard } from '@/utils/viewLeaveGuard';
 import type { Dashboard, DashboardWidget, MetricResult, WidgetLayout } from '@/types';
-import { DISCARD_CONFIRM, plainError, useDashboardEditor } from '../useDashboardEditor';
+import { COALESCE_MS, DISCARD_CONFIRM, HISTORY_LIMIT, plainError, useDashboardEditor } from '../useDashboardEditor';
 import type { DraftWidget } from '../widgetDraft';
 
 vi.mock('@/api/endpoints/dashboards', () => ({
@@ -482,5 +485,236 @@ describe('useDashboardEditor', () => {
     );
     expect(plainError(new Error('Widget 2: Top N needs a dimension'), 'x')).toBe('Widget 2: Top N needs a dimension');
     expect(plainError('nope', 'Fallback')).toBe('Fallback');
+  });
+});
+
+describe('useDashboardEditor — undo / redo', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const moved = (x: number): WidgetLayout => ({ ...layout(0), lg: { x, y: 0, w: 6, h: 5 } });
+  const lg = (r: { current: ReturnType<typeof useDashboardEditor> }, i: number) => r.current.draft!.widgets[i].layout.lg;
+
+  it('has nothing to undo or redo when editing starts', () => {
+    const { result } = editing();
+    expect(result.current.canUndo).toBe(false);
+    expect(result.current.canRedo).toBe(false);
+    // Nothing to undo: nothing changes
+    const before = result.current.draft;
+    act(() => result.current.undo());
+    act(() => result.current.redo());
+    expect(result.current.draft).toBe(before);
+  });
+
+  it('records each change and undoes / redoes layouts, widgets and the meta in turn', () => {
+    const { result } = editing();
+    act(() => result.current.setLayouts({ 11: moved(6) }));
+    act(() => result.current.upsertWidget(newWidget('n4'), metric(9)));
+    act(() => result.current.removeWidget('w12'));
+    act(() => result.current.setMeta({ description: 'Notes' }));
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(false);
+
+    act(() => result.current.undo());
+    expect(result.current.draft?.description).toBeNull();
+    act(() => result.current.undo());
+    expect(result.current.gridWidgets.map((w) => w.id)).toEqual([11, 12, -4]);
+    act(() => result.current.undo());
+    expect(result.current.gridWidgets.map((w) => w.id)).toEqual([11, 12]);
+    expect(result.current.gridData[-4]).toBeUndefined();
+    expect(lg(result, 0).x).toBe(6);
+    act(() => result.current.undo());
+    expect(lg(result, 0).x).toBe(0);
+    expect(result.current.canUndo).toBe(false);
+    expect(result.current.canRedo).toBe(true);
+    // Back to what was opened: clean again
+    expect(result.current.dirty).toBe(false);
+
+    act(() => result.current.redo());
+    expect(lg(result, 0).x).toBe(6);
+    act(() => result.current.redo());
+    // The added widget comes back with its preview
+    expect(result.current.gridData[-4]).toEqual(metric(9));
+    act(() => result.current.redo());
+    expect(result.current.gridWidgets.map((w) => w.id)).toEqual([11, -4]);
+    act(() => result.current.redo());
+    expect(result.current.draft?.description).toBe('Notes');
+    expect(result.current.canRedo).toBe(false);
+    expect(result.current.dirty).toBe(true);
+  });
+
+  it('brings a removed widget back with its preview', () => {
+    useDashboardStore.setState({ data: { 11: metric(1), 12: metric(2) } });
+    const { result } = editing();
+    const edited = { ...result.current.draft!.widgets[1], title: 'Edited' };
+    act(() => result.current.upsertWidget(edited, metric(7)));
+    act(() => result.current.removeWidget('w12'));
+    expect(result.current.gridData).toEqual({ 11: metric(1) });
+    act(() => result.current.undo());
+    expect(result.current.gridWidgets.map((w) => w.title)).toEqual(['Widget 11', 'Edited']);
+    expect(result.current.gridData).toEqual({ 11: metric(1), 12: metric(7) });
+    // And before the edit: the stored result again
+    act(() => result.current.undo());
+    expect(result.current.gridData).toEqual({ 11: metric(1), 12: metric(2) });
+  });
+
+  it('records nothing for a change that changes nothing', () => {
+    const { result } = editing();
+    act(() => result.current.setLayouts({ 11: layout(0), 12: layout(5) }));
+    act(() => result.current.setMeta({ name: 'Team plan' }));
+    act(() => result.current.removeWidget('n99'));
+    expect(result.current.canUndo).toBe(false);
+  });
+
+  it('folds the grid settling after a change into that change', () => {
+    const { result } = editing();
+    act(() => result.current.removeWidget('w11'));
+    // The library compacts the widget below upwards: no entry of its own
+    act(() => result.current.setLayouts({ 12: layout(0) }, 'settle'));
+    expect(lg(result, 0).y).toBe(0);
+    act(() => result.current.undo());
+    expect(result.current.gridWidgets.map((w) => w.id)).toEqual([11, 12]);
+    expect(lg(result, 1).y).toBe(5);
+    expect(result.current.canUndo).toBe(false);
+    // Settling after the undo keeps the redo stack
+    act(() => result.current.setLayouts({ 12: layout(6) }, 'settle'));
+    expect(result.current.canRedo).toBe(true);
+    act(() => result.current.redo());
+    expect(result.current.gridWidgets.map((w) => w.id)).toEqual([12]);
+    expect(lg(result, 0).y).toBe(0);
+  });
+
+  it('clears the redo stack on a new change', () => {
+    const { result } = editing();
+    act(() => result.current.setLayouts({ 11: moved(6) }));
+    act(() => result.current.undo());
+    expect(result.current.canRedo).toBe(true);
+    act(() => result.current.removeWidget('w12'));
+    expect(result.current.canRedo).toBe(false);
+    act(() => result.current.redo());
+    expect(result.current.gridWidgets.map((w) => w.id)).toEqual([11]);
+  });
+
+  it('coalesces typing in one field within a second into one step', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-24T10:00:00Z'));
+    const { result } = editing();
+    for (const name of ['T', 'Te', 'Tea', 'Team']) {
+      act(() => result.current.setMeta({ name }));
+      vi.advanceTimersByTime(COALESCE_MS - 100);
+    }
+    act(() => result.current.undo());
+    expect(result.current.draft?.name).toBe('Team plan');
+    expect(result.current.canUndo).toBe(false);
+    act(() => result.current.redo());
+    expect(result.current.draft?.name).toBe('Team');
+  });
+
+  it('starts a new step after a pause, in another field, or after another action', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-24T10:00:00Z'));
+    const { result } = editing();
+    act(() => result.current.setMeta({ name: 'A' }));
+    vi.advanceTimersByTime(COALESCE_MS + 1);
+    act(() => result.current.setMeta({ name: 'AB' }));
+    act(() => result.current.setMeta({ description: 'D' }));
+    act(() => result.current.setMeta({ description: 'De' }));
+    act(() => result.current.setLayouts({ 11: moved(6) }));
+    act(() => result.current.setMeta({ description: 'Des' }));
+
+    act(() => result.current.undo());
+    expect(result.current.draft?.description).toBe('De');
+    act(() => result.current.undo());
+    expect(lg(result, 0).x).toBe(0);
+    act(() => result.current.undo());
+    expect(result.current.draft?.description).toBeNull();
+    expect(result.current.draft?.name).toBe('AB');
+    act(() => result.current.undo());
+    expect(result.current.draft?.name).toBe('A');
+    act(() => result.current.undo());
+    expect(result.current.draft?.name).toBe('Team plan');
+    expect(result.current.canUndo).toBe(false);
+  });
+
+  it('starts a new step when typing goes on after an undo', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-24T10:00:00Z'));
+    const { result } = editing();
+    act(() => result.current.setMeta({ name: 'A' }));
+    act(() => result.current.setMeta({ name: 'AB' }));
+    act(() => result.current.undo());
+    act(() => result.current.setMeta({ name: 'X' }));
+    act(() => result.current.setMeta({ name: 'XY' }));
+    act(() => result.current.undo());
+    expect(result.current.draft?.name).toBe('Team plan');
+    expect(result.current.canUndo).toBe(false);
+  });
+
+  it(`keeps at most ${HISTORY_LIMIT} steps, dropping the oldest`, () => {
+    const { result } = editing();
+    for (let x = 1; x <= HISTORY_LIMIT + 5; x++) {
+      act(() => result.current.setLayouts({ 11: { ...layout(0), lg: { x: x % 2 ? 6 : 0, y: x, w: 6, h: 5 } } }));
+    }
+    let undone = 0;
+    while (result.current.canUndo) {
+      act(() => result.current.undo());
+      undone++;
+    }
+    expect(undone).toBe(HISTORY_LIMIT);
+    // The oldest five are gone: the earliest state left is after the fifth move
+    expect(lg(result, 0).y).toBe(5);
+    expect(result.current.dirty).toBe(true);
+  });
+
+  it('clears both stacks on startEdit, startNew and discard', () => {
+    const { result } = editing();
+    act(() => result.current.removeWidget('w12'));
+    act(() => result.current.removeWidget('w11'));
+    act(() => result.current.undo());
+    expect(result.current.canUndo && result.current.canRedo).toBe(true);
+    act(() => result.current.startEdit());
+    expect(result.current.canUndo || result.current.canRedo).toBe(false);
+
+    act(() => result.current.removeWidget('w12'));
+    act(() =>
+      result.current.startNew({
+        name: 'New',
+        description: null,
+        visibility: 'private',
+        role_ids: [],
+        site_ids: [],
+        team_ids: [],
+        user_ids: [],
+      })
+    );
+    expect(result.current.canUndo).toBe(false);
+    act(() => result.current.undo());
+    expect(result.current.draft?.name).toBe('New');
+
+    act(() => result.current.setMeta({ name: 'Newer' }));
+    act(() => result.current.discard());
+    expect(result.current.canUndo).toBe(false);
+    act(() => result.current.startEdit());
+    expect(result.current.canUndo).toBe(false);
+  });
+
+  it('clears both stacks on a successful save, and keeps them when it fails', async () => {
+    api.update.mockRejectedValueOnce(new ApiError('Nope', 500));
+    const { result } = editing();
+    act(() => result.current.removeWidget('w12'));
+    await act(async () => {
+      await result.current.save();
+    });
+    expect(result.current.canUndo).toBe(true);
+
+    api.update.mockResolvedValue(dashboard());
+    await act(async () => {
+      await result.current.save();
+    });
+    expect(result.current.editing).toBe(false);
+    act(() => result.current.startEdit());
+    expect(result.current.canUndo).toBe(false);
+    expect(result.current.canRedo).toBe(false);
   });
 });

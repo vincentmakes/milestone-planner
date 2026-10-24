@@ -9,6 +9,9 @@ import type { DashboardWidget, WidgetLayout } from '@/types';
 
 export type GridBreakpoint = keyof WidgetLayout;
 
+/** Who changed the grid's layouts: a drag / resize, or the library settling the grid. */
+export type LayoutSource = 'gesture' | 'settle';
+
 export const GRID_BREAKPOINTS: Readonly<Record<GridBreakpoint, number>> = { lg: 1000, md: 700, sm: 0 };
 export const GRID_COLS: Readonly<Record<GridBreakpoint, number>> = { lg: 12, md: 8, sm: 4 };
 export const GRID_ROW_HEIGHT = 80;
