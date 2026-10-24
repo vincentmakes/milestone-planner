@@ -171,6 +171,70 @@ describe('EChart', () => {
     expect(fake.instance.setOption.mock.calls[1][0].xAxis.axisLabel.rotate).toBe(30);
   });
 
+  it('keeps the container height too: a heatmap shows its values once every cell has room', () => {
+    const heatmap: MetricResult = {
+      unit: 'weeks',
+      dimensions: [
+        { kind: 'team', label: 'Team' },
+        { kind: 'period', label: 'Month' },
+      ],
+      rows: [1, 2].flatMap((team) =>
+        ['2026-01', '2026-02'].map((month) => ({
+          keys: [
+            { key: team, label: `Team ${team}` },
+            { key: month, label: month },
+          ],
+          value: team,
+        }))
+      ),
+      total: 6,
+      truncated: false,
+      warnings: [],
+    };
+    render(<EChart kind="heatmap" result={heatmap} label="H" />);
+    const [observer] = FakeResizeObserver.instances;
+    const resizeTo = (width: number, height: number) =>
+      act(() =>
+        observer.callback([{ contentRect: { width, height } } as ResizeObserverEntry], observer as unknown as ResizeObserver)
+      );
+    const last = () => fake.instance.setOption.mock.calls[fake.instance.setOption.mock.calls.length - 1][0];
+    // Unmeasured: no values in the cells
+    expect(last().series[0].label.show).toBe(false);
+    // 2 × 2 cells in 200 × 100 px: 100 px wide, 50 px high each
+    resizeTo(200, 100);
+    expect(fake.instance.setOption).toHaveBeenCalledTimes(2);
+    expect(last().series[0].label.show).toBe(true);
+    expect(last().xAxis.axisLabel.rotate).toBeUndefined();
+    // A resize that keeps them fitting sets nothing new
+    resizeTo(210, 110);
+    expect(fake.instance.setOption).toHaveBeenCalledTimes(2);
+    // 15 px high rows: no room
+    resizeTo(210, 30);
+    expect(fake.instance.setOption).toHaveBeenCalledTimes(3);
+    expect(last().series[0].label.show).toBe(false);
+    // 60 px columns: narrow (tilted labels), values still fit
+    resizeTo(120, 100);
+    expect(last().series[0].label.show).toBe(true);
+    expect(last().xAxis.axisLabel.rotate).toBe(30);
+    // No entry: the container's own size
+    const node = screen.getByRole('img', { name: 'H' });
+    Object.defineProperty(node, 'clientWidth', { configurable: true, value: 400 });
+    Object.defineProperty(node, 'clientHeight', { configurable: true, value: 20 });
+    act(() => observer.callback([], observer as unknown as ResizeObserver));
+    expect(last().series[0].label.show).toBe(false);
+    expect(last().xAxis.axisLabel.rotate).toBeUndefined();
+  });
+
+  it('never shows heatmap values on another kind', () => {
+    render(<EChart kind="bar" result={result(3)} label="W" />);
+    const [observer] = FakeResizeObserver.instances;
+    act(() =>
+      observer.callback([{ contentRect: { width: 400, height: 400 } } as ResizeObserverEntry], observer as unknown as ResizeObserver)
+    );
+    // Wide and tall, but a bar: the option is not set again
+    expect(fake.instance.setOption).toHaveBeenCalledTimes(1);
+  });
+
   it('disposes the chart and stops observing on unmount', () => {
     const { unmount } = render(<EChart kind="pie" result={result(3)} label="W" />);
     unmount();

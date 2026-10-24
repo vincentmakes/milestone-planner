@@ -1,5 +1,6 @@
 /**
- * A metric result → an ECharts option, per widget kind (bar, line, pie).
+ * A metric result → an ECharts option, per widget kind (bar, line, pie,
+ * gauge, heatmap; the last two in their own sections below).
  *
  * Pure: the result, the widget's display options and the chart theme in, an
  * option out (`EChart` applies it with `notMerge`).
@@ -32,6 +33,10 @@
  *   nothing after a percentage). A single series is named after the measure
  *   (`measureLabel`, "Booked weeks"), two series after the second
  *   dimension's values.
+ * - The new kinds (gauge, heatmap) keep the accessible description but no
+ *   decal hatching (`aria.decal` off); their colours come from the theme's
+ *   named tokens (`good` / `warn` / `bad`, `heatLow` / `heatHigh`), each
+ *   with a palette fallback.
  */
 
 import type { MetricKey, MetricResult, MetricUnit, WidgetKind, WidgetOptions } from '@/types';
@@ -83,8 +88,10 @@ export const NARROW_LABEL_WIDTH = 72;
 
 /** How the chart is laid out on screen (measured by `EChart`). */
 export interface ChartLayout {
-  /** Less than `NARROW_CATEGORY_PX` per category */
+  /** Less than `NARROW_CATEGORY_PX` per category (a heatmap: per column) */
   narrow?: boolean;
+  /** A heatmap has room for a value in every cell (`heatmapLabelsFit`) */
+  labelsFit?: boolean;
 }
 
 /** The number of categories the chart draws (the first dimension's distinct values). */
@@ -101,6 +108,300 @@ const axisLabel = (percent: boolean) => (value: number) =>
 /** The units of whole counts (the value axis then ticks in whole steps). */
 const COUNT_UNITS: ReadonlySet<MetricUnit> = new Set<MetricUnit>(['count', 'people', 'projects', 'phases', 'equipment']);
 
+/** A value with its unit word ("70.1 weeks"); nothing after a percentage or a missing value ("–"). */
+function withUnit(value: number | null | undefined, unit: MetricUnit, format: WidgetOptions | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return formatMetric(null, unit);
+  const text = formatMetric(value, unit, format);
+  const word = unit !== 'percent' && format?.number_format !== 'percent' ? unitWord(value, unit, format) : '';
+  return word ? `${text} ${word}` : text;
+}
+
+const HTML_ENTITIES: Readonly<Record<string, string>> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+/** Text for a tooltip `formatter`: ECharts writes its string as HTML, and labels are people's data. */
+export const escapeHtml = (text: string): string => text.replace(/[&<>"']/g, (c) => HTML_ENTITIES[c] ?? c);
+
+/** The four new kinds keep the accessible description but draw no decal hatching (bars and pies do). */
+const quietAria = () => ({ enabled: true, decal: { show: false } });
+
+// ---------------------------------------------------------------------------
+// Gauge
+// ---------------------------------------------------------------------------
+
+/** The colours of a gauge's bands; `plain` without a target. */
+export interface GaugeColours {
+  good: string;
+  warn: string;
+  bad: string;
+  plain: string;
+}
+
+/** The band names, standing in for colours when `gaugeScale` is called without any (tests, Task 3). */
+export const GAUGE_BANDS: GaugeColours = { good: 'good', warn: 'warn', bad: 'bad', plain: 'plain' };
+
+/** A gauge's scale: its ends, the coloured stops of its track and the colour of a value's band. */
+export interface GaugeScale {
+  min: number;
+  max: number;
+  /** `[fraction of the track, colour]`, non-decreasing, the last at 1 */
+  stops: [number, string][];
+  /** The colour of the band `value` falls in */
+  band: (value: number) => string;
+}
+
+const ceil10 = (value: number): number => Math.ceil(value / 10) * 10;
+
+/** The smallest 1, 2 or 5 × 10ⁿ at least `value` (1 for nothing positive). */
+export function niceCeil(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 1;
+  for (let exponent = Math.floor(Math.log10(value)) - 1; ; exponent += 1) {
+    for (const mantissa of [1, 2, 5]) {
+      const candidate = exponent >= 0 ? mantissa * 10 ** exponent : mantissa / 10 ** -exponent;
+      if (candidate >= value) return candidate;
+    }
+  }
+}
+
+/** A stored target, when it is one (finite, ≥ 0). */
+export const gaugeTarget = (target: number | null | undefined): number | null =>
+  typeof target === 'number' && Number.isFinite(target) && target >= 0 ? target : null;
+
+/**
+ * The scale of a gauge of `value` against `target`, in `unit`.
+ *
+ * `min` is 0, or the value when it is negative (available days). `max`: a
+ * percentage ends at 120 at least, else at the value or the target rounded up
+ * to ten; any other unit at the nice number (1, 2, 5 × 10ⁿ) past 125 % of the
+ * target and 110 % of the value. With a target the track is green up to it,
+ * amber up to 100 % (a percentage) or 115 % of the target (any other unit) —
+ * no amber band when the target is 100 % or more — and red after; without
+ * one it is the plain colour. The stops are fractions of the track from
+ * `min` to `max`, so a negative minimum keeps every band at its value.
+ */
+export function gaugeScale(
+  value: number,
+  target: number | null | undefined,
+  unit: MetricUnit,
+  colours: GaugeColours = GAUGE_BANDS
+): GaugeScale {
+  const goal = gaugeTarget(target);
+  const percent = unit === 'percent';
+  const min = Math.min(0, value);
+  const max = percent
+    ? Math.max(120, ceil10(value), ceil10(goal ?? 0))
+    : niceCeil(Math.max((goal ?? 0) * 1.25, value * 1.1, 1));
+  if (goal === null) return { min, max, stops: [[1, colours.plain]], band: () => colours.plain };
+  // The amber band's end, as a value: 100 % or 115 % of the target, never before the target.
+  const amber = Math.max(goal, Math.min(max, percent ? 100 : goal * 1.15));
+  const fraction = (v: number) => (v - min) / (max - min);
+  return {
+    min,
+    max,
+    stops: [
+      [fraction(goal), colours.good],
+      [fraction(amber), colours.warn],
+      [1, colours.bad],
+    ],
+    band: (v) => (v < goal ? colours.good : v <= amber ? colours.warn : colours.bad),
+  };
+}
+
+/** A gauge of the result's total (its dimensions, which only the API can send, are ignored). */
+function gaugeOption(result: MetricResult, opts: WidgetOptions, theme: ChartTheme): ChartOption {
+  const palette = theme.palette;
+  const unit = result.unit;
+  const value = result.total ?? 0;
+  const target = gaugeTarget(opts.target);
+  const scale = gaugeScale(value, target, unit, {
+    good: theme.good ?? palette[1],
+    warn: theme.warn ?? palette[2],
+    bad: theme.bad ?? palette[7] ?? palette[0],
+    plain: palette[0],
+  });
+  return {
+    aria: quietAria(),
+    series: [
+      {
+        type: 'gauge',
+        min: scale.min,
+        max: scale.max,
+        startAngle: 210,
+        endAngle: -30,
+        progress: { show: true, width: 12, itemStyle: { color: scale.band(value) } },
+        axisLine: { lineStyle: { width: 12, color: scale.stops } },
+        pointer: { show: false },
+        axisTick: { show: false },
+        splitLine: { show: false },
+        axisLabel: { show: false },
+        title: { show: target !== null, offsetCenter: [0, '70%'], color: theme.textSecondary },
+        detail: {
+          valueAnimation: false,
+          offsetCenter: [0, '20%'],
+          formatter: (v: number) => withUnit(v, unit, opts),
+          color: theme.textPrimary,
+        },
+        data: [
+          {
+            value,
+            name: target !== null ? `Target ${formatMetric(target, unit)} ${unitWord(target, unit)}`.trim() : '',
+          },
+        ],
+      },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Heatmap
+// ---------------------------------------------------------------------------
+
+/** A heatmap shows a value in a cell of at least this many pixels wide… */
+export const HEATMAP_LABEL_MIN_WIDTH = 44;
+/** …and this many high. */
+export const HEATMAP_LABEL_MIN_HEIGHT = 20;
+
+/** Whether every cell of an `xCount` × `yCount` heatmap in a `width` × `height` px chart has room for its value. */
+export const heatmapLabelsFit = (width: number, height: number, xCount: number, yCount: number): boolean =>
+  width / Math.max(1, xCount) >= HEATMAP_LABEL_MIN_WIDTH && height / Math.max(1, yCount) >= HEATMAP_LABEL_MIN_HEIGHT;
+
+/** The one column of a one-dimension heatmap (an API-only shape): the measure. */
+const MEASURE_KEY_ID = '__measure__';
+
+/** Period buckets in time order: their keys (`2026-01`, `2026-Q1`, `2026-W01`) sort as text. */
+const chronological = (keys: MetricKey[]): MetricKey[] => {
+  const rank = (key: MetricKey) => (key.key === OTHER_KEY ? 2 : key.key === null ? 1 : 0);
+  return [...keys].sort((a, b) => rank(a) - rank(b) || String(a.key).localeCompare(String(b.key)));
+};
+
+export interface HeatmapAxes {
+  /** The columns, left to right */
+  x: MetricKey[];
+  /** The rows, top to bottom */
+  y: MetricKey[];
+  xOf: (row: MetricResult['rows'][number]) => MetricKey | undefined;
+  yOf: (row: MetricResult['rows'][number]) => MetricKey | undefined;
+}
+
+/**
+ * A heatmap's axes: a period dimension runs along x and the other dimension
+ * down y; without a period the first dimension is y and the second x. Values
+ * keep the server's order ("Other" last), periods their time order. A
+ * one-dimension result (only the API sends one) is a single column named
+ * after the measure.
+ */
+export function heatmapAxes(result: MetricResult, measureLabel?: string): HeatmapAxes {
+  const ordered = (index: number) => {
+    const keys = distinctKeys(result, index);
+    return result.dimensions[index]?.kind === 'period' ? chronological(keys) : keys;
+  };
+  if (result.dimensions.length < 2) {
+    const measure: MetricKey = { key: MEASURE_KEY_ID, label: measureLabel || 'Value' };
+    return { x: [measure], y: ordered(0), xOf: () => measure, yOf: (row) => row.keys[0] ?? TOTAL_KEY };
+  }
+  const xIndex = result.dimensions[0].kind === 'period' ? 0 : 1;
+  const yIndex = 1 - xIndex;
+  return { x: ordered(xIndex), y: ordered(yIndex), xOf: (row) => row.keys[xIndex], yOf: (row) => row.keys[yIndex] };
+}
+
+/** A heatmap's column and row counts (`EChart` decides `narrow` and `labelsFit` with them). */
+export const heatmapCounts = (result: MetricResult): { x: number; y: number } => {
+  const axes = heatmapAxes(result);
+  return { x: axes.x.length, y: axes.y.length };
+};
+
+function heatmapOption(
+  result: MetricResult,
+  opts: WidgetOptions,
+  theme: ChartTheme,
+  measureLabel: string | undefined,
+  layout: ChartLayout
+): ChartOption {
+  const unit = result.unit;
+  const axes = heatmapAxes(result, measureLabel);
+  const xIndex = new Map(axes.x.map((key, i) => [keyId(key), i]));
+  const yIndex = new Map(axes.y.map((key, i) => [keyId(key), i]));
+  // One cell per (column, row); a null cell (a ratio over nothing) has no point.
+  const cells = new Map<string, [number, number, number | null]>();
+  for (const row of result.rows) {
+    const xKey = axes.xOf(row);
+    const yKey = axes.yOf(row);
+    const x = xKey && xIndex.get(keyId(xKey));
+    const y = yKey && yIndex.get(keyId(yKey));
+    if (x === undefined || y === undefined) continue;
+    const id = `${x}:${y}`;
+    const cell = cells.get(id);
+    cells.set(id, [x, y, addValue(cell ? cell[2] : undefined, row.value)]);
+  }
+  const data = [...cells.values()].filter((cell): cell is [number, number, number] => cell[2] !== null);
+  const values = data.map((cell) => cell[2]);
+  const minValue = values.length ? values.reduce((a, b) => Math.min(a, b)) : 0;
+  const maxValue = values.length ? values.reduce((a, b) => Math.max(a, b)) : 0;
+  const min = Math.min(0, minValue);
+  const max = unit === 'percent' ? Math.max(100, maxValue, min + 1) : Math.max(maxValue, min + 1);
+  const palette = theme.palette;
+  const narrow = Boolean(layout.narrow);
+  const axis = (keys: MetricKey[], axisLabel: Record<string, unknown>) => ({
+    type: 'category',
+    data: keys.map((key) => key.label),
+    boundaryGap: true,
+    axisLabel,
+  });
+  const valueOf = (params: { value?: unknown }) => (Array.isArray(params.value) ? (params.value[2] as number) : null);
+
+  return {
+    aria: quietAria(),
+    tooltip: {
+      trigger: 'item',
+      formatter: (params: { value?: unknown }) => {
+        const [x, y, value] = params.value as [number, number, number];
+        return escapeHtml(`${axes.y[y]?.label ?? ''} · ${axes.x[x]?.label ?? ''}: ${withUnit(value, unit, opts)}`);
+      },
+    },
+    // Room at the bottom for the colour scale; the axis labels inside the box.
+    grid: { left: 8, right: 16, top: 8, bottom: 56, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
+    xAxis: axis(axes.x, {
+      interval: 0,
+      overflow: 'truncate',
+      width: narrow ? NARROW_LABEL_WIDTH : LABEL_WIDTH,
+      ...(narrow ? { rotate: 30 } : {}),
+    }),
+    // First row on top
+    yAxis: { ...axis(axes.y, { interval: 0, overflow: 'truncate', width: 120 }), inverse: true },
+    visualMap: {
+      type: 'continuous',
+      min,
+      max,
+      calculable: false,
+      orient: 'horizontal',
+      left: 'center',
+      bottom: 0,
+      itemWidth: 10,
+      itemHeight: 120,
+      text: [formatMetric(max, unit, opts), formatMetric(min, unit, opts)],
+      textStyle: { color: theme.textSecondary },
+      inRange: { color: [theme.heatLow ?? theme.background ?? 'transparent', theme.heatHigh ?? palette[0]] },
+    },
+    series: [
+      {
+        type: 'heatmap',
+        data,
+        itemStyle: { borderColor: theme.background, borderWidth: 1 },
+        label: {
+          show: Boolean(layout.labelsFit),
+          formatter: (params: { value?: unknown }) => formatMetric(valueOf(params), unit, opts),
+        },
+        emphasis: { itemStyle: { borderColor: theme.textPrimary, borderWidth: 1 } },
+      },
+    ],
+  };
+}
+
 export function toOption(
   kind: ChartKind,
   result: MetricResult,
@@ -111,13 +412,9 @@ export function toOption(
   layout: ChartLayout = {}
 ): ChartOption {
   const opts = options ?? {};
-  /** A value with its unit word ("70.1 weeks"); nothing after a percentage or a missing value ("–"). */
-  const withUnit = (value: number | null | undefined, unit: MetricUnit, format: WidgetOptions | null) => {
-    if (value === null || value === undefined || !Number.isFinite(value)) return formatMetric(null, unit);
-    const text = formatMetric(value, unit, format);
-    const word = unit !== 'percent' && format?.number_format !== 'percent' ? unitWord(value, unit, format) : '';
-    return word ? `${text} ${word}` : text;
-  };
+  if (kind === 'gauge') return gaugeOption(result, opts, theme);
+  if (kind === 'heatmap') return heatmapOption(result, opts, theme, measureLabel, layout);
+
   const palette = theme.palette;
   const muted = theme.textMuted;
   const aria = { show: true, decal: { show: true } };

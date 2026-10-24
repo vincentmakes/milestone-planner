@@ -9,11 +9,13 @@
  * `echartsTheme.ts`), gets its option with `notMerge` whenever the result or
  * the options change, follows its container through a `ResizeObserver` and
  * is disposed on unmount. The observed width also decides whether the chart
- * is narrow (`isNarrow`: under 90 px per category), which tilts and shortens
- * the category labels (`toOption`'s `layout.narrow`) so they never overlap. A `data-theme` change on `<html>` (watched like
- * `ThemeToggle` does) re-registers the theme from the new tokens and applies
- * it with the instance's `setTheme` (ECharts 6), then sets the re-coloured
- * option.
+ * is narrow (`isNarrow`: under 90 px per category, a heatmap's per column),
+ * which tilts and shortens the category labels (`toOption`'s `layout.narrow`)
+ * so they never overlap, and with the observed height whether a heatmap has
+ * room for a value in each cell (`heatmapLabelsFit`, `layout.labelsFit`).
+ * A `data-theme` change on `<html>` (watched like `ThemeToggle` does)
+ * re-registers the theme from the new tokens and applies it with the
+ * instance's `setTheme` (ECharts 6), then sets the re-coloured option.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -30,7 +32,7 @@ import {
 import { CanvasRenderer } from 'echarts/renderers';
 import type { MetricResult, WidgetOptions } from '@/types';
 import { buildTheme, CHART_THEME_NAME, toEChartsTheme } from './echartsTheme';
-import { categoryCount, isNarrow, toOption } from './toOption';
+import { categoryCount, heatmapCounts, heatmapLabelsFit, isNarrow, toOption } from './toOption';
 import type { ChartKind } from './toOption';
 import styles from './EChart.module.css';
 
@@ -63,6 +65,12 @@ export interface EChartProps {
   measureLabel?: string;
 }
 
+/** The columns (categories) and rows a chart lays out, for `narrow` and `labelsFit`. */
+const chartCounts = (kind: ChartKind, result: MetricResult) =>
+  kind === 'heatmap'
+    ? { ...heatmapCounts(result), heatmap: true }
+    : { x: categoryCount(result), y: 0, heatmap: false };
+
 /** Bumped on every `data-theme` change of `<html>`. */
 function useThemeVersion(): number {
   const [version, setVersion] = useState(0);
@@ -81,19 +89,28 @@ export function EChart({ kind, result, options, label, measureLabel }: EChartPro
   // The theme follows the tokens of the active app theme.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- themeVersion is the trigger: the tokens live in the DOM
   const theme = useMemo(() => buildTheme(), [themeVersion]);
-  // Narrow: too little width per category for level labels. The observer
-  // measures the width; a new result re-decides with the last width.
-  const categories = useMemo(() => categoryCount(result), [result]);
-  const categoriesRef = useRef(categories);
-  const widthRef = useRef(0);
+  // Narrow: too little width per category (a heatmap: per column) for level
+  // labels; labelsFit: room for a value in every heatmap cell. The observer
+  // measures the container; a new result re-decides with the last size. Both
+  // are states, so a drag-resize sets the option again only when one flips.
+  const counts = useMemo(() => chartCounts(kind, result), [kind, result]);
+  const countsRef = useRef(counts);
+  const sizeRef = useRef({ width: 0, height: 0 });
   const [narrow, setNarrow] = useState(false);
+  const [labelsFit, setLabelsFit] = useState(false);
+  const decide = useRef(() => {
+    const { width, height } = sizeRef.current;
+    const { x, y, heatmap } = countsRef.current;
+    setNarrow(isNarrow(width, x));
+    setLabelsFit(heatmap && heatmapLabelsFit(width, height, x, y));
+  }).current;
   useEffect(() => {
-    categoriesRef.current = categories;
-    setNarrow(isNarrow(widthRef.current, categories));
-  }, [categories]);
+    countsRef.current = counts;
+    decide();
+  }, [counts, decide]);
   const option = useMemo(
-    () => toOption(kind, result, options, theme, measureLabel, { narrow }),
-    [kind, result, options, theme, measureLabel, narrow]
+    () => toOption(kind, result, options, theme, measureLabel, { narrow, labelsFit }),
+    [kind, result, options, theme, measureLabel, narrow, labelsFit]
   );
   const appliedTheme = useRef(themeVersion);
 
@@ -106,8 +123,12 @@ export function EChart({ kind, result, options, label, measureLabel }: EChartPro
     chartRef.current = chart;
     const observer = new ResizeObserver((entries) => {
       chart.resize();
-      widthRef.current = entries[0]?.contentRect.width ?? container.clientWidth;
-      setNarrow(isNarrow(widthRef.current, categoriesRef.current));
+      const rect = entries[0]?.contentRect;
+      sizeRef.current = {
+        width: rect?.width ?? container.clientWidth,
+        height: rect?.height ?? container.clientHeight,
+      };
+      decide();
     });
     observer.observe(container);
     return () => {
@@ -115,7 +136,7 @@ export function EChart({ kind, result, options, label, measureLabel }: EChartPro
       chart.dispose();
       chartRef.current = null;
     };
-  }, []);
+  }, [decide]);
 
   // A theme switch: the new tokens become the registered theme.
   useEffect(() => {
