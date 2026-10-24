@@ -297,9 +297,15 @@ describe('gauge, heatmap, treemap and sankey rules', () => {
     expect(normaliseQuery('bar', q).dimensions).toEqual([month, { kind: 'team' }]);
     // A percentage of the first dimension needs the second one still there.
     expect(normaliseQuery('treemap', { ...q, percent_of: 'first_dimension' }).percent_of).toBeNull();
-    expect(
-      normaliseQuery('treemap', query({ dimensions: [{ kind: 'site' }, { kind: 'project' }], percent_of: 'first_dimension', top_n: 3 }))
-    ).toMatchObject({ percent_of: 'first_dimension', top_n: 3 });
+    // A share within each first-dimension value would draw every parent the same
+    // size: a treemap or a sankey keeps a share of the total only.
+    const two = query({ dimensions: [{ kind: 'site' }, { kind: 'project' }], percent_of: 'first_dimension', top_n: 3 });
+    expect(normaliseQuery('treemap', two)).toMatchObject({ percent_of: null, top_n: 3 });
+    expect(normaliseQuery('sankey', two)).toMatchObject({ percent_of: null, top_n: 3 });
+    expect(normaliseQuery('treemap', { ...two, percent_of: 'total' }).percent_of).toBe('total');
+    expect(normaliseQuery('sankey', { ...two, percent_of: 'total' }).percent_of).toBe('total');
+    expect(normaliseQuery('heatmap', two).percent_of).toBe('first_dimension');
+    expect(normaliseQuery('bar', two).percent_of).toBe('first_dimension');
   });
 
   it('refuses a treemap or a sankey of a ratio measure before counting its dimensions', () => {

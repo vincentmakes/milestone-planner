@@ -528,6 +528,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
   // --- Percent of / Top N ---------------------------------------------------------------
   const percentOptions = [{ value: '', label: 'None' }];
   if (dimensions.length > 0) percentOptions.push({ value: 'total', label: 'Total' });
+  // Not on a treemap or a sankey (below): every parent would be drawn the same size.
   if (dimensions.length === 2) percentOptions.push({ value: 'first_dimension', label: 'First dimension' });
   const topNDisabled = dimensions.length === 0 || dimensions[0].kind === 'period';
 
@@ -757,7 +758,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
                     fullWidth
                     value={query.percent_of ?? ''}
                     onChange={(e) => setPercentOf(e.target.value)}
-                    options={kind === 'kpi' ? percentOptions.slice(0, 2) : percentOptions}
+                    options={kind === 'kpi' || SUMMED_KINDS.has(kind) ? percentOptions.slice(0, 2) : percentOptions}
                     disabled={dimensions.length === 0}
                   />
                 )}

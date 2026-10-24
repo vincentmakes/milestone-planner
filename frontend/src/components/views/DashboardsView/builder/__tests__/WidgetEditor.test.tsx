@@ -1001,6 +1001,32 @@ describe('WidgetEditor — gauge, heatmap, treemap and sankey', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(RATIO_HIERARCHY_PROBLEM);
   });
 
+  it('offers no Percent of the first dimension on a treemap or a sankey, and drops one chosen on a bar', async () => {
+    const choices = () => within(screen.getByLabelText('Percent of')).getAllByRole('option').map((o) => o.textContent);
+    renderEditor();
+    pickOption(/^Dimension 1/, 'Site');
+    pickOption(/^Dimension 2/, 'Project');
+    expect(choices()).toEqual(['None', 'Total', 'First dimension']);
+    fireEvent.change(screen.getByLabelText('Percent of'), { target: { value: 'first_dimension' } });
+    for (const kind of ['Treemap', 'Sankey']) {
+      chooseKind(kind);
+      expect(choices()).toEqual(['None', 'Total']);
+      expect(screen.getByLabelText('Percent of')).toHaveValue('');
+      await flushPreview();
+      expect(lastQuery()).not.toHaveProperty('percent_of');
+      // A share of the total stays.
+      fireEvent.change(screen.getByLabelText('Percent of'), { target: { value: 'total' } });
+      await flushPreview();
+      expect(lastQuery()).toMatchObject({ percent_of: 'total' });
+      chooseKind('Bar');
+      fireEvent.change(screen.getByLabelText('Percent of'), { target: { value: 'first_dimension' } });
+    }
+    // The heatmap keeps it.
+    chooseKind('Heatmap');
+    expect(choices()).toEqual(['None', 'Total', 'First dimension']);
+    expect(screen.getByLabelText('Percent of')).toHaveValue('first_dimension');
+  });
+
   it('offers a Target only on a gauge: a number from 0 to 1e9 is saved, any other text or an empty field clears it', async () => {
     const { onSave } = renderEditor();
     setTitle('Load');

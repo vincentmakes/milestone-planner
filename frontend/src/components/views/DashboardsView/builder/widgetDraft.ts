@@ -189,7 +189,8 @@ export const kpiWithoutDimension = noDimensionKind;
  * sankey), the filters the measure does not take dropped (a measure of
  * another family), a KPI with a dimension shows a share of the total — a
  * gauge, and a KPI of a measure that takes no percentage, have no dimension
- * —, a percentage needs its dimensions and a measure that takes one, Top N
+ * —, a percentage needs its dimensions and a measure that takes one (and is
+ * of the total on a treemap or a sankey), Top N
  * needs a first dimension that is not a period.
  */
 export function normaliseQuery(kind: WidgetKind, query: MetricQuery): MetricQuery {
@@ -201,7 +202,9 @@ export function normaliseQuery(kind: WidgetKind, query: MetricQuery): MetricQuer
   let percentOf = query.percent_of ?? null;
   if (dimensions.length === 0 || noPercent) percentOf = null;
   else if (kind === 'kpi') percentOf = 'total';
-  else if (percentOf === 'first_dimension' && dimensions.length < 2) percentOf = null;
+  // A share within each first-dimension value draws every parent box or left
+  // node the same size: a treemap or a sankey takes a share of the total only.
+  else if (percentOf === 'first_dimension' && (dimensions.length < 2 || SUMMED_KINDS.has(kind))) percentOf = null;
   const topN = dimensions.length === 0 || dimensions[0].kind === 'period' ? null : query.top_n ?? null;
   const filters = filtersFor(query.measure, query.filters);
   return { ...query, ...(filters ? { filters } : {}), dimensions, percent_of: percentOf, top_n: topN };
