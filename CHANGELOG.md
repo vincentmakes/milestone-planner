@@ -8,10 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [2.3.0] - 2026-10-30
 
 ### Added
-- Dashboards: build KPI and chart dashboards over projects, phases and bookings, keep them private or share them with roles; an Overview dashboard ships for everyone.
+- Dashboards: build KPI and chart dashboards over projects, phases and bookings, keep them private or share them with roles, sites, teams or individual people; an Overview dashboard ships for everyone.
 - Dashboard numbers count approved bookings as allocation-weighted working days of the project's site, bank holidays excluded; pending bookings and absences are left out.
 - A Dashboards view in the sidebar shows the dashboards shared with you — KPI tiles, bar, line and pie charts and tables that resize with the window and follow the theme.
-- Dashboard builders create, duplicate and share dashboards, and add KPI, bar, line, pie and table widgets with a live preview — any measure by site, team, person, project, manager, customer, confirmed, tag, project field or period.
+- Dashboard builders create, duplicate and share dashboards with roles, sites, teams and people (view only; each dashboard shows whom it is shared with), rename them and edit their description inline in edit mode, and add KPI, bar, line, pie and table widgets with a live preview beside the form — any measure by site, team, person, project, manager, customer, confirmed, tag, project field or period.
 
 ## [2.2.1] - 2026-11-02
 

@@ -1,13 +1,13 @@
 /**
  * DashboardsView (read mode) over the real dashboardStore with a mocked API:
  * the initial dashboard opens, the picker lists the dashboards grouped by
- * their hint and switches, Refresh and window focus reload the data, the
+ * their hint and switches, whom the open one is shared with, Refresh and window focus reload the data, the
  * empty state, the "no longer shared" notice on a 404, the builder slot only
  * for dashboards.manage on wider screens, and the pending live reload
  * dropped when the view leaves.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ApiError } from '@/api/client';
 import { dashboardsApi } from '@/api/endpoints/dashboards';
 import { useDashboardStore } from '@/stores/dashboardStore';
@@ -49,6 +49,10 @@ const summary = (id: number, name: string, extra: Partial<DashboardSummary> = {}
   description: null,
   visibility: 'everyone',
   role_ids: [],
+  site_ids: [],
+  team_ids: [],
+  user_ids: [],
+  shared_with: { roles: [], sites: [], teams: [], users: [] },
   owner_id: null,
   owner_name: null,
   is_default: false,
@@ -59,11 +63,17 @@ const summary = (id: number, name: string, extra: Partial<DashboardSummary> = {}
 });
 
 const LIST = [
-  summary(5, 'Team plan', { visibility: 'roles', role_ids: [2], owner_id: 2, owner_name: 'Bob Brown' }),
+  summary(5, 'Team plan', {
+    visibility: 'shared',
+    role_ids: [2],
+    shared_with: { roles: [{ id: 2, name: 'Superuser' }], sites: [], teams: [], users: [] },
+    owner_id: 2,
+    owner_name: 'Bob Brown',
+  }),
   summary(4, 'Zeta', { visibility: 'everyone', owner_id: 2, owner_name: 'Bob Brown' }),
   summary(3, 'My own', { visibility: 'private', owner_id: 1, owner_name: 'Ada Admin' }),
   summary(1, 'Overview', { is_default: true, description: 'The planning at a glance' }),
-  summary(6, 'Orphan', { visibility: 'roles' }),
+  summary(6, 'Orphan', { visibility: 'shared' }),
 ];
 
 const detail = (id: number, extra: Partial<Dashboard> = {}): Dashboard => ({
@@ -126,6 +136,19 @@ describe('DashboardsView', () => {
     expect(screen.getByTestId('grid')).toHaveAttribute('data-editing', 'false');
   });
 
+  it('shows whom the open dashboard is shared with, under its description', async () => {
+    render(<DashboardsView />);
+    await screen.findByText('Widget of 1');
+    expect(screen.getByText('Shared with everyone')).toBeInTheDocument();
+    pickOption(/^Dashboard/, 'Team plan');
+    await screen.findByText('Widget of 5');
+    expect(within(screen.getByRole('list', { name: 'Shared with' })).getByText('Superuser')).toBeInTheDocument();
+    pickOption(/^Dashboard/, 'My own');
+    expect(await screen.findByText('Only you (and administrators)')).toBeInTheDocument();
+    pickOption(/^Dashboard/, 'Orphan');
+    expect(await screen.findByText('Shared with no one left')).toBeInTheDocument();
+  });
+
   it('reopens the dashboard last opened in this tenant', async () => {
     useViewStore.setState({ lastDashboardId: { '': 4 } });
     render(<DashboardsView />);
@@ -140,7 +163,7 @@ describe('DashboardsView', () => {
     expect(options.map((o) => o.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
       'Overview Default',
       'My own Mine',
-      'Orphan Shared with no role',
+      'Orphan Shared with no one left',
       'Team plan Shared by Bob Brown',
       'Zeta Everyone',
     ]);

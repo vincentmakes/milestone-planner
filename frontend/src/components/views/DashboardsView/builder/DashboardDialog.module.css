@@ -1,4 +1,4 @@
-/* DashboardDialog: name, description, visibility and roles */
+/* DashboardDialog: name, description, visibility and the sharing targets */
 
 .form {
   display: flex;
@@ -6,7 +6,16 @@
   gap: 1rem;
 }
 
-.roles {
+/* Shared with…: roles, sites, teams and people */
+.targets {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.group {
   display: flex;
   flex-direction: column;
   gap: 0.375rem;

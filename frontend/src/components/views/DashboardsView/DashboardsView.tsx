@@ -4,18 +4,21 @@
  *
  * The toolbar picks a dashboard (`SearchableSelect`; the hint says where it
  * comes from: *Default*, *Mine*, *Everyone*, *Shared by <owner>* or *Shared
- * with no role*, and the list is ordered in those groups) and refreshes its
+ * with no one left*, and the list is ordered in those groups) and refreshes its
  * data. Holders of `dashboards.manage` on screens wider than a phone, outside
  * What-If, also get the builder's actions in the `builder-actions` slot:
  * **New** (the dashboard dialog, then an empty draft — nothing is sent until
  * Save), **Duplicate** ("Copy of …", opened in edit mode), and on a
- * dashboard they may edit **Edit**, **Share…** (the dialog, saving without
- * the widgets) and **Delete** (the default dashboard: admins only). Edit
- * mode (`useDashboardEditor`) turns the row into **Add widget** / **Save** /
- * **Cancel** and the grid into a draggable one whose widget headers carry
- * Edit and Remove; switching dashboard or leaving the view with unsaved
- * changes asks first. Below: the description, an error `Notice`, the empty
- * state, and the widget grid.
+ * dashboard they may edit **Edit**, **Share…** (the sharing dialog, saving
+ * without the widgets) and **Delete** (the default dashboard: admins only).
+ * Edit mode (`useDashboardEditor`) turns the row into **Add widget** /
+ * **Save** / **Cancel**, the description line into the dashboard's **Name**
+ * and **Description** fields (Save asks for a name first, sending nothing),
+ * and the grid into a draggable one whose widget headers carry Edit and
+ * Remove; switching dashboard or leaving the view with unsaved changes asks
+ * first. Below the toolbar: the description, whom the dashboard is shared
+ * with (`SharedWithLine`), an error `Notice`, the empty state, and the
+ * widget grid.
  *
  * On mount the list loads and the initial dashboard opens (the last one
  * opened in this tenant, else the default, else the first); window focus
@@ -24,7 +27,7 @@
  * grid stay in this chunk) inside an error boundary.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useDashboardStore } from '@/stores/dashboardStore';
 import { useAppStore } from '@/stores/appStore';
@@ -32,6 +35,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useHasPermission } from '@/hooks/useCan';
 import { useWhatIfBlocked } from '@/hooks/useWhatIfBlocked';
 import { Button } from '@/components/common/Button';
+import { Input } from '@/components/common/Input';
 import { Notice } from '@/components/common/Notice';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import type { SearchableOption } from '@/components/common/SearchableSelect';
@@ -47,20 +51,23 @@ import {
   TrashIcon,
 } from '@/components/common/Icon';
 import { confirmAction } from '@/utils/confirmDialog';
-import type { Dashboard, DashboardSummary, MetricResult } from '@/types';
+import type { Dashboard, DashboardSummary, MetricResult, SharedWith } from '@/types';
 import { DashboardGrid } from './DashboardGrid';
+import { NO_TARGET_TEXT, SharedWithLine } from './SharedWithLine';
+import { sharedWithNoOne } from './sharing';
 import { DashboardDialog } from './builder/DashboardDialog';
 import { WidgetEditor } from './builder/WidgetEditor';
 import { plainError, useDashboardEditor } from './builder/useDashboardEditor';
-import { MAX_WIDGETS } from './builder/widgetDraft';
+import { copyTargets, MAX_WIDGETS } from './builder/widgetDraft';
 import type { DashboardMeta, DraftWidget } from './builder/widgetDraft';
 import styles from './DashboardsView.module.css';
 
 export const EMPTY_TEXT = 'No dashboard is shared with you yet.';
-export const NO_ROLE_TEXT = 'Shared with no role';
 export const DELETED_TEXT = 'Dashboard deleted';
 export const FIRST_WIDGET_TEXT = 'Add your first widget.';
+export const NAME_REQUIRED_TEXT = 'Enter a name';
 const NAME_MAX = 100;
+const DESCRIPTION_MAX = 2000;
 
 /** The phone breakpoint of UI_GUIDELINES §2.12. */
 export const PHONE_QUERY = '(max-width: 640px)';
@@ -85,26 +92,32 @@ function useIsPhone(): boolean {
   return phone;
 }
 
-/** A `roles` dashboard that no role holds any more (its owner and admins see it). */
-const sharedWithNoRole = (d: Pick<DashboardSummary, 'visibility' | 'role_ids'>): boolean =>
-  d.visibility === 'roles' && d.role_ids.length === 0;
-
 /** Where a dashboard comes from, and its group rank in the picker. */
 function origin(dashboard: DashboardSummary, userId: number | null): { hint: string; rank: number } {
   if (dashboard.is_default) return { hint: 'Default', rank: 0 };
   const mine = userId !== null && dashboard.owner_id === userId;
-  if (sharedWithNoRole(dashboard)) return { hint: NO_ROLE_TEXT, rank: mine ? 1 : 2 };
+  if (sharedWithNoOne(dashboard)) return { hint: NO_TARGET_TEXT, rank: mine ? 1 : 2 };
   if (mine) return { hint: 'Mine', rank: 1 };
   if (dashboard.visibility === 'everyone') return { hint: 'Everyone', rank: 3 };
   return { hint: dashboard.owner_name ? `Shared by ${dashboard.owner_name}` : 'Shared with me', rank: 2 };
 }
 
-const metaOf = (d: Pick<Dashboard, 'name' | 'description' | 'visibility' | 'role_ids'>): DashboardMeta => ({
+const metaOf = (d: Dashboard): DashboardMeta => ({
   name: d.name,
   description: d.description,
   visibility: d.visibility,
-  role_ids: [...d.role_ids],
+  ...copyTargets(d),
 });
+
+const NEW_META: DashboardMeta = {
+  name: '',
+  description: null,
+  visibility: 'private',
+  role_ids: [],
+  site_ids: [],
+  team_ids: [],
+  user_ids: [],
+};
 
 export function DashboardsView() {
   const dashboards = useDashboardStore((s) => s.dashboards);
@@ -126,6 +139,10 @@ export function DashboardsView() {
   // The widget editor: open on a widget (null = a new one)
   const [widgetTarget, setWidgetTarget] = useState<{ widget: DraftWidget | null } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // A new draft's targets with their names (the dialog's; the server resolves them on save)
+  const [newSharedWith, setNewSharedWith] = useState<SharedWith | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   const { isSubmitting: acting, guard } = useSubmitGuard();
 
   // The builder's controls: the key, a wide screen, and never in What-If.
@@ -172,7 +189,6 @@ export function DashboardsView() {
 
   const empty = listLoaded && dashboards.length === 0;
   const draft = editor.draft;
-  const shown = draft ?? current;
 
   // --- Actions ---------------------------------------------------------------
   const switchTo = async (id: number | null) => {
@@ -192,6 +208,7 @@ export function DashboardsView() {
       try {
         const name = `Copy of ${current.name}`.slice(0, NAME_MAX);
         const copy = await useDashboardStore.getState().duplicate(current.id, name);
+        setNameError(null);
         editor.startEdit(copy);
       } catch (err) {
         console.error('[Dashboards] Failed to duplicate a dashboard', err);
@@ -216,6 +233,18 @@ export function DashboardsView() {
         setActionError(plainError(err, 'The dashboard could not be deleted.'));
       }
     });
+  };
+
+  // Save asks for a name first: nothing is sent without one.
+  const saveDraft = () => {
+    if (!draft) return;
+    if (!draft.name.trim()) {
+      setNameError(NAME_REQUIRED_TEXT);
+      nameRef.current?.focus();
+      return;
+    }
+    setNameError(null);
+    void editor.save();
   };
 
   const saveWidget = (widget: DraftWidget, preview: MetricResult | null) => {
@@ -243,7 +272,7 @@ export function DashboardsView() {
     builderActions = (
       <>
         {addWidgetButton('Add widget')}
-        <Button onClick={() => void editor.save()} loading={editor.saving}>
+        <Button onClick={saveDraft} loading={editor.saving}>
           Save
         </Button>
         <Button
@@ -278,7 +307,10 @@ export function DashboardsView() {
           <Button
             variant="secondary"
             icon={<Icon icon={EditIcon} />}
-            onClick={() => editor.startEdit()}
+            onClick={() => {
+              setNameError(null);
+              editor.startEdit();
+            }}
             disabled={acting}
           >
             Edit
@@ -309,6 +341,13 @@ export function DashboardsView() {
   }
 
   const newDraft = draft !== null && draft.id === undefined;
+
+  // Whom the shown dashboard is shared with: a new draft's from the dialog,
+  // an open one's from the server (edit mode never changes the sharing).
+  const sharing =
+    draft && newDraft
+      ? newSharedWith && { visibility: draft.visibility, owner_id: userId, shared_with: newSharedWith }
+      : current;
 
   return (
     <div className={styles.container}>
@@ -354,8 +393,38 @@ export function DashboardsView() {
       </div>
 
       <div className={styles.content}>
-        {shown?.description && <p className={styles.description}>{shown.description}</p>}
-        {shown && sharedWithNoRole(shown) && <p className={styles.description}>{NO_ROLE_TEXT}</p>}
+        {draft ? (
+          <div className={styles.metaFields}>
+            <Input
+              ref={nameRef}
+              label="Name *"
+              fullWidth
+              value={draft.name}
+              maxLength={NAME_MAX}
+              onChange={(e) => {
+                editor.setMeta({ name: e.target.value });
+                if (nameError) setNameError(null);
+              }}
+              aria-invalid={nameError ? true : undefined}
+            />
+            <Input
+              label="Description"
+              fullWidth
+              value={draft.description ?? ''}
+              maxLength={DESCRIPTION_MAX}
+              onChange={(e) => editor.setMeta({ description: e.target.value === '' ? null : e.target.value })}
+              placeholder="Optional description"
+            />
+          </div>
+        ) : (
+          current?.description && <p className={styles.description}>{current.description}</p>
+        )}
+        {sharing && (
+          <div className={styles.sharedWith}>
+            <SharedWithLine dashboard={sharing} userId={userId} />
+          </div>
+        )}
+        {draft && nameError && <Notice tone="error">{nameError}</Notice>}
         {editor.error && <Notice tone="error">{editor.error}</Notice>}
         {actionError && <Notice tone="error">{actionError}</Notice>}
         {loadError && <Notice tone="error">{loadError}</Notice>}
@@ -401,10 +470,12 @@ export function DashboardsView() {
       {dialog === 'new' && (
         <DashboardDialog
           mode="new"
-          initial={{ name: '', description: null, visibility: 'private', role_ids: [] }}
+          initial={NEW_META}
           onClose={() => setDialog(null)}
-          onDone={(meta) => {
+          onDone={(meta, sharedWith) => {
             setDialog(null);
+            setNewSharedWith(sharedWith);
+            setNameError(null);
             editor.startNew(meta);
           }}
         />
@@ -413,6 +484,7 @@ export function DashboardsView() {
         <DashboardDialog
           mode="share"
           initial={metaOf(current)}
+          sharedWith={current.shared_with}
           dashboardId={current.id}
           onClose={() => setDialog(null)}
           onDone={() => setDialog(null)}

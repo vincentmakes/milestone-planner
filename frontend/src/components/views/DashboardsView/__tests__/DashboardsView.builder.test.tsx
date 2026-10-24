@@ -2,7 +2,9 @@
  * DashboardsView, edit mode, over the real dashboardStore with a mocked API
  * (the grid is a fake that exposes its edit hooks): the toolbar per key,
  * dashboard and screen; New (dialog first, nothing sent until Save),
- * Duplicate, Share…, Delete; edit mode with Add widget / Save / Cancel; the
+ * Duplicate, Share… (sharing only), Delete; edit mode with Add widget / Save /
+ * Cancel, the inline name and description (Save asks for a name), whom the
+ * dashboard is shared with; the
  * dirty guard on a dashboard switch and on leaving the view; a draft that
  * survives a live dashboard reload; nothing of the builder during What-If.
  */
@@ -18,14 +20,16 @@ import { useWhatIfStore } from '@/stores/whatIfStore';
 import { resetAllStores } from '@/stores';
 import { makeRole, makeSystemRoles, makeUser } from '@/test/factories';
 import { stubConfirm } from '@/test/confirmDialog';
-import { pickOption } from '@/test/searchableSelect';
+import { pickOption, pickerTrigger } from '@/test/searchableSelect';
 import { viewLeaveGuard } from '@/utils/viewLeaveGuard';
 import type { Dashboard, DashboardSummary, DashboardWidget, WidgetLayout } from '@/types';
-import { DashboardsView, DELETED_TEXT, FIRST_WIDGET_TEXT, NO_ROLE_TEXT } from '../DashboardsView';
+import { DashboardsView, DELETED_TEXT, FIRST_WIDGET_TEXT, NAME_REQUIRED_TEXT } from '../DashboardsView';
+import { NO_TARGET_TEXT } from '../SharedWithLine';
 
 vi.mock('@/api/endpoints/dashboards', () => ({
   dashboardsApi: {
     list: vi.fn(),
+    shareableUsers: vi.fn(),
     get: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
@@ -86,6 +90,10 @@ const summary = (id: number, name: string, extra: Partial<DashboardSummary> = {}
   description: null,
   visibility: 'everyone',
   role_ids: [],
+  site_ids: [],
+  team_ids: [],
+  user_ids: [],
+  shared_with: { roles: [], sites: [], teams: [], users: [] },
   owner_id: 1,
   owner_name: 'Ada Admin',
   is_default: false,
@@ -142,6 +150,9 @@ beforeEach(() => {
   api.list.mockResolvedValue(LIST);
   api.get.mockImplementation(async (id: number) => detail(id));
   api.data.mockResolvedValue({ widgets: {}, loaded_at: '2026-10-23T10:00:00.000Z' });
+  api.shareableUsers.mockResolvedValue([
+    { id: 6, name: 'Diana Doe', job_title: null, site_names: ['Winterthur'] },
+  ]);
   api.query.mockResolvedValue({
     unit: 'weeks',
     dimensions: [],
@@ -213,13 +224,13 @@ describe('DashboardsView — toolbar', () => {
     expect(button('Edit')).not.toBeInTheDocument();
   });
 
-  it('says a dashboard shared with roles has no role left', async () => {
-    const stranded = summary(4, 'Stranded', { visibility: 'roles', role_ids: [] });
+  it('says a shared dashboard has no one left', async () => {
+    const stranded = summary(4, 'Stranded', { visibility: 'shared' });
     api.list.mockResolvedValue([...LIST, stranded]);
     api.get.mockResolvedValue({ ...stranded, widgets: [widget(40, 'First of 4')] });
     await renderOn(4);
-    expect(screen.getByText(NO_ROLE_TEXT)).toBeInTheDocument();
-    expect(NO_ROLE_TEXT).toBe('Shared with no role');
+    expect(screen.getByText(NO_TARGET_TEXT)).toBeInTheDocument();
+    expect(pickerTrigger(/^Dashboard/)).toHaveTextContent('Stranded');
   });
 });
 
@@ -233,6 +244,8 @@ describe('DashboardsView — New, Duplicate, Share…, Delete', () => {
     expect(screen.getByText(FIRST_WIDGET_TEXT)).toBeInTheDocument();
     expect(toolbarButtons()).toEqual(['Add widget', 'Save', 'Cancel']);
     expect(screen.getByRole('button', { name: /^Dashboard/ })).toHaveTextContent('Capacity');
+    expect(screen.getByLabelText('Name *')).toHaveValue('Capacity');
+    expect(screen.getByText('Only you (and administrators)')).toBeInTheDocument();
     expect(useDashboardStore.getState().editing).toBe(true);
 
     // The first widget, from the empty state
@@ -254,6 +267,9 @@ describe('DashboardsView — New, Duplicate, Share…, Delete', () => {
       description: null,
       visibility: 'private',
       role_ids: [],
+      site_ids: [],
+      team_ids: [],
+      user_ids: [],
       widgets: [
         {
           kind: 'bar',
@@ -284,7 +300,15 @@ describe('DashboardsView — New, Duplicate, Share…, Delete', () => {
     await act(async () => {
       fireEvent.click(button('Duplicate')!);
     });
-    expect(api.create).toHaveBeenCalledWith({ name: 'Copy of Theirs', visibility: 'private', role_ids: [], source_id: 3 });
+    expect(api.create).toHaveBeenCalledWith({
+      name: 'Copy of Theirs',
+      visibility: 'private',
+      role_ids: [],
+      site_ids: [],
+      team_ids: [],
+      user_ids: [],
+      source_id: 3,
+    });
     expect(toolbarButtons()).toEqual(['Add widget', 'Save', 'Cancel']);
     expect(screen.getByText('First of 9')).toBeInTheDocument();
   });
@@ -299,18 +323,61 @@ describe('DashboardsView — New, Duplicate, Share…, Delete', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Server down');
   });
 
-  it('shares the open dashboard with a PUT that keeps its widgets', async () => {
-    api.update.mockResolvedValue(detail(2, { visibility: 'roles', role_ids: [4] }));
+  it('shares the open dashboard with a PUT that keeps its name, description and widgets', async () => {
+    const shared = detail(2, {
+      description: 'Per team',
+      visibility: 'shared',
+      role_ids: [4],
+      user_ids: [6],
+      shared_with: { roles: [{ id: 4, name: 'Team Lead' }], sites: [], teams: [], users: [{ id: 6, name: 'Diana Doe' }] },
+    });
+    api.get.mockImplementation(async (id: number) => detail(id, { description: 'Per team' }));
+    api.update.mockResolvedValue(shared);
     await renderOn(2);
     fireEvent.click(button('Share…')!);
-    expect(screen.getByLabelText('Name *')).toHaveValue('Mine');
-    fireEvent.change(screen.getByLabelText('Visibility'), { target: { value: 'roles' } });
+    expect(screen.getByRole('dialog', { name: 'Share dashboard' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Name *')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Visibility'), { target: { value: 'shared' } });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Team Lead' }));
+    await waitFor(() => expect(pickerTrigger(/^People/)).not.toBeDisabled());
+    pickOption(/^People/, 'Diana Doe');
     await act(async () => {
       fireEvent.click(button('Save Changes')!);
     });
-    expect(api.update).toHaveBeenCalledWith(2, { name: 'Mine', description: null, visibility: 'roles', role_ids: [4] });
+    expect(api.update).toHaveBeenCalledWith(2, {
+      name: 'Mine',
+      description: 'Per team',
+      visibility: 'shared',
+      role_ids: [4],
+      site_ids: [],
+      team_ids: [],
+      user_ids: [6],
+    });
+    expect(api.update.mock.calls[0][1]).not.toHaveProperty('widgets');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const chips = within(screen.getByRole('list', { name: 'Shared with' }));
+    expect(chips.getByText('Team Lead')).toBeInTheDocument();
+    expect(chips.getByText('Diana Doe')).toBeInTheDocument();
+  });
+
+  it('closes the Share… dialog on Cancel without a request', async () => {
+    await renderOn(2);
+    fireEvent.click(button('Share…')!);
+    await act(async () => {});
+    fireEvent.click(button('Cancel')!);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(api.update).not.toHaveBeenCalled();
+  });
+
+  it('shows a new shared draft’s targets from the dialog until it is saved', async () => {
+    await renderOn(2);
+    fireEvent.click(button('New')!);
+    fireEvent.change(screen.getByLabelText('Name *'), { target: { value: 'Leads' } });
+    fireEvent.change(screen.getByLabelText('Visibility'), { target: { value: 'shared' } });
+    await waitFor(() => expect(pickerTrigger(/^People/)).not.toBeDisabled());
+    pickOption(/^People/, 'Diana Doe');
+    fireEvent.click(button('Create dashboard')!);
+    expect(within(screen.getByRole('list', { name: 'Shared with' })).getByText('Diana Doe')).toBeInTheDocument();
   });
 
   it('deletes after a confirm naming the dashboard, then opens the next one', async () => {
@@ -384,6 +451,95 @@ describe('DashboardsView — edit mode', () => {
     ]);
     expect(screen.getByText('Renamed')).toBeInTheDocument();
     expect(screen.getByTestId('grid')).toHaveAttribute('data-editing', 'false');
+  });
+
+  it('edits the name and description inline, and saves them with the sharing kept', async () => {
+    const shared = {
+      visibility: 'shared' as const,
+      site_ids: [1],
+      team_ids: [10],
+      shared_with: {
+        roles: [],
+        sites: [{ id: 1, name: 'Winterthur' }],
+        teams: [{ id: 10, name: 'QA & Compliance', site_name: 'Winterthur' }],
+        users: [],
+      },
+    };
+    api.get.mockImplementation(async (id: number) => detail(id, { description: 'Old words', ...shared }));
+    api.update.mockResolvedValue(detail(2, { name: 'Renamed', description: 'New words', ...shared }));
+    await editing();
+    expect(screen.queryByText('Old words', { selector: 'p' })).not.toBeInTheDocument();
+    const name = screen.getByLabelText('Name *');
+    const description = screen.getByLabelText('Description');
+    expect(name).toHaveValue('Mine');
+    expect(name).toHaveAttribute('maxLength', '100');
+    expect(description).toHaveValue('Old words');
+    expect(description).toHaveAttribute('maxLength', '2000');
+    // Whom it is shared with stays in sight while editing
+    expect(within(screen.getByRole('list', { name: 'Shared with' })).getByText('QA & Compliance')).toBeInTheDocument();
+
+    fireEvent.change(name, { target: { value: ' Renamed ' } });
+    expect(screen.getByRole('status')).toHaveTextContent('Editing — unsaved changes');
+    fireEvent.change(description, { target: { value: '' } });
+    fireEvent.change(description, { target: { value: 'New words ' } });
+    await act(async () => {
+      fireEvent.click(button('Save')!);
+    });
+    expect(api.update.mock.calls[0][1]).toMatchObject({
+      name: 'Renamed',
+      description: 'New words',
+      visibility: 'shared',
+      role_ids: [],
+      site_ids: [1],
+      team_ids: [10],
+      user_ids: [],
+    });
+    expect(button('Edit')).toBeInTheDocument();
+    expect(screen.getByText('New words')).toBeInTheDocument();
+  });
+
+  it('is unchanged again once the description is cleared back to none', async () => {
+    await editing();
+    const description = screen.getByLabelText('Description');
+    fireEvent.change(description, { target: { value: 'x' } });
+    expect(screen.getByRole('status')).toHaveTextContent('Editing — unsaved changes');
+    fireEvent.change(description, { target: { value: '' } });
+    expect(screen.getByRole('status')).toHaveTextContent(/^Editing$/);
+  });
+
+  it('asks for a name before saving, and sends nothing without one', async () => {
+    await editing();
+    const name = screen.getByLabelText('Name *');
+    fireEvent.change(name, { target: { value: '   ' } });
+    await act(async () => {
+      fireEvent.click(button('Save')!);
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent(NAME_REQUIRED_TEXT);
+    expect(NAME_REQUIRED_TEXT).toBe('Enter a name');
+    expect(name).toHaveFocus();
+    expect(name).toHaveAttribute('aria-invalid', 'true');
+    expect(api.update).not.toHaveBeenCalled();
+    expect(toolbarButtons()).toEqual(['Add widget', 'Save', 'Cancel']);
+    fireEvent.change(name, { target: { value: 'Back' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('forgets the name warning when edit mode ends', async () => {
+    stubConfirm(true);
+    await editing();
+    fireEvent.change(screen.getByLabelText('Name *'), { target: { value: '' } });
+    await act(async () => {
+      fireEvent.click(button('Save')!);
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent(NAME_REQUIRED_TEXT);
+    await act(async () => {
+      fireEvent.click(button('Cancel')!);
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Name *')).not.toBeInTheDocument();
+    fireEvent.click(button('Edit')!);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Name *')).toHaveValue('Mine');
   });
 
   it('closes the widget editor on Cancel', async () => {

@@ -73,6 +73,24 @@
   color: var(--text-secondary);
 }
 
+/* Edit mode: the dashboard's name and description, inline (stacked on phones) */
+.metaFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 1rem;
+  margin: 0 0.75rem 0.75rem;
+}
+
+.sharedWith {
+  margin: 0 0.75rem 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .metaFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .empty {
   padding: 2rem 0;
   text-align: center;
