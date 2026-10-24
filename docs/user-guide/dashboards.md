@@ -126,9 +126,11 @@ With **Shared with…**, the dialog lists four kinds of target, and you can mix 
 
 Choose at least one target; with none, the dialog shows *Choose at least one role, site, team or person*. Sharing is **view only**: the people you share with open the dashboard and see their own numbers, but only you (and administrators) can edit, share or delete it.
 
-Under the dashboard's title, the **Shared with** line names who sees it — one chip per role, site, team (*Team · Site*) and person — or reads *Shared with everyone*, or *Only you (and administrators)* for a private one. Everyone who can open the dashboard sees that line.
+Under the dashboard's title, the **Shared with** line names who sees it — one chip per role, site, team (*Team · Site*) and person — or reads *Shared with everyone*, or *Only you (and administrators)* for a private one. Everyone who can open the dashboard sees that line, with every name on it — including sites, teams and people outside their own sites: the owner chose to share with them, and the line shows names only, never planning data.
 
-A role, site, team or person you shared with that is **deleted** drops off the dashboard by itself. When every target is gone, the dashboard reads *Shared with no one left* and only you and the administrators see it. A target you **can no longer pick** — a person who was deactivated, a site you no longer belong to, a team at such a site — stays on the dashboard, and keeps its access, until you remove it in **Share…**; saving widgets never drops it.
+A role, site, team or person you shared with that is **deleted** drops off the dashboard by itself. When every target is gone, the dashboard reads *Shared with no one left* and only you and the administrators see it. A target you **can no longer pick** — a person who was deactivated, a site you no longer belong to, a team at such a site — stays on the dashboard, and keeps its access, until you remove it in **Share…**, where it is marked *No longer among your choices*.
+
+The sharing changes **only through Share…**: saving widgets, the name or the description in edit mode never touches it, so a change someone else made in **Share…** meanwhile is kept, and a target deleted while you were editing never blocks your save.
 
 People reached through a role, site, team or name still need the **Dashboards** permission to open the view. A custom role does not get it automatically: an administrator allows it in [Settings → Roles](settings.md#roles-permissions).
 
