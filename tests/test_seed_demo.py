@@ -172,7 +172,14 @@ async def test_counts_match_the_data_set(loaded):
     # dashboards need (2.1.0); holidays for last year, this year and next.
     assert (counts["projects"], counts["phases"], counts["subphases"]) == (13, 60, 13)
     assert (counts["staff_assignments"], counts["bank_holidays"]) == (107, 60)
-    assert counts["equipment_bookings"] == 5
+    # Five bookings and three blocks, then the dashboards' equipment measures'
+    # thirteen bookings and two blocks; six absences and the two of the
+    # capacity measures.
+    assert (counts["equipment_bookings"], counts["equipment_blocks"]) == (18, 5)
+    assert counts["vacations"] == 8
+    assert counts["equipment_bookings"] == len(demo.equipment_bookings)
+    assert counts["equipment_blocks"] == len(demo.equipment_blocks)
+    assert counts["vacations"] == len(demo.vacations)
     assert counts["projects"] == len(demo.projects)
     assert counts["phases"] == len(demo.phases)
     assert counts["subphases"] == len(demo.subphases)

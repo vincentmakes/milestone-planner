@@ -717,6 +717,11 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             )
             phase_window[(p["name"], ptype)] = (ps, pe)
 
+    # One late phase (the dashboards' Phases overdue): the Cleanroom trial
+    # ended three weeks ago and stays in progress, its report not signed off.
+    late = next(ph for ph in d.phases if (ph["project"], ph["type"]) == (CLEANROOM, "Trial"))
+    late.update(completion=80, status="in_progress")
+
     def subphase(
         proj: str,
         phase: str,
@@ -1050,6 +1055,127 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             end_date=today + day(52),
             description="Family holiday",
             type="Holidays",
+        ),
+    ]
+
+    # The dashboards' capacity and equipment measures (2.1.0), appended after
+    # the rows above. A week off for the two most booked people, this quarter:
+    # Bob was ill last week and Charlie takes a holiday week next month, so
+    # Process Development runs over capacity while the other teams do not.
+    d.vacations += [
+        dict(
+            staff=BOB,
+            start_date=today - day(10),
+            end_date=today - day(4),
+            description="Sick leave",
+            type="Illness",
+        ),
+        dict(
+            staff=CHARLIE,
+            start_date=today + day(21),
+            end_date=today + day(27),
+            description="Holiday week",
+            type="Holidays",
+        ),
+    ]
+    # Instrument time over the last twelve months and the next six: every
+    # instrument and type, one to three weeks each, inside the project's
+    # dates and at its site; the Mass Spectrometer is double-booked one week.
+    d.equipment_bookings += [
+        dict(
+            project=ENZYME,
+            equipment="Freeze Dryer",
+            start_date=today - months(11),
+            end_date=today - months(11) + day(13),
+        ),
+        dict(
+            project=REFERENCE,
+            equipment="PCR Thermocycler",
+            start_date=today - months(9),
+            end_date=today - months(9) + day(20),
+        ),
+        dict(
+            project=PACKAGING,
+            equipment="Plate Reader",
+            start_date=today - months(8),
+            end_date=today - months(8) + day(13),
+        ),
+        dict(
+            project=SOLVENT,
+            equipment="Mass Spectrometer",
+            start_date=today - months(6),
+            end_date=today - months(6) + day(6),
+        ),
+        # The same week as the Solvent run → a second overlap.
+        dict(
+            project=IMPURITY,
+            equipment="Mass Spectrometer",
+            start_date=today - months(6) + day(2),
+            end_date=today - months(6) + day(8),
+        ),
+        dict(
+            project=CLEANROOM,
+            equipment="Biosafety Cabinet",
+            start_date=today - months(2),
+            end_date=today - months(2) + day(13),
+        ),
+        dict(
+            project=QUALITY,
+            equipment="HPLC System 2",
+            start_date=today - day(45),
+            end_date=today - day(31),
+        ),
+        dict(
+            project=CATALYST,
+            equipment="Mass Spectrometer",
+            start_date=today - day(20),
+            end_date=today - day(7),
+        ),
+        dict(
+            project=BIOPROCESS,
+            equipment="Biosafety Cabinet",
+            start_date=today + day(30),
+            end_date=today + day(50),
+        ),
+        dict(
+            project=ANALYTICAL,
+            equipment="Centrifuge",
+            start_date=today + day(40),
+            end_date=today + day(46),
+        ),
+        dict(
+            project=FERMENTATION,
+            equipment="Freeze Dryer",
+            start_date=today + months(2),
+            end_date=today + months(2) + day(20),
+        ),
+        dict(
+            project=IMPURITY,
+            equipment="HPLC System 2",
+            start_date=today + months(2) + day(7),
+            end_date=today + months(2) + day(16),
+        ),
+        dict(
+            project=STABILITY,
+            equipment="PCR Thermocycler",
+            start_date=today + months(4),
+            end_date=today + months(4) + day(13),
+        ),
+    ]
+    d.equipment_blocks += [
+        dict(
+            equipment="Centrifuge",
+            start_date=today - months(11),
+            end_date=today - months(11) + day(4),
+            reason="defect",
+            description="Rotor replacement",
+        ),
+        dict(
+            equipment="HPLC System 2",
+            start_date=today + months(3),
+            end_date=today + months(3) + day(4),
+            reason="maintenance",
+            description="Pump seal service",
         ),
     ]
 

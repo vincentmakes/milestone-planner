@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 
+from app.models.absence_type import DEFAULT_ABSENCE_TYPES
 from app.schemas.dashboard import MetricQuery
 from app.scripts.demo_data import (
     ALICE,
@@ -27,8 +28,10 @@ from app.scripts.demo_data import (
     CATALYST,
     CHARLIE,
     DIANA,
+    IMPURITY,
     LEGACY,
     QUALITY,
+    SOLVENT,
     DemoData,
     build_demo,
 )
@@ -78,7 +81,8 @@ def test_every_row_of_the_demo_before_the_extra_projects_is_kept():
     for name, old_rows in snapshot.items():
         assert _is_subsequence(old_rows, lists[name]), name
     # Tables the extra projects leave alone are equal, not merely kept.
-    for name in ("users", "teams", "tags", "project_fields", "sites", "comments", "vacations"):
+    # (The vacations gained the dashboards' two absences, at the end only.)
+    for name in ("users", "teams", "tags", "project_fields", "sites", "comments"):
         assert lists[name] == snapshot[name], name
 
 
@@ -340,7 +344,15 @@ def build_facts(demo: DemoData) -> metrics.Facts:
 
     cards = _cards(demo)
     phases = [
-        metrics.PhaseFact(i, project_id[p["project"]], p["type"], p["start_date"], p["end_date"])
+        metrics.PhaseFact(
+            i,
+            project_id[p["project"]],
+            p["type"],
+            p["start_date"],
+            p["end_date"],
+            is_milestone=p["is_milestone"],
+            status=p["status"],
+        )
         for i, p in enumerate(demo.phases, start=1)
     ]
     phase_of_subphase = {(s["project"], s["name"]): s["phase"] for s in demo.subphases}
@@ -381,6 +393,90 @@ def build_facts(demo: DemoData) -> metrics.Facts:
         ((site_id[h["site"]], h["date"], None) for h in demo.bank_holidays),
         (date(1900, 1, 1), date(2999, 12, 31)),
     )
+
+    # The capacity family, the way load_facts builds it: the active bookable
+    # people, their sites and every team, their absences (a type that does not
+    # count as unavailable leaves them plannable) and the site closures.
+    period = (demo.today - timedelta(days=3 * 366), demo.today + timedelta(days=3 * 366))
+    unavailable_type = {name: unavailable for name, _, unavailable in DEFAULT_ABSENCE_TYPES}
+    closures = [
+        metrics.ClosureSpan(
+            e["date"],
+            e["end_date"] or e["date"],
+            tuple(sorted(site_id[s] for s in e["sites"])),
+            tuple(sorted(team_id[t] for t in e["teams"])),
+        )
+        for e in demo.company_events
+        if e["counts_as_unavailable"]
+    ]
+    team_sites = {team.id: team.site_id for team in teams.values()}
+    capacity: dict[int, metrics.CapacityFact] = {}
+    for u in demo.users:
+        if not (u["active"] and u["is_resource"]):
+            continue
+        pid = person_id[u["email"]]
+        sites = sorted(site_id[s] for s in u["sites"])
+        member_of = sorted(
+            team_id[(t["site"], t["name"])] for t in demo.teams if u["email"] in t["members"]
+        )
+        absences = [
+            metrics.AbsenceSpan(
+                v["start_date"], v["end_date"], v["description"], unavailable_type[v["type"]]
+            )
+            for v in demo.vacations
+            if v["staff"] == u["email"]
+        ]
+        capacity[pid] = metrics.CapacityFact(
+            person_id=pid,
+            person_name=persons[pid],
+            site_ids=tuple(sites),
+            team_ids=tuple(member_of),
+            max_capacity=u["max_capacity"],
+            off_days=metrics.person_off_days(
+                period, sites, member_of, holidays, absences, closures, team_sites
+            ),
+        )
+
+    # The equipment family: every row, the bookings, and the availability of
+    # every active equipment (every site visible) minus its blocks.
+    equipment_id = {e["name"]: i + 1 for i, e in enumerate(demo.equipment)}
+    equipment = {
+        equipment_id[e["name"]]: metrics.EquipmentInfo(
+            id=equipment_id[e["name"]],
+            name=e["name"],
+            type=e["type"],
+            site_ids=tuple(sorted(site_id[s] for s in e["sites"])),
+            active=True,
+        )
+        for e in demo.equipment
+    }
+    equipment_bookings = [
+        metrics.EquipmentBookingFact(
+            i,
+            project_id[b["project"]],
+            equipment_id[b["equipment"]],
+            b["start_date"],
+            b["end_date"],
+        )
+        for i, b in enumerate(demo.equipment_bookings, start=1)
+    ]
+    equipment_availability = [
+        metrics.EquipmentAvailabilityFact(
+            equipment_id=info.id,
+            site_ids=info.site_ids,
+            off_days=metrics.equipment_off_days(
+                period,
+                info.site_ids,
+                holidays,
+                [
+                    (b["start_date"], b["end_date"])
+                    for b in demo.equipment_blocks
+                    if equipment_id[b["equipment"]] == info.id
+                ],
+            ),
+        )
+        for info in equipment.values()
+    ]
     live = [p for p in projects.values() if not p.archived]
     return metrics.Facts(
         projects=projects,
@@ -397,6 +493,10 @@ def build_facts(demo: DemoData) -> metrics.Facts:
         extents={
             "exclude": (min(p.start for p in live), max(p.end for p in live)),
         },
+        capacity=capacity,
+        equipment=equipment,
+        equipment_bookings=equipment_bookings,
+        equipment_availability=equipment_availability,
     )
 
 
@@ -527,3 +627,159 @@ def test_customers_managers_people_and_tags_this_year(demo: DemoData, facts: met
         facts, _query("booked_weeks", [{"kind": "person"}], "this_year"), viewer=VIEWER
     )
     assert len(_labels(people)) >= 7
+
+
+# ---------------------------------------------------------------------------
+# The capacity, equipment and delivery measures over the demo
+# ---------------------------------------------------------------------------
+
+
+def _custom(measure: str, dimensions: list[dict[str, Any]], start: date, end: date) -> MetricQuery:
+    return MetricQuery.model_validate(
+        {
+            "measure": measure,
+            "dimensions": dimensions,
+            "filters": {
+                "archived": "exclude",
+                "period": {"from": start.isoformat(), "to": end.isoformat()},
+            },
+        }
+    )
+
+
+def _values(result: metrics.MetricResult) -> dict[str, float | None]:
+    return {row["keys"][0]["label"]: row["value"] for row in result.rows}
+
+
+def test_utilisation_per_team_is_plausible_and_someone_runs_over(facts: metrics.Facts):
+    def run(measure: str, dimensions: list[dict[str, Any]], period: str) -> metrics.MetricResult:
+        return metrics.aggregate(facts, _query(measure, dimensions, period), viewer=VIEWER)
+
+    # This quarter: every team has a figure, none absurd (a quarter seeded
+    # late is mostly past, which the demo plans more lightly).
+    teams = _values(run("utilisation", [{"kind": "team"}], "this_quarter"))
+    assert len(teams) >= 3
+    assert all(value is not None and 30 <= value <= 130 for value in teams.values()), teams
+    # Next month is planned densely: one team at or over its capacity, and
+    # someone over theirs, whatever day the demo is seeded.
+    ahead = _values(run("utilisation", [{"kind": "team"}], "next_month"))
+    assert max(v for v in ahead.values() if v is not None) >= 95, ahead
+    assert run("people_over_capacity", [], "next_month").total >= 1
+    # Available days per bookable person (the admin and Edward are not).
+    available = _values(run("available_days", [{"kind": "person"}], "this_quarter"))
+    assert len(available) == 7, available
+
+
+@pytest.mark.parametrize("today", [date(2026, 10, 24), date(2027, 1, 14)], ids=str)
+def test_a_quarter_seeded_early_shows_a_team_over_capacity(today: date):
+    """Seeded in the first half of a quarter, the quarter is mostly planned work."""
+    facts = build_facts(build_demo(today))
+    teams = metrics.aggregate(
+        facts, _query("utilisation", [{"kind": "team"}], "this_quarter"), viewer=VIEWER
+    )
+    values = _values(teams)
+    assert len(values) >= 3 and None not in values.values()
+    over = [name for name, value in values.items() if value is not None and value >= 95]
+    assert "Process Development" in over, values
+    assert all(value is not None and 40 <= value <= 130 for value in values.values()), values
+    people = metrics.aggregate(
+        facts, _query("people_over_capacity", [], "this_quarter"), viewer=VIEWER
+    )
+    assert people.total >= 1
+    negative = _values(
+        metrics.aggregate(
+            facts, _query("available_days", [{"kind": "person"}], "this_quarter"), viewer=VIEWER
+        )
+    )
+    assert negative["Bob Brown"] is not None and negative["Bob Brown"] < 0, negative
+
+
+def test_the_two_new_absences_take_capacity(demo: DemoData, facts: metrics.Facts):
+    bob, charlie = demo.vacations[-2:]
+    assert (bob["type"], charlie["type"]) == ("Illness", "Holidays")
+    for absence in (bob, charlie):
+        assert (absence["end_date"] - absence["start_date"]).days == 6
+    names = {f"{u['first_name']} {u['last_name']}": u["email"] for u in demo.users}
+    by_email = {names[c.person_name]: c for c in facts.capacity.values()}
+    for absence in (bob, charlie):
+        off = set(by_email[absence["staff"]].off_days)
+        week = [
+            absence["start_date"] + timedelta(days=i)
+            for i in range(7)
+            if (absence["start_date"] + timedelta(days=i)).weekday() < 5
+        ]
+        assert set(week) <= off, absence
+
+
+def test_equipment_time_covers_every_instrument_and_double_bookings_run_over(
+    demo: DemoData, facts: metrics.Facts
+):
+    year = _values(
+        metrics.aggregate(
+            facts,
+            _query("equipment_utilisation", [{"kind": "equipment"}], "this_year"),
+            viewer=VIEWER,
+        )
+    )
+    assert len(year) == len(demo.equipment) >= 6
+    assert sum(1 for value in year.values() if value) >= 6, year
+    assert all(value is not None and value < 100 for value in year.values()), year
+    types = {e["type"] for e in demo.equipment}
+    booked_types = {
+        e["type"]
+        for e in demo.equipment
+        for b in demo.equipment_bookings
+        if b["equipment"] == e["name"]
+    }
+    assert booked_types == types
+
+    # The two overlaps: HPLC System 1 (with a block in the same days) and
+    # the Mass Spectrometer, each over 100 % in the days both bookings share.
+    def booking(equipment: str, project: str) -> dict[str, Any]:
+        (row,) = (
+            b
+            for b in demo.equipment_bookings
+            if (b["equipment"], b["project"]) == (equipment, project)
+        )
+        return row
+
+    overlaps = {
+        "HPLC System 1": (booking("HPLC System 1", CATALYST), booking("HPLC System 1", BIOPROCESS)),
+        "Mass Spectrometer": (
+            booking("Mass Spectrometer", SOLVENT),
+            booking("Mass Spectrometer", IMPURITY),
+        ),
+    }
+    for name, (first, second) in overlaps.items():
+        start = max(first["start_date"], second["start_date"])
+        end = min(first["end_date"], second["end_date"])
+        assert start <= end, name
+        shared = _values(
+            metrics.aggregate(
+                facts,
+                _custom("equipment_utilisation", [{"kind": "equipment"}], start, end),
+                viewer=VIEWER,
+            )
+        )
+        assert shared[name] is not None and shared[name] > 100, (name, shared)
+    per_project = metrics.aggregate(
+        facts, _query("equipment_booked_days", [{"kind": "project"}], "all"), viewer=VIEWER
+    )
+    assert len(_labels(per_project)) >= 10
+
+
+def test_phases_are_due_every_month_and_one_is_late(demo: DemoData, facts: metrics.Facts):
+    overdue = metrics.aggregate(
+        facts, _query("phases_overdue", [], "last_12_months"), viewer=VIEWER
+    )
+    assert overdue.total >= 1
+    due = metrics.aggregate(
+        facts,
+        _query("phases_due", [{"kind": "period", "grain": "month"}], "next_12_months"),
+        viewer=VIEWER,
+    )
+    assert sum(1 for row in due.rows if row["value"]) >= 3
+    statuses = metrics.aggregate(
+        facts, _query("phase_count", [{"kind": "status"}], "all"), viewer=VIEWER
+    )
+    assert set(_labels(statuses)) == {"To do", "In progress", "Blocked", "Done"}
