@@ -790,6 +790,99 @@ async def test_update_keeps_targets_the_editor_could_not_pick_now(authed_client)
     assert resp.status_code == 404 and resp.json()["detail"] == "Person not found"
 
 
+async def test_a_save_without_sharing_keys_keeps_the_sharing(authed_client, sqlite):
+    """The widget editor sends the name, description and widgets only: the
+    visibility and every target stay as they are."""
+    client, set_user = authed_client
+    set_user(sue())
+    kept_site = sqlite.get(Dashboard, TWO_WAYS).sites[0]
+    resp = await client.put(
+        f"/api/dashboards/{TWO_WAYS}",
+        json={"name": "Two ways v2", "description": "Notes", "widgets": [widget_body("New")]},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert (body["name"], body["description"], body["visibility"]) == (
+        "Two ways v2",
+        "Notes",
+        "shared",
+    )
+    assert (body["site_ids"], body["user_ids"]) == ([FRANKFURT], [FAY])
+    assert [w["title"] for w in body["widgets"]] == ["New"]
+    assert sqlite.get(Dashboard, TWO_WAYS).sites[0] is kept_site
+    # Not even an everyone dashboard turns private.
+    resp = await client.put("/api/dashboards/6", json={"name": "Everyone by Sue"})
+    assert resp.json()["visibility"] == "everyone"
+
+
+async def test_a_save_without_sharing_keys_survives_a_deleted_target(authed_client, sqlite):
+    """A target deleted while the editor was open never blocks a widget save;
+    re-sending its id with the sharing is a 404 (only ids still on the
+    dashboard are kept as they are)."""
+    sqlite.execute(text(f"DELETE FROM users WHERE id = {FAY}"))
+    sqlite.commit()
+    client, set_user = authed_client
+    set_user(sue())
+    resp = await client.put(
+        f"/api/dashboards/{TWO_WAYS}",
+        json={"name": "Two ways", "widgets": [widget_body("New")]},
+    )
+    assert resp.status_code == 200
+    assert (resp.json()["visibility"], resp.json()["site_ids"]) == ("shared", [FRANKFURT])
+    resp = await client.put(
+        f"/api/dashboards/{TWO_WAYS}",
+        json={
+            "name": "Two ways",
+            "visibility": "shared",
+            "site_ids": [FRANKFURT],
+            "user_ids": [FAY],
+        },
+    )
+    assert resp.status_code == 404 and resp.json()["detail"] == "Person not found"
+
+
+async def test_the_share_dialog_body_changes_the_sharing_and_keeps_the_widgets(authed_client):
+    """Share... sends the name, description, visibility and lists, no widgets."""
+    client, set_user = authed_client
+    set_user(sue())
+    resp = await client.put(
+        "/api/dashboards/7",
+        json={
+            "name": "Mixed",
+            "description": None,
+            "visibility": "shared",
+            "role_ids": [],
+            "site_ids": [WINTERTHUR],
+            "team_ids": [QA_TEAM],
+            "user_ids": [LEO],
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["visibility"] == "shared"
+    assert (body["site_ids"], body["team_ids"], body["user_ids"]) == (
+        [WINTERTHUR],
+        [QA_TEAM],
+        [LEO],
+    )
+    assert len(body["widgets"]) == 9
+    # Lists without a visibility keep the current one and replace the targets.
+    resp = await client.put("/api/dashboards/7", json={"name": "Mixed", "user_ids": [UMA]})
+    body = resp.json()
+    assert body["visibility"] == "shared"
+    assert [body[k] for k in ("role_ids", "site_ids", "team_ids", "user_ids")] == [
+        [],
+        [],
+        [],
+        [UMA],
+    ]
+    # A visibility without lists means no target.
+    resp = await client.put("/api/dashboards/7", json={"name": "Mixed", "visibility": "private"})
+    body = resp.json()
+    assert body["visibility"] == "private"
+    assert [body[k] for k in ("role_ids", "site_ids", "team_ids", "user_ids")] == [[]] * 4
+
+
 async def test_a_viewer_by_sharing_may_not_edit(authed_client):
     client, set_user = authed_client
     set_user(user(LEO, "lead", {"views.dashboards", "dashboards.manage"}))

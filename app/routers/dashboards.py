@@ -20,9 +20,10 @@ Dashboards API (2.1.0): KPI and chart dashboards over the planning data.
   dashboard.
 - ``PUT /dashboards/{id}`` -- the owner holding ``dashboards.manage``, or an
   admin (404 for those who may not open it, 403 for viewers): replaces the
-  name, description, visibility, targets and -- when given -- the widgets
-  (new ids). Targets already on the dashboard stay accepted even when the
-  editor could not pick them any more. ``is_default`` and the owner never
+  name, description and -- when given -- the sharing (any of ``visibility``
+  and the four target lists; absent, the sharing stays as it is) and the
+  widgets (new ids). Targets already on the dashboard stay accepted even when
+  the editor could not pick them any more. ``is_default`` and the owner never
   change.
 - ``DELETE /dashboards/{id}`` -- same rule; the default dashboard only by an
   admin (403). 204.
@@ -292,6 +293,10 @@ class _Targets:
     user_ids: list[int] = field(default_factory=list)
 
 
+# The PUT body keys that change the sharing (absent: it stays as it is).
+SHARING_KEYS = frozenset({"visibility", "role_ids", "site_ids", "team_ids", "user_ids"})
+
+
 def _not_found(detail: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
 
@@ -301,17 +306,18 @@ async def _checked_targets(
     request: Request,
     user: User,
     body: DashboardIn,
+    visibility: str,
     current: Dashboard | None = None,
 ) -> _Targets:
     """
-    The targets of a ``shared`` dashboard: at least one of any kind (400), each
-    one the caller may pick (else 404 per kind): any existing role, a visible
-    site, a team at a visible site (inactive ones too), a shareable person.
-    Targets ``current`` already holds pass as they are (they were checked when
-    added; a person deactivated or a site left since must not block a save).
-    Other visibilities store no target.
+    The targets of a ``shared`` dashboard (``visibility``, the one being
+    stored): at least one of any kind (400), each one the caller may pick (else
+    404 per kind): any existing role, a visible site, a team at a visible site
+    (inactive ones too), a shareable person. Targets ``current`` already holds
+    pass as they are (they were checked when added; a person deactivated or a
+    site left since must not block a save). Other visibilities store no target.
     """
-    if body.visibility != "shared":
+    if visibility != "shared":
         return _Targets()
     targets = _Targets(
         role_ids=body.role_ids,
@@ -513,7 +519,7 @@ async def create_dashboard(
                 )
                 for widget in source.widgets
             ]
-    targets = await _checked_targets(db, request, user, body)
+    targets = await _checked_targets(db, request, user, body, body.visibility)
 
     dashboard = Dashboard(
         name=body.name,
@@ -540,16 +546,27 @@ async def update_dashboard(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Replace a dashboard's fields, sharing and (when given) widgets."""
+    """
+    Replace a dashboard's name and description, and -- when given -- its
+    sharing and its widgets. The sharing changes only when the body holds one
+    of ``SHARING_KEYS`` (the Share dialog sends them, the widget editor never
+    does): lists without ``visibility`` keep the current visibility, a
+    ``visibility`` without lists means no target. Otherwise the visibility and
+    every target stay as they are, so a widget save never undoes a sharing
+    change made meanwhile nor trips over a target deleted since.
+    """
     dashboard = await _visible_dashboard(db, await load_viewer_scope(db, user), dashboard_id)
     if not can_edit(user, dashboard):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=CANNOT_EDIT_DETAIL)
-    targets = await _checked_targets(db, request, user, body, current=dashboard)
+    given = body.model_fields_set
+    if given & SHARING_KEYS:
+        visibility = body.visibility if "visibility" in given else dashboard.visibility
+        targets = await _checked_targets(db, request, user, body, visibility, current=dashboard)
+        dashboard.visibility = visibility
+        _apply_targets(dashboard, targets)
 
     dashboard.name = body.name
     dashboard.description = _description(body.description)
-    dashboard.visibility = body.visibility
-    _apply_targets(dashboard, targets)
     if "widgets" in body.model_fields_set:
         dashboard.widgets = _widget_rows(body.widgets)
     dashboard.updated_at = utcnow_naive()

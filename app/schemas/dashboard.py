@@ -255,6 +255,8 @@ class DashboardIn(BaseModel):
 
     name: str = Field(min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=2000)
+    # POST: ``private`` when absent. PUT: absent (with the four lists) keeps
+    # the dashboard's sharing as it is; see ``update_dashboard``.
     visibility: Visibility = "private"
     # The targets of a ``shared`` dashboard (any match opens it); stored only
     # for ``shared``, each list de-duplicated and sorted.
