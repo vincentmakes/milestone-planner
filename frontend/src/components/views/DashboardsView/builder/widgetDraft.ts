@@ -185,13 +185,17 @@ export function dropUnheld(query: MetricQuery, holds: (key: PermissionKey | null
  * The options a widget stores: only those its kind uses, and only when they
  * differ from the renderer's default (bar: stacked, 100 % — which implies
  * stacked —, horizontal; line: legend off; pie: legend on; KPI share: the
- * bucket), plus the number format (*Percent* only on a percentage).
+ * bucket), plus the number format (*Percent* only on a percentage). A bar
+ * of a measure that takes no percentage (`NO_PERCENT_MEASURES`: a ratio, a
+ * signed number, a per-bucket count) is never stacked nor 100 %: adding
+ * percentages up, or sharing out negative days, means nothing.
  */
 export function cleanOptions(kind: WidgetKind, query: MetricQuery, options: WidgetOptions): WidgetOptions {
   const clean: WidgetOptions = {};
   if (kind === 'bar') {
-    if (options.percent) clean.percent = true;
-    if (options.stacked || options.percent) clean.stacked = true;
+    const stackable = !NO_PERCENT_MEASURES.has(query.measure);
+    if (stackable && options.percent) clean.percent = true;
+    if (stackable && (options.stacked || options.percent)) clean.stacked = true;
     if (options.orientation === 'horizontal') clean.orientation = 'horizontal';
   }
   if (kind === 'line' && options.show_legend === false) clean.show_legend = false;

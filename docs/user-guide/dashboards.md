@@ -174,7 +174,7 @@ On a phone (640 px wide or less) dashboards are view-only.
 6. **Period** — one of the [twelve periods](#periods) or a custom range
 7. **Percent of** — show shares instead of amounts: of the **total**, or within each value of the **first dimension** (each bar adds up to 100 %). Not offered for **Utilisation**, **Equipment utilisation** (already percentages), **Available days** (which can be negative) and **People over capacity** (counted again in each bar, so the bars are not parts of the total); a KPI of these four shows its figure for the whole period, with no dimension
 8. **Top N** — keep the largest values and group the rest as *Other*
-9. **Options** — stacked or 100 % bars and their orientation, a legend for lines and pies, the number format. A KPI showing a share needs a **Bucket**: the value whose share it shows (for example *Confirmed*)
+9. **Options** — stacked or 100 % bars and their orientation (no stacked or 100 % bars of the four measures without a percentage: a stack of percentages or of negative days adds up to nothing), a legend for lines and pies, the number format. A KPI showing a share needs a **Bucket**: the value whose share it shows (for example *Confirmed*)
 
 A pie of **Available days** is refused (negative days cannot be slices). If the combination cannot be answered, the preview says why in plain words, and **Add widget** / **Save Changes** waits until you fix it. A new widget is placed below the others; arrange it on the grid afterwards.
 

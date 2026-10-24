@@ -706,7 +706,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
             )}
 
             <div className={styles.row}>
-              {/* Utilisation and available days take no percentage. */}
+              {/* Utilisation, available days and people over capacity take no percentage. */}
               {!noPercent && (
                 <Select
                   label="Percent of"
@@ -734,6 +734,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
             <KindOptions
               kind={kind}
               options={options}
+              stackable={!noPercent}
               share={Boolean(query.percent_of)}
               percentUnit={queryUnit(query) === 'percent'}
               bucketOptions={bucketOptions}
@@ -834,6 +835,8 @@ function KindPicker({ value, onChange }: KindPickerProps) {
 interface KindOptionsProps {
   kind: WidgetKind;
   options: WidgetOptions;
+  /** A bar may be stacked or 100 % (not for a measure that takes no percentage) */
+  stackable: boolean;
   /** The query asks a percentage (a KPI then shows one bucket) */
   share: boolean;
   /** The result comes in percent: only then is the *Percent* number format offered */
@@ -843,23 +846,28 @@ interface KindOptionsProps {
 }
 
 /** The display options of a kind, and the number format of every kind. */
-function KindOptions({ kind, options, share, percentUnit, bucketOptions, onChange }: KindOptionsProps) {
+function KindOptions({ kind, options, stackable, share, percentUnit, bucketOptions, onChange }: KindOptionsProps) {
   const numberFormat = options.number_format === 'percent' && !percentUnit ? '' : options.number_format ?? '';
   return (
     <div className={styles.options}>
       {kind === 'bar' && (
         <>
-          <ToggleSwitch
-            label="Stacked"
-            checked={Boolean(options.stacked || options.percent)}
-            disabled={Boolean(options.percent)}
-            onChange={(stacked) => onChange({ stacked })}
-          />
-          <ToggleSwitch
-            label="100 %"
-            checked={Boolean(options.percent)}
-            onChange={(percent) => onChange(percent ? { percent, stacked: true } : { percent })}
-          />
+          {/* Utilisation, available days, people over capacity: no stack of them adds up. */}
+          {stackable && (
+            <ToggleSwitch
+              label="Stacked"
+              checked={Boolean(options.stacked || options.percent)}
+              disabled={Boolean(options.percent)}
+              onChange={(stacked) => onChange({ stacked })}
+            />
+          )}
+          {stackable && (
+            <ToggleSwitch
+              label="100 %"
+              checked={Boolean(options.percent)}
+              onChange={(percent) => onChange(percent ? { percent, stacked: true } : { percent })}
+            />
+          )}
           <Select
             label="Orientation"
             fullWidth

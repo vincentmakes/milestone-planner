@@ -349,8 +349,8 @@ export function archivedNeeds(mode: 'exclude' | 'include' | 'only' | undefined):
 /**
  * The measures that are already a percentage, can be negative, or whose
  * buckets are not parts of the total (people over capacity:
- * `NO_PERCENT_MEASURES`): no *Percent of* on them, and a KPI of one has no
- * dimension (it shows the total).
+ * `NO_PERCENT_MEASURES`): no *Percent of*, *Stacked* or *100 %* on them,
+ * and a KPI of one has no dimension (it shows the total).
  */
 export const NO_PERCENT_MEASURES: ReadonlySet<Measure> = new Set<Measure>([
   'utilisation',

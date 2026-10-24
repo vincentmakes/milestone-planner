@@ -1008,6 +1008,32 @@ describe('WidgetEditor — options and save', () => {
     expect(onSave.mock.calls[1][0].options).toEqual({ stacked: true, orientation: 'horizontal' });
   });
 
+  it('offers no Stacked or 100 % on a measure that takes no percentage, and drops a stored stack', () => {
+    const { onSave } = renderEditor({
+      widget: {
+        clientId: 'w4',
+        id: 4,
+        kind: 'bar',
+        title: 'Load',
+        query: { measure: 'booked_weeks', dimensions: [{ kind: 'team' }, { kind: 'site' }] },
+        options: { stacked: true, percent: true, orientation: 'horizontal' },
+        layout: { lg: { x: 0, y: 0, w: 6, h: 5 }, md: { x: 0, y: 0, w: 4, h: 5 }, sm: { x: 0, y: 0, w: 4, h: 5 } },
+      },
+    });
+    expect(screen.getByRole('switch', { name: 'Stacked' })).toBeChecked();
+    for (const measure of ['utilisation', 'available_days', 'people_over_capacity']) {
+      setMeasure(measure);
+      // A stack of percentages or of signed days adds up to nothing.
+      expect(screen.queryByRole('switch', { name: 'Stacked' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('switch', { name: '100 %' })).not.toBeInTheDocument();
+      expect(screen.getByLabelText('Orientation')).toHaveValue('horizontal');
+    }
+    fireEvent.click(saveButton('Save Changes'));
+    expect(onSave.mock.calls[0][0].options).toEqual({ orientation: 'horizontal' });
+    setMeasure('capacity_days');
+    expect(screen.getByRole('switch', { name: '100 %' })).toBeChecked();
+  });
+
   it('sets the legend of a line (on by default) and of a pie (off by default); a table has only the number format', () => {
     const { onSave } = renderEditor();
     fireEvent.change(screen.getByLabelText('Title *'), { target: { value: 'Legend' } });

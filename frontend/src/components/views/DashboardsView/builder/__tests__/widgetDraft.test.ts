@@ -197,6 +197,13 @@ describe('kind rules', () => {
     expect(cleanOptions('kpi', query({ percent_of: 'total' }), { kpi_bucket: null })).toEqual({});
     expect(cleanOptions('kpi', query(), { kpi_bucket: true })).toEqual({});
     expect(cleanOptions('table', query({ percent_of: 'total' }), { kpi_bucket: 3, stacked: true })).toEqual({});
+    // No stack of a measure that takes no percentage (ratios, signed days, per-bucket counts).
+    for (const measure of ['utilisation', 'available_days', 'people_over_capacity', 'equipment_utilisation'] as const) {
+      expect(cleanOptions('bar', query({ measure }), { stacked: true, percent: true, orientation: 'horizontal' })).toEqual({
+        orientation: 'horizontal',
+      });
+    }
+    expect(cleanOptions('bar', query({ measure: 'capacity_days' }), { stacked: true })).toEqual({ stacked: true });
   });
 
   it('names what blocks a query client-side', () => {
