@@ -59,6 +59,10 @@ Measure = Literal[
     "phase_weeks",
     "phases_due",
     "phases_overdue",
+    "capacity_days",
+    "available_days",
+    "utilisation",
+    "people_over_capacity",
 ]
 PlainKind = Literal[
     "site",

@@ -19,7 +19,10 @@ from app.schemas.dashboard import MetricQuery, WidgetIn
 from app.services import metrics
 from app.services.dashboard_seed import BASE_DASHBOARD, DEMO_EXTRA_WIDGETS, base_dashboard_rows
 from app.services.metrics import (
+    AbsenceSpan,
     BookingFact,
+    CapacityFact,
+    ClosureSpan,
     Facts,
     FieldInfo,
     MetricError,
@@ -117,6 +120,7 @@ def facts(
     phases: list[PhaseFact] | None = None,
     holidays: dict[int, list[date]] | None = None,
     extent: tuple[date, date] | None = None,
+    capacity: list[CapacityFact] | None = None,
 ) -> Facts:
     return Facts(
         projects={p.id: p for p in (projects if projects is not None else [project()])},
@@ -148,6 +152,7 @@ def facts(
         sites={1: "Site 1", 2: "Site 2"},
         today=TODAY,
         extents={"exclude": extent},
+        capacity={fact.person_id: fact for fact in capacity or []},
     )
 
 
@@ -844,6 +849,340 @@ FACT_CASES: list[tuple[str, Facts, MetricQuery, dict[str, Any]]] = [
     ),
 ]
 
+# --- The capacity family (round 3, Task 2) ---------------------------------------
+# A person's capacity is built like the loader builds it (``person_off_days``
+# over March 2026, the teams of ``facts()``: Alpha and Beta at site 1).
+
+MARCH_DAYS = (d("2026-03-01"), d("2026-03-31"))
+FACT_TEAM_SITES = {10: 1, 11: 1}
+
+
+def absence(start: str, end: str, description: str | None = None, unavailable: bool = True):
+    return AbsenceSpan(d(start), d(end), description, unavailable)
+
+
+def closure(start: str, end: str, sites: tuple[int, ...] = (1,), teams: tuple[int, ...] = ()):
+    return ClosureSpan(d(start), d(end), sites, teams)
+
+
+def person_capacity(
+    person: int = 1,
+    *,
+    sites: tuple[int, ...] = (1,),
+    teams: tuple[int, ...] = (),
+    max_capacity: int = 100,
+    holidays: dict[int, list[date]] | None = None,
+    absences: tuple[AbsenceSpan, ...] = (),
+    closures: tuple[ClosureSpan, ...] = (),
+) -> CapacityFact:
+    off_days = metrics.person_off_days(
+        MARCH_DAYS, sites, teams, holidays or {}, absences, closures, FACT_TEAM_SITES
+    )
+    return CapacityFact(
+        person, PERSONS.get(person, f"Person {person}"), sites, teams, max_capacity, off_days
+    )
+
+
+PERSON = [{"kind": "person"}]
+TEAM = [{"kind": "team"}]
+WEEKS = [{"kind": "period", "grain": "week"}]
+MONTHS = [{"kind": "period", "grain": "month"}]
+ON_LEAVE = (absence("2026-03-01", "2026-03-31"),)
+TWO_SITE_HOLIDAY = {2: [d("2026-03-04")]}
+
+CAPACITY_CASES: list[tuple[str, Facts, MetricQuery, dict[str, Any]]] = [
+    (
+        "utilisation: booked 10 of March's 22 weekdays",
+        facts(bookings=[booking(1, "2026-03-02", "2026-03-13")], capacity=[person_capacity()]),
+        q("utilisation"),
+        {"rows": [((), 45.45)], "total": 45.45, "unit": "percent"},
+    ),
+    (
+        "capacity days: every weekday of the period",
+        facts(bookings=[booking(1, "2026-03-02", "2026-03-13")], capacity=[person_capacity()]),
+        q("capacity_days"),
+        {"rows": [((), 22)], "total": 22, "unit": "days"},
+    ),
+    (
+        "available days: capacity less booked",
+        facts(bookings=[booking(1, "2026-03-02", "2026-03-13")], capacity=[person_capacity()]),
+        q("available_days"),
+        {"rows": [((), 12)], "total": 12, "unit": "days"},
+    ),
+    (
+        "a 50 % person has half the capacity",
+        facts(capacity=[person_capacity(max_capacity=50)]),
+        q("capacity_days"),
+        {"rows": [((), 11)]},
+    ),
+    (
+        "an unavailable absence week subtracts, a Home Office week does not",
+        facts(
+            capacity=[
+                person_capacity(
+                    absences=(
+                        absence("2026-03-09", "2026-03-13", "Holidays"),
+                        absence("2026-03-16", "2026-03-20", "Home office", unavailable=False),
+                    )
+                )
+            ]
+        ),
+        q("capacity_days"),
+        {"rows": [((), 17)]},
+    ),
+    (
+        "a recurring [R:1,3] absence takes March's Mondays and Wednesdays",
+        facts(
+            capacity=[
+                person_capacity(absences=(absence("2026-02-01", "2026-04-30", "[R:1,3] Course"),))
+            ]
+        ),
+        q("capacity_days"),
+        {"rows": [((), 13)]},  # 22 - (5 Mondays + 4 Wednesdays)
+    ),
+    (
+        "a whole-site closure of three weekdays subtracts",
+        facts(capacity=[person_capacity(closures=(closure("2026-03-25", "2026-03-27"),))]),
+        q("capacity_days"),
+        {"rows": [((), 19)]},
+    ),
+    (
+        "a team-limited closure subtracts for its members only",
+        facts(
+            capacity=[
+                person_capacity(
+                    1, teams=(10,), closures=(closure("2026-03-25", "2026-03-27", teams=(10,)),)
+                ),
+                person_capacity(
+                    2, teams=(11,), closures=(closure("2026-03-25", "2026-03-27", teams=(10,)),)
+                ),
+            ]
+        ),
+        q("capacity_days", PERSON),
+        {"rows": [(("Ann",), 19), (("Bob",), 22)], "total": 41},
+    ),
+    (
+        "a holiday at one of a two-site person's sites: once in the total, in both rows",
+        facts(
+            holidays=TWO_SITE_HOLIDAY,
+            capacity=[person_capacity(sites=(1, 2), holidays=TWO_SITE_HOLIDAY)],
+        ),
+        q("capacity_days", SITE),
+        {
+            "rows": [(("Site 1",), 21), (("Site 2",), 21)],
+            "total": 21,
+            "note": "A person at several sites counts in each",
+        },
+    ),
+    (
+        "utilisation by site reads the person's sites on both sides",
+        facts(
+            holidays=TWO_SITE_HOLIDAY,
+            bookings=[booking(1, "2026-03-02", "2026-03-13")],  # project at site 1
+            capacity=[person_capacity(sites=(1, 2), holidays=TWO_SITE_HOLIDAY)],
+        ),
+        q("utilisation", SITE),
+        {
+            "rows": [(("Site 1",), 47.62), (("Site 2",), 47.62)],  # 10 / 21
+            "total": 47.62,
+            "note": "A person at several sites counts in each",
+        },
+    ),
+    (
+        "a booked person without a capacity is ignored on both sides",
+        facts(
+            bookings=[
+                booking(1, "2026-03-02", "2026-03-06"),
+                booking(2, "2026-03-02", "2026-03-06", person=2),
+            ],
+            capacity=[person_capacity(1)],
+        ),
+        q("utilisation", PERSON),
+        {"rows": [(("Ann",), 22.73)], "total": 22.73},
+    ),
+    (
+        "a zero-capacity week with booked time is empty, without it 0",
+        facts(
+            bookings=[booking(1, "2026-03-09", "2026-03-13")],
+            capacity=[person_capacity(absences=ON_LEAVE)],
+        ),
+        q("utilisation", WEEKS),
+        {
+            "rows": [
+                (("W09 2026",), 0.0),
+                (("W10 2026",), 0.0),
+                (("W11 2026",), None),
+                (("W12 2026",), 0.0),
+                (("W13 2026",), 0.0),
+                (("W14 2026",), 0.0),
+            ],
+            "total": None,
+        },
+    ),
+    (
+        "nothing booked and no capacity: 0",
+        facts(capacity=[person_capacity(absences=ON_LEAVE)]),
+        q("utilisation"),
+        {"rows": [((), 0.0)], "total": 0.0},
+    ),
+    (
+        "available days go negative when booked over capacity",
+        facts(
+            bookings=[booking(1, "2026-03-02", "2026-03-31")],
+            capacity=[person_capacity(max_capacity=50)],
+        ),
+        q("available_days"),
+        {"rows": [((), -11)], "total": -11},
+    ),
+    (
+        "people over capacity by team",
+        facts(
+            bookings=[
+                booking(1, "2026-03-02", "2026-03-31"),
+                booking(2, "2026-03-02", "2026-03-06", allocation=50),  # 24.5 > 22
+                booking(3, "2026-03-02", "2026-03-13", person=2, allocation=50),  # 5 < 22
+            ],
+            capacity=[person_capacity(1, teams=(10,)), person_capacity(2, teams=(11,))],
+        ),
+        q("people_over_capacity", TEAM),
+        {"rows": [(("Alpha",), 1), (("Beta",), 0)], "total": 1, "unit": "people"},
+    ),
+    (
+        "people over capacity by month: the total is per person over the period",
+        facts(
+            bookings=[
+                # Ann: over in February (30 / 20) and March (33 / 22).
+                booking(1, "2026-02-02", "2026-03-31"),
+                booking(2, "2026-02-02", "2026-03-31", allocation=50),
+                # Bob: over in February (22.5 / 20), not over the two months.
+                booking(3, "2026-02-02", "2026-02-27", person=2),
+                booking(4, "2026-02-02", "2026-02-06", person=2, allocation=50),
+            ],
+            capacity=[person_capacity(1), person_capacity(2)],
+        ),
+        q("people_over_capacity", MONTHS, {"from": "2026-02-01", "to": "2026-03-31"}),
+        {"rows": [(("Feb 2026",), 2), (("Mar 2026",), 1)], "total": 1},
+    ),
+    (
+        "booked time without a capacity is over capacity",
+        facts(
+            bookings=[booking(1, "2026-03-02", "2026-03-06")],
+            capacity=[person_capacity(absences=ON_LEAVE)],
+        ),
+        q("people_over_capacity"),
+        {"rows": [((), 1)], "total": 1},
+    ),
+    (
+        "archived projects' bookings are left out by default",
+        facts(
+            projects=[project(1), project(2, archived=True)],
+            bookings=[booking(1, "2026-03-02", "2026-03-06", project_id=2)],
+            capacity=[person_capacity()],
+        ),
+        q("utilisation"),
+        {"rows": [((), 0.0)], "total": 0.0},
+    ),
+    (
+        "archived: include counts them",
+        facts(
+            projects=[project(1), project(2, archived=True)],
+            bookings=[booking(1, "2026-03-02", "2026-03-06", project_id=2)],
+            capacity=[person_capacity()],
+        ),
+        q("utilisation", filters={"archived": "include"}),
+        {"rows": [((), 22.73)], "total": 22.73},
+    ),
+    (
+        "archived: only counts nothing else",
+        facts(
+            projects=[project(1), project(2, archived=True)],
+            bookings=[
+                booking(1, "2026-03-02", "2026-03-06", project_id=2),
+                booking(2, "2026-03-02", "2026-03-13", project_id=1),
+            ],
+            capacity=[person_capacity()],
+        ),
+        q("available_days", filters={"archived": "only"}),
+        {"rows": [((), 17)], "total": 17},
+    ),
+    (
+        "top N ranks utilisation by the ratio",
+        facts(
+            bookings=[
+                booking(1, "2026-03-02", "2026-03-17"),  # Ann 12 / 22
+                booking(2, "2026-03-02", "2026-03-13", person=2),  # Bob 10 / 11
+                booking(3, "2026-03-02", "2026-03-16", person=3),  # Cid 11 / 22
+            ],
+            capacity=[person_capacity(1), person_capacity(2, max_capacity=50), person_capacity(3)],
+        ),
+        q("utilisation", PERSON, top_n=2),
+        {
+            "rows": [(("Ann",), 54.55), (("Bob",), 90.91), (("Other",), 50.0)],
+            "total": 60.0,  # 33 / 55
+        },
+    ),
+    (
+        "the Sites filter matches the person's sites, not the project's",
+        facts(
+            projects=[project(1), project(3, site_id=2)],
+            bookings=[
+                booking(1, "2026-03-02", "2026-03-06", project_id=3),  # Ann, a site-2 project
+                booking(2, "2026-03-02", "2026-03-06", person=2),  # Bob, at site 2
+            ],
+            capacity=[person_capacity(1, sites=(1,)), person_capacity(2, sites=(2,))],
+        ),
+        q("utilisation", PERSON, filters={"site_ids": [1]}),
+        {"rows": [(("Ann",), 22.73)], "total": 22.73},
+    ),
+    (
+        "the Teams filter matches the person's teams, not the booking's",
+        facts(
+            bookings=[
+                booking(1, "2026-03-02", "2026-03-06", team_ids=(11,)),
+                booking(2, "2026-03-02", "2026-03-06", person=2, team_ids=(10,)),
+            ],
+            capacity=[person_capacity(1, teams=(10,)), person_capacity(2, teams=(11,))],
+        ),
+        q("utilisation", PERSON, filters={"team_ids": [11]}),
+        {"rows": [(("Bob",), 22.73)], "total": 22.73},
+    ),
+    (
+        "the People filter keeps those people on both sides",
+        facts(
+            bookings=[
+                booking(1, "2026-03-02", "2026-03-06"),
+                booking(2, "2026-03-02", "2026-03-13", person=2),
+            ],
+            capacity=[person_capacity(1), person_capacity(2)],
+        ),
+        q("available_days", filters={"person_ids": [2]}),
+        {"rows": [((), 12)], "total": 12},
+    ),
+    (
+        "a person in two teams counts in each, one in none under No team",
+        facts(capacity=[person_capacity(1, teams=(10, 11)), person_capacity(2)]),
+        q("capacity_days", TEAM),
+        {
+            "rows": [(("Alpha",), 22), (("Beta",), 22), (("No team",), 22)],
+            "total": 44,
+            "note": "A person in several teams counts in each",
+        },
+    ),
+    (
+        "capacity by month adds up",
+        facts(capacity=[person_capacity()]),
+        q("capacity_days", MONTHS, {"from": "2026-02-01", "to": "2026-03-31"}),
+        {"rows": [(("Feb 2026",), 20), (("Mar 2026",), 22)], "total": 42},
+    ),
+    (
+        "capacity days as a share of the total",
+        facts(capacity=[person_capacity(1), person_capacity(2, max_capacity=50)]),
+        q("capacity_days", PERSON, percent_of="total"),
+        {"rows": [(("Ann",), 66.67), (("Bob",), 33.33)], "total": 100.0, "unit": "percent"},
+    ),
+]
+FACT_CASES += CAPACITY_CASES
+
 
 @pytest.mark.parametrize(
     ("name", "case_facts", "query", "expected"),
@@ -1352,7 +1691,7 @@ def test_equipment_filter_bounds():
 def test_percent_of_a_percentage_measure_is_refused(monkeypatch):
     from pydantic import ValidationError
 
-    # NO_PERCENT_MEASURES is empty until Task 2 adds the capacity ratios.
+    # The refusal machinery on borrowed measures (the real ones: below).
     monkeypatch.setattr(metrics, "NO_PERCENT_MEASURES", frozenset({"phase_weeks", "booked_days"}))
     monkeypatch.setitem(metrics.NO_PERCENT_MESSAGES, "booked_days", "Booked days cannot be one")
     body = {"measure": "phase_weeks", "dimensions": [{"kind": "site"}], "percent_of": "total"}
@@ -1393,7 +1732,7 @@ def test_missing_permission_in_order(query, keys, needed):
 
 
 def test_missing_permission_for_a_measure_family_and_an_equipment_filter(monkeypatch):
-    # No public measure needs a key until Tasks 2 / 3: borrow the booking family.
+    # The machinery on a borrowed family (the capacity family's own need: below).
     monkeypatch.setitem(metrics.MEASURE_NEEDS, "booking", "views.equipment")
     query = MetricQuery.model_validate(
         {"measure": "booked_days", "dimensions": [{"kind": "person"}]}
@@ -1418,9 +1757,9 @@ def test_viewer_has_its_keys():
 
 
 # --- Composite plumbing (round 3, Task 1) ----------------------------------------
-# Plumbing coverage only: no public measure is a composite yet. Task 2 replaces
-# these with the real capacity measures (utilisation, available_days,
-# people_over_capacity).
+# The machinery on a monkeypatched composite over two families (booked days /
+# project weeks), which no public measure combines; the capacity composites
+# are pinned by CAPACITY_CASES.
 
 
 @pytest.fixture
@@ -1717,3 +2056,100 @@ def test_capacity_days_are_weekdays_less_off_days_at_the_persons_rate():
     assert metrics.capacity_days(d("2026-03-01"), d("2026-03-31"), off, 50) == 10
     assert metrics.capacity_days(d("2026-03-05"), d("2026-03-10"), off, 80) == 3.2
     assert metrics.capacity_days(d("2026-03-10"), d("2026-03-05"), off, 100) == 0
+
+
+CAPACITY_REFUSALS = [
+    (
+        {"measure": "utilisation", "dimensions": [{"kind": "site"}], "percent_of": "total"},
+        "Utilisation is already a percentage",
+    ),
+    (
+        {"measure": "available_days", "dimensions": [{"kind": "site"}], "percent_of": "total"},
+        "Available days can be negative and cannot be a percentage",
+    ),
+    (
+        {"measure": "utilisation", "dimensions": [{"kind": "project"}]},
+        "Utilisation cannot be broken down by project",
+    ),
+    (
+        {"measure": "capacity_days", "dimensions": [{"kind": "phase_type"}]},
+        "Capacity (days) cannot be broken down by phase",
+    ),
+    (
+        {"measure": "people_over_capacity", "filters": {"project_ids": [1]}},
+        "The Projects filter does not apply to people over capacity",
+    ),
+    (
+        {"measure": "available_days", "filters": {"tag_ids": [20]}},
+        "The Tags filter does not apply to available days",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "message"), CAPACITY_REFUSALS)
+def test_capacity_spec_refusals(body, message):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as caught:
+        MetricQuery.model_validate(body)
+    assert caught.value.errors()[0]["msg"] == message
+
+
+def test_capacity_measures_accept_their_filters_and_a_share():
+    query = MetricQuery.model_validate(
+        {
+            "measure": "people_over_capacity",
+            "dimensions": [{"kind": "team"}, {"kind": "period", "grain": "month"}],
+            "filters": {"site_ids": [1], "team_ids": [10], "person_ids": [1]},
+            "percent_of": "first_dimension",
+        }
+    )
+    assert query.filters.team_ids == [10]
+    MetricQuery.model_validate(
+        {"measure": "capacity_days", "dimensions": [{"kind": "site"}], "percent_of": "total"}
+    )
+
+
+@pytest.mark.parametrize(
+    "measure", ["capacity_days", "available_days", "utilisation", "people_over_capacity"]
+)
+def test_capacity_measures_need_the_staff_view(measure):
+    query = MetricQuery.model_validate({"measure": measure})
+    viewer = Viewer(frozenset({"views.equipment", "views.archived"}))
+    assert metrics.missing_permission(query, viewer) == "views.staff"
+    with pytest.raises(MetricError) as caught:
+        aggregate(facts(capacity=[person_capacity()]), query, viewer=viewer)
+    assert caught.value.message == "This widget needs the Staff view permission"
+    assert metrics.measure_families(measure)[0] == "capacity"
+
+
+def test_utilisation_reads_both_families():
+    assert metrics.measure_families("utilisation") == ("capacity", "booking")
+    assert metrics.measure_families("capacity_days") == ("capacity",)
+
+
+def test_capacity_results_round_like_their_kind():
+    case = facts(
+        bookings=[booking(1, "2026-03-02", "2026-03-04", allocation=30)],
+        capacity=[person_capacity(max_capacity=80)],
+    )
+    utilisation = aggregate(case, q("utilisation"), viewer=FULL)
+    assert utilisation.total == 5.11  # 0.9 / 17.6
+    assert aggregate(case, q("available_days"), viewer=FULL).total == 16.7
+    over = aggregate(case, q("people_over_capacity"), viewer=FULL)
+    assert over.total == 0 and isinstance(over.total, int)
+
+
+def test_people_over_capacity_ignores_float_noise():
+    rule = metrics.COMPOSITE_RULES["people_over_capacity"]
+    assert rule(0, 0, {1: (10.000000000001, 10.0), 2: (10.1, 10.0), None: (5.0, 0.0)}) == 1
+
+
+def test_capacity_items_and_subjects():
+    fact = person_capacity(2)
+    case = facts(capacity=[fact])
+    items = list(
+        metrics._items(case, "capacity_days", metrics._Filters(archived="exclude"), "capacity")
+    )
+    assert items == [metrics._Item("capacity", 2, None, date.min, date.max, capacity=fact)]
+    assert metrics._subject("capacity_days", items[0]) == 2

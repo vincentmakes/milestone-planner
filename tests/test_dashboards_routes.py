@@ -1344,3 +1344,121 @@ async def test_an_empty_list(authed_client, sqlite):
     set_user(uma())
     resp = await client.get("/api/dashboards")
     assert resp.status_code == 200 and resp.json() == []
+
+
+# --- The capacity family -------------------------------------------------------
+
+UTILISATION_BY_PERSON = {**BY_SITE, "measure": "utilisation", "dimensions": [{"kind": "person"}]}
+
+
+async def test_utilisation_query_reads_the_bookable_people_of_the_visible_sites(authed_client):
+    client, set_user = authed_client
+    set_user(uma(site_ids=(1,)))
+    resp = await client.post("/api/dashboards/query", json=UTILISATION_BY_PERSON)
+    assert resp.status_code == 200
+    body = resp.json()
+    # Winterthur's active bookable members (Ed is inactive). Leo's booking is
+    # on a Frankfurt project Uma cannot see: not in the numerator.
+    assert [(r["keys"][0]["label"], r["value"]) for r in body["rows"]] == [
+        ("Leo Test", 0.0),
+        ("Sue Test", 0.0),
+        ("Uma Test", 22.73),
+    ]
+    assert body["unit"] == "percent" and body["total"] == 7.58  # 5 / 66
+
+
+async def test_capacity_queries_need_the_staff_view(authed_client):
+    client, set_user = authed_client
+    set_user(uma(permissions={"views.dashboards", "views.archived"}))
+    for measure in ("utilisation", "capacity_days", "available_days", "people_over_capacity"):
+        resp = await client.post("/api/dashboards/query", json={**BY_SITE, "measure": measure})
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == "This widget needs the Staff view permission"
+
+
+async def test_capacity_query_refusals(authed_client):
+    client, set_user = authed_client
+    set_user(uma())
+    resp = await client.post(
+        "/api/dashboards/query", json={**UTILISATION_BY_PERSON, "percent_of": "total"}
+    )
+    assert resp.status_code == 422
+    assert _detail(resp) == "Utilisation is already a percentage"
+    by_project = {**BY_SITE, "measure": "capacity_days", "dimensions": [{"kind": "project"}]}
+    resp = await client.post("/api/dashboards/query", json=by_project)
+    assert resp.status_code == 422
+    assert _detail(resp) == "Capacity (days) cannot be broken down by project"
+
+
+@pytest.fixture
+def capacity_board(sqlite):
+    sqlite.add(
+        Dashboard(
+            id=30,
+            name="Load",
+            visibility="everyone",
+            owner_id=SUE,
+            widgets=[
+                widget_row("Booked", BY_SITE, 0),
+                widget_row("Utilisation", UTILISATION_BY_PERSON, 1),
+            ],
+        )
+    )
+    sqlite.commit()
+    return 30
+
+
+@pytest.fixture
+def capacity_loads(monkeypatch):
+    """Records each capacity load (the population statement is built per load)."""
+    calls: list[object] = []
+    real = metrics._capacity_population
+
+    def spy(visible_site_ids):
+        calls.append(visible_site_ids)
+        return real(visible_site_ids)
+
+    monkeypatch.setattr(metrics, "_capacity_population", spy)
+    return calls
+
+
+async def test_data_without_the_staff_view_errors_the_capacity_widget(
+    authed_client, capacity_board, capacity_loads
+):
+    client, set_user = authed_client
+    set_user(uma(permissions={"views.dashboards"}))
+    with patch.object(
+        dashboards_router, "load_facts", wraps=dashboards_router.load_facts
+    ) as loader:
+        results = (await client.post(f"/api/dashboards/{capacity_board}/data")).json()["widgets"]
+    widgets = {w["title"]: results[str(w["id"])] for w in await _widgets(client, capacity_board)}
+    assert widgets["Utilisation"] == {"error": "This widget needs the Staff view permission"}
+    assert [(r["keys"][0]["label"], r["value"]) for r in widgets["Booked"]["rows"]] == [
+        ("Winterthur", 5)
+    ]
+    # Only the booking widget's family: no capacity facts load.
+    assert loader.await_args.kwargs["families"] == frozenset({"booking"})
+    assert capacity_loads == []
+
+
+async def test_data_loads_capacity_facts_only_for_a_capacity_widget(
+    authed_client, capacity_board, capacity_loads
+):
+    client, set_user = authed_client
+    set_user(uma(site_ids=(1,)))
+    with patch.object(
+        dashboards_router, "load_facts", wraps=dashboards_router.load_facts
+    ) as loader:
+        results = (await client.post(f"/api/dashboards/{capacity_board}/data")).json()["widgets"]
+    assert loader.await_args.kwargs["families"] == frozenset({"booking", "capacity"})
+    assert capacity_loads == [frozenset({1})]
+    widgets = {w["title"]: results[str(w["id"])] for w in await _widgets(client, capacity_board)}
+    assert widgets["Utilisation"]["total"] == 7.58
+
+    # The Overview's booking KPI alone never loads them.
+    await client.post("/api/dashboards/1/data")
+    assert capacity_loads == [frozenset({1})]
+
+
+async def _widgets(client, dashboard_id: int) -> list[dict]:
+    return (await client.get(f"/api/dashboards/{dashboard_id}")).json()["widgets"]

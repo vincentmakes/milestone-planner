@@ -562,3 +562,38 @@ async def test_absences_count_toward_the_row_cap(capacity_db, monkeypatch):
         await _load_capacity(capacity_db, visible=frozenset({1, 2}))
     monkeypatch.setattr(metrics, "MAX_FACT_ROWS", 4)
     assert len((await _load_capacity(capacity_db, visible=frozenset({1, 2}))).capacity) == 2
+
+
+async def test_loaded_capacity_aggregates(capacity_db):
+    capacity_db.add(_project(1, 1, "2026-03-01", "2026-03-31"))
+    await capacity_db.flush()
+    capacity_db.add(
+        ProjectAssignment(
+            id=1,
+            project_id=1,
+            staff_id=2,
+            allocation=100,
+            start_date=d("2026-03-02"),
+            end_date=d("2026-03-06"),
+        )
+    )
+    await capacity_db.commit()
+    facts = await _load_capacity(capacity_db, visible=frozenset({1, 2}))
+    viewer = Viewer(frozenset({"views.staff"}))
+
+    def ask(measure):
+        query = MetricQuery.model_validate(
+            {
+                "measure": measure,
+                "dimensions": [{"kind": "person"}],
+                "filters": {"period": {"from": "2026-03-01", "to": "2026-03-31"}},
+            }
+        )
+        result = aggregate(facts, query, viewer=viewer).to_dict()
+        return [(r["keys"][0]["label"], r["value"]) for r in result["rows"]], result["total"]
+
+    # Ann: 22 - 11 off days; Bob: (22 - 11) x 50 %.
+    assert ask("capacity_days") == ([("Ann T", 11), ("Bob T", 5.5)], 16.5)
+    # Bob's booking: 2-6 March less Winterthur's holiday on the 5th = 4 days.
+    assert ask("utilisation") == ([("Ann T", 0.0), ("Bob T", 72.73)], 24.24)
+    assert ask("people_over_capacity") == ([("Ann T", 0), ("Bob T", 0)], 0)

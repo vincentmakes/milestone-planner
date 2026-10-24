@@ -12,7 +12,8 @@ bulk load of *facts* per request:
   teams, people, tags, project fields and their items) used for labels,
   colours and stale-id warnings. A booking's dates are its effective dates
   (``booking_segments.effective_dates``) **clipped to its card**; pending
-  bookings are left out; absences and closures do not subtract.
+  bookings are left out; absences and closures do not subtract from booked
+  time (they reduce a person's capacity, see below).
 - ``aggregate`` is pure: it applies the query's own period and filters to the
   facts, splits them into the dimension values, and computes the measure.
   ``/dashboards/{id}/data`` loads the facts once for the union of its widgets'
@@ -39,6 +40,18 @@ Rules (see ``tests/test_metrics.py`` ``FACT_CASES``):
   of its end date inside the period; ``phases_overdue`` the same, restricted
   to phases due before today and not ``done``. The ``milestones`` filter
   (``include`` / ``only`` / ``exclude``) applies to every phase measure.
+- The **capacity** family (``views.staff``): ``capacity_days`` = sum over the
+  bookable people (active, *Bookable as a resource*, members of a visible
+  site) of max_capacity / 100 x (weekdays - their off days) of (period x
+  bucket); off days are bank holidays at any of their sites, unavailable
+  absences (``[R:...]`` ones on their pattern days only) and the site
+  closures that apply to them. ``utilisation`` = booked days / capacity days x
+  100 (None when booked time meets no capacity), ``available_days`` =
+  capacity - booked, ``people_over_capacity`` = the people whose own booked
+  days exceed their capacity in the group. The booked side counts only the
+  bookings of people with a capacity, keeps the project-site calendar and the
+  ``archived`` filter, and reads ``site`` / ``team`` / ``person`` (dimensions
+  and filters) from the person, like the capacity side.
 - The **distinct** measures (``booking_count``, ``people_booked``,
   ``project_count``, ``project_volume``, ``phase_count``, ``phases_due``,
   ``phases_overdue``) recompute the total,
@@ -105,8 +118,11 @@ MEASURES: tuple[str, ...] = (
     "phase_weeks",
     "phases_due",
     "phases_overdue",
-    # capacity (Task 2): capacity_days, available_days, utilisation,
-    # people_over_capacity
+    # capacity (bookable people's working days against their bookings)
+    "capacity_days",
+    "available_days",
+    "utilisation",
+    "people_over_capacity",
     # equipment (Task 3): equipment_booked_days, equipment_booking_count,
     # equipment_booked, equipment_utilisation
 )
@@ -128,6 +144,10 @@ FAMILY: dict[str, str] = {
     "phase_weeks": "phase",
     "phases_due": "phase",
     "phases_overdue": "phase",
+    "capacity_days": "capacity",
+    "available_days": "capacity",
+    "utilisation": "capacity",
+    "people_over_capacity": "capacity",
 }
 
 PLAIN_DIMENSION_KINDS: tuple[str, ...] = (
@@ -185,7 +205,7 @@ TOO_MANY_FACTS_DETAIL = "Narrow the filters: this query covers too many bookings
 
 # Summed amounts, deduplicated per fact and bucket.
 ADDITIVE_MEASURES: frozenset[str] = frozenset(
-    {"booked_days", "booked_weeks", "project_weeks", "phase_weeks"}
+    {"booked_days", "booked_weeks", "project_weeks", "phase_weeks", "capacity_days"}
 )
 # Counts of distinct things (``_ident``); ``project_volume`` sums one amount
 # per distinct project.
@@ -202,17 +222,22 @@ COUNT_MEASURES: frozenset[str] = frozenset(
 # Composite measures: ``measure -> (numerator base, denominator base)``. The
 # engine runs the item loop once per side with that side's base measure and
 # ``_combine_composite`` folds the two sums with ``COMPOSITE_RULES[measure]``
-# (Task 2 adds ``utilisation`` / ``available_days`` / ``people_over_capacity``
-# over ``("booked_days", "capacity_days")``, Task 3 ``equipment_utilisation``
-# over ``("equipment_booked_days", "equipment_available_days")``).
-COMPOSITES: dict[str, tuple[str, str]] = {}
+# (Task 3 adds ``equipment_utilisation`` over
+# ``("equipment_booked_days", "equipment_available_days")``).
+COMPOSITES: dict[str, tuple[str, str]] = {
+    "available_days": ("booked_days", "capacity_days"),
+    "utilisation": ("booked_days", "capacity_days"),
+    "people_over_capacity": ("booked_days", "capacity_days"),
+}
 # Measures that are already a percentage (or cannot be one): ``percent_of``
 # on them is refused (``percent_error``).
-NO_PERCENT_MEASURES: frozenset[str] = frozenset()
+NO_PERCENT_MEASURES: frozenset[str] = frozenset({"utilisation", "available_days"})
 # The refusal of ``percent_of`` per measure when the default wording does not fit.
-NO_PERCENT_MESSAGES: dict[str, str] = {}
+NO_PERCENT_MESSAGES: dict[str, str] = {
+    "available_days": "Available days can be negative and cannot be a percentage",
+}
 # Non-additive measures that keep two decimals (ratios) instead of an int.
-FLOAT_MEASURES: frozenset[str] = frozenset()
+FLOAT_MEASURES: frozenset[str] = frozenset({"utilisation", "available_days"})
 
 UNITS: dict[str, str] = {
     "booked_days": "days",
@@ -226,6 +251,10 @@ UNITS: dict[str, str] = {
     "phase_weeks": "weeks",
     "phases_due": "phases",
     "phases_overdue": "phases",
+    "capacity_days": "days",
+    "available_days": "days",
+    "utilisation": "percent",
+    "people_over_capacity": "people",
 }
 PERCENT_UNIT = "percent"
 
@@ -241,6 +270,10 @@ MEASURE_LABELS: dict[str, str] = {
     "phase_weeks": "Phase weeks",
     "phases_due": "Phases due",
     "phases_overdue": "Phases overdue",
+    "capacity_days": "Capacity (days)",
+    "available_days": "Available days",
+    "utilisation": "Utilisation",
+    "people_over_capacity": "People over capacity",
 }
 DIMENSION_LABELS: dict[str, str] = {
     "site": "Site",
@@ -392,6 +425,9 @@ _PROJECT_DIMENSIONS: frozenset[str] = frozenset(
 )
 _BOOKING_DIMENSIONS: frozenset[str] = _PROJECT_DIMENSIONS | {"team", "person", "phase_type"}
 _PHASE_DIMENSIONS: frozenset[str] = _PROJECT_DIMENSIONS | {"phase_type", "status"}
+# A capacity is a person's: no project dimension applies (``site`` and
+# ``team`` are the person's, on both sides of a composite).
+_CAPACITY_DIMENSIONS: frozenset[str] = frozenset({"person", "team", "site", "period"})
 
 MATRIX: dict[str, frozenset[str]] = {
     "booked_days": _BOOKING_DIMENSIONS,
@@ -407,6 +443,11 @@ MATRIX: dict[str, frozenset[str]] = {
     "phase_weeks": _PHASE_DIMENSIONS,
     "phases_due": _PHASE_DIMENSIONS,
     "phases_overdue": _PHASE_DIMENSIONS,
+    # Per bucket: utilisation and people over capacity are computed in each.
+    "capacity_days": _CAPACITY_DIMENSIONS,
+    "available_days": _CAPACITY_DIMENSIONS,
+    "utilisation": _CAPACITY_DIMENSIONS,
+    "people_over_capacity": _CAPACITY_DIMENSIONS,
 }
 # The permission a dimension needs (the per-person load is gated by it).
 NEEDS: dict[str, str] = {"person": "views.staff"}
@@ -719,6 +760,54 @@ def closure_applies(
     return not restricted or bool(set(restricted).intersection(person_team_ids))
 
 
+class AbsenceSpan(NamedTuple):
+    """One absence of a person (``unavailable``: its type takes them out, or none)."""
+
+    start: date
+    end: date
+    description: str | None
+    unavailable: bool
+
+
+class ClosureSpan(NamedTuple):
+    """A site closure: its days, sites and teams (``closure_applies``)."""
+
+    start: date
+    end: date
+    site_ids: tuple[int, ...]
+    team_ids: tuple[int, ...] = ()
+
+
+def person_off_days(
+    period: tuple[date, date],
+    site_ids: Sequence[int],
+    team_ids: Sequence[int],
+    holidays: Mapping[int, Sequence[date]],
+    absences: Iterable[AbsenceSpan],
+    closures: Iterable[ClosureSpan],
+    team_sites: Mapping[int, int | None],
+) -> tuple[date, ...]:
+    """
+    A person's off days in ``period`` (``CapacityFact.off_days``): the bank
+    holidays of any of their sites, their unavailable absences (a recurring
+    one on its pattern days only) and the closures that apply to them.
+    """
+    start, end = period
+    day_sets: list[Iterable[date]] = [holidays.get(site_id, ()) for site_id in site_ids]
+    for absence in absences:
+        if absence.unavailable:
+            days = parse_recurring_days(absence.description)
+            day_sets.append(
+                absence_weekdays(max(absence.start, start), min(absence.end, end), days)
+            )
+    for closure in closures:
+        if closure_applies(closure.site_ids, closure.team_ids, site_ids, team_ids, team_sites):
+            day_sets.append(
+                absence_weekdays(max(closure.start, start), min(closure.end, end), None)
+            )
+    return off_days_within(period, *day_sets)
+
+
 class WorkingCalendar:
     """Working days per site: weekdays minus that site's bank holidays."""
 
@@ -1025,10 +1114,16 @@ def _selected_option_ids(value: Any) -> set[int]:
     return set()
 
 
+def _archived_passes(project: ProjectFact, archived: str) -> bool:
+    if archived == "exclude":
+        return not project.archived
+    if archived == "only":
+        return project.archived
+    return True
+
+
 def _project_passes(project: ProjectFact, flt: _Filters) -> bool:
-    if flt.archived == "exclude" and project.archived:
-        return False
-    if flt.archived == "only" and not project.archived:
+    if not _archived_passes(project, flt.archived):
         return False
     if flt.site_ids is not None and project.site_id not in flt.site_ids:
         return False
@@ -1059,12 +1154,30 @@ class _Item(NamedTuple):
     end: date
     booking: BookingFact | None = None
     phase: PhaseFact | None = None
+    capacity: CapacityFact | None = None
 
 
 def _project_of(item: _Item) -> ProjectFact:
     """The item's project (the matrix keeps project dimensions to project-backed facts)."""
     assert item.project is not None
     return item.project
+
+
+def _capacity_passes(fact: CapacityFact, flt: _Filters) -> bool:
+    """The capacity family's filters, on the person (sites, teams, people)."""
+    if flt.site_ids is not None and not flt.site_ids.intersection(fact.site_ids):
+        return False
+    if flt.team_ids is not None and not flt.team_ids.intersection(fact.team_ids):
+        return False
+    return flt.person_ids is None or fact.person_id in flt.person_ids
+
+
+def _capacity_of(facts: Facts, item: _Item) -> CapacityFact:
+    """The capacity fact of a capacity-family item (either side)."""
+    if item.capacity is not None:
+        return item.capacity
+    assert item.booking is not None  # the capacity family's booked side
+    return facts.capacity[item.booking.person_id]
 
 
 def _items(facts: Facts, measure: str, flt: _Filters, family: str) -> Iterator[_Item]:
@@ -1076,7 +1189,27 @@ def _items(facts: Facts, measure: str, flt: _Filters, family: str) -> Iterator[_
     ``family`` the rules applied to them — Task 2's capacity rules key on it).
     """
     kind = FAMILY[measure]
-    if kind == "booking":
+    if kind == "booking" and family == "capacity":
+        # The booked side of a capacity measure: bookings of the people with
+        # a capacity (others are ignored on both sides), matched on the
+        # person's sites and teams -- not the project's site. Bookings stay
+        # cut to the projects of the visible sites (the loader's scope).
+        for booking in facts.bookings:
+            fact = facts.capacity.get(booking.person_id)
+            project = facts.projects.get(booking.project_id)
+            if fact is None or project is None or not _archived_passes(project, flt.archived):
+                continue
+            if not _capacity_passes(fact, flt):
+                continue
+            yield _Item(
+                "booking",
+                (booking.level, booking.id),
+                project,
+                booking.start,
+                booking.end,
+                booking=booking,
+            )
+    elif kind == "booking":
         for booking in facts.bookings:
             project = facts.projects.get(booking.project_id)
             if project is None or not _project_passes(project, flt):
@@ -1115,6 +1248,11 @@ def _items(facts: Facts, measure: str, flt: _Filters, family: str) -> Iterator[_
                 yield _Item("phase", phase.id, project, end, end, phase=phase)
             else:
                 yield _Item("phase", phase.id, project, phase.start, end, phase=phase)
+    elif kind == "capacity":
+        # Every day of the period (the piece loop clips to it and its buckets).
+        for fact in facts.capacity.values():
+            if _capacity_passes(fact, flt):
+                yield _Item("capacity", fact.person_id, None, date.min, date.max, capacity=fact)
     else:
         raise MetricError(f"Unknown measure family: {kind} ({family})")
 
@@ -1156,6 +1294,18 @@ def _values(facts: Facts, dimension: _Dimension, item: _Item, family: str) -> li
     ``_items``): Task 2 reads ``site`` / ``team`` from the person there.
     """
     kind = dimension.kind
+    if family == "capacity" and kind in ("site", "team", "person"):
+        # The person's sites, teams and name, on both sides.
+        fact = _capacity_of(facts, item)
+        if kind == "team":
+            return _team_values(facts, fact.team_ids, kind)
+        if kind == "person":
+            return [_by_label(fact.person_id, fact.person_name)]
+        sites = [
+            _by_label(site_id, facts.sites.get(site_id, f"Site {site_id}"))
+            for site_id in fact.site_ids
+        ]
+        return sites or [_empty(kind)]
     if kind == "team":
         return _team_values(facts, item.booking.team_ids if item.booking else (), kind)
     if kind == "person":
@@ -1219,6 +1369,9 @@ def _amount(measure: str, item: _Item, calendar: WorkingCalendar, start: date, e
         return calendar.days(_project_of(item).site_id, start, end) / 5
     if measure == "project_volume":
         return float(_project_of(item).volume or 0)
+    if measure == "capacity_days":
+        assert item.capacity is not None
+        return capacity_days(start, end, item.capacity.off_days, item.capacity.max_capacity)
     if measure in COUNT_MEASURES:
         return 1.0  # a distinct count: the amount is unused
     raise MetricError(f"Unknown measure: {measure}")
@@ -1240,6 +1393,8 @@ def _subject(measure: str, item: _Item) -> Any:
     booking (and Task 2's capacity) items, the equipment for Task 3's
     equipment items, else None. ``measure`` is the side's base measure.
     """
+    if item.capacity is not None:
+        return item.capacity.person_id
     if item.booking is not None:
         return item.booking.person_id
     return None
@@ -1292,14 +1447,31 @@ def ratio_percent(num: float, den: float) -> float | None:
     return num / den * 100
 
 
+# Booked time above a capacity by less than this is float noise, not overtime.
+OVER_CAPACITY_EPSILON = 1e-9
+
+
+def _people_over(subjects: dict[Any, tuple[float, float]]) -> float:
+    """The people whose own booked days exceed their capacity (0 capacity included)."""
+    return float(
+        sum(
+            1
+            for subject, (booked, capacity) in subjects.items()
+            if subject is not None and booked - capacity > OVER_CAPACITY_EPSILON
+        )
+    )
+
+
 # measure -> its fold of ``(numerator, denominator, {subject: (num, den)})``.
-# ``_combine_composite`` is the one place composites are computed; Task 2 adds
-# ``utilisation`` (``ratio_percent``), ``available_days`` (``den - num``) and
-# ``people_over_capacity`` (subjects with ``num > den``), Task 3
-# ``equipment_utilisation`` (``ratio_percent``).
+# ``_combine_composite`` is the one place composites are computed (Task 3 adds
+# ``equipment_utilisation`` -> ``ratio_percent``).
 COMPOSITE_RULES: dict[
     str, Callable[[float, float, dict[Any, tuple[float, float]]], float | None]
-] = {}
+] = {
+    "utilisation": lambda booked, capacity, _subjects: ratio_percent(booked, capacity),
+    "available_days": lambda booked, capacity, _subjects: capacity - booked,
+    "people_over_capacity": lambda _booked, _capacity, subjects: _people_over(subjects),
+}
 
 
 def _combine_composite(measure: str, contributions: Iterable[_Contribution]) -> float | None:
@@ -1989,8 +2161,8 @@ async def load_facts(
     capacity_ids: list[tuple[int, int]] = []
     sites_of: dict[int, list[int]] = {}
     teams_of: dict[int, list[int]] = {}
-    absences: list[Any] = []
-    closures: list[tuple[date, date, tuple[int, ...], tuple[int, ...]]] = []
+    absences: dict[int, list[AbsenceSpan]] = {}
+    closures: list[ClosureSpan] = []
     if population is not None:
         capacity_ids = [
             (row.id, row.max_capacity)
@@ -2020,7 +2192,12 @@ async def load_facts(
                 )
             ).all():
                 teams_of.setdefault(user_id, []).append(team_id)
-            absences = (await db.execute(_absence_statement(population, start, end))).all()
+            for row in (await db.execute(_absence_statement(population, start, end))).all():
+                # An untyped absence (or one of a type gone) is unavailable.
+                unavailable = row.counts_as_unavailable is None or bool(row.counts_as_unavailable)
+                absences.setdefault(row.staff_id, []).append(
+                    AbsenceSpan(row.start_date, row.end_date, row.description, unavailable)
+                )
             event_rows = (
                 await db.execute(
                     select(
@@ -2061,7 +2238,7 @@ async def load_facts(
                     [row.site_id] if row.site_id is not None else []
                 )
                 closures.append(
-                    (
+                    ClosureSpan(
                         row.date,
                         row.end_date or row.date,
                         tuple(sorted(linked)),
@@ -2091,35 +2268,24 @@ async def load_facts(
     capacity: dict[int, CapacityFact] = {}
     if capacity_ids:
         team_sites = {team.id: team.site_id for team in teams.values()}
-        absence_days: dict[int, list[Iterable[date]]] = {}
-        for row in absences:
-            # An untyped absence (or one of a type gone) is unavailable.
-            if row.counts_as_unavailable is not None and not row.counts_as_unavailable:
-                continue
-            absence_days.setdefault(row.staff_id, []).append(
-                absence_weekdays(
-                    max(row.start_date, start),
-                    min(row.end_date, end),
-                    parse_recurring_days(row.description),
-                )
-            )
         for person_id, max_capacity in capacity_ids:
             person_sites = sites_of.get(person_id, [])
             person_teams = teams_of.get(person_id, [])
-            day_sets: list[Iterable[date]] = [holidays.get(site_id, ()) for site_id in person_sites]
-            day_sets.extend(absence_days.get(person_id, ()))
-            for first, last, event_sites_of, event_teams_of in closures:
-                if closure_applies(
-                    event_sites_of, event_teams_of, person_sites, person_teams, team_sites
-                ):
-                    day_sets.append(absence_weekdays(max(first, start), min(last, end), None))
             capacity[person_id] = CapacityFact(
                 person_id=person_id,
                 person_name=persons.get(person_id, f"Person {person_id}"),
                 site_ids=tuple(person_sites),
                 team_ids=tuple(person_teams),
                 max_capacity=max_capacity,
-                off_days=off_days_within((start, end), *day_sets),
+                off_days=person_off_days(
+                    (start, end),
+                    person_sites,
+                    person_teams,
+                    holidays,
+                    absences.get(person_id, ()),
+                    closures,
+                    team_sites,
+                ),
             )
 
     return Facts(

@@ -315,6 +315,74 @@
         "site_ids",
         "tag_ids"
       ]
+    },
+    "capacity_days": {
+      "unit": "days",
+      "dimensions": [
+        "period",
+        "person",
+        "site",
+        "team"
+      ],
+      "needs": "views.staff",
+      "filters": [
+        "archived",
+        "period",
+        "person_ids",
+        "site_ids",
+        "team_ids"
+      ]
+    },
+    "available_days": {
+      "unit": "days",
+      "dimensions": [
+        "period",
+        "person",
+        "site",
+        "team"
+      ],
+      "needs": "views.staff",
+      "filters": [
+        "archived",
+        "period",
+        "person_ids",
+        "site_ids",
+        "team_ids"
+      ]
+    },
+    "utilisation": {
+      "unit": "percent",
+      "dimensions": [
+        "period",
+        "person",
+        "site",
+        "team"
+      ],
+      "needs": "views.staff",
+      "filters": [
+        "archived",
+        "period",
+        "person_ids",
+        "site_ids",
+        "team_ids"
+      ]
+    },
+    "people_over_capacity": {
+      "unit": "people",
+      "dimensions": [
+        "period",
+        "person",
+        "site",
+        "team"
+      ],
+      "needs": "views.staff",
+      "filters": [
+        "archived",
+        "period",
+        "person_ids",
+        "site_ids",
+        "team_ids"
+      ]
     }
   },
   "needs": {
@@ -324,7 +392,10 @@
     "equipment_types": "views.equipment",
     "archived": "views.archived"
   },
-  "no_percent": [],
+  "no_percent": [
+    "available_days",
+    "utilisation"
+  ],
   "relative_periods": [
     "this_year",
     "last_year",
