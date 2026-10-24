@@ -34,7 +34,17 @@ const query = (extra: Partial<MetricQuery> = {}): MetricQuery => ({ ...defaultQu
 
 describe('kind rules', () => {
   it('caps the dimensions per kind', () => {
-    expect(MAX_DIMENSIONS).toEqual({ kpi: 1, pie: 1, bar: 2, line: 2, table: 2 });
+    expect(MAX_DIMENSIONS).toEqual({
+      kpi: 1,
+      pie: 1,
+      bar: 2,
+      line: 2,
+      table: 2,
+      gauge: 0,
+      heatmap: 2,
+      treemap: 2,
+      sankey: 2,
+    });
     const two = query({ dimensions: [{ kind: 'site' }, { kind: 'team' }] });
     expect(normaliseQuery('pie', two).dimensions).toEqual([{ kind: 'site' }]);
     expect(normaliseQuery('bar', two).dimensions).toHaveLength(2);

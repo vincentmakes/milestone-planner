@@ -38,7 +38,7 @@ import type { MetricKey, MetricResult, MetricUnit, WidgetKind, WidgetOptions } f
 import { formatMetric, normaliseKey, OTHER_KEY, unitWord, widgetColor } from '@/utils/metrics';
 import type { ChartTheme } from './echartsTheme';
 
-export type ChartKind = Extract<WidgetKind, 'bar' | 'line' | 'pie'>;
+export type ChartKind = Extract<WidgetKind, 'bar' | 'line' | 'pie' | 'gauge' | 'heatmap' | 'treemap' | 'sankey'>;
 
 export type ChartOption = Record<string, unknown>;
 

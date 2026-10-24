@@ -22,6 +22,7 @@ const TOKENS: Record<string, string> = {
   '--text-muted': '#5a6a7a',
   '--border-color': '#2a3544',
   '--bg-card': '#151d2a',
+  '--bg-tertiary': '#1a2332',
   '--font-family': "'DM Sans', sans-serif",
 };
 
@@ -34,6 +35,16 @@ describe('buildTheme', () => {
     expect(theme.border).toBe('#2a3544');
     expect(theme.background).toBe('#151d2a');
     expect(theme.fontFamily).toBe("'DM Sans', sans-serif");
+  });
+
+  it('names the gauge bands and the heatmap scale after their tokens', () => {
+    const theme = buildTheme((token) => TOKENS[token]);
+    expect(theme.good).toBe('#10b981');
+    expect(theme.warn).toBe('#f97316');
+    expect(theme.bad).toBe('#ef4444');
+    expect(theme.heatLow).toBe('#1a2332');
+    // Trimmed like every token
+    expect(theme.heatHigh).toBe('#3b82f6');
   });
 
   it('builds the palette from the accents, then the skill swatches not already in it', () => {
@@ -59,6 +70,8 @@ describe('buildTheme', () => {
     expect(theme.textPrimary).toBeUndefined();
     expect(theme.border).toBeUndefined();
     expect(buildTheme(() => '   ').fontFamily).toBeUndefined();
+    // toOption then falls back to the palette (and the card surface) for them
+    for (const name of ['good', 'warn', 'bad', 'heatLow', 'heatHigh'] as const) expect(theme[name]).toBeUndefined();
   });
 
   it('reads the document by default', () => {

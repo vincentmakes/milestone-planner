@@ -25,13 +25,23 @@ const fake = vi.hoisted(() => {
 });
 
 vi.mock('echarts/core', () => ({ init: fake.init, use: fake.use, registerTheme: fake.registerTheme }));
-vi.mock('echarts/charts', () => ({ BarChart: 'BarChart', LineChart: 'LineChart', PieChart: 'PieChart' }));
+// Every named import of EChart.tsx must exist here: vitest throws on a missing one.
+vi.mock('echarts/charts', () => ({
+  BarChart: 'BarChart',
+  LineChart: 'LineChart',
+  PieChart: 'PieChart',
+  GaugeChart: 'GaugeChart',
+  HeatmapChart: 'HeatmapChart',
+  TreemapChart: 'TreemapChart',
+  SankeyChart: 'SankeyChart',
+}));
 vi.mock('echarts/components', () => ({
   AriaComponent: 'AriaComponent',
   DatasetComponent: 'DatasetComponent',
   GridComponent: 'GridComponent',
   LegendComponent: 'LegendComponent',
   TooltipComponent: 'TooltipComponent',
+  VisualMapComponent: 'VisualMapComponent',
 }));
 vi.mock('echarts/renderers', () => ({ CanvasRenderer: 'CanvasRenderer' }));
 
@@ -82,9 +92,14 @@ describe('EChart', () => {
       'BarChart',
       'LineChart',
       'PieChart',
+      'GaugeChart',
+      'HeatmapChart',
+      'TreemapChart',
+      'SankeyChart',
       'GridComponent',
       'TooltipComponent',
       'LegendComponent',
+      'VisualMapComponent',
       'DatasetComponent',
       'AriaComponent',
       'CanvasRenderer',

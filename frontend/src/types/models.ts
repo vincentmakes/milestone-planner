@@ -950,7 +950,8 @@ export interface AppNotification {
 // metric-query spec mirrors app/schemas/dashboard.py; the measure → dimension
 // matrix lives in utils/metrics.ts (asserted against shared/metric-matrix.json).
 
-export type WidgetKind = 'kpi' | 'bar' | 'line' | 'pie' | 'table';
+/** The widget kinds, in the server's order (`DASHBOARD_WIDGET_KINDS`). */
+export type WidgetKind = 'kpi' | 'bar' | 'line' | 'pie' | 'table' | 'gauge' | 'heatmap' | 'treemap' | 'sankey';
 
 /**
  * Who sees a dashboard: its owner (and admins), the targets of `shared`
@@ -1108,6 +1109,8 @@ export interface WidgetOptions {
   show_legend?: boolean | null;
   /** The KPI's bucket when `percent_of` is set: a dimension value's key */
   kpi_bucket?: boolean | number | string | null;
+  /** The gauge's target, in the result's unit (≥ 0): green below it, then amber, then red */
+  target?: number | null;
 }
 
 export interface GridPosition {

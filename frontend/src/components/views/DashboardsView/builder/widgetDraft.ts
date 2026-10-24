@@ -91,7 +91,17 @@ export interface EditorDraft extends DashboardMeta {
 export const MAX_WIDGETS = 50;
 
 /** The most dimensions per widget kind. */
-export const MAX_DIMENSIONS: Readonly<Record<WidgetKind, number>> = { kpi: 1, pie: 1, bar: 2, line: 2, table: 2 };
+export const MAX_DIMENSIONS: Readonly<Record<WidgetKind, number>> = {
+  kpi: 1,
+  pie: 1,
+  bar: 2,
+  line: 2,
+  table: 2,
+  gauge: 0,
+  heatmap: 2,
+  treemap: 2,
+  sankey: 2,
+};
 
 let lastClientId = 0;
 

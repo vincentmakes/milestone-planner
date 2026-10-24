@@ -6,8 +6,9 @@
  * style getter (the computed `<html>` style by default), so it is pure given
  * the getter and re-run whenever `data-theme` changes. `toEChartsTheme`
  * turns it into the theme object registered with ECharts as `milestone`.
- * A token the getter cannot resolve is left out (ECharts keeps its default);
- * no colour is hard-coded here.
+ * A token the getter cannot resolve is left out (ECharts keeps its default,
+ * and `toOption` falls back to the palette for the gauge bands and the
+ * heatmap scale); no colour is hard-coded here.
  */
 
 import { getCSSVariable } from '@/utils/themeColors';
@@ -38,6 +39,16 @@ export interface ChartTheme {
   border?: string;
   background?: string;
   fontFamily?: string;
+  /** A gauge's band below its target */
+  good?: string;
+  /** A gauge's band just past its target */
+  warn?: string;
+  /** A gauge's band well past its target */
+  bad?: string;
+  /** A heatmap's lowest value */
+  heatLow?: string;
+  /** A heatmap's highest value */
+  heatHigh?: string;
 }
 
 const clean = (value: string | null | undefined): string | undefined => {
@@ -64,6 +75,11 @@ export function buildTheme(read: StyleGetter = getCSSVariable): ChartTheme {
     border: clean(read('--border-color')),
     background: clean(read('--bg-card')),
     fontFamily: clean(read('--font-family')),
+    good: clean(read('--accent-green')),
+    warn: clean(read('--accent-orange')),
+    bad: clean(read('--accent-red')),
+    heatLow: clean(read('--bg-tertiary')),
+    heatHigh: clean(read('--accent-blue')),
   };
 }
 

@@ -1,7 +1,8 @@
 /**
- * EChart — one ECharts chart (bar, line or pie) of a widget's result.
+ * EChart — one ECharts chart (bar, line, pie, gauge, heatmap, treemap or
+ * sankey) of a widget's result.
  *
- * ECharts is imported piecemeal (`echarts/core` + the three charts, five
+ * ECharts is imported piecemeal (`echarts/core` + the seven charts, six
  * components and the canvas renderer), registered once at module level, so
  * the Dashboards chunk carries only what the widgets draw. The chart is
  * initialised once per mount with the `milestone` theme (the app tokens,
@@ -17,13 +18,14 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as echarts from 'echarts/core';
-import { BarChart, LineChart, PieChart } from 'echarts/charts';
+import { BarChart, GaugeChart, HeatmapChart, LineChart, PieChart, SankeyChart, TreemapChart } from 'echarts/charts';
 import {
   AriaComponent,
   DatasetComponent,
   GridComponent,
   LegendComponent,
   TooltipComponent,
+  VisualMapComponent,
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { MetricResult, WidgetOptions } from '@/types';
@@ -36,9 +38,14 @@ echarts.use([
   BarChart,
   LineChart,
   PieChart,
+  GaugeChart,
+  HeatmapChart,
+  TreemapChart,
+  SankeyChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
+  VisualMapComponent,
   DatasetComponent,
   AriaComponent,
   CanvasRenderer,
