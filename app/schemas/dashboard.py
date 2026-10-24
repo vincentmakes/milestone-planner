@@ -34,13 +34,19 @@ from pydantic_core import PydanticCustomError
 from app.models.dashboard import DASHBOARD_VISIBILITIES, DASHBOARD_WIDGET_KINDS
 from app.services.dashboard_seed import GRID_COLUMNS
 from app.services.metrics import (
-    BOOKING_MEASURES,
     DIMENSION_LABELS,
+    FILTER_KEYS,
     MAX_PERIOD_DAYS,
     PERIOD_TOO_LONG_DETAIL,
+    filter_error,
+    filter_given,
     matrix_error,
+    percent_error,
 )
 
+# The Literals spell out the engine's tuples (``metrics.MEASURES``,
+# ``PLAIN_DIMENSION_KINDS``, ``RELATIVE_PERIODS``) for the type checker;
+# ``tests/test_metric_matrix.py`` asserts they are equal, in order.
 Measure = Literal[
     "booked_days",
     "booked_weeks",
@@ -92,8 +98,6 @@ MAX_TARGETS = 200
 MAX_GRID_Y = 10000
 MAX_GRID_H = 40
 MAX_KPI_BUCKET_LENGTH = 200
-
-BOOKING_ONLY_FILTERS_DETAIL = "The Teams and People filters apply to booked time only"
 
 
 def _error(message: str) -> PydanticCustomError:
@@ -168,6 +172,15 @@ class MetricFilters(_Strict):
     field_options: dict[int, IdList] | None = Field(default=None, max_length=100)
     archived: Literal["exclude", "include", "only"] = "exclude"
     period: Period = Field(default_factory=lambda: RelativePeriod(relative="this_year"))
+    equipment_ids: IdList | None = None
+    equipment_types: (
+        Annotated[
+            list[Annotated[str, Field(min_length=1, max_length=100)]],
+            Field(max_length=100),
+        ]
+        | None
+    ) = None
+    milestones: Literal["include", "only", "exclude"] = "include"
 
 
 class MetricQuery(_Strict):
@@ -190,12 +203,16 @@ class MetricQuery(_Strict):
             message = matrix_error(self.measure, kind)
             if message:
                 raise _error(message)
-        # The person's teams and the person exist only on a booking: a project
-        # or phase measure would silently ignore them.
-        if self.measure not in BOOKING_MEASURES and (
-            self.filters.team_ids or self.filters.person_ids
-        ):
-            raise _error(BOOKING_ONLY_FILTERS_DETAIL)
+        # A filter the measure's facts do not carry would be silently ignored
+        # (``metrics.MEASURE_FILTERS``); a default value is no filter.
+        for key in FILTER_KEYS:
+            message = filter_error(self.measure, key)
+            if message and filter_given(self.filters, key):
+                raise _error(message)
+        if self.percent_of is not None:
+            message = percent_error(self.measure)
+            if message:
+                raise _error(message)
         if self.percent_of is not None and not self.dimensions:
             raise _error("A percentage needs a dimension")
         if self.percent_of == "first_dimension" and len(self.dimensions) != 2:

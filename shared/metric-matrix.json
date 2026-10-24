@@ -15,6 +15,20 @@
         "site",
         "tag",
         "team"
+      ],
+      "needs": null,
+      "filters": [
+        "archived",
+        "confirmed",
+        "field_options",
+        "period",
+        "person_ids",
+        "project_ids",
+        "project_manager_ids",
+        "project_team_ids",
+        "site_ids",
+        "tag_ids",
+        "team_ids"
       ]
     },
     "booked_weeks": {
@@ -32,6 +46,20 @@
         "site",
         "tag",
         "team"
+      ],
+      "needs": null,
+      "filters": [
+        "archived",
+        "confirmed",
+        "field_options",
+        "period",
+        "person_ids",
+        "project_ids",
+        "project_manager_ids",
+        "project_team_ids",
+        "site_ids",
+        "tag_ids",
+        "team_ids"
       ]
     },
     "booking_count": {
@@ -49,6 +77,20 @@
         "site",
         "tag",
         "team"
+      ],
+      "needs": null,
+      "filters": [
+        "archived",
+        "confirmed",
+        "field_options",
+        "period",
+        "person_ids",
+        "project_ids",
+        "project_manager_ids",
+        "project_team_ids",
+        "site_ids",
+        "tag_ids",
+        "team_ids"
       ]
     },
     "people_booked": {
@@ -65,6 +107,20 @@
         "site",
         "tag",
         "team"
+      ],
+      "needs": null,
+      "filters": [
+        "archived",
+        "confirmed",
+        "field_options",
+        "period",
+        "person_ids",
+        "project_ids",
+        "project_manager_ids",
+        "project_team_ids",
+        "site_ids",
+        "tag_ids",
+        "team_ids"
       ]
     },
     "project_count": {
@@ -79,6 +135,18 @@
         "project_team",
         "site",
         "tag"
+      ],
+      "needs": null,
+      "filters": [
+        "archived",
+        "confirmed",
+        "field_options",
+        "period",
+        "project_ids",
+        "project_manager_ids",
+        "project_team_ids",
+        "site_ids",
+        "tag_ids"
       ]
     },
     "project_weeks": {
@@ -93,6 +161,18 @@
         "project_team",
         "site",
         "tag"
+      ],
+      "needs": null,
+      "filters": [
+        "archived",
+        "confirmed",
+        "field_options",
+        "period",
+        "project_ids",
+        "project_manager_ids",
+        "project_team_ids",
+        "site_ids",
+        "tag_ids"
       ]
     },
     "project_volume": {
@@ -106,6 +186,18 @@
         "project_team",
         "site",
         "tag"
+      ],
+      "needs": null,
+      "filters": [
+        "archived",
+        "confirmed",
+        "field_options",
+        "period",
+        "project_ids",
+        "project_manager_ids",
+        "project_team_ids",
+        "site_ids",
+        "tag_ids"
       ]
     },
     "phase_count": {
@@ -121,6 +213,19 @@
         "project_team",
         "site",
         "tag"
+      ],
+      "needs": null,
+      "filters": [
+        "archived",
+        "confirmed",
+        "field_options",
+        "milestones",
+        "period",
+        "project_ids",
+        "project_manager_ids",
+        "project_team_ids",
+        "site_ids",
+        "tag_ids"
       ]
     },
     "phase_weeks": {
@@ -136,13 +241,30 @@
         "project_team",
         "site",
         "tag"
+      ],
+      "needs": null,
+      "filters": [
+        "archived",
+        "confirmed",
+        "field_options",
+        "milestones",
+        "period",
+        "project_ids",
+        "project_manager_ids",
+        "project_team_ids",
+        "site_ids",
+        "tag_ids"
       ]
     }
   },
   "needs": {
     "person": "views.staff",
+    "person_ids": "views.staff",
+    "equipment_ids": "views.equipment",
+    "equipment_types": "views.equipment",
     "archived": "views.archived"
   },
+  "no_percent": [],
   "relative_periods": [
     "this_year",
     "last_year",

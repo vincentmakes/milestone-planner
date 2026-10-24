@@ -80,13 +80,14 @@ from app.services.dashboard_access import (
     visible_dashboards_clause,
 )
 from app.services.metrics import (
-    ARCHIVED_NEEDS,
+    VIEWER_KEYS,
     Facts,
     MetricError,
     Viewer,
     aggregate,
     load_extent,
     load_facts,
+    measure_families,
     missing_permission,
     permission_message,
     resolve_period,
@@ -114,10 +115,7 @@ def _today() -> date:
 
 
 def _viewer(user: User) -> Viewer:
-    return Viewer(
-        can_see_staff=user.permissions.has("views.staff"),
-        can_see_archived=user.permissions.has(ARCHIVED_NEEDS),
-    )
+    return Viewer(frozenset(key for key in VIEWER_KEYS if user.permissions.has(key)))
 
 
 def _dump(value: Any) -> str:
@@ -632,6 +630,10 @@ async def _load_for(
         archived=archived,
         today=today,
         extents=extents,
+        # The capacity / equipment facts load only when a widget reads them.
+        families=frozenset(
+            family for query in queries for family in measure_families(query.measure)
+        ),
     )
 
 

@@ -39,7 +39,7 @@ from app.services.metrics import (
 )
 
 TODAY = date(2026, 10, 23)
-FULL = Viewer(can_see_staff=True, can_see_archived=True)
+FULL = Viewer(frozenset({"views.staff", "views.equipment", "views.archived"}))
 MARCH = {"from": "2026-03-01", "to": "2026-03-31"}
 
 
@@ -817,12 +817,12 @@ def test_dimension_labels_name_the_field_and_the_grain():
     ("viewer", "query", "message"),
     [
         (
-            Viewer(can_see_staff=False, can_see_archived=True),
+            Viewer(frozenset({"views.equipment", "views.archived"})),
             {"measure": "booked_days", "dimensions": [{"kind": "person"}]},
             "This widget needs the Staff view permission",
         ),
         (
-            Viewer(can_see_staff=True, can_see_archived=False),
+            Viewer(frozenset({"views.staff", "views.equipment"})),
             {"measure": "project_count", "filters": {"archived": "only"}},
             "This widget needs the Archived view permission",
         ),
@@ -835,7 +835,7 @@ def test_missing_permission_is_an_error(viewer, query, message):
 
 
 def test_people_booked_without_a_person_dimension_needs_no_staff_view():
-    viewer = Viewer(can_see_staff=False, can_see_archived=False)
+    viewer = Viewer(frozenset())
     result = aggregate(
         facts(bookings=[booking(1, "2026-03-02", "2026-03-06")]), q("people_booked"), viewer=viewer
     )
@@ -1130,11 +1130,11 @@ SPEC_REFUSALS = [
     ),
     (
         {"measure": "project_count", "filters": {"team_ids": [10]}},
-        "The Teams and People filters apply to booked time only",
+        "The Teams filter does not apply to projects",
     ),
     (
         {"measure": "phase_weeks", "filters": {"person_ids": [2]}},
-        "The Teams and People filters apply to booked time only",
+        "The People filter does not apply to phase weeks",
     ),
 ]
 
@@ -1166,6 +1166,299 @@ def test_spec_accepts_two_fields_and_booking_only_filters_where_they_apply():
         {"measure": "project_count", "filters": {"team_ids": [], "person_ids": []}}
     )
     assert empty.filters.person_ids == []
+
+
+FAMILY_FILTER_REFUSALS = [
+    # One per family: a filter its facts do not carry.
+    (
+        {"measure": "booked_days", "filters": {"milestones": "only"}},
+        "The Milestones filter does not apply to booked days",
+    ),
+    (
+        {"measure": "booking_count", "filters": {"equipment_types": ["HPLC"]}},
+        "The Equipment types filter does not apply to bookings",
+    ),
+    (
+        {"measure": "project_count", "filters": {"person_ids": [1]}},
+        "The People filter does not apply to projects",
+    ),
+    (
+        {"measure": "project_volume", "filters": {"milestones": "exclude"}},
+        "The Milestones filter does not apply to project volume",
+    ),
+    (
+        {"measure": "phase_count", "filters": {"equipment_ids": [4]}},
+        "The Equipment filter does not apply to phases",
+    ),
+    (
+        {"measure": "phase_weeks", "filters": {"team_ids": [10]}},
+        "The Teams filter does not apply to phase weeks",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "message"), FAMILY_FILTER_REFUSALS)
+def test_filters_that_do_not_apply_to_the_family_are_refused(body, message):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as caught:
+        MetricQuery.model_validate(body)
+    assert caught.value.errors()[0]["msg"] == message
+
+
+@pytest.mark.parametrize("measure", metrics.MEASURES)
+def test_default_filter_values_are_accepted_everywhere(measure):
+    query = MetricQuery.model_validate(
+        {
+            "measure": measure,
+            "filters": {
+                "milestones": "include",
+                "archived": "exclude",
+                "equipment_ids": [],
+                "equipment_types": None,
+                "person_ids": [],
+                "team_ids": None,
+                "field_options": {},
+                "period": {"relative": "next_12_months"},
+            },
+        }
+    )
+    assert query.filters.milestones == "include"
+    assert all(metrics.filter_error(measure, key) is None for key in ("archived", "period"))
+
+
+def test_phase_measures_take_the_milestones_filter():
+    query = MetricQuery.model_validate(
+        {"measure": "phase_count", "filters": {"milestones": "only"}}
+    )
+    assert query.filters.milestones == "only"
+    assert not metrics.filter_given(
+        MetricQuery.model_validate({"measure": "phase_count"}).filters, "milestones"
+    )
+
+
+def test_equipment_filter_bounds():
+    from pydantic import ValidationError
+
+    for types in ([""], ["x" * 101], ["t"] * 101):
+        with pytest.raises(ValidationError):
+            MetricQuery.model_validate(
+                {"measure": "booked_days", "filters": {"equipment_types": types}}
+            )
+    with pytest.raises(ValidationError):
+        MetricQuery.model_validate({"measure": "phase_count", "filters": {"milestones": "some"}})
+
+
+def test_percent_of_a_percentage_measure_is_refused(monkeypatch):
+    from pydantic import ValidationError
+
+    # NO_PERCENT_MEASURES is empty until Task 2 adds the capacity ratios.
+    monkeypatch.setattr(metrics, "NO_PERCENT_MEASURES", frozenset({"phase_weeks", "booked_days"}))
+    monkeypatch.setitem(metrics.NO_PERCENT_MESSAGES, "booked_days", "Booked days cannot be one")
+    body = {"measure": "phase_weeks", "dimensions": [{"kind": "site"}], "percent_of": "total"}
+    with pytest.raises(ValidationError) as caught:
+        MetricQuery.model_validate(body)
+    assert caught.value.errors()[0]["msg"] == "Phase weeks is already a percentage"
+    assert metrics.percent_error("booked_days") == "Booked days cannot be one"
+    assert metrics.percent_error("project_count") is None
+    # Without percent_of the measure is accepted.
+    MetricQuery.model_validate({**body, "percent_of": None})
+
+
+@pytest.mark.parametrize(
+    ("query", "keys", "needed"),
+    [
+        # A dimension.
+        ({"measure": "booked_days", "dimensions": [{"kind": "person"}]}, set(), "views.staff"),
+        # A given filter.
+        ({"measure": "booked_days", "filters": {"person_ids": [1]}}, set(), "views.staff"),
+        ({"measure": "booked_days", "filters": {"person_ids": []}}, set(), None),
+        # The archived mode, checked last.
+        ({"measure": "project_count", "filters": {"archived": "include"}}, set(), "views.archived"),
+        (
+            {
+                "measure": "booked_days",
+                "dimensions": [{"kind": "person"}],
+                "filters": {"archived": "only"},
+            },
+            {"views.staff"},
+            "views.archived",
+        ),
+        ({"measure": "project_count", "filters": {"archived": "only"}}, {"views.archived"}, None),
+    ],
+)
+def test_missing_permission_in_order(query, keys, needed):
+    viewer = Viewer(frozenset(keys))
+    assert metrics.missing_permission(MetricQuery.model_validate(query), viewer) == needed
+
+
+def test_missing_permission_for_a_measure_family_and_an_equipment_filter(monkeypatch):
+    # No public measure needs a key until Tasks 2 / 3: borrow the booking family.
+    monkeypatch.setitem(metrics.MEASURE_NEEDS, "booking", "views.equipment")
+    query = MetricQuery.model_validate(
+        {"measure": "booked_days", "dimensions": [{"kind": "person"}]}
+    )
+    assert metrics.missing_permission(query, Viewer(frozenset())) == "views.equipment"
+    assert (
+        metrics.missing_permission(query, Viewer(frozenset({"views.equipment"}))) == "views.staff"
+    )
+    with pytest.raises(MetricError) as caught:
+        aggregate(facts(), query, viewer=Viewer(frozenset({"views.staff"})))
+    assert caught.value.message == "This widget needs the Equipment view permission"
+    # The equipment filters need views.equipment (Task 3 gives them a measure).
+    monkeypatch.setitem(metrics.FILTER_NEEDS, "site_ids", "views.equipment")
+    monkeypatch.delitem(metrics.MEASURE_NEEDS, "booking")
+    sited = MetricQuery.model_validate({"measure": "project_count", "filters": {"site_ids": [1]}})
+    assert metrics.missing_permission(sited, Viewer(frozenset())) == "views.equipment"
+
+
+def test_viewer_has_its_keys():
+    viewer = Viewer(frozenset({"views.staff"}))
+    assert viewer.has("views.staff") and not viewer.has("views.equipment")
+
+
+# --- Composite plumbing (round 3, Task 1) ----------------------------------------
+# Plumbing coverage only: no public measure is a composite yet. Task 2 replaces
+# these with the real capacity measures (utilisation, available_days,
+# people_over_capacity).
+
+
+@pytest.fixture
+def ratio_test(monkeypatch):
+    """A composite ``ratio_test`` = booked days / project weeks x 100."""
+    seen: list[dict[Any, tuple[float, float]]] = []
+
+    def rule(num: float, den: float, subjects: dict[Any, tuple[float, float]]) -> float | None:
+        seen.append(subjects)
+        return metrics.ratio_percent(num, den)
+
+    monkeypatch.setitem(metrics.COMPOSITES, "ratio_test", ("booked_days", "project_weeks"))
+    monkeypatch.setitem(metrics.COMPOSITE_RULES, "ratio_test", rule)
+    monkeypatch.setitem(metrics.FAMILY, "ratio_test", "booking")
+    monkeypatch.setitem(metrics.UNITS, "ratio_test", "percent")
+    monkeypatch.setitem(metrics.MEASURE_LABELS, "ratio_test", "Ratio test")
+    monkeypatch.setattr(metrics, "FLOAT_MEASURES", frozenset({"ratio_test"}))
+    return seen
+
+
+def ratio_query(dimensions: list[dict[str, Any]], period: dict[str, str] = MARCH, **extra: Any):
+    return q("booked_days", dimensions, period, **extra).model_copy(
+        update={"measure": "ratio_test"}
+    )
+
+
+RATIO_PROJECTS = [
+    project(1, end=d("2026-03-31")),
+    project(2, end=d("2026-03-31")),
+    project(3, end=d("2026-03-31")),
+    # Ends in February: no project weeks in March, yet booked in March.
+    project(4, start=d("2026-02-01"), end=d("2026-02-28")),
+]
+RATIO_BOOKINGS = [
+    booking(1, "2026-03-02", "2026-03-06", project_id=1),
+    booking(2, "2026-03-02", "2026-03-06", project_id=2, allocation=50, person=2),
+    booking(3, "2026-03-02", "2026-03-06", project_id=4),
+]
+
+
+def test_composite_runs_both_sides_and_keeps_none_for_a_ratio_over_nothing(ratio_test):
+    result = aggregate(
+        facts(projects=RATIO_PROJECTS, bookings=RATIO_BOOKINGS),
+        ratio_query([{"kind": "project"}]),
+        viewer=FULL,
+    ).to_dict()
+    # March: 22 working days -> 4.4 project weeks per project.
+    assert [(r["keys"][0]["label"], r["value"]) for r in result["rows"]] == [
+        ("Project 1", 113.64),  # 5 / 4.4
+        ("Project 2", 56.82),  # 2.5 / 4.4
+        ("Project 3", 0.0),  # nothing booked
+        ("Project 4", None),  # booked, no weeks
+    ]
+    assert result["total"] == 94.7  # 12.5 / 13.2
+    assert result["unit"] == "percent"
+    # The total's fold (the first call) gets the subjects: the person on the
+    # booking side, None on the project side.
+    total_subjects = ratio_test[0]
+    assert set(total_subjects) == {1, 2, None}
+    assert total_subjects[1] == (10.0, 0.0) and total_subjects[2] == (2.5, 0.0)
+    assert total_subjects[None] == (0.0, pytest.approx(13.2))
+
+
+def test_composite_total_is_none_when_only_the_numerator_has_facts(ratio_test):
+    result = aggregate(
+        facts(projects=[RATIO_PROJECTS[3]], bookings=[RATIO_BOOKINGS[2]]),
+        ratio_query([]),
+        viewer=FULL,
+    ).to_dict()
+    assert result["rows"] == [{"keys": [], "value": None}]
+    assert result["total"] is None
+
+
+def test_composite_top_n_ranks_by_the_ratio_with_none_last(ratio_test):
+    result = aggregate(
+        facts(projects=RATIO_PROJECTS, bookings=RATIO_BOOKINGS),
+        ratio_query([{"kind": "project"}], top_n=2),
+        viewer=FULL,
+    ).to_dict()
+    # Project 3 (0 %) and Project 4 (None) fold into Other: 5 / 4.4.
+    assert [(r["keys"][0]["label"], r["value"]) for r in result["rows"]] == [
+        ("Project 1", 113.64),
+        ("Project 2", 56.82),
+        ("Other", 113.64),
+    ]
+    assert metrics._rank(None) > metrics._rank(0.0) > metrics._rank(5.0)
+
+
+def test_composite_empty_period_buckets_stay_zero(ratio_test):
+    result = aggregate(
+        facts(projects=RATIO_PROJECTS[:1], bookings=RATIO_BOOKINGS[:1]),
+        ratio_query(
+            [{"kind": "period", "grain": "month"}], {"from": "2026-03-01", "to": "2026-04-30"}
+        ),
+        viewer=FULL,
+    ).to_dict()
+    assert [(r["keys"][0]["label"], r["value"]) for r in result["rows"]] == [
+        ("Mar 2026", 113.64),
+        ("Apr 2026", 0.0),
+    ]
+
+
+def test_ratio_percent_rule():
+    assert metrics.ratio_percent(5, 0) is None
+    assert metrics.ratio_percent(0, 0) == 0.0
+    assert metrics.ratio_percent(1, 4) == 25.0
+
+
+def test_unknown_measures_and_families_are_errors(monkeypatch):
+    item = metrics._Item("project", 1, project(), d("2026-03-02"), d("2026-03-06"))
+    calendar = WorkingCalendar({})
+    with pytest.raises(MetricError, match="Unknown measure"):
+        metrics._amount("nothing", item, calendar, d("2026-03-02"), d("2026-03-06"))
+    with pytest.raises(MetricError, match="Unknown measure"):
+        metrics._combine("nothing", [])
+    monkeypatch.setitem(metrics.COMPOSITES, "no_rule", ("booked_days", "project_weeks"))
+    with pytest.raises(MetricError, match="Unknown measure"):
+        metrics._combine("no_rule", [])
+    monkeypatch.setitem(metrics.FAMILY, "orphan", "nowhere")
+    with pytest.raises(MetricError, match="Unknown measure family"):
+        list(metrics._items(facts(), "orphan", metrics._Filters(archived="exclude"), "nowhere"))
+    assert metrics._subject("project_count", item) is None
+
+
+def test_notes_name_the_family():
+    team = metrics._Dimension("team", "Team")
+    site = metrics._Dimension("site", "Site")
+    tag = metrics._Dimension("tag", "Tag")
+    assert metrics._note(team, "booking") == "A booking in several teams counts in each"
+    assert metrics._note(tag, "project") == "A project with several tags counts in each"
+    assert metrics._note(tag, "phase") == "A phase of a project with several tags counts in each"
+    assert metrics._note(team, "capacity") == "A person in several teams counts in each"
+    assert metrics._note(site, "capacity") == "A person at several sites counts in each"
+    assert metrics._note(site, "equipment") == "Equipment at several sites counts in each"
+    assert (
+        metrics._note(site, "booking")
+        == 'A booking of a project with several "Site" items counts in each'
+    )
 
 
 def test_spec_accepts_the_longest_period_and_defaults():

@@ -267,7 +267,9 @@ async def test_loaded_facts_aggregate(db):
             "filters": {"period": {"from": "2026-03-01", "to": "2026-03-31"}},
         }
     )
-    result = aggregate(facts, query, viewer=Viewer(True, True)).to_dict()
+    result = aggregate(
+        facts, query, viewer=Viewer(frozenset({"views.staff", "views.equipment", "views.archived"}))
+    ).to_dict()
     # Winterthur (5, 6 and 9 March off): project row 3 + linked 50 % x 7 +
     # clipped segment 3 + subphase 2 = 11.5; Frankfurt (4 March off): 4.
     assert [(r["keys"][0]["label"], r["value"]) for r in result["rows"]] == [
@@ -310,6 +312,23 @@ async def test_row_cap(db, monkeypatch):
     assert caught.value.message == "Narrow the filters: this query covers too many bookings"
     monkeypatch.setattr(metrics, "MAX_FACT_ROWS", 6)
     assert len((await _load(db)).bookings) == 5
+
+
+async def test_load_facts_accepts_the_families(db):
+    # Booking, project and phase facts always load; the capacity and equipment
+    # families (Tasks 2 / 3) add their facts only when named.
+    facts = await load_facts(
+        db,
+        period=MARCH,
+        visible_site_ids=None,
+        archived="exclude",
+        today=TODAY,
+        families=frozenset({"phase"}),
+    )
+    assert _bookings(facts) == _bookings(await _load(db))
+    assert len(facts.phases) == 2
+    assert facts.capacity == {} and facts.equipment == {}
+    assert facts.equipment_bookings == [] and facts.equipment_availability == []
 
 
 async def test_load_extent(db):

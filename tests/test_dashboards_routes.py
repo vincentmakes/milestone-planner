@@ -1035,7 +1035,7 @@ def _detail(resp) -> str:
         ),
         (
             {"measure": "project_weeks", "filters": {"person_ids": [1]}},
-            "The Teams and People filters apply to booked time only",
+            "The People filter does not apply to project weeks",
         ),
         ({**BY_SITE, "dimensions": [{"kind": "field", "field_id": 30}]}, '"Notes" cannot be used'),
         ({**BY_SITE, "dimensions": [{"kind": "field", "field_id": 99}]}, "no longer exists"),
@@ -1076,6 +1076,29 @@ async def test_query_permission_refusals(authed_client, permissions, body, messa
     assert resp.status_code == 422 and resp.json()["detail"] == message
 
 
+def test_viewer_holds_the_users_view_keys():
+    assert dashboards_router._viewer(admin()).keys == frozenset(
+        {"views.staff", "views.equipment", "views.archived"}
+    )
+    partial = uma(permissions={"views.dashboards", "views.equipment", "views.kanban"})
+    assert dashboards_router._viewer(partial).keys == frozenset({"views.equipment"})
+
+
+@pytest.mark.parametrize(
+    ("measure", "families"),
+    [("phase_count", {"phase"}), ("booked_days", {"booking"}), ("project_volume", {"project"})],
+)
+async def test_query_loads_the_families_of_its_measure(authed_client, measure, families):
+    client, set_user = authed_client
+    set_user(admin())
+    with patch.object(
+        dashboards_router, "load_facts", wraps=dashboards_router.load_facts
+    ) as loader:
+        resp = await client.post("/api/dashboards/query", json={"measure": measure})
+    assert resp.status_code == 200
+    assert loader.await_args.kwargs["families"] == frozenset(families)
+
+
 async def test_query_too_many_facts(authed_client, monkeypatch):
     client, set_user = authed_client
     set_user(uma())
@@ -1111,6 +1134,8 @@ async def test_data_answers_each_widget_from_one_load(authed_client):
     assert loader.await_count == 1
     # The union of the valid widgets' periods ("all" = the projects' extent).
     assert loader.await_args.kwargs["period"] == (date(2026, 1, 1), date(2026, 12, 31))
+    # The families of the widgets that parsed and passed the permission check.
+    assert loader.await_args.kwargs["families"] == frozenset({"booking", "project"})
     body = resp.json()
     assert body["loaded_at"].endswith("Z")
     results = body["widgets"]
@@ -1124,9 +1149,7 @@ async def test_data_answers_each_widget_from_one_load(authed_client):
     assert widgets["Archived only"] == {"error": "This widget needs the Archived view permission"}
     assert widgets["Gone field"] == {"error": "The project field of this widget no longer exists"}
     assert widgets["All time"]["rows"] == [{"keys": [], "value": 1}]
-    assert widgets["Projects of a team"] == {
-        "error": "The Teams and People filters apply to booked time only"
-    }
+    assert widgets["Projects of a team"] == {"error": "The Teams filter does not apply to projects"}
     # A People filter needs the Staff view, like the person dimension.
     assert widgets["One person"] == {"error": "This widget needs the Staff view permission"}
 

@@ -42,7 +42,7 @@ SNAPSHOT = Path(__file__).with_name("demo_data_snapshot.json")
 # A January, a mid-year and a December seed day.
 SEED_DAYS = [date(2027, 1, 14), date(2026, 6, 17), date(2026, 12, 9)]
 
-VIEWER = metrics.Viewer(can_see_staff=True, can_see_archived=True)
+VIEWER = metrics.Viewer(frozenset({"views.staff", "views.equipment", "views.archived"}))
 
 
 # ---------------------------------------------------------------------------

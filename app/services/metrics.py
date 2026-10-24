@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import json
 from bisect import bisect_left, bisect_right
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from itertools import product
@@ -68,17 +68,49 @@ if TYPE_CHECKING:
 # Vocabulary
 # ---------------------------------------------------------------------------
 
+# Measure families: which facts a measure counts. ``booking`` = approved
+# staff bookings, ``project`` = projects, ``phase`` = top-level phases,
+# ``capacity`` = bookable people's capacity (round 3, Task 2), ``equipment`` =
+# equipment bookings and availability (round 3, Task 3).
+FAMILIES: tuple[str, ...] = ("booking", "project", "phase", "capacity", "equipment")
+
+# The public measures, in family order (the builder lists them grouped).
 MEASURES: tuple[str, ...] = (
+    # booking
     "booked_days",
     "booked_weeks",
     "booking_count",
     "people_booked",
+    # project
     "project_count",
     "project_weeks",
     "project_volume",
+    # phase
     "phase_count",
     "phase_weeks",
+    # capacity (Task 2): capacity_days, available_days, utilisation,
+    # people_over_capacity
+    # equipment (Task 3): equipment_booked_days, equipment_booking_count,
+    # equipment_booked, equipment_utilisation
 )
+# Base measures a composite is built from that are never offered on their
+# own: not in ``MEASURES``, the schema Literal or the JSON mirror (Task 3
+# adds ``equipment_available_days``). They still need a ``FAMILY`` entry.
+INTERNAL_MEASURES: frozenset[str] = frozenset()
+
+# measure -> family, for every public and internal measure.
+FAMILY: dict[str, str] = {
+    "booked_days": "booking",
+    "booked_weeks": "booking",
+    "booking_count": "booking",
+    "people_booked": "booking",
+    "project_count": "project",
+    "project_weeks": "project",
+    "project_volume": "project",
+    "phase_count": "phase",
+    "phase_weeks": "phase",
+}
+
 PLAIN_DIMENSION_KINDS: tuple[str, ...] = (
     "site",
     "team",
@@ -122,6 +154,7 @@ PERIOD_LABELS: dict[str, str] = {
 }
 GRAINS: tuple[str, ...] = ("year", "quarter", "month", "week")
 ARCHIVED_MODES: tuple[str, ...] = ("exclude", "include", "only")
+MILESTONE_MODES: tuple[str, ...] = ("include", "only", "exclude")
 
 # A period covers at most five years (inclusive days).
 MAX_PERIOD_DAYS = 1826
@@ -130,15 +163,29 @@ PERIOD_TOO_LONG_DETAIL = "A period can cover at most five years"
 MAX_FACT_ROWS = 200_000
 TOO_MANY_FACTS_DETAIL = "Narrow the filters: this query covers too many bookings"
 
-BOOKING_MEASURES: frozenset[str] = frozenset(
-    {"booked_days", "booked_weeks", "booking_count", "people_booked"}
-)
-PROJECT_MEASURES: frozenset[str] = frozenset({"project_count", "project_weeks", "project_volume"})
-PHASE_MEASURES: frozenset[str] = frozenset({"phase_count", "phase_weeks"})
-# Summed amounts (the rest count distinct facts).
+# Summed amounts, deduplicated per fact and bucket.
 ADDITIVE_MEASURES: frozenset[str] = frozenset(
     {"booked_days", "booked_weeks", "project_weeks", "phase_weeks"}
 )
+# Counts of distinct things (``_ident``); ``project_volume`` sums one amount
+# per distinct project.
+COUNT_MEASURES: frozenset[str] = frozenset(
+    {"booking_count", "people_booked", "project_count", "phase_count"}
+)
+# Composite measures: ``measure -> (numerator base, denominator base)``. The
+# engine runs the item loop once per side with that side's base measure and
+# ``_combine_composite`` folds the two sums with ``COMPOSITE_RULES[measure]``
+# (Task 2 adds ``utilisation`` / ``available_days`` / ``people_over_capacity``
+# over ``("booked_days", "capacity_days")``, Task 3 ``equipment_utilisation``
+# over ``("equipment_booked_days", "equipment_available_days")``).
+COMPOSITES: dict[str, tuple[str, str]] = {}
+# Measures that are already a percentage (or cannot be one): ``percent_of``
+# on them is refused (``percent_error``).
+NO_PERCENT_MEASURES: frozenset[str] = frozenset()
+# The refusal of ``percent_of`` per measure when the default wording does not fit.
+NO_PERCENT_MESSAGES: dict[str, str] = {}
+# Non-additive measures that keep two decimals (ratios) instead of an int.
+FLOAT_MEASURES: frozenset[str] = frozenset()
 
 UNITS: dict[str, str] = {
     "booked_days": "days",
@@ -185,6 +232,109 @@ GRAIN_LABELS: dict[str, str] = {
     "week": "Week",
 }
 
+# --- Filters per measure ---------------------------------------------------
+
+# Every filter key of ``MetricFilters``, in the order refusals check them.
+FILTER_KEYS: tuple[str, ...] = (
+    "site_ids",
+    "team_ids",
+    "project_team_ids",
+    "person_ids",
+    "project_ids",
+    "project_manager_ids",
+    "tag_ids",
+    "confirmed",
+    "field_options",
+    "archived",
+    "period",
+    "equipment_ids",
+    "equipment_types",
+    "milestones",
+)
+FILTER_LABELS: dict[str, str] = {
+    "site_ids": "Sites",
+    "team_ids": "Teams",
+    "project_team_ids": "Project teams",
+    "person_ids": "People",
+    "project_ids": "Projects",
+    "project_manager_ids": "Project managers",
+    "tag_ids": "Tags",
+    "confirmed": "Confirmed",
+    "field_options": "Project fields",
+    "archived": "Archived",
+    "period": "Period",
+    "equipment_ids": "Equipment",
+    "equipment_types": "Equipment types",
+    "milestones": "Milestones",
+}
+# The value of a filter that is no filter (lists and ``confirmed``: None or
+# empty). ``period`` always applies and is never refused.
+FILTER_DEFAULTS: dict[str, Any] = {"archived": "exclude", "milestones": "include"}
+
+_PROJECT_FILTERS: frozenset[str] = frozenset(
+    {
+        "site_ids",
+        "project_team_ids",
+        "project_ids",
+        "project_manager_ids",
+        "tag_ids",
+        "confirmed",
+        "field_options",
+        "archived",
+        "period",
+    }
+)
+FAMILY_FILTERS: dict[str, frozenset[str]] = {
+    # The person's teams and the person exist only on a booking.
+    "booking": _PROJECT_FILTERS | {"team_ids", "person_ids"},
+    "project": _PROJECT_FILTERS,
+    "phase": _PROJECT_FILTERS | {"milestones"},
+    "capacity": frozenset({"site_ids", "team_ids", "person_ids", "archived", "period"}),
+    "equipment": _PROJECT_FILTERS | {"equipment_ids", "equipment_types"},
+}
+# A measure whose filters differ from its family's (Task 3:
+# ``equipment_utilisation``).
+MEASURE_FILTER_OVERRIDES: dict[str, frozenset[str]] = {}
+# measure -> the filters it accepts (a given filter outside it is a 422).
+MEASURE_FILTERS: dict[str, frozenset[str]] = {
+    measure: MEASURE_FILTER_OVERRIDES.get(measure, FAMILY_FILTERS[FAMILY[measure]])
+    for measure in MEASURES
+}
+
+
+def filter_given(filters: Any, key: str) -> bool:
+    """Whether ``filters`` (a ``MetricFilters``) sets ``key`` to a non-default value."""
+    if key == "period":
+        return True
+    value = getattr(filters, key, None)
+    if key in FILTER_DEFAULTS:
+        return bool(value != FILTER_DEFAULTS[key])
+    return value is not None and value != [] and value != {}
+
+
+def filter_error(measure: str, key: str) -> str | None:
+    """The refusal of filter ``key`` on ``measure``, or None when it applies."""
+    if key == "period" or key in MEASURE_FILTERS[measure]:
+        return None
+    return f"The {FILTER_LABELS[key]} filter does not apply to {MEASURE_LABELS[measure].lower()}"
+
+
+def percent_error(measure: str) -> str | None:
+    """The refusal of ``percent_of`` on ``measure``, or None when it may be a percentage."""
+    if measure not in NO_PERCENT_MEASURES:
+        return None
+    return NO_PERCENT_MESSAGES.get(measure, f"{MEASURE_LABELS[measure]} is already a percentage")
+
+
+def measure_families(measure: str) -> tuple[str, ...]:
+    """The families whose facts ``measure`` reads: its own, then a composite's bases'."""
+    families = [FAMILY[measure]]
+    for base in COMPOSITES.get(measure, ()):
+        if FAMILY[base] not in families:
+            families.append(FAMILY[base])
+    return tuple(families)
+
+
 # --- The validity matrix ---------------------------------------------------
 
 _PROJECT_DIMENSIONS: frozenset[str] = frozenset(
@@ -200,14 +350,14 @@ _PROJECT_DIMENSIONS: frozenset[str] = frozenset(
         "period",
     }
 )
-_ALL_DIMENSIONS: frozenset[str] = frozenset(DIMENSION_KINDS)
+_BOOKING_DIMENSIONS: frozenset[str] = _PROJECT_DIMENSIONS | {"team", "person", "phase_type"}
 
 MATRIX: dict[str, frozenset[str]] = {
-    "booked_days": _ALL_DIMENSIONS,
-    "booked_weeks": _ALL_DIMENSIONS,
-    "booking_count": _ALL_DIMENSIONS,
+    "booked_days": _BOOKING_DIMENSIONS,
+    "booked_weeks": _BOOKING_DIMENSIONS,
+    "booking_count": _BOOKING_DIMENSIONS,
     # Distinct people are not additive over time.
-    "people_booked": _ALL_DIMENSIONS - {"period"},
+    "people_booked": _BOOKING_DIMENSIONS - {"period"},
     "project_count": _PROJECT_DIMENSIONS,
     "project_weeks": _PROJECT_DIMENSIONS,
     # A volume is not spread over time.
@@ -217,9 +367,24 @@ MATRIX: dict[str, frozenset[str]] = {
 }
 # The permission a dimension needs (the per-person load is gated by it).
 NEEDS: dict[str, str] = {"person": "views.staff"}
+# The permission a measure family needs (keyed by family).
+MEASURE_NEEDS: dict[str, str] = {"capacity": "views.staff", "equipment": "views.equipment"}
+# The permission a given filter needs (a People filter rebuilds the
+# per-person breakdown one id at a time).
+FILTER_NEEDS: dict[str, str] = {
+    "person_ids": "views.staff",
+    "equipment_ids": "views.equipment",
+    "equipment_types": "views.equipment",
+}
 # ``archived: include | only`` needs this key.
 ARCHIVED_NEEDS = "views.archived"
-PERMISSION_NAMES: dict[str, str] = {"views.staff": "Staff", "views.archived": "Archived"}
+PERMISSION_NAMES: dict[str, str] = {
+    "views.staff": "Staff",
+    "views.equipment": "Equipment",
+    "views.archived": "Archived",
+}
+# The keys ``missing_permission`` may ask for (the router builds ``Viewer`` from them).
+VIEWER_KEYS: tuple[str, ...] = ("views.staff", "views.equipment", "views.archived")
 
 
 def matrix_error(measure: str, kind: str) -> str | None:
@@ -230,13 +395,28 @@ def matrix_error(measure: str, kind: str) -> str | None:
 
 
 def metric_matrix_json() -> str:
-    """The content of the committed ``shared/metric-matrix.json`` (frontend mirror)."""
+    """
+    The content of the committed ``shared/metric-matrix.json`` (frontend mirror).
+
+    Per measure: its unit, the dimensions it accepts, the key its family needs
+    (``null`` when none) and the filters it accepts. ``needs`` merges the keys
+    dimensions need (``NEEDS``) and given filters need (``FILTER_NEEDS``, plus
+    ``archived`` for ``include`` / ``only``) in one map, kind or filter key ->
+    permission key: the two vocabularies share no name. ``no_percent`` lists
+    the measures ``percent_of`` is refused on.
+    """
     data: dict[str, Any] = {
         "measures": {
-            measure: {"unit": UNITS[measure], "dimensions": sorted(MATRIX[measure])}
+            measure: {
+                "unit": UNITS[measure],
+                "dimensions": sorted(MATRIX[measure]),
+                "needs": MEASURE_NEEDS.get(FAMILY[measure]),
+                "filters": sorted(MEASURE_FILTERS[measure]),
+            }
             for measure in MEASURES
         },
-        "needs": {"person": NEEDS["person"], "archived": ARCHIVED_NEEDS},
+        "needs": {**NEEDS, **FILTER_NEEDS, "archived": ARCHIVED_NEEDS},
+        "no_percent": sorted(NO_PERCENT_MEASURES),
         "relative_periods": list(RELATIVE_PERIODS),
         "grains": list(GRAINS),
     }
@@ -260,10 +440,12 @@ class TooManyFacts(MetricError):
 
 @dataclass(frozen=True)
 class Viewer:
-    """What the caller may see beyond the visible sites (per-widget errors)."""
+    """The view keys the caller holds beyond the visible sites (per-widget errors)."""
 
-    can_see_staff: bool
-    can_see_archived: bool
+    keys: frozenset[str]
+
+    def has(self, key: str) -> bool:
+        return key in self.keys
 
 
 def permission_message(key: str) -> str:
@@ -271,15 +453,25 @@ def permission_message(key: str) -> str:
 
 
 def missing_permission(query: Any, viewer: Viewer) -> str | None:
-    """The key ``query`` needs and ``viewer`` lacks, or None."""
+    """
+    The key ``query`` needs and ``viewer`` lacks, or None.
+
+    Checked in order: the measure's families (``MEASURE_NEEDS``), each
+    dimension (``NEEDS``), each given filter (``FILTER_NEEDS``), then the
+    archived mode.
+    """
+    for family in measure_families(query.measure):
+        needed = MEASURE_NEEDS.get(family)
+        if needed is not None and not viewer.has(needed):
+            return needed
     for dimension in query.dimensions:
         needed = NEEDS.get(dimension.kind)
-        if needed == "views.staff" and not viewer.can_see_staff:
+        if needed is not None and not viewer.has(needed):
             return needed
-    # A People filter rebuilds the per-person breakdown one id at a time.
-    if query.filters.person_ids and not viewer.can_see_staff:
-        return NEEDS["person"]
-    if query.filters.archived != "exclude" and not viewer.can_see_archived:
+    for key, needed in FILTER_NEEDS.items():
+        if filter_given(query.filters, key) and not viewer.has(needed):
+            return needed
+    if query.filters.archived != "exclude" and not viewer.has(ARCHIVED_NEEDS):
         return ARCHIVED_NEEDS
     return None
 
@@ -388,6 +580,13 @@ class Facts:
     # (min start, max end) of the projects in scope per archived mode, for
     # the ``all`` period (a mode absent or None: no project).
     extents: dict[str, tuple[date, date] | None] = field(default_factory=dict)
+    # Loaded only for the families a request needs (``load_facts(families=)``);
+    # Tasks 2 / 3 give them their fact classes. person id -> capacity fact.
+    capacity: dict[int, Any] = field(default_factory=dict)
+    # equipment id -> equipment info (labels, stale-id warnings).
+    equipment: dict[int, Any] = field(default_factory=dict)
+    equipment_bookings: list[Any] = field(default_factory=list)
+    equipment_availability: list[Any] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -745,15 +944,30 @@ class _Item(NamedTuple):
 
     kind: str
     id: Any
-    project: ProjectFact
+    # None for facts without a project (capacity and availability facts).
+    project: ProjectFact | None
     start: date
     end: date
     booking: BookingFact | None = None
     phase: PhaseFact | None = None
 
 
-def _items(facts: Facts, measure: str, flt: _Filters) -> Iterator[_Item]:
-    if measure in BOOKING_MEASURES:
+def _project_of(item: _Item) -> ProjectFact:
+    """The item's project (the matrix keeps project dimensions to project-backed facts)."""
+    assert item.project is not None
+    return item.project
+
+
+def _items(facts: Facts, measure: str, flt: _Filters, family: str) -> Iterator[_Item]:
+    """
+    The items of ``measure`` (a base measure for a composite side).
+
+    ``family`` is the family of the measure *asked*: a composite's, which can
+    differ from the base measure's own (``FAMILY[measure]`` picks the facts,
+    ``family`` the rules applied to them — Task 2's capacity rules key on it).
+    """
+    kind = FAMILY[measure]
+    if kind == "booking":
         for booking in facts.bookings:
             project = facts.projects.get(booking.project_id)
             if project is None or not _project_passes(project, flt):
@@ -770,17 +984,19 @@ def _items(facts: Facts, measure: str, flt: _Filters) -> Iterator[_Item]:
                 booking.end,
                 booking=booking,
             )
-    elif measure in PROJECT_MEASURES:
+    elif kind == "project":
         for project in facts.projects.values():
             if _project_passes(project, flt):
                 yield _Item("project", project.id, project, project.start, project.end)
-    else:
+    elif kind == "phase":
         for phase in facts.phases:
             project = facts.projects.get(phase.project_id)
             if project is None or not _project_passes(project, flt):
                 continue
             end = phase.start if phase.is_milestone else phase.end
             yield _Item("phase", phase.id, project, phase.start, end, phase=phase)
+    else:
+        raise MetricError(f"Unknown measure family: {kind} ({family})")
 
 
 def _team_values(facts: Facts, team_ids: Iterable[int], kind: str) -> list[DimValue]:
@@ -807,22 +1023,31 @@ def _field_values(facts: Facts, info: FieldInfo, value: Any) -> list[DimValue]:
     return values or [_empty("field")]
 
 
-def _values(facts: Facts, dimension: _Dimension, item: _Item) -> list[DimValue]:
-    project = item.project
+def _values(facts: Facts, dimension: _Dimension, item: _Item, family: str) -> list[DimValue]:
+    """
+    The dimension values of ``item``; ``family`` is the asked measure's (see
+    ``_items``): Task 2 reads ``site`` / ``team`` from the person there.
+    """
     kind = dimension.kind
+    if kind == "team":
+        return _team_values(facts, item.booking.team_ids if item.booking else (), kind)
+    if kind == "person":
+        booking = item.booking
+        assert booking is not None  # the matrix keeps person to booking-backed facts
+        return [_by_label(booking.person_id, booking.person_name)]
+    if kind == "phase_type":
+        phase_type = (
+            item.phase.type if item.phase else item.booking.phase_type if item.booking else None
+        )
+        return [_by_label(phase_type, phase_type)] if phase_type else [_empty(kind)]
+    project = _project_of(item)
     if kind == "site":
         if project.site_id is None:
             return [_empty(kind)]
         name = project.site_name or facts.sites.get(project.site_id, f"Site {project.site_id}")
         return [_by_label(project.site_id, name)]
-    if kind == "team":
-        return _team_values(facts, item.booking.team_ids if item.booking else (), kind)
     if kind == "project_team":
         return _team_values(facts, project.team_ids, kind)
-    if kind == "person":
-        booking = item.booking
-        assert booking is not None  # the matrix keeps person to booking measures
-        return [_by_label(booking.person_id, booking.person_name)]
     if kind == "project":
         return [_by_label(project.id, project.name)]
     if kind == "project_manager":
@@ -847,11 +1072,6 @@ def _values(facts: Facts, dimension: _Dimension, item: _Item) -> list[DimValue]:
             if (tag := facts.tags.get(tag_id)) is not None
         ]
         return tags or [_empty(kind)]
-    if kind == "phase_type":
-        phase_type = (
-            item.phase.type if item.phase else item.booking.phase_type if item.booking else None
-        )
-        return [_by_label(phase_type, phase_type)] if phase_type else [_empty(kind)]
     if kind == "field":
         assert dimension.field is not None
         return _field_values(facts, dimension.field, project.field_values.get(dimension.field.id))
@@ -859,16 +1079,19 @@ def _values(facts: Facts, dimension: _Dimension, item: _Item) -> list[DimValue]:
 
 
 def _amount(measure: str, item: _Item, calendar: WorkingCalendar, start: date, end: date) -> float:
-    if measure == "project_volume":
-        return float(item.project.volume or 0)
-    if measure not in ADDITIVE_MEASURES:
-        return 1.0
-    days = calendar.days(item.project.site_id, start, end)
+    """The amount of ``item`` over ``[start, end]`` for a base measure (one branch each)."""
     if measure in ("booked_days", "booked_weeks"):
         assert item.booking is not None
+        days = calendar.days(_project_of(item).site_id, start, end)
         booked = item.booking.allocation / 100 * days
         return booked if measure == "booked_days" else booked / 5
-    return days / 5
+    if measure in ("project_weeks", "phase_weeks"):
+        return calendar.days(_project_of(item).site_id, start, end) / 5
+    if measure == "project_volume":
+        return float(_project_of(item).volume or 0)
+    if measure in COUNT_MEASURES:
+        return 1.0  # a distinct count: the amount is unused
+    raise MetricError(f"Unknown measure: {measure}")
 
 
 def _ident(measure: str, item: _Item) -> Any:
@@ -877,8 +1100,19 @@ def _ident(measure: str, item: _Item) -> Any:
         assert item.booking is not None
         return item.booking.person_id
     if measure in ("project_count", "project_volume"):
-        return item.project.id
+        return _project_of(item).id
     return (item.kind, item.id)
+
+
+def _subject(measure: str, item: _Item) -> Any:
+    """
+    The distinct subject a composite pairs its two sides on: the person for
+    booking (and Task 2's capacity) items, the equipment for Task 3's
+    equipment items, else None. ``measure`` is the side's base measure.
+    """
+    if item.booking is not None:
+        return item.booking.person_id
+    return None
 
 
 class _Contribution(NamedTuple):
@@ -886,10 +1120,16 @@ class _Contribution(NamedTuple):
     fid: tuple[Any, ...]  # one per fact and period bucket
     ident: Any
     amount: float
+    # A composite's side: "num" (numerator base) or "den" (denominator base).
+    side: str = "num"
+    # The side's distinct subject (``_subject``): pairs the two sides per person.
+    subject: Any = None
 
 
-def _combine(measure: str, contributions: Iterable[_Contribution]) -> float:
+def _combine(measure: str, contributions: Iterable[_Contribution]) -> float | None:
     """The measure over ``contributions``, each fact (or counted thing) once."""
+    if measure in COMPOSITES:
+        return _combine_composite(measure, contributions)
     if measure in ADDITIVE_MEASURES:
         by_fid: dict[Any, float] = {}
         for c in contributions:
@@ -900,7 +1140,60 @@ def _combine(measure: str, contributions: Iterable[_Contribution]) -> float:
         for c in contributions:
             by_ident.setdefault(c.ident, c.amount)
         return sum(by_ident.values())
-    return float(len({c.ident for c in contributions}))
+    if measure in COUNT_MEASURES:
+        return float(len({c.ident for c in contributions}))
+    raise MetricError(f"Unknown measure: {measure}")
+
+
+def _base_value(measure: str, contributions: list[_Contribution]) -> float:
+    value = _combine(measure, contributions)
+    assert value is not None  # a base measure is never a composite
+    return value
+
+
+def ratio_percent(num: float, den: float) -> float | None:
+    """
+    ``num / den`` as a percentage: None when ``den`` is 0 but ``num`` is not
+    (booked time with no capacity has no utilisation), 0.0 when both are 0
+    (an empty bucket).
+    """
+    if den == 0:
+        return None if num > 0 else 0.0
+    return num / den * 100
+
+
+# measure -> its fold of ``(numerator, denominator, {subject: (num, den)})``.
+# ``_combine_composite`` is the one place composites are computed; Task 2 adds
+# ``utilisation`` (``ratio_percent``), ``available_days`` (``den - num``) and
+# ``people_over_capacity`` (subjects with ``num > den``), Task 3
+# ``equipment_utilisation`` (``ratio_percent``).
+COMPOSITE_RULES: dict[
+    str, Callable[[float, float, dict[Any, tuple[float, float]]], float | None]
+] = {}
+
+
+def _combine_composite(measure: str, contributions: Iterable[_Contribution]) -> float | None:
+    """
+    A composite over ``contributions``: each side summed with its base measure
+    (additive bases dedupe per fact and bucket), overall and per subject, then
+    folded by ``COMPOSITE_RULES[measure]``.
+    """
+    num_base, den_base = COMPOSITES[measure]
+    sides: dict[str, list[_Contribution]] = {"num": [], "den": []}
+    by_subject: dict[Any, dict[str, list[_Contribution]]] = {}
+    for c in contributions:
+        sides[c.side].append(c)
+        by_subject.setdefault(c.subject, {"num": [], "den": []})[c.side].append(c)
+    num = _base_value(num_base, sides["num"])
+    den = _base_value(den_base, sides["den"])
+    subjects = {
+        subject: (_base_value(num_base, parts["num"]), _base_value(den_base, parts["den"]))
+        for subject, parts in by_subject.items()
+    }
+    rule = COMPOSITE_RULES.get(measure)
+    if rule is None:
+        raise MetricError(f"Unknown measure: {measure}")
+    return rule(num, den, subjects)
 
 
 def _pieces(
@@ -914,10 +1207,27 @@ def _pieces(
         index += 1
 
 
-def _note(dimension: _Dimension, noun: str) -> str:
+# The subject of a family's notes ("<noun> in several teams counts in each").
+FAMILY_NOUNS: dict[str, str] = {
+    "booking": "A booking",
+    "project": "A project",
+    "phase": "A phase",
+    "capacity": "A person",
+    "equipment": "An equipment booking",
+}
+
+
+def _note(dimension: _Dimension, family: str) -> str:
+    noun = FAMILY_NOUNS[family]
+    if dimension.kind == "site":
+        # Only the person / equipment side has several sites (a project has one).
+        if family == "capacity":
+            return "A person at several sites counts in each"
+        if family == "equipment":
+            return "Equipment at several sites counts in each"
     if dimension.kind == "team":
-        return f"A {noun} in several teams counts in each"
-    of_project = "A project" if noun == "project" else f"A {noun} of a project"
+        return f"{noun} in several teams counts in each"
+    of_project = "A project" if family == "project" else f"{noun} of a project"
     if dimension.kind == "project_team":
         return f"{of_project} in several teams counts in each"
     if dimension.kind == "tag":
@@ -925,18 +1235,12 @@ def _note(dimension: _Dimension, noun: str) -> str:
     return f'{of_project} with several "{dimension.label}" items counts in each'
 
 
-def _noun(measure: str) -> str:
-    if measure in BOOKING_MEASURES:
-        return "booking"
-    return "project" if measure in PROJECT_MEASURES else "phase"
-
-
 @dataclass
 class MetricResult:
     unit: str
     dimensions: list[dict[str, str]]
-    rows: list[dict[str, Any]]
-    total: float
+    rows: list[dict[str, Any]]  # each value a number, or None (a ratio over nothing)
+    total: float | None
     truncated: bool
     warnings: list[str]
     period: tuple[date, date]
@@ -964,10 +1268,22 @@ def _key_dict(value: DimValue) -> dict[str, Any]:
     return out
 
 
-def _rounded(measure: str, value: float, percent: bool) -> float:
-    if not percent and measure not in ADDITIVE_MEASURES and measure != "project_volume":
+def _rounded(measure: str, value: float | None, percent: bool) -> float | None:
+    if value is None:
+        return None
+    if (
+        not percent
+        and measure not in ADDITIVE_MEASURES
+        and measure not in FLOAT_MEASURES
+        and measure != "project_volume"
+    ):
         return int(value)
     return round(value, 2)
+
+
+def _rank(value: float | None) -> tuple[bool, float]:
+    """Top N order: the largest first, None last."""
+    return (value is None, -(value or 0.0))
 
 
 def aggregate(facts: Facts, query: Any, *, viewer: Viewer) -> MetricResult:
@@ -983,6 +1299,7 @@ def aggregate(facts: Facts, query: Any, *, viewer: Viewer) -> MetricResult:
     flt = _resolve_filters(facts, query.filters, warnings)
     dimensions = [_resolve_dimension(facts, spec) for spec in query.dimensions]
     measure: str = query.measure
+    family = FAMILY[measure]
     calendar = WorkingCalendar(facts.holidays)
 
     period_index = next((i for i, d in enumerate(dimensions) if d.kind == "period"), None)
@@ -994,40 +1311,51 @@ def aggregate(facts: Facts, query: Any, *, viewer: Viewer) -> MetricResult:
     bucket_starts = [b.start for b in bucket_list]
     bucket_values = [_value(b.key, b.label, None, i) for i, b in enumerate(bucket_list)]
 
+    # One pass per side: a composite's numerator and denominator bases, else
+    # the measure itself. Every contribution lands in the one list below.
+    sides: list[tuple[str, str]] = (
+        [(COMPOSITES[measure][0], "num"), (COMPOSITES[measure][1], "den")]
+        if measure in COMPOSITES
+        else [(measure, "num")]
+    )
     contributions: list[_Contribution] = []
     several: set[int] = set()
-    for item in _items(facts, measure, flt):
-        first, last = max(item.start, start), min(item.end, end)
-        if first > last:
-            continue
-        lists: list[list[DimValue] | None] = []
-        for index, dimension in enumerate(dimensions):
-            if index == period_index:
-                lists.append(None)
+    for base, side in sides:
+        for item in _items(facts, base, flt, family):
+            first, last = max(item.start, start), min(item.end, end)
+            if first > last:
                 continue
-            values = _values(facts, dimension, item)
-            if len(values) > 1:
-                several.add(index)
-            lists.append(values)
-        pieces: Iterable[tuple[int | None, date, date]] = (
-            _pieces(bucket_list, bucket_starts, first, last)
-            if period_index is not None
-            else [(None, first, last)]
-        )
-        ident = _ident(measure, item)
-        for bucket_index, piece_start, piece_end in pieces:
-            amount = _amount(measure, item, calendar, piece_start, piece_end)
-            if measure in ADDITIVE_MEASURES and amount == 0:
-                continue
-            fid = (item.kind, item.id, bucket_index)
-            combos = [
-                [bucket_values[bucket_index]]
-                if values is None and bucket_index is not None
-                else values or []
-                for values in lists
-            ]
-            for combo in product(*combos):
-                contributions.append(_Contribution(tuple(combo), fid, ident, amount))
+            lists: list[list[DimValue] | None] = []
+            for index, dimension in enumerate(dimensions):
+                if index == period_index:
+                    lists.append(None)
+                    continue
+                values = _values(facts, dimension, item, family)
+                if len(values) > 1:
+                    several.add(index)
+                lists.append(values)
+            pieces: Iterable[tuple[int | None, date, date]] = (
+                _pieces(bucket_list, bucket_starts, first, last)
+                if period_index is not None
+                else [(None, first, last)]
+            )
+            ident = _ident(base, item)
+            subject = _subject(base, item)
+            for bucket_index, piece_start, piece_end in pieces:
+                amount = _amount(base, item, calendar, piece_start, piece_end)
+                if base in ADDITIVE_MEASURES and amount == 0:
+                    continue
+                fid = (item.kind, item.id, bucket_index)
+                combos = [
+                    [bucket_values[bucket_index]]
+                    if values is None and bucket_index is not None
+                    else values or []
+                    for values in lists
+                ]
+                for combo in product(*combos):
+                    contributions.append(
+                        _Contribution(tuple(combo), fid, ident, amount, side, subject)
+                    )
 
     total_raw = _combine(measure, contributions)
     percent = query.percent_of is not None
@@ -1039,7 +1367,7 @@ def aggregate(facts: Facts, query: Any, *, viewer: Viewer) -> MetricResult:
             firsts.setdefault(c.values[0].key, c.values[0])
             grouped.setdefault(c.values[0].key, []).append(c)
         ranked = sorted(
-            firsts, key=lambda key: (-_combine(measure, grouped[key]), firsts[key].order)
+            firsts, key=lambda key: (*_rank(_combine(measure, grouped[key])), firsts[key].order)
         )
         if len(ranked) > query.top_n:
             kept = set(ranked[: query.top_n])
@@ -1056,7 +1384,7 @@ def aggregate(facts: Facts, query: Any, *, viewer: Viewer) -> MetricResult:
         for value in bucket_values:
             rows_by_key.setdefault((value.key,), ((value,), []))
 
-    denominators: dict[Any, float] = {}
+    denominators: dict[Any, float | None] = {}
     if query.percent_of == "first_dimension":
         by_first: dict[Any, list[_Contribution]] = {}
         for c in contributions:
@@ -1071,7 +1399,9 @@ def aggregate(facts: Facts, query: Any, *, viewer: Viewer) -> MetricResult:
             rows_by_key.values(), key=lambda entry: tuple(v.order for v in entry[0])
         ):
             raw = _combine(measure, group)
-            if query.percent_of == "total":
+            if raw is None:
+                pass  # a ratio over nothing stays empty, percentage or not
+            elif query.percent_of == "total":
                 raw = raw / total_raw * 100 if total_raw else 0.0
             elif query.percent_of == "first_dimension":
                 denominator = denominators.get(values[0].key, 0.0)
@@ -1081,7 +1411,7 @@ def aggregate(facts: Facts, query: Any, *, viewer: Viewer) -> MetricResult:
             )
 
     total = (100.0 if total_raw else 0.0) if percent else total_raw
-    notes = [_note(dimensions[i], _noun(measure)) for i in sorted(several)]
+    notes = [_note(dimensions[i], family) for i in sorted(several)]
     return MetricResult(
         unit=PERCENT_UNIT if percent else UNITS[measure],
         dimensions=[{"kind": d.kind, "label": d.label} for d in dimensions],
@@ -1227,13 +1557,17 @@ async def load_facts(
     archived: str,
     today: date,
     extents: dict[str, tuple[date, date] | None] | None = None,
+    families: frozenset[str] = frozenset(),
 ) -> Facts:
     """
     The facts for ``period`` at the visible sites (None = every site).
 
     ``archived`` is the widest mode the request needs (each widget applies
     its own). ``extents`` (archived mode -> ``load_extent``) is kept on the
-    facts for the ``all`` period. Raises ``TooManyFacts`` above
+    facts for the ``all`` period. ``families`` names the measure families the
+    request's widgets read (``measure_families``): the booking, project and
+    phase facts always load; the capacity (Task 2) and equipment (Task 3)
+    facts only when their family is named. Raises ``TooManyFacts`` above
     ``MAX_FACT_ROWS`` booking rows.
     """
     from sqlalchemy import func, or_, select
