@@ -13,8 +13,8 @@
 | **Drag staff/equipment** | Assign to a project bar on the timeline |
 | **Home** | Scroll the timeline to today |
 | **+** / **−** | Zoom the timeline in / out |
-| **Ctrl/Cmd + Z** | Undo |
-| **Ctrl/Cmd + Y**, **Ctrl/Cmd + Shift + Z** | Redo |
+| **Ctrl/Cmd + Z** | Undo (on the Gantt chart, or on a dashboard you are editing) |
+| **Ctrl/Cmd + Y**, **Ctrl/Cmd + Shift + Z** | Redo (on the Gantt chart, or on a dashboard you are editing) |
 | **Esc** | Cancel dependency linking or a phantom sibling bar |
 
 Keyboard shortcuts are ignored while a dialog is open, so typing in a dialog never acts on the Gantt chart behind it. In a dialog, **Esc** closes the dialog (or only the open picker inside it).

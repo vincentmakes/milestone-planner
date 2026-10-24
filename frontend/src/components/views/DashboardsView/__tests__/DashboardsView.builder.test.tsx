@@ -4,7 +4,7 @@
  * dashboard and screen; New (dialog first, nothing sent until Save),
  * Duplicate, Share… (sharing only), Delete; edit mode with Add widget / Save /
  * Cancel, the inline name and description (Save asks for a name), whom the
- * dashboard is shared with; the
+ * dashboard is shared with; Undo / Redo of the draft (buttons and keys); the
  * dirty guard on a dashboard switch and on leaving the view; a draft that
  * survives a live dashboard reload; nothing of the builder during What-If.
  */
@@ -242,7 +242,7 @@ describe('DashboardsView — New, Duplicate, Share…, Delete', () => {
     fireEvent.click(button('Create dashboard')!);
     expect(api.create).not.toHaveBeenCalled();
     expect(screen.getByText(FIRST_WIDGET_TEXT)).toBeInTheDocument();
-    expect(toolbarButtons()).toEqual(['Add widget', 'Save', 'Cancel']);
+    expect(toolbarButtons()).toEqual(['Undo', 'Redo', 'Add widget', 'Save', 'Cancel']);
     expect(screen.getByRole('button', { name: /^Dashboard/ })).toHaveTextContent('Capacity');
     expect(screen.getByLabelText('Name *')).toHaveValue('Capacity');
     expect(screen.getByText('Only you (and administrators)')).toBeInTheDocument();
@@ -309,7 +309,7 @@ describe('DashboardsView — New, Duplicate, Share…, Delete', () => {
       user_ids: [],
       source_id: 3,
     });
-    expect(toolbarButtons()).toEqual(['Add widget', 'Save', 'Cancel']);
+    expect(toolbarButtons()).toEqual(['Undo', 'Redo', 'Add widget', 'Save', 'Cancel']);
     expect(screen.getByText('First of 9')).toBeInTheDocument();
   });
 
@@ -515,7 +515,7 @@ describe('DashboardsView — edit mode', () => {
     expect(name).toHaveFocus();
     expect(name).toHaveAttribute('aria-invalid', 'true');
     expect(api.update).not.toHaveBeenCalled();
-    expect(toolbarButtons()).toEqual(['Add widget', 'Save', 'Cancel']);
+    expect(toolbarButtons()).toEqual(['Undo', 'Redo', 'Add widget', 'Save', 'Cancel']);
     fireEvent.change(name, { target: { value: 'Back' } });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
@@ -553,7 +553,7 @@ describe('DashboardsView — edit mode', () => {
       fireEvent.click(button('Save')!);
     });
     expect(screen.getByRole('alert')).toHaveTextContent('"Pie": A pie chart needs one dimension');
-    expect(toolbarButtons()).toEqual(['Add widget', 'Save', 'Cancel']);
+    expect(toolbarButtons()).toEqual(['Undo', 'Redo', 'Add widget', 'Save', 'Cancel']);
   });
 
   it('leaves at once when nothing changed, and asks when something did', async () => {
@@ -638,7 +638,7 @@ describe('DashboardsView — edit mode', () => {
     expect(confirm).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps Save and Cancel when the screen narrows to a phone mid-edit', async () => {
+  it('keeps Undo, Redo, Save and Cancel when the screen narrows to a phone mid-edit', async () => {
     const listeners = new Set<() => void>();
     const list = {
       matches: false,
@@ -651,7 +651,7 @@ describe('DashboardsView — edit mode', () => {
       list.matches = true;
       listeners.forEach((fn) => fn());
     });
-    expect(toolbarButtons()).toEqual(['Add widget', 'Save', 'Cancel']);
+    expect(toolbarButtons()).toEqual(['Undo', 'Redo', 'Add widget', 'Save', 'Cancel']);
   });
 
   it('caps a dashboard at 50 widgets', async () => {
@@ -664,5 +664,149 @@ describe('DashboardsView — edit mode', () => {
     fireEvent.click(button('Edit')!);
     expect(button('Add widget')).toBeDisabled();
     expect(button('Add widget')).toHaveAttribute('title', 'A dashboard holds at most 50 widgets');
+  });
+});
+
+describe('DashboardsView — undo / redo', () => {
+  async function editing(id = 2) {
+    await renderOn(id);
+    fireEvent.click(button('Edit')!);
+    expect(screen.getByTestId('grid')).toHaveAttribute('data-editing', 'true');
+  }
+  const undoButton = () => button('Undo')!;
+  const redoButton = () => button('Redo')!;
+  const press = (target: Element | Document, init: KeyboardEventInit) => {
+    const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+    act(() => {
+      target.dispatchEvent(event);
+    });
+    return event;
+  };
+
+  it('offers Undo and Redo in edit mode only, disabled with nothing to undo or redo', async () => {
+    await renderOn(2);
+    expect(button('Undo')).not.toBeInTheDocument();
+    expect(button('Redo')).not.toBeInTheDocument();
+    fireEvent.click(button('Edit')!);
+    expect(toolbarButtons()).toEqual(['Undo', 'Redo', 'Add widget', 'Save', 'Cancel']);
+    expect(undoButton()).toBeDisabled();
+    expect(redoButton()).toBeDisabled();
+    expect(undoButton()).toHaveAttribute('title', 'Undo (Ctrl+Z)');
+    expect(redoButton()).toHaveAttribute('title', 'Redo (Ctrl+Y)');
+  });
+
+  it('brings a removed widget back, and removes it again on Redo', async () => {
+    await editing();
+    fireEvent.click(button('Remove Second of 2')!);
+    expect(screen.queryByText('Second of 2')).not.toBeInTheDocument();
+    expect(undoButton()).toBeEnabled();
+    expect(screen.getByRole('status')).toHaveTextContent('Editing — unsaved changes');
+
+    fireEvent.click(undoButton());
+    expect(screen.getByText('Second of 2')).toBeInTheDocument();
+    expect(undoButton()).toBeDisabled();
+    expect(redoButton()).toBeEnabled();
+    // Back to what was opened: no unsaved change
+    expect(screen.getByRole('status')).toHaveTextContent(/^Editing$/);
+
+    fireEvent.click(redoButton());
+    expect(screen.queryByText('Second of 2')).not.toBeInTheDocument();
+    expect(redoButton()).toBeDisabled();
+  });
+
+  it('undoes the name typed inline, and Cancel then leaves without asking', async () => {
+    const confirm = stubConfirm(false);
+    await editing();
+    fireEvent.change(screen.getByLabelText('Name *'), { target: { value: 'Mine, renamed' } });
+    fireEvent.click(undoButton());
+    expect(screen.getByLabelText('Name *')).toHaveValue('Mine');
+    await act(async () => {
+      fireEvent.click(button('Cancel')!);
+    });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(button('Edit')).toBeInTheDocument();
+  });
+
+  it('undoes with Ctrl+Z and redoes with Ctrl+Y and Ctrl+Shift+Z in edit mode', async () => {
+    await editing();
+    fireEvent.click(button('Remove Second of 2')!);
+    fireEvent.click(button('Remove First of 2')!);
+
+    expect(press(document.body, { key: 'z', ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(screen.getByText('First of 2')).toBeInTheDocument();
+    press(document.body, { key: 'z', metaKey: true });
+    expect(screen.getByText('Second of 2')).toBeInTheDocument();
+
+    press(document.body, { key: 'y', ctrlKey: true });
+    expect(screen.queryByText('Second of 2')).not.toBeInTheDocument();
+    press(document.body, { key: 'Z', ctrlKey: true, shiftKey: true });
+    expect(screen.queryByText('First of 2')).not.toBeInTheDocument();
+    expect(redoButton()).toBeDisabled();
+  });
+
+  it('leaves the keys to a focused field, an open dialog, and the view outside edit mode', async () => {
+    await renderOn(2);
+    // Not editing: the builder does not listen
+    expect(press(document.body, { key: 'z', ctrlKey: true }).defaultPrevented).toBe(false);
+
+    fireEvent.click(button('Edit')!);
+    fireEvent.click(button('Remove Second of 2')!);
+    const name = screen.getByLabelText('Name *');
+    name.focus();
+    expect(press(name, { key: 'z', ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(screen.queryByText('Second of 2')).not.toBeInTheDocument();
+
+    fireEvent.click(button('Add widget')!);
+    const dialog = screen.getByRole('dialog', { name: 'Add widget' });
+    press(within(dialog).getByRole('button', { name: 'Cancel' }), { key: 'z', ctrlKey: true });
+    expect(screen.queryByText('Second of 2')).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    // Other keys, and Alt combinations, are not undo
+    press(document.body, { key: 'x', ctrlKey: true });
+    press(document.body, { key: 'z', ctrlKey: true, altKey: true });
+    press(document.body, { key: 'z' });
+    expect(screen.queryByText('Second of 2')).not.toBeInTheDocument();
+    press(document.body, { key: 'z', ctrlKey: true });
+    expect(screen.getByText('Second of 2')).toBeInTheDocument();
+  });
+
+  it('disables Undo and Redo, and the keys, while saving', async () => {
+    let finish: (value: Dashboard) => void = () => {};
+    api.update.mockImplementation(
+      () =>
+        new Promise<Dashboard>((resolve) => {
+          finish = resolve;
+        })
+    );
+    await editing();
+    fireEvent.click(button('Remove Second of 2')!);
+    fireEvent.click(button('Remove First of 2')!);
+    fireEvent.click(undoButton());
+    expect(redoButton()).toBeEnabled();
+    await act(async () => {
+      fireEvent.click(button('Save')!);
+    });
+    expect(undoButton()).toBeDisabled();
+    expect(redoButton()).toBeDisabled();
+    press(document.body, { key: 'z', ctrlKey: true });
+    expect(screen.queryByText('Second of 2')).not.toBeInTheDocument();
+    await act(async () => {
+      finish(detail(2, { widgets: [widget(21, 'First of 2')] }));
+    });
+    expect(button('Undo')).not.toBeInTheDocument();
+    expect(button('Edit')).toBeInTheDocument();
+  });
+
+  it('starts every edit with an empty history', async () => {
+    stubConfirm(true);
+    await editing();
+    fireEvent.click(button('Remove Second of 2')!);
+    await act(async () => {
+      fireEvent.click(button('Cancel')!);
+    });
+    fireEvent.click(button('Edit')!);
+    expect(undoButton()).toBeDisabled();
+    expect(redoButton()).toBeDisabled();
   });
 });

@@ -1,6 +1,7 @@
 /**
  * Global shortcuts must leave open modals alone (F1-25: no undo/redo of the
- * Gantt behind a dialog). The global Escape shortcut must leave open modals alone: the shared Modal
+ * Gantt behind a dialog), and undo/redo act on the Gantt view only (never
+ * from the Dashboards view, whose builder has its own history). The global Escape shortcut must leave open modals alone: the shared Modal
  * owns Escape and calls its own onClose (the Settings hub's is guarded by an
  * unsaved-changes confirm). With no modal open, Escape still cancels
  * dependency linking first, then phantom-sibling mode.
@@ -10,6 +11,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, cleanup, fireEvent } from '@testing-library/react';
 import { useKeyboardShortcuts } from '../useKeyboardShortcuts';
 import { useUIStore } from '@/stores/uiStore';
+import { useViewStore } from '@/stores/viewStore';
 
 const undoRedo = vi.hoisted(() => ({ undo: vi.fn(), redo: vi.fn() }));
 vi.mock('../useUndoRedo', () => ({
@@ -137,12 +139,61 @@ describe('useKeyboardShortcuts – while a modal is open', () => {
   });
 
   it('undoes and redoes when no modal is open', () => {
+    useViewStore.setState({ currentView: 'gantt' });
     renderHook(() => useKeyboardShortcuts());
 
     fireEvent.keyDown(document, { key: 'z', ctrlKey: true });
     fireEvent.keyDown(document, { key: 'y', ctrlKey: true });
+    fireEvent.keyDown(document, { key: 'Z', metaKey: true, shiftKey: true });
 
     expect(undo).toHaveBeenCalledTimes(1);
-    expect(redo).toHaveBeenCalledTimes(1);
+    expect(redo).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('useKeyboardShortcuts – undo/redo on the Gantt only', () => {
+  const { undo, redo } = undoRedo;
+
+  beforeEach(() => {
+    undo.mockReset();
+    redo.mockReset();
+    useUIStore.setState({ activeModal: null, openModalCount: 0, isLinkingDependency: false, phantomSiblingMode: null });
+  });
+
+  afterEach(() => {
+    cleanup();
+    useViewStore.setState({ currentView: 'gantt' });
+  });
+
+  it.each(['dashboards', 'staff', 'kanban', 'work'] as const)(
+    'neither undoes nor redoes the Gantt from the %s view, and leaves the keys alone',
+    (view) => {
+      useViewStore.setState({ currentView: view });
+      renderHook(() => useKeyboardShortcuts());
+
+      const events = [
+        new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true }),
+        new KeyboardEvent('keydown', { key: 'y', ctrlKey: true, bubbles: true, cancelable: true }),
+        new KeyboardEvent('keydown', { key: 'z', metaKey: true, shiftKey: true, bubbles: true, cancelable: true }),
+      ];
+      for (const event of events) document.dispatchEvent(event);
+
+      expect(undo).not.toHaveBeenCalled();
+      expect(redo).not.toHaveBeenCalled();
+      expect(events.some((event) => event.defaultPrevented)).toBe(false);
+    }
+  );
+
+  it('keeps the other shortcuts off the Gantt (Home still scrolls to today)', () => {
+    const triggerScrollToToday = vi.fn();
+    const original = useUIStore.getState().triggerScrollToToday;
+    useUIStore.setState({ triggerScrollToToday });
+    useViewStore.setState({ currentView: 'staff' });
+    renderHook(() => useKeyboardShortcuts());
+
+    fireEvent.keyDown(document, { key: 'Home' });
+
+    expect(triggerScrollToToday).toHaveBeenCalledTimes(1);
+    useUIStore.setState({ triggerScrollToToday: original });
   });
 });

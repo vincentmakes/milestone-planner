@@ -11,7 +11,9 @@
  * Save), **Duplicate** ("Copy of …", opened in edit mode), and on a
  * dashboard they may edit **Edit**, **Share…** (the sharing dialog, saving
  * without the widgets) and **Delete** (the default dashboard: admins only).
- * Edit mode (`useDashboardEditor`) turns the row into **Add widget** /
+ * Edit mode (`useDashboardEditor`) turns the row into **Undo** / **Redo**
+ * (the draft's history; also Ctrl/Cmd+Z, Ctrl/Cmd+Y and Ctrl/Cmd+Shift+Z
+ * outside the fields, `useDraftUndoShortcuts`) / **Add widget** /
  * **Save** / **Cancel**, the description line into the dashboard's **Name**
  * and **Description** fields (Save asks for a name first, sending nothing),
  * and the grid into a draggable one whose widget headers carry Edit and
@@ -46,9 +48,11 @@ import {
   CopyIcon,
   EditIcon,
   PlusIcon,
+  RedoIcon,
   RefreshIcon,
   ShareIcon,
   TrashIcon,
+  UndoIcon,
 } from '@/components/common/Icon';
 import { confirmAction } from '@/utils/confirmDialog';
 import type { Dashboard, DashboardSummary, MetricResult, SharedWith } from '@/types';
@@ -58,6 +62,7 @@ import { sharedWithNoOne } from './sharing';
 import { DashboardDialog } from './builder/DashboardDialog';
 import { WidgetEditor } from './builder/WidgetEditor';
 import { plainError, useDashboardEditor } from './builder/useDashboardEditor';
+import { useDraftUndoShortcuts } from './builder/useDraftUndoShortcuts';
 import { copyTargets, MAX_WIDGETS } from './builder/widgetDraft';
 import type { DashboardMeta, DraftWidget } from './builder/widgetDraft';
 import styles from './DashboardsView.module.css';
@@ -135,6 +140,7 @@ export function DashboardsView() {
   const phone = useIsPhone();
 
   const editor = useDashboardEditor(current);
+  useDraftUndoShortcuts(editor);
   const [dialog, setDialog] = useState<'new' | 'share' | null>(null);
   // The widget editor: open on a widget (null = a new one)
   const [widgetTarget, setWidgetTarget] = useState<{ widget: DraftWidget | null } | null>(null);
@@ -271,6 +277,26 @@ export function DashboardsView() {
     // Kept while editing even if the screen narrows, so the draft is never stranded.
     builderActions = (
       <>
+        <Button
+          variant="ghost"
+          icon={<Icon icon={UndoIcon} />}
+          onClick={editor.undo}
+          disabled={!editor.canUndo || editor.saving}
+          title="Undo (Ctrl+Z)"
+          aria-label="Undo"
+        >
+          Undo
+        </Button>
+        <Button
+          variant="ghost"
+          icon={<Icon icon={RedoIcon} />}
+          onClick={editor.redo}
+          disabled={!editor.canRedo || editor.saving}
+          title="Redo (Ctrl+Y)"
+          aria-label="Redo"
+        >
+          Redo
+        </Button>
         {addWidgetButton('Add widget')}
         <Button onClick={saveDraft} loading={editor.saving}>
           Save

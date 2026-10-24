@@ -76,10 +76,10 @@ export default defineConfig({
       // statements 92.34, functions 93.98, branches 84.68.
       // Each floor is the higher of the two lines (rebase of 2.2.0).
       thresholds: {
-        lines: 93.0,
+        lines: 93.1,
         statements: 92.0,
-        functions: 93.6,
-        branches: 84.3,
+        functions: 93.7,
+        branches: 84.5,
       },
     },
   },
