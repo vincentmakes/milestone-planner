@@ -134,6 +134,7 @@ same reason; use `run_migration.py` instead.
 | `add_project_comments` | Tenant | Lets a project carry its own comment thread: the `card_comments` entity-type CHECK gains `project` (2.0.0, also applied automatically on startup) — see below |
 | `add_project_field_decimals` | Tenant | Adds `project_fields.decimals`, the decimals of a number project field (2.1.0, also applied automatically on startup) — see below |
 | `add_equipment_assignment_note` | Tenant | Adds `equipment_assignments.note`, the optional note of an equipment booking (2.0.0, also applied automatically on startup) — see below |
+| `add_dashboard_sharing` | Tenant | Dashboard sharing by site, team and person: `dashboard_sites`, `dashboard_teams` and `dashboard_users`, and the visibility value `roles` renamed `shared` (2.1.0, also applied automatically on startup; requires `add_dashboards` and `add_teams`) — see below |
 | `add_dashboards` | Tenant | Dashboards: `dashboards`, `dashboard_roles` and `dashboard_widgets` (2.1.0, also applied automatically on startup, which also creates the *Overview* dashboard and grants the two dashboard permissions; requires `add_rbac`) — see below, and **let the application upgrade the tenant rather than running it first** |
 | `upgrade_to_v90` | Tenant | Major version upgrade |
 
@@ -269,7 +270,7 @@ python migrations/run_migration.py add_equipment_assignment_note
 
 | Table | Holds |
 |-------|-------|
-| `dashboards` | Name, description, owner (`owner_id`, set to NULL when the owner is deleted — their *private* dashboards are deleted with them), visibility `private` / `roles` / `everyone` (CHECK `dashboards_visibility_check`) and `is_default` (at most one default: partial unique index `dashboards_one_default`) |
+| `dashboards` | Name, description, owner (`owner_id`, set to NULL when the owner is deleted — their *private* dashboards are deleted with them), visibility `private` / `shared` / `everyone` (CHECK `dashboards_visibility_check`) and `is_default` (at most one default: partial unique index `dashboards_one_default`) |
 | `dashboard_roles` | The roles a dashboard is shared with (both foreign keys cascade: deleting a role or a dashboard removes the link) |
 | `dashboard_widgets` | One row per widget: kind `kpi` / `bar` / `line` / `pie` / `table` (CHECK `dashboard_widgets_kind_check`), title, the metric query, display options and grid layout as JSON text, order; deleted with their dashboard |
 
@@ -291,6 +292,26 @@ python migrations/run_migration.py add_dashboards
 
 !!! note "Pre-release databases"
     Personal tasks (My Todos) were removed before 2.0.0 shipped, so `add_rbac` no longer creates a `todos` table and no migration names a `todo_assigned` notification type. A database upgraded from a pre-release 2.0.0 build keeps its unused `todos` table and the wider notification CHECK; nothing writes either any more.
+
+#### Sharing by Site, Team and Person
+
+`add_dashboard_sharing` adds the three other kinds of target a `shared` dashboard can have, beside its roles. A `shared` dashboard opens for anyone matching **one** of them:
+
+| Table | Holds |
+|-------|-------|
+| `dashboard_sites` | The sites a dashboard is shared with — it opens for the site's **members** (`user_sites`); seeing every site is not membership |
+| `dashboard_teams` | The teams a dashboard is shared with — it opens for the team's members |
+| `dashboard_users` | The people a dashboard is shared with by name |
+
+Each link has the pair as its primary key, an index on the target column, and foreign keys that cascade both ways: deleting a dashboard, or the site, team or user it names, removes the link. The file also grants the three tables to the tenant's database user. Nothing is seeded.
+
+The file also holds a self-gated block for databases created from a **pre-release 2.1.0 build** (whose visibility CHECK still says `roles`): while `dashboards_visibility_check` does not allow `shared`, it drops the constraint, turns every `roles` row into `shared`, and adds the constraint back as `private` / `shared` / `everyone`. On any other database it does nothing.
+
+The same statements run **automatically** when a tenant's connection pool is created (single-tenant: at start-up), in their own step right after the dashboards step: the tables when one is missing, the visibility block every time (it gates itself). Because it is a separate step, it never re-runs the dashboards step's one-time Overview seed. Running the file by hand is optional and changes nothing on an upgraded tenant.
+
+```bash
+python migrations/run_migration.py add_dashboard_sharing
+```
 
 ### Writing New Migrations
 

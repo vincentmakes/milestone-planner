@@ -14,7 +14,8 @@ The **Dashboard** picker at the top lists every dashboard you may open, in this 
 |-------|------------------|
 | **Default** | The **Overview**, shared with everyone |
 | **Mine** | The dashboards you built, whoever you shared them with |
-| **Shared by** *name* | Dashboards someone shared with one of your roles (*Shared with me* when the owner's account is gone) |
+| **Shared by** *name* | Dashboards someone shared with you — with your role, one of your sites, one of your teams or you by name (*Shared with me* when the owner's account is gone) |
+| **Shared with no one left** | Your own dashboards (and, for administrators, anyone's) shared with roles, sites, teams or people that have all been deleted since |
 | **Everyone** | Dashboards shared with everyone who can open the view |
 
 Type in the picker's search box to find one by name. Milestone remembers the last dashboard you opened and shows it next time.
@@ -67,14 +68,15 @@ Building dashboards needs the **Manage dashboards** permission (Superuser by def
 |--------|--------------|
 | **New** | Asks for a name, an optional description and who sees it, then opens the empty dashboard for editing |
 | **Duplicate** | Copies the open dashboard as a private *Copy of …* and opens it for editing |
-| **Edit** | Lets you move, resize, add, change and remove widgets (your own dashboards; administrators: any) |
-| **Share…** | Changes the name, the description and who sees it |
+| **Edit** | Lets you rename the dashboard, change its description and move, resize, add, change and remove widgets (your own dashboards; administrators: any) |
+| **Share…** | Changes who sees it |
 | **Delete** | Deletes the dashboard and its widgets, after a confirmation |
 
 ### Editing the Layout
 
 While you edit, the toolbar shows **Add widget**, **Save** and **Cancel**, and the status beside the picker reads *Editing* — *Editing — unsaved changes* once you change something.
 
+- **Rename** the dashboard and change its **description** in the two fields above the widgets (*Name* is required, up to 100 characters; the description up to 2000). Clearing the name and clicking **Save** shows *Enter a name* and saves nothing
 - **Move** a widget by dragging its header
 - **Resize** it from its bottom-right corner
 - The **edit** and **remove** icons in a widget's header open it in the widget editor or take it off the dashboard
@@ -108,12 +110,27 @@ If the combination cannot be answered, the preview says why in plain words, and 
 | Visibility | Who sees it |
 |------------|-------------|
 | **Private** | You (and administrators) |
-| **Shared with roles** | Everyone holding one of the roles you tick, if their role has the **Dashboards** permission |
+| **Shared with…** | The people you choose below — anyone who matches **one** of them sees it |
 | **Everyone** | Everyone who can open the Dashboards view |
 
-A custom role does not get the **Dashboards** permission automatically: an administrator allows it in [Settings → Roles](settings.md#roles-permissions) before the role's members see dashboards shared with them. If every role a dashboard was shared with is deleted, it reads *Shared with no role* and only you and the administrators see it.
+With **Shared with…**, the dialog lists four kinds of target, and you can mix them freely:
 
-Only the owner (or an administrator) can change or delete a dashboard. When two people edit the same dashboard at once, the last one to save wins.
+| Target | Who it reaches |
+|--------|----------------|
+| **Roles** | Everyone holding one of the roles you tick |
+| **Sites** | The **members** of the site — the people whose user account lists it. Someone who sees every site (an administrator, or a role allowed to see all sites) but is not a member of that site is not reached this way |
+| **Teams** | The members of the team (the team's site is shown beside its name; an inactive team is marked *(inactive)*) |
+| **People** | The people you name — any active person at your sites, and anyone who sees every site |
+
+Choose at least one target; with none, the dialog shows *Choose at least one role, site, team or person*. Sharing is **view only**: the people you share with open the dashboard and see their own numbers, but only you (and administrators) can edit, share or delete it.
+
+Under the dashboard's title, the **Shared with** line names who sees it — one chip per role, site, team (*Team · Site*) and person — or reads *Shared with everyone*, or *Only you (and administrators)* for a private one. Everyone who can open the dashboard sees that line.
+
+A role, site, team or person you shared with that is **deleted** drops off the dashboard by itself. When every target is gone, the dashboard reads *Shared with no one left* and only you and the administrators see it. A target you **can no longer pick** — a person who was deactivated, a site you no longer belong to, a team at such a site — stays on the dashboard, and keeps its access, until you remove it in **Share…**; saving widgets never drops it.
+
+People reached through a role, site, team or name still need the **Dashboards** permission to open the view. A custom role does not get it automatically: an administrator allows it in [Settings → Roles](settings.md#roles-permissions).
+
+When two people edit the same dashboard at once, the last one to save wins.
 
 ## Limits
 

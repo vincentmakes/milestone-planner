@@ -456,13 +456,24 @@ Dashboards (2.1.0) are instance-wide pages of widgets; every query is cut to the
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/t/{slug}/api/dashboards` | The dashboards the caller may open (own, `everyone`, `roles` holding the caller's role; administrators: all), default first, then by name: `{id, name, description, visibility, role_ids, owner_id, owner_name, is_default, widget_count, can_edit, updated_at}` |
+| `GET` | `/t/{slug}/api/dashboards` | The dashboards the caller may open (own, `everyone`, `shared` with a match — see below; administrators: all), default first, then by name: `{id, name, description, visibility, role_ids, site_ids, team_ids, user_ids, shared_with, owner_id, owner_name, is_default, widget_count, can_edit, updated_at}` |
+| `GET` | `/t/{slug}/api/dashboards/shareable-users` | The people picker (`dashboards.manage`, else `403`): `[{id, name, job_title, site_names}]` — active members of the caller's visible sites plus every active user whose role sees every site (callers with `sites.view_all`: every active user), each once, the caller included, ordered by first then last name; `site_names` lists the person's sites among the caller's visible ones |
 | `GET` | `/t/{slug}/api/dashboards/{id}` | One dashboard with its `widgets` (`{id, kind, title, query, options, layout, sort_order}`, the last three as JSON objects); `404` unless the caller may open it |
-| `POST` | `/t/{slug}/api/dashboards` | Create (`dashboards.manage`): `{name, description?, visibility: private \| roles \| everyone, role_ids?, widgets?, source_id?}` → `201`. `source_id` copies the widgets of a dashboard the caller may open (`widgets` in the body win); `roles` needs at least one role (`400`), an unknown role is `404`; an invalid widget is `422` naming the widget by its title. The caller owns it; `is_default` is never set |
-| `PUT` | `/t/{slug}/api/dashboards/{id}` | The owner holding `dashboards.manage`, or an administrator (`404` if the caller may not open it, `403` if they may only view it): replaces name, description, visibility, roles and — when `widgets` is given — every widget (new ids). Without `widgets` the widgets are kept |
-| `DELETE` | `/t/{slug}/api/dashboards/{id}` | Same rule; the default dashboard only by an administrator (`403`) → `204` |
+| `POST` | `/t/{slug}/api/dashboards` | Create (`dashboards.manage`): `{name, description?, visibility: private \| shared \| everyone, role_ids?, site_ids?, team_ids?, user_ids?, widgets?, source_id?}` → `201`. `source_id` copies the **widgets** of a dashboard the caller may open (`widgets` in the body win) — never its sharing, the body's visibility and lists apply; target validation below; an invalid widget is `422` naming the widget by its title. The caller owns it; `is_default` is never set |
+| `PUT` | `/t/{slug}/api/dashboards/{id}` | The owner holding `dashboards.manage`, or an administrator (`404` if the caller may not open it, `403` if they may only view it): the same body as `POST` (no `source_id`); replaces name, description, visibility, the four target lists and — when `widgets` is given — every widget (new ids). Without `widgets` the widgets are kept (the Share dialog). Targets **already on the dashboard** are kept without being re-checked, so a person deactivated since, or a site the owner left, never blocks a save; only newly added ids must be pickable |
+| `DELETE` | `/t/{slug}/api/dashboards/{id}` | Same rule; the default dashboard only by an administrator (`403`) → `204`; widgets and target links go with it |
 | `POST` | `/t/{slug}/api/dashboards/query` | Answer one metric query (the builder's live preview) |
 | `POST` | `/t/{slug}/api/dashboards/{id}/data` | Every widget's result, `{"<widget id>": result \| {error}}`; the facts are loaded once for all widgets. A widget that cannot be answered (a deleted project field, a permission the viewer lacks, an invalid query) carries its own `error` |
+
+**Sharing.** `visibility` is `private`, `shared` or `everyone`. A `shared` dashboard is opened by anyone matching **one** of its targets: holding one of the roles (`role_ids`), being a member of one of the sites (`site_ids` — live `user_sites` membership; seeing every site does not match a site), a member of one of the teams (`team_ids`), or named (`user_ids`). Shared access is view only. Each list is at most 200 ids (`422`), de-duplicated and returned ascending; non-`shared` dashboards store four empty lists. Validation, in the order roles → sites → teams → people, the first failure answering:
+
+- `400` `Choose at least one role, site, team or person` — `shared` with all four lists empty
+- `404` `Role not found` — an id that is not a role
+- `404` `Site not found` — unknown, or outside the caller's visible sites
+- `404` `Team not found` — unknown, or at a site outside the caller's visible sites (inactive teams are allowed)
+- `404` `Person not found` — unknown, inactive, or not in the caller's `shareable-users` list
+
+`shared_with` resolves the targets to names for anyone who can open the dashboard: `{roles: [{id, name}], sites: [{id, name}], teams: [{id, name, site_name}], users: [{id, name}]}`, each sorted by name. A deleted role, site, team or user drops its link by cascade; a `shared` dashboard left with no target is seen by its owner and administrators only. Deleting the owner deletes their private dashboards; a shared one stays with its links (`owner_id` becomes `null`, administrators edit it).
 
 A **metric query** is `{measure, dimensions, filters, percent_of, top_n}`:
 
