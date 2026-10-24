@@ -266,6 +266,7 @@ ALL_KNOWN_NAMES = [
     *tp.TEAM_TABLES,
     *tp.PROJECT_FIELD_TABLES,
     *tp.DASHBOARD_TABLES,
+    *tp.DASHBOARD_SHARING_TABLES,
 ]
 
 
@@ -352,6 +353,7 @@ LEGACY_CHANGES = [
     *tp.DASHBOARDS_SCHEMA_STATEMENTS,
     tp.DASHBOARD_SEED_SQL,
     tp.DASHBOARD_PERMISSION_BACKFILL_SQL,
+    *tp.DASHBOARD_SHARING_SCHEMA_STATEMENTS,
     # The notification-types widening runs on every pool creation (own gate).
     *(s for s in tp.RBAC_SCHEMA_STATEMENTS if s != tp.NOTIFICATIONS_TYPE_CHECK_SQL),
 ]
@@ -385,8 +387,10 @@ async def test_legacy_tenant_gets_every_step():
     assert conn.log.index(tp.PROJECT_FIELDS_MIGRATION_SQL) > max(
         conn.log.index(s) for s in tp.PROJECT_FIELDS_SCHEMA_STATEMENTS
     )
-    # One commit per step (card status: one per table), 26 in all.
-    assert conn.log.count("COMMIT") == 26
+    # The dashboard visibility block gates itself: it runs on every tenant.
+    assert conn.ran(tp.DASHBOARD_VISIBILITY_CHECK_SQL)
+    # One commit per step (card status: one per table), 27 in all.
+    assert conn.log.count("COMMIT") == 27
 
 
 @pytest.mark.asyncio
@@ -417,16 +421,18 @@ async def test_current_tenant_only_probes_and_runs_the_idempotent_backfills():
     assert conn.ran(tp.USERS_IS_RESOURCE_SQL)
     for statement in tp.BOOKING_SEGMENT_COLUMN_STATEMENTS:
         assert conn.ran(statement)
-    # The project-comments widening and the equipment booking note are their
-    # own gates too.
+    # The project-comments widening, the equipment booking note and the
+    # dashboard visibility block are their own gates too.
     assert conn.ran(tp.PROJECT_COMMENTS_CHECK_SQL)
     assert conn.ran(tp.EQUIPMENT_ASSIGNMENTS_NOTE_SQL)
     assert conn.ran(tp.PROJECT_FIELD_DECIMALS_SQL)
+    assert conn.ran(tp.DASHBOARD_VISIBILITY_CHECK_SQL)
     assert "ROLLBACK" not in conn.log
     # Only the two always-run back-fill steps, the users.is_resource step, the
     # booking-segments step, the equipment-note step, the project-field
-    # decimals step, the project-comments step and the notification-types step.
-    assert conn.log.count("COMMIT") == 8
+    # decimals step, the project-comments step, the dashboard-sharing step (its
+    # visibility block) and the notification-types step.
+    assert conn.log.count("COMMIT") == 9
 
 
 @pytest.mark.asyncio

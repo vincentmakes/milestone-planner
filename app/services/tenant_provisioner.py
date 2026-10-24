@@ -1322,7 +1322,7 @@ DASHBOARDS_TABLE_SQL = """
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT dashboards_visibility_check
-        CHECK (visibility IN ('private', 'roles', 'everyone'))
+        CHECK (visibility IN ('private', 'shared', 'everyone'))
     )"""
 
 DASHBOARD_ROLES_TABLE_SQL = """
@@ -1450,6 +1450,89 @@ DASHBOARD_PERMISSION_BACKFILL_PG_SQL = (
     .replace(":role", "$2")
     .replace(":existing_permission", "$3")
 )
+
+
+# --- Dashboard sharing (add_dashboard_sharing.sql, 2.1.0) -------------------
+# A ``shared`` dashboard opens for anyone matching one of its targets: a role
+# (dashboard_roles, above), a site -- its members --, a team -- its members --
+# or a person. The three link tables reference dashboards, sites, teams and
+# users, so the block follows the dashboards block in every DDL source. Their
+# own constants and auto-migration step (no seed): adding them to
+# DASHBOARD_TABLES would re-run the Overview seed on every tenant created
+# before them. One statement per constant (asyncpg); setup_databases.sql, the
+# template and migrations/add_dashboard_sharing.sql carry the same text
+# (tests/test_dashboard_sharing_schema.py).
+DASHBOARD_SITES_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS dashboard_sites (
+      dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+      site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      PRIMARY KEY (dashboard_id, site_id)
+    )"""
+
+DASHBOARD_TEAMS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS dashboard_teams (
+      dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      PRIMARY KEY (dashboard_id, team_id)
+    )"""
+
+DASHBOARD_USERS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS dashboard_users (
+      dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      PRIMARY KEY (dashboard_id, user_id)
+    )"""
+
+DASHBOARD_SHARING_INDEX_STATEMENTS: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_dashboard_sites_site ON dashboard_sites(site_id)",
+    "CREATE INDEX IF NOT EXISTS idx_dashboard_teams_team ON dashboard_teams(team_id)",
+    "CREATE INDEX IF NOT EXISTS idx_dashboard_users_user ON dashboard_users(user_id)",
+)
+
+DASHBOARD_SHARING_SCHEMA_STATEMENTS: tuple[str, ...] = (
+    DASHBOARD_SITES_TABLE_SQL,
+    DASHBOARD_TEAMS_TABLE_SQL,
+    DASHBOARD_USERS_TABLE_SQL,
+    *DASHBOARD_SHARING_INDEX_STATEMENTS,
+)
+
+DASHBOARD_SHARING_TABLES: tuple[str, ...] = (
+    "dashboard_sites",
+    "dashboard_teams",
+    "dashboard_users",
+)
+
+DASHBOARD_SHARING_SCHEMA_SQL = ";\n".join(DASHBOARD_SHARING_SCHEMA_STATEMENTS) + ";"
+
+# Probe of the sharing auto-migration step: its DDL runs only while a table is
+# missing.
+DASHBOARD_SHARING_PROBE_SQL = (
+    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' "
+    "AND table_name IN (" + ", ".join(f"'{t}'" for t in DASHBOARD_SHARING_TABLES) + ")"
+)
+
+# The visibility value 'roles' became 'shared' before 2.1.0 was released: a
+# database created from a pre-release build carries the old CHECK and 'roles'
+# rows. Self-gated (a no-op once the constraint allows 'shared', or without a
+# dashboards table), so it runs on every pool creation; the UPDATE sits
+# between the DROP and the ADD. Only in the auto-migration step and
+# migrations/add_dashboard_sharing.sql -- the fresh sources create the new
+# CHECK directly.
+DASHBOARD_VISIBILITY_CHECK_SQL = """
+    DO $$
+    BEGIN
+        IF to_regclass('public.dashboards') IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('public.dashboards')
+              AND conname = 'dashboards_visibility_check'
+              AND strpos(pg_get_constraintdef(oid), 'shared') > 0
+        ) THEN
+            ALTER TABLE dashboards DROP CONSTRAINT IF EXISTS dashboards_visibility_check;
+            UPDATE dashboards SET visibility = 'shared' WHERE visibility = 'roles';
+            ALTER TABLE dashboards ADD CONSTRAINT dashboards_visibility_check
+                CHECK (visibility IN ('private', 'shared', 'everyone'));
+        END IF;
+    END $$"""
 
 
 def dashboard_seed_params(
@@ -2092,6 +2175,12 @@ def get_tenant_schema_sql() -> str:
     -- their widgets, with their indexes
     """
         + DASHBOARDS_SCHEMA_SQL
+        + """
+
+    -- The sites, teams and people dashboards are shared with (after sites,
+    -- teams and users), with their indexes
+    """
+        + DASHBOARD_SHARING_SCHEMA_SQL
         + """
 
     -- Approval policies (seeded: the project manager approves), approval

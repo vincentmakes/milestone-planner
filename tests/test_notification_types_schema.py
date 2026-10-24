@@ -21,7 +21,10 @@ from sqlalchemy import CheckConstraint
 
 from app.models.notification import Notification
 from app.services.tenant_provisioner import (
+    DASHBOARD_SHARING_PROBE_SQL,
+    DASHBOARD_SHARING_TABLES,
     DASHBOARD_TABLES,
+    DASHBOARD_VISIBILITY_CHECK_SQL,
     DASHBOARDS_PROBE_SQL,
     NOTIFICATION_TYPES,
     NOTIFICATIONS_TYPE_CHECK,
@@ -187,6 +190,14 @@ def _conn(rbac_needed: bool, fail_widening: bool = False):
             result = MagicMock()
             result.fetchall.return_value = [(t,) for t in DASHBOARD_TABLES]
             return result
+        if sql == DASHBOARD_SHARING_PROBE_SQL:  # the sharing step: up to date
+            log.append("SHARING probe")
+            result = MagicMock()
+            result.fetchall.return_value = [(t,) for t in DASHBOARD_SHARING_TABLES]
+            return result
+        if sql == DASHBOARD_VISIBILITY_CHECK_SQL:  # self-gated, runs every time
+            log.append("VISIBILITY")
+            return MagicMock()
         if sql == NOTIFICATIONS_TYPE_CHECK_SQL:
             log.append("WIDEN")
             if fail_widening:
@@ -222,7 +233,14 @@ async def test_auto_migration_widens_an_up_to_date_rbac_tenant():
 
     assert "RBAC statement" not in log
     start = log.index("RBAC probe")
-    assert log[start:] == ["RBAC probe", "WIDEN", "COMMIT"]
+    assert log[start:] == [
+        "RBAC probe",
+        "SHARING probe",
+        "VISIBILITY",
+        "COMMIT",
+        "WIDEN",
+        "COMMIT",
+    ]
 
 
 @pytest.mark.asyncio
@@ -243,7 +261,14 @@ async def test_auto_migration_widening_failure_rolls_back_and_never_raises(caplo
 
     await _run(conn)  # never raises
 
-    assert log[log.index("RBAC probe") :] == ["RBAC probe", "WIDEN", "ROLLBACK"]
+    assert log[log.index("RBAC probe") :] == [
+        "RBAC probe",
+        "SHARING probe",
+        "VISIBILITY",
+        "COMMIT",
+        "WIDEN",
+        "ROLLBACK",
+    ]
     # An ERROR, not a warning: without the widening every change notification
     # of the tenant fails (deliver logs and drops it).
     (record,) = (r for r in caplog.records if "notification types" in r.getMessage())

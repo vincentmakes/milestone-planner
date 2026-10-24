@@ -39,7 +39,10 @@ from app.services.tenant_provisioner import (
     DASHBOARD_ROLES_TABLE_SQL,
     DASHBOARD_SEED_PG_SQL,
     DASHBOARD_SEED_SQL,
+    DASHBOARD_SHARING_PROBE_SQL,
+    DASHBOARD_SHARING_TABLES,
     DASHBOARD_TABLES,
+    DASHBOARD_VISIBILITY_CHECK_SQL,
     DASHBOARD_WIDGET_SEED_PG_SQL,
     DASHBOARD_WIDGET_SEED_SQL,
     DASHBOARD_WIDGETS_TABLE_SQL,
@@ -184,7 +187,7 @@ def test_the_columns_and_checks():
     }
     assert (
         "CONSTRAINT dashboards_visibility_check "
-        "CHECK (visibility IN ('private', 'roles', 'everyone'))"
+        "CHECK (visibility IN ('private', 'shared', 'everyone'))"
     ) in _norm(DASHBOARDS_TABLE_SQL)
     assert _ddl_columns(DASHBOARD_WIDGETS_TABLE_SQL) == {
         "id": "SERIAL PRIMARY KEY",
@@ -203,7 +206,7 @@ def test_the_columns_and_checks():
 
 
 def test_the_model_constants_match_the_checks():
-    assert DASHBOARD_VISIBILITIES == ("private", "roles", "everyone")
+    assert DASHBOARD_VISIBILITIES == ("private", "shared", "everyone")
     assert DASHBOARD_WIDGET_KINDS == ("kpi", "bar", "line", "pie", "table")
 
 
@@ -328,6 +331,8 @@ PROBE = "CHECK dashboard tables"
 FIELDS_PROBE = "CHECK project field tables"
 RBAC_PROBE = "CHECK rbac"
 WIDEN = "widen notification types"
+SHARING_PROBE = "CHECK dashboard sharing tables"
+VISIBILITY = "dashboard visibility check"
 SEED = "INSERT dashboard"
 WIDGET = "INSERT widget"
 GRANT = "INSERT role permission"
@@ -336,8 +341,9 @@ NEW_ID = 77
 
 def _conn(tables=(), fail_on: str | None = None, dashboard_id: int | None = NEW_ID):
     """
-    A connection on which the project-fields and RBAC probes answer "up to
-    date" and the dashboards step's own SQL succeeds; every other
+    A connection on which the project-fields, RBAC and dashboard-sharing
+    probes answer "up to date" (the sharing step's self-gated visibility
+    block succeeds) and the dashboards step's own SQL succeeds; every other
     auto-migration step fails (and is contained by its own try/except).
     ``log`` records the statements interleaved with COMMIT / ROLLBACK, the
     seed inserts as SEED / WIDGET / GRANT; ``params`` their bound values.
@@ -364,6 +370,12 @@ def _conn(tables=(), fail_on: str | None = None, dashboard_id: int | None = NEW_
         if sql == DASHBOARDS_PROBE_SQL:
             log.append(PROBE)
             return rows(tables)
+        if sql == DASHBOARD_SHARING_PROBE_SQL:
+            log.append(SHARING_PROBE)
+            return rows(DASHBOARD_SHARING_TABLES)
+        if sql == DASHBOARD_VISIBILITY_CHECK_SQL:
+            log.append(VISIBILITY)
+            return MagicMock()
         if sql == NOTIFICATIONS_TYPE_CHECK_SQL:
             log.append(WIDEN)
             return MagicMock()
@@ -414,6 +426,9 @@ def _step(log: list[str]) -> list[str]:
     return log[start:]
 
 
+# The dashboard-sharing step on an up-to-date tenant: the probe, the
+# self-gated visibility block, its commit.
+SHARING_STEP_UP_TO_DATE = [SHARING_PROBE, VISIBILITY, "COMMIT"]
 BASE_WIDGETS = base_dashboard_rows()[1]
 FULL_STEP = [
     PROBE,
@@ -438,8 +453,9 @@ async def test_auto_migration_creates_the_schema_then_seeds(tables):
     # eight widgets, the three grants, one commit.
     assert _step(log) == FULL_STEP
     # After the project-fields and RBAC steps (dashboard_roles references
-    # roles), before the notification-types step.
-    assert log.index(FIELDS_PROBE) < log.index(RBAC_PROBE) < log.index(PROBE) < log.index(WIDEN)
+    # roles), before the sharing step and the notification-types step.
+    assert log.index(FIELDS_PROBE) < log.index(RBAC_PROBE) < log.index(PROBE)
+    assert log.index(PROBE) < log.index(SHARING_PROBE) < log.index(WIDEN)
 
 
 @pytest.mark.asyncio
@@ -484,7 +500,12 @@ async def test_auto_migration_skips_an_up_to_date_tenant():
 
     # Nothing between the probe and the next step: no schema, no seed, no
     # grant (an admin's later removal of the Overview or a key stays).
-    assert log[log.index(PROBE) :] == [PROBE, WIDEN, "COMMIT"]
+    assert log[log.index(PROBE) :] == [
+        PROBE,
+        *SHARING_STEP_UP_TO_DATE,
+        WIDEN,
+        "COMMIT",
+    ]
     assert not any(s in DASHBOARDS_SCHEMA_STATEMENTS for s in log)
     assert conn.params == {SEED: [], WIDGET: [], GRANT: []}
 
@@ -505,7 +526,8 @@ async def test_auto_migration_failure_rolls_back_and_never_raises(failing, ran):
     await _run_auto_migrations(conn)  # never raises
 
     assert _step(log) == [PROBE, *ran, "ROLLBACK"]
-    assert log[-2:] == [WIDEN, "COMMIT"]  # the later steps still ran
+    # The later steps still ran.
+    assert log[-5:] == [*SHARING_STEP_UP_TO_DATE, WIDEN, "COMMIT"]
 
 
 def test_seed_sql_binds_every_column():
@@ -585,7 +607,7 @@ def test_dashboard_model_matches_the_ddl():
     assert _fk(table.c.owner_id).target_fullname == "users.id"
     checks = {c.name: str(c.sqltext) for c in table.constraints if c.name}
     assert checks["dashboards_visibility_check"] == (
-        "visibility IN ('private', 'roles', 'everyone')"
+        "visibility IN ('private', 'shared', 'everyone')"
     )
     (index,) = table.indexes
     assert index.name == "dashboards_one_default"
@@ -594,7 +616,13 @@ def test_dashboard_model_matches_the_ddl():
     # Both dialects: PostgreSQL in production, SQLite in the SQLite-backed tests.
     assert str(index.dialect_options["postgresql"]["where"]) == "is_default"
     assert str(index.dialect_options["sqlite"]["where"]) == "is_default"
-    for rel in (Dashboard.widgets, Dashboard.roles):
+    for rel in (
+        Dashboard.widgets,
+        Dashboard.roles,
+        Dashboard.sites,
+        Dashboard.teams,
+        Dashboard.users,
+    ):
         assert rel.property.lazy == "selectin"
         assert rel.property.passive_deletes is True
         assert "delete-orphan" in rel.property.cascade
@@ -672,7 +700,15 @@ def sqlite_session():
         engine,
         tables=[
             metadata.tables[name]
-            for name in ("roles", "role_permissions", "users", *DASHBOARD_TABLES)
+            for name in (
+                "roles",
+                "role_permissions",
+                "users",
+                "sites",
+                "teams",
+                *DASHBOARD_TABLES,
+                *DASHBOARD_SHARING_TABLES,
+            )
         ],
     )
     with Session(engine) as session:
@@ -715,7 +751,7 @@ def test_only_one_default_dashboard(sqlite_session):
 
 
 def test_widgets_and_role_links_go_with_their_dashboard_and_role(sqlite_session):
-    dashboard = Dashboard(name="Team", visibility="roles", owner_id=7)
+    dashboard = Dashboard(name="Team", visibility="shared", owner_id=7)
     dashboard.roles = [DashboardRole(role_id=1), DashboardRole(role_id=2)]
     dashboard.widgets = [
         DashboardWidget(kind="bar", title="B", query="{}", layout="{}", sort_order=1),

@@ -31,7 +31,11 @@ from app.services.tenant_provisioner import (
     DASHBOARD_PERMISSION_BACKFILL,
     DASHBOARD_PERMISSION_BACKFILL_SQL,
     DASHBOARD_SEED_SQL,
+    DASHBOARD_SHARING_PROBE_SQL,
+    DASHBOARD_SHARING_SCHEMA_STATEMENTS,
+    DASHBOARD_SHARING_TABLES,
     DASHBOARD_TABLES,
+    DASHBOARD_VISIBILITY_CHECK_SQL,
     DASHBOARD_WIDGET_SEED_SQL,
     DASHBOARDS_PROBE_SQL,
     DASHBOARDS_SCHEMA_STATEMENTS,
@@ -894,6 +898,25 @@ class TenantConnectionManager:
                 logger.info("Auto-migration: Added dashboards on tenant %s", slug)
         except Exception as e:
             logger.warning("Auto-migration (dashboards) warning for %s: %s", slug, e)
+            await _rollback_quietly(conn)
+
+        # Dashboard sharing (add_dashboard_sharing.sql, 2.1.0): the site, team
+        # and person link tables with their indexes while one is missing (no
+        # seed), then -- on every pool creation, it gates itself -- the
+        # visibility CHECK of a pre-release database ('roles' -> 'shared',
+        # rows included). After the dashboards step: the links reference
+        # dashboards. One statement per execute.
+        try:
+            tables_check = await conn.execute(text(DASHBOARD_SHARING_PROBE_SQL))
+            existing = {row[0] for row in tables_check.fetchall()}
+            if not existing.issuperset(DASHBOARD_SHARING_TABLES):
+                logger.info("Auto-migration: Adding dashboard sharing on tenant %s...", slug)
+                for statement in DASHBOARD_SHARING_SCHEMA_STATEMENTS:
+                    await conn.execute(text(statement))
+            await conn.execute(text(DASHBOARD_VISIBILITY_CHECK_SQL))
+            await conn.commit()
+        except Exception as e:
+            logger.warning("Auto-migration (dashboard sharing) warning for %s: %s", slug, e)
             await _rollback_quietly(conn)
 
         # Notification types (add_change_notifications.sql). Runs on every pool

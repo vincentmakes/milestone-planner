@@ -667,7 +667,7 @@ CREATE TABLE project_field_selections (
 
 -- Dashboards (2.1.0): KPI and chart dashboards over the planning data. Owner
 -- (NULL = admin-owned, e.g. the seeded "Overview"), visibility private /
--- roles / everyone, at most one default. Same DDL as
+-- shared / everyone, at most one default. Same DDL as
 -- tenant_provisioner.DASHBOARDS_SCHEMA_STATEMENTS and
 -- migrations/add_dashboards.sql.
 CREATE TABLE dashboards (
@@ -680,10 +680,10 @@ CREATE TABLE dashboards (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT dashboards_visibility_check
-        CHECK (visibility IN ('private', 'roles', 'everyone'))
+        CHECK (visibility IN ('private', 'shared', 'everyone'))
 );
 
--- Roles a dashboard with visibility 'roles' is shared with (many-to-many)
+-- Roles a 'shared' dashboard is shared with (many-to-many)
 CREATE TABLE dashboard_roles (
     dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
     role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
@@ -702,6 +702,28 @@ CREATE TABLE dashboard_widgets (
     sort_order INTEGER NOT NULL DEFAULT 0,
     CONSTRAINT dashboard_widgets_kind_check
         CHECK (kind IN ('kpi', 'bar', 'line', 'pie', 'table'))
+);
+
+-- Sites, teams and people a 'shared' dashboard is shared with (many-to-many;
+-- a site or team stands for its members). Same DDL as
+-- tenant_provisioner.DASHBOARD_SHARING_SCHEMA_STATEMENTS and
+-- migrations/add_dashboard_sharing.sql.
+CREATE TABLE dashboard_sites (
+    dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    PRIMARY KEY (dashboard_id, site_id)
+);
+
+CREATE TABLE dashboard_teams (
+    dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+    team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    PRIMARY KEY (dashboard_id, team_id)
+);
+
+CREATE TABLE dashboard_users (
+    dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (dashboard_id, user_id)
 );
 
 -- ============================================================================
@@ -1014,6 +1036,9 @@ CREATE INDEX idx_project_field_selections_option ON project_field_selections(opt
 CREATE UNIQUE INDEX dashboards_one_default ON dashboards(is_default) WHERE is_default;
 CREATE INDEX idx_dashboard_roles_role ON dashboard_roles(role_id);
 CREATE INDEX idx_dashboard_widgets_dashboard ON dashboard_widgets(dashboard_id);
+CREATE INDEX idx_dashboard_sites_site ON dashboard_sites(site_id);
+CREATE INDEX idx_dashboard_teams_team ON dashboard_teams(team_id);
+CREATE INDEX idx_dashboard_users_user ON dashboard_users(user_id);
 CREATE INDEX idx_approval_policy_roles_role ON approval_policy_roles(role_id);
 CREATE INDEX idx_approval_requests_project_status ON approval_requests(project_id, status);
 CREATE INDEX idx_approval_requests_requester_status ON approval_requests(requester_id, status);

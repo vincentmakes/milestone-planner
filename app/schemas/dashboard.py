@@ -69,7 +69,7 @@ RelativeName = Literal[
     "this_year", "last_year", "this_quarter", "last_quarter", "last_12_months", "all"
 ]
 WidgetKind = Literal["kpi", "bar", "line", "pie", "table"]
-Visibility = Literal["private", "roles", "everyone"]
+Visibility = Literal["private", "shared", "everyone"]
 
 # Ids per filter list and widgets per dashboard (bounds on one request).
 MAX_FILTER_IDS = 500

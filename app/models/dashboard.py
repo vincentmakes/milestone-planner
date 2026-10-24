@@ -4,18 +4,21 @@ Dashboards (2.1.0): KPI and chart dashboards over the planning data.
 A ``Dashboard`` is instance-wide and owned by the person who created it
 (``owner_id``, ``ON DELETE SET NULL``: NULL = admin-owned, like the seeded
 base dashboard "Overview"). ``visibility`` decides who may open it:
-``private`` (the owner), ``roles`` (holders of the roles in
-``dashboard_roles``) or ``everyone`` (everyone who may open the view). At most
+``private`` (the owner), ``shared`` (anyone matching one of its targets: a
+role in ``dashboard_roles``, a site in ``dashboard_sites`` -- its members --, a
+team in ``dashboard_teams`` -- its members -- or a person in
+``dashboard_users``) or ``everyone`` (everyone who may open the view). At most
 one dashboard is the default (``is_default``; partial unique index
 ``dashboards_one_default``). A ``DashboardWidget`` is one tile: its ``kind``
 (``kpi``, ``bar``, ``line``, ``pie``, ``table``), a title, and three JSON
 texts -- the metric ``query``, the display ``options`` and the grid ``layout``
-per breakpoint. Widgets and role links go with their dashboard (ON DELETE
-CASCADE); a role link also goes with its role.
+per breakpoint. Widgets and target links go with their dashboard (ON DELETE
+CASCADE); a target link also goes with its role, site, team or person.
 
 The DDL lives in app/services/tenant_provisioner.py
-(DASHBOARDS_SCHEMA_STATEMENTS); tests/test_dashboards_schema.py keeps the two
-in step.
+(DASHBOARDS_SCHEMA_STATEMENTS, DASHBOARD_SHARING_SCHEMA_STATEMENTS);
+tests/test_dashboards_schema.py and tests/test_dashboard_sharing_schema.py
+keep the two in step.
 """
 
 from datetime import datetime
@@ -37,7 +40,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 from app.utils import utcnow_naive
 
-DASHBOARD_VISIBILITIES: tuple[str, ...] = ("private", "roles", "everyone")
+DASHBOARD_VISIBILITIES: tuple[str, ...] = ("private", "shared", "everyone")
 DASHBOARD_WIDGET_KINDS: tuple[str, ...] = ("kpi", "bar", "line", "pie", "table")
 
 
@@ -47,7 +50,7 @@ def _in(column: str, values: tuple[str, ...]) -> str:
 
 
 class Dashboard(Base):
-    """A named set of widgets, private to its owner or shared with roles / everyone."""
+    """A named set of widgets: private, shared with roles / sites / teams / people, or everyone's."""
 
     __tablename__ = "dashboards"
     __table_args__ = (
@@ -98,17 +101,54 @@ class Dashboard(Base):
         passive_deletes=True,
     )
 
+    sites: Mapped[list["DashboardSite"]] = relationship(
+        "DashboardSite",
+        lazy="selectin",
+        order_by="DashboardSite.site_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    teams: Mapped[list["DashboardTeam"]] = relationship(
+        "DashboardTeam",
+        lazy="selectin",
+        order_by="DashboardTeam.team_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    users: Mapped[list["DashboardUser"]] = relationship(
+        "DashboardUser",
+        lazy="selectin",
+        order_by="DashboardUser.user_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
     @property
     def role_ids(self) -> list[int]:
         """Ids of the roles the dashboard is shared with, ascending."""
         return sorted(link.role_id for link in self.roles)
+
+    @property
+    def site_ids(self) -> list[int]:
+        """Ids of the sites (their members) the dashboard is shared with, ascending."""
+        return sorted(link.site_id for link in self.sites)
+
+    @property
+    def team_ids(self) -> list[int]:
+        """Ids of the teams (their members) the dashboard is shared with, ascending."""
+        return sorted(link.team_id for link in self.teams)
+
+    @property
+    def user_ids(self) -> list[int]:
+        """Ids of the people the dashboard is shared with, ascending."""
+        return sorted(link.user_id for link in self.users)
 
     def __repr__(self) -> str:
         return f"<Dashboard {self.name} ({self.visibility})>"
 
 
 class DashboardRole(Base):
-    """A role a ``roles``-visibility dashboard is shared with."""
+    """A role a ``shared`` dashboard is shared with (its holders may open it)."""
 
     __tablename__ = "dashboard_roles"
     __table_args__ = (Index("idx_dashboard_roles_role", "role_id"),)
@@ -126,6 +166,69 @@ class DashboardRole(Base):
 
     def __repr__(self) -> str:
         return f"<DashboardRole dashboard={self.dashboard_id} role={self.role_id}>"
+
+
+class DashboardSite(Base):
+    """A site a ``shared`` dashboard is shared with (its members may open it)."""
+
+    __tablename__ = "dashboard_sites"
+    __table_args__ = (Index("idx_dashboard_sites_site", "site_id"),)
+
+    dashboard_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("dashboards.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    site_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("sites.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    def __repr__(self) -> str:
+        return f"<DashboardSite dashboard={self.dashboard_id} site={self.site_id}>"
+
+
+class DashboardTeam(Base):
+    """A team a ``shared`` dashboard is shared with (its members may open it)."""
+
+    __tablename__ = "dashboard_teams"
+    __table_args__ = (Index("idx_dashboard_teams_team", "team_id"),)
+
+    dashboard_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("dashboards.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    team_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("teams.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    def __repr__(self) -> str:
+        return f"<DashboardTeam dashboard={self.dashboard_id} team={self.team_id}>"
+
+
+class DashboardUser(Base):
+    """A person a ``shared`` dashboard is shared with."""
+
+    __tablename__ = "dashboard_users"
+    __table_args__ = (Index("idx_dashboard_users_user", "user_id"),)
+
+    dashboard_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("dashboards.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    def __repr__(self) -> str:
+        return f"<DashboardUser dashboard={self.dashboard_id} user={self.user_id}>"
 
 
 class DashboardWidget(Base):

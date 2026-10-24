@@ -1,13 +1,14 @@
 -- Migration: Add dashboards (PostgreSQL)
 -- Description: Creates dashboards (KPI and chart dashboards over the planning
 -- data: name, description, owner (NULL = admin-owned), visibility private /
--- roles / everyone, at most one default -- partial unique index
+-- shared / everyone, at most one default -- partial unique index
 -- dashboards_one_default), dashboard_roles (the roles a dashboard is shared
 -- with) and dashboard_widgets (kind kpi / bar / line / pie / table, title, the
 -- metric query, display options and grid layout as JSON texts, sort order).
 -- Widgets and role links go with their dashboard; a role link also goes with
 -- its role; a dashboard whose owner is deleted keeps existing (owner_id SET
--- NULL). Requires users and roles (add_rbac) (2.1.0).
+-- NULL). Requires users and roles (add_rbac) (2.1.0). The sites, teams and
+-- people a dashboard is shared with come with add_dashboard_sharing.
 --
 -- USAGE: Run this on each existing tenant database
 -- Example: python migrations/run_migration.py add_dashboards
@@ -36,10 +37,10 @@ CREATE TABLE IF NOT EXISTS dashboards (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT dashboards_visibility_check
-        CHECK (visibility IN ('private', 'roles', 'everyone'))
+        CHECK (visibility IN ('private', 'shared', 'everyone'))
 );
 
--- Roles a dashboard with visibility 'roles' is shared with
+-- Roles a 'shared' dashboard is shared with
 CREATE TABLE IF NOT EXISTS dashboard_roles (
     dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
     role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
