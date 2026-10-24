@@ -15,7 +15,9 @@ import {
   defaultQuery,
   dimensionKey,
   gridIdOf,
+  kpiWithoutDimension,
   MAX_DIMENSIONS,
+  NEGATIVE_PIE_PROBLEM,
   newClientId,
   normaliseQuery,
   placeNewWidget,
@@ -67,7 +69,7 @@ describe('kind rules', () => {
     expect(changeMeasure('bar', q, 'booked_days').measure).toBe('booked_days');
   });
 
-  it('drops the Teams and People filters off a booking measure', () => {
+  it('drops the Teams and People filters off a measure that is not a booking', () => {
     const filters = { team_ids: [5], person_ids: [8], tag_ids: [40], period: { relative: 'this_year' as const } };
     const q = query({ filters });
     expect(changeMeasure('bar', q, 'project_weeks').filters).toEqual({ tag_ids: [40], period: { relative: 'this_year' } });
@@ -76,6 +78,74 @@ describe('kind rules', () => {
     // Nothing to drop: the filters are kept as they are.
     const plain = query({ measure: 'project_count' });
     expect(normaliseQuery('bar', plain).filters).toBe(plain.filters);
+  });
+
+  it('drops the filters a measure of another family does not take', () => {
+    const filters = {
+      site_ids: [1],
+      team_ids: [5],
+      person_ids: [8],
+      project_ids: [30],
+      tag_ids: [40],
+      confirmed: true,
+      archived: 'include' as const,
+      milestones: 'only' as const,
+      equipment_ids: [70],
+      equipment_types: ['HPLC'],
+      period: { relative: 'next_quarter' as const },
+    };
+    const q = query({ measure: 'phase_count', filters });
+    // Capacity: Sites, Teams, People, archived and the period only.
+    expect(changeMeasure('bar', q, 'utilisation').filters).toEqual({
+      site_ids: [1],
+      team_ids: [5],
+      person_ids: [8],
+      archived: 'include',
+      period: { relative: 'next_quarter' },
+    });
+    // Equipment utilisation: the equipment's sites, Equipment, Equipment types.
+    expect(changeMeasure('bar', q, 'equipment_utilisation').filters).toEqual({
+      site_ids: [1],
+      archived: 'include',
+      equipment_ids: [70],
+      equipment_types: ['HPLC'],
+      period: { relative: 'next_quarter' },
+    });
+    // An equipment booking takes the project filters too, never the milestones.
+    expect(changeMeasure('bar', q, 'equipment_booked_days').filters).not.toHaveProperty('milestones');
+    expect(changeMeasure('bar', q, 'equipment_booked_days').filters).toMatchObject({ project_ids: [30], tag_ids: [40] });
+    // A phase measure keeps the milestones, drops the person and the equipment.
+    expect(changeMeasure('bar', q, 'phases_overdue').filters).toEqual({
+      site_ids: [1],
+      project_ids: [30],
+      tag_ids: [40],
+      confirmed: true,
+      archived: 'include',
+      milestones: 'only',
+      period: { relative: 'next_quarter' },
+    });
+  });
+
+  it('gives a KPI of a measure that takes no percentage no dimension, and no percentage at all', () => {
+    for (const measure of ['utilisation', 'available_days', 'equipment_utilisation'] as const) {
+      const q = normaliseQuery('kpi', query({ measure, dimensions: [{ kind: 'site' }], percent_of: 'total' }));
+      expect(q).toMatchObject({ measure, dimensions: [], percent_of: null, top_n: null });
+      expect(kpiWithoutDimension('kpi', measure)).toBe(true);
+      expect(kpiWithoutDimension('bar', measure)).toBe(false);
+    }
+    // Other measures keep the share of the total.
+    expect(normaliseQuery('kpi', query({ measure: 'capacity_days', dimensions: [{ kind: 'team' }] })).percent_of).toBe('total');
+    expect(kpiWithoutDimension('kpi', 'people_over_capacity')).toBe(false);
+    // A chart of one keeps its dimensions, never a percentage.
+    const bar = normaliseQuery(
+      'bar',
+      query({ measure: 'utilisation', dimensions: [{ kind: 'person' }, { kind: 'period', grain: 'month' }], percent_of: 'first_dimension' })
+    );
+    expect(bar).toMatchObject({ dimensions: [{ kind: 'person' }, { kind: 'period', grain: 'month' }], percent_of: null });
+    // A switch to a dimensionless KPI measure drops the dimension and the share.
+    const kpi = normaliseQuery('kpi', query({ dimensions: [{ kind: 'site' }] }));
+    expect(kpi.percent_of).toBe('total');
+    expect(changeMeasure('kpi', kpi, 'utilisation')).toMatchObject({ dimensions: [], percent_of: null });
   });
 
   it('keeps the Percent number format only on a percentage', () => {
@@ -119,6 +189,13 @@ describe('kind rules', () => {
     );
     expect(queryProblem('bar', query({ filters: { period: { from: '2026-01-01', to: '2026-03-31' } } }))).toBeNull();
     expect(queryProblem('table', { measure: 'booked_days' })).toBeNull();
+    // Available days can be negative: never a pie, whatever its dimensions.
+    expect(queryProblem('pie', query({ measure: 'available_days', dimensions: [{ kind: 'team' }] }))).toBe(
+      NEGATIVE_PIE_PROBLEM
+    );
+    expect(NEGATIVE_PIE_PROBLEM).toBe('Available days can be negative; choose a bar, line, table or KPI');
+    expect(queryProblem('bar', query({ measure: 'available_days', dimensions: [{ kind: 'team' }] }))).toBeNull();
+    expect(queryProblem('pie', query({ measure: 'utilisation', dimensions: [{ kind: 'team' }] }))).toBeNull();
   });
 });
 
@@ -172,6 +249,26 @@ describe('cleanQuery', () => {
     });
   });
 
+  it('keeps the equipment filters and a milestones mode, never the default `include`', () => {
+    const q = cleanQuery(
+      query({
+        measure: 'equipment_booked_days',
+        filters: { equipment_ids: [70, 71], equipment_types: ['HPLC'], period: { relative: 'next_12_months' } },
+      })
+    );
+    expect(q.filters).toEqual({ equipment_ids: [70, 71], equipment_types: ['HPLC'], period: { relative: 'next_12_months' } });
+    expect(cleanQuery(query({ filters: { equipment_ids: [], equipment_types: [] } })).filters).toEqual({
+      period: { relative: 'this_year' },
+    });
+    expect(cleanQuery(query({ measure: 'phase_count', filters: { milestones: 'include' } })).filters).toEqual({
+      period: { relative: 'this_year' },
+    });
+    expect(cleanQuery(query({ measure: 'phase_count', filters: { milestones: 'exclude' } })).filters).toEqual({
+      milestones: 'exclude',
+      period: { relative: 'this_year' },
+    });
+  });
+
   it('counts the filters set besides the period', () => {
     expect(activeFilterCount(undefined)).toBe(0);
     expect(activeFilterCount({ period: { relative: 'all' } })).toBe(0);
@@ -185,6 +282,8 @@ describe('cleanQuery', () => {
       })
     ).toBe(4);
     expect(activeFilterCount({ archived: 'exclude', confirmed: null })).toBe(0);
+    expect(activeFilterCount({ equipment_ids: [1], equipment_types: ['HPLC'], milestones: 'only' })).toBe(3);
+    expect(activeFilterCount({ equipment_ids: [], equipment_types: [], milestones: 'include' })).toBe(0);
   });
 });
 

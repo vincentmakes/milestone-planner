@@ -169,11 +169,6 @@ export const MATRIX: Readonly<Record<Measure, readonly DimensionKind[]>> = {
   equipment_utilisation: ['site', 'equipment', 'equipment_type', 'period'],
 };
 
-/** The booking measures (the builder's Teams / People filters; replaced by `MEASURE_FILTERS`). */
-export const BOOKING_MEASURES: ReadonlySet<Measure> = new Set(
-  MEASURES.filter((m) => m.family === 'booking').map((m) => m.key)
-);
-
 /** Whether `measure` can be broken down by `kind`. */
 export function isValidDimension(measure: Measure, kind: DimensionKind): boolean {
   return MATRIX[measure]?.includes(kind) ?? false;

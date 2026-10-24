@@ -3,15 +3,21 @@
  * preview.
  *
  * The form, in order: the kind (a radio group of five), the title, the
- * measure, up to two dimensions (only the kinds the measure accepts — the
- * matrix of `utils/metrics.ts`; *Person* only with `views.staff`; a project
- * field kind becomes one choice per dropdown or toggle field; a period
- * carries its grain), the filters (a collapsible section, closed when none
- * is set), the period (relative, or custom dates), *Percent of* and *Top N*,
- * and the display options of the kind. The kind rules (`widgetDraft.ts`): a
- * KPI has at most one dimension and then shows a share of the total (its
- * *Bucket* is one of the preview's values), a pie exactly one, the others up
- * to two; changing the measure drops a dimension it refuses.
+ * measure (grouped by family; the capacity measures only with `views.staff`,
+ * the equipment ones only with `views.equipment` — a stored measure stays
+ * listed, the preview then shows the server's refusal), up to two
+ * dimensions (only the kinds the measure accepts — the matrix of
+ * `utils/metrics.ts`; *Person* only with `views.staff`, *Equipment* and
+ * *Equipment type* only with `views.equipment`; a project field kind becomes
+ * one choice per dropdown or toggle field; a period carries its grain), the
+ * filters (a collapsible section, closed when none is set, holding only the
+ * filters the measure takes), the period (relative, or custom dates),
+ * *Percent of* (not on a measure that takes no percentage) and *Top N*, and
+ * the display options of the kind. The kind rules (`widgetDraft.ts`): a KPI
+ * has at most one dimension and then shows a share of the total (its
+ * *Bucket* is one of the preview's values) — a KPI of utilisation or
+ * available days has none —, a pie exactly one, the others up to two;
+ * changing the measure drops a dimension or a filter it refuses.
  *
  * The preview asks the server (`/dashboards/query`) 400 ms after the last
  * change; a newer request supersedes an older one (answers are matched by a
@@ -53,20 +59,27 @@ import { useHasPermission } from '@/hooks/useCan';
 import { useVisibleSites } from '@/hooks/useVisibleSites';
 import { uniqueById } from '@/utils/uniqueById';
 import {
-  BOOKING_MEASURES,
   DIMENSION_KINDS,
   dimensionLabel,
+  dimensionNeeds,
+  filterNeeds,
   GRAINS,
   isDimensionHidden,
-  MATRIX,
-  MEASURES,
+  isValidDimension,
+  measureFamily,
+  measureNeeds,
+  measuresByFamily,
+  NO_PERCENT_MEASURES,
   OTHER_KEY,
   queryUnit,
   RELATIVE_PERIODS,
+  takesFilter,
 } from '@/utils/metrics';
+import type { FilterKey } from '@/utils/metrics';
 import type {
   DimensionKind,
   Grain,
+  Measure,
   MetricDimension,
   MetricFilters,
   MetricQuery,
@@ -84,6 +97,7 @@ import {
   cleanQuery,
   defaultQuery,
   dimensionKey,
+  kpiWithoutDimension,
   MAX_DIMENSIONS,
   newClientId,
   normaliseQuery,
@@ -92,6 +106,7 @@ import {
   stableKey,
 } from './widgetDraft';
 import type { DraftWidget } from './widgetDraft';
+import type { PermissionKey } from '@/types/permissions';
 import styles from './WidgetEditor.module.css';
 
 /** The preview waits this long after the last change. */
@@ -109,10 +124,34 @@ const WIDGET_KINDS: readonly { key: WidgetKind; label: string; icon: typeof BarC
   { key: 'table', label: 'Table', icon: TableIcon },
 ];
 
-/** Measures whose numbers count working days (the hint names the holiday rule). */
-const WORKING_DAY_MEASURES = new Set(['booked_days', 'booked_weeks', 'project_weeks', 'phase_weeks']);
-const WORKING_DAYS_HINT =
+/** Measures whose numbers count working days at the project's site (the hint names the holiday rule). */
+const WORKING_DAY_MEASURES: ReadonlySet<Measure> = new Set<Measure>([
+  'booked_days',
+  'booked_weeks',
+  'project_weeks',
+  'phase_weeks',
+  'equipment_booked_days',
+]);
+export const WORKING_DAYS_HINT =
   'Working days: Monday to Friday, without the bank holidays loaded for the project’s site.';
+export const CAPACITY_HINT =
+  'Capacity counts weekdays at the person’s sites minus bank holidays, absences and closures, at their max capacity; booked time is matched to the same people';
+export const EQUIPMENT_AVAILABILITY_HINT =
+  'Availability counts weekdays at the equipment’s sites minus bank holidays and blocks; overlapping bookings add up';
+
+/** The hint under the measure: how its days are counted. */
+function measureHint(measure: Measure): string | undefined {
+  if (WORKING_DAY_MEASURES.has(measure)) return WORKING_DAYS_HINT;
+  if (measureFamily(measure) === 'capacity') return CAPACITY_HINT;
+  if (measure === 'equipment_utilisation') return EQUIPMENT_AVAILABILITY_HINT;
+  return undefined;
+}
+
+const MILESTONE_OPTIONS = [
+  { value: 'include', label: 'Include' },
+  { value: 'only', label: 'Only' },
+  { value: 'exclude', label: 'Exclude' },
+];
 
 /** Picker ids of the dimension choices: a kind by its position, a project field by its id. */
 const FIELD_ID_BASE = 1000;
@@ -147,6 +186,7 @@ const LIST_FILTER_LABELS = {
   person_ids: 'People',
   project_ids: 'Projects',
   tag_ids: 'Tags',
+  equipment_ids: 'Equipment',
 } as const;
 type ListFilter = keyof typeof LIST_FILTER_LABELS;
 
@@ -172,19 +212,32 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
   const filtersId = useId();
 
   const canStaff = useHasPermission('views.staff');
+  const canEquipment = useHasPermission('views.equipment');
   const canArchived = useHasPermission('views.archived');
+  // The keys a measure, a dimension or a filter may need, as held by the user.
+  const heldKeys = useMemo(() => {
+    const held = new Set<PermissionKey>();
+    if (canStaff) held.add('views.staff');
+    if (canEquipment) held.add('views.equipment');
+    if (canArchived) held.add('views.archived');
+    return held;
+  }, [canStaff, canEquipment, canArchived]);
+  const holds = (key: PermissionKey | null): boolean => key === null || heldKeys.has(key);
   const fields = useAppStore((s) => s.projectFields);
   const settings = useAppStore((s) => s.instanceSettings);
   const teams = useAppStore((s) => s.teams);
   const staff = useAppStore((s) => s.staff);
   const projects = useAppStore((s) => s.projects);
   const tags = useAppStore((s) => s.tags);
+  const equipment = useAppStore((s) => s.equipment);
   const sites = useVisibleSites();
 
   const dimensions = useMemo(() => query.dimensions ?? [], [query.dimensions]);
   const filters = useMemo<MetricFilters>(() => query.filters ?? {}, [query.filters]);
-  // The Teams (the person's teams) and People filters exist only on a booking.
-  const bookingMeasure = BOOKING_MEASURES.has(query.measure);
+  // The filters the measure takes, and the user may use (People: views.staff; Equipment: views.equipment).
+  const showsFilter = (key: FilterKey): boolean => takesFilter(query.measure, key) && holds(filterNeeds(key));
+  const noPercent = NO_PERCENT_MEASURES.has(query.measure);
+  const noDimension = kpiWithoutDimension(kind, query.measure);
   const problem = queryProblem(kind, query);
   const clean = useMemo(() => cleanQuery(query), [query]);
   const previewKey = problem ? null : stableKey(clean);
@@ -278,8 +331,9 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
   const allChoices = useMemo<DimensionChoice[]>(() => {
     const out: DimensionChoice[] = [];
     for (const { key, label } of DIMENSION_KINDS) {
-      if (!MATRIX[query.measure].includes(key)) continue;
-      if (key === 'person' && !canStaff) continue;
+      if (!isValidDimension(query.measure, key)) continue;
+      const need = dimensionNeeds(key);
+      if (need !== null && !heldKeys.has(need)) continue;
       if (isDimensionHidden(key, settings)) continue;
       if (key === 'field') {
         for (const field of fields) {
@@ -300,7 +354,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
       out.push({ id: kindId(key), label: key === 'period' ? label : dimensionLabel(dimension, fields, settings), dimension });
     }
     return out;
-  }, [query.measure, canStaff, settings, fields]);
+  }, [query.measure, heldKeys, settings, fields]);
 
   // Only the exact same choice is excluded: two different project fields cross.
   const choicesFor = (index: 0 | 1): DimensionChoice[] => {
@@ -379,8 +433,29 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
         .sort((a, b) => a.name.localeCompare(b.name)),
       project_ids: projectItems,
       tag_ids: tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
+      // The store holds one row per equipment-site pair (empty without views.equipment).
+      equipment_ids: uniqueById(equipment)
+        .map((e) => ({
+          id: e.id,
+          name: e.name,
+          hint:
+            (e.site_ids ?? [e.site_id])
+              .map((id) => siteName.get(id))
+              .filter(Boolean)
+              .join(', ') || undefined,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
     };
-  }, [teams, projects, staff, tags, sites, siteName, filters.archived]);
+  }, [teams, projects, staff, tags, equipment, sites, siteName, filters.archived]);
+
+  // Equipment types are names: the picker numbers them (1-based, in name order),
+  // a stored type no equipment has any more kept so it can be removed.
+  const equipmentTypes = useMemo(() => {
+    const names = new Set<string>();
+    for (const e of equipment) if (e.type?.trim()) names.add(e.type);
+    for (const name of filters.equipment_types ?? []) names.add(name);
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [equipment, filters.equipment_types]);
 
   const listFilter = (key: ListFilter, searchable = false) => (
     <MultiSelectDropdown
@@ -397,6 +472,10 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
   );
 
   const dropdownFields = fields.filter((f) => f.field_type === 'select' || f.field_type === 'multiselect');
+
+  // --- Measures ----------------------------------------------------------------------
+  // Those whose key the user holds; the current one always (a stored widget of a lost key).
+  const measureGroups = measuresByFamily((m) => m === query.measure || holds(measureNeeds(m)));
 
   // --- Period ----------------------------------------------------------------------
   const period = filters.period ?? { relative: 'this_year' as RelativePeriod };
@@ -504,13 +583,15 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
               label="Measure"
               fullWidth
               value={query.measure}
-              onChange={(e) => update(kind, changeMeasure(kind, query, e.target.value as MetricQuery['measure']))}
-              options={MEASURES.map((m) => ({ value: m.key, label: m.label }))}
-              hint={WORKING_DAY_MEASURES.has(query.measure) ? WORKING_DAYS_HINT : undefined}
+              onChange={(e) => update(kind, changeMeasure(kind, query, e.target.value as Measure))}
+              options={[]}
+              groups={measureGroups}
+              hint={measureHint(query.measure)}
             />
 
-            {dimensionField(0)}
-            {MAX_DIMENSIONS[kind] > 1 && dimensions.length > 0 && dimensionField(1)}
+            {/* A KPI of a measure that takes no percentage shows its total: no dimension. */}
+            {!noDimension && dimensionField(0)}
+            {!noDimension && MAX_DIMENSIONS[kind] > 1 && dimensions.length > 0 && dimensionField(1)}
 
             <section className={styles.section}>
               <Button
@@ -526,13 +607,26 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
               </Button>
               {filtersOpen && (
                 <div id={filtersId} className={styles.filters}>
-                  {listFilter('site_ids')}
-                  {bookingMeasure && listFilter('team_ids', true)}
-                  {listFilter('project_team_ids', true)}
-                  {bookingMeasure && canStaff && listFilter('person_ids', true)}
-                  {listFilter('project_ids', true)}
-                  {listFilter('tag_ids')}
-                  {dropdownFields.map((field) => (
+                  {showsFilter('site_ids') && listFilter('site_ids')}
+                  {showsFilter('team_ids') && listFilter('team_ids', true)}
+                  {showsFilter('project_team_ids') && listFilter('project_team_ids', true)}
+                  {showsFilter('person_ids') && listFilter('person_ids', true)}
+                  {showsFilter('project_ids') && listFilter('project_ids', true)}
+                  {showsFilter('tag_ids') && listFilter('tag_ids')}
+                  {showsFilter('equipment_ids') && listFilter('equipment_ids', true)}
+                  {showsFilter('equipment_types') && (
+                    <MultiSelectDropdown
+                      label="Equipment types"
+                      options={equipmentTypes.map((name, i) => ({ id: i + 1, name }))}
+                      selectedIds={
+                        new Set((filters.equipment_types ?? []).map((name) => equipmentTypes.indexOf(name) + 1))
+                      }
+                      onChange={(ids) => setFilters({ equipment_types: ids.map((id) => equipmentTypes[id - 1]) })}
+                      placeholder="Any"
+                      emptyText="No equipment type"
+                    />
+                  )}
+                  {showsFilter('field_options') && dropdownFields.map((field) => (
                     <MultiSelectDropdown
                       key={`field-${field.id}`}
                       label={field.name}
@@ -545,32 +639,45 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
                       emptyText="No item"
                     />
                   ))}
-                  <Select
-                    label="Confirmed"
-                    fullWidth
-                    value={typeof filters.confirmed === 'boolean' ? String(filters.confirmed) : 'any'}
-                    onChange={(e) =>
-                      setFilters({ confirmed: e.target.value === 'any' ? null : e.target.value === 'true' })
-                    }
-                    options={[
-                      { value: 'any', label: 'Any' },
-                      { value: 'true', label: 'Confirmed' },
-                      { value: 'false', label: 'Not confirmed' },
-                    ]}
-                  />
-                  <Select
-                    label="Archived projects"
-                    fullWidth
-                    value={filters.archived ?? 'exclude'}
-                    onChange={(e) => setFilters({ archived: e.target.value as MetricFilters['archived'] })}
-                    options={[
-                      { value: 'exclude', label: 'Exclude' },
-                      ...(canArchived || filters.archived === 'include'
-                        ? [{ value: 'include', label: 'Include' }]
-                        : []),
-                      ...(canArchived || filters.archived === 'only' ? [{ value: 'only', label: 'Only' }] : []),
-                    ]}
-                  />
+                  {showsFilter('milestones') && (
+                    <Select
+                      label="Milestones"
+                      fullWidth
+                      value={filters.milestones ?? 'include'}
+                      onChange={(e) => setFilters({ milestones: e.target.value as MetricFilters['milestones'] })}
+                      options={MILESTONE_OPTIONS}
+                    />
+                  )}
+                  {showsFilter('confirmed') && (
+                    <Select
+                      label="Confirmed"
+                      fullWidth
+                      value={typeof filters.confirmed === 'boolean' ? String(filters.confirmed) : 'any'}
+                      onChange={(e) =>
+                        setFilters({ confirmed: e.target.value === 'any' ? null : e.target.value === 'true' })
+                      }
+                      options={[
+                        { value: 'any', label: 'Any' },
+                        { value: 'true', label: 'Confirmed' },
+                        { value: 'false', label: 'Not confirmed' },
+                      ]}
+                    />
+                  )}
+                  {showsFilter('archived') && (
+                    <Select
+                      label="Archived projects"
+                      fullWidth
+                      value={filters.archived ?? 'exclude'}
+                      onChange={(e) => setFilters({ archived: e.target.value as MetricFilters['archived'] })}
+                      options={[
+                        { value: 'exclude', label: 'Exclude' },
+                        ...(canArchived || filters.archived === 'include'
+                          ? [{ value: 'include', label: 'Include' }]
+                          : []),
+                        ...(canArchived || filters.archived === 'only' ? [{ value: 'only', label: 'Only' }] : []),
+                      ]}
+                    />
+                  )}
                 </div>
               )}
             </section>
@@ -600,14 +707,17 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
             )}
 
             <div className={styles.row}>
-              <Select
-                label="Percent of"
-                fullWidth
-                value={query.percent_of ?? ''}
-                onChange={(e) => setPercentOf(e.target.value)}
-                options={kind === 'kpi' ? percentOptions.slice(0, 2) : percentOptions}
-                disabled={dimensions.length === 0}
-              />
+              {/* Utilisation and available days take no percentage. */}
+              {!noPercent && (
+                <Select
+                  label="Percent of"
+                  fullWidth
+                  value={query.percent_of ?? ''}
+                  onChange={(e) => setPercentOf(e.target.value)}
+                  options={kind === 'kpi' ? percentOptions.slice(0, 2) : percentOptions}
+                  disabled={dimensions.length === 0}
+                />
+              )}
               <Input
                 label="Top N"
                 type="number"

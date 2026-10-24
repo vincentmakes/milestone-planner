@@ -5,10 +5,13 @@
  *
  * Kind rules (the ruling of the plan): a KPI has at most one dimension, and
  * only together with *Percent of = Total* (it then shows one value's share,
- * `options.kpi_bucket`); a pie has exactly one; bar, line and table up to
- * two. The measure → dimension matrix (`utils/metrics.ts`) decides which
- * kinds of dimension a measure accepts. The server stays the judge: a query
- * it refuses is a 422 in plain words, shown by the editor's preview.
+ * `options.kpi_bucket`) — except a KPI of a measure that takes no percentage
+ * (utilisation, available days: `NO_PERCENT_MEASURES`), which has no
+ * dimension and shows the weighted total; a pie has exactly one (never of
+ * available days, which can be negative); bar, line and table up to two. The
+ * measure → dimension and → filter matrices (`utils/metrics.ts`) decide which
+ * dimensions and filters a measure accepts. The server stays the judge: a
+ * query it refuses is a 422 in plain words, shown by the editor's preview.
  */
 
 import type {
@@ -23,7 +26,8 @@ import type {
   WidgetLayout,
   WidgetOptions,
 } from '@/types';
-import { BOOKING_MEASURES, MATRIX, queryUnit } from '@/utils/metrics';
+import { isValidDimension, NO_PERCENT_MEASURES, queryUnit, takesFilter } from '@/utils/metrics';
+import type { FilterKey } from '@/utils/metrics';
 
 /** A widget of the draft: `id` only for a widget the server already holds. */
 export type DraftWidget = Omit<DashboardWidget, 'id' | 'sort_order'> & {
@@ -111,29 +115,36 @@ export function defaultQuery(): MetricQuery {
   };
 }
 
-/** The filters a measure takes: the Teams and People filters only on a booking measure. */
+/** The filters a measure takes (`MEASURE_FILTERS`): the others are dropped. */
 function filtersFor(measure: Measure, filters: MetricFilters | undefined): MetricFilters | undefined {
-  if (!filters || BOOKING_MEASURES.has(measure)) return filters;
-  if (filters.team_ids === undefined && filters.person_ids === undefined) return filters;
+  if (!filters) return filters;
+  const refused = (Object.keys(filters) as FilterKey[]).filter((key) => !takesFilter(measure, key));
+  if (refused.length === 0) return filters;
   const rest = { ...filters };
-  delete rest.team_ids;
-  delete rest.person_ids;
+  for (const key of refused) delete rest[key];
   return rest;
+}
+
+/** Whether a KPI of `measure` has no dimension: the measure takes no percentage, so a KPI shows its total. */
+export function kpiWithoutDimension(kind: WidgetKind, measure: Measure): boolean {
+  return kind === 'kpi' && NO_PERCENT_MEASURES.has(measure);
 }
 
 /**
  * The query made consistent with the widget kind and the measure: extra
- * dimensions and refused ones dropped, the Teams and People filters dropped
- * off a booking measure, a KPI with a dimension shows a share of the total,
- * a percentage needs its dimensions, Top N needs a first dimension that is
- * not a period.
+ * dimensions and refused ones dropped, the filters the measure does not take
+ * dropped (a measure of another family), a KPI with a dimension shows a share
+ * of the total — a KPI of a measure that takes no percentage has no
+ * dimension —, a percentage needs its dimensions and a measure that takes
+ * one, Top N needs a first dimension that is not a period.
  */
 export function normaliseQuery(kind: WidgetKind, query: MetricQuery): MetricQuery {
+  const noPercent = NO_PERCENT_MEASURES.has(query.measure);
   const dimensions = (query.dimensions ?? [])
-    .filter((d) => MATRIX[query.measure].includes(d.kind))
-    .slice(0, MAX_DIMENSIONS[kind]);
+    .filter((d) => isValidDimension(query.measure, d.kind))
+    .slice(0, kpiWithoutDimension(kind, query.measure) ? 0 : MAX_DIMENSIONS[kind]);
   let percentOf = query.percent_of ?? null;
-  if (dimensions.length === 0) percentOf = null;
+  if (dimensions.length === 0 || noPercent) percentOf = null;
   else if (kind === 'kpi') percentOf = 'total';
   else if (percentOf === 'first_dimension' && dimensions.length < 2) percentOf = null;
   const topN = dimensions.length === 0 || dimensions[0].kind === 'period' ? null : query.top_n ?? null;
@@ -141,7 +152,7 @@ export function normaliseQuery(kind: WidgetKind, query: MetricQuery): MetricQuer
   return { ...query, ...(filters ? { filters } : {}), dimensions, percent_of: percentOf, top_n: topN };
 }
 
-/** The query after a change of measure: dimensions the new measure refuses are dropped. */
+/** The query after a change of measure: dimensions and filters the new measure refuses are dropped. */
 export function changeMeasure(kind: WidgetKind, query: MetricQuery, measure: Measure): MetricQuery {
   return normaliseQuery(kind, { ...query, measure });
 }
@@ -171,9 +182,13 @@ export function cleanOptions(kind: WidgetKind, query: MetricQuery, options: Widg
   return clean;
 }
 
+/** Why a pie of available days is refused: its values can be negative. */
+export const NEGATIVE_PIE_PROBLEM = 'Available days can be negative; choose a bar, line, table or KPI';
+
 /** Why a query cannot be previewed or saved yet (client-side), or null. */
 export function queryProblem(kind: WidgetKind, query: MetricQuery): string | null {
   const dimensions = query.dimensions ?? [];
+  if (kind === 'pie' && query.measure === 'available_days') return NEGATIVE_PIE_PROBLEM;
   if (kind === 'pie' && dimensions.length !== 1) return 'A pie chart needs one dimension.';
   if (kind === 'kpi' && dimensions.length > 0 && query.percent_of !== 'total') {
     return 'A KPI with a dimension shows a share: set Percent of to Total.';
@@ -183,9 +198,17 @@ export function queryProblem(kind: WidgetKind, query: MetricQuery): string | nul
   return null;
 }
 
-const LIST_FILTERS = ['site_ids', 'team_ids', 'project_team_ids', 'person_ids', 'project_ids', 'tag_ids'] as const;
+const LIST_FILTERS = [
+  'site_ids',
+  'team_ids',
+  'project_team_ids',
+  'person_ids',
+  'project_ids',
+  'tag_ids',
+  'equipment_ids',
+] as const;
 
-/** The query a widget stores and sends: empty filters and unset fields left out. */
+/** The query a widget stores and sends: empty filters, defaults (archived `exclude`, milestones `include`) and unset fields left out. */
 export function cleanQuery(query: MetricQuery): MetricQuery {
   const source = query.filters ?? {};
   const filters: MetricFilters = {};
@@ -197,6 +220,8 @@ export function cleanQuery(query: MetricQuery): MetricQuery {
   if (fieldOptions.length > 0) filters.field_options = Object.fromEntries(fieldOptions);
   if (typeof source.confirmed === 'boolean') filters.confirmed = source.confirmed;
   if (source.archived && source.archived !== 'exclude') filters.archived = source.archived;
+  if (source.equipment_types && source.equipment_types.length > 0) filters.equipment_types = [...source.equipment_types];
+  if (source.milestones && source.milestones !== 'include') filters.milestones = source.milestones;
   filters.period = source.period ?? { relative: 'this_year' };
   const clean: MetricQuery = { measure: query.measure, filters };
   if (query.dimensions && query.dimensions.length > 0) clean.dimensions = query.dimensions.map((d) => ({ ...d }));
@@ -212,6 +237,8 @@ export function activeFilterCount(filters: MetricFilters | undefined): number {
   count += Object.values(filters.field_options ?? {}).filter((ids) => ids.length > 0).length;
   if (typeof filters.confirmed === 'boolean') count += 1;
   if (filters.archived && filters.archived !== 'exclude') count += 1;
+  if ((filters.equipment_types?.length ?? 0) > 0) count += 1;
+  if (filters.milestones && filters.milestones !== 'include') count += 1;
   return count;
 }
 

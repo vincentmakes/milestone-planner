@@ -5,15 +5,19 @@
  * field), a measure change dropping a refused dimension, the debounced
  * preview (stale answers ignored, 422 → Notice + Save disabled, a network
  * failure → "Preview unavailable"), the custom period, the KPI bucket from
- * the preview, the filters, and the widget handed to the builder.
+ * the preview, the filters, and the widget handed to the builder. The measure
+ * families: the grouped picker gated by views.staff / views.equipment, the
+ * hints, the dimensions and filters per family, no percentage (and a
+ * dimensionless KPI) on utilisation and available days, the twelve periods.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { ApiError } from '@/api/client';
 import { dashboardsApi } from '@/api/endpoints/dashboards';
 import { useAppStore } from '@/stores/appStore';
 import { resetAllStores } from '@/stores';
 import {
+  makeEquipment,
   makeProject,
   makeProjectField,
   makeProjectFieldOption,
@@ -27,7 +31,17 @@ import { optionLabel, pickerOptions, pickerTrigger, pickOption } from '@/test/se
 import { dateValue, pickRange } from '@/test/datePicker';
 import type { MetricQuery, MetricResult } from '@/types';
 import type { PermissionKey } from '@/types/permissions';
-import { KPI_BUCKET_REQUIRED, PREVIEW_DELAY_MS, PREVIEW_UNAVAILABLE, TITLE_REQUIRED, WidgetEditor } from '../WidgetEditor';
+import {
+  CAPACITY_HINT,
+  EQUIPMENT_AVAILABILITY_HINT,
+  KPI_BUCKET_REQUIRED,
+  PREVIEW_DELAY_MS,
+  PREVIEW_UNAVAILABLE,
+  TITLE_REQUIRED,
+  WidgetEditor,
+  WORKING_DAYS_HINT,
+} from '../WidgetEditor';
+import { NEGATIVE_PIE_PROBLEM } from '../widgetDraft';
 import type { DraftWidget } from '../widgetDraft';
 
 vi.mock('@/api/endpoints/dashboards', () => ({
@@ -83,6 +97,24 @@ const dimensionLabels = (n: 1 | 2) => pickerOptions(new RegExp(`^Dimension ${n}`
 const periodSelect = () => screen.getByRole('combobox', { name: 'Period' });
 const saveButton = (name = 'Add widget') => screen.getByRole('button', { name });
 const lastQuery = (): MetricQuery => api.query.mock.calls[api.query.mock.calls.length - 1][0];
+const measureSelect = () => screen.getByLabelText('Measure') as HTMLSelectElement;
+const setMeasure = (value: string) => fireEvent.change(measureSelect(), { target: { value } });
+/** The measure picker's groups: `[family label, [measure labels]]`. */
+const measureGroups = () =>
+  Array.from(measureSelect().querySelectorAll('optgroup')).map((g) => [
+    g.label,
+    Array.from(g.querySelectorAll('option')).map((o) => o.textContent),
+  ]);
+/** The list filters shown, by their labels, in order. */
+const filterButtons = () => {
+  const region = document.getElementById(screen.getByRole('button', { name: /^Filters/ }).getAttribute('aria-controls') ?? '');
+  return within(region as HTMLElement)
+    .getAllByRole('button')
+    .filter((b) => b.getAttribute('aria-haspopup') === 'listbox')
+    .map((b) => document.getElementById((b.getAttribute('aria-labelledby') ?? '').split(' ')[0])?.textContent);
+};
+const HPLC = makeEquipment({ id: 70, name: 'HPLC 1', type: 'HPLC', site_id: 1, site_ids: [1, 2] });
+const MS = makeEquipment({ id: 71, name: 'Mass spec', type: 'MS', site_id: 2, site_ids: [2] });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -441,6 +473,307 @@ describe('WidgetEditor — filters and period', () => {
     fireEvent.change(periodSelect(), { target: { value: 'last_12_months' } });
     await flushPreview();
     expect(lastQuery().filters?.period).toEqual({ relative: 'last_12_months' });
+  });
+});
+
+describe('WidgetEditor — measure families', () => {
+  const ALL = [...BASE, 'views.staff', 'views.equipment', 'views.archived', 'sites.view_all'] as PermissionKey[];
+
+  it('groups the measures by family, in the server order', () => {
+    signIn(ALL);
+    renderEditor();
+    expect(Array.from(measureSelect().children).filter((c) => c.tagName === 'OPTION')).toHaveLength(0);
+    expect(measureGroups()).toEqual([
+      ['Bookings', ['Booked days', 'Booked weeks', 'Bookings', 'People booked']],
+      ['Projects', ['Projects', 'Project weeks', 'Project volume']],
+      ['Phases', ['Phases', 'Phase weeks', 'Phases due', 'Phases overdue']],
+      ['Capacity', ['Capacity (days)', 'Available days', 'Utilisation', 'People over capacity']],
+      [
+        'Equipment',
+        ['Equipment booked days', 'Equipment bookings', 'Equipment booked', 'Equipment utilisation'],
+      ],
+    ]);
+  });
+
+  it('leaves out the capacity measures without views.staff and the equipment ones without views.equipment', () => {
+    signIn(BASE);
+    renderEditor();
+    expect(measureGroups().map(([label]) => label)).toEqual(['Bookings', 'Projects', 'Phases']);
+  });
+
+  it('keeps a stored measure listed when its key was lost, and lets the server refuse it', async () => {
+    signIn(BASE);
+    api.query.mockRejectedValue(new ApiError('Utilisation needs the Staff view', 422));
+    renderEditor({
+      widget: {
+        clientId: 'w9',
+        id: 9,
+        kind: 'bar',
+        title: 'Load',
+        query: { measure: 'utilisation', filters: { period: { relative: 'this_month' } } },
+        options: {},
+        layout: { lg: { x: 0, y: 0, w: 6, h: 5 }, md: { x: 0, y: 0, w: 4, h: 5 }, sm: { x: 0, y: 0, w: 4, h: 5 } },
+      },
+    });
+    expect(measureSelect()).toHaveValue('utilisation');
+    expect(measureGroups().map(([label]) => label)).toEqual(['Bookings', 'Projects', 'Phases', 'Capacity']);
+    expect(measureGroups()[3][1]).toEqual(['Utilisation']);
+    expect(periodSelect()).toHaveValue('this_month');
+    await flushPreview();
+    expect(screen.getByRole('complementary', { name: 'Preview' })).toHaveTextContent('Utilisation needs the Staff view');
+  });
+
+  it('names how each measure counts its days under the picker', () => {
+    signIn(ALL);
+    renderEditor();
+    expect(measureSelect()).toHaveAccessibleDescription(WORKING_DAYS_HINT);
+    setMeasure('equipment_booked_days');
+    expect(measureSelect()).toHaveAccessibleDescription(WORKING_DAYS_HINT);
+    setMeasure('people_over_capacity');
+    expect(measureSelect()).toHaveAccessibleDescription(CAPACITY_HINT);
+    setMeasure('equipment_utilisation');
+    expect(measureSelect()).toHaveAccessibleDescription(EQUIPMENT_AVAILABILITY_HINT);
+    setMeasure('project_count');
+    expect(measureSelect()).not.toHaveAccessibleDescription();
+  });
+
+  it('offers the dimensions of each family, the equipment kinds only with views.equipment', () => {
+    signIn(ALL);
+    renderEditor();
+    setMeasure('utilisation');
+    expect(dimensionLabels(1)).toEqual(['None', 'Site', 'Team', 'Person', 'Period']);
+    setMeasure('phases_due');
+    expect(dimensionLabels(1)).toContain('Status');
+    setMeasure('equipment_utilisation');
+    expect(dimensionLabels(1)).toEqual(['None', 'Site', 'Equipment', 'Equipment type', 'Period']);
+    setMeasure('equipment_booked');
+    expect(dimensionLabels(1)).toContain('Equipment type');
+    expect(dimensionLabels(1)).not.toContain('Period');
+    cleanup();
+    signIn([...BASE, 'views.staff']);
+    // A stored equipment widget without the key: its measure stays, its equipment kinds go.
+    renderEditor({
+      widget: {
+        clientId: 'w2',
+        id: 2,
+        kind: 'bar',
+        title: 'Bookings',
+        query: { measure: 'equipment_booking_count' },
+        options: {},
+        layout: { lg: { x: 0, y: 0, w: 6, h: 5 }, md: { x: 0, y: 0, w: 4, h: 5 }, sm: { x: 0, y: 0, w: 4, h: 5 } },
+      },
+    });
+    expect(dimensionLabels(1)).not.toContain('Equipment');
+    expect(dimensionLabels(1)).not.toContain('Equipment type');
+    expect(dimensionLabels(1)).toContain('Project');
+  });
+
+  it('hides Percent of on the measures that take no percentage, and drops a percentage on the switch', async () => {
+    signIn(ALL);
+    renderEditor();
+    pickOption(/^Dimension 1/, 'Team');
+    fireEvent.change(screen.getByLabelText('Percent of'), { target: { value: 'total' } });
+    setMeasure('utilisation');
+    expect(screen.queryByLabelText('Percent of')).not.toBeInTheDocument();
+    expect(dimension1()).toHaveTextContent('Team');
+    await flushPreview();
+    expect(lastQuery()).toEqual({
+      measure: 'utilisation',
+      dimensions: [{ kind: 'team' }],
+      filters: { period: { relative: 'this_year' } },
+    });
+    setMeasure('capacity_days');
+    expect(screen.getByLabelText('Percent of')).toBeInTheDocument();
+  });
+
+  it('gives a KPI of utilisation no dimension controls, its total in the preview body', async () => {
+    signIn(ALL);
+    renderEditor();
+    fireEvent.click(screen.getByRole('radio', { name: 'KPI' }));
+    pickOption(/^Dimension 1/, 'Site');
+    expect(screen.getByLabelText('Percent of')).toHaveValue('total');
+    setMeasure('utilisation');
+    expect(screen.queryByRole('button', { name: /^Dimension 1/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Percent of')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Bucket')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Top N')).toBeDisabled();
+    api.query.mockResolvedValue(result([{ keys: [], value: 87.5 }], { unit: 'percent', total: 87.5 }));
+    await flushPreview();
+    expect(lastQuery()).toEqual({ measure: 'utilisation', filters: { period: { relative: 'this_year' } } });
+    // A bar chart of it gets its dimension controls back.
+    fireEvent.click(screen.getByRole('radio', { name: 'Bar' }));
+    expect(screen.getByRole('button', { name: /^Dimension 1/ })).toBeInTheDocument();
+  });
+
+  it('refuses a pie of available days, before asking the server', async () => {
+    signIn(ALL);
+    renderEditor();
+    setMeasure('available_days');
+    fireEvent.click(screen.getByRole('radio', { name: 'Pie' }));
+    pickOption(/^Dimension 1/, 'Team');
+    await flushPreview();
+    api.query.mockClear();
+    await flushPreview();
+    expect(api.query).not.toHaveBeenCalled();
+    expect(screen.getByRole('complementary', { name: 'Preview' })).toHaveTextContent(NEGATIVE_PIE_PROBLEM);
+  });
+
+  it('sends a utilisation widget by person over next quarter, cut to some people', async () => {
+    signIn(ALL);
+    const { onSave } = renderEditor();
+    fireEvent.change(screen.getByLabelText('Title *'), { target: { value: 'Load' } });
+    setMeasure('utilisation');
+    pickOption(/^Dimension 1/, 'Person');
+    fireEvent.change(periodSelect(), { target: { value: 'next_quarter' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    pickOption(/^People/, 'Bob Brown');
+    pickOption(/^Teams/, 'Analytics');
+    await flushPreview();
+    const sent = {
+      measure: 'utilisation',
+      dimensions: [{ kind: 'person' }],
+      filters: { team_ids: [5], person_ids: [8], period: { relative: 'next_quarter' } },
+    };
+    expect(lastQuery()).toEqual(sent);
+    fireEvent.click(saveButton());
+    expect(onSave.mock.calls[0][0].query).toEqual(sent);
+  });
+});
+
+describe('WidgetEditor — filters per family', () => {
+  const ALL = [...BASE, 'views.staff', 'views.equipment', 'views.archived', 'sites.view_all'] as PermissionKey[];
+
+  beforeEach(() => {
+    signIn(ALL);
+    useAppStore.setState({
+      equipment: [HPLC, { ...HPLC, site_id: 2 }, MS, makeEquipment({ id: 72, name: 'Rig', type: '  ', site_ids: [] })],
+    });
+  });
+
+  it('shows Sites, Teams and People only on a capacity measure', () => {
+    renderEditor();
+    setMeasure('capacity_days');
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect(filterButtons()).toEqual(['Sites', 'Teams', 'People']);
+    expect(screen.getByLabelText('Archived projects')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Confirmed')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Milestones')).not.toBeInTheDocument();
+  });
+
+  it('adds the Milestones mode on a phase measure, sent only when not Include', async () => {
+    renderEditor();
+    setMeasure('phases_overdue');
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect(screen.queryByRole('button', { name: /^Teams/ })).not.toBeInTheDocument();
+    const milestones = screen.getByLabelText('Milestones');
+    expect(milestones).toHaveValue('include');
+    expect(within(milestones).getAllByRole('option').map((o) => o.textContent)).toEqual(['Include', 'Only', 'Exclude']);
+    fireEvent.change(milestones, { target: { value: 'exclude' } });
+    await flushPreview();
+    expect(lastQuery().filters).toEqual({ milestones: 'exclude', period: { relative: 'this_year' } });
+    expect(screen.getByRole('button', { name: 'Filters (1)' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Milestones'), { target: { value: 'include' } });
+    await flushPreview();
+    expect(lastQuery().filters).toEqual({ period: { relative: 'this_year' } });
+    // Off a phase measure the mode is dropped.
+    fireEvent.change(screen.getByLabelText('Milestones'), { target: { value: 'only' } });
+    setMeasure('project_count');
+    expect(screen.queryByLabelText('Milestones')).not.toBeInTheDocument();
+    await flushPreview();
+    expect(lastQuery().filters).toEqual({ period: { relative: 'this_year' } });
+  });
+
+  it('adds Equipment (each once, with its sites) and Equipment types on an equipment measure', async () => {
+    renderEditor();
+    setMeasure('equipment_booked_days');
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect(filterButtons()).toEqual([
+      'Sites',
+      'Project teams',
+      'Projects',
+      'Tags',
+      'Equipment',
+      'Equipment types',
+      'Project type',
+    ]);
+    expect(pickerOptions(/^Equipment(?! types)/).map((o) => o.textContent)).toEqual([
+      'HPLC 1 Basel, Berlin',
+      'Mass spec Berlin',
+      'Rig',
+    ]);
+    expect(pickerOptions(/^Equipment types/).map(optionLabel)).toEqual(['HPLC', 'MS']);
+    pickOption(/^Equipment(?! types)/, 'Mass spec');
+    pickOption(/^Equipment types/, 'MS');
+    pickOption(/^Equipment types/, 'HPLC');
+    await flushPreview();
+    expect(lastQuery().filters).toEqual({
+      equipment_ids: [71],
+      equipment_types: ['HPLC', 'MS'],
+      period: { relative: 'this_year' },
+    });
+    expect(screen.getByRole('button', { name: 'Filters (2)' })).toBeInTheDocument();
+    pickOption(/^Equipment types/, 'HPLC');
+    await flushPreview();
+    expect(lastQuery().filters?.equipment_types).toEqual(['MS']);
+    // Equipment utilisation filters the equipment and its sites only.
+    setMeasure('equipment_utilisation');
+    expect(filterButtons()).toEqual(['Sites', 'Equipment', 'Equipment types']);
+    expect(screen.queryByLabelText('Confirmed')).not.toBeInTheDocument();
+  });
+
+  it('keeps a stored equipment type no equipment has any more, so it can be removed', async () => {
+    renderEditor({
+      widget: {
+        clientId: 'w5',
+        id: 5,
+        kind: 'bar',
+        title: 'Types',
+        query: { measure: 'equipment_booking_count', filters: { equipment_types: ['Oven'] } },
+        options: {},
+        layout: { lg: { x: 0, y: 0, w: 6, h: 5 }, md: { x: 0, y: 0, w: 4, h: 5 }, sm: { x: 0, y: 0, w: 4, h: 5 } },
+      },
+    });
+    expect(pickerOptions(/^Equipment types/).map(optionLabel)).toEqual(['HPLC', 'MS', 'Oven']);
+    pickOption(/^Equipment types/, 'Oven');
+    await flushPreview();
+    expect(lastQuery().filters).toEqual({ period: { relative: 'this_year' } });
+  });
+
+  it('shows the equipment filters only with views.equipment, People only with views.staff', () => {
+    signIn([...BASE, 'views.archived']);
+    renderEditor({
+      widget: {
+        clientId: 'w6',
+        id: 6,
+        kind: 'bar',
+        title: 'Bookings',
+        query: { measure: 'equipment_booked' },
+        options: {},
+        layout: { lg: { x: 0, y: 0, w: 6, h: 5 }, md: { x: 0, y: 0, w: 4, h: 5 }, sm: { x: 0, y: 0, w: 4, h: 5 } },
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect(screen.queryByRole('button', { name: /^Equipment/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Projects/ })).toBeInTheDocument();
+  });
+
+  it('offers the twelve relative periods, then a custom range', () => {
+    renderEditor();
+    expect(within(periodSelect()).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'This year',
+      'Last year',
+      'Next year',
+      'This quarter',
+      'Last quarter',
+      'Next quarter',
+      'This month',
+      'Last month',
+      'Next month',
+      'Last 12 months',
+      'Next 12 months',
+      'All time',
+      'Custom…',
+    ]);
   });
 });
 
