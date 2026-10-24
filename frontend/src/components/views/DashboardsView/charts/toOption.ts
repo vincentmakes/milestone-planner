@@ -8,7 +8,10 @@
  *   never a `time` axis: the server's period labels are the buckets.
  * - A second dimension becomes the series, one per value; a missing
  *   (category × series) point is 0 (the server zero-fills period buckets
- *   only when the period is the single dimension).
+ *   only when the period is the single dimension). A `null` value (a ratio
+ *   over nothing: utilisation of a week without capacity) stays `null`, a
+ *   gap in the bar or line, and a pie leaves its slice out; values over
+ *   100 % are drawn as they are.
  * - `stacked` stacks the series; 100 % when `percent` is set or the server
  *   already answered percentages (`unit: 'percent'`): the value axis ends at
  *   100 (unless the result has a `note`: a fact counted in several values can
@@ -62,6 +65,12 @@ function distinctKeys(result: MetricResult, index: number): MetricKey[] {
 
 const round = (value: number): number => Math.round(value * 100) / 100;
 
+/** A row's value added to a point: null only while every value so far is null (`undefined` = none yet). */
+const addValue = (sum: number | null | undefined, value: number | null): number | null => {
+  if (value === null) return sum ?? null;
+  return (sum ?? 0) + value;
+};
+
 /** Categories above which a vertical chart tilts its labels. */
 export const ROTATE_ABOVE = 6;
 
@@ -99,8 +108,9 @@ export function toOption(
   layout: ChartLayout = {}
 ): ChartOption {
   const opts = options ?? {};
-  /** A value with its unit word ("70.1 weeks"); nothing after a percentage. */
-  const withUnit = (value: number, unit: MetricUnit, format: WidgetOptions | null) => {
+  /** A value with its unit word ("70.1 weeks"); nothing after a percentage or a missing value ("–"). */
+  const withUnit = (value: number | null | undefined, unit: MetricUnit, format: WidgetOptions | null) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) return formatMetric(null, unit);
     const text = formatMetric(value, unit, format);
     const word = unit !== 'percent' && format?.number_format !== 'percent' ? UNIT_LABELS[unit] : '';
     return word ? `${text} ${word}` : text;
@@ -111,17 +121,17 @@ export function toOption(
   const categories = distinctKeys(result, 0);
 
   if (kind === 'pie') {
-    const valueOf = new Map<string, number>();
+    const valueOf = new Map<string, number | null>();
     for (const row of result.rows) {
       const id = keyId(row.keys[0] ?? TOTAL_KEY);
-      valueOf.set(id, (valueOf.get(id) ?? 0) + row.value);
+      valueOf.set(id, addValue(valueOf.get(id), row.value));
     }
     const unit = result.unit;
     return {
       aria,
       tooltip: {
         trigger: 'item',
-        valueFormatter: (value: number) => withUnit(value, unit, opts),
+        valueFormatter: (value: number | null) => withUnit(value, unit, opts),
       },
       legend: opts.show_legend === true ? { show: true, type: 'scroll', top: 0 } : { show: false },
       series: [
@@ -130,11 +140,12 @@ export function toOption(
           radius: ['40%', '70%'],
           avoidLabelOverlap: true,
           label: { color: theme.textSecondary, overflow: 'truncate', width: 120 },
-          data: categories.map((key, i) => ({
-            name: key.label,
-            value: valueOf.get(keyId(key)) ?? 0,
-            itemStyle: { color: widgetColor(key, i, palette, muted) },
-          })),
+          // A slice of nothing (null) is left out; colours keep their position.
+          data: categories.flatMap((key, i) => {
+            const value = valueOf.get(keyId(key));
+            if (value === null || value === undefined) return [];
+            return [{ name: key.label, value, itemStyle: { color: widgetColor(key, i, palette, muted) } }];
+          }),
         },
       ],
     };
@@ -146,29 +157,32 @@ export function toOption(
   const normalise = Boolean(opts.percent) && result.unit !== 'percent';
   const displayUnit: MetricUnit = percentMode ? 'percent' : result.unit;
 
-  // values[series][category]
-  const values = seriesKeys.map(() => categories.map(() => 0));
+  // values[series][category]: 0 for a missing point, null for a ratio over nothing
+  const values: (number | null)[][] = seriesKeys.map(() => categories.map(() => 0));
+  const seen = seriesKeys.map(() => categories.map(() => false));
   const categoryIndex = new Map(categories.map((key, i) => [keyId(key), i]));
   const seriesIndex = new Map(seriesKeys.map((key, i) => [key ? keyId(key) : 'null', i]));
   for (const row of result.rows) {
     const c = categoryIndex.get(keyId(row.keys[0] ?? TOTAL_KEY));
     const s = twoDimensions ? seriesIndex.get(keyId(row.keys[1])) : 0;
     if (c === undefined || s === undefined) continue;
-    values[s][c] += row.value;
+    values[s][c] = addValue(seen[s][c] ? values[s][c] : undefined, row.value);
+    seen[s][c] = true;
   }
   if (normalise) {
     if (twoDimensions) {
       categories.forEach((_, c) => {
-        const sum = values.reduce((acc, series) => acc + series[c], 0);
+        const sum = values.reduce<number>((acc, series) => acc + (series[c] ?? 0), 0);
         values.forEach((series) => {
-          series[c] = sum > 0 ? round((series[c] / sum) * 100) : 0;
+          const v = series[c];
+          series[c] = v === null ? null : sum > 0 ? round((v / sum) * 100) : 0;
         });
       });
     } else {
       // The server's distinct total: a multi-valued dimension's rows add up
       // to more than it, and their sum would understate every share.
-      const total = result.total;
-      values[0] = values[0].map((v) => (total > 0 ? round((v / total) * 100) : 0));
+      const total = result.total ?? 0;
+      values[0] = values[0].map((v) => (v === null ? null : total > 0 ? round((v / total) * 100) : 0));
     }
   }
 
@@ -223,7 +237,7 @@ export function toOption(
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: kind === 'line' ? 'line' : 'shadow' },
-      valueFormatter: (value: number) => withUnit(value, displayUnit, percentMode ? null : opts),
+      valueFormatter: (value: number | null) => withUnit(value, displayUnit, percentMode ? null : opts),
     },
     xAxis: horizontal ? valueAxis : categoryAxis,
     yAxis: horizontal ? categoryAxis : valueAxis,

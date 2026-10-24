@@ -148,4 +148,50 @@ describe('TableWidget', () => {
     render(<TableWidget result={result} query={{ measure: 'project_count', dimensions: [{ kind: 'customer' }] }} />);
     expect(screen.getAllByRole('rowheader').map((h) => h.textContent)).toEqual(['Acme', 'No customer', 'Other', 'Total']);
   });
+
+  it('shows a dash for a value over nothing (null), one dimension or two, and for a null total', () => {
+    const result: MetricResult = {
+      ...base,
+      unit: 'percent',
+      dimensions: [{ kind: 'person', label: 'Person' }],
+      rows: [
+        { keys: [A], value: null },
+        { keys: [B], value: 120 },
+      ],
+      total: null,
+    };
+    render(<TableWidget result={result} query={{ measure: 'utilisation', dimensions: [{ kind: 'person' }] }} />);
+    const rows = screen.getAllByRole('row');
+    expect(cells(rows[1])).toEqual(['–']);
+    expect(cells(rows[2])[0]).toMatch(/^120\s%$/);
+    expect(cells(rows[3])).toEqual(['–']);
+  });
+
+  it('keeps a null cell "–" beside a missing (empty) one in a cross table, and sums capacity days', () => {
+    const result: MetricResult = {
+      ...base,
+      unit: 'days',
+      dimensions: [
+        { kind: 'team', label: 'Team' },
+        { kind: 'confirmed', label: 'Confirmed' },
+      ],
+      rows: [
+        { keys: [A, yes], value: null },
+        { keys: [A, no], value: 4 },
+        { keys: [B, yes], value: 2 },
+        { keys: [B, yes], value: null },
+      ],
+      total: 6,
+    };
+    render(
+      <TableWidget
+        result={result}
+        query={{ measure: 'capacity_days', dimensions: [{ kind: 'team' }, { kind: 'confirmed' }] }}
+      />
+    );
+    const rows = screen.getAllByRole('row');
+    expect(cells(rows[1])).toEqual(['–', '4.0', '4.0']);
+    expect(cells(rows[2])).toEqual(['2.0', '', '2.0']);
+    expect(cells(rows[3])).toEqual(['2.0', '4.0', '6.0']);
+  });
 });

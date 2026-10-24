@@ -62,6 +62,13 @@ describe('KpiTile', () => {
     expect(kpiValue(noneConfirmed, shareQuery, { kpi_bucket: true })).toEqual({ value: 0, label: null, missing: true });
   });
 
+  it('shows a dash for a total over nothing (null), with no unit word for a percentage', () => {
+    const none: MetricResult = { ...plain, unit: 'percent', rows: [{ keys: [], value: null }], total: null };
+    const { container } = render(<KpiTile result={none} query={{ measure: 'utilisation' }} />);
+    expect(container.querySelector('[class*="number"]')).toHaveTextContent(/^–$/);
+    expect(kpiValue(none, { measure: 'utilisation' })).toEqual({ value: null, label: null, missing: false });
+  });
+
   it('hides the unit word when the number is formatted as a percentage', () => {
     render(<KpiTile result={plain} query={{ measure: 'booked_weeks' }} options={{ number_format: 'percent' }} />);
     expect(screen.getByText(/^123\.4\s%$/)).toBeInTheDocument();
@@ -83,6 +90,19 @@ describe('kpiValue', () => {
     expect(kpiValue(byItem, itemQuery, { kpi_bucket: 4 })).toEqual({ value: 60, label: 'Service', missing: false });
     expect(kpiValue(byItem, itemQuery, { kpi_bucket: '3' })).toEqual({ value: 40, label: 'R&D', missing: false });
     expect(kpiValue(byItem, itemQuery, { kpi_bucket: 'Service' }).missing).toBe(true);
+  });
+
+  it('is null for a bucket whose rows are all null, and adds the numbers of a mixed one', () => {
+    const nulls: MetricResult = {
+      ...share,
+      rows: [
+        { keys: [{ key: 3, label: 'R&D' }], value: null },
+        { keys: [{ key: 4, label: 'Service' }], value: null },
+        { keys: [{ key: 4, label: 'Service' }], value: 25 },
+      ],
+    };
+    expect(kpiValue(nulls, itemQuery, { kpi_bucket: 3 })).toEqual({ value: null, label: 'R&D', missing: false });
+    expect(kpiValue(nulls, itemQuery, { kpi_bucket: 4 }).value).toBe(25);
   });
 
   it('matches a boolean bucket given as a string', () => {

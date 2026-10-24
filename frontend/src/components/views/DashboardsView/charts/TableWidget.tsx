@@ -3,8 +3,9 @@
  * second dimension's as columns, and a totals row.
  *
  * Cells are formatted with `formatMetric`; a missing (row × column) point is
- * empty. Row and column sums are shown only for additive measures (booked,
- * project and phase weeks / days) in their own unit — summing distinct
+ * empty, a `null` value (a ratio over nothing) "–". Row and column sums are
+ * shown only for additive measures (booked, project and phase weeks / days,
+ * capacity, available and equipment booked days) in their own unit — summing distinct
  * counts or percentages would double count — and only when no fact counted
  * in several values (the result's `note`: a booking on a project tagged A and
  * B sits in both cells), while the grand total is always the server's
@@ -24,7 +25,15 @@ export interface TableWidgetProps {
 }
 
 /** Measures whose values add up over the dimension values. */
-const ADDITIVE = new Set(['booked_days', 'booked_weeks', 'project_weeks', 'phase_weeks']);
+const ADDITIVE = new Set([
+  'booked_days',
+  'booked_weeks',
+  'project_weeks',
+  'phase_weeks',
+  'capacity_days',
+  'available_days',
+  'equipment_booked_days',
+]);
 
 const keyId = (key: MetricKey | undefined): string => JSON.stringify(normaliseKey(key?.key ?? null));
 
@@ -41,8 +50,11 @@ function distinct(result: MetricResult, index: number): MetricKey[] {
     .map(({ key }) => key);
 }
 
+/** A one-dimension row's value: 0 when absent, null (shown "–") kept. */
+const valueOrZero = (value: number | null | undefined): number | null => (value === undefined ? 0 : value);
+
 export function TableWidget({ result, query, options, dimensionLabels }: TableWidgetProps) {
-  const fmt = (value: number) => formatMetric(value, result.unit, options);
+  const fmt = (value: number | null) => formatMetric(value, result.unit, options);
   const labels = dimensionLabels ?? result.dimensions.map((d) => d.label);
   const sums = ADDITIVE.has(query.measure) && result.unit !== 'percent' && !result.note;
   const valueHeader = UNIT_LABELS[result.unit] || '%';
@@ -64,13 +76,15 @@ export function TableWidget({ result, query, options, dimensionLabels }: TableWi
 
   const rows = distinct(result, 0);
   const columns = result.dimensions.length >= 2 ? distinct(result, 1) : [];
-  const cell = new Map<string, number>();
+  // A cell is null only while every one of its rows is (a ratio over nothing).
+  const cell = new Map<string, number | null>();
   for (const row of result.rows) {
     const id = `${keyId(row.keys[0])}|${columns.length > 0 ? keyId(row.keys[1]) : ''}`;
-    cell.set(id, (cell.get(id) ?? 0) + row.value);
+    const sum = cell.get(id);
+    cell.set(id, row.value === null ? sum ?? null : (sum ?? 0) + row.value);
   }
   const valueAt = (r: MetricKey, c: MetricKey | null) => cell.get(`${keyId(r)}|${c ? keyId(c) : ''}`);
-  const sumOf = (values: (number | undefined)[]) => values.reduce<number>((acc, v) => acc + (v ?? 0), 0);
+  const sumOf = (values: (number | null | undefined)[]) => values.reduce<number>((acc, v) => acc + (v ?? 0), 0);
 
   return (
     <div className={styles.wrapper}>
@@ -105,7 +119,7 @@ export function TableWidget({ result, query, options, dimensionLabels }: TableWi
                   {sums && <td>{fmt(sumOf(columns.map((c) => valueAt(r, c))))}</td>}
                 </>
               ) : (
-                <td>{fmt(valueAt(r, null) ?? 0)}</td>
+                <td>{fmt(valueOrZero(valueAt(r, null)))}</td>
               )}
             </tr>
           ))}

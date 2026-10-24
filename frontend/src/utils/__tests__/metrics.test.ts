@@ -10,18 +10,29 @@ import matrix from '../../../../shared/metric-matrix.json';
 import {
   ARCHIVED_NEEDS,
   archivedNeeds,
-  BOOKING_MEASURES,
   DIMENSION_KINDS,
   dimensionLabel,
   dimensionNeeds,
   FALLBACK_PALETTE,
+  FAMILIES,
+  FAMILY_LABELS,
+  FILTER_KEYS,
+  filterNeeds,
   formatMetric,
   GRAINS,
   isDimensionHidden,
   isValidDimension,
   MATRIX,
+  MEASURE_FILTERS,
+  measureFamily,
+  measureLabel,
+  measureNeeds,
   MEASURES,
+  measuresByFamily,
+  NEEDS,
+  NO_PERCENT_MEASURES,
   normaliseKey,
+  takesFilter,
   OTHER_KEY,
   periodLabel,
   queryUnit,
@@ -31,44 +42,102 @@ import {
   widgetColor,
 } from '../metrics';
 import { SKILL_COLOR_SWATCHES } from '../colorSwatches';
-import type { DimensionKind, Measure } from '@/types';
+import type { DimensionKind, Measure, MeasureFamily } from '@/types';
 
 const sorted = (values: Iterable<string>) => [...values].sort();
 
+type MatrixMeasure = keyof typeof matrix.measures;
+const spec = (measure: Measure) => matrix.measures[measure as MatrixMeasure];
+
 describe('metric matrix mirror', () => {
-  it('names exactly the server measures, with their units', () => {
-    expect(sorted(MEASURES.map((m) => m.key))).toEqual(sorted(Object.keys(matrix.measures)));
+  it('names exactly the server measures, in its order, with their units', () => {
+    expect(MEASURES.map((m) => m.key)).toEqual(Object.keys(matrix.measures));
     for (const measure of MEASURES) {
-      expect(measure.unit).toBe(matrix.measures[measure.key as keyof typeof matrix.measures].unit);
+      expect(measure.unit).toBe(spec(measure.key).unit);
+    }
+  });
+
+  it('labels the measures like the server (MEASURE_LABELS)', () => {
+    expect(Object.fromEntries(MEASURES.map((m) => [m.key, m.label]))).toEqual({
+      booked_days: 'Booked days',
+      booked_weeks: 'Booked weeks',
+      booking_count: 'Bookings',
+      people_booked: 'People booked',
+      project_count: 'Projects',
+      project_weeks: 'Project weeks',
+      project_volume: 'Project volume',
+      phase_count: 'Phases',
+      phase_weeks: 'Phase weeks',
+      phases_due: 'Phases due',
+      phases_overdue: 'Phases overdue',
+      capacity_days: 'Capacity (days)',
+      available_days: 'Available days',
+      utilisation: 'Utilisation',
+      people_over_capacity: 'People over capacity',
+      equipment_booked_days: 'Equipment booked days',
+      equipment_booking_count: 'Equipment bookings',
+      equipment_booked: 'Equipment booked',
+      equipment_utilisation: 'Equipment utilisation',
+    });
+  });
+
+  it('keeps each family contiguous, in the server family order', () => {
+    const runs = MEASURES.map((m) => m.family).filter((family, i, all) => i === 0 || all[i - 1] !== family);
+    expect(runs).toEqual([...FAMILIES]);
+    expect(FAMILIES).toEqual(['booking', 'project', 'phase', 'capacity', 'equipment']);
+  });
+
+  it('puts each measure in the family the server’s needs and filters describe', () => {
+    for (const [measure, s] of Object.entries(matrix.measures)) {
+      const filters: string[] = s.filters;
+      let family: MeasureFamily;
+      if (s.needs === 'views.staff') family = 'capacity';
+      else if (s.needs === 'views.equipment') family = 'equipment';
+      else if (filters.includes('milestones')) family = 'phase';
+      else if (filters.includes('person_ids')) family = 'booking';
+      else family = 'project';
+      expect([measure, measureFamily(measure as Measure)]).toEqual([measure, family]);
     }
   });
 
   it('accepts the same dimensions per measure', () => {
-    for (const [measure, spec] of Object.entries(matrix.measures)) {
-      expect(sorted(MATRIX[measure as Measure])).toEqual(sorted(spec.dimensions));
+    for (const [measure, s] of Object.entries(matrix.measures)) {
+      expect(sorted(MATRIX[measure as Measure])).toEqual(sorted(s.dimensions));
       expect(new Set(MATRIX[measure as Measure]).size).toBe(MATRIX[measure as Measure].length);
     }
   });
 
-  it('names every dimension kind the matrix uses', () => {
-    const used = new Set(Object.values(matrix.measures).flatMap((m) => m.dimensions));
-    expect(sorted(DIMENSION_KINDS.map((d) => d.key))).toEqual(sorted(used));
-  });
-
-  it('asks for the same permissions', () => {
-    expect(dimensionNeeds('person')).toBe(matrix.needs.person);
-    expect(ARCHIVED_NEEDS).toBe(matrix.needs.archived);
-    for (const { key } of DIMENSION_KINDS) {
-      if (key !== 'person') expect(dimensionNeeds(key)).toBeNull();
+  it('takes the same filters per measure', () => {
+    for (const [measure, s] of Object.entries(matrix.measures)) {
+      expect([measure, sorted(MEASURE_FILTERS[measure as Measure])]).toEqual([measure, sorted(s.filters)]);
+      expect(new Set(MEASURE_FILTERS[measure as Measure]).size).toBe(MEASURE_FILTERS[measure as Measure].length);
     }
   });
 
-  it('counts as booking measures exactly those the server breaks down by person', () => {
-    const byPerson = Object.entries(matrix.measures)
-      .filter(([, spec]) => spec.dimensions.includes('person'))
-      .map(([key]) => key)
-      .sort();
-    expect([...BOOKING_MEASURES].sort()).toEqual(byPerson);
+  it('names every dimension kind the matrix uses, and every filter key', () => {
+    const used = new Set(Object.values(matrix.measures).flatMap((m) => m.dimensions));
+    expect(sorted(DIMENSION_KINDS.map((d) => d.key))).toEqual(sorted(used));
+    const filters = new Set(Object.values(matrix.measures).flatMap((m) => m.filters));
+    expect(sorted(FILTER_KEYS)).toEqual(sorted(filters));
+  });
+
+  it('asks for the same permissions: per measure, and the merged dimension / filter / archived map', () => {
+    for (const [measure, s] of Object.entries(matrix.measures)) {
+      expect([measure, measureNeeds(measure as Measure)]).toEqual([measure, s.needs]);
+    }
+    expect(NEEDS).toEqual(matrix.needs);
+    expect(ARCHIVED_NEEDS).toBe(matrix.needs.archived);
+    for (const { key } of DIMENSION_KINDS) {
+      expect([key, dimensionNeeds(key)]).toEqual([key, (matrix.needs as Record<string, string>)[key] ?? null]);
+    }
+    for (const key of FILTER_KEYS) {
+      const expected = key === 'archived' ? null : (matrix.needs as Record<string, string>)[key] ?? null;
+      expect([key, filterNeeds(key)]).toEqual([key, expected]);
+    }
+  });
+
+  it('refuses a percentage on the same measures', () => {
+    expect(sorted(NO_PERCENT_MEASURES)).toEqual(matrix.no_percent);
   });
 
   it('offers the same relative periods and grains, in order', () => {
@@ -83,7 +152,43 @@ describe('matrix helpers', () => {
     expect(isValidDimension('people_booked', 'period')).toBe(false);
     expect(isValidDimension('project_volume', 'period')).toBe(false);
     expect(isValidDimension('phase_count', 'phase_type')).toBe(true);
+    expect(isValidDimension('phases_due', 'status')).toBe(true);
+    expect(isValidDimension('booked_days', 'status')).toBe(false);
     expect(isValidDimension('project_count', 'team')).toBe(false);
+    expect(isValidDimension('utilisation', 'project')).toBe(false);
+    expect(isValidDimension('equipment_utilisation', 'equipment_type')).toBe(true);
+    expect(isValidDimension('booked_days', 'equipment')).toBe(false);
+    expect(isValidDimension('unknown' as Measure, 'site')).toBe(false);
+  });
+
+  it('tells the filters a measure takes', () => {
+    expect(takesFilter('booked_days', 'person_ids')).toBe(true);
+    expect(takesFilter('utilisation', 'project_ids')).toBe(false);
+    expect(takesFilter('phase_count', 'milestones')).toBe(true);
+    expect(takesFilter('equipment_utilisation', 'equipment_types')).toBe(true);
+    expect(takesFilter('unknown' as Measure, 'site_ids')).toBe(false);
+  });
+
+  it('knows each measure’s family and name, unknown ones too', () => {
+    expect(measureFamily('utilisation')).toBe('capacity');
+    expect(measureFamily('unknown' as Measure)).toBe('booking');
+    expect(measureLabel('phases_due')).toBe('Phases due');
+    expect(measureLabel('unknown' as Measure)).toBe('unknown');
+  });
+
+  it('groups the measures by family for the picker, empty families dropped', () => {
+    const groups = measuresByFamily();
+    expect(groups.map((g) => g.label)).toEqual(['Bookings', 'Projects', 'Phases', 'Capacity', 'Equipment']);
+    expect(groups.flatMap((g) => g.options.map((o) => o.value))).toEqual(MEASURES.map((m) => m.key));
+    expect(groups[3].options).toEqual([
+      { value: 'capacity_days', label: 'Capacity (days)' },
+      { value: 'available_days', label: 'Available days' },
+      { value: 'utilisation', label: 'Utilisation' },
+      { value: 'people_over_capacity', label: 'People over capacity' },
+    ]);
+    const noCapacity = measuresByFamily((m) => measureFamily(m) !== 'capacity');
+    expect(noCapacity.map((g) => g.label)).toEqual(['Bookings', 'Projects', 'Phases', 'Equipment']);
+    expect(FAMILY_LABELS.equipment).toBe('Equipment');
   });
 
   it('needs views.archived only to include archived projects', () => {
@@ -97,9 +202,15 @@ describe('matrix helpers', () => {
     expect(RELATIVE_PERIODS.map((p) => p.label)).toEqual([
       'This year',
       'Last year',
+      'Next year',
       'This quarter',
       'Last quarter',
+      'Next quarter',
+      'This month',
+      'Last month',
+      'Next month',
       'Last 12 months',
+      'Next 12 months',
       'All time',
     ]);
   });
@@ -107,6 +218,8 @@ describe('matrix helpers', () => {
   it('derives a query’s unit from its measure, or percent', () => {
     expect(queryUnit({ measure: 'booked_weeks' })).toBe('weeks');
     expect(queryUnit({ measure: 'project_count', percent_of: 'total' })).toBe('percent');
+    expect(queryUnit({ measure: 'utilisation' })).toBe('percent');
+    expect(queryUnit({ measure: 'equipment_booked' })).toBe('equipment');
     expect(queryUnit({ measure: 'unknown' as Measure })).toBe('count');
   });
 });
@@ -123,6 +236,7 @@ describe('formatMetric', () => {
     expect(formatMetric(7.6, 'count')).toBe('8');
     expect(formatMetric(3, 'people')).toBe('3');
     expect(formatMetric(2, 'phases')).toBe('2');
+    expect(formatMetric(4, 'equipment')).toBe('4');
   });
 
   it('shows volumes with up to two decimals', () => {
@@ -135,6 +249,11 @@ describe('formatMetric', () => {
     expect(formatMetric(50, 'percent')).toBe('50 %');
   });
 
+  it('shows a percentage past 100 as it is, never clamped (a double booking)', () => {
+    expect(formatMetric(110, 'percent')).toMatch(/^110\s%$/);
+    expect(formatMetric(254.55, 'percent')).toMatch(/^254\.6\s%$/);
+  });
+
   it('follows number_format', () => {
     expect(formatMetric(12.34, 'weeks', { number_format: 'integer' })).toBe('12');
     expect(formatMetric(3, 'projects', { number_format: 'decimal' })).toBe('3.00');
@@ -145,6 +264,7 @@ describe('formatMetric', () => {
 
   it('shows a dash for no value', () => {
     expect(formatMetric(null, 'weeks')).toBe('–');
+    expect(formatMetric(null, 'percent')).toBe('–');
     expect(formatMetric(undefined, 'weeks')).toBe('–');
     expect(formatMetric(Number.NaN, 'weeks')).toBe('–');
   });
@@ -172,6 +292,9 @@ describe('labels', () => {
     expect(dimensionLabel({ kind: 'period', grain: 'month' }, fields, null)).toBe('Month');
     expect(dimensionLabel({ kind: 'period', grain: 'decade' as never }, fields, null)).toBe('Period');
     expect(dimensionLabel({ kind: 'project_manager' }, fields, null)).toBe('Project manager');
+    expect(dimensionLabel({ kind: 'status' }, fields, null)).toBe('Status');
+    expect(dimensionLabel({ kind: 'equipment' }, fields, null)).toBe('Equipment');
+    expect(dimensionLabel({ kind: 'equipment_type' }, fields, null)).toBe('Equipment type');
     expect(dimensionLabel({ kind: 'mystery' as Exclude<DimensionKind, 'field' | 'period'> }, fields, null)).toBe(
       'mystery'
     );
@@ -186,6 +309,7 @@ describe('labels', () => {
   it('has a word for every unit but percent', () => {
     expect(UNIT_LABELS.weeks).toBe('weeks');
     expect(UNIT_LABELS.count).toBe('bookings');
+    expect(UNIT_LABELS.equipment).toBe('equipment');
     expect(UNIT_LABELS.percent).toBe('');
   });
 });

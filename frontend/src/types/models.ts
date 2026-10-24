@@ -968,7 +968,20 @@ export type Measure =
   | 'project_weeks'
   | 'project_volume'
   | 'phase_count'
-  | 'phase_weeks';
+  | 'phase_weeks'
+  | 'phases_due'
+  | 'phases_overdue'
+  | 'capacity_days'
+  | 'available_days'
+  | 'utilisation'
+  | 'people_over_capacity'
+  | 'equipment_booked_days'
+  | 'equipment_booking_count'
+  | 'equipment_booked'
+  | 'equipment_utilisation';
+
+/** The fact families of the measures, in the order the builder groups them. */
+export type MeasureFamily = 'booking' | 'project' | 'phase' | 'capacity' | 'equipment';
 
 export type DimensionKind =
   | 'site'
@@ -981,6 +994,9 @@ export type DimensionKind =
   | 'confirmed'
   | 'tag'
   | 'phase_type'
+  | 'status'
+  | 'equipment'
+  | 'equipment_type'
   | 'field'
   | 'period';
 
@@ -989,13 +1005,28 @@ export type Grain = 'year' | 'quarter' | 'month' | 'week';
 export type RelativePeriod =
   | 'this_year'
   | 'last_year'
+  | 'next_year'
   | 'this_quarter'
   | 'last_quarter'
+  | 'next_quarter'
+  | 'this_month'
+  | 'last_month'
+  | 'next_month'
   | 'last_12_months'
+  | 'next_12_months'
   | 'all';
 
 /** Units of a result: the measure's, or `percent` when the query asks a percentage. */
-export type MetricUnit = 'days' | 'weeks' | 'count' | 'people' | 'projects' | 'phases' | 'volume' | 'percent';
+export type MetricUnit =
+  | 'days'
+  | 'weeks'
+  | 'count'
+  | 'people'
+  | 'projects'
+  | 'phases'
+  | 'volume'
+  | 'equipment'
+  | 'percent';
 
 export type MetricDimension =
   | { kind: Exclude<DimensionKind, 'field' | 'period'> }
@@ -1020,6 +1051,11 @@ export interface MetricFilters {
   field_options?: Record<string, number[]> | null;
   archived?: 'exclude' | 'include' | 'only';
   period?: MetricPeriod;
+  equipment_ids?: number[] | null;
+  /** Exact equipment type names (case-sensitive) */
+  equipment_types?: string[] | null;
+  /** Phase measures: milestones counted too (`include`, the default, is never stored), only, or left out */
+  milestones?: 'include' | 'only' | 'exclude';
 }
 
 export interface MetricQuery {
@@ -1039,14 +1075,16 @@ export interface MetricKey {
 
 export interface MetricRow {
   keys: MetricKey[];
-  value: number;
+  /** `null` for a ratio over nothing (utilisation of a booked week with no capacity) */
+  value: number | null;
 }
 
 export interface MetricResult {
   unit: MetricUnit;
   dimensions: { kind: DimensionKind; label: string }[];
   rows: MetricRow[];
-  total: number;
+  /** `null` like a row value (a ratio over nothing) */
+  total: number | null;
   /** The `all` period was cut to five years */
   truncated: boolean;
   /** Stale ids dropped from the filters ("Team 14 no longer exists") */

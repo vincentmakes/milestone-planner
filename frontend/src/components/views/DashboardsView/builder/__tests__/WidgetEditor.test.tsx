@@ -54,7 +54,7 @@ const result = (rows: MetricResult['rows'] = [{ keys: [], value: 4 }], extra: Pa
   unit: 'weeks',
   dimensions: [],
   rows,
-  total: rows.reduce((sum, r) => sum + r.value, 0),
+  total: rows.reduce((sum, r) => sum + (r.value ?? 0), 0),
   truncated: false,
   warnings: [],
   ...extra,

@@ -12,7 +12,7 @@ import type { MetricKey, MetricResult, MetricRow } from '@/types';
 const theme: ChartTheme = { palette: ['p0', 'p1', 'p2'], textMuted: 'muted', textSecondary: 'secondary' };
 
 const k = (key: MetricKey['key'], label: string, color?: string): MetricKey => ({ key, label, ...(color ? { color } : {}) });
-const row = (keys: MetricKey[], value: number): MetricRow => ({ keys, value });
+const row = (keys: MetricKey[], value: number | null): MetricRow => ({ keys, value });
 
 function result(rows: MetricRow[], dims: number, extra: Partial<MetricResult> = {}): MetricResult {
   const kinds = ['team', 'confirmed'] as const;
@@ -20,7 +20,7 @@ function result(rows: MetricRow[], dims: number, extra: Partial<MetricResult> = 
     unit: 'weeks',
     dimensions: kinds.slice(0, dims).map((kind) => ({ kind, label: kind })),
     rows,
-    total: rows.reduce((sum, r) => sum + r.value, 0),
+    total: rows.reduce((sum, r) => sum + (r.value ?? 0), 0),
     truncated: false,
     warnings: [],
     ...extra,
@@ -234,6 +234,58 @@ describe('toOption — two dimensions', () => {
     const option = toOption('bar', result(rows, 2), {}, theme) as AnyOption;
     expect(option.series).toHaveLength(1);
     expect(option.series[0].data).toEqual([1, 0]);
+  });
+});
+
+describe('toOption — values over nothing (null)', () => {
+  // Utilisation of a week with booked time but no capacity: the server sends null.
+  const weeks = result([row([k('2026-W01', 'W01')], 40), row([k('2026-W02', 'W02')], null), row([k('2026-W03', 'W03')], 110)], 1, {
+    unit: 'percent',
+    total: null,
+  });
+
+  it('leaves a gap in a bar or line, never a 0, and draws values over 100 % as they are', () => {
+    expect((toOption('bar', weeks, {}, theme) as AnyOption).series[0].data).toEqual([40, null, 110]);
+    const line = toOption('line', weeks, {}, theme) as AnyOption;
+    expect(line.series[0].data).toEqual([40, null, 110]);
+    expect(line.yAxis.max).toBeUndefined();
+    expect(line.tooltip.valueFormatter(null)).toBe('–');
+    expect(line.tooltip.valueFormatter(110)).toMatch(/^110\s%$/);
+  });
+
+  it('keeps a null point beside the colours of its values', () => {
+    const coloured = result([row([k(1, 'Ann', '#aaa')], null), row([k(2, 'Bob', '#bbb')], 50)], 1, { unit: 'percent' });
+    expect((toOption('bar', coloured, {}, theme) as AnyOption).series[0].data).toEqual([
+      { value: null, itemStyle: { color: '#aaa' } },
+      { value: 50, itemStyle: { color: '#bbb' } },
+    ]);
+  });
+
+  it('keeps a null point null across two dimensions, a missing one 0, and adds a number to a null', () => {
+    const rows = [row([A, yes], null), row([B, yes], 20), row([B, yes], null), row([A, no], 5)];
+    const option = toOption('bar', result(rows, 2, { unit: 'days' }), {}, theme) as AnyOption;
+    expect(option.series[0].data).toEqual([null, 20]);
+    expect(option.series[1].data).toEqual([5, 0]);
+    expect(option.tooltip.valueFormatter(null)).toBe('–');
+  });
+
+  it('keeps null points null when normalising to 100 %', () => {
+    const rows = [row([A, yes], null), row([A, no], 5), row([B, yes], 3), row([B, no], 1)];
+    const stacked = toOption('bar', result(rows, 2, { unit: 'days' }), { stacked: true, percent: true }, theme) as AnyOption;
+    expect(stacked.series[0].data).toEqual([null, 75]);
+    expect(stacked.series[1].data).toEqual([100, 25]);
+    const single = result([row([A], null), row([B], 4)], 1, { unit: 'days', total: null });
+    expect((toOption('bar', single, { percent: true }, theme) as AnyOption).series[0].data).toEqual([null, 0]);
+  });
+
+  it('leaves a null slice out of a pie, the others keeping their colours', () => {
+    const rows = [row([A], null), row([B], 2), row([k(3, 'Gamma')], 4)];
+    const option = toOption('pie', result(rows, 1, { unit: 'percent' }), {}, theme) as AnyOption;
+    expect(option.series[0].data).toEqual([
+      { name: 'Beta', value: 2, itemStyle: { color: 'p1' } },
+      { name: 'Gamma', value: 4, itemStyle: { color: 'p2' } },
+    ]);
+    expect(option.tooltip.valueFormatter(null)).toBe('–');
   });
 });
 
