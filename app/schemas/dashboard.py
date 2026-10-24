@@ -66,7 +66,18 @@ PlainKind = Literal[
 ]
 Grain = Literal["year", "quarter", "month", "week"]
 RelativeName = Literal[
-    "this_year", "last_year", "this_quarter", "last_quarter", "last_12_months", "all"
+    "this_year",
+    "last_year",
+    "next_year",
+    "this_quarter",
+    "last_quarter",
+    "next_quarter",
+    "this_month",
+    "last_month",
+    "next_month",
+    "last_12_months",
+    "next_12_months",
+    "all",
 ]
 WidgetKind = Literal["kpi", "bar", "line", "pie", "table"]
 Visibility = Literal["private", "shared", "everyone"]

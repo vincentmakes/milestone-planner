@@ -146,9 +146,15 @@
   "relative_periods": [
     "this_year",
     "last_year",
+    "next_year",
     "this_quarter",
     "last_quarter",
+    "next_quarter",
+    "this_month",
+    "last_month",
+    "next_month",
     "last_12_months",
+    "next_12_months",
     "all"
   ],
   "grains": [

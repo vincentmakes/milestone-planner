@@ -95,11 +95,31 @@ DIMENSION_KINDS: tuple[str, ...] = (*PLAIN_DIMENSION_KINDS, "field", "period")
 RELATIVE_PERIODS: tuple[str, ...] = (
     "this_year",
     "last_year",
+    "next_year",
     "this_quarter",
     "last_quarter",
+    "next_quarter",
+    "this_month",
+    "last_month",
+    "next_month",
     "last_12_months",
+    "next_12_months",
     "all",
 )
+PERIOD_LABELS: dict[str, str] = {
+    "this_year": "This year",
+    "last_year": "Last year",
+    "next_year": "Next year",
+    "this_quarter": "This quarter",
+    "last_quarter": "Last quarter",
+    "next_quarter": "Next quarter",
+    "this_month": "This month",
+    "last_month": "Last month",
+    "next_month": "Next month",
+    "last_12_months": "Last 12 months",
+    "next_12_months": "Next 12 months",
+    "all": "All time",
+}
 GRAINS: tuple[str, ...] = ("year", "quarter", "month", "week")
 ARCHIVED_MODES: tuple[str, ...] = ("exclude", "include", "only")
 
@@ -433,6 +453,11 @@ def _month_end(year: int, month: int) -> date:
     return date(year, month + 1, 1) - timedelta(days=1)
 
 
+def _month_start(month_index: int) -> date:
+    """The first day of the month ``year * 12 + month - 1``."""
+    return date(month_index // 12, month_index % 12 + 1, 1)
+
+
 def _quarter_bounds(year: int, quarter: int) -> tuple[date, date]:
     first_month = 3 * quarter - 2
     return date(year, first_month, 1), _month_end(year, first_month + 2)
@@ -444,10 +469,14 @@ def resolve_period(
     """
     ``(from, to, truncated)`` of a period spec.
 
-    Relative: ``this_year`` / ``last_year`` (calendar years), ``this_quarter``
-    / ``last_quarter``, ``last_12_months`` (the 12 whole calendar months
-    ending with the current one), ``all`` (``extent``, the min..max of the
-    projects in scope; no projects -> today). An ``all`` extent longer than
+    Relative: ``this_year`` / ``last_year`` / ``next_year`` (calendar years),
+    ``this_quarter`` / ``last_quarter`` / ``next_quarter`` (calendar
+    quarters), ``this_month`` / ``last_month`` / ``next_month`` (calendar
+    months), ``last_12_months`` (the 12 whole calendar months ending with the
+    current one), ``next_12_months`` (the 12 whole calendar months starting
+    with the current one: both include the current month), ``all``
+    (``extent``, the min..max of the projects in scope; no projects ->
+    today). An ``all`` extent longer than
     five years is cut, ``truncated``: its end to at most a year after today
     (planned work stays in), its start to five years before that end.
     Absolute: ``{from, to}``.
@@ -469,10 +498,24 @@ def resolve_period(
             _quarter_bounds(year - 1, 4) if quarter == 1 else _quarter_bounds(year, quarter - 1)
         )
         return first, last, False
+    if relative == "next_year":
+        return date(year + 1, 1, 1), date(year + 1, 12, 31), False
+    if relative == "next_quarter":
+        first, last = (
+            _quarter_bounds(year + 1, 1) if quarter == 4 else _quarter_bounds(year, quarter + 1)
+        )
+        return first, last, False
+    # Months are counted as ``year * 12 + month - 1`` so shifts cross years.
+    month_index = year * 12 + today.month - 1
+    if relative in ("this_month", "last_month", "next_month"):
+        shift = {"this_month": 0, "last_month": -1, "next_month": 1}[relative]
+        first = _month_start(month_index + shift)
+        return first, _month_end(first.year, first.month), False
     if relative == "last_12_months":
-        month_index = year * 12 + (today.month - 1) - 11
-        first = date(month_index // 12, month_index % 12 + 1, 1)
-        return first, _month_end(year, today.month), False
+        return _month_start(month_index - 11), _month_end(year, today.month), False
+    if relative == "next_12_months":
+        last_month = _month_start(month_index + 11)
+        return date(year, today.month, 1), _month_end(last_month.year, last_month.month), False
     if relative == "all":
         if extent is None:
             return today, today, False
