@@ -170,6 +170,41 @@ async def test_superuser_can_change_own_email(authed_client, mock_db_session, de
 
 
 @pytest.mark.asyncio
+async def test_an_email_on_a_reserved_local_domain_is_saved(
+    authed_client, mock_db_session, destroy_sessions
+):
+    """The demo accounts and the quick-start admin live on ``.local``."""
+    client, set_user = authed_client
+    set_user(FakeUser(5, "superuser"))
+    me = make_user(5, "superuser")
+    route_db(mock_db_session, me)
+
+    resp = await client.put("/api/users/5", json={"email": "diana@Demo.Local"})
+
+    assert resp.status_code == 200
+    assert me.email == "diana@demo.local"
+
+
+@pytest.mark.asyncio
+async def test_an_invalid_email_is_422_in_plain_words(
+    authed_client, mock_db_session, destroy_sessions
+):
+    client, set_user = authed_client
+    set_user(FakeUser(5, "superuser"))
+    me = make_user(5, "superuser")
+    route_db(mock_db_session, me)
+
+    resp = await client.put("/api/users/5", json={"email": "not-an-email"})
+
+    assert resp.status_code == 422
+    (error,) = resp.json()["detail"]
+    assert error["loc"][-1] == "email"
+    assert error["msg"] == "Enter a valid e-mail address"
+    assert me.email == "u5@example.com"
+    mock_db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_superuser_cannot_elevate_role(authed_client, mock_db_session, destroy_sessions):
     client, set_user = authed_client
     set_user(FakeUser(5, "superuser"))

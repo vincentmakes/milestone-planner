@@ -14,10 +14,47 @@ local-offset shift. Pure dates are calendar days and serialise as midnight UTC.
 from datetime import UTC, date, datetime
 from typing import Annotated, Generic, TypeVar
 
+import email_validator
+from email_validator import EmailNotValidError, validate_email
 from fastapi import Query
-from pydantic import BaseModel, BeforeValidator, ConfigDict, PlainSerializer, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    PlainSerializer,
+    model_validator,
+)
+from pydantic_core import PydanticCustomError
 
 T = TypeVar("T")
+
+EMAIL_INVALID_MESSAGE = "Enter a valid e-mail address"
+
+# ``.local`` is a reserved (special-use) name that email-validator refuses even
+# with ``globally_deliverable=False``, yet it is the domain of the quick-start
+# admin (``admin@milestone.local``) and of the demo accounts, and an address
+# here is a sign-in name, never a mail target. Removing it from the library's
+# list is its documented way to allow one (README, "Special Use Domain
+# Names"); the others (``localhost``, ``invalid``, ``test``, ...) stay refused.
+if "local" in email_validator.SPECIAL_USE_DOMAIN_NAMES:
+    email_validator.SPECIAL_USE_DOMAIN_NAMES.remove("local")
+
+
+def _validate_email(value: str) -> str:
+    """A syntactically valid address, normalised (no DNS lookup)."""
+    try:
+        return validate_email(
+            value, check_deliverability=False, globally_deliverable=False
+        ).normalized
+    except EmailNotValidError:
+        raise PydanticCustomError("email", EMAIL_INVALID_MESSAGE) from None
+
+
+# The e-mail field of every user and administrator body (in place of
+# ``pydantic.EmailStr``, which refuses ``.local``). A refusal is a plain 422
+# message: ``Enter a valid e-mail address``.
+EmailAddress = Annotated[str, AfterValidator(_validate_email)]
 
 # A "#rrggbb" hex colour (tags, tag groups, teams).
 COLOR_PATTERN = "^#[0-9A-Fa-f]{6}$"
