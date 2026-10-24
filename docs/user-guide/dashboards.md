@@ -78,7 +78,7 @@ While you edit, the toolbar shows **Undo**, **Redo**, **Add widget**, **Save** a
 
 - **Rename** the dashboard and change its **description** in the two fields above the widgets (*Name* is required, up to 100 characters; the description up to 2000). Clearing the name and clicking **Save** shows *Enter a name* and saves nothing
 - **Move** a widget by dragging its header
-- **Resize** it from its bottom-right corner
+- **Resize** it from its bottom-right corner: making it wider or narrower trades width with the widgets beside it in its row, so the row stays full (no widget gets narrower than two columns); making it taller pushes the rows below down
 - The **edit** and **remove** icons in a widget's header open it in the widget editor or take it off the dashboard
 
 **Undo** and **Redo** (or **Ctrl/Cmd + Z** and **Ctrl/Cmd + Y** / **Ctrl/Cmd + Shift + Z**, outside the Name and Description fields) step back and forth through your moves, resizes, added, changed and removed widgets and renames — up to 50 steps — until you save or cancel; the header's Undo and Redo belong to the Gantt chart and are not shown on this view.

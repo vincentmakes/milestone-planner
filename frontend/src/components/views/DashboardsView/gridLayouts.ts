@@ -19,31 +19,6 @@ export const GRID_MARGIN: readonly [number, number] = [12, 12];
 
 const BREAKPOINT_NAMES = Object.keys(GRID_COLS) as GridBreakpoint[];
 
-/**
- * The library's per-breakpoint layouts of the widgets (item `i` = the widget id).
- *
- * Each item carries `maxW` = the columns from its `x` to the right edge (at
- * least its own width, for a stored layout the library moves back inside).
- * react-grid-layout 2.3.0 refuses, rather than clamps, a resize move whose
- * pixel width would cross the grid's right edge (`resizeEast` keeps the
- * current width), so a pointer sample past the edge before the last column
- * is reached left a widget stuck short of it: growing a widget back to the
- * right edge failed while shrinking always worked. With `maxW` the resize
- * corner caps the pixel width at the edge first (react-resizable's
- * `maxConstraints`), the move is never refused, and the widget takes every
- * column up to the edge.
- */
-export function toGridLayouts(widgets: readonly DashboardWidget[]): ResponsiveLayouts<GridBreakpoint> {
-  const layouts: Partial<Record<GridBreakpoint, Layout>> = {};
-  for (const bp of BREAKPOINT_NAMES) {
-    layouts[bp] = widgets.map((widget) => {
-      const pos = widget.layout[bp];
-      return { i: String(widget.id), ...pos, maxW: Math.max(GRID_COLS[bp] - pos.x, pos.w) };
-    });
-  }
-  return layouts;
-}
-
 /** The narrowest a widget gets while its row trades width (a stored narrower one keeps its width). */
 export const MIN_COLS = 2;
 
@@ -114,6 +89,34 @@ export function fluidResize(layout: Layout, itemId: string, nextW: number, cols:
     if (moving.has(entry.i)) return { ...entry, x: entry.x + delta, w: entry.w - delta };
     return entry;
   });
+}
+
+/**
+ * The library's per-breakpoint layouts of the widgets (item `i` = the widget id).
+ *
+ * Each item carries `maxW` (`fluidMaxW`): the columns from its `x` to the
+ * grid's right edge when nothing is right of it in its rows, else what its
+ * right column can give while keeping two columns each — the row-fluid resize
+ * (`fluidResize`, applied live by `DashboardGrid`) trades width with that
+ * column. react-grid-layout 2.3.0 refuses, rather than clamps, a resize move
+ * whose pixel width would cross the grid's right edge (`resizeEast` keeps the
+ * current width), so a pointer sample past the edge before the last column is
+ * reached left a widget stuck short of it; with `maxW` the resize corner caps
+ * the pixel width first (react-resizable's `maxConstraints`) and the move is
+ * never refused. `minW` = two columns (or a narrower stored width), so the
+ * corner stops where the rule does.
+ */
+export function toGridLayouts(widgets: readonly DashboardWidget[]): ResponsiveLayouts<GridBreakpoint> {
+  const layouts: Partial<Record<GridBreakpoint, Layout>> = {};
+  for (const bp of BREAKPOINT_NAMES) {
+    const base: Layout = widgets.map((widget) => ({ i: String(widget.id), ...widget.layout[bp] }));
+    layouts[bp] = base.map((entry) => ({
+      ...entry,
+      minW: Math.min(MIN_COLS, entry.w),
+      maxW: fluidMaxW(base, entry, GRID_COLS[bp]),
+    }));
+  }
+  return layouts;
 }
 
 /** The library's layouts back into each widget's `{lg, md, sm}` (a breakpoint it did not report keeps its position). */

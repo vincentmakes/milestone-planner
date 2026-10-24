@@ -4,13 +4,18 @@
  * item per widget at its stored position for the breakpoint of the
  * container width; nothing drags or resizes in view mode; a drag's or a
  * resize's report tagged as a gesture, the library's own as settling; the
- * conversions between widget layouts and the library's.
+ * row-fluid resize live during the gesture and in the report it ends with,
+ * and undone in one step through the builder's editor; the conversions
+ * between widget layouts and the library's.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { DashboardGrid } from '../DashboardGrid';
+import { useDashboardEditor } from '../builder/useDashboardEditor';
+import type { DashboardEditor } from '../builder/useDashboardEditor';
 import { fromGridLayouts, GRID_BREAKPOINTS, GRID_COLS, GRID_MARGIN, GRID_ROW_HEIGHT, toGridLayouts } from '../gridLayouts';
-import type { DashboardWidget, MetricResult } from '@/types';
+import type { Dashboard, DashboardWidget, MetricResult, WidgetLayout } from '@/types';
+import type { LayoutSource } from '../gridLayouts';
 
 const container = vi.hoisted(() => ({ width: 1200, mounted: true }));
 
@@ -26,6 +31,18 @@ vi.mock('react-grid-layout', async (importOriginal) => {
     }),
   };
 });
+
+vi.mock('@/api/endpoints/dashboards', () => ({
+  dashboardsApi: {
+    list: vi.fn(),
+    get: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    remove: vi.fn(),
+    query: vi.fn(),
+    data: vi.fn(),
+  },
+}));
 
 vi.mock('../charts/EChart', () => ({ EChart: () => <div data-testid="echart" /> }));
 
@@ -266,12 +283,160 @@ describe('DashboardGrid', () => {
 
   it('bounds every item’s width by the columns right of it', () => {
     const layouts = toGridLayouts(rightPair);
-    expect(layouts.lg!.map((l) => l.maxW)).toEqual([12, 6]);
-    expect(layouts.md!.map((l) => l.maxW)).toEqual([8, 4]);
+    // lg: the first widget beside the second (4 columns) may take 2 of them
+    expect(layouts.lg!.map((l) => l.maxW)).toEqual([8, 6]);
+    expect(layouts.md!.map((l) => l.maxW)).toEqual([6, 4]);
+    // sm: stacked, nothing beside either
     expect(layouts.sm!.map((l) => l.maxW)).toEqual([4, 4]);
+    expect(layouts.lg!.map((l) => l.minW)).toEqual([2, 2]);
     // A stored layout past the edge (the library moves it left) keeps its width
     const past = toGridLayouts([widget(1, [10, 0, 4, 2], [0, 0, 4, 2])]);
     expect(past.lg![0].maxW).toBe(4);
+    // A widget stored narrower than two columns may stay so
+    expect(toGridLayouts([widget(1, [0, 0, 1, 2], [0, 0, 4, 2])]).lg![0].minW).toBe(1);
+  });
+
+  // Two charts side by side on lg, a third below: 87 px per column, 12 px apart.
+  const row = [
+    widget(1, [0, 0, 6, 2], [0, 0, 4, 2]),
+    widget(2, [6, 0, 6, 2], [4, 0, 4, 2]),
+    widget(3, [0, 2, 12, 2], [0, 2, 8, 2]),
+  ];
+  const box = (id: number) => {
+    const el = document.querySelector<HTMLElement>(`[data-widget-id="${id}"]`)!;
+    return { transform: el.style.transform, width: el.style.width };
+  };
+  const renderRow = (onLayoutChange: (layouts: Record<number, WidgetLayout>, source: LayoutSource) => void) =>
+    render(<DashboardGrid widgets={row} data={data} editing onLayoutChange={onLayoutChange} />);
+  const press = (handle: Element) => fireEvent.mouseDown(handle, { button: 0, clientX: 1000, clientY: 500 });
+  const moveTo = (x: number, y = 500) => fireEvent.mouseMove(document, { button: 0, buttons: 1, clientX: x, clientY: y });
+  const release = (x: number, y = 500) => fireEvent.mouseUp(document, { button: 0, clientX: x, clientY: y });
+
+  it('narrows the right neighbour while a widget grows, live, and reports both', () => {
+    const onLayoutChange = vi.fn();
+    const { container: root } = renderRow(onLayoutChange);
+    onLayoutChange.mockClear();
+    press(root.querySelector('[data-widget-id="1"] > .react-resizable-handle-se')!);
+    // Two columns wider (2 × 99 px): during the gesture the neighbour has moved and narrowed
+    moveTo(1198);
+    expect(box(2)).toEqual({ transform: 'translate(804px,12px)', width: '384px' });
+    expect(onLayoutChange).not.toHaveBeenCalled();
+    release(1198);
+    // The library reports the gesture's layout from its stop and again from its
+    // state effect; the builder ignores the repeat (same positions)
+    expect(onLayoutChange).toHaveBeenCalled();
+    const first = JSON.stringify(onLayoutChange.mock.calls[0][0]);
+    expect(onLayoutChange.mock.calls.every((call) => JSON.stringify(call[0]) === first)).toBe(true);
+    const [reported, source] = onLayoutChange.mock.calls[0];
+    expect(source).toBe('gesture');
+    expect(reported[1].lg).toEqual({ x: 0, y: 0, w: 8, h: 2 });
+    expect(reported[2].lg).toEqual({ x: 8, y: 0, w: 4, h: 2 });
+    // The row below and the other breakpoints are untouched
+    expect(reported[3].lg).toEqual(row[2].layout.lg);
+    expect(reported[2].md).toEqual(row[1].layout.md);
+  });
+
+  it('widens the right neighbour while a widget shrinks, and gives it back within the gesture', () => {
+    const onLayoutChange = vi.fn();
+    const { container: root } = renderRow(onLayoutChange);
+    onLayoutChange.mockClear();
+    press(root.querySelector('[data-widget-id="1"] > .react-resizable-handle-se')!);
+    moveTo(1198);
+    // Back to the start width: the neighbour is back where it was
+    moveTo(1000);
+    expect(box(2)).toEqual({ transform: 'translate(606px,12px)', width: '582px' });
+    // Three columns narrower: the neighbour takes them
+    moveTo(703);
+    expect(box(2)).toEqual({ transform: 'translate(309px,12px)', width: '879px' });
+    release(703);
+    expect(lastLg(onLayoutChange, 1)).toEqual({ x: 0, y: 0, w: 3, h: 2 });
+    expect(lastLg(onLayoutChange, 2)).toEqual({ x: 3, y: 0, w: 9, h: 2 });
+  });
+
+  it('stops where the neighbour reaches two columns, and pushes the rows below on a height change', () => {
+    const onLayoutChange = vi.fn();
+    const { container: root } = renderRow(onLayoutChange);
+    onLayoutChange.mockClear();
+    press(root.querySelector('[data-widget-id="1"] > .react-resizable-handle-se')!);
+    // Far past the neighbour and a row taller
+    moveTo(1900, 592);
+    release(1900, 592);
+    expect(lastLg(onLayoutChange, 1)).toEqual({ x: 0, y: 0, w: 10, h: 3 });
+    expect(lastLg(onLayoutChange, 2)).toEqual({ x: 10, y: 0, w: 2, h: 2 });
+    expect(lastLg(onLayoutChange, 3)).toEqual({ x: 0, y: 3, w: 12, h: 2 });
+  });
+
+  it('never narrows the widget itself below two columns', () => {
+    const onLayoutChange = vi.fn();
+    const { container: root } = renderRow(onLayoutChange);
+    onLayoutChange.mockClear();
+    press(root.querySelector('[data-widget-id="1"] > .react-resizable-handle-se')!);
+    moveTo(100);
+    release(100);
+    expect(lastLg(onLayoutChange, 1)).toEqual({ x: 0, y: 0, w: 2, h: 2 });
+    expect(lastLg(onLayoutChange, 2)).toEqual({ x: 2, y: 0, w: 10, h: 2 });
+  });
+
+  it('trades width on the md grid too (8 columns)', () => {
+    container.width = 800;
+    const onLayoutChange = vi.fn();
+    const { container: root } = renderRow(onLayoutChange);
+    onLayoutChange.mockClear();
+    press(root.querySelector('[data-widget-id="1"] > .react-resizable-handle-se')!);
+    // 86.5 px per column + 12: one column wider
+    moveTo(1099);
+    release(1099);
+    const reported = onLayoutChange.mock.calls[onLayoutChange.mock.calls.length - 1][0];
+    expect(reported[1].md).toEqual({ x: 0, y: 0, w: 5, h: 2 });
+    expect(reported[2].md).toEqual({ x: 5, y: 0, w: 3, h: 2 });
+    expect(reported[1].lg).toEqual(row[0].layout.lg);
+  });
+
+  it('undoes a fluid resize in one step through the builder’s editor, both widgets back', async () => {
+    const open: Dashboard = {
+      id: 7,
+      name: 'Plan',
+      description: null,
+      visibility: 'private',
+      role_ids: [],
+      site_ids: [],
+      team_ids: [],
+      user_ids: [],
+      shared_with: { roles: [], sites: [], teams: [], users: [] },
+      owner_id: 1,
+      owner_name: 'Ada',
+      is_default: false,
+      widget_count: 3,
+      can_edit: true,
+      updated_at: '2026-10-23T10:00:00.000Z',
+      widgets: row,
+    };
+    const harness: { editor: DashboardEditor | null } = { editor: null };
+    function EditedGrid() {
+      const editor = useDashboardEditor(open);
+      harness.editor = editor;
+      return editor.editing ? (
+        <DashboardGrid widgets={editor.gridWidgets} data={{}} editing onLayoutChange={editor.setLayouts} />
+      ) : null;
+    }
+    const { container: root } = render(<EditedGrid />);
+    act(() => harness.editor!.startEdit());
+    const lgOf = (index: number) => harness.editor!.draft!.widgets[index].layout.lg;
+    press(root.querySelector('[data-widget-id="1"] > .react-resizable-handle-se')!);
+    moveTo(1198);
+    release(1198);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(lgOf(0)).toEqual({ x: 0, y: 0, w: 8, h: 2 });
+    expect(lgOf(1)).toEqual({ x: 8, y: 0, w: 4, h: 2 });
+    act(() => harness.editor!.undo());
+    expect(lgOf(0)).toEqual(row[0].layout.lg);
+    expect(lgOf(1)).toEqual(row[1].layout.lg);
+    expect(harness.editor!.canUndo).toBe(false);
+    expect(harness.editor!.dirty).toBe(false);
+    // And the grid shows them back
+    expect(box(2)).toEqual({ transform: 'translate(606px,12px)', width: '582px' });
   });
 
   it('lays out without a change listener', () => {
@@ -285,8 +450,10 @@ describe('grid layout conversions', () => {
   it('turns widget layouts into the library’s, per breakpoint, keyed by widget id', () => {
     const layouts = toGridLayouts(widgets);
     expect(Object.keys(layouts)).toEqual(['lg', 'md', 'sm']);
-    expect(layouts.lg![1]).toEqual({ i: '2', x: 3, y: 0, w: 3, h: 2, maxW: 9 });
-    expect(layouts.md![2]).toEqual({ i: '3', x: 0, y: 2, w: 8, h: 5, maxW: 8 });
+    expect(layouts.lg![1]).toEqual({ i: '2', x: 3, y: 0, w: 3, h: 2, minW: 2, maxW: 9 });
+    // Beside widget 2 (3 columns): it can give one
+    expect(layouts.lg![0]).toEqual({ i: '1', x: 0, y: 0, w: 3, h: 2, minW: 2, maxW: 4 });
+    expect(layouts.md![2]).toEqual({ i: '3', x: 0, y: 2, w: 8, h: 5, minW: 2, maxW: 8 });
   });
 
   it('reads them back, keeping a breakpoint the library did not report', () => {

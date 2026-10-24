@@ -43,7 +43,12 @@ describe('fluidResize', () => {
   });
 
   it('moves a stacked column together (two KPIs beside a tall chart)', () => {
-    const layout: Layout = [item('chart', 0, 0, 6, 4), item('a', 6, 0, 6, 2), item('b', 6, 2, 4, 2), item('far', 10, 2, 2, 2)];
+    const layout: Layout = [
+      item('chart', 0, 0, 6, 4),
+      item('a', 6, 0, 6, 2),
+      item('b', 6, 2, 4, 2),
+      item('far', 10, 2, 2, 2),
+    ];
     const grown = fluidResize(layout, 'chart', 7, 12);
     expect(boxes(grown)).toEqual({ chart: [0, 0, 7, 4], a: [7, 0, 5, 2], b: [7, 2, 3, 2], far: [10, 2, 2, 2] });
     // The narrowest item of the column decides: b (4 columns) gives 2 at most
@@ -127,7 +132,12 @@ describe('fluidResize', () => {
 
 describe('rightColumn', () => {
   it('is the band’s items at the smallest x right of the widget', () => {
-    const layout: Layout = [item('chart', 0, 0, 6, 4), item('a', 6, 0, 6, 2), item('b', 6, 2, 4, 2), item('far', 10, 2, 2, 2)];
+    const layout: Layout = [
+      item('chart', 0, 0, 6, 4),
+      item('a', 6, 0, 6, 2),
+      item('b', 6, 2, 4, 2),
+      item('far', 10, 2, 2, 2),
+    ];
     expect(rightColumn(layout, layout[0]).map((l) => l.i)).toEqual(['a', 'b']);
     expect(rightColumn(layout, layout[3])).toEqual([]);
     // Left of the widget does not count
