@@ -46,7 +46,7 @@ MATRIX_FILE = ROOT / "shared" / "metric-matrix.json"
 
 BOOKING = ("booked_days", "booked_weeks", "booking_count", "people_booked")
 PROJECT = ("project_count", "project_weeks", "project_volume")
-PHASE = ("phase_count", "phase_weeks")
+PHASE = ("phase_count", "phase_weeks", "phases_due", "phases_overdue")
 PROJECT_KINDS = {
     "site",
     "project_team",
@@ -120,7 +120,9 @@ def test_filters_per_family():
 
 @pytest.mark.parametrize("measure", BOOKING)
 def test_booking_measures_accept_every_kind_but_people_by_period(measure):
-    expected = set(DIMENSION_KINDS) - ({"period"} if measure == "people_booked" else set())
+    # Every kind but the phase status (people_booked: nor the period).
+    expected = set(DIMENSION_KINDS) - {"status"}
+    expected -= {"period"} if measure == "people_booked" else set()
     assert MATRIX[measure] == expected
 
 
@@ -132,7 +134,7 @@ def test_project_measures(measure):
 
 @pytest.mark.parametrize("measure", PHASE)
 def test_phase_measures(measure):
-    assert MATRIX[measure] == PROJECT_KINDS | {"phase_type"}
+    assert MATRIX[measure] == PROJECT_KINDS | {"phase_type", "status"}
 
 
 def test_needs_name_catalogue_keys():
@@ -175,6 +177,15 @@ def test_the_schema_enforces_the_matrix(measure, kind):
         with pytest.raises(ValidationError) as caught:
             MetricQuery.model_validate(body)
         assert caught.value.errors()[0]["msg"] == matrix_error(measure, kind)
+
+
+def test_phase_statuses_follow_the_kanban_columns():
+    from app.services.card_status import CARD_STATUSES
+    from app.services.metrics import PHASE_STATUS_LABELS, PHASE_STATUSES
+
+    assert PHASE_STATUSES == CARD_STATUSES == tuple(PHASE_STATUS_LABELS)
+    assert MEASURE_LABELS["phases_due"] == "Phases due"
+    assert MEASURE_LABELS["phases_overdue"] == "Phases overdue"
 
 
 def test_matrix_message_in_plain_words():

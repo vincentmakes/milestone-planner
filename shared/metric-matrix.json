@@ -212,6 +212,7 @@
         "project_manager",
         "project_team",
         "site",
+        "status",
         "tag"
       ],
       "needs": null,
@@ -240,6 +241,65 @@
         "project_manager",
         "project_team",
         "site",
+        "status",
+        "tag"
+      ],
+      "needs": null,
+      "filters": [
+        "archived",
+        "confirmed",
+        "field_options",
+        "milestones",
+        "period",
+        "project_ids",
+        "project_manager_ids",
+        "project_team_ids",
+        "site_ids",
+        "tag_ids"
+      ]
+    },
+    "phases_due": {
+      "unit": "phases",
+      "dimensions": [
+        "confirmed",
+        "customer",
+        "field",
+        "period",
+        "phase_type",
+        "project",
+        "project_manager",
+        "project_team",
+        "site",
+        "status",
+        "tag"
+      ],
+      "needs": null,
+      "filters": [
+        "archived",
+        "confirmed",
+        "field_options",
+        "milestones",
+        "period",
+        "project_ids",
+        "project_manager_ids",
+        "project_team_ids",
+        "site_ids",
+        "tag_ids"
+      ]
+    },
+    "phases_overdue": {
+      "unit": "phases",
+      "dimensions": [
+        "confirmed",
+        "customer",
+        "field",
+        "period",
+        "phase_type",
+        "project",
+        "project_manager",
+        "project_team",
+        "site",
+        "status",
         "tag"
       ],
       "needs": null,

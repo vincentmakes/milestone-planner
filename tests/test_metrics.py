@@ -726,6 +726,106 @@ FACT_CASES: list[tuple[str, Facts, MetricQuery, dict[str, Any]]] = [
         {"rows": [(("Design",), 2), (("Gate",), 0.2)], "total": 2.2, "unit": "weeks"},
     ),
     (
+        "phases by status, in board order",
+        facts(
+            phases=[
+                PhaseFact(1, 1, "A", d("2026-03-02"), d("2026-03-06"), False, "done"),
+                PhaseFact(2, 1, "B", d("2026-03-02"), d("2026-03-06"), False, "blocked"),
+                PhaseFact(3, 1, "C", d("2026-03-02"), d("2026-03-06")),
+                PhaseFact(4, 1, "D", d("2026-03-02"), d("2026-03-06"), False, "in_progress"),
+                PhaseFact(5, 1, "E", d("2026-03-09"), d("2026-03-13"), False, "done"),
+            ]
+        ),
+        q("phase_count", [{"kind": "status"}]),
+        {
+            "rows": [(("To do",), 1), (("In progress",), 1), (("Blocked",), 1), (("Done",), 2)],
+            "keys": [["todo"], ["in_progress"], ["blocked"], ["done"]],
+            "total": 5,
+        },
+    ),
+    (
+        "phases due are filed by their end date, once; a milestone on its date",
+        facts(
+            phases=[
+                PhaseFact(1, 1, "Span", d("2026-02-02"), d("2026-04-15")),
+                PhaseFact(2, 1, "Short", d("2026-02-02"), d("2026-02-20")),
+                PhaseFact(3, 1, "Gate", d("2026-03-10"), d("2026-03-10"), is_milestone=True),
+                # Due after the period: not due in it.
+                PhaseFact(4, 1, "Later", d("2026-03-02"), d("2026-05-04")),
+            ]
+        ),
+        q(
+            "phases_due",
+            [{"kind": "period", "grain": "month"}],
+            {"from": "2026-02-01", "to": "2026-04-30"},
+        ),
+        {
+            "rows": [(("Feb 2026",), 1), (("Mar 2026",), 1), (("Apr 2026",), 1)],
+            "total": 3,
+            "unit": "phases",
+        },
+    ),
+    (
+        "phases overdue: due before today and not done",
+        facts(
+            phases=[
+                PhaseFact(1, 1, "Late", d("2026-03-02"), d("2026-03-13")),
+                PhaseFact(2, 1, "Finished", d("2026-03-02"), d("2026-03-13"), False, "done"),
+                PhaseFact(3, 1, "Future", d("2026-10-01"), d("2026-11-30")),
+                PhaseFact(4, 1, "Yesterday", d("2026-10-01"), d("2026-10-22"), False, "blocked"),
+                # Due today (2026-10-23) is not overdue yet.
+                PhaseFact(5, 1, "Today", d("2026-10-01"), d("2026-10-23")),
+                PhaseFact(6, 1, "Gate", d("2026-06-01"), d("2026-06-01"), True, "in_progress"),
+            ]
+        ),
+        q("phases_overdue", [{"kind": "status"}], {"from": "2026-01-01", "to": "2026-12-31"}),
+        {
+            "rows": [(("To do",), 1), (("In progress",), 1), (("Blocked",), 1)],
+            "total": 3,
+            "unit": "phases",
+        },
+    ),
+    (
+        "milestones: only",
+        facts(
+            phases=[
+                PhaseFact(1, 1, "Design", d("2026-03-02"), d("2026-03-13")),
+                PhaseFact(2, 1, "Gate", d("2026-03-20"), d("2026-03-20"), is_milestone=True),
+            ]
+        ),
+        q("phase_count", [{"kind": "phase_type"}], filters={"milestones": "only"}),
+        {"rows": [(("Gate",), 1)], "total": 1},
+    ),
+    (
+        "milestones: exclude",
+        facts(
+            phases=[
+                PhaseFact(1, 1, "Design", d("2026-03-02"), d("2026-03-13")),
+                PhaseFact(2, 1, "Gate", d("2026-03-20"), d("2026-03-20"), is_milestone=True),
+            ]
+        ),
+        q("phase_weeks", [{"kind": "phase_type"}], filters={"milestones": "exclude"}),
+        {"rows": [(("Design",), 2)], "total": 2},
+    ),
+    (
+        "milestones: only, on phases due",
+        facts(
+            phases=[
+                PhaseFact(1, 1, "Design", d("2026-03-02"), d("2026-03-13")),
+                PhaseFact(2, 1, "Gate", d("2026-03-20"), d("2026-03-20"), is_milestone=True),
+                PhaseFact(3, 1, "Gate", d("2026-04-20"), d("2026-04-20"), is_milestone=True),
+            ]
+        ),
+        q("phases_due", filters={"milestones": "only"}),
+        {"rows": [((), 1)], "total": 1},
+    ),
+    (
+        "an unknown stored status sorts after Done",
+        facts(phases=[PhaseFact(1, 1, "A", d("2026-03-02"), d("2026-03-06"), False, "odd")]),
+        q("phases_due", [{"kind": "status"}]),
+        {"rows": [(("odd",), 1)]},
+    ),
+    (
         "booking phase type",
         facts(
             bookings=[
@@ -1421,6 +1521,16 @@ def test_composite_empty_period_buckets_stay_zero(ratio_test):
         ("Mar 2026", 113.64),
         ("Apr 2026", 0.0),
     ]
+
+
+def test_out_of_scope_phases_and_weekend_amounts_add_nothing():
+    stray = facts(
+        phases=[PhaseFact(1, 9, "Orphan", d("2026-03-02"), d("2026-03-06"))],
+        bookings=[booking(1, "2026-03-07", "2026-03-08")],  # a weekend
+    )
+    assert aggregate(stray, q("phases_due"), viewer=FULL).total == 0
+    assert aggregate(stray, q("booked_days"), viewer=FULL).total == 0
+    assert metrics.filter_given(q("booked_days").filters, "period")
 
 
 def test_ratio_percent_rule():

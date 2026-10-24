@@ -18,6 +18,13 @@ bulk load of *facts* per request:
   ``/dashboards/{id}/data`` loads the facts once for the union of its widgets'
   periods and aggregates every widget from them.
 
+Every measure belongs to a **family** (``FAMILY``: ``booking``, ``project``,
+``phase``, then ``capacity`` and ``equipment``) that decides the facts it
+reads, the permission it needs (``MEASURE_NEEDS``) and the filters it accepts
+(``MEASURE_FILTERS``; another given filter is a 422). A **composite** measure
+(``COMPOSITES``) is a numerator and a denominator base measure: the item loop
+runs once per side and ``_combine_composite`` folds the two sums.
+
 Rules (see ``tests/test_metrics.py`` ``FACT_CASES``):
 
 - **Working day** = Monday to Friday, not a bank holiday of the *project's*
@@ -28,8 +35,13 @@ Rules (see ``tests/test_metrics.py`` ``FACT_CASES``):
   ``phase_weeks`` prorate the project's / phase's span the same way (no
   allocation). ``project_count`` counts a project in every period bucket its
   span touches; ``project_volume`` adds each project's volume once.
+- ``phases_due`` counts each phase (a milestone: its date) once, in the bucket
+  of its end date inside the period; ``phases_overdue`` the same, restricted
+  to phases due before today and not ``done``. The ``milestones`` filter
+  (``include`` / ``only`` / ``exclude``) applies to every phase measure.
 - The **distinct** measures (``booking_count``, ``people_booked``,
-  ``project_count``, ``project_volume``, ``phase_count``) recompute the total,
+  ``project_count``, ``project_volume``, ``phase_count``, ``phases_due``,
+  ``phases_overdue``) recompute the total,
   the "Other" bucket and the percentage denominators over distinct facts: a
   project with two tags counts in both tag rows but once in the total.
   Additive measures do the same with the fact's amount (a booking in two teams
@@ -39,8 +51,9 @@ Rules (see ``tests/test_metrics.py`` ``FACT_CASES``):
 - Stale ids in a stored query's filters are dropped with a warning; a deleted
   project field used as a dimension is an error (``MetricError``).
 
-The **validity matrix** (``MATRIX``: which dimensions each measure accepts)
-lives here and is the one source: the pydantic spec enforces it and
+The **validity matrix** (``MATRIX``: which dimensions each measure accepts,
+with ``MEASURE_FILTERS``, the needs and ``NO_PERCENT_MEASURES``) lives here
+and is the one source: the pydantic spec enforces it and
 ``metric_matrix_json()`` writes ``shared/metric-matrix.json`` for the frontend
 (``tests/test_metric_matrix.py`` fails when the file is stale).
 
@@ -59,6 +72,7 @@ from itertools import product
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from app.services.booking_segments import effective_dates
+from app.services.card_status import CARD_STATUSES
 
 if TYPE_CHECKING:
     from sqlalchemy import ColumnElement
@@ -85,9 +99,11 @@ MEASURES: tuple[str, ...] = (
     "project_count",
     "project_weeks",
     "project_volume",
-    # phase
+    # phase (delivery: phases due / overdue by their end date)
     "phase_count",
     "phase_weeks",
+    "phases_due",
+    "phases_overdue",
     # capacity (Task 2): capacity_days, available_days, utilisation,
     # people_over_capacity
     # equipment (Task 3): equipment_booked_days, equipment_booking_count,
@@ -109,6 +125,8 @@ FAMILY: dict[str, str] = {
     "project_volume": "project",
     "phase_count": "phase",
     "phase_weeks": "phase",
+    "phases_due": "phase",
+    "phases_overdue": "phase",
 }
 
 PLAIN_DIMENSION_KINDS: tuple[str, ...] = (
@@ -122,6 +140,7 @@ PLAIN_DIMENSION_KINDS: tuple[str, ...] = (
     "confirmed",
     "tag",
     "phase_type",
+    "status",
 )
 DIMENSION_KINDS: tuple[str, ...] = (*PLAIN_DIMENSION_KINDS, "field", "period")
 RELATIVE_PERIODS: tuple[str, ...] = (
@@ -170,7 +189,14 @@ ADDITIVE_MEASURES: frozenset[str] = frozenset(
 # Counts of distinct things (``_ident``); ``project_volume`` sums one amount
 # per distinct project.
 COUNT_MEASURES: frozenset[str] = frozenset(
-    {"booking_count", "people_booked", "project_count", "phase_count"}
+    {
+        "booking_count",
+        "people_booked",
+        "project_count",
+        "phase_count",
+        "phases_due",
+        "phases_overdue",
+    }
 )
 # Composite measures: ``measure -> (numerator base, denominator base)``. The
 # engine runs the item loop once per side with that side's base measure and
@@ -197,6 +223,8 @@ UNITS: dict[str, str] = {
     "project_volume": "volume",
     "phase_count": "phases",
     "phase_weeks": "weeks",
+    "phases_due": "phases",
+    "phases_overdue": "phases",
 }
 PERCENT_UNIT = "percent"
 
@@ -210,6 +238,8 @@ MEASURE_LABELS: dict[str, str] = {
     "project_volume": "Project volume",
     "phase_count": "Phases",
     "phase_weeks": "Phase weeks",
+    "phases_due": "Phases due",
+    "phases_overdue": "Phases overdue",
 }
 DIMENSION_LABELS: dict[str, str] = {
     "site": "Site",
@@ -222,8 +252,17 @@ DIMENSION_LABELS: dict[str, str] = {
     "confirmed": "Confirmed",
     "tag": "Tag",
     "phase_type": "Phase",
+    "status": "Status",
     "field": "Project field",
     "period": "Period",
+}
+# A phase's Kanban column (``project_phases.status``), in board order.
+PHASE_STATUSES: tuple[str, ...] = CARD_STATUSES
+PHASE_STATUS_LABELS: dict[str, str] = {
+    "todo": "To do",
+    "in_progress": "In progress",
+    "blocked": "Blocked",
+    "done": "Done",
 }
 GRAIN_LABELS: dict[str, str] = {
     "year": "Year",
@@ -351,6 +390,7 @@ _PROJECT_DIMENSIONS: frozenset[str] = frozenset(
     }
 )
 _BOOKING_DIMENSIONS: frozenset[str] = _PROJECT_DIMENSIONS | {"team", "person", "phase_type"}
+_PHASE_DIMENSIONS: frozenset[str] = _PROJECT_DIMENSIONS | {"phase_type", "status"}
 
 MATRIX: dict[str, frozenset[str]] = {
     "booked_days": _BOOKING_DIMENSIONS,
@@ -362,8 +402,10 @@ MATRIX: dict[str, frozenset[str]] = {
     "project_weeks": _PROJECT_DIMENSIONS,
     # A volume is not spread over time.
     "project_volume": _PROJECT_DIMENSIONS - {"period"},
-    "phase_count": _PROJECT_DIMENSIONS | {"phase_type"},
-    "phase_weeks": _PROJECT_DIMENSIONS | {"phase_type"},
+    "phase_count": _PHASE_DIMENSIONS,
+    "phase_weeks": _PHASE_DIMENSIONS,
+    "phases_due": _PHASE_DIMENSIONS,
+    "phases_overdue": _PHASE_DIMENSIONS,
 }
 # The permission a dimension needs (the per-person load is gated by it).
 NEEDS: dict[str, str] = {"person": "views.staff"}
@@ -508,6 +550,8 @@ class PhaseFact:
     start: date
     end: date
     is_milestone: bool = False
+    # The Kanban column (``todo`` / ``in_progress`` / ``blocked`` / ``done``).
+    status: str = "todo"
 
 
 @dataclass(frozen=True)
@@ -854,6 +898,7 @@ class _Filters:
     tag_ids: set[int] | None = None
     confirmed: bool | None = None
     field_options: dict[int, set[int]] = field(default_factory=dict)
+    milestones: str = "include"
 
 
 def _known(
@@ -889,6 +934,7 @@ def _resolve_filters(facts: Facts, spec: Any, warnings: list[str]) -> _Filters:
         project_manager_ids=_known(spec.project_manager_ids, facts.persons, "Person", warnings),
         tag_ids=_known(spec.tag_ids, facts.tags, "Tag", warnings),
         confirmed=spec.confirmed,
+        milestones=getattr(spec, "milestones", "include"),
     )
     for field_id, option_ids in (spec.field_options or {}).items():
         if field_id not in facts.fields:
@@ -990,11 +1036,22 @@ def _items(facts: Facts, measure: str, flt: _Filters, family: str) -> Iterator[_
                 yield _Item("project", project.id, project, project.start, project.end)
     elif kind == "phase":
         for phase in facts.phases:
+            if flt.milestones == "only" and not phase.is_milestone:
+                continue
+            if flt.milestones == "exclude" and phase.is_milestone:
+                continue
             project = facts.projects.get(phase.project_id)
             if project is None or not _project_passes(project, flt):
                 continue
+            # A milestone is one day (the loader already sets its end to it).
             end = phase.start if phase.is_milestone else phase.end
-            yield _Item("phase", phase.id, project, phase.start, end, phase=phase)
+            if measure in ("phases_due", "phases_overdue"):
+                # Filed on its due date (its end), once.
+                if measure == "phases_overdue" and (end >= facts.today or phase.status == "done"):
+                    continue
+                yield _Item("phase", phase.id, project, end, end, phase=phase)
+            else:
+                yield _Item("phase", phase.id, project, phase.start, end, phase=phase)
     else:
         raise MetricError(f"Unknown measure family: {kind} ({family})")
 
@@ -1023,6 +1080,13 @@ def _field_values(facts: Facts, info: FieldInfo, value: Any) -> list[DimValue]:
     return values or [_empty("field")]
 
 
+def _status_value(status: str) -> DimValue:
+    """A phase status in board order (an unknown stored value sorts after Done)."""
+    if status in PHASE_STATUS_LABELS:
+        return _value(status, PHASE_STATUS_LABELS[status], None, PHASE_STATUSES.index(status))
+    return _value(status, status, None, len(PHASE_STATUSES), status)
+
+
 def _values(facts: Facts, dimension: _Dimension, item: _Item, family: str) -> list[DimValue]:
     """
     The dimension values of ``item``; ``family`` is the asked measure's (see
@@ -1040,6 +1104,9 @@ def _values(facts: Facts, dimension: _Dimension, item: _Item, family: str) -> li
             item.phase.type if item.phase else item.booking.phase_type if item.booking else None
         )
         return [_by_label(phase_type, phase_type)] if phase_type else [_empty(kind)]
+    if kind == "status":
+        assert item.phase is not None  # the matrix keeps status to phase measures
+        return [_status_value(item.phase.status)]
     project = _project_of(item)
     if kind == "site":
         if project.site_id is None:
@@ -1699,6 +1766,7 @@ async def load_facts(
                     ProjectPhase.start_date,
                     ProjectPhase.end_date,
                     ProjectPhase.is_milestone,
+                    ProjectPhase.status,
                 ).where(ProjectPhase.project_id.in_(project_ids))
             )
         ).all():
@@ -1712,6 +1780,7 @@ async def load_facts(
                     row.start_date,
                     row.start_date if milestone else row.end_date,
                     milestone,
+                    row.status or "todo",
                 ),
             )
         if subphase_rows:

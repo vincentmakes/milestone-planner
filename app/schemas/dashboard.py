@@ -57,6 +57,8 @@ Measure = Literal[
     "project_volume",
     "phase_count",
     "phase_weeks",
+    "phases_due",
+    "phases_overdue",
 ]
 PlainKind = Literal[
     "site",
@@ -69,6 +71,7 @@ PlainKind = Literal[
     "confirmed",
     "tag",
     "phase_type",
+    "status",
 ]
 Grain = Literal["year", "quarter", "month", "week"]
 RelativeName = Literal[

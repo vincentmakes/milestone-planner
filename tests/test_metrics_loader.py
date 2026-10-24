@@ -98,6 +98,7 @@ def db():
                     type="Design",
                     start_date=d("2026-03-02"),
                     end_date=d("2026-03-13"),
+                    status="in_progress",
                 ),
                 ProjectPhase(
                     id=101,
@@ -242,9 +243,9 @@ async def test_load_facts(db):
     assert (p1.site_name, p1.customer, p1.pm_id, p1.pm_name) == ("Winterthur", "Acme", 2, "Bob B")
     assert (p1.confirmed, p1.archived, p1.volume) == (True, False, 10.0)
     assert (p1.team_ids, p1.tag_ids, p1.field_values) == ((10,), (20,), {30: 300})
-    assert [(p.id, p.type, p.start, p.end, p.is_milestone) for p in facts.phases] == [
-        (100, "Design", d("2026-03-02"), d("2026-03-13"), False),
-        (101, "Gate", d("2026-03-20"), d("2026-03-20"), True),
+    assert [(p.id, p.type, p.start, p.end, p.is_milestone, p.status) for p in facts.phases] == [
+        (100, "Design", d("2026-03-02"), d("2026-03-13"), False, "in_progress"),
+        (101, "Gate", d("2026-03-20"), d("2026-03-20"), True, "todo"),
     ]
     assert facts.holidays == {
         1: [d("2026-03-05"), d("2026-03-06"), d("2026-03-09")],
