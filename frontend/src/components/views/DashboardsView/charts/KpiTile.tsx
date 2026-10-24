@@ -11,7 +11,7 @@
  */
 
 import type { MetricQuery, MetricResult, WidgetOptions } from '@/types';
-import { formatMetric, UNIT_LABELS } from '@/utils/metrics';
+import { formatMetric, unitWord } from '@/utils/metrics';
 import { BUCKET_NOT_FOUND, kpiValue } from './kpi';
 import styles from './KpiTile.module.css';
 
@@ -23,7 +23,8 @@ export interface KpiTileProps {
 
 export function KpiTile({ result, query, options }: KpiTileProps) {
   const { value, label, missing } = kpiValue(result, query, options);
-  const unit = UNIT_LABELS[result.unit];
+  // "1 phase", "3 phases".
+  const unit = unitWord(value, result.unit, options);
   return (
     <div className={styles.tile}>
       <div className={styles.value}>

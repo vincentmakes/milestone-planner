@@ -42,6 +42,7 @@ import {
   RELATIVE_PERIODS,
   resolvedPeriodLabel,
   UNIT_LABELS,
+  unitWord,
   widgetColor,
 } from '../metrics';
 import { SKILL_COLOR_SWATCHES } from '../colorSwatches';
@@ -304,6 +305,28 @@ describe('formatMetric', () => {
     expect(formatMetric(null, 'percent')).toBe('–');
     expect(formatMetric(undefined, 'weeks')).toBe('–');
     expect(formatMetric(Number.NaN, 'weeks')).toBe('–');
+  });
+});
+
+describe('unitWord', () => {
+  it('is singular when the value reads exactly 1, plural otherwise', () => {
+    expect(unitWord(1, 'phases')).toBe('phase');
+    expect(unitWord(1, 'people')).toBe('person');
+    expect(unitWord(1, 'projects')).toBe('project');
+    expect(unitWord(1, 'count')).toBe('booking');
+    expect(unitWord(1, 'equipment')).toBe('equipment');
+    expect(unitWord(1, 'volume')).toBe('volume');
+    expect(unitWord(0, 'phases')).toBe('phases');
+    expect(unitWord(2, 'people')).toBe('people');
+    expect(unitWord(1.4, 'people')).toBe('person'); // displayed as "1"
+    expect(unitWord(null, 'people')).toBe('people');
+    expect(unitWord(-1, 'phases')).toBe('phases');
+    // Days and weeks show a decimal: "1.0 days"; as integers, "1 day".
+    expect(unitWord(1, 'days')).toBe('days');
+    expect(unitWord(1, 'days', { number_format: 'integer' })).toBe('day');
+    expect(unitWord(1.2, 'weeks', { number_format: 'integer' })).toBe('week');
+    expect(unitWord(1, 'phases', { number_format: 'decimal' })).toBe('phases');
+    expect(unitWord(1, 'percent')).toBe('');
   });
 });
 

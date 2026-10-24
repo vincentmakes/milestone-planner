@@ -394,6 +394,35 @@ export const UNIT_LABELS: Readonly<Record<MetricUnit, string>> = {
   percent: '',
 };
 
+/** The unit word after a value displayed as exactly 1 ("1 person", "1 day"). */
+const SINGULAR_UNIT_LABELS: Readonly<Record<MetricUnit, string>> = {
+  days: 'day',
+  weeks: 'week',
+  count: 'booking',
+  people: 'person',
+  projects: 'project',
+  phases: 'phase',
+  volume: 'volume',
+  equipment: 'equipment',
+  percent: '',
+};
+
+/**
+ * The unit word after a value: singular when the value as displayed
+ * (`formatMetric`, with the widget's number format) reads exactly 1 — "1
+ * phase", "1 person"; days and weeks only when shown without decimals
+ * ("1.0 days" stays plural) —, plural otherwise ("0 phases", "2 people").
+ * Empty for a percentage.
+ */
+export function unitWord(
+  value: number | null | undefined,
+  unit: MetricUnit,
+  options?: Pick<WidgetOptions, 'number_format'> | null
+): string {
+  const one = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(1);
+  return formatMetric(value, unit, options) === one ? SINGULAR_UNIT_LABELS[unit] : UNIT_LABELS[unit];
+}
+
 /** The unit a query's result comes in: the measure's, or `percent` with a percentage. */
 export function queryUnit(query: { measure: Measure; percent_of?: string | null }): MetricUnit {
   if (query.percent_of) return 'percent';

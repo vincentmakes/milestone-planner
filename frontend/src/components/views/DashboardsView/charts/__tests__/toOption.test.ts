@@ -75,6 +75,11 @@ describe('toOption — bar and line, one dimension', () => {
     expect(option.tooltip.valueFormatter(12.4)).toBe('12 weeks');
     expect(toOption('bar', single, {}, theme).tooltip).toBeDefined();
     expect((toOption('bar', single, {}, theme) as AnyOption).tooltip.valueFormatter(70.1)).toBe('70.1 weeks');
+    // One of a count reads singular ("1 phase"); "1.0 weeks" stays plural.
+    const phases = toOption('bar', { ...single, unit: 'phases' }, {}, theme) as AnyOption;
+    expect(phases.tooltip.valueFormatter(1)).toBe('1 phase');
+    expect(phases.tooltip.valueFormatter(3)).toBe('3 phases');
+    expect((toOption('bar', single, {}, theme) as AnyOption).tooltip.valueFormatter(1)).toBe('1.0 weeks');
     const asPercent = toOption('line', single, { number_format: 'percent' }, theme) as AnyOption;
     expect(asPercent.tooltip.valueFormatter(60)).toMatch(/^60\s%$/);
   });

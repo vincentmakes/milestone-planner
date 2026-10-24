@@ -39,6 +39,18 @@ describe('KpiTile', () => {
     expect(screen.getByText('weeks')).toBeInTheDocument();
   });
 
+  it('says "1 phase", "1 person", but "2 people" and "0 phases"', () => {
+    const one = (unit: MetricResult['unit'], value: number): MetricResult => ({ ...plain, unit, rows: [{ keys: [], value }], total: value });
+    const { rerender } = render(<KpiTile result={one('phases', 1)} query={{ measure: 'phases_due' }} />);
+    expect(screen.getByText('phase')).toBeInTheDocument();
+    rerender(<KpiTile result={one('people', 1)} query={{ measure: 'people_over_capacity' }} />);
+    expect(screen.getByText('person')).toBeInTheDocument();
+    rerender(<KpiTile result={one('people', 2)} query={{ measure: 'people_over_capacity' }} />);
+    expect(screen.getByText('people')).toBeInTheDocument();
+    rerender(<KpiTile result={one('phases', 0)} query={{ measure: 'phases_due' }} />);
+    expect(screen.getByText('phases')).toBeInTheDocument();
+  });
+
   it('shows the bucket named by its key, as a percentage without a unit word', () => {
     const { container } = render(<KpiTile result={share} query={shareQuery} options={{ kpi_bucket: true }} />);
     expect(screen.getByText(/^62\.5\s%$/)).toBeInTheDocument();

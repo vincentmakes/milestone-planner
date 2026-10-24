@@ -35,7 +35,7 @@
  */
 
 import type { MetricKey, MetricResult, MetricUnit, WidgetKind, WidgetOptions } from '@/types';
-import { formatMetric, normaliseKey, OTHER_KEY, UNIT_LABELS, widgetColor } from '@/utils/metrics';
+import { formatMetric, normaliseKey, OTHER_KEY, unitWord, widgetColor } from '@/utils/metrics';
 import type { ChartTheme } from './echartsTheme';
 
 export type ChartKind = Extract<WidgetKind, 'bar' | 'line' | 'pie'>;
@@ -112,7 +112,7 @@ export function toOption(
   const withUnit = (value: number | null | undefined, unit: MetricUnit, format: WidgetOptions | null) => {
     if (value === null || value === undefined || !Number.isFinite(value)) return formatMetric(null, unit);
     const text = formatMetric(value, unit, format);
-    const word = unit !== 'percent' && format?.number_format !== 'percent' ? UNIT_LABELS[unit] : '';
+    const word = unit !== 'percent' && format?.number_format !== 'percent' ? unitWord(value, unit, format) : '';
     return word ? `${text} ${word}` : text;
   };
   const palette = theme.palette;
