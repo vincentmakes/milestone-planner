@@ -169,9 +169,12 @@ export function niceCeil(value: number): number {
   }
 }
 
-/** A stored target, when it is one (finite, ≥ 0). */
+/** The largest gauge target, the server's (`MAX_GAUGE_TARGET` in `app/schemas/dashboard.py`). */
+export const MAX_GAUGE_TARGET = 1_000_000_000;
+
+/** A stored target, when it is one (finite, from 0 to `MAX_GAUGE_TARGET`). */
 export const gaugeTarget = (target: number | null | undefined): number | null =>
-  typeof target === 'number' && Number.isFinite(target) && target >= 0 ? target : null;
+  typeof target === 'number' && Number.isFinite(target) && target >= 0 && target <= MAX_GAUGE_TARGET ? target : null;
 
 /**
  * The scale of a gauge of `value` against `target`, in `unit`.

@@ -1001,7 +1001,7 @@ describe('WidgetEditor — gauge, heatmap, treemap and sankey', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(RATIO_HIERARCHY_PROBLEM);
   });
 
-  it('offers a Target only on a gauge: a number of zero or more is saved, other text ignored, an empty field clears it', async () => {
+  it('offers a Target only on a gauge: a number from 0 to 1e9 is saved, any other text or an empty field clears it', async () => {
     const { onSave } = renderEditor();
     setTitle('Load');
     expect(screen.queryByLabelText('Target')).not.toBeInTheDocument();
@@ -1023,11 +1023,29 @@ describe('WidgetEditor — gauge, heatmap, treemap and sankey', () => {
     setTarget('85');
     fireEvent.click(saveButton());
     expect(saved()).toMatchObject({ kind: 'gauge', options: { target: 85 } });
-    // Text that is not a number keeps the last target.
+    // Text that is not a valid target clears the last one: the field never shows
+    // one value while another is saved.
+    setTarget('-5');
+    expect(target()).toHaveValue('-5');
+    fireEvent.click(saveButton());
+    expect(saved().options).toEqual({});
+    setTarget('85');
     setTarget('85x');
     expect(target()).toHaveValue('85x');
     fireEvent.click(saveButton());
-    expect(saved().options).toEqual({ target: 85 });
+    expect(saved().options).toEqual({});
+    setTarget('85');
+    setTarget('abc');
+    fireEvent.click(saveButton());
+    expect(saved().options).toEqual({});
+    // Past the server's cap (1e9): no target, rather than a 422 on save.
+    setTarget('85');
+    setTarget('2000000000');
+    fireEvent.click(saveButton());
+    expect(saved().options).toEqual({});
+    setTarget('1000000000');
+    fireEvent.click(saveButton());
+    expect(saved().options).toEqual({ target: 1_000_000_000 });
     setTarget('12,5');
     fireEvent.click(saveButton());
     expect(saved().options).toEqual({ target: 12.5 });

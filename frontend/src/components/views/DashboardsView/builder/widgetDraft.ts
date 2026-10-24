@@ -228,6 +228,20 @@ export function dropUnheld(query: MetricQuery, holds: (key: PermissionKey | null
   return { ...query, dimensions, filters };
 }
 
+/** A decimal number as typed: digits, with a decimal point or comma ("85", "12,5", ".5"). */
+const DECIMAL_TEXT = /^(\d+([.,]\d*)?|[.,]\d+)$/;
+
+/**
+ * The gauge target a typed text stands for, or `null` when it stands for none:
+ * an empty field, text that is not a plain decimal number ("abc", "85x",
+ * "-5", "1e3", "0x10") or a number past `MAX_GAUGE_TARGET` (`gaugeTarget`).
+ */
+export function parseTarget(text: string): number | null {
+  const trimmed = text.trim();
+  if (!DECIMAL_TEXT.test(trimmed)) return null;
+  return gaugeTarget(Number(trimmed.replace(',', '.')));
+}
+
 /**
  * The options a widget stores: only those its kind uses, and only when they
  * differ from the renderer's default (bar: stacked, 100 % — which implies
@@ -236,7 +250,8 @@ export function dropUnheld(query: MetricQuery, holds: (key: PermissionKey | null
  * of a measure that takes no percentage (`NO_PERCENT_MEASURES`: a ratio, a
  * signed number, a per-bucket count) is never stacked nor 100 %: adding
  * percentages up, or sharing out negative days, means nothing. A gauge keeps
- * its target when it is one (finite, ≥ 0: `gaugeTarget`, the renderer's rule).
+ * its target when it is one (finite, from 0 to `MAX_GAUGE_TARGET`: `gaugeTarget`,
+ * the renderer's rule).
  */
 export function cleanOptions(kind: WidgetKind, query: MetricQuery, options: WidgetOptions): WidgetOptions {
   const clean: WidgetOptions = {};

@@ -26,6 +26,7 @@ import {
   newClientId,
   noDimensionKind,
   normaliseQuery,
+  parseTarget,
   placeNewWidget,
   queryProblem,
   RATIO_HIERARCHY_PROBLEM,
@@ -339,7 +340,7 @@ describe('gauge, heatmap, treemap and sankey rules', () => {
       target: 12.5,
       number_format: 'decimal',
     });
-    for (const target of [-5, Number.NaN, Number.POSITIVE_INFINITY, null, undefined]) {
+    for (const target of [-5, Number.NaN, Number.POSITIVE_INFINITY, null, undefined, 2e9, 1_000_000_001]) {
       expect(cleanOptions('gauge', query(), { target })).toEqual({});
     }
     expect(cleanOptions('gauge', query(), { target: '85' as unknown as number })).toEqual({});
@@ -351,6 +352,19 @@ describe('gauge, heatmap, treemap and sankey rules', () => {
       {}
     );
     expect(cleanOptions('heatmap', query(), { number_format: 'integer', stacked: true })).toEqual({ number_format: 'integer' });
+  });
+
+  it('reads a typed target only as a plain decimal number from 0 to 1e9', () => {
+    expect(parseTarget('85')).toBe(85);
+    expect(parseTarget(' 85 ')).toBe(85);
+    expect(parseTarget('12,5')).toBe(12.5);
+    expect(parseTarget('12.5')).toBe(12.5);
+    expect(parseTarget('.5')).toBe(0.5);
+    expect(parseTarget('0')).toBe(0);
+    expect(parseTarget('1000000000')).toBe(1_000_000_000);
+    for (const text of ['', '  ', '-5', 'abc', '85x', '2000000000', '1e3', '0x10', '1,2,3', 'Infinity']) {
+      expect(parseTarget(text)).toBeNull();
+    }
   });
 
   it('places a new gauge at 3 × 4 / 4 × 4 / 4 × 4, the other new kinds at the chart size', () => {

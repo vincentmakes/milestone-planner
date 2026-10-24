@@ -12,6 +12,7 @@ import {
   gaugeScale,
   hasDrawableData,
   gaugeTarget,
+  MAX_GAUGE_TARGET,
   heatmapAxes,
   heatmapCounts,
   heatmapLabelsFit,
@@ -503,6 +504,14 @@ describe('gaugeScale — other units', () => {
     expect(gaugeTarget(Number.NaN)).toBeNull();
     expect(gaugeTarget(null)).toBeNull();
     expect(gaugeTarget('85' as unknown as number)).toBeNull();
+  });
+
+  it('refuses a target past the server cap (1e9)', () => {
+    expect(MAX_GAUGE_TARGET).toBe(1_000_000_000);
+    expect(gaugeTarget(MAX_GAUGE_TARGET)).toBe(MAX_GAUGE_TARGET);
+    expect(gaugeTarget(MAX_GAUGE_TARGET + 1)).toBeNull();
+    expect(gaugeTarget(2e9)).toBeNull();
+    expect(gaugeTarget(Number.POSITIVE_INFINITY)).toBeNull();
   });
 });
 

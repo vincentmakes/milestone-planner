@@ -114,6 +114,7 @@ import {
   newClientId,
   noDimensionKind,
   normaliseQuery,
+  parseTarget,
   placeNewWidget,
   queryProblem,
   stableKey,
@@ -346,16 +347,13 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
 
   const setOption = (patch: Partial<WidgetOptions>) => setOptions((prev) => ({ ...prev, ...patch }));
 
-  // The form is `noValidate`: a target is kept only when it reads as a number ≥ 0
-  // ("85", "12,5"); an emptied field clears it, any other text is not stored.
+  // The form is `noValidate`: a target is stored only when the text reads as a
+  // decimal number from 0 to `MAX_GAUGE_TARGET` ("85", "12,5"). Any other text —
+  // and an emptied field — clears it, like Top N: the widget is saved without a
+  // target rather than with the one the field no longer shows.
   const setTarget = (text: string) => {
     setTargetText(text);
-    if (text.trim() === '') {
-      setOption({ target: null });
-      return;
-    }
-    const target = Number(text.trim().replace(',', '.'));
-    if (Number.isFinite(target) && target >= 0) setOption({ target });
+    setOption({ target: parseTarget(text) });
   };
 
   // --- Dimension choices -------------------------------------------------------
