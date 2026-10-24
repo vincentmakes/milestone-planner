@@ -59,7 +59,7 @@ describe('WidgetCard', () => {
     expect(screen.getByTestId('echart')).toHaveAttribute('data-measure', 'Booked weeks');
   });
 
-  it.each(['line', 'pie'] as const)('draws a %s chart', (kind) => {
+  it.each(['line', 'pie', 'heatmap', 'treemap', 'sankey'] as const)('draws a %s chart', (kind) => {
     render(<WidgetCard widget={widget({ kind })} result={result()} />);
     expect(screen.getByTestId('echart')).toHaveAttribute('data-kind', kind);
   });
@@ -125,6 +125,34 @@ describe('WidgetCard', () => {
     render(<WidgetCard widget={widget()} result={result({ rows: [], total: 0 })} />);
     expect(screen.getByText('Nothing to show for this period.')).toBeInTheDocument();
     expect(screen.queryByTestId('echart')).not.toBeInTheDocument();
+  });
+
+  it('draws a gauge of the total, with the unit chip', () => {
+    const query = { measure: 'utilisation' as const };
+    render(<WidgetCard widget={widget({ kind: 'gauge', query })} result={result({ unit: 'percent', dimensions: [], total: 72 })} />);
+    expect(screen.getByTestId('echart')).toHaveAttribute('data-kind', 'gauge');
+    expect(screen.getByText('%')).toBeInTheDocument();
+  });
+
+  it('says a chart of the new kinds has nothing to show when it would draw blank', () => {
+    // A gauge of a ratio over nothing
+    const { rerender } = render(
+      <WidgetCard widget={widget({ kind: 'gauge', query: { measure: 'utilisation' } })} result={result({ total: null })} />
+    );
+    expect(screen.getByText('Nothing to show for this period.')).toBeInTheDocument();
+    expect(screen.queryByTestId('echart')).not.toBeInTheDocument();
+    // A treemap or a sankey with rows, none of them positive
+    const zeros = result({ rows: [{ keys: [{ key: 1, label: 'Alpha' }], value: 0 }], total: 0 });
+    for (const kind of ['treemap', 'sankey'] as const) {
+      rerender(<WidgetCard widget={widget({ kind })} result={zeros} />);
+      expect(screen.getByText('Nothing to show for this period.')).toBeInTheDocument();
+    }
+    // A heatmap of only empty cells
+    rerender(<WidgetCard widget={widget({ kind: 'heatmap' })} result={result({ rows: [{ keys: [{ key: 1, label: 'A' }], value: null }] })} />);
+    expect(screen.getByText('Nothing to show for this period.')).toBeInTheDocument();
+    // …but a zero cell is drawn
+    rerender(<WidgetCard widget={widget({ kind: 'heatmap' })} result={zeros} />);
+    expect(screen.getByTestId('echart')).toHaveAttribute('data-kind', 'heatmap');
   });
 
   it('shows a percentage unit as %', () => {

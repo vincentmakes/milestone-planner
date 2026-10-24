@@ -75,13 +75,15 @@ export default defineConfig({
       // with dashboard sharing by site, team and person, on lines 93.38,
       // statements 92.34, functions 93.98, branches 84.68; with the measure
       // families of the dashboards, on lines 93.49, statements 92.48,
-      // functions 94.08, branches 84.93.
+      // functions 94.08, branches 84.93; with the gauge, heatmap, treemap
+      // and sankey charts, rounded down from lines 93.54, statements 92.54,
+      // functions 94.13, branches 85.11.
       // Each floor is the higher of the two lines (rebase of 2.2.0).
       thresholds: {
-        lines: 93.4,
-        statements: 92.4,
-        functions: 94.0,
-        branches: 84.8,
+        lines: 93.5,
+        statements: 92.5,
+        functions: 94.1,
+        branches: 85.0,
       },
     },
   },

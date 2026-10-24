@@ -10,6 +10,7 @@ import {
   escapeHtml,
   GAUGE_BANDS,
   gaugeScale,
+  hasDrawableData,
   gaugeTarget,
   heatmapAxes,
   heatmapCounts,
@@ -753,5 +754,232 @@ describe('toOption — heatmap', () => {
     expect(heatmapLabelsFit(88, 39.9, 2, 2)).toBe(false);
     expect(heatmapLabelsFit(44, 20, 0, 0)).toBe(true);
     expect(heatmapLabelsFit(0, 0, 1, 1)).toBe(false);
+  });
+});
+
+const SITE = { kind: 'site' as const, label: 'Site' };
+const PROJ = { kind: 'project' as const, label: 'Project' };
+const MON = { kind: 'period' as const, label: 'Month' };
+const withDims = (rows: MetricRow[], dims: { kind: 'site' | 'project' | 'period'; label: string }[], extra: Partial<MetricResult> = {}) => ({
+  ...result(rows, 0),
+  dimensions: dims,
+  ...extra,
+});
+const OTHER = k('__other__', 'Other');
+
+describe('toOption — treemap', () => {
+  const basel = k(1, 'Basel');
+  const zurich = k(2, 'Zurich', '#123456');
+  const p1 = k(11, 'Apollo');
+  const p2 = k(12, 'Borealis');
+  const p3 = k(13, 'Cygnus');
+  const boxes: ChartTheme = { ...theme, background: 'card', textPrimary: 'primary' };
+
+  it('nests the second dimension in the first, each parent the sum of its children in its colour', () => {
+    const rows = [row([basel, p1], 3), row([basel, p2], 2), row([zurich, p3], 4)];
+    const option = toOption('treemap', withDims(rows, [SITE, PROJ]), {}, boxes) as AnyOption;
+    expect(option.aria).toEqual(QUIET_ARIA);
+    const [series] = option.series;
+    expect(series).toMatchObject({ type: 'treemap', roam: false, nodeClick: false, breadcrumb: { show: false } });
+    expect(series.data).toEqual([
+      {
+        name: 'Basel',
+        value: 5,
+        itemStyle: { color: 'p0' },
+        children: [
+          { name: 'Apollo', value: 3, itemStyle: { color: 'p0' } },
+          { name: 'Borealis', value: 2, itemStyle: { color: 'p0' } },
+        ],
+      },
+      { name: 'Zurich', value: 4, itemStyle: { color: '#123456' }, children: [{ name: 'Cygnus', value: 4, itemStyle: { color: '#123456' } }] },
+    ]);
+  });
+
+  it('drops null, zero and negative values, and a parent left with nothing', () => {
+    const rows = [row([basel, p1], null), row([basel, p2], 0), row([zurich, p1], -2), row([zurich, p3], 1), row([zurich], 5)];
+    const series = (toOption('treemap', withDims(rows, [SITE, PROJ]), {}, boxes) as AnyOption).series[0];
+    expect(series.data).toEqual([
+      { name: 'Zurich', value: 1, itemStyle: { color: '#123456' }, children: [{ name: 'Cygnus', value: 1, itemStyle: { color: '#123456' } }] },
+    ]);
+  });
+
+  it('is flat with one dimension, "Other" last and muted, colours keeping their position', () => {
+    const rows = [row([OTHER], 1), row([basel], 0), row([zurich], 4), row([p1], 2)];
+    const series = (toOption('treemap', withDims(rows, [SITE]), {}, boxes) as AnyOption).series[0];
+    expect(series.data).toEqual([
+      { name: 'Zurich', value: 4, itemStyle: { color: '#123456' } },
+      { name: 'Apollo', value: 2, itemStyle: { color: 'p2' } },
+      { name: 'Other', value: 1, itemStyle: { color: 'muted' } },
+    ]);
+    // No dimension: one "Total" box
+    expect((toOption('treemap', result([row([], 7)], 0), {}, boxes) as AnyOption).series[0].data).toEqual([
+      { name: 'Total', value: 7, itemStyle: { color: 'p0' } },
+    ]);
+  });
+
+  it('draws a period dimension flat over the other dimension (only the API sends one)', () => {
+    const jan = k('2026-01', 'Jan 2026');
+    const feb = k('2026-02', 'Feb 2026');
+    const rows = [row([basel, jan], 1), row([basel, feb], 2), row([zurich, jan], 4)];
+    const bySite = (toOption('treemap', withDims(rows, [SITE, MON]), {}, boxes) as AnyOption).series[0];
+    expect(bySite.data).toEqual([
+      { name: 'Basel', value: 3, itemStyle: { color: 'p0' } },
+      { name: 'Zurich', value: 4, itemStyle: { color: '#123456' } },
+    ]);
+    const swapped = [row([jan, basel], 1), row([jan, zurich], 4), row([feb, basel], 2)];
+    const period = (toOption('treemap', withDims(swapped, [MON, SITE]), {}, boxes) as AnyOption).series[0];
+    expect(period.data.map((d: AnyOption) => [d.name, d.value])).toEqual([
+      ['Basel', 3],
+      ['Zurich', 4],
+    ]);
+    // Only a period: flat over it
+    const months = (toOption('treemap', withDims([row([jan], 1), row([feb], 2)], [MON]), {}, boxes) as AnyOption).series[0];
+    expect(months.data.map((d: AnyOption) => d.name)).toEqual(['Jan 2026', 'Feb 2026']);
+  });
+
+  it('separates the boxes with the card colour and labels them with their value', () => {
+    const option = toOption('treemap', withDims([row([basel, p1], 3)], [SITE, PROJ]), { number_format: 'integer' }, boxes) as AnyOption;
+    const [series] = option.series;
+    // Level 0 is ECharts' virtual root: its gap parts the sites, theirs the projects under the site's name.
+    expect(series.levels).toEqual([
+      { itemStyle: { gapWidth: 2, borderColor: 'card', borderWidth: 0 } },
+      { itemStyle: { gapWidth: 1, borderColor: 'card', borderWidth: 2 }, upperLabel: { show: true, height: 22, color: 'primary' } },
+      { itemStyle: { borderColor: 'card' } },
+    ]);
+    expect(series.label.formatter({ name: 'Apollo', value: 3.4 })).toBe('Apollo\n3');
+    expect(series.label.formatter({})).toBe('\n–');
+    expect(option.tooltip.trigger).toBe('item');
+    expect(option.tooltip.formatter({ name: 'A <b>', value: 3 })).toBe('A &lt;b&gt;: 3 weeks');
+    expect(option.tooltip.formatter({ name: 'A', value: 1 })).toBe('A: 1 week');
+    expect(option.tooltip.formatter({})).toBe(': –');
+  });
+});
+
+describe('toOption — sankey', () => {
+  const p1 = k(11, 'Apollo');
+  const p2 = k(12, 'Borealis');
+  const t1 = k(1, 'Alpha team', '#aa0000');
+  const t2 = k(2, 'Beta team');
+  const flows: ChartTheme = { palette: ['p0', 'p1', 'p2', 'p3', 'p4', 'p5'], textMuted: 'muted', textPrimary: 'primary' };
+
+  it('flows from the first dimension to the second, node ids carrying their side', () => {
+    const rows = [row([p1, t1], 3), row([p1, t2], 2), row([p2, t2], 4)];
+    const option = toOption('sankey', withDims(rows, [PROJ, { kind: 'site', label: 'Team' }]), {}, flows) as AnyOption;
+    expect(option.aria).toEqual(QUIET_ARIA);
+    const [series] = option.series;
+    expect(series).toMatchObject({
+      type: 'sankey',
+      nodeAlign: 'justify',
+      draggable: false,
+      emphasis: { focus: 'adjacency' },
+      lineStyle: { color: 'gradient', opacity: 0.4 },
+      layoutIterations: 32,
+      label: { overflow: 'truncate', width: 120, color: 'primary' },
+    });
+    expect(series.data).toEqual([
+      { id: '1:11', name: 'Apollo', itemStyle: { color: 'p0' } },
+      { id: '1:12', name: 'Borealis', itemStyle: { color: 'p1' } },
+      // The palette continues after the left column; a value's own colour wins
+      { id: '2:1', name: 'Alpha team', itemStyle: { color: '#aa0000' } },
+      { id: '2:2', name: 'Beta team', itemStyle: { color: 'p3' } },
+    ]);
+    expect(series.links).toEqual([
+      { source: '1:11', target: '2:1', value: 3 },
+      { source: '1:11', target: '2:2', value: 2 },
+      { source: '1:12', target: '2:2', value: 4 },
+    ]);
+  });
+
+  it('keeps a value present on both sides as two nodes', () => {
+    const same = k(5, 'Shared');
+    const series = (toOption('sankey', withDims([row([same, same], 1)], [PROJ, PROJ]), {}, flows) as AnyOption).series[0];
+    expect(series.data.map((n: AnyOption) => n.id)).toEqual(['1:5', '2:5']);
+    expect(series.links).toEqual([{ source: '1:5', target: '2:5', value: 1 }]);
+    // Text keys are JSON in the id
+    const named = (toOption('sankey', withDims([row([k('ACME', 'ACME'), same], 1)], [PROJ, PROJ]), {}, flows) as AnyOption).series[0];
+    expect(named.data[0].id).toBe('1:"ACME"');
+  });
+
+  it('drops null and zero flows, and the nodes left without one', () => {
+    const rows = [row([p1, t1], null), row([p1, t2], 0), row([p2, t2], 4), row([p2], 9)];
+    const series = (toOption('sankey', withDims(rows, [PROJ, PROJ]), {}, flows) as AnyOption).series[0];
+    expect(series.links).toEqual([{ source: '1:12', target: '2:2', value: 4 }]);
+    expect(series.data.map((n: AnyOption) => n.id)).toEqual(['1:12', '2:2']);
+    // Colours keep their position: Borealis is the second left value, Beta the second right one
+    expect(series.data.map((n: AnyOption) => n.itemStyle.color)).toEqual(['p1', 'p3']);
+  });
+
+  it('draws "Other" as a muted node after the others', () => {
+    const rows = [row([OTHER, t1], 1), row([p1, t1], 3)];
+    const series = (toOption('sankey', withDims(rows, [PROJ, PROJ]), {}, flows) as AnyOption).series[0];
+    expect(series.data.slice(0, 2)).toEqual([
+      { id: '1:11', name: 'Apollo', itemStyle: { color: 'p0' } },
+      { id: '1:"__other__"', name: 'Other', itemStyle: { color: 'muted' } },
+    ]);
+  });
+
+  it('names the flow or the node and its total in the tooltip, escaped', () => {
+    const rows = [row([p1, t1], 3), row([p1, k(2, 'B&B')], 2)];
+    const option = toOption('sankey', withDims(rows, [PROJ, PROJ]), {}, flows) as AnyOption;
+    const { formatter } = option.tooltip;
+    expect(option.tooltip.trigger).toBe('item');
+    expect(formatter({ dataType: 'edge', data: { source: '1:11', target: '2:2' }, value: 2 })).toBe('Apollo → B&amp;B: 2.0 weeks');
+    expect(formatter({ dataType: 'node', data: { id: '1:11' }, name: 'Apollo', value: 5 })).toBe('Apollo: 5.0 weeks');
+    expect(formatter({ dataType: 'node', data: { id: '2:1' }, name: 'Alpha team', value: 99 })).toBe('Alpha team: 3.0 weeks');
+    // ECharts names a node with an id by that id: the node's own name is used
+    expect(formatter({ dataType: 'node', data: { id: '1:11' }, name: '1:11', value: 5 })).toBe('Apollo: 5.0 weeks');
+    expect(option.series[0].label.formatter({ data: { id: '2:2' }, name: '2:2' })).toBe('B&B');
+    expect(option.series[0].label.formatter({})).toBe('');
+    // Unknown ids: what ECharts gave
+    expect(formatter({ dataType: 'edge', data: {}, value: 1 })).toBe(' → : 1.0 weeks');
+    expect(formatter({ name: 'X', value: 4 })).toBe('X: 4.0 weeks');
+    expect(formatter({})).toBe(': –');
+  });
+
+  it('flows one dimension into one node named after the measure (only the API sends one)', () => {
+    const series = (toOption('sankey', withDims([row([p1], 3), row([p2], 1)], [PROJ]), {}, flows, 'Booked weeks') as AnyOption).series[0];
+    expect(series.data).toEqual([
+      { id: '1:11', name: 'Apollo', itemStyle: { color: 'p0' } },
+      { id: '1:12', name: 'Borealis', itemStyle: { color: 'p1' } },
+      { id: '2:"__measure__"', name: 'Booked weeks', itemStyle: { color: 'p2' } },
+    ]);
+    expect(series.links).toEqual([
+      { source: '1:11', target: '2:"__measure__"', value: 3 },
+      { source: '1:12', target: '2:"__measure__"', value: 1 },
+    ]);
+    const unnamed = (toOption('sankey', result([row([], 2)], 0), {}, flows) as AnyOption).series[0];
+    expect(unnamed.data.map((n: AnyOption) => n.name)).toEqual(['Total', 'Value']);
+  });
+});
+
+describe('hasDrawableData', () => {
+  const rows = (values: (number | null)[]) => result(values.map((v, i) => row([k(i, `V${i}`)], v)), 1);
+
+  it('needs a total for a gauge', () => {
+    expect(hasDrawableData('gauge', { ...rows([]), total: 0 })).toBe(true);
+    expect(hasDrawableData('gauge', { ...rows([5]), total: null })).toBe(false);
+  });
+
+  it('needs a value (a zero counts) for a heatmap', () => {
+    expect(hasDrawableData('heatmap', rows([null, 0]))).toBe(true);
+    expect(hasDrawableData('heatmap', rows([null, null]))).toBe(false);
+    expect(hasDrawableData('heatmap', rows([]))).toBe(false);
+  });
+
+  it('needs a positive value for a treemap or a sankey', () => {
+    for (const kind of ['treemap', 'sankey'] as const) {
+      expect(hasDrawableData(kind, rows([0, null, 2]))).toBe(true);
+      expect(hasDrawableData(kind, rows([0, null, -1]))).toBe(false);
+      expect(hasDrawableData(kind, rows([]))).toBe(false);
+    }
+  });
+
+  it('needs a row for a bar, line or pie chart; a KPI and a table always draw', () => {
+    for (const kind of ['bar', 'line', 'pie'] as const) {
+      expect(hasDrawableData(kind, rows([null]))).toBe(true);
+      expect(hasDrawableData(kind, rows([]))).toBe(false);
+    }
+    expect(hasDrawableData('kpi', rows([]))).toBe(true);
+    expect(hasDrawableData('table', rows([]))).toBe(true);
   });
 });

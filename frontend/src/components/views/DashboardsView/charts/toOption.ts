@@ -1,6 +1,7 @@
 /**
- * A metric result → an ECharts option, per widget kind (bar, line, pie,
- * gauge, heatmap; the last two in their own sections below).
+ * A metric result → an ECharts option, per widget kind (bar, line, pie;
+ * gauge, heatmap, treemap and sankey in their own sections below, and
+ * `hasDrawableData`, the guard of a blank chart, at the end).
  *
  * Pure: the result, the widget's display options and the chart theme in, an
  * option out (`EChart` applies it with `notMerge`).
@@ -33,7 +34,7 @@
  *   nothing after a percentage). A single series is named after the measure
  *   (`measureLabel`, "Booked weeks"), two series after the second
  *   dimension's values.
- * - The new kinds (gauge, heatmap) keep the accessible description but no
+ * - The four newer kinds keep the accessible description but no
  *   decal hatching (`aria.decal` off); their colours come from the theme's
  *   named tokens (`good` / `warn` / `bad`, `heatLow` / `heatHigh`), each
  *   with a palette fallback.
@@ -414,6 +415,8 @@ export function toOption(
   const opts = options ?? {};
   if (kind === 'gauge') return gaugeOption(result, opts, theme);
   if (kind === 'heatmap') return heatmapOption(result, opts, theme, measureLabel, layout);
+  if (kind === 'treemap') return treemapOption(result, opts, theme);
+  if (kind === 'sankey') return sankeyOption(result, opts, theme, measureLabel);
 
   const palette = theme.palette;
   const muted = theme.textMuted;
@@ -545,4 +548,243 @@ export function toOption(
     yAxis: horizontal ? categoryAxis : valueAxis,
     series,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Treemap
+// ---------------------------------------------------------------------------
+
+/** A positive value: treemap boxes and sankey flows draw nothing of a null, a zero or a negative one. */
+const positive = (value: number | null): value is number => value !== null && Number.isFinite(value) && value > 0;
+
+interface TreemapNode {
+  name: string;
+  value: number;
+  itemStyle: { color: string };
+  children?: TreemapNode[];
+}
+
+/**
+ * Boxes sized by value: two dimensions nest the second in the first (each
+ * parent the sum of its children, the children in its colour), one is flat.
+ * A period dimension (only the API sends one) makes it flat over the other
+ * dimension. Rows with nothing positive are left out; colours keep their
+ * position ("Other" muted).
+ */
+function treemapOption(result: MetricResult, opts: WidgetOptions, theme: ChartTheme): ChartOption {
+  const unit = result.unit;
+  const palette = theme.palette;
+  const muted = theme.textMuted;
+  const dims = result.dimensions;
+  const periods = dims.slice(0, 2).map((d) => d.kind === 'period');
+  const nested = dims.length >= 2 && !periods[0] && !periods[1];
+  const colour = (key: MetricKey, i: number) => widgetColor(key, i, palette, muted);
+
+  let data: TreemapNode[];
+  if (nested) {
+    const children = new Map<string, Map<string, { key: MetricKey; value: number }>>();
+    for (const row of result.rows) {
+      const [parent, child] = row.keys;
+      if (!parent || !child || !positive(row.value)) continue;
+      const kids = children.get(keyId(parent)) ?? new Map<string, { key: MetricKey; value: number }>();
+      children.set(keyId(parent), kids);
+      const kid = kids.get(keyId(child));
+      kids.set(keyId(child), { key: child, value: (kid?.value ?? 0) + row.value });
+    }
+    data = distinctKeys(result, 0).flatMap((key, i) => {
+      const kids = children.get(keyId(key));
+      if (!kids) return [];
+      const color = colour(key, i);
+      const list = [...kids.values()];
+      return [
+        {
+          name: key.label,
+          value: list.reduce((sum, kid) => sum + kid.value, 0),
+          itemStyle: { color },
+          children: list.map((kid) => ({ name: kid.key.label, value: kid.value, itemStyle: { color } })),
+        },
+      ];
+    });
+  } else {
+    const index = dims.length >= 2 && periods[0] && !periods[1] ? 1 : 0;
+    const sums = new Map<string, number>();
+    for (const row of result.rows) {
+      const key = row.keys[index] ?? (index === 0 ? TOTAL_KEY : undefined);
+      if (!key || !positive(row.value)) continue;
+      sums.set(keyId(key), (sums.get(keyId(key)) ?? 0) + row.value);
+    }
+    data = distinctKeys(result, index).flatMap((key, i) => {
+      const value = sums.get(keyId(key));
+      return value === undefined ? [] : [{ name: key.label, value, itemStyle: { color: colour(key, i) } }];
+    });
+  }
+
+  const numberOf = (value: unknown) => (typeof value === 'number' ? value : null);
+  return {
+    aria: quietAria(),
+    tooltip: {
+      trigger: 'item',
+      formatter: (params: { name?: string; value?: unknown }) =>
+        escapeHtml(`${params.name ?? ''}: ${withUnit(numberOf(params.value), unit, opts)}`),
+    },
+    series: [
+      {
+        type: 'treemap',
+        width: '100%',
+        height: '100%',
+        roam: false,
+        nodeClick: false,
+        breadcrumb: { show: false },
+        label: {
+          formatter: (params: { name?: string; value?: unknown }) =>
+            `${params.name ?? ''}\n${formatMetric(numberOf(params.value), unit, opts)}`,
+        },
+        // ECharts counts its virtual root as level 0: the root's gap parts the
+        // first dimension's boxes, theirs part the second's under their name.
+        levels: [
+          { itemStyle: { gapWidth: 2, borderColor: theme.background, borderWidth: 0 } },
+          {
+            itemStyle: { gapWidth: 1, borderColor: theme.background, borderWidth: 2 },
+            upperLabel: { show: true, height: 22, color: theme.textPrimary },
+          },
+          { itemStyle: { borderColor: theme.background } },
+        ],
+        data,
+      },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Sankey
+// ---------------------------------------------------------------------------
+
+/**
+ * Flows from the first dimension's values (left) to the second's (right),
+ * each flow the value of the row (rows with nothing positive are left out,
+ * and so are the values without a flow). Node ids carry their side (`1:` /
+ * `2:`), so a value present on both sides stays two nodes; the palette
+ * continues from the left column into the right one ("Other" muted). A
+ * one-dimension result (only the API sends one) flows into one node named
+ * after the measure.
+ */
+/** What ECharts hands a sankey tooltip or label: a node (`data.id`) or a flow (`dataType: 'edge'`). */
+interface SankeyTooltipParams {
+  dataType?: string;
+  data?: { id?: string; source?: string; target?: string };
+  name?: string;
+  value?: unknown;
+}
+
+function sankeyOption(
+  result: MetricResult,
+  opts: WidgetOptions,
+  theme: ChartTheme,
+  measureLabel: string | undefined
+): ChartOption {
+  const unit = result.unit;
+  const palette = theme.palette;
+  const muted = theme.textMuted;
+  const two = result.dimensions.length >= 2;
+  const left = distinctKeys(result, 0);
+  const measure: MetricKey = { key: MEASURE_KEY_ID, label: measureLabel || 'Value' };
+  const right = two ? distinctKeys(result, 1) : [measure];
+  const idOf = (side: 1 | 2, key: MetricKey) => `${side}:${keyId(key)}`;
+
+  const flows = new Map<string, { source: string; target: string; value: number }>();
+  for (const row of result.rows) {
+    const from = row.keys[0] ?? TOTAL_KEY;
+    const to = two ? row.keys[1] : measure;
+    if (!to || !positive(row.value)) continue;
+    const source = idOf(1, from);
+    const target = idOf(2, to);
+    const id = `${source}→${target}`;
+    flows.set(id, { source, target, value: (flows.get(id)?.value ?? 0) + row.value });
+  }
+  const links = [...flows.values()];
+  const totals = new Map<string, number>();
+  for (const link of links) {
+    totals.set(link.source, (totals.get(link.source) ?? 0) + link.value);
+    totals.set(link.target, (totals.get(link.target) ?? 0) + link.value);
+  }
+  const nodes = [
+    ...left.map((key, i) => ({
+      id: idOf(1, key),
+      name: key.label,
+      itemStyle: { color: widgetColor(key, i, palette, muted) },
+    })),
+    ...right.map((key, i) => ({
+      id: idOf(2, key),
+      name: key.label,
+      itemStyle: { color: widgetColor(key, i + left.length, palette, muted) },
+    })),
+  ].filter((node) => totals.has(node.id));
+  const nameOf = new Map(nodes.map((node) => [node.id, node.name]));
+
+  return {
+    aria: quietAria(),
+    tooltip: {
+      trigger: 'item',
+      formatter: (params: SankeyTooltipParams) => {
+        const data = params.data ?? {};
+        const value = typeof params.value === 'number' ? params.value : null;
+        if (params.dataType === 'edge') {
+          const from = nameOf.get(data.source ?? '') ?? '';
+          const to = nameOf.get(data.target ?? '') ?? '';
+          return escapeHtml(`${from} → ${to}: ${withUnit(value, unit, opts)}`);
+        }
+        // `params.name` is the node's id: its name comes from the node.
+        const name = nameOf.get(data.id ?? '') ?? params.name ?? '';
+        return escapeHtml(`${name}: ${withUnit(totals.get(data.id ?? '') ?? value, unit, opts)}`);
+      },
+    },
+    series: [
+      {
+        type: 'sankey',
+        nodeAlign: 'justify',
+        draggable: false,
+        emphasis: { focus: 'adjacency' },
+        lineStyle: { color: 'gradient', opacity: 0.4 },
+        layoutIterations: 32,
+        // A node with an `id` is named by it in ECharts' own label: name it here.
+        label: {
+          overflow: 'truncate',
+          width: 120,
+          color: theme.textPrimary,
+          formatter: (params: SankeyTooltipParams) => nameOf.get(params.data?.id ?? '') ?? '',
+        },
+        data: nodes,
+        links,
+      },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Blank-chart guard
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether a widget of `kind` draws anything of `result`: a gauge needs a
+ * total, a heatmap one value (a zero counts), a treemap or a sankey one
+ * positive value, a bar, line or pie chart one row. `WidgetCard` shows
+ * "Nothing to show for this period." otherwise. A KPI and a table always
+ * draw (they show their own empty state).
+ */
+export function hasDrawableData(kind: WidgetKind, result: MetricResult): boolean {
+  switch (kind) {
+    case 'gauge':
+      return result.total !== null;
+    case 'heatmap':
+      return result.rows.some((row) => row.value !== null);
+    case 'treemap':
+    case 'sankey':
+      return result.rows.some((row) => positive(row.value));
+    case 'bar':
+    case 'line':
+    case 'pie':
+      return result.rows.length > 0;
+    default:
+      return true;
+  }
 }

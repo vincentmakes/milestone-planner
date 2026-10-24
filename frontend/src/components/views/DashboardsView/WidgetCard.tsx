@@ -3,8 +3,10 @@
  *
  * The header (`.widgetHeader`, the drag handle while editing) holds the
  * title, the resolved period under it, and the unit; the body draws the
- * widget's result by kind — `KpiTile`, `EChart` (bar, line, pie) or
- * `TableWidget`. A widget whose query failed on the server shows its error
+ * widget's result by kind — `KpiTile`, `EChart` (bar, line, pie, gauge,
+ * heatmap, treemap, sankey) or `TableWidget`; a chart with nothing to draw
+ * (`hasDrawableData`: no row, a gauge without a total, a treemap or sankey
+ * without a positive value) says so instead. A widget whose query failed on the server shows its error
  * in a `Notice` (the server's words, verbatim); dropped filter ids
  * (`warnings`), a multi-value `note` and a cut "all time" period show as one
  * muted line. Until the first data arrives the body says it is loading.
@@ -20,6 +22,7 @@ import { Notice } from '@/components/common/Notice';
 import { Icon, CloseIcon, DragDotsIcon, EditIcon } from '@/components/common/Icon';
 import { dimensionLabel, MEASURES, queryUnit, resolvedPeriodLabel, UNIT_LABELS } from '@/utils/metrics';
 import { EChart } from './charts/EChart';
+import { hasDrawableData } from './charts/toOption';
 import { KpiTile } from './charts/KpiTile';
 import { TableWidget } from './charts/TableWidget';
 import styles from './WidgetCard.module.css';
@@ -73,7 +76,7 @@ export function WidgetCard({ widget, result, loading = false, editing = false, o
     body = (
       <TableWidget result={metric} query={widget.query} options={widget.options} dimensionLabels={dimensionLabels} />
     );
-  } else if (metric.rows.length === 0) {
+  } else if (!hasDrawableData(widget.kind, metric)) {
     body = <p className={styles.placeholder}>Nothing to show for this period.</p>;
   } else {
     const measureLabel = MEASURES.find((m) => m.key === widget.query.measure)?.label;
