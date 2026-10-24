@@ -32,6 +32,10 @@ const summary = (id: number, extra: Partial<DashboardSummary> = {}): DashboardSu
   description: null,
   visibility: 'everyone',
   role_ids: [],
+  site_ids: [],
+  team_ids: [],
+  user_ids: [],
+  shared_with: { roles: [], sites: [], teams: [], users: [] },
   owner_id: null,
   owner_name: null,
   is_default: false,
@@ -496,13 +500,16 @@ describe('save, remove, duplicate', () => {
     expect(api.get).toHaveBeenCalledTimes(1);
   });
 
-  it('copies a dashboard into a new private one and opens it', async () => {
+  it('copies a dashboard into a new private one shared with no one, and opens it', async () => {
     api.create.mockResolvedValue(detail(8, [80]));
     const copy = await useDashboardStore.getState().duplicate(1, 'Copy of Overview');
     expect(api.create).toHaveBeenCalledWith({
       name: 'Copy of Overview',
       visibility: 'private',
       role_ids: [],
+      site_ids: [],
+      team_ids: [],
+      user_ids: [],
       source_id: 1,
     });
     expect(copy.id).toBe(8);

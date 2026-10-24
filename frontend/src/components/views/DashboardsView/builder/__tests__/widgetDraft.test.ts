@@ -21,7 +21,9 @@ import {
   placeNewWidget,
   queryProblem,
   sameLayout,
+  savedTargets,
   stableKey,
+  TARGET_KEYS,
   toDraftWidget,
 } from '../widgetDraft';
 
@@ -236,8 +238,41 @@ describe('placement and ids', () => {
     expect(sameLayout(a, { ...a, sm: { ...a.sm, x: 1 } })).toBe(false);
     expect(stableKey({ b: 1, a: { d: [2, 1], c: null } })).toBe(stableKey({ a: { c: null, d: [2, 1] }, b: 1 }));
     expect(
-      comparableDraft({ name: 'N', description: undefined as unknown as null, visibility: 'roles', role_ids: [3, 1], widgets: [] })
-    ).toEqual({ name: 'N', description: null, visibility: 'roles', role_ids: [1, 3], widgets: [] });
+      comparableDraft({
+        name: 'N',
+        description: undefined as unknown as null,
+        visibility: 'shared',
+        role_ids: [3, 1],
+        site_ids: [9, 2],
+        team_ids: [5, 4],
+        user_ids: [7, 6],
+        widgets: [],
+      })
+    ).toEqual({
+      name: 'N',
+      description: null,
+      visibility: 'shared',
+      role_ids: [1, 3],
+      site_ids: [2, 9],
+      team_ids: [4, 5],
+      user_ids: [6, 7],
+      widgets: [],
+    });
+  });
+
+  it('sends the targets only for a shared dashboard, as copies', () => {
+    const meta = { visibility: 'shared' as const, role_ids: [1], site_ids: [2], team_ids: [3], user_ids: [4] };
+    const sent = savedTargets(meta);
+    expect(sent).toEqual({ role_ids: [1], site_ids: [2], team_ids: [3], user_ids: [4] });
+    expect(sent.site_ids).not.toBe(meta.site_ids);
+    expect(savedTargets({ ...meta, visibility: 'everyone' })).toEqual({
+      role_ids: [],
+      site_ids: [],
+      team_ids: [],
+      user_ids: [],
+    });
+    expect(savedTargets({ ...meta, visibility: 'private' }).user_ids).toEqual([]);
+    expect(TARGET_KEYS).toEqual(['role_ids', 'site_ids', 'team_ids', 'user_ids']);
   });
 
   it('identifies a dimension for the pickers', () => {

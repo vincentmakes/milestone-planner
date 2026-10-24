@@ -3,7 +3,8 @@
  *
  * Edit mode is a draft of the open dashboard (`startEdit`) or of a new one
  * (`startNew`, created by the dialog; nothing is sent until Save): its name,
- * description, visibility, roles and widgets, each widget with a client id
+ * description, visibility, sharing targets (roles, sites, teams, people) and
+ * widgets, each widget with a client id
  * (`w<id>` for a saved one, `n<k>` for a new one, which has no `id`). The
  * grid shows the draft (`gridWidgets`: a new widget carries a negative grid
  * id) with the store's data, or a widget's last preview once the widget
@@ -18,9 +19,14 @@
  * - `cancel()` asks `Discard the changes to this dashboard?` when dirty;
  *   `confirmDiscard()` asks the same without leaving (switching dashboards,
  *   and the view's leave guard, registered while editing).
+ * - `setMeta(partial)`: the inline name / description fields of edit mode
+ *   (any part of the meta).
  * - `save()` runs under `useSubmitGuard`: the store saves (POST for a new
  *   dashboard, else a PUT replacing the widgets) and shows the saved
  *   dashboard; edit mode ends. A failure stays in edit mode with `error`.
+ *   The PUT carries the sharing lists of the draft (the server replaces
+ *   them), so a widget save never un-shares a dashboard; they are sent empty
+ *   unless `shared`.
  *
  * While editing, `dashboardStore.editing` is set, so a live "dashboard
  * changed" reload never replaces the open dashboard under the draft.
@@ -34,8 +40,10 @@ import { setViewLeaveGuard } from '@/utils/viewLeaveGuard';
 import type { Dashboard, DashboardDraft, DashboardWidget, MetricError, MetricResult, WidgetLayout } from '@/types';
 import {
   comparableDraft,
+  copyTargets,
   gridIdOf,
   sameLayout,
+  savedTargets,
   stableKey,
   toDraftWidget,
 } from './widgetDraft';
@@ -66,7 +74,7 @@ function draftOf(dashboard: Dashboard): EditorDraft {
     name: dashboard.name,
     description: dashboard.description,
     visibility: dashboard.visibility,
-    role_ids: [...dashboard.role_ids],
+    ...copyTargets(dashboard),
     widgets: dashboard.widgets.map(toDraftWidget),
   };
 }
@@ -89,7 +97,8 @@ export interface DashboardEditor {
   confirmDiscard: () => Promise<boolean>;
   /** Leave edit mode without asking */
   discard: () => void;
-  setMeta: (meta: DashboardMeta) => void;
+  /** Change part of the name, description or sharing */
+  setMeta: (meta: Partial<DashboardMeta>) => void;
   setLayouts: (layouts: Record<number, WidgetLayout>) => void;
   upsertWidget: (widget: DraftWidget, preview?: MetricResult | null) => void;
   removeWidget: (clientId: string) => void;
@@ -140,7 +149,7 @@ export function useDashboardEditor(current: Dashboard | null): DashboardEditor {
   useEffect(() => (editing ? setViewLeaveGuard(confirmDiscard) : undefined), [editing, confirmDiscard]);
 
   const startNew = useCallback((meta: DashboardMeta) => {
-    setDraft({ ...meta, role_ids: [...meta.role_ids], widgets: [] });
+    setDraft({ ...meta, ...copyTargets(meta), widgets: [] });
     setBaseline(null);
     setPreviews({});
     setError(null);
@@ -165,8 +174,12 @@ export function useDashboardEditor(current: Dashboard | null): DashboardEditor {
     return true;
   }, [confirmDiscard, discard]);
 
-  const setMeta = useCallback((meta: DashboardMeta) => {
-    setDraft((prev) => (prev ? { ...prev, ...meta, role_ids: [...meta.role_ids] } : prev));
+  const setMeta = useCallback((meta: Partial<DashboardMeta>) => {
+    setDraft((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...meta };
+      return { ...next, ...copyTargets(next) };
+    });
   }, []);
 
   const setLayouts = useCallback((layouts: Record<number, WidgetLayout>) => {
@@ -237,10 +250,11 @@ export function useDashboardEditor(current: Dashboard | null): DashboardEditor {
     setError(null);
     const body: DashboardDraft = {
       ...(draft.id !== undefined ? { id: draft.id } : {}),
-      name: draft.name,
-      description: draft.description,
+      // The inline fields keep what is typed; the save sends it trimmed.
+      name: draft.name.trim(),
+      description: draft.description?.trim() || null,
       visibility: draft.visibility,
-      role_ids: draft.visibility === 'roles' ? draft.role_ids : [],
+      ...savedTargets(draft),
       widgets: draft.widgets.map(({ kind, title, query, options, layout }, index) => ({
         kind,
         title,

@@ -1,10 +1,11 @@
 /**
  * Dashboards API: each call hits its route with its body, and a dashboard
- * comes back normalised (options default to `{}`, widgets in `sort_order`).
+ * comes back normalised (options default to `{}`, the sharing lists to
+ * empty, widgets in `sort_order`).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as client from '@/api/client';
-import { dashboardsApi, transformDashboard } from '../dashboards';
+import { dashboardsApi, transformDashboard, transformSummary } from '../dashboards';
 import type { Dashboard, DashboardWidget, MetricQuery } from '@/types';
 
 vi.mock('@/api/client', () => ({
@@ -36,6 +37,10 @@ const dashboard = (widgets: DashboardWidget[]): Dashboard => ({
   description: null,
   visibility: 'everyone',
   role_ids: [],
+  site_ids: [],
+  team_ids: [],
+  user_ids: [],
+  shared_with: { roles: [], sites: [], teams: [], users: [] },
   owner_id: null,
   owner_name: null,
   is_default: true,
@@ -61,6 +66,28 @@ describe('transformDashboard', () => {
     expect(out.role_ids).toEqual([]);
   });
 
+  it('fills missing sharing lists and shared_with, and keeps given ones', () => {
+    const bare = {
+      ...dashboard([]),
+      site_ids: undefined as never,
+      team_ids: undefined as never,
+      user_ids: undefined as never,
+      shared_with: undefined as never,
+    };
+    const out = transformDashboard(bare);
+    expect(out).toMatchObject({ site_ids: [], team_ids: [], user_ids: [] });
+    expect(out.shared_with).toEqual({ roles: [], sites: [], teams: [], users: [] });
+
+    const partial = transformSummary({
+      ...dashboard([]),
+      visibility: 'shared' as const,
+      site_ids: [2],
+      shared_with: { sites: [{ id: 2, name: 'Frankfurt' }] } as never,
+    });
+    expect(partial.site_ids).toEqual([2]);
+    expect(partial.shared_with).toEqual({ roles: [], sites: [{ id: 2, name: 'Frankfurt' }], teams: [], users: [] });
+  });
+
   it('copes with a dashboard without widgets', () => {
     const raw = { ...dashboard([]), widgets: undefined as never };
     expect(transformDashboard(raw).widgets).toEqual([]);
@@ -68,10 +95,19 @@ describe('transformDashboard', () => {
 });
 
 describe('dashboardsApi', () => {
-  it('lists the dashboards', async () => {
-    get.mockResolvedValue([]);
-    await dashboardsApi.list();
+  it('lists the dashboards, each row normalised', async () => {
+    get.mockResolvedValue([{ ...dashboard([]), user_ids: undefined, shared_with: undefined }]);
+    const rows = await dashboardsApi.list();
     expect(get).toHaveBeenCalledWith('/api/dashboards');
+    expect(rows[0].user_ids).toEqual([]);
+    expect(rows[0].shared_with.users).toEqual([]);
+  });
+
+  it('lists the people a dashboard can be shared with', async () => {
+    const people = [{ id: 4, name: 'Leo Test', job_title: 'Chemist', site_names: ['Winterthur'] }];
+    get.mockResolvedValue(people);
+    await expect(dashboardsApi.shareableUsers()).resolves.toEqual(people);
+    expect(get).toHaveBeenCalledWith('/api/dashboards/shareable-users');
   });
 
   it('gets one dashboard, normalised', async () => {

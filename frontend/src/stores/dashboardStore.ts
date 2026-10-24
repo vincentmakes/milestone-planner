@@ -327,7 +327,16 @@ export const useDashboardStore = create<DashboardState>((set, get) => {
     },
 
     duplicate: async (id, name) => {
-      const saved = await dashboardsApi.create({ name, visibility: 'private', role_ids: [], source_id: id });
+      // A copy takes the widgets only: it starts private, shared with no one.
+      const saved = await dashboardsApi.create({
+        name,
+        visibility: 'private',
+        role_ids: [],
+        site_ids: [],
+        team_ids: [],
+        user_ids: [],
+        source_id: id,
+      });
       await showSaved(saved);
       return saved;
     },

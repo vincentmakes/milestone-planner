@@ -952,7 +952,12 @@ export interface AppNotification {
 
 export type WidgetKind = 'kpi' | 'bar' | 'line' | 'pie' | 'table';
 
-export type DashboardVisibility = 'private' | 'roles' | 'everyone';
+/**
+ * Who sees a dashboard: its owner (and admins), the targets of `shared`
+ * (roles, sites, teams, people — any match grants view access) or everyone
+ * who can open the Dashboards view.
+ */
+export type DashboardVisibility = 'private' | 'shared' | 'everyone';
 
 export type Measure =
   | 'booked_days'
@@ -1091,12 +1096,40 @@ export interface DashboardWidget {
   sort_order: number;
 }
 
+/** A sharing target with its name resolved by the server. */
+export interface SharedTarget {
+  id: number;
+  name: string;
+}
+
+/** Whom a `shared` dashboard is shared with, names resolved (each list by name). */
+export interface SharedWith {
+  roles: SharedTarget[];
+  sites: SharedTarget[];
+  teams: (SharedTarget & { site_name: string })[];
+  users: SharedTarget[];
+}
+
+/** A person a dashboard can be shared with (`GET /dashboards/shareable-users`). */
+export interface ShareableUser {
+  id: number;
+  name: string;
+  job_title: string | null;
+  /** Their sites among the caller's visible sites, by name */
+  site_names: string[];
+}
+
 export interface DashboardSummary {
   id: number;
   name: string;
   description: string | null;
   visibility: DashboardVisibility;
+  /** The `shared` targets, ascending ids (all empty unless `shared`) */
   role_ids: number[];
+  site_ids: number[];
+  team_ids: number[];
+  user_ids: number[];
+  shared_with: SharedWith;
   owner_id: number | null;
   owner_name: string | null;
   is_default: boolean;
@@ -1122,6 +1155,9 @@ export interface DashboardDraft {
   description?: string | null;
   visibility: DashboardVisibility;
   role_ids?: number[];
+  site_ids?: number[];
+  team_ids?: number[];
+  user_ids?: number[];
   widgets?: DashboardWidgetDraft[];
   /** POST only: copy this dashboard's widgets */
   source_id?: number;

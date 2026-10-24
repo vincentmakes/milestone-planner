@@ -33,12 +33,40 @@ export type DraftWidget = Omit<DashboardWidget, 'id' | 'sort_order'> & {
   clientId: string;
 };
 
-/** What the dashboard dialog edits. */
+/**
+ * A dashboard's name, description and sharing: what the dashboard dialog
+ * edits (and, in edit mode, the inline name / description fields). The four
+ * target lists mean something only for `shared`; a save sends them empty
+ * otherwise.
+ */
 export interface DashboardMeta {
   name: string;
   description: string | null;
   visibility: DashboardVisibility;
   role_ids: number[];
+  site_ids: number[];
+  team_ids: number[];
+  user_ids: number[];
+}
+
+/** The four target lists of a dashboard's sharing. */
+export const TARGET_KEYS = ['role_ids', 'site_ids', 'team_ids', 'user_ids'] as const;
+export type TargetKey = (typeof TARGET_KEYS)[number];
+
+/** Copies of the four target lists (the draft never shares arrays with the store). */
+export function copyTargets(meta: Pick<DashboardMeta, TargetKey>): Pick<DashboardMeta, TargetKey> {
+  return {
+    role_ids: [...meta.role_ids],
+    site_ids: [...meta.site_ids],
+    team_ids: [...meta.team_ids],
+    user_ids: [...meta.user_ids],
+  };
+}
+
+/** The lists a save sends: as chosen for `shared`, all empty otherwise. */
+export function savedTargets(meta: Pick<DashboardMeta, 'visibility' | TargetKey>): Pick<DashboardMeta, TargetKey> {
+  if (meta.visibility === 'shared') return copyTargets(meta);
+  return { role_ids: [], site_ids: [], team_ids: [], user_ids: [] };
 }
 
 /** The builder's draft of a dashboard (`id` undefined for a new one). */
@@ -225,13 +253,18 @@ export function stableKey(value: unknown): string {
   );
 }
 
-/** A draft without the client-only parts, for comparing with its baseline. */
+const sortedIds = (ids: readonly number[]): number[] => [...ids].sort((a, b) => a - b);
+
+/** A draft without the client-only parts, for comparing with its baseline (target order ignored). */
 export function comparableDraft(draft: EditorDraft): unknown {
   return {
     name: draft.name,
     description: draft.description ?? null,
     visibility: draft.visibility,
-    role_ids: [...draft.role_ids].sort((a, b) => a - b),
+    role_ids: sortedIds(draft.role_ids),
+    site_ids: sortedIds(draft.site_ids),
+    team_ids: sortedIds(draft.team_ids),
+    user_ids: sortedIds(draft.user_ids),
     widgets: draft.widgets.map(({ kind, title, query, options, layout }) => ({ kind, title, query, options, layout })),
   };
 }

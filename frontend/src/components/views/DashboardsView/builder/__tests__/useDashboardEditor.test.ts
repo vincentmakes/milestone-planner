@@ -3,8 +3,9 @@
  * draft of an open or a new dashboard, dirty tracking (key order ignored),
  * the grid's layouts mapped back onto the widgets (a report that moves
  * nothing is ignored), widgets added / replaced / removed with their
- * previews, the discard confirm, save success and failure, the store's
- * editing flag and the view's leave guard.
+ * previews, the inline meta (`setMeta` takes a part), the sharing lists kept
+ * by a widget save, the discard confirm, save success and failure, the
+ * store's editing flag and the view's leave guard.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
@@ -51,8 +52,12 @@ const dashboard = (extra: Partial<Dashboard> = {}): Dashboard => ({
   id: 7,
   name: 'Team plan',
   description: null,
-  visibility: 'roles',
+  visibility: 'shared',
   role_ids: [3, 2],
+  site_ids: [5],
+  team_ids: [8, 6],
+  user_ids: [4],
+  shared_with: { roles: [], sites: [], teams: [], users: [] },
   owner_id: 1,
   owner_name: 'Ada',
   is_default: false,
@@ -126,19 +131,43 @@ describe('useDashboardEditor', () => {
 
   it('tracks dirty against what was opened, whatever the key order', () => {
     const { result } = editing();
-    // The roles in another order are no change
-    act(() =>
-      result.current.setMeta({ name: 'Team plan', description: null, visibility: 'roles', role_ids: [2, 3] })
-    );
+    // The targets in another order are no change
+    act(() => result.current.setMeta({ role_ids: [2, 3], team_ids: [6, 8] }));
     expect(result.current.dirty).toBe(false);
-    act(() =>
-      result.current.setMeta({ name: 'Renamed', description: null, visibility: 'roles', role_ids: [2, 3] })
-    );
+    act(() => result.current.setMeta({ name: 'Renamed' }));
     expect(result.current.dirty).toBe(true);
-    act(() =>
-      result.current.setMeta({ name: 'Team plan', description: null, visibility: 'roles', role_ids: [3, 2] })
-    );
+    act(() => result.current.setMeta({ name: 'Team plan' }));
     expect(result.current.dirty).toBe(false);
+    act(() => result.current.setMeta({ user_ids: [] }));
+    expect(result.current.dirty).toBe(true);
+  });
+
+  it('changes only the part of the meta given', () => {
+    const { result } = editing();
+    act(() => result.current.setMeta({ description: 'Per team' }));
+    expect(result.current.draft).toMatchObject({
+      name: 'Team plan',
+      description: 'Per team',
+      visibility: 'shared',
+      role_ids: [3, 2],
+      site_ids: [5],
+      team_ids: [8, 6],
+      user_ids: [4],
+    });
+  });
+
+  it('ignores setMeta outside edit mode', () => {
+    const { result } = renderHook(() => useDashboardEditor(dashboard()));
+    act(() => result.current.setMeta({ name: 'Nope' }));
+    expect(result.current.draft).toBeNull();
+  });
+
+  it('never shares its target lists with the dashboard it drafts', () => {
+    const open = dashboard();
+    const { result } = editing(open);
+    expect(result.current.draft?.site_ids).toEqual(open.site_ids);
+    expect(result.current.draft?.site_ids).not.toBe(open.site_ids);
+    expect(result.current.draft?.user_ids).not.toBe(open.user_ids);
   });
 
   it('maps the grid layouts back onto the widgets', () => {
@@ -199,12 +228,25 @@ describe('useDashboardEditor', () => {
 
   it('starts a new dashboard dirty, with no widgets', () => {
     const { result } = renderHook(() => useDashboardEditor(dashboard()));
-    act(() => result.current.startNew({ name: 'Mine', description: 'Desc', visibility: 'private', role_ids: [] }));
+    act(() =>
+      result.current.startNew({
+        name: 'Mine',
+        description: 'Desc',
+        visibility: 'private',
+        role_ids: [],
+        site_ids: [],
+        team_ids: [],
+        user_ids: [],
+      })
+    );
     expect(result.current.draft).toEqual({
       name: 'Mine',
       description: 'Desc',
       visibility: 'private',
       role_ids: [],
+      site_ids: [],
+      team_ids: [],
+      user_ids: [],
       widgets: [],
     });
     expect(result.current.dirty).toBe(true);
@@ -258,6 +300,32 @@ describe('useDashboardEditor', () => {
     expect(confirm).toHaveBeenCalledTimes(1);
   });
 
+  it('a widget save keeps the sharing lists', async () => {
+    api.update.mockResolvedValue(dashboard());
+    const { result } = editing();
+    act(() => result.current.upsertWidget(newWidget('n3'), metric(1)));
+    await act(async () => {
+      await result.current.save();
+    });
+    expect(api.update.mock.calls[0][1]).toMatchObject({
+      visibility: 'shared',
+      role_ids: [3, 2],
+      site_ids: [5],
+      team_ids: [8, 6],
+      user_ids: [4],
+    });
+  });
+
+  it('sends the name and description trimmed (a blank description as none)', async () => {
+    api.update.mockResolvedValue(dashboard());
+    const { result } = editing();
+    act(() => result.current.setMeta({ name: '  Spaced  ', description: '   ' }));
+    await act(async () => {
+      await result.current.save();
+    });
+    expect(api.update.mock.calls[0][1]).toMatchObject({ name: 'Spaced', description: null });
+  });
+
   it('saves a PUT of the whole dashboard, then leaves edit mode', async () => {
     const saved = dashboard({ widgets: [widget(21, 0)] });
     api.update.mockResolvedValue(saved);
@@ -271,8 +339,11 @@ describe('useDashboardEditor', () => {
     expect(api.update).toHaveBeenCalledWith(7, {
       name: 'Team plan',
       description: null,
-      visibility: 'roles',
+      visibility: 'shared',
       role_ids: [3, 2],
+      site_ids: [5],
+      team_ids: [8, 6],
+      user_ids: [4],
       widgets: [
         {
           kind: 'bar',
@@ -289,10 +360,20 @@ describe('useDashboardEditor', () => {
     expect(useDashboardStore.getState().editing).toBe(false);
   });
 
-  it('creates a new dashboard with a POST, without roles unless shared with roles', async () => {
+  it('creates a new dashboard with a POST, without targets unless shared', async () => {
     api.create.mockResolvedValue(dashboard({ id: 9, visibility: 'private', role_ids: [] }));
     const { result } = renderHook(() => useDashboardEditor(null));
-    act(() => result.current.startNew({ name: 'Mine', description: null, visibility: 'private', role_ids: [4] }));
+    act(() =>
+      result.current.startNew({
+        name: 'Mine',
+        description: null,
+        visibility: 'private',
+        role_ids: [4],
+        site_ids: [1],
+        team_ids: [2],
+        user_ids: [3],
+      })
+    );
     act(() => result.current.upsertWidget(newWidget('n8', 0), metric(3)));
     await act(async () => {
       await result.current.save();
@@ -302,6 +383,9 @@ describe('useDashboardEditor', () => {
       description: null,
       visibility: 'private',
       role_ids: [],
+      site_ids: [],
+      team_ids: [],
+      user_ids: [],
       widgets: [
         {
           kind: 'kpi',
