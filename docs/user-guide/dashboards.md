@@ -1,6 +1,6 @@
 # Dashboards
 
-**Dashboards** turn the plan into numbers and charts: how many weeks people are booked on each project, how a team's time splits between confirmed and unconfirmed work, how many projects run at each site. A dashboard is a page of **widgets** — KPI tiles, bar, line and pie charts and tables — that anyone allowed can open, and that people who build dashboards can arrange, duplicate and share.
+**Dashboards** turn the plan into numbers and charts: how many weeks people are booked on each project, how a team's time splits between confirmed and unconfirmed work, how full each team and each instrument is, which phases are late, how many projects run at each site. A dashboard is a page of **widgets** — KPI tiles, bar, line and pie charts and tables — that anyone allowed can open, and that people who build dashboards can arrange, duplicate and share.
 
 Open it from **Dashboards** in the sidebar, just below My Work. The entry needs the **Dashboards** permission (Superuser and User by default, see [Roles & Permissions](settings.md#roles-permissions)).
 
@@ -20,13 +20,13 @@ The **Dashboard** picker at the top lists every dashboard you may open, in this 
 
 Type in the picker's search box to find one by name. Milestone remembers the last dashboard you opened and shows it next time.
 
-**Refresh** recomputes every widget. You rarely need it: when someone changes a project, a booking, a team or a project field, the open dashboard updates by itself within a couple of seconds.
+**Refresh** recomputes every widget. You rarely need it: when someone changes a project, a booking, a team, a project field, an absence, a bank holiday or site closure, an equipment booking or block, the open dashboard updates by itself within a couple of seconds.
 
 ### Everyone Sees Their Own Numbers
 
 A dashboard is a set of questions, not a copy of the answers. Each viewer gets the answers for the **sites they can see**: a colleague who works only at Frankfurt sees Frankfurt figures on the same Overview where an administrator sees every site. Archived projects are left out unless a widget asks for them.
 
-A widget can need a permission you do not hold — a breakdown by **person** needs the **Staff overview** permission, a widget that includes **archived projects** needs **Archived projects**. Such a widget shows *This widget needs the Staff view permission* (or *the Archived view permission*) in place of its chart; the rest of the dashboard works as usual.
+A widget can need a permission you do not hold — the **capacity** measures, a breakdown by **person** and the **People** filter need the **Staff overview** permission; the **equipment** measures, a breakdown by **equipment** or **equipment type** and the **Equipment** filters need the **Equipment view** permission; a widget that includes **archived projects** needs **Archived projects**. Such a widget shows *This widget needs the Staff view permission* (or *the Equipment view permission*, *the Archived view permission*) in place of its chart; the rest of the dashboard works as usual.
 
 ## The Overview
 
@@ -47,18 +47,91 @@ People who build dashboards can **Duplicate** it and adapt the copy. Only an adm
 
 ## What the Numbers Mean
 
-Booked time is **planned** time — what the bookings in the Gantt chart say, not hours recorded afterwards.
+Booked time is **planned** time — what the bookings in the Gantt chart say, not hours recorded afterwards. The [Measures](#measures) below say what each measure counts; these rules hold for all of them.
 
-- **Booked days** — for each booking, its allocation times the **working days** it covers inside the period. A booking at 50 % over two working weeks counts 5 days
-- **Booked weeks** — booked days divided by 5
-- A **working day** is Monday to Friday, except the [bank holidays](settings.md#bank-holidays) of the **project's site**. Absences and site closures do not reduce booked time
+- A **working day** is Monday to Friday, except the [bank holidays](settings.md#bank-holidays) of a site. Booked time counts the working days of the **project's site**; capacity counts those of the **person's** sites and equipment availability those of the **equipment's** sites
 - A booking on a phase or subphase counts only inside its card's dates; a booking on the whole project counts over its own dates. Someone booked both on the project and on one of its phases counts twice, as on the [Staff overview](staff-management.md)
 - **Bookings waiting for approval are not counted** until they are approved
-- **Bookings** counts booking rows, **People booked** counts different people, **Projects** and **Phases** count projects and phases whose dates touch the period (in every month, quarter or year they touch, when broken down by period)
-- **Project weeks** and **Phase weeks** are the working weeks a project or phase lasts inside the period, whoever is booked; **Project volume** adds up the projects' *Volume* field
+- Counts of projects and phases take those whose dates touch the period (in every month, quarter or year they touch, when broken down by period)
 - A breakdown by **Team** uses the teams of the booked person at the project's site (someone in two teams counts in both; *No team* otherwise). **Project team** uses the teams the project belongs to
-- A project with two tags, or two items of a multi-select field, appears under each of them; the total counts it once. The widget then says so under its chart
-- Empty values have their own bucket: *No customer*, *No manager*, *No tag*, *No team*, *No site*, *No phase* (a booking on the whole project), *Not set* (a project field)
+- A project with two tags, or two items of a multi-select field, appears under each of them; the total counts it once. The widget then says so under its chart. The same goes for a person or an instrument at two sites in a breakdown by **Site**
+- Empty values have their own bucket: *No customer*, *No manager*, *No tag*, *No team*, *No site*, *No phase* (a booking on the whole project), *No type* (equipment), *Not set* (a project field)
+- A value that cannot be computed — a utilisation with booked time but no capacity in that bucket — shows **–**, never 0
+
+## Measures
+
+The **Measure** list of the widget editor is grouped by family. Each family has its own filters and breakdowns: the editor offers only those that apply.
+
+### Bookings
+
+| Measure | What it counts |
+|---------|----------------|
+| **Booked days** | For each booking, its allocation times the working days it covers inside the period. A booking at 50 % over two working weeks counts 5 days |
+| **Booked weeks** | Booked days divided by 5 |
+| **Bookings** | Booking rows |
+| **People booked** | Different people with a booking |
+
+### Capacity
+
+Needs the **Staff overview** permission.
+
+| Measure | What it counts |
+|---------|----------------|
+| **Capacity (days)** | The days the bookable people can work, at their **max capacity**: a person at 60 % has 3 days in a full week |
+| **Available days** | Capacity minus booked days. Negative when someone is booked beyond their capacity |
+| **Utilisation** | Booked days over capacity, in %. Over 100 % means booked beyond capacity |
+| **People over capacity** | Different people whose booked days in the period (or in the bar, line point or cell) are more than their capacity |
+
+- **Who counts**: every active person marked *Bookable as a resource* who is a member of one of your sites. Bookings of people no longer bookable, or deactivated, are left out on both sides
+- **Capacity** is the weekdays at **their** sites minus the bank holidays of those sites, their absences of a type that counts as unavailable (a recurring absence only on its weekdays; Home Office leaves them plannable) and the site closures that apply to them — the same closures the Staff overview shows
+- **Sites and teams are the person's**: a breakdown by Site or Team, and the Sites, Teams and People filters, use the person's sites and teams on both sides of the ratio, not the project's. A person at two sites appears under each and once in the total
+- **The team figure is weighted**: a team's utilisation is the team's booked days over the team's capacity, not the average of its members' percentages. A KPI without a breakdown is the weighted figure of everyone in scope
+- A bar, line point or cell with booked time and no capacity (everyone off that week) shows **–**; with neither, 0 %
+- **Archived projects**: bookings on archived projects are left out unless the widget includes them
+- **Booked time is counted only on projects at your sites**: a person you see whose bookings are on a project at a site you cannot see shows less booked time than they have
+- **Not the same as the Staff overview**: the Staff overview's heatmap shows each day and does not take bank holidays off, while capacity does, and booked days follow the project's site while capacity follows the person's. A person booked on a project at a site with other bank holidays can read slightly over or under 100 %
+
+### Projects
+
+| Measure | What it counts |
+|---------|----------------|
+| **Projects** | Projects whose dates touch the period |
+| **Project weeks** | The working weeks a project lasts inside the period, whoever is booked |
+| **Project volume** | The projects' *Volume* field, added up |
+
+### Phases
+
+| Measure | What it counts |
+|---------|----------------|
+| **Phases** | Phases whose dates touch the period |
+| **Phase weeks** | The working weeks a phase lasts inside the period |
+| **Phases due** | Phases whose **end date** lies in the period (a milestone: its date), each filed once, in the month, quarter or year it is due |
+| **Phases overdue** | Phases due **before today** that are not **Done**, filed by their end date |
+
+- The phase measures count the phases of a project, not their subphases
+- Break them down by **Status** (To do, In progress, Blocked, Done — the Kanban columns) or by **Phase**
+- The **Milestones** filter includes milestones (the default), shows **only** milestones, or leaves them out
+
+### Equipment
+
+Needs the **Equipment view** permission.
+
+| Measure | What it counts |
+|---------|----------------|
+| **Equipment booked days** | The working days of each equipment booking inside the period, at the **project's site** (a booking is a whole day, there is no allocation) |
+| **Equipment bookings** | Equipment booking rows |
+| **Equipment booked** | Different instruments with a booking |
+| **Equipment utilisation** | Booked days over the instrument's availability, in % |
+
+- **Availability** is the weekdays at the **equipment's** sites minus the bank holidays of those sites and its blocks, for every active instrument at one of your sites
+- **Overlapping bookings add up**: two projects booking the same instrument the same week count twice, so utilisation **over 100 % flags a conflict**. A booking inside a block counts in full too — it is the same conflict
+- Equipment utilisation is broken down by Equipment, Equipment type, Site (the **equipment's** sites, like its Sites filter) or Period; the other equipment measures take the project breakdowns and filters as well
+- Booked days follow the project's site and availability the equipment's: a booking from a site with other bank holidays can read slightly over or under 100 %
+- Inactive equipment counts in booked days and bookings, not in utilisation
+
+### Periods
+
+**This year**, **Last year**, **Next year**, **This quarter**, **Last quarter**, **Next quarter**, **This month**, **Last month**, **Next month**, **Last 12 months**, **Next 12 months** and **All time**, or a custom range. Quarters and months are calendar ones. **Last 12 months** and **Next 12 months** both include the **current month**: the last 12 end with it, the next 12 start with it.
 
 ## Building a Dashboard
 
@@ -95,15 +168,15 @@ On a phone (640 px wide or less) dashboards are view-only.
 
 1. **Kind** — KPI, Bar, Line, Pie or Table
 2. **Title**
-3. **Measure** — Booked days, Booked weeks, Bookings, People booked, Projects, Project weeks, Project volume, Phases or Phase weeks
-4. **Dimension 1** and **Dimension 2** — how to break the measure down: Site, Team, Project team, Person, Project, Project manager, Customer, Confirmed, Tag, Phase, any dropdown or toggle **project field**, or Period (by year, quarter, month or week). Only the dimensions that make sense for the measure are offered; a pie takes one dimension, a KPI at most one
-5. **Filters** — limit the widget to some sites, teams, project teams, people, projects, tags, field items, confirmed or unconfirmed projects; include archived projects or show only them
-6. **Period** — This year, Last year, This quarter, Last quarter, Last 12 months, All time, or a custom range
-7. **Percent of** — show shares instead of amounts: of the **total**, or within each value of the **first dimension** (each bar adds up to 100 %)
+3. **Measure** — grouped by family: Bookings, Projects, Phases, Capacity and Equipment (see [Measures](#measures)). The capacity measures are listed only with the **Staff overview** permission, the equipment measures only with the **Equipment view** permission. A hint under the list says how the measure counts its days
+4. **Dimension 1** and **Dimension 2** — how to break the measure down: Site, Team, Project team, Person, Project, Project manager, Customer, Confirmed, Tag, Phase, Status, Equipment, Equipment type, any dropdown or toggle **project field**, or Period (by year, quarter, month or week). Only the dimensions that make sense for the measure are offered; a pie takes one dimension, a KPI at most one
+5. **Filters** — only those of the measure's family: sites, teams, project teams, people, projects, tags, field items, confirmed or unconfirmed projects, archived projects for bookings; the same without teams and people for projects, plus **Milestones** for phases; **Sites**, **Teams** and **People** (the person's) for capacity; the project filters plus **Equipment** and **Equipment types** for the equipment measures (Sites, Equipment and Equipment types only for equipment utilisation). Changing the measure drops the filters the new one does not take
+6. **Period** — one of the [twelve periods](#periods) or a custom range
+7. **Percent of** — show shares instead of amounts: of the **total**, or within each value of the **first dimension** (each bar adds up to 100 %). Not offered for **Utilisation**, **Equipment utilisation** (already percentages) and **Available days** (which can be negative); a KPI of these three shows the weighted figure, with no dimension
 8. **Top N** — keep the largest values and group the rest as *Other*
 9. **Options** — stacked or 100 % bars and their orientation, a legend for lines and pies, the number format. A KPI showing a share needs a **Bucket**: the value whose share it shows (for example *Confirmed*)
 
-If the combination cannot be answered, the preview says why in plain words, and **Add widget** / **Save Changes** waits until you fix it. A new widget is placed below the others; arrange it on the grid afterwards.
+A pie of **Available days** is refused (negative days cannot be slices). If the combination cannot be answered, the preview says why in plain words, and **Add widget** / **Save Changes** waits until you fix it. A new widget is placed below the others; arrange it on the grid afterwards.
 
 ### Sharing
 
