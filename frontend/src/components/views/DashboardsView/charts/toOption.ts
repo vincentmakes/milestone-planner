@@ -184,7 +184,8 @@ export const gaugeTarget = (target: number | null | undefined): number | null =>
  * to ten; any other unit at the nice number (1, 2, 5 × 10ⁿ) past 125 % of the
  * target and 110 % of the value. With a target the track is green up to it,
  * amber up to 100 % (a percentage) or 115 % of the target (any other unit) —
- * no amber band when the target is 100 % or more — and red after; without
+ * no amber band when the target is 100 % or more, a value at the target is
+ * then red — and red after; without
  * one it is the plain colour. The stops are fractions of the track from
  * `min` to `max`, so a negative minimum keeps every band at its value.
  */
@@ -212,7 +213,9 @@ export function gaugeScale(
       [fraction(amber), colours.warn],
       [1, colours.bad],
     ],
-    band: (v) => (v < goal ? colours.good : v <= amber ? colours.warn : colours.bad),
+    // Without an amber band (`amber === goal`), a value at the target is past it:
+    // red, like the track there — never amber, a colour the track does not show.
+    band: (v) => (v < goal ? colours.good : amber > goal && v <= amber ? colours.warn : colours.bad),
   };
 }
 
@@ -253,7 +256,8 @@ function gaugeOption(result: MetricResult, opts: WidgetOptions, theme: ChartThem
         data: [
           {
             value,
-            name: target !== null ? `Target ${formatMetric(target, unit)} ${unitWord(target, unit)}`.trim() : '',
+            // In the widget's number format, like the value ("Target 20 days" with Integer).
+            name: target !== null ? `Target ${withUnit(target, unit, opts)}` : '',
           },
         ],
       },

@@ -410,7 +410,13 @@ describe('gaugeScale — percentages', () => {
     expect(a).toBe(t);
     wellFormed(hundred);
     expect(hundred.band(99)).toBe('good');
+    // At the target with no amber band: red, the track's colour there.
+    expect(hundred.band(100)).toBe('bad');
     expect(hundred.band(101)).toBe('bad');
+    expect(gaugeScale(150, 150, 'percent').band(150)).toBe('bad');
+    expect(gaugeScale(0, 0, 'count').band(0)).toBe('bad');
+    // With an amber band a value at the target stays amber.
+    expect(gaugeScale(85, 85, 'percent').band(85)).toBe('warn');
 
     const above = gaugeScale(70, 150, 'percent');
     expect(above.max).toBe(150);
@@ -590,6 +596,21 @@ describe('toOption — gauge', () => {
     const people = (toOption('gauge', { ...days, unit: 'people' }, { target: 1 }, full) as AnyOption).series[0];
     expect(people.data[0].name).toBe('Target 1 person');
     expect(people.detail.formatter(3)).toBe('3 people');
+  });
+
+  it('writes the target in the widget’s number format, like the value', () => {
+    const days: MetricResult = { ...result([row([], 1)], 0), unit: 'days', total: 1 };
+    const integer = (toOption('gauge', days, { target: 20, number_format: 'integer' }, full) as AnyOption).series[0];
+    expect(integer.data[0].name).toBe('Target 20 days');
+    expect(integer.detail.formatter(1)).toBe('1 day');
+    expect((toOption('gauge', days, { target: 1, number_format: 'integer' }, full) as AnyOption).series[0].data[0].name).toBe(
+      'Target 1 day'
+    );
+    expect((toOption('gauge', days, { target: 20, number_format: 'decimal' }, full) as AnyOption).series[0].data[0].name).toBe(
+      'Target 20.00 days'
+    );
+    const percent = (toOption('gauge', utilisation(70), { target: 85, number_format: 'integer' }, full) as AnyOption).series[0];
+    expect(percent.data[0].name).toMatch(/^Target 85\s%$/);
   });
 
   it('reads the total of a result with dimensions (only the API sends one)', () => {
