@@ -132,10 +132,12 @@ export function slicesForEntity(entityType: string): Slice[] {
       // would otherwise keep showing — so those slices reload too, and so do
       // the site's teams. The signed-in user's own record (their sites) and
       // the staff rows (their site lists) move with a delete too: a user whose
-      // only site vanished is re-evaluated instead of staying on it.
+      // only site vanished is re-evaluated instead of staying on it. A
+      // dashboard shared with the site loses that link (cascade), and its
+      // members' dashboards change.
       return [
         'sites', 'siteCalendar', 'projects', 'tags', 'projectFields', 'equipment', 'teams',
-        'currentUser', 'staff',
+        'currentUser', 'staff', 'dashboards',
       ];
     case 'skill':
       return ['skills', 'staff'];
@@ -149,12 +151,14 @@ export function slicesForEntity(entityType: string): Slice[] {
       // Membership changes staff rows' team_ids. A team delete cascades on
       // the server to its project, tag, field item, equipment and
       // company-event links; like 'site', a rare admin action, so those
-      // slices reload too.
-      return ['teams', 'staff', 'projects', 'tags', 'projectFields', 'equipment', 'siteCalendar'];
+      // slices reload too. Membership decides who sees a dashboard shared
+      // with the team, and a delete drops its sharing links.
+      return ['teams', 'staff', 'projects', 'tags', 'projectFields', 'equipment', 'siteCalendar', 'dashboards'];
     case 'role':
       // The signed-in user's resolved permissions (/auth/me) and the role
-      // list (Settings → Roles, the role pickers).
-      return ['currentUser', 'roles'];
+      // list (Settings → Roles, the role pickers). A role delete drops the
+      // dashboards' links to it (the "Shared with" names).
+      return ['currentUser', 'roles', 'dashboards'];
     case 'approval_policy':
       // Who may approve changes the approver names on pending badges and the
       // requests the user may decide. approval_required (/auth/me) comes from

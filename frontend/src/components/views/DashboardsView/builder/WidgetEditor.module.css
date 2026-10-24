@@ -7,7 +7,7 @@
 
 .columns {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 15rem);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 26rem);
   gap: 1rem;
   align-items: start;
 }
@@ -140,7 +140,7 @@
 .previewBody {
   display: flex;
   flex-direction: column;
-  height: 16rem;
+  height: 20rem;
   min-width: 0;
 }
 

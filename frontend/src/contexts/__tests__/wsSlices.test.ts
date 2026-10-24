@@ -29,16 +29,20 @@ describe('slicesForEntity', () => {
     ['equipment', ['equipment', 'projects']],
     ['equipment_block', ['equipmentBlocks']],
     ['vacation', ['vacations']],
-    // A delete can take away a user's only site: their record and the staff rows reload.
-    ['site', ['sites', 'siteCalendar', 'projects', 'tags', 'projectFields', 'equipment', 'teams', 'currentUser', 'staff']],
+    // A delete can take away a user's only site: their record and the staff rows
+    // reload. Sharing by site: links and members change who sees a dashboard.
+    ['site', [
+      'sites', 'siteCalendar', 'projects', 'tags', 'projectFields', 'equipment', 'teams',
+      'currentUser', 'staff', 'dashboards',
+    ]],
     ['skill', ['skills', 'staff']],
     ['tag', ['tags', 'projects']],
     // Fields and items: a delete removes project values, so the tree reloads
     ['project_field', ['projectFields', 'projects']],
-    ['team', ['teams', 'staff', 'projects', 'tags', 'projectFields', 'equipment', 'siteCalendar']],
+    ['team', ['teams', 'staff', 'projects', 'tags', 'projectFields', 'equipment', 'siteCalendar', 'dashboards']],
     // RBAC: a role edit changes the signed-in user's permissions (/auth/me)
     // and the role list of Settings → Roles and the role pickers
-    ['role', ['currentUser', 'roles']],
+    ['role', ['currentUser', 'roles', 'dashboards']],
     // A policy edit changes the approver names on pending badges and who may
     // decide; a decision (approval_request) does not touch the policies.
     // approval_required comes from the role's modes (change:role), not the

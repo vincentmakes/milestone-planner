@@ -71,12 +71,14 @@ export default defineConfig({
       // functions 93.4, branches 84.0; with the
       // Dashboards view of 2.2.0, the same rule on lines 93.12, statements
       // 92.07, functions 93.7, branches 84.11; with the dashboard builder,
-      // on lines 93.32, statements 92.28, functions 93.89, branches 84.6.
+      // on lines 93.32, statements 92.28, functions 93.89, branches 84.6;
+      // with dashboard sharing by site, team and person, on lines 93.38,
+      // statements 92.34, functions 93.98, branches 84.68.
       // Each floor is the higher of the two lines (rebase of 2.2.0).
       thresholds: {
         lines: 93.0,
         statements: 92.0,
-        functions: 93.5,
+        functions: 93.6,
         branches: 84.3,
       },
     },

@@ -480,7 +480,7 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
   const filterCount = activeFilterCount(filters);
 
   return (
-    <Modal isOpen onClose={onClose} title={widget ? 'Edit widget' : 'Add widget'} size="lg" footer={footer}>
+    <Modal isOpen onClose={onClose} title={widget ? 'Edit widget' : 'Add widget'} size="xxl" footer={footer}>
       <form className={styles.form} onSubmit={handleSave} noValidate>
         <div className={styles.columns}>
           <div className={styles.fields}>

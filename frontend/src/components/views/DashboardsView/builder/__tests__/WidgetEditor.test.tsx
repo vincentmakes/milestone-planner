@@ -129,6 +129,14 @@ describe('WidgetEditor — form', () => {
     expect(api.query).toHaveBeenCalledWith({ measure: 'booked_weeks', filters: { period: { relative: 'this_year' } } });
   });
 
+  it('opens in the extra-wide dialog, the preview beside the form', async () => {
+    renderEditor();
+    const box = screen.getByRole('dialog', { name: 'Add widget' }).firstElementChild as HTMLElement;
+    expect(box.className).toMatch(/xxl/);
+    expect(box.className).not.toMatch(/(^|\s)_?lg/);
+    await flushPreview();
+  });
+
   it('moves through the kinds with the arrow keys, as one radio group', () => {
     renderEditor();
     const group = screen.getByRole('radiogroup', { name: 'Kind' });
