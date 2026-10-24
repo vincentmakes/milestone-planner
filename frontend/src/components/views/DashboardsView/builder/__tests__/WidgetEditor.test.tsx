@@ -9,6 +9,9 @@
  * families: the grouped picker gated by views.staff / views.equipment, the
  * hints, the dimensions and filters per family, no percentage (and a
  * dimensionless KPI) on utilisation and available days, the twelve periods.
+ * The gauge, heatmap, treemap and sankey: the nine kinds, their dimension
+ * fields (no Period on a treemap or a sankey), the gauge's hidden Percent of /
+ * Top N row and its Target, the ratio refusal, and the widgets saved.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
@@ -41,7 +44,7 @@ import {
   WidgetEditor,
   WORKING_DAYS_HINT,
 } from '../WidgetEditor';
-import { NEGATIVE_PIE_PROBLEM } from '../widgetDraft';
+import { NEGATIVE_PIE_PROBLEM, RATIO_HIERARCHY_PROBLEM } from '../widgetDraft';
 import type { DraftWidget } from '../widgetDraft';
 
 vi.mock('@/api/endpoints/dashboards', () => ({
@@ -173,23 +176,33 @@ describe('WidgetEditor — form', () => {
     renderEditor();
     const group = screen.getByRole('radiogroup', { name: 'Kind' });
     const radios = within(group).getAllByRole('radio');
-    expect(radios.map((r) => r.textContent)).toEqual(['KPI', 'Bar', 'Line', 'Pie', 'Table']);
-    expect(radios.map((r) => r.tabIndex)).toEqual([-1, 0, -1, -1, -1]);
-    fireEvent.keyDown(radios[1], { key: 'ArrowRight' });
+    const kinds = ['KPI', 'Gauge', 'Bar', 'Line', 'Pie', 'Heatmap', 'Treemap', 'Sankey', 'Table'];
+    expect(radios.map((r) => r.textContent)).toEqual(kinds);
+    expect(radios.map((r) => r.tabIndex)).toEqual([-1, -1, 0, -1, -1, -1, -1, -1, -1]);
+    fireEvent.keyDown(radios[2], { key: 'ArrowRight' });
     expect(screen.getByRole('radio', { name: 'Line' })).toHaveAttribute('aria-checked', 'true');
     expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Line' }));
-    fireEvent.keyDown(radios[2], { key: 'End' });
+    fireEvent.keyDown(radios[3], { key: 'End' });
     expect(screen.getByRole('radio', { name: 'Table' })).toHaveAttribute('aria-checked', 'true');
-    fireEvent.keyDown(radios[4], { key: 'ArrowDown' });
+    fireEvent.keyDown(radios[8], { key: 'ArrowDown' });
     expect(screen.getByRole('radio', { name: 'KPI' })).toHaveAttribute('aria-checked', 'true');
     fireEvent.keyDown(radios[0], { key: 'ArrowLeft' });
     expect(screen.getByRole('radio', { name: 'Table' })).toHaveAttribute('aria-checked', 'true');
-    fireEvent.keyDown(radios[4], { key: 'Home' });
+    fireEvent.keyDown(radios[8], { key: 'Home' });
     expect(screen.getByRole('radio', { name: 'KPI' })).toHaveAttribute('aria-checked', 'true');
     fireEvent.keyDown(radios[0], { key: 'ArrowUp' });
     expect(screen.getByRole('radio', { name: 'Table' })).toHaveAttribute('aria-checked', 'true');
-    fireEvent.keyDown(radios[4], { key: 'a' });
+    fireEvent.keyDown(radios[8], { key: 'a' });
     expect(screen.getByRole('radio', { name: 'Table' })).toHaveAttribute('aria-checked', 'true');
+    // The arrows walk every kind in order, one tab stop at a time.
+    fireEvent.keyDown(radios[8], { key: 'Home' });
+    const walked = ['KPI'];
+    for (let i = 0; i < kinds.length - 1; i += 1) {
+      fireEvent.keyDown(radios[i], { key: 'ArrowRight' });
+      walked.push(within(group).getByRole('radio', { checked: true }).textContent ?? '');
+      expect(radios.filter((r) => r.tabIndex === 0)).toEqual([radios[i + 1]]);
+    }
+    expect(walked).toEqual(kinds);
   });
 
   it('offers the dimensions the measure accepts, a field per dropdown or toggle field, Person only with views.staff', () => {
@@ -636,13 +649,15 @@ describe('WidgetEditor — measure families', () => {
     expect(screen.queryByRole('button', { name: /^Dimension 1/ })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Percent of')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Bucket')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Top N')).toBeDisabled();
+    // Nothing to rank without a dimension: no Top N either.
+    expect(screen.queryByLabelText('Top N')).not.toBeInTheDocument();
     api.query.mockResolvedValue(result([{ keys: [], value: 87.5 }], { unit: 'percent', total: 87.5 }));
     await flushPreview();
     expect(lastQuery()).toEqual({ measure: 'utilisation', filters: { period: { relative: 'this_year' } } });
     // A bar chart of it gets its dimension controls back.
     fireEvent.click(screen.getByRole('radio', { name: 'Bar' }));
     expect(screen.getByRole('button', { name: /^Dimension 1/ })).toBeInTheDocument();
+    expect(screen.getByLabelText('Top N')).toBeDisabled();
   });
 
   it('refuses a pie of available days, before asking the server', async () => {
@@ -898,6 +913,204 @@ describe('WidgetEditor — preview', () => {
     const preview = screen.getByRole('complementary', { name: 'Preview' });
     expect(within(preview).getByRole('heading', { name: 'By site' })).toBeInTheDocument();
     expect(within(preview).getByTestId('echart')).toHaveAttribute('data-kind', 'bar');
+  });
+});
+
+describe('WidgetEditor — gauge, heatmap, treemap and sankey', () => {
+  const PREVIEW = () => screen.getByRole('complementary', { name: 'Preview' });
+  const chooseKind = (name: string) => fireEvent.click(screen.getByRole('radio', { name }));
+  const setTitle = (value: string) => fireEvent.change(screen.getByLabelText('Title *'), { target: { value } });
+  const target = () => screen.getByLabelText('Target') as HTMLInputElement;
+  const setTarget = (value: string) => fireEvent.change(target(), { target: { value } });
+
+  it('gives a gauge no dimension field and no Percent of / Top N row, and drops the dimensions chosen', async () => {
+    renderEditor();
+    pickOption(/^Dimension 1/, 'Project');
+    pickOption(/^Dimension 2/, 'Team');
+    fireEvent.change(screen.getByLabelText('Percent of'), { target: { value: 'first_dimension' } });
+    chooseKind('Gauge');
+    expect(screen.queryByRole('button', { name: /^Dimension 1/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Dimension 2/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Percent of')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Top N')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Number format')).toBeInTheDocument();
+    api.query.mockResolvedValue(result([{ keys: [], value: 40 }]));
+    await flushPreview();
+    expect(lastQuery()).toEqual({ measure: 'booked_weeks', filters: { period: { relative: 'this_year' } } });
+    expect(within(PREVIEW()).getByTestId('echart')).toHaveAttribute('data-kind', 'gauge');
+    // Back on a bar the dimensions stay dropped.
+    chooseKind('Bar');
+    expect(dimension1()).toHaveTextContent('None');
+    expect(screen.queryByRole('button', { name: /^Dimension 2/ })).not.toBeInTheDocument();
+  });
+
+  it('shows both dimension fields of a heatmap at once, the second waiting for the first, and previews the two', async () => {
+    renderEditor();
+    chooseKind('Heatmap');
+    expect(dimension1()).toBeEnabled();
+    expect(pickerTrigger(/^Dimension 2/)).toBeDisabled();
+    expect(PREVIEW()).toHaveTextContent('A heatmap needs two dimensions.');
+    pickOption(/^Dimension 1/, 'Team');
+    expect(pickerTrigger(/^Dimension 2/)).toBeEnabled();
+    expect(PREVIEW()).toHaveTextContent('A heatmap needs two dimensions.');
+    // A heatmap takes a period (its x axis).
+    expect(dimensionLabels(2)).toContain('Period');
+    pickOption(/^Dimension 2/, 'Period');
+    api.query.mockResolvedValue(
+      result([{ keys: [{ key: 5, label: 'Analytics' }, { key: '2026-01', label: 'Jan 2026' }], value: 3 }])
+    );
+    await flushPreview();
+    expect(lastQuery().dimensions).toEqual([{ kind: 'team' }, { kind: 'period', grain: 'month' }]);
+    expect(within(PREVIEW()).getByTestId('echart')).toHaveAttribute('data-kind', 'heatmap');
+  });
+
+  it('shows both dimension fields of a sankey, without Period, and refuses one of a ratio', async () => {
+    renderEditor();
+    pickOption(/^Dimension 1/, 'Period');
+    chooseKind('Sankey');
+    // The period chosen on the bar is dropped, and offered on neither field.
+    expect(dimension1()).toHaveTextContent('None');
+    expect(dimensionLabels(1)).not.toContain('Period');
+    expect(PREVIEW()).toHaveTextContent('A sankey needs two dimensions.');
+    pickOption(/^Dimension 1/, 'Team');
+    expect(dimensionLabels(2)).not.toContain('Period');
+    pickOption(/^Dimension 2/, 'Project');
+    await flushPreview();
+    expect(lastQuery().dimensions).toEqual([{ kind: 'team' }, { kind: 'project' }]);
+    setMeasure('utilisation');
+    expect(PREVIEW()).toHaveTextContent(RATIO_HIERARCHY_PROBLEM);
+  });
+
+  it('gives a treemap one or two dimensions, without Period, and refuses one of a ratio', async () => {
+    renderEditor();
+    chooseKind('Treemap');
+    expect(screen.queryByRole('button', { name: /^Dimension 2/ })).not.toBeInTheDocument();
+    expect(dimensionLabels(1)).not.toContain('Period');
+    expect(PREVIEW()).toHaveTextContent('A treemap needs one or two dimensions.');
+    pickOption(/^Dimension 1/, 'Site');
+    await flushPreview();
+    expect(lastQuery().dimensions).toEqual([{ kind: 'site' }]);
+    expect(dimensionLabels(2)).not.toContain('Period');
+    pickOption(/^Dimension 2/, 'Project');
+    await flushPreview();
+    expect(lastQuery().dimensions).toEqual([{ kind: 'site' }, { kind: 'project' }]);
+    setMeasure('available_days');
+    expect(PREVIEW()).toHaveTextContent(RATIO_HIERARCHY_PROBLEM);
+    setTitle('Boxes');
+    fireEvent.click(saveButton());
+    expect(screen.getByRole('alert')).toHaveTextContent(RATIO_HIERARCHY_PROBLEM);
+  });
+
+  it('offers a Target only on a gauge: a number of zero or more is saved, other text ignored, an empty field clears it', async () => {
+    const { onSave } = renderEditor();
+    setTitle('Load');
+    expect(screen.queryByLabelText('Target')).not.toBeInTheDocument();
+    chooseKind('Gauge');
+    expect(target()).toHaveAttribute('placeholder', 'No target');
+    expect(target()).toHaveAttribute('inputmode', 'decimal');
+    expect(target()).toHaveAttribute('type', 'text');
+    expect(target()).toHaveAccessibleDescription('In weeks');
+    await flushPreview();
+    const saved = () => onSave.mock.calls[onSave.mock.calls.length - 1][0];
+
+    setTarget('abc');
+    expect(target()).toHaveValue('abc');
+    fireEvent.click(saveButton());
+    expect(saved().options).toEqual({});
+    setTarget('-5');
+    fireEvent.click(saveButton());
+    expect(saved().options).toEqual({});
+    setTarget('85');
+    fireEvent.click(saveButton());
+    expect(saved()).toMatchObject({ kind: 'gauge', options: { target: 85 } });
+    // Text that is not a number keeps the last target.
+    setTarget('85x');
+    expect(target()).toHaveValue('85x');
+    fireEvent.click(saveButton());
+    expect(saved().options).toEqual({ target: 85 });
+    setTarget('12,5');
+    fireEvent.click(saveButton());
+    expect(saved().options).toEqual({ target: 12.5 });
+    setTarget('0');
+    fireEvent.click(saveButton());
+    expect(saved().options).toEqual({ target: 0 });
+    setTarget('');
+    fireEvent.click(saveButton());
+    expect(saved().options).toEqual({});
+    // A percentage measure reads its target in %; another kind drops it.
+    setMeasure('utilisation');
+    expect(target()).toHaveAccessibleDescription('In %');
+    setTarget('90');
+    chooseKind('Bar');
+    expect(screen.queryByLabelText('Target')).not.toBeInTheDocument();
+    fireEvent.click(saveButton());
+    expect(saved().options).toEqual({});
+  });
+
+  it('opens a stored gauge with its target, and saves it at the gauge size', async () => {
+    const gauge: DraftWidget = {
+      clientId: 'w9',
+      id: 9,
+      kind: 'gauge',
+      title: 'Load',
+      query: { measure: 'utilisation', filters: { period: { relative: 'this_quarter' } } },
+      options: { target: 85, number_format: 'integer' },
+      layout: { lg: { x: 0, y: 0, w: 3, h: 4 }, md: { x: 0, y: 0, w: 4, h: 4 }, sm: { x: 0, y: 0, w: 4, h: 4 } },
+    };
+    const { onSave } = renderEditor({ widget: gauge });
+    expect(target()).toHaveValue('85');
+    expect(screen.getByLabelText('Number format')).toHaveValue('integer');
+    fireEvent.click(saveButton('Save Changes'));
+    expect(onSave.mock.calls[0][0]).toEqual({ ...gauge, query: { measure: 'utilisation', filters: { period: { relative: 'this_quarter' } } } });
+    cleanup();
+
+    // A new gauge lands at 3 × 4 under the others.
+    const { onSave: onAdd } = renderEditor({ widgets: [gauge] });
+    setTitle('New gauge');
+    chooseKind('Gauge');
+    fireEvent.click(saveButton());
+    expect(onAdd.mock.calls[0][0].layout).toEqual({
+      lg: { x: 0, y: 4, w: 3, h: 4 },
+      md: { x: 0, y: 4, w: 4, h: 4 },
+      sm: { x: 0, y: 4, w: 4, h: 4 },
+    });
+    cleanup();
+
+    // A stored target the gauge would not draw (sent through the API) is neither shown nor kept.
+    const { onSave: onFix } = renderEditor({ widget: { ...gauge, options: { target: -3 } } });
+    expect(target()).toHaveValue('');
+    fireEvent.click(saveButton('Save Changes'));
+    expect(onFix.mock.calls[0][0].options).toEqual({});
+  });
+
+  it('saves a heatmap, a treemap and a sankey with their dimensions and number format', () => {
+    const cases = [
+      { kind: 'Heatmap', dims: ['Team', 'Period'], sent: [{ kind: 'team' }, { kind: 'period', grain: 'month' }] },
+      { kind: 'Treemap', dims: ['Site'], sent: [{ kind: 'site' }] },
+      { kind: 'Sankey', dims: ['Team', 'Project'], sent: [{ kind: 'team' }, { kind: 'project' }] },
+    ];
+    for (const c of cases) {
+      const { onSave } = renderEditor();
+      setTitle(c.kind);
+      chooseKind(c.kind);
+      // Saving before the dimensions are chosen says why.
+      fireEvent.click(saveButton());
+      expect(onSave).not.toHaveBeenCalled();
+      expect(screen.getByRole('alert')).toHaveTextContent(/needs (one or )?two dimensions/);
+      c.dims.forEach((label, i) => pickOption(new RegExp(`^Dimension ${i + 1}`), label));
+      expect(screen.queryByLabelText('Target')).not.toBeInTheDocument();
+      expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText('Number format'), { target: { value: 'decimal' } });
+      fireEvent.click(saveButton());
+      expect(onSave.mock.calls[0][0]).toMatchObject({
+        kind: c.kind.toLowerCase(),
+        title: c.kind,
+        query: { measure: 'booked_weeks', dimensions: c.sent },
+        options: { number_format: 'decimal' },
+        layout: { lg: { x: 0, y: 0, w: 6, h: 5 } },
+      });
+      cleanup();
+    }
   });
 });
 

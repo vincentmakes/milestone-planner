@@ -2,7 +2,7 @@
  * WidgetEditor — add or edit one dashboard widget (2.1.0), with a live
  * preview.
  *
- * The form, in order: the kind (a radio group of five), the title, the
+ * The form, in order: the kind (a radio group of nine), the title, the
  * measure (grouped by family; the capacity measures only with `views.staff`,
  * the equipment ones only with `views.equipment` — a stored measure stays
  * listed, the preview then shows the server's refusal), up to two
@@ -17,8 +17,11 @@
  * the display options of the kind. The kind rules (`widgetDraft.ts`): a KPI
  * has at most one dimension and then shows a share of the total (its
  * *Bucket* is one of the preview's values) — a KPI of utilisation or
- * available days has none —, a pie exactly one, the others up to two;
- * changing the measure drops a dimension or a filter it refuses.
+ * available days has none —, a pie exactly one, a gauge none (no dimension
+ * field, no *Percent of* nor *Top N*; its *Target* in the display options), a
+ * heatmap and a sankey two, a treemap one or two (neither of them offers
+ * *Period*), the others up to two; changing the measure drops a dimension or
+ * a filter it refuses.
  *
  * The preview asks the server (`/dashboards/query`) 400 ms after the last
  * change; a newer request supersedes an older one (answers are matched by a
@@ -48,10 +51,14 @@ import {
   BarChartIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  GaugeIcon,
+  HeatmapIcon,
   KpiIcon,
   LineChartIcon,
   PieChartIcon,
+  SankeyIcon,
   TableIcon,
+  TreemapIcon,
 } from '@/components/common/Icon';
 import { ApiError } from '@/api/client';
 import { dashboardsApi } from '@/api/endpoints/dashboards';
@@ -76,6 +83,7 @@ import {
   queryUnit,
   RELATIVE_PERIODS,
   takesFilter,
+  unitWord,
 } from '@/utils/metrics';
 import type { FilterKey } from '@/utils/metrics';
 import type {
@@ -91,6 +99,7 @@ import type {
   WidgetOptions,
 } from '@/types';
 import { WidgetCard } from '../WidgetCard';
+import { gaugeTarget } from '../charts/toOption';
 import { plainError } from './useDashboardEditor';
 import {
   activeFilterCount,
@@ -100,13 +109,15 @@ import {
   defaultQuery,
   dimensionKey,
   dropUnheld,
-  kpiWithoutDimension,
   MAX_DIMENSIONS,
+  MIN_DIMENSIONS,
   newClientId,
+  noDimensionKind,
   normaliseQuery,
   placeNewWidget,
   queryProblem,
   stableKey,
+  SUMMED_KINDS,
 } from './widgetDraft';
 import type { DraftWidget } from './widgetDraft';
 import type { PermissionKey } from '@/types/permissions';
@@ -121,9 +132,13 @@ const TITLE_MAX = 120;
 
 const WIDGET_KINDS: readonly { key: WidgetKind; label: string; icon: typeof BarChartIcon }[] = [
   { key: 'kpi', label: 'KPI', icon: KpiIcon },
+  { key: 'gauge', label: 'Gauge', icon: GaugeIcon },
   { key: 'bar', label: 'Bar', icon: BarChartIcon },
   { key: 'line', label: 'Line', icon: LineChartIcon },
   { key: 'pie', label: 'Pie', icon: PieChartIcon },
+  { key: 'heatmap', label: 'Heatmap', icon: HeatmapIcon },
+  { key: 'treemap', label: 'Treemap', icon: TreemapIcon },
+  { key: 'sankey', label: 'Sankey', icon: SankeyIcon },
   { key: 'table', label: 'Table', icon: TableIcon },
 ];
 
@@ -198,6 +213,11 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
   );
   const [options, setOptions] = useState<WidgetOptions>(widget?.options ?? {});
   const [topNText, setTopNText] = useState(widget?.query.top_n ? String(widget.query.top_n) : '');
+  // The stored target as text: only one the gauge draws (finite, ≥ 0).
+  const [targetText, setTargetText] = useState(() => {
+    const target = gaugeTarget(widget?.options.target);
+    return target === null ? '' : String(target);
+  });
   const [filtersOpen, setFiltersOpen] = useState(() => activeFilterCount(widget?.query.filters) > 0);
   const [titleError, setTitleError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -235,7 +255,8 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
   const showsFilter = (key: FilterKey): boolean =>
     takesFilter(query.measure, key) && holds(filterNeeds(key)) && holds(filterNeeds(key, query.measure));
   const noPercent = NO_PERCENT_MEASURES.has(query.measure);
-  const noDimension = kpiWithoutDimension(kind, query.measure);
+  // A gauge, and a KPI of a measure that takes no percentage, show the total: no dimension.
+  const noDimension = noDimensionKind(kind, query.measure);
   const problem = queryProblem(kind, query);
   const clean = useMemo(() => cleanQuery(query), [query]);
   const previewKey = problem ? null : stableKey(clean);
@@ -325,6 +346,18 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
 
   const setOption = (patch: Partial<WidgetOptions>) => setOptions((prev) => ({ ...prev, ...patch }));
 
+  // The form is `noValidate`: a target is kept only when it reads as a number ≥ 0
+  // ("85", "12,5"); an emptied field clears it, any other text is not stored.
+  const setTarget = (text: string) => {
+    setTargetText(text);
+    if (text.trim() === '') {
+      setOption({ target: null });
+      return;
+    }
+    const target = Number(text.trim().replace(',', '.'));
+    if (Number.isFinite(target) && target >= 0) setOption({ target });
+  };
+
   // --- Dimension choices -------------------------------------------------------
   const allChoices = useMemo<DimensionChoice[]>(() => {
     const out: DimensionChoice[] = [];
@@ -355,10 +388,15 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
     return out;
   }, [query.measure, heldKeys, settings, fields]);
 
-  // Only the exact same choice is excluded: two different project fields cross.
+  // Only the exact same choice is excluded: two different project fields cross. A
+  // treemap or a sankey takes no period (its boxes or flows would be periods).
   const choicesFor = (index: 0 | 1): DimensionChoice[] => {
     const other = dimensions[index === 0 ? 1 : 0];
-    return allChoices.filter((c) => !other || dimensionKey(c.dimension) !== dimensionKey(other));
+    return allChoices.filter(
+      (c) =>
+        (!other || dimensionKey(c.dimension) !== dimensionKey(other)) &&
+        !(SUMMED_KINDS.has(kind) && c.dimension.kind === 'period')
+    );
   };
 
   const pickDimension = (index: 0 | 1, id: number | null) => {
@@ -385,6 +423,8 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
           label={label}
           className={styles.grow}
           fullWidth
+          // A second dimension shown before the first is chosen (heatmap, sankey) waits for it.
+          disabled={index === 1 && dimensions.length === 0}
           options={choicesFor(index)}
           value={dimension ? dimensionId(dimension) : null}
           onChange={(id) => pickDimension(index, id)}
@@ -588,9 +628,13 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
               hint={measureHint(query.measure)}
             />
 
-            {/* A KPI of a measure that takes no percentage shows its total: no dimension. */}
+            {/* A gauge, and a KPI of a measure that takes no percentage, show the total: no dimension.
+                A heatmap and a sankey show both fields at once (they need two). */}
             {!noDimension && dimensionField(0)}
-            {!noDimension && MAX_DIMENSIONS[kind] > 1 && dimensions.length > 0 && dimensionField(1)}
+            {!noDimension &&
+              MAX_DIMENSIONS[kind] > 1 &&
+              (dimensions.length > 0 || MIN_DIMENSIONS[kind] > 1) &&
+              dimensionField(1)}
 
             <section className={styles.section}>
               <Button
@@ -705,31 +749,34 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
               </div>
             )}
 
-            <div className={styles.row}>
-              {/* Utilisation, available days and people over capacity take no percentage. */}
-              {!noPercent && (
-                <Select
-                  label="Percent of"
+            {/* Without a dimension there is nothing to take a percentage of, nor to rank. */}
+            {!noDimension && (
+              <div className={styles.row}>
+                {/* Utilisation, available days and people over capacity take no percentage. */}
+                {!noPercent && (
+                  <Select
+                    label="Percent of"
+                    fullWidth
+                    value={query.percent_of ?? ''}
+                    onChange={(e) => setPercentOf(e.target.value)}
+                    options={kind === 'kpi' ? percentOptions.slice(0, 2) : percentOptions}
+                    disabled={dimensions.length === 0}
+                  />
+                )}
+                <Input
+                  label="Top N"
+                  type="number"
                   fullWidth
-                  value={query.percent_of ?? ''}
-                  onChange={(e) => setPercentOf(e.target.value)}
-                  options={kind === 'kpi' ? percentOptions.slice(0, 2) : percentOptions}
-                  disabled={dimensions.length === 0}
+                  min={1}
+                  max={50}
+                  step={1}
+                  value={topNDisabled ? '' : topNText}
+                  onChange={(e) => setTopN(e.target.value)}
+                  disabled={topNDisabled}
+                  hint={topNDisabled ? undefined : 'The largest values; the rest as Other'}
                 />
-              )}
-              <Input
-                label="Top N"
-                type="number"
-                fullWidth
-                min={1}
-                max={50}
-                step={1}
-                value={topNDisabled ? '' : topNText}
-                onChange={(e) => setTopN(e.target.value)}
-                disabled={topNDisabled}
-                hint={topNDisabled ? undefined : 'The largest values; the rest as Other'}
-              />
-            </div>
+              </div>
+            )}
 
             <KindOptions
               kind={kind}
@@ -737,7 +784,10 @@ export function WidgetEditor({ widget, widgets, onClose, onSave }: WidgetEditorP
               stackable={!noPercent}
               share={Boolean(query.percent_of)}
               percentUnit={queryUnit(query) === 'percent'}
+              unitHint={queryUnit(query) === 'percent' ? 'In %' : `In ${unitWord(2, queryUnit(query))}`}
               bucketOptions={bucketOptions}
+              targetText={targetText}
+              onTargetChange={setTarget}
               onChange={setOption}
             />
           </div>
@@ -784,7 +834,7 @@ interface KindPickerProps {
   onChange: (kind: WidgetKind) => void;
 }
 
-/** The five kinds as a radio group: arrows move and choose, one tab stop. */
+/** The nine kinds as a radio group: arrows move and choose, one tab stop. */
 function KindPicker({ value, onChange }: KindPickerProps) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const labelId = useId();
@@ -841,12 +891,28 @@ interface KindOptionsProps {
   share: boolean;
   /** The result comes in percent: only then is the *Percent* number format offered */
   percentUnit: boolean;
+  /** The unit of the result, under the gauge's target ("In weeks", "In %") */
+  unitHint: string;
   bucketOptions: { value: string; label: string }[];
+  /** The gauge target as typed (kept apart from the stored number) */
+  targetText: string;
+  onTargetChange: (text: string) => void;
   onChange: (patch: Partial<WidgetOptions>) => void;
 }
 
-/** The display options of a kind, and the number format of every kind. */
-function KindOptions({ kind, options, stackable, share, percentUnit, bucketOptions, onChange }: KindOptionsProps) {
+/** The display options of a kind (a gauge: its target), and the number format of every kind. */
+function KindOptions({
+  kind,
+  options,
+  stackable,
+  share,
+  percentUnit,
+  unitHint,
+  bucketOptions,
+  targetText,
+  onTargetChange,
+  onChange,
+}: KindOptionsProps) {
   const numberFormat = options.number_format === 'percent' && !percentUnit ? '' : options.number_format ?? '';
   return (
     <div className={styles.options}>
@@ -892,6 +958,18 @@ function KindOptions({ kind, options, stackable, share, percentUnit, bucketOptio
           label="Show legend"
           checked={options.show_legend === true}
           onChange={(show) => onChange({ show_legend: show })}
+        />
+      )}
+      {kind === 'gauge' && (
+        <Input
+          label="Target"
+          type="text"
+          inputMode="decimal"
+          fullWidth
+          placeholder="No target"
+          value={targetText}
+          onChange={(e) => onTargetChange(e.target.value)}
+          hint={unitHint}
         />
       )}
       {kind === 'kpi' && share && (

@@ -164,6 +164,14 @@ export { default as LineChartIcon } from '@mui/icons-material/ShowChartOutlined'
 export { default as TableIcon } from '@mui/icons-material/TableChartOutlined';
 /** A KPI widget: one number */
 export { default as KpiIcon } from '@mui/icons-material/NumbersOutlined';
+/** A gauge widget: one value against a target */
+export { default as GaugeIcon } from '@mui/icons-material/SpeedOutlined';
+/** A heatmap widget: a grid of shaded cells */
+export { default as HeatmapIcon } from '@mui/icons-material/GridOnOutlined';
+/** A treemap widget: nested boxes */
+export { default as TreemapIcon } from '@mui/icons-material/ViewQuiltOutlined';
+/** A sankey widget: flows between two dimensions */
+export { default as SankeyIcon } from '@mui/icons-material/AccountTreeOutlined';
 /** Duplicate (a dashboard) */
 export { default as CopyIcon } from '@mui/icons-material/ContentCopyOutlined';
 /** Share (a dashboard with roles or everyone) */

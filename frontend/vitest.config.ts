@@ -77,13 +77,14 @@ export default defineConfig({
       // families of the dashboards, on lines 93.49, statements 92.48,
       // functions 94.08, branches 84.93; with the gauge, heatmap, treemap
       // and sankey charts, rounded down from lines 93.54, statements 92.54,
-      // functions 94.13, branches 85.11.
+      // functions 94.13, branches 85.11; with their builder rules, from
+      // lines 93.55, statements 92.55, functions 94.13, branches 85.14.
       // Each floor is the higher of the two lines (rebase of 2.2.0).
       thresholds: {
         lines: 93.5,
         statements: 92.5,
         functions: 94.1,
-        branches: 85.0,
+        branches: 85.1,
       },
     },
   },
