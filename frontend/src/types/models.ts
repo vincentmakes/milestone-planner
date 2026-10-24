@@ -1148,12 +1148,16 @@ export type DashboardWidgetDraft = Omit<DashboardWidget, 'id' | 'sort_order'> & 
   sort_order?: number;
 };
 
-/** The body of a create / update. `widgets` omitted on a PUT keeps them. */
+/**
+ * The body of a create / update. `widgets` omitted on a PUT keeps them, and
+ * so does a PUT without the visibility and the four target lists keep the
+ * sharing (only Share... sends them; a POST without `visibility` is private).
+ */
 export interface DashboardDraft {
   id?: number;
   name: string;
   description?: string | null;
-  visibility: DashboardVisibility;
+  visibility?: DashboardVisibility;
   role_ids?: number[];
   site_ids?: number[];
   team_ids?: number[];

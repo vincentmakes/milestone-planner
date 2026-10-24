@@ -453,7 +453,7 @@ describe('DashboardsView — edit mode', () => {
     expect(screen.getByTestId('grid')).toHaveAttribute('data-editing', 'false');
   });
 
-  it('edits the name and description inline, and saves them with the sharing kept', async () => {
+  it('edits the name and description inline, and saves them without touching the sharing', async () => {
     const shared = {
       visibility: 'shared' as const,
       site_ids: [1],
@@ -485,16 +485,12 @@ describe('DashboardsView — edit mode', () => {
     await act(async () => {
       fireEvent.click(button('Save')!);
     });
-    expect(api.update.mock.calls[0][1]).toMatchObject({
-      name: 'Renamed',
-      description: 'New words',
-      visibility: 'shared',
-      role_ids: [],
-      site_ids: [1],
-      team_ids: [10],
-      user_ids: [],
-    });
+    // The sharing is the server's to keep: the save sends none of it.
+    const body = api.update.mock.calls[0][1];
+    expect(body).toMatchObject({ name: 'Renamed', description: 'New words' });
+    expect(Object.keys(body).sort()).toEqual(['description', 'name', 'widgets']);
     expect(button('Edit')).toBeInTheDocument();
+    expect(within(screen.getByRole('list', { name: 'Shared with' })).getByText('QA & Compliance')).toBeInTheDocument();
     expect(screen.getByText('New words')).toBeInTheDocument();
   });
 

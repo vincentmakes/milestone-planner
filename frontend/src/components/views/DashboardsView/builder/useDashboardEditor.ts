@@ -24,9 +24,12 @@
  * - `save()` runs under `useSubmitGuard`: the store saves (POST for a new
  *   dashboard, else a PUT replacing the widgets) and shows the saved
  *   dashboard; edit mode ends. A failure stays in edit mode with `error`.
- *   The PUT carries the sharing lists of the draft (the server replaces
- *   them), so a widget save never un-shares a dashboard; they are sent empty
- *   unless `shared`.
+ *   The PUT carries the name, description and widgets only -- never the
+ *   visibility or the target lists, which only Share... changes -- so a
+ *   widget save keeps the sharing as the server holds it (a change made
+ *   meanwhile, a target deleted since). The POST of a new dashboard carries
+ *   the sharing chosen in the New dialog (the lists empty unless `shared`).
+ *   The draft keeps the sharing for the "Shared with" line and `dirty`.
  *
  * While editing, `dashboardStore.editing` is set, so a live "dashboard
  * changed" reload never replaces the open dashboard under the draft.
@@ -253,8 +256,7 @@ export function useDashboardEditor(current: Dashboard | null): DashboardEditor {
       // The inline fields keep what is typed; the save sends it trimmed.
       name: draft.name.trim(),
       description: draft.description?.trim() || null,
-      visibility: draft.visibility,
-      ...savedTargets(draft),
+      ...(draft.id === undefined ? { visibility: draft.visibility, ...savedTargets(draft) } : {}),
       widgets: draft.widgets.map(({ kind, title, query, options, layout }, index) => ({
         kind,
         title,

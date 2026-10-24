@@ -3,8 +3,8 @@
  * draft of an open or a new dashboard, dirty tracking (key order ignored),
  * the grid's layouts mapped back onto the widgets (a report that moves
  * nothing is ignored), widgets added / replaced / removed with their
- * previews, the inline meta (`setMeta` takes a part), the sharing lists kept
- * by a widget save, the discard confirm, save success and failure, the
+ * previews, the inline meta (`setMeta` takes a part), a widget save that
+ * sends no sharing (the New POST does), the discard confirm, save success and failure, the
  * store's editing flag and the view's leave guard.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -300,20 +300,20 @@ describe('useDashboardEditor', () => {
     expect(confirm).toHaveBeenCalledTimes(1);
   });
 
-  it('a widget save keeps the sharing lists', async () => {
+  it('a widget save sends no sharing', async () => {
     api.update.mockResolvedValue(dashboard());
     const { result } = editing();
     act(() => result.current.upsertWidget(newWidget('n3'), metric(1)));
+    // Even a changed sharing in the draft is not sent: only Share... changes it.
+    act(() => result.current.setMeta({ visibility: 'private', user_ids: [] }));
     await act(async () => {
       await result.current.save();
     });
-    expect(api.update.mock.calls[0][1]).toMatchObject({
-      visibility: 'shared',
-      role_ids: [3, 2],
-      site_ids: [5],
-      team_ids: [8, 6],
-      user_ids: [4],
-    });
+    const body = api.update.mock.calls[0][1];
+    expect(Object.keys(body).sort()).toEqual(['description', 'name', 'widgets']);
+    for (const key of ['visibility', 'role_ids', 'site_ids', 'team_ids', 'user_ids']) {
+      expect(body).not.toHaveProperty(key);
+    }
   });
 
   it('sends the name and description trimmed (a blank description as none)', async () => {
@@ -339,11 +339,6 @@ describe('useDashboardEditor', () => {
     expect(api.update).toHaveBeenCalledWith(7, {
       name: 'Team plan',
       description: null,
-      visibility: 'shared',
-      role_ids: [3, 2],
-      site_ids: [5],
-      team_ids: [8, 6],
-      user_ids: [4],
       widgets: [
         {
           kind: 'bar',
@@ -358,6 +353,35 @@ describe('useDashboardEditor', () => {
     expect(result.current.editing).toBe(false);
     expect(useDashboardStore.getState().current).toEqual(saved);
     expect(useDashboardStore.getState().editing).toBe(false);
+  });
+
+  it('creates a new shared dashboard with a POST carrying its sharing', async () => {
+    api.create.mockResolvedValue(dashboard({ id: 9 }));
+    const { result } = renderHook(() => useDashboardEditor(null));
+    act(() =>
+      result.current.startNew({
+        name: 'Ours',
+        description: null,
+        visibility: 'shared',
+        role_ids: [4],
+        site_ids: [1],
+        team_ids: [2],
+        user_ids: [3],
+      })
+    );
+    await act(async () => {
+      await result.current.save();
+    });
+    expect(api.create).toHaveBeenCalledWith({
+      name: 'Ours',
+      description: null,
+      visibility: 'shared',
+      role_ids: [4],
+      site_ids: [1],
+      team_ids: [2],
+      user_ids: [3],
+      widgets: [],
+    });
   });
 
   it('creates a new dashboard with a POST, without targets unless shared', async () => {
