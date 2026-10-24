@@ -23,6 +23,9 @@ from app.services.metrics import (
     BookingFact,
     CapacityFact,
     ClosureSpan,
+    EquipmentAvailabilityFact,
+    EquipmentBookingFact,
+    EquipmentInfo,
     Facts,
     FieldInfo,
     MetricError,
@@ -112,6 +115,14 @@ def card_booking(
 
 
 PERSONS = {1: "Ann", 2: "Bob", 3: "Cid"}
+# An HPLC at site 1, a mass spectrometer at both sites, an inactive oven
+# without a type and a rig whose type is blank.
+EQUIPMENT = {
+    1: EquipmentInfo(1, "HPLC A", "HPLC", (1,), True),
+    2: EquipmentInfo(2, "Mass spec", "MS", (1, 2), True),
+    3: EquipmentInfo(3, "Old oven", None, (1,), False),
+    4: EquipmentInfo(4, "Rig", "  ", (1,), True),
+}
 
 
 def facts(
@@ -121,6 +132,8 @@ def facts(
     holidays: dict[int, list[date]] | None = None,
     extent: tuple[date, date] | None = None,
     capacity: list[CapacityFact] | None = None,
+    equipment_bookings: list[EquipmentBookingFact] | None = None,
+    availability: list[EquipmentAvailabilityFact] | None = None,
 ) -> Facts:
     return Facts(
         projects={p.id: p for p in (projects if projects is not None else [project()])},
@@ -153,6 +166,9 @@ def facts(
         today=TODAY,
         extents={"exclude": extent},
         capacity={fact.person_id: fact for fact in capacity or []},
+        equipment=dict(EQUIPMENT),
+        equipment_bookings=equipment_bookings or [],
+        equipment_availability=availability or [],
     )
 
 
@@ -1183,6 +1199,293 @@ CAPACITY_CASES: list[tuple[str, Facts, MetricQuery, dict[str, Any]]] = [
 ]
 FACT_CASES += CAPACITY_CASES
 
+# --- The equipment family (round 3, Task 3) --------------------------------------
+# Availability is built like the loader builds it (``equipment_off_days`` over
+# March 2026); March has 22 weekdays.
+
+
+def used(booking_id: int, start: str, end: str, *, equipment: int = 1, project_id: int = 1):
+    return EquipmentBookingFact(booking_id, project_id, equipment, d(start), d(end))
+
+
+def available(
+    equipment_id: int = 1,
+    *,
+    holidays: dict[int, list[date]] | None = None,
+    blocks: tuple[tuple[str, str], ...] = (),
+    period: tuple[date, date] = MARCH_DAYS,
+) -> EquipmentAvailabilityFact:
+    sites = EQUIPMENT[equipment_id].site_ids
+    off_days = metrics.equipment_off_days(
+        period, sites, holidays or {}, [(d(first), d(last)) for first, last in blocks]
+    )
+    return EquipmentAvailabilityFact(equipment_id, sites, off_days)
+
+
+BY_EQUIPMENT = [{"kind": "equipment"}]
+BY_TYPE = [{"kind": "equipment_type"}]
+FIRST_WEEK = used(1, "2026-03-02", "2026-03-06")
+SPRING = {"from": "2026-03-01", "to": "2026-04-30"}
+
+EQUIPMENT_CASES: list[tuple[str, Facts, MetricQuery, dict[str, Any]]] = [
+    (
+        "equipment booked days: whole days of the project site's calendar",
+        facts(
+            projects=TWO_SITES,
+            holidays={1: [d("2026-03-04")]},
+            equipment_bookings=[
+                used(1, "2026-03-02", "2026-03-06"),
+                used(2, "2026-03-02", "2026-03-06", equipment=2, project_id=3),
+            ],
+        ),
+        q("equipment_booked_days", SITE),
+        {"rows": [(("Site 1",), 4), (("Site 2",), 5)], "total": 9, "unit": "days"},
+    ),
+    (
+        "equipment booked days by equipment",
+        facts(
+            equipment_bookings=[
+                FIRST_WEEK,
+                used(2, "2026-03-09", "2026-03-10", equipment=2),
+                used(3, "2026-03-16", "2026-03-20"),
+            ]
+        ),
+        q("equipment_booked_days", BY_EQUIPMENT),
+        {"rows": [(("HPLC A",), 10), (("Mass spec",), 2)], "total": 12, "keys": [[1], [2]]},
+    ),
+    (
+        "two overlapping bookings of one instrument add up",
+        facts(
+            equipment_bookings=[
+                used(1, "2026-03-02", "2026-03-13"),
+                used(2, "2026-03-02", "2026-03-13"),
+            ],
+            availability=[available()],
+        ),
+        q("equipment_utilisation"),
+        {"rows": [((), 90.91)], "total": 90.91, "unit": "percent"},  # 20 / 22
+    ),
+    (
+        "a double booking reads over 100 %",
+        facts(
+            equipment_bookings=[
+                used(1, "2026-03-02", "2026-03-13"),
+                used(2, "2026-03-02", "2026-03-17"),
+            ],
+            availability=[available(blocks=(("2026-03-30", "2026-03-31"),))],
+        ),
+        q("equipment_utilisation"),
+        {"rows": [((), 110.0)], "total": 110.0},  # 22 / 20
+    ),
+    (
+        "a block of two weekdays leaves 20 available days",
+        facts(
+            equipment_bookings=[FIRST_WEEK],
+            availability=[available(blocks=(("2026-03-14", "2026-03-17"),))],
+        ),
+        q("equipment_utilisation"),
+        {"rows": [((), 25.0)]},  # 5 / 20
+    ),
+    (
+        "bookings by equipment type: no type and a blank type read No type",
+        facts(
+            equipment_bookings=[
+                FIRST_WEEK,
+                used(2, "2026-03-02", "2026-03-06", equipment=2),
+                used(3, "2026-03-02", "2026-03-06", equipment=3),
+                used(4, "2026-03-02", "2026-03-06", equipment=4),
+            ]
+        ),
+        q("equipment_booking_count", BY_TYPE),
+        {
+            "rows": [(("HPLC",), 1), (("MS",), 1), (("No type",), 2)],
+            "total": 4,
+            "unit": "count",
+            "keys": [["HPLC"], ["MS"], [None]],
+        },
+    ),
+    (
+        "utilisation by site: a two-site equipment in both rows, once in the total",
+        facts(
+            holidays=TWO_SITE_HOLIDAY,
+            equipment_bookings=[used(1, "2026-03-02", "2026-03-13", equipment=2)],
+            availability=[available(2, holidays=TWO_SITE_HOLIDAY)],
+        ),
+        q("equipment_utilisation", SITE),
+        {
+            "rows": [(("Site 1",), 47.62), (("Site 2",), 47.62)],  # 10 / 21
+            "total": 47.62,
+            "note": "Equipment at several sites counts in each",
+        },
+    ),
+    (
+        "equipment booked counts each instrument once",
+        facts(
+            projects=[project(1), project(2)],
+            equipment_bookings=[
+                FIRST_WEEK,
+                used(2, "2026-03-09", "2026-03-13", project_id=2),
+                used(3, "2026-03-09", "2026-03-13", equipment=2),
+            ],
+        ),
+        q("equipment_booked", [{"kind": "project"}]),
+        {"rows": [(("Project 1",), 2), (("Project 2",), 1)], "total": 2, "unit": "equipment"},
+    ),
+    (
+        "a booking of a project with two tags counts in both tag rows",
+        facts(projects=[project(1, tag_ids=(20, 21))], equipment_bookings=[FIRST_WEEK]),
+        q("equipment_booking_count", [{"kind": "tag"}]),
+        {
+            "rows": [(("Blue",), 1), (("Red",), 1)],
+            "total": 1,
+            "note": "An equipment booking of a project with several tags counts in each",
+        },
+    ),
+    (
+        "the Equipment filter on a booking measure",
+        facts(equipment_bookings=[FIRST_WEEK, used(2, "2026-03-09", "2026-03-10", equipment=2)]),
+        q("equipment_booked_days", filters={"equipment_ids": [2]}),
+        {"rows": [((), 2)]},
+    ),
+    (
+        "the project filters apply to equipment booking measures",
+        facts(
+            projects=[project(1), project(2, confirmed=True)],
+            equipment_bookings=[FIRST_WEEK, used(2, "2026-03-09", "2026-03-10", project_id=2)],
+        ),
+        q("equipment_booking_count", filters={"project_ids": [2], "confirmed": True}),
+        {"rows": [((), 1)]},
+    ),
+    (
+        "the Equipment types filter on a booking measure",
+        facts(equipment_bookings=[FIRST_WEEK, used(2, "2026-03-09", "2026-03-10", equipment=2)]),
+        q("equipment_booked_days", filters={"equipment_types": ["HPLC"]}),
+        {"rows": [((), 5)]},
+    ),
+    (
+        "the Equipment filter on utilisation applies to both sides",
+        facts(
+            equipment_bookings=[FIRST_WEEK, used(2, "2026-03-02", "2026-03-13", equipment=2)],
+            availability=[available(1), available(2)],
+        ),
+        q("equipment_utilisation", filters={"equipment_ids": [1]}),
+        {"rows": [((), 22.73)]},  # 5 / 22
+    ),
+    (
+        "the Equipment types filter on utilisation applies to both sides",
+        facts(
+            equipment_bookings=[FIRST_WEEK, used(2, "2026-03-02", "2026-03-13", equipment=2)],
+            availability=[available(1), available(2)],
+        ),
+        q("equipment_utilisation", filters={"equipment_types": ["MS"]}),
+        {"rows": [((), 45.45)]},  # 10 / 22
+    ),
+    (
+        "a stale equipment id and an unknown type (case-sensitive) warn",
+        facts(equipment_bookings=[FIRST_WEEK, used(2, "2026-03-09", "2026-03-10", equipment=2)]),
+        q(
+            "equipment_booked_days",
+            filters={"equipment_ids": [1, 99], "equipment_types": ["HPLC", "hplc"]},
+        ),
+        {
+            "rows": [((), 5)],
+            "warnings": ["Equipment 99 no longer exists", "Equipment type hplc no longer exists"],
+        },
+    ),
+    (
+        "a booking of inactive equipment counts in booked days",
+        facts(equipment_bookings=[FIRST_WEEK, used(2, "2026-03-09", "2026-03-10", equipment=3)]),
+        q("equipment_booked_days"),
+        {"rows": [((), 7)]},
+    ),
+    (
+        "but not in utilisation: inactive equipment has no availability",
+        facts(
+            equipment_bookings=[FIRST_WEEK, used(2, "2026-03-09", "2026-03-10", equipment=3)],
+            availability=[available(1)],
+        ),
+        q("equipment_utilisation"),
+        {"rows": [((), 22.73)]},  # 5 / 22
+    ),
+    (
+        "utilisation's Sites filter is the equipment's site, not the project's",
+        facts(
+            projects=TWO_SITES,
+            equipment_bookings=[used(1, "2026-03-02", "2026-03-06", project_id=3)],
+            availability=[available(1)],
+        ),
+        q("equipment_utilisation", filters={"site_ids": [1]}),
+        {"rows": [((), 22.73)]},
+    ),
+    (
+        "utilisation at the project's site leaves another site's equipment out",
+        facts(
+            projects=TWO_SITES,
+            equipment_bookings=[used(1, "2026-03-02", "2026-03-06", project_id=3)],
+            availability=[available(1), available(2)],
+        ),
+        q("equipment_utilisation", filters={"site_ids": [2]}),
+        {"rows": [((), 0.0)]},  # only the unbooked mass spectrometer is at site 2
+    ),
+    (
+        "booked days' Sites filter is the project's site",
+        facts(
+            projects=TWO_SITES,
+            equipment_bookings=[used(1, "2026-03-02", "2026-03-06", project_id=3)],
+        ),
+        q("equipment_booked_days", filters={"site_ids": [2]}),
+        {"rows": [((), 5)]},
+    ),
+    (
+        "booked time on equipment with no available day has no utilisation",
+        facts(
+            equipment_bookings=[FIRST_WEEK],
+            availability=[available(blocks=(("2026-03-01", "2026-03-31"),))],
+        ),
+        q("equipment_utilisation"),
+        {"rows": [((), None)], "total": None},
+    ),
+    (
+        "utilisation by type: unbooked equipment reads 0",
+        facts(equipment_bookings=[FIRST_WEEK], availability=[available(1), available(2)]),
+        q("equipment_utilisation", BY_TYPE),
+        {"rows": [(("HPLC",), 22.73), (("MS",), 0.0)], "total": 11.36},  # 5 / 44
+    ),
+    (
+        "archived projects' bookings stay out of utilisation by default",
+        facts(
+            projects=[project(1, archived=True)],
+            equipment_bookings=[FIRST_WEEK],
+            availability=[available(1)],
+        ),
+        q("equipment_utilisation"),
+        {"rows": [((), 0.0)]},
+    ),
+    (
+        "archived projects' bookings count with archived: include",
+        facts(
+            projects=[project(1, archived=True)],
+            equipment_bookings=[FIRST_WEEK],
+            availability=[available(1)],
+        ),
+        q("equipment_utilisation", filters={"archived": "include"}),
+        {"rows": [((), 22.73)]},
+    ),
+    (
+        "utilisation per month on both sides",
+        facts(
+            equipment_bookings=[used(1, "2026-03-30", "2026-04-03")],
+            availability=[available(1, period=(d("2026-03-01"), d("2026-04-30")))],
+        ),
+        q("equipment_utilisation", MONTHS, period=SPRING),
+        {
+            "rows": [(("Mar 2026",), 9.09), (("Apr 2026",), 13.64)],  # 2 / 22, 3 / 22
+            "total": 11.36,
+        },
+    ),
+]
+FACT_CASES += EQUIPMENT_CASES
+
 
 @pytest.mark.parametrize(
     ("name", "case_facts", "query", "expected"),
@@ -1744,7 +2047,7 @@ def test_missing_permission_for_a_measure_family_and_an_equipment_filter(monkeyp
     with pytest.raises(MetricError) as caught:
         aggregate(facts(), query, viewer=Viewer(frozenset({"views.staff"})))
     assert caught.value.message == "This widget needs the Equipment view permission"
-    # The equipment filters need views.equipment (Task 3 gives them a measure).
+    # A filter need on a borrowed filter (the equipment filters' own: below).
     monkeypatch.setitem(metrics.FILTER_NEEDS, "site_ids", "views.equipment")
     monkeypatch.delitem(metrics.MEASURE_NEEDS, "booking")
     sited = MetricQuery.model_validate({"measure": "project_count", "filters": {"site_ids": [1]}})
@@ -2153,3 +2456,190 @@ def test_capacity_items_and_subjects():
     )
     assert items == [metrics._Item("capacity", 2, None, date.min, date.max, capacity=fact)]
     assert metrics._subject("capacity_days", items[0]) == 2
+
+
+# --- The equipment family: spec, needs, items (round 3, Task 3) -----------------
+
+EQUIPMENT_REFUSALS = [
+    (
+        {"measure": "equipment_utilisation", "filters": {"project_ids": [1]}},
+        "The Projects filter does not apply to equipment utilisation",
+    ),
+    (
+        {"measure": "equipment_utilisation", "filters": {"tag_ids": [20]}},
+        "The Tags filter does not apply to equipment utilisation",
+    ),
+    (
+        {"measure": "equipment_booked_days", "filters": {"milestones": "only"}},
+        "The Milestones filter does not apply to equipment booked days",
+    ),
+    (
+        {"measure": "equipment_booking_count", "filters": {"person_ids": [1]}},
+        "The People filter does not apply to equipment bookings",
+    ),
+    (
+        {"measure": "equipment_booked", "dimensions": [{"kind": "period", "grain": "month"}]},
+        "Equipment booked cannot be broken down by period",
+    ),
+    (
+        {"measure": "equipment_utilisation", "dimensions": [{"kind": "project"}]},
+        "Equipment utilisation cannot be broken down by project",
+    ),
+    (
+        {"measure": "equipment_booked_days", "dimensions": [{"kind": "person"}]},
+        "Equipment booked days cannot be broken down by person",
+    ),
+    (
+        {"measure": "booked_days", "dimensions": [{"kind": "equipment"}]},
+        "Booked days cannot be broken down by equipment",
+    ),
+    (
+        {
+            "measure": "equipment_utilisation",
+            "dimensions": [{"kind": "equipment"}],
+            "percent_of": "total",
+        },
+        "Equipment utilisation is already a percentage",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "message"), EQUIPMENT_REFUSALS)
+def test_equipment_spec_refusals(body, message):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as caught:
+        MetricQuery.model_validate(body)
+    assert caught.value.errors()[0]["msg"] == message
+
+
+def test_equipment_measures_accept_their_filters_and_a_share():
+    booked = MetricQuery.model_validate(
+        {
+            "measure": "equipment_booked_days",
+            "dimensions": [{"kind": "equipment_type"}, {"kind": "project"}],
+            "filters": {
+                "equipment_ids": [1],
+                "equipment_types": ["HPLC"],
+                "project_ids": [1],
+                "tag_ids": [20],
+            },
+            "percent_of": "first_dimension",
+        }
+    )
+    assert booked.filters.equipment_types == ["HPLC"]
+    utilisation = MetricQuery.model_validate(
+        {
+            "measure": "equipment_utilisation",
+            "dimensions": [{"kind": "site"}, {"kind": "period", "grain": "month"}],
+            "filters": {"site_ids": [1], "equipment_ids": [1], "equipment_types": ["MS"]},
+        }
+    )
+    assert utilisation.filters.site_ids == [1]
+
+
+@pytest.mark.parametrize(
+    "measure",
+    [
+        "equipment_booked_days",
+        "equipment_booking_count",
+        "equipment_booked",
+        "equipment_utilisation",
+    ],
+)
+def test_equipment_measures_need_the_equipment_view(measure):
+    query = MetricQuery.model_validate({"measure": measure})
+    viewer = Viewer(frozenset({"views.staff", "views.archived"}))
+    assert metrics.missing_permission(query, viewer) == "views.equipment"
+    with pytest.raises(MetricError) as caught:
+        aggregate(facts(), query, viewer=viewer)
+    assert caught.value.message == "This widget needs the Equipment view permission"
+    assert metrics.measure_families(measure) == ("equipment",)
+
+
+def test_equipment_dimensions_and_filters_need_the_equipment_view(monkeypatch):
+    # Without the family's own need, the dimension and the filters still ask for it.
+    monkeypatch.delitem(metrics.MEASURE_NEEDS, "equipment")
+    viewer = Viewer(frozenset({"views.staff", "views.archived"}))
+    for body in (
+        {"measure": "equipment_booking_count", "dimensions": [{"kind": "equipment"}]},
+        {"measure": "equipment_booking_count", "dimensions": [{"kind": "equipment_type"}]},
+        {"measure": "equipment_booked_days", "filters": {"equipment_ids": [1]}},
+        {"measure": "equipment_utilisation", "filters": {"equipment_types": ["HPLC"]}},
+    ):
+        query = MetricQuery.model_validate(body)
+        assert metrics.missing_permission(query, viewer) == "views.equipment", body
+    plain = MetricQuery.model_validate({"measure": "equipment_booked_days"})
+    assert metrics.missing_permission(plain, viewer) is None
+
+
+def test_equipment_results_round_like_their_kind():
+    case = facts(
+        equipment_bookings=[FIRST_WEEK, used(2, "2026-03-02", "2026-03-03")],
+        availability=[available(blocks=(("2026-03-30", "2026-03-31"),))],
+    )
+    utilisation = aggregate(case, q("equipment_utilisation"), viewer=FULL)
+    assert utilisation.total == 35.0  # 7 / 20
+    count = aggregate(case, q("equipment_booking_count"), viewer=FULL)
+    assert count.total == 2 and isinstance(count.total, int)
+    booked = aggregate(case, q("equipment_booked"), viewer=FULL)
+    assert booked.total == 1 and booked.unit == "equipment"
+
+
+def test_equipment_off_days_are_holidays_of_its_sites_and_block_weekdays():
+    off = metrics.equipment_off_days(
+        MARCH_DAYS,
+        (1, 2),
+        {1: [d("2026-03-05")], 2: [d("2026-03-05"), d("2026-03-06")], 3: [d("2026-03-09")]},
+        [(d("2026-02-26"), d("2026-03-03")), (d("2026-03-28"), d("2026-04-03"))],
+    )
+    # Holidays of sites 1 and 2 once; the blocks' weekdays inside March only.
+    assert off == tuple(d(f"2026-03-{day}") for day in ("02", "03", "05", "06", "30", "31"))
+    assert metrics.equipment_off_days(MARCH_DAYS, (), {}, []) == ()
+
+
+def test_equipment_items_and_subjects():
+    booking_fact = used(7, "2026-03-02", "2026-03-06", equipment=2)
+    availability = available(2)
+    case = facts(equipment_bookings=[booking_fact], availability=[availability])
+    flt = metrics._Filters(archived="exclude")
+    numerator = list(
+        metrics._items(case, "equipment_booked_days", flt, "equipment", "equipment_utilisation")
+    )
+    assert [(i.kind, i.id, i.availability) for i in numerator] == [
+        ("equipment_booking", 7, availability)
+    ]
+    denominator = list(
+        metrics._items(case, "equipment_available_days", flt, "equipment", "equipment_utilisation")
+    )
+    assert denominator == [
+        metrics._Item(
+            "equipment_availability", 2, None, date.min, date.max, availability=availability
+        )
+    ]
+    # Outside utilisation, a booking carries no availability (``site`` is the project's).
+    plain = list(metrics._items(case, "equipment_booked_days", flt, "equipment"))
+    assert plain[0].availability is None and plain[0].equipment_booking == booking_fact
+    assert metrics._subject("equipment_booked_days", numerator[0]) == 2
+    assert metrics._subject("equipment_available_days", denominator[0]) == 2
+    assert metrics._ident("equipment_booked", plain[0]) == 2
+    assert metrics._ident("equipment_booking_count", plain[0]) == ("equipment_booking", 7)
+
+
+def test_an_equipment_row_gone_since_the_load_is_named_by_its_id():
+    case = facts(equipment_bookings=[used(1, "2026-03-02", "2026-03-06", equipment=42)])
+    result = aggregate(case, q("equipment_booking_count", BY_EQUIPMENT + BY_TYPE), viewer=FULL)
+    assert [[k["label"] for k in row["keys"]] for row in result.rows] == [
+        ["Equipment 42", "No type"]
+    ]
+    filtered = aggregate(
+        case, q("equipment_booking_count", filters={"equipment_types": ["HPLC"]}), viewer=FULL
+    )
+    assert filtered.total == 0
+
+
+def test_equipment_utilisation_rule():
+    rule = metrics.COMPOSITE_RULES["equipment_utilisation"]
+    assert rule(5.0, 0.0, {}) is None
+    assert rule(0.0, 0.0, {}) == 0.0
+    assert rule(22.0, 20.0, {}) == pytest.approx(110.0)

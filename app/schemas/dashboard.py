@@ -63,6 +63,10 @@ Measure = Literal[
     "available_days",
     "utilisation",
     "people_over_capacity",
+    "equipment_booked_days",
+    "equipment_booking_count",
+    "equipment_booked",
+    "equipment_utilisation",
 ]
 PlainKind = Literal[
     "site",
@@ -76,6 +80,8 @@ PlainKind = Literal[
     "tag",
     "phase_type",
     "status",
+    "equipment",
+    "equipment_type",
 ]
 Grain = Literal["year", "quarter", "month", "week"]
 RelativeName = Literal[

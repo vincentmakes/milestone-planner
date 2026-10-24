@@ -26,6 +26,7 @@ from app.models.dashboard import (
     DashboardUser,
     DashboardWidget,
 )
+from app.models.equipment import Equipment, EquipmentAssignment, EquipmentSite
 from app.models.project import Project
 from app.models.project_field import ProjectField
 from app.models.rbac import Role, RolePermission
@@ -1462,3 +1463,180 @@ async def test_data_loads_capacity_facts_only_for_a_capacity_widget(
 
 async def _widgets(client, dashboard_id: int) -> list[dict]:
     return (await client.get(f"/api/dashboards/{dashboard_id}")).json()["widgets"]
+
+
+# --- The equipment family ------------------------------------------------------
+
+EQUIPMENT_UTILISATION = {
+    **BY_SITE,
+    "measure": "equipment_utilisation",
+    "dimensions": [{"kind": "equipment"}],
+}
+
+
+@pytest.fixture
+def equipment_rows(sqlite):
+    """An HPLC at Winterthur and a mass spectrometer at Frankfurt, a week booked on each."""
+    sqlite.add_all(
+        [
+            Equipment(id=1, name="HPLC", type="HPLC", site_id=WINTERTHUR),
+            Equipment(id=2, name="Frankfurt MS", type="MS", site_id=FRANKFURT),
+        ]
+    )
+    sqlite.flush()
+    sqlite.add_all(
+        [
+            EquipmentSite(equipment_id=1, site_id=WINTERTHUR),
+            EquipmentSite(equipment_id=2, site_id=FRANKFURT),
+            EquipmentAssignment(
+                id=1,
+                project_id=1,
+                equipment_id=1,
+                start_date=date(2026, 3, 2),
+                end_date=date(2026, 3, 6),
+            ),
+            EquipmentAssignment(
+                id=2,
+                project_id=2,
+                equipment_id=2,
+                start_date=date(2026, 3, 9),
+                end_date=date(2026, 3, 13),
+            ),
+        ]
+    )
+    sqlite.commit()
+
+
+async def test_equipment_utilisation_query_is_cut_to_the_visible_sites(
+    authed_client, equipment_rows
+):
+    client, set_user = authed_client
+    set_user(uma(site_ids=(1,)))
+    resp = await client.post("/api/dashboards/query", json=EQUIPMENT_UTILISATION)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [(r["keys"][0]["label"], r["value"]) for r in body["rows"]] == [("HPLC", 22.73)]
+    assert body["unit"] == "percent" and body["total"] == 22.73  # 5 / 22
+
+    set_user(admin())
+    body = (await client.post("/api/dashboards/query", json=EQUIPMENT_UTILISATION)).json()
+    assert [(r["keys"][0]["label"], r["value"]) for r in body["rows"]] == [
+        ("Frankfurt MS", 22.73),
+        ("HPLC", 22.73),
+    ]
+
+
+async def test_equipment_queries_need_the_equipment_view(authed_client, equipment_rows):
+    client, set_user = authed_client
+    set_user(uma(permissions={"views.dashboards", "views.staff", "views.archived"}))
+    for measure in (
+        "equipment_booked_days",
+        "equipment_booking_count",
+        "equipment_booked",
+        "equipment_utilisation",
+    ):
+        resp = await client.post("/api/dashboards/query", json={**BY_SITE, "measure": measure})
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == "This widget needs the Equipment view permission"
+
+
+async def test_equipment_query_refusals(authed_client):
+    client, set_user = authed_client
+    set_user(uma())
+    resp = await client.post(
+        "/api/dashboards/query", json={**EQUIPMENT_UTILISATION, "percent_of": "total"}
+    )
+    assert resp.status_code == 422
+    assert _detail(resp) == "Equipment utilisation is already a percentage"
+    by_project = {
+        **BY_SITE,
+        "measure": "equipment_utilisation",
+        "filters": {**BY_SITE["filters"], "project_ids": [1]},
+    }
+    resp = await client.post("/api/dashboards/query", json=by_project)
+    assert resp.status_code == 422
+    assert _detail(resp) == "The Projects filter does not apply to equipment utilisation"
+
+
+async def test_query_loads_the_equipment_family(authed_client, equipment_rows):
+    client, set_user = authed_client
+    set_user(admin())
+    with patch.object(
+        dashboards_router, "load_facts", wraps=dashboards_router.load_facts
+    ) as loader:
+        resp = await client.post(
+            "/api/dashboards/query",
+            json={**BY_SITE, "measure": "equipment_booked_days", "dimensions": []},
+        )
+    assert resp.status_code == 200 and resp.json()["total"] == 10
+    assert loader.await_args.kwargs["families"] == frozenset({"equipment"})
+
+
+@pytest.fixture
+def equipment_board(sqlite, equipment_rows):
+    sqlite.add(
+        Dashboard(
+            id=31,
+            name="Lab",
+            visibility="everyone",
+            owner_id=SUE,
+            widgets=[
+                widget_row("Booked", BY_SITE, 0),
+                widget_row("Equipment", EQUIPMENT_UTILISATION, 1),
+            ],
+        )
+    )
+    sqlite.commit()
+    return 31
+
+
+@pytest.fixture
+def equipment_loads(monkeypatch):
+    """Records each equipment load (the booking statement is built per load)."""
+    calls: list[tuple[date, date]] = []
+    real = metrics._equipment_booking_statement
+
+    def spy(scope, start, end):
+        calls.append((start, end))
+        return real(scope, start, end)
+
+    monkeypatch.setattr(metrics, "_equipment_booking_statement", spy)
+    return calls
+
+
+async def test_data_without_the_equipment_view_errors_the_equipment_widget(
+    authed_client, equipment_board, equipment_loads
+):
+    client, set_user = authed_client
+    set_user(uma(permissions={"views.dashboards"}))
+    with patch.object(
+        dashboards_router, "load_facts", wraps=dashboards_router.load_facts
+    ) as loader:
+        results = (await client.post(f"/api/dashboards/{equipment_board}/data")).json()["widgets"]
+    widgets = {w["title"]: results[str(w["id"])] for w in await _widgets(client, equipment_board)}
+    assert widgets["Equipment"] == {"error": "This widget needs the Equipment view permission"}
+    assert [(r["keys"][0]["label"], r["value"]) for r in widgets["Booked"]["rows"]] == [
+        ("Winterthur", 5)
+    ]
+    # Only the booking widget's family: no equipment facts load.
+    assert loader.await_args.kwargs["families"] == frozenset({"booking"})
+    assert equipment_loads == []
+
+
+async def test_data_loads_equipment_facts_only_for_an_equipment_widget(
+    authed_client, equipment_board, equipment_loads
+):
+    client, set_user = authed_client
+    set_user(uma(site_ids=(1,)))
+    with patch.object(
+        dashboards_router, "load_facts", wraps=dashboards_router.load_facts
+    ) as loader:
+        results = (await client.post(f"/api/dashboards/{equipment_board}/data")).json()["widgets"]
+    assert loader.await_args.kwargs["families"] == frozenset({"booking", "equipment"})
+    assert equipment_loads == [(date(2026, 3, 1), date(2026, 3, 31))]
+    widgets = {w["title"]: results[str(w["id"])] for w in await _widgets(client, equipment_board)}
+    assert widgets["Equipment"]["total"] == 22.73
+
+    # The Overview's booking KPI alone never loads them.
+    await client.post("/api/dashboards/1/data")
+    assert len(equipment_loads) == 1

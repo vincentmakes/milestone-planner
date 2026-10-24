@@ -383,10 +383,118 @@
         "site_ids",
         "team_ids"
       ]
+    },
+    "equipment_booked_days": {
+      "unit": "days",
+      "dimensions": [
+        "confirmed",
+        "customer",
+        "equipment",
+        "equipment_type",
+        "field",
+        "period",
+        "project",
+        "project_manager",
+        "project_team",
+        "site",
+        "tag"
+      ],
+      "needs": "views.equipment",
+      "filters": [
+        "archived",
+        "confirmed",
+        "equipment_ids",
+        "equipment_types",
+        "field_options",
+        "period",
+        "project_ids",
+        "project_manager_ids",
+        "project_team_ids",
+        "site_ids",
+        "tag_ids"
+      ]
+    },
+    "equipment_booking_count": {
+      "unit": "count",
+      "dimensions": [
+        "confirmed",
+        "customer",
+        "equipment",
+        "equipment_type",
+        "field",
+        "period",
+        "project",
+        "project_manager",
+        "project_team",
+        "site",
+        "tag"
+      ],
+      "needs": "views.equipment",
+      "filters": [
+        "archived",
+        "confirmed",
+        "equipment_ids",
+        "equipment_types",
+        "field_options",
+        "period",
+        "project_ids",
+        "project_manager_ids",
+        "project_team_ids",
+        "site_ids",
+        "tag_ids"
+      ]
+    },
+    "equipment_booked": {
+      "unit": "equipment",
+      "dimensions": [
+        "confirmed",
+        "customer",
+        "equipment",
+        "equipment_type",
+        "field",
+        "project",
+        "project_manager",
+        "project_team",
+        "site",
+        "tag"
+      ],
+      "needs": "views.equipment",
+      "filters": [
+        "archived",
+        "confirmed",
+        "equipment_ids",
+        "equipment_types",
+        "field_options",
+        "period",
+        "project_ids",
+        "project_manager_ids",
+        "project_team_ids",
+        "site_ids",
+        "tag_ids"
+      ]
+    },
+    "equipment_utilisation": {
+      "unit": "percent",
+      "dimensions": [
+        "equipment",
+        "equipment_type",
+        "period",
+        "site"
+      ],
+      "needs": "views.equipment",
+      "filters": [
+        "archived",
+        "equipment_ids",
+        "equipment_types",
+        "period",
+        "site_ids"
+      ]
     }
   },
   "needs": {
     "person": "views.staff",
+    "equipment": "views.equipment",
+    "equipment_type": "views.equipment",
     "person_ids": "views.staff",
     "equipment_ids": "views.equipment",
     "equipment_types": "views.equipment",
@@ -394,6 +502,7 @@
   },
   "no_percent": [
     "available_days",
+    "equipment_utilisation",
     "utilisation"
   ],
   "relative_periods": [

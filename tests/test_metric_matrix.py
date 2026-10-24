@@ -48,6 +48,12 @@ BOOKING = ("booked_days", "booked_weeks", "booking_count", "people_booked")
 PROJECT = ("project_count", "project_weeks", "project_volume")
 PHASE = ("phase_count", "phase_weeks", "phases_due", "phases_overdue")
 CAPACITY = ("capacity_days", "available_days", "utilisation", "people_over_capacity")
+EQUIPMENT = (
+    "equipment_booked_days",
+    "equipment_booking_count",
+    "equipment_booked",
+    "equipment_utilisation",
+)
 PROJECT_KINDS = {
     "site",
     "project_team",
@@ -73,7 +79,8 @@ def test_committed_metric_matrix_file_is_up_to_date():
 
 def test_the_matrix_covers_every_measure():
     assert set(MATRIX) == set(MEASURES) == set(UNITS) == set(MEASURE_LABELS)
-    assert set(BOOKING + PROJECT + PHASE + CAPACITY) == set(MEASURES)
+    assert set(BOOKING + PROJECT + PHASE + CAPACITY + EQUIPMENT) == set(MEASURES)
+    assert not INTERNAL_MEASURES & (set(UNITS) | set(MATRIX) | set(MEASURE_LABELS))
 
 
 def test_every_measure_has_a_family_in_family_order():
@@ -86,7 +93,11 @@ def test_every_measure_has_a_family_in_family_order():
     assert {FAMILY[m] for m in PROJECT} == {"project"}
     assert {FAMILY[m] for m in PHASE} == {"phase"}
     assert {FAMILY[m] for m in CAPACITY} == {"capacity"}
+    assert {FAMILY[m] for m in EQUIPMENT} == {"equipment"}
     assert MEASURES[11:15] == CAPACITY  # after the phase measures
+    assert MEASURES[15:] == EQUIPMENT  # last
+    assert INTERNAL_MEASURES == {"equipment_available_days"}
+    assert FAMILY["equipment_available_days"] == "equipment"
     for measure, bases in COMPOSITES.items():
         assert measure in MEASURES and all(base in FAMILY for base in bases)
 
@@ -125,14 +136,26 @@ def test_filters_per_family():
             "archived",
             "period",
         }
+    for measure in EQUIPMENT[:3]:
+        assert MEASURE_FILTERS[measure] == project | {"equipment_ids", "equipment_types"}
+    # Utilisation is the equipment's: its sites, the equipment, its type.
+    assert MEASURE_FILTERS["equipment_utilisation"] == {
+        "site_ids",
+        "equipment_ids",
+        "equipment_types",
+        "archived",
+        "period",
+    }
+    assert set(MEASURE_FILTERS) == set(MEASURES)
     for measure in MEASURES:
         assert {"archived", "period"} <= MEASURE_FILTERS[measure] <= set(FILTER_KEYS)
 
 
 @pytest.mark.parametrize("measure", BOOKING)
 def test_booking_measures_accept_every_kind_but_people_by_period(measure):
-    # Every kind but the phase status (people_booked: nor the period).
-    expected = set(DIMENSION_KINDS) - {"status"}
+    # Every kind but the phase status and the equipment's (people_booked:
+    # nor the period).
+    expected = set(DIMENSION_KINDS) - {"status", "equipment", "equipment_type"}
     expected -= {"period"} if measure == "people_booked" else set()
     assert MATRIX[measure] == expected
 
@@ -152,6 +175,57 @@ def test_phase_measures(measure):
 def test_capacity_measures(measure):
     # The person's breakdowns, per period bucket too.
     assert MATRIX[measure] == {"person", "team", "site", "period"}
+
+
+@pytest.mark.parametrize("measure", EQUIPMENT[:3])
+def test_equipment_booking_measures(measure):
+    # The project's breakdowns and the equipment's (equipment_booked: no period).
+    expected = PROJECT_KINDS | {"equipment", "equipment_type"}
+    expected -= {"period"} if measure == "equipment_booked" else set()
+    assert MATRIX[measure] == expected
+
+
+def test_equipment_utilisation_matrix():
+    assert MATRIX["equipment_utilisation"] == {"equipment", "equipment_type", "site", "period"}
+
+
+def test_equipment_measure_kinds():
+    from app.services.metrics import (
+        ADDITIVE_MEASURES,
+        COMPOSITE_RULES,
+        COUNT_MEASURES,
+        DIMENSION_LABELS,
+        EMPTY_LABELS,
+        EQUIPMENT_SIDE_MEASURES,
+        FLOAT_MEASURES,
+        percent_error,
+    )
+
+    assert {"equipment_booked_days", "equipment_available_days"} <= ADDITIVE_MEASURES
+    assert {"equipment_booking_count", "equipment_booked"} <= COUNT_MEASURES
+    assert COMPOSITES["equipment_utilisation"] == (
+        "equipment_booked_days",
+        "equipment_available_days",
+    )
+    assert "equipment_utilisation" in COMPOSITE_RULES
+    assert EQUIPMENT_SIDE_MEASURES == {"equipment_utilisation"}
+    assert "equipment_utilisation" in NO_PERCENT_MEASURES & FLOAT_MEASURES
+    assert NO_PERCENT_MEASURES == {"utilisation", "equipment_utilisation", "available_days"}
+    assert percent_error("equipment_utilisation") == "Equipment utilisation is already a percentage"
+    assert percent_error("equipment_booked_days") is None
+    assert [UNITS[m] for m in EQUIPMENT] == ["days", "count", "equipment", "percent"]
+    assert [MEASURE_LABELS[m] for m in EQUIPMENT] == [
+        "Equipment booked days",
+        "Equipment bookings",
+        "Equipment booked",
+        "Equipment utilisation",
+    ]
+    assert PLAIN_DIMENSION_KINDS[-2:] == ("equipment", "equipment_type")
+    assert (DIMENSION_LABELS["equipment"], DIMENSION_LABELS["equipment_type"]) == (
+        "Equipment",
+        "Equipment type",
+    )
+    assert EMPTY_LABELS["equipment_type"] == "No type"
 
 
 def test_capacity_measure_kinds():
@@ -182,7 +256,11 @@ def test_capacity_measure_kinds():
 
 
 def test_needs_name_catalogue_keys():
-    assert NEEDS == {"person": "views.staff"}
+    assert NEEDS == {
+        "person": "views.staff",
+        "equipment": "views.equipment",
+        "equipment_type": "views.equipment",
+    }
     assert MEASURE_NEEDS == {"capacity": "views.staff", "equipment": "views.equipment"}
     assert FILTER_NEEDS == {
         "person_ids": "views.staff",

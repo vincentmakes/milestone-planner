@@ -805,3 +805,29 @@ async def test_equipment_bookings_count_toward_the_row_cap(equipment_db, monkeyp
         await _load_equipment(equipment_db)
     monkeypatch.setattr(metrics, "MAX_FACT_ROWS", 4)
     assert len((await _load_equipment(equipment_db)).equipment_bookings) == 4
+
+
+async def test_loaded_equipment_aggregates(equipment_db):
+    facts = await _load_equipment(equipment_db, visible=frozenset({1, 2}))
+    viewer = Viewer(frozenset({"views.equipment"}))
+
+    def ask(measure, kind):
+        query = MetricQuery.model_validate(
+            {
+                "measure": measure,
+                "dimensions": [{"kind": kind}],
+                "filters": {"period": {"from": "2026-03-01", "to": "2026-03-31"}},
+            }
+        )
+        result = aggregate(facts, query, viewer=viewer).to_dict()
+        return [(r["keys"][0]["label"], r["value"]) for r in result["rows"]], result["total"]
+
+    # HPLC: 9 booked days (Winterthur's holiday) over 22 - 3 off days; the
+    # mass spectrometer: 5 + 4 (Frankfurt's holiday) over 22 - 4. The
+    # inactive oven's booking is not in utilisation.
+    assert ask("equipment_utilisation", "equipment") == (
+        [("HPLC A", 47.37), ("Mass spec", 50.0)],
+        48.65,
+    )
+    # Booked days on the project's site: the oven's two days count there.
+    assert ask("equipment_booked_days", "site") == ([("Frankfurt", 9), ("Winterthur", 11)], 20)

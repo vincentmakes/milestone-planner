@@ -52,9 +52,21 @@ Rules (see ``tests/test_metrics.py`` ``FACT_CASES``):
   bookings of people with a capacity, keeps the project-site calendar and the
   ``archived`` filter, and reads ``site`` / ``team`` / ``person`` (dimensions
   and filters) from the person, like the capacity side.
+- The **equipment** family (``views.equipment``): ``equipment_booked_days``
+  = working days of the *project's* site of each equipment booking (whole
+  days, no allocation); ``equipment_booking_count`` / ``equipment_booked``
+  count bookings / distinct equipment; ``equipment_utilisation`` = booked
+  days / available days x 100, where an active equipment of a visible site
+  (any active equipment when every site is visible) is available on the
+  weekdays that are not a bank holiday at one of its sites nor inside one of
+  its blocks. Overlapping bookings add up, so a double-booked instrument
+  reads over 100 %. Utilisation counts only the bookings of equipment with
+  an availability and reads ``site`` (dimension and filter) from the
+  equipment on both sides; the booking measures keep the project's site.
 - The **distinct** measures (``booking_count``, ``people_booked``,
   ``project_count``, ``project_volume``, ``phase_count``, ``phases_due``,
-  ``phases_overdue``) recompute the total,
+  ``phases_overdue``, ``equipment_booking_count``, ``equipment_booked``)
+  recompute the total,
   the "Other" bucket and the percentage denominators over distinct facts: a
   project with two tags counts in both tag rows but once in the total.
   Additive measures do the same with the fact's amount (a booking in two teams
@@ -123,13 +135,16 @@ MEASURES: tuple[str, ...] = (
     "available_days",
     "utilisation",
     "people_over_capacity",
-    # equipment (Task 3): equipment_booked_days, equipment_booking_count,
-    # equipment_booked, equipment_utilisation
+    # equipment (equipment bookings against the equipment's working days)
+    "equipment_booked_days",
+    "equipment_booking_count",
+    "equipment_booked",
+    "equipment_utilisation",
 )
 # Base measures a composite is built from that are never offered on their
-# own: not in ``MEASURES``, the schema Literal or the JSON mirror (Task 3
-# adds ``equipment_available_days``). They still need a ``FAMILY`` entry.
-INTERNAL_MEASURES: frozenset[str] = frozenset()
+# own: not in ``MEASURES``, ``UNITS``, ``MATRIX``, the schema Literal or the
+# JSON mirror. They still need a ``FAMILY`` entry and an ``_amount`` branch.
+INTERNAL_MEASURES: frozenset[str] = frozenset({"equipment_available_days"})
 
 # measure -> family, for every public and internal measure.
 FAMILY: dict[str, str] = {
@@ -148,6 +163,11 @@ FAMILY: dict[str, str] = {
     "available_days": "capacity",
     "utilisation": "capacity",
     "people_over_capacity": "capacity",
+    "equipment_booked_days": "equipment",
+    "equipment_booking_count": "equipment",
+    "equipment_booked": "equipment",
+    "equipment_utilisation": "equipment",
+    "equipment_available_days": "equipment",
 }
 
 PLAIN_DIMENSION_KINDS: tuple[str, ...] = (
@@ -162,6 +182,8 @@ PLAIN_DIMENSION_KINDS: tuple[str, ...] = (
     "tag",
     "phase_type",
     "status",
+    "equipment",
+    "equipment_type",
 )
 DIMENSION_KINDS: tuple[str, ...] = (*PLAIN_DIMENSION_KINDS, "field", "period")
 RELATIVE_PERIODS: tuple[str, ...] = (
@@ -205,7 +227,15 @@ TOO_MANY_FACTS_DETAIL = "Narrow the filters: this query covers too many bookings
 
 # Summed amounts, deduplicated per fact and bucket.
 ADDITIVE_MEASURES: frozenset[str] = frozenset(
-    {"booked_days", "booked_weeks", "project_weeks", "phase_weeks", "capacity_days"}
+    {
+        "booked_days",
+        "booked_weeks",
+        "project_weeks",
+        "phase_weeks",
+        "capacity_days",
+        "equipment_booked_days",
+        "equipment_available_days",
+    }
 )
 # Counts of distinct things (``_ident``); ``project_volume`` sums one amount
 # per distinct project.
@@ -217,27 +247,35 @@ COUNT_MEASURES: frozenset[str] = frozenset(
         "phase_count",
         "phases_due",
         "phases_overdue",
+        "equipment_booking_count",
+        "equipment_booked",
     }
 )
 # Composite measures: ``measure -> (numerator base, denominator base)``. The
 # engine runs the item loop once per side with that side's base measure and
-# ``_combine_composite`` folds the two sums with ``COMPOSITE_RULES[measure]``
-# (Task 3 adds ``equipment_utilisation`` over
-# ``("equipment_booked_days", "equipment_available_days")``).
+# ``_combine_composite`` folds the two sums with ``COMPOSITE_RULES[measure]``.
 COMPOSITES: dict[str, tuple[str, str]] = {
     "available_days": ("booked_days", "capacity_days"),
     "utilisation": ("booked_days", "capacity_days"),
     "people_over_capacity": ("booked_days", "capacity_days"),
+    "equipment_utilisation": ("equipment_booked_days", "equipment_available_days"),
 }
+# The composites whose two sides read sites and filters from the equipment
+# (a booking's equipment on the numerator side), not from the project.
+EQUIPMENT_SIDE_MEASURES: frozenset[str] = frozenset({"equipment_utilisation"})
 # Measures that are already a percentage (or cannot be one): ``percent_of``
 # on them is refused (``percent_error``).
-NO_PERCENT_MEASURES: frozenset[str] = frozenset({"utilisation", "available_days"})
+NO_PERCENT_MEASURES: frozenset[str] = frozenset(
+    {"utilisation", "equipment_utilisation", "available_days"}
+)
 # The refusal of ``percent_of`` per measure when the default wording does not fit.
 NO_PERCENT_MESSAGES: dict[str, str] = {
     "available_days": "Available days can be negative and cannot be a percentage",
 }
 # Non-additive measures that keep two decimals (ratios) instead of an int.
-FLOAT_MEASURES: frozenset[str] = frozenset({"utilisation", "available_days"})
+FLOAT_MEASURES: frozenset[str] = frozenset(
+    {"utilisation", "equipment_utilisation", "available_days"}
+)
 
 UNITS: dict[str, str] = {
     "booked_days": "days",
@@ -255,6 +293,10 @@ UNITS: dict[str, str] = {
     "available_days": "days",
     "utilisation": "percent",
     "people_over_capacity": "people",
+    "equipment_booked_days": "days",
+    "equipment_booking_count": "count",
+    "equipment_booked": "equipment",
+    "equipment_utilisation": "percent",
 }
 PERCENT_UNIT = "percent"
 
@@ -274,6 +316,10 @@ MEASURE_LABELS: dict[str, str] = {
     "available_days": "Available days",
     "utilisation": "Utilisation",
     "people_over_capacity": "People over capacity",
+    "equipment_booked_days": "Equipment booked days",
+    "equipment_booking_count": "Equipment bookings",
+    "equipment_booked": "Equipment booked",
+    "equipment_utilisation": "Equipment utilisation",
 }
 DIMENSION_LABELS: dict[str, str] = {
     "site": "Site",
@@ -287,6 +333,8 @@ DIMENSION_LABELS: dict[str, str] = {
     "tag": "Tag",
     "phase_type": "Phase",
     "status": "Status",
+    "equipment": "Equipment",
+    "equipment_type": "Equipment type",
     "field": "Project field",
     "period": "Period",
 }
@@ -365,9 +413,14 @@ FAMILY_FILTERS: dict[str, frozenset[str]] = {
     "capacity": frozenset({"site_ids", "team_ids", "person_ids", "archived", "period"}),
     "equipment": _PROJECT_FILTERS | {"equipment_ids", "equipment_types"},
 }
-# A measure whose filters differ from its family's (Task 3:
-# ``equipment_utilisation``).
-MEASURE_FILTER_OVERRIDES: dict[str, frozenset[str]] = {}
+# A measure whose filters differ from its family's: equipment utilisation is
+# the equipment's (its sites, the equipment, its type), with the archived
+# test on the booked side.
+MEASURE_FILTER_OVERRIDES: dict[str, frozenset[str]] = {
+    "equipment_utilisation": frozenset(
+        {"site_ids", "equipment_ids", "equipment_types", "archived", "period"}
+    ),
+}
 # measure -> the filters it accepts (a given filter outside it is a 422).
 MEASURE_FILTERS: dict[str, frozenset[str]] = {
     measure: MEASURE_FILTER_OVERRIDES.get(measure, FAMILY_FILTERS[FAMILY[measure]])
@@ -428,6 +481,12 @@ _PHASE_DIMENSIONS: frozenset[str] = _PROJECT_DIMENSIONS | {"phase_type", "status
 # A capacity is a person's: no project dimension applies (``site`` and
 # ``team`` are the person's, on both sides of a composite).
 _CAPACITY_DIMENSIONS: frozenset[str] = frozenset({"person", "team", "site", "period"})
+# An equipment booking: its project's breakdowns (``site`` = the project's)
+# and its equipment's.
+_EQUIPMENT_BOOKING_DIMENSIONS: frozenset[str] = _PROJECT_DIMENSIONS | {
+    "equipment",
+    "equipment_type",
+}
 
 MATRIX: dict[str, frozenset[str]] = {
     "booked_days": _BOOKING_DIMENSIONS,
@@ -448,9 +507,19 @@ MATRIX: dict[str, frozenset[str]] = {
     "available_days": _CAPACITY_DIMENSIONS,
     "utilisation": _CAPACITY_DIMENSIONS,
     "people_over_capacity": _CAPACITY_DIMENSIONS,
+    "equipment_booked_days": _EQUIPMENT_BOOKING_DIMENSIONS,
+    "equipment_booking_count": _EQUIPMENT_BOOKING_DIMENSIONS,
+    # Distinct equipment is not additive over time.
+    "equipment_booked": _EQUIPMENT_BOOKING_DIMENSIONS - {"period"},
+    # The equipment's breakdowns only (``site`` = the equipment's sites).
+    "equipment_utilisation": frozenset({"equipment", "equipment_type", "site", "period"}),
 }
 # The permission a dimension needs (the per-person load is gated by it).
-NEEDS: dict[str, str] = {"person": "views.staff"}
+NEEDS: dict[str, str] = {
+    "person": "views.staff",
+    "equipment": "views.equipment",
+    "equipment_type": "views.equipment",
+}
 # The permission a measure family needs (keyed by family).
 MEASURE_NEEDS: dict[str, str] = {"capacity": "views.staff", "equipment": "views.equipment"}
 # The permission a given filter needs (a People filter rebuilds the
@@ -1041,6 +1110,7 @@ EMPTY_LABELS: dict[str, str] = {
     "tag": "No tag",
     "field": "Not set",
     "phase_type": "No phase",
+    "equipment_type": "No type",
 }
 OTHER_KEY = "__other__"
 OTHER_LABEL = "Other"
@@ -1108,6 +1178,8 @@ class _Filters:
     confirmed: bool | None = None
     field_options: dict[int, set[int]] = field(default_factory=dict)
     milestones: str = "include"
+    equipment_ids: set[int] | None = None
+    equipment_types: set[str] | None = None
 
 
 def _known(
@@ -1123,6 +1195,23 @@ def _known(
             kept.add(item)
         else:
             _warn(warnings, f"{noun} {item} no longer exists")
+    return kept or None
+
+
+def _known_types(types: list[str] | None, facts: Facts, warnings: list[str]) -> set[str] | None:
+    """
+    The equipment types (exact names, case-sensitive) some equipment still
+    has (None = no filter); each unknown one adds a warning.
+    """
+    if not types:
+        return None
+    existing = {info.type for info in facts.equipment.values() if info.type}
+    kept: set[str] = set()
+    for name in types:
+        if name in existing:
+            kept.add(name)
+        else:
+            _warn(warnings, f"Equipment type {name} no longer exists")
     return kept or None
 
 
@@ -1144,6 +1233,8 @@ def _resolve_filters(facts: Facts, spec: Any, warnings: list[str]) -> _Filters:
         tag_ids=_known(spec.tag_ids, facts.tags, "Tag", warnings),
         confirmed=spec.confirmed,
         milestones=getattr(spec, "milestones", "include"),
+        equipment_ids=_known(spec.equipment_ids, facts.equipment, "Equipment", warnings),
+        equipment_types=_known_types(spec.equipment_types, facts, warnings),
     )
     for field_id, option_ids in (spec.field_options or {}).items():
         if field_id not in facts.fields:
@@ -1212,6 +1303,10 @@ class _Item(NamedTuple):
     booking: BookingFact | None = None
     phase: PhaseFact | None = None
     capacity: CapacityFact | None = None
+    equipment_booking: EquipmentBookingFact | None = None
+    # The equipment's availability on both sides of an equipment-side
+    # composite (``EQUIPMENT_SIDE_MEASURES``): its sites answer ``site``.
+    availability: EquipmentAvailabilityFact | None = None
 
 
 def _project_of(item: _Item) -> ProjectFact:
@@ -1237,13 +1332,47 @@ def _capacity_of(facts: Facts, item: _Item) -> CapacityFact:
     return facts.capacity[item.booking.person_id]
 
 
-def _items(facts: Facts, measure: str, flt: _Filters, family: str) -> Iterator[_Item]:
+def _equipment_id(item: _Item) -> int:
+    """The equipment of an equipment-family item (either side)."""
+    if item.availability is not None:
+        return item.availability.equipment_id
+    assert item.equipment_booking is not None
+    return item.equipment_booking.equipment_id
+
+
+def _equipment_info(facts: Facts, equipment_id: int) -> EquipmentInfo:
+    """The equipment's reference row (a row gone since the load: its id as name)."""
+    info = facts.equipment.get(equipment_id)
+    if info is None:
+        return EquipmentInfo(equipment_id, f"Equipment {equipment_id}", None, (), False)
+    return info
+
+
+def _equipment_passes(info: EquipmentInfo, flt: _Filters) -> bool:
+    """The Equipment and Equipment types filters, on the equipment."""
+    if flt.equipment_ids is not None and info.id not in flt.equipment_ids:
+        return False
+    return flt.equipment_types is None or info.type in flt.equipment_types
+
+
+def _equipment_side_passes(facts: Facts, fact: EquipmentAvailabilityFact, flt: _Filters) -> bool:
+    """Equipment utilisation's filters: the equipment's sites, the equipment, its type."""
+    if flt.site_ids is not None and not flt.site_ids.intersection(fact.site_ids):
+        return False
+    return _equipment_passes(_equipment_info(facts, fact.equipment_id), flt)
+
+
+def _items(
+    facts: Facts, measure: str, flt: _Filters, family: str, asked: str = ""
+) -> Iterator[_Item]:
     """
     The items of ``measure`` (a base measure for a composite side).
 
     ``family`` is the family of the measure *asked*: a composite's, which can
     differ from the base measure's own (``FAMILY[measure]`` picks the facts,
-    ``family`` the rules applied to them — Task 2's capacity rules key on it).
+    ``family`` the rules applied to them: the capacity rules key on it).
+    ``asked`` is the measure asked itself: an equipment-side composite
+    (``EQUIPMENT_SIDE_MEASURES``) reads its filters from the equipment.
     """
     kind = FAMILY[measure]
     if kind == "booking" and family == "capacity":
@@ -1310,6 +1439,55 @@ def _items(facts: Facts, measure: str, flt: _Filters, family: str) -> Iterator[_
         for fact in facts.capacity.values():
             if _capacity_passes(fact, flt):
                 yield _Item("capacity", fact.person_id, None, date.min, date.max, capacity=fact)
+    elif kind == "equipment" and asked in EQUIPMENT_SIDE_MEASURES:
+        # Both sides of equipment utilisation: the equipment with an
+        # availability (active, at a visible site), matched on its sites;
+        # the booked side keeps the archived test of its project.
+        by_equipment = {a.equipment_id: a for a in facts.equipment_availability}
+        if measure == "equipment_available_days":
+            for available in facts.equipment_availability:
+                if _equipment_side_passes(facts, available, flt):
+                    yield _Item(
+                        "equipment_availability",
+                        available.equipment_id,
+                        None,
+                        date.min,
+                        date.max,
+                        availability=available,
+                    )
+        else:
+            for used in facts.equipment_bookings:
+                found = by_equipment.get(used.equipment_id)
+                project = facts.projects.get(used.project_id)
+                if found is None or project is None or not _archived_passes(project, flt.archived):
+                    continue
+                if not _equipment_side_passes(facts, found, flt):
+                    continue
+                yield _Item(
+                    "equipment_booking",
+                    used.id,
+                    project,
+                    used.start,
+                    used.end,
+                    equipment_booking=used,
+                    availability=found,
+                )
+    elif kind == "equipment":
+        # The booking side: the project's filters, then the equipment's.
+        for used in facts.equipment_bookings:
+            project = facts.projects.get(used.project_id)
+            if project is None or not _project_passes(project, flt):
+                continue
+            if not _equipment_passes(_equipment_info(facts, used.equipment_id), flt):
+                continue
+            yield _Item(
+                "equipment_booking",
+                used.id,
+                project,
+                used.start,
+                used.end,
+                equipment_booking=used,
+            )
     else:
         raise MetricError(f"Unknown measure family: {kind} ({family})")
 
@@ -1348,7 +1526,9 @@ def _status_value(status: str) -> DimValue:
 def _values(facts: Facts, dimension: _Dimension, item: _Item, family: str) -> list[DimValue]:
     """
     The dimension values of ``item``; ``family`` is the asked measure's (see
-    ``_items``): Task 2 reads ``site`` / ``team`` from the person there.
+    ``_items``): the capacity family reads ``site`` / ``team`` from the
+    person, equipment utilisation ``site`` from the equipment (its items
+    carry the availability fact).
     """
     kind = dimension.kind
     if family == "capacity" and kind in ("site", "team", "person"):
@@ -1361,6 +1541,21 @@ def _values(facts: Facts, dimension: _Dimension, item: _Item, family: str) -> li
         sites = [
             _by_label(site_id, facts.sites.get(site_id, f"Site {site_id}"))
             for site_id in fact.site_ids
+        ]
+        return sites or [_empty(kind)]
+    if kind == "equipment":
+        info = _equipment_info(facts, _equipment_id(item))
+        return [_by_label(info.id, info.name)]
+    if kind == "equipment_type":
+        equipment_type = _equipment_info(facts, _equipment_id(item)).type
+        if equipment_type and equipment_type.strip():
+            return [_by_label(equipment_type, equipment_type)]
+        return [_empty(kind)]
+    if kind == "site" and item.availability is not None:
+        # Equipment utilisation: the equipment's sites, on both sides.
+        sites = [
+            _by_label(site_id, facts.sites.get(site_id, f"Site {site_id}"))
+            for site_id in item.availability.site_ids
         ]
         return sites or [_empty(kind)]
     if kind == "team":
@@ -1429,6 +1624,12 @@ def _amount(measure: str, item: _Item, calendar: WorkingCalendar, start: date, e
     if measure == "capacity_days":
         assert item.capacity is not None
         return capacity_days(start, end, item.capacity.off_days, item.capacity.max_capacity)
+    if measure == "equipment_booked_days":
+        # Whole days on the project's calendar (no allocation).
+        return float(calendar.days(_project_of(item).site_id, start, end))
+    if measure == "equipment_available_days":
+        assert item.availability is not None
+        return float(working_days(start, end, item.availability.off_days))
     if measure in COUNT_MEASURES:
         return 1.0  # a distinct count: the amount is unused
     raise MetricError(f"Unknown measure: {measure}")
@@ -1441,15 +1642,19 @@ def _ident(measure: str, item: _Item) -> Any:
         return item.booking.person_id
     if measure in ("project_count", "project_volume"):
         return _project_of(item).id
+    if measure == "equipment_booked":
+        return _equipment_id(item)
     return (item.kind, item.id)
 
 
 def _subject(measure: str, item: _Item) -> Any:
     """
     The distinct subject a composite pairs its two sides on: the person for
-    booking (and Task 2's capacity) items, the equipment for Task 3's
-    equipment items, else None. ``measure`` is the side's base measure.
+    booking and capacity items, the equipment for equipment items, else
+    None. ``measure`` is the side's base measure.
     """
+    if item.availability is not None or item.equipment_booking is not None:
+        return _equipment_id(item)
     if item.capacity is not None:
         return item.capacity.person_id
     if item.booking is not None:
@@ -1520,14 +1725,15 @@ def _people_over(subjects: dict[Any, tuple[float, float]]) -> float:
 
 
 # measure -> its fold of ``(numerator, denominator, {subject: (num, den)})``.
-# ``_combine_composite`` is the one place composites are computed (Task 3 adds
-# ``equipment_utilisation`` -> ``ratio_percent``).
+# ``_combine_composite`` is the one place composites are computed.
 COMPOSITE_RULES: dict[
     str, Callable[[float, float, dict[Any, tuple[float, float]]], float | None]
 ] = {
     "utilisation": lambda booked, capacity, _subjects: ratio_percent(booked, capacity),
     "available_days": lambda booked, capacity, _subjects: capacity - booked,
     "people_over_capacity": lambda _booked, _capacity, subjects: _people_over(subjects),
+    # Overlapping bookings add up: over 100 % is a double booking.
+    "equipment_utilisation": lambda booked, available, _subjects: ratio_percent(booked, available),
 }
 
 
@@ -1680,7 +1886,7 @@ def aggregate(facts: Facts, query: Any, *, viewer: Viewer) -> MetricResult:
     contributions: list[_Contribution] = []
     several: set[int] = set()
     for base, side in sides:
-        for item in _items(facts, base, flt, family):
+        for item in _items(facts, base, flt, family, measure):
             first, last = max(item.start, start), min(item.end, end)
             if first > last:
                 continue
