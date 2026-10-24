@@ -122,6 +122,8 @@ With **Shared with…**, the dialog lists four kinds of target, and you can mix 
 | **Teams** | The members of the team (the team's site is shown beside its name; an inactive team is marked *(inactive)*) |
 | **People** | The people you name — any active person at your sites, and anyone who sees every site |
 
+![The Share dialog of a dashboard shared with the Winterthur site, the Analytical Lab team and Diana Davis: Visibility set to Shared with…, then the Roles checkboxes and the Sites, Teams and People pickers](../assets/screenshots/dashboard-share.png){ loading=lazy }
+
 Choose at least one target; with none, the dialog shows *Choose at least one role, site, team or person*. Sharing is **view only**: the people you share with open the dashboard and see their own numbers, but only you (and administrators) can edit, share or delete it.
 
 Under the dashboard's title, the **Shared with** line names who sees it — one chip per role, site, team (*Team · Site*) and person — or reads *Shared with everyone*, or *Only you (and administrators)* for a private one. Everyone who can open the dashboard sees that line.

@@ -653,6 +653,68 @@ def shot_dashboard_builder(context: BrowserContext) -> None:
     fresh.close()
 
 
+def _dashboard_picker(page: Page):
+    """The toolbar's dashboard picker: a listbox button named "Dashboard ..."
+    (its label, then the chosen dashboard)."""
+    return page.get_by_role("button", name=re.compile("^Dashboard")).and_(
+        page.locator('button[aria-haspopup="listbox"]')
+    )
+
+
+def _pick_dashboard(page: Page, name: str) -> None:
+    """Open a dashboard through the toolbar picker (a SearchableSelect)."""
+    _dashboard_picker(page).click()
+    page.get_by_role("combobox", name="Find a dashboard").fill(name)
+    page.get_by_role("option", name=re.compile(f"^{re.escape(name)}")).first.click()
+    page.wait_for_timeout(1500)
+
+
+def shot_dashboard_share(context: BrowserContext) -> None:
+    """The Share dialog as Bob, on a dashboard shared with one site
+    (Winterthur), one team (Analytical Lab) and one person (Diana Davis).
+    The dashboard is created through the API first and deleted afterwards,
+    so the demo is left as it was."""
+    fresh, page = _login_as(context, "bob.brown@demo.local")
+    api = f"{BASE}/t/demo/api"
+    sites = fresh.request.get(f"{api}/sites").json()
+    teams = fresh.request.get(f"{api}/teams").json()
+    people = fresh.request.get(f"{api}/dashboards/shareable-users").json()
+    site_id = next(s["id"] for s in sites if s["name"] == "Winterthur")
+    team_id = next(t["id"] for t in teams if t["name"] == "Analytical Lab")
+    user_id = next(u["id"] for u in people if u["name"] == "Diana Davis")
+    created = fresh.request.post(
+        f"{api}/dashboards",
+        data={
+            "name": "Lab workload",
+            "description": "Booked time of the analytical lab, by project and month",
+            "visibility": "shared",
+            "role_ids": [],
+            "site_ids": [site_id],
+            "team_ids": [team_id],
+            "user_ids": [user_id],
+        },
+    ).json()
+    try:
+        _open_dashboards_empty(page)
+        _pick_dashboard(page, "Lab workload")
+        page.get_by_role("button", name="Share…", exact=True).click()
+        page.get_by_role("dialog").wait_for()
+        page.wait_for_timeout(800)
+        page.screenshot(path=str(OUT / "dashboard-share.png"))
+        log("[done] dashboard-share.png")
+    finally:
+        fresh.request.delete(f"{api}/dashboards/{created['id']}")
+        fresh.close()
+
+
+def _open_dashboards_empty(page: Page) -> None:
+    """Open the Dashboards view without waiting for a chart (the dashboard
+    shown first may have no widget)."""
+    open_sidebar_item(page, "Dashboards")
+    _dashboard_picker(page).wait_for()
+    page.wait_for_timeout(1500)
+
+
 def _sidebar_modal_shot(context: BrowserContext, label: str, outfile: str) -> None:
     page = context.new_page()
     login(page)
@@ -1070,6 +1132,7 @@ TARGETS = {
     "my-assignments": shot_my_assignments,
     "dashboards": shot_dashboards,
     "dashboard-builder": shot_dashboard_builder,
+    "dashboard-share": shot_dashboard_share,
     "pending": shot_pending_assignment,
     "assignment-overview-row": shot_assignment_overview,
     "assign-staff": shot_assign_staff_modal,
