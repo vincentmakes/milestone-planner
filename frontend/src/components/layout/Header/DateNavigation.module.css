@@ -4,9 +4,13 @@
   gap: 12px;
 }
 
+/* `min-width: 0` lets the label below yield: its 120px width counts as the
+   box's min-content, so without it the navigator stayed rigid and pushed
+   Today out of its box over the controls next to it. */
 .navigation {
   display: flex;
   align-items: center;
+  min-width: 0;
   gap: 4px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
@@ -15,6 +19,7 @@
 }
 
 .navButton {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -38,16 +43,18 @@
 }
 
 /*
- * `width` rather than `min-width`, and this is the single most important line
- * in the header's layout. A min-width is a floor flexbox cannot cross, so the
- * old rule made the date navigator incompressible — which is why the centre
- * section spilled over the right-hand controls instead of shrinking. As a flex
- * basis it holds the same 120px when there is room and yields when there is not.
+ * A 120px flex basis rather than a `min-width` (or a `width`), and this is the
+ * single most important line in the header's layout. A min-width is a floor
+ * flexbox cannot cross, so the old rule made the date navigator
+ * incompressible — which is why the centre section spilled over the
+ * right-hand controls instead of shrinking. A `width` counts as the label's
+ * min-content, so the navigator still could not yield below it. As a basis it
+ * holds the same 120px when there is room and yields when there is not, down
+ * to its own text (the flex item's automatic minimum): the date stays legible
+ * and the site name truncates first.
  */
 .periodLabel {
-  width: 120px;
-  min-width: 0;
-  flex: 0 1 auto;
+  flex: 0 1 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -58,6 +65,8 @@
 }
 
 .todayButton {
+  flex-shrink: 0;
+  white-space: nowrap;
   padding: 6px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);

@@ -822,6 +822,13 @@ equivalents), plus view modes, theme and What-If at `minimal`. It also decides h
 Header CSS contains no pixel breakpoints above the global mobile one: the only `@media` widths
 allowed in `Header.module.css` / `WhatIfToggle.module.css` are the ≤ 640 px mobile rules.
 
+When the bar runs short, the left yields first (the instance title and site name truncate): the
+centre takes its content as flex basis and never goes below it, the date label is a 120 px
+*basis* that shrinks down to its own text, and the arrow buttons, Today and the label-less team
+trigger never shrink — so no control is drawn over its neighbour. On phones (≤ 640 px) the bar
+is a two-row grid: the logo and the actions, then the site and team selectors and the date
+controls (`Header.layout.test.ts` pins these rules; jsdom does no layout).
+
 ### 3.12 Loading, empty, error and confirmation
 
 - **Loading**: no skeletons. `LoadingScreen` covers app boot; a panel shows muted

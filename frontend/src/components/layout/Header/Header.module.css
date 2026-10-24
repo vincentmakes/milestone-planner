@@ -51,13 +51,19 @@
    CENTER SECTION: Timeline Controls
    ============================================================================= */
 
+/* Never narrower than its content (`min-width: auto`), and with its content
+   as basis (`flex: 1 1 auto`, not `flex: 1`). With a zero basis and no floor
+   the centre took the whole deficit when the bar ran short while the left
+   kept its full width, so the date controls overflowed their box onto the
+   icons beside them. Now the left yields (the site name truncates) and the
+   centre shrinks only what its controls can give (the period label down to
+   its text, the zoom and undo buttons). */
 .center {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 auto;
 }
 
 /* =============================================================================
@@ -272,12 +278,44 @@
   display: none;
 }
 
-/* Phones are not a target; this only keeps the bar from growing taller than
-   it needs to. The centre section deliberately stays rendered — the minimal
-   tier already fits well inside 768px, so hiding it outright would remove
-   controls for no reason. */
+/* Phones (the global mobile breakpoint, the one width this file may name):
+   with 44px touch targets the three sections no longer fit one line, so the
+   bar becomes a two-row grid instead of hiding controls. Row one: the logo
+   and the right-hand actions; row two: the site and team selectors, then the
+   date controls. `.left` dissolves (`display: contents`) so its children take
+   their own cells. The site column yields first (down to nothing but its
+   ellipsis), the date controls never go below their content. */
 @media (max-width: 640px) {
   .header {
-    height: 48px;
+    display: grid;
+    grid-template-columns: minmax(0, max-content) auto minmax(min-content, 1fr);
+    grid-template-rows: var(--header-height) auto;
+    height: auto;
+    padding: 0 0.5rem 0.25rem;
+    column-gap: 0.5rem;
+    row-gap: 0;
+  }
+
+  .left {
+    display: contents;
+  }
+
+  .logo {
+    grid-area: 1 / 1;
+  }
+
+  .right {
+    grid-area: 1 / 2 / 2 / 4;
+    justify-self: end;
+  }
+
+  .left > :not(.logo) {
+    grid-row: 2;
+    min-width: 0;
+  }
+
+  .center {
+    grid-area: 2 / 3;
+    justify-content: flex-end;
   }
 }

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - E-mail addresses on reserved domains such as `.local` are accepted again when creating or editing users and administrators (the demo accounts and the quick-start admin could not be saved).
+- On phone-sized screens the header's date controls no longer overlap the icons on the right.
 
 ## [2.2.1] - 2026-11-02
 
