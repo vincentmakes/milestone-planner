@@ -98,6 +98,9 @@ export const isNarrow = (width: number, categories: number): boolean =>
 const axisLabel = (percent: boolean) => (value: number) =>
   formatMetric(value, percent ? 'percent' : 'days', { number_format: Number.isInteger(value) ? 'integer' : null });
 
+/** The units of whole counts (the value axis then ticks in whole steps). */
+const COUNT_UNITS: ReadonlySet<MetricUnit> = new Set<MetricUnit>(['count', 'people', 'projects', 'phases', 'equipment']);
+
 export function toOption(
   kind: ChartKind,
   result: MetricResult,
@@ -227,6 +230,8 @@ export function toOption(
   const valueAxis = {
     type: 'value',
     ...(stacked && percentMode && !result.note ? { max: 100 } : {}),
+    // Counts are whole: no 0.2 / 0.4 ticks on an empty or small chart.
+    ...(COUNT_UNITS.has(displayUnit) ? { minInterval: 1 } : {}),
     axisLabel: { formatter: axisLabel(percentMode) },
   };
 

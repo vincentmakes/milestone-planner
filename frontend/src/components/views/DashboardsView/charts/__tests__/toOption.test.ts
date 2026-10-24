@@ -70,6 +70,21 @@ describe('toOption — bar and line, one dimension', () => {
     expect(option.tooltip).toMatchObject({ trigger: 'axis', axisPointer: { type: 'line' } });
   });
 
+  it('ticks a count axis in whole steps, never a days, weeks or percentage one', () => {
+    for (const unit of ['count', 'people', 'projects', 'phases', 'equipment'] as const) {
+      const counts = result([row([A], 0), row([B], 1)], 1, { unit });
+      expect((toOption('bar', counts, {}, theme) as AnyOption).yAxis.minInterval).toBe(1);
+      // Horizontal bars: the value axis is the x axis.
+      expect((toOption('bar', counts, { orientation: 'horizontal' }, theme) as AnyOption).xAxis.minInterval).toBe(1);
+      expect((toOption('line', counts, {}, theme) as AnyOption).yAxis.minInterval).toBe(1);
+      // As a 100 % bar the axis is a percentage.
+      expect((toOption('bar', counts, { stacked: true, percent: true }, theme) as AnyOption).yAxis).not.toHaveProperty('minInterval');
+    }
+    expect((toOption('bar', single, {}, theme) as AnyOption).yAxis).not.toHaveProperty('minInterval');
+    expect((toOption('bar', result([row([A], 1)], 1, { unit: 'days' }), {}, theme) as AnyOption).yAxis).not.toHaveProperty('minInterval');
+    expect((toOption('bar', result([row([A], 1)], 1, { unit: 'percent' }), {}, theme) as AnyOption).yAxis).not.toHaveProperty('minInterval');
+  });
+
   it('formats tooltip values with the number format, followed by the unit word', () => {
     const option = toOption('bar', single, { number_format: 'integer' }, theme) as AnyOption;
     expect(option.tooltip.valueFormatter(12.4)).toBe('12 weeks');
