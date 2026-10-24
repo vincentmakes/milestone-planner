@@ -106,6 +106,8 @@ MAX_FILTER_IDS = 500
 MAX_WIDGETS = 50
 # At most this many roles, sites, teams or people per kind on one dashboard.
 MAX_TARGETS = 200
+# The largest gauge target (WidgetOptions.target).
+MAX_GAUGE_TARGET = 1_000_000_000
 # Bounds on the stored widget JSON (a huge row or height would freeze every
 # viewer's grid): the grid row and height, and the KPI bucket key.
 MAX_GRID_Y = 10000
@@ -247,6 +249,10 @@ class WidgetOptions(_Strict):
     show_legend: bool | None = None
     # The KPI's bucket when ``percent_of`` is set: the dimension value's key.
     kpi_bucket: bool | int | Annotated[str, Field(max_length=MAX_KPI_BUCKET_LENGTH)] | None = None
+    # The gauge's target (the bands sit around it), in the measure's unit.
+    # Accepted on any kind, like the other options; the client keeps it for a
+    # gauge only.
+    target: float | None = Field(default=None, ge=0, le=MAX_GAUGE_TARGET, allow_inf_nan=False)
 
 
 class GridPosition(_Strict):

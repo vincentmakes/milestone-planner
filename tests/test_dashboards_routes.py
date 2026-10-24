@@ -700,6 +700,140 @@ async def test_create_refuses_an_invalid_widget(authed_client, widget, message):
     assert message in resp.json()["detail"][0]["msg"]
 
 
+# The four 2.1.0 chart kinds, one widget each (the gauge with its target).
+NEW_KIND_WIDGETS = [
+    widget_body(
+        "Utilisation",
+        {"measure": "utilisation", "dimensions": [], "filters": KPI_QUERY["filters"]},
+        kind="gauge",
+        options={"target": 85},
+        sort_order=0,
+    ),
+    widget_body(
+        "Team by month",
+        {**BY_SITE, "dimensions": [{"kind": "team"}, {"kind": "period", "grain": "month"}]},
+        kind="heatmap",
+        options={"number_format": "decimal"},
+        sort_order=1,
+    ),
+    widget_body(
+        "Site and project",
+        {**BY_SITE, "dimensions": [{"kind": "site"}, {"kind": "project"}]},
+        kind="treemap",
+        options={},
+        sort_order=2,
+    ),
+    widget_body(
+        "Project to team",
+        {**BY_SITE, "dimensions": [{"kind": "project"}, {"kind": "team"}], "top_n": 8},
+        kind="sankey",
+        options={},
+        sort_order=3,
+    ),
+]
+
+
+async def test_the_new_kinds_round_trip(authed_client, sqlite):
+    client, set_user = authed_client
+    set_user(sue())
+    resp = await client.post(
+        "/api/dashboards",
+        json={"name": "Flows", "visibility": "private", "widgets": NEW_KIND_WIDGETS},
+    )
+    assert resp.status_code == 201
+    created = resp.json()
+    assert [(w["kind"], w["options"]) for w in created["widgets"]] == [
+        ("gauge", {"target": 85}),
+        ("heatmap", {"number_format": "decimal"}),
+        ("treemap", {}),
+        ("sankey", {}),
+    ]
+    again = (await client.get(f"/api/dashboards/{created['id']}")).json()
+    assert again["widgets"] == created["widgets"]
+    rows = (
+        sqlite.query(DashboardWidget)
+        .filter_by(dashboard_id=created["id"])
+        .order_by(DashboardWidget.sort_order)
+        .all()
+    )
+    assert [r.kind for r in rows] == ["gauge", "heatmap", "treemap", "sankey"]
+    assert json.loads(rows[0].options) == {"target": 85}
+
+    # A save with the widgets swapped around keeps every kind and the target.
+    swapped = [
+        {**w, "sort_order": 3 - w["sort_order"], **({"options": {"target": 0}} if i == 0 else {})}
+        for i, w in enumerate(NEW_KIND_WIDGETS)
+    ]
+    resp = await client.put(
+        f"/api/dashboards/{created['id']}", json={"name": "Flows", "widgets": swapped}
+    )
+    assert resp.status_code == 200
+    updated = resp.json()["widgets"]
+    assert [w["kind"] for w in updated] == ["sankey", "treemap", "heatmap", "gauge"]
+    assert updated[-1]["options"] == {"target": 0}
+    stored = sqlite.query(DashboardWidget).filter_by(dashboard_id=created["id"]).all()
+    assert sorted(r.kind for r in stored) == ["gauge", "heatmap", "sankey", "treemap"]
+
+
+@pytest.mark.parametrize("target", [0, 85, 12.5, 1e9])
+async def test_a_gauge_target_within_bounds_is_stored(authed_client, sqlite, target):
+    client, set_user = authed_client
+    set_user(sue())
+    widget = {**NEW_KIND_WIDGETS[0], "options": {"target": target}}
+    resp = await client.post("/api/dashboards", json={"name": "Gauge", "widgets": [widget]})
+    assert resp.status_code == 201
+    (stored,) = resp.json()["widgets"]
+    assert stored["options"]["target"] == target
+    assert json.loads(sqlite.get(DashboardWidget, stored["id"]).options)["target"] == target
+
+
+@pytest.mark.parametrize(
+    "target",
+    [-1, -0.5, "abc", "nan", "inf", 1e9 + 1, [85]],
+    ids=["negative", "negative-fraction", "text", "nan-text", "inf-text", "too-big", "list"],
+)
+async def test_an_invalid_gauge_target_is_422(authed_client, sqlite, target):
+    client, set_user = authed_client
+    set_user(sue())
+    widget = {**NEW_KIND_WIDGETS[0], "options": {"target": target}}
+    resp = await client.post("/api/dashboards", json={"name": "Gauge", "widgets": [widget]})
+    assert resp.status_code == 422
+    assert '"Utilisation": ' in resp.json()["detail"][0]["msg"]
+    assert sqlite.query(Dashboard).filter_by(name="Gauge").count() == 0
+
+
+@pytest.mark.parametrize("target", [float("nan"), float("inf"), float("-inf"), "NaN", -1e-9])
+def test_the_gauge_target_refuses_what_is_not_a_finite_non_negative_number(target):
+    """The schema side of the 422 (a JSON body cannot carry a NaN float:
+    JSON.stringify writes null, and httpx refuses to encode one)."""
+    from pydantic import ValidationError
+
+    from app.schemas.dashboard import WidgetIn
+
+    with pytest.raises(ValidationError):
+        WidgetIn.model_validate({**NEW_KIND_WIDGETS[0], "options": {"target": target}})
+
+
+def test_the_gauge_target_is_optional_and_accepted_on_any_kind():
+    from app.schemas.dashboard import WidgetIn, WidgetOptions
+
+    assert WidgetOptions().target is None
+    assert WidgetOptions.model_validate({"target": None}).target is None
+    for kind in ("kpi", "bar", "heatmap"):
+        widget = WidgetIn.model_validate({**widget_body(kind=kind), "options": {"target": 50}})
+        assert widget.options.target == 50
+
+
+async def test_an_unknown_kind_is_422(authed_client, sqlite):
+    client, set_user = authed_client
+    set_user(sue())
+    resp = await client.post(
+        "/api/dashboards", json={"name": "Radar", "widgets": [widget_body(kind="radar")]}
+    )
+    assert resp.status_code == 422
+    assert sqlite.query(Dashboard).filter_by(name="Radar").count() == 0
+
+
 # --- Update --------------------------------------------------------------------
 
 
