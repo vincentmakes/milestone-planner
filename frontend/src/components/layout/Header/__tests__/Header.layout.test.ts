@@ -71,6 +71,14 @@ describe('Header layout rules', () => {
     expect(rule(nav, '.todayButton')).toMatch(/flex-shrink:\s*0;/);
   });
 
+  it('keeps each Panels toggle label on one line', () => {
+    // "Staff & Calendar" wrapped onto two lines in the 220px dropdown: the
+    // labels never wrap, so their width sizes the (shrink-to-fit) dropdown.
+    expect(rule(header, '.panelToggleBtn')).toMatch(/white-space:\s*nowrap;/);
+    expect(rule(header, '.panelsDropdown')).toMatch(/min-width:\s*220px;/);
+    expect(rule(header, '.panelsDropdown')).not.toMatch(/(^|[^-])width:/);
+  });
+
   it('keeps the label-less team trigger whole and lets the instance title truncate', () => {
     expect(css('TeamSelector.module.css')).toMatch(
       /\[data-density\]:not\(\[data-density='full'\]\) \.wrapper \{\s*flex-shrink:\s*0;\s*\}/

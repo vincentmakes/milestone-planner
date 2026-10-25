@@ -151,8 +151,11 @@
   gap: 0.5rem;
 }
 
+/* Each label stays on one line ("Staff & Calendar" wrapped at the
+   dropdown's 220px): the buttons' min-content widens the dropdown instead. */
 .panelToggleBtn {
   flex: 1;
+  white-space: nowrap;
   display: flex;
   flex-direction: column;
   align-items: center;
