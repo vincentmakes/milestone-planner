@@ -28,7 +28,7 @@ Type in the picker's search box to find one by name. Milestone remembers the las
 
 A dashboard is a set of questions, not a copy of the answers. Each viewer gets the answers for the **sites they can see**: a colleague who works only at Frankfurt sees Frankfurt figures on the same Overview where an administrator sees every site. Archived projects are left out unless a widget asks for them.
 
-A widget can need a permission you do not hold — the **capacity** measures, a breakdown by **person** and the **People** filter need the **Staff overview** permission — a capacity measure broken down by **person** or filtered to **People** also needs **See colleagues' absences**, since its days off are their absences; the **equipment** measures, a breakdown by **equipment** or **equipment type** and the **Equipment** filters need the **Equipment view** permission; a widget that includes **archived projects** needs **Archived projects**. Such a widget shows *This widget needs the Staff view permission* (or *the Equipment view permission*, *the Archived view permission*, *the Absences permission*) in place of its chart; the rest of the dashboard works as usual.
+A widget can need a permission you do not hold — the **capacity** measures, a breakdown by **person** and the **People** filter need the **Staff & Calendar** permission — a capacity measure broken down by **person** or filtered to **People** also needs **See colleagues' absences**, since its days off are their absences; the **equipment** measures, a breakdown by **equipment** or **equipment type** and the **Equipment** filters need the **Equipment view** permission; a widget that includes **archived projects** needs **Archived projects**. Such a widget shows *This widget needs the Staff view permission* (or *the Equipment view permission*, *the Archived view permission*, *the Absences permission*) in place of its chart; the rest of the dashboard works as usual.
 
 ## The Overview
 
@@ -56,7 +56,7 @@ A tenant seeded with the **demo data** — the demo tenant of the Codespaces and
 | **Booked weeks by site and project** | A treemap: one box per site, split into its projects, this year |
 | **Project to team flows** | A sankey: the eight projects with the most booked weeks (the rest as *Other*) flowing to the teams that work on them |
 
-The gauge's utilisation needs the **Staff overview** permission (the User and Superuser roles hold it by default); a role without it sees the permission message on that tile and the other three widgets as usual.
+The gauge's utilisation needs the **Staff & Calendar** permission (the User and Superuser roles hold it by default); a role without it sees the permission message on that tile and the other three widgets as usual.
 
 ## Chart Kinds
 
@@ -84,7 +84,7 @@ A widget is one of nine kinds. Each takes one measure and up to two **dimensions
 Booked time is **planned** time — what the bookings in the Gantt chart say, not hours recorded afterwards. The [Measures](#measures) below say what each measure counts; these rules hold for all of them.
 
 - A **working day** is Monday to Friday, except the [bank holidays](settings.md#bank-holidays) of a site. Booked time counts the working days of the **project's site**; capacity counts those of the **person's** sites and equipment availability those of the **equipment's** sites
-- A booking on a phase or subphase counts only inside its card's dates; a booking on the whole project counts over its own dates. Someone booked both on the project and on one of its phases counts twice, as on the [Staff overview](staff-management.md)
+- A booking on a phase or subphase counts only inside its card's dates; a booking on the whole project counts over its own dates. Someone booked both on the project and on one of its phases counts twice, as in the [Staff & Calendar](staff-management.md) view
 - **Bookings waiting for approval are not counted** until they are approved
 - Counts of projects and phases take those whose dates touch the period (in every month, quarter or year they touch, when broken down by period)
 - A breakdown by **Team** uses the teams of the booked person at the project's site (someone in two teams counts in both; *No team* otherwise). **Project team** uses the teams the project belongs to
@@ -107,7 +107,7 @@ The **Measure** list of the widget editor is grouped by family. Each family has 
 
 ### Capacity
 
-Needs the **Staff overview** permission. A breakdown by **Person** and the **People** filter also need **See colleagues' absences** (a person's capacity shows the days they are absent); by site, team or period the figures add people up and need the Staff overview alone.
+Needs the **Staff & Calendar** permission. A breakdown by **Person** and the **People** filter also need **See colleagues' absences** (a person's capacity shows the days they are absent); by site, team or period the figures add people up and need the **Staff & Calendar** permission alone.
 
 | Measure | What it counts |
 |---------|----------------|
@@ -117,13 +117,13 @@ Needs the **Staff overview** permission. A breakdown by **Person** and the **Peo
 | **People over capacity** | Different people whose booked days in the period (or in the bar, line point or cell) are more than their capacity |
 
 - **Who counts**: every active person marked *Bookable as a resource* who is a member of one of your sites. Bookings of people no longer bookable, or deactivated, are left out on both sides
-- **Capacity** is the weekdays at **their** sites minus the bank holidays of those sites, their absences of a type that counts as unavailable (a recurring absence only on its weekdays; Home Office leaves them plannable) and the site closures that apply to them — the same closures the Staff overview shows
+- **Capacity** is the weekdays at **their** sites minus the bank holidays of those sites, their absences of a type that counts as unavailable (a recurring absence only on its weekdays; Home Office leaves them plannable) and the site closures that apply to them — the same closures the Staff & Calendar view shows
 - **Sites and teams are the person's**: a breakdown by Site or Team, and the Sites, Teams and People filters, use the person's sites and teams on both sides of the ratio, not the project's. A person at two sites appears under each and once in the total
 - **The team figure is weighted**: a team's utilisation is the team's booked days over the team's capacity, not the average of its members' percentages. A KPI without a breakdown is the weighted figure of everyone in scope
 - A bar, line point or cell with booked time and no capacity (everyone off that week) shows **–**; with neither, 0 %
 - **Archived projects**: bookings on archived projects are left out unless the widget includes them
 - **Booked time is counted only on projects at your sites**: a person you see whose bookings are on a project at a site you cannot see shows less booked time than they have
-- **Not the same as the Staff overview**: the Staff overview's heatmap shows each day and does not take bank holidays off, while capacity does, and booked days follow the project's site while capacity follows the person's. A person booked on a project at a site with other bank holidays can read slightly over or under 100 %
+- **Not the same as the Staff & Calendar view**: its heatmap shows each day and does not take bank holidays off, while capacity does, and booked days follow the project's site while capacity follows the person's. A person booked on a project at a site with other bank holidays can read slightly over or under 100 %
 
 ### Projects
 
@@ -203,7 +203,7 @@ On a phone (640 px wide or less) dashboards are view-only.
 
 1. **Kind** — KPI, Gauge, Bar, Line, Pie, Heatmap, Treemap, Sankey or Table (see [Chart Kinds](#chart-kinds)). A gauge has no dimensions; a heatmap and a sankey need two, and the second dimension field opens once the first is chosen
 2. **Title**
-3. **Measure** — grouped by family: Bookings, Projects, Phases, Capacity and Equipment (see [Measures](#measures)). The capacity measures are listed only with the **Staff overview** permission, the equipment measures only with the **Equipment view** permission. A hint under the list says how the measure counts its days
+3. **Measure** — grouped by family: Bookings, Projects, Phases, Capacity and Equipment (see [Measures](#measures)). The capacity measures are listed only with the **Staff & Calendar** permission, the equipment measures only with the **Equipment view** permission. A hint under the list says how the measure counts its days
 4. **Dimension 1** and **Dimension 2** — how to break the measure down: Site, Team, Project team, Person, Project, Project manager, Customer, Confirmed, Tag, Phase, Status, Equipment, Equipment type, any dropdown or toggle **project field**, or Period (by year, quarter, month or week). Only the dimensions that make sense for the measure are offered; a pie takes one dimension, a KPI at most one, a heatmap and a sankey two, a treemap one or two (no Period for treemaps and sankeys), a gauge none
 5. **Filters** — only those of the measure's family: sites, teams, project teams, people, projects, tags, field items, confirmed or unconfirmed projects, archived projects for bookings; the same without teams and people for projects, plus **Milestones** for phases; **Sites**, **Teams** and **People** (the person's) for capacity; the project filters plus **Equipment** and **Equipment types** for the equipment measures (Sites, Equipment and Equipment types only for equipment utilisation). Changing the measure drops the filters the new one does not take
 6. **Period** — one of the [twelve periods](#periods) or a custom range

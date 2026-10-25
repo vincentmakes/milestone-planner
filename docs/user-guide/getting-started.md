@@ -16,7 +16,7 @@ When you navigate to the application URL, you are presented with the login scree
 
 The application is organized into several areas:
 
-- **Sidebar** (far left) — Switch between the main views: Gantt Chart, Kanban Board, My Work, Dashboards, Staff Overview, Equipment, Cross-Site, and Archived
+- **Sidebar** (far left) — Switch between the main views: Gantt Chart, Kanban Board, My Work, Dashboards, Staff & Calendar, Equipment, Cross-Site, and Archived
 - **Header** (top) — Branding, site selector, date navigation, zoom controls, theme toggle, and user menu
 - **Project Panel** (left-center) — Hierarchical list of projects, phases, and subphases
 - **Timeline** (right) — Visual Gantt bars aligned to a calendar
@@ -31,7 +31,7 @@ The application is organized into several areas:
 | Kanban | **Kanban Board** | The same work as cards moving through To Do, In Progress, Blocked and Done |
 | Work | **My Work** | Requests waiting for your decision, your bookings and your own requests, with a badge counting the requests to decide — see [My Work](my-work.md) |
 | Dashboard | **Dashboards** | KPIs and charts over the plan — booked weeks, confirmed shares, projects per site — shared with your role or with everyone — see [Dashboards](dashboards.md) |
-| Staff | **Staff Overview** | Staff members with assignments and availability |
+| Staff | **Staff & Calendar** | Staff members with assignments and availability |
 | Equipment | **Equipment** | Equipment items with booking timelines |
 | Cross-Site | **Cross-Site** | Overview of projects across the sites you can see (listed only with at least two) |
 | Archive | **Archived** | Completed/archived projects |

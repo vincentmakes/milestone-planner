@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Dashboard builders create, duplicate and share dashboards with roles, sites, teams and people (view only; each dashboard shows whom it is shared with), rename them and edit their description inline in edit mode, with undo and redo while editing, resize a widget and its row neighbours follow, and add KPI, gauge, bar, line, pie, heatmap, treemap, sankey and table widgets with a live preview beside the form — a gauge against a target of your choice, green up to it, amber just above, red beyond — any measure by site, team, person, project, manager, customer, confirmed, tag, phase, status, equipment, equipment type, project field or period.
 - Timelines show every company event of a day as stacked colour bands at any zoom, with a panel listing them (teams and closures named) and a click to edit.
 
+### Changed
+- The Staff Overview view is now called Staff & Calendar.
+
 ### Fixed
 - E-mail addresses on reserved domains such as `.local` are accepted again when creating or editing users and administrators (the demo accounts and the quick-start admin could not be saved).
 - On phone-sized screens the header's date controls no longer overlap the icons on the right.

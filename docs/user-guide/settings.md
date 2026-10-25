@@ -143,7 +143,7 @@ Some permissions worth knowing:
 | **Assign and manage anyone** | Book, change and remove anyone's assignments. People with it (and project managers on their projects) never need approval for their own bookings |
 | **See colleagues' absences** | See the absences of people at your sites; without it, only your own |
 | **Change user roles** | Give people a role — but only a role whose permissions you hold yourself |
-| **Kanban board**, **Dashboards**, **Staff overview**, **Equipment view**, **Cross-site view**, **Archived projects** | Show the matching view in the sidebar; without them it is hidden. **Dashboards** (Superuser and User by default) opens the [Dashboards](dashboards.md) view with the dashboards shared with the role or with everyone |
+| **Kanban board**, **Dashboards**, **Staff & Calendar**, **Equipment view**, **Cross-site view**, **Archived projects** | Show the matching view in the sidebar; without them it is hidden. **Dashboards** (Superuser and User by default) opens the [Dashboards](dashboards.md) view with the dashboards shared with the role or with everyone |
 | **Manage dashboards** | Create, edit, share and delete your own [dashboards](dashboards.md#building-a-dashboard). Superuser by default; administrators may change or delete any dashboard |
 | **What-If mode** | Show the What-If toggle on the Gantt chart |
 
@@ -225,7 +225,7 @@ Click **Save Changes** to save, or **Back** to return to the list. Emptying **Ci
 The **site selector** dropdown in the header filters everything to the selected site:
 
 - Projects visible on the Gantt chart
-- Staff in the Staff Overview
+- Staff in the Staff & Calendar view
 - Equipment in the Equipment View
 - Bank holidays and company events on the timeline
 - Custom columns
@@ -301,7 +301,7 @@ The filter narrows:
 - in the [Cross-Site view](cross-site-view.md), the current site's lane only
 - the options of the [project filter](gantt-charts.md#filtering-projects): a tag or dropdown-field item limited to teams at this site is offered only while one of them is ticked
 
-Equipment that is not limited to any team of the site is always shown; equipment limited to teams is shown when one of them is ticked. A [company event](#company-events) limited to teams follows the same rule: it shows on the timelines and in the Staff Overview's Company Events row only while one of its teams is ticked (or under **Whole site**), while a whole-site event always shows.
+Equipment that is not limited to any team of the site is always shown; equipment limited to teams is shown when one of them is ticked. A [company event](#company-events) limited to teams follows the same rule: it shows on the timelines and in the Staff & Calendar view's Company Events row only while one of its teams is ticked (or under **Whole site**), while a whole-site event always shows.
 
 A project created while the filter is active starts with the filter's teams ticked, so it appears in the view you are looking at.
 
@@ -385,13 +385,13 @@ Calendar files are limited to **5 MB** (for holidays, company events and absence
 
 ### Exporting Holidays to Calendar
 
-Click **Export .ics** to download the holidays currently listed (selected site and year) as an `.ics` calendar file. The **Export to Outlook** button on the Bank Holidays row of the Staff Overview does the same for the current site. Import the file into Outlook, Google Calendar, or any calendar app.
+Click **Export .ics** to download the holidays currently listed (selected site and year) as an `.ics` calendar file. The **Export to Outlook** button on the Bank Holidays row of the Staff & Calendar view does the same for the current site. Import the file into Outlook, Google Calendar, or any calendar app.
 
-### Holidays in the Staff Overview
+### Holidays in the Staff & Calendar view
 
-Expand the **Bank Holidays** row in the Staff Overview to see all holidays for the current site. Each entry is labelled **Holiday** (from the holiday service) or **Custom**. Admins and superusers can click an entry to edit it in Settings, delete it with the × button, or click **+ Add custom holiday** to open Settings → Bank holidays with the add form ready.
+Expand the **Bank Holidays** row in the Staff & Calendar view to see all holidays for the current site. Each entry is labelled **Holiday** (from the holiday service) or **Custom**. Admins and superusers can click an entry to edit it in Settings, delete it with the × button, or click **+ Add custom holiday** to open Settings → Bank holidays with the add form ready.
 
-![Staff Overview with the Bank Holidays row expanded, listing the site's holidays](../assets/screenshots/bank-holidays.png){ loading=lazy }
+![Staff & Calendar view with the Bank Holidays row expanded, listing the site's holidays](../assets/screenshots/bank-holidays.png){ loading=lazy }
 
 ### How Holidays Affect the Timeline
 
@@ -428,7 +428,7 @@ Editing an event changes it on every site it is linked to.
 
 - In **Settings → Company events**, the delete icon removes the event from **all** of its sites (the confirmation lists them).
 - Superusers can't edit or delete an event that is also **shared with sites they don't manage** (the edit and delete icons are disabled). Instead, **Remove from my sites** (the broken-link icon) unlinks it from their own sites; the other sites keep it.
-- In the Staff Overview, the × on a Company Events entry deletes a single-site event. For an event **shared with other sites**, it only removes the event from the current site; the other sites keep it.
+- In the Staff & Calendar view, the × on a Company Events entry deletes a single-site event. For an event **shared with other sites**, it only removes the event from the current site; the other sites keep it.
 
 ### Importing and Exporting Events
 
@@ -440,7 +440,7 @@ Editing an event changes it on every site it is linked to.
 - **Several events on the same day** are stacked on up to three lanes (below a bank holiday's orange line), with **+N** for any that do not fit; at quarter and year zoom a week or month shows one band and the number of its events. Hover or click the strip to list them all, with their dates, and **Site closure**, **Closure for &lt;teams&gt;** or **Teams: &lt;teams&gt;** on the events limited to teams
 - A plain event is informational only — it **does not affect working day calculations** or staff availability
 - Events are visible to all users on the sites they are linked to
-- In the Staff Overview, admins and superusers can click an event to edit it in Settings, or click **+** on the Company Events row to add one; in the timeline strip's panel, a click on an event's name opens it the same way
+- In the Staff & Calendar view, admins and superusers can click an event to edit it in Settings, or click **+** on the Company Events row to add one; in the timeline strip's panel, a click on an event's name opens it the same way
 - An event limited to teams follows the header [team filter](#team-filter), and the Company Events row names its teams after the event's name
 
 ### Site Closures
@@ -448,13 +448,13 @@ Editing an event changes it on every site it is linked to.
 Tick **Site closure — staff on these sites are unavailable** (it reads *staff of the selected teams on these sites* once teams are ticked) on an event for a shutdown, a company holiday or anything else that closes a site. For every day of the event, everyone who belongs to one of the event's sites is treated as away, like an [absence that counts as unavailable](vacations.md#absence-types):
 
 - In the [Staff workload view](staff-management.md#site-closures-in-the-workload) their cells show **0% available** in the event's color, with the tooltip *Site closed: &lt;event name&gt;*. Work assigned on those days is flagged as a **conflict**
-- Today's availability in the Staff Overview and on the resource cards shows them as unavailable during a closure
+- Today's availability in the Staff & Calendar view and on the resource cards shows them as unavailable during a closure
 - Their assignment bars in the Gantt chart are marked on the closed days
-- The timeline columns of the event get a stronger, hatched tint, the timeline strip's panel tags it **Site closure**, and the Staff Overview's Company Events row labels the entry **Closure** instead of **Event**
+- The timeline columns of the event get a stronger, hatched tint, the timeline strip's panel tags it **Site closure**, and the Staff & Calendar view's Company Events row labels the entry **Closure** instead of **Event**
 
 A person on several sites is unavailable when **any** of their sites is closed. Plain events and bank holidays do not reduce anyone's availability — only events marked as closures do.
 
-**A closure limited to teams takes out only their members.** The **Closure** badge in the event list says so in its hover text. At a site where the event names teams, only the members of those teams are unavailable; everyone else on that site keeps working. Such a closure never shades the calendar header as closed: its timeline columns get a plain event's tint instead of the hatched closure tint, since the rest of the site is open. In the Staff Overview's Company Events row, the hover text of its **Closure** label names the teams. A plain event limited to teams is still shown to the whole site, unless the header [team filter](#team-filter) leaves its teams out.
+**A closure limited to teams takes out only their members.** The **Closure** badge in the event list says so in its hover text. At a site where the event names teams, only the members of those teams are unavailable; everyone else on that site keeps working. Such a closure never shades the calendar header as closed: its timeline columns get a plain event's tint instead of the hatched closure tint, since the rest of the site is open. In the Staff & Calendar view's Company Events row, the hover text of its **Closure** label names the teams. A plain event limited to teams is still shown to the whole site, unless the header [team filter](#team-filter) leaves its teams out.
 
 The site export's **Company events** sheet has a **Staff unavailable** column showing which events are closures.
 
@@ -600,7 +600,7 @@ Click the **trash icon** on a skill. A confirmation dialog warns: *"This will re
 
 ### Filtering Staff by Skills
 
-In the **Staff Overview**, open the **Filter** panel:
+In the **Staff & Calendar** view, open the **Filter** panel:
 
 1. Under the **Skills** section, check one or more skills
 2. Each skill shows its assigned **color dot** next to the name
@@ -633,7 +633,7 @@ Absences that existed before absence types were introduced are filed under **Hol
 Each type has:
 
 - **Name** — must be unique
-- **Color** — used for the absence bars and badges in the Staff Overview and on the timeline
+- **Color** — used for the absence bars and badges in the Staff & Calendar view and on the timeline
 - **Counts as unavailable** — when ticked (Holidays, Illness…), the absence removes the person's capacity in the workload views. When unticked (Home Office), the absence is shown on the timeline but the person stays available for planning
 - **Active** — inactive types are hidden when booking a new absence, but existing absences keep their label and color
 
