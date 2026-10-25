@@ -502,8 +502,8 @@ PERMISSIONS: tuple[Permission, ...] = (
     _p(
         "Views and tools",
         "views.staff",
-        "Staff overview",
-        "Open the Staff view with availability and per-person assignments.",
+        "Staff & Calendar",
+        "Open the Staff & Calendar view with availability and per-person assignments.",
         _BOTH,
     ),
     _p(

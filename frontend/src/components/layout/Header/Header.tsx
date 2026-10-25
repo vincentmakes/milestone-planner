@@ -250,7 +250,7 @@ export function Header() {
                     }}
                   >
                     <Icon icon={UsersIcon} size={18} />
-                    <span>Staff</span>
+                    <span>Staff & Calendar</span>
                   </button>
                   <button
                     className={`${styles.panelToggleBtn} ${styles.equipment} ${showEquipmentOverview ? styles.active : ''}`}

@@ -94,7 +94,7 @@ describe('MainLayout', () => {
   it('switches views from the sidebar navigation', async () => {
     render(<MainLayout />);
     expect(screen.getByRole('main')).toHaveTextContent('Gantt view');
-    fireEvent.click(screen.getByRole('button', { name: 'Staff Overview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Staff & Calendar' }));
     expect(useViewStore.getState().currentView).toBe('staff');
     expect(screen.getByRole('main')).toHaveTextContent('Staff view');
   });
@@ -103,7 +103,7 @@ describe('MainLayout', () => {
     useAppStore.setState({ currentUser: makeUser({ role: 'admin' }) });
     useWhatIfStore.getState().enterWhatIfMode([]);
     render(<MainLayout />);
-    fireEvent.click(screen.getByRole('button', { name: 'Staff Overview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Staff & Calendar' }));
     expect(useViewStore.getState().currentView).toBe('gantt');
     expect(screen.getByRole('main')).toHaveTextContent('Gantt view');
   });

@@ -266,13 +266,13 @@ uses `--font-size-base` and `--line-height-normal`.
 | `--font-size-3xl` | 30 px | 32 px | unchanged | Login title |
 | `--icon-scale` | 1.125 | 1.125 | 1 | Multiplies every `Icon` `size` and the `Button` / `Input` / `Select` icon slots (§3.14) |
 
-**Compact scale.** The data of the five timeline views — Gantt, Staff Overview, Equipment,
+**Compact scale.** The data of the five timeline views — Gantt, Staff & Calendar, Equipment,
 Cross-site and Archived — keeps the denser scale through the global class `compact-ui`
 (`styles/global.css`), which re-declares `--font-size-xs` … `--font-size-base` and
 `--icon-scale` and resets the inherited text size to its own base. It sits on the data areas,
 not on the view's root, so the **title strip** above them (the Gantt project panel's `.header`
-with "Projects", its count, its 28 px icon buttons and **New**; the `.panelHeader` of Staff
-Overview, Equipment, Cross-site and Archived with its title, count and Filter trigger) takes the
+with "Projects", its count, its 28 px icon buttons and **New**; the `.panelHeader` of Staff &
+Calendar, Equipment, Cross-site and Archived with its title, count and Filter trigger) takes the
 app scale like the rest of the app. Compact: the Gantt's custom-column headers and project rows
 (`ProjectPanel` `.columnHeaders`, `.body`) and the whole `Timeline` (header and bars); in the
 four other views the list (`.panelBody`, Archived `.panelContent`) and the timeline

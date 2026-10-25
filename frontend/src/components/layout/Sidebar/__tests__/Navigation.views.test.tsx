@@ -40,7 +40,7 @@ describe('Navigation views', () => {
     render(<Navigation />);
     expect(button('Gantt Chart')).toBeInTheDocument();
     expect(button('Kanban Board')).toBeInTheDocument();
-    for (const label of ['Staff Overview', 'Equipment', 'Cross-Site', 'Archived']) {
+    for (const label of ['Staff & Calendar', 'Equipment', 'Cross-Site', 'Archived']) {
       expect(button(label)).not.toBeInTheDocument();
     }
   });
@@ -58,7 +58,7 @@ describe('Navigation views', () => {
     render(<Navigation />);
     expect(button('Cross-Site')).not.toBeInTheDocument();
     // The other views stay enabled, without a tooltip while expanded
-    const staff = button('Staff Overview')!;
+    const staff = button('Staff & Calendar')!;
     expect(staff).toBeEnabled();
     expect(staff).not.toHaveAttribute('title');
   });
@@ -109,7 +109,7 @@ describe('Navigation views', () => {
       'Gantt Chart',
       'Kanban Board',
       'My Work',
-      'Staff Overview',
+      'Staff & Calendar',
       'Equipment',
       'Dashboards',
       'Hide dashboards',

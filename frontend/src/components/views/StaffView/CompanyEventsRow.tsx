@@ -38,7 +38,7 @@ export function CompanyEventsRow({ isExpanded, onToggle }: CompanyEventsRowProps
   
   const canEdit = can(currentUser, 'company_events.manage');
   // Events are managed in the Settings hub, which cannot open during
-  // What-If (this row also shows in the Gantt's embedded staff overview).
+  // What-If (this row also shows in the Gantt's embedded Staff & Calendar panel).
   // Deleting is blocked too: events are not in the What-If snapshot, so a
   // queued DELETE would leave the row on screen (the reload reads the real
   // server list), a second try would queue a DELETE that 404s on Apply, and

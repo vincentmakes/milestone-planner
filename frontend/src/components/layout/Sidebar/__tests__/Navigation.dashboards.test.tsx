@@ -97,7 +97,7 @@ describe('Navigation — the Dashboards entry', () => {
       'Gantt Chart',
       'Kanban Board',
       'My Work',
-      'Staff Overview',
+      'Staff & Calendar',
       'Equipment',
       'Dashboards',
       'Hide dashboards',

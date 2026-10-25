@@ -1,8 +1,8 @@
 /**
  * Font sizes outside the timeline views come from the type scale.
  *
- * The app reads one step larger than the five timeline views (Gantt, Staff
- * Overview, Equipment, Cross-site, Archived), which keep the compact scale
+ * The app reads one step larger than the five timeline views (Gantt, Staff &
+ * Calendar, Equipment, Cross-site, Archived), which keep the compact scale
  * through the `.compact-ui` class on their root (`styles/global.css`). That
  * only works when a stylesheet reads `var(--font-size-*)`: a raw `0.75rem` or
  * `12px` stays put when the tokens move, and the screen drifts back to the

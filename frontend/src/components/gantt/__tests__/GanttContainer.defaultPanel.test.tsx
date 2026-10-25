@@ -23,7 +23,7 @@ vi.mock('@/hooks', () => ({
   useScrollSync: () => {},
   useFilteredProjects: (projects: Project[]) => projects,
 }));
-vi.mock('@/components/views/StaffView/StaffView', () => ({ StaffView: () => <div>Staff overview</div> }));
+vi.mock('@/components/views/StaffView/StaffView', () => ({ StaffView: () => <div>Staff & Calendar panel</div> }));
 vi.mock('@/components/views/EquipmentView/EquipmentView', () => ({
   EquipmentView: () => <div>Equipment overview</div>,
 }));
@@ -63,7 +63,7 @@ describe('GanttContainer default overview panel', () => {
   it('opens the Staff panel when the default is staff', () => {
     seed('staff');
     render(<GanttContainer />);
-    expect(screen.getByText('Staff overview')).toBeInTheDocument();
+    expect(screen.getByText('Staff & Calendar panel')).toBeInTheDocument();
     expect(useViewStore.getState().showStaffOverview).toBe(true);
   });
 
@@ -72,7 +72,7 @@ describe('GanttContainer default overview panel', () => {
     seed('equipment');
     render(<GanttContainer />);
     expect(screen.getByText('Equipment overview')).toBeInTheDocument();
-    expect(screen.queryByText('Staff overview')).not.toBeInTheDocument();
+    expect(screen.queryByText('Staff & Calendar panel')).not.toBeInTheDocument();
     expect(useViewStore.getState()).toMatchObject({ showEquipmentOverview: true, showStaffOverview: false });
   });
 
@@ -87,7 +87,7 @@ describe('GanttContainer default overview panel', () => {
     seed('staff', makeUser({ id: 9, role: 'user' }));
     render(<GanttContainer />);
     expect(useViewStore.getState().showStaffOverview).toBe(false);
-    expect(screen.queryByText('Staff overview')).not.toBeInTheDocument();
+    expect(screen.queryByText('Staff & Calendar panel')).not.toBeInTheDocument();
   });
 
   it('opens it for the project manager of a project', () => {

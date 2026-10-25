@@ -162,7 +162,10 @@ describe('Header density', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
     fireEvent.click(trigger);
-    expect(screen.getByRole('dialog', { name: 'Overview panels' })).toBeInTheDocument();
+    const panels = screen.getByRole('dialog', { name: 'Overview panels' });
+    // The two toggles are named after the views they dock below the Gantt.
+    expect(within(panels).getByRole('button', { name: 'Staff & Calendar' })).toBeInTheDocument();
+    expect(within(panels).getByRole('button', { name: 'Equipment' })).toBeInTheDocument();
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
 
     fireEvent.keyDown(document, { key: 'Escape' });

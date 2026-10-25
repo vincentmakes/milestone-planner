@@ -48,7 +48,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     view: 'staff',
-    label: 'Staff Overview',
+    label: 'Staff & Calendar',
     icon: <Icon icon={UsersIcon} size={18} />,
   },
   {

@@ -36,7 +36,7 @@ body {
 
 /* =============================================
    COMPACT SCALE (the timeline views)
-   The Gantt, Staff Overview, Equipment, Cross-site and Archived views keep
+   The Gantt, Staff & Calendar, Equipment, Cross-site and Archived views keep
    the denser pre-2.2 text and icon sizes: their root carries `compact-ui`.
    Custom properties resolve where they are declared, so the scope re-declares
    the size tokens themselves (a factor on the root tokens could not be undone

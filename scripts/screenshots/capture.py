@@ -212,12 +212,12 @@ def shot_gantt_with_staff(context: BrowserContext) -> None:
     use_quarter_view(page)
     expand_all_projects(page)
     click_today(page)
-    open_panel(page, "Staff")
+    open_panel(page, "Staff & Calendar")
     page.screenshot(path=str(OUT / "gantt-with-staff-panel.png"))
     log("[done] gantt-with-staff-panel.png")
     # Panel visibility persists in localStorage — close it again so later
     # shots (modals, What-If) capture a clean Gantt.
-    open_panel(page, "Staff")
+    open_panel(page, "Staff & Calendar")
     page.close()
 
 
@@ -267,9 +267,9 @@ def shot_vacations_view(context: BrowserContext) -> None:
     login(page)
     nav = page.locator('aside, nav').first
     try:
-        nav.get_by_role('button', name='Staff Overview', exact=True).click()
+        nav.get_by_role('button', name='Staff & Calendar', exact=True).click()
     except Exception:
-        page.click('button:has-text("Staff Overview")')
+        page.click('button:has-text("Staff & Calendar")')
     page.wait_for_timeout(1500)
     use_quarter_view(page)
     click_today(page)
@@ -538,9 +538,9 @@ def shot_assignment_overview(context: BrowserContext) -> None:
     # take half the height: close it for this shot.
     if page.get_by_text("Equipment Overview", exact=True).count() > 0:
         open_panel(page, "Equipment")
-    # (the sidebar's "Staff Overview" view entry is one match already)
-    if page.get_by_text("Staff Overview", exact=True).count() > 1:
-        open_panel(page, "Staff")
+    # (the sidebar's "Staff & Calendar" view entry is one match already)
+    if page.get_by_text("Staff & Calendar", exact=True).count() > 1:
+        open_panel(page, "Staff & Calendar")
     expand_all_projects(page)
     click_today(page)
     group = page.get_by_role("button", name="Collapse Charlie Clark's bookings")
@@ -772,7 +772,7 @@ def shot_import_modal(context: BrowserContext) -> None:
 def shot_staff_overview(context: BrowserContext) -> None:
     page = context.new_page()
     login(page)
-    open_sidebar_item(page, "Staff Overview")
+    open_sidebar_item(page, "Staff & Calendar")
     page.wait_for_timeout(1000)
     use_quarter_view(page)
     click_today(page)
@@ -905,7 +905,7 @@ def shot_vacation_modal(context: BrowserContext) -> None:
     """Vacation modal from an expanded staff row (capture only — never saved)."""
     page = context.new_page()
     login(page)
-    open_sidebar_item(page, "Staff Overview")
+    open_sidebar_item(page, "Staff & Calendar")
     page.wait_for_timeout(1000)
     # Staff rows expand by clicking the row itself.
     page.get_by_text("Alice Anderson", exact=True).first.click()
@@ -918,10 +918,10 @@ def shot_vacation_modal(context: BrowserContext) -> None:
 
 
 def shot_staff_filter(context: BrowserContext) -> None:
-    """Role/skills filter dropdown in the Staff Overview header."""
+    """Role/skills filter dropdown in the Staff & Calendar header."""
     page = context.new_page()
     login(page)
-    open_sidebar_item(page, "Staff Overview")
+    open_sidebar_item(page, "Staff & Calendar")
     page.wait_for_timeout(1000)
     page.get_by_role("button", name="Filter", exact=True).click()
     page.wait_for_timeout(500)
@@ -931,10 +931,10 @@ def shot_staff_filter(context: BrowserContext) -> None:
 
 
 def shot_bank_holidays(context: BrowserContext) -> None:
-    """Staff Overview with the Bank Holidays row expanded."""
+    """Staff & Calendar with the Bank Holidays row expanded."""
     page = context.new_page()
     login(page)
-    open_sidebar_item(page, "Staff Overview")
+    open_sidebar_item(page, "Staff & Calendar")
     page.wait_for_timeout(1000)
     use_quarter_view(page)
     click_today(page)

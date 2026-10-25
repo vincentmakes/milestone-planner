@@ -624,7 +624,7 @@ export const useViewStore = create<ViewState>()(
         return { ganttColorBy: colorBy };
       }),
 
-      // Staff overview - closes equipment if opening staff
+      // Staff & Calendar - closes equipment if opening staff
       setShowStaffOverview: (show) => set({
         showStaffOverview: show,
         showEquipmentOverview: show ? false : get().showEquipmentOverview,

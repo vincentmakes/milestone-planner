@@ -1,5 +1,5 @@
 /**
- * Staff overview: the left panel lists the site's active staff with today's
+ * Staff & Calendar: the left panel lists the site's active staff with today's
  * availability, a role/skill filter, expandable rows (absences + assignments
  * collected from every level of the project tree) and a confirmed delete
  * for absences.
@@ -117,7 +117,7 @@ function seed(role: 'admin' | 'superuser' | 'user' = 'admin', userId = 1) {
 
 const rowFor = (name: string) => screen.getByText(name).closest('[draggable]') as HTMLElement;
 const panelOf = () =>
-  screen.getByText('Staff Overview').parentElement!.parentElement!.parentElement as HTMLElement;
+  screen.getByText('Staff & Calendar').parentElement!.parentElement!.parentElement as HTMLElement;
 
 beforeEach(() => {
   resetAllStores();
@@ -130,7 +130,7 @@ describe('StaffView panel', () => {
     seed();
     render(<StaffView />);
 
-    expect(screen.getByText('Staff Overview')).toBeInTheDocument();
+    expect(screen.getByText('Staff & Calendar')).toBeInTheDocument();
     const names = screen
       .getAllByText(/^(Alice Ames|Bob Brown|Carl Cole|Dora Diaz)$/)
       .map((n) => n.childNodes[0].textContent);

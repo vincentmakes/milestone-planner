@@ -223,7 +223,7 @@ export const Timeline = forwardRef<HTMLDivElement, TimelineProps>(
         setTimelineScrollLeft(scrollContainer.scrollLeft);
       }, SCROLL_SAVE_DELAY);
       
-      // Sync with other timelines (Staff Overview)
+      // Sync with other timelines (Staff & Calendar)
       handleSyncScroll(e);
     }, [setTimelineScrollLeft, getVisibleDate, handleSyncScroll]);
 
