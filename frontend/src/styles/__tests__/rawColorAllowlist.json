@@ -30,7 +30,7 @@
   "components/gantt/Timeline/ProjectBar.module.css": 4,
   "components/gantt/Timeline/ProjectTimeline.module.css": 16,
   "components/gantt/Timeline/ResourceDropOverlay.module.css": 8,
-  "components/gantt/Timeline/TimelineBody.module.css": 4,
+  "components/gantt/Timeline/TimelineBody.module.css": 3,
   "components/gantt/Timeline/TimelineHeader.module.css": 3,
   "components/layout/Header/Header.module.css": 4,
   "components/layout/Header/HeaderOverflowMenu.module.css": 1,
