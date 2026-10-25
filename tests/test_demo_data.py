@@ -459,6 +459,29 @@ def test_tag_equipment_and_event_teams_sit_at_their_sites(demo: DemoData):
     assert shared and {site for site, _ in shared[0]["teams"]} < set(shared[0]["sites"])
 
 
+def test_three_events_share_the_iso_audits_first_day(demo: DemoData):
+    """The timelines' event strip has a day with three stacked events, one of
+    them limited to a team (the docs and the screenshots name them)."""
+    events = {e["name"]: e for e in demo.company_events}
+    audit = events["ISO 9001 audit"]
+    walk = events["Lab safety walk-through"]
+    calibration = events["Instrument calibration day"]
+    for ev in (walk, calibration):
+        assert ev["date"] == audit["date"] == TODAY + timedelta(days=12)
+        assert ev["end_date"] is None
+        assert ev["sites"] == ["Winterthur"]
+        assert ev["counts_as_unavailable"] is False
+    assert (walk["color"], walk["teams"]) == ("#14b8a6", [])
+    assert (calibration["color"], calibration["teams"]) == (
+        "#a855f7",
+        [("Winterthur", "Analytical Lab")],
+    )
+    # Three distinct colours, none of them a team colour
+    team_colors = {t["color"] for t in demo.teams if t.get("color")}
+    colors = {audit["color"], walk["color"], calibration["color"]}
+    assert len(colors) == 3 and not colors & team_colors
+
+
 def test_projects_with_a_team_limited_tag_share_one_of_its_teams(demo: DemoData):
     tags = {t["name"]: t for t in demo.tags}
     limited = [t for t in demo.tags if t["teams"]]

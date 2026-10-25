@@ -1010,6 +1010,26 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             # shows to the whole site; only a closure would spare non-members.
             teams=[(FRANKFURT, "Formulation")],
         ),
+        # Two more on the audit's first day, so the timelines show several
+        # events stacked on one day (and a team-limited one among them).
+        dict(
+            name="Lab safety walk-through",
+            sites=[WINTERTHUR],
+            date=today + day(12),
+            end_date=None,
+            color="#14b8a6",
+            counts_as_unavailable=False,
+            teams=[],
+        ),
+        dict(
+            name="Instrument calibration day",
+            sites=[WINTERTHUR],
+            date=today + day(12),
+            end_date=None,
+            color="#a855f7",
+            counts_as_unavailable=False,
+            teams=[(WINTERTHUR, "Analytical Lab")],
+        ),
     ]
 
     d.vacations = [
