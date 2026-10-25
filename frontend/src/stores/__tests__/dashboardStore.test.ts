@@ -168,9 +168,9 @@ describe('open', () => {
   });
 
   it('keeps a widget error as the widget’s own result', async () => {
-    api.data.mockResolvedValue({ widgets: { 11: { error: 'This widget needs the Staff view permission' } }, loaded_at: 'x' });
+    api.data.mockResolvedValue({ widgets: { 11: { error: 'This widget needs the Staff & Calendar view permission' } }, loaded_at: 'x' });
     await useDashboardStore.getState().open(1);
-    expect(useDashboardStore.getState().data[11]).toEqual({ error: 'This widget needs the Staff view permission' });
+    expect(useDashboardStore.getState().data[11]).toEqual({ error: 'This widget needs the Staff & Calendar view permission' });
   });
 
   it('clears the previous dashboard while another one opens', async () => {

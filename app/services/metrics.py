@@ -548,7 +548,7 @@ FAMILY_FILTER_NEEDS: dict[tuple[str, str], str] = {
 # ``archived: include | only`` needs this key.
 ARCHIVED_NEEDS = "views.archived"
 PERMISSION_NAMES: dict[str, str] = {
-    "views.staff": "Staff",
+    "views.staff": "Staff & Calendar",
     "views.equipment": "Equipment",
     "views.archived": "Archived",
     "absences.view_others": "Absences",

@@ -1190,7 +1190,7 @@ async def test_query_refusals(authed_client, body, message):
         (
             {"views.dashboards", "views.archived"},
             {**BY_SITE, "dimensions": [{"kind": "person"}]},
-            "This widget needs the Staff view permission",
+            "This widget needs the Staff & Calendar view permission",
         ),
         (
             {"views.dashboards", "views.staff"},
@@ -1200,7 +1200,7 @@ async def test_query_refusals(authed_client, body, message):
         (
             {"views.dashboards", "views.archived"},
             {**BY_SITE, "filters": {**BY_SITE["filters"], "person_ids": [UMA]}},
-            "This widget needs the Staff view permission",
+            "This widget needs the Staff & Calendar view permission",
         ),
     ],
 )
@@ -1280,13 +1280,17 @@ async def test_data_answers_each_widget_from_one_load(authed_client):
     assert [(r["keys"][0]["label"], r["value"]) for r in good["rows"]] == [("Winterthur", 5)]
     assert widgets["Broken JSON"] == {"error": "This widget's query cannot be read"}
     assert "error" in widgets["Invalid"]
-    assert widgets["By person"] == {"error": "This widget needs the Staff view permission"}
+    assert widgets["By person"] == {
+        "error": "This widget needs the Staff & Calendar view permission"
+    }
     assert widgets["Archived only"] == {"error": "This widget needs the Archived view permission"}
     assert widgets["Gone field"] == {"error": "The project field of this widget no longer exists"}
     assert widgets["All time"]["rows"] == [{"keys": [], "value": 1}]
     assert widgets["Projects of a team"] == {"error": "The Teams filter does not apply to projects"}
     # A People filter needs the Staff view, like the person dimension.
-    assert widgets["One person"] == {"error": "This widget needs the Staff view permission"}
+    assert widgets["One person"] == {
+        "error": "This widget needs the Staff & Calendar view permission"
+    }
 
 
 async def test_data_with_every_permission(authed_client):
@@ -1508,7 +1512,7 @@ async def test_capacity_queries_need_the_staff_view(authed_client):
     for measure in ("utilisation", "capacity_days", "available_days", "people_over_capacity"):
         resp = await client.post("/api/dashboards/query", json={**BY_SITE, "measure": measure})
         assert resp.status_code == 422
-        assert resp.json()["detail"] == "This widget needs the Staff view permission"
+        assert resp.json()["detail"] == "This widget needs the Staff & Calendar view permission"
 
 
 async def test_capacity_query_refusals(authed_client):
@@ -1571,7 +1575,9 @@ async def test_data_without_the_staff_view_errors_the_capacity_widget(
     ) as loader:
         results = (await client.post(f"/api/dashboards/{capacity_board}/data")).json()["widgets"]
     widgets = {w["title"]: results[str(w["id"])] for w in await _widgets(client, capacity_board)}
-    assert widgets["Utilisation"] == {"error": "This widget needs the Staff view permission"}
+    assert widgets["Utilisation"] == {
+        "error": "This widget needs the Staff & Calendar view permission"
+    }
     assert [(r["keys"][0]["label"], r["value"]) for r in widgets["Booked"]["rows"]] == [
         ("Winterthur", 5)
     ]

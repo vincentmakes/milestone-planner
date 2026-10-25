@@ -88,8 +88,8 @@ describe('WidgetCard', () => {
   });
 
   it('shows the server’s error verbatim, alone', () => {
-    render(<WidgetCard widget={widget()} result={{ error: 'This widget needs the Staff view permission' }} />);
-    expect(screen.getByRole('alert')).toHaveTextContent('This widget needs the Staff view permission');
+    render(<WidgetCard widget={widget()} result={{ error: 'This widget needs the Staff & Calendar view permission' }} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('This widget needs the Staff & Calendar view permission');
     expect(screen.queryByTestId('echart')).not.toBeInTheDocument();
     // The unit still comes from the query
     expect(screen.getByText('weeks')).toBeInTheDocument();

@@ -1651,7 +1651,7 @@ def test_dimension_labels_name_the_field_and_the_grain():
         (
             Viewer(frozenset({"views.equipment", "views.archived"})),
             {"measure": "booked_days", "dimensions": [{"kind": "person"}]},
-            "This widget needs the Staff view permission",
+            "This widget needs the Staff & Calendar view permission",
         ),
         (
             Viewer(frozenset({"views.staff", "views.equipment"})),
@@ -2200,7 +2200,8 @@ def test_the_absences_refusal_names_the_permission():
         == "views.staff"
     )
     assert (
-        metrics.permission_message("views.staff") == "This widget needs the Staff view permission"
+        metrics.permission_message("views.staff")
+        == "This widget needs the Staff & Calendar view permission"
     )
 
 
@@ -2591,7 +2592,7 @@ def test_capacity_measures_need_the_staff_view(measure):
     assert metrics.missing_permission(query, viewer) == "views.staff"
     with pytest.raises(MetricError) as caught:
         aggregate(facts(capacity=[person_capacity()]), query, viewer=viewer)
-    assert caught.value.message == "This widget needs the Staff view permission"
+    assert caught.value.message == "This widget needs the Staff & Calendar view permission"
     assert metrics.measure_families(measure)[0] == "capacity"
 
 
