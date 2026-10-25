@@ -30,6 +30,8 @@
  *   - `pin` (a click): stays until a second click, Escape, an outside
  *     mousedown or Tab out (`useDismissableOverlay`).
  * Escape returns focus to the cell without reopening the panel.
+ * The panel closes when its cells change (a zoom, a new range, new events
+ * without its cell): a hidden panel never comes back.
  *
  * Class names and data attributes avoid "row", "rows", "bar" and
  * `data-date`: the drag/resize hooks read every `[data-date]` in the document
@@ -142,6 +144,9 @@ export function TimelineMarkers({
       : null;
   const openRef = useRef(open);
   openRef.current = open;
+  // The raw state, for the timers: a panel hidden by a cell change still counts
+  const stateRef = useRef(openState);
+  stateRef.current = openState;
 
   const layerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -171,8 +176,10 @@ export function TimelineMarkers({
     (index: number, mode: OpenMode) => {
       cancelOpen();
       cancelClose();
+      const cell = cells[index];
+      if (!cell) return;
       openCellRef.current = cellRefs.current.get(index) ?? null;
-      setOpenState({ index, mode, dateStr: cells[index].dateStr });
+      setOpenState({ index, mode, dateStr: cell.dateStr });
     },
     [cells, cancelOpen, cancelClose]
   );
@@ -181,9 +188,27 @@ export function TimelineMarkers({
     cancelClose();
     closeTimer.current = setTimeout(() => {
       closeTimer.current = null;
-      if (openRef.current?.mode === 'hover') setOpenState(null);
+      if (stateRef.current?.mode === 'hover') setOpenState(null);
     }, HOVER_DELAY);
   }, [cancelClose]);
+
+  // A panel of other cells (zoom, range, events changed) closes for good
+  // instead of hiding until its cell comes back; a hover intent towards a
+  // cell of the old cells is dropped.
+  const stale = openState !== null && open === null;
+  useEffect(() => {
+    if (stale) close();
+  }, [stale, close]);
+  const shownCells = useRef(cells);
+  const shownMode = useRef(viewMode);
+  useEffect(() => {
+    if (shownCells.current === cells && shownMode.current === viewMode) return;
+    const zoomed = shownMode.current !== viewMode;
+    shownCells.current = cells;
+    shownMode.current = viewMode;
+    if (zoomed) close();
+    else cancelOpen();
+  }, [cells, viewMode, close, cancelOpen]);
 
   // Escape returns focus to the cell; that focus must not reopen the panel.
   // The hook focuses synchronously right after onClose, so the flag is cleared

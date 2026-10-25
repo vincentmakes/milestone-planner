@@ -458,6 +458,69 @@ describe('TimelineMarkers — the panel', () => {
     expect(dialog()).toBeNull();
   });
 
+  const strip = (mode: ViewMode) => (
+    <div data-testid="scroller">
+      <button type="button">Outside</button>
+      <TimelineMarkers cells={cellsFor(mode)} cellWidth={WIDTH} viewMode={mode} siteId={1} />
+    </div>
+  );
+
+  it('closes a pinned panel for good on a zoom change: it does not return at the old zoom', () => {
+    const { hit, indexOf, rerender } = renderMarkers();
+    fireEvent.click(hit(indexOf(EASTER)));
+    expect(dialog()).not.toBeNull();
+    rerender(strip('quarter'));
+    expect(dialog()).toBeNull();
+    rerender(strip('month'));
+    expect(dialog()).toBeNull();
+    expect(hit(indexOf(EASTER))).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('closes a hover panel whose cells changed before its close timer fired', () => {
+    vi.useFakeTimers();
+    const { hit, indexOf, rerender } = renderMarkers();
+    const cell = hit(indexOf(EASTER));
+    fireEvent.mouseEnter(cell);
+    advance(150);
+    expect(dialog()).not.toBeNull();
+    fireEvent.mouseLeave(cell);
+    rerender(strip('quarter'));
+    advance(500);
+    rerender(strip('month'));
+    expect(dialog()).toBeNull();
+  });
+
+  it('closes when new cells of the same zoom no longer hold its cell, and drops a pending hover', () => {
+    vi.useFakeTimers();
+    const { hit, indexOf, rerender } = renderMarkers();
+    fireEvent.click(hit(indexOf(EASTER)));
+    // The same zoom, a range starting a week later: Easter is at another index
+    const later = cellsFor('month').slice(7);
+    const at = (cells: TimelineCell[]) => (
+      <div data-testid="scroller">
+        <TimelineMarkers cells={cells} cellWidth={WIDTH} viewMode="month" siteId={1} />
+      </div>
+    );
+    expect(later.findIndex((c) => c.dateStr === EASTER)).not.toBe(indexOf(EASTER));
+    rerender(at(later));
+    expect(dialog()).toBeNull();
+    rerender(at(cellsFor('month')));
+    expect(dialog()).toBeNull();
+
+    // A hover intent started on the old cells opens nothing once they change
+    fireEvent.mouseEnter(hit(indexOf('2026-04-20')));
+    rerender(at([...cellsFor('month')]));
+    advance(500);
+    expect(dialog()).toBeNull();
+  });
+
+  it('keeps a panel whose cells were regenerated with its cell in place', () => {
+    const { hit, indexOf, rerender } = renderMarkers();
+    fireEvent.click(hit(indexOf(EASTER)));
+    rerender(strip('month'));
+    expect(dialog()).not.toBeNull();
+  });
+
   it('clears its timers on unmount', () => {
     vi.useFakeTimers();
     const { hit, indexOf, unmount } = renderMarkers();

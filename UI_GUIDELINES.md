@@ -807,7 +807,8 @@ from the inline `project.tags[].color`, which is stale during What-If.
   hover opens it after 150 ms and closes it 150 ms after the pointer leaves cell and panel (or
   when the timeline scrolls); focus opens it; a click / tap pins it, a second click closes;
   Escape, an outside mousedown and Tab out close any mode through `useDismissableOverlay`, and
-  Escape does not reopen on the returned focus. An event name is a ghost `sm` Button to Settings
+  Escape does not reopen on the returned focus. A change of cells (a zoom, a new range, its
+  cell's events gone) closes the panel for good — it never reappears when the cells come back. An event name is a ghost `sm` Button to Settings
   for `company_events.manage` (plain text otherwise, with the What-If reason as its title — never
   a disabled button). Its DOM uses no `data-date` and no class or attribute containing `row` /
   `bar` (drag, resize and `DependencyLayer` query those document-wide). Never add a per-view
