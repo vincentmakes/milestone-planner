@@ -6,6 +6,7 @@ The full contributing guide — development setup, coding standards, testing, an
 
 - [Contributing guide](https://docs-milestone.verdet.me/developer-guide/contributing/) (source: [`docs/developer-guide/contributing.md`](docs/developer-guide/contributing.md))
 - [Local development](https://docs-milestone.verdet.me/developer-guide/local-development/)
+- [Working with AI agents](https://docs-milestone.verdet.me/developer-guide/ai-workflow/) (source: [`docs/developer-guide/ai-workflow.md`](docs/developer-guide/ai-workflow.md))
 
 Contributions are accepted under the project's [FSL-1.1-MIT license](LICENSE) — see [Licensing of Contributions](https://docs-milestone.verdet.me/developer-guide/contributing/#licensing-of-contributions).
 

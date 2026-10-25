@@ -20,6 +20,7 @@ Rules live here, the reference in the [Codebase Reference](#reference-pages) pag
 | Finding a file or a term | [Project Structure](docs/developer-guide/codebase-map.md#project-structure), [Terminology](docs/developer-guide/codebase-map.md#terminology) |
 | Env, Docker, CI | [Environment Variables](docs/developer-guide/codebase-map.md#environment-variables), [Docker & Deployment](docs/developer-guide/codebase-map.md#docker-deployment), [CI](docs/developer-guide/codebase-map.md#ci) |
 | Docs and screenshots | **Documentation (MkDocs)** below, [Documentation Screenshots](docs/developer-guide/conventions-in-depth.md#documentation-screenshots) |
+| Agents and rounds | [AI workflow](docs/developer-guide/ai-workflow.md) |
 
 ## Quick Start
 
@@ -319,5 +320,6 @@ Published in the developer guide under **Codebase Reference**:
 - [Real-time collaboration internals](docs/developer-guide/realtime.md)
 - [Frontend architecture](docs/developer-guide/frontend-architecture.md)
 - [Conventions in depth](docs/developer-guide/conventions-in-depth.md)
+- [Working with AI agents](docs/developer-guide/ai-workflow.md)
 - [`UI_GUIDELINES.md`](UI_GUIDELINES.md) — deserves the same split later (8 900 words, about 12k tokens per UI agent).
 - User-facing pages: the map in the **Documentation (MkDocs)** bullets above.

@@ -100,5 +100,6 @@ nav:
       - Real-Time Internals: developer-guide/realtime.md
       - Frontend Architecture: developer-guide/frontend-architecture.md
       - Conventions in Depth: developer-guide/conventions-in-depth.md
+      - Working with AI Agents: developer-guide/ai-workflow.md
     - Contributing: developer-guide/contributing.md
     - Release Notes: release-notes.md
