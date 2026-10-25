@@ -328,3 +328,8 @@
   padding-top: 0;
   border-top: none;
 }
+
+/* The SSO test result under the SSO tab actions */
+.ssoTestResult {
+  margin-top: 1rem;
+}

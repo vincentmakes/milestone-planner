@@ -19,7 +19,6 @@ import {
 } from '@/api';
 import type {
   OrganizationDetail,
-  OrganizationSSOTestCheck,
   OrganizationSSOTestResult,
   TenantSummary,
 } from '@/api/endpoints/admin';
@@ -28,18 +27,10 @@ import { useSubmitGuard } from '@/components/common/useSubmitGuard';
 import { ToggleSwitch } from '@/components/common/ToggleSwitch';
 import { confirmAction } from '@/utils/confirmDialog';
 import styles from './AdminModal.module.css';
-import { Icon, CloseIcon, CheckCircleIcon, CancelIcon, WarningIcon, HelpIcon } from '@/components/common/Icon';
-import type { IconComponent } from '@/components/common/Icon';
+import { Icon, CloseIcon } from '@/components/common/Icon';
+import { SSOTestResult } from '@/components/common/SSOTestResult';
 
 /** Roles a tenant `users.role` CHECK accepts -- the only valid SSO default roles */
-/** The mark in front of each SSO test check (manual checks: a question mark). */
-const SSO_CHECK_ICONS: Record<OrganizationSSOTestCheck['status'], IconComponent> = {
-  pass: CheckCircleIcon,
-  fail: CancelIcon,
-  warn: WarningIcon,
-  manual: HelpIcon,
-};
-
 const SSO_DEFAULT_ROLES = ['user', 'superuser', 'admin'] as const;
 type SsoDefaultRole = (typeof SSO_DEFAULT_ROLES)[number];
 
@@ -589,46 +580,7 @@ export function OrganizationDetailsModal({ organizationId, onClose, onRefresh }:
                   </span>
 
                   {ssoTestResult && (
-                    <div style={{
-                      marginTop: '1rem',
-                      padding: '1rem',
-                      background: 'var(--bg-tertiary)',
-                      borderRadius: 'var(--radius-md)',
-                      fontSize: '0.875rem',
-                    }}>
-                      <div style={{ fontWeight: 500, marginBottom: '0.75rem' }}>
-                        {ssoTestResult.summary}
-                      </div>
-                      {ssoTestResult.checks.map((check, index) => (
-                        <div
-                          key={`${check.name}-${index}`}
-                          style={{ display: 'flex', gap: '0.6rem', marginBottom: '0.6rem' }}
-                        >
-                          <span
-                            aria-hidden="true"
-                            style={{
-                              flexShrink: 0,
-                              color: check.status === 'pass' ? 'var(--accent-green)'
-                                : check.status === 'fail' ? 'var(--accent-red)'
-                                : 'var(--text-muted)',
-                            }}
-                          >
-                            <Icon icon={SSO_CHECK_ICONS[check.status] ?? HelpIcon} size={16} />
-                          </span>
-                          <div>
-                            <div style={{ fontWeight: 500 }}>
-                              {check.name}
-                              {check.code && (
-                                <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
-                                  {' '}({check.code})
-                                </span>
-                              )}
-                            </div>
-                            <div style={{ color: 'var(--text-muted)' }}>{check.message}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <SSOTestResult result={ssoTestResult} className={styles.ssoTestResult} />
                   )}
                 </div>
               )}
