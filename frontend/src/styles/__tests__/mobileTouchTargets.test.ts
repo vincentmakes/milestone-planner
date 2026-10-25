@@ -5,7 +5,8 @@
  * is the touch target (UI_GUIDELINES §7). Without the exclusion the dialog
  * checkboxes rendered as 44 px squares on an iPhone while staying 16 px on a
  * desktop. Listbox rows (`role="option"`: the picker dropdowns, the mention
- * and tag suggestions) get the 44 px height too.
+ * and tag suggestions) get the 44 px height too. The timeline strip's 12 px
+ * hit cells (`markerBadge`) stay out of the rule through its "Badge" exclusion.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -45,6 +46,24 @@ describe('mobile touch targets (global.css)', () => {
   it('gives the label row around a checkbox or radio the touch height instead', () => {
     expect(block).toMatch(/label:has\(> input\[type="checkbox"\]\)[\s\S]*?min-height: 44px/);
     expect(block).toMatch(/label:has\(> input\[type="radio"\]\)[\s\S]*?min-height: 44px/);
+  });
+
+  // The timeline strip's hit cells (TimelineMarkers) are 12 px tall over the
+  // top of the timeline body: a 44 px (or 40 px on touch) minimum would cover
+  // the bars of the first row and swallow their clicks and drags. The
+  // "Badge" substring of their class keeps them out of both rules.
+  it('leaves the timeline strip hit cells (markerBadge) at 12 px', () => {
+    const touchBlock = css.slice(css.indexOf('@media (hover: none) and (pointer: coarse)'));
+    const coarseRule = touchBlock.slice(0, touchBlock.indexOf('}'));
+    for (const rule of [touchRule!, coarseRule]) {
+      const buttonSelector = rule.split(',').find((sel) => sel.includes('button:not('));
+      expect(buttonSelector).toContain(':not([class*="Badge"])');
+    }
+    const markers = readFileSync(
+      join(__dirname, '..', '..', 'components', 'gantt', 'Timeline', 'TimelineMarkers.module.css'),
+      'utf8'
+    );
+    expect(markers).toMatch(/\.markerBadge\s*\{[^}]*\bheight: 12px;/);
   });
 
   it('gives listbox option rows the touch height, not a width', () => {

@@ -1,0 +1,185 @@
+/* TimelineMarkers — the holiday / company-event strip at the top of a
+   timeline body and its panel. No class here may contain "row", "rows" or
+   "bar" (the drag hooks and DependencyLayer select on those substrings). */
+
+.markerLayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 100;
+  pointer-events: none;
+}
+
+/* Bank holiday: lane 0 of a day cell */
+.holidayLine {
+  position: absolute;
+  top: 0;
+  height: 3px;
+  background: var(--accent-orange);
+  pointer-events: none;
+}
+
+/* One event run on its lane (top set inline); --event-color set inline */
+.band {
+  position: absolute;
+  height: 3px;
+  border-radius: 1.5px;
+  background: var(--event-color, var(--accent-red));
+  pointer-events: none;
+}
+
+/* A closure (staff unavailable): a thin outline on the band and the swatch */
+.band.closure,
+.swatch.closure {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 25%, transparent);
+}
+
+/* "+N" / count badge and the narrow-cell dot, at the cell's right edge */
+.pip {
+  position: absolute;
+  top: 1px;
+  transform: translateX(-100%);
+  pointer-events: none;
+}
+
+.pipCount {
+  box-sizing: border-box;
+  min-width: 10px;
+  height: 10px;
+  padding: 0 2px;
+  border-radius: 5px;
+  font-size: 9px;
+  line-height: 10px;
+  font-weight: var(--font-weight-semibold);
+  text-align: center;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+.pipDot {
+  top: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+/* Hit cell: transparent, the strip's 12 px (the bars start below it) */
+.markerBadge {
+  position: absolute;
+  top: 0;
+  height: 12px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  pointer-events: auto;
+  cursor: default;
+}
+
+.markerBadge:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -2px;
+}
+
+/* The panel (AnchoredPanel draws position and z-index) */
+.panel {
+  max-width: 320px;
+  min-width: 200px;
+  padding: 8px 10px;
+  gap: 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.panelTitle {
+  font-weight: var(--font-weight-semibold);
+}
+
+.panelCount {
+  font-weight: normal;
+  color: var(--text-secondary);
+}
+
+.holidayNote {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.holidaySwatch {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--accent-orange);
+}
+
+.eventList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.eventItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.swatch {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 2px;
+  background: var(--event-color, var(--accent-red));
+}
+
+.eventText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* The name as a ghost button: aligned with the plain-text form */
+.eventName {
+  height: auto;
+  min-height: 0;
+  padding: 0 4px;
+  margin-left: -4px;
+  text-align: left;
+  white-space: normal;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.eventNameText {
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.eventDates {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.eventTag {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
