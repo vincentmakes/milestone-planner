@@ -86,9 +86,9 @@
   background: rgba(249, 115, 22, 0.25);
 }
 
-/* Company events - red */
+/* Company events - the first event's colour (`--event-color`, set inline), red without one */
 .bgCell.eventBg {
-  background: rgba(239, 68, 68, 0.25);
+  background: color-mix(in srgb, var(--event-color, var(--accent-red)) 25%, transparent);
 }
 
 /* Today - blue */
@@ -131,7 +131,7 @@
 }
 
 .secondaryCell.eventText {
-  color: var(--accent-red);
+  color: var(--event-color, var(--accent-red));
 }
 
 .dayLabel {

@@ -8,6 +8,25 @@ import { useAppStore } from '@/stores/appStore';
 import type { TimelineCell, TimelineHeader as TimelineHeaderType } from '../utils';
 import styles from './TimelineHeader.module.css';
 
+/** `--event-color` for a cell whose first event has a colour */
+function eventColorStyle(cell: TimelineCell): React.CSSProperties | undefined {
+  return cell.companyEventColor
+    ? ({ ['--event-color' as string]: cell.companyEventColor } as React.CSSProperties)
+    : undefined;
+}
+
+/**
+ * The label cell's title: the holiday name first, then every event of the
+ * cell joined by " · ", with " (n events)" when there are several;
+ * `undefined` when the cell has neither.
+ */
+function headerCellTitle(cell: TimelineCell): string | undefined {
+  const names = cell.companyEvents.map((event) => event.name);
+  const parts = cell.isBankHoliday && cell.bankHolidayName ? [cell.bankHolidayName, ...names] : names;
+  if (parts.length === 0) return undefined;
+  return names.length > 1 ? `${parts.join(' · ')} (${names.length} events)` : parts.join(' · ');
+}
+
 interface TimelineHeaderProps {
   headers: {
     primary: TimelineHeaderType[];
@@ -78,7 +97,7 @@ export const TimelineHeader = memo(function TimelineHeader({
                   <div
                     key={`bg-${index}`}
                     className={`${styles.bgCell} ${bgClass}`}
-                    style={{ left: index * cellWidth, width: cellWidth }}
+                    style={{ left: index * cellWidth, width: cellWidth, ...eventColorStyle(cell) }}
                   />
                 );
               })}
@@ -107,18 +126,12 @@ export const TimelineHeader = memo(function TimelineHeader({
               textClass = styles.eventText;
             }
             
-            const tooltipText = cell.isBankHoliday 
-              ? cell.bankHolidayName 
-              : cell.isCompanyEvent 
-                ? cell.companyEventName 
-                : undefined;
-            
             return (
               <div
                 key={index}
                 className={`${styles.secondaryCell} ${textClass}`}
-                style={{ width: cellWidth }}
-                title={tooltipText}
+                style={{ width: cellWidth, ...eventColorStyle(cell) }}
+                title={headerCellTitle(cell)}
                 data-date={cell.dateStr}
                 data-date-end={cell.dateEnd || undefined}
               >
