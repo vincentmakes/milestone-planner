@@ -3,8 +3,9 @@
  * Displays the time period headers above the timeline: the period row, the
  * day / week / month labels, and the events row (`TimelineMarkers`: holiday
  * lines, company-event bands and their panel, at every zoom). The header is
- * `--timeline-header-total` high (23 + 28 + 14 px + the bottom border); the
- * left panes' headers read the same token, so their rows stay aligned.
+ * `--timeline-header-total` high (23 + 28 + 15 px: the events row draws the
+ * header's bottom border); the left panes' headers read the same token, so
+ * their rows stay aligned.
  */
 
 import { memo } from 'react';

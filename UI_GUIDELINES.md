@@ -790,11 +790,13 @@ from the inline `project.tags[].color`, which is stale during What-If.
   first); the header tints a cell in its first event's colour and names every event in its title.
 - **Event strip** (`gantt/Timeline/TimelineMarkers.tsx`) is the one holiday / event strip of
   all five timelines (Gantt, Staff, Equipment, Cross-site, Archived). `TimelineHeader` mounts
-  it in its third row, `eventsRow` (14 px: the 12 px strip, a 1 px top border, 1 px below), at
-  **every** zoom (only the background tints stay week / month), with the current site's id read
-  from `appStore` — never in a timeline body, where the bands and hit cells would sit on the
-  first row's bars. The header is `--timeline-header-total` (66 px: 23 + 28 + 14 + its 1 px
-  bottom border) high and every left pane's header reads that token (`ProjectPanel`, Staff,
+  it in its third row, `eventsRow` (15 px: the 12 px strip and 1 px below it, between a 1 px
+  top border and the header's 1 px bottom border, which the row draws itself so the line sits
+  right under the strip even when the custom-column spacer follows), at **every** zoom (only
+  the background tints stay week / month), with the current site's id read from `appStore` —
+  never in a timeline body, where the bands and hit cells would sit on the first row's bars.
+  The header is `--timeline-header-total` (66 px: 23 + 28 + 15) high and every left pane's
+  header reads that token (`ProjectPanel`, Staff,
   Equipment, Cross-site, Archived), so both panes shift together and the rows stay level. The
   Staff / Equipment panels embedded below the Gantt have no header of their own (they sit under
   the Gantt's).

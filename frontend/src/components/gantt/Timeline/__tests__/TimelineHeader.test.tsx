@@ -166,7 +166,7 @@ describe('TimelineHeader events row', () => {
     expect(within(screen.getByRole('dialog')).getByText('Teams: Analytical Lab')).toBeInTheDocument();
   });
 
-  it('sizes its rows to --timeline-header-total (23 + 28 + 14 + the 1 px border)', () => {
+  it('sizes its rows to --timeline-header-total (23 + 28 + 15, the events row ending on the border)', () => {
     const css = readFileSync(join(__dirname, '..', 'TimelineHeader.module.css'), 'utf8');
     const px = (selector: string, prop: string) => {
       const rule = css.match(new RegExp(`\\.${selector}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
@@ -174,8 +174,12 @@ describe('TimelineHeader events row', () => {
     };
     expect(px('primaryRow', 'height')).toBe(23);
     expect(px('secondaryRow', 'height')).toBe(28);
-    expect(px('eventsRow', 'height')).toBe(14);
-    expect(css).toMatch(/\.header\s*\{[^}]*border-bottom: 1px solid/);
-    expect(23 + 28 + 14 + 1).toBe(66);
+    expect(px('eventsRow', 'height')).toBe(15);
+    // The events row draws the bottom line itself, right under the strip
+    // (the custom-column spacer below it ends with its own border) …
+    expect(css).toMatch(/\.eventsRow\s*\{[^}]*border-bottom: 1px solid var\(--border-color\);/);
+    // … so the container has none: no double line, nothing grows
+    expect(css).not.toMatch(/\.header\s*\{[^}]*border-bottom/);
+    expect(23 + 28 + 15).toBe(66);
   });
 });
