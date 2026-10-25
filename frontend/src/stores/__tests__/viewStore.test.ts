@@ -628,3 +628,41 @@ describe('viewStore last dashboard (2.1.0)', () => {
     useViewStore.setState({ currentView: 'gantt' });
   });
 });
+
+describe('viewStore sidebar dashboards list (2.1.0)', () => {
+  const KEY = 'milestone-view-storage-v1';
+
+  beforeEach(() => {
+    localStorage.clear();
+    useViewStore.setState({ sidebarDashboardsExpanded: true });
+  });
+
+  it('is open by default and toggles', () => {
+    useViewStore.getState().resetView();
+    expect(useViewStore.getState().sidebarDashboardsExpanded).toBe(true);
+    useViewStore.getState().toggleSidebarDashboards();
+    expect(useViewStore.getState().sidebarDashboardsExpanded).toBe(false);
+    useViewStore.getState().toggleSidebarDashboards();
+    expect(useViewStore.getState().sidebarDashboardsExpanded).toBe(true);
+  });
+
+  it('survives a reload (partialize + merge round-trip)', async () => {
+    useViewStore.getState().toggleSidebarDashboards();
+    const raw = JSON.parse(localStorage.getItem(KEY) as string);
+    expect(raw.state.sidebarDashboardsExpanded).toBe(false);
+
+    useViewStore.setState({ sidebarDashboardsExpanded: true });
+    localStorage.setItem(KEY, JSON.stringify(raw));
+    await useViewStore.persist.rehydrate();
+    expect(useViewStore.getState().sidebarDashboardsExpanded).toBe(false);
+  });
+
+  it('keeps the default for a stored value that is not a boolean', async () => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({ state: { sidebarDashboardsExpanded: 'no' }, version: VIEW_STORE_VERSION })
+    );
+    await useViewStore.persist.rehydrate();
+    expect(useViewStore.getState().sidebarDashboardsExpanded).toBe(true);
+  });
+});

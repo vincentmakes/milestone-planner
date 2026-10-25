@@ -11,6 +11,7 @@ import { useViewStore } from '@/stores/viewStore';
 import { useWhatIfStore } from '@/stores/whatIfStore';
 import { resetAllStores } from '@/stores';
 import { useWorkStore } from '@/stores/workStore';
+import { useDashboardStore } from '@/stores/dashboardStore';
 import { whatIfUnavailableMessage } from '@/utils/whatIf';
 import { setViewLeaveGuard } from '@/utils/viewLeaveGuard';
 import { makeApprovalRequest, makeSite, makeUser } from '@/test/factories';
@@ -21,6 +22,8 @@ beforeEach(() => {
   resetAllStores();
   useViewStore.getState().resetView();
   useAppStore.setState({ sites: twoSites });
+  // The Dashboards entry would load its list (Navigation.dashboards.test.tsx covers that).
+  useDashboardStore.setState({ listLoaded: true });
 });
 
 afterEach(async () => {
@@ -98,11 +101,21 @@ describe('Navigation views', () => {
     expect(button('My Work')!.querySelector('[data-testid="AssignmentIndOutlinedIcon"]')).not.toBeNull();
   });
 
-  it('lists Dashboards right after My Work, with the dashboard icon, and opens it', () => {
+  it('lists Dashboards right after Equipment, with the dashboard icon, and opens it', () => {
     useAppStore.setState({ currentUser: makeUser({ role: 'user', site_ids: [1, 2] }) });
     render(<Navigation />);
     const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'));
-    expect(labels.slice(2, 5)).toEqual(['My Work', 'Dashboards', 'Staff Overview']);
+    expect(labels).toEqual([
+      'Gantt Chart',
+      'Kanban Board',
+      'My Work',
+      'Staff Overview',
+      'Equipment',
+      'Dashboards',
+      'Hide dashboards',
+      'Cross-Site',
+      'Archived',
+    ]);
     const dashboards = button('Dashboards')!;
     expect(dashboards.querySelector('[data-testid="DashboardOutlinedIcon"]')).not.toBeNull();
     fireEvent.click(dashboards);

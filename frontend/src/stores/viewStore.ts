@@ -334,6 +334,8 @@ interface ViewState {
   // ---------------------------------------------
   sidebarCollapsed: boolean;
   resourcePanelCollapsed: boolean;
+  /** The sidebar's Dashboards entry lists the user's dashboards below it (2.1.0). Default open. */
+  sidebarDashboardsExpanded: boolean;
 
   // ---------------------------------------------
   // ACTIONS - View State
@@ -403,6 +405,8 @@ interface ViewState {
   toggleResourcePanel: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setResourcePanelCollapsed: (collapsed: boolean) => void;
+  /** Show / hide the dashboards listed under the sidebar's Dashboards entry. */
+  toggleSidebarDashboards: () => void;
 
   // ---------------------------------------------
   // ACTIONS - Reset
@@ -460,6 +464,7 @@ const initialViewState = {
   // UI layout
   sidebarCollapsed: false,
   resourcePanelCollapsed: false,
+  sidebarDashboardsExpanded: true,
 };
 
 // =============================================================================
@@ -826,6 +831,10 @@ export const useViewStore = create<ViewState>()(
 
       setResourcePanelCollapsed: (collapsed) => set({ resourcePanelCollapsed: collapsed }),
 
+      toggleSidebarDashboards: () => set((state) => ({
+        sidebarDashboardsExpanded: !state.sidebarDashboardsExpanded,
+      })),
+
       // -----------------------------------------
       // RESET
       // -----------------------------------------
@@ -852,6 +861,7 @@ export const useViewStore = create<ViewState>()(
         currentResourceTab: state.currentResourceTab,
         sidebarCollapsed: state.sidebarCollapsed,
         resourcePanelCollapsed: state.resourcePanelCollapsed,
+        sidebarDashboardsExpanded: state.sidebarDashboardsExpanded,
         showStaffOverview: state.showStaffOverview,
         showEquipmentOverview: state.showEquipmentOverview,
         kanbanProjectId: state.kanbanProjectId,
@@ -889,6 +899,10 @@ export const useViewStore = create<ViewState>()(
           currentResourceTab: (persisted?.currentResourceTab as ResourceTab) ?? currentState.currentResourceTab,
           sidebarCollapsed: (persisted?.sidebarCollapsed as boolean) ?? currentState.sidebarCollapsed,
           resourcePanelCollapsed: (persisted?.resourcePanelCollapsed as boolean) ?? currentState.resourcePanelCollapsed,
+          sidebarDashboardsExpanded:
+            typeof persisted?.sidebarDashboardsExpanded === 'boolean'
+              ? persisted.sidebarDashboardsExpanded
+              : currentState.sidebarDashboardsExpanded,
           showStaffOverview: (persisted?.showStaffOverview as boolean) ?? currentState.showStaffOverview,
           showEquipmentOverview: (persisted?.showEquipmentOverview as boolean) ?? currentState.showEquipmentOverview,
           // Every field added to partialize above MUST also be listed here

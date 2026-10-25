@@ -91,3 +91,121 @@
   padding: 0 0.25rem;
   line-height: 1rem;
 }
+
+/* Dashboards: the row (the view's button + the chevron) and the nested list
+   of the user's dashboards. No class here contains "Badge": the chevron and
+   the list buttons keep the phone-size 44 px touch targets. */
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.groupHead .navItem {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.chevron:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.chevron:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -2px;
+}
+
+.chevron svg {
+  transition: transform var(--transition-fast);
+}
+
+.chevron.expanded svg {
+  transform: rotate(90deg);
+}
+
+.subList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Indented to the row's label: its padding + the 20 px icon + the gap */
+.subItem {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.3125rem 0.5rem 0.3125rem calc(0.5rem + 20px + 0.625rem);
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  transition: all var(--transition-fast);
+}
+
+.subItem:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.subItem:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.subItem:disabled:hover {
+  color: var(--text-secondary);
+  background: transparent;
+}
+
+.subItem.active {
+  color: var(--accent-blue);
+  background: var(--accent-blue-alpha);
+}
+
+.subItem:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -2px;
+}
+
+.subLabel {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subEmpty {
+  padding: 0.3125rem 0.5rem 0.3125rem calc(0.5rem + 20px + 0.625rem);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}

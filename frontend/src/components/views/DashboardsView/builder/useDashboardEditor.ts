@@ -22,7 +22,8 @@
  *   clears the redo stack and one action stays one undo step).
  * - `cancel()` asks `Discard the changes to this dashboard?` when dirty;
  *   `confirmDiscard()` asks the same without leaving (switching dashboards,
- *   and the view's leave guard, registered while editing).
+ *   and the view's leave guard, registered while editing). Another dashboard
+ *   opening under the draft (the sidebar's list, after the guard) discards it.
  * - `setMeta(partial)`: the inline name / description fields of edit mode
  *   (any part of the meta).
  * - `save()` runs under `useSubmitGuard`: the store saves (POST for a new
@@ -215,7 +216,22 @@ export function useDashboardEditor(current: Dashboard | null): DashboardEditor {
   // Leaving the view while editing asks the same question.
   useEffect(() => (editing ? setViewLeaveGuard(confirmDiscard) : undefined), [editing, confirmDiscard]);
 
+  // The dashboard open when the draft began. Another one opening under the
+  // draft (the sidebar's list, once the leave guard agreed) ends edit mode:
+  // the draft never stays over a dashboard it was not made from.
+  const currentId = current?.id ?? null;
+  const currentIdRef = useRef(currentId);
+  currentIdRef.current = currentId;
+  const draftOfIdRef = useRef<number | null>(null);
+  const seenIdRef = useRef(currentId);
+  useEffect(() => {
+    const changed = currentId !== seenIdRef.current;
+    seenIdRef.current = currentId;
+    if (editing && changed && currentId !== null && currentId !== draftOfIdRef.current) discard();
+  }, [editing, currentId, discard]);
+
   const startNew = useCallback((meta: DashboardMeta) => {
+    draftOfIdRef.current = currentIdRef.current;
     setState(fresh({ ...meta, ...copyTargets(meta), widgets: [] }));
     setBaseline(null);
     setError(null);
@@ -225,6 +241,7 @@ export function useDashboardEditor(current: Dashboard | null): DashboardEditor {
     (dashboard?: Dashboard | null) => {
       const source = dashboard ?? current;
       if (!source) return;
+      draftOfIdRef.current = source.id;
       const next = draftOf(source);
       setState(fresh(next));
       setBaseline(stableKey(comparableDraft(next)));

@@ -909,6 +909,14 @@ controls (`Header.layout.test.ts` pins these rules; jsdom does no layout).
 - The sidebar's **My Work** entry carries a count badge (`workStore.openCount`, the approvals to
   decide, capped at `99+`); the count is part of the button's accessible name ("My Work, 1
   approval to decide") and the badge is `aria-hidden`.
+- The sidebar's **Dashboards** entry (below Equipment) is a row: the view's button plus a 24 px
+  chevron button (`ChevronRightIcon`, rotated 90° when open, `aria-expanded` / `aria-controls`,
+  "Show dashboards" / "Hide dashboards"), over a nested `<ul aria-label="Dashboards">` of the
+  user's dashboards — `--font-size-xs` buttons indented to the row's label, ellipsis with the full
+  name as `title`, the open one in the active style with `aria-current="page"`, disabled with the
+  row's reason during What-If, a muted "No dashboards" when the list is empty. No class there
+  contains "Badge", so the phone-size touch rule applies to both buttons. The icons-only sidebar
+  shows the row alone.
 - `ActivityFeed` is a polite live region (`role="status" aria-live="polite"`) of bottom-right
   toasts.
 

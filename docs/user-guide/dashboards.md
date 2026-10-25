@@ -8,7 +8,9 @@ Open it from **Dashboards** in the sidebar, just below My Work. The entry needs 
 
 ## Opening a Dashboard
 
-The **Dashboard** picker at the top lists every dashboard you may open, in this order:
+**Dashboards** in the sidebar, below **Equipment**, opens the view on the dashboard you looked at last. Under it the sidebar lists every dashboard you can open — click one to go straight to it; the one on screen is highlighted. The arrow at the right of the **Dashboards** entry folds the list away or shows it again, and Milestone remembers your choice in this browser. With the sidebar reduced to icons, only the **Dashboards** entry is shown.
+
+Inside the view, the **Dashboard** picker at the top lists them too, in this order:
 
 | Label | Which dashboards |
 |-------|------------------|

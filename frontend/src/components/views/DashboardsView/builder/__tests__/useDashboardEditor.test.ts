@@ -470,6 +470,49 @@ describe('useDashboardEditor', () => {
     expect(viewLeaveGuard()).toBeNull();
   });
 
+  it('ends edit mode when another dashboard opens under the draft (the sidebar list)', () => {
+    const hook = editing(dashboard({ id: 7 }));
+    act(() => hook.result.current.setMeta({ name: 'Renamed' }));
+    // A fresh copy of the same dashboard (a live reload): the draft stays
+    hook.rerender({ c: dashboard({ id: 7 }) });
+    expect(hook.result.current.editing).toBe(true);
+    // Switching: the store clears the open dashboard first, the draft stays
+    hook.rerender({ c: null });
+    expect(hook.result.current.editing).toBe(true);
+    hook.rerender({ c: dashboard({ id: 9, name: 'Other' }) });
+    expect(hook.result.current.editing).toBe(false);
+    expect(hook.result.current.draft).toBeNull();
+    expect(useDashboardStore.getState().editing).toBe(false);
+    expect(viewLeaveGuard()).toBeNull();
+  });
+
+  it('keeps a draft started on a dashboard that is not open yet (a copy) once it opens', () => {
+    const hook = renderHook(({ c }) => useDashboardEditor(c), { initialProps: { c: dashboard({ id: 7 }) } });
+    act(() => hook.result.current.startEdit(dashboard({ id: 12, name: 'Copy of Team plan' })));
+    hook.rerender({ c: dashboard({ id: 12, name: 'Copy of Team plan' }) });
+    expect(hook.result.current.editing).toBe(true);
+    expect(hook.result.current.draft?.id).toBe(12);
+  });
+
+  it('ends a new draft when another dashboard opens, not before', () => {
+    const hook = renderHook(({ c }) => useDashboardEditor(c), { initialProps: { c: dashboard({ id: 7 }) } });
+    act(() =>
+      hook.result.current.startNew({
+        name: 'Mine',
+        description: null,
+        visibility: 'private',
+        role_ids: [],
+        site_ids: [],
+        team_ids: [],
+        user_ids: [],
+      })
+    );
+    hook.rerender({ c: dashboard({ id: 7 }) });
+    expect(hook.result.current.editing).toBe(true);
+    hook.rerender({ c: dashboard({ id: 9 }) });
+    expect(hook.result.current.editing).toBe(false);
+  });
+
   it('words an unknown failure plainly', () => {
     expect(plainError(new Error('a, body: b'), 'x')).toBe('a, b');
     expect(plainError(new Error('absolute: A period can cover at most five years'), 'x')).toBe(
