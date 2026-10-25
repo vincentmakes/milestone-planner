@@ -521,6 +521,100 @@ describe('TimelineMarkers — the panel', () => {
     expect(dialog()).not.toBeNull();
   });
 
+  it('opens no hover panel while a mouse button is held (a bar dragged through the strip)', () => {
+    vi.useFakeTimers();
+    const { hit, indexOf } = renderMarkers();
+    fireEvent.mouseEnter(hit(indexOf(EASTER)), { buttons: 1 });
+    advance(500);
+    expect(dialog()).toBeNull();
+  });
+
+  it.each([
+    ['a bar drag', () => useUIStore.getState().startDrag('phase', 1)],
+    ['a bar resize', () => useUIStore.getState().startResize('phase', 1, 'right')],
+    ['a resource drag (body class)', () => document.body.classList.add('resource-dragging')],
+  ])('opens no hover or focus panel during %s, and a drag closes an open one', (_, begin) => {
+    vi.useFakeTimers();
+    const { hit, indexOf } = renderMarkers();
+    const cell = hit(indexOf(EASTER));
+    act(() => begin());
+    try {
+      fireEvent.mouseEnter(cell);
+      advance(500);
+      expect(dialog()).toBeNull();
+      act(() => cell.focus());
+      expect(dialog()).toBeNull();
+    } finally {
+      act(() => {
+        useUIStore.getState().endDrag();
+        useUIStore.getState().endResize();
+        document.body.classList.remove('resource-dragging');
+      });
+      act(() => cell.blur());
+    }
+
+    // Open after the drag; a drag starting during the hover intent opens nothing
+    fireEvent.mouseLeave(cell);
+    fireEvent.mouseEnter(cell);
+    act(() => useUIStore.getState().startDrag('phase', 1));
+    advance(500);
+    expect(dialog()).toBeNull();
+    act(() => useUIStore.getState().endDrag());
+
+    // A hover panel open when a drag starts closes; a pinned one stays
+    fireEvent.mouseLeave(cell);
+    fireEvent.mouseEnter(cell);
+    advance(150);
+    expect(dialog()).not.toBeNull();
+    act(() => useUIStore.getState().startDrag('phase', 1));
+    expect(dialog()).toBeNull();
+    act(() => useUIStore.getState().endDrag());
+    fireEvent.click(cell);
+    act(() => useUIStore.getState().startDrag('phase', 1));
+    expect(dialog()).not.toBeNull();
+    act(() => useUIStore.getState().endDrag());
+  });
+
+  it('closes a hover panel on Escape without moving focus or stopping the key', () => {
+    vi.useFakeTimers();
+    const { hit, indexOf } = renderMarkers();
+    const outside = screen.getByRole('button', { name: 'Outside' });
+    act(() => outside.focus());
+    const seen = vi.fn();
+    window.addEventListener('keydown', seen);
+    try {
+      fireEvent.mouseEnter(hit(indexOf(EASTER)));
+      advance(150);
+      expect(dialog()).not.toBeNull();
+      fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+      expect(dialog()).toBeNull();
+      expect(document.activeElement).toBe(outside);
+      // Dependency linking / phantom mode still get the key
+      expect(seen).toHaveBeenCalledWith(expect.objectContaining({ key: 'Escape' }));
+    } finally {
+      window.removeEventListener('keydown', seen);
+    }
+  });
+
+  it('a pinned panel still takes Escape and returns focus to its cell', async () => {
+    const { hit, indexOf } = renderMarkers();
+    const cell = hit(indexOf(EASTER));
+    const outside = screen.getByRole('button', { name: 'Outside' });
+    fireEvent.click(cell);
+    act(() => outside.focus());
+    const seen = vi.fn();
+    window.addEventListener('keydown', seen);
+    try {
+      fireEvent.keyDown(outside, { key: 'Escape' });
+      await flushMicrotasks();
+      expect(dialog()).toBeNull();
+      expect(document.activeElement).toBe(cell);
+      expect(seen).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', seen);
+    }
+  });
+
   it('clears its timers on unmount', () => {
     vi.useFakeTimers();
     const { hit, indexOf, unmount } = renderMarkers();

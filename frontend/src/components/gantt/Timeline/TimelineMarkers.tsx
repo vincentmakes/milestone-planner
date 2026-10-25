@@ -29,9 +29,12 @@
  *   - `focus`: closes when focus leaves the strip and the panel;
  *   - `pin` (a click): stays until a second click, Escape, an outside
  *     mousedown or Tab out (`useDismissableOverlay`).
- * Escape returns focus to the cell without reopening the panel.
+ * Escape on a focused or pinned panel returns focus to the cell without
+ * reopening the panel; on a hover panel it closes the panel and leaves focus
+ * and the key alone (dependency linking and phantom mode still see it).
  * The panel closes when its cells change (a zoom, a new range, new events
- * without its cell): a hidden panel never comes back.
+ * without its cell): a hidden panel never comes back. No hover or focus
+ * panel opens while a bar is dragged or resized.
  *
  * Class names and data attributes avoid "row", "rows", "bar" and
  * `data-date`: the drag/resize hooks read every `[data-date]` in the document
@@ -81,6 +84,14 @@ const HOVER_DELAY = 150;
 /** Lane pitch and the cell width below which a "+N" becomes a dot */
 const LANE_PITCH = 4;
 const PIP_MIN_CELL_WIDTH = 18;
+
+/** A drag, a resize or a resource drag is under way (no hover / focus panel then) */
+function dragInProgress(): boolean {
+  const ui = useUIStore.getState();
+  if (ui.isDragging || ui.isResizing || ui.resourceDrag.active) return true;
+  const body = document.body.classList;
+  return body.contains('resource-dragging') || body.contains('kanban-dragging');
+}
 
 function eventColorStyle(color: string | null | undefined): CSSProperties {
   return color ? ({ ['--event-color' as string]: color } as CSSProperties) : {};
@@ -210,6 +221,14 @@ export function TimelineMarkers({
     else cancelOpen();
   }, [cells, viewMode, close, cancelOpen]);
 
+  // A drag or a resize starting closes a hover or focus panel
+  const dragging = useUIStore((s) => s.isDragging || s.isResizing || s.resourceDrag.active);
+  useEffect(() => {
+    if (!dragging) return;
+    cancelOpen();
+    if (stateRef.current && stateRef.current.mode !== 'pin') close();
+  }, [dragging, cancelOpen, close]);
+
   // Escape returns focus to the cell; that focus must not reopen the panel.
   // The hook focuses synchronously right after onClose, so the flag is cleared
   // once the current event is done (an outside mousedown leaves it unused).
@@ -221,17 +240,28 @@ export function TimelineMarkers({
     close();
   }, [close]);
 
+  // A focused or pinned panel: Escape (focus back on the cell), outside
+  // mousedown, Tab out. A hover panel is the pointer's: it closes on leave,
+  // on scroll and on an Escape it neither stops nor answers with a focus move.
+  const hoverOpen = open?.mode === 'hover';
   const { onBlur } = useDismissableOverlay({
-    open: open !== null,
+    open: open !== null && !hoverOpen,
     onClose: onDismiss,
     wrapperRef: layerRef,
     triggerRef: openCellRef,
     panelRef,
   });
+  useEffect(() => {
+    if (!hoverOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [hoverOpen, close]);
 
   // A hover panel closes as soon as the timeline (any scrolling ancestor of
   // the strip) scrolls; a focused or pinned one follows its cell.
-  const hoverOpen = open?.mode === 'hover';
   useEffect(() => {
     if (!hoverOpen) return;
     const onScroll = (e: Event) => {
@@ -253,15 +283,17 @@ export function TimelineMarkers({
   );
 
   // --- hit-cell handlers ----------------------------------------------------
-  const onCellEnter = (index: number) => {
+  const onCellEnter = (index: number, e: ReactMouseEvent) => {
     cancelClose();
     const current = openRef.current;
     if (current?.mode === 'pin' || current?.index === index) return;
     cancelOpen();
+    // A bar dragged or resized through the strip (a button held) opens nothing
+    if (e.buttons !== 0 || dragInProgress()) return;
     openTimer.current = setTimeout(() => {
       openTimer.current = null;
       const latest = openRef.current;
-      if (latest?.mode === 'pin' || latest?.index === index) return;
+      if (latest?.mode === 'pin' || latest?.index === index || dragInProgress()) return;
       show(index, 'hover');
     }, HOVER_DELAY);
   };
@@ -278,6 +310,7 @@ export function TimelineMarkers({
     }
     const current = openRef.current;
     if (current?.index === index && current.mode === 'pin') return;
+    if (dragInProgress()) return;
     show(index, 'focus');
   };
 
@@ -436,7 +469,7 @@ export function TimelineMarkers({
             aria-haspopup="dialog"
             aria-expanded={isOpen}
             aria-controls={isOpen ? panelId : undefined}
-            onMouseEnter={() => onCellEnter(index)}
+            onMouseEnter={(e) => onCellEnter(index, e)}
             onMouseLeave={onCellLeave}
             onFocus={() => onCellFocus(index)}
             onClick={() => onCellClick(index)}
