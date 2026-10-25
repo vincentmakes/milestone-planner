@@ -152,8 +152,8 @@ describe('CrossSiteTimelineBody', () => {
     [{ date: '2026-08-01', name: 'National Day' }],
     new Set(['2026-08-05', '2026-08-06']),
     [
-      { date: '2026-08-05', name: 'Audit', color: '#ff0000' },
-      { date: '2026-08-06', name: 'Shutdown', counts_as_unavailable: true },
+      { id: 1, date: '2026-08-05', name: 'Audit', color: '#ff0000' },
+      { id: 2, date: '2026-08-06', name: 'Shutdown', counts_as_unavailable: true },
     ]
   );
   const rows: CrossSiteRow[] = [{ type: 'site', site: basel, isCurrentSite: false, projectCount: 0 }];

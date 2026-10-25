@@ -17,7 +17,7 @@ import {
   startOfQuarter,
 } from 'date-fns';
 import type { ViewMode } from '@/types';
-import { addDaysToDateString } from '@/utils/date';
+import { addDaysToDateString, formatLocalDate } from '@/utils/date';
 
 // =============================================================================
 // TYPES
@@ -33,10 +33,22 @@ export interface TimelineCell {
   isBankHoliday: boolean;
   isCustomHoliday: boolean;
   bankHolidayName?: string;
+  /**
+   * Day cells: the day is in `companyEventDates`. Span cells (quarter weeks,
+   * year months): at least one event overlaps the span.
+   */
   isCompanyEvent: boolean;
+  /** Name of the first of `companyEvents` */
   companyEventName?: string;
+  /** Colour of the first of `companyEvents` */
   companyEventColor?: string | null;
-  /** A whole-site closure (one not limited to teams) covers this day */
+  /**
+   * Every company event overlapping the cell's span (a day; a quarter week's
+   * Monday–Sunday; a year month's first to last day), in `compareCellEvents`
+   * order: whole-site closures, team-limited closures, plain events.
+   */
+  companyEvents: CellEvent[];
+  /** A whole-site closure (one not limited to teams) covers this day; always false on span cells */
   isSiteClosure: boolean;
   dayOfWeek: number;
   isFirstOfWeek: boolean;
@@ -46,13 +58,52 @@ export interface TimelineCell {
   yearLabel: string;
 }
 
-/** What a company event contributes to one day's cell */
+/** A company event as a timeline cell carries it */
+export interface CellEvent {
+  id: number;
+  name: string;
+  color: string | null;
+  /** First day, YYYY-MM-DD */
+  start: string;
+  /** Last day (inclusive), YYYY-MM-DD — the start for a one-day event */
+  end: string;
+  /** A site closure (`counts_as_unavailable`), whether limited to teams or not */
+  isClosure: boolean;
+  /** Teams the event is limited to (flat across its sites; empty = whole sites) */
+  teamIds: number[];
+}
+
+/** What company events contribute to one day's cell */
 interface EventInfo {
+  events: CellEvent[];
   name?: string;
   isEvent: boolean;
   color?: string | null;
   /** A covering event is a whole-site closure (not limited to teams) */
   isClosure: boolean;
+}
+
+/** Every event overlapping [from, to] (YYYY-MM-DD, inclusive), in cell order */
+type SpanEvents = (from: string, to: string) => CellEvent[];
+
+/** 0 whole-site closure, 1 team-limited closure, 2 plain event */
+function eventRank(event: CellEvent): number {
+  if (!event.isClosure) return 2;
+  return event.teamIds.length === 0 ? 0 : 1;
+}
+
+/**
+ * The order of a cell's events: whole-site closures, then team-limited
+ * closures, then plain events; within each, by start, then name, then id.
+ * Plain `<` string comparison (not `localeCompare`), so the order — and the
+ * strip's lanes built on it — is the same in every locale.
+ */
+export function compareCellEvents(a: CellEvent, b: CellEvent): number {
+  const rank = eventRank(a) - eventRank(b);
+  if (rank !== 0) return rank;
+  if (a.start !== b.start) return a.start < b.start ? -1 : 1;
+  if (a.name !== b.name) return a.name < b.name ? -1 : 1;
+  return a.id - b.id;
 }
 
 export interface TimelineHeader {
@@ -91,7 +142,7 @@ export function generateTimelineCells(
   bankHolidayDates: Set<string>,
   bankHolidays: Array<{ date: string; end_date?: string | null; name: string; is_custom?: boolean }>,
   companyEventDates: Set<string> = new Set(),
-  companyEvents: Array<{ date: string; end_date?: string | null; name: string; color?: string | null; counts_as_unavailable?: boolean; team_ids?: number[] }> = [],
+  companyEvents: Array<{ id: number; date: string; end_date?: string | null; name: string; color?: string | null; counts_as_unavailable?: boolean; team_ids?: number[] }> = [],
   showWeekends: boolean = true
 ): TimelineCell[] {
   const today = new Date();
@@ -114,24 +165,36 @@ export function generateTimelineCells(
     };
   };
   
+  // Normalised and sorted once: filtering keeps the order, so every cell's
+  // list is already in `compareCellEvents` order.
+  const cellEvents: CellEvent[] = companyEvents
+    .map((e) => ({
+      id: e.id,
+      name: e.name,
+      color: e.color ?? null,
+      start: normalizeDate(e.date),
+      end: normalizeDate(e.end_date || e.date),
+      isClosure: !!e.counts_as_unavailable,
+      teamIds: e.team_ids ?? [],
+    }))
+    .sort(compareCellEvents);
+
+  const getSpanEvents: SpanEvents = (from, to) => cellEvents.filter((e) => e.start <= to && e.end >= from);
+
   const getEventInfo = (date: Date): EventInfo => {
     const dateStr = format(date, 'yyyy-MM-dd');
-    // Find events that include this date (handles multi-day events); a
-    // whole-site closure wins over a plain event on the same day. A closure
-    // limited to teams stays a plain event here: the header cell is per day
-    // for the whole site, so it must not shade it as closed.
-    const covering = companyEvents.filter((e) => {
-      const startDate = normalizeDate(e.date);
-      const endDate = normalizeDate(e.end_date || e.date);
-      return dateStr >= startDate && dateStr <= endDate;
-    });
-    const siteClosure = covering.find((e) => e.counts_as_unavailable && !e.team_ids?.length);
-    const event = siteClosure ?? covering[0];
+    // Events that include this date (multi-day events too); a whole-site
+    // closure sorts first, so it names and colours the day. A closure limited
+    // to teams does not make `isClosure`: the cell is per day for the whole
+    // site, so it must not shade it as closed.
+    const covering = getSpanEvents(dateStr, dateStr);
+    const first = covering[0];
     return {
-      name: event?.name,
+      events: covering,
+      name: first?.name,
       isEvent: companyEventDates.has(dateStr),
-      color: event?.color,
-      isClosure: !!siteClosure,
+      color: first?.color,
+      isClosure: covering.some((e) => eventRank(e) === 0),
     };
   };
 
@@ -144,10 +207,10 @@ export function generateTimelineCells(
       cells = generateMonthViewCells(currentDate, today, bankHolidayDates, getHolidayInfo, getEventInfo);
       break;
     case 'quarter':
-      cells = generateQuarterViewCells(currentDate, today, bankHolidayDates, getHolidayInfo, getEventInfo);
+      cells = generateQuarterViewCells(currentDate, today, bankHolidayDates, getHolidayInfo, getEventInfo, getSpanEvents);
       break;
     case 'year':
-      cells = generateYearViewCells(currentDate, today, bankHolidayDates, getHolidayInfo, getEventInfo);
+      cells = generateYearViewCells(currentDate, getSpanEvents);
       break;
     default:
       return [];
@@ -216,14 +279,32 @@ function generateMonthViewCells(
 }
 
 /**
- * Quarter view: Shows weeks, spanning ~4 quarters
+ * Give a span cell (quarter week, year month) the events overlapping its
+ * span: `isCompanyEvent` = any, name and colour = the first, never
+ * `isSiteClosure`.
+ */
+function applySpanEvents(cell: TimelineCell, events: CellEvent[]): void {
+  cell.companyEvents = events;
+  cell.isCompanyEvent = events.length > 0;
+  cell.companyEventName = events[0]?.name;
+  cell.companyEventColor = events[0]?.color;
+  cell.isSiteClosure = false;
+}
+
+/**
+ * Quarter view: Shows weeks, spanning ~4 quarters.
+ *
+ * Holidays keep the first-day rule (`isBankHoliday` = the Monday is one), so
+ * the strip draws no holiday line on span cells; company events cover the
+ * whole week (`companyEvents`).
  */
 function generateQuarterViewCells(
   currentDate: Date,
   today: Date,
   bankHolidayDates: Set<string>,
   getHolidayInfo: (date: Date) => { name?: string; isCustom: boolean },
-  getEventInfo: (date: Date) => EventInfo
+  getEventInfo: (date: Date) => EventInfo,
+  getSpanEvents: SpanEvents
 ): TimelineCell[] {
   const cells: TimelineCell[] = [];
   const { before, after } = PERIODS_CONFIG.quarter;
@@ -245,6 +326,7 @@ function generateQuarterViewCells(
     cell.dateEnd = weekEnd;
     // Override isToday to check if today is within this week
     cell.isToday = isTodayInWeek;
+    applySpanEvents(cell, getSpanEvents(cell.dateStr, formatLocalDate(weekEnd)));
     cells.push(cell);
     current = addWeeks(current, 1);
   }
@@ -253,15 +335,10 @@ function generateQuarterViewCells(
 }
 
 /**
- * Year view: Shows months, spanning ~3 years
+ * Year view: Shows months, spanning ~3 years. No holiday information; company
+ * events cover the whole month (`companyEvents`).
  */
-function generateYearViewCells(
-  currentDate: Date,
-  _today: Date,
-  _bankHolidayDates: Set<string>,
-  _getHolidayInfo: (date: Date) => { name?: string; isCustom: boolean },
-  _getEventInfo: (date: Date) => EventInfo
-): TimelineCell[] {
+function generateYearViewCells(currentDate: Date, getSpanEvents: SpanEvents): TimelineCell[] {
   const cells: TimelineCell[] = [];
   const { before, after } = PERIODS_CONFIG.year;
 
@@ -273,7 +350,7 @@ function generateYearViewCells(
   for (let i = 0; i < totalMonths; i++) {
     const date = addMonths(startDate, i);
     // For year view, create cells with month labels
-    cells.push(createYearViewCell(date));
+    cells.push(createYearViewCell(date, getSpanEvents));
   }
 
   return cells;
@@ -282,17 +359,18 @@ function generateYearViewCells(
 /**
  * Create a single timeline cell for year view (monthly cells)
  */
-function createYearViewCell(
-  date: Date
-): TimelineCell {
+function createYearViewCell(date: Date, getSpanEvents: SpanEvents): TimelineCell {
   const dateStr = format(date, 'yyyy-MM-dd');
+  // The month's last day; no `dateEnd` on year cells (the drag code reads
+  // `data-date-end`, which only quarter weeks carry)
+  const monthEnd = addDaysToDateString(formatLocalDate(addMonths(date, 1)), -1);
   const dayOfWeek = date.getDay();
   const currentMonth = new Date();
   currentMonth.setHours(0, 0, 0, 0);
   const isCurrentMonth = date.getFullYear() === currentMonth.getFullYear() &&
                          date.getMonth() === currentMonth.getMonth();
 
-  return {
+  const cell: TimelineCell = {
     date,
     dateStr,
     label: format(date, 'MMM'), // Month abbreviation for year view
@@ -301,8 +379,8 @@ function createYearViewCell(
     isBankHoliday: false, // Not applicable for month-level cells
     isCustomHoliday: false, // Not applicable for month-level cells
     bankHolidayName: undefined,
-    isCompanyEvent: false, // Not applicable for month-level cells
-    companyEventName: undefined,
+    isCompanyEvent: false,
+    companyEvents: [],
     isSiteClosure: false,
     dayOfWeek,
     isFirstOfWeek: date.getDate() <= 7 && dayOfWeek === 1,
@@ -311,6 +389,8 @@ function createYearViewCell(
     monthLabel: format(date, 'MMM'),
     yearLabel: format(date, 'yyyy'),
   };
+  applySpanEvents(cell, getSpanEvents(dateStr, monthEnd));
+  return cell;
 }
 
 /**
@@ -340,6 +420,7 @@ function createCell(
     isCompanyEvent: eventInfo.isEvent,
     companyEventName: eventInfo.name,
     companyEventColor: eventInfo.color,
+    companyEvents: eventInfo.events,
     isSiteClosure: eventInfo.isEvent && eventInfo.isClosure,
     dayOfWeek,
     isFirstOfWeek: dayOfWeek === 1, // Monday

@@ -9,7 +9,7 @@ export {
   findCellIndex,
 } from './timeline';
 
-export type { TimelineCell, TimelineHeader } from './timeline';
+export type { CellEvent, TimelineCell, TimelineHeader } from './timeline';
 
 export {
   extractDependencies,
