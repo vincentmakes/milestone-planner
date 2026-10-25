@@ -11,3 +11,7 @@
 .message p + p {
   margin-top: 0.75rem;
 }
+
+.word {
+  margin-top: 1rem;
+}

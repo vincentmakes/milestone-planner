@@ -180,4 +180,78 @@ describe('ConfirmDialog', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(useUIStore.getState().openModalCount).toBe(0);
   });
+
+  describe('with a word to type', () => {
+    const typed = () => screen.getByLabelText('Type CHANGE to confirm') as HTMLInputElement;
+    const askWord = () =>
+      ask({ message: 'Change SSO?', confirmLabel: 'Save changes', destructive: true, confirmWord: 'CHANGE' });
+
+    it('keeps the confirm button disabled until the word is typed', async () => {
+      render(<ConfirmDialog />);
+      const answer = askWord();
+      const confirm = screen.getByRole('button', { name: 'Save changes' });
+      expect(confirm).toBeDisabled();
+
+      fireEvent.change(typed(), { target: { value: 'change' } });
+      expect(confirm).toBeDisabled(); // exact case
+      fireEvent.click(confirm);
+      expect(useConfirmStore.getState().queue).toHaveLength(1);
+
+      fireEvent.change(typed(), { target: { value: ' CHANGE ' } });
+      expect(confirm).toBeEnabled();
+      fireEvent.click(confirm);
+      await expect(answer).resolves.toBe(true);
+    });
+
+    it('starts with focus in the field and turns off autocomplete', () => {
+      render(<ConfirmDialog />);
+      void askWord();
+      expect(typed()).toHaveFocus();
+      expect(typed()).toHaveAttribute('autocomplete', 'off');
+    });
+
+    it('confirms on Enter only once the word matches', async () => {
+      render(<ConfirmDialog />);
+      const answer = askWord();
+      fireEvent.keyDown(typed(), { key: 'Enter' });
+      expect(useConfirmStore.getState().queue).toHaveLength(1);
+
+      fireEvent.change(typed(), { target: { value: 'CHANGE' } });
+      fireEvent.keyDown(typed(), { key: 'a' });
+      expect(useConfirmStore.getState().queue).toHaveLength(1);
+      fireEvent.keyDown(typed(), { key: 'Enter', isComposing: true });
+      expect(useConfirmStore.getState().queue).toHaveLength(1);
+      fireEvent.keyDown(typed(), { key: 'Enter' });
+      await expect(answer).resolves.toBe(true);
+    });
+
+    it('still resolves false on Cancel', async () => {
+      render(<ConfirmDialog />);
+      const answer = askWord();
+      fireEvent.change(typed(), { target: { value: 'CHANGE' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      await expect(answer).resolves.toBe(false);
+    });
+
+    it('opens the next queued request with an empty field', async () => {
+      render(<ConfirmDialog />);
+      const first = askWord();
+      const second = askWord();
+      fireEvent.change(typed(), { target: { value: 'CHANGE' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+      await expect(first).resolves.toBe(true);
+
+      expect(typed()).toHaveValue('');
+      expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      await expect(second).resolves.toBe(false);
+    });
+
+    it('shows no field without a word', () => {
+      render(<ConfirmDialog />);
+      void ask({ message: 'Go?' });
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled();
+    });
+  });
 });
