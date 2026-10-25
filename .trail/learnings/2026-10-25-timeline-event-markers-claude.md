@@ -19,6 +19,7 @@ touches:
   - frontend/src/components/views/ArchivedView/TimelineRow.tsx
   - frontend/src/styles/__tests__/mobileTouchTargets.test.ts
   - app/scripts/demo_data.py
+  - tests/test_demo_data.py
 ---
 
 ## Decided
@@ -37,6 +38,6 @@ touches:
 - A left pane next to a timeline must size its header with `var(--timeline-header-total)`, never a pixel value: a new header row means changing the token (and `timelineHeaderHeight.test.ts`), not five stylesheets. `StaffView.module.css`'s `.staffRow { min-height: 52px }` is a staff row, not a header (the inline row height wins) — it is not part of the token.
 - The Staff / Equipment panels embedded below the Gantt render no `TimelineHeader` (a 36 px tinted spacer instead), so they have no strip: the Gantt's header strip above covers them.
 - The strip's DOM must hold no `data-date` and no class / attribute containing `row` or `bar`: `useDragAndDrop` / `useResize` read every `[data-date]` in the document and `DependencyLayer` takes the first `[class*="rows"]`.
-- Lane order follows the cell order, so on the demo's ISO-audit day the lanes read amber (audit, starts first), violet ("Instrument calibration day"), teal ("Lab safety walk-through") — alphabetical within the plain events, not the order they were created in.
-- The Settings event form offers the theme swatches only (`ColorSwatchPicker` without `allowCustom`): the demo's `#14b8a6` / `#a855f7` cannot be picked there; on the live demo they were created through Settings with the nearest swatch, then set exactly through `PUT /events/{id}` (the endpoint the form saves with).
+- Lane order follows the cell order, so on the demo's ISO-audit day the lanes read amber (audit, starts first), purple ("Instrument calibration day"), cyan ("Lab safety walk-through") — alphabetical within the plain events, not the order they were created in.
+- The Settings event form offers the seven event swatches only (`ColorSwatchPicker` without `allowCustom`, `EVENT_COLOR_SWATCHES`): seed event colours from that list (the demo's two stacked events are Cyan `#06b6d4` and Purple `#8b5cf6`, `test_demo_data.py` reads the list), or an edit through Settings silently changes them. The round-5 seed used `#14b8a6` / `#a855f7`, which no swatch matches.
 - At 640 px the Gantt's project panel plus custom columns is wider than the viewport, so the Gantt timeline is off-screen on a phone; the phone checks of the strip ran on the Staff Overview. At ≤ 640 px the panel's name buttons take the global 44 px height, so the panel grows taller (intended: they are touch targets).

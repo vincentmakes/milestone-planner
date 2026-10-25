@@ -14,6 +14,7 @@ shares one of its teams.
 
 import re
 from datetime import date, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -37,6 +38,9 @@ from app.services.permissions import (
 )
 
 TODAY = date(2026, 10, 17)
+EVENT_SWATCHES_TS = (
+    Path(__file__).resolve().parent.parent / "frontend" / "src" / "utils" / "colorSwatches.ts"
+)
 
 
 @pytest.fixture(scope="module")
@@ -471,15 +475,24 @@ def test_three_events_share_the_iso_audits_first_day(demo: DemoData):
         assert ev["end_date"] is None
         assert ev["sites"] == ["Winterthur"]
         assert ev["counts_as_unavailable"] is False
-    assert (walk["color"], walk["teams"]) == ("#14b8a6", [])
+    assert (walk["color"], walk["teams"]) == ("#06b6d4", [])
     assert (calibration["color"], calibration["teams"]) == (
-        "#a855f7",
+        "#8b5cf6",
         [("Winterthur", "Analytical Lab")],
     )
-    # Three distinct colours, none of them a team colour
-    team_colors = {t["color"] for t in demo.teams if t.get("color")}
+    # Three distinct colours, each a swatch of the Settings event form
+    # (EVENT_COLOR_SWATCHES in frontend/src/utils/colorSwatches.ts), none of
+    # them the colour of a team at their site
+    event_swatches = set(
+        re.findall(
+            r"value: '(#[0-9a-f]{6})'",
+            EVENT_SWATCHES_TS.read_text().split("EVENT_COLOR_SWATCHES", 1)[1].split("];", 1)[0],
+        )
+    )
+    assert len(event_swatches) == 7
+    team_colors = {t["color"] for t in demo.teams if t.get("color") and t["site"] == "Winterthur"}
     colors = {audit["color"], walk["color"], calibration["color"]}
-    assert len(colors) == 3 and not colors & team_colors
+    assert len(colors) == 3 and colors <= event_swatches and not colors & team_colors
 
 
 def test_projects_with_a_team_limited_tag_share_one_of_its_teams(demo: DemoData):

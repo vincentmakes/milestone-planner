@@ -1011,13 +1011,16 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             teams=[(FRANKFURT, "Formulation")],
         ),
         # Two more on the audit's first day, so the timelines show several
-        # events stacked on one day (and a team-limited one among them).
+        # events stacked on one day (and a team-limited one among them). Their
+        # colours are swatches of the Settings event form (Cyan, Purple), so
+        # the demo can be edited there without losing them, and neither is the
+        # colour of a Winterthur team.
         dict(
             name="Lab safety walk-through",
             sites=[WINTERTHUR],
             date=today + day(12),
             end_date=None,
-            color="#14b8a6",
+            color="#06b6d4",
             counts_as_unavailable=False,
             teams=[],
         ),
@@ -1026,7 +1029,7 @@ def build_demo(  # noqa: PLR0915 — one table after another, by design
             sites=[WINTERTHUR],
             date=today + day(12),
             end_date=None,
-            color="#a855f7",
+            color="#8b5cf6",
             counts_as_unavailable=False,
             teams=[(WINTERTHUR, "Analytical Lab")],
         ),
