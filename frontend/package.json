@@ -14,7 +14,9 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:changed": "vitest run --changed",
+    "test:related": "vitest related --run"
   },
   "dependencies": {
     "@emotion/cache": "11.14.0",

@@ -126,11 +126,17 @@ npm test              # Watch mode
 npx vitest run        # Single run
 npm run test:coverage # Single run with coverage (fails below the floors in vitest.config.ts)
 
+# Targeted runs while iterating (single run, no watch mode)
+npm run test:related -- src/utils/metrics.ts   # tests that import these source files
+npm run test:changed -- origin/main            # tests affected by files changed since a ref
+
 # Coverage of the lines your branch changes (run from frontend/)
 diff-cover coverage/lcov.info --compare-branch=origin/main
 ```
 
 Compare against the branch your pull request targets — `origin/main` in most cases.
+
+`test:related` and `test:changed` are Vitest's dependency-aware runs, for use while iterating; run the full suite once before you push. `test:changed` calls git (in a sandboxed agent session, prefix it with `GIT_CONFIG_GLOBAL=/dev/null`), and a change to `package.json` itself re-runs every test. See [Working with AI agents](ai-workflow.md).
 
 ### Coverage gates
 
