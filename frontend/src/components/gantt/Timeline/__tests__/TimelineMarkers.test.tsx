@@ -727,11 +727,24 @@ describe('TimelineMarkers — the count badge and the dot', () => {
     expect(prop(rule(markers, 'pipDot'), 'background')).toBe(prop(badge, 'background'));
   });
 
-  it('keeps the 10 px badge with its radius and 9 px type', () => {
+  it('draws the 12 px badge over the whole strip, with its radius and 10 px type', () => {
     const count = rule(markers, 'pipCount');
-    expect(prop(count, 'height')).toBe('10px');
-    expect(prop(count, 'min-width')).toBe('10px');
-    expect(prop(count, 'border-radius')).toBe('5px');
-    expect(prop(count, 'font-size')).toBe('9px');
+    expect(prop(count, 'top')).toBe('0');
+    expect(prop(count, 'height')).toBe('12px');
+    expect(prop(count, 'line-height')).toBe('12px');
+    expect(prop(count, 'min-width')).toBe('12px');
+    expect(prop(count, 'padding')).toBe('0 3px');
+    expect(prop(count, 'border-radius')).toBe('6px');
+    expect(prop(count, 'font-size')).toBe('10px');
+    // The hit cell is the strip: 12 px from the top, so the badge fits it.
+    expect(prop(rule(markers, 'markerBadge'), 'height')).toBe('12px');
+  });
+
+  it('centres the 5 px dot in the 12 px strip', () => {
+    const dot = rule(markers, 'pipDot');
+    expect(prop(dot, 'width')).toBe('5px');
+    expect(prop(dot, 'height')).toBe('5px');
+    // (12 - 5) / 2
+    expect(prop(dot, 'top')).toBe('3.5px');
   });
 });

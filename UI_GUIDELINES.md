@@ -801,7 +801,8 @@ from the inline `project.tags[].color`, which is stale during What-If.
   Staff / Equipment panels embedded below the Gantt have no header of their own (they sit under
   the Gantt's).
   Day zoom: a 3 px band per event in its colour on up to three lanes (`eventLanes.ts`, lane 0
-  kept for the orange holiday line), `+N` (a dot below 18 px cells) for what does not fit —
+  kept for the orange holiday line), `+N` (a 12 px badge in 10 px type over the whole strip; a
+  5 px dot centred in it below 18 px cells) for what does not fit —
   the count and the dot in the sidebar count badge's colours (`--accent-blue`, `--text-on-accent`);
   quarter / year: one band + a count per cell. The hit cells are `button.markerBadge`, 12 px
   high, transparent — the `Badge` in the class keeps them out of the 44 px / 40 px mobile

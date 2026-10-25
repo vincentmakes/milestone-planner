@@ -46,24 +46,27 @@
   pointer-events: none;
 }
 
+/* 12 px: the whole strip (the events row's lane height), from its top */
 .pipCount {
+  top: 0;
   box-sizing: border-box;
-  min-width: 10px;
-  height: 10px;
-  padding: 0 2px;
-  border-radius: 5px;
-  font-size: 9px;
-  line-height: 10px;
+  min-width: 12px;
+  height: 12px;
+  padding: 0 3px;
+  border-radius: 6px;
+  font-size: 10px;
+  line-height: 12px;
   font-weight: var(--font-weight-semibold);
   text-align: center;
   background: var(--accent-blue);
   color: var(--text-on-accent);
 }
 
+/* Centred in the 12 px strip */
 .pipDot {
-  top: 4px;
-  width: 4px;
-  height: 4px;
+  top: 3.5px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--accent-blue);
 }
