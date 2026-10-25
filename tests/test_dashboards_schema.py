@@ -33,6 +33,8 @@ from app.models.user import User
 from app.services import tenant_provisioner as tp
 from app.services.dashboard_seed import WIDGET_KEYS, base_dashboard_rows
 from app.services.tenant_provisioner import (
+    DASHBOARD_NAMED_SEED_PG_SQL,
+    DASHBOARD_NAMED_SEED_SQL,
     DASHBOARD_PERMISSION_BACKFILL,
     DASHBOARD_PERMISSION_BACKFILL_PG_SQL,
     DASHBOARD_PERMISSION_BACKFILL_SQL,
@@ -56,6 +58,8 @@ from app.services.tenant_provisioner import (
     PROJECT_FIELDS_PROBE_SQL,
     RBAC_NEEDS_MIGRATION_SQL,
     dashboard_seed_params,
+    dashboard_seed_pg_statement,
+    dashboard_seed_statement,
     get_tenant_schema_sql,
 )
 from app.utils import utcnow_naive
@@ -347,23 +351,31 @@ SHARING_PROBE = "CHECK dashboard sharing tables"
 VISIBILITY = "dashboard visibility check"
 KINDS = "dashboard widget kinds check"
 SEED = "INSERT dashboard"
+NAMED = "INSERT named dashboard"
 WIDGET = "INSERT widget"
 GRANT = "INSERT role permission"
 NEW_ID = 77
+NAMED_ID = 78
 
 
-def _conn(tables=(), fail_on: str | None = None, dashboard_id: int | None = NEW_ID):
+def _conn(
+    tables=(),
+    fail_on: str | None = None,
+    dashboard_id: int | None = NEW_ID,
+    named_id: int | None = NAMED_ID,
+):
     """
     A connection on which the project-fields, RBAC and dashboard-sharing
     probes answer "up to date" (the sharing step's self-gated visibility
     block succeeds) and the dashboards step's own SQL succeeds; every other
     auto-migration step fails (and is contained by its own try/except).
     ``log`` records the statements interleaved with COMMIT / ROLLBACK, the
-    seed inserts as SEED / WIDGET / GRANT; ``params`` their bound values.
-    ``dashboard_id`` is what the dashboard insert returns (None = conflict).
+    seed inserts as SEED (the Overview) / NAMED ("Capacity and flows") /
+    WIDGET / GRANT; ``params`` their bound values. ``dashboard_id`` /
+    ``named_id`` are what the two dashboard inserts return (None = it exists).
     """
     log: list[str] = []
-    params: dict[str, list[dict]] = {SEED: [], WIDGET: [], GRANT: []}
+    params: dict[str, list[dict]] = {SEED: [], NAMED: [], WIDGET: [], GRANT: []}
 
     def rows(values):
         result = MagicMock()
@@ -397,6 +409,7 @@ def _conn(tables=(), fail_on: str | None = None, dashboard_id: int | None = NEW_
             return MagicMock()
         seeds = {
             DASHBOARD_SEED_SQL: SEED,
+            DASHBOARD_NAMED_SEED_SQL: NAMED,
             DASHBOARD_WIDGET_SEED_SQL: WIDGET,
             DASHBOARD_PERMISSION_BACKFILL_SQL: GRANT,
         }
@@ -407,7 +420,7 @@ def _conn(tables=(), fail_on: str | None = None, dashboard_id: int | None = NEW_
             if label == fail_on:
                 raise RuntimeError("seed failed")
             result = MagicMock()
-            result.scalar.return_value = dashboard_id
+            result.scalar.return_value = named_id if label == NAMED else dashboard_id
             return result
         if sql in DASHBOARDS_SCHEMA_STATEMENTS:
             log.append(sql)
@@ -446,12 +459,14 @@ def _step(log: list[str]) -> list[str]:
 # commit, then the self-gated visibility block and its own commit, then the
 # self-gated widget-kinds block and its own commit.
 SHARING_STEP_UP_TO_DATE = [SHARING_PROBE, "COMMIT", VISIBILITY, "COMMIT", KINDS, "COMMIT"]
-BASE_WIDGETS = base_dashboard_rows()[1]
+(_, BASE_WIDGETS), (_, CAPACITY_WIDGETS) = base_dashboard_rows()
 FULL_STEP = [
     PROBE,
     *DASHBOARDS_SCHEMA_STATEMENTS,
     SEED,
     *[WIDGET] * len(BASE_WIDGETS),
+    NAMED,
+    *[WIDGET] * len(CAPACITY_WIDGETS),
     *[GRANT] * 3,
     "COMMIT",
 ]
@@ -467,7 +482,9 @@ async def test_auto_migration_creates_the_schema_then_seeds(tables):
     await _run_auto_migrations(conn)
 
     # Schema (the one-default index before the seed), the Overview with its
-    # eight widgets, the three grants, one commit.
+    # eight widgets, "Capacity and flows" with its three, the three grants,
+    # one commit.
+    assert (len(BASE_WIDGETS), len(CAPACITY_WIDGETS)) == (8, 3)
     assert _step(log) == FULL_STEP
     # After the project-fields and RBAC steps (dashboard_roles references
     # roles), before the sharing step and the notification-types step.
@@ -476,20 +493,27 @@ async def test_auto_migration_creates_the_schema_then_seeds(tables):
 
 
 @pytest.mark.asyncio
-async def test_auto_migration_seed_binds_the_base_dashboard():
+async def test_auto_migration_seed_binds_the_base_dashboards():
     conn, _ = _conn()
 
     before = utcnow_naive()
     await _run_auto_migrations(conn)
 
+    (overview_rows, _), (capacity_rows, _) = base_dashboard_rows()
     (dashboard,) = conn.params[SEED]
-    assert {k: dashboard[k] for k in ("name", "description", "visibility", "is_default")} == (
-        base_dashboard_rows()[0]
-    )
+    assert {k: dashboard[k] for k in overview_rows} == overview_rows
     assert dashboard["created_at"] == dashboard["updated_at"]
     assert dashboard["created_at"].tzinfo is None and dashboard["created_at"] >= before
-    # Every widget of the base dashboard, on the new id, JSON as text binds.
-    assert conn.params[WIDGET] == [{"dashboard_id": NEW_ID, **w} for w in BASE_WIDGETS]
+    # "Capacity and flows" keyed by its name (bound twice, as two parameters).
+    (named,) = conn.params[NAMED]
+    assert {k: named[k] for k in capacity_rows} == capacity_rows
+    assert named["existing_name"] == "Capacity and flows"
+    assert named["created_at"] == dashboard["created_at"]
+    # Every widget of both, on their new ids, JSON as text binds.
+    assert conn.params[WIDGET] == [
+        *({"dashboard_id": NEW_ID, **w} for w in BASE_WIDGETS),
+        *({"dashboard_id": NAMED_ID, **w} for w in CAPACITY_WIDGETS),
+    ]
     # The one-shot grants: superuser + user see dashboards, superuser manages.
     assert [(g["role"], g["permission"]) for g in conn.params[GRANT]] == [
         ("superuser", "views.dashboards"),
@@ -501,12 +525,41 @@ async def test_auto_migration_seed_binds_the_base_dashboard():
 
 @pytest.mark.asyncio
 async def test_auto_migration_writes_no_widget_when_a_default_exists():
-    """ON CONFLICT ... DO NOTHING returned no id: a concurrent creation won."""
+    """ON CONFLICT ... DO NOTHING returned no id: a concurrent creation won.
+    "Capacity and flows" is still seeded."""
     conn, log = _conn(dashboard_id=None)
 
     await _run_auto_migrations(conn)
 
-    assert _step(log) == [PROBE, *DASHBOARDS_SCHEMA_STATEMENTS, SEED, *[GRANT] * 3, "COMMIT"]
+    assert _step(log) == [
+        PROBE,
+        *DASHBOARDS_SCHEMA_STATEMENTS,
+        SEED,
+        NAMED,
+        *[WIDGET] * len(CAPACITY_WIDGETS),
+        *[GRANT] * 3,
+        "COMMIT",
+    ]
+    assert {w["dashboard_id"] for w in conn.params[WIDGET]} == {NAMED_ID}
+
+
+@pytest.mark.asyncio
+async def test_auto_migration_writes_no_widget_of_an_existing_named_dashboard():
+    """WHERE NOT EXISTS returned no id: a dashboard of that name exists."""
+    conn, log = _conn(named_id=None)
+
+    await _run_auto_migrations(conn)
+
+    assert _step(log) == [
+        PROBE,
+        *DASHBOARDS_SCHEMA_STATEMENTS,
+        SEED,
+        *[WIDGET] * len(BASE_WIDGETS),
+        NAMED,
+        *[GRANT] * 3,
+        "COMMIT",
+    ]
+    assert {w["dashboard_id"] for w in conn.params[WIDGET]} == {NEW_ID}
 
 
 @pytest.mark.asyncio
@@ -524,7 +577,7 @@ async def test_auto_migration_skips_an_up_to_date_tenant():
         "COMMIT",
     ]
     assert not any(s in DASHBOARDS_SCHEMA_STATEMENTS for s in log)
-    assert conn.params == {SEED: [], WIDGET: [], GRANT: []}
+    assert conn.params == {SEED: [], NAMED: [], WIDGET: [], GRANT: []}
 
 
 @pytest.mark.asyncio
@@ -533,9 +586,13 @@ async def test_auto_migration_skips_an_up_to_date_tenant():
     [
         (DASHBOARD_WIDGETS_TABLE_SQL, [*DASHBOARDS_SCHEMA_STATEMENTS[:3]]),
         (SEED, [*DASHBOARDS_SCHEMA_STATEMENTS, SEED]),
-        (GRANT, [*DASHBOARDS_SCHEMA_STATEMENTS, SEED, *[WIDGET] * 8, GRANT]),
+        (NAMED, [*DASHBOARDS_SCHEMA_STATEMENTS, SEED, *[WIDGET] * 8, NAMED]),
+        (
+            GRANT,
+            [*DASHBOARDS_SCHEMA_STATEMENTS, SEED, *[WIDGET] * 8, NAMED, *[WIDGET] * 3, GRANT],
+        ),
     ],
-    ids=["schema", "seed", "grant"],
+    ids=["schema", "seed", "named", "grant"],
 )
 async def test_auto_migration_failure_rolls_back_and_never_raises(failing, ran):
     conn, log = _conn(fail_on=failing)
@@ -560,6 +617,19 @@ def test_seed_sql_binds_every_column():
     assert DASHBOARD_SEED_SQL.endswith(
         "ON CONFLICT (is_default) WHERE is_default DO NOTHING RETURNING id"
     )
+    assert set(text(DASHBOARD_NAMED_SEED_SQL).compile().params) == {
+        "name",
+        "description",
+        "visibility",
+        "is_default",
+        "created_at",
+        "updated_at",
+        "existing_name",
+    }
+    assert DASHBOARD_NAMED_SEED_SQL.startswith("INSERT INTO dashboards (")
+    assert DASHBOARD_NAMED_SEED_SQL.endswith(
+        " WHERE NOT EXISTS (SELECT 1 FROM dashboards WHERE name = :existing_name) RETURNING id"
+    )
     assert set(text(DASHBOARD_WIDGET_SEED_SQL).compile().params) == {
         "dashboard_id",
         *WIDGET_KEYS,
@@ -574,6 +644,7 @@ def test_seed_sql_binds_every_column():
 def test_asyncpg_seed_sql_uses_each_placeholder_once():
     for sql, count in (
         (DASHBOARD_SEED_PG_SQL, 6),
+        (DASHBOARD_NAMED_SEED_PG_SQL, 7),
         (DASHBOARD_WIDGET_SEED_PG_SQL, 7),
         (DASHBOARD_PERMISSION_BACKFILL_PG_SQL, 3),
     ):
@@ -583,6 +654,24 @@ def test_asyncpg_seed_sql_uses_each_placeholder_once():
     assert DASHBOARD_SEED_PG_SQL.endswith(
         "ON CONFLICT (is_default) WHERE is_default DO NOTHING RETURNING id"
     )
+    assert DASHBOARD_NAMED_SEED_PG_SQL.endswith(
+        " WHERE NOT EXISTS (SELECT 1 FROM dashboards WHERE name = $7) RETURNING id"
+    )
+
+
+def test_each_base_dashboard_picks_its_insert():
+    """The Overview goes through the one-default index, any other by name."""
+    (overview, _), (capacity, _) = dashboard_seed_params()
+    assert dashboard_seed_statement(overview) == (DASHBOARD_SEED_SQL, overview)
+    assert dashboard_seed_statement(capacity) == (
+        DASHBOARD_NAMED_SEED_SQL,
+        {**capacity, "existing_name": "Capacity and flows"},
+    )
+    sql, args = dashboard_seed_pg_statement(overview)
+    assert (sql, len(args), args[0]) == (DASHBOARD_SEED_PG_SQL, 6, "Overview")
+    sql, args = dashboard_seed_pg_statement(capacity)
+    assert sql == DASHBOARD_NAMED_SEED_PG_SQL
+    assert args == [*(capacity[c] for c in tp.DASHBOARD_SEED_COLUMNS), "Capacity and flows"]
 
 
 # ---------------------------------------------------------------------------
@@ -811,29 +900,62 @@ def test_widgets_and_role_links_go_with_their_dashboard_and_role(sqlite_session)
 
 
 def test_the_seed_sql_runs_once_on_sqlite(sqlite_session):
-    """The auto-migration's SQLAlchemy seed text, executed for real: the
-    first insert returns the new id, a second one hits dashboards_one_default
-    and returns nothing."""
-    dashboard, widgets = dashboard_seed_params()
-    first = sqlite_session.execute(text(DASHBOARD_SEED_SQL).bindparams(**dashboard)).scalar()
-    assert first is not None
-    for widget in widgets:
-        sqlite_session.execute(
-            text(DASHBOARD_WIDGET_SEED_SQL).bindparams(dashboard_id=first, **widget)
-        )
-    sqlite_session.commit()
-    again = sqlite_session.execute(text(DASHBOARD_SEED_SQL).bindparams(**dashboard)).scalar()
-    assert again is None
+    """The auto-migration's SQLAlchemy seed texts, executed for real: the
+    first inserts return the new ids, a second run hits dashboards_one_default
+    and the name guard and returns nothing."""
 
-    loaded = sqlite_session.get(Dashboard, first)
+    def seed() -> list[int | None]:
+        ids = []
+        for dashboard, widgets in dashboard_seed_params():
+            sql, binds = dashboard_seed_statement(dashboard)
+            dashboard_id = sqlite_session.execute(text(sql).bindparams(**binds)).scalar()
+            if dashboard_id is not None:
+                for widget in widgets:
+                    sqlite_session.execute(
+                        text(DASHBOARD_WIDGET_SEED_SQL).bindparams(
+                            dashboard_id=dashboard_id, **widget
+                        )
+                    )
+            ids.append(dashboard_id)
+        sqlite_session.commit()
+        return ids
+
+    overview_id, capacity_id = seed()
+    assert None not in (overview_id, capacity_id) and overview_id != capacity_id
+    assert seed() == [None, None]
+    assert sqlite_session.execute(text("SELECT count(*) FROM dashboards")).scalar() == 2
+    assert sqlite_session.execute(text("SELECT count(*) FROM dashboard_widgets")).scalar() == 11
+
+    (_, overview_widgets), (_, capacity_widgets) = dashboard_seed_params()
+    loaded = sqlite_session.get(Dashboard, overview_id)
     assert (loaded.name, loaded.visibility, loaded.is_default, loaded.owner_id) == (
         "Overview",
         "everyone",
         True,
         None,
     )
-    assert [w.title for w in loaded.widgets] == [w["title"] for w in widgets]
+    assert [w.title for w in loaded.widgets] == [w["title"] for w in overview_widgets]
     assert json.loads(loaded.widgets[1].options) == {"kpi_bucket": True}
+    loaded = sqlite_session.get(Dashboard, capacity_id)
+    assert (loaded.name, loaded.visibility, loaded.is_default, loaded.owner_id) == (
+        "Capacity and flows",
+        "everyone",
+        False,
+        None,
+    )
+    assert [w.kind for w in loaded.widgets] == ["heatmap", "treemap", "sankey"]
+    assert [w.title for w in loaded.widgets] == [w["title"] for w in capacity_widgets]
+
+
+def test_the_named_seed_skips_an_existing_name(sqlite_session):
+    """The name guard looks at the name only: any dashboard already called
+    "Capacity and flows" (say, built by hand) stops the seed."""
+    (_, _), (capacity, _) = dashboard_seed_params()
+    sql, binds = dashboard_seed_statement(capacity)
+    sqlite_session.add(Dashboard(name="Capacity and flows", visibility="private"))
+    sqlite_session.commit()
+    assert sqlite_session.execute(text(sql).bindparams(**binds)).scalar() is None
+    assert sqlite_session.execute(text("SELECT count(*) FROM dashboards")).scalar() == 1
 
 
 def test_the_backfill_sql_grants_only_what_is_missing_on_sqlite(sqlite_session):

@@ -17,7 +17,12 @@ import pytest
 
 from app.schemas.dashboard import MetricQuery, WidgetIn
 from app.services import metrics
-from app.services.dashboard_seed import BASE_DASHBOARD, DEMO_EXTRA_WIDGETS, base_dashboard_rows
+from app.services.dashboard_seed import (
+    BASE_DASHBOARDS,
+    DEMO_EXTRA_WIDGETS,
+    base_dashboard_rows,
+    capacity_dashboard_rows,
+)
 from app.services.metrics import (
     AbsenceSpan,
     BookingFact,
@@ -1868,9 +1873,20 @@ def test_unknown_grain_and_period_are_errors():
 # --- The seed ----------------------------------------------------------------
 
 
+def _seed_rows() -> list[dict]:
+    """Every seeded widget: both base dashboards with the demo's field widgets,
+    plus the demo-only gauge."""
+    rows = [
+        w for _, widgets in base_dashboard_rows({"Project type": 1, "Area": 2}) for w in widgets
+    ]
+    return [*rows, capacity_dashboard_rows(with_gauge=True)[1][0]]
+
+
 def test_every_seed_widget_parses_and_passes_the_matrix():
-    _, rows = base_dashboard_rows({"Project type": 1, "Area": 2})
-    assert len(rows) == len(BASE_DASHBOARD["widgets"]) + len(DEMO_EXTRA_WIDGETS)
+    rows = _seed_rows()
+    assert len(rows) == (
+        sum(len(d["widgets"]) for d in BASE_DASHBOARDS) + len(DEMO_EXTRA_WIDGETS) + 1
+    )
     for row in rows:
         widget = WidgetIn.model_validate(
             {
@@ -1894,8 +1910,7 @@ def test_every_seed_widget_aggregates():
     seed_facts.fields[1] = FieldInfo(1, "Project type", "select")
     seed_facts.fields[2] = FieldInfo(2, "Area", "multiselect")
     seed_facts.options[300] = OptionInfo(300, 1, "Internal", "#aaaaaa")
-    _, rows = base_dashboard_rows({"Project type": 1, "Area": 2})
-    for row in rows:
+    for row in _seed_rows():
         query = MetricQuery.model_validate(json.loads(row["query"]))
         result = aggregate(seed_facts, query, viewer=FULL)
         assert result.warnings == []

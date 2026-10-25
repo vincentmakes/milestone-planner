@@ -16,7 +16,11 @@ from datetime import datetime
 from typing import Any
 
 from app.scripts.demo_data import DEMO_PASSWORD, DemoData
-from app.services.dashboard_seed import DEMO_DASHBOARD, base_dashboard_rows, demo_dashboard_rows
+from app.services.dashboard_seed import (
+    CAPACITY_DASHBOARD_NAME,
+    capacity_dashboard_rows,
+    overview_rows,
+)
 from app.services.encryption import generate_password, hash_user_password
 from app.services.mentions import parse_mention_ids
 from app.utils import utcnow_naive
@@ -102,12 +106,14 @@ async def _insert_dashboard(
 async def insert_demo_dashboards(conn: Any, field_ids: dict[str, int]) -> dict[str, int]:
     """Insert the demo's two dashboards through `conn` (asyncpg API).
 
-    1. The base dashboard "Overview" (app/services/dashboard_seed.py), keyed
-       as the one default dashboard, with the two widgets over the demo's
-       "Project type" and "Area" fields when `field_ids` (field name -> id)
-       names them.
-    2. "Capacity and flows" (dashboard_seed.DEMO_DASHBOARD: a gauge, a
-       heatmap, a treemap and a sankey), keyed by its name, owner NULL.
+    The two base dashboards (app/services/dashboard_seed.py) with the demo's
+    extras:
+
+    1. "Overview", keyed as the one default dashboard, with the two widgets
+       over the demo's "Project type" and "Area" fields when `field_ids`
+       (field name -> id) names them.
+    2. "Capacity and flows", keyed by its name, owner NULL, with the
+       demo-only utilisation gauge before its heatmap, treemap and sankey.
 
     Each dashboard's widgets are written only in the run that creates it.
     Called by `insert_demo_data`, and callable on its own against a tenant
@@ -123,13 +129,15 @@ async def insert_demo_dashboards(conn: Any, field_ids: dict[str, int]) -> dict[s
     Returns the row counts of the two dashboards, for the summary.
     """
     now = utcnow_naive()
-    overview, overview_widgets = base_dashboard_rows(field_ids)
+    overview, overview_widgets = overview_rows(field_ids)
     await _insert_dashboard(conn, overview, overview_widgets, {"is_default": True}, now)
-    demo, demo_widgets = demo_dashboard_rows()
-    await _insert_dashboard(conn, demo, demo_widgets, {"name": DEMO_DASHBOARD["name"]}, now)
+    capacity, capacity_widgets = capacity_dashboard_rows(with_gauge=True)
+    await _insert_dashboard(
+        conn, capacity, capacity_widgets, {"name": CAPACITY_DASHBOARD_NAME}, now
+    )
     return {
         "dashboards": 2,
-        "dashboard_widgets": len(overview_widgets) + len(demo_widgets),
+        "dashboard_widgets": len(overview_widgets) + len(capacity_widgets),
     }
 
 

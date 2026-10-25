@@ -30,7 +30,6 @@ from app.services.tenant_provisioner import (
     COMPANY_EVENTS_SITE_NULLABLE_SQL,
     DASHBOARD_PERMISSION_BACKFILL,
     DASHBOARD_PERMISSION_BACKFILL_SQL,
-    DASHBOARD_SEED_SQL,
     DASHBOARD_SHARING_PROBE_SQL,
     DASHBOARD_SHARING_SCHEMA_STATEMENTS,
     DASHBOARD_SHARING_TABLES,
@@ -60,6 +59,7 @@ from app.services.tenant_provisioner import (
     TEAMS_SCHEMA_STATEMENTS,
     USERS_IS_RESOURCE_SQL,
     dashboard_seed_params,
+    dashboard_seed_statement,
 )
 from app.utils import utcnow_naive
 
@@ -865,11 +865,12 @@ class TenantConnectionManager:
 
         # Dashboards (add_dashboards.sql, 2.1.0): the three tables and their
         # indexes, then -- in the same transaction, only in the run that
-        # creates the tables -- the base dashboard "Overview" with its widgets
-        # and the one-shot grant of views.dashboards (superuser, user) and
-        # dashboards.manage (superuser) to the system roles that exist. Never
-        # again once every table exists, so an admin's later removal of the
-        # Overview or of a key is never undone. After the RBAC step:
+        # creates the tables -- the two base dashboards "Overview" and
+        # "Capacity and flows" with their widgets and the one-shot grant of
+        # views.dashboards (superuser, user) and dashboards.manage (superuser)
+        # to the system roles that exist. Never again once every table
+        # exists, so an admin's later removal of a dashboard or of a key is
+        # never undone. After the RBAC step:
         # dashboard_roles references roles. One statement per execute.
         try:
             tables_check = await conn.execute(text(DASHBOARDS_PROBE_SQL))
@@ -878,11 +879,11 @@ class TenantConnectionManager:
                 logger.info("Auto-migration: Adding dashboards on tenant %s...", slug)
                 for statement in DASHBOARDS_SCHEMA_STATEMENTS:
                     await conn.execute(text(statement))
-                dashboard, widgets = dashboard_seed_params()
-                dashboard_id = (
-                    await conn.execute(text(DASHBOARD_SEED_SQL).bindparams(**dashboard))
-                ).scalar()
-                if dashboard_id is not None:
+                for dashboard, widgets in dashboard_seed_params():
+                    sql, binds = dashboard_seed_statement(dashboard)
+                    dashboard_id = (await conn.execute(text(sql).bindparams(**binds))).scalar()
+                    if dashboard_id is None:
+                        continue  # it exists: none of its widgets is written
                     for widget in widgets:
                         await conn.execute(
                             text(DASHBOARD_WIDGET_SEED_SQL).bindparams(

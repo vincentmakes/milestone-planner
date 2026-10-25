@@ -38,7 +38,7 @@ from app.scripts.demo_data import (
 )
 from app.services import metrics
 from app.services.booking_segments import segments_overlap
-from app.services.dashboard_seed import base_dashboard_rows, demo_dashboard_rows
+from app.services.dashboard_seed import base_dashboard_rows, capacity_dashboard_rows
 
 SNAPSHOT_DAY = date(2026, 10, 17)
 SNAPSHOT = Path(__file__).with_name("demo_data_snapshot.json")
@@ -521,7 +521,7 @@ def build_facts(demo: DemoData) -> metrics.Facts:
 def _overview(facts: metrics.Facts) -> dict[str, metrics.MetricResult]:
     """Every Overview widget (with the two demo extras), by title."""
     field_ids = {f.name: f.id for f in facts.fields.values()}
-    _, widgets = base_dashboard_rows(field_ids)
+    (_, widgets), _capacity = base_dashboard_rows(field_ids)
     assert len(widgets) == 10
     return {
         w["title"]: metrics.aggregate(
@@ -593,8 +593,8 @@ def test_every_overview_widget_has_a_shape(facts: metrics.Facts):
 
 
 def _capacity_and_flows(facts: metrics.Facts) -> dict[str, metrics.MetricResult]:
-    """Every widget of the demo's second dashboard, by title."""
-    _, widgets = demo_dashboard_rows()
+    """Every widget of the demo's second dashboard (the gauge first), by title."""
+    _, widgets = capacity_dashboard_rows(with_gauge=True)
     assert len(widgets) == 4
     return {
         w["title"]: metrics.aggregate(
@@ -608,6 +608,18 @@ def test_every_widget_of_both_dashboards_has_rows(facts: metrics.Facts):
     for title, result in {**_overview(facts), **_capacity_and_flows(facts)}.items():
         assert result.rows, title
         assert not result.warnings, title
+
+
+def test_every_base_widget_has_rows_without_the_demo_extras(facts: metrics.Facts):
+    """What a tenant without the demo's fields gets: both base dashboards."""
+    rows = base_dashboard_rows()
+    assert [len(widgets) for _, widgets in rows] == [8, 3]
+    for _, widgets in rows:
+        for w in widgets:
+            query = MetricQuery.model_validate(json.loads(w["query"]))
+            result = metrics.aggregate(facts, query, viewer=VIEWER)
+            assert result.rows, w["title"]
+            assert not result.warnings, w["title"]
 
 
 def test_the_capacity_and_flows_widgets_have_a_shape(facts: metrics.Facts):

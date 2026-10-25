@@ -1,10 +1,11 @@
 """
-The base dashboard "Overview" (app/services/dashboard_seed.py): eight widgets
-in the shape the dashboard_widgets columns hold, metric queries in the spec's
-shape, layouts inside the grid of every breakpoint without overlaps, and the
-demo's two field widgets only for the fields that exist. Then the demo-only
-"Capacity and flows" (DEMO_DASHBOARD): one widget of each 2.1.0 chart kind,
-under the same rules.
+The two base dashboards (app/services/dashboard_seed.py). "Overview": eight
+widgets in the shape the dashboard_widgets columns hold, metric queries in the
+spec's shape, layouts inside the grid of every breakpoint without overlaps,
+and the demo's two field widgets only for the fields that exist. Then
+"Capacity and flows" (CAPACITY_DASHBOARD): a heatmap, a treemap and a sankey
+for every tenant, plus the demo-only utilisation gauge first, under the same
+rules.
 """
 
 import json
@@ -18,12 +19,16 @@ from app.schemas.dashboard import MetricQuery, WidgetIn
 from app.services import dashboard_seed, metrics
 from app.services.dashboard_seed import (
     BASE_DASHBOARD,
-    DEMO_DASHBOARD,
+    BASE_DASHBOARDS,
+    CAPACITY_DASHBOARD,
+    CAPACITY_DASHBOARD_NAME,
+    DASHBOARD_KEYS,
     DEMO_EXTRA_WIDGETS,
     GRID_COLUMNS,
     WIDGET_KEYS,
     base_dashboard_rows,
-    demo_dashboard_rows,
+    capacity_dashboard_rows,
+    overview_rows,
 )
 
 FIELDS = {"Project type": 41, "Area": 42}
@@ -31,7 +36,7 @@ QUERY_KEYS = {"measure", "dimensions", "filters", "percent_of", "top_n"}
 
 
 def _rows(field_ids=None):
-    return base_dashboard_rows(field_ids)[1]
+    return overview_rows(field_ids)[1]
 
 
 def _overlap(a: dict, b: dict) -> bool:
@@ -50,7 +55,7 @@ def test_the_base_dashboard():
     assert BASE_DASHBOARD["is_default"] is True
     description = BASE_DASHBOARD["description"]
     assert description.endswith(".") and description.count(". ") == 0  # one sentence
-    dashboard, _ = base_dashboard_rows()
+    dashboard, _ = overview_rows()
     assert dashboard == {
         "name": "Overview",
         "description": description,
@@ -248,32 +253,81 @@ def test_the_module_is_import_light():
 
 
 # ---------------------------------------------------------------------------
-# The demo's second dashboard, "Capacity and flows"
+# Both base dashboards
 # ---------------------------------------------------------------------------
 
 
-def _demo_rows():
-    return demo_dashboard_rows()[1]
+@pytest.mark.parametrize("field_ids", [None, FIELDS], ids=["base", "demo"])
+def test_base_dashboard_rows_holds_both_in_order(field_ids):
+    assert BASE_DASHBOARDS == (BASE_DASHBOARD, CAPACITY_DASHBOARD)
+    rows = base_dashboard_rows(field_ids)
+    assert [dashboard for dashboard, _ in rows] == [
+        {key: definition[key] for key in DASHBOARD_KEYS} for definition in BASE_DASHBOARDS
+    ]
+    # The Overview's rows as overview_rows gives them (the field extras only
+    # with field ids); "Capacity and flows" always the gauge-less base one.
+    assert rows[0] == overview_rows(field_ids)
+    assert rows[1] == capacity_dashboard_rows()
+    assert rows[1] == capacity_dashboard_rows(with_gauge=False)
+    # One default, distinct names.
+    assert [dashboard["is_default"] for dashboard, _ in rows] == [True, False]
+    assert len({dashboard["name"] for dashboard, _ in rows}) == 2
 
 
-def test_the_demo_dashboard():
-    dashboard, _ = demo_dashboard_rows()
+def test_every_base_widget_validates_and_passes_the_matrix():
+    """What every tenant gets: no capacity measure (those need views.staff),
+    no person dimension."""
+    for _, widgets in base_dashboard_rows():
+        for row in widgets:
+            assert row["kind"] in DASHBOARD_WIDGET_KINDS
+            query = MetricQuery.model_validate(json.loads(row["query"]))
+            for dimension in query.dimensions:
+                assert metrics.matrix_error(query.measure, dimension.kind) is None, row["title"]
+                assert dimension.kind != "person", row["title"]
+            assert query.measure != "utilisation", row["title"]
+
+
+# ---------------------------------------------------------------------------
+# "Capacity and flows"
+# ---------------------------------------------------------------------------
+
+
+def _capacity_rows(with_gauge=False):
+    return capacity_dashboard_rows(with_gauge)[1]
+
+
+def test_the_capacity_dashboard():
+    dashboard, _ = capacity_dashboard_rows()
     assert dashboard == {
         "name": "Capacity and flows",
         "description": (
-            "Utilisation against target, booked time per team and month, where each site's "
-            "time goes and which teams work on which projects."
+            "Booked time per team and month, where each site's time goes and which teams "
+            "work on which projects."
         ),
         "visibility": "everyone",
         "is_default": False,
     }
-    assert dashboard == DEMO_DASHBOARD
+    assert dashboard["name"] == CAPACITY_DASHBOARD_NAME
     assert dashboard["visibility"] in DASHBOARD_VISIBILITIES
     assert dashboard["name"] != BASE_DASHBOARD["name"]
+    assert dashboard["description"].count(". ") == 0  # one sentence
+    # The demo's is the same dashboard, only with the gauge.
+    assert capacity_dashboard_rows(with_gauge=True)[0] == dashboard
 
 
-def test_the_four_demo_widgets_in_order():
-    rows = _demo_rows()
+def test_the_three_base_capacity_widgets_in_order():
+    rows = _capacity_rows()
+    assert [(r["kind"], r["title"]) for r in rows] == [
+        ("heatmap", "Booked weeks per team and month"),
+        ("treemap", "Booked weeks by site and project"),
+        ("sankey", "Project to team flows"),
+    ]
+    assert [r["sort_order"] for r in rows] == [0, 1, 2]
+    assert [w["title"] for w in CAPACITY_DASHBOARD["widgets"]] == [r["title"] for r in rows]
+
+
+def test_the_four_demo_capacity_widgets_in_order():
+    rows = _capacity_rows(with_gauge=True)
     assert [(r["kind"], r["title"]) for r in rows] == [
         ("gauge", "Utilisation this quarter"),
         ("heatmap", "Booked weeks per team and month"),
@@ -282,10 +336,16 @@ def test_the_four_demo_widgets_in_order():
     ]
     assert all(r["kind"] in DASHBOARD_WIDGET_KINDS for r in rows)
     assert [r["sort_order"] for r in rows] == [0, 1, 2, 3]
+    # One definition per widget: only the layout and the sort order move.
+    for base, demo in zip(_capacity_rows(), rows[1:], strict=True):
+        assert {k: base[k] for k in ("kind", "title", "query", "options")} == {
+            k: demo[k] for k in ("kind", "title", "query", "options")
+        }
 
 
-def test_every_demo_row_has_the_column_shape_and_validates():
-    for row in _demo_rows():
+@pytest.mark.parametrize("with_gauge", [False, True], ids=["base", "demo"])
+def test_every_capacity_row_has_the_column_shape_and_validates(with_gauge):
+    for row in _capacity_rows(with_gauge):
         assert tuple(row) == WIDGET_KEYS
         for column in ("query", "options", "layout"):
             assert row[column] == json.dumps(
@@ -301,8 +361,8 @@ def test_every_demo_row_has_the_column_shape_and_validates():
         assert widget.query == query
 
 
-def test_the_demo_queries_and_options():
-    rows = {r["title"]: r for r in _demo_rows()}
+def test_the_capacity_queries_and_options():
+    rows = {r["title"]: r for r in _capacity_rows(with_gauge=True)}
     queries = {title: json.loads(r["query"]) for title, r in rows.items()}
     options = {title: json.loads(r["options"]) for title, r in rows.items()}
 
@@ -337,8 +397,40 @@ def test_the_demo_queries_and_options():
     }
 
 
-def test_the_demo_layouts():
-    layouts = [json.loads(r["layout"]) for r in _demo_rows()]
+def _check_grid(layouts):
+    for breakpoint, cols in GRID_COLUMNS.items():
+        boxes = [layout[breakpoint] for layout in layouts]
+        for box in boxes:
+            assert box["x"] >= 0 and box["y"] >= 0 and box["w"] > 0 and box["h"] > 0
+            assert box["x"] + box["w"] <= cols, (breakpoint, box)
+        for a, b in combinations(boxes, 2):
+            assert not _overlap(a, b), (breakpoint, a, b)
+
+
+def test_the_base_capacity_layouts():
+    layouts = [json.loads(r["layout"]) for r in _capacity_rows()]
+    assert layouts == [
+        {
+            "lg": {"x": 0, "y": 0, "w": 12, "h": 4},
+            "md": {"x": 0, "y": 0, "w": 8, "h": 4},
+            "sm": {"x": 0, "y": 0, "w": 4, "h": 5},
+        },
+        {
+            "lg": {"x": 0, "y": 4, "w": 6, "h": 5},
+            "md": {"x": 0, "y": 4, "w": 8, "h": 5},
+            "sm": {"x": 0, "y": 5, "w": 4, "h": 5},
+        },
+        {
+            "lg": {"x": 6, "y": 4, "w": 6, "h": 5},
+            "md": {"x": 0, "y": 9, "w": 8, "h": 5},
+            "sm": {"x": 0, "y": 10, "w": 4, "h": 5},
+        },
+    ]
+    _check_grid(layouts)
+
+
+def test_the_demo_capacity_layouts():
+    layouts = [json.loads(r["layout"]) for r in _capacity_rows(with_gauge=True)]
     assert layouts == [
         {
             "lg": {"x": 0, "y": 0, "w": 3, "h": 4},
@@ -361,19 +453,15 @@ def test_the_demo_layouts():
             "sm": {"x": 0, "y": 14, "w": 4, "h": 5},
         },
     ]
-    for breakpoint, cols in GRID_COLUMNS.items():
-        boxes = [layout[breakpoint] for layout in layouts]
-        for box in boxes:
-            assert box["x"] >= 0 and box["y"] >= 0 and box["w"] > 0 and box["h"] > 0
-            assert box["x"] + box["w"] <= cols, (breakpoint, box)
-        for a, b in combinations(boxes, 2):
-            assert not _overlap(a, b), (breakpoint, a, b)
+    _check_grid(layouts)
 
 
-def test_the_demo_rows_never_touch_the_overview():
-    before = json.dumps([BASE_DASHBOARD, DEMO_DASHBOARD], sort_keys=True)
-    demo_dashboard_rows()
-    demo_dashboard_rows()[1][0]["kind"] = "kpi"  # a caller's change stays its own
-    assert json.dumps([BASE_DASHBOARD, DEMO_DASHBOARD], sort_keys=True) == before
-    assert demo_dashboard_rows()[1][0]["kind"] == "gauge"
+def test_the_capacity_rows_never_touch_the_definitions():
+    before = json.dumps(BASE_DASHBOARDS, sort_keys=True)
+    capacity_dashboard_rows(with_gauge=True)
+    capacity_dashboard_rows()[1][0]["kind"] = "kpi"  # a caller's change stays its own
+    base_dashboard_rows(FIELDS)[1][1][0]["title"] = "changed"
+    assert json.dumps(BASE_DASHBOARDS, sort_keys=True) == before
+    assert capacity_dashboard_rows()[1][0]["kind"] == "heatmap"
+    assert capacity_dashboard_rows(with_gauge=True)[1][0]["kind"] == "gauge"
     assert all(r["kind"] in ("kpi", "bar", "line", "pie") for r in _rows({"Area": 1}))

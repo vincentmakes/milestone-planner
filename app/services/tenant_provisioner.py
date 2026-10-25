@@ -1372,19 +1372,21 @@ DASHBOARD_TABLES: tuple[str, ...] = ("dashboards", "dashboard_roles", "dashboard
 
 DASHBOARDS_SCHEMA_SQL = ";\n".join(DASHBOARDS_SCHEMA_STATEMENTS) + ";"
 
-# Probe of the dashboards auto-migration step: the step (schema, base
-# dashboard, permission backfill) runs only while a table is missing.
+# Probe of the dashboards auto-migration step: the step (schema, the two base
+# dashboards, permission backfill) runs only while a table is missing.
 DASHBOARDS_PROBE_SQL = (
     "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' "
     "AND table_name IN (" + ", ".join(f"'{t}'" for t in DASHBOARD_TABLES) + ")"
 )
 
-# The base dashboard (app/services/dashboard_seed.py) and its widgets, written
-# in the step that creates the tables, with bound parameters: SQLAlchemy
-# text() binds (:name) for the tenant auto-migration, asyncpg placeholders
-# ($n) for the provisioner and init_db. ON CONFLICT names the partial unique
-# index dashboards_one_default, so a concurrent creation inserts one default;
-# no id back = the default exists, and no widget is written.
+# The two base dashboards (app/services/dashboard_seed.py) and their widgets,
+# written in the step that creates the tables, with bound parameters:
+# SQLAlchemy text() binds (:name) for the tenant auto-migration, asyncpg
+# placeholders ($n) for the provisioner and init_db. The Overview: ON CONFLICT
+# names the partial unique index dashboards_one_default, so a concurrent
+# creation inserts one default. "Capacity and flows": inserted only while no
+# dashboard has its name (DASHBOARD_NAMED_SEED_SQL). No id back = the
+# dashboard exists, and none of its widgets is written.
 DASHBOARD_SEED_COLUMNS: tuple[str, ...] = (
     "name",
     "description",
@@ -1424,6 +1426,24 @@ DASHBOARD_SEED_PG_SQL = (
     )
     + _DEFAULT_CONFLICT
 )
+# A non-default base dashboard, keyed by its name (INSERT ... SELECT ...
+# WHERE NOT EXISTS; the name bound a second time as its own parameter, so
+# asyncpg uses each placeholder once).
+_NAMED_SEED_GUARD = " WHERE NOT EXISTS (SELECT 1 FROM dashboards WHERE name = {}) RETURNING id"
+
+
+def _seed_select_sql(table: str, columns: tuple[str, ...], placeholders: list[str]) -> str:
+    return f"INSERT INTO {table} ({', '.join(columns)}) SELECT {', '.join(placeholders)}"
+
+
+DASHBOARD_NAMED_SEED_SQL = _seed_select_sql(
+    "dashboards", DASHBOARD_SEED_COLUMNS, [f":{c}" for c in DASHBOARD_SEED_COLUMNS]
+) + _NAMED_SEED_GUARD.format(":existing_name")
+DASHBOARD_NAMED_SEED_PG_SQL = _seed_select_sql(
+    "dashboards",
+    DASHBOARD_SEED_COLUMNS,
+    [f"${i}" for i in range(1, len(DASHBOARD_SEED_COLUMNS) + 1)],
+) + _NAMED_SEED_GUARD.format(f"${len(DASHBOARD_SEED_COLUMNS) + 1}")
 DASHBOARD_WIDGET_SEED_SQL = _seed_insert_sql(
     "dashboard_widgets",
     DASHBOARD_WIDGET_SEED_COLUMNS,
@@ -1568,33 +1588,54 @@ DASHBOARD_WIDGET_KIND_CHECK_SQL = f"""
 
 def dashboard_seed_params(
     field_ids: dict[str, int] | None = None,
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """The base dashboard's insert parameters (with its timestamps) and its widgets'."""
-    dashboard, widgets = base_dashboard_rows(field_ids)
+) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
+    """Both base dashboards' insert parameters (with their timestamps) and
+    their widgets', Overview first."""
     now = utcnow_naive()
-    return {**dashboard, "created_at": now, "updated_at": now}, widgets
+    return [
+        ({**dashboard, "created_at": now, "updated_at": now}, widgets)
+        for dashboard, widgets in base_dashboard_rows(field_ids)
+    ]
 
 
-async def seed_base_dashboard(conn: asyncpg.Connection) -> int | None:
+def dashboard_seed_statement(dashboard: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """The SQLAlchemy text and binds inserting one base dashboard (the tenant
+    auto-migration): the default through its unique index, any other by name."""
+    if dashboard["is_default"]:
+        return DASHBOARD_SEED_SQL, dashboard
+    return DASHBOARD_NAMED_SEED_SQL, {**dashboard, "existing_name": dashboard["name"]}
+
+
+def dashboard_seed_pg_statement(dashboard: dict[str, Any]) -> tuple[str, list[Any]]:
+    """``dashboard_seed_statement`` for asyncpg (the provisioner and init_db)."""
+    values = [dashboard[c] for c in DASHBOARD_SEED_COLUMNS]
+    if dashboard["is_default"]:
+        return DASHBOARD_SEED_PG_SQL, values
+    return DASHBOARD_NAMED_SEED_PG_SQL, [*values, dashboard["name"]]
+
+
+async def seed_base_dashboard(conn: asyncpg.Connection) -> list[int | None]:
     """
-    Insert the base dashboard with its widgets and grant the dashboard keys
-    (asyncpg; the provisioner and init_db). The id of the new dashboard, or
-    None when a default dashboard already existed (then no widget is written).
+    Insert both base dashboards with their widgets and grant the dashboard
+    keys (asyncpg; the provisioner and init_db). Per dashboard, the id of the
+    new row, or None when it already existed (then none of its widgets is
+    written).
     """
-    dashboard, widgets = dashboard_seed_params()
-    dashboard_id = await conn.fetchval(
-        DASHBOARD_SEED_PG_SQL, *(dashboard[c] for c in DASHBOARD_SEED_COLUMNS)
-    )
-    if dashboard_id is not None:
-        for widget in widgets:
-            await conn.execute(
-                DASHBOARD_WIDGET_SEED_PG_SQL,
-                dashboard_id,
-                *(widget[c] for c in DASHBOARD_WIDGET_SEED_COLUMNS[1:]),
-            )
+    ids: list[int | None] = []
+    for dashboard, widgets in dashboard_seed_params():
+        sql, args = dashboard_seed_pg_statement(dashboard)
+        dashboard_id = await conn.fetchval(sql, *args)
+        if dashboard_id is not None:
+            for widget in widgets:
+                await conn.execute(
+                    DASHBOARD_WIDGET_SEED_PG_SQL,
+                    dashboard_id,
+                    *(widget[c] for c in DASHBOARD_WIDGET_SEED_COLUMNS[1:]),
+                )
+        ids.append(dashboard_id)
     for role, permission in DASHBOARD_PERMISSION_BACKFILL:
         await conn.execute(DASHBOARD_PERMISSION_BACKFILL_PG_SQL, permission, role, permission)
-    return dashboard_id
+    return ids
 
 
 def _sql_block(*statements: str) -> str:
@@ -2299,8 +2340,8 @@ async def run_seed_data(
 ):
     """Seed initial data for a new tenant using parameterized queries.
 
-    ``seed_dashboards``: also write the base dashboard and the dashboard key
-    grants (seed_base_dashboard()). The provisioner always does (a new database);
+    ``seed_dashboards``: also write the two base dashboards and the dashboard
+    key grants (seed_base_dashboard()). The provisioner always does (a new database);
     init_db only in the run that creates the dashboards tables, so a later
     start never brings back a dashboard an admin deleted.
     """
@@ -2337,7 +2378,7 @@ async def run_seed_data(
     # keeps its (possibly edited) permissions.
     for statement in (RBAC_SEED_ROLES_SQL, RBAC_SEED_POLICIES_SQL):
         await conn.execute(statement)
-    # The base dashboard and the dashboard key grants, after the roles.
+    # The two base dashboards and the dashboard key grants, after the roles.
     if seed_dashboards:
         await seed_base_dashboard(conn)
     # User input - use parameterized queries

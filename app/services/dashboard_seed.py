@@ -1,19 +1,22 @@
 """
-The base dashboard "Overview" and the demo's "Capacity and flows" (2.1.0), as
+The two base dashboards, "Overview" and "Capacity and flows" (2.1.0), as
 plain Python.
 
-Seeded once, in the step that creates the dashboards tables: the provisioner
-(``tenant_provisioner.run_seed_data``, new tenants), the tenant auto-migration
+Seeded once, in the step that creates the dashboards tables, by four paths:
+the provisioner (``tenant_provisioner.run_seed_data`` through
+``seed_base_dashboard``, new tenants), the tenant auto-migration
 (``tenant_manager._run_auto_migrations``, existing tenants), ``init_db`` when
-it creates the tables, and the demo seed (``demo_seed.insert_demo_data``,
-which adds the two widgets over the demo's "Project type" and "Area" fields).
-An admin may delete or edit it afterwards; nothing brings it back.
+it creates the tables (``run_seed_data(seed_dashboards=True)``), and the demo
+seed (``demo_seed.insert_demo_dashboards``). A tenant whose dashboards tables
+already exist gets nothing; an admin may delete or edit either dashboard
+afterwards and nothing brings it back.
 
-"Capacity and flows" (``DEMO_DASHBOARD``, ``demo_dashboard_rows``) is the
-demo-only second dashboard showing the gauge, heatmap, treemap and sankey
-kinds. Only the demo seed writes it (``demo_seed.insert_demo_dashboards``):
-never the provisioner's bare defaults, the tenant auto-migration or
-``init_db``.
+The demo adds its extras to the same definitions: the two Overview widgets
+over its "Project type" and "Area" fields (``DEMO_EXTRA_WIDGETS``, through
+``base_dashboard_rows(field_ids)``) and, first on "Capacity and flows", a
+utilisation gauge (``capacity_dashboard_rows(with_gauge=True)``). The gauge is
+demo-only because its ``utilisation`` measure needs the Staff & Calendar view
+key, which not every role every tenant ships holds.
 
 Each widget is ``{kind, title, query, options, layout, sort_order}``: the
 metric ``query`` follows the metric-query spec (measure, dimensions, filters,
@@ -159,7 +162,7 @@ BASE_DASHBOARD: dict[str, Any] = {
 }
 
 # The demo's extra widgets, over its project fields (keyed by field name; the
-# field id is filled in by base_dashboard_rows). Added after the base charts.
+# field id is filled in by overview_rows). Added after the base charts.
 DEMO_EXTRA_WIDGETS: tuple[tuple[str, dict[str, Any]], ...] = (
     (
         "Project type",
@@ -186,33 +189,25 @@ DEMO_EXTRA_WIDGETS: tuple[tuple[str, dict[str, Any]], ...] = (
 )
 
 
-# The demo-only second dashboard (seeded by demo_seed alone): one widget of
-# each 2.1.0 chart kind, every one over the booking data, so it needs no
-# project field. Explicit layouts per breakpoint.
-DEMO_DASHBOARD: dict[str, Any] = {
-    "name": "Capacity and flows",
-    "description": (
-        "Utilisation against target, booked time per team and month, where each site's "
-        "time goes and which teams work on which projects."
-    ),
-    "visibility": "everyone",
-    "is_default": False,
-}
+# The second base dashboard: a heatmap, a treemap and a sankey over the
+# booking data, so it needs no project field and no view key beyond
+# views.dashboards. Explicit layouts per breakpoint. The demo puts the
+# utilisation gauge first (_CAPACITY_GAUGE, demo-only) and shifts the
+# others (_DEMO_CAPACITY_LAYOUTS): one definition of each widget, two layouts.
+CAPACITY_DASHBOARD_NAME = "Capacity and flows"
 
-_DEMO_DASHBOARD_WIDGETS: tuple[dict[str, Any], ...] = (
-    _widget(
-        "gauge",
-        "Utilisation this quarter",
-        _query("utilisation", period="this_quarter"),
-        {
-            "lg": {"x": 0, "y": 0, "w": 3, "h": 4},
-            "md": {"x": 0, "y": 0, "w": 4, "h": 4},
-            "sm": {"x": 0, "y": 0, "w": 4, "h": 4},
-        },
-        0,
-        {"target": 85},
-    ),
-    _widget(
+# (kind, title, query, options)
+_CapacityWidget = tuple[str, str, dict[str, Any], dict[str, Any] | None]
+
+_CAPACITY_GAUGE: _CapacityWidget = (
+    "gauge",
+    "Utilisation this quarter",
+    _query("utilisation", period="this_quarter"),
+    {"target": 85},
+)
+
+_CAPACITY_CHARTS: tuple[_CapacityWidget, ...] = (
+    (
         "heatmap",
         "Booked weeks per team and month",
         _query(
@@ -220,38 +215,70 @@ _DEMO_DASHBOARD_WIDGETS: tuple[dict[str, Any], ...] = (
             [{"kind": "team"}, {"kind": "period", "grain": "month"}],
             period="last_12_months",
         ),
-        {
-            "lg": {"x": 3, "y": 0, "w": 9, "h": 4},
-            "md": {"x": 4, "y": 0, "w": 4, "h": 4},
-            "sm": {"x": 0, "y": 4, "w": 4, "h": 5},
-        },
-        1,
+        None,
     ),
-    _widget(
+    (
         "treemap",
         "Booked weeks by site and project",
         _query("booked_weeks", [{"kind": "site"}, {"kind": "project"}]),
-        {
-            "lg": {"x": 0, "y": 4, "w": 6, "h": 5},
-            "md": {"x": 0, "y": 4, "w": 8, "h": 5},
-            "sm": {"x": 0, "y": 9, "w": 4, "h": 5},
-        },
-        2,
+        None,
     ),
-    _widget(
+    (
         "sankey",
         "Project to team flows",
         # top_n ranks the first dimension: the eight busiest projects (and
         # Other) flow to the teams.
         _query("booked_weeks", [{"kind": "project"}, {"kind": "team"}], top_n=8),
-        {
-            "lg": {"x": 6, "y": 4, "w": 6, "h": 5},
-            "md": {"x": 0, "y": 9, "w": 8, "h": 5},
-            "sm": {"x": 0, "y": 14, "w": 4, "h": 5},
-        },
-        3,
+        None,
     ),
 )
+
+
+def _box(x: int, y: int, w: int, h: int) -> dict[str, int]:
+    return {"x": x, "y": y, "w": w, "h": h}
+
+
+# Heatmap, treemap, sankey: the heatmap across the top, the two others side
+# by side below it on lg, stacked on md and sm.
+_CAPACITY_LAYOUTS: tuple[dict[str, dict[str, int]], ...] = (
+    {"lg": _box(0, 0, 12, 4), "md": _box(0, 0, 8, 4), "sm": _box(0, 0, 4, 5)},
+    {"lg": _box(0, 4, 6, 5), "md": _box(0, 4, 8, 5), "sm": _box(0, 5, 4, 5)},
+    {"lg": _box(6, 4, 6, 5), "md": _box(0, 9, 8, 5), "sm": _box(0, 10, 4, 5)},
+)
+
+# The demo's: the gauge, then the heatmap beside it, then as above.
+_DEMO_CAPACITY_LAYOUTS: tuple[dict[str, dict[str, int]], ...] = (
+    {"lg": _box(0, 0, 3, 4), "md": _box(0, 0, 4, 4), "sm": _box(0, 0, 4, 4)},
+    {"lg": _box(3, 0, 9, 4), "md": _box(4, 0, 4, 4), "sm": _box(0, 4, 4, 5)},
+    {"lg": _box(0, 4, 6, 5), "md": _box(0, 4, 8, 5), "sm": _box(0, 9, 4, 5)},
+    {"lg": _box(6, 4, 6, 5), "md": _box(0, 9, 8, 5), "sm": _box(0, 14, 4, 5)},
+)
+
+
+def _capacity_widgets(with_gauge: bool) -> list[dict[str, Any]]:
+    content = (_CAPACITY_GAUGE, *_CAPACITY_CHARTS) if with_gauge else _CAPACITY_CHARTS
+    layouts = _DEMO_CAPACITY_LAYOUTS if with_gauge else _CAPACITY_LAYOUTS
+    return [
+        _widget(kind, title, copy.deepcopy(query), copy.deepcopy(layout), i, copy.deepcopy(opts))
+        for i, ((kind, title, query, opts), layout) in enumerate(zip(content, layouts, strict=True))
+    ]
+
+
+CAPACITY_DASHBOARD: dict[str, Any] = {
+    "name": CAPACITY_DASHBOARD_NAME,
+    "description": (
+        "Booked time per team and month, where each site's time goes and which teams "
+        "work on which projects."
+    ),
+    "visibility": "everyone",
+    "is_default": False,
+    "widgets": _capacity_widgets(with_gauge=False),
+}
+
+# The base dashboards, in seeding order: the default first.
+BASE_DASHBOARDS: tuple[dict[str, Any], ...] = (BASE_DASHBOARD, CAPACITY_DASHBOARD)
+
+DASHBOARD_KEYS: tuple[str, ...] = ("name", "description", "visibility", "is_default")
 
 
 def _json(value: Any) -> str:
@@ -278,11 +305,15 @@ def _with_field(query: dict[str, Any], field_id: int) -> dict[str, Any]:
     return filled
 
 
-def base_dashboard_rows(
+def _dashboard_row(definition: dict[str, Any]) -> dict[str, Any]:
+    return {key: definition[key] for key in DASHBOARD_KEYS}
+
+
+def overview_rows(
     field_ids: dict[str, int] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """
-    The insert parameters of the base dashboard and of its widgets.
+    The insert parameters of the Overview and of its widgets.
 
     Returns ``(dashboard, widgets)``: ``dashboard`` = ``{name, description,
     visibility, is_default}``, each widget = ``{kind, title, query, options,
@@ -290,8 +321,6 @@ def base_dashboard_rows(
     JSON text. ``field_ids`` (project field name -> id) adds the demo extras
     whose field is present, after the base widgets.
     """
-    dashboard = {key: BASE_DASHBOARD[key] for key in ("name", "description", "visibility")}
-    dashboard["is_default"] = BASE_DASHBOARD["is_default"]
     widgets = [copy.deepcopy(w) for w in BASE_DASHBOARD["widgets"]]
 
     charts = len(_CHARTS)
@@ -310,15 +339,29 @@ def base_dashboard_rows(
         )
         charts += 1
 
-    return dashboard, [_widget_row(w) for w in widgets]
+    return _dashboard_row(BASE_DASHBOARD), [_widget_row(w) for w in widgets]
 
 
-def demo_dashboard_rows() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def capacity_dashboard_rows(
+    with_gauge: bool = False,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """
-    The insert parameters of the demo's "Capacity and flows" dashboard and of
-    its four widgets, in the shapes ``base_dashboard_rows`` returns.
+    The insert parameters of "Capacity and flows" and of its widgets, in the
+    shapes ``overview_rows`` returns: the heatmap, the treemap and the sankey,
+    or -- ``with_gauge``, the demo -- the utilisation gauge first, then those.
     """
-    dashboard = {
-        key: DEMO_DASHBOARD[key] for key in ("name", "description", "visibility", "is_default")
-    }
-    return dashboard, [_widget_row(w) for w in _DEMO_DASHBOARD_WIDGETS]
+    return _dashboard_row(CAPACITY_DASHBOARD), [
+        _widget_row(w) for w in _capacity_widgets(with_gauge)
+    ]
+
+
+def base_dashboard_rows(
+    field_ids: dict[str, int] | None = None,
+) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
+    """
+    The insert parameters of both base dashboards, in ``BASE_DASHBOARDS``
+    order: ``[(overview, widgets), (capacity, widgets)]``, each pair as
+    ``overview_rows`` returns it. ``field_ids`` adds the demo's field widgets
+    to the Overview; "Capacity and flows" is always the gauge-less base one.
+    """
+    return [overview_rows(field_ids), capacity_dashboard_rows()]

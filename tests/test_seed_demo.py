@@ -577,7 +577,7 @@ async def test_a_rerun_leaves_role_and_policy_settings_alone():
 async def test_the_base_dashboard_with_the_demo_field_widgets(loaded):
     """Overview (dashboard_seed.BASE_DASHBOARD) plus the two widgets over the
     demo's "Project type" and "Area" fields, on the ids the fake handed out."""
-    from app.services.dashboard_seed import base_dashboard_rows
+    from app.services.dashboard_seed import overview_rows
 
     conn, _, counts = loaded
     (sql, args), _second = conn.inserts("dashboards")
@@ -590,7 +590,7 @@ async def test_the_base_dashboard_with_the_demo_field_widgets(loaded):
 
     dashboard_id = conn.ids[("dashboards", (True,))]
     fields = {name: conn.ids[("project_fields", (name,))] for name in ("Project type", "Area")}
-    _, expected = base_dashboard_rows(fields)
+    _, expected = overview_rows(fields)
     widgets = conn.inserts("dashboard_widgets")[:10]
     assert len(expected) == 10
     for (sql, args), widget in zip(widgets, expected, strict=True):
@@ -616,9 +616,10 @@ async def test_the_base_dashboard_with_the_demo_field_widgets(loaded):
 
 
 async def test_the_demo_capacity_and_flows_dashboard(loaded):
-    """The second dashboard (dashboard_seed.DEMO_DASHBOARD) after the Overview,
-    keyed by its name, with its four widgets on the id the fake handed out."""
-    from app.services.dashboard_seed import demo_dashboard_rows
+    """The second base dashboard (dashboard_seed.CAPACITY_DASHBOARD) after the
+    Overview, keyed by its name, with the demo-only gauge before its three
+    widgets, on the id the fake handed out."""
+    from app.services.dashboard_seed import capacity_dashboard_rows
 
     conn, _, _ = loaded
     _overview, (sql, args) = conn.inserts("dashboards")
@@ -636,7 +637,7 @@ async def test_the_demo_capacity_and_flows_dashboard(loaded):
 
     dashboard_id = conn.ids[("dashboards", ("Capacity and flows",))]
     assert dashboard_id != conn.ids[("dashboards", (True,))]
-    _, expected = demo_dashboard_rows()
+    _, expected = capacity_dashboard_rows(with_gauge=True)
     widgets = conn.inserts("dashboard_widgets")[10:]
     assert len(widgets) == len(expected) == 4
     for (sql, args), widget in zip(widgets, expected, strict=True):
