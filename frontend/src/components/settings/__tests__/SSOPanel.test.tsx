@@ -401,6 +401,28 @@ describe('SSOPanel', () => {
       expect(screen.queryByText('Client credentials')).not.toBeInTheDocument();
     });
 
+    it('clears the result when the Enable SSO switch changes', async () => {
+      render(<SSOPanel />);
+      await screen.findByDisplayValue('tenant-guid');
+      fireEvent.click(testButton());
+      expect(await screen.findByRole('status')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('switch', { name: 'Enable SSO' }));
+      expect(screen.queryByRole('status')).toBeNull();
+    });
+
+    it('shows the "nothing is saved" note only while the organization does not manage SSO', async () => {
+      const note = 'The test uses the values above as entered — nothing is saved.';
+      const { unmount } = render(<SSOPanel />);
+      await screen.findByDisplayValue('tenant-guid');
+      expect(screen.getByText(note)).toBeInTheDocument();
+      unmount();
+
+      vi.mocked(apiGet).mockResolvedValue({ ...fullConfig, org_sso_active: true });
+      render(<SSOPanel />);
+      await screen.findByText(/managed by your organization/);
+      expect(screen.queryByText(note)).toBeNull();
+    });
+
     it('validates the required fields before testing', async () => {
       render(<SSOPanel />);
       await screen.findByDisplayValue('tenant-guid');

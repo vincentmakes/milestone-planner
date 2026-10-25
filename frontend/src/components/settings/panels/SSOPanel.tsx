@@ -341,7 +341,10 @@ export function SSOPanel({ onDirtyChange }: Partial<SettingsPanelProps> = {}) {
           <div className={styles.toggleSection}>
             <ToggleSwitch
               checked={enabled}
-              onChange={setEnabled}
+              onChange={(value) => {
+                setEnabled(value);
+                setTestResult(null);
+              }}
               disabled={orgSSOActive}
               label="Enable SSO"
             />
@@ -439,7 +442,9 @@ export function SSOPanel({ onDirtyChange }: Partial<SettingsPanelProps> = {}) {
               Save Configuration
             </Button>
           </div>
-          <p className={styles.testNote}>The test uses the values above as entered — nothing is saved.</p>
+          {!orgSSOActive && (
+            <p className={styles.testNote}>The test uses the values above as entered — nothing is saved.</p>
+          )}
 
           {testResult && <SSOTestResult result={testResult} />}
         </>
