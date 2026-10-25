@@ -153,6 +153,10 @@ When working on this codebase, follow these conventions:
 - ESLint: `react-hooks/rules-of-hooks` is an **error** (fails CI); most other rules are at **warn** level, so CI's lint job will not catch everything else. Treat warnings as errors when writing new code.
 - **A WebSocket message other than `change:*` needs its own `case`** in `useWebSocket` (the `default:` branch only handles `change:*`) — `notification:new` is the existing one.
 - **Gantt writes**: staff-assignment updates must include `allocation` (backend requirement); new dependency links always write `entity` and go through `components/gantt/utils/dependencies.ts`; Group-by section rows never carry a class name containing `row` nor `data-project-id` / `data-phase-id` (the drag/resize hooks and `DependencyLayer` find rows by them). Detail: [Gantt architecture](docs/developer-guide/frontend-architecture.md#gantt-architecture-srccomponentsgantt).
+- **Touch and drag plumbing**: never spread a `SyntheticEvent` — build the mouse-like event with `toMouseLikeEvent` (`src/utils/touchEvents.ts`); the document `mousemove`/`mouseup`/`touch*` listeners of drag and resize are attached at drag start and removed on end and on unmount, never left on the document between drags.
+- **Resolve tag and field-item colours by id** through `appStore.tags` / `appStore.projectFields`, never from the inline `project.tags[].color` (stale during What-If).
+- **`useScrollSync` pads the shorter pane from measured scroll heights** — never a fixed scrollbar-height padding in CSS.
+- **Dependencies auto-align only at creation**: moving an item never cascades to its dependents.
 - Frontend model types live in `src/types/models.ts`; dates are `YYYY-MM-DD` strings throughout the frontend (the backend may send the midnight form `YYYY-MM-DDT00:00:00.000Z`).
 - **Never parse a model date with `new Date(str)` / `parseISO(str)` or derive one with `toISOString().split('T')[0]`** — both are UTC and shift the day for users west of UTC. Use `parseLocalDate` / `formatLocalDate` / `toDateOnly` / `addDaysToDateString` / `daysBetweenDateStrings` (and `formatDateISO(new Date())` for "today") from `src/utils/date.ts`; day counts between local midnights are `Math.round`ed (DST). Tests pin `process.env.TZ = 'America/New_York'` before imports (`*.newYork.test.ts`). `new Date(str)` is fine only for real timestamps (`created_at`, …).
 - **Node 24** is the required toolchain (declared in `frontend/package.json` `engines`, used by the Dockerfile and all CI jobs) — don't build with older Node locally.
@@ -182,6 +186,7 @@ The repo ships [Trail](https://github.com/trailhq/Trail-Code) for Claude Code se
 - Organization-level SSO **takes precedence** over tenant-level SSO; enabling tenant SSO while org SSO is active is rejected with 409 (`_reject_if_org_sso_active`). Preserve this guardrail.
 - API docs (`/api/docs`, `/api/redoc`, `/api/openapi.json`) are gated to `role == "admin"` — keep them gated.
 - **No fallthrough to `DB_*`**: a request carrying a tenant slug but no pool is a 503, never the default database.
+- Behind a reverse proxy `FORWARDED_ALLOW_IPS` must list the proxy; otherwise every client shares one login-throttle key and the lockout applies to everyone.
 - Revocation is immediate: `SessionService.destroy_user_sessions()` is called on deactivate / delete / role change / password set (it also closes the user's open WebSockets) — keep it on any new path that does one of these.
 - `GET /settings` and `GET /settings/{key}` have no auth dependency — never store secrets in the `settings` table. `/health` is public — add no further config values to it.
 - Tenant `admin` (`users.role`) and portal `admin` (`admin_users.role`, below `superadmin`) are separate accounts in separate databases — don't confuse them.
@@ -225,7 +230,11 @@ The repo ships [Trail](https://github.com/trailhq/Trail-Code) for Claude Code se
 
 ### Documentation Screenshots
 
-When asked to **add, update, or refresh screenshots in the MkDocs docs** (`docs/`), use the canonical capture pipeline in `scripts/screenshots/` — do not capture by hand. Capture against the **demo tenant only** (seeded by `python -m app.scripts.seed_demo`; login `admin@demo.local` / `demo1234`), then verify with `mkdocs build --strict`. The steps, the conventions the scripts enforce and how to add a shot: [`scripts/screenshots/README.md`](scripts/screenshots/README.md) and [Documentation Screenshots](docs/developer-guide/conventions-in-depth.md#documentation-screenshots).
+When asked to **add, update, or refresh screenshots in the MkDocs docs** (`docs/`), use the canonical capture pipeline in `scripts/screenshots/` — do not capture by hand. Capture against the **demo tenant only** (seeded by `python -m app.scripts.seed_demo`; login `admin@demo.local` / `demo1234`), then verify with `mkdocs build --strict`.
+
+- The three capture scripts run in this order: `capture.py`, `capture_collab.py`, then `capture_admin.py` (it temporarily attaches the demo tenant to an SSO org). `.env` must set `MULTI_TENANT=true`, a `TENANT_ENCRYPTION_KEY` and `INIT_ADMIN_PASSWORD`. Never run `playwright install` where a Chromium is preinstalled — match the preinstalled one. Fixed conventions: viewport 1440×900, light theme, en-US, Gantt Q zoom.
+
+The steps, the conventions the scripts enforce and how to add a shot: [`scripts/screenshots/README.md`](scripts/screenshots/README.md) and [Documentation Screenshots](docs/developer-guide/conventions-in-depth.md#documentation-screenshots).
 
 ### Versioning & Changelog (MANDATORY)
 

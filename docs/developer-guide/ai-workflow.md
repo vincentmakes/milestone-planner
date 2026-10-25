@@ -13,7 +13,7 @@ A round is one plan carried out in this order:
 5. **One fix wave.** Everything the review found, batched into a single task.
 6. **The finishing menu.** Keep the branch, merge it locally, or open a PR.
 
-The artifacts live in `.superpowers/sdd/<plan>/` (git-ignored): the ledger `progress.md`, one brief and one report per task, and the review packages. There is **one plan artifact**: the plan copy in that workspace. Briefs point at page **headings** (`routes.md`, "Assignments"), never "read the whole page".
+The artifacts live in `.superpowers/sdd/<plan>/` (kept out of git locally: add it to `.git/info/exclude`; it is scratch): the ledger `progress.md`, one brief and one report per task, and the review packages. There is **one plan artifact**: the plan copy in that workspace. Briefs point at page **headings** (`routes.md`, "Assignments"), never "read the whole page".
 
 ## Model routing
 
