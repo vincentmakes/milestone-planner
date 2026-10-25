@@ -1,7 +1,7 @@
 /**
  * Wire contract of the thin endpoint modules: each function hits the right
  * HTTP method + URL with the right body. The client itself is mocked, so these
- * pin the routes the backend exposes (see the API reference in CLAUDE.md).
+ * pin the routes the backend exposes (see docs/developer-guide/routes.md).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as client from '@/api/client';
